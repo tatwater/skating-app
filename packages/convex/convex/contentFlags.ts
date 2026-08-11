@@ -21,6 +21,10 @@ const TARGET_TABLE: Record<(typeof FLAG_TARGET_TYPES)[number], TableNames> = {
   photo: 'photos',
   user: 'profiles',
   hazard: 'hazards', // Phase 9 (D51) — mods can hide a bad pin
+  // N6d (D73). The one user-supplied free-text surface in the access layer, and the only part of it a
+  // flag can reach: a bogus "gate locked" on a lake somebody wants to themselves is exactly the abuse
+  // this queue exists for. Access **photos** flag as `photo` like every other image, unchanged.
+  accessAlert: 'accessAlerts',
 };
 
 /**

@@ -7,7 +7,15 @@
  * These are the backend-centric enums the apps rarely need to enumerate.
  */
 
-import { BODY_FEATURE_TYPES as CORE_BODY_FEATURE_TYPES, HAZARD_VERDICTS } from '@skating/core';
+import {
+  ACCESS_ALERT_REASONS as CORE_ACCESS_ALERT_REASONS,
+  ACCESS_ALERT_STATUSES as CORE_ACCESS_ALERT_STATUSES,
+  ACCESS_ALERT_TARGETS as CORE_ACCESS_ALERT_TARGETS,
+  ACCESS_ALERT_VERDICTS as CORE_ACCESS_ALERT_VERDICTS,
+  APPROACH_KINDS as CORE_APPROACH_KINDS,
+  BODY_FEATURE_TYPES as CORE_BODY_FEATURE_TYPES,
+  HAZARD_VERDICTS,
+} from '@skating/core';
 
 /**
  * Where a GPS activity came *in* from — the A-inputs of the Phase 8 pipeline (D24).
@@ -166,8 +174,23 @@ export const HAZARD_HEALING_STATES = ['none', 'healing_unsafe', 'disputed'] as c
  */
 export const BODY_FEATURE_TYPES = CORE_BODY_FEATURE_TYPES;
 
-/** Abuse/safety flag targets, reasons, and lifecycle (D32/D37). `hazard` added Phase 9 (D51). */
-export const FLAG_TARGET_TYPES = ['report', 'comment', 'photo', 'user', 'hazard'] as const;
+/**
+ * Abuse/safety flag targets, reasons, and lifecycle (D32/D37). `hazard` added Phase 9 (D51);
+ * `accessAlert` added N6d (D73).
+ *
+ * The N6d kickoff found this list one short of the claim its own plan made. Access **photos** ride
+ * `photo` exactly as Workstream C assumes, but an access **alert** is user-supplied free text on a
+ * public surface with no target type to flag it by — so *"moderation rides the existing
+ * `contentFlags`"* was true of half of it.
+ */
+export const FLAG_TARGET_TYPES = [
+  'report',
+  'comment',
+  'photo',
+  'user',
+  'hazard',
+  'accessAlert',
+] as const;
 export const FLAG_REASONS = [
   'unsafe_false_report',
   'spam',
@@ -242,6 +265,25 @@ export const MODERATION_ACTIONS = [
   // `NAME_SOURCE_RANK` would otherwise re-impose `gnis > nhd > 3dhp > osm` on the next campaign, and
   // the stored `user` claim is the only thing standing between a moderator's decision and that.
   'set_water_body_name',
+  // ── N6d, the access layer (D72/D73/D144) ────────────────────────────────────────────────────────
+  // An operator placed or edited a parking area. Audited for the reason the D72 amendment gives:
+  // association distance is uncapped for humans, so a lot a mile from the ice is a legitimate write
+  // *and* the one write in this phase that can send a stranger to the wrong trailhead in the dark.
+  // Attribution is what makes that reversible.
+  'set_parking_area',
+  // Overrode a derived `approachKind` (D144). Distinct from `set_parking_area` because it contradicts
+  // a routed measurement rather than adding a fact, and "the number said 2 km and a human said
+  // drive-up" is exactly the claim someone will want to see the basis for later.
+  'set_approach_kind',
+  // Pinned a community access alert as `official` — the founder's 2026-08-10 exemption from both the
+  // TTL and the seasonal reset. The only way an access claim outlives its season, so it is the one
+  // that most needs a name on it.
+  'pin_access_alert',
+  'unpin_access_alert',
+  // "This never existed" (D65's verdict, applied to access). Not `remove`: retraction says the claim
+  // was never true, where removal says it is no longer wanted on screen, and a mistaken alert deserves
+  // the first rather than the second.
+  'retract_access_alert',
 ] as const;
 export const MODERATION_TARGET_TYPES = [
   'report',
@@ -254,6 +296,12 @@ export const MODERATION_TARGET_TYPES = [
   'bodyFeature',
   'waterBodySubArea', // N2 (D60): a named region inside one body
   'hazardRecurrence', // N5c (D78): a cross-season pattern a moderator suppressed or restored
+  // N6d (D72/D73): the access layer. `putIn` was already moderatable through the Phase 4 `hide`
+  // mutation with nothing auditing it; giving it a target type is that gap closed alongside the two
+  // new surfaces rather than after them.
+  'putIn',
+  'parkingArea',
+  'accessAlert',
 ] as const;
 
 /** In-app support inbox (D37). */
@@ -335,11 +383,63 @@ export const NOTIFICATION_PREF_DEFAULTS: Record<(typeof NOTIFICATION_PREF_KEYS)[
     greatReportNearby: false,
   };
 
-/** Put-in marker provenance (Phase 4, decision #7): clustered from reports vs. admin-set. */
-export const PUTIN_SOURCES = ['derived', 'official'] as const;
+/**
+ * Put-in marker provenance (Phase 4, decision #7; `osm` added N6d / D143).
+ *
+ * **In ladder order, weakest first** — `official` beats `osm` beats `derived`, and a re-import never
+ * overwrites a rung above its own. The same precedence discipline as the N6a depth ladder, and for the
+ * same reason: an operator's correction has to survive the next ETL run or it is not worth making.
+ *
+ * - `derived` — clustered from visible reports' points. Approximate, recomputed on read.
+ * - `osm` — a named slipway, beach, pier or fishing access from the Geofabrik extract (N6d B1).
+ * - `official` — an operator pinned it. Accurate, priority styling.
+ *
+ * ⚠ **`osm` scores as `derived` in D2's richness ladder, not as `official`** (D143). It is stored like
+ * an official row and approximate like a derived one, so the resemblance to check is provenance rather
+ * than storage: `display.ts` calls the official term *"the strongest static signal we have"* on the
+ * grounds that a **human** confirmed you can get on the ice here, and an ETL cannot confirm that.
+ */
+export const PUTIN_SOURCES = ['derived', 'osm', 'official'] as const;
 
 /** Put-in marker visibility — a moderator `hide` suppresses a coord regardless of re-clustering. */
 export const PUTIN_STATUSES = ['visible', 'hidden'] as const;
+
+/**
+ * Where a parking area came from (N6d / D72). Same two-rung ladder as put-ins minus the derived one:
+ * nothing clusters a parking lot out of report points, so there is no approximate rung to have.
+ */
+export const PARKING_SOURCES = ['osm', 'official'] as const;
+
+/** Parking-area visibility — mirrors `PUTIN_STATUSES` so a moderator's `hide` means one thing. */
+export const PARKING_STATUSES = ['visible', 'hidden'] as const;
+
+/**
+ * What an access point offers, beyond existing (N6d A2, founder calls).
+ *
+ * Toilets, trails and parking all change whether a trip works. **Boat ramp is kept** for the
+ * ice-fishing crossover and because it costs nothing — it is the same `leisure=slipway` tag we already
+ * read to *find* put-ins, so excluding it would be extra work. **Food is excluded**: everyone has a
+ * maps app for restaurants, and it is the amenity most likely to be wrong.
+ *
+ * ⚠ `trail` is **derived from a successful ORS `foot-hiking` route**, not extracted (N6d correction 9).
+ * ORS routes over the same `highway=path` / `route=hiking` ways a second extract would have pulled, so
+ * a routed leg *is* the evidence a trail exists — which removed the line-geometry export entirely.
+ */
+export const ACCESS_AMENITIES = ['toilets', 'trail', 'boat_ramp'] as const;
+
+/**
+ * How you get from the car to the ice (N6d / D144) — **re-exported from `@skating/core`, not
+ * redefined**, the `BODY_FEATURE_TYPES` discipline. The clients derive this from a distance and the
+ * backend stores an operator's override of it, so a second hand-written copy would be two lists that
+ * agree until one of them doesn't.
+ */
+export const APPROACH_KINDS = CORE_APPROACH_KINDS;
+
+/** Access-alert vocabulary (N6d / D73) — all four re-exported from `@skating/core` for the same reason. */
+export const ACCESS_ALERT_REASONS = CORE_ACCESS_ALERT_REASONS;
+export const ACCESS_ALERT_STATUSES = CORE_ACCESS_ALERT_STATUSES;
+export const ACCESS_ALERT_VERDICTS = CORE_ACCESS_ALERT_VERDICTS;
+export const ACCESS_ALERT_TARGETS = CORE_ACCESS_ALERT_TARGETS;
 
 /**
  * Coalescing-queue bucket (Phase 4, decision #4). `digest` = the once-daily 8pm-ET "all within X₁"

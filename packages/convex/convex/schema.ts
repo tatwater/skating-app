@@ -37,9 +37,15 @@ import {
 import { defineSchema, defineTable } from 'convex/server';
 import { v } from 'convex/values';
 import {
+  ACCESS_ALERT_REASONS,
+  ACCESS_ALERT_STATUSES,
+  ACCESS_ALERT_TARGETS,
+  ACCESS_ALERT_VERDICTS,
+  ACCESS_AMENITIES,
   ACTIVITY_PROMPT_STATES,
   ACTIVITY_PROVIDERS,
   ADMIN_AREA_LEVELS,
+  APPROACH_KINDS,
   BODY_FEATURE_TYPES,
   BOUNTY_GATE_DECISIONS,
   BOUNTY_STATUSES,
@@ -64,6 +70,8 @@ import {
   NOTIFICATION_PREF_KEYS,
   NOTIFICATION_QUEUE_KINDS,
   NOTIFICATION_TYPES,
+  PARKING_SOURCES,
+  PARKING_STATUSES,
   POINT_EVENT_REASONS,
   PUTIN_SOURCES,
   PUTIN_STATUSES,
@@ -1983,7 +1991,239 @@ export default defineSchema({
     status: literals(PUTIN_STATUSES), // hidden = moderator-suppressed coord
     createdByUserId: v.optional(v.id('profiles')), // the admin/mod who set official / hid it
     createdAt: v.number(),
-  }).index('by_water_body', ['waterBodyId']),
+
+    // ── N6d (D72): the access layer ───────────────────────────────────────────────────────────────
+
+    /**
+     * OSM's own name for the feature — *"Lake Fairlee Boat Ramp"*, a state fishing access area, a town
+     * beach. Absent for `derived` markers and for OSM features with no `name` tag, where the display
+     * falls back to `compassSideLabel`'s deterministic *"North launch"* rather than to a stored string.
+     *
+     * **Not stored for the fallback case, deliberately.** A derived label re-computes identically on
+     * every import and costs nothing; storing it would create a second copy that drifts the first time
+     * a body's outline changes.
+     */
+    name: v.optional(v.string()),
+
+    /**
+     * Idempotent re-import key for the OSM pass (`way/123`, `node/456`) — the same discipline
+     * `waterBodies.by_external_id` uses. A re-run updates the row in place rather than duplicating it,
+     * which is what lets the extract be re-processed without destroying curation.
+     *
+     * Absent for `derived` and operator-set markers, which have no upstream id.
+     */
+    externalId: v.optional(v.string()),
+
+    /** Where the car goes for this launch, when we know of a lot that serves it. */
+    parkingAreaId: v.optional(v.id('parkingAreas')),
+
+    /**
+     * The walk from `parkingAreaId` to here, in metres — **routed, not flown** (D87).
+     *
+     * A routed `foot-hiking` leg where ORS could find a path, straight-line where it could not. The
+     * difference is disclosed rather than smoothed over, because straight-line **under-reports** and
+     * the two deserve different words: *"about 900 m on foot"* against *"at least 900 m on foot"*.
+     *
+     * Computed once at ETL and cached here. **Never computed from a request path** — the quota is a
+     * non-issue only because of when we call it.
+     */
+    approachMeters: v.optional(v.number()),
+
+    /**
+     * Metres of climb on that leg, one-way, parking → put-in (D87).
+     *
+     * The founder's half of the question, and the reason it is not a footnote: a kilometre with 120 m
+     * of climb in skate boots carrying a chair is a different trip from a flat kilometre. The return
+     * trip's climb is the descent and the skater can infer it.
+     */
+    approachAscentM: v.optional(v.number()),
+
+    /**
+     * `true` ⇒ `approachMeters` came from an ORS route; `false` ⇒ straight-line fallback.
+     *
+     * A separate boolean rather than a sentinel distance, because the fallback's number is *usable* —
+     * it is just a floor rather than an estimate, and a caption has to be able to say so.
+     */
+    approachRouted: v.optional(v.boolean()),
+
+    /**
+     * An operator's override of the derived `approachKind` (D144).
+     *
+     * **The kind itself is never stored.** It is a pure function of `approachMeters`
+     * (`approachKindFor`), so persisting it would be a cached derivation that goes stale the moment a
+     * re-route changes the distance — the N6a lesson about a second copy of a ladder, in miniature.
+     * What *is* stored is a human disagreeing with the derivation, which no function can recompute.
+     *
+     * Also the field the D144 assertion gate writes: above `HIKE_IN_ASSERT_M` the UI requires the
+     * author to set this explicitly rather than letting a mile-long approach be entered silently.
+     */
+    approachKindOverride: v.optional(literals(APPROACH_KINDS)),
+
+    /**
+     * Photos of the launch (N6d Workstream D, D88), capped at `MAX_ACCESS_PHOTOS`.
+     *
+     * ⚠ These are **infrastructure, not conditions**, which is why they are exempt from D66's seasonal
+     * purge and why `lib/photoOrphans` had to learn about a third owner class. A parking lot looks the
+     * same next November; a photo of the ice does not.
+     */
+    photoIds: v.optional(v.array(v.id('photos'))),
+  })
+    .index('by_water_body', ['waterBodyId'])
+    // Idempotent OSM upsert (N6d B3), mirroring `waterBodies.by_external_id`.
+    .index('by_external_id', ['externalId'])
+    // Every access point one uploader has attached a photo to — the third arm of the orphan-GC
+    // reference scan (N3 / `lib/photoOrphans`). Without it the sweep would have to scan the whole
+    // table to decide whether one person's photo is referenced, and the alternative it would fall
+    // back to is deleting it.
+    .index('by_created_by', ['createdByUserId']),
+
+  /**
+   * Where the car goes (N6d / D72) — modelled apart from `putIns`, and many-to-many with bodies.
+   *
+   * **Apart**, because `putIns` is load-bearing across drive-time bands, the notification fan-out, N3
+   * deletion and the Phase 5 feed: generalizing it into an `accessPoints` table with a `kind`
+   * discriminator is cleaner on paper and puts five other systems on a metadata phase's critical path.
+   *
+   * **Many-to-many**, because a trailhead lot serving three ponds is normal in the Northeast (D72
+   * amendment). The bodies it serves live in `parkingAreaBodies` rather than in an array here — see
+   * that table for why an array could not have worked.
+   */
+  parkingAreas: defineTable({
+    coord: latLng, // where the car actually goes
+    name: v.optional(v.string()), // OSM's, where it has one
+    source: literals(PARKING_SOURCES), // `official` beats `osm`, same ladder as put-ins
+    status: literals(PARKING_STATUSES), // hidden = moderator-suppressed
+    amenities: v.array(literals(ACCESS_AMENITIES)),
+    /** OSM `capacity` where tagged. Rare, and never inferred from the polygon's area. */
+    capacity: v.optional(v.number()),
+    /** OSM `fee` where tagged. Tri-state by omission: absent means nobody said, not "free". */
+    fee: v.optional(v.boolean()),
+    externalId: v.optional(v.string()), // `way/123` — idempotent re-import key
+    photoIds: v.optional(v.array(v.id('photos'))),
+    createdByUserId: v.optional(v.id('profiles')),
+    createdAt: v.number(),
+  })
+    .index('by_external_id', ['externalId'])
+    .index('by_created_by', ['createdByUserId']),
+
+  /**
+   * Which bodies a parking area serves (N6d / D72 amendment) — a join table, and it has to be one.
+   *
+   * The plan's field sketch put a plural `waterBodyIds` array on `parkingAreas`. That stores the fact
+   * but cannot answer the question every read actually asks: **"what parking serves this lake?"**
+   * Convex has no array-contains index, so a body-side lookup against an array is a full table scan —
+   * the `listInViewport` failure, on a table that will grow with the corpus.
+   *
+   * So the association is rows, indexed both directions, and the array is **not** kept alongside them:
+   * two copies of one fact is what N7 spent a phase undoing.
+   *
+   * `inferred` records how the association was made, and it is the D72 amendment written into the
+   * data. An OSM-inferred link is bounded by `PARKING_INFER_RADIUS_M` and may be re-derived away by
+   * the next run; a human's assertion has no distance limit and must survive it.
+   */
+  parkingAreaBodies: defineTable({
+    parkingAreaId: v.id('parkingAreas'),
+    waterBodyId: v.id('waterBodies'),
+    /** `true` ⇒ the OSM pass guessed this within the radius; `false` ⇒ a person asserted it. */
+    inferred: v.boolean(),
+    createdByUserId: v.optional(v.id('profiles')),
+    createdAt: v.number(),
+  })
+    .index('by_water_body', ['waterBodyId'])
+    .index('by_parking_area', ['parkingAreaId'])
+    // Point lookup + uniqueness for the upsert (one row per lot×body), the `waterBodyFavorites`
+    // shape: a re-import must update the association rather than stack a second copy of it.
+    .index('by_parking_area_water_body', ['parkingAreaId', 'waterBodyId']),
+
+  /**
+   * "Temporarily inaccessible" as a decaying community claim (N6d / D73).
+   *
+   * A free-text seasonal note is correct the day it is written and wrong by spring, and nothing in the
+   * system knows the difference — because nothing is ever asked. So a blocker is modelled like a
+   * hazard: somebody asserts it, others confirm or deny, and absent either it expires on its own.
+   *
+   * **The decay is a plain TTL and must never become D56's.** A locked gate does not thaw; applying the
+   * weather multiplier would let a warm week silently expire every road closure in the corpus, and the
+   * failure would be invisible because expiring is what an alert is *supposed* to do. The math lives in
+   * `@skating/core/accessAlert.ts`, which imports nothing from the hazard decay model.
+   *
+   * **It annotates; it never suppresses** (open question 3). A blocked launch on a lake with three
+   * others must not silence the lake in drive-time notifications, for the same reason hazards never
+   * hide a body: a lake with one locked gate is still a lake worth telling someone about.
+   */
+  accessAlerts: defineTable({
+    targetType: literals(ACCESS_ALERT_TARGETS),
+    putInId: v.optional(v.id('putIns')),
+    parkingAreaId: v.optional(v.id('parkingAreas')),
+    /**
+     * Denormalized from the target so the per-lake read is one index range rather than a fan-out over
+     * every access point on the body. A parking area serving three ponds yields one alert row per
+     * *target*, not per body — the alert is about the lot, and the lot is what is blocked.
+     */
+    waterBodyId: v.id('waterBodies'),
+    reason: literals(ACCESS_ALERT_REASONS),
+    /** Free text, and the one place in this phase it is allowed — bounded by the row's own expiry. */
+    note: v.optional(v.string()),
+    createdByUserId: v.id('profiles'),
+    createdAt: v.number(),
+    /** The N5a season this belongs to, from `createdAt`. What the hard-expire is measured against. */
+    season: v.number(),
+    /**
+     * When this lapses — `min(TTL, season end)`, reset by each confirmation.
+     *
+     * ⚠ **Absent for `official` pins only** (founder call, 2026-08-10), which never expire. Convex
+     * indexes on optional fields are **not sparse**: an absent value sorts *first*, so a bare
+     * `lte('expiresAt', now)` range would match every pinned row rather than skipping it. That is why
+     * the sweep's index leads with `status` — see `by_status_expires_at`.
+     */
+    expiresAt: v.optional(v.number()),
+    status: literals(ACCESS_ALERT_STATUSES),
+    /** Newest "still blocked" observation. Drives the clock and the *"confirmed 3 days ago"* line. */
+    lastConfirmedAt: v.optional(v.number()),
+    /** Derived from distinct users' latest votes, never incremented — stored for the read path. */
+    confirmCount: v.number(),
+    denyCount: v.number(),
+    /** The moderator who pinned it `official`, and the one who retracted it. */
+    pinnedByUserId: v.optional(v.id('profiles')),
+    retractedByUserId: v.optional(v.id('profiles')),
+  })
+    // The per-lake read: every alert annotating any access point on this body.
+    .index('by_water_body', ['waterBodyId'])
+    .index('by_put_in', ['putInId'])
+    .index('by_parking_area', ['parkingAreaId'])
+    /**
+     * The expiry sweep, and the shape is the whole reason `official` is a status.
+     *
+     * Leading with `status` means the sweep runs `eq('status', 'active').lte('expiresAt', now)`, so a
+     * pinned row is in a different equality prefix and the range cannot reach it **at all**. The
+     * correctness does not depend on anybody remembering that optional-field indexes aren't sparse; it
+     * depends on a prefix that excludes the exempt rows by construction.
+     */
+    .index('by_status_expires_at', ['status', 'expiresAt'])
+    // A departing user's alerts (N3/D62), and the author-side half of the orphan-photo scan.
+    .index('by_author', ['createdByUserId']),
+
+  /**
+   * One skater's latest word on one access alert (N6d / D73).
+   *
+   * **One row per user per alert** is the invariant that makes confirmation idempotent: a queued
+   * confirmation replayed on flush updates the same row and re-derives the same counts, so a lost ack
+   * can never double-count toward resolution. The same reasoning as `hazardConfirmations`, and the
+   * counts on the alert row are derived from this table rather than incremented on it.
+   */
+  accessAlertVotes: defineTable({
+    accessAlertId: v.id('accessAlerts'),
+    userId: v.id('profiles'),
+    verdict: literals(ACCESS_ALERT_VERDICTS),
+    /** When they stood there — passed in, so an offline flush hours later still stamps the moment. */
+    observedAt: v.number(),
+    createdAt: v.number(),
+  })
+    .index('by_alert', ['accessAlertId'])
+    // Point lookup + uniqueness for the upsert (one vote per user×alert).
+    .index('by_alert_user', ['accessAlertId', 'userId'])
+    // A departing user's votes (N3/D62).
+    .index('by_user', ['userId']),
 
   // Outbound-notification coalescing queue (Phase 4, decision #4). `reports.create` enqueues one row
   // per candidate recipient×bucket; a row coalesces per `(user, body, kind)` (bumping `count` +
