@@ -47,6 +47,7 @@ import {
   type QueryCtx,
   query,
 } from './_generated/server';
+import { MAX_ACCESS_ROWS_PER_BODY } from './accessPoints';
 import { requireContributor, requireContributorRole } from './lib/auth';
 import { ACCESS_ALERT_REASONS, ACCESS_ALERT_TARGETS, ACCESS_ALERT_VERDICTS } from './lib/enums';
 import { literals } from './lib/validators';
@@ -344,10 +345,12 @@ export async function loadLiveAlertsForBody(
   waterBodyId: Id<'waterBodies'>,
   now: number = Date.now(),
 ): Promise<AccessAlertView[]> {
+  // Capped for the same reason the parking read is (see `MAX_ACCESS_ROWS_PER_BODY`): alerts are
+  // user-generated, so "how many can one lake have" is not a number we control.
   const rows = await ctx.db
     .query('accessAlerts')
     .withIndex('by_water_body', (q) => q.eq('waterBodyId', waterBodyId))
-    .collect();
+    .take(MAX_ACCESS_ROWS_PER_BODY);
   return rows
     .filter((r) => accessAlertIsLive(r, now))
     .sort((a, b) =>

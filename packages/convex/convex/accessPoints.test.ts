@@ -17,6 +17,7 @@ import { convexTest } from 'convex-test';
 import { describe, expect, test } from 'vitest';
 import { api, internal } from './_generated/api';
 import type { Id } from './_generated/dataModel';
+import { MAX_ACCESS_ROWS_PER_BODY } from './accessPoints';
 import schema from './schema';
 
 const modules = import.meta.glob('./**/*.*s');
@@ -873,5 +874,51 @@ describe('the operator write path (D72 amendment / D144)', () => {
 
     const links = await t.run((ctx) => ctx.db.query('parkingAreaBodies').collect());
     expect(links).toHaveLength(2);
+  });
+});
+
+describe('per-body read caps (the listInViewport lesson)', () => {
+  /**
+   * `loadParkingForBody` runs on **every drawer open** and costs one `get` per link, so an uncapped
+   * read is fine on today's corpus and a drawer that won't load once the ETL has run everywhere. A
+   * 200-lot slice of Vermont — our sparsest state — already put 9 lots on one body.
+   */
+  test('a body with more lots than the cap still returns, bounded', async () => {
+    const t = convexTest(schema, modules);
+    const body = await seedSquareBody(t);
+    await t.run(async (ctx) => {
+      for (let i = 0; i < MAX_ACCESS_ROWS_PER_BODY + 20; i++) {
+        const parkingAreaId = await ctx.db.insert('parkingAreas', {
+          coord: { lat: 44.011 + i * 1e-5, lng: -72 },
+          source: 'osm' as const,
+          status: 'visible' as const,
+          amenities: [],
+          externalId: `way/bulk-${i}`,
+          createdAt: Date.now(),
+        });
+        await ctx.db.insert('parkingAreaBodies', {
+          parkingAreaId,
+          waterBodyId: body,
+          inferred: true,
+          createdAt: Date.now(),
+        });
+      }
+    });
+
+    const lots = await t.query(api.accessPoints.listParkingForBody, { waterBodyId: body });
+    expect(lots.length).toBe(MAX_ACCESS_ROWS_PER_BODY);
+
+    // And the composite read a drawer actually makes stays bounded too.
+    const access = await t.query(api.accessPoints.accessForBody, { waterBodyId: body });
+    expect(access.parking.length).toBe(MAX_ACCESS_ROWS_PER_BODY);
+  });
+
+  /** Total shape: a caller reading `alerts` shouldn't have to know it is sometimes absent. */
+  test('accessForBody returns every key even for an unknown body', async () => {
+    const t = convexTest(schema, modules);
+    const body = await seedSquareBody(t);
+    await t.run((ctx) => ctx.db.delete(body));
+    const access = await t.query(api.accessPoints.accessForBody, { waterBodyId: body });
+    expect(access).toEqual({ putIns: [], parking: [], blockedIds: [], alerts: [] });
   });
 });

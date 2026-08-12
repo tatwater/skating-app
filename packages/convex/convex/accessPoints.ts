@@ -72,6 +72,20 @@ import { listedBodiesNearCoord } from './waterBodies';
  */
 export const IMPORT_SUPPRESS_METERS = 150;
 
+/**
+ * Ceiling on every per-body access read.
+ *
+ * **Not a theoretical guard.** A 200-lot slice of *Vermont* — our sparsest state — already put 9 lots
+ * on one body, and `PARKING_INFER_RADIUS_M` reaches 250 m through a town: a lake in a dense
+ * Massachusetts suburb will accumulate far more. `loadParkingForBody` runs on **every drawer open**
+ * and costs one `get` per link, so an uncapped read is the `listInViewport` failure with a new coat —
+ * fine on today's corpus, and a drawer that won't load once the ETL has run everywhere.
+ *
+ * Generous enough that reaching it means something is wrong with the data rather than with the lake:
+ * no real body has 64 distinct public parking areas serving it.
+ */
+export const MAX_ACCESS_ROWS_PER_BODY = 64;
+
 /** The bodies a coordinate is close enough to, nearest first. Shared by both import lanes. */
 async function bodiesWithin(
   ctx: MutationCtx,
@@ -99,7 +113,7 @@ async function isModeratorSuppressed(
   const rows = await ctx.db
     .query('putIns')
     .withIndex('by_water_body', (q) => q.eq('waterBodyId', waterBodyId))
-    .collect();
+    .take(MAX_ACCESS_ROWS_PER_BODY);
   return rows.some(
     (r) => r.status === 'hidden' && haversineMeters(coord, r.coord) <= IMPORT_SUPPRESS_METERS,
   );
@@ -153,7 +167,7 @@ async function recomputeAccessKind(
   const rows = await ctx.db
     .query('putIns')
     .withIndex('by_water_body', (q) => q.eq('waterBodyId', waterBodyId))
-    .collect();
+    .take(MAX_ACCESS_ROWS_PER_BODY);
   const kind = bodyAccessKind(
     rows
       .filter((r) => r.status === 'visible')
@@ -447,7 +461,7 @@ export async function loadParkingForBody(
   const links = await ctx.db
     .query('parkingAreaBodies')
     .withIndex('by_water_body', (q) => q.eq('waterBodyId', waterBodyId))
-    .collect();
+    .take(MAX_ACCESS_ROWS_PER_BODY);
   const lots: ParkingMarker[] = [];
   for (const link of links) {
     const lot = await ctx.db.get(link.parkingAreaId);
@@ -587,13 +601,13 @@ async function loadAccessPhotoRows(
     return ctx.db
       .query('accessPhotos')
       .withIndex('by_put_in', (q) => q.eq('putInId', putInId))
-      .collect();
+      .take(MAX_ACCESS_ROWS_PER_BODY);
   }
   if (!parkingAreaId) return [];
   return ctx.db
     .query('accessPhotos')
     .withIndex('by_parking_area', (q) => q.eq('parkingAreaId', parkingAreaId))
-    .collect();
+    .take(MAX_ACCESS_ROWS_PER_BODY);
 }
 
 /**
@@ -636,12 +650,14 @@ export const accessForBody = query({
   args: { waterBodyId: v.id('waterBodies') },
   handler: async (ctx, { waterBodyId }) => {
     const body = await ctx.db.get(waterBodyId);
-    if (!body) return { putIns: [], parking: [], blockedIds: [] };
+    // `alerts` included even here, so the shape is total: a caller that reads `access.alerts` on the
+    // unknown-body branch shouldn't have to know it is sometimes absent.
+    if (!body) return { putIns: [], parking: [], blockedIds: [], alerts: [] };
 
     const rows = await ctx.db
       .query('putIns')
       .withIndex('by_water_body', (q) => q.eq('waterBodyId', waterBodyId))
-      .collect();
+      .take(MAX_ACCESS_ROWS_PER_BODY);
     const parking = await loadParkingForBody(ctx, waterBodyId);
     const alerts = await loadLiveAlertsForBody(ctx, waterBodyId);
 
@@ -742,7 +758,7 @@ export const setOfficialParking = mutation({
       .withIndex('by_parking_area', (q) =>
         q.eq('parkingAreaId', parkingAreaId as Id<'parkingAreas'>),
       )
-      .collect();
+      .take(MAX_ACCESS_ROWS_PER_BODY);
     const wanted = new Set(args.waterBodyIds.map(String));
     for (const link of existingLinks) {
       if (!wanted.has(String(link.waterBodyId)) && !link.inferred) await ctx.db.delete(link._id);

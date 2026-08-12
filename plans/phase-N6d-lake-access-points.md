@@ -474,6 +474,66 @@ a full routing pass spans two to three days. That needs no decision: the cache r
 unrouted leg is stored straight-line *flagged*, so the drawer says *"at least 900 m on foot"* until
 the number improves.
 
+## The 250 m radius, eyeballed — 2026-08-12
+
+*B2 asks for this explicitly and it had only been checked in aggregate. Two measurements, and the
+second dissolves a worry rather than answering it.*
+
+### Pairing rate by state, at 250 m
+
+| | launches | paired with a lot | pair rate | lots | unpaired |
+|---|---:|---:|---:|---:|---:|
+| VT | 423 | 238 | **56%** | 4,692 | 95% |
+| NH | 1,256 | 354 | **28%** | 7,824 | 95% |
+| ME | 2,587 | 924 | 36% | 9,950 | 91% |
+| MA | 4,772 | 1,731 | 36% | 28,174 | 94% |
+| NY | 4,470 | 1,754 | 39% | 46,879 | 96% |
+
+**The radius is not obviously wrong in either direction**, which is the finding. A dense state was
+supposed to falsify it by over-pairing; MA and NY sit at 36–39%, mid-pack, and the outlier is NH at
+28% — an *under*-pairing state, which is what you would expect where launches are mapped and their
+lots are not. **VT's 56% is the ceiling of what OSM supports**, not evidence the radius is generous.
+
+So the number stays at 250 m. It was a guess, it remains a guess, and it is now a guess with five
+states of evidence that it is not badly placed.
+
+### The mile-in trailhead: geometry cannot find it, and that is D72's answer
+
+The founder's question, asked of the water-relevance gate: *"how can we be sure we capture parking at
+the end of a hiking trail?"*
+
+Measured, over 3,000 sampled unpaired lots, as distance to the nearest **mapped launch** (a launch is
+on water by definition, so this is a direct proxy for "is this lot about a lake"):
+
+| distance to nearest launch | share | ≈ corpus-wide |
+|---|---:|---:|
+| 0–250 m | 2.7% | 2,525 |
+| 250–500 m | 6.5% | 6,035 |
+| 500 m–1 km | 12.9% | 11,886 |
+| 1–1.6 km | 14.8% | 13,672 |
+| 1.6–3 km | 25.7% | 23,711 |
+| 3–8 km | 29.7% | 27,438 |
+
+**There is no gap.** The curve rises monotonically to 3–8 km, which is the signature of parking spread
+over a landscape where lakes are everywhere — not of a distinct trailhead population sitting at a
+characteristic distance. Widening the radius to a mile would admit ~34,000 lots, overwhelmingly in
+dense MA and NY, to catch a handful of genuine trailheads.
+
+**And the hole is upstream of the gate.** `pairAccessFeatures` caps at the same 250 m, so a mile-in
+trailhead never pairs in the first place — the water-relevance gate never gets a say. The ETL cannot
+discover that case *at all*, by any radius.
+
+Which is exactly what **D72's amendment already decided**: *"the association radius governs inference
+only. An operator- or author-set parking association has no distance limit."* The mile-in trailhead is
+the **human** path — `setOfficialParking`, which performs no distance check — and this measurement is
+the evidence that it has to be, rather than a limitation we settled for.
+
+> **The one principled way to widen it is the data correction 9 dropped.** A lot at the end of a
+> `highway=path` that leads to a lake *is* a trailhead, and that is a **signal** rather than a radius.
+> Re-extracting trails and pairing through path connectivity would find the case geometry can't. It
+> wants line geometry and a connectivity walk, so it is a fast-follow rather than this phase — but it
+> is the right shape, and it should not be confused with "turn the radius up".
+
 ---
 
 ## Open questions — all answered 2026-07-31
