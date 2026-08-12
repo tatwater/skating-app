@@ -431,3 +431,81 @@ describe('accessAlerts.listForBody', () => {
     expect((await t.run((ctx) => ctx.db.get(id)))?.status).toBe('active');
   });
 });
+
+describe('an alert on a shared lot (D72 amendment)', () => {
+  /**
+   * A trailhead serving three ponds is the normal case here, and a gate is locked for everybody who
+   * parks there. The alert is filed against **one** body — fanning out a row per body would make one
+   * locked gate look like three — so the read has to pull it back through the lot's associations, or
+   * two of the three lakes are silently unwarned.
+   */
+  test('shows on every lake the parking area serves, not just the one it was filed against', async () => {
+    const { t, waterBodyId, author } = await setup();
+    const second = await seedBody(t);
+
+    const parkingAreaId = await t.run((ctx) =>
+      ctx.db.insert('parkingAreas', {
+        coord: { lat: 44.02, lng: -72 },
+        name: 'Trailhead Lot',
+        source: 'osm' as const,
+        status: 'visible' as const,
+        amenities: [],
+        createdAt: Date.now(),
+      }),
+    );
+    for (const body of [waterBodyId, second]) {
+      await t.run((ctx) =>
+        ctx.db.insert('parkingAreaBodies', {
+          parkingAreaId,
+          waterBodyId: body,
+          inferred: false,
+          createdAt: Date.now(),
+        }),
+      );
+    }
+
+    await author.as.mutation(api.accessAlerts.create, {
+      targetType: 'parking_area',
+      parkingAreaId,
+      reason: 'gate_locked',
+    });
+
+    const onFirst = await t.query(api.accessAlerts.listForBody, { waterBodyId });
+    const onSecond = await t.query(api.accessAlerts.listForBody, { waterBodyId: second });
+    expect(onFirst).toHaveLength(1);
+    expect(onSecond).toHaveLength(1);
+    expect(onFirst[0]?.id).toBe(onSecond[0]?.id);
+  });
+
+  /** Deduped: an alert reachable both directly and through a lot must not render twice. */
+  test('an alert reachable by both paths appears once', async () => {
+    const { t, waterBodyId, putInId, author } = await setup();
+    const parkingAreaId = await t.run((ctx) =>
+      ctx.db.insert('parkingAreas', {
+        coord: { lat: 44.02, lng: -72 },
+        source: 'osm' as const,
+        status: 'visible' as const,
+        amenities: [],
+        createdAt: Date.now(),
+      }),
+    );
+    await t.run((ctx) =>
+      ctx.db.insert('parkingAreaBodies', {
+        parkingAreaId,
+        waterBodyId,
+        inferred: true,
+        createdAt: Date.now(),
+      }),
+    );
+    await author.as.mutation(api.accessAlerts.create, {
+      targetType: 'parking_area',
+      parkingAreaId,
+      reason: 'not_plowed',
+    });
+    await author.as.mutation(api.accessAlerts.create, { targetType: 'put_in', putInId, reason: 'gate_locked' });
+
+    const alerts = await t.query(api.accessAlerts.listForBody, { waterBodyId });
+    expect(alerts).toHaveLength(2);
+    expect(new Set(alerts.map((a) => a.id)).size).toBe(2);
+  });
+});

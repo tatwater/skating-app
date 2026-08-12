@@ -17,7 +17,7 @@ import { convexTest } from 'convex-test';
 import { describe, expect, test } from 'vitest';
 import { api, internal } from './_generated/api';
 import type { Id } from './_generated/dataModel';
-import { MAX_ACCESS_ROWS_PER_BODY } from './accessPoints';
+import { MAX_ACCESS_ROWS_PER_BODY } from './lib/accessLimits';
 import schema from './schema';
 
 const modules = import.meta.glob('./**/*.*s');

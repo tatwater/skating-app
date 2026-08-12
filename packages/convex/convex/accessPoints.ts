@@ -55,6 +55,7 @@ import {
   query,
 } from './_generated/server';
 import { loadLiveAlertsForBody } from './accessAlerts';
+import { MAX_ACCESS_ROWS_PER_BODY } from './lib/accessLimits';
 import { requireContributor, requireContributorRole } from './lib/auth';
 import { ACCESS_ALERT_TARGETS, ACCESS_AMENITIES, APPROACH_KINDS } from './lib/enums';
 import { assertOwnedPhotos, resolvePhotoUrls } from './lib/photoAccess';
@@ -71,20 +72,6 @@ import { listedBodiesNearCoord } from './waterBodies';
  * are the same number for the same reason — if they ever diverge it should be deliberate.
  */
 export const IMPORT_SUPPRESS_METERS = 150;
-
-/**
- * Ceiling on every per-body access read.
- *
- * **Not a theoretical guard.** A 200-lot slice of *Vermont* — our sparsest state — already put 9 lots
- * on one body, and `PARKING_INFER_RADIUS_M` reaches 250 m through a town: a lake in a dense
- * Massachusetts suburb will accumulate far more. `loadParkingForBody` runs on **every drawer open**
- * and costs one `get` per link, so an uncapped read is the `listInViewport` failure with a new coat —
- * fine on today's corpus, and a drawer that won't load once the ETL has run everywhere.
- *
- * Generous enough that reaching it means something is wrong with the data rather than with the lake:
- * no real body has 64 distinct public parking areas serving it.
- */
-export const MAX_ACCESS_ROWS_PER_BODY = 64;
 
 /** The bodies a coordinate is close enough to, nearest first. Shared by both import lanes. */
 async function bodiesWithin(

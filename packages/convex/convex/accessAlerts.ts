@@ -47,7 +47,7 @@ import {
   type QueryCtx,
   query,
 } from './_generated/server';
-import { MAX_ACCESS_ROWS_PER_BODY } from './accessPoints';
+import { MAX_ACCESS_ROWS_PER_BODY } from './lib/accessLimits';
 import { requireContributor, requireContributorRole } from './lib/auth';
 import { ACCESS_ALERT_REASONS, ACCESS_ALERT_TARGETS, ACCESS_ALERT_VERDICTS } from './lib/enums';
 import { literals } from './lib/validators';
@@ -347,11 +347,35 @@ export async function loadLiveAlertsForBody(
 ): Promise<AccessAlertView[]> {
   // Capped for the same reason the parking read is (see `MAX_ACCESS_ROWS_PER_BODY`): alerts are
   // user-generated, so "how many can one lake have" is not a number we control.
-  const rows = await ctx.db
+  const direct = await ctx.db
     .query('accessAlerts')
     .withIndex('by_water_body', (q) => q.eq('waterBodyId', waterBodyId))
     .take(MAX_ACCESS_ROWS_PER_BODY);
-  return rows
+
+  // ── The shared-lot half, and it is not an optimisation ────────────────────────────────────────
+  //
+  // An alert on a **parking area** is filed against one body — the first the lot is associated with —
+  // because fanning out a row per body would make one locked gate look like three. But a trailhead lot
+  // serving three ponds is the normal case here (D72 amendment), and reading only `by_water_body`
+  // would warn skaters heading to *one* of them and silently fail the other two. A gate is locked for
+  // everybody who parks there.
+  //
+  // So the lot's alerts are pulled through its associations as well, and the two sets are deduped: an
+  // alert filed against this body **and** sitting on a lot linked to it appears in both.
+  const links = await ctx.db
+    .query('parkingAreaBodies')
+    .withIndex('by_water_body', (q) => q.eq('waterBodyId', waterBodyId))
+    .take(MAX_ACCESS_ROWS_PER_BODY);
+  const byId = new Map(direct.map((r) => [r._id, r]));
+  for (const link of links) {
+    const lotAlerts = await ctx.db
+      .query('accessAlerts')
+      .withIndex('by_parking_area', (q) => q.eq('parkingAreaId', link.parkingAreaId))
+      .take(MAX_ACCESS_ROWS_PER_BODY);
+    for (const alert of lotAlerts) byId.set(alert._id, alert);
+  }
+
+  return [...byId.values()]
     .filter((r) => accessAlertIsLive(r, now))
     .sort((a, b) =>
       a.status === b.status ? b.createdAt - a.createdAt : a.status === 'official' ? -1 : 1,
