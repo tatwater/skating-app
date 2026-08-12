@@ -86,6 +86,20 @@ const ORS_MAX_RETRIES = 3;
 /** Backoff after a 429. Generous — the limit is per minute, so waiting one out is the cheap fix. */
 const ORS_BACKOFF_MS = 20_000;
 
+/**
+ * Consecutive `403`s that mean **the daily quota is gone**, not that one request was malformed.
+ *
+ * ORS signals per-minute throttling with `429` and daily exhaustion with **`403`** — which the first
+ * full run discovered the expensive way: it hit the 2,000/day ceiling and then sent **2,978 more
+ * requests**, every one of them refused, at 1.6 s apart. That is an hour and a half of politely
+ * hammering an endpoint that had already said no, on somebody else's free tier.
+ *
+ * Three in a row is enough. A single 403 could be a bad payload for one odd coordinate pair; three
+ * consecutive ones are a quota. After that the pass stops calling ORS entirely and flies the rest
+ * straight — **uncached**, so tomorrow's run picks them up exactly where this one stopped.
+ */
+const ORS_QUOTA_STRIKES = 3;
+
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /** Read `.env.local` beside this package, the `wind-climate` pattern. Real env wins. */
@@ -189,11 +203,16 @@ interface RoutedLeg {
   cacheable: boolean;
 }
 
+/** Flipped once the daily quota is provably gone; every later leg flies straight without asking. */
+let quotaExhausted = false;
+let consecutiveForbidden = 0;
+
 async function routeApproach(
   from: LatLng,
   to: LatLng,
   apiKey: string | undefined,
 ): Promise<RoutedLeg> {
+  if (quotaExhausted) return { leg: straightLineApproach(from, to), cacheable: false };
   // No key at all is a stable fact about this run, not a transient failure — but it is also not a
   // fact about the lake, so it is not written to an archive a keyed run will later read.
   if (!apiKey) return { leg: straightLineApproach(from, to), cacheable: false };
@@ -218,13 +237,29 @@ async function routeApproach(
         return { leg: straightLineApproach(from, to), cacheable: false };
       }
 
+      if (res.status === 403) {
+        // The daily quota, not a bad request — see `ORS_QUOTA_STRIKES`. Counted rather than logged
+        // per leg, because the useful output is "we ran out", not 2,978 identical lines.
+        consecutiveForbidden++;
+        if (consecutiveForbidden >= ORS_QUOTA_STRIKES) {
+          quotaExhausted = true;
+          log(
+            `ORS refused ${ORS_QUOTA_STRIKES} in a row with 403 — daily quota is gone. Flying the rest straight; re-run tomorrow and the cache resumes.`,
+          );
+        }
+        return { leg: straightLineApproach(from, to), cacheable: false };
+      }
+
       if (!res.ok) {
         // A 404 is "no routable path" and is a stable fact about these two points, so it caches.
         // Anything else is worth seeing and is not worth aborting a pass over: one bad pair should
         // cost that pair its precision, not the run its progress.
+        consecutiveForbidden = 0;
         if (res.status !== 404) log(`ORS ${res.status} for ${cacheKey(from, to)} — falling back`);
         return { leg: straightLineApproach(from, to), cacheable: res.status === 404 };
       }
+
+      consecutiveForbidden = 0;
 
       const parsed = parseOrsFootHikingRoute((await res.json()) as OrsRouteResponse);
       return parsed
@@ -341,6 +376,8 @@ async function main(): Promise<void> {
     retryableFallbacks: uncached,
     cacheHits,
     routingEnabled: Boolean(apiKey),
+    // The operator's "come back tomorrow" signal, stated rather than inferred from a ratio.
+    quotaExhausted,
   };
   writeFileSync(join(SCRATCH, 'summary.json'), `${JSON.stringify(summary, null, 2)}\n`);
   log(JSON.stringify(summary));
