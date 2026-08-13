@@ -534,6 +534,47 @@ the evidence that it has to be, rather than a limitation we settled for.
 > wants line geometry and a connectivity walk, so it is a fast-follow rather than this phase — but it
 > is the right shape, and it should not be confused with "turn the radius up".
 
+## What the load found — 2026-08-13
+
+**The gate rejects 83%, and the `paired` bypass rescues the case the founder asked about.** Over the
+first 38,256 lots loaded:
+
+| outcome | count | share |
+|---|---:|---:|
+| landed (created or updated) | 6,351 | 16% |
+| `notNearWater` — refused by the gate | 31,905 | **83%** |
+| **paired, but no body within 250 m** | **840** | — |
+
+That last row is the answer to *"how can we be sure we capture parking at the end of a hiking trail?"*
+in data rather than argument: **840 lots paired with a launch while sitting beyond every body's
+inference radius.** A pure proximity gate would have dropped every one of them. They survive because
+pairing bypasses the distance test entirely — which is the D72 amendment working exactly as written.
+
+The 83% also corrects my own sample: an early 200-lot slice suggested 57%, but that slice was the head
+of the file and therefore Vermont, which is lake-dense and unrepresentative. **The real rejection rate
+is higher, which means the gate is doing more work than it looked like it was** — and that the corpus
+would have been four-fifths noise without it.
+
+### ORS: the routing pass stalled at 79%, and the quota is not on the schedule we assumed
+
+3,974 of 4,980 paired legs carry a routed approach. The remaining **980 are stored straight-line and
+flagged**, so they render *"at least 900 m on foot"* rather than *"about"* — the D87 fallback doing its
+job rather than a gap.
+
+Retried across three days and two times of day; `{"error": "Quota exceeded"}` on the **first** request
+each time after the first two days' 2,000 each. The 403 carries no rate-limit headers, so the reset
+window is not discoverable from the API — it needs the ORS dashboard. Two things make this cost
+nothing to leave open:
+
+- the route cache is permanent, and the 980 fallbacks were deliberately left **uncached**, so a
+  re-run picks up exactly there;
+- the loader upserts on OSM id, so re-running the transform and the put-ins lane later fills the
+  approaches in place with no other consequence.
+
+**⚠ Phase 4 is unaffected, and it was worth checking**: D87 shares the key, but ORS quotas are
+**per-service** — `isochrones/driving-car` returned HTTP 200 with a real polygon while directions was
+refusing. The ETL cannot starve the app's drive-time bands.
+
 ---
 
 ## Open questions — all answered 2026-07-31
