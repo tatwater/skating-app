@@ -22,7 +22,7 @@ missing" is now the question that gates several deferred items, and the list bel
 | Vercel | ✅ in use | `SENTRY_AUTH_TOKEN` still unset ⇒ no build-time source-map upload |
 | Expo / EAS | ✅ in use | Dev builds; a **new dev-client build** is needed for the Phase 8 recorder |
 | Sentry | ✅ in use | Both surfaces |
-| OpenRouteService (hosted) | ✅ in use | 60-min isochrone ceiling ⇒ the 90-min band is a radius fallback. **Also N6d's `foot-hiking` approach routing (D87)** — same key, and `elevation: true` returns ascent |
+| OpenRouteService (hosted) | ✅ in use | 60-min isochrone ceiling ⇒ the 90-min band is a radius fallback. **Also N6d's `foot-hiking` approach routing (D87)** — same key, and `elevation: true` returns ascent. ⚠ Dashboard moved to <https://account.heigit.org>; **directions ≈2,000/day & 40/min, quota-exceeded is a `403`**, and quotas are **per-endpoint** (§6) |
 | Cloudflare R2 | ✅ in use | 948 MB 5-state basemap |
 | Open-Meteo | ✅ no account | Phase 10 forecast/history; also the **elevation** endpoint (N6c A1) |
 | NWS `api.weather.gov` | ⬜ not set up | 🆓 **no account, no key.** N6c B5 alerts. Needs only a `User-Agent` header (D74) |
@@ -106,6 +106,36 @@ See `04-integrations.md` for per-provider integration detail.
 - Sign up for an API key at <https://openrouteservice.org>. Chosen over self-hosted
   Valhalla to avoid running a routing server; isochrones are cached per user (D18),
   so the free tier is ample. Valhalla stays a "later, only if we outgrow ORS" option.
+
+> #### ⚠ The account portal has moved, and the free-tier limits are not what we assumed (2026-08-13)
+>
+> **Dashboard: <https://account.heigit.org>** — `openrouteservice.org/plans` now 301s there. ORS is
+> operated by HeiGIT and the key/usage panel lives in that portal, not on the old
+> `openrouteservice.org/dev` dashboard. Neither the plans page nor `/restrictions/` publishes the
+> per-endpoint quotas (the former is a JS app; the latter documents *request size* limits, which are a
+> different thing entirely and easy to mistake for rate limits).
+>
+> **What N6d's routing pass measured**, since the documentation would not tell us:
+>
+> | | observed |
+> |---|---|
+> | `directions/foot-hiking` per minute | **40** — a 700 ms gap (~85/min) got exactly 40 through, then `429` |
+> | `directions` per day | **~2,000** — two consecutive days stopped dead at 2,000 |
+> | daily reset | **not 24 h, and not midnight UTC** — refused at +24 h and again at +26½ h |
+> | quota exhausted signal | **`403 {"error":"Quota exceeded"}`**, *not* 429, and with **no rate-limit headers** |
+> | `isochrones` while `directions` was exhausted | **HTTP 200** — the pools are **per-endpoint** |
+>
+> **The last row is the one that matters for the app.** D87 has N6d's approach routing sharing Phase 4's
+> key, and the obvious worry is an ETL starving the drive-time bands a user waits on. It cannot: the
+> quotas are separate, verified while directions was refusing.
+>
+> **The reset behaviour is still unexplained** and is the thing to check in the portal. A plausible
+> reading is that HeiGIT's migration changed the free allotment from a daily quota to something
+> smaller or longer-cycled; our own usage is the only evidence we have either way.
+>
+> **The operational rule this bought** (`scripts/etl/src/accessCli.ts`): three consecutive 403s trip a
+> circuit breaker and the pass stops calling. Before that existed, one run sent **2,978 requests to an
+> endpoint that had already said no**.
 - **Second use, same key (D87, N6d):** the **`foot-hiking`** profile for parking → put-in approach
   distance, with `elevation: true` for **ascent in metres**. Called at **ETL time, once per put-in** and
   cached on the row — never from a request path — so it adds no per-user quota pressure. This is why
