@@ -43,8 +43,20 @@ export const WTK_GRID_DEG = 0.018;
 /** Winters averaged into one rose. Five is enough to wash out an anomalous year (founder call). */
 export const WTK_YEARS = [2010, 2011, 2012, 2013, 2014] as const;
 
-/** Pause between requests: the API documents a 1/second ceiling on CSV downloads. */
-export const WTK_REQUEST_DELAY_MS = 1100;
+/**
+ * Pause between requests. The documented 1/second ceiling on CSV downloads is what set this to
+ * 1100 ms, but it is not the limit that binds: the same endpoint caps CSV at **10,000 requests a
+ * day**, and that one is never mentioned next to the per-second one.
+ *
+ * At 1100 ms plus the ~4 s measured latency the run paced ~700/hr — 16,800/day, or 1.7× the cap.
+ * So it spent a full day's quota in ~14 hours and the rest of the day collecting 429s, each of
+ * which costs the whole `WTK_RATE_LIMIT_RETRIES` budget (~17 min) before it counts as failed. The
+ * N7-3 campaign ran clean to 84% and then crawled at ~40/hr; `x-ratelimit-remaining: 0` with a
+ * `retry-after` of an hour is what it looks like from the outside.
+ *
+ * 5000 ms plus latency is ~400/hr (~9,600/day), which lands under the cap rather than into it.
+ */
+export const WTK_REQUEST_DELAY_MS = 5000;
 
 export interface WtkPoint {
   lat: number;
@@ -216,6 +228,17 @@ export const WTK_RATE_LIMIT_RETRIES = 8;
 export const WTK_MAX_BACKOFF_MS = 240_000;
 
 /**
+ * Base of the geometric retry schedule — deliberately NOT `WTK_REQUEST_DELAY_MS`.
+ *
+ * The two were the same constant until the daily cap forced the pacing delay up, which silently
+ * scaled every backoff with it (4.4 s → 20 s on the first retry) and made each failure *more*
+ * expensive at exactly the moment failures got common. Pacing answers "how fast may we go when
+ * things are fine"; this answers "how long do we wait when they are not". They move for unrelated
+ * reasons, so they are separate constants and the schedule below stays pinned by test.
+ */
+export const WTK_BACKOFF_BASE_MS = 1100;
+
+/**
  * How long the server asked us to wait, in ms, or `null` when it did not say.
  *
  * **RFC 9110 allows two forms** and services use both: delta-seconds (`120`) and an HTTP-date
@@ -264,7 +287,7 @@ export async function fetchCellYear(
   for (let attempt = 0; attempt < attempts; attempt++) {
     if (attempt > 0 && !rateLimited && attempt >= maxRetries) break;
     if (attempt > 0) {
-      const backoff = Math.min(WTK_REQUEST_DELAY_MS * 4 ** attempt, WTK_MAX_BACKOFF_MS);
+      const backoff = Math.min(WTK_BACKOFF_BASE_MS * 4 ** attempt, WTK_MAX_BACKOFF_MS);
       await sleepImpl(lastRetryAfter ?? backoff);
     }
     lastRetryAfter = null;
