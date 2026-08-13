@@ -1244,8 +1244,9 @@ elevation, and where else to look.
   **Two commands, not one:** a `--dry-run` emitting reviewable matches, then an apply step, because the
   founder reviews the list before boosts land. The unmatched entries are the interesting output.
 
-**N6d — Lake access points: parking, named put-ins, and access alerts.** 🔨 **Built 2026-08-11**
-(all five workstreams + every UI surface; ETL routing pass running, loaders not yet run) —
+**N6d — Lake access points: parking, named put-ins, and access alerts.** ✅ **COMPLETE on dev
+2026-08-13** — all five workstreams, every UI surface, and the ETL run end to end: **3,588 put-ins,
+11,375 parking areas, 4,209 bodies with access** (16.7% of the corpus), routing 99.4%. Prod deferred. —
 scoped 2026-07-30; see [`phase-N6d-lake-access-points.md`](./phase-N6d-lake-access-points.md); decisions
 **D72** (parking modelled apart from put-ins) and **D73** (access blockers decay, they aren't notes), plus
 **D143**/**D144** and a **D72 second amendment** taken at the 2026-08-10 kickoff. **Split out of N6c at
@@ -1271,7 +1272,7 @@ a new lifecycle. Independent of N6c; either order.
 > — and worse, a `429` fallback was being **cached as an answer**, which would have made 2,173 legs
 > permanently unroutable.
 >
-> **⛔ `backfillCells` is released but not run.** D2's put-in terms have never fired (dev carried 0
+> **⛔ `backfillCells` is released, the access data is loaded, and it is STILL not run.** D2's put-in terms have never fired (dev carried 0
 > `putIns` rows), and the held re-score bakes D143's rung in on its first pass. The order is: run the
 > access ETL, *then* `backfillCells` — running the re-score first would score a corpus with no access
 > data and have to be repeated, which is the duplicated work that gate exists to avoid.

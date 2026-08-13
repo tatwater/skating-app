@@ -1,10 +1,12 @@
 # Phase N6d — Lake access points: parking, named put-ins, and access alerts
 
-> **Status:** 🔨 **Built 2026-08-11 — all five workstreams and every UI surface; ETL running** —
+> **Status:** ✅ **COMPLETE on dev 2026-08-13** — all five workstreams, every UI surface, and the ETL
+> run end to end (3,588 put-ins · 11,375 parking areas · 4,209 bodies with access; routing 99.4%).
+> Unpushed; prod deferred as every phase since 2.5. `backfillCells` is released and **not yet run**. —
 > scoped 2026-07-30, kickoff re-read against the post-N7 codebase 2026-08-10. Founder ask, same day as
 > the scoping. Suites green: core 1,837 · convex 1,220 · web 301 · mobile 95 · etl 407.
-> See *§What the build found* and *§What the first real run found*. Outstanding: the routing pass
-> spans a few days on ORS's free tier, the loaders have not run, and `backfillCells` waits on them.
+> See *§What the build found*, *§What the first real run found*, *§The 250 m radius, eyeballed*,
+> *§What the load found* and *§The run, completed*.
 > **Split from** [N6c](./phase-N6c-expanded-lake-profiles.md) at scoping — it was roughly the size of
 > everything else in that phase combined, and it is the only part touching a new lifecycle.
 > **Depends on:** nothing in N6c. These two can run in parallel or in either order.
@@ -574,6 +576,46 @@ nothing to leave open:
 **⚠ Phase 4 is unaffected, and it was worth checking**: D87 shares the key, but ORS quotas are
 **per-service** — `isochrones/driving-car` returned HTTP 200 with a real polygon while directions was
 refusing. The ETL cannot starve the app's drive-time bands.
+
+## The run, completed — 2026-08-13
+
+**The corpus went from zero access data to knowing how you get onto 4,209 lakes** (16.7% of ~25,197).
+
+| | |
+|---|---:|
+| put-ins loaded | **3,588** (all `osm`; 783 carry an OSM name) |
+| …with a parking area | 1,351 |
+| …with a **routed** approach + ascent | **1,347** |
+| …straight-line, flagged | 7 |
+| parking areas | **11,375** |
+| lot↔body associations | 11,325 |
+| bodies with a put-in | 1,415 |
+| bodies with parking | 3,655 |
+| **bodies with any access** | **4,209** |
+
+**Routing finished at 99.4%** — 4,949 of 4,980 paired legs, with `retryableFallbacks: 0`. The 31
+remaining fallbacks are genuine ORS "no path" answers, not quota casualties, so they are the permanent
+honest result rather than something to re-run.
+
+**What the pass walked past, named rather than buried in a ratio** (D137): **9,737 put-in candidates
+had no corpus body within 30 m.** That is a scope boundary, not a fault — coastal slipways, river
+landings, and ponds below the N7 admission floor. And **92,384 lots were refused by the
+water-relevance gate**, which is the finding that gate exists for.
+
+### The two things the load itself taught us
+
+**1. Legitimate lakes exceed the read cap.** 160 lots on Lake Champlain, 97 on Winnipesaukee, 64 on
+Seneca — all real for lakes that size. The cap docstring had claimed no real body would reach 64; it
+was wrong within two hours. The cap stays (it is a read bound), but `accessForBody` now resolves the
+lots its put-ins *reference* by id before filling the rest from the index — otherwise the directions
+target on our four biggest lakes depended on index order, silently reinstating the pre-N6d bug on the
+lakes that matter most.
+
+**2. The 250 m radius over-includes in towns, and the shape of it is now visible.** An 11-acre urban
+pond collected 56 lots; Lake Quinsigamond (603 acres, in Worcester) collected 97. Only **4 bodies
+exceed 64 lots and 33 exceed 30**, so this is a narrow tail rather than a systemic problem — but it is
+the direction to look if the radius is ever revisited, and it is *not* the same population as
+Champlain's legitimate 160.
 
 ---
 
