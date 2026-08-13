@@ -8,6 +8,7 @@
  */
 
 import {
+  chooseAccessTarget,
   PARKING_INFER_RADIUS_M,
   PUTIN_SHORE_RADIUS_M,
   RICHNESS_PUT_IN_DERIVED,
@@ -920,5 +921,78 @@ describe('per-body read caps (the listInViewport lesson)', () => {
     await t.run((ctx) => ctx.db.delete(body));
     const access = await t.query(api.accessPoints.accessForBody, { waterBodyId: body });
     expect(access).toEqual({ putIns: [], parking: [], blockedIds: [], alerts: [] });
+  });
+});
+
+describe('the lot a chosen put-in points at is always resolvable', () => {
+  /**
+   * ⚠ Found by the first full load, not by reasoning. It put **160 lots on Lake Champlain**, 97 on
+   * Winnipesaukee and 64 on Seneca — all legitimate for lakes that size. `loadParkingForBody` reads a
+   * capped window in *index* order, so on those bodies the lot a put-in references can sit outside it,
+   * and `chooseAccessTarget` would fall back to routing a car at the launch: precisely the pre-N6d
+   * behaviour this phase exists to fix, on the four lakes that matter most.
+   */
+  test('a referenced lot is returned even when it sits past the read cap', async () => {
+    const t = convexTest(schema, modules);
+    const body = await seedSquareBody(t);
+
+    // Fill the window with unrelated lots first, so the referenced one lands beyond it.
+    await t.run(async (ctx) => {
+      for (let i = 0; i < MAX_ACCESS_ROWS_PER_BODY + 10; i++) {
+        const id = await ctx.db.insert('parkingAreas', {
+          coord: { lat: 44.011 + i * 1e-5, lng: -72 },
+          name: `filler-${i}`,
+          source: 'osm' as const,
+          status: 'visible' as const,
+          amenities: [],
+          externalId: `way/filler-${i}`,
+          createdAt: Date.now(),
+        });
+        await ctx.db.insert('parkingAreaBodies', {
+          parkingAreaId: id,
+          waterBodyId: body,
+          inferred: true,
+          createdAt: Date.now(),
+        });
+      }
+    });
+
+    const theLot = await t.run(async (ctx) => {
+      const id = await ctx.db.insert('parkingAreas', {
+        coord: { lat: 44.0125, lng: -72 },
+        name: 'The Actual Lot',
+        source: 'official' as const,
+        status: 'visible' as const,
+        amenities: [],
+        externalId: 'way/the-lot',
+        createdAt: Date.now(),
+      });
+      await ctx.db.insert('parkingAreaBodies', {
+        parkingAreaId: id,
+        waterBodyId: body,
+        inferred: false,
+        createdAt: Date.now(),
+      });
+      await ctx.db.insert('putIns', {
+        waterBodyId: body,
+        coord: { lat: 44.0101, lng: -72 },
+        name: 'Town Landing',
+        source: 'osm' as const,
+        status: 'visible' as const,
+        parkingAreaId: id,
+        approachMeters: 300,
+        approachRouted: true,
+        createdAt: Date.now(),
+      });
+      return id;
+    });
+
+    const access = await t.query(api.accessPoints.accessForBody, { waterBodyId: body });
+    expect(access.parking.some((p) => p.id === theLot)).toBe(true);
+
+    // And the whole point: the target routes to the lot, not the launch.
+    const target = chooseAccessTarget(access.putIns, access.parking, new Set(access.blockedIds));
+    expect(target?.via).toBe('parking');
+    expect(target?.parking?.name).toBe('The Actual Lot');
   });
 });

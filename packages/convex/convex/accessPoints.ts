@@ -645,7 +645,35 @@ export const accessForBody = query({
       .query('putIns')
       .withIndex('by_water_body', (q) => q.eq('waterBodyId', waterBodyId))
       .take(MAX_ACCESS_ROWS_PER_BODY);
-    const parking = await loadParkingForBody(ctx, waterBodyId);
+    // ── The lots our put-ins actually reference, resolved BY ID before anything else ──────────────
+    //
+    // `loadParkingForBody` is capped and reads in index order, which is fine for listing and wrong for
+    // *choosing*. The first full load put 160 lots on Lake Champlain, 97 on Winnipesaukee and 64 on
+    // Seneca; on those bodies the lot a chosen put-in points at can sit outside the window, and
+    // `chooseAccessTarget` would then silently fall back to routing a car at the launch — exactly the
+    // pre-N6d behaviour this phase exists to fix, on the four lakes that matter most.
+    //
+    // Bounded by construction: put-ins are themselves capped, so this adds at most that many gets.
+    const referenced = new Map<string, Awaited<ReturnType<typeof loadParkingForBody>>[number]>();
+    for (const row of rows) {
+      if (row.status !== 'visible' || !row.parkingAreaId) continue;
+      if (referenced.has(row.parkingAreaId)) continue;
+      const lot = await ctx.db.get(row.parkingAreaId);
+      if (lot?.status !== 'visible') continue;
+      referenced.set(lot._id, {
+        id: lot._id,
+        coord: lot.coord,
+        name: lot.name,
+        source: lot.source,
+        amenities: lot.amenities,
+        capacity: lot.capacity,
+        fee: lot.fee,
+      });
+    }
+    for (const lot of await loadParkingForBody(ctx, waterBodyId)) {
+      if (!referenced.has(lot.id)) referenced.set(lot.id, lot);
+    }
+    const parking = [...referenced.values()];
     const alerts = await loadLiveAlertsForBody(ctx, waterBodyId);
 
     const interior = (body.interiorPoint ?? body.centroid) as LatLng | undefined;

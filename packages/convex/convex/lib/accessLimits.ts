@@ -20,7 +20,14 @@
  * and costs one `get` per link, so an uncapped read is the `listInViewport` failure with a new coat:
  * fine on today's corpus, and a drawer that will not load once the ETL has run everywhere.
  *
- * Generous enough that reaching it means something is wrong with the data rather than with the lake —
- * no real body has 64 distinct public parking areas serving it.
+ * ⚠ **It is reached, and by legitimate lakes.** The first full load put **160 lots on Lake Champlain**,
+ * 97 on Winnipesaukee and 64 on Seneca — all real, because a 276,000-acre lake genuinely has that many
+ * access points. (It also put 56 on an 11-acre urban pond, which is the 250 m radius reaching through
+ * a town and is *not* legitimate. Both populations exist; only the second is a data problem.)
+ *
+ * So this is a **read bound, not a claim about the world**, and callers must not assume the cap means
+ * "all of them". `accessForBody` in particular resolves the lots its put-ins actually reference *by
+ * id* before filling the remaining slots from the index — otherwise the directions target on our four
+ * biggest lakes would depend on where their lots happened to land in index order.
  */
 export const MAX_ACCESS_ROWS_PER_BODY = 64;
