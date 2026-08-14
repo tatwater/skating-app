@@ -586,16 +586,24 @@ A **second `osmium tags-filter` pass over the same archived extracts** the water
 No new source, no new download, no new account — and because `.raw/<state>/` is never deleted, its
 provenance is the manifest that is already there.
 
+The full pass, in order (a put-in references its lot by OSM id, so parking must land first):
+
 ```bash
 pnpm --filter @skating/etl access-transform                      # all five states
 pnpm --filter @skating/etl access-transform VT                   # one, for the eyeballing pass
 pnpm --filter @skating/etl access-transform --parking-radius=400 # try a different inference radius
 pnpm --filter @skating/etl access-transform --no-route           # skip ORS entirely
 
-# ⚠ Order matters — see below.
-pnpm --filter @skating/etl load-access parking .scratch/access/parking.ndjson
-pnpm --filter @skating/etl load-access put-ins .scratch/access/put-ins.ndjson
+# ⚠ Order matters — see below. Use ABSOLUTE paths: `pnpm --filter` runs with cwd = scripts/etl,
+# so a repo-relative path resolves under scripts/etl/ and vanishes.
+pnpm --filter @skating/etl load-access parking "$PWD/scripts/etl/.scratch/access/parking.ndjson"
+pnpm --filter @skating/etl load-access put-ins "$PWD/scripts/etl/.scratch/access/put-ins.ndjson"
 ```
+
+**Split into chunks and run ~4 in parallel.** The bottleneck is `convex run` subprocess startup, not
+Convex: measured **164 lots/min serial vs ~311 at `-P 4`**. A full parking lane is ~12,000 subprocess
+spawns, so chunking with `.done` markers also means a failure costs one chunk rather than the run.
+Batch size stays at **8** — 24 blows the 16 MB transaction read cap, measured.
 
 ### Three things that are not obvious
 
@@ -617,6 +625,37 @@ depth join settled on.
 and is stored `approachRouted: false`, which the drawer renders as *"at least 900 m on foot"* rather
 than *"about"*. Responses are cached in `.scratch/access/ors-cache.json` and written after **every**
 request, so a crash 3,000 requests into a pass does not re-spend the first 2,999.
+
+### The water-relevance gate (added after the first run measured the problem)
+
+`amenity=parking` is one of the most common tags in OSM: **95,294 lots across five states, 92,384 of
+them unpaired** with any launch — supermarkets, schools, fire departments, ski clubs. The loader
+therefore stores a lot only when **a put-in claimed it** (`paired`, emitted by the transform) **or** a
+corpus body sits within `PARKING_INFER_RADIUS_M`. Neither ⇒ counted as `notNearWater` and dropped.
+
+The real load refused **83%** on that rule. It also kept **840 lots that paired with a launch while
+sitting beyond every body's radius** — the mile-in trailhead case, which survives precisely because
+pairing bypasses the distance test (D72 amendment). A pure proximity gate would have lost all of them.
+
+### ⚠ Two quota lessons, both learned the expensive way
+
+**1. ORS's daily quota is a `403`, not a `429`, and it carries no headers.** Directions is ~2,000/day
+and 40/minute; `429` means slow down, `403 {"error":"Quota exceeded"}` means come back tomorrow. Three
+consecutive 403s now trip a circuit breaker — before it existed, one run sent **2,978 requests to an
+endpoint that had already said no**. Fallbacks from a 403/429 are deliberately **not cached**, so a
+later run resumes; only real routes and genuine `404`s ("no path", a stable answer) are archived.
+Quotas are **per-endpoint**, so this cannot starve Phase 4's isochrones. Dashboard:
+<https://account.heigit.org>.
+
+**2. Pass `marginMeters` to `listedBodiesNearCoord`, always.** The first parking load spent
+**104.95 GB of Convex database I/O — 1.1 MB per lot — and disabled the deployment.** The candidate box
+defaulted to ~1,113 m for every caller; the parking gate tests 250 m (**20×** the area) and the put-in
+gate 30 m (**1,377×**). Convex has no projection, so each candidate read is a whole document with its
+polygon: Champlain's ~300 KB outline was re-read for every lot within a kilometre, 95,294 times.
+
+> The same lesson is in `git log 53a952f` from five days earlier — the N7-3 sounding re-key deleted a
+> per-point server lookup for exactly this reason and went from 4+ hours to seconds. **If a pass does a
+> spatial lookup per record, check its box before running it at scale.**
 
 ### Before the full run: eyeball one state
 
