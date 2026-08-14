@@ -41,8 +41,11 @@ import {
   SHALLOW_MAX_DEPTH_M,
   SHALLOW_MEAN_DEPTH_M,
   SHALLOW_THAW_K,
+  STRONG_WIND_MIN_MPS,
   TRUST_CLASS_THRESHOLDS,
   VOLATILE_MIN_SEASONS,
+  WIND_ARCHIVE_MIN_FETCH_M,
+  WIND_ROSE_MONTHS,
 } from '@skating/core';
 import { createFileRoute } from '@tanstack/react-router';
 import { AdminPageHeader } from '../components/admin/adminUi';
@@ -65,6 +68,23 @@ import {
 export const Route = createFileRoute('/admin/tuning')({ component: AdminTuning });
 
 const DAY_MS = 24 * 60 * 60 * 1000;
+const MPS_TO_MPH = 2.23694;
+/** 1-indexed, so `WIND_ROSE_MONTHS` (calendar months) indexes it directly. */
+const MONTH_ABBR = [
+  '',
+  'Jan',
+  'Feb',
+  'Mar',
+  'Apr',
+  'May',
+  'Jun',
+  'Jul',
+  'Aug',
+  'Sep',
+  'Oct',
+  'Nov',
+  'Dec',
+];
 
 function AdminTuning() {
   const catalogue = useCatalogue();
@@ -502,6 +522,46 @@ function AdminTuning() {
           </ConstantCard>
         </div>
         <MetricComposition metricKey="zoom_band_distribution" catalogue={catalogue} />
+      </TuningSection>
+
+      {/* ── Winter wind (D90) ────────────────────────────────────────────── */}
+      <TuningSection
+        title="Winter wind"
+        blurb="What the rose counts, and at what bar. The 47,765 cell-years behind it — NREL WIND Toolkit speed and direction at 10 m — are archived raw, so moving anything here is a local re-derive: minutes, and zero API requests. Two further levers live in the ETL rather than in a constant, and are worth knowing about before a winter goes by: the archive holds 2010–2014 of an available 2007–2014 (three more winters is ~28,659 requests, about three days against the 10,000/day cap), and it is sampled hourly of an available 5 / 15 / 30 / 60 minutes (finer costs the same requests, since the quota counts requests rather than bytes, but roughly 12× the storage). Both are written up in scripts/wind-climate/README.md."
+      >
+        <div className="grid gap-3 sm:grid-cols-3">
+          <ConstantCard
+            name="STRONG_WIND_MIN_MPS"
+            value={`${STRONG_WIND_MIN_MPS} m/s · ${Math.round(STRONG_WIND_MIN_MPS * MPS_TO_MPH)} mph`}
+            file="windRose.ts"
+          >
+            The bar an hour must clear to count as <strong>strong wind</strong> — 20 mph, picked to
+            be a speed a person can picture rather than a round number in metric. Counts are
+            accumulated at this threshold, so changing it needs a re-derive; the value used is
+            stored per body as <code className="font-mono">strongWindMinMps</code>, which makes a
+            mixed-threshold corpus detectable rather than silently incoherent.{' '}
+            <strong>Lower it</strong> if a winter passes and almost nothing reads as exposed.
+          </ConstantCard>
+          <ConstantCard
+            name="WIND_ROSE_MONTHS"
+            value={WIND_ROSE_MONTHS.map((m) => MONTH_ABBR[m]).join(' ')}
+            file="windRose.ts"
+          >
+            The only months counted. An annual rose averages in summer patterns that say nothing
+            about ice — prevailing December wind is not prevailing July wind — and this filter is
+            the reason hourly data was worth fetching instead of a published climatology.
+          </ConstantCard>
+          <ConstantCard
+            name="WIND_ARCHIVE_MIN_FETCH_M"
+            value={`${WIND_ARCHIVE_MIN_FETCH_M} m`}
+            file="windRose.ts"
+          >
+            A body earns a rose only if its longest fetch clears this floor. Below it the exposure
+            claim would describe a pond where no wind can build a wave — and every extra cell is
+            spent against a hard daily request cap, so the floor is a budget as much as a
+            judgement.
+          </ConstantCard>
+        </div>
       </TuningSection>
 
       {/* ── Report freshness (D59) ───────────────────────────────────────── */}

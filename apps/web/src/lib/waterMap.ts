@@ -328,7 +328,9 @@ export function favoriteFeatureIds(
 /** A put-in marker as `putIns.listForBody` returns it — a routable coord + its provenance. */
 export interface MappablePutIn {
   coord: { lat: number; lng: number };
-  source: 'derived' | 'official';
+  source: 'derived' | 'osm' | 'official';
+  /** OSM's name for the launch (N6d/A3), where it has one — what makes a pin worth tapping. */
+  name?: string;
 }
 
 /**
@@ -344,7 +346,7 @@ export function putInsToFeatureCollection(
     features: markers.map((m) => ({
       type: 'Feature',
       geometry: { type: 'Point', coordinates: [m.coord.lng, m.coord.lat] },
-      properties: { source: m.source },
+      properties: { source: m.source, ...(m.name ? { name: m.name } : {}) },
     })),
   };
 }

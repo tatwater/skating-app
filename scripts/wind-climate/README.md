@@ -164,3 +164,58 @@ Nothing is fetched at read time. The caption reads the stored column.
 - **2010–2014.** A climatology, not a trend, and it says nothing about this winter.
 - **One point per lake**, from the same `interiorPoint` the fetch profile is cast from. Wind varies
   across a big lake; this characterises the body.
+
+---
+
+## Levers we deliberately left on the table
+
+Each of these is a **choice we made**, not a limit of the dataset. They are written down because the
+moment to reach for one is a winter from now — when a rose reads wrong and nobody remembers what was
+ever adjustable.
+
+**Height is not one of them.** `winddirection_10m` / `windspeed_10m` is 10 m above ground: standard
+anemometer height, and the level every forecast is quoted at. WTK also serves 40–200 m, but those are
+turbine hub heights describing wind no skater ever feels. Settled.
+
+### 1. Three more winters
+
+WTK covers **2007–2014**. `WTK_YEARS` takes 2010–2014 — five of the eight available.
+
+| | |
+| --- | --- |
+| Cost | 9,553 cells × 3 winters = **28,659 requests** |
+| Wall clock | ~3 days, pacing under the 10,000/day cap |
+| Reach for it when | five winters turn out not to wash out an anomalous one |
+
+### 2. Finer than hourly
+
+`interval` accepts **5, 15, 30 or 60** minutes. We send 60, which is what makes every cell-year
+exactly 8,760 rows.
+
+The quota is on **requests, not bytes** — so 5-minute data costs *the same number of requests*, but
+returns 12× the rows and turns a 3.3 GB archive into roughly 40 GB.
+
+Reach for it if the question ever becomes about gusts or squall timing. It is not what a seasonal
+rose describes, which is why hourly is right here.
+
+### 3. The strong-wind threshold
+
+`STRONG_WIND_MIN_MPS = 8.94` m/s in `packages/core/src/windRose.ts` — **exactly 20 mph**, picked to
+be a number a person can picture rather than a round figure in metric.
+
+This is the cheap lever, and the whole reason the archive exists: **re-deriving at a different
+threshold costs minutes of local compute and zero requests.**
+
+```bash
+pnpm --filter @skating/wind-climate derive --campaign=<id>
+```
+
+Lower it to 6.71 m/s and 15 mph hours start counting as strong. The value used is stored per row as
+`strongWindMinMps`, so a corpus that mixes thresholds is detectable rather than silently incoherent.
+
+### What is *not* cheap
+
+Re-fetching. The 47,765 cell-years behind these roses cost days against a 10,000-a-day cap, which is
+why `.raw/` is archived byte-faithfully and mirrored to R2 rather than reduced on the fly. Anything
+answerable from **speed and direction at 10 m, hourly, 2010–2014** is a `derive` away. Anything else
+is a fetch.
