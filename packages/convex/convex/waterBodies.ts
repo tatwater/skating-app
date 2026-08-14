@@ -4750,6 +4750,9 @@ export const resolveBodyForCoord = query({
  */
 const NEAR_COORD_MARGIN_DEG = 0.01;
 
+/** Metres per degree of latitude — the constant that turns a radius into a candidate box. */
+const METERS_PER_DEG_LAT = 111_320;
+
 /**
  * The listed bodies worth testing a single coord against — the candidate lookup shared by
  * `resolveBodyForCoord` and the Phase 8 track resolver (D44).
@@ -4763,14 +4766,41 @@ const NEAR_COORD_MARGIN_DEG = 0.01;
 export async function listedBodiesNearCoord(
   ctx: QueryCtx,
   coord: { lat: number; lng: number },
+  /**
+   * How far from `coord` a body may be and still be a candidate, in metres.
+   *
+   * **Pass this whenever you know it.** Convex has no projection — reading a candidate reads its
+   * whole document, `polygon` included — so the box's *area* is the read bill, and the default
+   * margin is ~1,113 m because that is what coord→lake resolution needs. A caller testing 250 m that
+   * accepts the default reads **20× the area it needs**; one testing 30 m reads **1,377×**.
+   *
+   * That is not hypothetical. N6d's parking pass ran 95,294 lookups on the default and spent
+   * **104.95 GB of database I/O — 1.1 MB per lot** — enough to disable the deployment, because
+   * Champlain's ~300 KB polygon was re-read for every lot within a kilometre of it.
+   *
+   * Safe to tighten to exactly the radius you test: `bodiesCoveringBox` matches on **bbox**
+   * intersection, and a polygon within *r* of a point always has a bbox within *r* of it. Omit it
+   * only when you genuinely want the resolution-grade net.
+   */
+  marginMeters?: number,
 ): Promise<Map<Id<'waterBodies'>, Doc<'waterBodies'>>> {
+  // Longitude degrees shrink with latitude, so the two axes are converted separately — a symmetric
+  // degree margin is ~40% wider in latitude than longitude at 44°N, which is harmless when it is
+  // generous and a missed body when it is tight.
+  const latMargin =
+    marginMeters === undefined ? NEAR_COORD_MARGIN_DEG : marginMeters / METERS_PER_DEG_LAT;
+  const lngMargin =
+    marginMeters === undefined
+      ? NEAR_COORD_MARGIN_DEG
+      : marginMeters / (METERS_PER_DEG_LAT * Math.max(0.1, Math.cos((coord.lat * Math.PI) / 180)));
+
   const { byId, truncated } = await bodiesCoveringBox(
     ctx,
     {
-      minLat: coord.lat - NEAR_COORD_MARGIN_DEG,
-      maxLat: coord.lat + NEAR_COORD_MARGIN_DEG,
-      minLng: coord.lng - NEAR_COORD_MARGIN_DEG,
-      maxLng: coord.lng + NEAR_COORD_MARGIN_DEG,
+      minLat: coord.lat - latMargin,
+      maxLat: coord.lat + latMargin,
+      minLng: coord.lng - lngMargin,
+      maxLng: coord.lng + lngMargin,
     },
     { limit: MAX_VIEWPORT_LIMIT },
   );

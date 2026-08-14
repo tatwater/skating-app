@@ -1272,7 +1272,15 @@ a new lifecycle. Independent of N6c; either order.
 > — and worse, a `429` fallback was being **cached as an answer**, which would have made 2,173 legs
 > permanently unroutable.
 >
-> **⛔ `backfillCells` is released, the access data is loaded, and it is STILL not run.** D2's put-in terms have never fired (dev carried 0
+> **✅ `backfillCells` ran 2026-08-14** — 24,961 bodies re-scored in 84 batches, closing the single
+> full-corpus re-score N6c had held since 2026-08-02. D2's put-in terms are live for the first time.
+>
+> ⚠ **The parking load cost 104.95 GB of database I/O and disabled the dev deployment** (restored by
+> raising the spending cap). One parameter: `listedBodiesNearCoord`'s candidate box was a fixed
+> ~1,113 m for every caller, so a 250 m gate read 20× the area it needed and a 30 m gate read 1,377×
+> — of *whole documents*, polygons included, since Convex has no projection. Fixed with an optional
+> `marginMeters`. `matchBathymetryLakes` (51 GB) and `coveringBodyForPoints` (21 GB) are the same
+> shape and remain unfixed. D2's put-in terms have never fired (dev carried 0
 > `putIns` rows), and the held re-score bakes D143's rung in on its first pass. The order is: run the
 > access ETL, *then* `backfillCells` — running the re-score first would score a corpus with no access
 > data and have to be repeated, which is the duplicated work that gate exists to avoid.

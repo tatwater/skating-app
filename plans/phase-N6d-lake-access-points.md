@@ -2,7 +2,8 @@
 
 > **Status:** ✅ **COMPLETE on dev 2026-08-13** — all five workstreams, every UI surface, and the ETL
 > run end to end (3,588 put-ins · 11,375 parking areas · 4,209 bodies with access; routing 99.4%).
-> Unpushed; prod deferred as every phase since 2.5. `backfillCells` is released and **not yet run**. —
+> Unpushed; prod deferred as every phase since 2.5. **`backfillCells` ran 2026-08-14** — 24,961 bodies
+> re-scored in 84 batches, closing the pass N6c had held since 2026-08-02. —
 > scoped 2026-07-30, kickoff re-read against the post-N7 codebase 2026-08-10. Founder ask, same day as
 > the scoping. Suites green: core 1,837 · convex 1,220 · web 301 · mobile 95 · etl 407.
 > See *§What the build found*, *§What the first real run found*, *§The 250 m radius, eyeballed*,
@@ -616,6 +617,50 @@ pond collected 56 lots; Lake Quinsigamond (603 acres, in Worcester) collected 97
 exceed 64 lots and 33 exceed 30**, so this is a narrow tail rather than a systemic problem — but it is
 the direction to look if the radius is ever revisited, and it is *not* the same population as
 Champlain's legitimate 160.
+
+## ⚠ The load disabled the deployment, and the cause is one parameter — 2026-08-14
+
+**`accessPoints.matchAndImportParking` spent 104.95 GB of database I/O** — twice the next-largest
+consumer in the project's history (`matchBathymetryLakes`, 51 GB) and 4.5× the depth join. It exhausted
+the Convex free plan and **disabled the dev deployment**. Restored by raising the spending cap.
+
+**It is 1.1 MB of document reads per lot**, and the reason is a single default:
+
+`listedBodiesNearCoord` built its candidate box from a fixed `NEAR_COORD_MARGIN_DEG = 0.01` — about
+**1,113 m** — because that is what coord→lake resolution needs. Every caller inherited it:
+
+| gate | radius it tests | box it read | wasted area |
+|---|---:|---:|---:|
+| parking | 250 m | 1,113 m | **20×** |
+| put-in | 30 m | 1,113 m | **1,377×** |
+
+**Convex has no projection**, so a candidate read is a *whole document* — `polygon` included. Lake
+Champlain's ~300 KB outline was therefore re-read for every one of the lots within a kilometre of it,
+95,294 times over. And **83% of that work was discarded** by the water-relevance gate, which runs
+*after* the lookup.
+
+**The fix:** `listedBodiesNearCoord` takes an optional `marginMeters`, converted per-axis (longitude
+degrees shrink with latitude — a symmetric degree margin is ~40% wider in latitude than longitude at
+44°N). Tightening is provably safe: `bodiesCoveringBox` matches on **bbox**, and a polygon within *r*
+of a point always has a bbox within *r* of it. The default is unchanged, so resolution-grade callers
+keep their net; only callers that know their radius opt in.
+
+### What I should have seen, and the honest reason I didn't
+
+Two days earlier I noticed the gate rejects most lots *after* paying for the lookup, said out loud that
+*"the gate saves storage, not time"*, and filed it as a wall-clock nuisance. It was a **quota**
+problem. I evaluated a bbox pre-filter purely on wall-clock — the axis it loses on — and talked us out
+of the thing that would have avoided this, because a local pre-filter never touches Convex at all.
+
+The founder's instinct to *"just get everything and then make decisions"* was also the more expensive
+half of this, and the measurement that answered it (no gap between trailhead and supermarket) is what
+justified the gate. Both halves were right; the cost model was the part nobody priced.
+
+### The same shape elsewhere, worth checking before the next campaign
+
+`matchBathymetryLakes` (51 GB) and `coveringBodyForPoints` (21 GB) are the same pattern — a per-record
+spatial lookup on the wide default net. Neither is fixed here, and neither is urgent, but they are the
+next two candidates if I/O ever binds again.
 
 ---
 

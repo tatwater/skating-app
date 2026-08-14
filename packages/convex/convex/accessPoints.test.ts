@@ -996,3 +996,51 @@ describe('the lot a chosen put-in points at is always resolvable', () => {
     expect(target?.parking?.name).toBe('The Actual Lot');
   });
 });
+
+describe('the candidate box is sized to the radius (the 105 GB lesson)', () => {
+  /**
+   * ⚠ N6d's parking pass ran 95,294 lookups on `listedBodiesNearCoord`'s default ~1,113 m net and
+   * spent **104.95 GB of database I/O — 1.1 MB per lot** — enough to disable the deployment. Convex
+   * has no projection, so reading a candidate reads its whole document, `polygon` included, and
+   * Champlain's ~300 KB outline was re-read for every lot within a kilometre of it.
+   *
+   * Tightening the box is safe because `bodiesCoveringBox` matches on **bbox**, and a polygon within
+   * *r* of a point always has a bbox within *r* of it. These two tests pin both halves: nothing that
+   * should match is lost, and something outside the radius is not dragged in.
+   */
+  test('a lot inside the radius still matches with the tightened box', async () => {
+    const t = convexTest(schema, modules);
+    const body = await seedSquareBody(t);
+    const result = await t.mutation(internal.accessPoints.matchAndImportParking, {
+      lots: [{ ...LOT, point: northOfShore(PARKING_INFER_RADIUS_M - 20), paired: false }],
+    });
+    expect(result.created).toBe(1);
+    expect(result.linksCreated).toBe(1);
+    expect(body).toBeDefined();
+  });
+
+  test('a launch just inside the shore radius still matches, though the box is now 30 m', async () => {
+    const t = convexTest(schema, modules);
+    const body = await seedSquareBody(t);
+    const result = await t.mutation(internal.accessPoints.matchAndImportPutIns, {
+      putIns: [{ externalId: 'node/tight', point: northOfShore(PUTIN_SHORE_RADIUS_M - 5) }],
+    });
+    expect(result.created).toBe(1);
+    expect(result.noBodyNearby).toBe(0);
+    const row = (await t.run((ctx) => ctx.db.query('putIns').collect()))[0];
+    expect(row?.waterBodyId).toBe(body);
+  });
+
+  /** Longitude degrees shrink with latitude; a metres→degrees conversion that forgets cos(lat) at
+   *  44°N would under-reach by ~28% in longitude and silently miss bodies to the east and west. */
+  test('a lot due EAST of the shore still matches, so the longitude conversion is right', async () => {
+    const t = convexTest(schema, modules);
+    await seedSquareBody(t);
+    const eastOfShore = { lat: 44, lng: -72 + 0.01 + (PARKING_INFER_RADIUS_M - 30) / (111_320 * Math.cos((44 * Math.PI) / 180)) };
+    const result = await t.mutation(internal.accessPoints.matchAndImportParking, {
+      lots: [{ ...LOT, externalId: 'way/east', point: eastOfShore, paired: false }],
+    });
+    expect(result.created).toBe(1);
+    expect(result.linksCreated).toBe(1);
+  });
+});

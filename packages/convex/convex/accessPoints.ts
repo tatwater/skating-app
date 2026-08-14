@@ -79,7 +79,10 @@ async function bodiesWithin(
   coord: LatLng,
   radiusMeters: number,
 ): Promise<{ body: Doc<'waterBodies'>; distance: number }[]> {
-  const byId = await listedBodiesNearCoord(ctx, coord);
+  // **Ask for exactly the radius we test.** The default net is ~1,113 m, and this pass runs it 95,294
+  // times: on the default it spent 104.95 GB of database I/O and took the deployment down. The gate
+  // needs 250 m for a lot and 30 m for a launch, so the box shrinks by 20x and 1,377x respectively.
+  const byId = await listedBodiesNearCoord(ctx, coord, radiusMeters);
   const hits: { body: Doc<'waterBodies'>; distance: number }[] = [];
   for (const body of byId.values()) {
     const distance = distanceToPolygonMeters(
