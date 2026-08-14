@@ -198,6 +198,23 @@ export const collect = internalQuery({
       .query('photos')
       .withIndex('by_uploader', (q) => q.eq('uploaderId', userId))
       .take(ROW_CAP);
+    // The access layer (N6d / D73, D88). Three tables of things a person said and did — a claim that
+    // a gate was locked, a verdict on somebody else's, a photo of a pull-off — and an export that
+    // omitted them would be quietly incomplete in the one direction that matters, since the whole
+    // promise here is "everything about you". The vote rows are included for the same reason
+    // `hazardConfirmations` is: a confirmation is a contribution, not bookkeeping.
+    const accessAlerts = await ctx.db
+      .query('accessAlerts')
+      .withIndex('by_author', (q) => q.eq('createdByUserId', userId))
+      .take(ROW_CAP);
+    const accessAlertVotes = await ctx.db
+      .query('accessAlertVotes')
+      .withIndex('by_user', (q) => q.eq('userId', userId))
+      .take(ROW_CAP);
+    const accessPhotos = await ctx.db
+      .query('accessPhotos')
+      .withIndex('by_uploader', (q) => q.eq('uploaderId', userId))
+      .take(ROW_CAP);
 
     const {
       // Not exported: the Clerk subject is an internal identifier for a system the user already has
@@ -216,6 +233,9 @@ export const collect = internalQuery({
       waterBodyFavorites: favorites,
       reportRatings: ratings,
       pointEvents: points,
+      accessAlerts: accessAlerts,
+      accessAlertVotes: accessAlertVotes,
+      accessPhotos: accessPhotos,
       // Secrets stripped — see the note above.
       activityConnections: connections.map((c) => ({
         provider: c.provider,

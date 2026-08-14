@@ -27,7 +27,12 @@ function useFlags() {
 function FlagRow({ flag }: { flag: FlagView }) {
   const resolveFlag = useMutation(api.moderation.resolveFlag);
   const setStatus = useMutation(api.moderation.setModerationStatus);
+  const retractAlert = useMutation(api.accessAlerts.retract);
   const canTakedown = TAKEDOWNABLE.has(flag.targetType) && flag.target.exists;
+  // An access alert has no `moderationStatus` to set — its takedown verb is **retraction** (D65
+  // applied to access): "this was never true", which is exactly what a bogus "gate locked" is. So it
+  // gets its own action rather than being the one flaggable thing a moderator cannot act on.
+  const canRetract = flag.targetType === 'accessAlert' && flag.target.exists;
 
   return (
     <Card>
@@ -104,6 +109,22 @@ function FlagRow({ flag }: { flag: FlagView }) {
                 }
               />
             </>
+          ) : null}
+          {canRetract ? (
+            <ReasonDialog
+              trigger={
+                <Button variant="secondary" size="sm">
+                  Retract alert
+                </Button>
+              }
+              title="Retract this access alert"
+              description="Marks the claim as never having been true and writes an audit record. It stops annotating the launch immediately."
+              confirmLabel="Retract"
+              confirmVariant="secondary"
+              onConfirm={(reason) =>
+                retractAlert({ accessAlertId: flag.targetId as Id<'accessAlerts'>, reason })
+              }
+            />
           ) : null}
           <ReasonDialog
             trigger={

@@ -558,8 +558,7 @@ function AdminTuning() {
           >
             A body earns a rose only if its longest fetch clears this floor. Below it the exposure
             claim would describe a pond where no wind can build a wave — and every extra cell is
-            spent against a hard daily request cap, so the floor is a budget as much as a
-            judgement.
+            spent against a hard daily request cap, so the floor is a budget as much as a judgement.
           </ConstantCard>
         </div>
       </TuningSection>

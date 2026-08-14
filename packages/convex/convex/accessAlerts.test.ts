@@ -141,9 +141,9 @@ describe('accessAlerts.create', () => {
   test('refuses a target that does not exist or has been hidden', async () => {
     const { t, waterBodyId, putInId, author } = await setup();
     await t.run((ctx) => ctx.db.patch(putInId, { status: 'hidden' as const }));
-    await expect(author.as.mutation(api.accessAlerts.create, { ...ALERT, putInId })).rejects.toThrow(
-      /Put-in not found/,
-    );
+    await expect(
+      author.as.mutation(api.accessAlerts.create, { ...ALERT, putInId }),
+    ).rejects.toThrow(/Put-in not found/);
     expect(waterBodyId).toBeDefined();
   });
 
@@ -277,7 +277,7 @@ describe('accessAlerts.retract (D65 applied to access)', () => {
 
 describe('accessAlerts.setOfficial — the founder exemption', () => {
   test('a member cannot pin', async () => {
-    const { t, putInId, author } = await setup();
+    const { putInId, author } = await setup();
     const id = await author.as.mutation(api.accessAlerts.create, { ...ALERT, putInId });
     await expect(
       author.as.mutation(api.accessAlerts.setOfficial, {
@@ -502,10 +502,85 @@ describe('an alert on a shared lot (D72 amendment)', () => {
       parkingAreaId,
       reason: 'not_plowed',
     });
-    await author.as.mutation(api.accessAlerts.create, { targetType: 'put_in', putInId, reason: 'gate_locked' });
+    await author.as.mutation(api.accessAlerts.create, {
+      targetType: 'put_in',
+      putInId,
+      reason: 'gate_locked',
+    });
 
     const alerts = await t.query(api.accessAlerts.listForBody, { waterBodyId });
     expect(alerts).toHaveLength(2);
     expect(new Set(alerts.map((a) => a.id)).size).toBe(2);
+  });
+});
+
+/**
+ * Flagging an access alert (N6d correction 8) — and the half that is easy to ship without.
+ *
+ * Adding `accessAlert` to `FLAG_TARGET_TYPES` makes *filing* work on its own, so the feature looks
+ * finished from the reporting side while the moderator queue renders every one of these as
+ * "(deleted)" with no author and no note: `resolveFlagTarget`'s switch had no case and fell through
+ * to its not-found branch. A flag nobody can read is a flag nobody can action.
+ */
+describe('a flagged alert is triageable, not a hole in the queue', () => {
+  test('the queue resolves the alert to its author and its words', async () => {
+    const { t, putInId, author } = await setup();
+    const flagger = await seedUser(t, 'flagger');
+    const mod = await seedUser(t, 'mod', 'moderator');
+
+    const accessAlertId = await author.as.mutation(api.accessAlerts.create, {
+      ...ALERT,
+      putInId,
+      note: 'Gate is wide open, this is nonsense',
+    });
+    await flagger.as.mutation(api.contentFlags.flag, {
+      targetType: 'accessAlert',
+      targetId: accessAlertId,
+      reason: 'spam',
+    });
+
+    const { priority, standard } = await mod.as.query(api.moderation.listFlags, {});
+    const row = [...priority, ...standard].find((f) => f.targetId === accessAlertId);
+    expect(row?.target.exists).toBe(true);
+    expect(row?.target.summary).toBe('Gate is wide open, this is nonsense');
+    expect(row?.target.author?.username).toBe('author');
+  });
+
+  /** An alert with no note still has to say what it claims — the reason is the claim. */
+  test('an alert with no note falls back to its reason rather than to nothing', async () => {
+    const { t, putInId, author } = await setup();
+    const flagger = await seedUser(t, 'flagger');
+    const mod = await seedUser(t, 'mod', 'moderator');
+
+    const accessAlertId = await author.as.mutation(api.accessAlerts.create, { ...ALERT, putInId });
+    await flagger.as.mutation(api.contentFlags.flag, {
+      targetType: 'accessAlert',
+      targetId: accessAlertId,
+      reason: 'spam',
+    });
+
+    const { priority, standard } = await mod.as.query(api.moderation.listFlags, {});
+    const row = [...priority, ...standard].find((f) => f.targetId === accessAlertId);
+    expect(row?.target.summary).toBe('Access alert: gate_locked');
+  });
+
+  /**
+   * The takedown verb, and why it is retraction rather than a hide.
+   *
+   * An access alert carries no `moderationStatus` axis, so `setModerationStatus` cannot touch it —
+   * which is what made it, briefly, the one flaggable thing in the app a moderator could not act on.
+   * `retract` is the right verb anyway: a bogus "gate locked" was never true, which is exactly what
+   * D65's verdict says.
+   */
+  test('a moderator retracts the alert a flag was about', async () => {
+    const { t, putInId, author } = await setup();
+    const mod = await seedUser(t, 'mod', 'moderator');
+    const accessAlertId = await author.as.mutation(api.accessAlerts.create, { ...ALERT, putInId });
+
+    await mod.as.mutation(api.accessAlerts.retract, { accessAlertId, reason: 'gate is open' });
+
+    expect((await t.run((ctx) => ctx.db.get(accessAlertId)))?.status).toBe('retracted');
+    const actions = await t.run((ctx) => ctx.db.query('moderationActions').collect());
+    expect(actions.some((a) => a.action === 'retract_access_alert')).toBe(true);
   });
 });

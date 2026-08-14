@@ -2075,7 +2075,6 @@ export default defineSchema({
      * author to set this explicitly rather than letting a mile-long approach be entered silently.
      */
     approachKindOverride: v.optional(literals(APPROACH_KINDS)),
-
   })
     .index('by_water_body', ['waterBodyId'])
     // Idempotent OSM upsert (N6d B3), mirroring `waterBodies.by_external_id`.

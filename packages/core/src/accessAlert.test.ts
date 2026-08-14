@@ -18,7 +18,11 @@ function alert(over: Partial<AccessAlertRecord> = {}): AccessAlertRecord {
   return { status: 'active', createdAt: JAN, expiresAt: JAN + ACCESS_ALERT_TTL_MS, ...over };
 }
 
-function vote(userId: string, verdict: 'still_blocked' | 'open', observedAt: number): AccessAlertVote {
+function vote(
+  userId: string,
+  verdict: 'still_blocked' | 'open',
+  observedAt: number,
+): AccessAlertVote {
   return { userId, verdict, observedAt };
 }
 
@@ -72,14 +76,11 @@ describe('accessAlertIsLive', () => {
     expect(accessAlertIsLive(alert(), JAN + ACCESS_ALERT_TTL_MS + 1)).toBe(false);
   });
 
-  test.each(['expired', 'resolved', 'retracted', 'hidden'] as const)(
-    'a %s alert is never live',
-    (status) => {
-      expect(accessAlertIsLive(alert({ status, expiresAt: JAN + ACCESS_ALERT_TTL_MS }), JAN)).toBe(
-        false,
-      );
-    },
-  );
+  test.each(['expired', 'resolved', 'retracted'] as const)('a %s alert is never live', (status) => {
+    expect(accessAlertIsLive(alert({ status, expiresAt: JAN + ACCESS_ALERT_TTL_MS }), JAN)).toBe(
+      false,
+    );
+  });
 
   test('every status is covered by the liveness rule', () => {
     for (const status of ACCESS_ALERT_STATUSES) {
@@ -99,7 +100,11 @@ describe('deriveAccessAlertLifecycle', () => {
 
   test('a confirmation resets the clock from the observation, not the assertion', () => {
     const later = JAN + 20 * 24 * 60 * 60 * 1000;
-    const out = deriveAccessAlertLifecycle(alert(), [vote('a', 'still_blocked', later)], SEASON_END);
+    const out = deriveAccessAlertLifecycle(
+      alert(),
+      [vote('a', 'still_blocked', later)],
+      SEASON_END,
+    );
     expect(out.expiresAt).toBe(accessAlertExpiryFor(later, SEASON_END));
     expect(out.lastConfirmedAt).toBe(later);
     expect(out.confirmCount).toBe(1);
@@ -134,11 +139,7 @@ describe('deriveAccessAlertLifecycle', () => {
   test('one skater voting twice counts once, and the later verdict wins', () => {
     const out = deriveAccessAlertLifecycle(
       alert(),
-      [
-        vote('a', 'open', JAN + 1),
-        vote('a', 'still_blocked', JAN + 2),
-        vote('b', 'open', JAN + 3),
-      ],
+      [vote('a', 'open', JAN + 1), vote('a', 'still_blocked', JAN + 2), vote('b', 'open', JAN + 3)],
       SEASON_END,
     );
     expect(out.denyCount).toBe(1);
@@ -153,24 +154,22 @@ describe('deriveAccessAlertLifecycle', () => {
     expect(second).toEqual(first);
   });
 
-  test.each(['official', 'retracted', 'hidden'] as const)(
-    'votes never move a %s alert',
-    (status) => {
-      const out = deriveAccessAlertLifecycle(
-        alert({ status, expiresAt: undefined }),
-        [vote('a', 'open', JAN + 1), vote('b', 'open', JAN + 2), vote('c', 'open', JAN + 3)],
-        SEASON_END,
-      );
-      expect(out.status).toBe(status);
-      expect(out.denyCount).toBe(3);
-    },
-  );
+  test.each(['official', 'retracted'] as const)('votes never move a %s alert', (status) => {
+    const out = deriveAccessAlertLifecycle(
+      alert({ status, expiresAt: undefined }),
+      [vote('a', 'open', JAN + 1), vote('b', 'open', JAN + 2), vote('c', 'open', JAN + 3)],
+      SEASON_END,
+    );
+    expect(out.status).toBe(status);
+    expect(out.denyCount).toBe(3);
+  });
 
   test('a confirmation revives an expired alert; silence leaves it expired', () => {
     const expired = alert({ status: 'expired' });
     expect(deriveAccessAlertLifecycle(expired, [], SEASON_END).status).toBe('expired');
     expect(
-      deriveAccessAlertLifecycle(expired, [vote('a', 'still_blocked', JAN + 40)], SEASON_END).status,
+      deriveAccessAlertLifecycle(expired, [vote('a', 'still_blocked', JAN + 40)], SEASON_END)
+        .status,
     ).toBe('active');
   });
 

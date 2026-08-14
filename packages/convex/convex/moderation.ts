@@ -252,6 +252,22 @@ async function resolveFlagTarget(
         summary: snippet(doc.caption) || 'Photo',
       };
     }
+    case 'accessAlert': {
+      // N6d (D73). Without this case the switch falls through to `notFound`, and every access-alert
+      // flag renders in the queue as "(deleted)" with no author and no note — a moderator looking at
+      // a report about nothing. Adding the target type to `FLAG_TARGET_TYPES` made filing work; this
+      // is what makes *triaging* work, and the two are easy to ship apart.
+      const id = ctx.db.normalizeId('accessAlerts', rawTargetId);
+      const doc = id ? await ctx.db.get(id) : null;
+      if (!doc) return notFound;
+      return {
+        exists: true,
+        author: await loadQueueUser(ctx, doc.createdByUserId),
+        // The reason is the claim and the note is the evidence for it; a bogus alert is usually only
+        // recognisable from the second, so it leads where there is one.
+        summary: snippet(doc.note) || `Access alert: ${doc.reason}`,
+      };
+    }
     case 'user': {
       const id = ctx.db.normalizeId('profiles', rawTargetId);
       const doc = id ? await ctx.db.get(id) : null;

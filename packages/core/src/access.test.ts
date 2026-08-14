@@ -1,20 +1,20 @@
 import { describe, expect, test } from 'vitest';
 import {
-  APPROACH_KINDS,
-  approachKindFor,
-  compassSideLabel,
-  DRIVE_UP_MAX_M,
-  HIKE_IN_ASSERT_M,
   type AccessParking,
   type AccessPutIn,
+  APPROACH_KINDS,
+  approachKindFor,
   bodyAccessKind,
   chooseAccessTarget,
+  compassSideLabel,
+  DRIVE_UP_MAX_M,
   describeApproach,
+  HIKE_IN_ASSERT_M,
   isHikeIn,
   orsFootHikingBody,
   PARKING_INFER_RADIUS_M,
-  parseOrsFootHikingRoute,
   PUTIN_SHORE_RADIUS_M,
+  parseOrsFootHikingRoute,
   requiresHikeInAssertion,
   resolveApproachKind,
   resolvePutInName,
@@ -224,7 +224,9 @@ describe('the approach leg (D87)', () => {
 
   test('parses the one-way distance and ascent off the first feature', () => {
     const leg = parseOrsFootHikingRoute({
-      features: [{ properties: { summary: { distance: 1123.4, duration: 900 }, ascent: 91.2, descent: 12 } }],
+      features: [
+        { properties: { summary: { distance: 1123.4, duration: 900 }, ascent: 91.2, descent: 12 } },
+      ],
     });
     expect(leg).toEqual({ meters: 1123.4, ascentM: 91.2, routed: true });
   });
@@ -250,7 +252,9 @@ describe('the approach leg (D87)', () => {
   });
 
   test('missing elevation data yields a distance with no climb rather than a zero climb', () => {
-    const leg = parseOrsFootHikingRoute({ features: [{ properties: { summary: { distance: 400 } } }] });
+    const leg = parseOrsFootHikingRoute({
+      features: [{ properties: { summary: { distance: 400 } } }],
+    });
     expect(leg).toEqual({ meters: 400, ascentM: undefined, routed: true });
   });
 
@@ -258,7 +262,10 @@ describe('the approach leg (D87)', () => {
     ['no path found', {}],
     ['an empty feature list', { features: [] }],
     ['a feature with no summary', { features: [{ properties: {} }] }],
-    ['a non-numeric distance', { features: [{ properties: { summary: { distance: Number.NaN } } }] }],
+    [
+      'a non-numeric distance',
+      { features: [{ properties: { summary: { distance: Number.NaN } } }] },
+    ],
   ])('returns null for %s, so the caller falls back rather than recording a zero', (_label, res) => {
     expect(parseOrsFootHikingRoute(res)).toBeNull();
   });
@@ -312,7 +319,10 @@ describe('chooseAccessTarget — the routing rule (D72)', () => {
 
   test('the source ladder decides between launches', () => {
     const chosen = chooseAccessTarget(
-      [launch({ id: 'derived', source: 'derived' }), launch({ id: 'official', source: 'official' })],
+      [
+        launch({ id: 'derived', source: 'derived' }),
+        launch({ id: 'official', source: 'official' }),
+      ],
       [],
     );
     expect(chosen?.putIn.id).toBe('official');
@@ -320,10 +330,7 @@ describe('chooseAccessTarget — the routing rule (D72)', () => {
 
   test('between equals, the shorter walk wins', () => {
     const chosen = chooseAccessTarget(
-      [
-        launch({ id: 'far', approachMeters: 900 }),
-        launch({ id: 'near', approachMeters: 120 }),
-      ],
+      [launch({ id: 'far', approachMeters: 900 }), launch({ id: 'near', approachMeters: 120 })],
       [],
     );
     expect(chosen?.putIn.id).toBe('near');
@@ -402,7 +409,13 @@ describe('describeApproach', () => {
   test('climb is included when measured and omitted when not — never zeroed', () => {
     expect(
       describeApproach(
-        { ...base, approachMeters: 1100, approachAscentM: 90, approachRouted: true, approachKind: 'hike_in' },
+        {
+          ...base,
+          approachMeters: 1100,
+          approachAscentM: 90,
+          approachRouted: true,
+          approachKind: 'hike_in',
+        },
         'metric',
       ),
     ).toBe('Park here, then about 1.1 km on foot, 90 m of climb.');
@@ -418,7 +431,13 @@ describe('describeApproach', () => {
   test('imperial switches units without changing the hedge', () => {
     expect(
       describeApproach(
-        { ...base, approachMeters: 2000, approachAscentM: 30, approachRouted: true, approachKind: 'hike_in' },
+        {
+          ...base,
+          approachMeters: 2000,
+          approachAscentM: 30,
+          approachRouted: true,
+          approachKind: 'hike_in',
+        },
         'imperial',
       ),
     ).toBe('Park here, then about 1.2 mi on foot, 98 ft of climb.');

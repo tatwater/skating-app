@@ -241,7 +241,7 @@ describe('the Hike-In chip on the feed card (N6d / D87)', () => {
     iceTypes: [],
     surfaceTags: [],
     photoThumbUrls: [],
-    author: { userId: 'u1', displayName: 'A', profileVisibility: 'public' as const },
+    author: { displayName: 'A', username: 'a' },
     blocked: false,
   };
 
@@ -256,10 +256,8 @@ describe('the Hike-In chip on the feed card (N6d / D87)', () => {
     );
     for (const kind of ['drive_up', 'short_walk', undefined]) {
       expect(
-        buildFeedCardView(
-          { ...base, ...(kind ? { accessKind: kind } : {}) },
-          base.skateEndTime,
-        ).isHikeIn,
+        buildFeedCardView({ ...base, ...(kind ? { accessKind: kind } : {}) }, base.skateEndTime)
+          .isHikeIn,
       ).toBe(false);
     }
   });

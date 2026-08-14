@@ -175,7 +175,9 @@ describe('accessPoints.matchAndImportParking', () => {
 
     await t.mutation(internal.accessPoints.matchAndImportParking, { lots });
     const second = await t.mutation(internal.accessPoints.matchAndImportParking, {
-      lots: [{ ...LOT, point: northOfShore(50), name: 'Renamed Lot', amenities: ['toilets' as const] }],
+      lots: [
+        { ...LOT, point: northOfShore(50), name: 'Renamed Lot', amenities: ['toilets' as const] },
+      ],
     });
 
     expect(second.created).toBe(0);
@@ -230,13 +232,14 @@ describe('accessPoints.matchAndImportParking', () => {
       lots: [{ ...LOT, point: northOfShore(50) }],
     });
     const link = (await t.run((ctx) => ctx.db.query('parkingAreaBodies').collect()))[0];
-    await t.run((ctx) => ctx.db.patch(link!._id, { inferred: false }));
+    if (!link) throw new Error('the first pass should have inferred an association');
+    await t.run((ctx) => ctx.db.patch(link._id, { inferred: false }));
 
     await t.mutation(internal.accessPoints.matchAndImportParking, {
       lots: [{ ...LOT, point: northOfShore(50) }],
     });
 
-    const after = await t.run((ctx) => ctx.db.get(link!._id));
+    const after = await t.run((ctx) => ctx.db.get(link._id));
     expect(after?.inferred).toBe(false);
     expect(after?.waterBodyId).toBe(body);
   });
@@ -290,7 +293,12 @@ describe('accessPoints.matchAndImportPutIns', () => {
   test('picks the nearest body when two are in range', async () => {
     const t = convexTest(schema, modules);
     await seedSquareBody(t, { name: 'Far Pond', lat: 44, lng: -72, half: 0.01 });
-    const near = await seedSquareBody(t, { name: 'Near Pond', lat: 44.0104, lng: -72, half: 0.0002 });
+    const near = await seedSquareBody(t, {
+      name: 'Near Pond',
+      lat: 44.0104,
+      lng: -72,
+      half: 0.0002,
+    });
 
     const result = await t.mutation(internal.accessPoints.matchAndImportPutIns, {
       putIns: [{ ...LAUNCH, point: { lat: 44.01055, lng: -72 } }],
@@ -470,7 +478,11 @@ describe('accessPoints.listParkingForBody', () => {
 });
 
 describe('access-point photos (Workstream D / D88)', () => {
-  async function seedUploader(t: ReturnType<typeof convexTest>, subject: string, role: 'member' | 'moderator' = 'member') {
+  async function seedUploader(
+    t: ReturnType<typeof convexTest>,
+    subject: string,
+    role: 'member' | 'moderator' = 'member',
+  ) {
     const id = await t.run((ctx) =>
       ctx.db.insert('profiles', {
         clerkUserId: subject,
@@ -505,10 +517,16 @@ describe('access-point photos (Workstream D / D88)', () => {
    * blob it could not prove gone — the row is the only pointer to those bytes — so a fake storage id
    * makes every photo look undeletable and quietly turns a sweep test into a no-op.
    */
-  async function seedPhoto(t: ReturnType<typeof convexTest>, uploaderId: Id<'profiles'>, createdAt = Date.now()) {
+  async function seedPhoto(
+    t: ReturnType<typeof convexTest>,
+    uploaderId: Id<'profiles'>,
+    createdAt = Date.now(),
+  ) {
     return t.run(async (ctx) => {
       const storageId = await ctx.storage.store(new Blob([`photo-${createdAt}-${Math.random()}`]));
-      const thumbStorageId = await ctx.storage.store(new Blob([`thumb-${createdAt}-${Math.random()}`]));
+      const thumbStorageId = await ctx.storage.store(
+        new Blob([`thumb-${createdAt}-${Math.random()}`]),
+      );
       return ctx.db.insert('photos', {
         storageId,
         thumbStorageId,
@@ -557,11 +575,19 @@ describe('access-point photos (Workstream D / D88)', () => {
 
     for (let i = 0; i < 3; i++) {
       const photoId = await seedPhoto(t, user.id, Date.now() - i);
-      await user.as.mutation(api.accessPoints.attachPhoto, { targetType: 'put_in', putInId, photoId });
+      await user.as.mutation(api.accessPoints.attachPhoto, {
+        targetType: 'put_in',
+        putInId,
+        photoId,
+      });
     }
     const overflow = await seedPhoto(t, user.id, Date.now() - 99);
     await expect(
-      user.as.mutation(api.accessPoints.attachPhoto, { targetType: 'put_in', putInId, photoId: overflow }),
+      user.as.mutation(api.accessPoints.attachPhoto, {
+        targetType: 'put_in',
+        putInId,
+        photoId: overflow,
+      }),
     ).rejects.toThrow(/at most 3 photos/);
   });
 
@@ -584,8 +610,16 @@ describe('access-point photos (Workstream D / D88)', () => {
     const user = await seedUploader(t, 'skater');
     const photoId = await seedPhoto(t, user.id);
 
-    await user.as.mutation(api.accessPoints.attachPhoto, { targetType: 'put_in', putInId, photoId });
-    await user.as.mutation(api.accessPoints.attachPhoto, { targetType: 'put_in', putInId, photoId });
+    await user.as.mutation(api.accessPoints.attachPhoto, {
+      targetType: 'put_in',
+      putInId,
+      photoId,
+    });
+    await user.as.mutation(api.accessPoints.attachPhoto, {
+      targetType: 'put_in',
+      putInId,
+      photoId,
+    });
     expect(await t.run((ctx) => ctx.db.query('accessPhotos').collect())).toHaveLength(1);
   });
 
@@ -626,7 +660,11 @@ describe('access-point photos (Workstream D / D88)', () => {
     const user = await seedUploader(t, 'skater');
     // Older than the 30-day grace, so the sweep would genuinely consider it.
     const photoId = await seedPhoto(t, user.id, Date.now() - 60 * 24 * 60 * 60 * 1000);
-    await user.as.mutation(api.accessPoints.attachPhoto, { targetType: 'put_in', putInId, photoId });
+    await user.as.mutation(api.accessPoints.attachPhoto, {
+      targetType: 'put_in',
+      putInId,
+      photoId,
+    });
 
     await t.mutation(internal.storageHygiene.sweepOrphanPhotos, {});
 
@@ -845,6 +883,65 @@ describe('the operator write path (D72 amendment / D144)', () => {
     expect(row?.approachRouted).toBeUndefined();
   });
 
+  /**
+   * The denormalized chip has **two** writers, and the operator one was missing.
+   *
+   * `waterBodies.accessKind` feeds the map summary card and the feed card, and it was recomputed only
+   * by the ETL join — so a moderator asserting `hike_in` on a mile-away trailhead left the lake
+   * wearing no warning at all. That is the precise trip this phase exists to stop somebody making,
+   * and it would have been invisible: the put-in row would be perfectly correct while the two browse
+   * surfaces said nothing.
+   */
+  test("an operator's hike-in assertion reaches the body's chip", async () => {
+    const t = convexTest(schema, modules);
+    const body = await seedSquareBody(t);
+    const mod = await seedModerator(t);
+    const putInId = (await t.run((ctx) =>
+      ctx.db.insert('putIns', {
+        waterBodyId: body,
+        coord: northOfShore(5),
+        source: 'osm' as const,
+        status: 'visible' as const,
+        createdAt: Date.now(),
+      }),
+    )) as Id<'putIns'>;
+    const parkingAreaId = await mod.mutation(api.accessPoints.setOfficialParking, {
+      coord: northOfShore(3_000),
+      amenities: [],
+      waterBodyIds: [body],
+    });
+    expect((await t.run((ctx) => ctx.db.get(body)))?.accessKind).toBeUndefined();
+
+    await mod.mutation(api.accessPoints.setPutInAccess, {
+      putInId,
+      parkingAreaId,
+      approachKindOverride: 'hike_in',
+    });
+    expect((await t.run((ctx) => ctx.db.get(body)))?.accessKind).toBe('hike_in');
+  });
+
+  /** The mirror case: a chip must not outlive the measurement it was derived from. */
+  test('clearing the parking clears the body chip too', async () => {
+    const t = convexTest(schema, modules);
+    const body = await seedSquareBody(t);
+    const mod = await seedModerator(t);
+    const putInId = (await t.run((ctx) =>
+      ctx.db.insert('putIns', {
+        waterBodyId: body,
+        coord: northOfShore(5),
+        source: 'osm' as const,
+        status: 'visible' as const,
+        approachMeters: 400,
+        approachRouted: true,
+        createdAt: Date.now(),
+      }),
+    )) as Id<'putIns'>;
+    await t.run((ctx) => ctx.db.patch(body, { accessKind: 'short_walk' as const }));
+
+    await mod.mutation(api.accessPoints.setPutInAccess, { putInId, clearParking: true });
+    expect((await t.run((ctx) => ctx.db.get(body)))?.accessKind).toBeUndefined();
+  });
+
   /** Hand edits and the ETL must not fight: an inference nobody thought about is left alone. */
   test('an operator edit does not delete OSM inferences it simply did not mention', async () => {
     const t = convexTest(schema, modules);
@@ -1036,7 +1133,10 @@ describe('the candidate box is sized to the radius (the 105 GB lesson)', () => {
   test('a lot due EAST of the shore still matches, so the longitude conversion is right', async () => {
     const t = convexTest(schema, modules);
     await seedSquareBody(t);
-    const eastOfShore = { lat: 44, lng: -72 + 0.01 + (PARKING_INFER_RADIUS_M - 30) / (111_320 * Math.cos((44 * Math.PI) / 180)) };
+    const eastOfShore = {
+      lat: 44,
+      lng: -72 + 0.01 + (PARKING_INFER_RADIUS_M - 30) / (111_320 * Math.cos((44 * Math.PI) / 180)),
+    };
     const result = await t.mutation(internal.accessPoints.matchAndImportParking, {
       lots: [{ ...LOT, externalId: 'way/east', point: eastOfShore, paired: false }],
     });

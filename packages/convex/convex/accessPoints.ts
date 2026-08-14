@@ -868,6 +868,14 @@ export const setPutInAccess = mutation({
       approachKindOverride: override,
     });
 
+    // **The denormalization has two writers, not one.** Everything this mutation touches is an input
+    // to `resolveApproachKind`, so skipping the recompute leaves the map card and the feed card
+    // showing a chip derived from the previous state — and in the direction that matters: a moderator
+    // asserting `hike_in` on a mile-away trailhead would leave the lake wearing no warning at all,
+    // which is the exact trip this phase exists to stop somebody making. `clearParking` is the mirror
+    // case, where a stale `drive_up` outlives the measurement it came from.
+    await recomputeAccessKind(ctx, putIn.waterBodyId);
+
     await ctx.db.insert('moderationActions', {
       actorId: actor._id,
       action:

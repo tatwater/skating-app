@@ -36,7 +36,9 @@ function lotPolygon(point: { lat: number; lng: number }): Geometry {
   };
 }
 
-function access(over: Partial<AccessFeature> & Pick<AccessFeature, 'kind' | 'externalId' | 'point'>): AccessFeature {
+function access(
+  over: Partial<AccessFeature> & Pick<AccessFeature, 'kind' | 'externalId' | 'point'>,
+): AccessFeature {
   return { isSlipway: false, ...over };
 }
 
@@ -66,7 +68,13 @@ describe('accessFeaturePoint', () => {
   test('refuses a line, null geometry, and a node with nonsense coordinates', () => {
     expect(accessFeaturePoint(null)).toBeNull();
     expect(
-      accessFeaturePoint({ type: 'LineString', coordinates: [[0, 0], [1, 1]] } as Geometry),
+      accessFeaturePoint({
+        type: 'LineString',
+        coordinates: [
+          [0, 0],
+          [1, 1],
+        ],
+      } as Geometry),
     ).toBeNull();
     expect(
       accessFeaturePoint({ type: 'Point', coordinates: [Number.NaN, 44] } as Geometry),
@@ -120,16 +128,18 @@ describe('parseAccessFeature', () => {
    * A lot you may not use is not a worse access point — it is a driveway, and publishing it sends
    * somebody to one.
    */
-  test.each(['private', 'no', 'customers', 'permit'])(
-    'refuses a lot tagged access=%s outright',
-    (value) => {
-      expect(
-        parseAccessFeature(
-          feature({ '@type': 'way', '@id': 1, amenity: 'parking', access: value }, lotPolygon(LAKE)),
-        ),
-      ).toBeNull();
-    },
-  );
+  test.each([
+    'private',
+    'no',
+    'customers',
+    'permit',
+  ])('refuses a lot tagged access=%s outright', (value) => {
+    expect(
+      parseAccessFeature(
+        feature({ '@type': 'way', '@id': 1, amenity: 'parking', access: value }, lotPolygon(LAKE)),
+      ),
+    ).toBeNull();
+  });
 
   test('access=yes and an untagged lot both survive', () => {
     expect(
@@ -138,8 +148,9 @@ describe('parseAccessFeature', () => {
       )?.kind,
     ).toBe('parking');
     expect(
-      parseAccessFeature(feature({ '@type': 'way', '@id': 2, amenity: 'parking' }, lotPolygon(LAKE)))
-        ?.kind,
+      parseAccessFeature(
+        feature({ '@type': 'way', '@id': 2, amenity: 'parking' }, lotPolygon(LAKE)),
+      )?.kind,
     ).toBe('parking');
   });
 
@@ -147,15 +158,17 @@ describe('parseAccessFeature', () => {
    * OSM's `fee` key takes values well beyond yes/no. Reading an unrecognised one as `false` would
    * publish "no fee" on a lot that charges.
    */
-  test.each(['interval', 'donation', '5 USD', ''])(
-    'fee=%s reads as unknown, never as free',
-    (value) => {
-      const parsed = parseAccessFeature(
-        feature({ '@type': 'way', '@id': 3, amenity: 'parking', fee: value }, lotPolygon(LAKE)),
-      );
-      expect(parsed?.fee).toBeUndefined();
-    },
-  );
+  test.each([
+    'interval',
+    'donation',
+    '5 USD',
+    '',
+  ])('fee=%s reads as unknown, never as free', (value) => {
+    const parsed = parseAccessFeature(
+      feature({ '@type': 'way', '@id': 3, amenity: 'parking', fee: value }, lotPolygon(LAKE)),
+    );
+    expect(parsed?.fee).toBeUndefined();
+  });
 
   test.each(['0', '-4', 'lots', ''])('capacity=%s is refused rather than guessed', (value) => {
     const parsed = parseAccessFeature(
@@ -180,7 +193,9 @@ describe('parseAccessFeature', () => {
 
   test('refuses anything without a stable OSM identity, and anything that is not access', () => {
     expect(parseAccessFeature(feature({ leisure: 'slipway' }, node(LAKE)))).toBeNull();
-    expect(parseAccessFeature(feature({ '@type': 'node', leisure: 'slipway' }, node(LAKE)))).toBeNull();
+    expect(
+      parseAccessFeature(feature({ '@type': 'node', leisure: 'slipway' }, node(LAKE))),
+    ).toBeNull();
     expect(
       parseAccessFeature(feature({ '@type': 'node', '@id': 8, amenity: 'cafe' }, node(LAKE))),
     ).toBeNull();
@@ -231,7 +246,11 @@ describe('pairAccessFeatures', () => {
   });
 
   test('a slipway promotes its lot to a boat ramp; a beach does not', () => {
-    const lot = access({ kind: 'parking', externalId: 'way/20', point: destinationPoint(LAKE, 0, 80) });
+    const lot = access({
+      kind: 'parking',
+      externalId: 'way/20',
+      point: destinationPoint(LAKE, 0, 80),
+    });
     const beach = access({ kind: 'put_in', externalId: 'node/2', point: LAKE, isSlipway: false });
 
     expect(pairAccessFeatures([launch, lot]).parking[0]?.amenities).toEqual(['boat_ramp']);
@@ -260,8 +279,17 @@ describe('pairAccessFeatures', () => {
   /** A diffable artifact is how the eyeballing pass B2 asks for actually gets done. */
   test('amenities are sorted, so the emitted records are byte-stable across runs', () => {
     const lot = access({ kind: 'parking', externalId: 'way/40', point: LAKE });
-    const toilet = access({ kind: 'toilets', externalId: 'node/5', point: destinationPoint(LAKE, 0, 20) });
-    const ramp = access({ kind: 'put_in', externalId: 'node/6', point: destinationPoint(LAKE, 0, 30), isSlipway: true });
+    const toilet = access({
+      kind: 'toilets',
+      externalId: 'node/5',
+      point: destinationPoint(LAKE, 0, 20),
+    });
+    const ramp = access({
+      kind: 'put_in',
+      externalId: 'node/6',
+      point: destinationPoint(LAKE, 0, 30),
+      isSlipway: true,
+    });
 
     const forwards = pairAccessFeatures([lot, toilet, ramp]).parking[0]?.amenities;
     const backwards = pairAccessFeatures([ramp, toilet, lot]).parking[0]?.amenities;
@@ -269,12 +297,16 @@ describe('pairAccessFeatures', () => {
     expect(forwards).toEqual(backwards);
   });
 
-  test('the paired flag is set for the loader\'s water-relevance gate', () => {
+  test("the paired flag is set for the loader's water-relevance gate", () => {
     // `amenity=parking` is one of OSM's most common tags — 4,656 lots in Vermont alone, 202 of them
     // paired. The loader keeps an unpaired lot only if it finds water near it, which it can test and
     // this transform cannot.
     const lot = access({ kind: 'parking', externalId: 'way/70', point: LAKE });
-    const lonely = access({ kind: 'parking', externalId: 'way/71', point: destinationPoint(LAKE, 0, 5_000) });
+    const lonely = access({
+      kind: 'parking',
+      externalId: 'way/71',
+      point: destinationPoint(LAKE, 0, 5_000),
+    });
     const paired = pairAccessFeatures([launch, lot, lonely]).parking;
     expect(paired.find((p) => p.externalId === 'way/70')?.paired).toBe(true);
     expect(paired.find((p) => p.externalId === 'way/71')?.paired).toBe(false);
@@ -289,8 +321,16 @@ describe('pairAccessFeatures', () => {
 
   test('two launches may share one lot', () => {
     const lot = access({ kind: 'parking', externalId: 'way/50', point: LAKE });
-    const a = access({ kind: 'put_in', externalId: 'node/7', point: destinationPoint(LAKE, 0, 50) });
-    const b = access({ kind: 'put_in', externalId: 'node/8', point: destinationPoint(LAKE, 180, 60) });
+    const a = access({
+      kind: 'put_in',
+      externalId: 'node/7',
+      point: destinationPoint(LAKE, 0, 50),
+    });
+    const b = access({
+      kind: 'put_in',
+      externalId: 'node/8',
+      point: destinationPoint(LAKE, 180, 60),
+    });
 
     const paired = pairAccessFeatures([lot, a, b]);
     expect(paired.putIns.every((p) => p.parkingExternalId === 'way/50')).toBe(true);
@@ -298,7 +338,11 @@ describe('pairAccessFeatures', () => {
   });
 
   test('the radius is injectable, so one state can be eyeballed at a different setting', () => {
-    const lot = access({ kind: 'parking', externalId: 'way/60', point: destinationPoint(LAKE, 0, 400) });
+    const lot = access({
+      kind: 'parking',
+      externalId: 'way/60',
+      point: destinationPoint(LAKE, 0, 400),
+    });
     expect(pairAccessFeatures([launch, lot]).putIns[0]?.parkingExternalId).toBeUndefined();
     expect(pairAccessFeatures([launch, lot], 500).putIns[0]?.parkingExternalId).toBe('way/60');
   });

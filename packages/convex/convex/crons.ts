@@ -116,12 +116,7 @@ crons.interval('sweep orphan photos', { hours: 24 }, internal.storageHygiene.swe
  * sit under a different `status` prefix of `by_status_expires_at`, so this is a structural exemption
  * rather than a filter somebody has to remember.
  */
-crons.interval(
-  'expire access alerts',
-  { hours: 6 },
-  internal.accessAlerts.expireLapsedAlerts,
-  {},
-);
+crons.interval('expire access alerts', { hours: 6 }, internal.accessAlerts.expireLapsedAlerts, {});
 
 /**
  * A departed skater's photos, expired with the season they were taken in (D66/N5a).

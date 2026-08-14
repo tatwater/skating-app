@@ -67,7 +67,7 @@ for await (const line of rl) {
     if (b.type === 'bay') bayLow++;
     if (!suspect && lowFresh.length < 25) {
       lowFresh.push(
-        `${(m.toFixed(1) + 'm').padStart(7)}  ${String(Math.round(b.surfaceAreaSqM / 4046.86)).padStart(5)}ac  ` +
+        `${`${m.toFixed(1)}m`.padStart(7)}  ${String(Math.round(b.surfaceAreaSqM / 4046.86)).padStart(5)}ac  ` +
           `${b.states.join(',').padEnd(5)} ${b.type.padEnd(11)} ${b.name || '(unnamed)'}`,
       );
     }

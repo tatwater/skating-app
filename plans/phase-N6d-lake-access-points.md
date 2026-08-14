@@ -5,9 +5,10 @@
 > Unpushed; prod deferred as every phase since 2.5. **`backfillCells` ran 2026-08-14** — 24,961 bodies
 > re-scored in 84 batches, closing the pass N6c had held since 2026-08-02. —
 > scoped 2026-07-30, kickoff re-read against the post-N7 codebase 2026-08-10. Founder ask, same day as
-> the scoping. Suites green: core 1,837 · convex 1,220 · web 301 · mobile 95 · etl 407.
+> the scoping. **Pre-PR review 2026-08-14** — four defects fixed and a red build made green; suites now
+> core 1,839 · convex 1,240 · web 301 · mobile 95 · etl 408, with `lint` and `check-types` clean.
 > See *§What the build found*, *§What the first real run found*, *§The 250 m radius, eyeballed*,
-> *§What the load found* and *§The run, completed*.
+> *§What the load found*, *§The run, completed* and *§What the pre-PR review found*.
 > **Split from** [N6c](./phase-N6c-expanded-lake-profiles.md) at scoping — it was roughly the size of
 > everything else in that phase combined, and it is the only part touching a new lifecycle.
 > **Depends on:** nothing in N6c. These two can run in parallel or in either order.
@@ -694,6 +695,67 @@ justified the gate. Both halves were right; the cost model was the part nobody p
 `matchBathymetryLakes` (51 GB) and `coveringBodyForPoints` (21 GB) are the same pattern — a per-record
 spatial lookup on the wide default net. Neither is fixed here, and neither is urgent, but they are the
 next two candidates if I/O ever binds again.
+
+## What the pre-PR review found — 2026-08-14
+
+*Four defects and a red build, found by reading the branch end to end before pushing it. The pattern
+in all four is the same and worth naming: **N6d added new surfaces to systems that enumerate their
+inputs**, and an enumeration nobody updated fails silently rather than loudly.*
+
+**0. CI was red, and the type error was inside a test.** `pnpm check-types` failed on
+`feed.test.ts`'s Hike-In fixture — a `FeedAuthor` built from the wrong fields — and `pnpm lint`
+failed with 15 diagnostics, eleven of them unformatted N6d files. Worth recording because vitest does
+not typecheck: **every one of the 1,837 tests passed against a build that could not compile**, so
+"suites green" was true and meaningless. Run `lint` and `check-types` before believing a phase is
+done.
+
+**1. A flagged access alert was a hole in the moderator queue.** The kickoff's correction 8 was
+implemented exactly as far as it was written — `FLAG_TARGET_TYPES` gained `accessAlert` and
+`contentFlags` learned its table — so *filing* worked. But `moderation.resolveFlagTarget` is a switch
+with a `default: notFound`, and nothing added the case, so every access-alert flag rendered as
+**"(deleted)"** with no author, no note and `exists: false`. A flag a moderator cannot read is a flag
+nobody can action.
+
+Fixing the read half exposed the write half: an alert carries no `moderationStatus`, so
+`setModerationStatus` cannot touch it and the queue's takedown buttons are gated on target type. The
+verb it actually wants is **retraction** — a bogus "gate locked" was never true, which is D65's
+verdict — so the queue now offers that instead of a hide it cannot perform.
+
+**2. `waterBodies.accessKind` had two writers and only one of them wrote.** `recomputeAccessKind` ran
+in `matchAndImportPutIns` and nowhere else, so `setPutInAccess` — every operator edit — left the
+denormalized chip describing the previous state. The direction of the failure is the bad one: a
+moderator asserting `hike_in` on a mile-away trailhead left the lake wearing **no warning at all**,
+which is the exact trip this phase exists to prevent somebody making. Nothing would have looked
+wrong; the `putIns` row was correct and only the two browse surfaces lied. `clearParking` was the
+mirror, leaving a `drive_up` chip outliving the measurement it came from.
+
+**3. Three user-authored tables were invisible to the N3 account lifecycle.** `accessAlerts`,
+`accessAlertVotes` and `accessPhotos` appeared in no deletion or export path. Two consequences:
+
+- `lib/contentPurge`'s `CATEGORIES` did not include alerts, so a departed skater's `note` — free text
+  *they typed*, on the same side of the D62 seam as `reports.notes` and `contentFlags.note` — was
+  never redacted. Now a category of its own: the row survives (somebody did find that gate locked)
+  and the sentence comes off.
+- `dataExport.collect` enumerates eleven tables and named none of them, so a user's own access
+  contributions were missing from their export. **An export is only ever wrong by omission, and an
+  omission is indistinguishable from a person who never used the feature** — nothing errors, nothing
+  looks empty, and "everything about you" quietly stops being true one phase at a time.
+
+**4. `ACCESS_ALERT_STATUSES` carried a `hidden` nothing writes.** Removed. The takedown a moderator
+performs is retraction (finding 1), so a status with no writer was an invitation to build against a
+hide path that does not exist. Safe to narrow: no row has ever held it.
+
+### The test-coverage shape, stated rather than implied
+
+The backend is thoroughly covered — ~2,800 lines across `accessPoints`, `accessAlerts`, `access`,
+`accessAlert` and `accessTransform`, and they are the right tests. **Every client surface the phase
+added has none**, which breaks this repo's own convention: each Phase 9 hazard component carries a
+`.test.tsx` and N6d's four (`AccessSection` and `AccessPhotos`, web and mobile) carry nothing. Two of
+the gaps are in files that already exist and already test the exact function — `waterMap.test.ts` has
+fourteen `summaryCardText` cases and no Hike-in one; `FeedCard.test.tsx` has no `isHikeIn` case. The
+`photoReconcile` `access` phase and `durablePhotoIds`' access arm — the D66 carve-out and the
+data-loss fix this doc calls the phase's one data-loss finding — were asserted only by the code
+implementing them.
 
 ---
 

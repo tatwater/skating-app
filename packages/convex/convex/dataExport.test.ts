@@ -169,6 +169,47 @@ describe('collect — what a bundle carries', () => {
     expect(serialized).not.toContain('REFRESH-SECRET');
   });
 
+  /**
+   * The access layer (N6d), which landed after this bundle's shape was settled — and that is the
+   * failure mode worth a test: an export is only ever wrong by *omission*, and an omission looks
+   * exactly like a person who never used the feature. Nothing errors, nothing is empty-looking, and
+   * the promise of "everything about you" quietly stops being true one phase at a time.
+   */
+  test("carries the access layer's three user-authored tables", async () => {
+    const t = harness();
+    const user = await seedUser(t, 'exporter');
+    const bodyId = await seedBody(t);
+    const putInId = (await t.run((ctx) =>
+      ctx.db.insert('putIns', {
+        waterBodyId: bodyId,
+        coord: { lat: 0.5, lng: 0.5 },
+        source: 'osm' as const,
+        status: 'visible' as const,
+        createdAt: T0,
+      }),
+    )) as Id<'putIns'>;
+    const alertId = await user.as.mutation(api.accessAlerts.create, {
+      targetType: 'put_in' as const,
+      putInId,
+      reason: 'not_plowed' as const,
+      note: 'Town stopped plowing past the bridge',
+    });
+    await user.as.mutation(api.accessAlerts.vote, {
+      accessAlertId: alertId,
+      verdict: 'still_blocked' as const,
+    });
+
+    const data = await t.query(internal.dataExport.collect, { userId: user.id });
+
+    expect(data.accessAlerts).toHaveLength(1);
+    expect(data.accessAlerts[0]?.note).toBe('Town stopped plowing past the bridge');
+    // A verdict on somebody else's claim is a contribution, not bookkeeping — the same reasoning
+    // that puts `hazardConfirmations` in the bundle.
+    expect(data.accessAlertVotes).toHaveLength(1);
+    expect(data.accessAlertVotes[0]?.verdict).toBe('still_blocked');
+    expect(data.accessPhotos).toEqual([]);
+  });
+
   test('omits the Clerk subject', async () => {
     const t = harness();
     const user = await seedUser(t, 'exporter');

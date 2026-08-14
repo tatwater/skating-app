@@ -54,7 +54,13 @@ export type AccessAlertReason = (typeof ACCESS_ALERT_REASONS)[number];
  * - `expired` — its TTL ran out, or the season turned.
  * - `resolved` — enough people said it's open again.
  * - `retracted` — it never existed (D65). Different from `resolved`, which means it did and no longer does.
- * - `hidden` — moderator-suppressed as bad content.
+ *
+ * **There is deliberately no `hidden`.** Every other moderatable thing in the app carries a
+ * `moderationStatus` axis kept separate from its lifecycle, and this one does not need it: the
+ * takedown a moderator actually performs on a bogus "gate locked" is **retraction** — the claim was
+ * never true — which `retract` already gives them, audited, on anyone's alert. A `hidden` nothing
+ * writes is worse than no status at all, because the next reader assumes there is a hide path and
+ * builds against it.
  */
 export const ACCESS_ALERT_STATUSES = [
   'active',
@@ -62,7 +68,6 @@ export const ACCESS_ALERT_STATUSES = [
   'expired',
   'resolved',
   'retracted',
-  'hidden',
 ] as const;
 export type AccessAlertStatus = (typeof ACCESS_ALERT_STATUSES)[number];
 
@@ -192,13 +197,25 @@ export function deriveAccessAlertLifecycle(
     ? Math.max(...confirms.map((v) => v.observedAt))
     : undefined;
 
-  const settled: AccessAlertStatus[] = ['official', 'retracted', 'hidden'];
+  const settled: AccessAlertStatus[] = ['official', 'retracted'];
   if (settled.includes(alert.status)) {
-    return { status: alert.status, expiresAt: alert.expiresAt, confirmCount, denyCount, lastConfirmedAt };
+    return {
+      status: alert.status,
+      expiresAt: alert.expiresAt,
+      confirmCount,
+      denyCount,
+      lastConfirmedAt,
+    };
   }
 
   if (denyCount >= ACCESS_ALERT_RESOLVE_VOTES) {
-    return { status: 'resolved', expiresAt: alert.expiresAt, confirmCount, denyCount, lastConfirmedAt };
+    return {
+      status: 'resolved',
+      expiresAt: alert.expiresAt,
+      confirmCount,
+      denyCount,
+      lastConfirmedAt,
+    };
   }
 
   const base = lastConfirmedAt ?? alert.createdAt;

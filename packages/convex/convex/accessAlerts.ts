@@ -174,7 +174,7 @@ export const vote = mutation({
     }
     const alert = await ctx.db.get(accessAlertId);
     if (!alert) throw new ConvexError('Access alert not found');
-    if (alert.status === 'retracted' || alert.status === 'hidden') {
+    if (alert.status === 'retracted') {
       throw new ConvexError('This alert is no longer open to votes');
     }
 

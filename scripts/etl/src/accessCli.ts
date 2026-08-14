@@ -111,7 +111,10 @@ function readEnvFile(url: URL): Record<string, string> {
     if (!trimmed || trimmed.startsWith('#')) continue;
     const eq = trimmed.indexOf('=');
     if (eq === -1) continue;
-    out[trimmed.slice(0, eq).trim()] = trimmed.slice(eq + 1).trim().replace(/^["']|["']$/g, '');
+    out[trimmed.slice(0, eq).trim()] = trimmed
+      .slice(eq + 1)
+      .trim()
+      .replace(/^["']|["']$/g, '');
   }
   return out;
 }

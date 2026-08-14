@@ -293,7 +293,8 @@ export function pairAccessFeatures(
   const pairedParking = new Set<string>();
   const putIns: PutInRecord[] = putInFeatures.map((candidate) => {
     const lot = nearestWithin(candidate.point, parkingFeatures, parkingRadiusM);
-    if (!lot) return { externalId: candidate.externalId, point: candidate.point, name: candidate.name };
+    if (!lot)
+      return { externalId: candidate.externalId, point: candidate.point, name: candidate.name };
     pairedParking.add(lot.externalId);
     if (candidate.isSlipway) amenitiesByParking.get(lot.externalId)?.add('boat_ramp');
     return {
