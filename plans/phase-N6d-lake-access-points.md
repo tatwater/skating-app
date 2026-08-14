@@ -5,8 +5,9 @@
 > Unpushed; prod deferred as every phase since 2.5. **`backfillCells` ran 2026-08-14** — 24,961 bodies
 > re-scored in 84 batches, closing the pass N6c had held since 2026-08-02. —
 > scoped 2026-07-30, kickoff re-read against the post-N7 codebase 2026-08-10. Founder ask, same day as
-> the scoping. **Pre-PR review 2026-08-14** — four defects fixed and a red build made green; suites now
-> core 1,839 · convex 1,240 · web 301 · mobile 95 · etl 408, with `lint` and `check-types` clean.
+> the scoping. **Pre-PR review 2026-08-14** — four defects fixed, a red build made green, and the
+> client surfaces covered; suites now core 1,839 · convex 1,242 · web 311 · mobile 96 · etl 408, with
+> `lint` and `check-types` clean.
 > See *§What the build found*, *§What the first real run found*, *§The 250 m radius, eyeballed*,
 > *§What the load found*, *§The run, completed* and *§What the pre-PR review found*.
 > **Split from** [N6c](./phase-N6c-expanded-lake-profiles.md) at scoping — it was roughly the size of
@@ -568,8 +569,31 @@ Comparable in size to Workstream B1/B2 — call it a small phase, not an afterno
 
 **Recommendation: don't, yet.** The case it targets is already served twice over — `setOfficialParking`
 takes a human's association at any distance (D72 amendment), and 840 lots already survived the gate on
-the pairing bypass. If the goal is more access coverage, the **9,737 put-in candidates with no corpus
-body** are a far larger population to understand first.
+the pairing bypass. If the goal is more access coverage, the put-in candidates with no corpus body are
+a far larger population — see below.
+
+### The 9,910 candidates that matched no body, characterised
+
+73% of everything the access pass extracted found no corpus body within `PUTIN_SHORE_RADIUS_M`. What
+they are:
+
+| tag | count | share |
+|---|---:|---:|
+| `man_made=pier` | 4,186 | 42% |
+| `natural=beach` | 4,023 | 40% |
+| **`leisure=slipway`** | **1,376** | **13%** |
+| `leisure=fishing` | 325 | 3% |
+
+By state: **MA 40% · NY 34% · ME 18%** · NH 4% · VT 1%.
+
+**82% are piers and beaches, 58% are in our two coastal states** — that is the ocean, water we
+deliberately do not carry (D4 and N7's salt-water veto). A scope boundary working as designed.
+
+**The 1,376 unmatched slipways are the actual question.** A boat ramp implies real inland water, so
+each is one of three things: a body below the N7 admission floor, a river landing (D4), or **a lake
+the corpus is missing**. Only the third says the corpus is *wrong* rather than *bounded*, and a sample
+of a few dozen against the map would settle which dominates. That is an afternoon, and it is a bigger
+lever on access coverage than the trail work above.
 
 ## What the load found — 2026-08-13
 

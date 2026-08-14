@@ -1454,6 +1454,52 @@ crescent lake is on land, and drive-time bands plus the pin-less report's town s
 a shoreline-ish point. See [`phase-N6c`](./phase-N6c-expanded-lake-profiles.md) *§The three point
 fields*.
 
+### N6d's two follow-ups — both sized, neither urgent (2026-08-14)
+
+Recorded here rather than only in the phase doc, because this is where someone looks for *what's
+next* and the phase doc is where someone looks when they're already in N6d. Both are **measured**, so
+neither needs re-deriving before a decision.
+
+**1. Trail-connectivity pairing — the principled way to widen the parking radius. ⚖ Small phase,
+~6% yield.** A lot at the end of a `highway=path` that leads to a lake *is* a trailhead; that is a
+signal rather than a radius, and it would find the mile-in case the 250 m inference cap cannot.
+
+- **De-risked:** OSM way connectivity **survives the GeoJSON export** — 29% of endpoints in Vermont's
+  40,840 trail ways are shared by 2+ ways as byte-identical coordinates, so the graph builds from a
+  coordinate hash. No node-ref extraction, no pyosmium.
+- **Capped:** a connection needs *both* ends on a trail, and only **6% of unpaired put-ins (27 of 416
+  in VT)** have a trail within 50 m. The lot side is fine at 31%; the launch side is the ceiling.
+  Extrapolates to **~150–300 new pairings across five states**, against 1,351 already found.
+- **Cost:** ~600–900k line geometries (VT alone is 642k vertices, so memory wants streaming), a
+  coordinate-hashed graph, a budget-bounded BFS with property tests for cycles and disconnection.
+- **Why not yet:** the case is already served twice — `setOfficialParking` accepts a human's
+  association at any distance (D72 amendment), and 840 lots already survived the gate on the pairing
+  bypass. See [`phase-N6d`](./phase-N6d-lake-access-points.md) *§Sized 2026-08-14*.
+
+**2. The 9,910 put-in candidates that matched no corpus body — and the 1,376 that are the actual
+question.** 73% of everything the access pass extracted found no body within `PUTIN_SHORE_RADIUS_M`.
+Characterised rather than left as a number:
+
+| tag | count | share |
+|---|---:|---:|
+| `man_made=pier` | 4,186 | 42% |
+| `natural=beach` | 4,023 | 40% |
+| **`leisure=slipway`** | **1,376** | **13%** |
+| `leisure=fishing` | 325 | 3% |
+
+By state: **MA 40% · NY 34% · ME 18%** · NH 4% · VT 1%.
+
+**82% are piers and beaches and 58% sit in our two coastal states**, so the bulk is ocean — water we
+deliberately do not carry (D4, and the N7 salt-water veto). That part is a scope boundary working as
+designed, not a gap.
+
+**The 1,376 unmatched slipways are the signal.** A boat ramp implies real inland water somebody
+launches a boat onto, so each one is a corpus body below the N7 admission floor, a river landing
+(D4), or a lake we are genuinely missing. **That third case is the one worth knowing about**, because
+it is the only one of the three that says the corpus is wrong rather than bounded — and it is a much
+larger population than the trail work above would ever reach. A sample of a few dozen against the map
+would settle which it mostly is; that is an afternoon, not a phase.
+
 ### Waiting on a blocker
 
 Grouped by *what* is blocking, because that's what determines when it moves.
