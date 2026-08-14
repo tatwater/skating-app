@@ -277,6 +277,25 @@ describe('putInsToFeatureCollection', () => {
     expect(fc.features[1]?.properties?.source).toBe('derived');
   });
 
+  /**
+   * The `osm` rung (N6d), and the name that makes a pin worth tapping rather than a dot.
+   *
+   * The rung is the load-bearing half: an OSM launch is neither `official` nor `derived`, so a layer
+   * that only styles those two draws nothing for it — which is exactly how the 3,588 imported launches
+   * were invisible on the map while the drawer described them happily.
+   */
+  it('carries the osm rung and its name through to the layer', () => {
+    const fc = putInsToFeatureCollection([
+      { coord: { lat: 44, lng: -72 }, source: 'osm', name: 'Lake Fairlee Boat Ramp' },
+      { coord: { lat: 45, lng: -73 }, source: 'osm' },
+    ]);
+    expect(fc.features[0]?.properties?.source).toBe('osm');
+    expect(fc.features[0]?.properties?.name).toBe('Lake Fairlee Boat Ramp');
+    // Absent rather than empty: a blank label would render as a nameless pin with a gap under it,
+    // where a missing key lets the layer fall back to whatever it says for an unnamed marker.
+    expect(fc.features[1]?.properties && 'name' in fc.features[1].properties).toBe(false);
+  });
+
   it('is empty for no markers', () => {
     expect(putInsToFeatureCollection([]).features).toHaveLength(0);
   });
@@ -445,6 +464,33 @@ describe('summary cards (N6c/E)', () => {
     });
     expect(belowQuorum).not.toContain('●');
     expect(belowQuorum).not.toContain('○');
+  });
+
+  /**
+   * The Hike-In chip (N6d / D87) — the browse surface, where a skater is supposed to learn this
+   * *before* committing rather than at the trailhead.
+   *
+   * **Only `hike_in` prints, and that is the rule worth pinning.** A card has two legible lines; one
+   * spent announcing that you can park at a boat ramp is a line spent saying nothing, and a chip that
+   * appears on every lake stops being a warning. Same reasoning that keeps `describeApproach` silent
+   * for a pull-off.
+   */
+  it('chips a hike-in body, and says nothing about the unremarkable approaches', () => {
+    const summary = { recentReportCount: 3, topHazardTypes: [] };
+    expect(summaryCardText({ ...base, summary, accessKind: 'hike_in' })).toContain('Hike-in');
+    for (const accessKind of ['drive_up', 'short_walk', undefined]) {
+      expect(summaryCardText({ ...base, summary, accessKind })).not.toContain('Hike-in');
+    }
+  });
+
+  /**
+   * E3 governs whether there is a card at all, and it is deliberately *not* relaxed for access: a
+   * hike-in pond nobody has reported still draws nothing here. The chip is not lost — the body's own
+   * drawer carries it regardless — and this is the seam that keeps the map from filling up with cards
+   * for lakes nothing has happened on.
+   */
+  it('does not conjure a card out of an access kind alone', () => {
+    expect(summaryCardText({ ...base, accessKind: 'hike_in' })).toBeNull();
   });
 
   /**

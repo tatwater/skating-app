@@ -351,6 +351,45 @@ describe('photoReconcile — season_expiry mode (D66)', () => {
     expect(await t.run((ctx) => ctx.db.get(loose))).toBeNull();
   });
 
+  /**
+   * The `access` phase (N6d), and it is the **only** clearing phase besides `hazards` that runs in
+   * this mode — which is the D66 carve-out expressed as a list entry in `MODES`.
+   *
+   * The escalation path matters more than it looks: this is the completing pass that runs when the
+   * one-shot scan in `expireDepartedPhotos` caps out, so a prolific contributor's access photos take
+   * *this* route rather than that one. Omitting the phase would have made the carve-out hold for
+   * ordinary accounts and silently fail for exactly the accounts with the most to lose.
+   */
+  test('keeps an access-point photo too — infrastructure is not on the seasonal clock', async () => {
+    const t = harness();
+    const { uploader, loose } = await seedDeparted(t);
+    const bodyId = await seedBody(t);
+    const onAccessPoint = await seedPhoto(t, uploader, 'on-access-point', lastSeason());
+    const putInId = await t.run((ctx) =>
+      ctx.db.insert('putIns', {
+        waterBodyId: bodyId,
+        coord: { lat: 0.5, lng: 0.5 },
+        source: 'osm' as const,
+        status: 'visible' as const,
+        createdAt: lastSeason(),
+      }),
+    );
+    await t.run((ctx) =>
+      ctx.db.insert('accessPhotos', {
+        targetType: 'put_in' as const,
+        putInId,
+        photoId: onAccessPoint,
+        uploaderId: uploader,
+        createdAt: lastSeason(),
+      }),
+    );
+
+    await runSeasonExpiry(t, uploader);
+
+    expect(await t.run((ctx) => ctx.db.get(onAccessPoint))).not.toBeNull();
+    expect(await t.run((ctx) => ctx.db.get(loose))).toBeNull();
+  });
+
   test('does not touch this season, whatever else is true', async () => {
     const t = harness();
     const { uploader } = await seedDeparted(t);

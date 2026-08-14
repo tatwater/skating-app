@@ -2,6 +2,7 @@ import { api } from '@skating/convex/api';
 import type { Id } from '@skating/convex/dataModel';
 import { chooseAccessTarget, describeApproach, isHikeIn } from '@skating/core';
 import { useMutation, useQuery } from 'convex/react';
+import type { FunctionReturnType } from 'convex/server';
 import { useState } from 'react';
 import { AccessPhotos } from './AccessPhotos';
 import { Panel } from './Panel';
@@ -42,12 +43,57 @@ export function AccessSection({ waterBodyId }: { waterBodyId: Id<'waterBodies'> 
   const access = useQuery(api.accessPoints.accessForBody, { waterBodyId });
   const vote = useMutation(api.accessAlerts.vote);
   const createAlert = useMutation(api.accessAlerts.create);
+
+  if (!access) return null;
+  return (
+    <AccessSectionView
+      access={access}
+      onVote={(accessAlertId, verdict) =>
+        vote({ accessAlertId: accessAlertId as Id<'accessAlerts'>, verdict })
+      }
+      onCreateAlert={(putInId, reason, note) =>
+        createAlert({
+          targetType: 'put_in',
+          putInId: putInId as Id<'putIns'>,
+          reason: reason as 'gate_locked',
+          ...(note ? { note } : {}),
+        })
+      }
+    />
+  );
+}
+
+/**
+ * What `accessForBody` hands back — taken from the function's own return type rather than restated.
+ *
+ * Restating it is the version that rots: the query grows a field, this shape does not, and the view
+ * silently stops seeing it. The same reason the enums are re-exported from core instead of re-typed.
+ */
+export type AccessData = FunctionReturnType<typeof api.accessPoints.accessForBody>;
+
+/**
+ * The rendering half, split out so it can be tested without a Convex client — the `HazardListView`
+ * pattern, and for the same reason: everything worth asserting here is a rule about what appears on
+ * screen, and none of it is a rule about how the data arrived.
+ */
+export function AccessSectionView({
+  access,
+  onVote,
+  onCreateAlert,
+}: {
+  access: AccessData;
+  // Opaque string ids, matching `chooseAccessTarget`'s own signature: the resolver is shared with
+  // mobile and deliberately knows nothing about Convex's branded types. The data half below is the
+  // one place that knows which table each id belongs to, so that is where the cast lives.
+  onVote: (accessAlertId: string, verdict: 'still_blocked' | 'open') => Promise<unknown>;
+  onCreateAlert: (putInId: string, reason: string, note?: string) => Promise<unknown>;
+}) {
   const [busy, setBusy] = useState<string | null>(null);
   const [reporting, setReporting] = useState(false);
   const [reason, setReason] = useState('gate_locked');
   const [note, setNote] = useState('');
 
-  if (!access || (access.putIns.length === 0 && access.parking.length === 0)) return null;
+  if (access.putIns.length === 0 && access.parking.length === 0) return null;
 
   const target = chooseAccessTarget(access.putIns, access.parking, new Set(access.blockedIds));
   const approach = target ? describeApproach(target) : null;
@@ -138,12 +184,7 @@ export function AccessSection({ waterBodyId }: { waterBodyId: Id<'waterBodies'> 
                 onClick={async () => {
                   setBusy('new');
                   try {
-                    await createAlert({
-                      targetType: 'put_in',
-                      putInId: target.putIn.id as Id<'putIns'>,
-                      reason: reason as 'gate_locked',
-                      ...(note.trim() ? { note: note.trim() } : {}),
-                    });
+                    await onCreateAlert(target.putIn.id, reason, note.trim() || undefined);
                     setReporting(false);
                     setNote('');
                   } finally {
@@ -187,7 +228,7 @@ export function AccessSection({ waterBodyId }: { waterBodyId: Id<'waterBodies'> 
                     onClick={async () => {
                       setBusy(alert.id);
                       try {
-                        await vote({ accessAlertId: alert.id, verdict: 'still_blocked' });
+                        await onVote(alert.id, 'still_blocked');
                       } finally {
                         setBusy(null);
                       }
@@ -202,7 +243,7 @@ export function AccessSection({ waterBodyId }: { waterBodyId: Id<'waterBodies'> 
                     onClick={async () => {
                       setBusy(alert.id);
                       try {
-                        await vote({ accessAlertId: alert.id, verdict: 'open' });
+                        await onVote(alert.id, 'open');
                       } finally {
                         setBusy(null);
                       }

@@ -745,17 +745,33 @@ mirror, leaving a `drive_up` chip outliving the measurement it came from.
 performs is retraction (finding 1), so a status with no writer was an invitation to build against a
 hide path that does not exist. Safe to narrow: no row has ever held it.
 
-### The test-coverage shape, stated rather than implied
+### The test-coverage shape, and what the second pass closed
 
-The backend is thoroughly covered — ~2,800 lines across `accessPoints`, `accessAlerts`, `access`,
-`accessAlert` and `accessTransform`, and they are the right tests. **Every client surface the phase
-added has none**, which breaks this repo's own convention: each Phase 9 hazard component carries a
-`.test.tsx` and N6d's four (`AccessSection` and `AccessPhotos`, web and mobile) carry nothing. Two of
-the gaps are in files that already exist and already test the exact function — `waterMap.test.ts` has
-fourteen `summaryCardText` cases and no Hike-in one; `FeedCard.test.tsx` has no `isHikeIn` case. The
-`photoReconcile` `access` phase and `durablePhotoIds`' access arm — the D66 carve-out and the
-data-loss fix this doc calls the phase's one data-loss finding — were asserted only by the code
-implementing them.
+The backend was thoroughly covered from the start — ~2,800 lines across `accessPoints`,
+`accessAlerts`, `access`, `accessAlert` and `accessTransform`. **Every client surface the phase added
+had nothing**, which breaks this repo's own convention: each Phase 9 hazard component carries a
+`.test.tsx`. And two of the gaps were in files that already existed and already tested the exact
+function — `waterMap.test.ts` had fourteen `summaryCardText` cases and no Hike-in one.
+
+Closed in the follow-up commit:
+
+- **The Hike-In chip on all three surfaces it was promised on** — `summaryCardText` (map card),
+  `FeedCard` (feed), `AccessSectionView` (drawer). The rule pinned is *only `hike_in` prints*: a chip
+  that appears on every lake stops being a warning.
+- **The `osm` rung reaching the map layer**, both clients. This is the one that had already failed
+  once — an OSM launch is neither `official` nor `derived`, so a layer styling those two drew nothing
+  for 3,588 imported launches.
+- **The D66 carve-out, in both destructive paths.** `expireDepartedPhotos` and `photoReconcile`'s
+  `access` phase — the fix this doc calls the phase's one data-loss finding — were asserted only by
+  the code implementing them. The `access` phase matters more than it looks: it is the *escalation*
+  path, so a prolific contributor's access photos take it rather than the one-shot scan.
+- **The never-hide invariant, as a render test.** `AccessSection` got the repo's view/data split
+  (the `HazardListView` pattern) so a blocked launch staying on screen, named and routable, is now
+  something a refactor cannot quietly break.
+
+**Still uncovered, named rather than implied:** the three remaining components — `AccessPhotos` (both
+clients) and mobile's `AccessSection` — plus the lake editor's `AccessTool` and the alert-posting
+form's submit path. All would want the same view/data split first.
 
 ---
 
