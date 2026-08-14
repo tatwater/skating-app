@@ -537,6 +537,39 @@ the evidence that it has to be, rather than a limitation we settled for.
 > wants line geometry and a connectivity walk, so it is a fast-follow rather than this phase — but it
 > is the right shape, and it should not be confused with "turn the radius up".
 
+### ⚖ Sized 2026-08-14, and the yield is smaller than that paragraph implies
+
+Measured rather than estimated, because the paragraph above reads like an unlock and the data says
+otherwise.
+
+**The blocker is de-risked.** OSM way connectivity **survives the GeoJSON export**: in Vermont's 40,840
+trail ways, **29% of endpoints are shared by two or more ways as byte-identical coordinates**. So the
+graph can be built by hashing endpoint coordinates — no node-ref extraction, no pyosmium, no custom
+libosmium binding. That was the piece that could have made this a week.
+
+**But the yield is capped by OSM's own trail coverage, and it is low:**
+
+| | VT |
+|---|---:|
+| unpaired put-ins | 416 |
+| …with a trail within 50 m | **27 (6%)** |
+| unpaired lots | 8,724 |
+| …with a trail within 50 m | 2,731 (31%) |
+
+A connection needs **both** ends on a trail, so **the launch side is the ceiling and it is 6%**.
+Extrapolated, that is on the order of **150–300 new pairings across five states** — against 1,351
+already found, so perhaps +11–22%, and only for lots that a walk actually connects.
+
+**Cost:** ~600–900k line geometries across five states (VT alone is 40,840 ways / 642k vertices, so
+memory wants streaming rather than a naïve load), a coordinate-hashed connectivity graph, a
+budget-bounded BFS with property tests for cycles and disconnection, plus a handful of extra ORS legs.
+Comparable in size to Workstream B1/B2 — call it a small phase, not an afternoon.
+
+**Recommendation: don't, yet.** The case it targets is already served twice over — `setOfficialParking`
+takes a human's association at any distance (D72 amendment), and 840 lots already survived the gate on
+the pairing bypass. If the goal is more access coverage, the **9,737 put-in candidates with no corpus
+body** are a far larger population to understand first.
+
 ## What the load found — 2026-08-13
 
 **The gate rejects 83%, and the `paired` bypass rescues the case the founder asked about.** Over the
