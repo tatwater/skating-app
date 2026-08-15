@@ -115,6 +115,26 @@ export function destinationPoint(
 }
 
 /**
+ * The bearing from `origin` to `target`, in degrees clockwise from north, normalized to `[0, 360)` —
+ * the **inverse of `destinationPoint`**, and the primitive N6d's compass-side put-in labels
+ * ("North launch") derive from.
+ *
+ * Flat-earth around the origin, matching `destinationPoint` and `toLocalMetres` rather than the
+ * great-circle initial bearing, and that consistency is the point: at the sub-kilometre scale this
+ * serves (a launch off a lake's interior point) the two differ by far less than the uncertainty in
+ * where the "centre" of a lake even is, while a mixed pair would not round-trip.
+ *
+ * Returns `0` for coincident points — arbitrary, but a label has to say something, and "N" is the
+ * conventional degenerate answer rather than a `NaN` from `atan2(0, 0)`.
+ */
+export function bearingDegrees(origin: LatLng, target: LatLng): number {
+  const east = (target.lng - origin.lng) * Math.cos(origin.lat * DEG);
+  const north = target.lat - origin.lat;
+  if (east === 0 && north === 0) return 0;
+  return (((Math.atan2(east, north) / DEG) % 360) + 360) % 360;
+}
+
+/**
  * Project a GeoJSON `[lng, lat]` position into local metres relative to `origin`
  * (equirectangular / flat-earth around the origin). Exact enough at lake / parking-lot
  * scale — sub-1% distance error out to several km, far tighter than the ~300 m buffer this

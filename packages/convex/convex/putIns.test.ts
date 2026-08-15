@@ -224,3 +224,82 @@ describe('putIns.setOfficial / hide (auth + audit)', () => {
     ).rejects.toThrow(/not found/i);
   });
 });
+
+describe('OSM-derived launches on the map (N6d)', () => {
+  /**
+   * ⚠ Caught in pre-PR review, and it would have shipped silently. `loadPutInRows` bucketed rows as
+   * `official` or `derived`; an `osm` row is neither, so the **3,588 launches the access ETL imported
+   * were invisible to the map's marker query** while the drawer — which reads `accessForBody`
+   * directly — described them perfectly happily. The most visible artefact of the phase, missing.
+   */
+  test('an osm put-in renders, carrying its OSM name', async () => {
+    const t = convexTest(schema, modules);
+    const body = await seedBody(t);
+    await t.run((ctx) =>
+      ctx.db.insert('putIns', {
+        waterBodyId: body,
+        coord: { lat: 44.02, lng: -72 },
+        name: 'Lake Fairlee Boat Ramp',
+        source: 'osm' as const,
+        status: 'visible' as const,
+        createdAt: Date.now(),
+      }),
+    );
+
+    const markers = await t.query(api.putIns.listForBody, { waterBodyId: body });
+    expect(markers).toHaveLength(1);
+    expect(markers[0]?.source).toBe('osm');
+    expect(markers[0]?.name).toBe('Lake Fairlee Boat Ramp');
+  });
+
+  /** The ladder, on screen: an operator's pin outranks a mapped slipway. */
+  test('an official marker sorts ahead of an osm one', async () => {
+    const t = convexTest(schema, modules);
+    const body = await seedBody(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert('putIns', {
+        waterBodyId: body,
+        coord: { lat: 44.02, lng: -72 },
+        source: 'osm' as const,
+        status: 'visible' as const,
+        createdAt: Date.now(),
+      });
+      await ctx.db.insert('putIns', {
+        waterBodyId: body,
+        coord: { lat: 44.03, lng: -72 },
+        name: 'The Real Landing',
+        source: 'official' as const,
+        status: 'visible' as const,
+        createdAt: Date.now(),
+      });
+    });
+
+    const markers = await t.query(api.putIns.listForBody, { waterBodyId: body });
+    expect(markers.map((m) => m.source)).toEqual(['official', 'osm']);
+    expect(markers[0]?.name).toBe('The Real Landing');
+  });
+
+  /** A moderator's `hide` must suppress an imported launch exactly as it suppresses any other. */
+  test('a hidden coord suppresses an osm marker', async () => {
+    const t = convexTest(schema, modules);
+    const body = await seedBody(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert('putIns', {
+        waterBodyId: body,
+        coord: { lat: 44.02, lng: -72 },
+        source: 'osm' as const,
+        status: 'visible' as const,
+        createdAt: Date.now(),
+      });
+      await ctx.db.insert('putIns', {
+        waterBodyId: body,
+        coord: { lat: 44.02, lng: -72 },
+        source: 'derived' as const,
+        status: 'hidden' as const,
+        createdAt: Date.now(),
+      });
+    });
+
+    expect(await t.query(api.putIns.listForBody, { waterBodyId: body })).toHaveLength(0);
+  });
+});

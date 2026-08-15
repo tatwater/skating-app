@@ -40,7 +40,17 @@ export type ImportRunKind =
   | 'r2_mirror'
   | 'bathymetry_join'
   | 'bathymetry_build'
-  | 'bathymetry_tiles';
+  | 'bathymetry_tiles'
+  /**
+   * `scripts/etl load-access` — the N6d access pass, in two kinds because it runs in two stages with
+   * a hard order between them.
+   *
+   * A put-in references its lot by OSM id, so the lots must be rows first. Sharing one kind would
+   * make the signature of running them out of order (`parkingMissing` on every put-in) look like a
+   * data quality finding rather than a sequencing mistake.
+   */
+  | 'access_parking'
+  | 'access_put_ins';
 
 /** A named tally. Each loader names its own; see the table comment for why they aren't columns. */
 export interface RunCount {

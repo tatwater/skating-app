@@ -20,7 +20,7 @@ import { internalMutation } from './_generated/server';
 import { reclaimExportBlob } from './lib/exportBundles';
 import {
   deletePhotoAndBlobs,
-  hazardPhotoIds,
+  durablePhotoIds,
   PHOTO_ORPHAN_GRACE_MS,
   referencedPhotoIds,
 } from './lib/photoOrphans';
@@ -309,7 +309,7 @@ export const expireDepartedPhotos = internalMutation({
 
     const target = season ?? seasonOf(Date.now());
     const seasonStart = seasonStartMs(target);
-    const keep = await hazardPhotoIds(ctx, userId, scanCap);
+    const keep = await durablePhotoIds(ctx, userId, scanCap);
     const page = await ctx.db
       .query('photos')
       .withIndex('by_uploader', (q) => q.eq('uploaderId', userId))

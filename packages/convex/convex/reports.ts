@@ -622,6 +622,8 @@ export const seasonsForBody = query({
 interface BodyInfo {
   name: string;
   centroid: LatLng;
+  /** The body's easiest known approach (N6d/D144) — drives the feed card's Hike-In chip. */
+  accessKind?: string;
 }
 
 /** Resolve a report's surviving water-body name + centroid, following `mergedIntoId` (D36); cached. */
@@ -640,6 +642,9 @@ async function bodyInfoFor(
     name: body?.name ?? 'Unknown water body',
     // A resolvable body always has a centroid; the fallback keeps the type total for a dangling ref.
     centroid: body?.centroid ?? { lat: 0, lng: 0 },
+    // The Hike-In chip (N6d/D87). Free here — the body doc is already loaded and cached per query, so
+    // a page of thirty reports over five lakes costs five reads either way.
+    ...(body?.accessKind !== undefined ? { accessKind: body.accessKind } : {}),
   };
   cache.set(waterBodyId, info);
   return info;
@@ -700,6 +705,7 @@ async function toFeedCard(
     author: await authorFor(ctx, r.authorId, caches.authors, now),
     blocked: sets.blocked.has(r.authorId),
     isFavorite: sets.favorites.has(r.waterBodyId),
+    ...(body.accessKind !== undefined ? { accessKind: body.accessKind } : {}),
   };
 }
 

@@ -49,6 +49,24 @@ describe('FeedCard', () => {
     expect(screen.queryByText('Burlington, VT')).not.toBeInTheDocument();
   });
 
+  /**
+   * D87's third surface, and the feed is the one that most needs it: this is where the **drive-time**
+   * filter lives, so a hike-in lake sitting inside a "within 60 minutes" band is not the trip a
+   * skater thinks they are being offered. Shown beside the drive time, never folded into it — a
+   * 55-minute drive plus a 25-minute walk is not an 80-minute drive.
+   */
+  it('shows the Hike-In chip, and only for a hike-in body', () => {
+    const { rerender } = render(
+      <FeedCard data={{ ...DATA, accessKind: 'hike_in' }} now={NOW} onOpen={() => {}} />,
+    );
+    expect(screen.getByText('Hike-in')).toBeInTheDocument();
+
+    for (const accessKind of ['drive_up', 'short_walk', undefined]) {
+      rerender(<FeedCard data={{ ...DATA, accessKind }} now={NOW} onOpen={() => {}} />);
+      expect(screen.queryByText('Hike-in')).not.toBeInTheDocument();
+    }
+  });
+
   it('fires onOpen when the card is clicked (tap → drawer)', () => {
     const onOpen = vi.fn();
     render(<FeedCard data={DATA} now={NOW} onOpen={onOpen} />);

@@ -102,6 +102,23 @@ crons.interval(
 crons.interval('sweep orphan photos', { hours: 24 }, internal.storageHygiene.sweepOrphanPhotos, {});
 
 /**
+ * Lapse access alerts whose TTL ran out, or whose season did (N6d / D73).
+ *
+ * Six-hourly rather than daily, because an alert is read at exactly the moment somebody is deciding
+ * whether to drive somewhere: a road that reopened is a wasted trip in one direction and a stale
+ * warning is a lake nobody visits in the other, and neither deserves to hang for most of a day.
+ *
+ * **The season boundary needs no cron of its own.** Every write clamps expiry to
+ * `min(TTL, season end)`, so a rollover is simply a batch whose expiry has passed — one mechanism, one
+ * sweep, and no annual job that runs correctly for the first time eleven months after it was written.
+ *
+ * Moderator-pinned `official` alerts are exempt (founder call) and the sweep cannot reach them: they
+ * sit under a different `status` prefix of `by_status_expires_at`, so this is a structural exemption
+ * rather than a filter somebody has to remember.
+ */
+crons.interval('expire access alerts', { hours: 6 }, internal.accessAlerts.expireLapsedAlerts, {});
+
+/**
  * A departed skater's photos, expired with the season they were taken in (D66/N5a).
  *
  * Daily rather than annually, even though the clock it enforces turns over once a year: accounts are

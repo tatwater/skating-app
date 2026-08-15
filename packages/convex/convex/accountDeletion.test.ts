@@ -1135,6 +1135,49 @@ describe('flags: the row is about content and survives, the note is prose and do
   });
 });
 
+/**
+ * Access alerts (N6d / D73) — the same seam, on a table added long after this file was written.
+ *
+ * The gap this closes is the ordinary one: a phase introduces a user-authored free-text surface and
+ * nothing in the deletion sweep knows it exists, so the D62 promise quietly stops covering it. Nothing
+ * looks wrong from the outside, which is why it is worth a test rather than a comment — the row still
+ * renders, the account still tombstones, and only the sentence they typed is still standing.
+ */
+describe('access alerts: the observation survives its author, the sentence does not', () => {
+  test("a departing skater's alert keeps its reason and loses its note", async () => {
+    const t = harness();
+    const bodyId = await seedBody(t);
+    const putInId = (await t.run((ctx) =>
+      ctx.db.insert('putIns', {
+        waterBodyId: bodyId,
+        coord: { lat: 0.5, lng: 0.5 },
+        source: 'osm' as const,
+        status: 'visible' as const,
+        createdAt: T0,
+      }),
+    )) as Id<'putIns'>;
+    const user = await seedUser(t, 'leaver');
+
+    const alertId = await user.as.mutation(api.accessAlerts.create, {
+      targetType: 'put_in' as const,
+      putInId,
+      reason: 'gate_locked' as const,
+      note: 'Chain across the road since the logging trucks came through',
+    });
+
+    await finalize(t, user.id);
+
+    const alert = await t.run((ctx) => ctx.db.get(alertId));
+    // Kept: somebody found that gate locked, and with the author pointer tombstoned there is no
+    // person left in the row. Erasing it would take a fact from the next skater and give the one who
+    // left nothing back — the argument the whole redaction design rests on.
+    expect(alert).not.toBeNull();
+    expect(alert?.reason).toBe('gate_locked');
+    expect(alert?.putInId).toBe(putInId);
+    expect(alert?.note).toBeUndefined();
+  });
+});
+
 describe('bucket 3 — keep, severed from identity (D62)', () => {
   const trackPath = {
     type: 'LineString' as const,

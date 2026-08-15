@@ -9,6 +9,8 @@
  */
 
 import type { ApiFromModules, FilterApi, FunctionReference } from "convex/server";
+import type * as accessAlerts from "../accessAlerts.js";
+import type * as accessPoints from "../accessPoints.js";
 import type * as accountDeletion from "../accountDeletion.js";
 import type * as admin from "../admin.js";
 import type * as adminAreas from "../adminAreas.js";
@@ -32,6 +34,7 @@ import type * as hazardWeather from "../hazardWeather.js";
 import type * as http from "../http.js";
 import type * as importRuns from "../importRuns.js";
 import type * as isochrones from "../isochrones.js";
+import type * as lib_accessLimits from "../lib/accessLimits.js";
 import type * as lib_activityConnections from "../lib/activityConnections.js";
 import type * as lib_auth from "../lib/auth.js";
 import type * as lib_authorView from "../lib/authorView.js";
@@ -81,6 +84,8 @@ import type * as weather from "../weather.js";
 import type * as weatherAlerts from "../weatherAlerts.js";
 
 declare const fullApi: ApiFromModules<{
+  "accessAlerts": typeof accessAlerts;
+  "accessPoints": typeof accessPoints;
   "accountDeletion": typeof accountDeletion;
   "admin": typeof admin;
   "adminAreas": typeof adminAreas;
@@ -104,6 +109,7 @@ declare const fullApi: ApiFromModules<{
   "http": typeof http;
   "importRuns": typeof importRuns;
   "isochrones": typeof isochrones;
+  "lib/accessLimits": typeof lib_accessLimits;
   "lib/activityConnections": typeof lib_activityConnections;
   "lib/auth": typeof lib_auth;
   "lib/authorView": typeof lib_authorView;

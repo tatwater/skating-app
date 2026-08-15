@@ -1,3 +1,5 @@
+export * from './access';
+export * from './accessAlert';
 export * from './age';
 export * from './authRoute';
 export * from './badges';

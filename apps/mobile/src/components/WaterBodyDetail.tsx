@@ -20,6 +20,7 @@ import { Button, H4, Paragraph, Spinner, Text, XStack, YStack } from 'tamagui';
 import { cacheBody } from '../lib/bodyCache';
 import { env } from '../lib/env';
 import { cacheReports } from '../lib/reportCache';
+import { AccessSection } from './AccessSection';
 import { AlertStrip } from './AlertStrip';
 import { BountyForm } from './BountyForm';
 import { BountyList } from './BountyList';
@@ -180,6 +181,9 @@ export function WaterBodyDetail({
           </Paragraph>
         ) : null}
         <DirectionsButton waterBodyId={result.body._id} />
+        {/* How you get onto the ice (N6d) — beneath the directions button it explains, and absent on
+            the great majority of bodies OSM has never mapped access for. */}
+        <AccessSection waterBodyId={result.body._id} />
       </YStack>
 
       {formOpen ? (

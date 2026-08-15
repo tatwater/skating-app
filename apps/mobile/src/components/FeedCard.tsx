@@ -50,6 +50,12 @@ export function FeedCard({
               {card.locationSecondary}
             </Text>
           ) : null}
+          {/* D87's third surface — beside the drive time, never folded into it (D72 amendment). */}
+          {card.isHikeIn ? (
+            <Text color="$foregroundMuted" fontSize={12}>
+              Hike-in
+            </Text>
+          ) : null}
         </YStack>
         <Text color="$foregroundMuted" fontSize={12}>
           {card.relativeTime}

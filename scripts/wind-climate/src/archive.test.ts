@@ -77,6 +77,13 @@ describe('missingResponses — the whole incremental story', () => {
 });
 
 describe('estimateFetchMinutes', () => {
+  // The pacing the measured runs were ACTUALLY paced at. Two cases below reproduce observed runs —
+  // the 2026-08-09 snapshot, 5,907 requests over 8.55 h — so they have to use that run's delay, not
+  // whatever `WTK_REQUEST_DELAY_MS` happens to be now. It went 1100 → 5000 ms once the endpoint's
+  // 10,000/day cap turned out to be the binding limit, and these broke: a calibration test that
+  // drifts with a live tuning constant is no longer calibrating against anything.
+  const MEASURED_RUN_DELAY_MS = 1100;
+
   it('counts response latency, not just the pacing delay', () => {
     // ⚠ The reason this function exists. The old loader printed "~96 min at 1/s" for a job that
     // takes 7.7 hours, because it counted only the deliberate pause and ignored the 5.3 s response.
@@ -84,8 +91,8 @@ describe('estimateFetchMinutes', () => {
     // The handoff hand-computed **7.7 h** for 5,225 requests, independently and a week earlier.
     // Landing on the same figure from a measured latency is the cross-check worth having here.
     const requests = 5225;
-    const honest = estimateFetchMinutes(requests, WTK_MEASURED_LATENCY_MS, WTK_REQUEST_DELAY_MS);
-    const pacingOnly = estimateFetchMinutes(requests, 0, WTK_REQUEST_DELAY_MS);
+    const honest = estimateFetchMinutes(requests, WTK_MEASURED_LATENCY_MS, MEASURED_RUN_DELAY_MS);
+    const pacingOnly = estimateFetchMinutes(requests, 0, MEASURED_RUN_DELAY_MS);
     expect(honest / 60).toBeGreaterThan(7);
     expect(honest / 60).toBeLessThan(8.5);
     // 4.03 s of latency against 1.10 s of pacing — the delay is under a quarter of the truth, which
@@ -107,7 +114,7 @@ describe('estimateFetchMinutes', () => {
   it('would have estimated the real run to within a quarter', () => {
     // The actual snapshot: 5,907 requests, 8.55 h. An estimate that lands here is doing its job;
     // the failure this function replaced was off by 5×.
-    const hours = estimateFetchMinutes(5907, WTK_MEASURED_LATENCY_MS, WTK_REQUEST_DELAY_MS) / 60;
+    const hours = estimateFetchMinutes(5907, WTK_MEASURED_LATENCY_MS, MEASURED_RUN_DELAY_MS) / 60;
     expect(hours).toBeGreaterThan(7);
     expect(hours).toBeLessThan(10.7);
   });

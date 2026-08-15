@@ -25,6 +25,18 @@ describe('putInsToFeatureCollection', () => {
     expect(fc.features[0]?.properties?.source).toBe('official');
   });
 
+  /** The `osm` rung and its name (N6d/A3) — the same assertion web's helper carries, so the two
+   *  clients cannot drift on what an imported launch looks like to a layer. */
+  it('carries the osm rung and its name through to the layer', () => {
+    const fc = putInsToFeatureCollection([
+      { coord: { lat: 44, lng: -72 }, source: 'osm', name: 'Town Beach' },
+      { coord: { lat: 45, lng: -73 }, source: 'osm' },
+    ]);
+    expect(fc.features[0]?.properties?.source).toBe('osm');
+    expect(fc.features[0]?.properties?.name).toBe('Town Beach');
+    expect(fc.features[1]?.properties && 'name' in fc.features[1].properties).toBe(false);
+  });
+
   it('is empty for no markers', () => {
     expect(putInsToFeatureCollection([]).features).toHaveLength(0);
   });

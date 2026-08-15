@@ -13,7 +13,10 @@ import {
   NHD_SELECT,
   nhdExtractArgs,
   ONE_ACRE_SQ_KM,
+  OSM_ACCESS_TAGS,
   OSM_WATER_TAGS,
+  osmAccessExportArgs,
+  osmAccessFilterArgs,
   osmExportArgs,
   osmFilterArgs,
   THREE_DHP_SELECT,
@@ -50,6 +53,49 @@ describe('the OSM filter', () => {
     expect(args).toContain('--geometry-types=polygon');
     expect(args.join(' ')).toContain('-a type,id');
     expect(args.join(' ')).toContain('print_record_separator=false');
+  });
+});
+
+describe('the access extract (N6d B1)', () => {
+  it('keeps the four access tag families and nothing from the water pass', () => {
+    expect([...OSM_ACCESS_TAGS]).toEqual([
+      'leisure=slipway',
+      'waterway=slipway',
+      'amenity=parking',
+      'amenity=toilets',
+      'natural=beach',
+      'leisure=fishing',
+      'man_made=pier',
+    ]);
+    // The two passes are over the same extract and must not fight over the same features.
+    for (const tag of OSM_ACCESS_TAGS) expect(OSM_WATER_TAGS).not.toContain(tag);
+  });
+
+  it('carries no trail tags — ORS routes those ways, so a route is the trail evidence', () => {
+    // Correction 9. Extracting `highway=path` / `route=hiking` would be a second, larger geometry
+    // class parsed to answer a question the routing step already answers — and it is the only thing
+    // that would have forced line handling into this pipeline.
+    const joined = OSM_ACCESS_TAGS.join(' ');
+    expect(joined).not.toContain('highway');
+    expect(joined).not.toContain('route=hiking');
+    expect(osmAccessExportArgs('/f.pbf', '/o').join(' ')).not.toContain('line');
+  });
+
+  it('exports points as well as polygons, which the water pass never needed', () => {
+    // The failure this pins is silent: a toilet block is a node and a slipway is a node about as
+    // often as it is a way, and `osmium export` emits fewer features rather than failing — so
+    // `--geometry-types=polygon` here would report success over an extract missing most of its
+    // put-in candidates.
+    const args = osmAccessExportArgs('/f.pbf', '/out.geojsonseq');
+    expect(args).toContain('--geometry-types=point,polygon');
+    expect(args.join(' ')).toContain('-a type,id');
+  });
+
+  it('filters with -t, exactly as the water pass does', () => {
+    const args = osmAccessFilterArgs('/in.pbf', '/out.pbf');
+    expect(args).toContain('-t');
+    expect(args).not.toContain('-R');
+    expect(args).toContain('--overwrite');
   });
 });
 

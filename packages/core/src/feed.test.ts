@@ -231,3 +231,34 @@ describe('buildFeedCardView', () => {
     expect(view.blocked).toBe(true);
   });
 });
+
+describe('the Hike-In chip on the feed card (N6d / D87)', () => {
+  const base = {
+    reportId: 'r1',
+    waterBodyId: 'w1',
+    bodyName: 'Test Pond',
+    skateEndTime: Date.UTC(2027, 0, 10),
+    iceTypes: [],
+    surfaceTags: [],
+    photoThumbUrls: [],
+    author: { displayName: 'A', username: 'a' },
+    blocked: false,
+  };
+
+  /**
+   * The drive-time filter is what this corrects. A skater filtering to "within 60 minutes" is
+   * filtering on *drive* time, and a hike-in lake inside that band is not the trip they think they
+   * are being offered.
+   */
+  it('only hike_in chips — the other kinds are unremarkable', () => {
+    expect(buildFeedCardView({ ...base, accessKind: 'hike_in' }, base.skateEndTime).isHikeIn).toBe(
+      true,
+    );
+    for (const kind of ['drive_up', 'short_walk', undefined]) {
+      expect(
+        buildFeedCardView({ ...base, ...(kind ? { accessKind: kind } : {}) }, base.skateEndTime)
+          .isHikeIn,
+      ).toBe(false);
+    }
+  });
+});

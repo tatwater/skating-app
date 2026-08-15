@@ -18,6 +18,7 @@ import { Link } from '@tanstack/react-router';
 import { usePaginatedQuery, useQuery } from 'convex/react';
 import { useEffect, useState } from 'react';
 import { env } from '../lib/env';
+import { AccessSection } from './AccessSection';
 import { AlertStrip } from './AlertStrip';
 import { WaterBodyModeratorControls } from './admin/WaterBodyModeratorControls';
 import { BountyForm } from './BountyForm';
@@ -201,6 +202,10 @@ export function WaterBodyDetail({
         {/* Official NWS alerts (N6c/B5) first — a warning from the local forecast office outranks
             both our observations and anybody's forecast, so it sits above both strips. */}
         <AlertStrip waterBodyId={result.body._id} reveal={reveal} />
+        {/* How you get onto the ice (N6d) — above the weather, because it decides whether the trip is
+            possible at all, where the weather decides whether it is worth making. Renders nothing on
+            the great majority of bodies OSM has never mapped access for. */}
+        <AccessSection waterBodyId={result.body._id} />
         {/* The forward forecast (N6c/B5b) — the other half of the weather-since timeline, and the
             half that answers "should I bother driving". Above the season filter so it sits with the
             body's current state rather than inside its history. */}

@@ -20,6 +20,7 @@ import { ConvexError, v } from 'convex/values';
 import type { MultiPolygon, Polygon } from 'geojson';
 import type { Doc, Id } from './_generated/dataModel';
 import { mutation, type QueryCtx, query } from './_generated/server';
+import { recomputeAccessKind } from './accessPoints';
 import { requireContributorRole } from './lib/auth';
 import { latLng } from './lib/validators';
 
@@ -31,7 +32,16 @@ const HIDE_SUPPRESS_METERS = DEFAULT_PUTIN_MERGE_METERS;
 /** A put-in marker as the map consumes it: a routable coord, its provenance, and (derived) its weight. */
 export interface PutInMarker {
   coord: LatLng;
-  source: 'derived' | 'official';
+  source: 'derived' | 'osm' | 'official';
+  /**
+   * The launch's name (N6d/A3) — OSM's where it has one, else the derived compass label.
+   *
+   * *"Lake Fairlee Boat Ramp"* is what makes a pin worth tapping rather than a dot, and it is the
+   * headline of the phase's A3: OSM already names these features, so the names arrive free with the
+   * geometry. Absent on `derived` clusters, which are a statistical artefact of report points and have
+   * nothing to be named after.
+   */
+  name?: string;
   reportCount?: number;
   /**
    * When somebody was last known to get on the ice here — the newest `skateEndTime` among the reports
@@ -72,9 +82,10 @@ async function loadPutInRows(ctx: QueryCtx, waterBodyId: Id<'waterBodies'>) {
     .withIndex('by_water_body', (q) => q.eq('waterBodyId', waterBodyId))
     .collect();
   const official = rows.filter((r) => r.source === 'official' && r.status === 'visible');
+  const osm = rows.filter((r) => r.source === 'osm' && r.status === 'visible');
   const persisted = rows.filter((r) => r.source === 'derived' && r.status === 'visible');
   const hidden = rows.filter((r) => r.status === 'hidden');
-  return { official, persisted, hidden };
+  return { official, osm, persisted, hidden };
 }
 
 /** Is `coord` within the suppression radius of any moderator-hidden coord? */
@@ -93,7 +104,7 @@ export const listForBody = query({
   handler: async (ctx, { waterBodyId }): Promise<PutInMarker[]> => {
     const body = await ctx.db.get(waterBodyId);
     if (!body) return [];
-    const { official, persisted, hidden } = await loadPutInRows(ctx, waterBodyId);
+    const { official, osm, persisted, hidden } = await loadPutInRows(ctx, waterBodyId);
 
     // Derived clusters from the visible reports that didn't opt out of showing a put-in (decision #7).
     //
@@ -123,8 +134,24 @@ export const listForBody = query({
     // Official markers first (priority styling), unless a hidden coord suppresses them.
     for (const o of official) {
       if (!isSuppressed(o.coord, hidden)) {
-        markers.push({ coord: o.coord, source: 'official' });
+        markers.push({ coord: o.coord, source: 'official', ...(o.name ? { name: o.name } : {}) });
       }
+    }
+
+    // Then the OSM-derived launches (N6d). **Between `official` and `derived`, matching the
+    // `PUTIN_SOURCES` ladder**: a mapped slipway is better evidence than a cluster of report points and
+    // worse than an operator's pin. Without this bucket they render nowhere — they are neither
+    // `official` nor `derived`, so the 3,588 launches the access ETL imported would be invisible on the
+    // map while the drawer happily described them.
+    for (const row of osm) {
+      if (isSuppressed(row.coord, hidden)) continue;
+      if (markers.some((m) => haversineMeters(m.coord, row.coord) <= HIDE_SUPPRESS_METERS))
+        continue;
+      markers.push({
+        coord: row.coord,
+        source: 'osm',
+        ...(row.name ? { name: row.name } : {}),
+      });
     }
 
     // Then persisted derived markers — access points whose source report has been erased (a departed
@@ -185,6 +212,13 @@ export const setOfficial = mutation({
       metadata: { coord, putInId: id },
       createdAt: Date.now(),
     });
+    // The body's denormalized `accessKind` is derived from its visible put-ins, so every mutation
+    // that changes that set owes it a recompute (PR #43 review). A fresh `official` marker carries no
+    // measured approach, so today this is usually a no-op — `bodyAccessKind` ignores an unknown kind.
+    // It is here because the *invariant* is what keeps the chip honest, and the alternative is a rule
+    // that holds by luck: the moment this mutation learns to take an approach, or the ladder learns
+    // to score an unmeasured official marker, the omission becomes a wrong chip nobody looks for.
+    await recomputeAccessKind(ctx, waterBodyId);
     return id;
   },
 });
@@ -218,6 +252,11 @@ export const hide = mutation({
       metadata: { coord, putInId: id },
       createdAt: Date.now(),
     });
+    // ⚠ **This one is not a no-op, and it is the case the review found.** A hide suppresses every
+    // launch within `DEFAULT_PUTIN_MERGE_METERS` of the coord, so hiding a lake's only hike-in launch
+    // has to take the Hike-In chip with it — otherwise the map draws no marker while the card still
+    // warns about a walk to a launch that is no longer there.
+    await recomputeAccessKind(ctx, waterBodyId);
     return id;
   },
 });

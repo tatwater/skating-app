@@ -65,7 +65,7 @@ import { deletePhotoAndBlobs, PHOTO_ORPHAN_GRACE_MS } from './lib/photoOrphans';
  * style choice: a flag cleared before it is set would make a referenced photo look unreferenced, which
  * is the one mistake this whole file exists to avoid.
  */
-const PHASES = ['mark', 'reports', 'hazards', 'sweep'] as const;
+const PHASES = ['mark', 'reports', 'hazards', 'access', 'sweep'] as const;
 type Phase = (typeof PHASES)[number];
 
 /**
@@ -94,7 +94,11 @@ const MODES = {
     tooNew: (photo: Doc<'photos'>, now: number) => photo.createdAt >= now - PHOTO_ORPHAN_GRACE_MS,
   },
   season_expiry: {
-    phases: ['mark', 'hazards', 'sweep'],
+    // `access` runs here as well as in `orphan`, and it is the **only** clearing phase besides
+    // `hazards` that does. That is N6d's carve-out from D66 stated as a list entry: an access-point
+    // photo documents infrastructure rather than conditions, so the argument that expires a report
+    // photo at the season boundary does not reach it — a parking lot looks the same next November.
+    phases: ['mark', 'hazards', 'access', 'sweep'],
     mark: 'seasonExpiryCandidate',
     /**
      * From the season still running ⇒ not due yet. `takenAt` where the skater kept EXIF (D42), else
@@ -261,6 +265,8 @@ async function runPhase(
       return clearFromReports(ctx, uploaderId, cursor, referrerPage, mode);
     case 'hazards':
       return clearFromHazards(ctx, uploaderId, cursor, referrerPage, mode);
+    case 'access':
+      return clearFromAccessPoints(ctx, uploaderId, cursor, referrerPage, mode);
     case 'sweep':
       return sweepStillMarked(ctx, uploaderId, cursor, photoPage, now, mode);
   }
@@ -328,7 +334,7 @@ async function clearFromReports(
   return { ...continuation(page), touched };
 }
 
-/** Phase 3 — the same, for hazards. The **only** clearing phase `season_expiry` runs. */
+/** Phase 3 — the same, for hazards. `season_expiry` runs this one and `access`, never `reports`. */
 async function clearFromHazards(
   ctx: MutationCtx,
   uploaderId: Id<'profiles'>,
@@ -346,6 +352,37 @@ async function clearFromHazards(
     for (const photoId of hazard.photoIds) {
       if (await clearMark(ctx, photoId, uploaderId, mode)) touched++;
     }
+  }
+  return { ...continuation(page), touched };
+}
+
+/**
+ * Phase 4 — the same, for access-point attachments (N6d Workstream D).
+ *
+ * **Runs in both modes**, which no other clearing phase does, and the asymmetry is the policy rather
+ * than an oversight. `reports` is `orphan`-only because a surviving report must not protect a departed
+ * skater's photo (D66). This one runs everywhere because an access photo is *infrastructure*: it is
+ * not on the seasonal clock at all, so neither pass may sweep it.
+ *
+ * It reads `accessPhotos` by **uploader**, not by access point, and that is the whole reason the join
+ * table exists. The put-in a photo hangs off was created by the ETL, so a scan keyed on the uploader's
+ * own access points would find nothing and every access photo would be swept as an orphan.
+ */
+async function clearFromAccessPoints(
+  ctx: MutationCtx,
+  uploaderId: Id<'profiles'>,
+  cursor: string | undefined,
+  size: number,
+  mode: ReconcileMode,
+): Promise<PhaseResult> {
+  const page = await ctx.db
+    .query('accessPhotos')
+    .withIndex('by_uploader', (q) => q.eq('uploaderId', uploaderId))
+    .paginate({ cursor: cursor ?? null, numItems: size });
+
+  let touched = 0;
+  for (const attachment of page.page) {
+    if (await clearMark(ctx, attachment.photoId, uploaderId, mode)) touched++;
   }
   return { ...continuation(page), touched };
 }
@@ -372,7 +409,7 @@ async function clearMark(
 }
 
 /**
- * Phase 4 — whatever is still marked was named by nothing, across a complete pass over every row that
+ * Phase 5 — whatever is still marked was named by nothing, across a complete pass over every row that
  * could have named it. That is the guarantee the one-shot scan can't make, and it's what earns the
  * delete.
  *

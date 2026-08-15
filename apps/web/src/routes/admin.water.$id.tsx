@@ -174,6 +174,7 @@ function LakeEditor() {
             onResult={setBanner}
           />
           <PutInTool waterBodyId={waterBodyId} putIns={putIns ?? []} />
+          <AccessTool waterBodyId={waterBodyId} onResult={setBanner} />
           <BodyFeatureTool
             waterBodyId={waterBodyId}
             features={features ?? []}
@@ -1030,11 +1031,12 @@ function PutInTool({
   putIns: readonly { coord: LatLng; source: string }[];
 }) {
   const official = putIns.filter((p) => p.source === 'official').length;
+  const osm = putIns.filter((p) => p.source === 'osm').length;
   const derived = putIns.filter((p) => p.source === 'derived').length;
   return (
     <ToolCard title="Put-ins">
       <p className="text-foreground-muted text-sm">
-        {official} official · {derived} derived from reports.
+        {official} official · {osm} from OSM · {derived} derived from reports.
       </p>
       <Link
         to="/water/$id"
@@ -1043,6 +1045,170 @@ function PutInTool({
       >
         Place and hide pins on the public map →
       </Link>
+    </ToolCard>
+  );
+}
+
+/**
+ * Parking and the approach (N6d / D72 amendment, D144) — **rung 1 of the access ladder.**
+ *
+ * This is where a human's assertion outranks the OSM pass. Two rules make it different from every
+ * other tool on this page:
+ *
+ * **No distance limit.** `PARKING_INFER_RADIUS_M` bounds what the *ETL* will guess; an operator may
+ * associate a lot with this lake from any distance at all, because a trailhead a mile from the ice is
+ * not an edge case to tolerate — it is the case the phase exists for. The form says so out loud,
+ * because the absence of a validation error is otherwise indistinguishable from a bug.
+ *
+ * **Above a mile the approach kind must be asserted, not derived** (D144). The server refuses the
+ * write otherwise, and it refuses rather than defaulting: stamping `hike_in` silently would be the
+ * system making the assertion on the operator's behalf, when the whole point is that a far-flung
+ * association is the one input here that costs its author nothing and a stranger a night.
+ */
+function AccessTool({
+  waterBodyId,
+  onResult,
+}: {
+  waterBodyId: Id<'waterBodies'>;
+  onResult: SetBanner;
+}) {
+  const access = useQuery(api.accessPoints.accessForBody, { waterBodyId });
+  const setParking = useMutation(api.accessPoints.setOfficialParking);
+  const setPutInAccess = useMutation(api.accessPoints.setPutInAccess);
+
+  const [lat, setLat] = useState('');
+  const [lng, setLng] = useState('');
+  const [name, setName] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [selectedPutIn, setSelectedPutIn] = useState('');
+  const [selectedLot, setSelectedLot] = useState('');
+  const [kind, setKind] = useState('');
+
+  const lots = access?.parking ?? [];
+  const storedPutIns = access?.putIns ?? [];
+
+  async function addLot() {
+    const latN = Number.parseFloat(lat);
+    const lngN = Number.parseFloat(lng);
+    if (!Number.isFinite(latN) || !Number.isFinite(lngN)) {
+      onResult({ tone: 'error', text: 'Enter a latitude and longitude.' });
+      return;
+    }
+    setBusy(true);
+    try {
+      await setParking({
+        coord: { lat: latN, lng: lngN },
+        ...(name.trim() ? { name: name.trim() } : {}),
+        amenities: [],
+        waterBodyIds: [waterBodyId],
+      });
+      setLat('');
+      setLng('');
+      setName('');
+      onResult({ tone: 'ok', text: 'Parking area saved at the operator rung.' });
+    } catch (err) {
+      onResult({ tone: 'error', text: errorText(err) });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function linkPutIn() {
+    if (!selectedPutIn) return;
+    setBusy(true);
+    try {
+      await setPutInAccess({
+        putInId: selectedPutIn as Id<'putIns'>,
+        ...(selectedLot ? { parkingAreaId: selectedLot as Id<'parkingAreas'> } : {}),
+        ...(selectedLot ? {} : { clearParking: true }),
+        ...(kind ? { approachKindOverride: kind as 'hike_in' } : {}),
+      });
+      onResult({ tone: 'ok', text: 'Access updated.' });
+    } catch (err) {
+      // The D144 refusal lands here verbatim — the server writes the operator-facing sentence.
+      onResult({ tone: 'error', text: errorText(err) });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <ToolCard title="Parking & approach">
+      {lots.length > 0 ? (
+        <ul className="space-y-1 text-sm">
+          {lots.map((lot) => (
+            <li key={lot.id} className="text-foreground-muted">
+              {lot.name ?? 'Unnamed lot'} — {lot.source}
+              {lot.amenities.length > 0 ? ` · ${lot.amenities.join(', ')}` : ''}
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="text-foreground-muted text-sm">No parking on record for this lake.</p>
+      )}
+
+      <div className="grid grid-cols-2 gap-2">
+        <Input placeholder="Latitude" value={lat} onChange={(e) => setLat(e.target.value)} />
+        <Input placeholder="Longitude" value={lng} onChange={(e) => setLng(e.target.value)} />
+      </div>
+      <Input placeholder="Name (optional)" value={name} onChange={(e) => setName(e.target.value)} />
+      <Button size="sm" disabled={busy} onClick={() => void addLot()}>
+        Add parking at the operator rung
+      </Button>
+      <p className="text-foreground-muted text-xs">
+        There is deliberately <strong>no distance limit</strong> here — the ~250 m radius caps what
+        the OSM pass will guess, never what you can assert. A trailhead a mile from the ice is the
+        case this exists for.
+      </p>
+
+      {storedPutIns.length > 0 ? (
+        <div className="space-y-2 border-border border-t pt-2">
+          <select
+            className="w-full rounded border p-1 text-sm"
+            value={selectedPutIn}
+            onChange={(e) => setSelectedPutIn(e.target.value)}
+            aria-label="Put-in"
+          >
+            <option value="">Choose a put-in…</option>
+            {storedPutIns.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.name ?? 'Unnamed launch'} ({p.source})
+              </option>
+            ))}
+          </select>
+          <select
+            className="w-full rounded border p-1 text-sm"
+            value={selectedLot}
+            onChange={(e) => setSelectedLot(e.target.value)}
+            aria-label="Parking area"
+          >
+            <option value="">No parking (clears the approach)</option>
+            {lots.map((lot) => (
+              <option key={lot.id} value={lot.id}>
+                {lot.name ?? 'Unnamed lot'}
+              </option>
+            ))}
+          </select>
+          <select
+            className="w-full rounded border p-1 text-sm"
+            value={kind}
+            onChange={(e) => setKind(e.target.value)}
+            aria-label="Approach kind"
+          >
+            <option value="">Derive the approach kind from the distance</option>
+            <option value="drive_up">Drive-up</option>
+            <option value="short_walk">Short walk</option>
+            <option value="hike_in">Hike-in</option>
+          </select>
+          <Button size="sm" variant="outline" disabled={busy} onClick={() => void linkPutIn()}>
+            Save access
+          </Button>
+          <p className="text-foreground-muted text-xs">
+            Beyond a mile the server <strong>requires</strong> Hike-in to be chosen explicitly
+            rather than derived, so a long approach can't be entered silently.
+          </p>
+        </div>
+      ) : null}
     </ToolCard>
   );
 }

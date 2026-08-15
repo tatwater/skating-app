@@ -2166,6 +2166,29 @@ everyone has a maps app for restaurants, and it's the amenity most likely to be 
 **Coverage will be patchy** in the rural Northeast, and that must not become an argument for hand-entering
 the rest (D70). It is strictly more than the zero we have now.
 
+### Second amendment (2026-08-10) — *directions* re-target; **drive-time bands do not**
+
+*"Directions target the parking area"* was written as though it named one behaviour. The N6d kickoff
+found it names two, with very different costs, and only one of them is *"only its call sites get
+smarter"*:
+
+| surface | what it targets today | cost of re-targeting |
+|---|---|---|
+| the **directions deep link** | a put-in coord (`directionsUrl`, two call sites) | pick a better target — genuinely free |
+| the **drive-time band** | **`body.centroid`**, via `bandForCoord` at `notifications.ts:175` and `reports.ts:795` | an access-coord lookup per body, inside the notification fan-out and **per report in a feed page** |
+
+> **Founder call: the link re-targets now; the bands stay on `body.centroid`.**
+
+The bug this decision exists to fix — a maps app handed a destination it cannot route to — lives
+entirely in the link, so the free half buys all of the stated value. The band's residue is real and is
+recorded rather than hidden: a mile-away trailhead still classifies against the water rather than the
+car, so its 30/60/90 band reads slightly optimistic. **That is a bounded, one-band error on the small
+population of hike-in lakes**, against a per-report read on the feed's hot path for every lake.
+
+**What would change the call** is a denormalised access coord on `waterBodies` — no read cost, but a
+second copy of a fact, maintained on every access-point write, of exactly the kind that drifts silently.
+Not worth it for a band boundary until something demonstrates that it is.
+
 ## D73 — An access blocker is a decaying community alert, not a note (N6d)
 
 **Decided (2026-07-30; founder call.)** *"Road closed south of the gate until repairs are done"* is the most
@@ -4433,3 +4456,63 @@ Everything revealed carries `·dev`. **Flip the constant to `false` before the s
 means forgetting is survivable rather than harmful.
 
 **Related:** [D86](#d86--aggregate-quality-renders-as-a-graded-mark-never-as-a-word), [D141](#d141--the-map-cards-counts-are-recomputed-never-incremented-n6c-2--e), [D3](#d3--never-a-safety-verdict).
+
+---
+
+## D143 — A derived access point is **data**, not a vouch (N6d)
+
+**2026-08-10, founder call.** An OSM-sourced put-in enters `PUTIN_SOURCES` below `official`, and in
+D2's richness ladder it scores as **`derived` (+0.06)**, not as `official` (+0.12).
+
+The call was needed because an `osm` row is a hybrid of the two rungs that already exist: it is
+**stored**, like an operator's `official` pin, and **approximate**, like a cluster of report points. So
+neither term was the obvious default, and picking by resemblance would have picked by the wrong
+resemblance — storage is an implementation fact, provenance is the one that means something.
+
+**What `official` is for is the thing being protected.** `display.ts` calls it *"the strongest static
+signal we have"* on the grounds that *a human confirmed you can get on the ice here*. An ETL cannot
+confirm that. Letting the top term become reachable by an import would not raise OSM's standing; it
+would lower `official`'s, and it would do so across the whole corpus in one pass — because unlike every
+other richness term, this one is about to be baked in by the single held `backfillCells` re-score.
+
+**The stakes, stated plainly, because they are unusual for a constant.** Both put-in terms have never
+fired: dev carries **0 `putIns` rows**. N6c has held `backfillCells` since 2026-08-02 waiting for this
+phase, so the first time D2's access terms ever affect a `displayScore` is the run that follows this
+build. There is no incumbent scoring to compare against and no gradual rollout — which is the argument
+for choosing the conservative rung rather than the flattering one.
+
+The ladder still does its job on top: an operator who pins an `official` marker at an OSM-derived
+coordinate promotes it, and a re-import never overwrites them (B3).
+
+**Related:** [D2](#d2--display-prominence-is-computed), [D49](#d49--display-prominence), [D70](#d70--lake-profile-content-is-derived-or-third-party-never-hand-maintained-n6cn6d), [D72](#d72--parking-is-modelled-apart-from-put-ins-and-directions-route-to-the-car-n6d), [`phase-N6d`](./phase-N6d-lake-access-points.md).
+
+---
+
+## D144 — The approach thresholds are **product lines**, and the longest one is a demand (N6d)
+
+**2026-08-10, founder call.** `approachKind` derives as `drive_up` ≤ **150 m** · `short_walk` ≤
+**800 m** · `hike_in` beyond, and above **1,600 m** the UI **requires** the author to assert `hike_in`
+rather than deriving it for them.
+
+N6d named `HIKE_IN_THRESHOLD_M` and never gave it a number, called it *"a product line, not a geometry
+one"*, and left the `drive_up`/`short_walk` boundary unmentioned. That framing is right and it is why
+these could not be settled by fitting anything: there is no dataset of where a walk stops being a
+walk.
+
+- **800 m** is roughly ten minutes in boots carrying skates, a chair and a shovel — the point where a
+  trip acquires a decision rather than a walk from the car.
+- **150 m** is a pull-off and a bank, not an approach worth a sentence.
+- **1,600 m** — a mile — is the founder's own example of the lakes this phase exists for (*"you park at
+  least a mile from the ice"*), which makes it the natural place for assertion to replace inference.
+
+**The asymmetry that makes the last one a demand rather than a chip.** Everything else here is
+derived from a routed distance and is wrong at worst by a category. A **human-entered** association at a
+mile is the one input in this phase that costs its author nothing and costs a stranger a night —
+mistyping a lot ten miles away sends someone to the wrong trailhead in the dark (D72 amendment,
+ramification 4). Requiring the assertion means a long approach cannot be entered silently: the author
+has to state the thing the chip will then tell everyone.
+
+Three product lines and one cap, and only `PARKING_INFER_RADIUS_M` (250 m) is the cap. These move by
+founder call; that one moves by eyeballing a state's output.
+
+**Related:** [D72](#d72--parking-is-modelled-apart-from-put-ins-and-directions-route-to-the-car-n6d), [D87](#d87--approach-distance-is-walked-not-flown-n6d), [D3](#d3--never-a-safety-verdict), [`phase-N6d`](./phase-N6d-lake-access-points.md).

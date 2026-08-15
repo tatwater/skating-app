@@ -412,6 +412,50 @@ describe('expireDepartedPhotos (D66)', () => {
     expect(result).toMatchObject({ deleted: 1, kept: 1, done: true });
   });
 
+  /**
+   * The N6d carve-out from D66, and the reason it is a carve-out rather than an exception.
+   *
+   * A report photo documents **conditions**, which expire with their season. An access photo
+   * documents **infrastructure** — a parking lot looks the same next November — so the argument that
+   * retires the first does not reach the second. It stays under N3 deletion the whole time, by the
+   * D62 second amendment's redact-don't-erase: the departed skater's photo of a gravel pull-off is
+   * reassigned to anonymous, not destroyed, because there is no person in a picture of a pull-off.
+   *
+   * `durablePhotoIds` is what makes it true, and it was the half of this phase with no test — the
+   * failure would have been a cron quietly deleting the access layer's photos one season later.
+   */
+  test('keeps an access-point photo, which is infrastructure rather than a condition', async () => {
+    const t = harness();
+    const userId = await seedTombstone(t, 'departed');
+    const pullOff = await seedPhoto(t, userId, lastSeason());
+    const morningShot = await seedPhoto(t, userId, lastSeason());
+    const waterBodyId = await seedBody(t);
+    const putInId = await t.run((ctx) =>
+      ctx.db.insert('putIns', {
+        waterBodyId,
+        coord: { lat: 0.5, lng: 0.5 },
+        source: 'osm' as const,
+        status: 'visible' as const,
+        createdAt: lastSeason(),
+      }),
+    );
+    await t.run((ctx) =>
+      ctx.db.insert('accessPhotos', {
+        targetType: 'put_in' as const,
+        putInId,
+        photoId: pullOff,
+        uploaderId: userId,
+        createdAt: lastSeason(),
+      }),
+    );
+
+    const result = await t.mutation(internal.storageHygiene.expireDepartedPhotos, { userId });
+
+    expect(await t.run((ctx) => ctx.db.get(pullOff))).not.toBeNull();
+    expect(await t.run((ctx) => ctx.db.get(morningShot))).toBeNull();
+    expect(result).toMatchObject({ deleted: 1, kept: 1 });
+  });
+
   test('leaves this season alone — the clock is the season boundary, not the deletion', async () => {
     const t = harness();
     const userId = await seedTombstone(t, 'departed');

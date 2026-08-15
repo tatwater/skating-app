@@ -1244,11 +1244,46 @@ elevation, and where else to look.
   **Two commands, not one:** a `--dry-run` emitting reviewable matches, then an apply step, because the
   founder reviews the list before boosts land. The unmatched entries are the interesting output.
 
-**N6d — Lake access points: parking, named put-ins, and access alerts.** 📋 Scoped 2026-07-30, unbuilt —
-see [`phase-N6d-lake-access-points.md`](./phase-N6d-lake-access-points.md); decisions **D72** (parking
-modelled apart from put-ins) and **D73** (access blockers decay, they aren't notes). **Split out of N6c at
+**N6d — Lake access points: parking, named put-ins, and access alerts.** ✅ **COMPLETE on dev
+2026-08-13** — all five workstreams, every UI surface, and the ETL run end to end: **3,588 put-ins,
+11,375 parking areas, 4,209 bodies with access** (16.7% of the corpus), routing 99.4%. Prod deferred. —
+scoped 2026-07-30; see [`phase-N6d-lake-access-points.md`](./phase-N6d-lake-access-points.md); decisions
+**D72** (parking modelled apart from put-ins) and **D73** (access blockers decay, they aren't notes), plus
+**D143**/**D144** and a **D72 second amendment** taken at the 2026-08-10 kickoff. **Split out of N6c at
 scoping** — it was roughly the size of everything else there combined, and it's the only part introducing
 a new lifecycle. Independent of N6c; either order.
+
+> **The kickoff re-read this entry against the post-N7 codebase and found seven corrections** — see the
+> doc's *§What the kickoff found in the plan*. The one that changes the build: **the body association
+> has to run server-side**, exactly as N6a discovered mid-build, because the transform has no polygons
+> and the merge output is no longer the loaded corpus. The one that would have shipped as data loss:
+> **`photoOrphans` would delete access-point photos** thirty days after upload, since its soundness
+> argument is that only an uploader's own reports and hazards can reference a photo.
+> **Founder calls (2026-08-10):** all five workstreams ship together; the **directions link** re-targets
+> to parking but the **drive-time bands do not** (D72 amendment); an `osm` put-in scores as `derived`
+> **+0.06** (D143); approach thresholds are **150 / 800 / 1,600 m** (D144). A moderator-pinned access
+> alert **never expires** — the analogue of an official put-in outranks the seasonal reset — and posting
+> one notifies nobody.
+>
+> **The first real run found three things** — see the doc's *§What the first real run found*. The
+> eyeballing pass B2 asked for paid off immediately: `amenity=parking` yields **95,294 lots across
+> five states, 92,384 unpaired** (fire departments, ski clubs, supermarkets), so the loader gained a
+> water-relevance gate. ORS's free tier caps directions at **40/minute**, not the ~85 the gap assumed
+> — and worse, a `429` fallback was being **cached as an answer**, which would have made 2,173 legs
+> permanently unroutable.
+>
+> **✅ `backfillCells` ran 2026-08-14** — 24,961 bodies re-scored in 84 batches, closing the single
+> full-corpus re-score N6c had held since 2026-08-02. D2's put-in terms are live for the first time.
+>
+> ⚠ **The parking load cost 104.95 GB of database I/O and disabled the dev deployment** (restored by
+> raising the spending cap). One parameter: `listedBodiesNearCoord`'s candidate box was a fixed
+> ~1,113 m for every caller, so a 250 m gate read 20× the area it needed and a 30 m gate read 1,377×
+> — of *whole documents*, polygons included, since Convex has no projection. Fixed with an optional
+> `marginMeters`. `matchBathymetryLakes` (51 GB) and `coveringBodyForPoints` (21 GB) are the same
+> shape and remain unfixed. D2's put-in terms have never fired (dev carried 0
+> `putIns` rows), and the held re-score bakes D143's rung in on its first pass. The order is: run the
+> access ETL, *then* `backfillCells` — running the re-score first would score a corpus with no access
+> data and have to be repeated, which is the duplicated work that gate exists to avoid.
 
 - **The bug this fixes:** `putIns` is a bare coordinate and `directionsUrl` routes a car to it. For a
   hike-in pond that's a destination a maps app cannot route to, discovered at the trailhead in winter.
@@ -1418,6 +1453,52 @@ only to be deleted by this.
 crescent lake is on land, and drive-time bands plus the pin-less report's town stamp deliberately want
 a shoreline-ish point. See [`phase-N6c`](./phase-N6c-expanded-lake-profiles.md) *§The three point
 fields*.
+
+### N6d's two follow-ups — both sized, neither urgent (2026-08-14)
+
+Recorded here rather than only in the phase doc, because this is where someone looks for *what's
+next* and the phase doc is where someone looks when they're already in N6d. Both are **measured**, so
+neither needs re-deriving before a decision.
+
+**1. Trail-connectivity pairing — the principled way to widen the parking radius. ⚖ Small phase,
+~6% yield.** A lot at the end of a `highway=path` that leads to a lake *is* a trailhead; that is a
+signal rather than a radius, and it would find the mile-in case the 250 m inference cap cannot.
+
+- **De-risked:** OSM way connectivity **survives the GeoJSON export** — 29% of endpoints in Vermont's
+  40,840 trail ways are shared by 2+ ways as byte-identical coordinates, so the graph builds from a
+  coordinate hash. No node-ref extraction, no pyosmium.
+- **Capped:** a connection needs *both* ends on a trail, and only **6% of unpaired put-ins (27 of 416
+  in VT)** have a trail within 50 m. The lot side is fine at 31%; the launch side is the ceiling.
+  Extrapolates to **~150–300 new pairings across five states**, against 1,351 already found.
+- **Cost:** ~600–900k line geometries (VT alone is 642k vertices, so memory wants streaming), a
+  coordinate-hashed graph, a budget-bounded BFS with property tests for cycles and disconnection.
+- **Why not yet:** the case is already served twice — `setOfficialParking` accepts a human's
+  association at any distance (D72 amendment), and 840 lots already survived the gate on the pairing
+  bypass. See [`phase-N6d`](./phase-N6d-lake-access-points.md) *§Sized 2026-08-14*.
+
+**2. The 9,910 put-in candidates that matched no corpus body — and the 1,376 that are the actual
+question.** 73% of everything the access pass extracted found no body within `PUTIN_SHORE_RADIUS_M`.
+Characterised rather than left as a number:
+
+| tag | count | share |
+|---|---:|---:|
+| `man_made=pier` | 4,186 | 42% |
+| `natural=beach` | 4,023 | 40% |
+| **`leisure=slipway`** | **1,376** | **13%** |
+| `leisure=fishing` | 325 | 3% |
+
+By state: **MA 40% · NY 34% · ME 18%** · NH 4% · VT 1%.
+
+**82% are piers and beaches and 58% sit in our two coastal states**, so the bulk is ocean — water we
+deliberately do not carry (D4, and the N7 salt-water veto). That part is a scope boundary working as
+designed, not a gap.
+
+**The 1,376 unmatched slipways are the signal.** A boat ramp implies real inland water somebody
+launches a boat onto, so each one is a corpus body below the N7 admission floor, a river landing
+(D4), or a lake we are genuinely missing. **That third case is the one worth knowing about**, because
+it is the only one of the three that says the corpus is wrong rather than bounded — and it is a much
+larger population than the trail work above would ever reach. A sample of a few dozen against the map
+would settle which it mostly is; that is an afternoon, not a phase.
 
 ### Waiting on a blocker
 

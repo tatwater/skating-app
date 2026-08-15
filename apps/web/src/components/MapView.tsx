@@ -457,11 +457,17 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
         source: 'put-in-markers',
         paint: {
           'circle-radius': 6,
+          // Three rungs, three colours — `PUTIN_SOURCES` on screen (N6d/D143). An OSM slipway is
+          // better evidence than a cluster of report points and worse than an operator's pin, and
+          // rendering it in the `derived` blue said the opposite. The `case` already had a fallback,
+          // so the 3,588 imported launches drew — just in the wrong rung's colour.
           'circle-color': [
             'case',
             ['==', ['get', 'source'], 'official'],
             '#0e7490', // cyan-700 — accurate, admin-set
-            '#5b8fb0', // muted blue — approximate, derived
+            ['==', ['get', 'source'], 'osm'],
+            '#3d7ea6', // between the two — mapped by someone, but not vouched for by us
+            '#5b8fb0', // muted blue — approximate, derived from report points
           ],
           'circle-stroke-color': '#ffffff',
           'circle-stroke-width': 2,

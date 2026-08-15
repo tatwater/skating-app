@@ -155,6 +155,15 @@ export interface FeedCardData {
   blocked: boolean;
   /** Viewer has favorited this body (Phase 4) — drives the feed badge + the per-page boost. */
   isFavorite?: boolean;
+  /**
+   * The body's easiest known approach (N6d / D87), denormalized onto the row by the access join.
+   *
+   * **On the feed card because the drive-time filter is the thing it corrects.** A skater filtering
+   * to "within 60 minutes" is filtering on *drive* time, and a hike-in lake inside that band is not
+   * the trip they think they are being offered. The two are shown separately and never summed — a
+   * 55-minute drive plus a 25-minute walk is not an 80-minute drive (D72 amendment).
+   */
+  accessKind?: string;
 }
 
 /** Render-ready feed card. `relativeTime` depends on `now`, so it's computed per render, not stored. */
@@ -181,6 +190,8 @@ export interface FeedCardView {
   blocked: boolean;
   /** Viewer has favorited this body (Phase 4) — the card shows a heart/badge and boosts it. */
   isFavorite: boolean;
+  /** `true` ⇒ render the Hike-In chip (D87). Only the hike-in case; the others are unremarkable. */
+  isHikeIn: boolean;
 }
 
 /**
@@ -259,5 +270,6 @@ export function buildFeedCardView(data: FeedCardData, now: number): FeedCardView
     author: data.author,
     blocked: data.blocked,
     isFavorite: data.isFavorite ?? false,
+    isHikeIn: data.accessKind === 'hike_in',
   };
 }

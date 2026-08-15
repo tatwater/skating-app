@@ -71,6 +71,7 @@ import {
   PHOTO_PIN_COLOR,
   PUT_IN_MARKER_DERIVED_COLOR,
   PUT_IN_MARKER_OFFICIAL_COLOR,
+  PUT_IN_MARKER_OSM_COLOR,
   PUT_IN_PIN_COLOR,
   putInsToFeatureCollection,
   SUB_AREA_PALETTE,
@@ -711,8 +712,9 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
           />
         </GeoJSONSource>
 
-        {/* Put-in markers for the focused lake (Phase 4, decision #7): official = accurate cyan,
-          derived = approximate muted blue. Distinct from the amber report-photo pins. */}
+        {/* Put-in markers for the focused lake (Phase 4, decision #7; N6d/D143 added the middle
+          rung): official = accurate cyan, osm = a mapped slipway, derived = approximate muted blue.
+          Three colours for three rungs of `PUTIN_SOURCES`. Distinct from the amber report-photo pins. */}
         <GeoJSONSource id="put-in-markers" data={putInsFC}>
           <Layer
             id="put-in-markers"
@@ -723,6 +725,8 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
                 'case',
                 ['==', ['get', 'source'], 'official'],
                 PUT_IN_MARKER_OFFICIAL_COLOR,
+                ['==', ['get', 'source'], 'osm'],
+                PUT_IN_MARKER_OSM_COLOR,
                 PUT_IN_MARKER_DERIVED_COLOR,
               ],
               'circle-stroke-color': '#ffffff',

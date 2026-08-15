@@ -58,6 +58,14 @@ export const FAVORITE_OUTLINE_COLOR = '#eab308';
 /** Put-in marker colors (Phase 4, decision #7): accurate admin `official` vs. approximate `derived`. */
 export const PUT_IN_MARKER_OFFICIAL_COLOR = '#0e7490';
 export const PUT_IN_MARKER_DERIVED_COLOR = '#5b8fb0';
+/**
+ * The middle rung (N6d/D143) — a slipway somebody mapped in OSM.
+ *
+ * Between the two existing colours on purpose: better evidence than a cluster of report points, and
+ * not a human vouching that you can get on the ice here. Rendering it in the `derived` blue, which is
+ * what the two-way `case` did before this existed, said the opposite of the ladder.
+ */
+export const PUT_IN_MARKER_OSM_COLOR = '#3d7ea6';
 
 /** Initial framing — Burlington sits near the center of the region; the fallback when no device
  *  fix is available (device geolocation reframes on open when in-region, D12/D20). */
@@ -273,7 +281,9 @@ export function waterBodiesToFeatureCollection(
 /** A put-in marker as `putIns.listForBody` returns it — a routable coord + its provenance. */
 export interface MappablePutIn {
   coord: { lat: number; lng: number };
-  source: 'derived' | 'official';
+  source: 'derived' | 'osm' | 'official';
+  /** OSM's name for the launch (N6d/A3), where it has one — what makes a pin worth tapping. */
+  name?: string;
 }
 
 /**
@@ -289,7 +299,7 @@ export function putInsToFeatureCollection(
     features: markers.map((m) => ({
       type: 'Feature',
       geometry: { type: 'Point', coordinates: [m.coord.lng, m.coord.lat] },
-      properties: { source: m.source },
+      properties: { source: m.source, ...(m.name ? { name: m.name } : {}) },
     })),
   };
 }

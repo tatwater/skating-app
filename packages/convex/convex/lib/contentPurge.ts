@@ -90,6 +90,7 @@ const CATEGORIES = [
   'hazards',
   'comments',
   'flags',
+  'accessAlerts',
   'photos',
   'recordings',
   'bounties',
@@ -135,6 +136,7 @@ export interface RedactionResult {
     hazards: number;
     comments: number;
     flags: number;
+    accessAlerts: number;
     photos: number;
   };
   /** Rows removed outright — private, unpublished, or a standing ask nobody is making any more. */
@@ -142,7 +144,7 @@ export interface RedactionResult {
 }
 
 const EMPTY: Omit<RedactionResult, 'more' | 'cursor'> = {
-  redacted: { reports: 0, hazards: 0, comments: 0, flags: 0, photos: 0 },
+  redacted: { reports: 0, hazards: 0, comments: 0, flags: 0, accessAlerts: 0, photos: 0 },
   erased: { bounties: 0, recordings: 0, photos: 0 },
 };
 
@@ -220,6 +222,8 @@ export async function redactAgedContent(
         return redactComments();
       case 'flags':
         return redactFlagNotes();
+      case 'accessAlerts':
+        return redactAccessAlertNotes();
       case 'photos':
         return sweepPhotos();
       case 'recordings':
@@ -339,6 +343,36 @@ export async function redactAgedContent(
       if (flag.note === undefined) continue; // already clean, or a flag filed without one
       await ctx.db.patch(flag._id, { note: undefined });
       result.redacted.flags++;
+    }
+    return nextCursor(page);
+  }
+
+  // ── Access alerts: the claim stays, the sentence goes (N6d / D73) ──────────────────────────────
+  //
+  // The same seam as flags and reports, on a table N6d added after this file was written. `note` is
+  // free text *they typed* — "gate locked, the town put a chain on it after the logging trucks" — and
+  // it sits on exactly the wrong side of the second amendment's line, so it comes off with everything
+  // else somebody wrote.
+  //
+  // **What survives is the observation, and it is worth keeping.** `reason` is a structured enum, the
+  // target is a lot or a launch, and the dates are dates: with the author pointer tombstoned there is
+  // no person left in the row, and it is still true that somebody found that gate locked. Deleting it
+  // would take a fact away from the next skater and give nothing back to the one who left — the
+  // argument this whole file is built on.
+  //
+  // Aged on `createdAt`, like comments and flags: an alert has no skate of its own. Note that most
+  // rows will already have expired by the time they are due, which changes nothing here — expiry
+  // stops an alert *annotating*, and this is about what is stored.
+  async function redactAccessAlertNotes(): Promise<string | null> {
+    const page = await ctx.db
+      .query('accessAlerts')
+      .withIndex('by_author', (q) => q.eq('createdByUserId', userId))
+      .paginate({ cursor, numItems: pageSize });
+    for (const alert of page.page) {
+      if (!isDue(alert.createdAt)) continue;
+      if (alert.note === undefined) continue; // already clean, or an alert posted without one
+      await ctx.db.patch(alert._id, { note: undefined });
+      result.redacted.accessAlerts++;
     }
     return nextCursor(page);
   }
