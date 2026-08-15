@@ -7,7 +7,10 @@
 # **This exists before the archive it mirrors, on purpose.** The wind fetch is 5,225 requests and
 # ~7.7 hours against a shared daily quota, and the reason it has to be archived at all is that the
 # last run fetched wind SPEED and threw it away — turning a two-minute local recompute into a
-# 7.7-hour re-fetch. See plans/HANDOFF-wind-climate-archive.md.
+# 7.7-hour re-fetch. See D134 in plans/01-decisions.md, and this package's README.
+#
+# It earned its keep: the archive reached 47,765 cell-years / 3.3 GB, and the R2 copy has been
+# verified byte-identical (`rclone check`, 0 differences across 57,318 objects).
 #
 # Standing this up now means the durable copy is one command away the moment `.raw/` has anything in
 # it, rather than a step somebody remembers after the expensive part is already done.

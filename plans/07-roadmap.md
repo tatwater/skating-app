@@ -983,8 +983,9 @@ for all of it.)*
 
 > **⏰ Its data gate is CLEARED as of 2026-08-09 (N7-3).** Everything below that reads *"ETL passes
 > not yet run"* was written before the data campaign. Against the loaded corpus today: **elevation
-> 99.5%** (24,834 of 24,958, 3DEP, 98.2% at 1 m LiDAR), **wind roses 1,193 bodies** stamped from the
-> archive, **depth 24.2% overall but 83–90% above 50 acres**, and **bathymetry coverage 2,057
+> 99.5%** (24,834 of 24,958, 3DEP, 98.2% at 1 m LiDAR), **wind roses 11,114 bodies** stamped from the
+> archive (1,193 at the time this was written; widened to the 250 m gate and completed 2026-08-15),
+> **depth 24.2% overall but 83–90% above 50 acres**, and **bathymetry coverage 2,057
 > bodies**. The one number still outstanding is `regionStats:recompute`, which is the last pass of the
 > campaign and gates only the **decile** copy (A5), not the rest of N6c-1.
 >
@@ -1354,8 +1355,8 @@ per catalogue (D109/D110). 178,095 groups in, **24,958 bodies** out.
 | --- | --- |
 | elevation | ✅ **99.5%** — 3DEP, 98.2% at 1 m LiDAR, replacing a metered forecast API (D127) |
 | depth | ✅ 24.2% overall, **83–90% above 50 acres**, 81.2% of stored depths measured |
-| wind roses | ✅ 1,193 bodies, derived offline from a byte-faithful archive (D134) |
-| wind, widened | 🔄 250 m fetch gate (D135) — 41,855 requests, ~53 h left, 0 failed |
+| wind roses | ✅ **11,114 / 11,114 bodies** at the widened 250 m gate (D135), derived offline from a byte-faithful archive (D134) — finished 2026-08-15 |
+| wind archive | ✅ **47,765 / 47,765 cell-years** (9,553 cells × 5 winters), 418.4M hourly rows, mirrored to R2 and hash-verified at 0 differences |
 | bathymetry | ✅ **2,298 lakes → 52,522 contour lines → 2,287 bodies** (D95 re-key: +232 net-new) |
 | `regionStats` | ✅ recomputed — 24,953 bodies × 5 metrics × 5 states |
 

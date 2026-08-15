@@ -13,8 +13,8 @@
 > | elevation | **99.5%** — 24,834, USGS 3DEP, 98.2% at 1 m LiDAR (D127) |
 > | depth | 24.2% overall · **83–90% above 50 acres** · **81.2% of stored depths measured** |
 > | `state_agency` rung | **0 → 3,033 measurements** (it had never had a writer) |
-> | wind roses | **1,193 / 1,193** derived from the archive, zero requests (D134) |
-> | wind, widened | 🔄 250 m gate (D135) — 41,855 requests, then `derive` again for ~11,118 bodies |
+> | wind roses | **11,114 / 11,114** derived from the archive, zero requests (D134/D135) — 1,193 at the 1 km gate on 2026-08-09, widened to 250 m and completed **2026-08-15** |
+> | wind archive | **47,765 / 47,765 cell-years** · 418.4M hourly rows · 3.3 GB mirrored to R2, hash-verified 0 differences |
 > | bathymetry | **2,298 lakes → 52,522 contour lines → 2,287 bodies**, tiles published |
 > | D95 re-key | **293 recovered, +232 net-new** after the density gate (projected +217) |
 > | `regionStats` | ✅ recomputed — 24,953 bodies × 5 metrics × 5 states |
@@ -1962,9 +1962,8 @@ job to change — see the `WATER_BODY_CLASSES` migration under D96.
 **The N6c campaign's own passes are unfinished and this campaign subsumes them.** Elevation stopped at
 5,975 of ~11,000 on quota (now D101's problem); wind stopped at ~2% deliberately; `regionStats` never
 ran and is empty. Nothing here needs resuming — it needs re-running against the corpus step 6
-establishes. The wind archive rebuild described in `HANDOFF-wind-climate-archive.md` is a **hard
-prerequisite of step 11**: without the `.raw/` split, the 7.7-hour fetch is spent and then spent again
-the first time a threshold moves.
+establishes. The wind archive rebuild (**D134**) is a **hard prerequisite of step 11**: without the
+`.raw/` split, the 7.7-hour fetch is spent and then spent again the first time a threshold moves.
 
 
 ---
@@ -2200,7 +2199,7 @@ reading did.
 | **Refactor `waterBodies.ts`** | **5,400+ lines, 49 exported Convex functions** — the import/ETL path, the read path, moderation, and per-body editing in one module. Every loader calls `convexRun('waterBodies:X')` **by string**, so splitting it renames function paths; it wants its own PR with nothing else in flight. Flagged during the N7-3 audit and deliberately not done during a campaign. |
 | **MA and NY depth sources** | The largest remaining data gap, and it is **research, not engineering**. Measured: the join is lossless (stored coverage tracks source reach within 1–2 points in every area band), and **1,489 bodies ≥ 10 ha have no source point inside them at all** — MA 443 (reach 58.7%, vs 82–86% for ME/NH/VT) and NY 629. MassGIS is a dead end: it holds only **265 distinct lakes** and all 265 are already used. Needs new state/agency datasets found and vetted. |
 | **Québec** | Deliberately not done. Three new source lanes — StatCan boundaries, NHN/CanVec hydrography, CGNDB names. Only OSM crosses the border today. The classifier's French keywords are already in, and `OCEAN_NAME_VETO_MIN_ACRES` was kept rather than deleted specifically for this. |
-| **The 250 m wind fetch** | Running at the time of writing (~52 h). `derive` again afterwards to stamp ~11,118 bodies, and a `snapshot` resume pass to pick up the 18 cell-years lost to 429 under the old retry policy. |
+| ~~**The 250 m wind fetch**~~ | ✅ **Done 2026-08-15.** 47,765 / 47,765 cell-years archived and mirrored (hash-verified, 0 differences); `derive` stamped **11,114 / 11,114** bodies. The cell-years lost to 429 were recovered — the resumed run finished with **0 failures**, because `snapshot` re-offers anything missing rather than tracking a retry list. The real cost was a pacing bug, not the retry policy: see `WTK_REQUEST_DELAY_MS`. |
 | **Prod** | The whole corpus is dev-only, like every phase since 2.5. |
 | **The regression corpus** | Still deferred, with the setup written down — see *Verification*. |
 
@@ -2213,8 +2212,11 @@ reading did.
 `HANDOFF-n6c-data-campaign.md` was audited against the deployment, folded into
 [`phase-N6c`](./phase-N6c-expanded-lake-profiles.md) and [`phase-N6a`](./phase-N6a-lake-depth.md), and
 deleted (2026-08-10) — its one still-live item was `backfillRepresentativePoint`, since **run**: all
-three tables clean, 9 sub-areas filled, 24,961 bodies and 2,546 admin areas already complete. `HANDOFF-wind-climate-archive.md` is historical (superseded by D134/D135) and is the last one
-left; it self-declares as history in its own banner and can go the same way.
+three tables clean, 9 sub-areas filled, 24,961 bodies and 2,546 admin areas already complete.
+`HANDOFF-wind-climate-archive.md` went the same way on **2026-08-15**, once the wind lane finished:
+audited, its findings folded into [`phase-N6c`](./phase-N6c-expanded-lake-profiles.md),
+[`scripts/wind-climate/README.md`](../scripts/wind-climate/README.md) and D134/D135/**D145**, and
+deleted. **No `HANDOFF-*` documents remain.**
 
 [`01-decisions.md`](./01-decisions.md) — **D92–D105**, **D109–D137** ·
 [`docs/water-body-data.md`](../docs/water-body-data.md) — the same story for humans ·

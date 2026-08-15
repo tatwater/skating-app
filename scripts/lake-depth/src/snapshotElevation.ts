@@ -7,9 +7,9 @@
  *
  * ## Split from the load on purpose
  *
- * `scripts/bathymetry` separates `snapshot` from `derive` and `HANDOFF-wind-climate-archive.md`
- * argues at length that the wind pass should have: *"after the one fetch, changing a threshold,
- * adding a statistic, or rebuilding from scratch is `mirror-r2.sh pull` + `derive`."* This is the
+ * `scripts/bathymetry` separates `snapshot` from `derive`, and **D134** argues at length that the
+ * wind pass should have: *"after the one fetch, changing a threshold, adding a statistic, or
+ * rebuilding from scratch is `mirror-r2.sh pull` + `derive`."* This is the
  * fetch half. `loadElevation.ts` is the derive half and **reads the archive only** — it never
  * reaches the network, which is the property that makes the split real rather than nominal.
  *

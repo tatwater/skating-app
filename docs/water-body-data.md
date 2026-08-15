@@ -271,7 +271,7 @@ measurements away, we assigned each sounding to whichever lake actually contains
 **232 lakes that had no contours at all.** The credit line on those says the lake assignment is ours,
 not the agency's, because it is.
 
-### Wind — 1,193 lakes
+### Wind — 11,114 lakes
 
 Winter wind climatology from NREL's WIND Toolkit: which direction wind actually comes from, combined
 with how much open water lies in each direction.
@@ -279,13 +279,18 @@ with how much open water lies in each direction.
 That combination is the point. Fetch alone names the wrong shore. **Lake Willoughby** has its longest
 open water to the south-southeast, and the founder was fairly sure it never gets a southerly — it sits
 in a glacial trough between two mountains. The data says the trough *channels* wind along the valley:
-strongly bimodal, 19.4% from the southeast and 18.6% from the northwest, with almost nothing from the
-east where the ridges block it. The reasoning was right, the prediction was wrong, and the only way to
-know was to look.
+strongly bimodal, **19.2% from the northwest and 15.3% from the south-southeast**, against **1.3% from
+the northeast** where Mount Pisgah and Mount Hor block it. The reasoning was right, the prediction was
+wrong, and the only way to know was to look.
 
-We're currently expanding this from 1,193 lakes to about 11,100, because wind matters for two
-different hazards — pressure ridges (which need a long fetch) and wind holes (which don't) — and the
-original cutoff was chosen for the first and was quietly deciding the second.
+Every lake also carries **how hard it blows, per direction** — hours at or above 20 mph. That turns
+out to be a different question from which direction is commonest. Willoughby's windiest direction is
+the northwest, but the south-southeast delivers **393 of its 1,010 strong-wind hours** against the
+northwest's 52. The frequent shore and the punished shore are not the same shore.
+
+The coverage here is 11,114 lakes rather than the 1,193 we started with. Wind matters for two
+different hazards — pressure ridges, which need a long fetch, and wind holes, which do not — and the
+original cutoff had been chosen for the first while quietly deciding the second.
 
 ---
 

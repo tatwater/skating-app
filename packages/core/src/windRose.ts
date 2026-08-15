@@ -300,10 +300,19 @@ const HOURS_PER_WINTER = 24 * (31 + 31 + 28 + 31);
  * distinguish them would have to handle a null it has no use for. The distinction is available from
  * `isPlausibleStrongWindHours` where it matters.
  *
- * ⚠ **Deliberately no copy.** D82 settled that bathymetry is context rather than counsel, and this
- * is the same class of number wearing a scarier name. Whether a wind-hole clause belongs in the
- * caption, only in the profile, or nowhere is a founder call that has not been taken — so this
- * returns data and nothing here writes a sentence.
+ * ⚠ **Deliberately no copy, and this is settled (D145, 2026-08-15): nowhere.** Not the caption, not
+ * the profile. D82 settled that bathymetry is context rather than counsel, and this is the same class
+ * of number wearing a scarier name — sharper, because the number really is predictive and "wind hole"
+ * really is frightening, which is precisely why an always-on clause would over-warn all winter to be
+ * right a few days of it.
+ *
+ * The distinction is a **climatology versus a condition**: these counts describe Januaries in
+ * general, and a skater on the ice is asking about today. The intended eventual home is a
+ * *conditional* profile banner — right season, right conditions, this body's climatology, and no
+ * report or hazard already documenting it — not a permanent label. Not built.
+ *
+ * So this function has **no production caller on purpose.** If you are wiring it into copy, read D145
+ * first; it is unread by design rather than by oversight.
  */
 export function windHoleSectors(
   wind: SustainedWind,

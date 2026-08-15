@@ -2702,10 +2702,15 @@ could come from particular directions."*
 direction with five miles of open water that wind never blows from is not an exposed shore.
 
 **So we measured it, and the result was more interesting than either position.** NREL WIND Toolkit,
-2 km WRF, Willoughby, Dec–Mar: **19.4% SE, 16.1% SSE, 18.6% NW** — a strongly *bimodal* rose along
-the NNW–SSE trough, with the E/NE quadrant essentially blocked by Mount Pisgah and Mount Hor. The
-specific prediction was wrong; the **reasoning was exactly right**, and the data shows the named
-mechanism — terrain funnels wind *along* the valley rather than excluding half of it.
+2 km WRF, Willoughby, Dec–Mar: **19.2% NW, 15.3% SSE, 14.5% SE against 1.3% NE** — a strongly
+*bimodal* rose along the NNW–SSE trough, with the E/NE quadrant essentially blocked by Mount Pisgah
+and Mount Hor. The specific prediction was wrong; the **reasoning was exactly right**, and the data
+shows the named mechanism — terrain funnels wind *along* the valley rather than excluding half of it.
+
+*(Figures restated 2026-08-15 from the full-corpus derive. The 2026-08-02 pass recorded 19.4% SE /
+16.1% SSE / 18.6% NW — same trough and same terrain block, but the leading sector swapped. See
+[`phase-N6c` §3](./phase-N6c-expanded-lake-profiles.md) for the comparison and the unconfirmed
+explanation; the decision below does not depend on which sector leads.)*
 
 **The rule:** exposure is `winterFrequency[k] × fetchM[k]`, and **a lake with no rose says nothing
 about wind at all.** There is deliberately no fallback to fetch-alone: that fallback is the claim
@@ -3814,8 +3819,8 @@ corpus rebuild — a lake whose polygon did not move has the same interior point
 costs no request, which is D104's *"near zero"* recurring cost made real. It is also what lets the
 **merge** read it, since the tidal referee needs an elevation before the body exists as a row.
 
-Fetch is split from load, before the mistake rather than after it: `HANDOFF-wind-climate-archive.md`
-exists because that pass fetched, parsed and discarded, and one derived statistic then cost a
+Fetch is split from load, before the mistake rather than after it: [D134](#d134--the-wind-lane-archives-responses-and-captures-the-speed-it-was-already-fetching-n7-3)
+exists because the wind pass fetched, parsed and discarded, and one derived statistic then cost a
 7.7-hour re-fetch.
 
 **Related:** [D101](#d101--elevation-comes-from-data-we-already-hold-not-from-a-metered-forecast-api), [D104](#d104--elevation-from-3dep-and-the-recurring-cost-is-near-zero), [D126](#d126--the-sea-is-settled-by-how-high-the-water-sits-not-by-what-it-is-called-n7-2), [`phase-N7`](./phase-N7-unified-corpus.md).
@@ -4149,10 +4154,11 @@ because it renders as a percentage, and a percentage of 300 hours reads identica
 Counts carry their own denominator, so a thin sample there is a small number honestly reported. **A
 cell can therefore contribute strong-wind hours and no rose.**
 
-⚠ **No copy, deliberately.** Whether a wind-hole clause belongs in the caption, only in the profile,
-or nowhere is a founder call that has **not** been taken. `windHoleSectors` returns data; nothing
-writes a sentence. Same discipline as [D82](#d82--bathymetry-is-context-not-counsel), and this is the
-same class of number wearing a scarier name.
+✅ **No copy — and that is now settled, not pending.** [D145](#d145--wind-hole-risk-is-data-not-copy-no-clause-in-the-caption-or-the-profile-n7-3)
+took the call on 2026-08-15: **nowhere**, in neither the caption nor the profile. `windHoleSectors`
+returns data; nothing writes a sentence. Same discipline as
+[D82](#d82--bathymetry-is-context-not-counsel), and this is the same class of number wearing a
+scarier name. The eventual home for it is a **conditional** banner, not a permanent clause — see D145.
 
 ⚠ **`WIND_HOLE_MIN_HOURS` is a rate, not an episode length.** Strict consecutiveness was ruled out
 (founder, 2026-08-02: *"if the wind dies down for an hour and picks back up I bet it would do just as
@@ -4176,7 +4182,7 @@ pushed more bodies over the 1 km fetch bar. The wall clock also grew because the
 the **measured 5.3 s response latency** plus pacing, where the old loader's *"~96 min at 1/s"*
 counted only the deliberate pause and was wrong by 5×.
 
-**Related:** [D82](#d82--bathymetry-is-context-not-counsel), [D86](#d86--a-rose-is-suppressed-rather-than-rendered-thin), [`HANDOFF-wind-climate-archive.md`](./HANDOFF-wind-climate-archive.md).
+**Related:** [D82](#d82--bathymetry-is-context-not-counsel), [D86](#d86--a-rose-is-suppressed-rather-than-rendered-thin), [D145](#d145--wind-hole-risk-is-data-not-copy-no-clause-in-the-caption-or-the-profile-n7-3), [`scripts/wind-climate/README.md`](../scripts/wind-climate/README.md).
 
 ---
 
@@ -4516,3 +4522,42 @@ Three product lines and one cap, and only `PARKING_INFER_RADIUS_M` (250 m) is th
 founder call; that one moves by eyeballing a state's output.
 
 **Related:** [D72](#d72--parking-is-modelled-apart-from-put-ins-and-directions-route-to-the-car-n6d), [D87](#d87--approach-distance-is-walked-not-flown-n6d), [D3](#d3--never-a-safety-verdict), [`phase-N6d`](./phase-N6d-lake-access-points.md).
+
+---
+
+## D145 — Wind-hole risk is data, not copy: no clause in the caption **or** the profile (N7-3)
+
+**2026-08-15, founder call — closing the question D134 left open.** `strongWindHours` stays stored,
+`windHoleSectors` stays exported, and **neither client writes a sentence about wind holes anywhere.**
+
+**Founder:** *"Let's only let active hazards be displayed right now. We can always add an alert banner
+to the body profile later when it's the right time of the season / right conditions for wind holes to
+appear & nobody has written actual reports that document them."*
+
+**The distinction that settles it is between a climatology and a condition.** `strongWindHours` says
+this shore *averaged* 393 hours at or above 20 mph across five winters. That is a statement about
+Januaries in general. A skater standing on the ice needs to know about **today**, and a permanent
+profile line saying "prone to wind holes" answers a question nobody asked in a voice that sounds like
+it did. It would also be the first thing on a lake page to warn about a hazard that **no one has
+observed** — inverting the direction of evidence the whole hazard system runs on, where a warning
+exists because a person saw something.
+
+**So the bar is the same one D3 sets and D82 applied to bathymetry**: context is allowed to inform,
+never to counsel. Wind holes are the sharper case because the number *is* predictive and the name *is*
+frightening, which is exactly why an always-on clause would over-warn all winter to be right a few
+days of it.
+
+**What this does not close.** The founder named the shape the copy should eventually take, and it is
+worth writing down because it is a better design than the clause it replaces — an **alert banner on
+the body profile**, gated on three conditions at once:
+
+1. the **season and conditions** are right for wind holes to form,
+2. this body's **stored climatology** says its shores get the sustained wind that drives them, and
+3. **no report or hazard already documents them** — because once a person has looked, their
+   observation outranks our average.
+
+That is a live, conditional, self-retiring claim rather than a permanent label, and it needs a
+weather trigger (D56's lane) plus the never-hide invariant. **Not built, not scheduled**; the data it
+would read is already stored, which is the point of having derived it.
+
+**Related:** [D3](#d3--never-a-safety-verdict), [D82](#d82--bathymetry-is-context-not-counsel), [D90](#d90--wind-exposure-is-frequency-times-fetch-never-fetch-alone-n6c-1), [D134](#d134--the-wind-lane-archives-responses-and-captures-the-speed-it-was-already-fetching-n7-3), [`phase-N6c`](./phase-N6c-expanded-lake-profiles.md).

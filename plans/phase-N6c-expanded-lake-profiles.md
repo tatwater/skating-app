@@ -41,8 +41,8 @@
 > shoreline**, and the framing rule that the copy must never imply two lakes' elevations are
 > comparable at tens of feet — which matters *less* at 1 m than at 90 m, but is still the rule.
 >
-> The wind pass is untouched and still blocked on the archive rebuild in
-> `HANDOFF-wind-climate-archive.md`.
+> The wind pass was blocked on the archive rebuild when this was written. That rebuild shipped as
+> **D134**, and the lane finished on 2026-08-15 — see the banner below.
 
 > ### ✅ EVERY DATA GATE IN THIS DOCUMENT IS CLEARED (2026-08-09, N7-3)
 >
@@ -52,7 +52,7 @@
 > | this doc says | actually |
 > | --- | --- |
 > | elevation blocked on an unrun ETL / a metered quota | ✅ **99.5%** — 24,834 of 24,958, 3DEP, 98.2% at 1 m LiDAR (**D127**) |
-> | wind blocked on the archive rebuild | ✅ **built and run** — 5,910 cell-years archived + mirrored, **1,193 bodies** derived offline (**D134**) |
+> | wind blocked on the archive rebuild | ✅ **built, run, and finished** — **47,765 cell-years** archived + mirrored, **11,114 bodies** derived offline (**D134**/**D135**) |
 > | depth ETL not yet run | ✅ run — 24.2% of the corpus, **83–90% above 50 acres**, 81.2% measured |
 > | contour coverage feeding the `+2` prominence term | ✅ **2,057 bodies** in `bathymetryCoverage` |
 > | `regionStats` deciles | ⬜ **the one thing still outstanding** — it is the campaign's last pass |
@@ -64,7 +64,8 @@
 > (250 m)**, not `MIN_FETCH_CLAUSE_M` (1 km) — they are separate questions and D135 explains why. And
 > bodies now carry **sustained-wind hours** (`strongWindHours` / `sampledWindHours` /
 > `strongWindMinMps`) beside the rose, read through `windHoleSectors`. Whether a wind-hole clause
-> belongs in the caption is **still an open founder call**; nothing writes that sentence.
+> belongs in the caption is **settled as of 2026-08-15 — nowhere** (**D145**): not the caption, not
+> the profile. Nothing writes that sentence, and `windHoleSectors` has no production caller by design.
 
 > **⚠️ SPLIT INTO TWO PHASES, 2026-08-02 (founder call at kickoff).** As scoped this was ~15
 > workstreams across schema, ETL, two clients, a new external API, an admin surface and a
@@ -189,10 +190,32 @@ The caption first said Willoughby is *"most open to wind out of the south-southe
 (mountains) around lakes drastically impact the chance that wind could come from particular
 directions."*
 
-Measured against NREL's WIND Toolkit (2 km WRF, Dec–Mar): **19.4% SE, 16.1% SSE, 18.6% NW** — a
-strongly **bimodal rose along the NNW–SSE trough**, with the E/NE quadrant blocked by Pisgah and Hor.
-So the specific prediction was wrong and the *reasoning* was exactly right: terrain dominates, and it
-funnels wind **along** the valley rather than excluding half of it.
+Measured against NREL's WIND Toolkit (2 km WRF, Dec–Mar): a strongly **bimodal rose along the
+NNW–SSE trough**, with the E/NE quadrant blocked by Pisgah and Hor. So the specific prediction was
+wrong and the *reasoning* was exactly right: terrain dominates, and it funnels wind **along** the
+valley rather than excluding half of it.
+
+⚠ **The per-sector percentages moved between the two runs, and the conclusion did not.** This section
+originally recorded **19.4% SE, 16.1% SSE, 18.6% NW** from the 2026-08-02 pass. The 2026-08-15
+full-corpus derive reads:
+
+| | 2026-08-02 | 2026-08-15 | strong-wind hours |
+| --- | --- | --- | --- |
+| NW | 18.6% | **19.2%** | 52 |
+| SSE | 16.1% | **15.3%** | 393 |
+| SE | **19.4%** | 14.5% | 227 |
+| NE | 0.8% | 1.3% | 5 |
+
+Same trough, same 15× NW-over-NE terrain block, same energy — redistributed across adjacent sectors,
+and the *leading* sector is now NW rather than SE. **The likely cause is that Willoughby's sampling
+point moved**: the rose is folded onto WTK's 2 km grid from `interiorPoint`, and N7 re-merged the
+outline from four catalogues between the two runs, so the body may now resolve to a different cell.
+That is a hypothesis from the sequence, **not something confirmed** — worth pinning down before any
+copy quotes a leading sector, since *"most exposed to the southeast"* would now be wrong.
+
+The strong-wind hours are the newer half (D134) and say something the frequencies do not: **SSE
+carries 393 of Willoughby's 1,010 strong hours against NW's 52.** The commonest direction and the
+hardest-blowing one are different shores.
 
 Exposure is therefore the **product**, `winterFrequency[k] × fetchM[k]` (**D90**), and the caption
 says nothing about wind without a rose — there is deliberately no fallback to fetch-alone, because
@@ -438,7 +461,8 @@ delete it once the findings landed here. Audited line by line against the deploy
 **What needed no carrying.** Passes 1–3 (canonical re-import, depth join, bathymetry coverage) were
 superseded wholesale by N7's re-merge and are recorded in
 [`phase-N7-unified-corpus.md`](./phase-N7-unified-corpus.md). Pass 4's Open-Meteo elevation lane is
-dead (**D127** → USGS 3DEP, 99.5%). Pass 5's wind roses ran (1,193 bodies). Pass 6's
+dead (**D127** → USGS 3DEP, 99.5%). Pass 5's wind roses ran (1,193 bodies then; **11,114 after the
+250 m widening finished 2026-08-15**). Pass 6's
 `regionStats:recompute` ran. And **all six of its "gotchas worth not re-learning" are already written
 down** — the 16 MB read cap in the roadmap, N6a, N6b and N7; *"denominators lie by default"* in the
 roadmap and N7; measured-sample wall-clock estimates, the abort-on-a-streak rule, the
