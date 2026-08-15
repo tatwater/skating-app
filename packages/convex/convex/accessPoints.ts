@@ -94,6 +94,27 @@ async function bodiesWithin(
   return hits.sort((a, b) => a.distance - b.distance);
 }
 
+/**
+ * The put-ins that actually render, once a moderator's `hide` is applied (PR #43 review).
+ *
+ * `putIns.hide` does not flip a row's status — it **inserts a `hidden` suppression row at a coord**,
+ * so that one action outlives however many rows are later imported near it. `listForBody` has always
+ * honoured that. The two read paths this phase added did not: they filtered on `status === 'visible'`
+ * alone, so hiding a lake's only launch removed its marker from the map while the drawer went on
+ * naming it, the directions button went on routing to it, and the body kept its Hike-In chip.
+ *
+ * One helper rather than the test repeated twice, because "which launches count" is exactly the rule
+ * that gets re-implemented slightly differently on the third caller.
+ */
+function visibleAfterHides(rows: readonly Doc<'putIns'>[]): Doc<'putIns'>[] {
+  const hidden = rows.filter((r) => r.status === 'hidden');
+  return rows.filter(
+    (r) =>
+      r.status === 'visible' &&
+      !hidden.some((h) => haversineMeters(r.coord, h.coord) <= IMPORT_SUPPRESS_METERS),
+  );
+}
+
 /** Has a moderator hidden this spot? An import must not undo that (see `IMPORT_SUPPRESS_METERS`). */
 async function isModeratorSuppressed(
   ctx: MutationCtx,
@@ -150,7 +171,7 @@ async function linkParkingToBody(
  * no-op patch is still a document write and a subscription invalidation for every client watching
  * this lake.
  */
-async function recomputeAccessKind(
+export async function recomputeAccessKind(
   ctx: MutationCtx,
   waterBodyId: Id<'waterBodies'>,
 ): Promise<void> {
@@ -159,9 +180,9 @@ async function recomputeAccessKind(
     .withIndex('by_water_body', (q) => q.eq('waterBodyId', waterBodyId))
     .take(MAX_ACCESS_ROWS_PER_BODY);
   const kind = bodyAccessKind(
-    rows
-      .filter((r) => r.status === 'visible')
-      .map((r) => resolveApproachKind(r.approachMeters, r.approachKindOverride)),
+    visibleAfterHides(rows).map((r) =>
+      resolveApproachKind(r.approachMeters, r.approachKindOverride),
+    ),
   );
   const body = await ctx.db.get(waterBodyId);
   if (!body || body.accessKind === kind) return;
@@ -509,6 +530,16 @@ export const attachPhoto = mutation({
     if (isMinor(profile.dateOfBirth, Date.now())) {
       throw new ConvexError('Users under 18 cannot upload access-point photos');
     }
+    // The same off-target refusal `accessAlerts.create` makes, and this table needs it for a second
+    // reason: the `MAX_ACCESS_PHOTOS` cap is counted against the target `targetType` names, so a row
+    // smuggling the *other* id past it would land on a point whose cap was never checked — and show
+    // up in that point's gallery on a lake the uploader never touched.
+    if (targetType === 'put_in' && parkingAreaId !== undefined) {
+      throw new ConvexError('A put-in photo cannot also name a parking area');
+    }
+    if (targetType === 'parking_area' && putInId !== undefined) {
+      throw new ConvexError('A parking-area photo cannot also name a put-in');
+    }
     // The same ownership rule reports and hazards hold. It is not merely defensive here: it is what
     // keeps `photoOrphans`' scan-by-author sound, since a photo attached by someone other than its
     // uploader would be referenced by a row no scan of that uploader could reach.
@@ -533,8 +564,7 @@ export const attachPhoto = mutation({
 
     return ctx.db.insert('accessPhotos', {
       targetType,
-      putInId,
-      parkingAreaId,
+      ...(targetType === 'put_in' ? { putInId } : { parkingAreaId }),
       photoId,
       uploaderId: profile._id,
       createdAt: Date.now(),
@@ -648,6 +678,10 @@ export const accessForBody = query({
       .query('putIns')
       .withIndex('by_water_body', (q) => q.eq('waterBodyId', waterBodyId))
       .take(MAX_ACCESS_ROWS_PER_BODY);
+    // A moderator's `hide` applies here exactly as it does on the map (see `visibleAfterHides`).
+    // Resolved once, before either the lot walk or the marker list, so the drawer cannot name a
+    // launch the map has stopped drawing — or hand the directions button its coordinate.
+    const live = visibleAfterHides(rows);
     // ── The lots our put-ins actually reference, resolved BY ID before anything else ──────────────
     //
     // `loadParkingForBody` is capped and reads in index order, which is fine for listing and wrong for
@@ -658,8 +692,8 @@ export const accessForBody = query({
     //
     // Bounded by construction: put-ins are themselves capped, so this adds at most that many gets.
     const referenced = new Map<string, Awaited<ReturnType<typeof loadParkingForBody>>[number]>();
-    for (const row of rows) {
-      if (row.status !== 'visible' || !row.parkingAreaId) continue;
+    for (const row of live) {
+      if (!row.parkingAreaId) continue;
       if (referenced.has(row.parkingAreaId)) continue;
       const lot = await ctx.db.get(row.parkingAreaId);
       if (lot?.status !== 'visible') continue;
@@ -680,22 +714,20 @@ export const accessForBody = query({
     const alerts = await loadLiveAlertsForBody(ctx, waterBodyId);
 
     const interior = (body.interiorPoint ?? body.centroid) as LatLng | undefined;
-    const putIns = rows
-      .filter((r) => r.status === 'visible')
-      .map((r) => ({
-        id: r._id,
-        coord: r.coord,
-        // Resolved here so both clients get the same fallback label — a compass side derived from the
-        // body's *interior* point, never its `centroid`, which is Turf's `pointOnFeature` and lands on
-        // the shoreline (a bearing taken from there is noise).
-        name: resolvePutInName(r.name, r.coord, interior),
-        source: r.source,
-        parkingAreaId: r.parkingAreaId,
-        approachMeters: r.approachMeters,
-        approachAscentM: r.approachAscentM,
-        approachRouted: r.approachRouted,
-        approachKindOverride: r.approachKindOverride,
-      }));
+    const putIns = live.map((r) => ({
+      id: r._id,
+      coord: r.coord,
+      // Resolved here so both clients get the same fallback label — a compass side derived from the
+      // body's *interior* point, never its `centroid`, which is Turf's `pointOnFeature` and lands on
+      // the shoreline (a bearing taken from there is noise).
+      name: resolvePutInName(r.name, r.coord, interior),
+      source: r.source,
+      parkingAreaId: r.parkingAreaId,
+      approachMeters: r.approachMeters,
+      approachAscentM: r.approachAscentM,
+      approachRouted: r.approachRouted,
+      approachKindOverride: r.approachKindOverride,
+    }));
 
     return {
       putIns,

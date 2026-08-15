@@ -584,3 +584,175 @@ describe('a flagged alert is triageable, not a hole in the queue', () => {
     expect(actions.some((a) => a.action === 'retract_access_alert')).toBe(true);
   });
 });
+
+/**
+ * The PR #43 security finding: **an alert may name exactly one target.**
+ *
+ * `targetType` selects which id is validated, and the original code persisted the other one
+ * unchecked — so a `put_in` alert could smuggle the `parkingAreaId` of a lot on a lake the author has
+ * never seen, and `loadLiveAlertsForBody`'s independent `by_parking_area` range would publish it
+ * there. A contributor could put "gate locked" on any lake in the corpus, attributed to nothing that
+ * lake can name.
+ */
+describe('an alert names one target, and cannot be made to name two', () => {
+  /** A second lake with its own lot — the one an attacker wants their warning to appear on. */
+  async function otherLake(t: ReturnType<typeof convexTest>) {
+    const waterBodyId = (await t.run((ctx) =>
+      ctx.db.insert('waterBodies', {
+        name: 'Innocent Pond',
+        searchText: 'Innocent Pond',
+        type: 'lakePond' as const,
+        source: 'osm' as const,
+        externalId: 'way/2',
+        polygon: {
+          type: 'Polygon',
+          coordinates: [
+            [
+              [-70.01, 41.99],
+              [-69.99, 41.99],
+              [-69.99, 42.01],
+              [-70.01, 42.01],
+              [-70.01, 41.99],
+            ],
+          ],
+        },
+        bbox: { minLat: 41.99, minLng: -70.01, maxLat: 42.01, maxLng: -69.99 },
+        centroid: { lat: 42, lng: -70 },
+        dedupStatus: 'clean' as const,
+        createdAt: Date.now(),
+      }),
+    )) as Id<'waterBodies'>;
+    const parkingAreaId = (await t.run((ctx) =>
+      ctx.db.insert('parkingAreas', {
+        coord: { lat: 42.01, lng: -70 },
+        source: 'osm' as const,
+        status: 'visible' as const,
+        amenities: [],
+        createdAt: Date.now(),
+      }),
+    )) as Id<'parkingAreas'>;
+    await t.run((ctx) =>
+      ctx.db.insert('parkingAreaBodies', {
+        parkingAreaId,
+        waterBodyId,
+        inferred: true,
+        createdAt: Date.now(),
+      }),
+    );
+    return { waterBodyId, parkingAreaId };
+  }
+
+  test('a put-in alert carrying a foreign lot is refused outright', async () => {
+    const { t, putInId, author } = await setup();
+    const victim = await otherLake(t);
+
+    await expect(
+      author.as.mutation(api.accessAlerts.create, {
+        ...ALERT,
+        putInId,
+        parkingAreaId: victim.parkingAreaId,
+      }),
+    ).rejects.toThrow(/cannot also name a parking area/);
+
+    // And the lake it was aimed at is untouched — the assertion that matters, since a stored row
+    // would have been reachable from there whatever the mutation returned.
+    expect(
+      await t.query(api.accessAlerts.listForBody, { waterBodyId: victim.waterBodyId }),
+    ).toEqual([]);
+  });
+
+  test('a parking alert carrying a foreign launch is refused too', async () => {
+    const { t, putInId, author } = await setup();
+    const victim = await otherLake(t);
+
+    await expect(
+      author.as.mutation(api.accessAlerts.create, {
+        targetType: 'parking_area',
+        parkingAreaId: victim.parkingAreaId,
+        putInId,
+        reason: 'gate_locked',
+      }),
+    ).rejects.toThrow(/cannot also name a put-in/);
+    expect(await t.run((ctx) => ctx.db.query('accessAlerts').collect())).toEqual([]);
+  });
+
+  /** Belt to that braces: even a legitimate alert stores only the field its type names. */
+  test('a legitimate put-in alert stores no parking id at all', async () => {
+    const { t, putInId, author } = await setup();
+    const id = await author.as.mutation(api.accessAlerts.create, { ...ALERT, putInId });
+    const row = await t.run((ctx) => ctx.db.get(id));
+    expect(row?.putInId).toBe(putInId);
+    expect(row?.parkingAreaId).toBeUndefined();
+  });
+});
+
+/**
+ * The PR #43 cap finding: **the read cap must bound the answer, not the history.**
+ *
+ * No alert row is ever deleted — expiring flips a status — so a lake accumulates them across seasons.
+ * Reading the bare `by_water_body` index took the oldest page and only then filtered for liveness, so
+ * two winters of settled rows would hide a locked gate behind them.
+ */
+describe('a live alert survives a lake full of settled ones', () => {
+  test('an active alert is found behind more than a cap of expired rows', async () => {
+    const { t, waterBodyId, putInId, author } = await setup();
+    // Comfortably past MAX_ACCESS_ROWS_PER_BODY (64), all older than the live one.
+    await t.run(async (ctx) => {
+      for (let i = 0; i < 80; i++) {
+        await ctx.db.insert('accessAlerts', {
+          targetType: 'put_in' as const,
+          putInId,
+          waterBodyId,
+          reason: 'not_plowed' as const,
+          createdByUserId: (await ctx.db.query('profiles').first())?._id as Id<'profiles'>,
+          createdAt: Date.now() - (i + 2) * DAY_MS,
+          season: seasonOf(Date.now()),
+          status: 'expired' as const,
+          confirmCount: 0,
+          denyCount: 0,
+        });
+      }
+    });
+
+    const id = await author.as.mutation(api.accessAlerts.create, { ...ALERT, putInId });
+
+    const live = await t.query(api.accessAlerts.listForBody, { waterBodyId });
+    expect(live.map((a) => a.id)).toContain(id);
+    expect(live).toHaveLength(1);
+  });
+
+  /** The pin's exemption, applied to the read: a busy season must not crowd out a moderator. */
+  test('an official pin survives a cap of newer active alerts', async () => {
+    const { t, waterBodyId, putInId, author } = await setup();
+    const mod = await seedUser(t, 'mod', 'moderator');
+    const pinned = await author.as.mutation(api.accessAlerts.create, { ...ALERT, putInId });
+    await mod.as.mutation(api.accessAlerts.setOfficial, {
+      accessAlertId: pinned,
+      official: true,
+      reason: 'confirmed with the town',
+    });
+
+    await t.run(async (ctx) => {
+      for (let i = 0; i < 80; i++) {
+        await ctx.db.insert('accessAlerts', {
+          targetType: 'put_in' as const,
+          putInId,
+          waterBodyId,
+          reason: 'lot_full' as const,
+          createdByUserId: author.id as Id<'profiles'>,
+          createdAt: Date.now() + i,
+          season: seasonOf(Date.now()),
+          expiresAt: Date.now() + 30 * DAY_MS,
+          status: 'active' as const,
+          confirmCount: 0,
+          denyCount: 0,
+        });
+      }
+    });
+
+    const live = await t.query(api.accessAlerts.listForBody, { waterBodyId });
+    expect(live.map((a) => a.id)).toContain(pinned);
+    // And it sorts first, because a moderator's claim outranks a passer-by's.
+    expect(live[0]?.id).toBe(pinned);
+  });
+});

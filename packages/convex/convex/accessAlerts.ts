@@ -103,6 +103,24 @@ export const create = mutation({
       throw new ConvexError('Users under 18 cannot post access alerts');
     }
 
+    // ⚠ **The off-target id is refused, not ignored** (PR #43 review, security).
+    //
+    // `targetType` selects which id is *validated*, and persisting the other one unchecked is the
+    // whole exploit: an alert filed as `put_in` against a launch you can see, carrying the
+    // `parkingAreaId` of a lot on a lake you have never been to, is reachable from that lake through
+    // `loadLiveAlertsForBody`'s independent `by_parking_area` range. A contributor could publish
+    // "gate locked" on any lake in the corpus, attributed to nothing that lake can name.
+    //
+    // Refused rather than silently dropped, because a client sending both is confused about what it
+    // is claiming and should hear so. The insert below then writes **only** the field `targetType`
+    // names, so the row cannot contradict itself even if this check is ever loosened.
+    if (args.targetType === 'put_in' && args.parkingAreaId !== undefined) {
+      throw new ConvexError('A put-in alert cannot also name a parking area');
+    }
+    if (args.targetType === 'parking_area' && args.putInId !== undefined) {
+      throw new ConvexError('A parking-area alert cannot also name a put-in');
+    }
+
     // Resolve the target and, with it, the body. `waterBodyId` is denormalized onto the row so the
     // per-lake read is one index range rather than a fan-out over every access point on the body.
     let waterBodyId: Id<'waterBodies'>;
@@ -137,8 +155,10 @@ export const create = mutation({
 
     return ctx.db.insert('accessAlerts', {
       targetType: args.targetType,
-      putInId: args.putInId,
-      parkingAreaId: args.parkingAreaId,
+      // Only the field `targetType` names — the row is incapable of carrying a second target.
+      ...(args.targetType === 'put_in'
+        ? { putInId: args.putInId }
+        : { parkingAreaId: args.parkingAreaId }),
       waterBodyId,
       reason: args.reason,
       note,
@@ -334,6 +354,63 @@ function toView(alert: Doc<'accessAlerts'>): AccessAlertView {
 }
 
 /**
+ * The statuses a live alert can hold — **the only two rows either read path needs to see.**
+ *
+ * `expired`, `resolved` and `retracted` are settled and can never come back on their own, so reading
+ * them costs the cap and buys nothing. Kept beside `accessAlertIsLive` in spirit: that function
+ * decides whether a row *is* live, this one decides which rows are worth asking about.
+ */
+const LIVE_STATUSES = ['active', 'official'] as const;
+
+/**
+ * The two status-scoped reads.
+ *
+ * Written out per index rather than parameterized: threading the index name and its leading field
+ * through arguments defeats Convex's index typing and buys one `any` plus a suppression, which is a
+ * poor trade for six duplicated lines on the query this file most needs to be obviously correct.
+ *
+ * In both, the statuses are queried **separately and each capped** rather than as one range, so a
+ * busy season of `active` rows can never crowd out a moderator's pin — the reason `official` is a
+ * status rather than a flag, applied to the read side. Newest-first within each, so a cap that does
+ * bind drops the stalest claim rather than an arbitrary one.
+ */
+async function liveAlertsByBody(
+  ctx: QueryCtx,
+  waterBodyId: Id<'waterBodies'>,
+): Promise<Doc<'accessAlerts'>[]> {
+  const pages = await Promise.all(
+    LIVE_STATUSES.map((status) =>
+      ctx.db
+        .query('accessAlerts')
+        .withIndex('by_water_body_status', (q) =>
+          q.eq('waterBodyId', waterBodyId).eq('status', status),
+        )
+        .order('desc')
+        .take(MAX_ACCESS_ROWS_PER_BODY),
+    ),
+  );
+  return pages.flat();
+}
+
+async function liveAlertsByParkingArea(
+  ctx: QueryCtx,
+  parkingAreaId: Id<'parkingAreas'>,
+): Promise<Doc<'accessAlerts'>[]> {
+  const pages = await Promise.all(
+    LIVE_STATUSES.map((status) =>
+      ctx.db
+        .query('accessAlerts')
+        .withIndex('by_parking_area_status', (q) =>
+          q.eq('parkingAreaId', parkingAreaId).eq('status', status),
+        )
+        .order('desc')
+        .take(MAX_ACCESS_ROWS_PER_BODY),
+    ),
+  );
+  return pages.flat();
+}
+
+/**
  * Every live alert annotating an access point on this body.
  *
  * Liveness is re-checked here and not left to the sweep, because **the cron's schedule must never be a
@@ -347,10 +424,13 @@ export async function loadLiveAlertsForBody(
 ): Promise<AccessAlertView[]> {
   // Capped for the same reason the parking read is (see `MAX_ACCESS_ROWS_PER_BODY`): alerts are
   // user-generated, so "how many can one lake have" is not a number we control.
-  const direct = await ctx.db
-    .query('accessAlerts')
-    .withIndex('by_water_body', (q) => q.eq('waterBodyId', waterBodyId))
-    .take(MAX_ACCESS_ROWS_PER_BODY);
+  //
+  // ⚠ **The cap must bound the answer, not the history** (PR #43 review). Nothing here is ever
+  // deleted — expiring flips a status — so a lake's rows accumulate across seasons, and a capped read
+  // over the bare `by_water_body` index took the *oldest* page and only then filtered for liveness.
+  // Two winters in, that is a page of expired rows and a locked gate nobody hears about. Scoping the
+  // range by status means every row read could still be live, so the cap spends itself on answers.
+  const direct = await liveAlertsByBody(ctx, waterBodyId);
 
   // ── The shared-lot half, and it is not an optimisation ────────────────────────────────────────
   //
@@ -368,10 +448,7 @@ export async function loadLiveAlertsForBody(
     .take(MAX_ACCESS_ROWS_PER_BODY);
   const byId = new Map(direct.map((r) => [r._id, r]));
   for (const link of links) {
-    const lotAlerts = await ctx.db
-      .query('accessAlerts')
-      .withIndex('by_parking_area', (q) => q.eq('parkingAreaId', link.parkingAreaId))
-      .take(MAX_ACCESS_ROWS_PER_BODY);
+    const lotAlerts = await liveAlertsByParkingArea(ctx, link.parkingAreaId);
     for (const alert of lotAlerts) byId.set(alert._id, alert);
   }
 

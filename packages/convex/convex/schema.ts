@@ -2194,10 +2194,25 @@ export default defineSchema({
     pinnedByUserId: v.optional(v.id('profiles')),
     retractedByUserId: v.optional(v.id('profiles')),
   })
-    // The per-lake read: every alert annotating any access point on this body.
-    .index('by_water_body', ['waterBodyId'])
-    .index('by_put_in', ['putInId'])
-    .index('by_parking_area', ['parkingAreaId'])
+    /**
+     * The two per-lake reads, and the status prefix is the point (PR #43 review).
+     *
+     * An alert row is never deleted — expiring flips a status — so a lake accumulates them across
+     * seasons for ever. These replaced bare `by_water_body` / `by_parking_area` indexes, over which a
+     * capped read took the *oldest* rows and only then filtered for liveness: after two winters that
+     * is a page of expired rows and a locked gate nobody is told about. The bug was that the cap got
+     * spent before the filter ran.
+     *
+     * Leading with `status` means the range only ever contains rows that could still be live, so the
+     * cap bounds the answer rather than the history. `active` and `official` are read separately —
+     * they are the only two live statuses, and a pin must not be crowded out by a busy season.
+     *
+     * The unqualified variants are **gone rather than kept alongside**: nothing read them once these
+     * existed, and an index nobody reads is write amplification on every alert and a trap for the next
+     * person, who will reach for the shorter name and reintroduce the bug.
+     */
+    .index('by_water_body_status', ['waterBodyId', 'status'])
+    .index('by_parking_area_status', ['parkingAreaId', 'status'])
     /**
      * The expiry sweep, and the shape is the whole reason `official` is a status.
      *

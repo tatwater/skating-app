@@ -6,10 +6,12 @@
 > re-scored in 84 batches, closing the pass N6c had held since 2026-08-02. —
 > scoped 2026-07-30, kickoff re-read against the post-N7 codebase 2026-08-10. Founder ask, same day as
 > the scoping. **Pre-PR review 2026-08-14** — four defects fixed, a red build made green, and the
-> client surfaces covered; suites now core 1,839 · convex 1,242 · web 311 · mobile 96 · etl 408, with
-> `lint` and `check-types` clean.
+> client surfaces covered. **Greptile round 1 (PR #43)** — three P1s, one of them a security hole,
+> all fixed with tests verified to fail first. Suites now core 1,839 · convex 1,250 · web 311 ·
+> mobile 96 · etl 408, with `lint` and `check-types` clean.
 > See *§What the build found*, *§What the first real run found*, *§The 250 m radius, eyeballed*,
-> *§What the load found*, *§The run, completed* and *§What the pre-PR review found*.
+> *§What the load found*, *§The run, completed*, *§What the pre-PR review found* and
+> *§What Greptile found*.
 > **Split from** [N6c](./phase-N6c-expanded-lake-profiles.md) at scoping — it was roughly the size of
 > everything else in that phase combined, and it is the only part touching a new lifecycle.
 > **Depends on:** nothing in N6c. These two can run in parallel or in either order.
@@ -796,6 +798,59 @@ Closed in the follow-up commit:
 **Still uncovered, named rather than implied:** the three remaining components — `AccessPhotos` (both
 clients) and mobile's `AccessSection` — plus the lake editor's `AccessTool` and the alert-posting
 form's submit path. All would want the same view/data split first.
+
+---
+
+## What Greptile found — 2026-08-14, PR #43
+
+*Three P1s, scored 1/5 and correctly so: one of them is a security hole. All three are real, one is
+real for a different reason than reported, and each has the same underlying shape as the four the
+self-review found — **a new surface added to a system that enumerates its inputs.***
+
+**1. ⚠ An alert could name two targets, and the second one was never checked (security).**
+`create` uses `targetType` to decide which id to *validate* and then persisted **both**. So an alert
+filed as `put_in` against a launch you can see, carrying the `parkingAreaId` of a lot on a lake you
+have never been to, was reachable from that lake through `loadLiveAlertsForBody`'s independent
+`by_parking_area` range. A contributor could publish "gate locked" on any lake in the corpus,
+attributed to nothing that lake could name — and `blockedIds` would de-prioritize a launch there.
+
+Fixed twice over: contradictory ids are **refused**, and the insert writes only the field `targetType`
+names, so the row cannot contradict itself even if the check is later loosened. **`attachPhoto` had
+the identical defect and Greptile did not flag it** — worse there, because the `MAX_ACCESS_PHOTOS` cap
+is counted against the named target, so a smuggled id landed on a point whose cap was never checked.
+
+**2. The read cap was spent on history rather than on answers.** No alert row is ever deleted —
+expiring flips a status — so a lake accumulates them across seasons. `loadLiveAlertsForBody` took a
+capped page off the bare `by_water_body` index and *then* filtered for liveness, so two winters in,
+the oldest 64 rows are all settled and a live locked-gate warning is invisible.
+
+The fix is the discipline the expiry sweep already had, applied to the read: `by_water_body_status`
+and `by_parking_area_status` lead with `status`, so the range only ever contains rows that could be
+live. `active` and `official` are queried **separately and each capped**, because a busy season must
+not crowd out a moderator's pin — which is the same argument that made `official` a status rather than
+a flag, on the read side this time. The three unqualified indexes are **removed**, not kept alongside:
+nothing read them any more, and the shorter name is a trap that reintroduces the bug.
+
+**3. The `accessKind` finding is real; the mutation named is not.** Greptile reported `setOfficial`
+leaving the chip stale. Measured, that one is a no-op — a fresh official marker carries no measured
+approach, so it contributes `undefined` and `bodyAccessKind` ignores it. The invariant behind the
+finding was genuinely unmaintained, though, and **`hide` is where it bites**:
+
+`putIns.hide` does not flip a row's status; it inserts a `hidden` suppression row at a coordinate, so
+one action outlives however many imports later land near it. `listForBody` has always honoured that.
+Neither read path this phase added did. Hiding a lake's only launch therefore removed its marker from
+the map while **the drawer went on naming it, the directions button went on routing to it, and the
+body kept its Hike-In chip** — the moderator's action visible on exactly one of four surfaces. That
+last part is the half the review did not find, and it is the worst of it.
+
+So the suppression rule is now one shared helper used by `recomputeAccessKind` and `accessForBody`,
+and both `putIns` mutations recompute. `setOfficial`'s call is wired despite being a no-op today,
+because an invariant that holds by luck stops holding the moment the mutation grows an argument.
+
+Every fix carries a test that was **verified to fail against the pre-fix code** — three for the first
+two findings, one for the third, plus guards that pin the non-regression side (a launch beyond the
+suppression radius is untouched; a pin survives a flood of newer active rows, which is what a naive
+`order('desc')` fix would have broken).
 
 ---
 

@@ -20,6 +20,7 @@ import { ConvexError, v } from 'convex/values';
 import type { MultiPolygon, Polygon } from 'geojson';
 import type { Doc, Id } from './_generated/dataModel';
 import { mutation, type QueryCtx, query } from './_generated/server';
+import { recomputeAccessKind } from './accessPoints';
 import { requireContributorRole } from './lib/auth';
 import { latLng } from './lib/validators';
 
@@ -211,6 +212,13 @@ export const setOfficial = mutation({
       metadata: { coord, putInId: id },
       createdAt: Date.now(),
     });
+    // The body's denormalized `accessKind` is derived from its visible put-ins, so every mutation
+    // that changes that set owes it a recompute (PR #43 review). A fresh `official` marker carries no
+    // measured approach, so today this is usually a no-op — `bodyAccessKind` ignores an unknown kind.
+    // It is here because the *invariant* is what keeps the chip honest, and the alternative is a rule
+    // that holds by luck: the moment this mutation learns to take an approach, or the ladder learns
+    // to score an unmeasured official marker, the omission becomes a wrong chip nobody looks for.
+    await recomputeAccessKind(ctx, waterBodyId);
     return id;
   },
 });
@@ -244,6 +252,11 @@ export const hide = mutation({
       metadata: { coord, putInId: id },
       createdAt: Date.now(),
     });
+    // ⚠ **This one is not a no-op, and it is the case the review found.** A hide suppresses every
+    // launch within `DEFAULT_PUTIN_MERGE_METERS` of the coord, so hiding a lake's only hike-in launch
+    // has to take the Hike-In chip with it — otherwise the map draws no marker while the card still
+    // warns about a walk to a launch that is no longer there.
+    await recomputeAccessKind(ctx, waterBodyId);
     return id;
   },
 });

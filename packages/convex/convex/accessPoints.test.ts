@@ -84,6 +84,38 @@ function northOfShore(metres: number, { half = 0.01, lat = 44, lng = -72 } = {})
   return { lat: lat + half + metres * DEG_PER_M, lng };
 }
 
+/** A moderator identity — shared by every describe that exercises an operator write path. */
+async function seedModerator(t: ReturnType<typeof convexTest>) {
+  const subject = 'mod';
+  await t.run((ctx) =>
+    ctx.db.insert('profiles', {
+      clerkUserId: subject,
+      displayName: subject,
+      username: subject,
+      driveTimePrefMinutes: 60,
+      profileVisibility: 'public' as const,
+      notificationPrefs: {
+        activityDetected: true,
+        bountyRequest: true,
+        hazardConfirmation: true,
+        bountyFulfilled: true,
+        reportRated: true,
+        reportCommented: true,
+        contentFlagResolved: true,
+        favoriteReport: true,
+        nearbyReportDigest: false,
+        greatReportNearby: false,
+      },
+      dateOfBirth: Date.UTC(1990, 0, 1),
+      reputationPoints: 0,
+      role: 'moderator' as const,
+      status: 'active' as const,
+      createdAt: Date.now(),
+    }),
+  );
+  return t.withIdentity({ subject });
+}
+
 const LOT = {
   externalId: 'way/lot-1',
   point: { lat: 44.0105, lng: -72 },
@@ -731,37 +763,6 @@ describe('D2 richness — the term this phase unblocks (D143)', () => {
 });
 
 describe('the operator write path (D72 amendment / D144)', () => {
-  async function seedModerator(t: ReturnType<typeof convexTest>) {
-    const subject = 'mod';
-    await t.run((ctx) =>
-      ctx.db.insert('profiles', {
-        clerkUserId: subject,
-        displayName: subject,
-        username: subject,
-        driveTimePrefMinutes: 60,
-        profileVisibility: 'public' as const,
-        notificationPrefs: {
-          activityDetected: true,
-          bountyRequest: true,
-          hazardConfirmation: true,
-          bountyFulfilled: true,
-          reportRated: true,
-          reportCommented: true,
-          contentFlagResolved: true,
-          favoriteReport: true,
-          nearbyReportDigest: false,
-          greatReportNearby: false,
-        },
-        dateOfBirth: Date.UTC(1990, 0, 1),
-        reputationPoints: 0,
-        role: 'moderator' as const,
-        status: 'active' as const,
-        createdAt: Date.now(),
-      }),
-    );
-    return t.withIdentity({ subject });
-  }
-
   /**
    * The amendment, as a test. The ~250 m radius bounds what the ETL will *guess*; a human's assertion
    * has no distance limit, and a mile-away trailhead is the case this phase exists for.
@@ -1142,5 +1143,94 @@ describe('the candidate box is sized to the radius (the 105 GB lesson)', () => {
     });
     expect(result.created).toBe(1);
     expect(result.linksCreated).toBe(1);
+  });
+});
+
+/**
+ * A moderator's hide reaches every access surface (PR #43 review, finding 3).
+ *
+ * `putIns.hide` does not flip a row's status — it inserts a `hidden` suppression row at a coord, so
+ * one action outlives however many imports later land near it. `listForBody` has always honoured
+ * that; the two read paths N6d added did not. Hiding a lake's only launch removed its marker from the
+ * map while the drawer went on naming it, the directions button went on routing to it, and the body
+ * kept its Hike-In chip.
+ *
+ * The review reported this as `setOfficial` leaving `accessKind` stale. That specific case is a
+ * no-op — a fresh official marker carries no measured approach, so it contributes nothing to
+ * `bodyAccessKind` — but the invariant behind it was genuinely unmaintained, and `hide` is where it
+ * bites.
+ */
+describe('a hidden coordinate suppresses the launch everywhere, not just on the map', () => {
+  async function seedHikeInLaunch(t: ReturnType<typeof convexTest>, body: Id<'waterBodies'>) {
+    const putInId = (await t.run((ctx) =>
+      ctx.db.insert('putIns', {
+        waterBodyId: body,
+        coord: northOfShore(5),
+        source: 'osm' as const,
+        status: 'visible' as const,
+        approachMeters: 1_200,
+        approachRouted: true,
+        createdAt: Date.now(),
+      }),
+    )) as Id<'putIns'>;
+    await t.run((ctx) => ctx.db.patch(body, { accessKind: 'hike_in' as const }));
+    return putInId;
+  }
+
+  test('hiding the only launch takes the chip, the drawer entry and the directions target with it', async () => {
+    const t = convexTest(schema, modules);
+    const body = await seedSquareBody(t);
+    await seedHikeInLaunch(t, body);
+    const mod = await seedModerator(t);
+
+    await mod.mutation(api.putIns.hide, {
+      waterBodyId: body,
+      coord: northOfShore(5),
+      reason: 'this is somebody’s driveway',
+    });
+
+    // The map already did this. These three did not.
+    expect(await t.query(api.putIns.listForBody, { waterBodyId: body })).toEqual([]);
+    expect((await t.run((ctx) => ctx.db.get(body)))?.accessKind).toBeUndefined();
+    const access = await t.query(api.accessPoints.accessForBody, { waterBodyId: body });
+    expect(access.putIns).toEqual([]);
+  });
+
+  /** A hide is a statement about *one* launch, not about the lake. */
+  test('a launch beyond the suppression radius is untouched', async () => {
+    const t = convexTest(schema, modules);
+    const body = await seedSquareBody(t);
+    await seedHikeInLaunch(t, body);
+    const mod = await seedModerator(t);
+
+    // Well outside IMPORT_SUPPRESS_METERS (150 m) of the launch at 5 m north of the shore.
+    await mod.mutation(api.putIns.hide, {
+      waterBodyId: body,
+      coord: northOfShore(900),
+      reason: 'unrelated',
+    });
+
+    expect((await t.run((ctx) => ctx.db.get(body)))?.accessKind).toBe('hike_in');
+    expect(
+      (await t.query(api.accessPoints.accessForBody, { waterBodyId: body })).putIns,
+    ).toHaveLength(1);
+  });
+
+  /**
+   * The mutation the review actually named. It is a no-op today and is wired anyway, because the
+   * invariant — every writer of the visible put-in set recomputes the chip — is what keeps this
+   * honest, and a rule that holds by luck stops holding the moment the mutation grows an argument.
+   */
+  test('setOfficial keeps the chip correct rather than merely unchanged', async () => {
+    const t = convexTest(schema, modules);
+    const body = await seedSquareBody(t);
+    await seedHikeInLaunch(t, body);
+    const mod = await seedModerator(t);
+
+    await mod.mutation(api.putIns.setOfficial, { waterBodyId: body, coord: northOfShore(400) });
+
+    // Still hike-in: the official marker has no measured approach, so the easiest *known* way onto
+    // this lake is unchanged. The assertion is that the value is re-derived, not left alone.
+    expect((await t.run((ctx) => ctx.db.get(body)))?.accessKind).toBe('hike_in');
   });
 });
