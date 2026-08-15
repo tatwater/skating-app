@@ -55,7 +55,7 @@ import {
   query,
 } from './_generated/server';
 import { loadLiveAlertsForBody } from './accessAlerts';
-import { MAX_ACCESS_ROWS_PER_BODY } from './lib/accessLimits';
+import { MAX_ACCESS_ROWS_PER_BODY, MAX_PUT_IN_ROWS_SCANNED } from './lib/accessLimits';
 import { requireContributor, requireContributorRole } from './lib/auth';
 import { ACCESS_ALERT_TARGETS, ACCESS_AMENITIES, APPROACH_KINDS } from './lib/enums';
 import { assertOwnedPhotos, resolvePhotoUrls } from './lib/photoAccess';
@@ -121,10 +121,12 @@ async function isModeratorSuppressed(
   waterBodyId: Id<'waterBodies'>,
   coord: LatLng,
 ): Promise<boolean> {
+  // A **search**, so it takes the scan bound rather than the render cap: a `hide` that sorted past
+  // the first page would be a hide the next import silently undoes.
   const rows = await ctx.db
     .query('putIns')
     .withIndex('by_water_body', (q) => q.eq('waterBodyId', waterBodyId))
-    .take(MAX_ACCESS_ROWS_PER_BODY);
+    .take(MAX_PUT_IN_ROWS_SCANNED);
   return rows.some(
     (r) => r.status === 'hidden' && haversineMeters(coord, r.coord) <= IMPORT_SUPPRESS_METERS,
   );
@@ -175,10 +177,12 @@ export async function recomputeAccessKind(
   ctx: MutationCtx,
   waterBodyId: Id<'waterBodies'>,
 ): Promise<void> {
+  // The scan bound, because "the easiest way onto this lake" is a minimum over the whole set: a
+  // truncated read describes a subset and calls it the body.
   const rows = await ctx.db
     .query('putIns')
     .withIndex('by_water_body', (q) => q.eq('waterBodyId', waterBodyId))
-    .take(MAX_ACCESS_ROWS_PER_BODY);
+    .take(MAX_PUT_IN_ROWS_SCANNED);
   const kind = bodyAccessKind(
     visibleAfterHides(rows).map((r) =>
       resolveApproachKind(r.approachMeters, r.approachKindOverride),
@@ -693,14 +697,15 @@ export const accessForBody = query({
     // unknown-body branch shouldn't have to know it is sometimes absent.
     if (!body) return { putIns: [], parking: [], blockedIds: [], alerts: [] };
 
+    // **Scanned wide, answered narrow.** Suppression needs every `hidden` row on the body — one that
+    // sorted past a render-sized page would leave the drawer naming a launch the moderator removed —
+    // so the read takes the scan bound and the *answer* is capped afterwards. Bounding the search by
+    // the size of the reply is the mistake this phase has now made in three different places.
     const rows = await ctx.db
       .query('putIns')
       .withIndex('by_water_body', (q) => q.eq('waterBodyId', waterBodyId))
-      .take(MAX_ACCESS_ROWS_PER_BODY);
-    // A moderator's `hide` applies here exactly as it does on the map (see `visibleAfterHides`).
-    // Resolved once, before either the lot walk or the marker list, so the drawer cannot name a
-    // launch the map has stopped drawing — or hand the directions button its coordinate.
-    const live = visibleAfterHides(rows);
+      .take(MAX_PUT_IN_ROWS_SCANNED);
+    const live = visibleAfterHides(rows).slice(0, MAX_ACCESS_ROWS_PER_BODY);
     // ── The lots our put-ins actually reference, resolved BY ID before anything else ──────────────
     //
     // `loadParkingForBody` is capped and reads in index order, which is fine for listing and wrong for

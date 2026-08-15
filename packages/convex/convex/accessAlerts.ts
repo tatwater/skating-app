@@ -47,7 +47,7 @@ import {
   type QueryCtx,
   query,
 } from './_generated/server';
-import { MAX_ACCESS_ROWS_PER_BODY } from './lib/accessLimits';
+import { MAX_ACCESS_ROWS_PER_BODY, MAX_LOT_LINKS_SCANNED } from './lib/accessLimits';
 import { requireContributor, requireContributorRole } from './lib/auth';
 import { ACCESS_ALERT_REASONS, ACCESS_ALERT_TARGETS, ACCESS_ALERT_VERDICTS } from './lib/enums';
 import { literals } from './lib/validators';
@@ -457,10 +457,18 @@ export async function loadLiveAlertsForBody(
   //
   // So the lot's alerts are pulled through its associations as well, and the two sets are deduped: an
   // alert filed against this body **and** sitting on a lot linked to it appears in both.
+  //
+  // ⚠ **This walk is bounded by `MAX_LOT_LINKS_SCANNED`, not by the render cap**, and conflating the
+  // two was a real omission: the render cap exists to stop a drawer returning 160 parking markers,
+  // while every association skipped *here* is a locked gate somebody is not told about. Champlain
+  // carries 160 associations, so at 64 the corpus's biggest lakes could not see a warning on their
+  // own parking. The direct read above rescues an alert filed against *this* body; a shared lot's
+  // alert is filed against whichever body came first, so on the other lake this walk is the only way
+  // to it.
   const links = await ctx.db
     .query('parkingAreaBodies')
     .withIndex('by_water_body', (q) => q.eq('waterBodyId', waterBodyId))
-    .take(MAX_ACCESS_ROWS_PER_BODY);
+    .take(MAX_LOT_LINKS_SCANNED);
   const byId = new Map<Id<'accessAlerts'>, Doc<'accessAlerts'>>();
 
   // ⚠ **`waterBodyId` is a denormalization, and denormalizations go stale — so the *target* decides
@@ -501,10 +509,12 @@ export async function loadLiveAlertsForBody(
     byId.set(alert._id, alert);
   }
 
-  for (const link of links) {
-    const lotAlerts = await liveAlertsByParkingArea(ctx, link.parkingAreaId, now);
-    for (const alert of lotAlerts) byId.set(alert._id, alert);
-  }
+  // Issued together rather than in sequence: they are independent indexed ranges that return nothing
+  // for the overwhelming majority of lots, so the cost is round trips rather than documents.
+  const lotPages = await Promise.all(
+    links.map((link) => liveAlertsByParkingArea(ctx, link.parkingAreaId, now)),
+  );
+  for (const page of lotPages) for (const alert of page) byId.set(alert._id, alert);
 
   return [...byId.values()]
     .filter((r) => accessAlertIsLive(r, now))

@@ -1288,3 +1288,63 @@ describe("an operator's lot survives a lake that exceeds the read cap", () => {
     expect(access.parking.map((l) => l.id)).toContain(official);
   });
 });
+
+/**
+ * Bounding a **search** by the size of the *answer* — the mistake this phase made in three places
+ * (self-review after PR #43 round 4).
+ *
+ * A `hide` is a suppression row among the body's put-ins. Reading only a render-sized page to look
+ * for one means that on a busy body the hide sorts past the window and is silently undone: the import
+ * re-creates the launch, the chip keeps describing it, and the drawer keeps offering it. The read cap
+ * exists to bound what a drawer *returns*; it was never the right bound for a question.
+ */
+describe('a hide is honoured however many put-ins the lake has', () => {
+  test('a suppression row past the render cap still suppresses', async () => {
+    const t = convexTest(schema, modules);
+    const body = await seedSquareBody(t);
+
+    // A busy shoreline: more launches than the render cap, all visible, all before the hide.
+    await t.run(async (ctx) => {
+      for (let i = 0; i < MAX_ACCESS_ROWS_PER_BODY + 20; i++) {
+        await ctx.db.insert('putIns', {
+          waterBodyId: body,
+          coord: northOfShore(5 + i),
+          source: 'osm' as const,
+          status: 'visible' as const,
+          externalId: `node/bulk-${i}`,
+          createdAt: Date.now(),
+        });
+      }
+    });
+    // The launch that matters, and the moderator's hide of it — both past the window.
+    await t.run((ctx) =>
+      ctx.db.insert('putIns', {
+        waterBodyId: body,
+        coord: northOfShore(10, { lng: -72.005 }),
+        source: 'osm' as const,
+        status: 'visible' as const,
+        approachMeters: 1_400,
+        approachRouted: true,
+        externalId: 'node/private-driveway',
+        createdAt: Date.now(),
+      }),
+    );
+    const mod = await seedModerator(t);
+    await mod.mutation(api.putIns.hide, {
+      waterBodyId: body,
+      coord: northOfShore(10, { lng: -72.005 }),
+      reason: 'this is a private driveway',
+    });
+
+    // The suppressed launch is gone from the drawer, and the import will not resurrect it.
+    const access = await t.query(api.accessPoints.accessForBody, { waterBodyId: body });
+    expect(access.putIns.some((p) => p.approachMeters === 1_400)).toBe(false);
+    // Still bounded: a search that reads wide must not answer wide.
+    expect(access.putIns.length).toBeLessThanOrEqual(MAX_ACCESS_ROWS_PER_BODY);
+
+    const result = await t.mutation(internal.accessPoints.matchAndImportPutIns, {
+      putIns: [{ externalId: 'node/private-driveway', point: northOfShore(10, { lng: -72.005 }) }],
+    });
+    expect(result.moderatorSuppressed).toBe(1);
+  });
+});

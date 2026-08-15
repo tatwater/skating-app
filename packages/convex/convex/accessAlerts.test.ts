@@ -999,3 +999,106 @@ describe('a put-in alert stops warning the lake its launch left', () => {
     expect(await t.query(api.accessAlerts.listForBody, { waterBodyId: elsewhere })).toEqual([]);
   });
 });
+
+/**
+ * The shared-lot walk must reach **every** lot the body has, not the first capful (PR #43, round 4).
+ *
+ * `loadLiveAlertsForBody` finds a lot's alerts by walking the body's associations. That walk was
+ * capped at the *render* cap, which is the wrong bound for it: the render cap exists to stop a drawer
+ * returning 160 parking markers, while this walk is looking for the handful of lots that have a
+ * warning on them. Champlain carries 160 associations today, so on the corpus's biggest lakes every
+ * association past the 64th was simply not asked about.
+ *
+ * The direct read rescues an alert *filed against this body* — but a shared lot's alert is filed
+ * against whichever body came first, so on the other lake it is reachable only through this walk.
+ */
+describe('a shared-lot alert is found however many lots the lake has', () => {
+  test('an alert on the hundredth lot still reaches the lake', async () => {
+    const { t } = await setup();
+    const filedAgainst = await seedBody(t);
+    const busy = (await t.run((ctx) =>
+      ctx.db.insert('waterBodies', {
+        name: 'Champlain',
+        searchText: 'Champlain',
+        type: 'lakePond' as const,
+        source: 'osm' as const,
+        externalId: 'way/champlain',
+        polygon: {
+          type: 'Polygon',
+          coordinates: [
+            [
+              [-73.01, 44.49],
+              [-72.99, 44.49],
+              [-72.99, 44.51],
+              [-73.01, 44.51],
+              [-73.01, 44.49],
+            ],
+          ],
+        },
+        bbox: { minLat: 44.49, minLng: -73.01, maxLat: 44.51, maxLng: -72.99 },
+        centroid: { lat: 44.5, lng: -73 },
+        dedupStatus: 'clean' as const,
+        createdAt: Date.now(),
+      }),
+    )) as Id<'waterBodies'>;
+
+    // The lake's own lots, linked first — more than the render cap, as Champlain really has.
+    await t.run(async (ctx) => {
+      for (let i = 0; i < 100; i++) {
+        const parkingAreaId = await ctx.db.insert('parkingAreas', {
+          coord: { lat: 44.5, lng: -73 },
+          source: 'osm' as const,
+          status: 'visible' as const,
+          amenities: [],
+          externalId: `way/bulk-${i}`,
+          createdAt: Date.now(),
+        });
+        await ctx.db.insert('parkingAreaBodies', {
+          parkingAreaId,
+          waterBodyId: busy,
+          inferred: true,
+          createdAt: Date.now(),
+        });
+      }
+    });
+
+    // A trailhead lot serving both lakes, associated with the busy one *last* so its link sits well
+    // past the cap. Filed against the other lake, so only the walk can find it here.
+    const shared = (await t.run((ctx) =>
+      ctx.db.insert('parkingAreas', {
+        coord: { lat: 44.5, lng: -73.004 },
+        source: 'osm' as const,
+        status: 'visible' as const,
+        amenities: [],
+        externalId: 'way/shared',
+        createdAt: Date.now(),
+      }),
+    )) as Id<'parkingAreas'>;
+    await t.run(async (ctx) => {
+      await ctx.db.insert('parkingAreaBodies', {
+        parkingAreaId: shared,
+        waterBodyId: filedAgainst,
+        inferred: true,
+        createdAt: Date.now(),
+      });
+      await ctx.db.insert('parkingAreaBodies', {
+        parkingAreaId: shared,
+        waterBodyId: busy,
+        inferred: true,
+        createdAt: Date.now(),
+      });
+    });
+
+    const member = await seedUser(t, 'member');
+    const alertId = await member.as.mutation(api.accessAlerts.create, {
+      targetType: 'parking_area',
+      parkingAreaId: shared,
+      reason: 'gate_locked',
+    });
+    expect((await t.run((ctx) => ctx.db.get(alertId)))?.waterBodyId).toBe(filedAgainst);
+
+    // A gate is locked for everybody who parks there, including the people going to the big lake.
+    const onBusy = await t.query(api.accessAlerts.listForBody, { waterBodyId: busy });
+    expect(onBusy.map((a) => a.id)).toContain(alertId);
+  });
+});

@@ -7,9 +7,10 @@
 > scoped 2026-07-30, kickoff re-read against the post-N7 codebase 2026-08-10. Founder ask, same day as
 > the scoping. **Pre-PR review 2026-08-14** — four defects fixed, a red build made green, and the
 > client surfaces covered. **Greptile round 1 (PR #43)** — three P1s, one of them a security hole,
-> **rounds 2–3** three more cap defects, and a self-review pass that found two more of the same class
-> from the write side — all fixed with tests verified to fail first. Suites now core 1,839 ·
-> convex 1,255 · web 311 · mobile 96 · etl 408, with `lint` and `check-types` clean.
+> **rounds 2–4** four more cap defects, plus five the self-review found first — all fixed with tests
+> verified to fail first, and the rule behind every one of them written down (*scanned wide, answered
+> narrow*). Suites now core 1,839 · convex 1,257 · web 311 · mobile 96 · etl 408, with `lint` and
+> `check-types` clean.
 > See *§What the build found*, *§What the first real run found*, *§The 250 m radius, eyeballed*,
 > *§What the load found*, *§The run, completed*, *§What the pre-PR review found* and
 > *§What Greptile found*.
@@ -920,6 +921,38 @@ refusal. They now derive the id and the type together and are incapable of formi
 uncapped (Phase 4 code, now reading a table N6d filled), and `expireLapsedAlerts` sweeps 200 rows per
 six hours, so a season rollover lags for days. The second is now *safe* rather than merely tolerable,
 because the read no longer trusts the sweep's schedule — which is what round 3 bought.
+
+### Round 4 — the distinction all six cap findings were circling
+
+**7. The shared-lot walk was bounded by the render cap.** `loadLiveAlertsForBody` finds a lot's
+alerts by walking the body's associations, and that walk took `MAX_ACCESS_ROWS_PER_BODY` — so on
+Champlain's 160 associations, every lot past the 64th was never asked about. The direct read rescues
+an alert filed against *this* body; a shared lot's alert is filed against whichever body came first,
+so on the other lake the walk is the only route to it. **The corpus's biggest lakes could not see a
+warning on their own parking.**
+
+This is the finding that finally named the rule the previous five were circling:
+
+> **Ask whether a cap is bounding an _answer_ or a _search_.** A render cap exists so a drawer does
+> not return 160 parking markers. A search is looking for the handful of rows that carry the thing
+> you asked about, and every row it skips is a wrong answer, not a shorter one.
+
+The walk now takes `MAX_LOT_LINKS_SCANNED` (512) — affordable because a `parkingAreaBodies` row is
+four fields and two ids, a rounding error beside the ~300 KB polygon that actually took the deployment
+down in August — and the per-lot probes are issued in parallel.
+
+**And applying that rule to its siblings found three more, before Greptile did.** All three read
+`putIns` by body at the render cap while asking a question about the whole set:
+
+- `isModeratorSuppressed` asks *"has anyone hidden this spot?"* — a `hide` sorting past the page is a
+  hide **the next import silently undoes**, which is the whack-a-mole the suppression row exists to
+  prevent;
+- `recomputeAccessKind` takes the **minimum** approach over the body, so a truncated read describes a
+  subset and calls it the lake;
+- `accessForBody` needs every `hidden` row to apply suppression, though it returns only a page.
+
+All three now scan on `MAX_PUT_IN_ROWS_SCANNED` (512) and `accessForBody` caps its *reply* afterwards
+— **scanned wide, answered narrow**, which is the rule stated as code.
 
 ---
 
