@@ -28,11 +28,12 @@ export function AccessPhotos({
   label: string;
 }) {
   const targetType = putInId ? ('put_in' as const) : ('parking_area' as const);
-  const photos = useQuery(api.accessPoints.listPhotos, {
-    targetType,
-    ...(putInId ? { putInId } : {}),
-    ...(parkingAreaId ? { parkingAreaId } : {}),
-  });
+  // Exactly the id `targetType` names, never both. The server refuses a row that claims two targets
+  // — an alert or photo carrying a foreign id is reachable from that other lake's read path — and
+  // spreading whichever props happened to be set would send one the moment this component is given
+  // both. Deriving the pair together keeps the client incapable of forming the request.
+  const target = putInId ? { putInId } : parkingAreaId ? { parkingAreaId } : {};
+  const photos = useQuery(api.accessPoints.listPhotos, { targetType, ...target });
   const generateUploadUrl = useMutation(api.photos.generateUploadUrl);
   const createPhoto = useMutation(api.photos.create);
   const attach = useMutation(api.accessPoints.attachPhoto);
@@ -65,12 +66,7 @@ export function AccessPhotos({
           thumbStorageId: thumbStorageId as Id<'_storage'>,
           placeOnMap: false,
         });
-        await attach({
-          targetType,
-          ...(putInId ? { putInId } : {}),
-          ...(parkingAreaId ? { parkingAreaId } : {}),
-          photoId,
-        });
+        await attach({ targetType, ...target, photoId });
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Couldn’t add that photo.');

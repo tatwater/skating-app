@@ -809,3 +809,193 @@ describe('the cap ranks by observation time, not by when the row landed', () => 
     expect(live[0]?.id).toBe(freshest);
   });
 });
+
+/**
+ * The cap must contain **only rows that can still be live** (PR #43 review, round 3).
+ *
+ * Scoping the range by `status` removed settled rows, and it does not remove *unswept* ones: expiry
+ * is a status flip performed by a cron every six hours in pages of 200, so a row whose `expiresAt`
+ * passed an hour ago is still `status: 'active'` and still inside the range. Taking a capful of those
+ * and only then applying `accessAlertIsLive` spends the budget on rows that are about to be thrown
+ * away — and the row they displace is the worst possible one to lose, because an alert kept current
+ * by confirmations has an *old* `createdAt` and a *future* expiry. It sorts last and it is the only
+ * live warning on the lake.
+ */
+describe('an unswept backlog cannot hide a confirmed, still-live warning', () => {
+  test('a long closure kept current by confirmations survives a capful of lapsed rows', async () => {
+    const { t, waterBodyId, putInId, author } = await setup();
+    const now = Date.now();
+
+    // The one that matters: asserted seven weeks ago, re-confirmed yesterday, so it is live for
+    // another month — and its `createdAt` is the oldest on the lake.
+    const confirmed = (await t.run((ctx) =>
+      ctx.db.insert('accessAlerts', {
+        targetType: 'put_in' as const,
+        putInId,
+        waterBodyId,
+        reason: 'road_closed' as const,
+        note: 'Town has not reopened the gate',
+        createdByUserId: author.id as Id<'profiles'>,
+        createdAt: now - 50 * DAY_MS,
+        season: seasonOf(now),
+        expiresAt: now + 29 * DAY_MS,
+        lastConfirmedAt: now - DAY_MS,
+        status: 'active' as const,
+        confirmCount: 3,
+        denyCount: 0,
+      }),
+    )) as Id<'accessAlerts'>;
+
+    // The backlog: lapsed a week ago, newer than the live one by `createdAt`, and still `active`
+    // because the sweep has not reached them.
+    await t.run(async (ctx) => {
+      for (let i = 0; i < 80; i++) {
+        await ctx.db.insert('accessAlerts', {
+          targetType: 'put_in' as const,
+          putInId,
+          waterBodyId,
+          reason: 'lot_full' as const,
+          createdByUserId: author.id as Id<'profiles'>,
+          createdAt: now - 40 * DAY_MS,
+          season: seasonOf(now),
+          expiresAt: now - 7 * DAY_MS,
+          status: 'active' as const,
+          confirmCount: 0,
+          denyCount: 0,
+        });
+      }
+    });
+
+    const live = await t.query(api.accessAlerts.listForBody, { waterBodyId });
+    expect(live.map((a) => a.id)).toContain(confirmed);
+    // And it is the only thing on the lake, because everything else lapsed.
+    expect(live).toHaveLength(1);
+  });
+});
+
+/**
+ * A lot alert follows the **association**, not the denormalized column (self-review, pre-round-4).
+ *
+ * `waterBodyId` is stamped at `create` from whichever association came first. `setOfficialParking`
+ * can then delete that association — a moderator narrowing a lot to the lakes it really serves — and
+ * the row goes on naming a body the lot has nothing to do with. Same failure as the
+ * contradictory-target hole, reached from the write side: a "gate locked" warning on a lake nobody
+ * parks at that lot for.
+ */
+describe('a lot alert stops showing on a lake the lot no longer serves', () => {
+  test('dropping the association drops the warning with it', async () => {
+    const t = convexTest(schema, modules);
+    const a = await seedBody(t);
+    const b = (await t.run((ctx) =>
+      ctx.db.insert('waterBodies', {
+        name: 'Second Lake',
+        searchText: 'Second Lake',
+        type: 'lakePond' as const,
+        source: 'osm' as const,
+        externalId: 'way/9',
+        polygon: {
+          type: 'Polygon',
+          coordinates: [
+            [
+              [-72.01, 44.99],
+              [-71.99, 44.99],
+              [-71.99, 45.01],
+              [-72.01, 45.01],
+              [-72.01, 44.99],
+            ],
+          ],
+        },
+        bbox: { minLat: 44.99, minLng: -72.01, maxLat: 45.01, maxLng: -71.99 },
+        centroid: { lat: 45, lng: -72 },
+        dedupStatus: 'clean' as const,
+        createdAt: Date.now(),
+      }),
+    )) as Id<'waterBodies'>;
+
+    const mod = await seedUser(t, 'mod', 'moderator');
+    const member = await seedUser(t, 'member');
+    const parkingAreaId = await mod.as.mutation(api.accessPoints.setOfficialParking, {
+      coord: { lat: 44.5, lng: -72 },
+      amenities: [],
+      waterBodyIds: [a, b],
+    });
+    const alertId = await member.as.mutation(api.accessAlerts.create, {
+      targetType: 'parking_area',
+      parkingAreaId,
+      reason: 'gate_locked',
+    });
+    // Filed against the first association, and visible from both lakes — the D72 shared-lot rule.
+    expect(await t.query(api.accessAlerts.listForBody, { waterBodyId: a })).toHaveLength(1);
+    expect(await t.query(api.accessAlerts.listForBody, { waterBodyId: b })).toHaveLength(1);
+    expect((await t.run((ctx) => ctx.db.get(alertId)))?.waterBodyId).toBe(a);
+
+    // The moderator narrows the lot to the lake it actually serves.
+    await mod.as.mutation(api.accessPoints.setOfficialParking, {
+      parkingAreaId,
+      coord: { lat: 44.5, lng: -72 },
+      amenities: [],
+      waterBodyIds: [b],
+    });
+
+    // Gone from the lake it no longer serves, still on the one it does — even though the row's own
+    // `waterBodyId` still says otherwise.
+    expect(await t.query(api.accessAlerts.listForBody, { waterBodyId: a })).toEqual([]);
+    expect(await t.query(api.accessAlerts.listForBody, { waterBodyId: b })).toHaveLength(1);
+  });
+});
+
+/**
+ * The same rule for the other target type, and the honest limit of it.
+ *
+ * A re-import can move a launch between bodies — `matchAndImportPutIns` patches `waterBodyId` from
+ * the OSM coordinate. The alert then names a lake its launch has left. What this guarantees is that
+ * **the wrong lake stops being warned**; it does not make the alert appear on the new one, because
+ * the read is keyed on the denormalized column and the row is simply unreachable from there.
+ *
+ * That asymmetry is the right way round — showing nothing beats showing a locked gate to people
+ * heading somewhere else — and making it *follow* would need a write-side repair in the import lane
+ * (plus the `by_put_in` index back). Deliberately not built: a mapper moving a slipway across a lake
+ * boundary is not a case worth carrying code for, where a moderator narrowing a lot's associations
+ * is an ordinary Tuesday.
+ */
+describe('a put-in alert stops warning the lake its launch left', () => {
+  test('the warning leaves with the launch', async () => {
+    const { t, waterBodyId, putInId, author } = await setup();
+    const elsewhere = (await t.run((ctx) =>
+      ctx.db.insert('waterBodies', {
+        name: 'Elsewhere Pond',
+        searchText: 'Elsewhere Pond',
+        type: 'lakePond' as const,
+        source: 'osm' as const,
+        externalId: 'way/8',
+        polygon: {
+          type: 'Polygon',
+          coordinates: [
+            [
+              [-70.01, 41.99],
+              [-69.99, 41.99],
+              [-69.99, 42.01],
+              [-70.01, 42.01],
+              [-70.01, 41.99],
+            ],
+          ],
+        },
+        bbox: { minLat: 41.99, minLng: -70.01, maxLat: 42.01, maxLng: -69.99 },
+        centroid: { lat: 42, lng: -70 },
+        dedupStatus: 'clean' as const,
+        createdAt: Date.now(),
+      }),
+    )) as Id<'waterBodies'>;
+
+    await author.as.mutation(api.accessAlerts.create, { ...ALERT, putInId });
+    expect(await t.query(api.accessAlerts.listForBody, { waterBodyId })).toHaveLength(1);
+
+    // The OSM coordinate moved and the join re-attached the launch to a different body.
+    await t.run((ctx) => ctx.db.patch(putInId, { waterBodyId: elsewhere }));
+
+    expect(await t.query(api.accessAlerts.listForBody, { waterBodyId })).toEqual([]);
+    // Not on the new lake either — see the note above. Asserted so the limit is pinned rather than
+    // discovered by somebody who assumed it followed.
+    expect(await t.query(api.accessAlerts.listForBody, { waterBodyId: elsewhere })).toEqual([]);
+  });
+});

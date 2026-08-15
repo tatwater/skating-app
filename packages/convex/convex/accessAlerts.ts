@@ -108,7 +108,7 @@ export const create = mutation({
     // `targetType` selects which id is *validated*, and persisting the other one unchecked is the
     // whole exploit: an alert filed as `put_in` against a launch you can see, carrying the
     // `parkingAreaId` of a lot on a lake you have never been to, is reachable from that lake through
-    // `loadLiveAlertsForBody`'s independent `by_parking_area` range. A contributor could publish
+    // `loadLiveAlertsForBody`'s independent by-parking-area range. A contributor could publish
     // "gate locked" on any lake in the corpus, attributed to nothing that lake can name.
     //
     // Refused rather than silently dropped, because a client sending both is confused about what it
@@ -363,33 +363,40 @@ function toView(alert: Doc<'accessAlerts'>): AccessAlertView {
 const LIVE_STATUSES = ['active', 'official'] as const;
 
 /**
- * The two status-scoped reads.
+ * The two live reads — **the range is what makes the cap correct, not the filter after it.**
  *
  * Written out per index rather than parameterized: threading the index name and its leading field
  * through arguments defeats Convex's index typing and buys one `any` plus a suppression, which is a
- * poor trade for six duplicated lines on the query this file most needs to be obviously correct.
+ * poor trade for a few duplicated lines on the query this file most needs to be obviously correct.
  *
- * In both, the statuses are queried **separately and each capped** rather than as one range, so a
- * busy season of `active` rows can never crowd out a moderator's pin — the reason `official` is a
- * status rather than a flag, applied to the read side.
+ * Three properties, and each one is a bug that shipped in an earlier draft of this function:
  *
- * `.order('desc')` runs over an index whose trailing key is **`createdAt`**, so "newest first" means
- * newest *observation* — the same clock `loadLiveAlertsForBody` sorts by and every surface renders.
- * Ranking by the implicit `_creationTime` instead would rank by when the row landed, and the offline
- * queue routinely lands a row hours after it was seen. A cap that binds then drops the stalest claim
- * rather than the one that happened to be written first.
+ * 1. **The statuses are queried separately and each capped**, so a busy season of `active` rows can
+ *    never crowd out a moderator's pin — the reason `official` is a status rather than a flag,
+ *    applied to the read side.
+ * 2. **`active` is bounded by `gt('expiresAt', now)`**, so a row the six-hourly sweep has not reached
+ *    yet cannot occupy a slot it is about to be filtered out of. Status alone does not exclude a
+ *    lapsed row; only the clock does.
+ * 3. **Ordering is by expiry**, which is derived from `max(createdAt, lastConfirmedAt)` and is
+ *    therefore a better recency than `createdAt`: a backdated observation sorts down, and a
+ *    confirmation — which `createdAt` cannot see at all — moves a row up.
+ *
+ * The pinned read deliberately has no clock bound: a pin carries no expiry and outranks the
+ * lifecycle rather than participating in it.
  */
 async function liveAlertsByBody(
   ctx: QueryCtx,
   waterBodyId: Id<'waterBodies'>,
+  now: number,
 ): Promise<Doc<'accessAlerts'>[]> {
   const pages = await Promise.all(
     LIVE_STATUSES.map((status) =>
       ctx.db
         .query('accessAlerts')
-        .withIndex('by_water_body_status_created_at', (q) =>
-          q.eq('waterBodyId', waterBodyId).eq('status', status),
-        )
+        .withIndex('by_water_body_status_expires_at', (q) => {
+          const scoped = q.eq('waterBodyId', waterBodyId).eq('status', status);
+          return status === 'active' ? scoped.gt('expiresAt', now) : scoped;
+        })
         .order('desc')
         .take(MAX_ACCESS_ROWS_PER_BODY),
     ),
@@ -400,14 +407,16 @@ async function liveAlertsByBody(
 async function liveAlertsByParkingArea(
   ctx: QueryCtx,
   parkingAreaId: Id<'parkingAreas'>,
+  now: number,
 ): Promise<Doc<'accessAlerts'>[]> {
   const pages = await Promise.all(
     LIVE_STATUSES.map((status) =>
       ctx.db
         .query('accessAlerts')
-        .withIndex('by_parking_area_status_created_at', (q) =>
-          q.eq('parkingAreaId', parkingAreaId).eq('status', status),
-        )
+        .withIndex('by_parking_area_status_expires_at', (q) => {
+          const scoped = q.eq('parkingAreaId', parkingAreaId).eq('status', status);
+          return status === 'active' ? scoped.gt('expiresAt', now) : scoped;
+        })
         .order('desc')
         .take(MAX_ACCESS_ROWS_PER_BODY),
     ),
@@ -431,19 +440,20 @@ export async function loadLiveAlertsForBody(
   // user-generated, so "how many can one lake have" is not a number we control.
   //
   // ⚠ **The cap must bound the answer, not the history** (PR #43 review). Nothing here is ever
-  // deleted — expiring flips a status — so a lake's rows accumulate across seasons, and a capped read
-  // over the bare `by_water_body` index took the *oldest* page and only then filtered for liveness.
-  // Two winters in, that is a page of expired rows and a locked gate nobody hears about. Scoping the
-  // range by status means every row read could still be live, so the cap spends itself on answers.
-  const direct = await liveAlertsByBody(ctx, waterBodyId);
+  // deleted — expiring flips a status — so a lake's rows accumulate across seasons, and the original
+  // unqualified body index took the *oldest* page and only then filtered for liveness. Two winters
+  // in, that is a page of expired rows and a locked gate nobody hears about. The range is now scoped
+  // by status *and* bounded by the expiry clock, so every row it can return is already live and the
+  // cap spends itself on answers. See `liveAlertsByBody`.
+  const direct = await liveAlertsByBody(ctx, waterBodyId, now);
 
   // ── The shared-lot half, and it is not an optimisation ────────────────────────────────────────
   //
   // An alert on a **parking area** is filed against one body — the first the lot is associated with —
   // because fanning out a row per body would make one locked gate look like three. But a trailhead lot
-  // serving three ponds is the normal case here (D72 amendment), and reading only `by_water_body`
-  // would warn skaters heading to *one* of them and silently fail the other two. A gate is locked for
-  // everybody who parks there.
+  // serving three ponds is the normal case here (D72 amendment), and reading only the body-scoped
+  // range would warn skaters heading to *one* of them and silently fail the other two. A gate is
+  // locked for everybody who parks there.
   //
   // So the lot's alerts are pulled through its associations as well, and the two sets are deduped: an
   // alert filed against this body **and** sitting on a lot linked to it appears in both.
@@ -451,9 +461,48 @@ export async function loadLiveAlertsForBody(
     .query('parkingAreaBodies')
     .withIndex('by_water_body', (q) => q.eq('waterBodyId', waterBodyId))
     .take(MAX_ACCESS_ROWS_PER_BODY);
-  const byId = new Map(direct.map((r) => [r._id, r]));
+  const byId = new Map<Id<'accessAlerts'>, Doc<'accessAlerts'>>();
+
+  // ⚠ **`waterBodyId` is a denormalization, and denormalizations go stale — so the *target* decides
+  // which lake an alert belongs to, and the column is only an index key.**
+  //
+  // The row records which body the alert was filed against at `create` time. Two ordinary things move
+  // the target out from under it afterwards:
+  //
+  // - `setOfficialParking` deletes an association, a moderator narrowing a lot to the lakes it really
+  //   serves; and
+  // - `matchAndImportPutIns` re-imports a launch whose OSM coordinate moved, which can attach it to a
+  //   different body entirely.
+  //
+  // Either way the row goes on naming a lake its target has nothing to do with, and this read would
+  // go on warning that lake about a gate nobody parks at — the same "an alert on a lake it does not
+  // belong to" failure as the contradictory-target hole, arrived at from the write side. Re-checking
+  // costs one bounded lookup per alert on a page that is itself capped.
+  //
+  // What this buys is that the **wrong lake stops being warned**. It does not move the alert to the
+  // right one: the read is keyed on the denormalized column, so a moved target's row is unreachable
+  // from its new body until something rewrites the column. That asymmetry is the right way round —
+  // silence beats a locked gate shown to people going somewhere else.
+  for (const alert of direct) {
+    if (alert.parkingAreaId !== undefined) {
+      const link = await ctx.db
+        .query('parkingAreaBodies')
+        .withIndex('by_parking_area_water_body', (q) =>
+          q
+            .eq('parkingAreaId', alert.parkingAreaId as Id<'parkingAreas'>)
+            .eq('waterBodyId', waterBodyId),
+        )
+        .unique();
+      if (!link) continue;
+    } else if (alert.putInId !== undefined) {
+      const putIn = await ctx.db.get(alert.putInId);
+      if (putIn?.waterBodyId !== waterBodyId) continue;
+    }
+    byId.set(alert._id, alert);
+  }
+
   for (const link of links) {
-    const lotAlerts = await liveAlertsByParkingArea(ctx, link.parkingAreaId);
+    const lotAlerts = await liveAlertsByParkingArea(ctx, link.parkingAreaId, now);
     for (const alert of lotAlerts) byId.set(alert._id, alert);
   }
 

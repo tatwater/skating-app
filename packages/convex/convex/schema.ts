@@ -2224,18 +2224,30 @@ export default defineSchema({
      * existed, and an index nobody reads is write amplification on every alert and a trap for the next
      * person, who will reach for the shorter name and reintroduce the bug.
      *
-     * ⚠ **`createdAt` is in the key, and leaving it out was the second half of the same bug.** Without
-     * it the trailing sort key is Convex's implicit `_creationTime`, so a capped read ranks by *when
-     * we heard* while the returned list — and every surface that renders it — ranks by *when it was
-     * seen*. Those are different clocks: `createdAt` is an observation time that `create` accepts from
-     * the client and merely clamps to "not in the future", and the offline queue makes a row that
-     * landed hours after it was observed the ordinary case rather than an adversarial one. A queue
-     * flush of stale observations could therefore push the freshest locked-gate warning out of the
-     * window while older ones stayed visible. Naming the sort field follows
-     * `by_water_body_skate_end_time` and the rest of this schema, for exactly this reason.
+     * ⚠ **`expiresAt` is the third key, and it took three passes to get right.** The read bounds it
+     * with `gt(now)`, so the range holds only rows that are *provably still live* and the cap cannot
+     * be spent on rows about to be discarded. Two earlier shapes both failed, and both failures are
+     * worth keeping because they look correct:
+     *
+     * - **Status alone is not enough.** Expiry is a status flip performed by a cron every six hours
+     *   in pages of 200, so a row whose `expiresAt` passed an hour ago is still `active` and still in
+     *   the range. A capful of those, filtered for liveness only *afterwards*, returns nothing.
+     * - **`createdAt` as the sort key is not enough either.** The row an unswept backlog displaces is
+     *   the worst one to lose: an alert kept current by confirmations has an **old** `createdAt` and a
+     *   **future** expiry, so it sorts last while being the only live warning on the lake.
+     *
+     * Ordering by `expiresAt` fixes both and subsumes the recency the read actually wants, because
+     * expiry is derived from `max(createdAt, lastConfirmedAt)`: a backdated observation gets an
+     * earlier expiry and sorts down, and a confirmation moves a row up. That is *better* than ranking
+     * by `createdAt`, which cannot see a confirmation at all.
+     *
+     * Safe as a range bound: an `active` row always carries a numeric expiry — `create` sets one and
+     * `deriveAccessAlertLifecycle` always recomputes one — so nothing live hides in the `undefined`
+     * bucket that optional-field indexes sort first. Pinned rows, which *do* have no expiry, are read
+     * by their own status and never touch this bound.
      */
-    .index('by_water_body_status_created_at', ['waterBodyId', 'status', 'createdAt'])
-    .index('by_parking_area_status_created_at', ['parkingAreaId', 'status', 'createdAt'])
+    .index('by_water_body_status_expires_at', ['waterBodyId', 'status', 'expiresAt'])
+    .index('by_parking_area_status_expires_at', ['parkingAreaId', 'status', 'expiresAt'])
     /**
      * The expiry sweep, and the shape is the whole reason `official` is a status.
      *

@@ -7,9 +7,9 @@
 > scoped 2026-07-30, kickoff re-read against the post-N7 codebase 2026-08-10. Founder ask, same day as
 > the scoping. **Pre-PR review 2026-08-14** — four defects fixed, a red build made green, and the
 > client surfaces covered. **Greptile round 1 (PR #43)** — three P1s, one of them a security hole,
-> **round 2** two more cap defects, one of them unreported — all fixed with tests verified to fail
-> first. Suites now core 1,839 · convex 1,252 · web 311 ·
-> mobile 96 · etl 408, with `lint` and `check-types` clean.
+> **rounds 2–3** three more cap defects, and a self-review pass that found two more of the same class
+> from the write side — all fixed with tests verified to fail first. Suites now core 1,839 ·
+> convex 1,255 · web 311 · mobile 96 · etl 408, with `lint` and `check-types` clean.
 > See *§What the build found*, *§What the first real run found*, *§The 250 m radius, eyeballed*,
 > *§What the load found*, *§The run, completed*, *§What the pre-PR review found* and
 > *§What Greptile found*.
@@ -876,6 +876,50 @@ new column was needed.
 **The generalisation worth keeping:** *a cap is a read bound, so the rows that must survive it have to
 be chosen, not sorted into place afterwards.* That sentence covers all three cap findings, including
 `accessForBody`'s referenced-lot resolution, which the load taught us the same way in August.
+
+### Round 3 — status is not a clock, and the row it hid was the worst one to lose
+
+**6. An unswept backlog could hide a confirmed, still-live warning.** Scoping by `status` removed
+*settled* rows and not *lapsed* ones: expiry is a status flip performed by a cron every six hours in
+pages of 200, so a row whose `expiresAt` passed an hour ago is still `active` and still inside the
+range. A capful of those, filtered for liveness only afterwards, returns nothing.
+
+And the row they displace is the worst one to lose. **An alert kept current by confirmations has an
+old `createdAt` and a future expiry** — so under round 2's `createdAt` ordering it sorted last while
+being the only live warning on the lake. Reproduced exactly that way: one road closure asserted seven
+weeks ago and re-confirmed yesterday, behind eighty lapsed rows, returned an empty list.
+
+The range is now bounded by the clock as well as the status — `gt('expiresAt', now)` — so it cannot
+contain a row that is about to be filtered out. Ordering by expiry also **subsumes** round 2's fix and
+improves on it: expiry derives from `max(createdAt, lastConfirmedAt)`, so a backdated observation
+still sorts down *and* a confirmation moves a row up, which `createdAt` cannot see at all.
+
+### And what our own review found before pushing — the same class, from the write side
+
+Round 3's fix was cheap; the round trips were not. So the branch was re-read for the *classes* rather
+than the instances, which turned up two more of the security finding's shape — an alert on a lake it
+does not belong to — reached from the write side instead of the request:
+
+- **`setOfficialParking` can delete the association an alert was filed against.** A moderator
+  narrowing a lot to the lakes it really serves leaves the alert's denormalized `waterBodyId` pointing
+  at a lake the lot no longer touches, and the direct read went on warning it. **This is an ordinary
+  operation, not an edge case.**
+- **`matchAndImportPutIns` can move a launch between bodies**, with the same consequence.
+
+So the rule is now uniform: **the target decides which lake an alert belongs to, and `waterBodyId` is
+only an index key.** One bounded lookup per alert on an already-capped page. The honest limit is
+recorded in a test rather than left to be discovered — a moved target's alert *stops warning the wrong
+lake* but does not appear on the right one, because the read is keyed on the stale column. Silence
+beats a locked gate shown to people going somewhere else.
+
+**Also tightened:** both `AccessPhotos` components spread whichever id props were set, so they would
+have sent two targets the moment either was given both — a latent mismatch with the server's new
+refusal. They now derive the id and the type together and are incapable of forming the request.
+
+**Known and deliberately not fixed:** `putIns.loadPutInRows` still `.collect()`s a body's rows
+uncapped (Phase 4 code, now reading a table N6d filled), and `expireLapsedAlerts` sweeps 200 rows per
+six hours, so a season rollover lags for days. The second is now *safe* rather than merely tolerable,
+because the read no longer trusts the sweep's schedule — which is what round 3 bought.
 
 ---
 
