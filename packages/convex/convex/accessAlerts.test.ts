@@ -756,3 +756,56 @@ describe('a live alert survives a lake full of settled ones', () => {
     expect(live[0]?.id).toBe(pinned);
   });
 });
+
+/**
+ * The cap must rank by the **same clock the API reports** (PR #43 review, round 2).
+ *
+ * `createdAt` is an *observation* time, not an insertion time: `create` takes `observedAt` and clamps
+ * it to "no later than now", so a row's `createdAt` can sit well before the moment it was written.
+ * The offline queue makes that the ordinary case rather than an adversarial one — a skater posts from
+ * a lake with no signal and the row lands hours later.
+ *
+ * Ordering the capped read by the index's implicit `_creationTime` therefore ranked by *when we heard*
+ * rather than *when it was seen*, while the returned list sorts by `createdAt`. A flush of stale
+ * observations could push the freshest locked-gate warning out of the window entirely.
+ */
+describe('the cap ranks by observation time, not by when the row landed', () => {
+  test('a fresh observation survives a later flush of backdated ones', async () => {
+    const { t, waterBodyId, putInId, author } = await setup();
+    const now = Date.now();
+
+    // Seen today, and written first.
+    const freshest = await author.as.mutation(api.accessAlerts.create, {
+      ...ALERT,
+      putInId,
+      note: 'Gate went on this morning',
+      observedAt: now - 60_000,
+    });
+
+    // Then a queue drains: more than a capful of alerts, every one of them *seen* ten days ago and
+    // written now. By insertion order these are the newest rows on the lake; by observation they are
+    // the stalest thing on it.
+    await t.run(async (ctx) => {
+      for (let i = 0; i < 80; i++) {
+        await ctx.db.insert('accessAlerts', {
+          targetType: 'put_in' as const,
+          putInId,
+          waterBodyId,
+          reason: 'not_plowed' as const,
+          createdByUserId: author.id as Id<'profiles'>,
+          createdAt: now - 10 * DAY_MS,
+          season: seasonOf(now),
+          expiresAt: now + 20 * DAY_MS,
+          status: 'active' as const,
+          confirmCount: 0,
+          denyCount: 0,
+        });
+      }
+    });
+
+    const live = await t.query(api.accessAlerts.listForBody, { waterBodyId });
+    expect(live.map((a) => a.id)).toContain(freshest);
+    // And it leads, because the list is ordered by observation and this is the newest observation.
+    expect(live[0]?.id).toBe(freshest);
+  });
+});

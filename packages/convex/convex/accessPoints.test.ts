@@ -1234,3 +1234,57 @@ describe('a hidden coordinate suppresses the launch everywhere, not just on the 
     expect((await t.run((ctx) => ctx.db.get(body)))?.accessKind).toBe('hike_in');
   });
 });
+
+/**
+ * A cap is a read bound, so the rows that must survive it are **chosen, never sorted into place
+ * afterwards** (PR #43 review, round 2 — the sibling of the alert-cap finding, one table over).
+ *
+ * `loadParkingForBody` took one capped page and then moved operator-set lots to the front, which
+ * ranks nothing: the truncation has already happened. Four real bodies exceed the cap — Champlain
+ * carries 160 lots, Winnipesaukee 97, Seneca 64 — so on exactly the lakes an operator is most likely
+ * to correct, their correction could be the row that fell off.
+ */
+describe("an operator's lot survives a lake that exceeds the read cap", () => {
+  test('the asserted association is returned though it was linked last', async () => {
+    const t = convexTest(schema, modules);
+    const body = await seedSquareBody(t);
+
+    // More than a capful of ordinary OSM lots, linked first.
+    await t.run(async (ctx) => {
+      for (let i = 0; i < MAX_ACCESS_ROWS_PER_BODY + 16; i++) {
+        const parkingAreaId = await ctx.db.insert('parkingAreas', {
+          coord: northOfShore(60),
+          source: 'osm' as const,
+          status: 'visible' as const,
+          amenities: [],
+          externalId: `way/bulk-${i}`,
+          createdAt: Date.now(),
+        });
+        await ctx.db.insert('parkingAreaBodies', {
+          parkingAreaId,
+          waterBodyId: body,
+          inferred: true,
+          createdAt: Date.now(),
+        });
+      }
+    });
+
+    // Then the moderator's, linked last and referenced by no put-in — so nothing else rescues it.
+    const mod = await seedModerator(t);
+    const official = await mod.mutation(api.accessPoints.setOfficialParking, {
+      coord: northOfShore(40),
+      name: 'The Real Lot',
+      amenities: [],
+      waterBodyIds: [body],
+    });
+
+    const lots = await t.query(api.accessPoints.listParkingForBody, { waterBodyId: body });
+    expect(lots.map((l) => l.id)).toContain(official);
+    expect(lots[0]?.id).toBe(official);
+    // Still bounded — the fix is about *which* rows the budget buys, not about spending more of it.
+    expect(lots.length).toBeLessThanOrEqual(MAX_ACCESS_ROWS_PER_BODY);
+
+    const access = await t.query(api.accessPoints.accessForBody, { waterBodyId: body });
+    expect(access.parking.map((l) => l.id)).toContain(official);
+  });
+});

@@ -2138,6 +2138,19 @@ export default defineSchema({
   })
     .index('by_water_body', ['waterBodyId'])
     .index('by_parking_area', ['parkingAreaId'])
+    /**
+     * The per-lake read, **asserted associations first** (PR #43 review, round 2).
+     *
+     * Same shape as the alert cap, one table over: `loadParkingForBody` capped the links and *then*
+     * sorted operator-set lots to the front, so on the four bodies that exceed the cap — Champlain
+     * carries 160 lots, Winnipesaukee 97 — a moderator's own lot could be truncated away before the
+     * sort ever saw it. Sorting after truncating ranks nothing.
+     *
+     * `inferred` is the right discriminator and needs no new column: only `setOfficialParking` writes
+     * `false`, and an inference may be promoted to an assertion but never the reverse. So it already
+     * means "a human said so", which is exactly the set that must not be cropped out.
+     */
+    .index('by_water_body_inferred', ['waterBodyId', 'inferred'])
     // Point lookup + uniqueness for the upsert (one row per lot×body), the `waterBodyFavorites`
     // shape: a re-import must update the association rather than stack a second copy of it.
     .index('by_parking_area_water_body', ['parkingAreaId', 'waterBodyId']),
@@ -2210,9 +2223,19 @@ export default defineSchema({
      * The unqualified variants are **gone rather than kept alongside**: nothing read them once these
      * existed, and an index nobody reads is write amplification on every alert and a trap for the next
      * person, who will reach for the shorter name and reintroduce the bug.
+     *
+     * ⚠ **`createdAt` is in the key, and leaving it out was the second half of the same bug.** Without
+     * it the trailing sort key is Convex's implicit `_creationTime`, so a capped read ranks by *when
+     * we heard* while the returned list — and every surface that renders it — ranks by *when it was
+     * seen*. Those are different clocks: `createdAt` is an observation time that `create` accepts from
+     * the client and merely clamps to "not in the future", and the offline queue makes a row that
+     * landed hours after it was observed the ordinary case rather than an adversarial one. A queue
+     * flush of stale observations could therefore push the freshest locked-gate warning out of the
+     * window while older ones stayed visible. Naming the sort field follows
+     * `by_water_body_skate_end_time` and the rest of this schema, for exactly this reason.
      */
-    .index('by_water_body_status', ['waterBodyId', 'status'])
-    .index('by_parking_area_status', ['parkingAreaId', 'status'])
+    .index('by_water_body_status_created_at', ['waterBodyId', 'status', 'createdAt'])
+    .index('by_parking_area_status_created_at', ['parkingAreaId', 'status', 'createdAt'])
     /**
      * The expiry sweep, and the shape is the whole reason `official` is a status.
      *

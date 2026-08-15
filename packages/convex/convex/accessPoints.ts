@@ -469,10 +469,29 @@ export async function loadParkingForBody(
   ctx: QueryCtx,
   waterBodyId: Id<'waterBodies'>,
 ): Promise<ParkingMarker[]> {
-  const links = await ctx.db
+  // **Asserted associations are selected first, not merely sorted first** (PR #43 review, round 2).
+  //
+  // This used to take one capped page and then sort operator-set lots to the front — which ranks
+  // nothing, because the truncation already happened. On the four bodies that exceed the cap
+  // (Champlain 160 lots, Winnipesaukee 97) a moderator's own lot could be cut before the sort saw
+  // it, which is the `accessForBody` lesson repeating one table over: a cap is a read bound, so the
+  // rows that must survive it have to be *chosen*, never sorted into place afterwards.
+  //
+  // `inferred: false` is the human's mark — only `setOfficialParking` writes it, and a promotion runs
+  // one way — so this is the same "an assertion outranks a guess" rule the join table exists for.
+  const asserted = await ctx.db
     .query('parkingAreaBodies')
-    .withIndex('by_water_body', (q) => q.eq('waterBodyId', waterBodyId))
+    .withIndex('by_water_body_inferred', (q) =>
+      q.eq('waterBodyId', waterBodyId).eq('inferred', false),
+    )
     .take(MAX_ACCESS_ROWS_PER_BODY);
+  const guessed = await ctx.db
+    .query('parkingAreaBodies')
+    .withIndex('by_water_body_inferred', (q) =>
+      q.eq('waterBodyId', waterBodyId).eq('inferred', true),
+    )
+    .take(Math.max(0, MAX_ACCESS_ROWS_PER_BODY - asserted.length));
+  const links = [...asserted, ...guessed];
   const lots: ParkingMarker[] = [];
   for (const link of links) {
     const lot = await ctx.db.get(link.parkingAreaId);

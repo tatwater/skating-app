@@ -7,7 +7,8 @@
 > scoped 2026-07-30, kickoff re-read against the post-N7 codebase 2026-08-10. Founder ask, same day as
 > the scoping. **Pre-PR review 2026-08-14** — four defects fixed, a red build made green, and the
 > client surfaces covered. **Greptile round 1 (PR #43)** — three P1s, one of them a security hole,
-> all fixed with tests verified to fail first. Suites now core 1,839 · convex 1,250 · web 311 ·
+> **round 2** two more cap defects, one of them unreported — all fixed with tests verified to fail
+> first. Suites now core 1,839 · convex 1,252 · web 311 ·
 > mobile 96 · etl 408, with `lint` and `check-types` clean.
 > See *§What the build found*, *§What the first real run found*, *§The 250 m radius, eyeballed*,
 > *§What the load found*, *§The run, completed*, *§What the pre-PR review found* and
@@ -851,6 +852,30 @@ Every fix carries a test that was **verified to fail against the pre-fix code** 
 two findings, one for the third, plus guards that pin the non-regression side (a launch beyond the
 suppression radius is untouched; a pin survives a flood of newer active rows, which is what a naive
 `order('desc')` fix would have broken).
+
+### Round 2 — the cap fix was half a fix, and the same shape sat one table over
+
+**4. The cap ranked by the wrong clock.** Scoping the range by status stopped expired history
+consuming the budget, but the trailing sort key was still Convex's implicit `_creationTime` — so the
+capped read ranked by *when we heard* while the returned list, and every surface that renders it,
+ranks by `createdAt`, which is *when it was seen*. `create` takes `observedAt` from the client and
+only clamps it to "not in the future", and **the offline queue makes a row that lands hours after it
+was observed the ordinary case rather than an adversarial one**. A queue flush of stale observations
+could therefore push the freshest locked-gate warning clean out of the window. Fixed by putting
+`createdAt` in the index key, which is what the rest of this schema already does
+(`by_water_body_skate_end_time`) and for exactly this reason.
+
+**5. And `loadParkingForBody` had the identical bug, unreported.** It took one capped page of
+associations and *then* sorted operator-set lots to the front — which ranks nothing, because the
+truncation already happened. Four real bodies exceed the cap (Champlain 160 lots, Winnipesaukee 97,
+Seneca 64), so on exactly the lakes an operator is most likely to correct, their correction could be
+the row that fell off. Selection now leads with the asserted associations: `inferred: false` is
+already the human's mark — only `setOfficialParking` writes it, and a promotion runs one way — so no
+new column was needed.
+
+**The generalisation worth keeping:** *a cap is a read bound, so the rows that must survive it have to
+be chosen, not sorted into place afterwards.* That sentence covers all three cap findings, including
+`accessForBody`'s referenced-lot resolution, which the load taught us the same way in August.
 
 ---
 

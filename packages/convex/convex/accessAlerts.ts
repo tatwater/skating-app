@@ -371,8 +371,13 @@ const LIVE_STATUSES = ['active', 'official'] as const;
  *
  * In both, the statuses are queried **separately and each capped** rather than as one range, so a
  * busy season of `active` rows can never crowd out a moderator's pin — the reason `official` is a
- * status rather than a flag, applied to the read side. Newest-first within each, so a cap that does
- * bind drops the stalest claim rather than an arbitrary one.
+ * status rather than a flag, applied to the read side.
+ *
+ * `.order('desc')` runs over an index whose trailing key is **`createdAt`**, so "newest first" means
+ * newest *observation* — the same clock `loadLiveAlertsForBody` sorts by and every surface renders.
+ * Ranking by the implicit `_creationTime` instead would rank by when the row landed, and the offline
+ * queue routinely lands a row hours after it was seen. A cap that binds then drops the stalest claim
+ * rather than the one that happened to be written first.
  */
 async function liveAlertsByBody(
   ctx: QueryCtx,
@@ -382,7 +387,7 @@ async function liveAlertsByBody(
     LIVE_STATUSES.map((status) =>
       ctx.db
         .query('accessAlerts')
-        .withIndex('by_water_body_status', (q) =>
+        .withIndex('by_water_body_status_created_at', (q) =>
           q.eq('waterBodyId', waterBodyId).eq('status', status),
         )
         .order('desc')
@@ -400,7 +405,7 @@ async function liveAlertsByParkingArea(
     LIVE_STATUSES.map((status) =>
       ctx.db
         .query('accessAlerts')
-        .withIndex('by_parking_area_status', (q) =>
+        .withIndex('by_parking_area_status_created_at', (q) =>
           q.eq('parkingAreaId', parkingAreaId).eq('status', status),
         )
         .order('desc')
