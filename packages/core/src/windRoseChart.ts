@@ -43,15 +43,35 @@ const DEGREES_PER_SECTOR = 360 / WIND_ROSE_SECTORS;
  * arrow — and two lakes could not be compared by eye, which is most of what a reader does with a
  * profile page. A shared reference means arrow size carries an absolute claim.
  *
- * **15 m/s (~34 mph) is measured, not guessed**: the strongest sector mean anywhere in the derived
- * corpus is 14.54 m/s, so no honest value clamps and no lake wastes the top of the scale. A first
- * draft used 12 and would have flattened the windiest cells against the ceiling.
+ * **10 m/s (~22 mph) is set from the corpus distribution, not from its maximum.** Measured over
+ * derived bodies: median peak sector **4.7 m/s**, p90 **6.8**, p95 **8.0**, p99 **11.1**, max
+ * **14.54**. An earlier draft used 15 — the observed maximum — so that nothing would ever clamp, and
+ * the result was a chart where the *median* lake's longest arrow reached 31% of the band and read as
+ * a speck. Scaling to the outlier made the common case illegible.
  *
- * The consequence is deliberate and worth stating: a sheltered pond averaging 2 m/s draws visibly
- * tiny arrows. That *is* the picture — it is sheltered — and it is the whole reason the scale is
- * shared rather than per-lake.
+ * At 10 the median lake peaks near half the band and **1.3% of lakes clamp** at the ceiling. That is
+ * a real loss — the windiest few draw identical full-length arrows — and it is the right trade,
+ * because their exact figures are still in the blurb and the numbers table while the readability of
+ * the other 98.7% is not recoverable any other way.
+ *
+ * Still deliberate: a sheltered pond averaging 2 m/s draws visibly short arrows. That *is* the
+ * picture, and it is the whole reason the scale is shared rather than per-lake.
  */
-export const WIND_ARROW_REFERENCE_MPS = 15;
+export const WIND_ARROW_REFERENCE_MPS = 10;
+
+/**
+ * How the radius is divided, outward from the centre: frequency plot, gap, arrow band, label ring.
+ *
+ * Split explicitly because the first version allotted the arrows whatever was left after a single
+ * `rimFraction` — about 12px of a 176px chart — and then drew the compass labels *into the same
+ * band*. Arrows were both tiny and colliding with the letters.
+ */
+export const WIND_ROSE_LABEL_BAND = 0.14;
+export const WIND_ROSE_ARROW_BAND = 0.3;
+export const WIND_ROSE_ARROW_GAP = 0.03;
+
+/** Arrow half-width as a share of its length — the triangle's proportions. */
+const ARROW_HALF_WIDTH_RATIO = 0.42;
 
 /** A point in the chart's own pixel space. */
 export interface ChartPoint {
@@ -114,8 +134,8 @@ export interface WindRoseChartInput {
   emphasizedSector?: number | null | undefined;
   /** Square viewport edge in px. */
   size: number;
-  /** Share of the radius reserved outside the plot for arrows and labels. */
-  rimFraction?: number;
+  /** Override the arrow band, as a share of the radius. Defaults to `WIND_ROSE_ARROW_BAND`. */
+  arrowBandFraction?: number;
 }
 
 const clamp01 = (v: number): number => (v < 0 ? 0 : v > 1 ? 1 : v);
@@ -159,10 +179,12 @@ export function windRoseChartModel(input: WindRoseChartInput): WindRoseChartMode
   const maxFrequency = Math.max(...rose);
   if (!Number.isFinite(maxFrequency) || maxFrequency <= 0) return null;
 
-  const rimFraction = input.rimFraction ?? 0.28;
   const center: ChartPoint = { x: size / 2, y: size / 2 };
   const outerRadius = size / 2;
-  const plotRadius = outerRadius * (1 - rimFraction);
+  const arrowBand = outerRadius * (input.arrowBandFraction ?? WIND_ROSE_ARROW_BAND);
+  const arrowGap = outerRadius * WIND_ROSE_ARROW_GAP;
+  // Every band is subtracted explicitly, so the plot can never quietly eat the arrows' room.
+  const plotRadius = outerRadius - arrowBand - arrowGap - outerRadius * WIND_ROSE_LABEL_BAND;
 
   // The area scale is anchored at zero and topped at the lake's own maximum, which is the one place
   // per-lake normalisation is right: the rose is a *shape*, and its shape is the claim. Absolute
@@ -183,9 +205,18 @@ export function windRoseChartModel(input: WindRoseChartInput): WindRoseChartMode
 
   const arrows: WindRoseArrow[] = [];
   if (Array.isArray(meanWindMps) && meanWindMps.length === WIND_ROSE_SECTORS) {
-    const gap = outerRadius * 0.04;
-    const tipRadius = plotRadius + gap;
-    const maxLength = outerRadius - tipRadius - outerRadius * 0.1;
+    const tipRadius = plotRadius + arrowGap;
+    // **The band has to bound the whole triangle, not its centreline.** A base corner sits half a
+    // width off-axis, so its distance from the centre is `hypot(tipRadius + L, halfWidth)` — which
+    // overshoots the band even when the back edge fits exactly. Solving
+    //   (tipRadius + L)² + (w·L)² = limit²
+    // for L gives the longest arrow whose corners still clear the label ring. Ignoring it let the
+    // glyphs bulge into the compass letters by about a pixel at full intensity.
+    const limit = outerRadius - outerRadius * WIND_ROSE_LABEL_BAND;
+    const w2 = ARROW_HALF_WIDTH_RATIO * ARROW_HALF_WIDTH_RATIO;
+    const discriminant = tipRadius * tipRadius - (1 + w2) * (tipRadius * tipRadius - limit * limit);
+    const fitted = discriminant > 0 ? (-tipRadius + Math.sqrt(discriminant)) / (1 + w2) : 0;
+    const maxLength = Math.max(0, Math.min(arrowBand, fitted));
     for (let sector = 0; sector < WIND_ROSE_SECTORS; sector++) {
       const mps = meanWindMps[sector];
       // `null` means no reading and draws nothing. A measured 0 would draw a degenerate arrow, which
@@ -196,7 +227,7 @@ export function windRoseChartModel(input: WindRoseChartInput): WindRoseChartMode
       const length = maxLength * intensity;
       if (length <= 0) continue;
       const bearing = sector * DEGREES_PER_SECTOR;
-      const halfWidth = length * 0.42;
+      const halfWidth = length * ARROW_HALF_WIDTH_RATIO;
       const tip = polarPoint(center, tipRadius, bearing);
       const backCenter = polarPoint(center, tipRadius + length, bearing);
       // The two base corners sit on the tangent at `backCenter`, which is the bearing rotated a
@@ -221,7 +252,8 @@ export function windRoseChartModel(input: WindRoseChartInput): WindRoseChartMode
     }
   }
 
-  const cardinalRadius = outerRadius * 0.965;
+  // Centred in the label ring, which the arrow band no longer reaches into.
+  const cardinalRadius = outerRadius - (outerRadius * WIND_ROSE_LABEL_BAND) / 2;
   const cardinals = [
     { label: 'N', sector: 0 },
     { label: 'E', sector: 4 },

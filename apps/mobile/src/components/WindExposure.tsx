@@ -26,7 +26,7 @@ import { Paragraph, Text, useTheme, XStack, YStack } from 'tamagui';
  * wind speed would read as a danger scale (D145).
  */
 
-const CHART_SIZE = 168;
+const CHART_SIZE = 208;
 const MPS_TO_MPH = 2.23694;
 
 export interface WindExposureBody {
@@ -75,71 +75,72 @@ export function WindExposure({ body }: { body: WindExposureBody }) {
         Wind exposure
       </Text>
 
-      <XStack gap="$3" alignItems="center" flexWrap="wrap">
-        <Svg
-          width={CHART_SIZE}
-          height={CHART_SIZE}
-          viewBox={`0 0 ${CHART_SIZE} ${CHART_SIZE}`}
-          accessibilityRole="image"
-          accessibilityLabel={`Winter wind rose. ${prose}`}
-        >
-          {model.rings.map((ring) => (
-            <Circle
-              key={ring.frequency}
-              cx={model.center.x}
-              cy={model.center.y}
-              r={ring.radius}
-              fill="none"
-              stroke={gridColor}
-              strokeWidth={1}
+      {/* Rose centred, prose beneath — side by side it was pinned left against a narrow column of
+          wrapped text and read as an afterthought. */}
+      <YStack gap="$3">
+        <XStack justifyContent="center">
+          <Svg
+            width={CHART_SIZE}
+            height={CHART_SIZE}
+            viewBox={`0 0 ${CHART_SIZE} ${CHART_SIZE}`}
+            accessibilityRole="image"
+            accessibilityLabel={`Winter wind rose. ${prose}`}
+          >
+            {model.rings.map((ring) => (
+              <Circle
+                key={ring.frequency}
+                cx={model.center.x}
+                cy={model.center.y}
+                r={ring.radius}
+                fill="none"
+                stroke={gridColor}
+                strokeWidth={1}
+              />
+            ))}
+            {model.spokes.map((spoke, i) => (
+              <Line
+                key={COMPASS_POINTS_16[i]}
+                x1={spoke.from.x}
+                y1={spoke.from.y}
+                x2={spoke.to.x}
+                y2={spoke.to.y}
+                stroke={gridColor}
+                strokeWidth={1}
+              />
+            ))}
+            <Path
+              d={areaPath(model)}
+              fill={areaColor}
+              fillOpacity={0.22}
+              stroke={areaColor}
+              strokeWidth={2}
+              strokeLinejoin="round"
             />
-          ))}
-          {model.spokes.map((spoke, i) => (
-            <Line
-              key={COMPASS_POINTS_16[i]}
-              x1={spoke.from.x}
-              y1={spoke.from.y}
-              x2={spoke.to.x}
-              y2={spoke.to.y}
-              stroke={gridColor}
-              strokeWidth={1}
-            />
-          ))}
-          <Path
-            d={areaPath(model)}
-            fill={areaColor}
-            fillOpacity={0.22}
-            stroke={areaColor}
-            strokeWidth={2}
-            strokeLinejoin="round"
-          />
-          {/* A sector with no speed reading has no arrow — an absence, not a zero. */}
-          {model.arrows.map((arrow) => (
-            <Polygon
-              key={arrow.label}
-              points={arrowPoints(arrow)}
-              fill={arrow.emphasized ? emphasisColor : arrowColor}
-              fillOpacity={arrow.emphasized ? 1 : 0.65}
-            />
-          ))}
-          {model.cardinals.map((cardinal) => (
-            <SvgText
-              key={cardinal.label}
-              x={cardinal.at.x}
-              y={cardinal.at.y}
-              fontSize={9}
-              fill={arrowColor}
-              textAnchor="middle"
-            >
-              {cardinal.label}
-            </SvgText>
-          ))}
-        </Svg>
-
-        <Paragraph flexShrink={1} minWidth={160} flexBasis={160} flexGrow={1}>
-          {prose}
-        </Paragraph>
-      </XStack>
+            {/* A sector with no speed reading has no arrow — an absence, not a zero. */}
+            {model.arrows.map((arrow) => (
+              <Polygon
+                key={arrow.label}
+                points={arrowPoints(arrow)}
+                fill={arrow.emphasized ? emphasisColor : arrowColor}
+                fillOpacity={arrow.emphasized ? 1 : 0.65}
+              />
+            ))}
+            {model.cardinals.map((cardinal) => (
+              <SvgText
+                key={cardinal.label}
+                x={cardinal.at.x}
+                y={cardinal.at.y}
+                fontSize={9}
+                fill={arrowColor}
+                textAnchor="middle"
+              >
+                {cardinal.label}
+              </SvgText>
+            ))}
+          </Svg>
+        </XStack>
+        <Paragraph>{prose}</Paragraph>
+      </YStack>
 
       {/* With two encodings a key is not optional — without it the arrows read as decoration. */}
       <Text color="$foregroundMuted" fontSize={11}>

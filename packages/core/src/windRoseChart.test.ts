@@ -6,6 +6,7 @@ import {
   polarPoint,
   ringFrequencies,
   WIND_ARROW_REFERENCE_MPS,
+  WIND_ROSE_LABEL_BAND,
   windExposureSummary,
   windRoseChartModel,
 } from './windRoseChart';
@@ -322,5 +323,51 @@ describe('windExposureSummary', () => {
   it('returns null without a usable rose', () => {
     expect(windExposureSummary({ rose: [], ...base })).toBeNull();
     expect(windExposureSummary({ rose: Array.from({ length: 16 }, () => 0), ...base })).toBeNull();
+  });
+});
+
+describe('the band layout (arrows were once 3px)', () => {
+  it('keeps arrows out of the compass-label ring', () => {
+    // The first version gave the arrows whatever was left after one `rimFraction` and then drew the
+    // cardinals into the same space. Arrows collided with the letters AND were about 12px long.
+    const m = windRoseChartModel({
+      rose: WILLOUGHBY_ROSE,
+      meanWindMps: WILLOUGHBY_MEAN_MPS.map(() => WIND_ARROW_REFERENCE_MPS),
+      size: SIZE,
+    }) as NonNullable<ReturnType<typeof windRoseChartModel>>;
+    const outer = SIZE / 2;
+    const labelRingInner = outer - outer * WIND_ROSE_LABEL_BAND;
+    for (const a of m.arrows) {
+      for (const p of a.points) {
+        expect(Math.hypot(p.x - m.center.x, p.y - m.center.y)).toBeLessThanOrEqual(
+          labelRingInner + 1e-6,
+        );
+      }
+    }
+  });
+
+  it('gives a MEDIAN lake a legible arrow, not a speck', () => {
+    // The bug this pins. Corpus median peak is 4.7 m/s; against the old 15 m/s reference and the old
+    // ~12px band that drew a 3px triangle. The fix was both halves — a reference set from the
+    // distribution rather than the outlier, and a band that is actually reserved.
+    const median = 4.7;
+    const m = windRoseChartModel({
+      rose: WILLOUGHBY_ROSE,
+      meanWindMps: WILLOUGHBY_MEAN_MPS.map(() => median),
+      size: SIZE,
+    }) as NonNullable<ReturnType<typeof windRoseChartModel>>;
+    const arrow = m.arrows[0] as NonNullable<(typeof m.arrows)[0]>;
+    const tip = Math.hypot(arrow.points[0].x - m.center.x, arrow.points[0].y - m.center.y);
+    const back = Math.hypot(arrow.points[1].x - m.center.x, arrow.points[1].y - m.center.y);
+    const length = back - tip;
+    // A tenth of the radius is the floor of "legible" at this chart size.
+    expect(length).toBeGreaterThan((SIZE / 2) * 0.1);
+  });
+
+  it('scales the reference to the distribution, not to the single windiest cell', () => {
+    // 10 m/s puts the median near half the band and clamps ~1.3% of lakes. Raising this back to the
+    // observed 14.54 maximum makes the common case unreadable again.
+    expect(WIND_ARROW_REFERENCE_MPS).toBe(10);
+    expect(4.7 / WIND_ARROW_REFERENCE_MPS).toBeGreaterThan(0.4);
   });
 });

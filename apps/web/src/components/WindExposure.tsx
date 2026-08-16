@@ -28,7 +28,7 @@ import {
  * the same arithmetic — see `windRoseChart.ts`.
  */
 
-const CHART_SIZE = 176;
+const CHART_SIZE = 216;
 
 export interface WindExposureBody {
   windRose?: number[];
@@ -65,14 +65,16 @@ export function WindExposure({ body }: { body: WindExposureBody }) {
       <h3 className="font-medium text-foreground-muted text-xs uppercase tracking-widest">
         Wind exposure
       </h3>
-      <div className="flex flex-wrap items-center gap-4">
+      {/* The rose is centred and the prose runs full width beneath it. Side by side, the chart was
+          pinned left against a narrow column of wrapped text and read as an afterthought. */}
+      <div className="flex flex-col gap-3">
         <svg
           width={CHART_SIZE}
           height={CHART_SIZE}
           viewBox={`0 0 ${CHART_SIZE} ${CHART_SIZE}`}
           role="img"
           aria-label={`Winter wind rose. ${prose}`}
-          className="shrink-0"
+          className="mx-auto shrink-0"
         >
           {/* Recessive grid: solid hairlines one shade off the surface, never dashed. */}
           {model.rings.map((ring) => (
@@ -128,9 +130,7 @@ export function WindExposure({ body }: { body: WindExposureBody }) {
             </text>
           ))}
         </svg>
-        <div className="min-w-[12rem] flex-1">
-          <p className="text-foreground text-sm leading-relaxed">{prose}</p>
-        </div>
+        <p className="text-foreground text-sm leading-relaxed">{prose}</p>
       </div>
 
       {/* A legend is not optional with two encodings: without it the arrows read as decoration. */}
