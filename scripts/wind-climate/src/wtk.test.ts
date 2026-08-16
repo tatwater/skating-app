@@ -7,6 +7,7 @@ import {
   emptyCounts,
   fetchCellYear,
   gridKey,
+  meanSpeedFromAccumulator,
   MIN_ROSE_HOURS,
   pointForGridKey,
   retryAfterMs,
@@ -133,6 +134,56 @@ describe('the speed column, which every run before N7-3 discarded', () => {
     const acc = emptyAccumulator(10);
     accumulateCsv(csv([[1, 0, 10]]), acc);
     expect(acc.strongHours[0]).toBe(1);
+  });
+
+  it('means the speed per sector — how hard it blows, not how often it blows hard', () => {
+    const acc = emptyAccumulator();
+    accumulateCsv(
+      csv([
+        [1, 0, 4],
+        [1, 0, 8],
+        [1, 90, 10],
+      ]),
+      acc,
+    );
+    const mean = meanSpeedFromAccumulator(acc);
+    expect(mean[0]).toBe(6); // (4 + 8) / 2
+    expect(mean[4]).toBe(10);
+    // Neither north hour is strong, so the two statistics genuinely disagree — which is the whole
+    // reason both are stored. A sector can blow steadily without ever blowing hard.
+    expect(acc.strongHours[0]).toBe(0);
+  });
+
+  it('divides by hours with a READABLE speed, not by the rose s hours', () => {
+    // ⚠ The subtle one. An hour whose direction parses and whose speed does not still counts toward
+    // the rose, deliberately — dropping it would bias the rose toward whatever conditions produce a
+    // clean speed field. So `counts` is the wrong divisor: averaging 10 m/s over two hours when only
+    // one carried a reading would report 5 m/s and call a gale a breeze.
+    const acc = emptyAccumulator();
+    accumulateCsv(
+      `${csv([[1, 0, 10]])}2012,1,1,0,30,0,not-a-number\n`,
+      acc,
+    );
+    expect(acc.counts[0]).toBe(2); // both hours are in the rose
+    expect(acc.speedHours[0]).toBe(1); // only one had a speed
+    expect(meanSpeedFromAccumulator(acc)[0]).toBe(10); // not 5
+  });
+
+  it('reports null, never zero, for a sector with no reading at all', () => {
+    // Zero is a real wind speed. A glyph sized on it would draw "dead calm from the east"
+    // identically to "we have never measured the east", and only one of those is a measurement.
+    const acc = emptyAccumulator();
+    accumulateCsv(csv([[1, 0, 6]]), acc);
+    const mean = meanSpeedFromAccumulator(acc);
+    expect(mean[0]).toBe(6);
+    expect(mean[4]).toBeNull();
+    expect(mean.filter((v) => v === 0)).toHaveLength(0);
+  });
+
+  it('carries the mean through climateFromAccumulator', () => {
+    const acc = emptyAccumulator();
+    accumulateCsv(csv([[1, 0, 7]]), acc);
+    expect(climateFromAccumulator(acc).meanWindMps[0]).toBe(7);
   });
 
   it('re-derives at a different bar with no re-fetch — the point of the archive', () => {

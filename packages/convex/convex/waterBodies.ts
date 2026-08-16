@@ -36,6 +36,7 @@ import {
   isMeasuredDepthSource,
   isMinor,
   isPlausibleElevationM,
+  isPlausibleMeanWindMps,
   isPlausibleStrongWindHours,
   isPlausibleWindRose,
   isWetlandClass,
@@ -2323,6 +2324,8 @@ export const importWindRoses = internalMutation({
          */
         rose: v.optional(v.array(v.number())),
         strongWindHours: v.optional(v.array(v.number())),
+        /** Mean m/s per sector; `null` per sector with no readable speed. See the schema field. */
+        meanWindMps: v.optional(v.array(v.union(v.number(), v.null()))),
         sampledWindHours: v.optional(v.number()),
         strongWindMinMps: v.optional(v.number()),
       }),
@@ -2362,6 +2365,16 @@ export const importWindRoses = internalMutation({
         patch.strongWindHours = entry.strongWindHours;
         patch.sampledWindHours = entry.sampledWindHours;
         patch.strongWindMinMps = entry.strongWindMinMps;
+      }
+      // Mean speed rides with the sustained-wind block but is validated separately: it has its own
+      // denominator (hours with a readable speed) and can legitimately be absent when the counts
+      // are present, so gating it on `isPlausibleStrongWindHours` would reject honest rows.
+      if (entry.meanWindMps !== undefined) {
+        if (!isPlausibleMeanWindMps(entry.meanWindMps)) {
+          malformed++;
+          continue;
+        }
+        patch.meanWindMps = entry.meanWindMps;
       }
       if (Object.keys(patch).length === 0) {
         malformed++;

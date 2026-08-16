@@ -91,3 +91,4 @@ export * from './weather';
 export * from './weatherConditions';
 export * from './weatherStrip';
 export * from './windRose';
+export * from './windRoseChart';

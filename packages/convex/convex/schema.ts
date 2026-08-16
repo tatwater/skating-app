@@ -754,6 +754,20 @@ export default defineSchema({
     sampledWindHours: v.optional(v.number()),
     /** The m/s bar those counts were taken at, so a mixed-threshold corpus is detectable. */
     strongWindMinMps: v.optional(v.number()),
+    /**
+     * Mean winter wind speed in m/s per sector — **how hard it blows from a direction**, where
+     * `strongWindHours` is how *often* it blows hard from one. The wind-exposure chart needs both:
+     * the rose sets the shape, this sets the arrows.
+     *
+     * **`null` per sector, never `0`, where no hour there had a readable speed.** Zero is a real
+     * wind speed, and a glyph sized on it would draw "dead calm from the north" identically to "we
+     * have no reading from the north". Only one of those is a measurement.
+     *
+     * Its denominator is hours with a *readable speed*, not `windRose`'s hours — `accumulateCsv`
+     * deliberately keeps an hour whose direction parses and whose speed does not, so the two
+     * counts genuinely differ. Absent entirely when no sector had a reading.
+     */
+    meanWindMps: v.optional(v.array(v.union(v.number(), v.null()))),
     // Lake depth (N6a / D68). Best-available value plus **per-measurement** provenance: mean and max
     // routinely come from different rungs of the ladder (LAGOS-US holds 17,675 maxima against 6,137
     // means), so one `depthSource` could not honestly describe both. The ladder itself lives in

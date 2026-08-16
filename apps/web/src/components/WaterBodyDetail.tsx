@@ -40,6 +40,7 @@ import { Button } from './ui/button';
 import { Card, CardContent } from './ui/card';
 import { SheetDescription, SheetHeader, SheetTitle } from './ui/sheet';
 import { Skeleton } from './ui/skeleton';
+import { WindExposure } from './WindExposure';
 
 /**
  * Water-body detail drawer content (§D, D47) for `/water/$id`. Reads `waterBodies.get`, which
@@ -210,6 +211,10 @@ export function WaterBodyDetail({
             half that answers "should I bother driving". Above the season filter so it sits with the
             body's current state rather than inside its history. */}
         <ForecastStrip waterBodyId={result.body._id} reveal={reveal} />
+        {/* Winter wind (N7-3 / D90). A climatology rather than a condition, so it sits BELOW the
+            forecast: what the last five winters did is background to what this week is doing. Renders
+            nothing on the ~56% of the corpus with no rose, and says nothing about safety (D145). */}
+        <WindExposure body={result.body} />
         <WaterBodyModeratorControls body={result.body} />
         <SeasonFilter waterBodyId={result.body._id} />
         <BountyList waterBodyId={result.body._id} />

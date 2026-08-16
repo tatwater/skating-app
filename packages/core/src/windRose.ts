@@ -280,6 +280,39 @@ export function isPlausibleStrongWindHours(wind: SustainedWind): boolean {
   return total <= sampledWindHours;
 }
 
+/**
+ * The fastest mean sector wind we will believe, in m/s. **60 m/s is ~134 mph.**
+ *
+ * A *mean* over a winter cannot approach this — the strongest mean sector speeds in the corpus are
+ * single digits — so anything above it is a units error (mph stored as m/s, or a sum stored as a
+ * mean), not a windy lake. Generous on purpose: this is a units check, not a climate opinion.
+ */
+export const MAX_PLAUSIBLE_MEAN_WIND_MPS = 60;
+
+/**
+ * Is this a usable stored mean-speed array?
+ *
+ * **`null` is valid and `0` is valid, and they mean different things** — no reading versus a
+ * measured dead calm. Both pass; only the shape, the sign and a units ceiling are checked.
+ *
+ * Deliberately separate from `isPlausibleStrongWindHours`: mean speed carries its own denominator
+ * (hours with a readable speed, which is not the rose's denominator), so a row can honestly have
+ * one and not the other. Validating them together would reject that.
+ */
+export function isPlausibleMeanWindMps(value: unknown): value is (number | null)[] {
+  if (!Array.isArray(value) || value.length !== WIND_ROSE_SECTORS) return false;
+  let anyReading = false;
+  for (const mps of value) {
+    if (mps === null) continue;
+    if (typeof mps !== 'number' || !Number.isFinite(mps)) return false;
+    if (mps < 0 || mps > MAX_PLAUSIBLE_MEAN_WIND_MPS) return false;
+    anyReading = true;
+  }
+  // Sixteen nulls is the same claim as an absent field, and storing it would make every consumer
+  // handle a case that says nothing. The writer omits the field instead.
+  return anyReading;
+}
+
 export interface WindHoleSector {
   /** Index into the 16 compass points — the direction wind blows FROM. */
   sector: number;
