@@ -34,6 +34,7 @@ import { useMapSelection } from './MapSelectionContext';
 import { ReferenceLinks } from './ReferenceLinks';
 import { ReportForm } from './ReportForm';
 import { SeasonEmptyState, SeasonFilter } from './SeasonFilter';
+import { WindExposure } from './WindExposure';
 
 /**
  * Water-body detail drawer (§F, D47) for `/water/[id]`, the mobile mirror of web's `WaterBodyDetail`.
@@ -224,6 +225,10 @@ export function WaterBodyDetail({
           <AlertStrip waterBodyId={result.body._id} reveal={reveal} />
           {/* The forward forecast (N6c/B5b) — the other half of the weather-since timeline. */}
           <ForecastStrip waterBodyId={result.body._id} reveal={reveal} />
+          {/* Winter wind (N7-3 / D90) — a climatology, so it sits BELOW the forecast: what the last
+              five winters did is background to what this week is doing. Renders nothing without a
+              rose, and says nothing about safety (D145). */}
+          <WindExposure body={result.body} />
           <SeasonFilter waterBodyId={result.body._id} />
           <BountyList waterBodyId={result.body._id} />
           {/* The lake page and nowhere else (§9.1) — not the map, the feed, notifications or the

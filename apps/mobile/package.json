@@ -51,6 +51,7 @@
     "react-native-reanimated": "4.5.0",
     "react-native-safe-area-context": "~5.7.0",
     "react-native-screens": "4.25.2",
+    "react-native-svg": "15.15.4",
     "tamagui": "^2.4.4"
   },
   "devDependencies": {
