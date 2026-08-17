@@ -3,13 +3,13 @@ import {
   buildReportInput,
   emptyReportForm,
   emptyThicknessReading,
+  isFormRoundTripOf,
   type ReportFormState,
   reportFormFromReport,
   resolveSkateWindow,
   type StoredReportForForm,
-  sameThroughFormRounding,
 } from './reportForm';
-import { cmToInches, cToF, kphToMph } from './units';
+import { cmToInches, cToF, fToC, kphToMph } from './units';
 
 describe('emptyThicknessReading', () => {
   it('is a blank single measured reading (the "add reading" default)', () => {
@@ -362,35 +362,47 @@ describe('reportFormFromReport', () => {
       expect(rebuilt.conditions?.airTempC).toBeCloseTo(-3.4, 0);
     });
 
-    it('is recognised as unedited at the precision the field actually offers', () => {
+    it('is recognised as untouched, because the round trip is predicted exactly', () => {
       const rebuilt = buildReportInput(reportFormFromReport(MODELLED), 'wb1');
-      expect(sameThroughFormRounding('airTempC', -3.4, rebuilt.conditions?.airTempC)).toBe(true);
-      expect(sameThroughFormRounding('windSpeedKph', 18.7, rebuilt.conditions?.windSpeedKph)).toBe(
-        true,
-      );
+      expect(isFormRoundTripOf('airTempC', -3.4, rebuilt.conditions?.airTempC)).toBe(true);
+      expect(isFormRoundTripOf('windSpeedKph', 18.7, rebuilt.conditions?.windSpeedKph)).toBe(true);
     });
   });
 
-  describe('sameThroughFormRounding', () => {
-    it('is true for two readings that render as the same whole unit', () => {
-      // −3.4 °C and −3.33 °C both show as 26 °F: the form could not tell them apart, so neither can
-      // an author have meant to change one into the other.
-      expect(sameThroughFormRounding('airTempC', -3.4, -3.3333333333333335)).toBe(true);
+  describe('isFormRoundTripOf', () => {
+    it('is true for the value the form would have re-emitted', () => {
+      // −3.4 °C displays as 26 °F, and 26 °F converts back to −3.33: the exact number an untouched
+      // field arrives as, so it is the one number that counts as "the author left this alone".
+      expect(isFormRoundTripOf('airTempC', -3.4, fToC(26))).toBe(true);
     });
 
     it('is true when the field is absent on both sides', () => {
-      expect(sameThroughFormRounding('airTempC', undefined, undefined)).toBe(true);
+      expect(isFormRoundTripOf('airTempC', undefined, undefined)).toBe(true);
     });
 
     it('is false when the field was cleared or added', () => {
-      expect(sameThroughFormRounding('airTempC', -3.4, undefined)).toBe(false);
-      expect(sameThroughFormRounding('airTempC', undefined, -3.4)).toBe(false);
+      expect(isFormRoundTripOf('airTempC', -3.4, undefined)).toBe(false);
+      expect(isFormRoundTripOf('airTempC', undefined, -3.4)).toBe(false);
     });
 
-    /** The tolerance cannot mask a real edit: retyping the field moves it a whole unit at least. */
     it('is false for a value the author actually retyped', () => {
-      expect(sameThroughFormRounding('airTempC', -3.4, -3.888888888888889)).toBe(false); // 26 °F → 25 °F
-      expect(sameThroughFormRounding('windSpeedKph', 18.7, 20.3)).toBe(false); // 12 mph → 13 mph
+      expect(isFormRoundTripOf('airTempC', -3.4, -3.888888888888889)).toBe(false); // 26 °F → 25 °F
+      expect(isFormRoundTripOf('windSpeedKph', 18.7, 20.3)).toBe(false); // 12 mph → 13 mph
+    });
+
+    /**
+     * ⚠ The reason this predicts the round trip instead of allowing a whole-unit tolerance: both
+     * inputs take decimals, so a tolerance would read 26.4 °F typed over a modelled 26 °F as
+     * unchanged and restore the model's number — discarding an edit to protect provenance, which is
+     * a worse failure than the one the check exists to prevent.
+     */
+    it('is false for a fractional edit inside the displayed unit', () => {
+      const typed = buildReportInput(
+        { ...BASE, conditions: { ...BASE.conditions, airTempF: '26.4', windMph: '11.6' } },
+        'wb1',
+      );
+      expect(isFormRoundTripOf('airTempC', -3.4, typed.conditions?.airTempC)).toBe(false);
+      expect(isFormRoundTripOf('windSpeedKph', 18.7, typed.conditions?.windSpeedKph)).toBe(false);
     });
   });
 

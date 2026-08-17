@@ -20,6 +20,7 @@ import {
   hasMeasuredThickness,
   ICE_TYPES,
   isBrowsableSeason,
+  isFormRoundTripOf,
   isMinor,
   type LatLng,
   matchesFilters,
@@ -34,7 +35,6 @@ import {
   SKATE_QUALITIES,
   SKY_CONDITIONS,
   SURFACE_TAGS,
-  sameThroughFormRounding,
   sanitizeFeedFilters,
   seasonEndMs,
   seasonOf,
@@ -1103,11 +1103,12 @@ export const update = mutation({
  * figure came back identical, nothing about the weather was edited, whatever else was. Change one and
  * the block becomes the author's, which is the honest reading of someone typing over it.
  *
- * ⚠ **It compares at the form's precision, not with `===`.** The two numbers are stored in precise
- * metric and edited in whole °F / whole mph, so an untouched −3.4 °C comes back as −3.33 — see
- * `sameThroughFormRounding`, which owns that rounding jointly with the form that applies it. An exact
- * comparison here would call every edit a weather edit and defeat the whole function. The stored
- * number is then kept verbatim for each field that survived, so a round-trip can't nudge a
+ * ⚠ **It asks whether the number came back off the form untouched, not whether it is close.** The
+ * two are stored in precise metric and edited in whole °F / whole mph, so an untouched −3.4 °C comes
+ * back as −3.33; a bare `stored === next` would call every edit a weather edit and defeat the whole
+ * function. `isFormRoundTripOf` predicts the form's exact arithmetic instead of allowing a tolerance
+ * — deliberately, because the inputs take decimals and a tolerance would swallow a real 0.4° edit.
+ * The stored number is then kept verbatim for each field that survived, so a round-trip can't nudge a
  * measurement the author never opened.
  *
  * Only ever *downgrades* toward the stored source, so it cannot launder a user's number into an
@@ -1118,8 +1119,8 @@ function mergeEditedConditions(
   next: Doc<'reports'>['conditions'],
 ): Doc<'reports'>['conditions'] {
   if (!stored || !next) return next;
-  const sameTemp = sameThroughFormRounding('airTempC', stored.airTempC, next.airTempC);
-  const sameWind = sameThroughFormRounding('windSpeedKph', stored.windSpeedKph, next.windSpeedKph);
+  const sameTemp = isFormRoundTripOf('airTempC', stored.airTempC, next.airTempC);
+  const sameWind = isFormRoundTripOf('windSpeedKph', stored.windSpeedKph, next.windSpeedKph);
   // Undo the rounding drift field by field, independently of the source decision below: a value the
   // author couldn't have changed shouldn't move, even on an edit that *did* touch the rest of the block.
   const merged = {

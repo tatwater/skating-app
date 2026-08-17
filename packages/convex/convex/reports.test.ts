@@ -1,4 +1,4 @@
-import { buildReportInput, reportFormFromReport } from '@skating/core';
+import { buildReportInput, emptyReportForm, reportFormFromReport } from '@skating/core';
 import { convexTest } from 'convex-test';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { api, internal } from './_generated/api';
@@ -6,6 +6,15 @@ import type { Id } from './_generated/dataModel';
 import schema from './schema';
 
 const modules = import.meta.glob('./**/*.*s');
+
+/** The conditions half of a form state, with only the air-temp field filled in. */
+const FORM_CONDITIONS = (airTempF: string) => ({
+  airTempF,
+  windMph: '',
+  windDir: '',
+  sky: '' as const,
+  precip: '' as const,
+});
 
 /**
  * **The clock is pinned, because a report now has a season** (N5a/D63).
@@ -755,23 +764,56 @@ describe('reports.update (author-only LWW, D25)', () => {
     });
 
     /**
+     * The other side of the same line, and the reason the check predicts the round trip instead of
+     * allowing a whole-unit tolerance: both inputs take decimals. A tolerance would read 26.4 °F
+     * typed over a modelled 26 °F as unchanged and restore the model's number — discarding an edit
+     * to protect provenance, which is worse than the bug the check exists to prevent.
+     */
+    test('a fractional edit inside the displayed unit is still the author’s', async () => {
+      const t = convexTestWithGeo();
+      const { asAuthor, reportId } = await seedReport(t);
+      await t.run((ctx) =>
+        ctx.db.patch(reportId, {
+          conditions: { airTempC: -3.4, source: 'openmeteo' as const }, // shows as 26 °F
+        }),
+      );
+
+      const typed = buildReportInput(
+        { ...emptyReportForm(SKATE_TIME), conditions: FORM_CONDITIONS('26.4') },
+        'unused',
+      );
+      await asAuthor.mutation(api.reports.update, {
+        reportId,
+        skateEndTime: SKATE_TIME,
+        ...(typed.conditions ? { conditions: typed.conditions } : {}),
+      });
+
+      const after = await t.run((ctx) => ctx.db.get(reportId));
+      expect(after?.conditions?.source).toBe('user'); // they changed it, so it's theirs
+      expect(after?.conditions?.airTempC).toBe(typed.conditions?.airTempC); // and it was kept
+    });
+
+    /**
      * The value-level half of the fix stands on its own: a field the form could not have changed
      * keeps its stored number even on an edit that *did* make the block the author's.
      */
     test('editing one weather field does not nudge the other', async () => {
       const t = convexTestWithGeo();
       const { asAuthor, reportId } = await seedReport(t);
-      await t.run((ctx) =>
-        ctx.db.patch(reportId, {
-          conditions: { airTempC: -3.4, windSpeedKph: 18.7, source: 'openmeteo' as const },
-        }),
-      );
+      const modelled = { airTempC: -3.4, windSpeedKph: 18.7, source: 'openmeteo' as const };
+      await t.run((ctx) => ctx.db.patch(reportId, { conditions: modelled }));
 
+      // Seed the form, retype the air temp (26 °F → 30 °F), leave the wind field alone — derived
+      // rather than hand-written, because the untouched value is whatever the round trip emits.
+      const form = reportFormFromReport({ skateEndTime: SKATE_TIME, conditions: modelled });
+      const edited = buildReportInput(
+        { ...form, conditions: { ...form.conditions, airTempF: '30' } },
+        'unused',
+      );
       await asAuthor.mutation(api.reports.update, {
         reportId,
         skateEndTime: SKATE_TIME,
-        // 26 °F retyped as 30 °F; the wind field was never touched, so it round-trips as 11.6 mph.
-        conditions: { airTempC: -1.1111111111111112, windSpeedKph: 18.68, source: 'user' },
+        ...(edited.conditions ? { conditions: edited.conditions } : {}),
       });
 
       const after = await t.run((ctx) => ctx.db.get(reportId));
