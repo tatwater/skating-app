@@ -7,8 +7,8 @@ import {
   emptyCounts,
   fetchCellYear,
   gridKey,
-  meanSpeedFromAccumulator,
   MIN_ROSE_HOURS,
+  meanSpeedFromAccumulator,
   pointForGridKey,
   retryAfterMs,
   roseFromCounts,
@@ -160,10 +160,7 @@ describe('the speed column, which every run before N7-3 discarded', () => {
     // clean speed field. So `counts` is the wrong divisor: averaging 10 m/s over two hours when only
     // one carried a reading would report 5 m/s and call a gale a breeze.
     const acc = emptyAccumulator();
-    accumulateCsv(
-      `${csv([[1, 0, 10]])}2012,1,1,0,30,0,not-a-number\n`,
-      acc,
-    );
+    accumulateCsv(`${csv([[1, 0, 10]])}2012,1,1,0,30,0,not-a-number\n`, acc);
     expect(acc.counts[0]).toBe(2); // both hours are in the rose
     expect(acc.speedHours[0]).toBe(1); // only one had a speed
     expect(meanSpeedFromAccumulator(acc)[0]).toBe(10); // not 5
