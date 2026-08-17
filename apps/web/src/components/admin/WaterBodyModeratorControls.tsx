@@ -1,18 +1,29 @@
 import { api } from '@skating/convex/api';
 import type { Id } from '@skating/convex/dataModel';
+import { Link } from '@tanstack/react-router';
 import { useMutation } from 'convex/react';
-import { useState } from 'react';
+import { cn } from '@/lib/utils';
 import { useRole } from '../../lib/useRole';
-import { Button } from '../ui/button';
+import { Button, buttonVariants } from '../ui/button';
 import { Card, CardContent } from '../ui/card';
-import { Input } from '../ui/input';
-import { Label } from '../ui/label';
 import { ReasonDialog } from './ReasonDialog';
 
 /**
- * In-context moderator affordances on a water-body detail (D37/D49) — set the display `curatedBoost`
- * from the body itself, and approve/reject a pending user-drawn body without opening the queue. Same
- * server-gated mutations as `/admin/water`. Renders nothing for non-moderators.
+ * In-context moderator affordances on a water-body detail (D37/D49).
+ *
+ * **The curated-boost field used to live here and is now a link to the lake editor.** A lone number
+ * input was the whole of this card's editing surface, and it was the *worse* copy of a control the
+ * editor already has: there, `setCuratedBoost` sits beside the resulting `displayScore` and
+ * `minVisibleZoom`, so an operator can see what a boost of 0.3 actually does to the zoom a lake draws
+ * at. Here it was a bare number with no feedback, on a panel a skater is also looking at.
+ *
+ * **Approve/reject stayed**, and the difference is worth stating: they are a decision about *this*
+ * body made at the moment you are looking at it, they appear only on a pending user-drawn body (a
+ * rare, transient state), and sending someone to another page to press Approve would be friction on
+ * the one action that is genuinely time-sensitive here. Editing prominence is curation you sit down
+ * to do; approving a body is something you do in passing.
+ *
+ * Renders nothing for non-moderators.
  */
 export function WaterBodyModeratorControls({
   body,
@@ -21,14 +32,11 @@ export function WaterBodyModeratorControls({
     _id: string;
     source: string;
     reviewStatus?: 'pending' | 'approved' | 'rejected';
-    curatedBoost?: number;
   };
 }) {
   const { canModerate } = useRole();
-  const setCuratedBoost = useMutation(api.waterBodies.setCuratedBoost);
   const approve = useMutation(api.waterBodies.approve);
   const reject = useMutation(api.waterBodies.reject);
-  const [boost, setBoost] = useState(String(body.curatedBoost ?? 0));
 
   if (!canModerate) return null;
 
@@ -42,30 +50,19 @@ export function WaterBodyModeratorControls({
           Moderator tools
         </p>
 
-        <div className="flex items-end gap-2">
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="curated-boost">Curated boost</Label>
-            <Input
-              id="curated-boost"
-              type="number"
-              step="0.1"
-              value={boost}
-              onChange={(e) => setBoost(e.target.value)}
-              className="w-28"
-            />
-          </div>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => {
-              const value = Number(boost);
-              if (Number.isFinite(value))
-                void setCuratedBoost({ waterBodyId, curatedBoost: value });
-            }}
-          >
-            Set prominence
-          </Button>
-        </div>
+        {/* A link rather than a `<Button onClick={navigate}>`: it is a navigation, so it should
+            middle-click, open in a new tab, and show its destination on hover like one. */}
+        <Link
+          to="/admin/water/$id"
+          params={{ id: body._id }}
+          className={cn(buttonVariants({ variant: 'outline', size: 'sm' }), 'self-start')}
+        >
+          Open in the lake editor
+        </Link>
+        <p className="text-foreground-muted text-xs">
+          Prominence, depth, names, sub-areas, access points, posted rules and the moderation
+          history — all of it, with the audit trail.
+        </p>
 
         {isPendingUserBody ? (
           <div className="flex flex-wrap gap-2">
