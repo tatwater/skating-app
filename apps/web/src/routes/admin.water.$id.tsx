@@ -57,6 +57,9 @@ function LakeEditor() {
 
   const subAreas = useQuery(api.subAreas.listForBody, { waterBodyId });
   const putIns = useQuery(api.putIns.listForBody, { waterBodyId });
+  // Also read by `AccessTool` below; the Convex client dedupes identical subscriptions to one, so
+  // hoisting it for the canvas costs nothing.
+  const access = useQuery(api.accessPoints.accessForBody, { waterBodyId });
   const hazards = useQuery(api.hazards.listForBody, { waterBodyId });
   const features = useQuery(api.bodyFeatures.listForBody, { waterBodyId });
   const tracks = useQuery(api.gpsActivities.listTracksForBody, { waterBodyId });
@@ -76,7 +79,18 @@ function LakeEditor() {
   const [featureDraft, setFeatureDraft] = useState<GeoJSON.Polygon | GeoJSON.MultiPolygon | null>(
     null,
   );
-  const [placingFeature, setPlacingFeature] = useState(false);
+  /**
+   * **What the next map click means — one slot, not a boolean per tool** (N6f).
+   *
+   * Three tools now place a point on this canvas, and there is a single unconditional click handler
+   * on the map. With a boolean each, two could be armed at once and the click would go to whichever
+   * branch was written first — a bug with no error, where a lot lands as a put-in. A discriminator
+   * makes "armed for something else" unrepresentable: arming any tool disarms the others by
+   * construction, and each tool's button reads its own value to know whether it is the live one.
+   */
+  const [placing, setPlacing] = useState<'feature' | 'put_in' | 'parking' | null>(null);
+  const [putInPoint, setPutInPoint] = useState<LatLng | null>(null);
+  const [parkingPoint, setParkingPoint] = useState<LatLng | null>(null);
 
   if (result === undefined) return <AdminEmpty>Loading…</AdminEmpty>;
   if (result === null || !body) {
@@ -138,17 +152,27 @@ function LakeEditor() {
                   centroid: s.centroid,
                 })),
               putIns: putIns ?? [],
+              parkingAreas: access?.parking ?? [],
               samplePoints: body.weatherSamplePoints ?? [],
               // One draft slot on the map, shared by the two tools that produce a shape. They can't
               // both be armed — arming either clears the other — so there is never a shape on screen
               // whose owner is ambiguous.
               draftPolygon: draft ?? featureDraft,
-              suggestedPoints: featurePoint ? [...suggested, featurePoint] : suggested,
+              // Every pending point, drawn hollow — the canvas's existing "unsaved proposal"
+              // convention. Which tool owns which is answered by the card holding it, each of which
+              // prints its own coordinate; the map's job here is only to say "not saved yet".
+              suggestedPoints: [suggested, featurePoint, putInPoint, parkingPoint]
+                .flat()
+                .filter((p): p is LatLng => p !== null),
             }}
             onMapClick={(coord) => {
-              if (!placingFeature) return;
-              setFeaturePoint(coord);
-              setPlacingFeature(false);
+              // One-shot: consume the click and disarm, so a stray second click can't move the point
+              // an operator has already started filling a form around.
+              if (placing === 'feature') setFeaturePoint(coord);
+              else if (placing === 'put_in') setPutInPoint(coord);
+              else if (placing === 'parking') setParkingPoint(coord);
+              else return;
+              setPlacing(null);
             }}
             onReady={(map) => {
               drawTargetRef.current = map;
@@ -174,8 +198,25 @@ function LakeEditor() {
             setSuggested={setSuggested}
             onResult={setBanner}
           />
-          <PutInTool waterBodyId={waterBodyId} putIns={putIns ?? []} />
-          <AccessTool waterBodyId={waterBodyId} onResult={setBanner} />
+          {/* The three placement tools each read the one `placing` slot, so arming any of them is
+              also what disarms the other two — there is no state in which a click is ambiguous. */}
+          <PutInTool
+            waterBodyId={waterBodyId}
+            putIns={putIns ?? []}
+            armed={placing === 'put_in'}
+            onArm={(on) => setPlacing(on ? 'put_in' : null)}
+            point={putInPoint}
+            onClearPoint={() => setPutInPoint(null)}
+            onResult={setBanner}
+          />
+          <AccessTool
+            waterBodyId={waterBodyId}
+            armed={placing === 'parking'}
+            onArm={(on) => setPlacing(on ? 'parking' : null)}
+            point={parkingPoint}
+            onClearPoint={() => setParkingPoint(null)}
+            onResult={setBanner}
+          />
           <BodyFeatureTool
             waterBodyId={waterBodyId}
             features={features ?? []}
@@ -183,8 +224,8 @@ function LakeEditor() {
             setDraft={setFeatureDraft}
             point={featurePoint}
             setPoint={setFeaturePoint}
-            arming={placingFeature}
-            setArming={setPlacingFeature}
+            arming={placing === 'feature'}
+            setArming={(on) => setPlacing(on ? 'feature' : null)}
             mapRef={drawTargetRef}
             onResult={setBanner}
           />
@@ -1028,29 +1069,149 @@ function SamplePointTool({
   );
 }
 
-/** Put-ins (Phase 4, decision #7) — the existing mutations, on the canvas that shows where they are. */
+/**
+ * Put-ins (Phase 4, decision #7) — the existing mutations, on the canvas that shows where they are.
+ *
+ * **This card used to be three counts and a link reading "Place and hide pins on the public map →".**
+ * There was no such control on the public map; `putIns.setOfficial` and `putIns.hide` had shipped in
+ * Phase 4 with a comment deferring the operator UI to Phase 7 and had zero callers in either app
+ * since. The link's destination was a moderator panel that links back here, so following the
+ * instruction returned you to the card that gave it.
+ *
+ * Placement is armed here and clicked on the editor canvas rather than on the public map, which is
+ * where every other placement tool on this page already lives — the camera is locked to this lake
+ * (Decision 5), so a click cannot land on the water next door.
+ *
+ * **Hiding is a list action, not a click on the pin.** A pin is 6 px, OSM contributes clusters of
+ * them, and hiding is destructive-ish and takes a mandatory reason — so it wants an unambiguous row
+ * with a name on it, not a target you might miss by three pixels.
+ */
 function PutInTool({
   waterBodyId,
   putIns,
+  armed,
+  onArm,
+  point,
+  onClearPoint,
+  onResult,
 }: {
   waterBodyId: Id<'waterBodies'>;
-  putIns: readonly { coord: LatLng; source: string }[];
+  putIns: readonly { coord: LatLng; source: string; name?: string }[];
+  armed: boolean;
+  onArm: (on: boolean) => void;
+  point: LatLng | null;
+  onClearPoint: () => void;
+  onResult: SetBanner;
 }) {
+  const setOfficial = useMutation(api.putIns.setOfficial);
+  const hide = useMutation(api.putIns.hide);
+  const [name, setName] = useState('');
+  const [busy, setBusy] = useState(false);
+
   const official = putIns.filter((p) => p.source === 'official').length;
   const osm = putIns.filter((p) => p.source === 'osm').length;
   const derived = putIns.filter((p) => p.source === 'derived').length;
+
+  async function save() {
+    if (!point) return;
+    setBusy(true);
+    try {
+      await setOfficial({
+        waterBodyId,
+        coord: point,
+        ...(name.trim() ? { name: name.trim() } : {}),
+      });
+      onClearPoint();
+      setName('');
+      onResult({ tone: 'ok', text: 'Official put-in placed.' });
+    } catch (err) {
+      onResult({ tone: 'error', text: errorText(err) });
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <ToolCard title="Put-ins">
       <p className="text-foreground-muted text-sm">
         {official} official · {osm} from OSM · {derived} derived from reports.
       </p>
-      <Link
-        to="/water/$id"
-        params={{ id: waterBodyId }}
-        className="text-foreground-muted text-sm underline underline-offset-2"
-      >
-        Place and hide pins on the public map →
-      </Link>
+
+      {putIns.length > 0 ? (
+        <ul className="space-y-1 text-sm">
+          {putIns.map((p) => (
+            <li
+              key={`${p.coord.lat},${p.coord.lng}`}
+              className="flex items-center justify-between gap-2"
+            >
+              <span className="truncate text-foreground-muted">
+                {p.name ?? 'Unnamed launch'} — {p.source}
+              </span>
+              <ReasonDialog
+                trigger={
+                  <Button variant="ghost" size="xs">
+                    Hide
+                  </Button>
+                }
+                title="Hide this put-in"
+                description="Writes a suppression row at this coordinate, so it stays hidden even after the derived clusters are recomputed. Reversible only by an admin."
+                confirmLabel="Hide"
+                confirmVariant="secondary"
+                onConfirm={async (reason) => {
+                  try {
+                    await hide({ waterBodyId, coord: p.coord, reason });
+                    onResult({ tone: 'ok', text: 'Put-in hidden.' });
+                  } catch (err) {
+                    onResult({ tone: 'error', text: errorText(err) });
+                  }
+                }}
+              />
+            </li>
+          ))}
+        </ul>
+      ) : null}
+
+      <div className="flex flex-col gap-2 border-border border-t pt-2">
+        <Button
+          variant={armed ? 'default' : 'outline'}
+          size="sm"
+          className="self-start"
+          onClick={() => onArm(!armed)}
+        >
+          {armed ? 'Click the map…' : point ? 'Pick a different spot' : 'Place an official put-in'}
+        </Button>
+        {point ? (
+          <>
+            <p className="text-foreground-muted text-xs">
+              {point.lat.toFixed(5)}, {point.lng.toFixed(5)} — drawn hollow until you save.
+            </p>
+            <Input
+              placeholder="Name (optional) — e.g. Town Beach"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+            />
+            <div className="flex gap-2">
+              <Button size="sm" disabled={busy} onClick={() => void save()}>
+                {busy ? 'Saving…' : 'Save put-in'}
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => {
+                  onClearPoint();
+                  setName('');
+                }}
+              >
+                Cancel
+              </Button>
+            </div>
+          </>
+        ) : null}
+        <p className="text-foreground-muted text-xs">
+          An official marker outranks OSM and the derived clusters. Leave the name blank and it
+          renders by compass bearing, the same as a derived launch.
+        </p>
+      </div>
     </ToolCard>
   );
 }
@@ -1073,17 +1234,23 @@ function PutInTool({
  */
 function AccessTool({
   waterBodyId,
+  armed,
+  onArm,
+  point,
+  onClearPoint,
   onResult,
 }: {
   waterBodyId: Id<'waterBodies'>;
+  armed: boolean;
+  onArm: (on: boolean) => void;
+  point: LatLng | null;
+  onClearPoint: () => void;
   onResult: SetBanner;
 }) {
   const access = useQuery(api.accessPoints.accessForBody, { waterBodyId });
   const setParking = useMutation(api.accessPoints.setOfficialParking);
   const setPutInAccess = useMutation(api.accessPoints.setPutInAccess);
 
-  const [lat, setLat] = useState('');
-  const [lng, setLng] = useState('');
   const [name, setName] = useState('');
   const [busy, setBusy] = useState(false);
   const [selectedPutIn, setSelectedPutIn] = useState('');
@@ -1093,23 +1260,24 @@ function AccessTool({
   const lots = access?.parking ?? [];
   const storedPutIns = access?.putIns ?? [];
 
+  /**
+   * **This used to be two text boxes taking a decimal latitude and longitude** (N6f), with the lake
+   * on a locked canvas three feet to the left. Typed coordinates are how a lot ends up in the wrong
+   * hemisphere from a dropped minus sign — and there is no validation that could catch it, because
+   * every plausible typo is still a valid coordinate somewhere on earth. A click cannot be in the
+   * wrong hemisphere: the camera is locked to this body.
+   */
   async function addLot() {
-    const latN = Number.parseFloat(lat);
-    const lngN = Number.parseFloat(lng);
-    if (!Number.isFinite(latN) || !Number.isFinite(lngN)) {
-      onResult({ tone: 'error', text: 'Enter a latitude and longitude.' });
-      return;
-    }
+    if (!point) return;
     setBusy(true);
     try {
       await setParking({
-        coord: { lat: latN, lng: lngN },
+        coord: point,
         ...(name.trim() ? { name: name.trim() } : {}),
         amenities: [],
         waterBodyIds: [waterBodyId],
       });
-      setLat('');
-      setLng('');
+      onClearPoint();
       setName('');
       onResult({ tone: 'ok', text: 'Parking area saved at the operator rung.' });
     } catch (err) {
@@ -1153,19 +1321,49 @@ function AccessTool({
         <p className="text-foreground-muted text-sm">No parking on record for this lake.</p>
       )}
 
-      <div className="grid grid-cols-2 gap-2">
-        <Input placeholder="Latitude" value={lat} onChange={(e) => setLat(e.target.value)} />
-        <Input placeholder="Longitude" value={lng} onChange={(e) => setLng(e.target.value)} />
+      <div className="flex flex-col gap-2 border-border border-t pt-2">
+        <Button
+          variant={armed ? 'default' : 'outline'}
+          size="sm"
+          className="self-start"
+          onClick={() => onArm(!armed)}
+        >
+          {armed ? 'Click the map…' : point ? 'Pick a different spot' : 'Place a parking area'}
+        </Button>
+        {point ? (
+          <>
+            <p className="text-foreground-muted text-xs">
+              {point.lat.toFixed(5)}, {point.lng.toFixed(5)} — drawn hollow until you save.
+            </p>
+            <Input
+              placeholder="Name (optional) — e.g. Reservoir Road lot"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+            />
+            <div className="flex gap-2">
+              <Button size="sm" disabled={busy} onClick={() => void addLot()}>
+                {busy ? 'Saving…' : 'Save at the operator rung'}
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => {
+                  onClearPoint();
+                  setName('');
+                }}
+              >
+                Cancel
+              </Button>
+            </div>
+          </>
+        ) : null}
+        <p className="text-foreground-muted text-xs">
+          The camera is locked to this lake, so a click can only land near it — but there is
+          deliberately <strong>no distance limit</strong> on the association below. The ~250 m
+          radius caps what the OSM pass will guess, never what you can assert; a trailhead a mile
+          from the ice is the case this exists for.
+        </p>
       </div>
-      <Input placeholder="Name (optional)" value={name} onChange={(e) => setName(e.target.value)} />
-      <Button size="sm" disabled={busy} onClick={() => void addLot()}>
-        Add parking at the operator rung
-      </Button>
-      <p className="text-foreground-muted text-xs">
-        There is deliberately <strong>no distance limit</strong> here — the ~250 m radius caps what
-        the OSM pass will guess, never what you can assert. A trailhead a mile from the ice is the
-        case this exists for.
-      </p>
 
       {storedPutIns.length > 0 ? (
         <div className="space-y-2 border-border border-t pt-2">

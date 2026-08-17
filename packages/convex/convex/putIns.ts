@@ -28,6 +28,8 @@ import { latLng } from './lib/validators';
 const PUTIN_REPORT_SCAN_LIMIT = 200;
 /** A derived cluster or official marker within this distance of a `hidden` coord is suppressed. */
 const HIDE_SUPPRESS_METERS = DEFAULT_PUTIN_MERGE_METERS;
+/** A label on a map pin, not a description — "Town Beach", not a paragraph about the town beach. */
+const MAX_PUT_IN_NAME_LENGTH = 60;
 
 /** A put-in marker as the map consumes it: a routable coord, its provenance, and (derived) its weight. */
 export interface PutInMarker {
@@ -186,20 +188,42 @@ export const listForBody = query({
 });
 
 /**
- * Admin/moderator: add an `official` put-in marker (accurate, priority styling). The operator UI is
- * Phase 7; the data + mutation land here. Writes a `moderationActions` audit row for accountability.
+ * Admin/moderator: add an `official` put-in marker (accurate, priority styling). Writes a
+ * `moderationActions` audit row for accountability.
+ *
+ * The operator UI is the lake editor's Put-ins tool (N6f) — arm, click the canvas, save. This
+ * mutation shipped in Phase 4 with a comment promising that UI "in Phase 7" and went unwired for
+ * three phases while the admin card linked to the public map, which never grew a control either.
+ *
+ * `name` is optional and new with that UI. An `osm` launch arrives with whatever OSM called it and a
+ * `derived` one is labelled by compass bearing (`resolvePutInName`), so a hand-placed launch was the
+ * one rung that could never be named — despite being the rung where somebody actually knows.
  */
 export const setOfficial = mutation({
-  args: { waterBodyId: v.id('waterBodies'), coord: latLng, reason: v.optional(v.string()) },
-  handler: async (ctx, { waterBodyId, coord, reason }) => {
+  args: {
+    waterBodyId: v.id('waterBodies'),
+    coord: latLng,
+    name: v.optional(v.string()),
+    reason: v.optional(v.string()),
+  },
+  handler: async (ctx, { waterBodyId, coord, name, reason }) => {
     const actor = await requireContributorRole(ctx, 'moderator');
     const body = await ctx.db.get(waterBodyId);
     if (!body) throw new ConvexError('Water body not found');
+    const trimmedName = name?.trim();
+    if (trimmedName && trimmedName.length > MAX_PUT_IN_NAME_LENGTH) {
+      throw new ConvexError(
+        `Keep the name under ${MAX_PUT_IN_NAME_LENGTH} characters — it labels a pin on a map.`,
+      );
+    }
     const id = await ctx.db.insert('putIns', {
       waterBodyId,
       coord,
       source: 'official',
       status: 'visible',
+      // Absent rather than empty, so `resolvePutInName` falls back to the compass label instead of
+      // rendering a launch with a blank name.
+      ...(trimmedName ? { name: trimmedName } : {}),
       createdByUserId: actor._id,
       createdAt: Date.now(),
     });
@@ -208,8 +232,9 @@ export const setOfficial = mutation({
       action: 'set_put_in', // a dedicated verb — placing an official marker, not un-hiding one
       targetType: 'waterbody',
       targetId: waterBodyId,
-      reason: reason ?? 'Set official put-in',
-      metadata: { coord, putInId: id },
+      reason:
+        reason ?? (trimmedName ? `Set official put-in: ${trimmedName}` : 'Set official put-in'),
+      metadata: { coord, putInId: id, ...(trimmedName ? { name: trimmedName } : {}) },
       createdAt: Date.now(),
     });
     // The body's denormalized `accessKind` is derived from its visible put-ins, so every mutation

@@ -201,6 +201,53 @@ describe('putIns.setOfficial / hide (auth + audit)', () => {
     expect(actions[0]?.action).toBe('set_put_in'); // a dedicated verb, not the misleading 'restore'
   });
 
+  /**
+   * The operator UI (N6f) can name a hand-placed launch. `osm` arrives with OSM's name and `derived`
+   * is labelled by compass bearing, so `official` was the one rung that could never be named —
+   * despite being the rung where somebody actually knows what the place is called.
+   */
+  test('setOfficial stores an operator-supplied name, and says it in the audit line', async () => {
+    const t = convexTestWithGeo();
+    const id = await seedBody(t);
+    const asMod = await seedUser(t, 'clerk_mod', 'moderator');
+    await asMod.mutation(api.putIns.setOfficial, {
+      waterBodyId: id,
+      coord: { lat: 0.5, lng: 0 },
+      name: '  Town Beach  ',
+    });
+
+    const rows = await t.run((ctx) => ctx.db.query('putIns').collect());
+    expect(rows[0]?.name).toBe('Town Beach'); // trimmed
+    const actions = await t.run((ctx) => ctx.db.query('moderationActions').collect());
+    expect(actions[0]?.reason).toBe('Set official put-in: Town Beach');
+  });
+
+  test('a blank name stores as absent, so the compass fallback still applies', async () => {
+    const t = convexTestWithGeo();
+    const id = await seedBody(t);
+    const asMod = await seedUser(t, 'clerk_mod', 'moderator');
+    await asMod.mutation(api.putIns.setOfficial, {
+      waterBodyId: id,
+      coord: { lat: 0.5, lng: 0 },
+      name: '   ',
+    });
+    const rows = await t.run((ctx) => ctx.db.query('putIns').collect());
+    expect(rows[0]?.name).toBeUndefined();
+  });
+
+  test('refuses a name long enough to be a description', async () => {
+    const t = convexTestWithGeo();
+    const id = await seedBody(t);
+    const asMod = await seedUser(t, 'clerk_mod', 'moderator');
+    await expect(
+      asMod.mutation(api.putIns.setOfficial, {
+        waterBodyId: id,
+        coord: { lat: 0.5, lng: 0 },
+        name: 'x'.repeat(80),
+      }),
+    ).rejects.toThrow(/Keep the name under/);
+  });
+
   test('hide requires a non-empty reason', async () => {
     const t = convexTestWithGeo();
     const id = await seedBody(t);

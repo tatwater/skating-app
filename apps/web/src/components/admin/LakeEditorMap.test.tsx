@@ -107,6 +107,7 @@ function data(overrides: Partial<EditorData> = {}): EditorData {
     },
     subAreas: [],
     putIns: [],
+    parkingAreas: [],
     samplePoints: [],
     suggestedPoints: [],
     draftPolygon: null,
@@ -188,6 +189,33 @@ describe('LakeEditorMap — what gets drawn', () => {
 
     const points = sources.get('editor-sample-points')?.data as GeoJSON.FeatureCollection;
     expect(points.features.map((f) => f.properties?.suggested)).toEqual([false, true]);
+  });
+
+  /**
+   * Parking (N6f) — drawn so the operator placing a lot can see the ones already there. Its own
+   * source rather than sharing the put-in layer: the two are placed by two different tools and are
+   * the pair most easily confused on this canvas.
+   */
+  it('draws parking areas separately from put-ins, each carrying its provenance', () => {
+    render(
+      <LakeEditorMap
+        data={data({
+          putIns: [{ coord: { lat: 44.5, lng: -73.2 }, source: 'osm' }],
+          parkingAreas: [
+            { coord: { lat: 44.55, lng: -73.25 }, source: 'official' },
+            { coord: { lat: 44.56, lng: -73.26 }, source: 'osm' },
+          ],
+        })}
+      />,
+    );
+    loadMap();
+
+    const lots = sources.get('editor-parking')?.data as GeoJSON.FeatureCollection;
+    expect(lots.features).toHaveLength(2);
+    expect(lots.features.map((f) => f.properties?.source)).toEqual(['official', 'osm']);
+    // And the put-in source is untouched — one launch, not three access points in one bucket.
+    const launches = sources.get('editor-put-ins')?.data as GeoJSON.FeatureCollection;
+    expect(launches.features).toHaveLength(1);
   });
 
   /**
