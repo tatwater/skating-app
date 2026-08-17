@@ -16,6 +16,7 @@ import {
   type PromotionTarget,
   referenceLinkError,
   seasonOf,
+  snapToEdge,
   suggestSamplePoints,
   timingWindowLabel,
 } from '@skating/core';
@@ -166,7 +167,12 @@ function LakeEditor() {
               // One-shot: consume the click and disarm, so a stray second click can't move the point
               // an operator has already started filling a form around.
               if (placing === 'feature') setFeaturePoint(coord);
-              else if (placing === 'put_in') setPutInPoint(coord);
+              // **Snapped in the preview, not just on save** (N6f). The server snaps a put-in to the
+              // shoreline before storing it, so a raw click drawn on the canvas would promise a pin
+              // where one is never going to be — and the gap is most visible for the mid-lake click
+              // that most needs snapping. What you see hollow is where it lands.
+              else if (placing === 'put_in')
+                setPutInPoint(snapToEdge(coord, body.polygon as unknown as GeoJSON.Polygon));
               else if (placing === 'parking') setParkingPoint(coord);
               else return;
               setPlacing(null);

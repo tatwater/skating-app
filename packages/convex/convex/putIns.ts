@@ -14,8 +14,10 @@
 import {
   clusterPutIns,
   DEFAULT_PUTIN_MERGE_METERS,
+  distanceToPolygonMeters,
   haversineMeters,
   type LatLng,
+  OPERATOR_PUT_IN_SNAP_MAX_M,
   snapToEdge,
 } from '@skating/core';
 import { ConvexError, v } from 'convex/values';
@@ -218,9 +220,29 @@ export const setOfficial = mutation({
         `Keep the name under ${MAX_PUT_IN_NAME_LENGTH} characters — it labels a pin on a map.`,
       );
     }
+
+    // **Snap to the shoreline, like every other rung already does** (N6f). `derived` clusters are
+    // snapped in `listForBody` because a report's `point` is where somebody *skated*, which is often
+    // mid-lake; `osm` launches arrive on the shore by construction. `official` — the one rung a human
+    // places by hand — was the only one stored raw, so an operator's click landed exactly where they
+    // tapped and a slightly-off tap left a pin floating on the water.
+    //
+    // That is not merely untidy. A put-in coord is the **directions destination** (D#7), and the
+    // stated reason put-ins exist at all is that routing to a point on the water sends someone into
+    // the middle of the lake. A hand-placed floating pin reintroduces precisely that, one lake at a
+    // time.
+    const polygon = body.polygon as unknown as Polygon | MultiPolygon;
+    const outsideM = distanceToPolygonMeters(coord, polygon);
+    if (outsideM > OPERATOR_PUT_IN_SNAP_MAX_M) {
+      throw new ConvexError(
+        `That point is ${Math.round(outsideM)} m from the water — too far to snap to the shore. If you meant the parking, place a parking area instead.`,
+      );
+    }
+    const snapped = snapToEdge(coord, polygon);
+
     const id = await ctx.db.insert('putIns', {
       waterBodyId,
-      coord,
+      coord: snapped,
       source: 'official',
       status: 'visible',
       // Absent rather than empty, so `resolvePutInName` falls back to the compass label instead of
@@ -236,7 +258,9 @@ export const setOfficial = mutation({
       targetId: waterBodyId,
       reason:
         reason ?? (trimmedName ? `Set official put-in: ${trimmedName}` : 'Set official put-in'),
-      metadata: { coord, putInId: id, ...(trimmedName ? { name: trimmedName } : {}) },
+      // The **snapped** coord, which is what was stored — an audit row recording the raw click
+      // would describe a marker that never existed.
+      metadata: { coord: snapped, putInId: id, ...(trimmedName ? { name: trimmedName } : {}) },
       createdAt: Date.now(),
     });
     // The body's denormalized `accessKind` is derived from its visible put-ins, so every mutation
