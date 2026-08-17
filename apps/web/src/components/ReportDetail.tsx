@@ -402,7 +402,7 @@ export function ReportDetail({ reportId }: { reportId: string }) {
           bodyName={body.body.name}
           open
           onOpenChange={(next) => !next && setEditing(false)}
-          editing={{ reportId: report._id, report }}
+          editing={{ reportId: report._id, report, photoIds: report.photoIds }}
         />
       ) : null}
       <Comments reportId={report._id} />

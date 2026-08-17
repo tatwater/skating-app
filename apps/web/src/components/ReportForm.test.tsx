@@ -8,7 +8,11 @@ import type { PhotoDraftView } from './usePhotoDrafts';
 const FIXED_NOW = Date.UTC(2026, 0, 5, 12, 0);
 
 function renderFields(
-  opts: { putInPin?: { lat: number; lng: number } | null; photos?: PhotoDraftView[] } = {},
+  opts: {
+    putInPin?: { lat: number; lng: number } | null;
+    photos?: PhotoDraftView[];
+    existingPhotos?: { photoId: string; thumbUrl: string | null }[];
+  } = {},
 ) {
   const spies = {
     onSubmit: vi.fn(),
@@ -18,6 +22,7 @@ function renderFields(
     onAddFiles: vi.fn(),
     onRemovePhoto: vi.fn(),
     onTogglePlaceOnMap: vi.fn(),
+    onRemoveExistingPhoto: vi.fn(),
   };
   let latest: ReportFormState | undefined;
   function Wrapper() {
@@ -29,6 +34,7 @@ function renderFields(
         onFormChange={setForm}
         putInPin={opts.putInPin ?? null}
         photos={opts.photos ?? []}
+        existingPhotos={opts.existingPhotos ?? []}
         submitting={false}
         error={null}
         {...spies}
@@ -44,6 +50,37 @@ describe('ReportFormFields', () => {
     renderFields();
     expect(screen.queryByRole('button', { name: 'Public' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Only me' })).not.toBeInTheDocument();
+  });
+
+  /**
+   * `reports.update` is last-write-wins over `photoIds`, so an edit form that can't see the report's
+   * existing photos posts an empty list and detaches every one of them. Rendering them is what makes
+   * the submitted array mean "this report's photos" rather than "what was picked in this session".
+   */
+  describe('photos already on the report (edit path, N6f)', () => {
+    const ATTACHED = [{ photoId: 'p1', thumbUrl: 'https://example.test/p1.jpg' }];
+
+    it('shows nothing extra when creating a new report', () => {
+      renderFields();
+      expect(screen.queryByAltText('Attached to this report')).not.toBeInTheDocument();
+    });
+
+    it('renders each attached photo with its own remove control', () => {
+      const { spies } = renderFields({ existingPhotos: ATTACHED });
+      expect(screen.getByAltText('Attached to this report')).toHaveAttribute(
+        'src',
+        'https://example.test/p1.jpg',
+      );
+
+      fireEvent.click(screen.getByRole('button', { name: 'Remove' }));
+      expect(spies.onRemoveExistingPhoto).toHaveBeenCalledWith('p1');
+    });
+
+    /** A thumbnail that hasn't loaded (or 404s) must not hide the photo — it's still attached. */
+    it('still renders a row when the thumbnail URL is missing', () => {
+      renderFields({ existingPhotos: [{ photoId: 'p1', thumbUrl: null }] });
+      expect(screen.getByText('Already on this report')).toBeInTheDocument();
+    });
   });
 
   it('adds and removes thickness readings, toggling value ↔ range inputs (XOR)', () => {

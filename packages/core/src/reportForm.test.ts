@@ -7,6 +7,7 @@ import {
   reportFormFromReport,
   resolveSkateWindow,
   type StoredReportForForm,
+  sameThroughFormRounding,
 } from './reportForm';
 import { cmToInches, cToF, kphToMph } from './units';
 
@@ -339,6 +340,58 @@ describe('reportFormFromReport', () => {
     // inventing a hidden field. `reports.update` preserves the stored source when values are unchanged.
     const form = reportFormFromReport(FULL);
     expect(form.conditions).not.toHaveProperty('source');
+  });
+
+  /**
+   * The weather pair is the round trip's one lossy step, and the values that expose it are exactly
+   * the ones production stores: `FULL` above uses −10 °C (14 °F) and 16.09344 kph (10.0 mph), both
+   * whole imperial units, so they survive an exact comparison and hide the problem. Open-Meteo has no
+   * reason to return either.
+   */
+  describe('a modelled reading that does not land on a whole imperial unit', () => {
+    /** −3.4 °C → 25.88 °F → the field shows 26 → back to −3.33 °C. Off by a rounding step, untouched. */
+    const MODELLED: StoredReportForForm = {
+      skateEndTime: SKATE_END,
+      conditions: { airTempC: -3.4, windSpeedKph: 18.7 },
+    };
+
+    it('does not survive an exact comparison — which is why the server cannot use one', () => {
+      const rebuilt = buildReportInput(reportFormFromReport(MODELLED), 'wb1');
+      expect(rebuilt.conditions?.airTempC).not.toBe(-3.4);
+      expect(rebuilt.conditions?.windSpeedKph).not.toBe(18.7);
+      expect(rebuilt.conditions?.airTempC).toBeCloseTo(-3.4, 0);
+    });
+
+    it('is recognised as unedited at the precision the field actually offers', () => {
+      const rebuilt = buildReportInput(reportFormFromReport(MODELLED), 'wb1');
+      expect(sameThroughFormRounding('airTempC', -3.4, rebuilt.conditions?.airTempC)).toBe(true);
+      expect(sameThroughFormRounding('windSpeedKph', 18.7, rebuilt.conditions?.windSpeedKph)).toBe(
+        true,
+      );
+    });
+  });
+
+  describe('sameThroughFormRounding', () => {
+    it('is true for two readings that render as the same whole unit', () => {
+      // −3.4 °C and −3.33 °C both show as 26 °F: the form could not tell them apart, so neither can
+      // an author have meant to change one into the other.
+      expect(sameThroughFormRounding('airTempC', -3.4, -3.3333333333333335)).toBe(true);
+    });
+
+    it('is true when the field is absent on both sides', () => {
+      expect(sameThroughFormRounding('airTempC', undefined, undefined)).toBe(true);
+    });
+
+    it('is false when the field was cleared or added', () => {
+      expect(sameThroughFormRounding('airTempC', -3.4, undefined)).toBe(false);
+      expect(sameThroughFormRounding('airTempC', undefined, -3.4)).toBe(false);
+    });
+
+    /** The tolerance cannot mask a real edit: retyping the field moves it a whole unit at least. */
+    it('is false for a value the author actually retyped', () => {
+      expect(sameThroughFormRounding('airTempC', -3.4, -3.888888888888889)).toBe(false); // 26 °F → 25 °F
+      expect(sameThroughFormRounding('windSpeedKph', 18.7, 20.3)).toBe(false); // 12 mph → 13 mph
+    });
   });
 
   it('rounds to a stable display value, so a no-op edit does not perturb the number', () => {

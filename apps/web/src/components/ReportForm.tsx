@@ -226,6 +226,17 @@ export interface ReportFormFieldsProps {
   onAddFiles: (files: FileList) => void;
   onRemovePhoto: (id: string) => void;
   onTogglePlaceOnMap: (id: string, on: boolean) => void;
+  /**
+   * The photos already attached to the report being edited (N6f) — empty for a new one.
+   *
+   * They are not drafts: they're uploaded rows with server ids, so they carry no blob to re-send and
+   * no `placeOnMap` decision left to make. Rendering them is what makes `photoIds` on submit mean
+   * "the photos this report has" rather than "the photos picked in this session" — without them an
+   * edit posts an empty list and `reports.update` (last-write-wins) drops every image.
+   */
+  existingPhotos?: { photoId: string; thumbUrl: string | null }[];
+  /** Detach an already-attached photo. The row survives; the 30-day orphan sweep reclaims it. */
+  onRemoveExistingPhoto?: (photoId: string) => void;
   onSubmit: () => void;
   onCancel: () => void;
   submitting: boolean;
@@ -250,6 +261,8 @@ export function ReportFormFields({
   onAddFiles,
   onRemovePhoto,
   onTogglePlaceOnMap,
+  existingPhotos = [],
+  onRemoveExistingPhoto,
   onSubmit,
   onCancel,
   submitting,
@@ -452,6 +465,30 @@ export function ReportFormFields({
 
       <Field label="Photos">
         <div className="flex flex-col gap-2">
+          {/* Already attached (edit only), above the picker: they came first, and they're the ones
+              an author would be surprised to lose. */}
+          {existingPhotos.map((photo) => (
+            <div key={photo.photoId} className="flex items-center gap-3">
+              {photo.thumbUrl ? (
+                <img
+                  src={photo.thumbUrl}
+                  alt="Attached to this report"
+                  className="h-16 w-16 rounded-md object-cover"
+                />
+              ) : (
+                <div className="h-16 w-16 rounded-md bg-muted" />
+              )}
+              <span className="flex-1 text-foreground-muted text-sm">Already on this report</span>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => onRemoveExistingPhoto?.(photo.photoId)}
+              >
+                Remove
+              </Button>
+            </div>
+          ))}
           <Input
             type="file"
             accept="image/*,.heic,.heif"
@@ -572,8 +609,13 @@ export function ReportForm({
    * is cleared. A half-seeded edit form would silently delete the thickness readings of every author
    * who only wanted to fix a typo. `reportFormFromReport` is the inverse that makes that safe, and
    * its round-trip is pinned in `@skating/core`.
+   *
+   * `photoIds` is part of that same last-write-wins block and is passed **from the caller rather than
+   * fetched here**, because it has to be right on the very first render: a submit that landed before
+   * an async photo query resolved would post an empty list and detach every image. The caller already
+   * holds the report row, so the ids cost nothing; only the thumbnails are queried.
    */
-  editing?: { reportId: Id<'reports'>; report: StoredReportForForm };
+  editing?: { reportId: Id<'reports'>; report: StoredReportForForm; photoIds: Id<'photos'>[] };
 }) {
   const navigate = useNavigate();
   const profile = useQuery(api.profiles.current, {});
@@ -588,6 +630,16 @@ export function ReportForm({
   // Report photos + hazard photos are the same pipeline, so they share one hook — it owns the
   // checkpointed upload and the reclaim-on-abandon sweep (see `usePhotoDrafts`).
   const photoDrafts = usePhotoDrafts();
+  // The already-attached photos an edit is keeping (N6f). Seeded synchronously from the prop, so it
+  // is correct before first paint; `photos.getUrls` only supplies the thumbnails to render.
+  // Deliberately NOT routed through `usePhotoDrafts`: these rows are committed, and the hook's
+  // reclaim-on-abandon sweep would delete a published report's photos the moment a user opened the
+  // edit form and closed it again.
+  const [keptPhotoIds, setKeptPhotoIds] = useState<Id<'photos'>[]>(() => editing?.photoIds ?? []);
+  const attachedPhotos = useQuery(
+    api.photos.getUrls,
+    editing && editing.photoIds.length > 0 ? { reportId: editing.reportId } : 'skip',
+  );
   // D55: the author's own on-ice hazards for this lake, pre-checked to bundle into this report.
   // Held as an explicit opt-out set rather than an opt-in one — the offer is pre-checked, but the
   // skater can always drop any of them, and nothing attaches without the list being visible.
@@ -652,7 +704,14 @@ export function ReportForm({
         // `waterBodyId` is deliberately not sent: `update` reads it from the stored report and a
         // report can never change lakes. Hazard bundling is a create-time act too — the hazards are
         // already attached, and re-offering them on an edit would double-attach.
-        await updateReport({ ...input, reportId: editing.reportId, photoIds });
+        //
+        // Kept photos lead, new ones follow: `photoIds` replaces the stored array wholesale, so
+        // sending only this session's uploads would silently strip the report's existing images.
+        await updateReport({
+          ...input,
+          reportId: editing.reportId,
+          photoIds: [...keptPhotoIds, ...photoIds],
+        });
         setPutInPin(null);
         onOpenChange(false);
         navigate({ to: '/report/$id', params: { id: editing.reportId } });
@@ -713,6 +772,13 @@ export function ReportForm({
             onAddFiles={photoDrafts.addFiles}
             onRemovePhoto={photoDrafts.removePhoto}
             onTogglePlaceOnMap={photoDrafts.setPlaceOnMap}
+            existingPhotos={keptPhotoIds.map((photoId) => ({
+              photoId,
+              thumbUrl: attachedPhotos?.find((p) => p.photoId === photoId)?.thumbUrl ?? null,
+            }))}
+            onRemoveExistingPhoto={(photoId) =>
+              setKeptPhotoIds((prev) => prev.filter((id) => id !== photoId))
+            }
             onSubmit={handleSubmit}
             onCancel={closeForm}
             submitting={submitting}

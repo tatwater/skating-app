@@ -301,7 +301,7 @@ export function ReportDetail({ reportId }: { reportId: string }) {
           {...(report.waterBodyId ? { waterBodyId: report.waterBodyId } : {})}
           {...(body?.available ? { bodyName: body.body.name } : {})}
           onClose={() => setEditing(false)}
-          editing={{ reportId: report._id, report }}
+          editing={{ reportId: report._id, report, photoIds: report.photoIds }}
         />
       ) : null}
 

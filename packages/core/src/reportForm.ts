@@ -205,6 +205,43 @@ function toFormReading(reading: ThicknessReadingLike): ThicknessFormReading {
 }
 
 /**
+ * The whole-unit imperial figure the conditions fields *display* for a stored metric reading.
+ *
+ * Keyed by field so the server can ask the same question of the same numbers — see
+ * `sameThroughFormRounding`. Both halves of the round-trip read this map, so the rounding the form
+ * shows and the rounding the server compares against cannot drift apart.
+ */
+const CONDITION_FIELD_VALUE = {
+  airTempC: (metric: number) => roundTo(cToF(metric), 0),
+  windSpeedKph: (metric: number) => roundTo(kphToMph(metric), 0),
+} as const;
+
+/**
+ * Would the edit form have re-emitted `next` from a stored `stored` **without the author touching
+ * it**? (N6f)
+ *
+ * The conditions fields are whole degrees F and whole mph, and the stored numbers are neither: a
+ * report's weather is usually written by `conditions.autofillConditions` from Open-Meteo in precise
+ * metric. So −3.4 °C renders as `26`, and `buildReportInput` converts that back to −3.33 °C — a
+ * different number, from an author who typed nothing. An exact `===` on the two therefore reads every
+ * edit as a weather edit, which is wrong twice over: it perturbs a measurement nobody touched, and it
+ * relabels a model's figure as a human's observation.
+ *
+ * Comparing at the precision the field actually offers is the honest test. If the author *did* retype
+ * the number, they could only have moved it by a whole unit, so this cannot mask a real edit.
+ */
+export function sameThroughFormRounding(
+  field: keyof typeof CONDITION_FIELD_VALUE,
+  stored: number | undefined,
+  next: number | undefined,
+): boolean {
+  if (stored === next) return true; // covers both-absent, and an untouched value that needed no rounding
+  if (stored === undefined || next === undefined) return false; // one side cleared or added
+  const value = CONDITION_FIELD_VALUE[field];
+  return value(stored) === value(next);
+}
+
+/**
  * Seed the form from a stored report — the inverse of `buildReportInput`, for the edit path (N6f).
  *
  * `reports.update` is **last-write-wins over the whole content block**, not a patch: an omitted
@@ -216,6 +253,13 @@ function toFormReading(reading: ThicknessReadingLike): ThicknessFormReading {
  * and no way to render it, so round-tripping it here would mean inventing a hidden field. The server
  * keeps the stored source when the values come back unchanged (see `reports.update`), which is the
  * same decision made in the one place that can actually compare old and new.
+ *
+ * ⚠ **The weather pair is the one lossy step**, because the fields are whole °F / whole mph and the
+ * stored numbers are precise metric from Open-Meteo. `buildReportInput(reportFormFromReport(r))`
+ * reproduces every other field exactly; those two come back within a rounding step, which is why the
+ * server compares them with `sameThroughFormRounding` rather than `===`. The imperial fields above it
+ * are lossless in practice — a user typed them in inches to begin with, so they round-trip to
+ * themselves.
  */
 export function reportFormFromReport(report: StoredReportForForm): ReportFormState {
   return {
@@ -230,11 +274,11 @@ export function reportFormFromReport(report: StoredReportForForm): ReportFormSta
       airTempF:
         report.conditions?.airTempC === undefined
           ? ''
-          : String(roundTo(cToF(report.conditions.airTempC), 0)),
+          : String(CONDITION_FIELD_VALUE.airTempC(report.conditions.airTempC)),
       windMph:
         report.conditions?.windSpeedKph === undefined
           ? ''
-          : String(roundTo(kphToMph(report.conditions.windSpeedKph), 0)),
+          : String(CONDITION_FIELD_VALUE.windSpeedKph(report.conditions.windSpeedKph)),
       windDir: report.conditions?.windDir ?? '',
       sky: report.conditions?.sky ?? '',
       precip: report.conditions?.precip ?? '',

@@ -364,8 +364,12 @@ export function ReportForm({
    * Seeded from the whole stored report, because `reports.update` is last-write-wins over the entire
    * content block — a half-seeded form would silently clear every field the author didn't retype.
    * Distinct from `draft`, which edits an unsent *local* draft; this one is already published.
+   *
+   * `photoIds` is part of that same last-write-wins block, and comes from the caller (which already
+   * holds the report row) rather than a query, so it is right on the first render — a submit that
+   * beat an async fetch would post an empty list and detach every image.
    */
-  editing?: { reportId: Id<'reports'>; report: StoredReportForForm };
+  editing?: { reportId: Id<'reports'>; report: StoredReportForForm; photoIds: Id<'photos'>[] };
   /**
    * A **server** activity to attach (N6f), as opposed to `trackDraftId`'s local one.
    *
@@ -427,6 +431,11 @@ export function ReportForm({
         }))
       : [],
   );
+  // The already-attached photos an edit is keeping (N6f). Seeded synchronously from the prop so it is
+  // correct before first paint, and held apart from `photos` on purpose: those are drafts with local
+  // files that the unmount sweep reclaims, and running a published report's committed rows through
+  // that sweep would delete its images the moment someone opened the edit form and backed out.
+  const [keptPhotoIds, setKeptPhotoIds] = useState<Id<'photos'>[]>(() => editing?.photoIds ?? []);
   const [showConditions, setShowConditions] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [savingDraft, setSavingDraft] = useState(false);
@@ -661,7 +670,14 @@ export function ReportForm({
       if (editing) {
         // No `waterBodyId` (a report can't change lakes), no activity (already linked), no hazard
         // bundling (a create-time act — re-offering would double-attach).
-        await updateReport({ ...input, reportId: editing.reportId, photoIds });
+        //
+        // Kept photos lead, new ones follow: `photoIds` replaces the stored array wholesale, so
+        // sending only this session's uploads would silently strip the report's existing images.
+        await updateReport({
+          ...input,
+          reportId: editing.reportId,
+          photoIds: [...keptPhotoIds, ...photoIds],
+        });
         setPutInPin(null);
         setPinDropMode(false);
         onClose();
@@ -970,6 +986,22 @@ export function ReportForm({
           <Button size="$2" alignSelf="flex-start" onPress={onAddPhotos}>
             Add photos
           </Button>
+          {/* Already attached (edit only). Removing one detaches it on save — the row survives, and
+              the 30-day orphan sweep reclaims it. */}
+          {keptPhotoIds.map((photoId) => (
+            <XStack key={photoId} gap="$2" alignItems="center">
+              <Text color="$foregroundMuted" flex={1} fontSize={12}>
+                Already on this report
+              </Text>
+              <Button
+                size="$2"
+                chromeless
+                onPress={() => setKeptPhotoIds((prev) => prev.filter((id) => id !== photoId))}
+              >
+                Remove
+              </Button>
+            </XStack>
+          ))}
           {photos.map((photo) => (
             <XStack key={photo.id} gap="$2" alignItems="center">
               <Text color="$foregroundMuted" flex={1} fontSize={12}>

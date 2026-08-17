@@ -34,6 +34,7 @@ import {
   SKATE_QUALITIES,
   SKY_CONDITIONS,
   SURFACE_TAGS,
+  sameThroughFormRounding,
   sanitizeFeedFilters,
   seasonEndMs,
   seasonOf,
@@ -1063,7 +1064,7 @@ export const update = mutation({
       skateQuality: n.skateQuality,
       iceThickness: n.iceThickness,
       snowCoverCm: n.snowCoverCm,
-      conditions: preserveConditionsSource(existing.conditions, n.conditions),
+      conditions: mergeEditedConditions(existing.conditions, n.conditions),
       notes: n.notes,
       ...(args.showPutIn !== undefined ? { showPutIn: args.showPutIn } : {}),
       photoIds,
@@ -1089,7 +1090,8 @@ export const update = mutation({
 });
 
 /**
- * Keep an `observed` conditions block's provenance across an edit that didn't touch the weather.
+ * Merge an edited conditions block over the stored one, keeping both the measurement and its
+ * provenance where the author didn't actually touch the weather.
  *
  * **The bug this fixes is silent and one-directional.** A report's conditions are often filled in by
  * `internal.conditions.autofillConditions` from Open-Meteo, stamped `source: 'openmeteo'`. The edit
@@ -1101,21 +1103,38 @@ export const update = mutation({
  * figure came back identical, nothing about the weather was edited, whatever else was. Change one and
  * the block becomes the author's, which is the honest reading of someone typing over it.
  *
+ * ⚠ **It compares at the form's precision, not with `===`.** The two numbers are stored in precise
+ * metric and edited in whole °F / whole mph, so an untouched −3.4 °C comes back as −3.33 — see
+ * `sameThroughFormRounding`, which owns that rounding jointly with the form that applies it. An exact
+ * comparison here would call every edit a weather edit and defeat the whole function. The stored
+ * number is then kept verbatim for each field that survived, so a round-trip can't nudge a
+ * measurement the author never opened.
+ *
  * Only ever *downgrades* toward the stored source, so it cannot launder a user's number into an
  * observation.
  */
-function preserveConditionsSource(
+function mergeEditedConditions(
   stored: Doc<'reports'>['conditions'],
   next: Doc<'reports'>['conditions'],
 ): Doc<'reports'>['conditions'] {
-  if (!stored || !next || stored.source === next.source) return next;
+  if (!stored || !next) return next;
+  const sameTemp = sameThroughFormRounding('airTempC', stored.airTempC, next.airTempC);
+  const sameWind = sameThroughFormRounding('windSpeedKph', stored.windSpeedKph, next.windSpeedKph);
+  // Undo the rounding drift field by field, independently of the source decision below: a value the
+  // author couldn't have changed shouldn't move, even on an edit that *did* touch the rest of the block.
+  const merged = {
+    ...next,
+    ...(sameTemp && stored.airTempC !== undefined ? { airTempC: stored.airTempC } : {}),
+    ...(sameWind && stored.windSpeedKph !== undefined ? { windSpeedKph: stored.windSpeedKph } : {}),
+  };
+  if (stored.source === next.source) return merged;
   const unchanged =
-    stored.airTempC === next.airTempC &&
-    stored.windSpeedKph === next.windSpeedKph &&
+    sameTemp &&
+    sameWind &&
     stored.windDir === next.windDir &&
     stored.sky === next.sky &&
     stored.precip === next.precip;
-  return unchanged ? { ...next, source: stored.source } : next;
+  return unchanged ? { ...merged, source: stored.source } : merged;
 }
 
 /**
