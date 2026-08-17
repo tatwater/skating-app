@@ -47,6 +47,9 @@ class FakeMap {
   }
   remove() {}
   fitBounds() {}
+  resize() {}
+  touchZoomRotate = { disableRotation: () => {} };
+  keyboard = { disableRotation: () => {} };
   getCenter() {
     return { lng: -73, lat: 44.5 };
   }

@@ -22,6 +22,7 @@ import { Link } from '@tanstack/react-router';
 import { useQuery } from 'convex/react';
 import { useEffect } from 'react';
 import { Comments } from './CommentThread';
+import { PanelDescription, PanelHeader, PanelTitle } from './DetailPanel';
 import { DetailSkeleton, UnavailableState } from './DrawerStates';
 import { useMapSelection } from './MapSelectionContext';
 import { ModeratorActions } from './ModeratorActions';
@@ -30,7 +31,6 @@ import { ThumbControl } from './ThumbControl';
 import { TrustAvatar } from './TrustDisplay';
 import { Badge } from './ui/badge';
 import { Separator } from './ui/separator';
-import { SheetDescription, SheetHeader, SheetTitle } from './ui/sheet';
 import { WeatherStrip } from './WeatherStrip';
 
 /** The plain data a report renders from — decoupled from Convex so `ReportView` is testable. */
@@ -83,16 +83,16 @@ export function ReportView({
 
   return (
     <>
-      <SheetHeader>
-        <SheetTitle>
+      <PanelHeader>
+        <PanelTitle>
           {data.bodyName
             ? formatLocationLine({
                 ...(data.subAreaName !== undefined ? { subAreaName: data.subAreaName } : {}),
                 bodyName: data.bodyName,
               })
             : 'Report'}
-        </SheetTitle>
-        <SheetDescription>
+        </PanelTitle>
+        <PanelDescription>
           Off the ice {formatSkateTime(data.skateEndTime)}
           {duration ? ` · skated ${duration}` : null}
           {/* A past season still resolves by permalink — a link, a bookmark or an old notification
@@ -101,8 +101,8 @@ export function ReportView({
           {seasonOf(data.skateEndTime) === seasonOf(Date.now())
             ? null
             : ` · from the ${formatSeason(seasonOf(data.skateEndTime))} season`}
-        </SheetDescription>
-      </SheetHeader>
+        </PanelDescription>
+      </PanelHeader>
       {data.authorName ? (
         <div className="flex items-center gap-2 px-4 pt-1 text-sm">
           <TrustAvatar

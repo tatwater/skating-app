@@ -6,6 +6,7 @@ import { useMutation, useQuery } from 'convex/react';
 import { ConvexError } from 'convex/values';
 import { useState } from 'react';
 import { expiryLabel } from './BountyList';
+import { PanelDescription, PanelHeader, PanelTitle } from './DetailPanel';
 import { DetailSkeleton, UnavailableState } from './DrawerStates';
 import { useIsLeaving } from './LeavingNotice';
 import { ThumbControl } from './ThumbControl';
@@ -13,7 +14,6 @@ import { TrustAvatar } from './TrustDisplay';
 import { Badge } from './ui/badge';
 import { Button } from './ui/button';
 import { Separator } from './ui/separator';
-import { SheetDescription, SheetHeader, SheetTitle } from './ui/sheet';
 
 const STATUS_LABEL: Record<string, string> = {
   open: 'Open',
@@ -66,13 +66,13 @@ export function BountyDetail({ bountyId }: { bountyId: string }) {
 
   return (
     <>
-      <SheetHeader>
-        <SheetTitle>Bounty{detail.waterBody ? ` · ${detail.waterBody.name}` : ''}</SheetTitle>
-        <SheetDescription>
+      <PanelHeader>
+        <PanelTitle>Bounty{detail.waterBody ? ` · ${detail.waterBody.name}` : ''}</PanelTitle>
+        <PanelDescription>
           {STATUS_LABEL[detail.status] ?? detail.status}
           {isOpen ? ` · ${expiryLabel(detail.expiresAt, now)}` : ''}
-        </SheetDescription>
-      </SheetHeader>
+        </PanelDescription>
+      </PanelHeader>
 
       <div className="flex flex-col gap-4 px-4 pb-4">
         <div className="flex items-center gap-2">

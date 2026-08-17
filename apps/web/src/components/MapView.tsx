@@ -138,6 +138,7 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
     browseSeason,
     contourBodyKey,
     setContourCredit,
+    setViewportLakes,
   } = useMapSelection();
 
   const [queryArgs, setQueryArgs] = useState<QueryArgs | null>(null);
@@ -214,6 +215,19 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
   useEffect(() => {
     if (bodies !== undefined) setFeatures(waterBodiesToFeatureCollection(bodies));
   }, [bodies]);
+
+  // The same rows, handed to the sidebar's "lakes in view" list (see `MapSelectionContext`). No
+  // extra query, by the same argument the summary cards make below — and one that matters more
+  // here, because a list is a per-pan re-render and this read path is the one that has been fixed
+  // for cost twice. Reset to `null` (not `[]`) whenever the query isn't running, so the list can
+  // tell "nothing here" from "haven't looked yet".
+  useEffect(() => {
+    if (queryArgs === null || regionOffscreen) setViewportLakes(null);
+    else if (bodies !== undefined) setViewportLakes(bodies);
+  }, [bodies, queryArgs, regionOffscreen, setViewportLakes]);
+  // The map unmounts when you leave the map routes; the sidebar must not keep listing the lakes
+  // that were in view three pages ago if it ever renders before the map answers again.
+  useEffect(() => () => setViewportLakes(null), [setViewportLakes]);
 
   // Per-body summary cards (N6c/E). **No extra query** — the cards are derived from the same
   // `listInViewport` rows the water source already has, because `summary` is denormalized onto the
@@ -1035,11 +1049,24 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
   }, [geolocateOnMount, mapRef.current]);
 
   return (
-    <div className="relative">
-      <div
-        ref={containerRef}
-        className="h-[75vh] w-full overflow-hidden rounded-lg border border-border"
-      />
+    // The map fills its column. Two elements, and the split between them is load-bearing:
+    //
+    // The **wrapper** is `absolute inset-0`, which takes its size from the layout's positioned map
+    // cell without a percentage height having to resolve down a chain of stretched flex items.
+    //
+    // The **container** — the element MapLibre is handed — must NOT be positioned by us, because
+    // MapLibre adds its own `.maplibregl-map` class the moment it takes ownership, and that class
+    // declares `position: relative`. Tailwind's `.absolute` is the same specificity and loses on
+    // source order, so an `absolute inset-0` container silently flips to `relative` with auto
+    // height, collapses to zero (every child it has is absolutely positioned), and the map vanishes
+    // — after MapLibre has already measured 300px for its canvas, since it measures *after* adding
+    // the class. `h-full` against an absolutely-sized wrapper is immune: it's a height, not a
+    // position, so there's nothing for MapLibre's stylesheet to override.
+    //
+    // No fixed height (it was `75vh`, from when the map was a block on a scrolling page) and no
+    // rounding or border: it is the surface now, not a card on one.
+    <div className="absolute inset-0">
+      <div ref={containerRef} className="h-full w-full overflow-hidden" />
       <ReturnToRegion
         visible={regionOffscreen}
         onReturn={() =>

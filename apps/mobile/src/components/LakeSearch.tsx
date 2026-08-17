@@ -1,5 +1,5 @@
 import { api } from '@skating/convex/api';
-import { searchQueryArg, waterBodyClassLabel } from '@skating/core';
+import { searchQueryArg, waterBodyClassLabel, waterBodyDisplayName } from '@skating/core';
 import { useQuery } from 'convex/react';
 import { useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
@@ -87,7 +87,7 @@ export function LakeSearchBox({
               accessibilityRole="button"
               testID={`lake-search-result-${hit._id}`}
             >
-              <Text color="$foreground">{hit.name || 'Unnamed water'}</Text>
+              <Text color="$foreground">{waterBodyDisplayName(hit.name)}</Text>
               <Text color="$foregroundMuted" fontSize="$1">
                 {hitMeta(hit)}
               </Text>

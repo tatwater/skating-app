@@ -1,5 +1,5 @@
 import { api } from '@skating/convex/api';
-import { searchQueryArg, waterBodyClassLabel } from '@skating/core';
+import { searchQueryArg, waterBodyClassLabel, waterBodyDisplayName } from '@skating/core';
 import { useNavigate } from '@tanstack/react-router';
 import { useQuery } from 'convex/react';
 import { SearchIcon } from 'lucide-react';
@@ -85,7 +85,7 @@ export function LakeSearchBox({
         <ComboboxList>
           {(hit: LakeHit) => (
             <ComboboxItem key={hit._id} value={hit}>
-              <span className="flex-1 truncate">{hit.name || 'Unnamed water'}</span>
+              <span className="flex-1 truncate">{waterBodyDisplayName(hit.name)}</span>
               <span className="text-xs text-muted-foreground">{hitMeta(hit)}</span>
             </ComboboxItem>
           )}

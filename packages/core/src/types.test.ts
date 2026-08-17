@@ -15,6 +15,7 @@ import {
   USER_STATUSES,
   WATER_BODY_CLASSES,
   waterBodyClassLabel,
+  waterBodyDisplayName,
 } from './types';
 
 /**
@@ -144,6 +145,18 @@ describe('shared vocabulary (06-data-model.md, confirmed terms)', () => {
     expect(waterBodyClassLabel('unclassified')).toBe('Water');
     // An unmigrated row still renders as something rather than blank.
     expect(waterBodyClassLabel('marsh')).toBe('marsh');
+  });
+
+  it('calls a nameless body something, on every surface that shows one', () => {
+    // `name` is required and stores `''` for the thousands of ponds no catalogue ever labelled, so
+    // the raw value renders a blank heading — indistinguishable from a drawer that failed to load.
+    expect(waterBodyDisplayName('Lake Willoughby')).toBe('Lake Willoughby');
+    expect(waterBodyDisplayName('')).toBe('Unnamed water');
+    expect(waterBodyDisplayName(undefined)).toBe('Unnamed water');
+    // Whitespace is not a name either — it renders as blank just as convincingly.
+    expect(waterBodyDisplayName('   ')).toBe('Unnamed water');
+    // But it is a *fallback*, not a trim: a real name is passed through exactly as stored.
+    expect(waterBodyDisplayName(' Mill Pond ')).toBe(' Mill Pond ');
   });
 
   it('roles and statuses match the account model (D37/D33)', () => {

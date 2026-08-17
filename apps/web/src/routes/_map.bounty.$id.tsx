@@ -1,6 +1,6 @@
 import { createFileRoute } from '@tanstack/react-router';
 import { BountyDetail } from '../components/BountyDetail';
-import { DetailSheet } from '../components/DetailSheet';
+import { DetailPanel } from '../components/DetailPanel';
 
 // `/bounty/$id` — a deep-linkable bounty detail drawer over the map (D47).
 export const Route = createFileRoute('/_map/bounty/$id')({ component: BountyRoute });
@@ -8,8 +8,8 @@ export const Route = createFileRoute('/_map/bounty/$id')({ component: BountyRout
 function BountyRoute() {
   const { id } = Route.useParams();
   return (
-    <DetailSheet>
+    <DetailPanel>
       <BountyDetail bountyId={id} />
-    </DetailSheet>
+    </DetailPanel>
   );
 }

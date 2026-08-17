@@ -28,3 +28,30 @@ export function parseMapSelection(pathname: string): MapSelection {
   if (hazard?.[1]) return { kind: 'hazard', hazardId: decodeURIComponent(hazard[1]) };
   return { kind: 'none' };
 }
+
+/**
+ * Is this pathname one of the `_map` layout's routes — the map itself, or a detail panel over it?
+ *
+ * **Wider than `parseMapSelection`, deliberately.** That function answers "what should the map
+ * highlight", and a bounty pin has no highlight, so `/bounty/$id` isn't in its grammar. This one
+ * answers "is the map on screen", which governs chrome: the app shell gives a map route the whole
+ * viewport (no page scroll, no `max-w`) and puts the lake search in the header, and `/bounty/$id`
+ * needs all of that exactly as much as `/water/$id` does. Keeping the two separate is why the
+ * bounty drawer doesn't have to pretend to be a selection to get the right frame.
+ */
+export function isMapRoute(pathname: string): boolean {
+  const path = pathname.length > 1 ? pathname.replace(/\/$/, '') : pathname;
+  if (path === '/') return true;
+  return /^\/(water|report|hazard|bounty)\/[^/]+$/.test(path);
+}
+
+/**
+ * Is a detail panel open over the map? `true` for every `_map` child except the bare map.
+ *
+ * The sidebar is always open on desktop (it shows what's in view when nothing is selected), so this
+ * is what decides *which* of its two contents renders — and, on a phone, whether it renders at all.
+ */
+export function hasMapDrawer(pathname: string): boolean {
+  const path = pathname.length > 1 ? pathname.replace(/\/$/, '') : pathname;
+  return isMapRoute(path) && path !== '/';
+}

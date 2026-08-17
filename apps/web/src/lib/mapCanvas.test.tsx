@@ -23,6 +23,10 @@ class FakeMap {
   controls: unknown[] = [];
   removed = false;
   fitted: unknown[] = [];
+  resizes = 0;
+  rotationDisabled: string[] = [];
+  touchZoomRotate = { disableRotation: () => this.rotationDisabled.push('touch') };
+  keyboard = { disableRotation: () => this.rotationDisabled.push('keyboard') };
 
   constructor(options: Record<string, unknown>) {
     this.options = options;
@@ -39,6 +43,9 @@ class FakeMap {
   }
   fitBounds(bounds: unknown) {
     this.fitted.push(bounds);
+  }
+  resize() {
+    this.resizes++;
   }
   getCenter() {
     return { lng: -73, lat: 44.5 };
@@ -150,6 +157,34 @@ describe('useMapCanvas', () => {
 
     rerender(<Host tick={1} />);
     expect(onLoad).toHaveBeenCalledTimes(1); // and not again on every render
+  });
+
+  /**
+   * North stays up. Rotation has four separate entry points in MapLibre — right-drag, two-finger
+   * twist, shift+arrows, and pitch-with-rotate — and disabling three of them is the same as
+   * disabling none, because the map ends up spun either way and `showCompass: false` leaves nothing
+   * on screen to undo it with. Hence one test covering all four rather than a spot check.
+   */
+  it('locks the camera to north on every rotation path', () => {
+    render(<Host tick={0} />);
+    const map = FakeMap.instances[0];
+    expect(map?.options.dragRotate).toBe(false);
+    expect(map?.options.pitchWithRotate).toBe(false);
+    expect(map?.options.touchPitch).toBe(false);
+    expect(map?.rotationDisabled).toEqual(['touch', 'keyboard']);
+  });
+
+  /**
+   * The map's height now comes from the flex layout rather than a fixed `75vh`, and MapLibre sizes
+   * its canvas once in the constructor — falling back to 400×300 if the container measured zero at
+   * that instant, with only a `ResizeObserver` (which fires on *changes*) to correct it. The
+   * re-measure on load is the guard, and it is invisible from the outside, so it is pinned here.
+   */
+  it('re-measures the container on load', () => {
+    render(<Host tick={0} />);
+    expect(FakeMap.instances[0]?.resizes).toBe(0);
+    FakeMap.instances[0]?.load();
+    expect(FakeMap.instances[0]?.resizes).toBe(1);
   });
 
   it('tears the map down on unmount and releases the pmtiles protocol', () => {

@@ -569,6 +569,12 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
         attribution
         logo={false}
         compass={false}
+        // North is up, always — the same call as web's (see `lib/mapCanvas`), and it matters more
+        // here: the two-finger twist that spins a map is the same gesture as the pinch that zooms
+        // it, so on a phone it happens constantly and by accident. With `compass={false}` there is
+        // nothing on screen to put it back, and a skater who has lost north on the ice has lost the
+        // thing the map was for.
+        touchRotate={false}
         onPress={onMapPress}
         onRegionDidChange={onRegionDidChange}
         // The settled read: the tiles for this view are in, so the ramp keeps up as the skater pans.

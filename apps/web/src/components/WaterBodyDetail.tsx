@@ -13,6 +13,7 @@ import {
   revealPlaceholder,
   SKATE_QUALITY_LABELS,
   waterBodyClassLabel,
+  waterBodyDisplayName,
 } from '@skating/core';
 import { Link } from '@tanstack/react-router';
 import { usePaginatedQuery, useQuery } from 'convex/react';
@@ -23,6 +24,7 @@ import { AlertStrip } from './AlertStrip';
 import { WaterBodyModeratorControls } from './admin/WaterBodyModeratorControls';
 import { BountyForm } from './BountyForm';
 import { BountyList } from './BountyList';
+import { PanelDescription, PanelHeader, PanelTitle } from './DetailPanel';
 import { DirectionsButton } from './DirectionsButton';
 import { DetailSkeleton, UnavailableState } from './DrawerStates';
 import { FavoriteButton } from './FavoriteButton';
@@ -38,7 +40,6 @@ import { SeasonEmptyState, SeasonFilter } from './SeasonFilter';
 import { Badge } from './ui/badge';
 import { Button } from './ui/button';
 import { Card, CardContent } from './ui/card';
-import { SheetDescription, SheetHeader, SheetTitle } from './ui/sheet';
 import { Skeleton } from './ui/skeleton';
 import { WindExposure } from './WindExposure';
 
@@ -147,18 +148,18 @@ export function WaterBodyDetail({
 
   return (
     <>
-      <SheetHeader>
+      <PanelHeader>
         <div className="flex items-start justify-between gap-2">
-          <SheetTitle>{result.body.name}</SheetTitle>
+          <PanelTitle>{waterBodyDisplayName(result.body.name)}</PanelTitle>
           <FavoriteButton waterBodyId={result.body._id} />
         </div>
-        <SheetDescription>
+        <PanelDescription>
           {waterBodyClassLabel(result.body.type)}
           {result.body.surfaceAreaSqM !== undefined
             ? ` · ${formatAreaAcres(result.body.surfaceAreaSqM)}`
             : ''}
           {depth ? ` · ${depth.text}` : ''}
-        </SheetDescription>
+        </PanelDescription>
         {/* Provenance sits under the numbers rather than beside them: most bodies have no depth at all
             (73% of the corpus is below every source's area floor), so this line is absent far more often
             than present, and a caveat inline in the description would read as clutter when it IS there. */}
@@ -180,7 +181,7 @@ export function WaterBodyDetail({
         {depth ? null : reveal ? (
           <p className="text-muted-foreground text-xs italic">{revealPlaceholder('depth')}</p>
         ) : null}
-      </SheetHeader>
+      </PanelHeader>
       <div className="flex flex-col gap-4 px-4 pb-4">
         {/* Report creation + directions to a put-in (never the on-water centroid, D#7).
             A pending deletion removes all three composers (D62 amendment) and keeps directions:
@@ -242,7 +243,7 @@ export function WaterBodyDetail({
       {formOpen ? (
         <ReportForm
           waterBodyId={result.body._id}
-          bodyName={result.body.name}
+          bodyName={waterBodyDisplayName(result.body.name)}
           open={formOpen}
           onOpenChange={setFormOpen}
         />
@@ -253,7 +254,7 @@ export function WaterBodyDetail({
       {bountyFormOpen ? (
         <BountyForm
           waterBodyId={result.body._id}
-          bodyName={result.body.name}
+          bodyName={waterBodyDisplayName(result.body.name)}
           open={bountyFormOpen}
           onOpenChange={setBountyFormOpen}
         />
