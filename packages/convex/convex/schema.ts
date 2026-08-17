@@ -73,6 +73,7 @@ import {
   PARKING_SOURCES,
   PARKING_STATUSES,
   POINT_EVENT_REASONS,
+  PUBLIC_ACCESS_VERDICTS,
   PUTIN_SOURCES,
   PUTIN_STATUSES,
   RATING_VERDICTS,
@@ -90,6 +91,7 @@ import {
   geoJson,
   latLng,
   literals,
+  postedAccess,
   weatherSinceSummary,
 } from './lib/validators';
 
@@ -754,6 +756,20 @@ export default defineSchema({
     sampledWindHours: v.optional(v.number()),
     /** The m/s bar those counts were taken at, so a mixed-threshold corpus is detectable. */
     strongWindMinMps: v.optional(v.number()),
+    /**
+     * Mean winter wind speed in m/s per sector — **how hard it blows from a direction**, where
+     * `strongWindHours` is how *often* it blows hard from one. The wind-exposure chart needs both:
+     * the rose sets the shape, this sets the arrows.
+     *
+     * **`null` per sector, never `0`, where no hour there had a readable speed.** Zero is a real
+     * wind speed, and a glyph sized on it would draw "dead calm from the north" identically to "we
+     * have no reading from the north". Only one of those is a measurement.
+     *
+     * Its denominator is hours with a *readable speed*, not `windRose`'s hours — `accumulateCsv`
+     * deliberately keeps an hour whose direction parses and whose speed does not, so the two
+     * counts genuinely differ. Absent entirely when no sector had a reading.
+     */
+    meanWindMps: v.optional(v.array(v.union(v.number(), v.null()))),
     // Lake depth (N6a / D68). Best-available value plus **per-measurement** provenance: mean and max
     // routinely come from different rungs of the ladder (LAGOS-US holds 17,675 maxima against 6,137
     // means), so one `depthSource` could not honestly describe both. The ladder itself lives in
@@ -833,6 +849,52 @@ export default defineSchema({
      * only, and it does not name this one — the same way `curatedBoost` survives.
      */
     referenceLinks: v.optional(v.array(v.object({ label: v.string(), url: v.string() }))),
+    /**
+     * What the sign says (N6e) — the posted seasonal window and daily hours for being on the ice.
+     *
+     * **This is not an `accessAlert`, and the difference is the whole design.** An alert is a decaying
+     * community claim: 30-day TTL, hard-expired at the season boundary, resolved by two votes. Run
+     * Tomhannock Reservoir's *"January 1 - March 15, daylight hours only"* through that lifecycle and
+     * it is silently deleted every July — silently, because expiring is what alerts are *supposed* to
+     * do. A posted rule is a standing legal fact, so it is a moderator-written attribute with an audit
+     * row behind it, and nothing expires it.
+     *
+     * **A body's rule governs the ice, not the way in.** The identical field on `putIns` and
+     * `parkingAreas` governs those, and the three are never merged — see `@skating/core/postedAccess`.
+     *
+     * Optional ⇒ migration-free, and preserved across re-import for free: `importCanonical` patches a
+     * named field list and does not name this one, the same way `curatedBoost` survives.
+     */
+    postedAccess: v.optional(postedAccess),
+    /**
+     * A moderator's ruling on whether this body can be lawfully reached at all (N6f).
+     *
+     * **Three states, and absence is one of them**: no ruling, `none` (no lawful way in — the body
+     * dims to half opacity and drops ~2 zoom levels), and `open` (reviewed, there *is* public access).
+     * One field rather than two booleans, because both are the same moderator answering the same
+     * question and a pair would make "both set" representable.
+     *
+     * `open` renders nothing on the map. It exists to stop a settled body being reported over and
+     * over: while it stands, a `no_public_access` flag must carry a note saying what changed. That is
+     * why the verdict is **dated** — an undated ruling could only ever be final, and land changes
+     * hands.
+     *
+     * **Separate from `postedAccess` on purpose.** That field's contract is that it annotates and
+     * never suppresses; this one dims and demotes, which is suppression, and a suppression needs its
+     * own field and its own argument rather than riding along beside a posted sign.
+     *
+     * ⚠ The demotion is *derived* into `displayScore`/`minVisibleZoom`, so every site that re-scores
+     * an existing body must read this field — including `importCanonical`, which otherwise preserves
+     * the verdict while silently restoring the body's original zoom. See `scoreFields`.
+     */
+    publicAccess: v.optional(
+      v.object({
+        verdict: literals(PUBLIC_ACCESS_VERDICTS),
+        decidedAt: v.number(),
+        decidedByUserId: v.id('profiles'),
+        note: v.optional(v.string()),
+      }),
+    ),
     /**
      * The map summary card's denormalized counts (N6c Workstream E).
      *
@@ -1301,6 +1363,17 @@ export default defineSchema({
     hazardIdsCreated: v.array(v.id('hazards')),
     createdAt: v.number(),
     updatedAt: v.number(),
+    /**
+     * When the **author** last edited this report (N6f) — the `comments.editedAt` precedent, and the
+     * only honest basis for an "· edited" byline.
+     *
+     * **Deliberately not `updatedAt`.** That field moves for reasons the author had nothing to do
+     * with: the conditions autofill backfills Open-Meteo's weather hours after posting, and the
+     * summary recompute touches the row too. A byline derived from `updatedAt` would accuse people of
+     * edits they never made — and would do it to *every* report, since almost all of them get
+     * autofilled. Optional ⇒ absent on every report never edited, which is the great majority.
+     */
+    editedAt: v.optional(v.number()),
   })
     .index('by_water_body_skate_end_time', ['waterBodyId', 'skateEndTime'])
     // Per-body feed, paginated (infinite scroll). `moderationStatus` leads so the gate is applied
@@ -1997,8 +2070,8 @@ export default defineSchema({
 
   // Routable put-in markers (Phase 4, decision #7). `derived` markers are materialized by clustering
   // visible report points (approximate — a report `point` can be mid-lake); `official` markers are
-  // admin-set (accurate, priority styling — the operator UI is Phase 7, the data + mutations land
-  // here). A moderator `hide` writes a `hidden` row at the coord so the suppression outlives
+  // admin-set (accurate, priority styling), placed from the lake editor's Put-ins tool (N6f).
+  // A moderator `hide` writes a `hidden` row at the coord so the suppression outlives
   // re-clustering (decision #7). Indexed by body for the per-lake marker list + directions target.
   putIns: defineTable({
     waterBodyId: v.id('waterBodies'),
@@ -2075,6 +2148,13 @@ export default defineSchema({
      * author to set this explicitly rather than letting a mile-long approach be entered silently.
      */
     approachKindOverride: v.optional(literals(APPROACH_KINDS)),
+    /**
+     * What the sign at *this launch* says (N6e) — hours posted on the gate, not on the lake.
+     *
+     * Separate from the body's rule because they constrain different things and are never merged: a
+     * reservoir open around the clock with one launch shut at dusk is not a reservoir shut at dusk.
+     */
+    postedAccess: v.optional(postedAccess),
   })
     .index('by_water_body', ['waterBodyId'])
     // Idempotent OSM upsert (N6d B3), mirroring `waterBodies.by_external_id`.
@@ -2109,6 +2189,13 @@ export default defineSchema({
     externalId: v.optional(v.string()), // `way/123` — idempotent re-import key
     createdByUserId: v.optional(v.id('profiles')),
     createdAt: v.number(),
+    /**
+     * What the sign on *this lot* says (N6e) — and the case that forced rules onto three tables
+     * rather than one: a lot shared with a business, barred during business hours, while the lake and
+     * the other two lots serving it are unrestricted. Hanging that on the body would be a false claim
+     * about both.
+     */
+    postedAccess: v.optional(postedAccess),
   })
     .index('by_external_id', ['externalId'])
     .index('by_created_by', ['createdByUserId']),

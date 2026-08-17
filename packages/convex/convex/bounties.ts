@@ -787,11 +787,10 @@ export const expireBounties = internalMutation({
   },
 });
 
-/** One bounty for its detail view. Public — bounties aren't gated by trust or blocks. */
-export const get = query({
-  args: { bountyId: v.id('bounties') },
-  handler: (ctx, { bountyId }) => ctx.db.get(bountyId),
-});
+// `bounties.get` — a raw `ctx.db.get` for the detail view — was removed in N6f. It had zero callers
+// anywhere, including tests: `getDetail` below replaced it before either client ever shipped a bounty
+// screen, and both apps have always read that. A public query returning an unenriched row is worse
+// than no query, because the next detail surface would reach for the one whose name reads right.
 
 /**
  * The enriched `/bounty/$id` detail payload (D47) in one round-trip: the requester (ringed by trust), the

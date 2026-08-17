@@ -1,5 +1,5 @@
 import { createFileRoute } from '@tanstack/react-router';
-import { DetailSheet } from '../components/DetailSheet';
+import { DetailPanel } from '../components/DetailPanel';
 import { HazardDetail } from '../components/HazardDetail';
 
 // `/hazard/$id` — a deep-linkable hazard drawer over the map (Phase 9, D51/D52).
@@ -17,8 +17,8 @@ function HazardRoute() {
   const { id } = Route.useParams();
   const { action } = Route.useSearch();
   return (
-    <DetailSheet>
+    <DetailPanel>
       <HazardDetail hazardId={id} action={action} />
-    </DetailSheet>
+    </DetailPanel>
   );
 }

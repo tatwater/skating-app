@@ -11,6 +11,7 @@ import {
   profileRevealEnabled,
   SUB_AREA_MIN_RENDER_ZOOM,
   undoDraftPlacement,
+  withAccessDim,
 } from '@skating/core';
 import { useNavigate } from '@tanstack/react-router';
 import { useQuery } from 'convex/react';
@@ -138,6 +139,7 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
     browseSeason,
     contourBodyKey,
     setContourCredit,
+    setViewportLakes,
   } = useMapSelection();
 
   const [queryArgs, setQueryArgs] = useState<QueryArgs | null>(null);
@@ -208,12 +210,32 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
     queryArgs && !regionOffscreen ? queryArgs : 'skip',
   );
 
+  // The lakes *this viewer* has reported as having no public access (N6f) — they draw dimmed for
+  // them alone. One small query for the whole session rather than per body: a person reports a
+  // handful of lakes in their life, and an unconfirmed report reaches nobody else's map.
+  const selfFlagged = useQuery(api.contentFlags.myAccessFlags, {});
+
   // Retain the last loaded features while the next query is in flight (Convex returns `undefined`
   // for a fresh key until it resolves) so bodies never blink off the map between pans.
   const [features, setFeatures] = useState<GeoJSON.FeatureCollection>(EMPTY_FEATURES);
   useEffect(() => {
-    if (bodies !== undefined) setFeatures(waterBodiesToFeatureCollection(bodies));
-  }, [bodies]);
+    if (bodies !== undefined) {
+      setFeatures(waterBodiesToFeatureCollection(bodies, new Set(selfFlagged ?? [])));
+    }
+  }, [bodies, selfFlagged]);
+
+  // The same rows, handed to the sidebar's "lakes in view" list (see `MapSelectionContext`). No
+  // extra query, by the same argument the summary cards make below — and one that matters more
+  // here, because a list is a per-pan re-render and this read path is the one that has been fixed
+  // for cost twice. Reset to `null` (not `[]`) whenever the query isn't running, so the list can
+  // tell "nothing here" from "haven't looked yet".
+  useEffect(() => {
+    if (queryArgs === null || regionOffscreen) setViewportLakes(null);
+    else if (bodies !== undefined) setViewportLakes(bodies);
+  }, [bodies, queryArgs, regionOffscreen, setViewportLakes]);
+  // The map unmounts when you leave the map routes; the sidebar must not keep listing the lakes
+  // that were in view three pages ago if it ever renders before the map answers again.
+  useEffect(() => () => setViewportLakes(null), [setViewportLakes]);
 
   // Per-body summary cards (N6c/E). **No extra query** — the cards are derived from the same
   // `listInViewport` rows the water source already has, because `summary` is denormalized onto the
@@ -354,8 +376,15 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
         source: 'water',
         paint: {
           'fill-color': water.fill,
-          // Selected body reads brighter (D47 tap highlight).
-          'fill-opacity': ['case', ['boolean', ['feature-state', 'selected'], false], 0.6, 0.35],
+          // Selected body reads brighter (D47 tap highlight); a body with no public access reads
+          // half-strength (N6f). The dim is a *multiplier* so it composes with the selection rather
+          // than flattening it — a dimmed lake you tap still brightens, relative to itself.
+          'fill-opacity': withAccessDim([
+            'case',
+            ['boolean', ['feature-state', 'selected'], false],
+            0.6,
+            0.35,
+          ]) as maplibregl.DataDrivenPropertyValueSpecification<number>,
         },
       });
       map.addLayer({
@@ -371,6 +400,11 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
             '#eab308', // amber-500 — the favorite gold
             water.outline,
           ],
+          // The outline dims with the fill (N6f). A full-strength outline around a ghost fill reads
+          // as a rendering bug rather than as a statement about the lake.
+          'line-opacity': withAccessDim(
+            1,
+          ) as maplibregl.DataDrivenPropertyValueSpecification<number>,
           'line-width': [
             'case',
             ['boolean', ['feature-state', 'favorite'], false],
@@ -1035,11 +1069,24 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
   }, [geolocateOnMount, mapRef.current]);
 
   return (
-    <div className="relative">
-      <div
-        ref={containerRef}
-        className="h-[75vh] w-full overflow-hidden rounded-lg border border-border"
-      />
+    // The map fills its column. Two elements, and the split between them is load-bearing:
+    //
+    // The **wrapper** is `absolute inset-0`, which takes its size from the layout's positioned map
+    // cell without a percentage height having to resolve down a chain of stretched flex items.
+    //
+    // The **container** — the element MapLibre is handed — must NOT be positioned by us, because
+    // MapLibre adds its own `.maplibregl-map` class the moment it takes ownership, and that class
+    // declares `position: relative`. Tailwind's `.absolute` is the same specificity and loses on
+    // source order, so an `absolute inset-0` container silently flips to `relative` with auto
+    // height, collapses to zero (every child it has is absolutely positioned), and the map vanishes
+    // — after MapLibre has already measured 300px for its canvas, since it measures *after* adding
+    // the class. `h-full` against an absolutely-sized wrapper is immune: it's a height, not a
+    // position, so there's nothing for MapLibre's stylesheet to override.
+    //
+    // No fixed height (it was `75vh`, from when the map was a block on a scrolling page) and no
+    // rounding or border: it is the surface now, not a card on one.
+    <div className="absolute inset-0">
+      <div ref={containerRef} className="h-full w-full overflow-hidden" />
       <ReturnToRegion
         visible={regionOffscreen}
         onReturn={() =>

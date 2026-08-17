@@ -9,7 +9,7 @@
  *
  * Population is moderator/seed-driven (D37, refined 2026-07-23: promote/demote is part of the
  * moderator content toolkit, not admin-only). v1 shipped the schema, the reads, and the
- * promote/demote mutations; the operator UI lands in Phase 7 (D49-style).
+ * promote/demote mutations; the operator UI is the lake editor's Known-features tool.
  */
 
 import { type HazardShape, hazardBbox, isPubliclyVisible, isValidHazardShape } from '@skating/core';

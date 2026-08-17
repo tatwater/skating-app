@@ -18,11 +18,13 @@ import {
   photoUploadCoord,
   type ReportDraft,
   type ReportFormState,
+  reportFormFromReport,
   resolveSkateWindow,
   SKATE_QUALITIES,
   SKATE_QUALITY_LABELS,
   SKY_CONDITIONS,
   SKY_LABELS,
+  type StoredReportForForm,
   SURFACE_TAGS,
   THICKNESS_METHOD_LABELS,
   THICKNESS_METHODS,
@@ -336,6 +338,8 @@ export function ReportForm({
   trackDraftId,
   onClose,
   onSaved,
+  editing,
+  activityId,
 }: {
   /** Absent for a coord-only offline capture — the lake is resolved from `coord` at flush. */
   waterBodyId?: Id<'waterBodies'>;
@@ -354,6 +358,27 @@ export function ReportForm({
   onClose: () => void;
   /** Called after saving a draft (defaults to `onClose`). */
   onSaved?: () => void;
+  /**
+   * An existing **server** report to edit rather than create (N6f).
+   *
+   * Seeded from the whole stored report, because `reports.update` is last-write-wins over the entire
+   * content block — a half-seeded form would silently clear every field the author didn't retype.
+   * Distinct from `draft`, which edits an unsent *local* draft; this one is already published.
+   *
+   * `photoIds` is part of that same last-write-wins block, and comes from the caller (which already
+   * holds the report row) rather than a query, so it is right on the first render — a submit that
+   * beat an async fetch would post an empty list and detach every image.
+   */
+  editing?: { reportId: Id<'reports'>; report: StoredReportForForm; photoIds: Id<'photos'>[] };
+  /**
+   * A **server** activity to attach (N6f), as opposed to `trackDraftId`'s local one.
+   *
+   * The recorder hands over a local draft id because the track may not have flushed yet. The You
+   * tab's unreported-skates list is the opposite case: those rows come from the server, so a local
+   * draft may be long gone (or have been recorded on another phone entirely), and the id it has is
+   * the only one there is.
+   */
+  activityId?: string;
 }) {
   const router = useRouter();
   const profile = useQuery(api.profiles.current, {});
@@ -362,6 +387,7 @@ export function ReportForm({
   const deletePhoto = useMutation(api.photos.remove);
   const removeBlob = useMutation(api.photos.removeBlob);
   const createReport = useMutation(api.reports.create);
+  const updateReport = useMutation(api.reports.update);
   const recordSignal = useMutation(api.analytics.recordClientSignal);
   // On the map (online, from a lake's detail drawer) the put-in is dropped by tapping the live map;
   // off the map (the offline capture/edit routes, outside the `(map)` layout) there's no map, so the
@@ -405,6 +431,11 @@ export function ReportForm({
         }))
       : [],
   );
+  // The already-attached photos an edit is keeping (N6f). Seeded synchronously from the prop so it is
+  // correct before first paint, and held apart from `photos` on purpose: those are drafts with local
+  // files that the unmount sweep reclaims, and running a published report's committed rows through
+  // that sweep would delete its images the moment someone opened the edit form and backed out.
+  const [keptPhotoIds, setKeptPhotoIds] = useState<Id<'photos'>[]>(() => editing?.photoIds ?? []);
   const [showConditions, setShowConditions] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [savingDraft, setSavingDraft] = useState(false);
@@ -422,6 +453,13 @@ export function ReportForm({
   // 9.5) — earliest-in as the start, latest-out as the end. Editable, never authoritative.
   useEffect(() => {
     if (profile !== undefined && !minor && form === null) {
+      // An edit seeds from the published report and takes no dwell prefill — the skate window is a
+      // fact the author already stated, and quietly moving it under them would be the opposite of
+      // what an edit form is for.
+      if (editing) {
+        setForm(reportFormFromReport(editing.report));
+        return;
+      }
       const base = emptyReportForm(Date.now());
       // `waterBodyId` here is `WaterBodyDetail`'s resolved survivor `_id` — the same id the on-ice watcher
       // keys dwells on (`noteDwell`), so the lookup matches. If a caller ever passes an unresolved/merged
@@ -438,7 +476,7 @@ export function ReportForm({
       if (suggestion.end !== undefined) setPrefilledFromDwell(true);
       setForm(base);
     }
-  }, [profile, form, minor, waterBodyId]);
+  }, [profile, form, minor, waterBodyId, editing]);
 
   // Reclaim whatever a draft has already uploaded so nothing is stranded server-side: a created row
   // (deletes the row + both blobs) or, for a partial/interrupted upload, the bare blobs that never
@@ -622,13 +660,37 @@ export function ReportForm({
       submittedRef.current = true;
       // A recorded skate that's already synced can be attached directly; one that hasn't is picked
       // up by the draft path below instead. Either way the report never waits on the track.
-      const activityId =
-        trackDraftId !== undefined ? (getTrack(trackDraftId)?.activityId ?? undefined) : undefined;
+      // A directly-supplied server id wins: it came from the server's own list, where a local draft
+      // may not exist at all.
+      const resolvedActivityId =
+        activityId ??
+        (trackDraftId !== undefined
+          ? (getTrack(trackDraftId)?.activityId ?? undefined)
+          : undefined);
+      if (editing) {
+        // No `waterBodyId` (a report can't change lakes), no activity (already linked), no hazard
+        // bundling (a create-time act — re-offering would double-attach).
+        //
+        // Kept photos lead, new ones follow: `photoIds` replaces the stored array wholesale, so
+        // sending only this session's uploads would silently strip the report's existing images.
+        await updateReport({
+          ...input,
+          reportId: editing.reportId,
+          photoIds: [...keptPhotoIds, ...photoIds],
+        });
+        setPutInPin(null);
+        setPinDropMode(false);
+        onClose();
+        router.navigate({ pathname: '/report/[id]', params: { id: editing.reportId } });
+        return;
+      }
       const reportId = await createReport({
         ...input,
         waterBodyId,
         photoIds,
-        ...(activityId !== undefined ? { activityId: activityId as Id<'gpsActivities'> } : {}),
+        ...(resolvedActivityId !== undefined
+          ? { activityId: resolvedActivityId as Id<'gpsActivities'> }
+          : {}),
         ...(bundleHazardIds.length > 0
           ? { attachHazardIds: bundleHazardIds as Id<'hazards'>[] }
           : {}),
@@ -655,6 +717,12 @@ export function ReportForm({
   // Editing an existing draft reuses its id + idempotencyKey so a later retry stays deduped.
   async function handleSaveDraft() {
     if (!form) return;
+    // **A published report has no draft to save to.** The flush path only ever calls
+    // `reports.create` (see `flushService`), so queuing an edit as a draft would post a *second*
+    // report on reconnect and leave the original exactly as it was — a duplicate, from someone who
+    // asked to change one thing. The button is hidden while editing; this is the invariant, so the
+    // UI can't reintroduce the bug by putting it back.
+    if (editing) return;
     // Refuse to save over a draft that's mid-flush — the flush's checkpoint writes + delete would
     // clobber this edit and idempotency would re-serve the pre-edit report, losing the change
     // silently. Checked synchronously right before the sync `saveDraft` so a flush can't claim the
@@ -924,6 +992,22 @@ export function ReportForm({
           <Button size="$2" alignSelf="flex-start" onPress={onAddPhotos}>
             Add photos
           </Button>
+          {/* Already attached (edit only). Removing one detaches it on save — the row survives, and
+              the 30-day orphan sweep reclaims it. */}
+          {keptPhotoIds.map((photoId) => (
+            <XStack key={photoId} gap="$2" alignItems="center">
+              <Text color="$foregroundMuted" flex={1} fontSize={12}>
+                Already on this report
+              </Text>
+              <Button
+                size="$2"
+                chromeless
+                onPress={() => setKeptPhotoIds((prev) => prev.filter((id) => id !== photoId))}
+              >
+                Remove
+              </Button>
+            </XStack>
+          ))}
           {photos.map((photo) => (
             <XStack key={photo.id} gap="$2" alignItems="center">
               <Text color="$foregroundMuted" flex={1} fontSize={12}>
@@ -1003,16 +1087,26 @@ export function ReportForm({
         <Button chromeless onPress={onClose} disabled={submitting || savingDraft}>
           Cancel
         </Button>
-        <Button onPress={handleSaveDraft} disabled={submitting || savingDraft}>
-          {savingDraft ? 'Saving…' : 'Save draft'}
-        </Button>
+        {/* No draft lane for a published report (N6f) — you save the changes or you don't. A draft
+            flushes through `reports.create`, so this would duplicate the report rather than edit it. */}
+        {editing ? null : (
+          <Button onPress={handleSaveDraft} disabled={submitting || savingDraft}>
+            {savingDraft ? 'Saving…' : 'Save draft'}
+          </Button>
+        )}
         <Button
           backgroundColor="$primary"
           color="$primaryForeground"
           onPress={handleSubmit}
           disabled={submitting || savingDraft || waterBodyId === undefined}
         >
-          {submitting ? 'Posting…' : 'Post report'}
+          {submitting
+            ? editing
+              ? 'Saving…'
+              : 'Posting…'
+            : editing
+              ? 'Save changes'
+              : 'Post report'}
         </Button>
       </XStack>
     </YStack>

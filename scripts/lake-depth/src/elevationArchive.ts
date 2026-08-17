@@ -3,10 +3,11 @@
  *
  * ## Why an archive at all, for a field that is one number
  *
- * `HANDOFF-wind-climate-archive.md` was written after the wind pass fetched, parsed and discarded
- * — and adding one derived statistic then cost a **7.7-hour re-fetch** that should have been a
- * two-minute local recompute. Its conclusion, stated as a rule: *"archive whole responses so the
- * next 'could we also derive X?' costs minutes."*
+ * **D134** exists because the wind pass fetched, parsed and discarded — and adding one derived
+ * statistic then cost a **7.7-hour re-fetch** that should have been a two-minute local recompute.
+ * Its conclusion, stated as a rule: *"archive whole responses so the next 'could we also derive X?'
+ * costs minutes."* (That lane has since proved it at scale: 47,765 archived cell-years, re-derived
+ * offline with zero requests. See `scripts/wind-climate/README.md`.)
  *
  * This is that rule applied before the mistake rather than after it. The EPQS pass is ~4 hours; the
  * questions already queued against it are a tidal referee, a datum comparison against the 5,693

@@ -1,6 +1,10 @@
 import { api } from '@skating/convex/api';
 import type { Id } from '@skating/convex/dataModel';
-import { USER_SELECTABLE_WATER_BODY_CLASSES, waterBodyClassLabel } from '@skating/core';
+import {
+  USER_SELECTABLE_WATER_BODY_CLASSES,
+  waterBodyClassLabel,
+  waterBodyDisplayName,
+} from '@skating/core';
 import { useMutation, useQuery } from 'convex/react';
 import { useState } from 'react';
 import { Button, Input, Paragraph, Text, XStack, YStack } from 'tamagui';
@@ -112,7 +116,7 @@ export function NewWaterPrompt({
               onPress={() => onResolved(match.waterBodyId)}
             >
               <YStack flex={1} alignItems="flex-start">
-                <Text color="$foreground">{match.name || 'Unnamed water'}</Text>
+                <Text color="$foreground">{waterBodyDisplayName(match.name)}</Text>
                 <Text color="$foregroundMuted" fontSize={11}>
                   {match.centroidDistanceM} m away
                   {match.official ? ' · on the official map' : ''}

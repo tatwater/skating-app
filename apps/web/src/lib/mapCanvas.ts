@@ -146,8 +146,24 @@ export function useMapCanvas(options: MapCanvasOptions): MapCanvas {
       ...(maxBounds ? { maxBounds } : {}),
       ...(initialView.minZoom !== undefined ? { minZoom: initialView.minZoom } : {}),
       attributionControl: false, // replaced below with an always-visible (non-compact) control
+      // **North is up, always.** A rotated map is a trap here rather than a feature: the navigation
+      // control is built with `showCompass: false`, so once a two-finger twist or a right-drag has
+      // spun the view there is no affordance anywhere to put it back — and nobody rotates a map on
+      // purpose, they do it by accident while pinching to zoom. It costs a skater their bearings on
+      // the one surface where "which way is the far shore" is the question being asked.
+      //
+      // Pitch goes with it. It is the same accidental two-finger gesture, and a tilted lake reads as
+      // a different shape than the one on the polygon it is drawn from.
+      dragRotate: false,
+      pitchWithRotate: false,
+      touchPitch: false,
     });
     mapRef.current = map;
+    // The other two rotation paths, which are handler methods rather than constructor options: the
+    // two-finger twist (the accidental one) and shift+arrows on the keyboard. `touchZoomRotate` stays
+    // enabled — pinch-to-zoom is essential — with only its rotation half switched off.
+    map.touchZoomRotate.disableRotation();
+    map.keyboard.disableRotation();
     map.addControl(new maplibregl.AttributionControl({ compact: false }));
     if (navigationControl) {
       map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right');
@@ -163,6 +179,15 @@ export function useMapCanvas(options: MapCanvasOptions): MapCanvas {
     };
 
     map.on('load', () => {
+      // Re-measure the container. A cheap guard, not a fix for an observed bug.
+      //
+      // MapLibre sizes its canvas **once, synchronously, in the constructor**, falling back to
+      // 400×300 if the container measures zero, and its `ResizeObserver` only fires on subsequent
+      // *changes* — so a container that is briefly zero at construction and correct forever after
+      // produces a 300px map inside a full-height box, with the viewport query framed on bounds
+      // nobody is looking at. That was never possible while the map was a fixed `75vh` block; now
+      // that its height comes from the flex layout, it is one unsettled frame away.
+      map.resize();
       // Frame the caller's bounds before anything reads the viewport, so the first query is scoped to
       // what the user will actually be looking at rather than to the pre-fit view.
       if (fitBounds && !lastViewRef.current)

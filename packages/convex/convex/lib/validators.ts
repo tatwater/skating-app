@@ -90,6 +90,38 @@ export const geoJson = v.union(
   v.object({ type: v.literal('MultiPolygon'), coordinates: v.array(v.array(v.array(position))) }),
 );
 
+/**
+ * The `PostedAccess` shape from `@skating/core` (N6e) — what a posted sign says about when you may be
+ * there. **Keep in sync with the core interface**; a compile-time `Infer` check in `postedAccess.ts`
+ * catches drift, the same guard `weatherSinceSummary` carries.
+ *
+ * Shared here rather than inlined per table because the identical shape hangs off three of them —
+ * `waterBodies`, `putIns` and `parkingAreas` — and a rule that validated differently depending on
+ * which one it was attached to would be a bug nobody would think to look for.
+ *
+ * Every field is optional, which is load-bearing rather than lax: "open year-round, daylight only" has
+ * no `dateRange`, and "January 1 – March 15, any hour" has no `dailyWindow`. The check that a rule
+ * asserts *something* is `postedAccessError`'s, in core, where both clients can run it too.
+ */
+export const postedAccess = v.object({
+  dateRange: v.optional(
+    v.object({
+      startMonth: v.number(),
+      startDay: v.number(),
+      endMonth: v.number(),
+      endDay: v.number(),
+    }),
+  ),
+  dailyWindow: v.optional(
+    v.union(
+      v.object({ kind: v.literal('daylight'), offsetMinutes: v.number() }),
+      v.object({ kind: v.literal('clock'), openMinute: v.number(), closeMinute: v.number() }),
+    ),
+  ),
+  permitRequired: v.optional(v.boolean()),
+  note: v.optional(v.string()),
+});
+
 const nullableNumber = v.union(v.number(), v.null());
 
 /**

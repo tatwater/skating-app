@@ -140,6 +140,24 @@ export const WATER_BODY_CLASS_LABELS: Readonly<Record<WaterBodyClass, string>> =
   unclassified: 'Water',
 };
 
+/**
+ * What to call a water body on screen — its name, or "Unnamed water" when it hasn't got one.
+ *
+ * A great deal of the corpus is nameless: the catalogues carry thousands of ponds no publisher ever
+ * labelled, and `name` is a required field storing `''` for every one of them. Rendering that raw
+ * gives a heading that is simply absent — a drawer whose title line is blank, a sentence reading
+ * "Report on ." — which looks like the page failed to load rather than like the pond has no name.
+ *
+ * Here rather than in each client because there are four surfaces that need it (both searches, the
+ * lake drawer, mobile's new-water prompt) and they were each holding their own copy of the string.
+ *
+ * **This is a display fallback, never a value.** Nothing derived from it is stored, matched, or
+ * searched: a body with no name still has no name, and the day someone names it, this stops showing.
+ */
+export function waterBodyDisplayName(name: string | undefined): string {
+  return name?.trim() ? name : 'Unnamed water';
+}
+
 /** The display label for a stored class, falling back to the raw value for an unmigrated row. */
 export function waterBodyClassLabel(value: string): string {
   return WATER_BODY_CLASS_LABELS[value as WaterBodyClass] ?? value;

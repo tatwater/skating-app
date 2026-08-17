@@ -108,3 +108,16 @@
     -webkit-font-smoothing: antialiased;
   }
 }
+
+/* The map's own attribution credit, pinned to 12px.
+
+   MapLibre sizes it by inheritance from a `font` shorthand on `.maplibregl-map`, which the map now
+   being the whole page makes fragile — it inherits whatever the layout around it happens to set. The
+   credit has to be legible and has to stay put, but it is the least important text on the screen, so
+   it gets an explicit floor rather than a size that drifts with its container. Outside `@layer base`
+   so it beats maplibre's own stylesheet regardless of import order. */
+.maplibregl-ctrl-attrib,
+.maplibregl-ctrl-attrib a {
+  font-size: 12px;
+  line-height: 16px;
+}

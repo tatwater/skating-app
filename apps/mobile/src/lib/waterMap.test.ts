@@ -124,7 +124,31 @@ describe('waterBodiesToFeatureCollection', () => {
     ]);
     expect(fc.type).toBe('FeatureCollection');
     expect(fc.features).toHaveLength(1);
-    expect(fc.features[0]?.properties).toEqual({ _id: 'wb1', name: 'Lake Morey', type: 'lake' });
+    expect(fc.features[0]?.properties).toEqual({
+      _id: 'wb1',
+      name: 'Lake Morey',
+      type: 'lake',
+      // Always present, never absent (N6f): the shared dim expression compares against `true`, and a
+      // missing property evaluates to null inside an `any`, which throws rather than reading false.
+      noPublicAccess: false,
+      selfFlagged: false,
+    });
+  });
+
+  it('dims a body a moderator ruled shut, and the viewer’s own reports (N6f)', () => {
+    const body = {
+      _id: 'wb1',
+      name: 'Lake Morey',
+      type: 'lake',
+      polygon: { type: 'Point' as const, coordinates: [-72.1, 43.9] },
+    };
+    expect(
+      waterBodiesToFeatureCollection([{ ...body, publicAccess: { verdict: 'none' } }]).features[0]
+        ?.properties?.noPublicAccess,
+    ).toBe(true);
+    expect(
+      waterBodiesToFeatureCollection([body], new Set(['wb1'])).features[0]?.properties?.selfFlagged,
+    ).toBe(true);
   });
 
   it('is empty for no bodies', () => {

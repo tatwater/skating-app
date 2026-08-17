@@ -3,8 +3,10 @@ import { describe, expect, it } from 'vitest';
 import { MIN_FETCH_CLAUSE_M } from './lakeCaption';
 import {
   exposureIndex,
+  isPlausibleMeanWindMps,
   isPlausibleStrongWindHours,
   isPlausibleWindRose,
+  MAX_PLAUSIBLE_MEAN_WIND_MPS,
   mostExposedSector,
   normalizeRose,
   STRONG_WIND_MIN_MPS,
@@ -274,5 +276,65 @@ describe('WIND_ARCHIVE_MIN_FETCH_M', () => {
     const between = 500;
     expect(between).toBeGreaterThanOrEqual(WIND_ARCHIVE_MIN_FETCH_M);
     expect(between).toBeLessThan(MIN_FETCH_CLAUSE_M);
+  });
+});
+
+describe('isPlausibleMeanWindMps', () => {
+  const full = (v: number | null) => Array.from({ length: WIND_ROSE_SECTORS }, () => v);
+
+  it('accepts a full array of readings', () => {
+    expect(isPlausibleMeanWindMps(full(5.5))).toBe(true);
+  });
+
+  it('accepts null for a sector with no reading', () => {
+    const mixed = full(4);
+    mixed[3] = null;
+    expect(isPlausibleMeanWindMps(mixed)).toBe(true);
+  });
+
+  it('accepts a measured zero, which is not the same claim as null', () => {
+    // Dead calm from a direction is a reading. If this ever starts rejecting 0, a sheltered lake
+    // silently loses a sector it actually measured.
+    const calm = full(3);
+    calm[7] = 0;
+    expect(isPlausibleMeanWindMps(calm)).toBe(true);
+  });
+
+  it('rejects sixteen nulls — that is an absent field, not a measurement', () => {
+    expect(isPlausibleMeanWindMps(full(null))).toBe(false);
+  });
+
+  it('rejects the wrong number of sectors', () => {
+    expect(isPlausibleMeanWindMps([1, 2, 3])).toBe(false);
+    expect(isPlausibleMeanWindMps([])).toBe(false);
+  });
+
+  it('rejects a negative speed', () => {
+    const bad = full(4);
+    bad[0] = -1;
+    expect(isPlausibleMeanWindMps(bad)).toBe(false);
+  });
+
+  it('rejects a units error rather than believing a 134 mph mean', () => {
+    // The failure this exists for: mph stored as m/s, or a sum stored as a mean. A winter MEAN
+    // cannot approach the ceiling, so anything past it is an instrument error, not a windy lake.
+    const mph = full(45); // ~100 mph as if it were m/s
+    expect(isPlausibleMeanWindMps(mph)).toBe(true); // still under the ceiling, deliberately generous
+    const absurd = full(MAX_PLAUSIBLE_MEAN_WIND_MPS + 1);
+    expect(isPlausibleMeanWindMps(absurd)).toBe(false);
+  });
+
+  it('rejects non-arrays and non-numeric entries', () => {
+    expect(isPlausibleMeanWindMps(undefined)).toBe(false);
+    expect(isPlausibleMeanWindMps(null)).toBe(false);
+    const bad: unknown[] = full(4);
+    bad[2] = 'breezy';
+    expect(isPlausibleMeanWindMps(bad)).toBe(false);
+  });
+
+  it('rejects NaN, which a bad division produces silently', () => {
+    const bad = full(4);
+    bad[1] = Number.NaN;
+    expect(isPlausibleMeanWindMps(bad)).toBe(false);
   });
 });

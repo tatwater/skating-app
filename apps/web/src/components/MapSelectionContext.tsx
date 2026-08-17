@@ -1,6 +1,7 @@
 import type { HazardDraft, HazardType } from '@skating/core';
 import type { LineString } from 'geojson';
 import { createContext, type ReactNode, useContext, useMemo, useState } from 'react';
+import type { ViewportLake } from '../lib/viewportLakes';
 
 /**
  * Shared selection state for the persistent map (Phase 2 §D). The `_map` layout keeps one `MapView`
@@ -118,6 +119,21 @@ interface MapSelectionValue {
    */
   contourCredit: string | null;
   setContourCredit: (line: string | null) => void;
+  /**
+   * The bodies the map currently has in view, or `null` before it has answered.
+   *
+   * The **second** thing in this context that flows map → sidebar (`contourCredit` was the first),
+   * and for the same reason: only the map knows. The sidebar lists what's in view when no lake is
+   * selected, and the map's `listInViewport` subscription has already fetched exactly those rows —
+   * so this wire exists to keep the sidebar from opening a second subscription on the same viewport
+   * key. That read path is the one with a history of read-cap failures at corpus scale; doubling
+   * its callers to populate a list is not a trade worth making.
+   *
+   * `null` means "no answer yet" — first load, or panned off the region where the query is skipped
+   * outright — and is deliberately distinct from `[]`, "in view, and there is nothing here".
+   */
+  viewportLakes: ViewportLake[] | null;
+  setViewportLakes: (lakes: ViewportLake[] | null) => void;
 }
 
 const MapSelectionContext = createContext<MapSelectionValue | null>(null);
@@ -138,6 +154,7 @@ export function MapSelectionProvider({ children }: { children: ReactNode }) {
   const [browseSeason, setBrowseSeason] = useState<number | null>(null);
   const [contourBodyKey, setContourBodyKey] = useState<string | null>(null);
   const [contourCredit, setContourCredit] = useState<string | null>(null);
+  const [viewportLakes, setViewportLakes] = useState<ViewportLake[] | null>(null);
 
   const value = useMemo(
     () => ({
@@ -167,6 +184,8 @@ export function MapSelectionProvider({ children }: { children: ReactNode }) {
       setContourBodyKey,
       contourCredit,
       setContourCredit,
+      viewportLakes,
+      setViewportLakes,
     }),
     [
       highlightWaterBodyId,
@@ -182,6 +201,7 @@ export function MapSelectionProvider({ children }: { children: ReactNode }) {
       browseSeason,
       contourBodyKey,
       contourCredit,
+      viewportLakes,
     ],
   );
 

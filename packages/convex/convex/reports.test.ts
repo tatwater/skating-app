@@ -1,3 +1,4 @@
+import { buildReportInput, emptyReportForm, reportFormFromReport } from '@skating/core';
 import { convexTest } from 'convex-test';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { api, internal } from './_generated/api';
@@ -5,6 +6,15 @@ import type { Id } from './_generated/dataModel';
 import schema from './schema';
 
 const modules = import.meta.glob('./**/*.*s');
+
+/** The conditions half of a form state, with only the air-temp field filled in. */
+const FORM_CONDITIONS = (airTempF: string) => ({
+  airTempF,
+  windMph: '',
+  windDir: '',
+  sky: '' as const,
+  precip: '' as const,
+});
 
 /**
  * **The clock is pinned, because a report now has a season** (N5a/D63).
@@ -663,6 +673,173 @@ describe('reports.update (author-only LWW, D25)', () => {
     ).rejects.toThrow(/only the author/i);
   });
 
+  /**
+   * `editedAt` is the byline's basis and `updatedAt` cannot be (N6f): the conditions autofill moves
+   * `updatedAt` hours after posting on nearly every report, so a byline derived from it would mark
+   * the whole corpus as edited by authors who never touched it.
+   */
+  test('stamps editedAt, which a fresh report does not carry', async () => {
+    const t = convexTestWithGeo();
+    const { asAuthor, reportId } = await seedReport(t);
+    expect((await t.run((ctx) => ctx.db.get(reportId)))?.editedAt).toBeUndefined();
+
+    await asAuthor.mutation(api.reports.update, {
+      reportId,
+      skateEndTime: SKATE_TIME,
+      notes: 'fixed a typo',
+    });
+    expect((await t.run((ctx) => ctx.db.get(reportId)))?.editedAt).toBeGreaterThan(0);
+  });
+
+  describe('conditions provenance survives an unrelated edit', () => {
+    /** Post a report, then let the autofill stamp the weather `openmeteo`, as it does in production. */
+    async function seedWithObservedWeather(t: ReturnType<typeof convexTest>) {
+      const seeded = await seedReport(t);
+      await t.run((ctx) =>
+        ctx.db.patch(seeded.reportId, {
+          conditions: { airTempC: -8, windSpeedKph: 12, source: 'openmeteo' as const },
+        }),
+      );
+      return seeded;
+    }
+
+    test('editing the notes does not re-mark the weather as user-entered', async () => {
+      const t = convexTestWithGeo();
+      const { asAuthor, reportId } = await seedWithObservedWeather(t);
+
+      // The form round-trips the same weather back, stamped `user` by `buildReportInput`.
+      await asAuthor.mutation(api.reports.update, {
+        reportId,
+        skateEndTime: SKATE_TIME,
+        notes: 'fixed a typo',
+        conditions: { airTempC: -8, windSpeedKph: 12, source: 'user' },
+      });
+
+      expect((await t.run((ctx) => ctx.db.get(reportId)))?.conditions?.source).toBe('openmeteo');
+    });
+
+    test('actually changing a weather value makes it the author’s claim', async () => {
+      const t = convexTestWithGeo();
+      const { asAuthor, reportId } = await seedWithObservedWeather(t);
+
+      await asAuthor.mutation(api.reports.update, {
+        reportId,
+        skateEndTime: SKATE_TIME,
+        conditions: { airTempC: -2, windSpeedKph: 12, source: 'user' },
+      });
+
+      const after = await t.run((ctx) => ctx.db.get(reportId));
+      expect(after?.conditions?.source).toBe('user');
+      expect(after?.conditions?.airTempC).toBe(-2);
+    });
+
+    /**
+     * The tests above use −8 °C and 12 kph, which happen to be whole-ish imperial units and so
+     * survive an exact comparison. Open-Meteo has no reason to hand us one of those, and the real
+     * client sends whatever the *form* round-tripped — so this drives the actual round trip rather
+     * than hand-writing the numbers, and would have caught an exact `===` here.
+     */
+    test('an unedited modelled reading survives the form’s whole-unit rounding', async () => {
+      const t = convexTestWithGeo();
+      const { asAuthor, reportId } = await seedReport(t);
+      const modelled = { airTempC: -3.4, windSpeedKph: 18.7, source: 'openmeteo' as const };
+      await t.run((ctx) => ctx.db.patch(reportId, { conditions: modelled }));
+
+      // Exactly what the edit form does: seed from the stored report, change only the notes, submit.
+      const form = reportFormFromReport({ skateEndTime: SKATE_TIME, conditions: modelled });
+      const input = buildReportInput({ ...form, notes: 'fixed a typo' }, 'unused');
+      expect(input.conditions?.airTempC).not.toBe(modelled.airTempC); // the rounding really is lossy
+      await asAuthor.mutation(api.reports.update, {
+        reportId,
+        skateEndTime: SKATE_TIME,
+        notes: input.notes as string,
+        ...(input.conditions ? { conditions: input.conditions } : {}),
+      });
+
+      const after = await t.run((ctx) => ctx.db.get(reportId));
+      expect(after?.conditions?.source).toBe('openmeteo'); // not relabelled as the author's claim
+      expect(after?.conditions?.airTempC).toBe(-3.4); // and not nudged by the round trip
+      expect(after?.conditions?.windSpeedKph).toBe(18.7);
+      expect(after?.notes).toBe('fixed a typo');
+    });
+
+    /**
+     * The other side of the same line, and the reason the check predicts the round trip instead of
+     * allowing a whole-unit tolerance: both inputs take decimals. A tolerance would read 26.4 °F
+     * typed over a modelled 26 °F as unchanged and restore the model's number — discarding an edit
+     * to protect provenance, which is worse than the bug the check exists to prevent.
+     */
+    test('a fractional edit inside the displayed unit is still the author’s', async () => {
+      const t = convexTestWithGeo();
+      const { asAuthor, reportId } = await seedReport(t);
+      await t.run((ctx) =>
+        ctx.db.patch(reportId, {
+          conditions: { airTempC: -3.4, source: 'openmeteo' as const }, // shows as 26 °F
+        }),
+      );
+
+      const typed = buildReportInput(
+        { ...emptyReportForm(SKATE_TIME), conditions: FORM_CONDITIONS('26.4') },
+        'unused',
+      );
+      await asAuthor.mutation(api.reports.update, {
+        reportId,
+        skateEndTime: SKATE_TIME,
+        ...(typed.conditions ? { conditions: typed.conditions } : {}),
+      });
+
+      const after = await t.run((ctx) => ctx.db.get(reportId));
+      expect(after?.conditions?.source).toBe('user'); // they changed it, so it's theirs
+      expect(after?.conditions?.airTempC).toBe(typed.conditions?.airTempC); // and it was kept
+    });
+
+    /**
+     * The value-level half of the fix stands on its own: a field the form could not have changed
+     * keeps its stored number even on an edit that *did* make the block the author's.
+     */
+    test('editing one weather field does not nudge the other', async () => {
+      const t = convexTestWithGeo();
+      const { asAuthor, reportId } = await seedReport(t);
+      const modelled = { airTempC: -3.4, windSpeedKph: 18.7, source: 'openmeteo' as const };
+      await t.run((ctx) => ctx.db.patch(reportId, { conditions: modelled }));
+
+      // Seed the form, retype the air temp (26 °F → 30 °F), leave the wind field alone — derived
+      // rather than hand-written, because the untouched value is whatever the round trip emits.
+      const form = reportFormFromReport({ skateEndTime: SKATE_TIME, conditions: modelled });
+      const edited = buildReportInput(
+        { ...form, conditions: { ...form.conditions, airTempF: '30' } },
+        'unused',
+      );
+      await asAuthor.mutation(api.reports.update, {
+        reportId,
+        skateEndTime: SKATE_TIME,
+        ...(edited.conditions ? { conditions: edited.conditions } : {}),
+      });
+
+      const after = await t.run((ctx) => ctx.db.get(reportId));
+      expect(after?.conditions?.source).toBe('user'); // the block is the author's now
+      expect(after?.conditions?.airTempC).toBeCloseTo(-1.11, 2); // their number, as typed
+      expect(after?.conditions?.windSpeedKph).toBe(18.7); // the untouched one, exactly as stored
+    });
+
+    test('never launders a user’s number into an observation', async () => {
+      const t = convexTestWithGeo();
+      const { asAuthor, reportId } = await seedReport(t);
+      await asAuthor.mutation(api.reports.update, {
+        reportId,
+        skateEndTime: SKATE_TIME,
+        conditions: { airTempC: -8, source: 'user' },
+      });
+      // Stored is already `user`; an identical resubmit must not drift toward `openmeteo`.
+      await asAuthor.mutation(api.reports.update, {
+        reportId,
+        skateEndTime: SKATE_TIME,
+        conditions: { airTempC: -8, source: 'user' },
+      });
+      expect((await t.run((ctx) => ctx.db.get(reportId)))?.conditions?.source).toBe('user');
+    });
+  });
+
   test('re-validates on edit (rejects an invalid change)', async () => {
     const t = convexTestWithGeo();
     const { asAuthor, reportId } = await seedReport(t);
@@ -770,6 +947,61 @@ describe('reports.update / photos.create guards (review fixes)', () => {
     await expect(
       asUser.mutation(api.reports.update, { reportId, skateEndTime: SKATE_TIME, notes: 'edit' }),
     ).rejects.toThrow(/moderated/i);
+  });
+
+  /**
+   * `photoIds` is part of the last-write-wins block, so the array the client sends **is** the
+   * report's photo list — an edit form that only knows about this session's uploads posts `[]` and
+   * detaches every image the report already had. Both clients therefore submit the kept ids ahead of
+   * the new ones; these pin the two halves of that contract from the server's side.
+   */
+  describe('an edit replaces the photo list wholesale', () => {
+    async function seedReportWithPhoto(t: ReturnType<typeof convexTest>) {
+      const { id } = await seedBody(t);
+      const asUser = await seedUser(t, 'clerk_a');
+      const storageId = await t.run((ctx) => ctx.storage.store(new Blob(['x'])));
+      const photoId = await asUser.mutation(api.photos.create, {
+        storageId,
+        thumbStorageId: storageId,
+        placeOnMap: false,
+      });
+      const reportId = await asUser.mutation(api.reports.create, {
+        waterBodyId: id,
+        skateEndTime: SKATE_TIME,
+        photoIds: [photoId],
+      });
+      return { asUser, reportId, photoId };
+    }
+
+    test('resubmitting the kept ids keeps the photos attached', async () => {
+      const t = convexTestWithGeo();
+      const { asUser, reportId, photoId } = await seedReportWithPhoto(t);
+      await asUser.mutation(api.reports.update, {
+        reportId,
+        skateEndTime: SKATE_TIME,
+        notes: 'fixed a typo',
+        photoIds: [photoId],
+      });
+      expect((await t.run((ctx) => ctx.db.get(reportId)))?.photoIds).toEqual([photoId]);
+    });
+
+    test('an empty list detaches them — which is why the client must send the kept ids', async () => {
+      const t = convexTestWithGeo();
+      const { asUser, reportId } = await seedReportWithPhoto(t);
+      await asUser.mutation(api.reports.update, {
+        reportId,
+        skateEndTime: SKATE_TIME,
+        photoIds: [],
+      });
+      expect((await t.run((ctx) => ctx.db.get(reportId)))?.photoIds).toEqual([]);
+    });
+
+    test('omitting the field entirely preserves them (the offline/partial-arg path)', async () => {
+      const t = convexTestWithGeo();
+      const { asUser, reportId, photoId } = await seedReportWithPhoto(t);
+      await asUser.mutation(api.reports.update, { reportId, skateEndTime: SKATE_TIME });
+      expect((await t.run((ctx) => ctx.db.get(reportId)))?.photoIds).toEqual([photoId]);
+    });
   });
 
   test('photos.create rejects an out-of-range coord (range guard, D42)', async () => {

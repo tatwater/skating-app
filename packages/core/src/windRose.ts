@@ -280,6 +280,39 @@ export function isPlausibleStrongWindHours(wind: SustainedWind): boolean {
   return total <= sampledWindHours;
 }
 
+/**
+ * The fastest mean sector wind we will believe, in m/s. **60 m/s is ~134 mph.**
+ *
+ * A *mean* over a winter cannot approach this — the strongest mean sector speeds in the corpus are
+ * single digits — so anything above it is a units error (mph stored as m/s, or a sum stored as a
+ * mean), not a windy lake. Generous on purpose: this is a units check, not a climate opinion.
+ */
+export const MAX_PLAUSIBLE_MEAN_WIND_MPS = 60;
+
+/**
+ * Is this a usable stored mean-speed array?
+ *
+ * **`null` is valid and `0` is valid, and they mean different things** — no reading versus a
+ * measured dead calm. Both pass; only the shape, the sign and a units ceiling are checked.
+ *
+ * Deliberately separate from `isPlausibleStrongWindHours`: mean speed carries its own denominator
+ * (hours with a readable speed, which is not the rose's denominator), so a row can honestly have
+ * one and not the other. Validating them together would reject that.
+ */
+export function isPlausibleMeanWindMps(value: unknown): value is (number | null)[] {
+  if (!Array.isArray(value) || value.length !== WIND_ROSE_SECTORS) return false;
+  let anyReading = false;
+  for (const mps of value) {
+    if (mps === null) continue;
+    if (typeof mps !== 'number' || !Number.isFinite(mps)) return false;
+    if (mps < 0 || mps > MAX_PLAUSIBLE_MEAN_WIND_MPS) return false;
+    anyReading = true;
+  }
+  // Sixteen nulls is the same claim as an absent field, and storing it would make every consumer
+  // handle a case that says nothing. The writer omits the field instead.
+  return anyReading;
+}
+
 export interface WindHoleSector {
   /** Index into the 16 compass points — the direction wind blows FROM. */
   sector: number;
@@ -300,10 +333,19 @@ const HOURS_PER_WINTER = 24 * (31 + 31 + 28 + 31);
  * distinguish them would have to handle a null it has no use for. The distinction is available from
  * `isPlausibleStrongWindHours` where it matters.
  *
- * ⚠ **Deliberately no copy.** D82 settled that bathymetry is context rather than counsel, and this
- * is the same class of number wearing a scarier name. Whether a wind-hole clause belongs in the
- * caption, only in the profile, or nowhere is a founder call that has not been taken — so this
- * returns data and nothing here writes a sentence.
+ * ⚠ **Deliberately no copy, and this is settled (D145, 2026-08-15): nowhere.** Not the caption, not
+ * the profile. D82 settled that bathymetry is context rather than counsel, and this is the same class
+ * of number wearing a scarier name — sharper, because the number really is predictive and "wind hole"
+ * really is frightening, which is precisely why an always-on clause would over-warn all winter to be
+ * right a few days of it.
+ *
+ * The distinction is a **climatology versus a condition**: these counts describe Januaries in
+ * general, and a skater on the ice is asking about today. The intended eventual home is a
+ * *conditional* profile banner — right season, right conditions, this body's climatology, and no
+ * report or hazard already documenting it — not a permanent label. Not built.
+ *
+ * So this function has **no production caller on purpose.** If you are wiring it into copy, read D145
+ * first; it is unread by design rather than by oversight.
  */
 export function windHoleSectors(
   wind: SustainedWind,

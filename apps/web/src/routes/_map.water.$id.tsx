@@ -1,5 +1,5 @@
 import { createFileRoute } from '@tanstack/react-router';
-import { DetailSheet } from '../components/DetailSheet';
+import { DetailPanel } from '../components/DetailPanel';
 import { WaterBodyDetail } from '../components/WaterBodyDetail';
 
 // `/water/$id` — a deep-linkable water-body detail drawer over the map (D47).
@@ -16,8 +16,8 @@ function WaterRoute() {
   const { id } = Route.useParams();
   const { sub } = Route.useSearch();
   return (
-    <DetailSheet>
+    <DetailPanel>
       <WaterBodyDetail waterBodyId={id} focusSubAreaId={sub} />
-    </DetailSheet>
+    </DetailPanel>
   );
 }

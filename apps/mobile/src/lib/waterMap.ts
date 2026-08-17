@@ -257,6 +257,8 @@ export interface MappableBody {
   name: string;
   type: string;
   polygon: GeoJSON.Geometry;
+  /** A moderator's access ruling (N6f). `verdict: 'none'` draws the body dimmed. */
+  publicAccess?: { verdict: string };
 }
 
 /**
@@ -264,16 +266,28 @@ export interface MappableBody {
  * type ride along as feature properties: a tap reads `_id` to navigate, and the selection-highlight
  * layer filters on `_id` (RN has no `setFeatureState`, so the highlight is a data-driven filter, not
  * a feature-state flag as on web).
+ *
+ * `selfFlaggedIds` are the bodies **this viewer** has reported as having no public access (N6f) —
+ * dimmed for them alone, because an unconfirmed report must not change anyone else's map. Carried as
+ * a property rather than a filtered layer so both clients share one opacity expression; that RN gap
+ * above is exactly why web puts it in properties too instead of using feature-state as favourites do.
  */
 export function waterBodiesToFeatureCollection(
   bodies: readonly MappableBody[],
+  selfFlaggedIds: ReadonlySet<string> = new Set(),
 ): GeoJSON.FeatureCollection {
   return {
     type: 'FeatureCollection',
     features: bodies.map((body) => ({
       type: 'Feature',
       geometry: body.polygon,
-      properties: { _id: body._id, name: body.name, type: body.type },
+      properties: {
+        _id: body._id,
+        name: body.name,
+        type: body.type,
+        noPublicAccess: body.publicAccess?.verdict === 'none',
+        selfFlagged: selfFlaggedIds.has(body._id),
+      },
     })),
   };
 }

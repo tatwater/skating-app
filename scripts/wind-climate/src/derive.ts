@@ -159,6 +159,7 @@ async function main(): Promise<void> {
     waterBodyId: string;
     rose?: number[];
     strongWindHours: number[];
+    meanWindMps?: (number | null)[];
     sampledWindHours: number;
     strongWindMinMps: number;
   }[] = [];
@@ -181,11 +182,15 @@ async function main(): Promise<void> {
     }
     const climate = climateFromAccumulator(acc);
     if (climate.rose === null) tooThin += list.length;
+    // All-null means no hour in this cell had a readable speed at all. Storing sixteen nulls says
+    // the same thing as storing nothing while costing a column, so the field is simply absent.
+    const anySpeed = climate.meanWindMps.some((v) => v !== null);
     for (const t of list) {
       updates.push({
         waterBodyId: t.waterBodyId,
         ...(climate.rose ? { rose: climate.rose } : {}),
         strongWindHours: climate.strongWindHours,
+        ...(anySpeed ? { meanWindMps: climate.meanWindMps } : {}),
         sampledWindHours: climate.sampledWindHours,
         strongWindMinMps: climate.strongWindMinMps,
       });

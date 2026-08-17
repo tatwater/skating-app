@@ -104,6 +104,27 @@ Two cases the resolver must distinguish, because they need different answers:
 - **No catalogue knows it** — a flooded field, a beaver flowage, a new impoundment. That is N2's
   hand-drawn path, and Phase 8's `pathToBody` is already the right tool.
 
+### ⚠ The client half is already written and unmounted — wire it, don't write it (noted 2026-08-16)
+
+`apps/mobile/src/components/NewWaterPrompt.tsx` **exists, is complete, and has zero callers.** It
+takes `{ activityId, onResolved, onDismiss }` and queries `waterBodies.findMatchCandidates` — which is
+itself referenced from nowhere else, so the query and the component are an orphaned pair. Building a
+new prompt in this phase would be writing the second one.
+
+It could not be mounted before N6f for a concrete reason worth keeping: it needs a **server**
+`activityId`, and the only surface that offered an unmatched skate was the recorder's stop-card, which
+holds a *local* draft id (the track often hasn't flushed yet). Its "add it from your track" button was
+`disabled` for exactly the unmatched case it was written for.
+
+**N6f removed that blocker.** `UnreportedSkates` in the You tab is `listMine`-backed, so every row
+carries a server `activityId`, and an unmatched skate now renders this line instead of a dead button:
+
+> *"We couldn't match this to a lake we know, so there's nothing to report it against yet."*
+
+**That sentence is this phase's to delete.** Replacing it with `<NewWaterPrompt activityId={…} />` is
+the smallest honest version of D108 — the resolver and the admission flow are still the real work, but
+the surface that reaches them is already built and already has the id it needs.
+
 ---
 
 ## What N7 already landed for this, and why it could not wait

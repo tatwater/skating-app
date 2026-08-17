@@ -13,6 +13,7 @@ import {
   revealPlaceholder,
   SKATE_QUALITY_LABELS,
   waterBodyClassLabel,
+  waterBodyDisplayName,
 } from '@skating/core';
 import { Link } from '@tanstack/react-router';
 import { usePaginatedQuery, useQuery } from 'convex/react';
@@ -23,6 +24,7 @@ import { AlertStrip } from './AlertStrip';
 import { WaterBodyModeratorControls } from './admin/WaterBodyModeratorControls';
 import { BountyForm } from './BountyForm';
 import { BountyList } from './BountyList';
+import { PanelDescription, PanelHeader, PanelTitle } from './DetailPanel';
 import { DirectionsButton } from './DirectionsButton';
 import { DetailSkeleton, UnavailableState } from './DrawerStates';
 import { FavoriteButton } from './FavoriteButton';
@@ -32,14 +34,16 @@ import { HazardList } from './HazardList';
 import { IceHistory } from './IceHistory';
 import { LeavingNotice } from './LeavingNotice';
 import { useMapSelection } from './MapSelectionContext';
+import { PostedAccess } from './PostedAccess';
+import { PublicAccessSection } from './PublicAccessSection';
 import { ReferenceLinks } from './ReferenceLinks';
 import { ReportForm } from './ReportForm';
 import { SeasonEmptyState, SeasonFilter } from './SeasonFilter';
 import { Badge } from './ui/badge';
 import { Button } from './ui/button';
 import { Card, CardContent } from './ui/card';
-import { SheetDescription, SheetHeader, SheetTitle } from './ui/sheet';
 import { Skeleton } from './ui/skeleton';
+import { WindExposure } from './WindExposure';
 
 /**
  * Water-body detail drawer content (§D, D47) for `/water/$id`. Reads `waterBodies.get`, which
@@ -146,18 +150,18 @@ export function WaterBodyDetail({
 
   return (
     <>
-      <SheetHeader>
+      <PanelHeader>
         <div className="flex items-start justify-between gap-2">
-          <SheetTitle>{result.body.name}</SheetTitle>
+          <PanelTitle>{waterBodyDisplayName(result.body.name)}</PanelTitle>
           <FavoriteButton waterBodyId={result.body._id} />
         </div>
-        <SheetDescription>
+        <PanelDescription>
           {waterBodyClassLabel(result.body.type)}
           {result.body.surfaceAreaSqM !== undefined
             ? ` · ${formatAreaAcres(result.body.surfaceAreaSqM)}`
             : ''}
           {depth ? ` · ${depth.text}` : ''}
-        </SheetDescription>
+        </PanelDescription>
         {/* Provenance sits under the numbers rather than beside them: most bodies have no depth at all
             (73% of the corpus is below every source's area floor), so this line is absent far more often
             than present, and a caveat inline in the description would read as clutter when it IS there. */}
@@ -179,7 +183,7 @@ export function WaterBodyDetail({
         {depth ? null : reveal ? (
           <p className="text-muted-foreground text-xs italic">{revealPlaceholder('depth')}</p>
         ) : null}
-      </SheetHeader>
+      </PanelHeader>
       <div className="flex flex-col gap-4 px-4 pb-4">
         {/* Report creation + directions to a put-in (never the on-water centroid, D#7).
             A pending deletion removes all three composers (D62 amendment) and keeps directions:
@@ -202,6 +206,19 @@ export function WaterBodyDetail({
         {/* Official NWS alerts (N6c/B5) first — a warning from the local forecast office outranks
             both our observations and anybody's forecast, so it sits above both strips. */}
         <AlertStrip waterBodyId={result.body._id} reveal={reveal} />
+        {/* Whether you may be here at all (N6f) — above the posted hours, because "there is no lawful
+            way in" outranks "and it closes at sunset". Annotates only: a ruling dims the lake on the
+            map and demotes it, and disables nothing on this page. */}
+        <PublicAccessSection body={result.body} />
+        {/* What the sign says (N6e) — above the route, because permission precedes access: whether you
+            may be out there at all outranks how you would get on. Its own strip rather than a row
+            inside AccessSection, which renders nothing when a body has no mapped put-ins and would
+            otherwise swallow the rule on exactly the remote reservoir that posts one. */}
+        <PostedAccess
+          rule={result.body.postedAccess}
+          coord={result.body.interiorPoint ?? result.body.centroid}
+          reveal={reveal}
+        />
         {/* How you get onto the ice (N6d) — above the weather, because it decides whether the trip is
             possible at all, where the weather decides whether it is worth making. Renders nothing on
             the great majority of bodies OSM has never mapped access for. */}
@@ -210,6 +227,10 @@ export function WaterBodyDetail({
             half that answers "should I bother driving". Above the season filter so it sits with the
             body's current state rather than inside its history. */}
         <ForecastStrip waterBodyId={result.body._id} reveal={reveal} />
+        {/* Winter wind (N7-3 / D90). A climatology rather than a condition, so it sits BELOW the
+            forecast: what the last five winters did is background to what this week is doing. Renders
+            nothing on the ~56% of the corpus with no rose, and says nothing about safety (D145). */}
+        <WindExposure body={result.body} />
         <WaterBodyModeratorControls body={result.body} />
         <SeasonFilter waterBodyId={result.body._id} />
         <BountyList waterBodyId={result.body._id} />
@@ -237,7 +258,7 @@ export function WaterBodyDetail({
       {formOpen ? (
         <ReportForm
           waterBodyId={result.body._id}
-          bodyName={result.body.name}
+          bodyName={waterBodyDisplayName(result.body.name)}
           open={formOpen}
           onOpenChange={setFormOpen}
         />
@@ -248,7 +269,7 @@ export function WaterBodyDetail({
       {bountyFormOpen ? (
         <BountyForm
           waterBodyId={result.body._id}
-          bodyName={result.body.name}
+          bodyName={waterBodyDisplayName(result.body.name)}
           open={bountyFormOpen}
           onOpenChange={setBountyFormOpen}
         />

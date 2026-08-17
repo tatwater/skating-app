@@ -20,6 +20,7 @@ import {
   hasMeasuredThickness,
   ICE_TYPES,
   isBrowsableSeason,
+  isFormRoundTripOf,
   isMinor,
   type LatLng,
   matchesFilters,
@@ -1063,10 +1064,14 @@ export const update = mutation({
       skateQuality: n.skateQuality,
       iceThickness: n.iceThickness,
       snowCoverCm: n.snowCoverCm,
-      conditions: n.conditions,
+      conditions: mergeEditedConditions(existing.conditions, n.conditions),
       notes: n.notes,
       ...(args.showPutIn !== undefined ? { showPutIn: args.showPutIn } : {}),
       photoIds,
+      // Distinct from `updatedAt` on purpose (N6f). `updatedAt` moves for reasons the author had
+      // nothing to do with — the conditions autofill backfills the weather hours later — so a byline
+      // reading "edited" off it would accuse people of edits they never made. This moves only here.
+      editedAt: now,
       updatedAt: now,
     });
 
@@ -1083,6 +1088,55 @@ export const update = mutation({
     return args.reportId;
   },
 });
+
+/**
+ * Merge an edited conditions block over the stored one, keeping both the measurement and its
+ * provenance where the author didn't actually touch the weather.
+ *
+ * **The bug this fixes is silent and one-directional.** A report's conditions are often filled in by
+ * `internal.conditions.autofillConditions` from Open-Meteo, stamped `source: 'openmeteo'`. The edit
+ * form has no slot for provenance and `buildReportInput` stamps everything it emits `source: 'user'`
+ * — so an author fixing a typo in their notes would re-mark the *weather* as personally observed,
+ * turning a model's number into a human's claim with nobody deciding that.
+ *
+ * The comparison is on the values, not on a dirty flag the client could get wrong: if every weather
+ * figure came back identical, nothing about the weather was edited, whatever else was. Change one and
+ * the block becomes the author's, which is the honest reading of someone typing over it.
+ *
+ * ⚠ **It asks whether the number came back off the form untouched, not whether it is close.** The
+ * two are stored in precise metric and edited in whole °F / whole mph, so an untouched −3.4 °C comes
+ * back as −3.33; a bare `stored === next` would call every edit a weather edit and defeat the whole
+ * function. `isFormRoundTripOf` predicts the form's exact arithmetic instead of allowing a tolerance
+ * — deliberately, because the inputs take decimals and a tolerance would swallow a real 0.4° edit.
+ * The stored number is then kept verbatim for each field that survived, so a round-trip can't nudge a
+ * measurement the author never opened.
+ *
+ * Only ever *downgrades* toward the stored source, so it cannot launder a user's number into an
+ * observation.
+ */
+function mergeEditedConditions(
+  stored: Doc<'reports'>['conditions'],
+  next: Doc<'reports'>['conditions'],
+): Doc<'reports'>['conditions'] {
+  if (!stored || !next) return next;
+  const sameTemp = isFormRoundTripOf('airTempC', stored.airTempC, next.airTempC);
+  const sameWind = isFormRoundTripOf('windSpeedKph', stored.windSpeedKph, next.windSpeedKph);
+  // Undo the rounding drift field by field, independently of the source decision below: a value the
+  // author couldn't have changed shouldn't move, even on an edit that *did* touch the rest of the block.
+  const merged = {
+    ...next,
+    ...(sameTemp && stored.airTempC !== undefined ? { airTempC: stored.airTempC } : {}),
+    ...(sameWind && stored.windSpeedKph !== undefined ? { windSpeedKph: stored.windSpeedKph } : {}),
+  };
+  if (stored.source === next.source) return merged;
+  const unchanged =
+    sameTemp &&
+    sameWind &&
+    stored.windDir === next.windDir &&
+    stored.sky === next.sky &&
+    stored.precip === next.precip;
+  return unchanged ? { ...merged, source: stored.source } : merged;
+}
 
 /**
  * One-time migration (Phase 5): copy each report's legacy `skateTime` → `skateEndTime`, drop the old

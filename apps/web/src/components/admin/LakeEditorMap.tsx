@@ -29,6 +29,8 @@ export interface LakeEditorData {
     centroid: LatLng;
   }[];
   putIns: readonly { coord: LatLng; source: string }[];
+  /** Lots serving this body (N6f) — context for placement, so a new one isn't a duplicate. */
+  parkingAreas: readonly { coord: LatLng; source: string }[];
   samplePoints: readonly LatLng[];
   /** A grid the operator is previewing but hasn't saved — drawn hollow, so it reads as a proposal. */
   suggestedPoints: readonly LatLng[];
@@ -168,6 +170,23 @@ export function LakeEditorMap({
         },
       });
 
+      // Parking (N6d/N6f) — drawn so an operator placing a lot can see the ones already there, which
+      // is the difference between adding the lot that was missing and adding a third copy of one that
+      // wasn't. Amber and larger than a put-in: a lot and a launch are the two things on this canvas
+      // most easily confused, and they are placed by two different tools a card apart.
+      map.addSource('editor-parking', { type: 'geojson', data: EMPTY });
+      map.addLayer({
+        id: 'editor-parking',
+        type: 'circle',
+        source: 'editor-parking',
+        paint: {
+          'circle-radius': 7,
+          'circle-color': ['case', ['==', ['get', 'source'], 'official'], '#f59e0b', '#b45309'],
+          'circle-stroke-color': '#ffffff',
+          'circle-stroke-width': 2,
+        },
+      });
+
       // Saved sample points read solid; a suggested grid reads hollow. Same layer, one paint
       // expression, so a half-accepted suggestion can't look identical to a saved one.
       map.addSource('editor-sample-points', { type: 'geojson', data: EMPTY });
@@ -245,6 +264,19 @@ export function LakeEditorMap({
     });
     // biome-ignore lint/correctness/useExhaustiveDependencies: setData reads mapRef.
   }, [loaded, data.putIns, setData]);
+
+  useEffect(() => {
+    if (!loaded) return;
+    setData('editor-parking', {
+      type: 'FeatureCollection',
+      features: data.parkingAreas.map((p) => ({
+        type: 'Feature',
+        geometry: { type: 'Point', coordinates: [p.coord.lng, p.coord.lat] },
+        properties: { source: p.source },
+      })),
+    });
+    // biome-ignore lint/correctness/useExhaustiveDependencies: setData reads mapRef.
+  }, [loaded, data.parkingAreas, setData]);
 
   useEffect(() => {
     if (!loaded) return;

@@ -31,9 +31,11 @@ import { IceHistory } from './IceHistory';
 
 import { LeavingNotice, useIsLeaving } from './LeavingNotice';
 import { useMapSelection } from './MapSelectionContext';
+import { PostedAccess } from './PostedAccess';
 import { ReferenceLinks } from './ReferenceLinks';
 import { ReportForm } from './ReportForm';
 import { SeasonEmptyState, SeasonFilter } from './SeasonFilter';
+import { WindExposure } from './WindExposure';
 
 /**
  * Water-body detail drawer (§F, D47) for `/water/[id]`, the mobile mirror of web's `WaterBodyDetail`.
@@ -47,6 +49,7 @@ import { SeasonEmptyState, SeasonFilter } from './SeasonFilter';
 export function WaterBodyDetail({
   waterBodyId,
   trackDraftId,
+  activityId,
   focusSubAreaId,
 }: {
   waterBodyId: string;
@@ -58,6 +61,8 @@ export function WaterBodyDetail({
    * would be the moment the whole record→report loop leaks people.
    */
   trackDraftId?: string;
+  /** A synced skate to attach (N6f) — the server id, from the You tab's unreported list. */
+  activityId?: string;
 }) {
   const result = useQuery(api.waterBodies.get, {
     waterBodyId: waterBodyId as Id<'waterBodies'>,
@@ -72,7 +77,7 @@ export function WaterBodyDetail({
     ? subAreas?.find((s) => s._id === focusSubAreaId && !s.removed)
     : undefined;
   const { setFocus, setHighlightWaterBodyId, setContourBodyKey, contourCredit } = useMapSelection();
-  const [formOpen, setFormOpen] = useState(trackDraftId !== undefined);
+  const [formOpen, setFormOpen] = useState(trackDraftId !== undefined || activityId !== undefined);
   const [bountyFormOpen, setBountyFormOpen] = useState(false);
   const leaving = useIsLeaving();
   // Same whole-table fetch as web — five rows of aggregate geography, so the caption stays a pure
@@ -181,6 +186,14 @@ export function WaterBodyDetail({
           </Paragraph>
         ) : null}
         <DirectionsButton waterBodyId={result.body._id} />
+        {/* What the sign says (N6e) — above the route, because permission precedes access. Its own
+            section rather than a row inside AccessSection, which renders nothing when a body has no
+            mapped put-ins and would swallow the rule on exactly the remote reservoir that posts one. */}
+        <PostedAccess
+          rule={result.body.postedAccess}
+          coord={result.body.interiorPoint ?? result.body.centroid}
+          reveal={reveal}
+        />
         {/* How you get onto the ice (N6d) — beneath the directions button it explains, and absent on
             the great majority of bodies OSM has never mapped access for. */}
         <AccessSection waterBodyId={result.body._id} />
@@ -191,6 +204,7 @@ export function WaterBodyDetail({
           waterBodyId={result.body._id}
           bodyName={result.body.name}
           {...(trackDraftId !== undefined ? { trackDraftId } : {})}
+          {...(activityId !== undefined ? { activityId } : {})}
           onClose={() => setFormOpen(false)}
         />
       ) : bountyFormOpen ? (
@@ -224,6 +238,10 @@ export function WaterBodyDetail({
           <AlertStrip waterBodyId={result.body._id} reveal={reveal} />
           {/* The forward forecast (N6c/B5b) — the other half of the weather-since timeline. */}
           <ForecastStrip waterBodyId={result.body._id} reveal={reveal} />
+          {/* Winter wind (N7-3 / D90) — a climatology, so it sits BELOW the forecast: what the last
+              five winters did is background to what this week is doing. Renders nothing without a
+              rose, and says nothing about safety (D145). */}
+          <WindExposure body={result.body} />
           <SeasonFilter waterBodyId={result.body._id} />
           <BountyList waterBodyId={result.body._id} />
           {/* The lake page and nowhere else (§9.1) — not the map, the feed, notifications or the

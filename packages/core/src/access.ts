@@ -20,6 +20,7 @@
 
 import { bearingDegrees, haversineMeters, type LatLng } from './geometry';
 import { compassPointFor } from './lakeGeometry';
+import type { PostedAccess } from './postedAccess';
 
 /**
  * How you get from the car to the ice. Derived from a routed approach distance, with an operator
@@ -105,6 +106,28 @@ export const AMENITY_NEAR_PARKING_M = 150;
  * that produces a wrong answer instead of no answer.
  */
 export const PUTIN_SHORE_RADIUS_M = 30;
+
+/**
+ * How far *outside* a body an operator's put-in click may land before the write is refused (N6f).
+ *
+ * **Not `PUTIN_SHORE_RADIUS_M`, and the difference is the whole point.** That one is the ETL's
+ * tolerance for deciding whether an OSM slipway belongs to *this lake or the next one over* — a
+ * question about identity, where being loose produces a confidently wrong answer. This is a human
+ * saying "here" on a canvas locked to one lake, where identity is already settled and the only
+ * question is how badly they missed. Thirty metres would reject an ordinary click at a wide zoom.
+ *
+ * Every put-in is snapped to the shoreline before it is stored, so the *inside* case needs no bound
+ * at all: `distanceToPolygonMeters` reads 0 anywhere on the water, and a click in the middle of
+ * Champlain snaps five kilometres to the nearest shore with no complaint, which is right — mid-water
+ * is the obvious "I meant the edge nearest here" gesture, and it is exactly what a floating pin is.
+ *
+ * The bound exists for the other direction: a click well inland is not a missed shoreline, it is
+ * someone marking a trailhead or a lot, and snapping it half a kilometre onto the water would turn a
+ * mistake into a plausible-looking wrong answer that directions would then send someone to. Refusing
+ * beats silently relocating, especially since there is no "move this put-in" — correcting one means
+ * hiding it, which leaves a suppression row behind.
+ */
+export const OPERATOR_PUT_IN_SNAP_MAX_M = 500;
 
 /**
  * The approach kind implied by a distance, or `undefined` when there is no distance to imply one
@@ -304,6 +327,15 @@ export interface AccessPutIn {
   approachAscentM?: number;
   approachRouted?: boolean;
   approachKindOverride?: ApproachKind;
+  /**
+   * What the sign on *this launch* says (N6e).
+   *
+   * Carried here so the drawer can render it beside the launch it governs, and read by nothing in the
+   * resolver: `chooseAccessTarget` must not prefer an open launch over a shut one. A posted rule
+   * annotates and never suppresses, and silently routing someone around a closure would be the
+   * strongest form of suppression — the launch would simply stop being mentioned.
+   */
+  postedAccess?: PostedAccess;
 }
 
 /** A parking area as the access resolver sees it. */
@@ -312,6 +344,8 @@ export interface AccessParking {
   coord: LatLng;
   name?: string;
   source: 'osm' | 'official';
+  /** What the sign on *this lot* says (N6e). Not read by the resolver — see `AccessPutIn`. */
+  postedAccess?: PostedAccess;
 }
 
 /** Where to send the car, and everything the drawer needs to describe the rest of the trip. */

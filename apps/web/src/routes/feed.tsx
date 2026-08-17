@@ -128,7 +128,15 @@ function FeedPage() {
           `MapSelectionContext`, so we mount a throwaway provider here (no map is rendered on the
           feed, so those updates are inert). Modal drawer: the feed doesn't need a tappable backdrop. */}
       <Sheet open={report !== undefined} onOpenChange={(open) => !open && closeReport()}>
-        <SheetContent side="right" className="w-full gap-0 overflow-y-auto sm:max-w-md">
+        {/* `aria-label` because `ReportDetail`'s heading is a plain `h2` now, not a `Dialog.Title` —
+            it has to render in the map sidebar, which is a region of the page rather than a dialog
+            (see `DetailPanel`). This is the one place it's still inside a real dialog, so this is
+            where the accessible name has to come from. */}
+        <SheetContent
+          side="right"
+          aria-label="Report"
+          className="w-full gap-0 overflow-y-auto sm:max-w-md"
+        >
           {report !== undefined ? (
             <MapSelectionProvider>
               <ReportDetail reportId={report as Id<'reports'>} />

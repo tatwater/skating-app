@@ -1,5 +1,5 @@
 import { Link } from '@tanstack/react-router';
-import { SheetDescription, SheetHeader, SheetTitle } from './ui/sheet';
+import { PanelDescription, PanelHeader, PanelTitle } from './DetailPanel';
 import { Skeleton } from './ui/skeleton';
 
 /**
@@ -11,14 +11,14 @@ import { Skeleton } from './ui/skeleton';
 export function DetailSkeleton() {
   return (
     <>
-      <SheetHeader>
-        <SheetTitle>
+      <PanelHeader>
+        <PanelTitle>
           <Skeleton className="h-5 w-40" />
-        </SheetTitle>
-        <SheetDescription>
+        </PanelTitle>
+        <PanelDescription>
           <Skeleton className="mt-1 h-4 w-28" />
-        </SheetDescription>
-      </SheetHeader>
+        </PanelDescription>
+      </PanelHeader>
       <div className="flex flex-col gap-3 px-4 pb-4">
         <Skeleton className="h-10 w-full" />
         <Skeleton className="h-24 w-full" />
@@ -32,10 +32,10 @@ export function DetailSkeleton() {
 export function UnavailableState({ title, message }: { title: string; message: string }) {
   return (
     <>
-      <SheetHeader>
-        <SheetTitle>{title}</SheetTitle>
-        <SheetDescription>{message}</SheetDescription>
-      </SheetHeader>
+      <PanelHeader>
+        <PanelTitle>{title}</PanelTitle>
+        <PanelDescription>{message}</PanelDescription>
+      </PanelHeader>
       <div className="px-4 pb-4">
         <Link to="/" className="text-primary text-sm underline-offset-4 hover:underline">
           Back to the map

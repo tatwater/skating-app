@@ -19,6 +19,7 @@ import { ProfileEdit } from '../../src/components/ProfileEdit';
 import { Avatar } from '../../src/components/ProfileView';
 import { StravaConnect } from '../../src/components/StravaConnect';
 import { TrackHistory } from '../../src/components/TrackHistory';
+import { UnreportedSkates } from '../../src/components/UnreportedSkates';
 
 /**
  * Profile / settings hub (D28). Who you're signed in as (with a link to your public profile),
@@ -82,6 +83,9 @@ export default function YouScreen() {
               sits directly under it because that's where a push that didn't land is retried by hand,
               and because connecting an account here is the thing that makes those retries work. */}
           <StravaConnect />
+          {/* Server-backed, above the device-local `TrackHistory` (N6f): "which skates still owe a
+              report" is the actionable question, and it is the one this phone alone can't answer. */}
+          <UnreportedSkates />
           <TrackHistory />
 
           <AccountLifecycle />

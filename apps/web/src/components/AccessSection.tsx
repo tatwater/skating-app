@@ -6,6 +6,7 @@ import type { FunctionReturnType } from 'convex/server';
 import { useState } from 'react';
 import { AccessPhotos } from './AccessPhotos';
 import { Panel } from './Panel';
+import { PostedAccessLine } from './PostedAccess';
 import { Button } from './ui/button';
 import { Textarea } from './ui/textarea';
 
@@ -127,6 +128,18 @@ export function AccessSectionView({
       {/* "about" vs "at least" is decided in core: a straight-line fallback under-reports, and the
           hedge is the difference between an estimate and a floor (D87). */}
       {approach ? <p className="text-foreground-muted text-sm">{approach}</p> : null}
+
+      {/* Rules posted on *these* access points (N6e), against the point each governs. The body's own
+          rule is a separate strip above this panel and is never folded in here: a lot shut during a
+          shop's business hours says nothing about the launch beside it, or about the ice. */}
+      {target ? (
+        <>
+          <PostedAccessLine rule={target.putIn.postedAccess} coord={target.putIn.coord} />
+          {target.parking ? (
+            <PostedAccessLine rule={target.parking.postedAccess} coord={target.parking.coord} />
+          ) : null}
+        </>
+      ) : null}
 
       {access.parking.some((p) => p.amenities.length > 0) ? (
         <p className="text-foreground-muted text-xs">

@@ -38,6 +38,7 @@ import {
   type LatLng,
   MAX_ACCESS_PHOTOS,
   PARKING_INFER_RADIUS_M,
+  type PostedAccess,
   PUTIN_SHORE_RADIUS_M,
   requiresHikeInAssertion,
   resolveApproachKind,
@@ -466,6 +467,14 @@ export interface ParkingMarker {
   amenities: readonly string[];
   capacity?: number;
   fee?: boolean;
+  /**
+   * What the sign on *this lot* says (N6e) — hours posted on the gate, not on the lake.
+   *
+   * Carried on the marker rather than fetched separately because the lot document is already in hand
+   * here: a rule costs zero extra reads on the read path, which is most of why it is a field on three
+   * tables rather than a join table.
+   */
+  postedAccess?: PostedAccess;
 }
 
 /** Every visible parking area serving a body — the directions target and the drawer's access line. */
@@ -508,6 +517,7 @@ export async function loadParkingForBody(
       amenities: lot.amenities,
       capacity: lot.capacity,
       fee: lot.fee,
+      postedAccess: lot.postedAccess,
     });
   }
   // Operator-set lots first — the same priority ordering `putIns.listForBody` gives official markers,
@@ -751,6 +761,9 @@ export const accessForBody = query({
       approachAscentM: r.approachAscentM,
       approachRouted: r.approachRouted,
       approachKindOverride: r.approachKindOverride,
+      // The rule posted on *this launch* (N6e). Never merged with the body's — a reservoir open around
+      // the clock with one launch shut at dusk is not a reservoir shut at dusk.
+      postedAccess: r.postedAccess,
     }));
 
     return {

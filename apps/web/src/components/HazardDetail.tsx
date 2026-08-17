@@ -29,6 +29,7 @@ import { useMutation, useQuery } from 'convex/react';
 import { ConvexError } from 'convex/values';
 import { type ReactNode, useEffect, useRef, useState } from 'react';
 import { HazardModeratorControls } from './admin/HazardModeratorControls';
+import { PanelDescription, PanelHeader, PanelTitle } from './DetailPanel';
 import { DetailSkeleton, UnavailableState } from './DrawerStates';
 import { useMapSelection } from './MapSelectionContext';
 import { FlagDialog } from './SafetyControls';
@@ -37,7 +38,6 @@ import { TrustAvatar } from './TrustDisplay';
 import { Badge } from './ui/badge';
 import { Button } from './ui/button';
 import { Separator } from './ui/separator';
-import { SheetDescription, SheetHeader, SheetTitle } from './ui/sheet';
 import { WeatherStrip } from './WeatherStrip';
 
 /** The plain data a hazard renders from — decoupled from Convex so `HazardView` is testable. */
@@ -177,9 +177,9 @@ export function HazardView({
 
   return (
     <>
-      <SheetHeader>
-        <SheetTitle>{hazardTypeLabel(data.type)}</SheetTitle>
-        <SheetDescription>
+      <PanelHeader>
+        <PanelTitle>{hazardTypeLabel(data.type)}</PanelTitle>
+        <PanelDescription>
           {data.bodyName ? (
             <Link
               to="/water/$id"
@@ -192,8 +192,8 @@ export function HazardView({
               })}
             </Link>
           ) : null}
-        </SheetDescription>
-      </SheetHeader>
+        </PanelDescription>
+      </PanelHeader>
 
       <div className="space-y-4 px-4 pb-6">
         <div className="flex flex-wrap items-center gap-2">

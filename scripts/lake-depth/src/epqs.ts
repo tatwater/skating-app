@@ -31,8 +31,8 @@
  * | key / documented cap | none of either |
  *
  * Four hours is a *once* cost, which is the entire argument for the archive beside this file: after
- * it, changing a threshold or deriving a new statistic is a local read. That is the lesson
- * `HANDOFF-wind-climate-archive.md` was written to stop us re-learning at 7.7 hours a time.
+ * it, changing a threshold or deriving a new statistic is a local read. That is the lesson **D134**
+ * was written to stop us re-learning at 7.7 hours a time.
  */
 
 import { isPlausibleElevationM } from '@skating/core';

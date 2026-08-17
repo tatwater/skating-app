@@ -22,7 +22,7 @@ import type {
   SurfaceTag,
   ThicknessMethod,
 } from './types';
-import { fToC, inchesToCm, mphToKph } from './units';
+import { cmToInches, cToF, fToC, inchesToCm, kphToMph, mphToKph, roundTo } from './units';
 
 /** One thickness reading as the form holds it: imperial strings + a single/range mode toggle. */
 export interface ThicknessFormReading {
@@ -136,6 +136,161 @@ export function buildReportInput(
     ...(hasConditions ? { conditions: { ...conditions, source: 'user' as const } } : {}),
     ...(notes !== '' ? { notes } : {}),
     ...(point ? { point } : {}),
+  };
+}
+
+/**
+ * A stored report, as much of it as the form needs to be seeded from (N6f).
+ *
+ * Structural rather than `Doc<'reports'>`, so `@skating/core` stays free of the Convex data model
+ * and both clients can pass the row they already hold.
+ */
+export interface StoredReportForForm {
+  skateEndTime: number;
+  skateStartTime?: number;
+  iceTypes?: IceType[];
+  surfaceTags?: SurfaceTag[];
+  skateQuality?: SkateQuality;
+  iceThickness?: { readings: ThicknessReadingLike[] };
+  snowCoverCm?: number;
+  conditions?: {
+    airTempC?: number;
+    windSpeedKph?: number;
+    windDir?: string;
+    sky?: SkyCondition;
+    precip?: PrecipType;
+  };
+  notes?: string;
+}
+
+interface ThicknessReadingLike {
+  valueCm?: number;
+  minCm?: number;
+  maxCm?: number;
+  method: ThicknessMethod;
+}
+
+/**
+ * Round-trip a metric number into the imperial string the form edits.
+ *
+ * **Rounded, and that is a real decision.** 12 cm is 4.724409448818898 inches, and seeding an edit
+ * box with that would make every report look like it had been measured to the micron — and worse,
+ * re-submitting it unchanged would store 11.99999… cm, so a no-op edit would silently perturb the
+ * number. One decimal is finer than anyone reads ice to and stable across a round trip.
+ */
+function toInchesString(cm: number | undefined, decimals = 1): string {
+  return cm === undefined ? '' : String(roundTo(cmToInches(cm), decimals));
+}
+
+/** One stored reading → the form's imperial pair, choosing the mode the reading was actually made in. */
+function toFormReading(reading: ThicknessReadingLike): ThicknessFormReading {
+  // `valueCm` present ⇒ a single measurement; otherwise it was entered as a range, even if only one
+  // end of it was filled in. `buildReportInput` produces exactly one of these two shapes.
+  if (reading.valueCm !== undefined) {
+    return {
+      mode: 'single',
+      value: toInchesString(reading.valueCm),
+      min: '',
+      max: '',
+      method: reading.method,
+    };
+  }
+  return {
+    mode: 'range',
+    value: '',
+    min: toInchesString(reading.minCm),
+    max: toInchesString(reading.maxCm),
+    method: reading.method,
+  };
+}
+
+/**
+ * The two lossy conditions fields, each as the pair of conversions the form puts them through:
+ * `display` is the whole imperial unit the input shows, `toMetric` is what `buildReportInput` sends
+ * back. Keyed by field so the server can replay the exact same arithmetic — see `isFormRoundTripOf`.
+ * Both halves read this map, so what the form renders and what the server predicts cannot drift.
+ */
+const CONDITION_FIELD = {
+  airTempC: { display: (metric: number) => roundTo(cToF(metric), 0), toMetric: fToC },
+  windSpeedKph: { display: (metric: number) => roundTo(kphToMph(metric), 0), toMetric: mphToKph },
+} as const;
+
+/**
+ * Is `next` **exactly** what the edit form would have re-emitted for a stored `stored`, i.e. did the
+ * author leave this field alone? (N6f)
+ *
+ * The conditions fields are whole degrees F and whole mph, and the stored numbers are neither: a
+ * report's weather is usually written by `conditions.autofillConditions` from Open-Meteo in precise
+ * metric. So −3.4 °C renders as `26`, and `buildReportInput` converts that back to −3.33 °C — a
+ * different number, from an author who typed nothing. An exact `stored === next` therefore reads
+ * every edit as a weather edit, which is wrong twice over: it perturbs a measurement nobody touched,
+ * and it relabels a model's figure as a human's observation.
+ *
+ * ⚠ **This predicts the round trip rather than allowing a tolerance**, and the difference is not
+ * academic. Both inputs accept decimals, so "did these two round to the same whole unit?" would call
+ * 26.4 °F typed over a modelled 26 °F *unchanged* and silently restore the model's number — throwing
+ * away an edit to protect provenance, which is a worse trade than the bug it fixes. Reconstructing
+ * `toMetric(display(stored))` and comparing exactly has no such window: the arithmetic is the same
+ * ops in the same order as the form's, so an untouched field matches bit for bit, and anything the
+ * author actually typed — by a whole unit or a tenth of one — does not.
+ *
+ * The one case it *does* absorb is an author retyping the number already on screen. Keeping the
+ * stored value there is right anyway: they entered exactly what was displayed, so there is nothing
+ * to record but a loss of precision.
+ */
+export function isFormRoundTripOf(
+  field: keyof typeof CONDITION_FIELD,
+  stored: number | undefined,
+  next: number | undefined,
+): boolean {
+  if (stored === next) return true; // covers both-absent, and a value that needed no rounding
+  if (stored === undefined || next === undefined) return false; // one side cleared or added
+  const { display, toMetric } = CONDITION_FIELD[field];
+  return toMetric(display(stored)) === next;
+}
+
+/**
+ * Seed the form from a stored report — the inverse of `buildReportInput`, for the edit path (N6f).
+ *
+ * `reports.update` is **last-write-wins over the whole content block**, not a patch: an omitted
+ * optional field is cleared. So an edit form that started empty would silently delete every field the
+ * author didn't retype, which is why this exists and why it has to be faithful in both directions —
+ * `buildReportInput(reportFormFromReport(r))` must reproduce `r`.
+ *
+ * **What it deliberately does not carry**: `conditions.source`. The form has no slot for provenance
+ * and no way to render it, so round-tripping it here would mean inventing a hidden field. The server
+ * keeps the stored source when the values come back unchanged (see `reports.update`), which is the
+ * same decision made in the one place that can actually compare old and new.
+ *
+ * ⚠ **The weather pair is the one lossy step**, because the fields are whole °F / whole mph and the
+ * stored numbers are precise metric from Open-Meteo. `buildReportInput(reportFormFromReport(r))`
+ * reproduces every other field exactly; those two come back within a rounding step, which is why the
+ * server asks `isFormRoundTripOf` rather than `===`. The imperial fields above it are lossless in
+ * practice — a user typed them in inches to begin with, so they round-trip to themselves.
+ */
+export function reportFormFromReport(report: StoredReportForForm): ReportFormState {
+  return {
+    skateEndTime: report.skateEndTime,
+    ...(report.skateStartTime !== undefined ? { skateStartTime: report.skateStartTime } : {}),
+    iceTypes: [...(report.iceTypes ?? [])],
+    surfaceTags: [...(report.surfaceTags ?? [])],
+    skateQuality: report.skateQuality ?? '',
+    thickness: (report.iceThickness?.readings ?? []).map(toFormReading),
+    snowCover: toInchesString(report.snowCoverCm),
+    conditions: {
+      airTempF:
+        report.conditions?.airTempC === undefined
+          ? ''
+          : String(CONDITION_FIELD.airTempC.display(report.conditions.airTempC)),
+      windMph:
+        report.conditions?.windSpeedKph === undefined
+          ? ''
+          : String(CONDITION_FIELD.windSpeedKph.display(report.conditions.windSpeedKph)),
+      windDir: report.conditions?.windDir ?? '',
+      sky: report.conditions?.sky ?? '',
+      precip: report.conditions?.precip ?? '',
+    },
+    notes: report.notes ?? '',
   };
 }
 

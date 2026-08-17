@@ -109,6 +109,22 @@ export interface WindAccumulator {
   counts: SectorCounts;
   /** Winter hours per sector **at or above the strong threshold** — the wind-hole signal. */
   strongHours: SectorCounts;
+  /**
+   * Summed m/s per sector, for a **mean** speed — how hard it blows from a direction, as opposed to
+   * `strongHours`, which is how often it blows hard. A rose says which way; these say what it is
+   * like when it does.
+   */
+  speedSum: SectorCounts;
+  /**
+   * Hours with a **readable** speed, per sector — `speedSum`'s denominator, and deliberately not
+   * `counts`.
+   *
+   * `accumulateCsv` keeps an hour whose direction parses but whose speed does not, because dropping
+   * it would bias the rose toward whatever conditions produce a clean speed field. That same rule
+   * makes `counts` the wrong divisor here: it would average a sector's speed sum over hours that
+   * contributed nothing to it and quietly report a light wind.
+   */
+  speedHours: SectorCounts;
   /** Every winter hour accepted, the honest denominator for both. */
   sampledHours: number;
   /** The m/s bar `strongHours` was taken at, carried so a stored row is self-describing. */
@@ -119,6 +135,8 @@ export function emptyAccumulator(strongMinMps: number = STRONG_WIND_MIN_MPS): Wi
   return {
     counts: emptyCounts(),
     strongHours: emptyCounts(),
+    speedSum: emptyCounts(),
+    speedHours: emptyCounts(),
     sampledHours: 0,
     strongMinMps,
   };
@@ -155,9 +173,14 @@ export function accumulateCsv(csv: string, into: WindAccumulator): number {
     into.counts[index] = (into.counts[index] ?? 0) + 1;
     // A row with a readable direction and an unreadable speed still counts toward the rose — the
     // two are separate claims, and dropping the hour entirely would silently bias the rose toward
-    // whatever conditions happen to produce a clean speed field.
-    if (Number.isFinite(speed) && speed >= into.strongMinMps) {
-      into.strongHours[index] = (into.strongHours[index] ?? 0) + 1;
+    // whatever conditions happen to produce a clean speed field. Everything speed-derived below is
+    // therefore guarded on the speed parsing, and carries its own denominator.
+    if (Number.isFinite(speed)) {
+      into.speedSum[index] = (into.speedSum[index] ?? 0) + speed;
+      into.speedHours[index] = (into.speedHours[index] ?? 0) + 1;
+      if (speed >= into.strongMinMps) {
+        into.strongHours[index] = (into.strongHours[index] ?? 0) + 1;
+      }
     }
     into.sampledHours++;
     accepted++;
@@ -185,8 +208,24 @@ export function roseFromCounts(counts: SectorCounts, hours: number): number[] | 
 export interface CellClimate {
   rose: number[] | null;
   strongWindHours: number[];
+  /** Mean m/s per sector, `null` per sector where no hour there had a readable speed. */
+  meanWindMps: (number | null)[];
   sampledWindHours: number;
   strongWindMinMps: number;
+}
+
+/**
+ * Mean m/s per sector — **`null`, never `0`, where a sector has no readable speed at all.**
+ *
+ * Zero is a real wind speed, and a rose glyph sized on it would draw "dead calm from the north"
+ * identically to "we have no reading from the north". They are different claims and only one of
+ * them is a measurement, so the absent case is absent rather than small.
+ */
+export function meanSpeedFromAccumulator(acc: WindAccumulator): (number | null)[] {
+  return acc.speedSum.map((sum, k) => {
+    const hours = acc.speedHours[k] ?? 0;
+    return hours > 0 ? sum / hours : null;
+  });
 }
 
 /**
@@ -202,6 +241,7 @@ export function climateFromAccumulator(acc: WindAccumulator): CellClimate {
   return {
     rose: roseFromCounts(acc.counts, acc.sampledHours),
     strongWindHours: [...acc.strongHours],
+    meanWindMps: meanSpeedFromAccumulator(acc),
     sampledWindHours: acc.sampledHours,
     strongWindMinMps: acc.strongMinMps,
   };
