@@ -60,6 +60,7 @@ export * from './photo';
 export * from './postedAccess';
 export * from './profile';
 export * from './profileReveal';
+export * from './publicAccess';
 export * from './putIn';
 export * from './recommended';
 export * from './reconcile';

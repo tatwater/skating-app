@@ -35,6 +35,7 @@ import { IceHistory } from './IceHistory';
 import { LeavingNotice } from './LeavingNotice';
 import { useMapSelection } from './MapSelectionContext';
 import { PostedAccess } from './PostedAccess';
+import { PublicAccessSection } from './PublicAccessSection';
 import { ReferenceLinks } from './ReferenceLinks';
 import { ReportForm } from './ReportForm';
 import { SeasonEmptyState, SeasonFilter } from './SeasonFilter';
@@ -205,6 +206,10 @@ export function WaterBodyDetail({
         {/* Official NWS alerts (N6c/B5) first — a warning from the local forecast office outranks
             both our observations and anybody's forecast, so it sits above both strips. */}
         <AlertStrip waterBodyId={result.body._id} reveal={reveal} />
+        {/* Whether you may be here at all (N6f) — above the posted hours, because "there is no lawful
+            way in" outranks "and it closes at sunset". Annotates only: a ruling dims the lake on the
+            map and demotes it, and disables nothing on this page. */}
+        <PublicAccessSection body={result.body} />
         {/* What the sign says (N6e) — above the route, because permission precedes access: whether you
             may be out there at all outranks how you would get on. Its own strip rather than a row
             inside AccessSection, which renders nothing when a body has no mapped put-ins and would

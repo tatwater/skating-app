@@ -12,6 +12,7 @@
  * lifecycle `status` (D3) — see the hazards schema note.
  */
 
+import { disputesReview } from '@skating/core';
 import { ConvexError, v } from 'convex/values';
 import { internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
@@ -268,6 +269,23 @@ async function resolveFlagTarget(
         summary: snippet(doc.note) || `Access alert: ${doc.reason}`,
       };
     }
+    case 'waterbody': {
+      // N6f — the same trap the `accessAlert` case above documents, and the reason that note is worth
+      // its length: without this the switch falls through to `notFound` and every access report shows
+      // as "(deleted)".
+      const id = ctx.db.normalizeId('waterBodies', rawTargetId);
+      const doc = id ? await ctx.db.get(id) : null;
+      if (!doc) return notFound;
+      return {
+        exists: true,
+        // **No author, and that is not a gap.** Every other flag target was written by somebody who
+        // can be warned or banned; a lake has no author, and the `createdByUserId` on a user-drawn
+        // body is the wrong person entirely — they drew the outline, they did not claim it was
+        // private. Leaving it null keeps the queue's per-author affordances from pointing at them.
+        author: null,
+        summary: doc.name ? `Lake: ${doc.name}` : 'Unnamed water body',
+      };
+    }
     case 'user': {
       const id = ctx.db.normalizeId('profiles', rawTargetId);
       const doc = id ? await ctx.db.get(id) : null;
@@ -327,14 +345,47 @@ async function toFlagView(ctx: QueryCtx, flag: Doc<'contentFlags'>): Promise<Fla
 }
 
 /**
+ * One lake's worth of "no public access" reports, collapsed (N6f).
+ *
+ * **The only flag reason the queue groups**, because it is the only one many people can independently
+ * make about the same target: five people reporting one lake is one job, not five, and the count is
+ * the signal rather than noise to page past. Every other reason is a claim about one thing somebody
+ * wrote, where five flags on one comment really are five opinions about one object.
+ */
+export interface AccessReportGroup {
+  waterBodyId: string;
+  name: string;
+  /** Distinct reporters — `contentFlags` dedups per (flagger, target), so the rows *are* the people. */
+  count: number;
+  firstReportedAt: number;
+  /** What the reporters said, newest first. The evidence a moderator actually rules on. */
+  notes: string[];
+  /**
+   * Set when these reports post-date a prior `open` ruling — "disputes a review from March 2026".
+   *
+   * Derived from the two timestamps rather than stored on the flag: a stored copy would keep naming a
+   * decision that a later re-ruling had already replaced.
+   */
+  disputesReviewFrom?: number;
+}
+
+/**
  * The moderator flag queue (D37/D3). Open + reviewing flags off `by_status`, oldest-first (a queue
  * drains front-to-back so nothing rots), split into a **priority lane** — `unsafe_false_report` is a
- * *safety* incident, not FIFO spam (D3) — and a standard lane. Each row carries its resolved subject
- * so a moderator can triage without opening every item. Bounded to `QUEUE_LIMIT` per status.
+ * *safety* incident, not FIFO spam (D3) — a standard lane, and the N6f **access lane**, which is
+ * grouped by lake and ranked by how many people agree rather than by age. Each row carries its
+ * resolved subject so a moderator can triage without opening every item. Bounded to `QUEUE_LIMIT` per
+ * status.
  */
 export const listFlags = query({
   args: {},
-  handler: async (ctx): Promise<{ priority: FlagView[]; standard: FlagView[] }> => {
+  handler: async (
+    ctx,
+  ): Promise<{
+    priority: FlagView[];
+    standard: FlagView[];
+    accessReports: AccessReportGroup[];
+  }> => {
     await requireRole(ctx, 'moderator');
     const open = await ctx.db
       .query('contentFlags')
@@ -346,13 +397,58 @@ export const listFlags = query({
       .take(QUEUE_LIMIT);
     // Oldest first across both statuses so the queue is a true work order.
     const rows = [...open, ...reviewing].sort((a, b) => a.createdAt - b.createdAt);
-    const views = await Promise.all(rows.map((f) => toFlagView(ctx, f)));
+
+    const accessRows = rows.filter(
+      (f) => f.targetType === 'waterbody' && f.reason === 'no_public_access',
+    );
+    // The access rows leave the flat lanes entirely — showing a lake in both places would put the
+    // same job in front of a moderator twice, once collapsed and once not.
+    const flat = rows.filter((f) => !accessRows.includes(f));
+    const views = await Promise.all(flat.map((f) => toFlagView(ctx, f)));
+
     return {
       priority: views.filter((v) => v.reason === 'unsafe_false_report'),
       standard: views.filter((v) => v.reason !== 'unsafe_false_report'),
+      accessReports: await groupAccessReports(ctx, accessRows),
     };
   },
 });
+
+/** Collapse per-reporter rows into one job per lake, most-corroborated first. */
+async function groupAccessReports(
+  ctx: QueryCtx,
+  rows: Doc<'contentFlags'>[],
+): Promise<AccessReportGroup[]> {
+  const byBody = new Map<string, Doc<'contentFlags'>[]>();
+  for (const row of rows) {
+    const held = byBody.get(row.targetId);
+    if (held) held.push(row);
+    else byBody.set(row.targetId, [row]);
+  }
+
+  const groups: AccessReportGroup[] = [];
+  for (const [targetId, flags] of byBody) {
+    const id = ctx.db.normalizeId('waterBodies', targetId);
+    const body = id ? await ctx.db.get(id) : null;
+    // A body deleted out from under its reports has no job left to do; the rows stay for the record.
+    if (!body) continue;
+    const newestFirst = [...flags].sort((a, b) => b.createdAt - a.createdAt);
+    const firstReportedAt = Math.min(...flags.map((f) => f.createdAt));
+    const disputed = disputesReview(body.publicAccess, Math.max(...flags.map((f) => f.createdAt)));
+    groups.push({
+      waterBodyId: targetId,
+      name: body.name || 'Unnamed water body',
+      count: flags.length,
+      firstReportedAt,
+      notes: newestFirst.map((f) => f.note?.trim()).filter((n): n is string => Boolean(n)),
+      ...(disputed ? { disputesReviewFrom: disputed.decidedAt } : {}),
+    });
+  }
+
+  // Most-corroborated first — the founder's "the more users, the higher it rises". Age breaks ties so
+  // two lakes with one report each still drain front-to-back.
+  return groups.sort((a, b) => b.count - a.count || a.firstReportedAt - b.firstReportedAt);
+}
 
 /** An audit row as the dashboard/history panel presents it — the action plus who took it. */
 interface ActionView {

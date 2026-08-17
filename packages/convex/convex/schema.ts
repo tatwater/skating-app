@@ -73,6 +73,7 @@ import {
   PARKING_SOURCES,
   PARKING_STATUSES,
   POINT_EVENT_REASONS,
+  PUBLIC_ACCESS_VERDICTS,
   PUTIN_SOURCES,
   PUTIN_STATUSES,
   RATING_VERDICTS,
@@ -865,6 +866,35 @@ export default defineSchema({
      * named field list and does not name this one, the same way `curatedBoost` survives.
      */
     postedAccess: v.optional(postedAccess),
+    /**
+     * A moderator's ruling on whether this body can be lawfully reached at all (N6f).
+     *
+     * **Three states, and absence is one of them**: no ruling, `none` (no lawful way in — the body
+     * dims to half opacity and drops ~2 zoom levels), and `open` (reviewed, there *is* public access).
+     * One field rather than two booleans, because both are the same moderator answering the same
+     * question and a pair would make "both set" representable.
+     *
+     * `open` renders nothing on the map. It exists to stop a settled body being reported over and
+     * over: while it stands, a `no_public_access` flag must carry a note saying what changed. That is
+     * why the verdict is **dated** — an undated ruling could only ever be final, and land changes
+     * hands.
+     *
+     * **Separate from `postedAccess` on purpose.** That field's contract is that it annotates and
+     * never suppresses; this one dims and demotes, which is suppression, and a suppression needs its
+     * own field and its own argument rather than riding along beside a posted sign.
+     *
+     * ⚠ The demotion is *derived* into `displayScore`/`minVisibleZoom`, so every site that re-scores
+     * an existing body must read this field — including `importCanonical`, which otherwise preserves
+     * the verdict while silently restoring the body's original zoom. See `scoreFields`.
+     */
+    publicAccess: v.optional(
+      v.object({
+        verdict: literals(PUBLIC_ACCESS_VERDICTS),
+        decidedAt: v.number(),
+        decidedByUserId: v.id('profiles'),
+        note: v.optional(v.string()),
+      }),
+    ),
     /**
      * The map summary card's denormalized counts (N6c Workstream E).
      *

@@ -97,7 +97,15 @@ export function ViewportLakeListView({
                       className="size-3 shrink-0 self-center fill-current text-primary"
                     />
                   ) : null}
-                  <span className="truncate text-foreground text-sm">{row.name}</span>
+                  <span
+                    className={
+                      row.publicAccess?.verdict === 'none'
+                        ? 'truncate text-muted-foreground text-sm'
+                        : 'truncate text-foreground text-sm'
+                    }
+                  >
+                    {row.name}
+                  </span>
                 </span>
                 <span className="shrink-0 text-muted-foreground text-xs">{rowMeta(row)}</span>
               </Link>
@@ -124,9 +132,16 @@ export function ViewportLakeListView({
 }
 
 /** The right-hand meta on a row: "Lake · 1,182 acres · VT", skipping whatever we don't know. */
-function rowMeta(row: { type: string; surfaceAreaSqM?: number; states?: string[] }): string {
+function rowMeta(row: {
+  type: string;
+  surfaceAreaSqM?: number;
+  states?: string[];
+  publicAccess?: { verdict: string };
+}): string {
   const parts = [waterBodyClassLabel(row.type)];
   if (row.surfaceAreaSqM !== undefined) parts.push(formatAreaAcres(row.surfaceAreaSqM));
   if (row.states?.length) parts.push(row.states.join(', '));
+  // Leads rather than trails (N6f): it is the one fact here that decides whether the rest matters.
+  if (row.publicAccess?.verdict === 'none') return `No public access · ${parts.join(' · ')}`;
   return parts.join(' · ');
 }

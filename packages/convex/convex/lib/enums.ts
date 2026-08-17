@@ -14,6 +14,7 @@ import {
   ACCESS_ALERT_VERDICTS as CORE_ACCESS_ALERT_VERDICTS,
   APPROACH_KINDS as CORE_APPROACH_KINDS,
   BODY_FEATURE_TYPES as CORE_BODY_FEATURE_TYPES,
+  PUBLIC_ACCESS_VERDICTS as CORE_PUBLIC_ACCESS_VERDICTS,
   HAZARD_VERDICTS,
 } from '@skating/core';
 
@@ -89,6 +90,12 @@ export const ADMIN_AREA_LEVELS = ['state', 'county', 'town'] as const;
  * which is exactly the never-hide line we don't cross (D3).
  */
 export const DEDUP_STATUSES = ['clean', 'suspected_duplicate', 'near_certain', 'merged'] as const;
+
+/**
+ * A moderator's ruling on whether a body can be lawfully reached (N6f). Re-exported from
+ * `@skating/core` so the schema, both clients and the mutation share one vocabulary.
+ */
+export const PUBLIC_ACCESS_VERDICTS = CORE_PUBLIC_ACCESS_VERDICTS;
 
 /** Why an admin soft-delisted a water body — reversible, never a hard delete (D48). */
 export const REMOVAL_REASONS = [
@@ -190,6 +197,15 @@ export const FLAG_TARGET_TYPES = [
   'user',
   'hazard',
   'accessAlert',
+  // N6f — the first flag target that is a *place* rather than something somebody wrote. It rides this
+  // table because the machinery it needs already exists here and nowhere else: one open flag per
+  // (flagger, target), which is exactly "one claim per person", so the open-row count *is* the
+  // corroboration count and a votes table would only have re-implemented the dedup.
+  //
+  // ⚠ Adding a target type takes THREE edits, not one: this list, `TARGET_TABLE` in
+  // `contentFlags.ts`, and a `case` in `resolveFlagTarget` in `moderation.ts`. Skipping the third
+  // renders every such flag as "(deleted)" in the queue.
+  'waterbody',
 ] as const;
 export const FLAG_REASONS = [
   'unsafe_false_report',
@@ -199,6 +215,10 @@ export const FLAG_REASONS = [
   // Auto-routed to the mod queue when a target crosses the net-unhelpful threshold (D50, Phase 6).
   // Written by `ratings.ts`; NEVER hides the target (visibility of safety content isn't score-gated, D3).
   'auto_low_quality',
+  // "There is no lawful way onto this water" (N6f) — a claim about a *place*, not about content, and
+  // the only reason in this list many people can independently make about the same target. That is
+  // why it is the one reason the queue groups by target and ranks by how many said it.
+  'no_public_access',
   'other',
 ] as const;
 export const FLAG_STATUSES = ['open', 'reviewing', 'actioned', 'dismissed'] as const;
@@ -294,6 +314,12 @@ export const MODERATION_ACTIONS = [
   // the rule every year"*. Auditing them under one verb would lose which of those a moderator meant,
   // which is the first thing anyone reviewing a wrong closure would want to know.
   'set_posted_access',
+  // ── N6f ─────────────────────────────────────────────────────────────────────────────────────────
+  // Ruled on whether a body can be lawfully reached. Distinct from `remove` even though both take a
+  // lake off the browse path: `remove` says it should not be on the map at all, this says it is real
+  // and you cannot get to it. Auditing them together would lose which the moderator meant, and they
+  // reverse differently.
+  'set_public_access',
 ] as const;
 export const MODERATION_TARGET_TYPES = [
   'report',

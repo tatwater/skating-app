@@ -211,6 +211,8 @@ export interface MappableBody {
   name: string;
   type: string;
   polygon: GeoJSON.Geometry;
+  /** A moderator's access ruling (N6f). `verdict: 'none'` draws the body dimmed. */
+  publicAccess?: { verdict: string };
 }
 
 /**
@@ -219,9 +221,16 @@ export interface MappableBody {
  * tap/selection highlight (D47). The string `_id`/name/type ride along as feature properties (a
  * tap reads `_id` to navigate; `featureIdForBody` maps a selected `_id` back to the numeric id so
  * a deep-linked selection can be highlighted without a click).
+ *
+ * `selfFlaggedIds` are the bodies **this viewer** has reported as having no public access (N6f).
+ * They draw dimmed for that person alone — an unconfirmed report must not change anyone else's map,
+ * or one account could dim any lake in the corpus. It rides the properties bag rather than
+ * feature-state (which is how favourites do it) so that the mobile client, whose binding has no
+ * ergonomic `setFeatureState`, can share one expression instead of growing a parallel filtered layer.
  */
 export function waterBodiesToFeatureCollection(
   bodies: readonly MappableBody[],
+  selfFlaggedIds: ReadonlySet<string> = new Set(),
 ): GeoJSON.FeatureCollection {
   return {
     type: 'FeatureCollection',
@@ -229,7 +238,13 @@ export function waterBodiesToFeatureCollection(
       type: 'Feature',
       id: index,
       geometry: body.polygon,
-      properties: { _id: body._id, name: body.name, type: body.type },
+      properties: {
+        _id: body._id,
+        name: body.name,
+        type: body.type,
+        noPublicAccess: body.publicAccess?.verdict === 'none',
+        selfFlagged: selfFlaggedIds.has(body._id),
+      },
     })),
   };
 }

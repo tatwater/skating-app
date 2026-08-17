@@ -21,6 +21,8 @@ export interface ViewportLake {
   surfaceAreaSqM?: number;
   states?: string[];
   summary?: { recentReportCount: number };
+  /** A moderator's access ruling (N6f) — `verdict: 'none'` sinks the row and prints a chip. */
+  publicAccess?: { verdict: string };
 }
 
 /** A row with the two things the list decides rather than reads. */
@@ -59,7 +61,11 @@ export const VIEWPORT_LIST_LIMIT = 50;
  *  1. **Favorites first.** The map already outlines them; the list is the surface where "my lakes"
  *     is a useful sort, and a favorite that fell to row 40 behind bigger water you've never skated
  *     is the list failing at the one thing it knows about you.
- *  2. **Largest first**, then name, so the order is total and a re-render can't reshuffle equals.
+ *  2. **Bodies with no public access last** (N6f) — the list's half of the map's dim. A lake you
+ *     cannot lawfully reach should not take one of fifty rows from one you can. It still *has* a row,
+ *     which is the same restraint the zoom demotion keeps: harder to find, never hidden.
+ *     Below the favorite check on purpose — if you favorited it, you know something we don't.
+ *  3. **Largest first**, then name, so the order is total and a re-render can't reshuffle equals.
  */
 export function orderViewportLakes(
   bodies: readonly ViewportLake[],
@@ -71,6 +77,9 @@ export function orderViewportLakes(
     .map((body) => ({ ...body, isFavorite: favoriteIds.has(body._id) }))
     .sort((a, b) => {
       if (a.isFavorite !== b.isFavorite) return a.isFavorite ? -1 : 1;
+      const aShut = a.publicAccess?.verdict === 'none';
+      const bShut = b.publicAccess?.verdict === 'none';
+      if (aShut !== bShut) return aShut ? 1 : -1;
       const area = (b.surfaceAreaSqM ?? 0) - (a.surfaceAreaSqM ?? 0);
       if (area !== 0) return area;
       return a.name.localeCompare(b.name) || a._id.localeCompare(b._id);

@@ -164,6 +164,78 @@ function FlagRow({ flag }: { flag: FlagView }) {
   );
 }
 
+/**
+ * One lake's "no public access" reports, collapsed (N6f).
+ *
+ * **Grouped, unlike every other row on this page**, because it is the only claim many people can
+ * independently make about the same target: five reports on one lake is one job whose count is the
+ * signal, where five flags on one comment are five opinions to read. Ruling closes them all.
+ */
+function AccessReportRow({
+  group,
+}: {
+  group: NonNullable<ReturnType<typeof useFlags>>['accessReports'][number];
+}) {
+  const setPublicAccess = useMutation(api.waterBodies.setPublicAccess);
+  const waterBodyId = group.waterBodyId as Id<'waterBodies'>;
+
+  return (
+    <Card>
+      <CardContent className="flex flex-col gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <Badge variant="secondary">no public access</Badge>
+          {/* The corroboration count is the rank — this lane is sorted by it, not by age. */}
+          <Badge variant="outline">
+            {group.count} {group.count === 1 ? 'report' : 'reports'}
+          </Badge>
+          {group.disputesReviewFrom ? (
+            <Badge variant="destructive">disputes a prior review</Badge>
+          ) : null}
+        </div>
+        <p className="text-foreground text-sm">{group.name}</p>
+        {group.disputesReviewFrom ? (
+          <p className="text-foreground-muted text-xs">
+            You ruled this open {relativeDays(group.disputesReviewFrom)}. These reports came after,
+            and each had to say what changed.
+          </p>
+        ) : null}
+        {group.notes.map((note) => (
+          <p key={note} className="text-foreground-muted text-sm italic">
+            “{note}”
+          </p>
+        ))}
+
+        <div className="flex flex-wrap gap-2 pt-1">
+          <ReasonDialog
+            trigger={
+              <Button variant="outline" size="sm">
+                Mark no public access
+              </Button>
+            }
+            title="Mark this body as having no public access"
+            description="It stays on the map, drawn at half opacity and two zoom levels later, and every open report on it is closed as actioned."
+            confirmLabel="Mark"
+            confirmVariant="default"
+            onConfirm={(reason) => setPublicAccess({ waterBodyId, verdict: 'none', reason })}
+          />
+          <ReasonDialog
+            trigger={
+              <Button variant="ghost" size="sm">
+                Confirm public access
+              </Button>
+            }
+            title="Confirm this body has public access"
+            description="Nothing changes on the map. The reports are dismissed, and reporting it again will require saying what changed."
+            confirmLabel="Confirm"
+            confirmVariant="outline"
+            onConfirm={(reason) => setPublicAccess({ waterBodyId, verdict: 'open', reason })}
+          />
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
 function AdminFlags() {
   const flags = useFlags();
 
@@ -172,7 +244,9 @@ function AdminFlags() {
       <AdminPageHeader title="Flag queue" subtitle="Safety flags first, then everything else." />
       {flags === undefined ? (
         <AdminEmpty>Loading…</AdminEmpty>
-      ) : flags.priority.length === 0 && flags.standard.length === 0 ? (
+      ) : flags.priority.length === 0 &&
+        flags.standard.length === 0 &&
+        flags.accessReports.length === 0 ? (
         <AdminEmpty>The queue is clear. 🎉</AdminEmpty>
       ) : (
         <>
@@ -183,6 +257,16 @@ function AdminFlags() {
               </h2>
               {flags.priority.map((f) => (
                 <FlagRow key={f.id} flag={f} />
+              ))}
+            </section>
+          ) : null}
+          {flags.accessReports.length > 0 ? (
+            <section className="flex flex-col gap-2">
+              <h2 className="font-mono text-foreground-muted text-xs uppercase tracking-widest">
+                Access · most corroborated first
+              </h2>
+              {flags.accessReports.map((g) => (
+                <AccessReportRow key={g.waterBodyId} group={g} />
               ))}
             </section>
           ) : null}

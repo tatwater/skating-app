@@ -93,4 +93,53 @@ describe('orderViewportLakes', () => {
     expect(input.map((r) => r._id)).toEqual(['a', 'b']);
   });
 
+  describe('no public access (N6f)', () => {
+    const shut = { verdict: 'none' };
+
+    it('sinks a body with no public access below bigger and smaller water alike', () => {
+      const { rows } = orderViewportLakes([
+        lake({
+          _id: 'private',
+          name: 'Private',
+          surfaceAreaSqM: 1_000_000_000,
+          publicAccess: shut,
+        }),
+        lake({ _id: 'small', name: 'Small', surfaceAreaSqM: 40_000 }),
+      ]);
+      expect(rows.map((r) => r._id)).toEqual(['small', 'private']);
+    });
+
+    // Harder to find, never hidden — the list's half of the zoom demotion's restraint.
+    it('still gives it a row', () => {
+      const { rows, hiddenCount } = orderViewportLakes([
+        lake({ _id: 'private', name: 'Private', publicAccess: shut }),
+      ]);
+      expect(rows.map((r) => r._id)).toEqual(['private']);
+      expect(hiddenCount).toBe(0);
+    });
+
+    it('a favorite outranks the demotion — you know something we don’t', () => {
+      const { rows } = orderViewportLakes(
+        [
+          lake({ _id: 'private', name: 'Private', surfaceAreaSqM: 40_000, publicAccess: shut }),
+          lake({ _id: 'big', name: 'Big', surfaceAreaSqM: 1_000_000_000 }),
+        ],
+        new Set(['private']),
+      );
+      expect(rows.map((r) => r._id)).toEqual(['private', 'big']);
+    });
+
+    it('an “open” ruling sorts like any other body', () => {
+      const { rows } = orderViewportLakes([
+        lake({ _id: 'small', name: 'Small', surfaceAreaSqM: 40_000 }),
+        lake({
+          _id: 'reviewed',
+          name: 'Reviewed',
+          surfaceAreaSqM: 1_000_000,
+          publicAccess: { verdict: 'open' },
+        }),
+      ]);
+      expect(rows.map((r) => r._id)).toEqual(['reviewed', 'small']);
+    });
+  });
 });

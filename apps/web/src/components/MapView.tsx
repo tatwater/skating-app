@@ -11,6 +11,7 @@ import {
   profileRevealEnabled,
   SUB_AREA_MIN_RENDER_ZOOM,
   undoDraftPlacement,
+  withAccessDim,
 } from '@skating/core';
 import { useNavigate } from '@tanstack/react-router';
 import { useQuery } from 'convex/react';
@@ -209,12 +210,19 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
     queryArgs && !regionOffscreen ? queryArgs : 'skip',
   );
 
+  // The lakes *this viewer* has reported as having no public access (N6f) — they draw dimmed for
+  // them alone. One small query for the whole session rather than per body: a person reports a
+  // handful of lakes in their life, and an unconfirmed report reaches nobody else's map.
+  const selfFlagged = useQuery(api.contentFlags.myAccessFlags, {});
+
   // Retain the last loaded features while the next query is in flight (Convex returns `undefined`
   // for a fresh key until it resolves) so bodies never blink off the map between pans.
   const [features, setFeatures] = useState<GeoJSON.FeatureCollection>(EMPTY_FEATURES);
   useEffect(() => {
-    if (bodies !== undefined) setFeatures(waterBodiesToFeatureCollection(bodies));
-  }, [bodies]);
+    if (bodies !== undefined) {
+      setFeatures(waterBodiesToFeatureCollection(bodies, new Set(selfFlagged ?? [])));
+    }
+  }, [bodies, selfFlagged]);
 
   // The same rows, handed to the sidebar's "lakes in view" list (see `MapSelectionContext`). No
   // extra query, by the same argument the summary cards make below — and one that matters more
@@ -368,8 +376,15 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
         source: 'water',
         paint: {
           'fill-color': water.fill,
-          // Selected body reads brighter (D47 tap highlight).
-          'fill-opacity': ['case', ['boolean', ['feature-state', 'selected'], false], 0.6, 0.35],
+          // Selected body reads brighter (D47 tap highlight); a body with no public access reads
+          // half-strength (N6f). The dim is a *multiplier* so it composes with the selection rather
+          // than flattening it — a dimmed lake you tap still brightens, relative to itself.
+          'fill-opacity': withAccessDim([
+            'case',
+            ['boolean', ['feature-state', 'selected'], false],
+            0.6,
+            0.35,
+          ]) as maplibregl.DataDrivenPropertyValueSpecification<number>,
         },
       });
       map.addLayer({
@@ -385,6 +400,11 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
             '#eab308', // amber-500 — the favorite gold
             water.outline,
           ],
+          // The outline dims with the fill (N6f). A full-strength outline around a ghost fill reads
+          // as a rendering bug rather than as a statement about the lake.
+          'line-opacity': withAccessDim(
+            1,
+          ) as maplibregl.DataDrivenPropertyValueSpecification<number>,
           'line-width': [
             'case',
             ['boolean', ['feature-state', 'favorite'], false],

@@ -18,6 +18,7 @@ import {
   type BBox,
   isRegionOffscreen,
   SUB_AREA_MIN_RENDER_ZOOM,
+  withAccessDim,
 } from '@skating/core';
 import { useQuery } from 'convex/react';
 import * as Location from 'expo-location';
@@ -220,12 +221,17 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
   const subAreaArgs = queryArgs.zoom >= SUB_AREA_MIN_RENDER_ZOOM ? queryArgs : ('skip' as const);
   const subAreas = useQuery(api.subAreas.listInViewport, subAreaArgs);
 
+  // The lakes *this viewer* has reported as having no public access (N6f) — dimmed for them alone.
+  const selfFlagged = useQuery(api.contentFlags.myAccessFlags, {});
+
   // Retain the last loaded features while the next query is in flight (Convex returns `undefined`
   // for a fresh key until it resolves) so bodies never blink off the map between pans.
   const [features, setFeatures] = useState<GeoJSON.FeatureCollection>(EMPTY_FC);
   useEffect(() => {
-    if (bodies !== undefined) setFeatures(waterBodiesToFeatureCollection(bodies));
-  }, [bodies]);
+    if (bodies !== undefined) {
+      setFeatures(waterBodiesToFeatureCollection(bodies, new Set(selfFlagged ?? [])));
+    }
+  }, [bodies, selfFlagged]);
   const [subAreaFeatures, setSubAreaFeatures] = useState<GeoJSON.FeatureCollection>(EMPTY_FC);
   useEffect(() => {
     // Zooming back out clears the layer rather than leaving the last bays drawn over a regional view.
@@ -592,27 +598,38 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
         <Camera ref={cameraRef} initialViewState={{ center: INITIAL_CENTER, zoom: INITIAL_ZOOM }} />
 
         <GeoJSONSource id="water" data={features} onPress={onWaterPress}>
+          {/* The N6f access dim wraps each base opacity rather than replacing it, so the
+            selected/unselected distinction survives on a dimmed lake. Shared with web through
+            `withAccessDim`, which is why both signals ride the feature properties. */}
           <Layer
             id="water-fill"
             type="fill"
-            paint={{ 'fill-color': water.fill, 'fill-opacity': 0.35 }}
+            paint={{ 'fill-color': water.fill, 'fill-opacity': withAccessDim(0.35) as never }}
           />
           <Layer
             id="water-fill-selected"
             type="fill"
             filter={['==', ['get', '_id'], highlightWaterBodyId ?? '']}
-            paint={{ 'fill-color': water.fill, 'fill-opacity': 0.6 }}
+            paint={{ 'fill-color': water.fill, 'fill-opacity': withAccessDim(0.6) as never }}
           />
           <Layer
             id="water-outline"
             type="line"
-            paint={{ 'line-color': water.outline, 'line-width': 1 }}
+            paint={{
+              'line-color': water.outline,
+              'line-width': 1,
+              'line-opacity': withAccessDim(1) as never,
+            }}
           />
           <Layer
             id="water-outline-selected"
             type="line"
             filter={['==', ['get', '_id'], highlightWaterBodyId ?? '']}
-            paint={{ 'line-color': water.outline, 'line-width': 2.5 }}
+            paint={{
+              'line-color': water.outline,
+              'line-width': 2.5,
+              'line-opacity': withAccessDim(1) as never,
+            }}
           />
           {/* Favorited bodies read gold (Phase 4, decision #1) — a data-driven `in` filter over the
             viewer's favorite id set (matches nothing when empty / signed out). */}

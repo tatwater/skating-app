@@ -90,6 +90,7 @@ import { rankCandidates, scanCells } from './lib/cellScan';
 import {
   CANONICAL_SOURCES,
   GEOMETRY_SOURCES,
+  PUBLIC_ACCESS_VERDICTS,
   REMOVAL_REASONS,
   WATER_BODY_SOURCES,
 } from './lib/enums';
@@ -407,14 +408,26 @@ function nameFields(
  * `minVisibleZoom` is stored on the row AND denormalized onto its cell rows (see `./lib/cellIndex`),
  * where it's the trailing field of `by_cell` — so a wide-zoom query returns the most-prominent
  * bodies first and never reads the rest at all.
+ *
+ * ⚠ **`noPublicAccess` is a property of an *existing* row, and every caller that re-scores one has to
+ * pass it.** It is the only input here that isn't derivable from the incoming record, so an omission
+ * doesn't fail — it silently restores the body's undemoted zoom and nothing says so. `importCanonical`
+ * is the dangerous one: it would preserve the verdict (it patches a named field list) while undoing
+ * the demotion the verdict exists to cause. `assertScoredWithAccess` in the tests pins this.
  */
 function scoreFields(input: {
   surfaceAreaSqM?: number;
   curatedBoost?: number;
   richness?: ProfileRichness;
+  noPublicAccess?: boolean;
 }) {
   const score = displayScore(input);
   return { displayScore: score, minVisibleZoom: minVisibleZoom(score) };
+}
+
+/** The demotion input for a stored row — one place, so the six scoring call sites can't spell it differently. */
+function noPublicAccessOf(body: { publicAccess?: { verdict: string } }): boolean {
+  return body.publicAccess?.verdict === 'none';
 }
 
 /**
@@ -472,12 +485,21 @@ async function richnessFor(ctx: QueryCtx, body: Doc<'waterBodies'>): Promise<Pro
 }
 
 /**
- * A stored body's `minVisibleZoom` (D49), recomputed from area + boost. Used when a mutation
- * re-cells a body without changing its score inputs (`approve`/`remove`/`restore`), so the cell rows
- * stay correct even for a legacy row missing the field.
+ * A stored body's `minVisibleZoom` (D49), recomputed from area + boost + the N6f access demotion.
+ * Used when a mutation re-cells a body without changing its score inputs
+ * (`approve`/`remove`/`restore`), so the cell rows stay correct even for a legacy row missing the
+ * field.
+ *
+ * **Not the richness term**, which is `backfillCells`' alone — so these paths already knowingly drop
+ * it. The access demotion is different: it is a moderator's decision rather than a derived statistic,
+ * and dropping it would silently un-demote a body every time somebody approved or restored it.
  */
-function zoomSortKey(body: { surfaceAreaSqM?: number; curatedBoost?: number }): number {
-  return scoreFields(body).minVisibleZoom;
+function zoomSortKey(body: {
+  surfaceAreaSqM?: number;
+  curatedBoost?: number;
+  publicAccess?: { verdict: string };
+}): number {
+  return scoreFields({ ...body, noPublicAccess: noPublicAccessOf(body) }).minVisibleZoom;
 }
 
 /**
@@ -677,6 +699,11 @@ export const importCanonical = internalMutation({
         const scores = scoreFields({
           surfaceAreaSqM: item.surfaceAreaSqM,
           curatedBoost: existing.curatedBoost,
+          // N6f: the verdict itself survives because this patch names its fields and does not name
+          // `publicAccess` — but the *demotion* is derived, so omitting it here would preserve the
+          // ruling and quietly restore the body's original zoom on the next campaign. Same shape as
+          // the richness caveat above, and worse, because a moderator made this one by hand.
+          noPublicAccess: noPublicAccessOf(existing),
         });
         await ctx.db.patch(existing._id, {
           // `name` + `nameClaims` + `searchText` together, because a moderator's pick outranks the
@@ -1380,6 +1407,7 @@ export const backfillCells = internalMutation({
         richness,
         surfaceAreaSqM: body.surfaceAreaSqM,
         curatedBoost: body.curatedBoost,
+        noPublicAccess: noPublicAccessOf(body),
       });
       const patch: Partial<Doc<'waterBodies'>> = {};
       if (body.displayScore !== scores.displayScore) patch.displayScore = scores.displayScore;
@@ -2671,6 +2699,159 @@ export const restore = mutation({
 });
 
 /**
+ * Moderator: rule on whether a body can be lawfully reached (N6f).
+ *
+ * The three verdicts, and why the middle one is stored at all:
+ * - `none` — no lawful way in. The body dims to half opacity and drops ~2 zoom levels. It stays on
+ *   the map: someone may hold a key or an invitation, and deleting a real lake is a claim we have no
+ *   business making. `remove` (D48) is the verb for a body that genuinely should go.
+ * - `open` — reviewed, there *is* public access. Renders nothing. **Its whole job is the gate in
+ *   `contentFlags.flag`**: a settled body stops being re-reported unless the next person says what
+ *   changed. A dismissed flag alone couldn't do that — dismissal is a fact about one report, and this
+ *   has to be a fact about the lake.
+ * - `null` — clears back to unruled, and re-opens note-less reporting.
+ *
+ * **Ruling closes the queue job.** Every open `no_public_access` flag on the body is resolved in the
+ * same transaction — `actioned` when the reporters were right, `dismissed` when they weren't — which
+ * is what lets the queue group by body instead of showing five identical rows for one lake.
+ */
+export const setPublicAccess = mutation({
+  args: {
+    waterBodyId: v.id('waterBodies'),
+    verdict: v.union(literals(PUBLIC_ACCESS_VERDICTS), v.null()),
+    note: v.optional(v.string()),
+    reason: v.optional(v.string()),
+  },
+  handler: async (ctx, { waterBodyId, verdict, note, reason }) => {
+    const actor = await requireContributorRole(ctx, 'moderator');
+    const body = await ctx.db.get(waterBodyId);
+    if (!body) throw new ConvexError('Water body not found');
+
+    const trimmedNote = note?.trim();
+    if (trimmedNote && trimmedNote.length > MAX_PUBLIC_ACCESS_NOTE_LENGTH) {
+      throw new ConvexError(
+        `Keep the note under ${MAX_PUBLIC_ACCESS_NOTE_LENGTH} characters — it renders inline on the lake.`,
+      );
+    }
+
+    const now = Date.now();
+    const next =
+      verdict === null
+        ? undefined
+        : {
+            verdict,
+            decidedAt: now,
+            decidedByUserId: actor._id,
+            ...(trimmedNote ? { note: trimmedNote } : {}),
+          };
+
+    // The demotion is derived, so the score and the cell rows both move with the verdict. Skipping
+    // the re-sync would leave the body drawing at its old zoom until something else happened to
+    // re-cell it — `minVisibleZoom` is part of `by_cell`'s range, not just a stamp (N1).
+    const scores = scoreFields({
+      surfaceAreaSqM: body.surfaceAreaSqM,
+      curatedBoost: body.curatedBoost,
+      noPublicAccess: verdict === 'none',
+    });
+    await ctx.db.patch(waterBodyId, { publicAccess: next, ...scores });
+    await syncWaterBodyCells(ctx, waterBodyId, {
+      bbox: body.bbox,
+      minVisibleZoom: scores.minVisibleZoom,
+      listed: isListed(body),
+    });
+
+    // Ruling on the lake resolves the reports about it. `actioned` says the reporters were right;
+    // `dismissed` says they weren't. Clearing the verdict leaves them open — the question is once
+    // again unsettled, and the queue should say so.
+    const resolution = verdict === 'none' ? 'actioned' : verdict === 'open' ? 'dismissed' : null;
+    let resolved = 0;
+    if (resolution) {
+      const open = await ctx.db
+        .query('contentFlags')
+        .withIndex('by_target_status_reason', (q) =>
+          q
+            .eq('targetType', 'waterbody')
+            .eq('targetId', waterBodyId as string)
+            .eq('status', 'open')
+            .eq('reason', 'no_public_access'),
+        )
+        .collect();
+      for (const row of open) {
+        await ctx.db.patch(row._id, {
+          status: resolution,
+          resolvedByUserId: actor._id,
+          resolvedAt: now,
+        });
+        resolved++;
+      }
+    }
+
+    await ctx.db.insert('moderationActions', {
+      actorId: actor._id,
+      action: 'set_public_access',
+      targetType: 'waterbody',
+      targetId: waterBodyId,
+      reason: reason?.trim() || describePublicAccessChange(verdict, trimmedNote, resolved),
+      metadata: { publicAccess: next ?? null, prev: { publicAccess: body.publicAccess ?? null } },
+      createdAt: now,
+    });
+    return waterBodyId;
+  },
+});
+
+/** A citation, not a paragraph — it renders inline on the lake. Matches the depth-note ceiling. */
+const MAX_PUBLIC_ACCESS_NOTE_LENGTH = 160;
+
+function describePublicAccessChange(
+  verdict: 'none' | 'open' | null,
+  note: string | undefined,
+  resolved: number,
+): string {
+  const head =
+    verdict === 'none'
+      ? 'Marked as having no public access'
+      : verdict === 'open'
+        ? 'Reviewed — public access confirmed'
+        : 'Cleared the public-access ruling';
+  const reports = resolved > 0 ? `, closing ${resolved} report${resolved === 1 ? '' : 's'}` : '';
+  return `${head}${reports}${note ? ` (${note})` : ''}`;
+}
+
+/**
+ * How many distinct people have an open "no public access" report on this body, for the drawer.
+ *
+ * The count is the open-row count and nothing else: `contentFlags` dedups to one open flag per
+ * (flagger, target), so the rows *are* the distinct people. That is the whole reason this rides the
+ * flag table rather than a purpose-built votes table.
+ *
+ * Public — an unconfirmed report shows as "3 people have reported…" to everyone, which is the
+ * annotate half of the design. What it does *not* do is change any pixel on the map for anyone but
+ * the reporters themselves.
+ */
+export const pendingAccessReportCount = query({
+  args: { waterBodyId: v.id('waterBodies') },
+  handler: async (ctx, { waterBodyId }) => {
+    const rows = await ctx.db
+      .query('contentFlags')
+      .withIndex('by_target_status_reason', (q) =>
+        q
+          .eq('targetType', 'waterbody')
+          .eq('targetId', waterBodyId as string)
+          .eq('status', 'open')
+          .eq('reason', 'no_public_access'),
+      )
+      .take(MAX_ACCESS_REPORTS_COUNTED);
+    return rows.length;
+  },
+});
+
+/**
+ * A read bound, not a claim about the world: past this the drawer says "50+" and a moderator has long
+ * since had the job at the top of the queue. Nothing downstream branches on the exact number.
+ */
+const MAX_ACCESS_REPORTS_COUNTED = 50;
+
+/**
  * Moderator: reject a user-drawn body (D37) — the third arm of the review triad beside `approve` and
  * the D36 `merge`. Mirrors `approve`'s guards (user-source, still-pending), flips `reviewStatus` to
  * `rejected` (which `isListed` treats as unlisted), drops its cell rows so it leaves the
@@ -3152,7 +3333,11 @@ export const setCuratedBoost = mutation({
     const body = await ctx.db.get(waterBodyId);
     if (!body) throw new ConvexError('Water body not found');
 
-    const scores = scoreFields({ surfaceAreaSqM: body.surfaceAreaSqM, curatedBoost });
+    const scores = scoreFields({
+      surfaceAreaSqM: body.surfaceAreaSqM,
+      curatedBoost,
+      noPublicAccess: noPublicAccessOf(body),
+    });
     await ctx.db.patch(waterBodyId, { curatedBoost, ...scores });
     // Restamp the cell rows with the new `minVisibleZoom` — it's part of `by_cell`'s range, so a
     // boost that didn't move the body still has to move its rows, or it draws at the old zoom (N1).
@@ -4505,7 +4690,11 @@ export const applyCuratedBoostSeed = internalMutation({
         notFound.push(name);
         continue;
       }
-      const scores = scoreFields({ surfaceAreaSqM: target.surfaceAreaSqM, curatedBoost: boost });
+      const scores = scoreFields({
+        surfaceAreaSqM: target.surfaceAreaSqM,
+        curatedBoost: boost,
+        noPublicAccess: noPublicAccessOf(target),
+      });
       await ctx.db.patch(target._id, { curatedBoost: boost, ...scores });
       await syncWaterBodyCells(ctx, target._id, {
         bbox: target.bbox,

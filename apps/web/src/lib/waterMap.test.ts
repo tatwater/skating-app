@@ -221,11 +221,43 @@ describe('waterBodiesToFeatureCollection', () => {
     const feature = fc.features[0];
     expect(feature?.id).toBe(0);
     expect(feature?.geometry).toEqual(bodies[0]?.polygon);
-    expect(feature?.properties).toEqual({ _id: 'body_1', name: 'Lake Champlain', type: 'lake' });
+    expect(feature?.properties).toEqual({
+      _id: 'body_1',
+      name: 'Lake Champlain',
+      type: 'lake',
+      // Always present, never absent (N6f): the dim expression compares against `true`, and a missing
+      // property would evaluate to null inside an `any`, which throws rather than reading as false.
+      noPublicAccess: false,
+      selfFlagged: false,
+    });
   });
 
   it('produces an empty collection for no bodies', () => {
     expect(waterBodiesToFeatureCollection([]).features).toHaveLength(0);
+  });
+
+  describe('no public access (N6f)', () => {
+    it('marks a body a moderator ruled shut', () => {
+      const fc = waterBodiesToFeatureCollection([
+        { ...(bodies[0] as (typeof bodies)[number]), publicAccess: { verdict: 'none' } },
+      ]);
+      expect(fc.features[0]?.properties?.noPublicAccess).toBe(true);
+    });
+
+    it('leaves an “open” ruling undimmed — it changes no pixel', () => {
+      const fc = waterBodiesToFeatureCollection([
+        { ...(bodies[0] as (typeof bodies)[number]), publicAccess: { verdict: 'open' } },
+      ]);
+      expect(fc.features[0]?.properties?.noPublicAccess).toBe(false);
+    });
+
+    it('marks the viewer’s own reports, and nobody else’s body', () => {
+      const fc = waterBodiesToFeatureCollection(bodies, new Set(['body_1']));
+      expect(fc.features[0]?.properties?.selfFlagged).toBe(true);
+      expect(waterBodiesToFeatureCollection(bodies).features[0]?.properties?.selfFlagged).toBe(
+        false,
+      );
+    });
   });
 });
 
