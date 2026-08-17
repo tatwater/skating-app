@@ -222,42 +222,65 @@ describe('a partial poll failure must not surface a stale copy (Greptile P1, 202
    * text and VT fails, so the two rows diverge — and the stale VT row was inserted first and never
    * replaced, so it is the one `.take()` returns first. A first-wins dedupe shows the old severity.
    */
+  /**
+   * ⚠ **The clock is faked here for the same reason the next describe block fakes it, and this test
+   * was flaky without it** (found 2026-08-16, twice in one evening's runs).
+   *
+   * The whole assertion is that the dedupe prefers the *freshest* copy, which means it orders by
+   * `fetchedAt` — so the two polls have to land at distinguishable times. On real wall clock they
+   * usually do, by a millisecond or two of luck. When they don't, both copies carry the same stamp,
+   * the dedupe has nothing left to order by but insertion order, and it picks the stale `Moderate`
+   * one — reporting a genuine regression that isn't there.
+   *
+   * A flaky regression test is worse than no regression test: this one guards a Greptile P1, and the
+   * first thing a red run teaches anyone is to re-run it.
+   */
   test('a body spanning two states sees the freshest copy of one warning', async () => {
     const t = convexTest(schema, modules);
     // Champlain: the real reason this matters — the corpus's most prominent body spans VT and NY.
     const waterBodyId = await seedBody(t, ['NY', 'VT']);
 
-    // Poll 1: both states answer, one warning, Moderate.
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async () =>
-        alertsResponse([feature({ id: 'urn:oid:storm', severity: 'Moderate', headline: 'old' })]),
-      ),
-    );
-    await t.action(internal.weatherAlerts.refreshAlerts, {});
+    vi.useFakeTimers();
+    vi.setSystemTime(1_000_000);
+    try {
+      // Poll 1: both states answer, one warning, Moderate.
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(async () => {
+          vi.advanceTimersByTime(60_000);
+          return alertsResponse([
+            feature({ id: 'urn:oid:storm', severity: 'Moderate', headline: 'old' }),
+          ]);
+        }),
+      );
+      await t.action(internal.weatherAlerts.refreshAlerts, {});
 
-    // Poll 2: NWS has upgraded it to Severe — but only NY answers. VT keeps its Moderate copy.
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async (url: string) => {
-        if (url.includes('area=VT')) return new Response('down', { status: 503 });
-        return alertsResponse([
-          feature({ id: 'urn:oid:storm', severity: 'Severe', headline: 'upgraded' }),
-        ]);
-      }),
-    );
-    await t.action(internal.weatherAlerts.refreshAlerts, {});
+      // Poll 2: NWS has upgraded it to Severe — but only NY answers. VT keeps its Moderate copy.
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(async (url: string) => {
+          vi.advanceTimersByTime(60_000);
+          if (url.includes('area=VT')) return new Response('down', { status: 503 });
+          return alertsResponse([
+            feature({ id: 'urn:oid:storm', severity: 'Severe', headline: 'upgraded' }),
+          ]);
+        }),
+      );
+      await t.action(internal.weatherAlerts.refreshAlerts, {});
 
-    // Both copies are still cached — the failed state deliberately keeps what it had.
-    const rows = await t.run((ctx) => ctx.db.query('weatherAlerts').collect());
-    expect(rows.filter((r) => r.alertId === 'urn:oid:storm').length).toBeGreaterThan(1);
+      // Both copies are still cached — the failed state deliberately keeps what it had.
+      const rows = await t.run((ctx) => ctx.db.query('weatherAlerts').collect());
+      expect(rows.filter((r) => r.alertId === 'urn:oid:storm').length).toBeGreaterThan(1);
 
-    const alerts = await t.query(api.weatherAlerts.listForBody, { waterBodyId });
+      const alerts = await t.query(api.weatherAlerts.listForBody, { waterBodyId });
 
-    // One warning, and the upgraded text — not the stale copy that happens to sort first.
-    expect(alerts).toHaveLength(1);
-    expect(alerts[0]?.severity).toBe('Severe');
-    expect(alerts[0]?.headline).toBe('upgraded');
+      // One warning, and the upgraded text — not the stale copy that happens to sort first.
+      expect(alerts).toHaveLength(1);
+      expect(alerts[0]?.severity).toBe('Severe');
+      expect(alerts[0]?.headline).toBe('upgraded');
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 
