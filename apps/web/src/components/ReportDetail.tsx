@@ -20,16 +20,18 @@ import {
 } from '@skating/core';
 import { Link } from '@tanstack/react-router';
 import { useQuery } from 'convex/react';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { Comments } from './CommentThread';
 import { PanelDescription, PanelHeader, PanelTitle } from './DetailPanel';
 import { DetailSkeleton, UnavailableState } from './DrawerStates';
 import { useMapSelection } from './MapSelectionContext';
 import { ModeratorActions } from './ModeratorActions';
+import { ReportForm } from './ReportForm';
 import { BlockedChip, FlagDialog } from './SafetyControls';
 import { ThumbControl } from './ThumbControl';
 import { TrustAvatar } from './TrustDisplay';
 import { Badge } from './ui/badge';
+import { Button } from './ui/button';
 import { Separator } from './ui/separator';
 import { WeatherStrip } from './WeatherStrip';
 
@@ -61,6 +63,14 @@ export interface ReportViewData {
    * (Phase 10 / D56 §7) — a soft disclosure for the reader, never a verdict or a hidden report (D3).
    */
   conflicting?: boolean;
+  /**
+   * When the author last edited this (N6f) — the `comments.editedAt` convention.
+   *
+   * Deliberately not `updatedAt`: the conditions autofill moves that on nearly every report hours
+   * after posting, so a byline off it would mark the whole corpus as edited by people who never
+   * touched it.
+   */
+  editedAt?: number;
   photos: { photoId: string; url: string | null; thumbUrl: string | null; caption?: string }[];
 }
 
@@ -101,6 +111,7 @@ export function ReportView({
           {seasonOf(data.skateEndTime) === seasonOf(Date.now())
             ? null
             : ` · from the ${formatSeason(seasonOf(data.skateEndTime))} season`}
+          {data.editedAt ? ' · edited' : null}
         </PanelDescription>
       </PanelHeader>
       {data.authorName ? (
@@ -267,6 +278,10 @@ export function ReportDetail({ reportId }: { reportId: string }) {
     reportId: reportId as Id<'reports'>,
   });
 
+  // The author's own edit dialog (N6f). Declared with the other hooks, above the loading/unavailable
+  // early returns, so the hook order is stable across a report that arrives late.
+  const [editing, setEditing] = useState(false);
+
   // Fly to the report's put-in point as soon as the report loads.
   useEffect(() => {
     if (report) setFocus({ lat: report.point.lat, lng: report.point.lng, zoom: 13 });
@@ -343,6 +358,7 @@ export function ReportDetail({ reportId }: { reportId: string }) {
           conditions: report.conditions,
           notes: report.notes,
           conflicting: report.conflicting,
+          editedAt: report.editedAt,
           photos: photos ?? [],
         }}
       />
@@ -368,6 +384,26 @@ export function ReportDetail({ reportId }: { reportId: string }) {
           <FlagDialog targetType="report" targetId={report._id} label="Flag report" />
           <ModeratorActions targetType="report" targetId={report._id} />
         </div>
+      ) : null}
+      {/* The author's own control (N6f), mirroring the comment thread's Edit. `reports.update` has
+          existed since D25 with nothing calling it, so posting a report was a one-way door — a
+          mistyped thickness could only be corrected by asking a moderator to remove the whole thing.
+          A moderated report is refused server-side, so the button is hidden rather than left to fail. */}
+      {me && isOwn && report.moderationStatus === 'visible' && !isLeaving(me) ? (
+        <div className="flex flex-wrap gap-1 px-4 pb-2">
+          <Button variant="outline" size="sm" onClick={() => setEditing(true)}>
+            Edit report
+          </Button>
+        </div>
+      ) : null}
+      {editing && body?.available ? (
+        <ReportForm
+          waterBodyId={report.waterBodyId}
+          bodyName={body.body.name}
+          open
+          onOpenChange={(next) => !next && setEditing(false)}
+          editing={{ reportId: report._id, report }}
+        />
       ) : null}
       <Comments reportId={report._id} />
     </>

@@ -4,7 +4,9 @@ import {
   emptyReportForm,
   emptyThicknessReading,
   type ReportFormState,
+  reportFormFromReport,
   resolveSkateWindow,
+  type StoredReportForForm,
 } from './reportForm';
 import { cmToInches, cToF, kphToMph } from './units';
 
@@ -231,5 +233,122 @@ describe('resolveSkateWindow', () => {
   it('rejects a non-positive explicit start', () => {
     expect(resolveSkateWindow({ end: END, start: 0 }).ok).toBe(false);
     expect(resolveSkateWindow({ end: END, start: -5 }).ok).toBe(false);
+  });
+});
+
+/**
+ * The edit path's load-bearing property (N6f).
+ *
+ * `reports.update` is last-write-wins over the whole content block, so a form seeded with anything
+ * less than the stored report **deletes** whatever the author didn't retype. That makes
+ * `buildReportInput(reportFormFromReport(r))` ≡ `r` the actual contract, not a nicety.
+ */
+describe('reportFormFromReport', () => {
+  const SKATE_END = Date.UTC(2026, 0, 15, 20, 0, 0);
+
+  /** A report using every field the form can edit, so the round trip has something to lose. */
+  const FULL: StoredReportForForm = {
+    skateEndTime: SKATE_END,
+    skateStartTime: SKATE_END - 90 * 60_000,
+    iceTypes: ['black_ice'],
+    surfaceTags: ['glass'],
+    skateQuality: 'great',
+    iceThickness: {
+      readings: [
+        { valueCm: 12.7, method: 'measured' }, // 5.0 in
+        { minCm: 10.16, maxCm: 15.24, method: 'estimated' }, // 4.0–6.0 in
+      ],
+    },
+    snowCoverCm: 2.54, // 1.0 in
+    conditions: {
+      airTempC: -10,
+      windSpeedKph: 16.09344,
+      windDir: 'NW',
+      sky: 'clear',
+      precip: 'none',
+    },
+    notes: 'Glassy all the way to the north end.',
+  };
+
+  it('round-trips a fully populated report through the form and back', () => {
+    const rebuilt = buildReportInput(reportFormFromReport(FULL), 'wb1');
+    expect(rebuilt.skateEndTime).toBe(FULL.skateEndTime);
+    expect(rebuilt.skateStartTime).toBe(FULL.skateStartTime);
+    expect(rebuilt.iceTypes).toEqual(FULL.iceTypes);
+    expect(rebuilt.surfaceTags).toEqual(FULL.surfaceTags);
+    expect(rebuilt.skateQuality).toBe(FULL.skateQuality);
+    expect(rebuilt.notes).toBe(FULL.notes);
+    // Imperial round trip, to the tenth of an inch the form displays.
+    expect(rebuilt.snowCoverCm).toBeCloseTo(FULL.snowCoverCm as number, 2);
+    expect(rebuilt.conditions?.airTempC).toBeCloseTo(-10, 1);
+    expect(rebuilt.conditions?.windSpeedKph).toBeCloseTo(16.09, 1);
+    expect(rebuilt.conditions?.windDir).toBe('NW');
+    expect(rebuilt.conditions?.sky).toBe('clear');
+    expect(rebuilt.conditions?.precip).toBe('none');
+  });
+
+  it('keeps each reading in the mode it was measured in', () => {
+    const form = reportFormFromReport(FULL);
+    expect(form.thickness[0]).toMatchObject({ mode: 'single', value: '5', method: 'measured' });
+    expect(form.thickness[1]).toMatchObject({
+      mode: 'range',
+      min: '4',
+      max: '6',
+      method: 'estimated',
+    });
+
+    const rebuilt = buildReportInput(form, 'wb1');
+    expect(rebuilt.iceThickness?.readings[0]).toMatchObject({ method: 'measured' });
+    expect(rebuilt.iceThickness?.readings[0]?.valueCm).toBeCloseTo(12.7, 2);
+    expect(rebuilt.iceThickness?.readings[1]?.minCm).toBeCloseTo(10.16, 2);
+    expect(rebuilt.iceThickness?.readings[1]?.maxCm).toBeCloseTo(15.24, 2);
+  });
+
+  /**
+   * A range reading with only one end filled has no `valueCm`, so it must stay a range — collapsing
+   * it to `single` would move an open-ended "at least 4 inches" into a precise claim.
+   */
+  it('keeps a half-filled range a range', () => {
+    const form = reportFormFromReport({
+      skateEndTime: SKATE_END,
+      iceThickness: { readings: [{ minCm: 10.16, method: 'estimated' }] },
+    });
+    expect(form.thickness[0]).toMatchObject({ mode: 'range', min: '4', max: '' });
+    expect(buildReportInput(form, 'wb1').iceThickness?.readings[0]).not.toHaveProperty('maxCm');
+  });
+
+  it('seeds a bare observation-only report without inventing fields', () => {
+    const form = reportFormFromReport({ skateEndTime: SKATE_END, notes: 'Just looked at it.' });
+    expect(form).toMatchObject({
+      skateEndTime: SKATE_END,
+      iceTypes: [],
+      surfaceTags: [],
+      skateQuality: '',
+      thickness: [],
+      snowCover: '',
+      notes: 'Just looked at it.',
+    });
+    const rebuilt = buildReportInput(form, 'wb1');
+    expect(rebuilt).not.toHaveProperty('skateQuality');
+    expect(rebuilt).not.toHaveProperty('iceThickness');
+    expect(rebuilt).not.toHaveProperty('conditions');
+  });
+
+  it('does not carry conditions provenance — the server decides that', () => {
+    // The form has no slot for `source` and no way to render it; round-tripping it here would mean
+    // inventing a hidden field. `reports.update` preserves the stored source when values are unchanged.
+    const form = reportFormFromReport(FULL);
+    expect(form.conditions).not.toHaveProperty('source');
+  });
+
+  it('rounds to a stable display value, so a no-op edit does not perturb the number', () => {
+    const once = reportFormFromReport(FULL);
+    const twice = reportFormFromReport({
+      ...FULL,
+      ...(buildReportInput(once, 'wb1').snowCoverCm !== undefined
+        ? { snowCoverCm: buildReportInput(once, 'wb1').snowCoverCm }
+        : {}),
+    });
+    expect(twice.snowCover).toBe(once.snowCover);
   });
 });

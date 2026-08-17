@@ -49,6 +49,7 @@ import { WindExposure } from './WindExposure';
 export function WaterBodyDetail({
   waterBodyId,
   trackDraftId,
+  activityId,
   focusSubAreaId,
 }: {
   waterBodyId: string;
@@ -60,6 +61,8 @@ export function WaterBodyDetail({
    * would be the moment the whole record→report loop leaks people.
    */
   trackDraftId?: string;
+  /** A synced skate to attach (N6f) — the server id, from the You tab's unreported list. */
+  activityId?: string;
 }) {
   const result = useQuery(api.waterBodies.get, {
     waterBodyId: waterBodyId as Id<'waterBodies'>,
@@ -74,7 +77,7 @@ export function WaterBodyDetail({
     ? subAreas?.find((s) => s._id === focusSubAreaId && !s.removed)
     : undefined;
   const { setFocus, setHighlightWaterBodyId, setContourBodyKey, contourCredit } = useMapSelection();
-  const [formOpen, setFormOpen] = useState(trackDraftId !== undefined);
+  const [formOpen, setFormOpen] = useState(trackDraftId !== undefined || activityId !== undefined);
   const [bountyFormOpen, setBountyFormOpen] = useState(false);
   const leaving = useIsLeaving();
   // Same whole-table fetch as web — five rows of aggregate geography, so the caption stays a pure
@@ -201,6 +204,7 @@ export function WaterBodyDetail({
           waterBodyId={result.body._id}
           bodyName={result.body.name}
           {...(trackDraftId !== undefined ? { trackDraftId } : {})}
+          {...(activityId !== undefined ? { activityId } : {})}
           onClose={() => setFormOpen(false)}
         />
       ) : bountyFormOpen ? (

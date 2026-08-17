@@ -663,6 +663,84 @@ describe('reports.update (author-only LWW, D25)', () => {
     ).rejects.toThrow(/only the author/i);
   });
 
+  /**
+   * `editedAt` is the byline's basis and `updatedAt` cannot be (N6f): the conditions autofill moves
+   * `updatedAt` hours after posting on nearly every report, so a byline derived from it would mark
+   * the whole corpus as edited by authors who never touched it.
+   */
+  test('stamps editedAt, which a fresh report does not carry', async () => {
+    const t = convexTestWithGeo();
+    const { asAuthor, reportId } = await seedReport(t);
+    expect((await t.run((ctx) => ctx.db.get(reportId)))?.editedAt).toBeUndefined();
+
+    await asAuthor.mutation(api.reports.update, {
+      reportId,
+      skateEndTime: SKATE_TIME,
+      notes: 'fixed a typo',
+    });
+    expect((await t.run((ctx) => ctx.db.get(reportId)))?.editedAt).toBeGreaterThan(0);
+  });
+
+  describe('conditions provenance survives an unrelated edit', () => {
+    /** Post a report, then let the autofill stamp the weather `openmeteo`, as it does in production. */
+    async function seedWithObservedWeather(t: ReturnType<typeof convexTest>) {
+      const seeded = await seedReport(t);
+      await t.run((ctx) =>
+        ctx.db.patch(seeded.reportId, {
+          conditions: { airTempC: -8, windSpeedKph: 12, source: 'openmeteo' as const },
+        }),
+      );
+      return seeded;
+    }
+
+    test('editing the notes does not re-mark the weather as user-entered', async () => {
+      const t = convexTestWithGeo();
+      const { asAuthor, reportId } = await seedWithObservedWeather(t);
+
+      // The form round-trips the same weather back, stamped `user` by `buildReportInput`.
+      await asAuthor.mutation(api.reports.update, {
+        reportId,
+        skateEndTime: SKATE_TIME,
+        notes: 'fixed a typo',
+        conditions: { airTempC: -8, windSpeedKph: 12, source: 'user' },
+      });
+
+      expect((await t.run((ctx) => ctx.db.get(reportId)))?.conditions?.source).toBe('openmeteo');
+    });
+
+    test('actually changing a weather value makes it the author’s claim', async () => {
+      const t = convexTestWithGeo();
+      const { asAuthor, reportId } = await seedWithObservedWeather(t);
+
+      await asAuthor.mutation(api.reports.update, {
+        reportId,
+        skateEndTime: SKATE_TIME,
+        conditions: { airTempC: -2, windSpeedKph: 12, source: 'user' },
+      });
+
+      const after = await t.run((ctx) => ctx.db.get(reportId));
+      expect(after?.conditions?.source).toBe('user');
+      expect(after?.conditions?.airTempC).toBe(-2);
+    });
+
+    test('never launders a user’s number into an observation', async () => {
+      const t = convexTestWithGeo();
+      const { asAuthor, reportId } = await seedReport(t);
+      await asAuthor.mutation(api.reports.update, {
+        reportId,
+        skateEndTime: SKATE_TIME,
+        conditions: { airTempC: -8, source: 'user' },
+      });
+      // Stored is already `user`; an identical resubmit must not drift toward `openmeteo`.
+      await asAuthor.mutation(api.reports.update, {
+        reportId,
+        skateEndTime: SKATE_TIME,
+        conditions: { airTempC: -8, source: 'user' },
+      });
+      expect((await t.run((ctx) => ctx.db.get(reportId)))?.conditions?.source).toBe('user');
+    });
+  });
+
   test('re-validates on edit (rejects an invalid change)', async () => {
     const t = convexTestWithGeo();
     const { asAuthor, reportId } = await seedReport(t);

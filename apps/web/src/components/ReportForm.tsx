@@ -12,11 +12,13 @@ import {
   PRECIP_LABELS,
   PRECIP_TYPES,
   type ReportFormState,
+  reportFormFromReport,
   resolveSkateWindow,
   SKATE_QUALITIES,
   SKATE_QUALITY_LABELS,
   SKY_CONDITIONS,
   SKY_LABELS,
+  type StoredReportForForm,
   SURFACE_TAGS,
   THICKNESS_METHOD_LABELS,
   THICKNESS_METHODS,
@@ -233,6 +235,8 @@ export interface ReportFormFieldsProps {
    * (the prompt needs a Convex query; these fields must not).
    */
   bundlePrompt?: ReactNode;
+  /** "Post report" for a new one, "Save changes" for an edit (N6f). */
+  submitLabel?: { idle: string; busy: string };
 }
 
 export function ReportFormFields({
@@ -250,6 +254,7 @@ export function ReportFormFields({
   onCancel,
   submitting,
   error,
+  submitLabel = { idle: 'Post report', busy: 'Posting…' },
 }: ReportFormFieldsProps) {
   const patch = (partial: Partial<ReportFormState>) => onFormChange({ ...form, ...partial });
 
@@ -539,7 +544,7 @@ export function ReportFormFields({
           Cancel
         </Button>
         <Button type="submit" disabled={submitting}>
-          {submitting ? 'Posting…' : 'Post report'}
+          {submitting ? submitLabel.busy : submitLabel.idle}
         </Button>
       </div>
     </form>
@@ -553,15 +558,27 @@ export function ReportForm({
   bodyName,
   open,
   onOpenChange,
+  editing,
 }: {
   waterBodyId: Id<'waterBodies'>;
   bodyName: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /**
+   * An existing report to edit instead of creating a new one (N6f).
+   *
+   * **The form is seeded from the whole stored report, not from the fields being changed**, because
+   * `reports.update` is last-write-wins over the entire content block: anything the form doesn't send
+   * is cleared. A half-seeded edit form would silently delete the thickness readings of every author
+   * who only wanted to fix a typo. `reportFormFromReport` is the inverse that makes that safe, and
+   * its round-trip is pinned in `@skating/core`.
+   */
+  editing?: { reportId: Id<'reports'>; report: StoredReportForForm };
 }) {
   const navigate = useNavigate();
   const profile = useQuery(api.profiles.current, {});
   const createReport = useMutation(api.reports.create);
+  const updateReport = useMutation(api.reports.update);
   const recordSignal = useMutation(api.analytics.recordClientSignal);
   const { putInPin, setPutInPin, setPinDropMode, pinDropMode } = useMapSelection();
 
@@ -581,12 +598,13 @@ export function ReportForm({
   // Minors are read-only — all reports are public (D13), so under-18 users can't post (D41).
   const minor = profile ? isMinor(profile.dateOfBirth, Date.now()) : false;
 
-  // Initialize the form once the profile is known (and the author is allowed to post).
+  // Initialize the form once the profile is known (and the author is allowed to post). An edit seeds
+  // from the stored report; a new report starts blank.
   useEffect(() => {
     if (profile !== undefined && !minor && form === null) {
-      setForm(emptyReportForm(Date.now()));
+      setForm(editing ? reportFormFromReport(editing.report) : emptyReportForm(Date.now()));
     }
-  }, [profile, form, minor]);
+  }, [profile, form, minor, editing]);
 
   // Clear the map put-in-pin state when the form goes away — including an unmount from navigating
   // away mid-pin-drop, which would otherwise strand the map in crosshair/banner mode.
@@ -630,6 +648,16 @@ export function ReportForm({
       // otherwise sweep (submittedRef still false) and delete the very photo rows the committing
       // report is about to reference — leaving it with permanently missing images.
       photoDrafts.setCommitted(true);
+      if (editing) {
+        // `waterBodyId` is deliberately not sent: `update` reads it from the stored report and a
+        // report can never change lakes. Hazard bundling is a create-time act too — the hazards are
+        // already attached, and re-offering them on an edit would double-attach.
+        await updateReport({ ...input, reportId: editing.reportId, photoIds });
+        setPutInPin(null);
+        onOpenChange(false);
+        navigate({ to: '/report/$id', params: { id: editing.reportId } });
+        return;
+      }
       const reportId = await createReport({
         ...input,
         waterBodyId,
@@ -664,7 +692,9 @@ export function ReportForm({
     >
       <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>Report on {bodyName}</DialogTitle>
+          <DialogTitle>
+            {editing ? `Edit your report on ${bodyName}` : `Report on ${bodyName}`}
+          </DialogTitle>
         </DialogHeader>
         {minor ? (
           // Under-18 accounts are read-only — all reports are public, so minors can't post (D41).
@@ -686,6 +716,7 @@ export function ReportForm({
             onSubmit={handleSubmit}
             onCancel={closeForm}
             submitting={submitting}
+            {...(editing ? { submitLabel: { idle: 'Save changes', busy: 'Saving…' } } : {})}
             error={error ?? photoDrafts.error}
             bundlePrompt={
               <HazardBundlePrompt

@@ -17,13 +17,14 @@ import {
 import { useQuery } from 'convex/react';
 import { useRouter } from 'expo-router';
 import * as WebBrowser from 'expo-web-browser';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { Image, Pressable } from 'react-native';
-import { H4, Paragraph, Separator, Text, XStack, YStack } from 'tamagui';
+import { Button, H4, Paragraph, Separator, Text, XStack, YStack } from 'tamagui';
 import { Comments } from './CommentThread';
 import { Badge, Chips, DetailLoading, Section, Unavailable } from './detailUi';
 import { useMapSelection } from './MapSelectionContext';
 import { ModeratorActions } from './ModeratorActions';
+import { ReportForm } from './ReportForm';
 import { BlockedChip, FlagControl } from './SafetyControls';
 import { ThumbControl } from './ThumbControl';
 import { TrustAvatar } from './TrustDisplay';
@@ -40,6 +41,8 @@ export function ReportDetail({ reportId }: { reportId: string }) {
   const router = useRouter();
   const report = useQuery(api.reports.get, { reportId: reportId as Id<'reports'> });
   const body = useQuery(api.waterBodies.get, report ? { waterBodyId: report.waterBodyId } : 'skip');
+  // The author's own edit sheet (N6f). With the other hooks, above the early returns.
+  const [editing, setEditing] = useState(false);
   const authors = useQuery(
     api.profiles.publicByIds,
     report ? { profileIds: [report.authorId] } : 'skip',
@@ -136,6 +139,7 @@ export function ReportDetail({ reportId }: { reportId: string }) {
           {seasonOf(report.skateEndTime) === seasonOf(Date.now())
             ? ''
             : ` · from the ${formatSeason(seasonOf(report.skateEndTime))} season`}
+          {report.editedAt ? ' · edited' : ''}
         </Text>
         {authorName ? (
           <XStack gap="$1.5" alignItems="center" flexWrap="wrap">
@@ -282,6 +286,23 @@ export function ReportDetail({ reportId }: { reportId: string }) {
           <FlagControl targetType="report" targetId={report._id} label="Flag report" />
           <ModeratorActions targetType="report" targetId={report._id} />
         </XStack>
+      ) : null}
+
+      {/* The author's own control (N6f). `reports.update` shipped with D25 and had nothing calling
+          it, so posting was a one-way door: a mistyped thickness could only be fixed by asking a
+          moderator to remove the whole report. Hidden once moderated, which the server refuses. */}
+      {me && isOwn && report.moderationStatus === 'visible' && !isLeaving(me) ? (
+        <Button size="$2" chromeless onPress={() => setEditing(true)}>
+          Edit report
+        </Button>
+      ) : null}
+      {editing ? (
+        <ReportForm
+          {...(report.waterBodyId ? { waterBodyId: report.waterBodyId } : {})}
+          {...(body?.available ? { bodyName: body.body.name } : {})}
+          onClose={() => setEditing(false)}
+          editing={{ reportId: report._id, report }}
+        />
       ) : null}
 
       <Comments reportId={report._id} />

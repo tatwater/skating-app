@@ -1363,6 +1363,17 @@ export default defineSchema({
     hazardIdsCreated: v.array(v.id('hazards')),
     createdAt: v.number(),
     updatedAt: v.number(),
+    /**
+     * When the **author** last edited this report (N6f) — the `comments.editedAt` precedent, and the
+     * only honest basis for an "· edited" byline.
+     *
+     * **Deliberately not `updatedAt`.** That field moves for reasons the author had nothing to do
+     * with: the conditions autofill backfills Open-Meteo's weather hours after posting, and the
+     * summary recompute touches the row too. A byline derived from `updatedAt` would accuse people of
+     * edits they never made — and would do it to *every* report, since almost all of them get
+     * autofilled. Optional ⇒ absent on every report never edited, which is the great majority.
+     */
+    editedAt: v.optional(v.number()),
   })
     .index('by_water_body_skate_end_time', ['waterBodyId', 'skateEndTime'])
     // Per-body feed, paginated (infinite scroll). `moderationStatus` leads so the gate is applied

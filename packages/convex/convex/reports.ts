@@ -1063,10 +1063,14 @@ export const update = mutation({
       skateQuality: n.skateQuality,
       iceThickness: n.iceThickness,
       snowCoverCm: n.snowCoverCm,
-      conditions: n.conditions,
+      conditions: preserveConditionsSource(existing.conditions, n.conditions),
       notes: n.notes,
       ...(args.showPutIn !== undefined ? { showPutIn: args.showPutIn } : {}),
       photoIds,
+      // Distinct from `updatedAt` on purpose (N6f). `updatedAt` moves for reasons the author had
+      // nothing to do with — the conditions autofill backfills the weather hours later — so a byline
+      // reading "edited" off it would accuse people of edits they never made. This moves only here.
+      editedAt: now,
       updatedAt: now,
     });
 
@@ -1083,6 +1087,36 @@ export const update = mutation({
     return args.reportId;
   },
 });
+
+/**
+ * Keep an `observed` conditions block's provenance across an edit that didn't touch the weather.
+ *
+ * **The bug this fixes is silent and one-directional.** A report's conditions are often filled in by
+ * `internal.conditions.autofillConditions` from Open-Meteo, stamped `source: 'openmeteo'`. The edit
+ * form has no slot for provenance and `buildReportInput` stamps everything it emits `source: 'user'`
+ * — so an author fixing a typo in their notes would re-mark the *weather* as personally observed,
+ * turning a model's number into a human's claim with nobody deciding that.
+ *
+ * The comparison is on the values, not on a dirty flag the client could get wrong: if every weather
+ * figure came back identical, nothing about the weather was edited, whatever else was. Change one and
+ * the block becomes the author's, which is the honest reading of someone typing over it.
+ *
+ * Only ever *downgrades* toward the stored source, so it cannot launder a user's number into an
+ * observation.
+ */
+function preserveConditionsSource(
+  stored: Doc<'reports'>['conditions'],
+  next: Doc<'reports'>['conditions'],
+): Doc<'reports'>['conditions'] {
+  if (!stored || !next || stored.source === next.source) return next;
+  const unchanged =
+    stored.airTempC === next.airTempC &&
+    stored.windSpeedKph === next.windSpeedKph &&
+    stored.windDir === next.windDir &&
+    stored.sky === next.sky &&
+    stored.precip === next.precip;
+  return unchanged ? { ...next, source: stored.source } : next;
+}
 
 /**
  * One-time migration (Phase 5): copy each report's legacy `skateTime` → `skateEndTime`, drop the old

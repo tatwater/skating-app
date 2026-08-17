@@ -22,7 +22,7 @@ import type {
   SurfaceTag,
   ThicknessMethod,
 } from './types';
-import { fToC, inchesToCm, mphToKph } from './units';
+import { cmToInches, cToF, fToC, inchesToCm, kphToMph, mphToKph, roundTo } from './units';
 
 /** One thickness reading as the form holds it: imperial strings + a single/range mode toggle. */
 export interface ThicknessFormReading {
@@ -136,6 +136,110 @@ export function buildReportInput(
     ...(hasConditions ? { conditions: { ...conditions, source: 'user' as const } } : {}),
     ...(notes !== '' ? { notes } : {}),
     ...(point ? { point } : {}),
+  };
+}
+
+/**
+ * A stored report, as much of it as the form needs to be seeded from (N6f).
+ *
+ * Structural rather than `Doc<'reports'>`, so `@skating/core` stays free of the Convex data model
+ * and both clients can pass the row they already hold.
+ */
+export interface StoredReportForForm {
+  skateEndTime: number;
+  skateStartTime?: number;
+  iceTypes?: IceType[];
+  surfaceTags?: SurfaceTag[];
+  skateQuality?: SkateQuality;
+  iceThickness?: { readings: ThicknessReadingLike[] };
+  snowCoverCm?: number;
+  conditions?: {
+    airTempC?: number;
+    windSpeedKph?: number;
+    windDir?: string;
+    sky?: SkyCondition;
+    precip?: PrecipType;
+  };
+  notes?: string;
+}
+
+interface ThicknessReadingLike {
+  valueCm?: number;
+  minCm?: number;
+  maxCm?: number;
+  method: ThicknessMethod;
+}
+
+/**
+ * Round-trip a metric number into the imperial string the form edits.
+ *
+ * **Rounded, and that is a real decision.** 12 cm is 4.724409448818898 inches, and seeding an edit
+ * box with that would make every report look like it had been measured to the micron — and worse,
+ * re-submitting it unchanged would store 11.99999… cm, so a no-op edit would silently perturb the
+ * number. One decimal is finer than anyone reads ice to and stable across a round trip.
+ */
+function toInchesString(cm: number | undefined, decimals = 1): string {
+  return cm === undefined ? '' : String(roundTo(cmToInches(cm), decimals));
+}
+
+/** One stored reading → the form's imperial pair, choosing the mode the reading was actually made in. */
+function toFormReading(reading: ThicknessReadingLike): ThicknessFormReading {
+  // `valueCm` present ⇒ a single measurement; otherwise it was entered as a range, even if only one
+  // end of it was filled in. `buildReportInput` produces exactly one of these two shapes.
+  if (reading.valueCm !== undefined) {
+    return {
+      mode: 'single',
+      value: toInchesString(reading.valueCm),
+      min: '',
+      max: '',
+      method: reading.method,
+    };
+  }
+  return {
+    mode: 'range',
+    value: '',
+    min: toInchesString(reading.minCm),
+    max: toInchesString(reading.maxCm),
+    method: reading.method,
+  };
+}
+
+/**
+ * Seed the form from a stored report — the inverse of `buildReportInput`, for the edit path (N6f).
+ *
+ * `reports.update` is **last-write-wins over the whole content block**, not a patch: an omitted
+ * optional field is cleared. So an edit form that started empty would silently delete every field the
+ * author didn't retype, which is why this exists and why it has to be faithful in both directions —
+ * `buildReportInput(reportFormFromReport(r))` must reproduce `r`.
+ *
+ * **What it deliberately does not carry**: `conditions.source`. The form has no slot for provenance
+ * and no way to render it, so round-tripping it here would mean inventing a hidden field. The server
+ * keeps the stored source when the values come back unchanged (see `reports.update`), which is the
+ * same decision made in the one place that can actually compare old and new.
+ */
+export function reportFormFromReport(report: StoredReportForForm): ReportFormState {
+  return {
+    skateEndTime: report.skateEndTime,
+    ...(report.skateStartTime !== undefined ? { skateStartTime: report.skateStartTime } : {}),
+    iceTypes: [...(report.iceTypes ?? [])],
+    surfaceTags: [...(report.surfaceTags ?? [])],
+    skateQuality: report.skateQuality ?? '',
+    thickness: (report.iceThickness?.readings ?? []).map(toFormReading),
+    snowCover: toInchesString(report.snowCoverCm),
+    conditions: {
+      airTempF:
+        report.conditions?.airTempC === undefined
+          ? ''
+          : String(roundTo(cToF(report.conditions.airTempC), 0)),
+      windMph:
+        report.conditions?.windSpeedKph === undefined
+          ? ''
+          : String(roundTo(kphToMph(report.conditions.windSpeedKph), 0)),
+      windDir: report.conditions?.windDir ?? '',
+      sky: report.conditions?.sky ?? '',
+      precip: report.conditions?.precip ?? '',
+    },
+    notes: report.notes ?? '',
   };
 }
 
