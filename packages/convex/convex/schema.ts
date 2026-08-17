@@ -90,6 +90,7 @@ import {
   geoJson,
   latLng,
   literals,
+  postedAccess,
   weatherSinceSummary,
 } from './lib/validators';
 
@@ -847,6 +848,23 @@ export default defineSchema({
      * only, and it does not name this one — the same way `curatedBoost` survives.
      */
     referenceLinks: v.optional(v.array(v.object({ label: v.string(), url: v.string() }))),
+    /**
+     * What the sign says (N6e) — the posted seasonal window and daily hours for being on the ice.
+     *
+     * **This is not an `accessAlert`, and the difference is the whole design.** An alert is a decaying
+     * community claim: 30-day TTL, hard-expired at the season boundary, resolved by two votes. Run
+     * Tomhannock Reservoir's *"January 1 - March 15, daylight hours only"* through that lifecycle and
+     * it is silently deleted every July — silently, because expiring is what alerts are *supposed* to
+     * do. A posted rule is a standing legal fact, so it is a moderator-written attribute with an audit
+     * row behind it, and nothing expires it.
+     *
+     * **A body's rule governs the ice, not the way in.** The identical field on `putIns` and
+     * `parkingAreas` governs those, and the three are never merged — see `@skating/core/postedAccess`.
+     *
+     * Optional ⇒ migration-free, and preserved across re-import for free: `importCanonical` patches a
+     * named field list and does not name this one, the same way `curatedBoost` survives.
+     */
+    postedAccess: v.optional(postedAccess),
     /**
      * The map summary card's denormalized counts (N6c Workstream E).
      *
@@ -2089,6 +2107,13 @@ export default defineSchema({
      * author to set this explicitly rather than letting a mile-long approach be entered silently.
      */
     approachKindOverride: v.optional(literals(APPROACH_KINDS)),
+    /**
+     * What the sign at *this launch* says (N6e) — hours posted on the gate, not on the lake.
+     *
+     * Separate from the body's rule because they constrain different things and are never merged: a
+     * reservoir open around the clock with one launch shut at dusk is not a reservoir shut at dusk.
+     */
+    postedAccess: v.optional(postedAccess),
   })
     .index('by_water_body', ['waterBodyId'])
     // Idempotent OSM upsert (N6d B3), mirroring `waterBodies.by_external_id`.
@@ -2123,6 +2148,13 @@ export default defineSchema({
     externalId: v.optional(v.string()), // `way/123` — idempotent re-import key
     createdByUserId: v.optional(v.id('profiles')),
     createdAt: v.number(),
+    /**
+     * What the sign on *this lot* says (N6e) — and the case that forced rules onto three tables
+     * rather than one: a lot shared with a business, barred during business hours, while the lake and
+     * the other two lots serving it are unrestricted. Hanging that on the body would be a false claim
+     * about both.
+     */
+    postedAccess: v.optional(postedAccess),
   })
     .index('by_external_id', ['externalId'])
     .index('by_created_by', ['createdByUserId']),

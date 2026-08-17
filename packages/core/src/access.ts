@@ -20,6 +20,7 @@
 
 import { bearingDegrees, haversineMeters, type LatLng } from './geometry';
 import { compassPointFor } from './lakeGeometry';
+import type { PostedAccess } from './postedAccess';
 
 /**
  * How you get from the car to the ice. Derived from a routed approach distance, with an operator
@@ -304,6 +305,15 @@ export interface AccessPutIn {
   approachAscentM?: number;
   approachRouted?: boolean;
   approachKindOverride?: ApproachKind;
+  /**
+   * What the sign on *this launch* says (N6e).
+   *
+   * Carried here so the drawer can render it beside the launch it governs, and read by nothing in the
+   * resolver: `chooseAccessTarget` must not prefer an open launch over a shut one. A posted rule
+   * annotates and never suppresses, and silently routing someone around a closure would be the
+   * strongest form of suppression — the launch would simply stop being mentioned.
+   */
+  postedAccess?: PostedAccess;
 }
 
 /** A parking area as the access resolver sees it. */
@@ -312,6 +322,8 @@ export interface AccessParking {
   coord: LatLng;
   name?: string;
   source: 'osm' | 'official';
+  /** What the sign on *this lot* says (N6e). Not read by the resolver — see `AccessPutIn`. */
+  postedAccess?: PostedAccess;
 }
 
 /** Where to send the car, and everything the drawer needs to describe the rest of the trip. */

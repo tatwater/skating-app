@@ -26,6 +26,7 @@ import type maplibregl from 'maplibre-gl';
 import { useEffect, useRef, useState } from 'react';
 import { AdminEmpty, AdminPageHeader } from '../components/admin/adminUi';
 import { LakeEditorMap } from '../components/admin/LakeEditorMap';
+import { PostedAccessTool } from '../components/admin/PostedAccessEditor';
 import { ReasonDialog } from '../components/admin/ReasonDialog';
 import { WaterBodyTimeline } from '../components/admin/WaterBodyTimeline';
 import { Button } from '../components/ui/button';
@@ -191,6 +192,11 @@ function LakeEditor() {
           <RecurrenceTool waterBodyId={waterBodyId} onResult={setBanner} />
           <PromotionTool waterBodyId={waterBodyId} onResult={setBanner} />
           <TrackTool tracks={Array.isArray(tracks) ? [] : (tracks?.tracks ?? [])} />
+          {/* What the sign says (N6e) — beside the reference links, because both are things a human
+              read somewhere and typed in, and neither is derivable from the row. */}
+          <ToolCard title="Posted rules">
+            <PostedAccessTool body={body} onResult={setBanner} />
+          </ToolCard>
           <ReferenceLinkTool body={body} onResult={setBanner} />
           {/* Last in the column (N6c/F1): the log answers "what happened to this lake", which is a
               question you ask after looking at the levers, not before. */}

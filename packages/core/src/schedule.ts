@@ -1,58 +1,20 @@
 /**
  * Pure scheduling helpers (Phase 4, decision #4) — the "next 8pm ET" instant the notification digest
  * flushes at. Kept framework-free + injectable (`nowMs`) so it's deterministic in tests and shared by
- * the Convex enqueue path. Timezone math is done with `Intl` (full ICU in both the Convex runtime and
- * Node/edge test runner) rather than a fixed UTC offset, so it stays correct across the EST↔EDT shift.
+ * the Convex enqueue path.
+ *
+ * The zone primitives live in `zonedTime.ts` — they moved there when N6e's posted-access rules needed
+ * the same `Intl` parse and the same DST correction.
  *
  * Per-user local-time / true-sunset timing is deferred (single-timezone pilot) — see the roadmap.
+ * **N6e did not reopen that**: `solar.ts` computes sunrise/sunset for *display* in the lake drawer and
+ * is deliberately not imported here.
  */
+
+import { zonedParts, zoneOffsetMs } from './zonedTime';
 
 const HOUR_MS = 60 * 60 * 1000;
 const DAY_MS = 24 * HOUR_MS;
-
-interface ZonedParts {
-  year: number;
-  month: number; // 1-12
-  day: number;
-  hour: number; // 0-23
-  minute: number;
-  second: number;
-}
-
-/** Wall-clock parts of `ms` in `timeZone` (via `Intl`), as numbers. */
-export function zonedParts(ms: number, timeZone: string): ZonedParts {
-  const dtf = new Intl.DateTimeFormat('en-US', {
-    timeZone,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-    hour12: false,
-  });
-  const map: Record<string, string> = {};
-  for (const part of dtf.formatToParts(new Date(ms))) {
-    if (part.type !== 'literal') map[part.type] = part.value;
-  }
-  // `hour12: false` can render midnight as "24"; normalize it to 0.
-  const hour = Number(map.hour) % 24;
-  return {
-    year: Number(map.year),
-    month: Number(map.month),
-    day: Number(map.day),
-    hour,
-    minute: Number(map.minute),
-    second: Number(map.second),
-  };
-}
-
-/** Signed offset (ms) such that `localWallClock = utc + offset` at instant `ms` in `timeZone`. */
-function zoneOffsetMs(ms: number, timeZone: string): number {
-  const p = zonedParts(ms, timeZone);
-  const asUtc = Date.UTC(p.year, p.month - 1, p.day, p.hour, p.minute, p.second);
-  return asUtc - ms;
-}
 
 /** The current hour-of-day (0-23) in `timeZone`. */
 export function zonedHour(ms: number, timeZone: string): number {

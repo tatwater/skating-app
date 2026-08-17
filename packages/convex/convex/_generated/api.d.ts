@@ -66,6 +66,7 @@ import type * as notifications from "../notifications.js";
 import type * as operatorAlerts from "../operatorAlerts.js";
 import type * as photoReconcile from "../photoReconcile.js";
 import type * as photos from "../photos.js";
+import type * as postedAccess from "../postedAccess.js";
 import type * as profiles from "../profiles.js";
 import type * as putIns from "../putIns.js";
 import type * as ratings from "../ratings.js";
@@ -147,6 +148,7 @@ declare const fullApi: ApiFromModules<{
   operatorAlerts: typeof operatorAlerts;
   photoReconcile: typeof photoReconcile;
   photos: typeof photos;
+  postedAccess: typeof postedAccess;
   profiles: typeof profiles;
   putIns: typeof putIns;
   ratings: typeof ratings;

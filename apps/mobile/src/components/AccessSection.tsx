@@ -6,6 +6,7 @@ import { useState } from 'react';
 import { Button, Paragraph, Text, XStack, YStack } from 'tamagui';
 import { AccessPhotos } from './AccessPhotos';
 import { Badge, Section } from './detailUi';
+import { PostedAccessLine } from './PostedAccess';
 
 /** How each alert reason reads. Short, because it sits beside a launch name on a phone. */
 const REASON_LABELS: Record<string, string> = {
@@ -72,6 +73,18 @@ export function AccessSection({ waterBodyId }: { waterBodyId: Id<'waterBodies'> 
       {/* The hedge ("about" vs "at least") is decided in core: a straight-line fallback under-reports,
           so it is a floor rather than an estimate (D87). */}
       {approach ? <Paragraph color="$foregroundMuted">{approach}</Paragraph> : null}
+
+      {/* Rules posted on *these* access points (N6e), against the point each governs. The body's own
+          rule is a separate section above and is never folded in here: a lot shut during a shop's
+          business hours says nothing about the launch beside it, or about the ice. */}
+      {target ? (
+        <>
+          <PostedAccessLine rule={target.putIn.postedAccess} coord={target.putIn.coord} />
+          {target.parking ? (
+            <PostedAccessLine rule={target.parking.postedAccess} coord={target.parking.coord} />
+          ) : null}
+        </>
+      ) : null}
 
       {amenities.length > 0 ? (
         <Text color="$foregroundMuted" fontSize={12}>

@@ -284,6 +284,16 @@ export const MODERATION_ACTIONS = [
   // was never true, where removal says it is no longer wanted on screen, and a mistaken alert deserves
   // the first rather than the second.
   'retract_access_alert',
+  // ── N6e ─────────────────────────────────────────────────────────────────────────────────────────
+  // Typed in what a posted sign says — the seasonal window, the daily hours, the permit. One verb for
+  // all three targets (body, put-in, lot) because it is one claim wearing three hats, and the target
+  // type already distinguishes them.
+  //
+  // Distinct from `pin_access_alert` even though both make a durable access statement: an official
+  // alert says *"this is shut right now, until a moderator says otherwise"*, while this says *"this is
+  // the rule every year"*. Auditing them under one verb would lose which of those a moderator meant,
+  // which is the first thing anyone reviewing a wrong closure would want to know.
+  'set_posted_access',
 ] as const;
 export const MODERATION_TARGET_TYPES = [
   'report',

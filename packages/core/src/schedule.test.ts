@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { nextZonedHourMs, zonedHour, zonedParts } from './schedule';
+import { nextZonedHourMs, zonedHour } from './schedule';
+import { zonedParts } from './zonedTime';
 
 const ET = 'America/New_York';
 

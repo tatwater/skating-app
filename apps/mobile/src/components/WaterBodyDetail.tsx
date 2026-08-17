@@ -31,6 +31,7 @@ import { IceHistory } from './IceHistory';
 
 import { LeavingNotice, useIsLeaving } from './LeavingNotice';
 import { useMapSelection } from './MapSelectionContext';
+import { PostedAccess } from './PostedAccess';
 import { ReferenceLinks } from './ReferenceLinks';
 import { ReportForm } from './ReportForm';
 import { SeasonEmptyState, SeasonFilter } from './SeasonFilter';
@@ -182,6 +183,14 @@ export function WaterBodyDetail({
           </Paragraph>
         ) : null}
         <DirectionsButton waterBodyId={result.body._id} />
+        {/* What the sign says (N6e) — above the route, because permission precedes access. Its own
+            section rather than a row inside AccessSection, which renders nothing when a body has no
+            mapped put-ins and would swallow the rule on exactly the remote reservoir that posts one. */}
+        <PostedAccess
+          rule={result.body.postedAccess}
+          coord={result.body.interiorPoint ?? result.body.centroid}
+          reveal={reveal}
+        />
         {/* How you get onto the ice (N6d) — beneath the directions button it explains, and absent on
             the great majority of bodies OSM has never mapped access for. */}
         <AccessSection waterBodyId={result.body._id} />

@@ -34,6 +34,7 @@ import { HazardList } from './HazardList';
 import { IceHistory } from './IceHistory';
 import { LeavingNotice } from './LeavingNotice';
 import { useMapSelection } from './MapSelectionContext';
+import { PostedAccess } from './PostedAccess';
 import { ReferenceLinks } from './ReferenceLinks';
 import { ReportForm } from './ReportForm';
 import { SeasonEmptyState, SeasonFilter } from './SeasonFilter';
@@ -204,6 +205,15 @@ export function WaterBodyDetail({
         {/* Official NWS alerts (N6c/B5) first — a warning from the local forecast office outranks
             both our observations and anybody's forecast, so it sits above both strips. */}
         <AlertStrip waterBodyId={result.body._id} reveal={reveal} />
+        {/* What the sign says (N6e) — above the route, because permission precedes access: whether you
+            may be out there at all outranks how you would get on. Its own strip rather than a row
+            inside AccessSection, which renders nothing when a body has no mapped put-ins and would
+            otherwise swallow the rule on exactly the remote reservoir that posts one. */}
+        <PostedAccess
+          rule={result.body.postedAccess}
+          coord={result.body.interiorPoint ?? result.body.centroid}
+          reveal={reveal}
+        />
         {/* How you get onto the ice (N6d) — above the weather, because it decides whether the trip is
             possible at all, where the weather decides whether it is worth making. Renders nothing on
             the great majority of bodies OSM has never mapped access for. */}
