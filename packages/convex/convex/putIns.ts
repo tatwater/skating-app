@@ -6,7 +6,9 @@
  * put-in coord, never the on-water centroid (which would route you into the middle of the lake).
  *
  * The clustering/snap/geometry lives in `@skating/core` (`clusterPutIns` / `snapToEdge`) so it's pure
- * + tested; this module is the Convex glue + the moderator/admin mutations (the operator UI is Phase 7).
+ * + tested; this module is the Convex glue + the moderator/admin mutations. The operator UI is the
+ * lake editor's Put-ins tool (N6f) — this header promised it "in Phase 7" for three phases while
+ * `setOfficial` and `hide` had no caller at all, which is exactly how nobody noticed.
  */
 
 import {

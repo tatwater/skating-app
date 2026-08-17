@@ -28,11 +28,19 @@ function FlagRow({ flag }: { flag: FlagView }) {
   const resolveFlag = useMutation(api.moderation.resolveFlag);
   const setStatus = useMutation(api.moderation.setModerationStatus);
   const retractAlert = useMutation(api.accessAlerts.retract);
+  const setAlertOfficial = useMutation(api.accessAlerts.setOfficial);
   const canTakedown = TAKEDOWNABLE.has(flag.targetType) && flag.target.exists;
   // An access alert has no `moderationStatus` to set — its takedown verb is **retraction** (D65
   // applied to access): "this was never true", which is exactly what a bogus "gate locked" is. So it
   // gets its own action rather than being the one flaggable thing a moderator cannot act on.
-  const canRetract = flag.targetType === 'accessAlert' && flag.target.exists;
+  //
+  // **Pinning is the other half, and it was missing.** `retract` shipped wired and `setOfficial` did
+  // not, so a moderator reaching a flagged alert could only ever conclude "this is false" — the
+  // verdict the queue is shaped around. But a flag is also how a *true* alert reaches a moderator:
+  // somebody who wants a lake to themselves flags a real "gate locked". Pinning it is the founder's
+  // 2026-08-10 exemption from both the TTL and the seasonal reset, and without a button the only way
+  // to act on a correct alert was to leave it and let it expire on schedule.
+  const isAlert = flag.targetType === 'accessAlert' && flag.target.exists;
 
   return (
     <Card>
@@ -110,21 +118,41 @@ function FlagRow({ flag }: { flag: FlagView }) {
               />
             </>
           ) : null}
-          {canRetract ? (
-            <ReasonDialog
-              trigger={
-                <Button variant="secondary" size="sm">
-                  Retract alert
-                </Button>
-              }
-              title="Retract this access alert"
-              description="Marks the claim as never having been true and writes an audit record. It stops annotating the launch immediately."
-              confirmLabel="Retract"
-              confirmVariant="secondary"
-              onConfirm={(reason) =>
-                retractAlert({ accessAlertId: flag.targetId as Id<'accessAlerts'>, reason })
-              }
-            />
+          {isAlert ? (
+            <>
+              <ReasonDialog
+                trigger={
+                  <Button variant="secondary" size="sm">
+                    Retract alert
+                  </Button>
+                }
+                title="Retract this access alert"
+                description="Marks the claim as never having been true and writes an audit record. It stops annotating the launch immediately."
+                confirmLabel="Retract"
+                confirmVariant="secondary"
+                onConfirm={(reason) =>
+                  retractAlert({ accessAlertId: flag.targetId as Id<'accessAlerts'>, reason })
+                }
+              />
+              <ReasonDialog
+                trigger={
+                  <Button variant="outline" size="sm">
+                    Pin as official
+                  </Button>
+                }
+                title="Pin this access alert as official"
+                description="The alert stops expiring — no 30-day TTL and no seasonal reset — and carries your name. Use it when a flagged alert turns out to be true."
+                confirmLabel="Pin"
+                confirmVariant="default"
+                onConfirm={(reason) =>
+                  setAlertOfficial({
+                    accessAlertId: flag.targetId as Id<'accessAlerts'>,
+                    official: true,
+                    reason,
+                  })
+                }
+              />
+            </>
           ) : null}
           <ReasonDialog
             trigger={

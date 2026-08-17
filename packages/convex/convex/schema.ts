@@ -2059,8 +2059,8 @@ export default defineSchema({
 
   // Routable put-in markers (Phase 4, decision #7). `derived` markers are materialized by clustering
   // visible report points (approximate — a report `point` can be mid-lake); `official` markers are
-  // admin-set (accurate, priority styling — the operator UI is Phase 7, the data + mutations land
-  // here). A moderator `hide` writes a `hidden` row at the coord so the suppression outlives
+  // admin-set (accurate, priority styling), placed from the lake editor's Put-ins tool (N6f).
+  // A moderator `hide` writes a `hidden` row at the coord so the suppression outlives
   // re-clustering (decision #7). Indexed by body for the per-lake marker list + directions target.
   putIns: defineTable({
     waterBodyId: v.id('waterBodies'),

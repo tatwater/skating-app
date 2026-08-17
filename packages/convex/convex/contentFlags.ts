@@ -1,9 +1,8 @@
 /**
  * Content-flag functions (D32/D3). Any active user can flag a report / comment / photo / user for
  * abuse. `unsafe_false_report` is a **first-class** reason: a dangerously false "ice is great" claim
- * is a safety incident, not mere spam (D3) — it lands in the admin flag queue's priority lane later
- * (Phase 7). No queue UI here; rows accrue as `contentFlags` the founder reads via the Convex
- * dashboard for now.
+ * is a safety incident, not mere spam (D3) — it lands in the priority lane of the admin flag queue
+ * at `/admin/flags`, which reads `moderation.listFlags` and resolves through `moderation.resolveFlag`.
  */
 
 import { accessReportGateMessage } from '@skating/core';
@@ -35,7 +34,7 @@ const TARGET_TABLE: Record<(typeof FLAG_TARGET_TYPES)[number], TableNames> = {
 /**
  * Flag content for abuse/safety review (D32). `requireProfile`; the target must exist; deduped to
  * **one open flag per (flagger, target)** — a repeat flag returns the existing open row rather than
- * piling up duplicates. Resolution + the priority-lane queue are Phase 7.
+ * piling up duplicates. Resolution and the priority lane live in `/admin/flags`.
  */
 export const flag = mutation({
   args: {

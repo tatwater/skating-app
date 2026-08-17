@@ -96,14 +96,11 @@ function LakeEditor() {
   if (result === null || !body) {
     return <AdminEmpty>No such water body. The link may be broken.</AdminEmpty>;
   }
-  if (!result.available) {
-    return (
-      <AdminEmpty>
-        This body isn’t on the map (removed, rejected or merged). Restore it before editing — a
-        sub-area drawn on an unlisted lake would have nowhere to render.
-      </AdminEmpty>
-    );
-  }
+  // A delisted body renders this instead of the editor, and it used to say "Restore it before
+  // editing" while offering no way to restore it — the empty state was the third place in this
+  // feature that named an action nobody could take. The button is here rather than in `RemovalTool`
+  // because that card lives inside the editor, which is exactly what a delisted body does not get.
+  if (!result.available) return <RestoreGate waterBodyId={waterBodyId} />;
 
   return (
     <div className="flex flex-col gap-4">
@@ -239,6 +236,9 @@ function LakeEditor() {
             <PostedAccessTool body={body} onResult={setBanner} />
           </ToolCard>
           <ReferenceLinkTool body={body} onResult={setBanner} />
+          {/* The one lever here that removes rather than refines, so it sits below all of them and
+              above only the log that records it. */}
+          <RemovalTool body={body} onResult={setBanner} />
           {/* Last in the column (N6c/F1): the log answers "what happened to this lake", which is a
               question you ask after looking at the levers, not before. */}
           <ToolCard title="History">
@@ -1065,6 +1065,152 @@ function SamplePointTool({
           Clear saved points
         </Button>
       ) : null}
+    </ToolCard>
+  );
+}
+
+/**
+ * What a delisted body shows instead of the editor (D48) — and the way back.
+ *
+ * `waterBodies.get` answers `{ available: false }` for anything unlisted, without the row, so this
+ * has only the id from the route. That is enough: `restore` takes an id, and everything else on this
+ * screen would be editing a lake that draws nowhere.
+ */
+function RestoreGate({ waterBodyId }: { waterBodyId: Id<'waterBodies'> }) {
+  const restore = useMutation(api.waterBodies.restore);
+  const [error, setError] = useState<string | null>(null);
+
+  return (
+    <div className="flex flex-col items-start gap-3">
+      <AdminEmpty>
+        This body isn’t on the map (removed, rejected or merged). Restore it before editing — a
+        sub-area drawn on an unlisted lake would have nowhere to render.
+      </AdminEmpty>
+      {error ? <p className="text-danger text-sm">{error}</p> : null}
+      <Button
+        size="sm"
+        variant="outline"
+        onClick={async () => {
+          setError(null);
+          try {
+            await restore({ waterBodyId });
+          } catch (err) {
+            // A `reject`ed or `merge`d body lands here too, and the server's refusal says which —
+            // "not removed" is the honest answer for a body that is unlisted for another reason.
+            setError(errorText(err));
+          }
+        }}
+      >
+        Restore to the map
+      </Button>
+      <Link
+        to="/admin/water"
+        className="text-foreground-muted text-sm underline underline-offset-2"
+      >
+        ← Back to the water queues
+      </Link>
+    </div>
+  );
+}
+
+/** Why an admin delisted a body (D48). Mirrors `REMOVAL_REASONS`; the server validates the value. */
+const REMOVAL_REASON_LABELS: Record<string, string> = {
+  landowner_request: 'Landowner request',
+  unskateable: 'Not skateable',
+  junk: 'Junk data',
+  duplicate: 'Duplicate',
+  other: 'Other',
+};
+
+/**
+ * Take a body off the map, or put it back (D48) — **admin-only, reversible, never a hard delete.**
+ *
+ * `remove`/`restore` shipped in Phase 2 and had no caller in either app until now, which meant a
+ * landowner takedown — the case D48 was built *for* — could only be performed from the Convex
+ * dashboard. Same shape of gap as `putIns.setOfficial`: a fully implemented, authz'd, audited
+ * mutation with nothing to press.
+ *
+ * Removing drops the body's cell rows so it leaves the map at zero read cost, and takes its named
+ * bays with it — a delisted Champlain still drawing "Malletts Bay" would be worse than either
+ * outcome. Restoring brings back the bays that weren't delisted in their own right.
+ *
+ * Last in the tool column, above the history: it is the one action here that removes rather than
+ * refines, and nothing that refines should sit below it.
+ */
+function RemovalTool({ body, onResult }: { body: Doc<'waterBodies'>; onResult: SetBanner }) {
+  const remove = useMutation(api.waterBodies.remove);
+  const restore = useMutation(api.waterBodies.restore);
+  const [reason, setReason] = useState('landowner_request');
+  const removed = body.removedAt !== undefined;
+
+  return (
+    <ToolCard title="Listing">
+      {removed ? (
+        <>
+          <p className="text-foreground-muted text-sm">
+            Delisted{body.removalReason ? ` — ${REMOVAL_REASON_LABELS[body.removalReason]}` : ''}.
+            It draws nowhere, and its bays are off the map with it.
+          </p>
+          <Button
+            size="sm"
+            variant="outline"
+            className="self-start"
+            onClick={async () => {
+              try {
+                await restore({ waterBodyId: body._id as Id<'waterBodies'> });
+                onResult({ tone: 'ok', text: 'Restored to the map.' });
+              } catch (err) {
+                onResult({ tone: 'error', text: errorText(err) });
+              }
+            }}
+          >
+            Restore to the map
+          </Button>
+        </>
+      ) : (
+        <>
+          <select
+            className="rounded border border-border bg-surface px-2 py-1 text-sm"
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+            aria-label="Removal reason"
+          >
+            {Object.entries(REMOVAL_REASON_LABELS).map(([value, label]) => (
+              <option key={value} value={value}>
+                {label}
+              </option>
+            ))}
+          </select>
+          <ReasonDialog
+            trigger={
+              <Button size="sm" variant="outline" className="self-start">
+                Take off the map
+              </Button>
+            }
+            title="Delist this water body"
+            description="It stops drawing, its cell rows are dropped, and its named bays go with it. Reversible from this card — nothing is deleted."
+            confirmLabel="Delist"
+            confirmVariant="secondary"
+            requireReason={false}
+            reasonPlaceholder="Optional note for the audit log"
+            onConfirm={async () => {
+              try {
+                await remove({
+                  waterBodyId: body._id as Id<'waterBodies'>,
+                  reason: reason as 'landowner_request',
+                });
+                onResult({ tone: 'ok', text: 'Taken off the map.' });
+              } catch (err) {
+                onResult({ tone: 'error', text: errorText(err) });
+              }
+            }}
+          />
+          <p className="text-foreground-muted text-xs">
+            Admin only, and reversible — the row, its reports and its hazards all survive. A
+            re-import preserves the delisting rather than quietly putting the lake back.
+          </p>
+        </>
+      )}
     </ToolCard>
   );
 }
