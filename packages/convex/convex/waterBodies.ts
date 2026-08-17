@@ -2748,7 +2748,15 @@ export const setPublicAccess = mutation({
     // The demotion is derived, so the score and the cell rows both move with the verdict. Skipping
     // the re-sync would leave the body drawing at its old zoom until something else happened to
     // re-cell it — `minVisibleZoom` is part of `by_cell`'s range, not just a stamp (N1).
+    //
+    // **Richness is read here rather than dropped**, unlike the bulk paths that omit it (see
+    // `richnessFor`). Their reason is cost — two extra index reads across 116,070 rows inside the
+    // heaviest mutation in the app — and it does not apply to one body under a moderator's hand. It
+    // matters more here than anywhere: this is the only *penalty* in the ladder, so scoring it
+    // without the boosts the body has earned would demote it further than the ruling asks, and
+    // clearing the verdict later would restore it to the wrong zoom rather than the one it had.
     const scores = scoreFields({
+      richness: await richnessFor(ctx, body),
       surfaceAreaSqM: body.surfaceAreaSqM,
       curatedBoost: body.curatedBoost,
       noPublicAccess: verdict === 'none',
@@ -3333,7 +3341,12 @@ export const setCuratedBoost = mutation({
     const body = await ctx.db.get(waterBodyId);
     if (!body) throw new ConvexError('Water body not found');
 
+    // Richness for the same reason `setPublicAccess` reads it: one body under a moderator's hand is
+    // nowhere near the bulk paths' cost argument, and the two mutations have to agree — a boost
+    // applied right after an access ruling would otherwise strip the richness that ruling just
+    // scored in, and the body's zoom would swing on which control a moderator touched last.
     const scores = scoreFields({
+      richness: await richnessFor(ctx, body),
       surfaceAreaSqM: body.surfaceAreaSqM,
       curatedBoost,
       noPublicAccess: noPublicAccessOf(body),

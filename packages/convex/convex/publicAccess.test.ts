@@ -443,6 +443,37 @@ describe('a re-import preserves the ruling AND the demotion', () => {
     expect((await bodyRow(t, id))?.minVisibleZoom).toBe(demoted);
   });
 
+  /**
+   * The other half of the same trap, in the opposite direction.
+   *
+   * `scoreFields` takes richness too, and the bulk paths drop it for a cost reason that does not
+   * apply to one body under a moderator's hand. Re-scoring an access ruling without it would demote
+   * the body further than the ruling asks — and then *clearing* the verdict would leave it below
+   * where it started, on a body nobody had ruled anything about, until the next `backfillCells`.
+   */
+  test('a ruling keeps the richness the body has earned', async () => {
+    const t = convexTest(schema, modules);
+    const id = await seedBody(t);
+    // Give the body something to be rich about, then score it the way the corpus sweep would.
+    await t.run((ctx) =>
+      ctx.db.insert('putIns', {
+        waterBodyId: id,
+        coord: { lat: 44, lng: -72 },
+        source: 'official' as const,
+        status: 'visible' as const,
+        createdAt: Date.now(),
+      }),
+    );
+    await t.mutation(internal.waterBodies.backfillCells, {});
+    const rich = (await bodyRow(t, id))?.displayScore as number;
+
+    const mod = await seedUser(t, 'mod', 'moderator');
+    await mod.as.mutation(api.waterBodies.setPublicAccess, { waterBodyId: id, verdict: 'none' });
+    await mod.as.mutation(api.waterBodies.setPublicAccess, { waterBodyId: id, verdict: null });
+
+    expect((await bodyRow(t, id))?.displayScore).toBe(rich);
+  });
+
   test('backfillCells keeps the demotion', async () => {
     const t = convexTest(schema, modules);
     const id = await seedBody(t);
