@@ -717,6 +717,12 @@ export function ReportForm({
   // Editing an existing draft reuses its id + idempotencyKey so a later retry stays deduped.
   async function handleSaveDraft() {
     if (!form) return;
+    // **A published report has no draft to save to.** The flush path only ever calls
+    // `reports.create` (see `flushService`), so queuing an edit as a draft would post a *second*
+    // report on reconnect and leave the original exactly as it was — a duplicate, from someone who
+    // asked to change one thing. The button is hidden while editing; this is the invariant, so the
+    // UI can't reintroduce the bug by putting it back.
+    if (editing) return;
     // Refuse to save over a draft that's mid-flush — the flush's checkpoint writes + delete would
     // clobber this edit and idempotency would re-serve the pre-edit report, losing the change
     // silently. Checked synchronously right before the sync `saveDraft` so a flush can't claim the
@@ -1081,9 +1087,13 @@ export function ReportForm({
         <Button chromeless onPress={onClose} disabled={submitting || savingDraft}>
           Cancel
         </Button>
-        <Button onPress={handleSaveDraft} disabled={submitting || savingDraft}>
-          {savingDraft ? 'Saving…' : 'Save draft'}
-        </Button>
+        {/* No draft lane for a published report (N6f) — you save the changes or you don't. A draft
+            flushes through `reports.create`, so this would duplicate the report rather than edit it. */}
+        {editing ? null : (
+          <Button onPress={handleSaveDraft} disabled={submitting || savingDraft}>
+            {savingDraft ? 'Saving…' : 'Save draft'}
+          </Button>
+        )}
         <Button
           backgroundColor="$primary"
           color="$primaryForeground"
