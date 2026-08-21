@@ -1,5 +1,6 @@
 export * from './access';
 export * from './accessAlert';
+export * from './aerialImagery';
 export * from './age';
 export * from './approachLayer';
 export * from './authRoute';
