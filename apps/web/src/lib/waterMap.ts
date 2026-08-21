@@ -51,6 +51,20 @@ export const MAP_FLAVORS = { light: 'white', dark: 'dark' } as const;
 export type MapFlavor = (typeof MAP_FLAVORS)[keyof typeof MAP_FLAVORS];
 
 /**
+ * The basemap flavour's own land colour — what N6e's imagery mask paints with.
+ *
+ * Read off the flavour rather than hard-coded, for the reason the region mask already established:
+ * *a mask is not a grey rectangle laid over a map, it is the same paint the basemap uses.* The first
+ * imagery build hard-coded `#ffffff`, which is invisible in light mode and a white hole punched
+ * through a dark map in dark mode — the bug that reads as "the map broke" rather than "the map stops
+ * here".
+ */
+export function basemapEarthColor(flavor: MapFlavor): string {
+  const palette = namedFlavor(flavor) as unknown as Record<string, string>;
+  return palette.earth ?? '#ffffff';
+}
+
+/**
  * Icy water fill/outline per theme, layered over the basemap. Pale ice-blue on the white basemap;
  * a deeper glacial blue on the dark one. `AttributionControl` still surfaces the ODbL credit.
  */

@@ -10,6 +10,7 @@ import {
   type BBox,
   draftPlacementCount,
   formatAerialCaptureDate,
+  type ImageryMaskInput,
   isDraftSubmittable,
   isRegionOffscreen,
   type LatLng,
@@ -60,6 +61,7 @@ import {
 import { useMapCanvas } from '../lib/mapCanvas';
 import { createPolygonDraw, type PolygonDrawControl } from '../lib/polygonDraw';
 import {
+  basemapEarthColor,
   DEMO_PMTILES_URL,
   favoriteFeatureIds,
   featureIdForBody,
@@ -955,21 +957,47 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
   // those three changes — a memo and not an effect, because a new object identity here tears the
   // raster down and re-adds it, which against a dynamic renderer we don't own means re-rendering
   // every tile. `null` whenever the reveal is off, which is also how "no lake open" arrives.
+  //
+  // **Identity is cached against a key, and that is the fix for a visible bug rather than a
+  // micro-optimisation.** `features` is replaced every time the viewport subscription re-emits, and
+  // a Convex subscription re-emits on its own schedule — so a plain memo over `features` handed back
+  // a new object roughly once a second, tearing the raster down and re-adding it each time. On
+  // screen that was a steady flicker of the road map showing through the photograph. Keying on what
+  // the mask is actually *made of* means a re-emit carrying identical geometry returns the identical
+  // object, and the reveal effect never runs again.
+  const revealMaskRef = useRef<{ key: string; mask: ImageryMaskInput } | null>(null);
   const revealMask = useMemo(() => {
     if (!imageryOn || !highlightWaterBodyId) return null;
+    const launches = putIns ?? [];
+    const key = `${highlightWaterBodyId}|${launches
+      .map((p) => `${p.coord.lat},${p.coord.lng},${p.approachPath?.length ?? 0}`)
+      .join(';')}`;
+    if (revealMaskRef.current?.key === key) return revealMaskRef.current.mask;
+
     const feature = features.features.find((f) => f.properties?._id === highlightWaterBodyId);
     const polygon = feature?.geometry;
-    if (polygon?.type !== 'Polygon' && polygon?.type !== 'MultiPolygon') return null;
-    return {
+    // The body may not be in the viewport answer yet on a deep link. Hold the previous mask rather
+    // than flashing to `null` and back, which would be the same teardown by a different route.
+    if (polygon?.type !== 'Polygon' && polygon?.type !== 'MultiPolygon') {
+      return revealMaskRef.current?.mask ?? null;
+    }
+    const mask: ImageryMaskInput = {
       polygon,
       // Only routed hike-in legs carry a path, which is the correct set — a drive-up ramp's walk is
       // already inside the water's own buffer. See `approachLayer`'s module note.
-      approachPaths: (putIns ?? []).flatMap((p) => (p.approachPath ? [p.approachPath] : [])),
-      markerCoords: (putIns ?? []).map((p) => p.coord),
+      approachPaths: launches.flatMap((p) => (p.approachPath ? [p.approachPath] : [])),
+      markerCoords: launches.map((p) => p.coord),
     };
+    revealMaskRef.current = { key, mask };
+    return mask;
   }, [imageryOn, highlightWaterBodyId, features, putIns]);
 
-  useImageryReveal({ map: mapRef.current, loaded, mask: revealMask });
+  useImageryReveal({
+    map: mapRef.current,
+    loaded,
+    mask: revealMask,
+    maskColor: basemapEarthColor(flavor),
+  });
 
   // Layers step aside for the photograph, except the ones the skater decides about.
   //

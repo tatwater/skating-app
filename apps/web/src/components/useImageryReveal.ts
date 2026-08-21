@@ -60,6 +60,11 @@ export interface ImageryRevealOptions {
   loaded: boolean;
   /** `null` ⇒ nothing to reveal. Both "no lake open" and "reveal off" arrive as `null`. */
   mask: ImageryMaskInput | null;
+  /**
+   * What the mask paints with — the basemap flavour's own land colour, never a hard-coded white.
+   * See `basemapEarthColor`; a white mask on the dark map reads as a hole punched in it.
+   */
+  maskColor: string;
 }
 
 /**
@@ -71,7 +76,7 @@ export interface ImageryRevealOptions {
  * USGS for a lake nobody is looking at. Hence removing layers before the source, unconditionally,
  * and on every dependency change rather than only on unmount.
  */
-export function useImageryReveal({ map, loaded, mask }: ImageryRevealOptions): void {
+export function useImageryReveal({ map, loaded, mask, maskColor }: ImageryRevealOptions): void {
   useEffect(() => {
     if (!map || !loaded || !mask) return;
 
@@ -120,9 +125,9 @@ export function useImageryReveal({ map, loaded, mask }: ImageryRevealOptions): v
           source: IMAGERY_MASK_SOURCE_ID,
           filter: ['==', ['get', 'step'], index],
           paint: {
-            // Painted in the basemap's own white rather than a grey scrim: the mask is not a dimming
-            // effect over a photograph, it is the map resuming where the photograph stops.
-            'fill-color': '#ffffff',
+            // The basemap's own paint, not a scrim: the mask is not a dimming effect over a
+            // photograph, it is the map resuming where the photograph stops.
+            'fill-color': maskColor,
             'fill-opacity': 0,
             'fill-opacity-transition': { duration: IMAGERY_FADE_MS, delay: 0 },
             'fill-antialias': true,
@@ -156,7 +161,7 @@ export function useImageryReveal({ map, loaded, mask }: ImageryRevealOptions): v
     };
     // `mask` is rebuilt by the caller only when the lake or its access changes; `FEATHER_STEPS` is a
     // constant and named here so a change to it cannot leave a stale ring count on screen in dev.
-  }, [map, loaded, mask]);
+  }, [map, loaded, mask, maskColor]);
 }
 
 export { FEATHER_STEPS, IMAGERY_BEFORE_LAYER_ID, IMAGERY_FADE_MS };

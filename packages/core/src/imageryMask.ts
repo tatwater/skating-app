@@ -67,11 +67,18 @@ export const MASK_FILL_OPACITY = 0.999;
  * from it would be a hard edge with extra layers. So the aerial tier's numbers cannot simply be
  * reused, and the ratio between the two is roughly the ratio of their resolutions.
  *
- * Starting values, chosen to be legible rather than measured. Tuning these by looking at them is an
- * explicit open question in the phase doc.
+ * **Set by looking at a render, which is the only way these were ever going to be right.** The first
+ * pass guessed 10 m solid + 30 m fade; against a 0.3 m photograph that read as a hard edge with
+ * extra steps, because six stacked masks across 30 m is a 5 m band each — under a pixel at the zoom
+ * anyone inspects a put-in at. Founder's call on seeing it: *"the feathering is too minimal — I think
+ * we could go to 20 m solid and a fade over the next 50-100 m."* 80 m splits that range.
+ *
+ * The Sentinel numbers move with them by the same ratio, and for a reason the aerial pair does not
+ * have: at 10 m per pixel, a 20 m band is two pixels, so the tier needs the whole ramp scaled up or
+ * the feather is quantised away by the sensor before it ever reaches a screen.
  */
-export const AERIAL_MASK_METERS = { solid: 10, feather: 30 } as const;
-export const SENTINEL_MASK_METERS = { solid: 30, feather: 100 } as const;
+export const AERIAL_MASK_METERS = { solid: 20, feather: 80 } as const;
+export const SENTINEL_MASK_METERS = { solid: 60, feather: 240 } as const;
 
 /** How many stacked masks build the fade. Six reads as smooth; more is layers for nothing. */
 export const FEATHER_STEPS = 6;
