@@ -43,6 +43,7 @@ export * from './hazardProximity';
 export * from './hazardQueue';
 export * from './hazardRecurrence';
 export * from './hazardWeatherDecay';
+export * from './imageryMask';
 export * from './lakeCaption';
 export * from './lakeDepth';
 export * from './lakeForecast';
