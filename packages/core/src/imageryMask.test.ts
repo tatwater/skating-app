@@ -1,4 +1,6 @@
+import type { MultiPolygon, Polygon } from 'geojson';
 import { describe, expect, it } from 'vitest';
+import { pointInPolygon, surfaceAreaSqM } from './geometry';
 import {
   AERIAL_MASK_METERS,
   buildImageryMask,
@@ -10,8 +12,6 @@ import {
   revealShape,
   SENTINEL_MASK_METERS,
 } from './imageryMask';
-import { pointInPolygon, surfaceAreaSqM } from './geometry';
-import type { MultiPolygon, Polygon } from 'geojson';
 
 /** A ~1 km square pond near Burlington, big enough that metre-scale buffers are visible in it. */
 const POND: Polygon = {
@@ -57,13 +57,7 @@ describe('revealShape', () => {
       {
         polygon: POND,
         parkingCoords: [parking],
-        approachPaths: [
-          [
-            parking,
-            { lat: 44.455, lng: -73.21 },
-            { lat: 44.455, lng: -73.2 },
-          ],
-        ],
+        approachPaths: [[parking, { lat: 44.455, lng: -73.21 }, { lat: 44.455, lng: -73.2 }]],
       },
       10,
     );

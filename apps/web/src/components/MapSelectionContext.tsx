@@ -1,6 +1,6 @@
 import type { HazardDraft, HazardType } from '@skating/core';
 import type { LineString } from 'geojson';
-import { createContext, type ReactNode, useContext, useMemo, useState } from 'react';
+import { createContext, type ReactNode, useContext, useEffect, useMemo, useState } from 'react';
 import type { ViewportLake } from '../lib/viewportLakes';
 
 /**
@@ -134,6 +134,43 @@ interface MapSelectionValue {
    */
   viewportLakes: ViewportLake[] | null;
   setViewportLakes: (lakes: ViewportLake[] | null) => void;
+  /**
+   * Is the aerial reveal on for the open lake? (N6e / D146.)
+   *
+   * **Deliberately session state and not a stored preference**, which is the difference between this
+   * and every other display toggle we have declined to build. D146 made imagery *content scoped to a
+   * body* rather than a base map, and content you reveal is something you do, not a mode you live in
+   * — so it resets when the drawer closes, and closing the app forgets it entirely.
+   *
+   * That is also load-bearing for the row below: a reveal that cannot be sticky is a reveal whose
+   * hazard toggle cannot be silently stuck off.
+   */
+  imageryOn: boolean;
+  setImageryOn: (on: boolean) => void;
+  /**
+   * Are hazards drawn on top of the imagery? Defaults **on**, resets with the reveal.
+   *
+   * The founder's answer to a genuine tension (2026-08-21): imagery-on is a landscape-reading intent
+   * and hazard pins are in the way of it, but D81 named losing hazards to a display preference as a
+   * safety regression. A toggle dissolves that, because the skater is choosing about a screen they
+   * are looking at right now.
+   *
+   * **Default true, and never persisted** — a safety layer you have to go and find is a safety layer
+   * that isn't there, and a remembered "off" is the original failure relocated and then forgotten.
+   */
+  hazardsOverImagery: boolean;
+  setHazardsOverImagery: (on: boolean) => void;
+  /**
+   * When the open lake was last photographed — *"June 2023"* — or `null` if we haven't asked or the
+   * body sits outside NAIP coverage.
+   *
+   * The third map → drawer wire, and it exists for the same reason `contourCredit` does: only the
+   * side that talks to the service knows. **On this tier the date is not a footnote** — NAIP flies
+   * in mid-summer on a 2–3 year cycle, so a skater looking at green trees in January needs to be
+   * told why, and `null` must render as *nothing* rather than as a guessed year (D147).
+   */
+  aerialCaptureLabel: string | null;
+  setAerialCaptureLabel: (label: string | null) => void;
 }
 
 const MapSelectionContext = createContext<MapSelectionValue | null>(null);
@@ -155,6 +192,21 @@ export function MapSelectionProvider({ children }: { children: ReactNode }) {
   const [contourBodyKey, setContourBodyKey] = useState<string | null>(null);
   const [contourCredit, setContourCredit] = useState<string | null>(null);
   const [viewportLakes, setViewportLakes] = useState<ViewportLake[] | null>(null);
+  const [imageryOn, setImageryOn] = useState(false);
+  const [hazardsOverImagery, setHazardsOverImagery] = useState(true);
+  const [aerialCaptureLabel, setAerialCaptureLabel] = useState<string | null>(null);
+
+  // Closing the lake takes the reveal — and the hazard choice — with it (D146).
+  //
+  // The reset is what makes "never persisted" true in practice rather than only in the type: without
+  // it, turning hazards off on one lake would carry that decision to the next lake silently, which is
+  // the exact shape of the failure D81 warned about, just arriving by a different road.
+  useEffect(() => {
+    if (contourBodyKey) return;
+    setImageryOn(false);
+    setHazardsOverImagery(true);
+    setAerialCaptureLabel(null);
+  }, [contourBodyKey]);
 
   const value = useMemo(
     () => ({
@@ -186,6 +238,12 @@ export function MapSelectionProvider({ children }: { children: ReactNode }) {
       setContourCredit,
       viewportLakes,
       setViewportLakes,
+      imageryOn,
+      setImageryOn,
+      hazardsOverImagery,
+      setHazardsOverImagery,
+      aerialCaptureLabel,
+      setAerialCaptureLabel,
     }),
     [
       highlightWaterBodyId,
@@ -202,6 +260,9 @@ export function MapSelectionProvider({ children }: { children: ReactNode }) {
       contourBodyKey,
       contourCredit,
       viewportLakes,
+      imageryOn,
+      hazardsOverImagery,
+      aerialCaptureLabel,
     ],
   );
 

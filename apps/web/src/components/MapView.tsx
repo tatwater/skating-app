@@ -22,7 +22,7 @@ import { useQuery } from 'convex/react';
 import type maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { useTheme } from 'next-themes';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   CONTOUR_BEFORE_LAYER_ID,
   CONTOUR_FADE_MS,
@@ -76,6 +76,12 @@ import {
 } from '../lib/waterMap';
 import { useMapSelection } from './MapSelectionContext';
 import { ReturnToRegion } from './ReturnToRegion';
+import {
+  IMAGERY_HAZARD_LAYERS,
+  IMAGERY_REPLACED_LAYERS,
+  setLayersVisible,
+  useImageryReveal,
+} from './useImageryReveal';
 
 /**
  * Interactive MapLibre map — the read side of the Phase 2 loop (§D, D5/D6/D47/D49). Imperative
@@ -144,6 +150,8 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
     contourBodyKey,
     setContourCredit,
     setViewportLakes,
+    imageryOn,
+    hazardsOverImagery,
   } = useMapSelection();
 
   const [queryArgs, setQueryArgs] = useState<QueryArgs | null>(null);
@@ -931,6 +939,58 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
       }
     };
   }, [contourBodyKey, contourPalette, loaded, mapRef.current, setContourCredit]);
+
+  // ── The aerial reveal for the open lake (N6e / D146).
+  //
+  // The mask is a union of the water, the walk and the parking, so it is rebuilt only when one of
+  // those three changes — a memo and not an effect, because a new object identity here tears the
+  // raster down and re-adds it, which against a dynamic renderer we don't own means re-rendering
+  // every tile. `null` whenever the reveal is off, which is also how "no lake open" arrives.
+  const revealMask = useMemo(() => {
+    if (!imageryOn || !highlightWaterBodyId) return null;
+    const feature = features.features.find((f) => f.properties?._id === highlightWaterBodyId);
+    const polygon = feature?.geometry;
+    if (polygon?.type !== 'Polygon' && polygon?.type !== 'MultiPolygon') return null;
+    return {
+      polygon,
+      // Only routed hike-in legs carry a path, which is the correct set — a drive-up ramp's walk is
+      // already inside the water's own buffer. See `approachLayer`'s module note.
+      approachPaths: (putIns ?? []).flatMap((p) => (p.approachPath ? [p.approachPath] : [])),
+      markerCoords: (putIns ?? []).map((p) => p.coord),
+    };
+  }, [imageryOn, highlightWaterBodyId, features, putIns]);
+
+  // Layers step aside for the photograph, except the ones the skater decides about.
+  //
+  // Two effects rather than one, and deliberately: the replaced set is ours (the A3 table) and the
+  // hazard set is the skater's. Folding them together would make the hazard toggle re-run the whole
+  // suppression on every flip, and would put a safety layer's visibility inside a code path that
+  // also owns cartography.
+  // `mapRef.current` in the deps matches the convention every other effect in this file follows: the
+  // ref is populated after first render, so a callback memoized without it would close over `null`
+  // for the life of the component and silently never suppress anything.
+  const suppressBaseLayers = useCallback(
+    (suppressed: boolean) => {
+      const map = mapRef.current;
+      if (map) setLayersVisible(map, IMAGERY_REPLACED_LAYERS, !suppressed);
+    },
+    [mapRef.current],
+  );
+
+  useImageryReveal({
+    map: mapRef.current,
+    loaded,
+    mask: revealMask,
+    onSuppressBaseLayers: suppressBaseLayers,
+  });
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !loaded) return;
+    // Hazards are visible unless the skater has *chosen* to hide them while looking at imagery —
+    // never merely because imagery is on (D81's safety line, and the founder's toggle answering it).
+    setLayersVisible(map, IMAGERY_HAZARD_LAYERS, !revealMask || hazardsOverImagery);
+  }, [revealMask, hazardsOverImagery, loaded, mapRef.current]);
 
   // Open-bounty pins across the viewport (D10/D17) — refreshed as the map pans + as bounties change.
   useEffect(() => {

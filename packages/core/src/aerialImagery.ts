@@ -30,8 +30,8 @@
  * *access* and never conditions.
  */
 
-import { type BBox, type LatLng, polygonBBox } from './geometry';
 import type { MultiPolygon, Polygon } from 'geojson';
+import { type BBox, type LatLng, polygonBBox } from './geometry';
 
 /** The ImageServer's dynamic render endpoint. */
 const NAIP_IMAGE_SERVER =

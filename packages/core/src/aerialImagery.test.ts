@@ -1,3 +1,4 @@
+import type { Polygon } from 'geojson';
 import { describe, expect, it } from 'vitest';
 import {
   AERIAL_ATTRIBUTION,
@@ -10,7 +11,6 @@ import {
   parseAerialScene,
   resolutionFromSceneName,
 } from './aerialImagery';
-import type { Polygon } from 'geojson';
 
 const POND: Polygon = {
   type: 'Polygon',
@@ -110,7 +110,9 @@ describe('aerialIdentifyUrl', () => {
 
   it('sends lng/lat as x/y in 4326, which is the pairing easiest to get backwards', () => {
     const url = aerialIdentifyUrl({ lat: 44.455, lng: -73.195 });
-    const geometry = JSON.parse(decodeURIComponent(url.split('geometry=')[1]?.split('&')[0] ?? '{}'));
+    const geometry = JSON.parse(
+      decodeURIComponent(url.split('geometry=')[1]?.split('&')[0] ?? '{}'),
+    );
     expect(geometry.x).toBe(-73.195);
     expect(geometry.y).toBe(44.455);
     expect(geometry.spatialReference.wkid).toBe(4326);
