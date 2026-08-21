@@ -535,6 +535,18 @@ coastal launches we do not carry.
 > **Not yet verified on a screen.** The pure layer is covered by tests on both clients and the data is
 > loaded on dev, but nobody has looked at a rendered dashed line. Web first, then the Android build.
 
+**Two operator notes, because both cost time to rediscover:**
+
+- ⚠ **`load-access parking` needs `--batch=1` for a coastal-Massachusetts slice.** The default batch of
+  8 blew Convex's **16 MB per-execution read cap** on lots around Boston — 13.5 MB for eight of them —
+  and the loader skipped both batches rather than failing loudly. This is the 105 GB lesson's
+  smaller sibling: `marginMeters` fixed the *per-lookup* waste, and `bodiesCoveringBox` still matches
+  on **bbox**, so one lot near a body with a large bounding box reads that whole polygon. The
+  batch size is what bounds it.
+- **Only the changed rows were loaded** — 49 lots and 331 put-ins, diffed out of the artifacts against
+  the pre-run copies — rather than re-running 95,294 lots through the join that took the deployment
+  down in August. The loaders upsert on OSM id, so a subset is a legitimate load and not a shortcut.
+
 ---
 
 ## Out of scope
