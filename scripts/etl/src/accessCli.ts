@@ -6,6 +6,7 @@
  *   pnpm --filter @skating/etl access-transform VT                    # one
  *   pnpm --filter @skating/etl access-transform --refresh             # re-run osmium
  *   pnpm --filter @skating/etl access-transform --no-route            # skip ORS entirely
+ *   pnpm --filter @skating/etl access-transform --no-trails           # skip the connectivity pass
  *   pnpm --filter @skating/etl access-transform --parking-radius=400  # eyeball a different radius
  *
  * Writes `.scratch/access/parking.ndjson` and `.scratch/access/put-ins.ndjson`, plus a
@@ -51,11 +52,18 @@ import {
 } from '@skating/core';
 import {
   type AccessFeature,
+  applyTrailPairings,
   type OsmAccessFeature,
   pairAccessFeatures,
   parseAccessFeature,
 } from './accessTransform';
-import { osmAccessExportArgs, osmAccessFilterArgs } from './extract';
+import {
+  osmAccessExportArgs,
+  osmAccessFilterArgs,
+  osmTrailExportArgs,
+  osmTrailFilterArgs,
+} from './extract';
+import { createTrailGraphBuilder, pairByTrailConnectivity } from './trailGraph';
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
 const OSM_DIR = join(ROOT, '.raw');
@@ -144,6 +152,85 @@ function accessFeatureFile(state: string, refresh: boolean): string {
   const step2 = spawnSync('osmium', osmAccessExportArgs(filtered, out), { encoding: 'utf8' });
   if (step2.status !== 0) throw new Error(`${state}: osmium export exited ${step2.status}`);
   return out;
+}
+
+/** Extract one state's trail lines, cached in `.scratch` (N6e Workstream 0). */
+function trailFile(state: string, refresh: boolean): string {
+  const out = join(SCRATCH, `osm-trails-${state}.geojsonseq`);
+  if (existsSync(out) && !refresh) return out;
+
+  const dir = join(OSM_DIR, state);
+  const manifestPath = join(dir, 'manifest.json');
+  if (!existsSync(manifestPath)) {
+    throw new Error(
+      `${state}: no archived extract at ${dir}. Run \`pnpm --filter @skating/etl archive ${state.toUpperCase()}\` first.`,
+    );
+  }
+  const { filename } = JSON.parse(readFileSync(manifestPath, 'utf8')) as { filename: string };
+
+  const filtered = join(SCRATCH, `osm-trails-${state}.pbf`);
+  log(`${state}: filtering trails…`);
+  const step1 = spawnSync('osmium', osmTrailFilterArgs(join(dir, filename), filtered), {
+    encoding: 'utf8',
+  });
+  if (step1.status !== 0) throw new Error(`${state}: osmium tags-filter exited ${step1.status}`);
+
+  const step2 = spawnSync('osmium', osmTrailExportArgs(filtered, out), { encoding: 'utf8' });
+  if (step2.status !== 0) throw new Error(`${state}: osmium export exited ${step2.status}`);
+  return out;
+}
+
+/**
+ * Stream every state's trail lines into one graph.
+ *
+ * **Streamed, one way at a time, and this is not a style preference.** Vermont alone is 40,840 ways
+ * and 642k vertices; five states is on the order of 600–900k ways. Parsing them into an array of
+ * GeoJSON features before building the graph would materialise the loose representation the compact
+ * one exists to avoid, and the builder's whole point is that a way's coordinates are copied into a
+ * `Float64Array` and the parsed object is left for the collector immediately.
+ */
+async function buildTrails(states: readonly string[], refresh: boolean) {
+  const builder = createTrailGraphBuilder();
+  let refusedLines = 0;
+
+  for (const state of states) {
+    const file = trailFile(state, refresh);
+    let kept = 0;
+    const reader = createInterface({
+      input: createReadStream(file, 'utf8'),
+      crlfDelay: Infinity,
+    });
+    for await (const raw of reader) {
+      const trimmed = raw.trim();
+      const line = trimmed.startsWith(RECORD_SEPARATOR) ? trimmed.slice(1) : trimmed;
+      if (line.length === 0) continue;
+      let feature: {
+        properties?: { type?: string; id?: number };
+        geometry?: { type?: string; coordinates?: number[][] };
+      };
+      try {
+        feature = JSON.parse(line) as typeof feature;
+      } catch {
+        refusedLines++;
+        continue;
+      }
+      const coordinates = feature.geometry?.coordinates;
+      if (feature.geometry?.type !== 'LineString' || !coordinates) continue;
+      const id = `${feature.properties?.type ?? 'way'}/${feature.properties?.id ?? ''}`;
+      builder.addWay({
+        id,
+        coords: coordinates.map(([lng, lat]) => ({ lat: lat as number, lng: lng as number })),
+      });
+      kept++;
+    }
+    log(`${state}: ${kept} trail ways`);
+  }
+
+  const graph = builder.build();
+  log(
+    `trail graph: ${graph.stats.ways} ways, ${graph.stats.nodes} nodes, ${graph.stats.duplicates} cross-border duplicates, ${graph.stats.degenerate} degenerate`,
+  );
+  return { graph, refusedLines };
 }
 
 async function readAccessFeatures(states: readonly string[], refresh: boolean) {
@@ -298,6 +385,7 @@ async function main(): Promise<void> {
   const args = process.argv.slice(2);
   const refresh = args.includes('--refresh');
   const noRoute = args.includes('--no-route');
+  const noTrails = args.includes('--no-trails');
   const radiusArg = args.find((a) => a.startsWith('--parking-radius='));
   const parkingRadius = radiusArg
     ? Number.parseFloat(radiusArg.slice('--parking-radius='.length))
@@ -308,10 +396,41 @@ async function main(): Promise<void> {
   mkdirSync(SCRATCH, { recursive: true });
 
   const { features, refusedLines } = await readAccessFeatures(selected, refresh);
-  const pairing = pairAccessFeatures(features, parkingRadius);
+  let pairing = pairAccessFeatures(features, parkingRadius);
   log(
     `paired at ${parkingRadius} m: ${pairing.putIns.length} put-ins (${pairing.stats.putInsWithParking} with parking), ${pairing.parking.length} lots (${pairing.stats.parkingWithoutPutIn} unpaired)`,
   );
+
+  /**
+   * The trail pass (N6e Workstream 0) — connectivity where proximity has already given up.
+   *
+   * Run **before** routing, deliberately: a pairing found here is indistinguishable downstream from
+   * one found by proximity, so it goes through the same ORS leg and comes back with the same
+   * distance, ascent and line. Running it after would leave exactly the longest approaches in the
+   * corpus — the ones this pass exists to find — as the only unrouted ones.
+   */
+  let trailStats: Record<string, number> | undefined;
+  if (!noTrails) {
+    const { graph, refusedLines: refusedTrailLines } = await buildTrails(selected, refresh);
+    const unpairedPutIns = pairing.putIns
+      .filter((p) => !p.parkingExternalId)
+      .map((p) => ({ externalId: p.externalId, point: p.point }));
+    const unpairedLots = pairing.parking
+      .filter((p) => !p.paired)
+      .map((p) => ({ externalId: p.externalId, point: p.point }));
+
+    const trails = pairByTrailConnectivity(graph, unpairedPutIns, unpairedLots);
+    pairing = applyTrailPairings(pairing, trails.pairings);
+    trailStats = {
+      ...graph.stats,
+      ...trails.stats,
+      refusedTrailLines,
+      trailPairings: trails.pairings.length,
+    };
+    log(
+      `trails: ${trails.pairings.length} new pairings from ${trails.stats.putInsOnTrail}/${unpairedPutIns.length} unpaired launches on a trail and ${trails.stats.lotsOnTrail}/${unpairedLots.length} unpaired lots`,
+    );
+  }
 
   const env = { ...readEnvFile(new URL('../.env.local', import.meta.url)), ...process.env };
   const apiKey = noRoute ? undefined : env.ORS_API_KEY;
@@ -432,6 +551,7 @@ async function main(): Promise<void> {
     // question: routing asks "how far is the walk", this asks "do we have the line to draw it".
     pathBackfills,
     pathsRecovered,
+    ...(trailStats ? { trails: trailStats } : {}),
     // Not a ratio (D137): the legs a re-run tomorrow would still pick up, named.
     legsAwaitingPath: awaitingPath,
     routingEnabled: Boolean(apiKey),

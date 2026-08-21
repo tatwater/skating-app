@@ -4,6 +4,7 @@ import { describe, expect, test } from 'vitest';
 import {
   type AccessFeature,
   accessFeaturePoint,
+  applyTrailPairings,
   type OsmAccessFeature,
   pairAccessFeatures,
   parseAccessFeature,
@@ -345,5 +346,56 @@ describe('pairAccessFeatures', () => {
     });
     expect(pairAccessFeatures([launch, lot]).putIns[0]?.parkingExternalId).toBeUndefined();
     expect(pairAccessFeatures([launch, lot], 500).putIns[0]?.parkingExternalId).toBe('way/60');
+  });
+});
+
+describe('applyTrailPairings', () => {
+  const launch = access({ kind: 'put_in', externalId: 'node/1', point: LAKE });
+  const trailhead = access({
+    kind: 'parking',
+    externalId: 'way/trailhead',
+    point: destinationPoint(LAKE, 0, 1_200),
+  });
+
+  test('a trail pairing carries the lot through the water-relevance gate', () => {
+    const before = pairAccessFeatures([launch, trailhead]);
+    expect(before.parking[0]?.paired).toBe(false);
+
+    const after = applyTrailPairings(before, [
+      { putInExternalId: 'node/1', parkingExternalId: 'way/trailhead' },
+    ]);
+
+    expect(after.putIns[0]?.parkingExternalId).toBe('way/trailhead');
+    // The half that is easy to miss: a trailhead lot is beyond every shoreline by definition, so
+    // without `paired` the loader would file the very lots this pass finds as `notNearWater`.
+    expect(after.parking[0]?.paired).toBe(true);
+    expect(after.stats.putInsWithParking).toBe(1);
+    expect(after.stats.parkingWithoutPutIn).toBe(0);
+  });
+
+  /** A lot 250 m away is a closer answer than one 1.2 km up a path. Proximity is not second-guessed. */
+  test('never overwrites a pairing proximity already made', () => {
+    const near = access({
+      kind: 'parking',
+      externalId: 'way/near',
+      point: destinationPoint(LAKE, 0, 80),
+    });
+    const before = pairAccessFeatures([launch, near, trailhead]);
+    expect(before.putIns[0]?.parkingExternalId).toBe('way/near');
+
+    const after = applyTrailPairings(before, [
+      { putInExternalId: 'node/1', parkingExternalId: 'way/trailhead' },
+    ]);
+    expect(after.putIns[0]?.parkingExternalId).toBe('way/near');
+    expect(after.parking.find((p) => p.externalId === 'way/trailhead')?.paired).toBe(false);
+  });
+
+  test('a pairing naming a launch that is not here changes nothing', () => {
+    const before = pairAccessFeatures([launch, trailhead]);
+    const after = applyTrailPairings(before, [
+      { putInExternalId: 'node/absent', parkingExternalId: 'way/trailhead' },
+    ]);
+    expect(after.putIns[0]?.parkingExternalId).toBeUndefined();
+    expect(after.parking[0]?.paired).toBe(false);
   });
 });

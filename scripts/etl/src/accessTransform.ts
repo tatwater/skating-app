@@ -247,6 +247,51 @@ export interface AccessPairing {
   };
 }
 
+/**
+ * Fold the trail network's pairings into a proximity pairing (N6e Workstream 0).
+ *
+ * Two effects, and the second is the one that would be easy to miss: the launch gains its lot, **and
+ * the lot becomes `paired`** — which is what carries it through the loader's water-relevance gate.
+ * A trailhead lot is by definition beyond `PARKING_INFER_RADIUS_M` of any shoreline, so without the
+ * flag the very lots this pass exists to find would be the ones it files as `notNearWater`. The 840
+ * lots the first load rescued on that bypass are the proof the mechanism works; this widens what can
+ * reach it.
+ *
+ * **A trail pairing never overwrites a proximity pairing.** A lot within 250 m of the launch is a
+ * closer answer than one 1.2 km up a path, and the caller only offers unpaired launches anyway —
+ * enforced here as well so the rule survives a caller that forgets.
+ */
+export function applyTrailPairings(
+  pairing: AccessPairing,
+  trailPairings: readonly { putInExternalId: string; parkingExternalId: string }[],
+): AccessPairing {
+  const lotFor = new Map(trailPairings.map((p) => [p.putInExternalId, p.parkingExternalId]));
+  const newlyPaired = new Set<string>();
+
+  const putIns = pairing.putIns.map((putIn) => {
+    if (putIn.parkingExternalId) return putIn;
+    const parkingExternalId = lotFor.get(putIn.externalId);
+    if (!parkingExternalId) return putIn;
+    newlyPaired.add(parkingExternalId);
+    return { ...putIn, parkingExternalId };
+  });
+
+  const parking = pairing.parking.map((lot) =>
+    newlyPaired.has(lot.externalId) && !lot.paired ? { ...lot, paired: true } : lot,
+  );
+
+  return {
+    parking,
+    putIns,
+    stats: {
+      ...pairing.stats,
+      putInsWithParking: putIns.filter((p) => p.parkingExternalId).length,
+      putInsWithoutParking: putIns.filter((p) => !p.parkingExternalId).length,
+      parkingWithoutPutIn: parking.filter((p) => !p.paired).length,
+    },
+  };
+}
+
 /** The nearest of `candidates` to `point` within `radius`, or nothing. */
 function nearestWithin<T extends { point: LatLng }>(
   point: LatLng,
