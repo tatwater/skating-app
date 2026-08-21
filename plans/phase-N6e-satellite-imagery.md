@@ -171,29 +171,33 @@ and makes the client nearly free — at the cost of needing an ETL re-run to cha
 | Water-body **outline** | drawn | **kept, and it matters more** | It's what makes the masked patch read as *this lake* instead of a hole in the map. The founder's first inspiration image is precisely a bright outline containing dark imagery. |
 | **Bathymetric contours** | drawn in detail view | **not drawn** | D81's surviving half; unreadable over a photograph |
 | **Sub-area outlines + labels** | drawn | **drawn, behind a flag** | Founder call reversed 2026-08-21b — *"I'm open to keeping [them] drawn… let's make that easy to turn on and off so we can play around with it."* |
-| **Hazards** | drawn | **not drawn** ⚠ | Founder call, 2026-08-21b — *"different user intents."* **See the safety note below; behind one constant.** |
-| **Skate paths** | drawn | **not drawn** | Same call. The least contentious half of it — a track is a record, not a warning. |
+| **Hazards** | drawn | **user's choice, default ON** | Founder call, 2026-08-21c — a toggle inside the reveal. See below. |
+| **Skate paths** | drawn | **not drawn** | Founder call — *"different user intents."* The least contentious half: a track is a record, not a warning. |
 | **Put-ins / parking / toilets / approach** | drawn | **drawn** | They're inside the mask *by construction* — that's what the union in A1 is for |
 | **Place labels** | from the vector style | **kept** | The base map never changed, so this is free |
 | Attribution | OSM/ODbL, on-map control | **drawer credits + an on-map ⓘ** | §A4 |
 
-> ⚠ **The hazard row reverses a call this phase previously described as non-negotiable, and the
-> reversal is recorded rather than smoothed over.** D81 named this exact scenario: *"A skater who turns
-> on imagery to check a put-in must not lose the hazard pins doing it; that would be a safety
-> regression delivered by a display preference."* That sentence was written from the founder's own
-> earlier instruction to keep hazards drawn over imagery.
+> **Hazards: the middle, and it is the better answer.** *(Founder, 2026-08-21c: "let's provide a toggle
+> when viewing imagery layers to turn hazards on/off. Then users get to choose.")*
 >
-> **What makes the reversal defensible:** the drawer still lists every hazard on the body; Phase 9.5's
-> on-ice alerting is independent of map display entirely; and the reveal is a deliberate, temporary,
-> planning-mode act rather than a persisted mode someone forgets they left on (D146 killed the
-> persisted preference, which is what makes this true).
+> The first pass hid them outright, which walked straight into the scenario D81 had already named:
+> *"A skater who turns on imagery to check a put-in must not lose the hazard pins doing it; that would
+> be a safety regression delivered by a display preference."* A user-controlled toggle dissolves that,
+> because it stops being a preference **we** imposed.
 >
-> **What it must therefore never become:** a default, a persisted state, or a mode that survives
-> navigation. If the reveal ever becomes sticky, this row has to change back.
+> **Three rules keep it dissolved, and they are not optional:**
 >
-> **Implementation rule:** one constant governs both hazard and path visibility, so flipping it — or
-> moving to the dimmed-rather-than-hidden middle — is a one-line change and not an archaeology
-> expedition.
+> 1. **Default ON.** A safety layer that has to be found is a safety layer that isn't there. The
+>    skater turns hazards *off* if the pins are in the way of what they're inspecting — a choice they
+>    made, about a screen they are looking at, right now.
+> 2. **Reveal-scoped, never persisted.** Closing the reveal resets it. This is the load-bearing one: a
+>    persisted "hazards off" is precisely the failure D81 warned about, just relocated from our
+>    decision to theirs and then forgotten. D146 already killed the persisted imagery preference, so
+>    this is consistent rather than special.
+> 3. **One constant governs the default**, so if watching real use says people are turning it off and
+>    getting surprised, flipping it back is a one-line change and not an archaeology expedition.
+>
+> Skate paths need none of this — a recorded track carries no warning, so hiding it costs nothing.
 
 ### A4 — Attribution: credits in the drawer, one ⓘ on the map
 
@@ -363,17 +367,31 @@ a storage question, not an availability one.
 > occupy a lot more of the year than just Nov→Mar? I'm thinking specifically about the top of Mt
 > Washington, which can be incredibly cold, even in summer months."*
 
-Real, and worse than the summit: **Lakes of the Clouds is a body in our corpus at ~5,000 ft**, so
-"sample only at water bodies" does not save us. Three guards, and the third is the one that matters:
+Real, and worse than the summit: **the alpine tarn is a body in our corpus**, so "sample only at water
+bodies" does not save us. Confirmed against dev, 2026-08-21: **`Upper Lake of the Clouds`, NH, 1.0 acre
+(4,107 m²), elevation 1,531 m** — it clears the 1-acre hard admission floor by 60 m². (Its Adirondack
+cousin `Lake Tear of the Clouds`, NY, 1.8 acres at 1,318 m, is in there too.)
 
-1. **Sample at bodies, not a grid.** No summit stations enter the calculation at all.
-2. **Percentile, never minimum.** *The 25th-percentile body* must show sustained freezing — so a handful
-   of alpine tarns cannot drag the region into season. We have elevation on **99.5%** of bodies (N7-3),
-   so excluding the top decile is free if we want belt-and-braces.
-3. **The gate and the turnover are different things, and only one of them is user-visible.** Weather
-   decides *when we start looking*; **the first frame that shows ice decides when the app turns over**
-   (D149). So an over-eager gate costs a few dollars of granule fetches and nothing else. **Mt
-   Washington can make us start looking in September; it cannot make the app claim the season turned.**
+**And the founder's answer was to make it the trigger rather than the noise:**
+
+> **Founder, 2026-08-21c:** *"I'd actually be totally happy to start a season once Lake of the Clouds
+> registers freezing temps. That lake is an early-season favorite in the community, which signals the
+> new season has arrived!"*
+
+Which is better than the guard I was going to build, because it is *true* — the community already
+treats that pond as the season opener, so the signal carries meaning a percentile never would. Three
+notes on making it safe:
+
+1. **It is a weather trigger, not an imagery one, and that distinction saves it.** At 1.0 acre the body
+   is ~41 Sentinel pixels, nearly all of them shoreline-mixed — imagery could not reliably tell us when
+   it froze. Sampling *temperature* at a coordinate does not care how small the pond is.
+2. **OR, never AND.** The season opens when Lake of the Clouds registers freezing **or** the
+   percentile-across-bodies signal fires. One 1-acre pond must not be a single point of failure for the
+   whole region's ingest — a gap in one weather series should not stall a season.
+3. **The gate and the turnover are still different things, which is what makes the whole thing cheap.**
+   Weather decides *when we start looking*; **the first frame showing ice decides when the app turns
+   over** (D149). An over-eager gate costs a few dollars of granule fetches. **Mt Washington can make
+   us start looking in September; it cannot make the app claim the season turned.**
 
 That asymmetry is licence to make the gate deliberately generous — the expensive failure is a *late*
 gate that misses freeze-up, not an early one that wastes compute.
@@ -462,29 +480,37 @@ snow *presence* (SCL's snow/ice class, NDSI); it **cannot see 3–6 inches**. Bu
 fetches **Open-Meteo snowfall**. So: **imagery for the ice, weather for the snow**, joined on the
 imagery-derived ice-in date. Neither lane could produce this sentence alone.
 
+**And the founder pushed it one step further, which is where it gets genuinely good:**
+
+> **2026-08-21c:** *"Open-Meteo tells us when snow falls, imagery bands tell us if/when that snow has
+> blown away or melted or piled up into snowdrifts/dunes and ice is uncovered again?!"*
+
+That is the right division of labour, and it answers a question neither source can answer alone.
+**Snowfall is an event; snow *cover* is a state**, and in a Northeast winter the two come apart
+constantly — wind strips a lake bare while the gauge records six inches, or drifts pile into dunes and
+leave black ice between them. The weather lane knows what fell; **only the imagery knows what stayed**.
+
+Both halves stay observations (D140's `.past`, D151's framing), so nothing here needs a prediction to
+be useful: *"6″ fell Jan 12 · lake read bare again by Jan 15"* is two measurements and a date, and it is
+exactly the fact a skater is trying to reconstruct by reading reports.
+
 **Phrasing stays inside D151 and D3** — these are observed medians across nine seasons, and each clause
 is a description. *"Prime window"* and *"best ice"* are the phrasings to avoid; the sentence is more
 useful without them anyway.
 
-#### Two research lanes this archive opens — both deferred, one with a hard cap
+#### Two research lanes this archive opens → [N6g](./phase-N6g-imagery-research.md)
 
-**Black ice from SAR + freeze rate → N6g, research, validation-gated.** Physically plausible: smooth ice
-is specular and returns dark in SAR, so *low backscatter **plus** Sentinel-2 classifying ice rather than
-water* is a smooth-ice signature, and how fast a body froze is a genuine covariate. Against it: 10–20 m
-pixels, black ice that changes character within hours, and **an incentive structure that makes a false
-positive the costliest error this product could make** — everyone wants black ice, which is exactly why
-they would trust the claim.
+Split into their own doc at the founder's ask (2026-08-21c), because both read this archive, neither can
+start before it exists, and both are easy to ship and hard to ship *correctly*:
 
-> **Rule if it is ever built:** validated against our own condition reports first, and **the strongest
-> claim it may ever make is "smooth ice observed on \[date]."** Never *"black ice here."* D3, D150, D151
-> all point the same way.
-
-**Never-freezing bodies → demote, never delete.** Nine seasons of never-observed-ice is strong evidence
-for Cape Cod and coastal brackish water, and it is a genuinely good use of the archive. But evidence of
-absence has failure modes: **a sub-pixel pond cannot show ice at 10 m regardless of temperature**, and a
-missed cold year is a missed cold year. Deletion is the one irreversible operation in the corpus, and we
-already have demote lanes — `listed`, D49 prominence, N6f's access verdict. **So a body with nine dry
-seasons gets demoted, with the evidence shown to an operator**, and never removed.
+- **Black ice from SAR + freeze rate.** The most-wanted thing a skater could be told and the most
+  dangerous to get wrong — a false positive sends someone to a lake *because* we implied the good ice
+  was there. Validation-gated against our own reports; capped at *"smooth ice observed on \[date]"*
+  forever.
+- **Bodies that never freeze.** Nine dry seasons is strong evidence for a 50-acre lake and weak evidence
+  for a 1-acre pond, because after shoreline erosion a 1-acre body has under ten pixels to vote with.
+  The founder's N7b recoverability argument holds **if** we archive the enriched row before removing it
+  — the expensive part of a corpus row is the N7-3 enrichment, not the row.
 
 ---
 
