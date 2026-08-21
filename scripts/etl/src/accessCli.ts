@@ -48,6 +48,7 @@ import {
   orsFootHikingBody,
   PARKING_INFER_RADIUS_M,
   parseOrsFootHikingRoute,
+  plausibleApproach,
   straightLineApproach,
 } from '@skating/core';
 import {
@@ -205,7 +206,11 @@ async function buildTrails(states: readonly string[], refresh: boolean) {
       const line = trimmed.startsWith(RECORD_SEPARATOR) ? trimmed.slice(1) : trimmed;
       if (line.length === 0) continue;
       let feature: {
-        properties?: { type?: string; id?: number };
+        // `-a type,id` writes these as `@type` and `@id`, which is what `parseAccessFeature` reads
+        // too. Getting it wrong is silent and total: every way lands under the id `way/undefined`,
+        // the dedupe folds the whole state into one edge, and the pass reports a graph of two ways
+        // and 40,838 "cross-border duplicates" without erroring once.
+        properties?: { '@type'?: string; '@id'?: string | number };
         geometry?: { type?: string; coordinates?: number[][] };
       };
       try {
@@ -216,7 +221,12 @@ async function buildTrails(states: readonly string[], refresh: boolean) {
       }
       const coordinates = feature.geometry?.coordinates;
       if (feature.geometry?.type !== 'LineString' || !coordinates) continue;
-      const id = `${feature.properties?.type ?? 'way'}/${feature.properties?.id ?? ''}`;
+      const rawId = feature.properties?.['@id'];
+      if (rawId === undefined) {
+        refusedLines++;
+        continue;
+      }
+      const id = `${feature.properties?.['@type'] ?? 'way'}/${rawId}`;
       builder.addWay({
         id,
         coords: coordinates.map(([lng, lat]) => ({ lat: lat as number, lng: lng as number })),
@@ -454,6 +464,8 @@ async function main(): Promise<void> {
   let pathsRecovered = 0;
   /** Hike-in legs still owed a line when this run ended — the operator's "run it again" number. */
   let awaitingPath = 0;
+  /** Legs ORS routed the long way round the water, demoted to straight-line (D87 rung 2). */
+  let implausible = 0;
 
   for (const putIn of pairing.putIns) {
     if (!putIn.parkingExternalId) continue;
@@ -505,6 +517,13 @@ async function main(): Promise<void> {
       if (apiKey) await sleep(ORS_GAP_MS);
     }
 
+    // A leg ORS routed the long way round the water is not an approach (N6e Workstream 0). Applied
+    // here rather than at the request, so the 30 already sitting in the cache from N6d's pass are
+    // demoted too — the cache keeps ORS's true answer and the row gets the usable one.
+    const applied = plausibleApproach(leg, lot.point, putIn.point);
+    if (applied !== leg) implausible++;
+    leg = applied;
+
     putIn.approachMeters = Math.round(leg.meters);
     putIn.approachAscentM = leg.ascentM === undefined ? undefined : Math.round(leg.ascentM);
     putIn.approachRouted = leg.routed;
@@ -551,6 +570,9 @@ async function main(): Promise<void> {
     // question: routing asks "how far is the walk", this asks "do we have the line to draw it".
     pathBackfills,
     pathsRecovered,
+    // Named rather than folded into `fellBackToStraightLine`: these are legs ORS *did* route, and
+    // the number says how often a lot and its launch are on opposite sides of the water.
+    implausibleRoutes: implausible,
     ...(trailStats ? { trails: trailStats } : {}),
     // Not a ratio (D137): the legs a re-run tomorrow would still pick up, named.
     legsAwaitingPath: awaitingPath,

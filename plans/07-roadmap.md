@@ -1312,9 +1312,10 @@ a new lifecycle. Independent of N6c; either order.
 > bodies (a trailhead serving three ponds is normal here), which is cheap now and awkward later.
 
 **N6e — Imagery, scoped to a lake: the aerial reveal and the freeze-up timeline.** 📋 **Re-scoped
-2026-08-21**, unbuilt — see [`phase-N6e-satellite-imagery.md`](./phase-N6e-satellite-imagery.md);
-decisions **D146**–**D150**, plus **D84** (two tiers) and **D75** (the licence question is answered).
-Gated behind N6d, with **one blocking item inside N6d** — see the last bullet.
+2026-08-21**; imagery unbuilt, **Workstream 0 built the same day** — see
+[`phase-N6e-satellite-imagery.md`](./phase-N6e-satellite-imagery.md);
+decisions **D146**–**D151**, plus **D84** (two tiers) and **D75** (the licence question is answered).
+Gated behind N6d, which is complete on dev.
 
 *The 2026-07-31 scoping specced a map-wide **base-map toggle**. A founder review falsified that shape
 three ways, so the doc was rewritten rather than patched.*
@@ -1350,11 +1351,22 @@ three ways, so the doc was rewritten rather than patched.*
   L2A. Amended onto D140's line: dated per-pass classification is permitted, the hop to *skateable*
   is not. **Capture the bands during N6e's reads anyway** — re-fetching a season later is the
   expensive version.
-- ⚠ **Blocking, and time-sensitive: N6d must store the ORS route geometry before its routing pass
-  finishes.** The mask buffers the trail, and we have no trail line — N6d correction #9 dropped it. But
-  `access.ts` already calls ORS's **GeoJSON** endpoint and discards the geometry, so capturing it costs
-  one field and **zero extra quota**. Re-deriving means re-routing every put-in against a 2,000/day
-  ceiling, paid twice. It also unlocks drawing the approach, which doesn't exist today.
+- ✅ **Workstream 0 — the way in, built 2026-08-21** (on the N6e branch, not as an N6d follow-up). The
+  prerequisite was *"store the ORS route geometry **before** N6d's routing pass finishes"*, and it
+  arrived eight days late: the pass completed 2026-08-13 and the cache holds only
+  `{meters, ascentM, routed}`, so the free window had shut. Re-routing the **262 hike-in legs**
+  (founder call, over 4,945 or 2,349) bought the lines back for under a day of quota. **The trail
+  connectivity fast-follow N6d sized and declined shipped with it** at the founder's ask — 1.15M ways
+  hashed into a graph by byte-identical endpoints, never stored, budget capped at `HIKE_IN_ASSERT_M`
+  because D144 already said an association at that range must be asserted rather than derived. And the
+  approach is **drawn** on both clients, from the marker query so a moderator's `hide` takes the line
+  with it. **254 of 262 lines recovered; 30 launches across 22 lakes now draw a walk.** The trail pass
+  found **69 pairings against the 150–300 it was sized at** (+12 launches that gained a lot once
+  loaded) — N6d's *"don't, yet"* was right about the yield, and the launch side was always the
+  ceiling. ⚠ **And drawing the lines exposed 30 approaches that were never walks**: legs ORS routed
+  around the water, up to **99 km** between a lot and a launch 250 m apart, which N6d has been
+  rendering as *"about 99 km on foot"* since August. `MAX_PLAUSIBLE_APPROACH_M` demotes them to the
+  straight-line rung; dev now carries none.
 
 **N7 — The unified corpus: one record per lake, two catalogues behind it, and a full data campaign.**
 ✅ **Corpus + campaign complete on dev, 2026-08-09** (the 250 m wind fetch runs on; prod deferred) — the phase this roadmap had no entry for at all until now. See [`phase-N7-unified-corpus.md`](./phase-N7-unified-corpus.md) — the one N7 document, with the

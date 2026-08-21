@@ -426,3 +426,82 @@ describe('OSM-derived launches on the map (N6d)', () => {
     expect(await t.query(api.putIns.listForBody, { waterBodyId: body })).toHaveLength(0);
   });
 });
+
+describe('the approach line on the map (N6e Workstream 0)', () => {
+  const LINE = [
+    { lat: 44.03, lng: -72.001 },
+    { lat: 44.025, lng: -72.0005 },
+    { lat: 44.02, lng: -72 },
+  ];
+
+  const seedLaunch = async (
+    t: ReturnType<typeof convexTest>,
+    body: Id<'waterBodies'>,
+    over: Record<string, unknown> = {},
+  ) =>
+    t.run((ctx) =>
+      ctx.db.insert('putIns', {
+        waterBodyId: body,
+        coord: { lat: 44.02, lng: -72 },
+        source: 'osm' as const,
+        status: 'visible' as const,
+        approachMeters: 1_240,
+        approachAscentM: 96,
+        approachRouted: true,
+        approachPath: LINE,
+        createdAt: Date.now(),
+        ...over,
+      }),
+    );
+
+  /** The map draws the walk from the marker it already holds — no second query for the line. */
+  test('a marker carries its walk, so the map needs no extra read', async () => {
+    const t = convexTest(schema, modules);
+    const body = await seedBody(t);
+    await seedLaunch(t, body);
+
+    const markers = await t.query(api.putIns.listForBody, { waterBodyId: body });
+    expect(markers[0]?.approachPath).toEqual(LINE);
+    expect(markers[0]?.approachMeters).toBe(1_240);
+    expect(markers[0]?.approachAscentM).toBe(96);
+    expect(markers[0]?.id).toBeDefined();
+  });
+
+  /**
+   * ⚠ The PR #43 defect, one field over. A moderator's `hide` is a **coordinate**, not a status, so
+   * a suppressed launch is filtered out of the marker list — and its line has to go with it. Drawing
+   * the approach from a separate query would have left a dashed trail walking to a launch the
+   * moderator removed from the map.
+   */
+  test('a hidden launch takes its line with it', async () => {
+    const t = convexTest(schema, modules);
+    const body = await seedBody(t);
+    await seedLaunch(t, body);
+    await t.run((ctx) =>
+      ctx.db.insert('putIns', {
+        waterBodyId: body,
+        coord: { lat: 44.02, lng: -72 },
+        source: 'derived' as const,
+        status: 'hidden' as const,
+        createdAt: Date.now(),
+      }),
+    );
+
+    expect(await t.query(api.putIns.listForBody, { waterBodyId: body })).toHaveLength(0);
+  });
+
+  /** A short walk stores no line, and the marker must not invent one from the two coordinates. */
+  test('a launch with no stored line reports none', async () => {
+    const t = convexTest(schema, modules);
+    const body = await seedBody(t);
+    await seedLaunch(t, body, {
+      approachMeters: 300,
+      approachPath: undefined,
+      approachAscentM: undefined,
+    });
+
+    const markers = await t.query(api.putIns.listForBody, { waterBodyId: body });
+    expect(markers[0]?.approachMeters).toBe(300);
+    expect(markers[0]?.approachPath).toBeUndefined();
+  });
+});

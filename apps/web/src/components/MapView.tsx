@@ -1,7 +1,11 @@
 import { api } from '@skating/convex/api';
 import type { Id } from '@skating/convex/dataModel';
 import {
+  APPROACH_LAYER_ID,
+  APPROACH_SOURCE_ID,
   applyDraftMapClick,
+  approachesToFeatureCollection,
+  approachLinePaint,
   type BBox,
   draftPlacementCount,
   isDraftSubmittable,
@@ -482,6 +486,20 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
           'circle-stroke-width': 2,
         },
       });
+      // The walk from the car to the ice (N6e Workstream 0), under the pins at its two ends: a
+      // hike-in lake's whole problem is that the way in is not obvious, and N6d could say "1.1 km on
+      // foot" without being able to say *where*. Added before the markers so the route never covers
+      // the launch it leads to.
+      map.addSource(APPROACH_SOURCE_ID, { type: 'geojson', data: EMPTY_FEATURES });
+      map.addLayer({
+        id: APPROACH_LAYER_ID,
+        type: 'line',
+        source: APPROACH_SOURCE_ID,
+        layout: { 'line-cap': 'round', 'line-join': 'round' },
+        // Amber-700: warm against the cool put-in blues, and not the danger red the hazard layer
+        // owns — a long walk is a thing to plan for, not a thing to avoid.
+        paint: approachLinePaint('#b45309') as never,
+      });
       // Put-in markers for the focused lake (Phase 4, decision #7): official markers read as a solid
       // teardrop-ish dot, derived clusters a lighter ring — both distinct from the report photo pins.
       map.addSource('put-in-markers', { type: 'geojson', data: EMPTY_FEATURES });
@@ -740,6 +758,10 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
     if (!map || !loaded) return;
     const source = map.getSource('put-in-markers') as maplibregl.GeoJSONSource | undefined;
     source?.setData(putInsToFeatureCollection(putIns ?? []));
+    // The approach lines ride the same query and the same effect, deliberately: they are drawn from
+    // the markers themselves, so a launch and its walk can never disagree about whether it is there.
+    const approaches = map.getSource(APPROACH_SOURCE_ID) as maplibregl.GeoJSONSource | undefined;
+    approaches?.setData(approachesToFeatureCollection(putIns ?? []));
   }, [putIns, loaded, mapRef.current]);
 
   // The recorded path behind the open report (Phase 8) — cleared when the drawer closes. The drawer

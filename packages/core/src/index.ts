@@ -1,6 +1,7 @@
 export * from './access';
 export * from './accessAlert';
 export * from './age';
+export * from './approachLayer';
 export * from './authRoute';
 export * from './badges';
 export * from './basemapLayers';

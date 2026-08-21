@@ -385,6 +385,42 @@ function approachPathFrom(coordinates: number[][] | undefined): LatLng[] | undef
 }
 
 /**
+ * The longest routed leg that is still a walk to the ice.
+ *
+ * **Not a tuning value — a shape in the data.** Sorted, the corpus's routed approaches run
+ * continuously out to 4,061 m and then jump: 4.9 km, a cluster at 5.2–5.7 km, then 8 km, 17 km,
+ * 26 km, and three legs of **99 km**. Every one of those long ones is a lot within
+ * `PARKING_INFER_RADIUS_M` of its launch — 250 metres — that ORS could only reach by walking around
+ * an inlet, a river with no bridge, or an entire lake.
+ *
+ * The number ORS returns is *correct*: that genuinely is the shortest walk. It is not an **approach**,
+ * because nobody parks 250 m from the ice and walks 99 km to it. The honest reading of a leg like that
+ * is that there is no walking route between the car and the launch, which is what the straight-line
+ * fallback already says.
+ *
+ * 5 km, because that is where the distribution breaks and because it is already three times the
+ * distance at which D144 makes a *human* assert what they are claiming.
+ */
+export const MAX_PLAUSIBLE_APPROACH_M = 5_000;
+
+/**
+ * Demote a routed leg that is not a walk to the ice (N6e Workstream 0).
+ *
+ * Applied to cached legs as well as fresh ones, deliberately: 30 of these were already stored by
+ * N6d's routing pass, so a rule that only ran on new requests would leave *"about 99 km on foot"* on
+ * the surfaces that already render it — and, once the line is drawn, a dashed trail crossing three
+ * counties from a lake's parking marker.
+ *
+ * Demoted rather than dropped: the pairing itself is still good evidence (somebody mapped a lot 250 m
+ * from a launch), so the row keeps its lot and falls back to *"at least 250 m on foot"*. What it
+ * loses is the number that was wrong and the line that would have drawn it.
+ */
+export function plausibleApproach(leg: ApproachLeg, from: LatLng, to: LatLng): ApproachLeg {
+  if (!leg.routed || leg.meters <= MAX_PLAUSIBLE_APPROACH_M) return leg;
+  return straightLineApproach(from, to);
+}
+
+/**
  * The fallback rung: crow-flies, **flagged as such** (D87 ladder rung 2).
  *
  * The flag is the whole point. A straight line between a lot and a launch **under-reports** a real

@@ -13,10 +13,12 @@ import {
   describeApproach,
   HIKE_IN_ASSERT_M,
   isHikeIn,
+  MAX_PLAUSIBLE_APPROACH_M,
   orsFootHikingBody,
   PARKING_INFER_RADIUS_M,
   PUTIN_SHORE_RADIUS_M,
   parseOrsFootHikingRoute,
+  plausibleApproach,
   requiresHikeInAssertion,
   resolveApproachKind,
   resolvePutInName,
@@ -354,6 +356,53 @@ describe('the approach leg (D87)', () => {
     test('approachPathWanted is the hike-in line, and it is exclusive at the boundary', () => {
       expect(approachPathWanted(SHORT_WALK_MAX_M)).toBe(false);
       expect(approachPathWanted(SHORT_WALK_MAX_M + 1)).toBe(true);
+    });
+  });
+
+  /**
+   * Found by drawing the lines: three legs in the corpus are **99 km** long, between a lot and a
+   * launch 250 m apart. ORS is not wrong — that is the shortest walk when the two are on opposite
+   * sides of an inlet with no bridge. It is not an *approach*, and once drawn it is a dashed trail
+   * crossing three counties out of a lake's parking marker.
+   */
+  describe('plausibleApproach', () => {
+    const LOT = { lat: 44.5, lng: -72.5 };
+    const LAUNCH = destinationPoint(LOT, 90, 250);
+
+    test('leaves an ordinary walk alone', () => {
+      const leg = { meters: 1_240, ascentM: 96, routed: true, path: [LOT, LAUNCH] };
+      expect(plausibleApproach(leg, LOT, LAUNCH)).toBe(leg);
+    });
+
+    test('demotes a leg routed the long way round the water to the straight-line rung', () => {
+      const demoted = plausibleApproach(
+        { meters: 99_151, ascentM: 900, routed: true, path: [LOT, LAUNCH] },
+        LOT,
+        LAUNCH,
+      );
+      expect(demoted.routed).toBe(false);
+      expect(demoted.meters).toBeCloseTo(250, 0);
+      // Both halves matter: the number was wrong, and the line would have drawn it.
+      expect(demoted.path).toBeUndefined();
+      expect(demoted.ascentM).toBeUndefined();
+    });
+
+    test('holds at the boundary rather than a metre either side of it', () => {
+      const at = { meters: MAX_PLAUSIBLE_APPROACH_M, routed: true };
+      const over = { meters: MAX_PLAUSIBLE_APPROACH_M + 1, routed: true };
+      expect(plausibleApproach(at, LOT, LAUNCH).routed).toBe(true);
+      expect(plausibleApproach(over, LOT, LAUNCH).routed).toBe(false);
+    });
+
+    /** A straight-line leg is already the fallback; re-deriving it would be a no-op with a cost. */
+    test('leaves an unrouted leg untouched, however long', () => {
+      const leg = { meters: 40_000, routed: false };
+      expect(plausibleApproach(leg, LOT, LAUNCH)).toBe(leg);
+    });
+
+    /** The ceiling has to sit well clear of the range a human is made to assert (D144). */
+    test('is far above the distance at which a person must assert the association', () => {
+      expect(MAX_PLAUSIBLE_APPROACH_M).toBeGreaterThan(HIKE_IN_ASSERT_M * 2);
     });
   });
 

@@ -67,6 +67,15 @@ export const PUT_IN_MARKER_DERIVED_COLOR = '#5b8fb0';
  */
 export const PUT_IN_MARKER_OSM_COLOR = '#3d7ea6';
 
+/**
+ * The approach line (N6e Workstream 0) — amber-700.
+ *
+ * Warm against the cool put-in blues so the walk reads as a distinct kind of thing from the markers
+ * it joins, and deliberately **not** the hazard palette's red: a long walk is something to plan for,
+ * not something to avoid, and D82's rule about colour making claims words did not applies here too.
+ */
+export const APPROACH_LINE_COLOR = '#b45309';
+
 /** Initial framing — Burlington sits near the center of the region; the fallback when no device
  *  fix is available (device geolocation reframes on open when in-region, D12/D20). */
 export const INITIAL_CENTER: [number, number] = [-73.15, 44.46];

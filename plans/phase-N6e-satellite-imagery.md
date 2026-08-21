@@ -3,9 +3,12 @@
 *Not a base map you switch to. A photograph of **this lake**, clipped to its own shape and the way in,
 with a date on it — and behind it, a season of passes you can scrub through and watch the ice arrive.*
 
-> **Status:** 📋 Re-scoped 2026-08-21 after a founder review of the original scoping. **Not built.**
-> Gated behind [N6d](./phase-N6d-lake-access-points.md), with **one item that must land inside N6d** —
-> see [Prerequisite](#prerequisite--the-one-thing-that-cannot-wait-for-this-phase).
+> **Status:** 📋 Re-scoped 2026-08-21 after a founder review of the original scoping. **Imagery not
+> built; [Workstream 0](#workstream-0--getting-the-way-in-into-the-app--built-2026-08-21) is** — the
+> access prerequisite grew into a build of its own on 2026-08-21 (route geometry, the trail
+> connectivity pass, and the approach drawn on both clients) and landed on this phase's branch rather
+> than as an N6d follow-up (founder call). Gated behind
+> [N6d](./phase-N6d-lake-access-points.md), which is complete on dev.
 >
 > **What changed, and why the rewrite rather than a patch.** The 2026-07-31 scoping specced a
 > **base-map toggle**: satellite replaces the vector basemap across the whole map, everywhere, and the
@@ -391,22 +394,146 @@ polygon needs to see past its current edge, which is the opposite of what a skat
 
 ---
 
-## Prerequisite — the one thing that cannot wait for this phase
+## Workstream 0 — Getting the way in into the app ✅ **BUILT 2026-08-21**
 
-**N6d must store the ORS route geometry, before its routing pass finishes.**
+*Scoped as a one-line prerequisite. It became a workstream because the window it depended on had
+already closed, and because the founder took the second half of it at the same time.*
 
-A1's mask buffers the trail. **We have no trail geometry.** N6d's correction #9 dropped trail lines from
+### 0a — The line ORS was already handing us
+
+A1's mask buffers the trail. **We had no trail geometry.** N6d's correction #9 dropped trail lines from
 the OSM extract on the reasoning that a successful `foot-hiking` route *is* the trail signal, so
-`amenities` carries a `trail` flag and the schema stores `approachMeters`, `approachAscentM` and
+`amenities` carried a `trail` flag and the schema stored `approachMeters`, `approachAscentM` and
 `approachRouted` — but no line.
 
-**And we are already being handed it.** `packages/core/src/access.ts` calls ORS's **GeoJSON** directions
-endpoint, which returns the route geometry; the parser takes distance and ascent and discards the rest.
-Capturing it costs one optional field and **zero additional ORS quota**. Re-deriving it later means
-re-routing every put-in against a 2,000/day quota, paid twice.
+> ### ⚠ The zero-cost window closed on 2026-08-13, and the prerequisite was written as though it
+> hadn't
+>
+> *"Before its routing pass finishes"* was the right instruction and it arrived eight days late.
+> N6d's routing pass **completed at 99.4% on 2026-08-13**, and the check that mattered was not the
+> plan but the cache: `.scratch/access/ors-cache.json` holds 4,976 legs as
+> `{"meters":129.3,"ascentM":0.2,"routed":true}`. `parseOrsFootHikingRoute` read `summary.distance`
+> and `ascent` off `features[0].properties` and dropped `features[0].geometry` — so the responses are
+> gone, and *"costs zero additional ORS quota"* stopped being true the moment the last leg cached.
+>
+> **Recovering it is a re-route**, against a 2,000/day quota that answers with a `403` carrying no
+> reset header. Priced from the cache before spending anything: 4,945 routed legs (~3 days), 2,349
+> over 150 m (~2 days), or **262 hike-in legs (under one day)**.
+>
+> **Founder call, 2026-08-21: hike-in only.** The line exists to be drawn and to be buffered into
+> N6e's mask, and below 800 m it is a few metres of tarmac between a car and a bank — invisible at
+> the drawer's zoom, invisible inside a 30 m buffer, and paid for on every read of the row. The
+> residue, stated: the 2,087 legs between 150 m and 800 m keep their distance and their chip and
+> render no line, so N6e's mask on a short-walk body buffers the lake and the parking alone.
 
-It also unlocks **drawing the approach on the map**, which does not exist today — N6d gives a distance
-and a hike-in chip, not a line.
+**What shipped.** `approachPathWanted` is one predicate shared by the parser and the ETL, so a leg can
+never be re-routed against the quota and then have its geometry thrown away. The path is stripped to
+2D (`elevation: true` returns `[lng, lat, metres]` triples, and the climb is already on the row),
+simplified to `APPROACH_PATH_TOLERANCE_M` — 5 m, the corpus shoreline's own tolerance — and refused
+entirely above `APPROACH_PATH_MAX_VERTICES` rather than truncated, because a truncated route is a walk
+that stops in the woods.
+
+**The cache gained `pathAsked`, and that is what lets the backfill finish.** A routed leg whose line
+came back unusable is a **real answer** and is remembered, exactly as a 404 is. Without the flag those
+legs would be re-requested on every run for ever — the mirror image of the 429-cached-as-an-answer bug
+N6d's first run found, which cached a failure as an answer where this would refuse to cache an answer
+at all.
+
+**One line is never drawn: the straight-line fallback's.** The distance can hedge itself — *"at least
+900 m on foot"* — because a number carries its own qualifier. A line cannot: a crow-flies segment
+through the woods is indistinguishable on a map from a route somebody walked. So `approachPath` is
+written only for a routed hike-in leg, and `setPutInAccess` **retracts it** on both branches that
+re-point the association, since a stale line would be drawn from the *new* lot's marker as
+authoritatively as the routed ones beside it.
+
+### 0b — Pairing a trailhead by the trail rather than by the radius
+
+> **Founder call, 2026-08-21:** take the trail-connectivity fast-follow N6d sized and declined, in
+> the same pass.
+
+N6d's *§Sized 2026-08-14* recommended *"don't, yet"* and the founder overrode it. The case is real and
+nothing else reaches it: `pairAccessFeatures` caps at `PARKING_INFER_RADIUS_M`, so **a lot a kilometre
+up a trail never pairs, and a leg that never pairs is never routed.** Widening the radius does not
+help — the measured distance curve from unpaired lots to the nearest launch rises monotonically to
+3–8 km with no trailhead population to aim at.
+
+So the trail lines come back, for a question routing cannot answer. They are **not stored**: 1.15M ways
+stream into `Float64Array`s, build a graph, and are discarded. Nothing about trails reaches Convex.
+
+- **The graph is built by hashing endpoint coordinates**, which is the de-risking N6d measured: 29% of
+  Vermont's trail endpoints are byte-identical across ways, because `osmium export` round-trips the
+  same double for the same node. No pyosmium, no node-ref extraction. `COORD_KEY_DP` is 7 (~11 mm) and
+  ⚠ loosening it does not improve connectivity, it invents crossings where a path passes over a
+  culvert.
+- **Dijkstra, not BFS**, because trail ways differ in length by three orders of magnitude and a hop
+  count would prefer one 4 km logging track to six 50 m footpaths.
+- **The inference budget is `HIKE_IN_ASSERT_M`, not a number of its own.** D144 already drew this line
+  for the human direction — above 1,600 m an association must be *asserted* rather than derived — and
+  an ETL guessing at 3 km would be doing exactly what that forbids a person from doing silently.
+  Beyond it the answer stays `setOfficialParking`, which has no distance limit and attributes the
+  claim to somebody.
+- **A trail pairing also flips the lot to `paired`**, which is what carries it through the loader's
+  water-relevance gate. Without that the very lots this pass exists to find would be filed as
+  `notNearWater`, since a trailhead is beyond every shoreline by definition.
+
+### 0c — The walk, drawn
+
+N6d gave a distance, a climb and a Hike-In chip and no way to see **where** the kilometre goes. The
+line now renders on both clients from `packages/core/src/approachLayer.ts` — dashed, because a solid
+line reads as surveyed infrastructure and this is an ORS route over OSM's trail data.
+
+**It is drawn from the marker query, not from a query of its own**, and that is a correctness choice
+rather than a saving. `putIns.hide` inserts a suppression *coordinate*, so a hidden launch is filtered
+out of `listForBody` before it can contribute — and its line goes with it. A second query would have
+re-created the PR #43 defect exactly: the marker gone from the map while a dashed trail still walked
+to where it used to be.
+
+### What the run found — 2026-08-21
+
+*Three things, and the third was invisible until the lines were drawn.*
+
+**1. The geometry came back almost whole, and the quota was never in danger.** 262 hike-in legs
+re-requested, **254 lines recovered (97%)**, `retryableFallbacks: 0`, `legsAwaitingPath: 0`, and no
+`403` at all — 331 requests including the new pairings, against a 2,000/day ceiling. The stored lines
+run **11 to 53 vertices** after simplification, median 18, nowhere near
+`APPROACH_PATH_MAX_VERTICES` — so the cap never bound, which is the outcome that makes "refuse rather
+than truncate" cost nothing.
+
+**2. The trail pass works and yields far less than it was sized at.** The graph built exactly as
+predicted — **1,153,613 ways, 1,559,201 nodes, 0 degenerate, 1,677 cross-border duplicates** — and
+Vermont reproduced the sizing pass's own figures to the row (27 of 185 unpaired launches on a trail;
+the doc measured 27). Across five states, **2,030 of 8,361 unpaired launches** and **52,667 of 92,384
+unpaired lots** are within `TRAIL_SNAP_M` of a trail, 106.9M candidate pairs were pruned by the exact
+straight-line filter, 24,480 searches ran — and the result is **69 new pairings**, against the
+150–300 N6d extrapolated.
+
+Loaded, that is **+12 launches that gained a lot** and **+1 body with a put-in**: the 69 include a
+great many coastal beaches and piers that match no corpus body, which is the same scope boundary the
+9,737 unmatched candidates already described. **N6d's *"don't, yet"* was right about the yield.** The
+founder took it anyway and the machinery now exists; the honest summary is that the trailhead case is
+rarer in OSM than the lot-side numbers suggested, because the **launch** side was always the ceiling.
+
+**3. ⚠ Thirty approaches were not walks, and drawing them is what made that obvious.** Sorted, the
+routed legs run continuously to 4,061 m and then jump to 4.9 km, 8 km, 17 km, 26 km, and **three at
+99 km** — every one of them a lot within 250 m of its launch that ORS could only reach by going
+around the water. N6d has been storing those since August: the drawer says *"about 99 km on foot"* and
+the body wears a Hike-In chip. As a number it is absurd and easy to miss; as a **dashed line crossing
+three counties out of a lake's parking marker**, it is unmissable, which is why this fell out of the
+render work rather than the data work.
+
+`MAX_PLAUSIBLE_APPROACH_M` (5 km) demotes them to the straight-line rung — *"at least 250 m on foot"*
+— keeping the pairing, dropping the number that was wrong and the line that would have drawn it. The
+rule is applied where the leg is **used** rather than where it is requested, so the 30 already in the
+cache were fixed by a re-run that spent no quota at all. Dev now carries **zero** put-ins claiming an
+approach over 5 km.
+
+**Where it landed:** 3,589 put-ins · 1,363 with a lot · **30 launches across 22 lakes draw a walk**.
+That last number is small for the same reason as the trail yield: of 266 launches whose line was
+recovered, **288 of the 331 changed rows matched no corpus body**, so the lines mostly belong to
+coastal launches we do not carry.
+
+> **Not yet verified on a screen.** The pure layer is covered by tests on both clients and the data is
+> loaded on dev, but nobody has looked at a rendered dashed line. Web first, then the Android build.
 
 ---
 
@@ -427,8 +554,11 @@ and a hike-in chip, not a line.
 
 ## Sequencing — three PRs *(settled 2026-08-21)*
 
-**PR 0 — inside N6d, blocking and time-sensitive.** Capture the ORS route geometry while the routing
-pass is still running. See [Prerequisite](#prerequisite--the-one-thing-that-cannot-wait-for-this-phase).
+**PR 0 — the way in.** ✅ **Built 2026-08-21**, on this branch rather than inside N6d (founder call —
+N6d is merged, and a follow-up PR against it would have been a second review of the same code). The
+route geometry, the trail connectivity pass the founder took at the same time, and the approach drawn
+on both clients. See [Workstream 0](#workstream-0--getting-the-way-in-into-the-app--built-2026-08-21)
+— including why *"while the routing pass is still running"* arrived eight days too late to be free.
 
 **PR 1 — the reveal. Zero infrastructure.**
 
