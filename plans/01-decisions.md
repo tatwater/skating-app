@@ -4716,3 +4716,49 @@ anyway** — we are already paying for the download, and re-fetching a season la
 version.
 
 **Related:** [D3](#d3--never-a-safety-verdict), [D140](#d140--a-forecast-and-an-observation-are-separated-by-a-type-not-a-rule-n6c-2--b5b), D147, D148, [`phase-N6e`](./phase-N6e-satellite-imagery.md).
+
+---
+
+## D151 — A phenology date is a **bracket between two passes**, and the claim is about our observation (N6e)
+
+**2026-08-21, founder call, scoping the nine-season archive.** *"We could say something along the lines
+of 'satellite/radar observed 100% ice coverage on X date' instead of '100% ice coverage on X date' so
+that it's about the **observed** date, not the actual date."*
+
+**Two rules, and the second falls out of the first:**
+
+- **The subject of the sentence is us, not the lake.** *"Satellite observed full ice coverage on Jan 8"*
+  is a fact about a photograph. *"The lake froze on Jan 8"* is a claim about the world that a cloudy
+  fortnight can make false. Same grammar D140 applies to weather, one sensor over.
+- **A date is published as the two passes that bracket it**, never as a point with an error bar:
+  **"open water observed Dec 29 · fully frozen observed Jan 8."** The gap *is* the uncertainty, expressed
+  as the two things we actually saw. A cloudy stretch widens the bracket, which reads as precisely what
+  happened — no statistics, nothing to explain, and nothing that can be quoted out of context as
+  precision we don't have.
+
+**Because cloud cover in a Northeast winter is the dominant error term and it is not random.** Sentinel-2
+yields ~2–4 usable optical frames a month here. Any single season's ice-in date is soft by 5–10 days, and
+an error bar invites the reader to treat the midpoint as the answer. A bracket has no midpoint to
+mistake.
+
+**Aggregation is where this pays off.** Nine seasons of brackets converge on the sentence actually
+wanted — *"usually freezes in early January"* — and **climatology gets more reliable as individual dates
+get fuzzier**, which is the opposite of how the uncertainty feels.
+
+⚠ **Central tendency yes; trend claims no.** Sentinel-1's revisit is **not uniform across the archive** —
+S1B failed December 2021 and S1C only reached orbit at the end of 2024, so 2017-22 and 2024-26 have
+~6-day radar coverage while 2022-23 and 2023-24 have ~12-day. Brackets absorb that honestly, but *"freeze-
+up is getting later"* computed across these seasons would be measuring **observation frequency**, not
+climate. The archive supports averages, not trends.
+
+**Scope:** derived **dark** in N6e's PR 2 (operator-visible, no skater surface); the charts that read it
+ship in PR 3. Nine complete seasons, 2017-18 through 2025-26 — the window where Sentinel-2 has two
+satellites, which makes the number an event rather than a preference.
+
+**Prior art, checked 2026-08-21:** nobody has done this for ~25,000 bodies, but
+[NSIDC G01377](https://nsidc.org/data/g01377/versions/1) supplies the standard variable definitions and a
+[published algorithm for small lakes validated on 296 Maine lakes](https://doi.org/10.3390/rs11141718)
+is the closest thing to a reference implementation. Maine's **human ice-out records** give us ground
+truth inside our own region — worth more than any dataset we could have borrowed.
+
+**Related:** [D3](#d3--never-a-safety-verdict), [D140](#d140--a-forecast-and-an-observation-are-separated-by-a-type-not-a-rule-n6c-2--b5b), D149, D150, [`phase-N6e`](./phase-N6e-satellite-imagery.md).

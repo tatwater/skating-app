@@ -299,6 +299,63 @@ a storage question, not an availability one.
 timeline invites inference far harder than a static image does, so every frame carries its own date and
 its own cloud caveat — they travel with the frame, they are not furniture around the control.
 
+### C5 — The nine-season archive and the phenology it yields *(derived dark in PR 2)*
+
+> **Founder, 2026-08-21:** hold every available pass for the region, reveal only the current season, and
+> mine the history for **ice-in / ice-out, >90% coverage, first snow, melt events** per body.
+
+**Nine seasons, and the number is an event rather than a preference.** Sentinel-2B reached operations
+in mid-2017, which is when the constellation's revisit halved to ~5 days (~2–3 at our latitude).
+**Winter 2017-18 through 2025-26 is exactly nine complete seasons at full cadence, with no partial
+season at either end.** 2015-16 and 2016-17 exist on a single satellite — a ~10-day revisit, which in a
+Northeast winter is one or two usable frames a month — and are excluded, along with everything older
+regardless of source *(founder: "not bother with any imagery data older than 9 years")*. That retires
+the Landsat-to-the-1980s option; it stays noted as a future product, not this one.
+
+Economics: **~13 GB in R2 (~$0.20/mo)**, backfill ≈ 8,000 granule jobs ≈ **$43 on Fly**, a couple of
+days across 25 parallel Machines. Keeping the pixels as well as the derived series is cheap insurance
+against wanting to re-derive with a better algorithm.
+
+> **D151 — A phenology date is a bracket between two passes, never a point, and the claim is about our
+> observation rather than the lake.**
+>
+> **Founder, 2026-08-21:** *"we could say something along the lines of 'satellite/radar observed 100%
+> ice coverage on X date' instead of '100% ice coverage on X date' so that it's about the **observed**
+> date, not the actual date."*
+
+That framing is the honest one and it also solves the cloud problem without statistics. We do not
+publish "ice-in: January 8 ± 5 days"; we publish **"open water observed Dec 29 · fully frozen observed
+Jan 8."** The gap *is* the uncertainty, stated as the two things we actually saw. A cloudy stretch
+widens the bracket, which reads as exactly what happened.
+
+Aggregated across nine seasons those brackets converge on the sentence that is actually wanted —
+*"usually freezes in early January"* — which is a climatology, and climatology is the one thing here
+that gets **more** reliable as individual dates get fuzzier.
+
+⚠ **Sentinel-1's cadence is not uniform across the archive, and it will bias any trend.** S1B failed in
+December 2021 and S1C only reached orbit at the end of 2024, so 2017-22 and 2024-26 have ~6-day radar
+revisit while **2022-23 and 2023-24 have ~12-day**. Brackets handle this honestly (fewer passes ⇒ wider
+bracket), but a *trend* across seasons — "freeze-up is getting later" — would be contaminated by
+observation frequency rather than climate. **Central tendency yes; trend claims no.**
+
+**Prior art — checked 2026-08-21, and the hunch was right.** Nobody has done this for ~25,000 bodies.
+What exists is more useful than a dataset anyway:
+
+- **[NSIDC's Global Lake and River Ice Phenology Database](https://nsidc.org/data/g01377/versions/1)** —
+  865 lakes and rivers, mostly human-observed, some records centuries long. Far too sparse for us, but
+  it is the **variable definitions** everyone else uses, and borrowing them costs nothing.
+- **[Remote sensing of lake ice phenology across a range of lake sizes, Maine](https://doi.org/10.3390/rs11141718)** —
+  a published algorithm for **small lakes**, validated on **296 lakes in Maine**, one of our five
+  states. Fuses Landsat's resolution with MODIS's cadence, which is structurally the same move we make
+  with Sentinel-2 + Sentinel-1. **This is the closest thing to a reference implementation we will find**,
+  and it says cadence matters at least as much as resolution.
+- **[`BigelowLab/iceout`](https://rdrr.io/github/BigelowLab/iceout/f/README.md)** — Maine-based tooling
+  in the same lineage. Maine also publishes **human ice-out records**, which gives us a ground-truth set
+  *inside our own region* to validate derived dates against. That is how we find out whether the
+  pipeline works, and it is worth more than any dataset we could have borrowed.
+- **[Daily Lake Ice Phenology from AMSR-E/AMSR2](https://nsidc.org/data/nsidc-0726/versions/1)** — 5 km
+  passive microwave. Useless for our ponds; a sanity check for Champlain.
+
 ---
 
 ## Workstream D — The four pieces D138 moved here
@@ -368,20 +425,33 @@ and a hike-in chip, not a line.
 
 ---
 
-## Sequencing
+## Sequencing — three PRs *(settled 2026-08-21)*
 
-0. **N6d captures the route geometry.** Blocking, and time-sensitive.
+**PR 0 — inside N6d, blocking and time-sensitive.** Capture the ORS route geometry while the routing
+pass is still running. See [Prerequisite](#prerequisite--the-one-thing-that-cannot-wait-for-this-phase).
+
+**PR 1 — the reveal. Zero infrastructure.**
+
 1. **A1 + A2 against NAIP** — mask, inverse fill, hard edge. Where the design risk lives, and entirely
    testable before anything is user-visible.
 2. **B1 + B2** — the 0.3 m source and its date stamp. The moment the feature exists.
 3. **A3 + the control** — the reveal, scoped to the detail view; then rings for the feather.
-4. **E** — the admin editor, unmasked. Cheap once 1–3 land, and it is where operators will stress it.
+4. **E** — the admin editor, unmasked. Cheap once 1–3 land, and where operators will stress it.
 5. **D** — the deep link and the `satelliteImagery` machinery.
-6. **C** — the pipeline, the box, the archive, the scrubber. The long pole, and the only part with an
-   external dependency.
 
-**Steps 1–5 are a shippable unit with no infrastructure.** Step 6 is where the phase becomes expensive,
-and the founder's call is that it ships in the same PR — so expect one large review rather than two.
+Ships against a keyless public endpoint with no box, no archive and no cron. **Could land while N6d is
+still settling**, which is the point of putting the seam here.
+
+**PR 2 — the timeline.** The Fly box, the STAC poll, the granule reader, the masked PMTiles archive,
+the scrubber, D149's weather gate and turnover, the 9-season backfill, and the phenology series
+**derived dark** (§C5). The long pole, and the only part with an external dependency.
+
+**PR 3 — what the archive knows.** The ice-coverage charts in the drawer and the live hatch layer —
+everything user-facing that reads what PR 2 derived. This is N6f's content, and D150's real home.
+
+*This reverses the earlier 2026-08-21 call that the timeline ships with the layer. The timeline is the
+biggest thing in the phase and the only part needing infrastructure; keeping it out of PR 1 is what
+makes PR 1 reviewable.*
 
 ---
 
@@ -408,44 +478,41 @@ and the founder's call is that it ships in the same PR — so expect one large r
   when" outside Fly's Machines API. Splitting hosts (Railway for batch, Fly for ORS) costs the same
   ~$50/mo and buys two dashboards, two deploy paths and two bills.
 
+## Resolved 2026-08-21 (second founder review)
+
+- **NAIP survives as the reveal's *home state*.** The founder's instinct was to drop the summer image
+  outright; the awkwardness turned out to be a UI problem — a June frame sitting *inside* a freeze-up
+  timeline — with a different fix. Turn the reveal on ⇒ **0.3 m aerial**, no pipeline, works today.
+  Scrub ⇒ **winter frames display over it** for the dates that exist. One control, no summer frame in
+  the scrubber, and the N6d access pairing survives at the only resolution where a pull-off is legible.
+  **Keep it easily removable**: founder's standing intent is that *high-res winter replaces summer
+  entirely* the day we can pay for tasked imagery (D147's revisit trigger).
+- **NAIP stays live-fetched in PR 1 — not archived.** *Archiving it would be ~44 GB* (0.3 m over the
+  same water-plus-buffer footprint is ~1,100× the pixels of a 10 m Sentinel pass) — affordable at
+  ~$0.66/mo, but it needs the box, which would **destroy PR 1's zero-infrastructure property** and make
+  it the harder thing to delete later. Live-fetch is both cheaper to build and more removable. Revisit
+  only if courtesy or latency against `USGSNAIPPlus` demands it.
+  ⚠ **"Best summer imagery each year" is not annual:** NAIP flies each state on a **2–3 year cycle**,
+  so the refresh mechanism is watching the ImageServer's `Year` field per state and re-reading when it
+  moves — not a yearly fetch.
+- **Nine seasons, derived dark in PR 2, surfaced for real in PR 3.** See §C5 and **D151**.
+- **Three PRs.** See [Sequencing](#sequencing--three-prs-settled-2026-08-21).
+- **App-wide season turnover: the surgical version, at the founder's delegation** (*"I'll follow your
+  lead"*). D63's July boundary stays as the **season key** — it is load-bearing across N5a hazards,
+  `contentPurge`, the D66 photo purge, `seasonWindow` and bounties, and changing it is wide blast radius
+  for nothing a skater sees. D149's freeze signal applies to the **display default** instead: when last
+  season's content stops reading as current. Most of that already happens without a cliff — hazards
+  decay on D56's multiplier, reports age on their own curves — so the work is an **audit of what hard-
+  cuts at July 1 that a skater would notice**, and moving only that. Scoped as its own small task, not
+  part of this phase's PRs.
+
 ## Open questions
 
-1. **Does NAIP survive, and in what shape?** The founder's instinct is to drop the summer image
-   outright — *"that's useless to us"* — and it is a foreign object *inside a freeze-up timeline*.
-   But dropping it also drops **the only resolution at which access is legible** (a pull-off is 1–2
-   pixels at Sentinel's 10 m; the whole N6d pairing lives at 0.3 m) **and the only part of this phase
-   with no infrastructure dependency** — the thing that still ships if the pipeline slips.
-   *Proposed resolution: the aerial is the **home state** of the reveal and the scrubber swaps winter
-   frames over it.* One control, no summer frame in the timeline, access use case intact.
-2. **The all-time archive, and what it forces.** Founder, 2026-08-21: hold every available pass for the
-   region indefinitely, reveal only the current season, and mine the history for **ice-in / ice-out,
-   >90% coverage, first snow, melt events** per body — charted in the drawer. The economics are
-   friendly (~9 usable Sentinel-2 seasons ⇒ **~13 GB, ~$0.20/mo in R2**; backfill ≈ 8,000 granule jobs
-   ≈ **$43 on Fly**, a couple of days parallel). **But extracting phenology *is* the classifier D150
-   defers to N6f** — this is not a retention decision, it is a request to pull classification back in.
-   *Proposed resolution, on the N5c precedent: **derive dark**. N6e's pipeline computes and stores the
-   phenology series (a few hundred bytes per body per season, operator-visible, no user surface); N6f
-   ships the charts and the hatch layer that read it. The backfill then runs once, not twice.*
-   Three things to weigh first:
-   - **Cloud makes any single year's date soft — ±5–10 days.** Nine seasons average into a good
-     climatology; *"ice-in 2021"* alone would not be a number to quote. Sentinel-1 SAR is what tightens
-     it, which is a second reason it is in scope.
-   - **Landsat reaches back to the 1980s** at 30 m, free, same STAC access — too coarse for a pond,
-     ample for ice-or-not on anything above ~20 ha. **Forty seasons instead of nine** is a different
-     product, and a follow-on rather than v1.
-   - ⚠ **Check whether this is already solved.** Published lake-ice phenology datasets exist (NSIDC's
-     global database among them). One search before deriving nine seasons ourselves.
-3. **Does the phase split into two PRs, and where's the seam?** *Proposed:* **PR 1 — the reveal**
-   (mask, feather, control, NAIP + date stamp, Workstreams D and E, the N6d prerequisite): **zero
-   infrastructure**, ships against a keyless endpoint, could land while N6d settles. **PR 2 — the
-   timeline** (the box, STAC poll, granule reader, archive, scrubber, weather gate, backfill, phenology
-   derived dark). **PR 3 — what the archive knows** (hatch layer, charts). This *reverses* the
-   2026-08-21 call that the timeline ships in the same PR — it is the single biggest thing in the phase
-   and the only part with an external dependency.
-4. **Does the app-wide season turnover adopt D149's freeze signal?** *Proposed: no — separate two things
-   that look like one.* D63's July boundary is the **season key**, load-bearing across N5a hazards,
-   `contentPurge`, the D66 photo purge, `seasonWindow` and bounties; changing it is broad blast radius
-   for no visible gain. What the founder actually wants is the **display default** — when last season's
-   content stops reading as current — and that is a small, safe change. Most of it already happens
-   without a cliff (hazards decay on D56, reports age on their own curves). **Audit what hard-cuts at
-   July 1 that a skater would notice, and move only that.**
+*(None blocking. The phase is decided end-to-end; what remains is what a screen will tell us.)*
+
+1. **Hard edge vs. feathered rings** — build the inverse mask first, try the rings, keep whichever
+   survives being looked at (§A2).
+2. **Buffer distances per tier** — the starting numbers in §A1 are estimates, not measurements.
+3. **Whether the aerial and the scrubber ever want separate affordances** after both are on screen
+   together. One control is the intent; if it reads as two features wearing one switch, that is worth
+   revisiting *after* seeing it, not before.
