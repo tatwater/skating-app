@@ -9,6 +9,7 @@ import {
   imageryMaskLayerId,
   inverseMask,
   MASK_FILL_OPACITY,
+  outerRingsOnly,
   revealShape,
   SENTINEL_MASK_METERS,
 } from './imageryMask';
@@ -101,22 +102,35 @@ describe('inverseMask', () => {
     expect(pointInPolygon({ lat: 44.455, lng: -73.195 }, mask)).toBe(false);
   });
 
-  it("paints over the shape's own islands", () => {
+  it('lets islands show in full rather than punching them out', () => {
     const mask = inverseMask(POND_WITH_ISLAND);
-    // An island inside a lake is not the lake; the photograph has to stop at the water.
-    expect(pointInPolygon({ lat: 44.455, lng: -73.195 }, mask)).toBe(true);
-    // ...while open water beside it still shows through.
+    // The island is revealed with the rest of the lake — it is what a skater orients by, and as a
+    // hole-inside-a-hole it triangulated into white wedges (see `outerRingsOnly`).
+    expect(pointInPolygon({ lat: 44.455, lng: -73.195 }, mask)).toBe(false);
     expect(pointInPolygon({ lat: 44.4515, lng: -73.1975 }, mask)).toBe(false);
+    // ...and the far field is still masked.
+    expect(pointInPolygon({ lat: 38.5, lng: -98.3 }, mask)).toBe(true);
   });
 
-  it('keeps every ring of a multipolygon', () => {
+  it('is one hole per polygon, never per ring', () => {
     const two: MultiPolygon = {
       type: 'MultiPolygon',
       coordinates: [POND.coordinates as number[][][], POND_WITH_ISLAND.coordinates as number[][][]],
     };
-    const mask = inverseMask(two);
-    // World ring + 1 + 2.
-    expect(mask.coordinates).toHaveLength(4);
+    // World ring + one outer per polygon. The island's ring must not appear: nested holes are what
+    // MapLibre's triangulation resolved by depth rather than by parent shape.
+    expect(inverseMask(two).coordinates).toHaveLength(3);
+  });
+});
+
+describe('outerRingsOnly', () => {
+  it('drops holes and keeps one ring per polygon', () => {
+    expect(outerRingsOnly(POND_WITH_ISLAND)).toHaveLength(1);
+    expect(outerRingsOnly(POND_WITH_ISLAND)[0]).toEqual(POND.coordinates[0]);
+  });
+
+  it('survives a polygon with no rings at all', () => {
+    expect(outerRingsOnly({ type: 'Polygon', coordinates: [] })).toHaveLength(0);
   });
 });
 

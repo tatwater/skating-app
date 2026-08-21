@@ -60,8 +60,6 @@ export interface ImageryRevealOptions {
   loaded: boolean;
   /** `null` ⇒ nothing to reveal. Both "no lake open" and "reveal off" arrive as `null`. */
   mask: ImageryMaskInput | null;
-  /** Draw water fill and sub-area layers normally, or step aside for the photograph. */
-  onSuppressBaseLayers?: (suppressed: boolean) => void;
 }
 
 /**
@@ -73,12 +71,7 @@ export interface ImageryRevealOptions {
  * USGS for a lake nobody is looking at. Hence removing layers before the source, unconditionally,
  * and on every dependency change rather than only on unmount.
  */
-export function useImageryReveal({
-  map,
-  loaded,
-  mask,
-  onSuppressBaseLayers,
-}: ImageryRevealOptions): void {
+export function useImageryReveal({ map, loaded, mask }: ImageryRevealOptions): void {
   useEffect(() => {
     if (!map || !loaded || !mask) return;
 
@@ -150,11 +143,8 @@ export function useImageryReveal({
       }
     });
 
-    onSuppressBaseLayers?.(true);
-
     return () => {
       cancelAnimationFrame(raf);
-      onSuppressBaseLayers?.(false);
       // Layers before sources, always: MapLibre throws on removing a source still in use, and a throw
       // in a cleanup runs during React's commit — so the leak would take the next render with it.
       for (const layer of maskLayerIds) {
@@ -166,7 +156,7 @@ export function useImageryReveal({
     };
     // `mask` is rebuilt by the caller only when the lake or its access changes; `FEATHER_STEPS` is a
     // constant and named here so a change to it cannot leave a stale ring count on screen in dev.
-  }, [map, loaded, mask, onSuppressBaseLayers]);
+  }, [map, loaded, mask]);
 }
 
 export { FEATHER_STEPS, IMAGERY_BEFORE_LAYER_ID, IMAGERY_FADE_MS };
@@ -189,6 +179,15 @@ export const IMAGERY_REPLACED_LAYERS = [
   'sub-area-outline',
   'sub-area-label',
   'track-line',
+  // **The one this list was missing, and the first render found it.** D81 has said since N6b that
+  // contours go with the base map — they are cartographic furniture and they fight a photograph for
+  // legibility. Omitting the id here did not disable the rule, it just stopped implementing it: the
+  // isobaths kept drawing over the imagery and read as nested rings in every shallow bay.
+  //
+  // It is the same id `contourLayer.ts` exports, spelled out rather than imported, because this
+  // array is the A3 table and a reader checking the table against the code should not have to
+  // resolve a constant to do it.
+  'bathymetry-contours',
 ] as const;
 
 export const IMAGERY_HAZARD_LAYERS = [

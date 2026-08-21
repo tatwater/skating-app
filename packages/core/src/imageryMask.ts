@@ -127,7 +127,13 @@ export function revealShape(
 ): Polygon | MultiPolygon | null {
   const parts: (Polygon | MultiPolygon)[] = [];
 
-  const water = bufferGeometry(input.polygon, solidMeters);
+  // Holes are dropped *before* buffering, not just before inverting (see `outerRingsOnly`). Growing
+  // a polygon outward shrinks its holes, so an island narrower than twice the buffer collapses to a
+  // sliver or self-intersects — and a broken ring here would propagate into every feather step.
+  const water = bufferGeometry(
+    { type: 'MultiPolygon', coordinates: outerRingsOnly(input.polygon).map((ring) => [ring]) },
+    solidMeters,
+  );
   if (water) parts.push(water);
 
   for (const path of input.approachPaths ?? []) {
@@ -173,20 +179,41 @@ function bufferGeometry(
 }
 
 /**
+ * Every polygon's **outer ring only**, holes discarded.
+ *
+ * ## Why islands are not punched out — the first render answered this
+ *
+ * The first version treated a lake's islands as part of the mask, on the reasoning that *an island is
+ * not the lake, so the photograph should stop at the water*. Rendering it falsified that twice over:
+ *
+ * 1. **It looked wrong.** An island in a lake is exactly the thing a skater is orienting by, and a
+ *    lake full of white holes reads as damage, not as cartography. The founder's call on seeing it:
+ *    *"maybe for imagery we can use only the outermost perimeter of the polygon for masking, and
+ *    allow islands to show in full."*
+ * 2. **It rendered wrong**, which is the part worth keeping in the comment. `inverseMask` puts the
+ *    world in ring 0 and everything else after it, so a lake's island became **a hole inside a
+ *    hole** — and MapLibre's triangulation resolves nested rings by nesting depth, not by which ring
+ *    belonged to which shape. The output was white wedges radiating from the shoreline, which is the
+ *    signature of an earcut failure and not the shape anyone asked for.
+ *
+ * Stripping holes fixes both at once, and it also removes the harder half of the *buffer*: growing a
+ * polygon outward shrinks its holes, so an island narrower than the feather distance would collapse
+ * or self-intersect on the way out. Islands never enter the geometry now, so they cannot.
+ */
+export function outerRingsOnly(shape: Polygon | MultiPolygon): Position[][] {
+  const polygons = shape.type === 'Polygon' ? [shape.coordinates] : shape.coordinates;
+  return polygons.flatMap((rings) => (rings[0] ? [rings[0]] : []));
+}
+
+/**
  * Invert a shape into a mask: a polygon covering the world with the shape punched out of it.
  *
- * Every ring of the shape becomes a hole, **including the shape's own holes** — an island inside a
- * lake is not part of the lake, and painting over it is how the photograph stops at the water. Ring
- * winding is not normalised because MapLibre's fill rule treats any inner ring as a hole regardless
- * of direction, which is the one place the spec is more forgiving than the GeoJSON standard.
+ * **One hole per polygon, never per ring** — see `outerRingsOnly`. Ring winding is not normalised
+ * because MapLibre's fill rule treats any subsequent ring as a hole regardless of direction, which
+ * is the one place the renderer is more forgiving than the GeoJSON standard.
  */
 export function inverseMask(shape: Polygon | MultiPolygon): Polygon {
-  const rings: Position[][] = [WORLD_RING];
-  if (shape.type === 'Polygon') {
-    rings.push(...shape.coordinates);
-  } else {
-    for (const poly of shape.coordinates) rings.push(...poly);
-  }
+  const rings: Position[][] = [WORLD_RING, ...outerRingsOnly(shape)];
   return { type: 'Polygon', coordinates: rings };
 }
 

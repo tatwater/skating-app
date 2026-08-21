@@ -969,29 +969,25 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
     };
   }, [imageryOn, highlightWaterBodyId, features, putIns]);
 
+  useImageryReveal({ map: mapRef.current, loaded, mask: revealMask });
+
   // Layers step aside for the photograph, except the ones the skater decides about.
   //
   // Two effects rather than one, and deliberately: the replaced set is ours (the A3 table) and the
-  // hazard set is the skater's. Folding them together would make the hazard toggle re-run the whole
-  // suppression on every flip, and would put a safety layer's visibility inside a code path that
-  // also owns cartography.
-  // `mapRef.current` in the deps matches the convention every other effect in this file follows: the
-  // ref is populated after first render, so a callback memoized without it would close over `null`
-  // for the life of the component and silently never suppress anything.
-  const suppressBaseLayers = useCallback(
-    (suppressed: boolean) => {
-      const map = mapRef.current;
-      if (map) setLayersVisible(map, IMAGERY_REPLACED_LAYERS, !suppressed);
-    },
-    [mapRef.current],
-  );
-
-  useImageryReveal({
-    map: mapRef.current,
-    loaded,
-    mask: revealMask,
-    onSuppressBaseLayers: suppressBaseLayers,
-  });
+  // hazard set is the skater's. Folding them together would put a safety layer's visibility inside a
+  // code path that also owns cartography.
+  //
+  // **`contourBodyKey` is in the deps and is not decoration.** This started as a callback fired once
+  // when the reveal mounted, which is wrong for any layer that can be re-added underneath it — and
+  // the contour layer is exactly that: its own effect adds it on drawer-open and would hand back a
+  // visible isobath set over the photograph. Re-running whenever either changes is what makes the
+  // suppression a *state* rather than an event.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: contourBodyKey is a re-run trigger, not a read — the contour effect re-adds its layer on drawer-open and this has to re-hide it.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !loaded) return;
+    setLayersVisible(map, IMAGERY_REPLACED_LAYERS, !revealMask);
+  }, [revealMask, loaded, contourBodyKey, mapRef.current]);
 
   useEffect(() => {
     const map = mapRef.current;
