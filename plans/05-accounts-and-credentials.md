@@ -26,8 +26,9 @@ missing" is now the question that gates several deferred items, and the list bel
 | Cloudflare R2 | ✅ in use | 948 MB 5-state basemap |
 | Open-Meteo | ✅ no account | Phase 10 forecast/history; also the **elevation** endpoint (N6c A1) |
 | NWS `api.weather.gov` | ⬜ not set up | 🆓 **no account, no key.** N6c B5 alerts. Needs only a `User-Agent` header (D74) |
-| Copernicus Data Space | ⬜ not set up | 🆓 registration. **Not needed for the N6c deep link** — only for N6e's Sentinel-2 *recent-ice* tier (D75/D84) |
-| USGS / The National Map (NAIP) | ⬜ nothing to set up | 🆓 **no account, no key, no quota** — public-domain aerial. This is what ships N6e's satellite toggle (D84, §14b) |
+| Copernicus Data Space | ⬜ **needed for N6e** | 🆓 registration. **Now on the critical path** — N6e's freeze-up timeline reads Sentinel-2 + Sentinel-1 (D148). ⚠ We read the **open COGs via STAC**, not the metered Process API, so the 10,000-req/month quota is not the ceiling; AWS Earth Search is the anonymous alternative if registration bites |
+| USGS / The National Map (NAIP) | ⬜ nothing to set up | 🆓 **no account, no key, no quota** — public-domain aerial. Ships N6e's aerial reveal. ⚠ Use **`USGSNAIPPlus`** (0.3 m), **not** `USGSImageryOnly` (caps at z16) — §14b |
+| Fly.io | ⬜ **needed for N6e** | 💰 First infrastructure we operate. Granule pipeline ≈ **$4/mo** (per-job Machines, seasonal); self-hosted ORS later ≈ **$46/mo** always-warm at 8 GB. Chosen over Railway (~$81/mo for the same ORS) — D148 |
 | Windy API | ⬜ deliberately not set up | €990/yr, and there is **no MapLibre overlay path** — we link out instead (D75, §15) |
 | Planet | ⬜ deliberately not set up | Quote-based. Their free catalogue duplicates Copernicus; only PlanetScope is new (§16) |
 | Apple Developer | ✅ enrolled | Per the Phase 8 doc. TestFlight distribution to the alpha crew still pending |
@@ -228,24 +229,41 @@ Founder ask: record cost, benefit and setup for the providers we evaluated durin
     is **Tier 2** of a two-tier split. Everything above still holds — but it is no longer what gates the
     satellite toggle, because Tier 1 doesn't need an account at all:
 
-### 14b. Aerial imagery — **USGS / The National Map (NAIP)** 🆓 — **no account** (D84)
+### 14b. Aerial imagery — **USGS / The National Map (NAIP)** 🆓 — **no account** (D84, corrected by D147)
 
-**The tier that actually ships the toggle**, and it needs nothing set up.
+**The tier that actually ships the reveal**, and it needs nothing set up.
 
-- `basemap.nationalmap.gov`'s `USGSImageryOnly` tile service — NAIP-derived aerial orthoimagery,
-  **~0.6 m**, conterminous US, **XYZ-compatible**.
-- **Public domain.** USDA/USGS federal imagery: **no account, no key, no quota, no licence review.** The
-  three things that deferred in-app imagery are all absent.
-- **Cost: €0**, with no tier to outgrow. There is nothing on this line to budget.
-- **What it's for:** reading *access*, not ice. Leaf-on summer imagery refreshed every ~2–3 years is
-  useless for conditions and ideal for finding the pull-off — which is why it pairs with N6d rather than
-  with the weather work.
-- **The one thing to watch is courtesy, not cost:** no published quota is not the same as no limits, and
-  it isn't a CDN we control. v1 points MapLibre at it directly and measures; a caching proxy is available
-  whenever load justifies it (public-domain imagery may be freely cached), and **it's the same proxy
-  Tier 2 needs** — build it once, when Tier 2 does.
-- ⚠ **Confirm at build:** ArcGIS tile axis order is `/tile/{z}/{y}/{x}` (**y before x** — wrong order
-  returns tiles, just the wrong ones) and the behaviour past native max zoom.
+> ⚠ **Corrected 2026-08-21, against the live services.** This entry previously named the
+> `USGSImageryOnly` tile service at "~0.6 m". Both halves were wrong, and the error was load-bearing —
+> it is what let N6e's original scoping promise a skater the gap in the trees and the path to the shore.
+
+- **Use `imagery.nationalmap.gov`'s `USGSNAIPPlus` ImageServer** — `pixelSizeX: 0.3`, CORS `*`, no key.
+  It is an **ImageServer, not a tile cache**, so there is no `/tile/` endpoint; MapLibre's
+  **`{bbox-epsg-3857}`** token makes `exportImage` a drop-in raster source. Verified returning a 256×256
+  JPEG at a z18 extent over Burlington in which individual cars are countable.
+- **Not `basemap.nationalmap.gov`'s `USGSImageryOnly`.** Its `maxScale` is 9027.977411 — **ArcGIS level
+  16** — and z17+ returns a hard **404** rather than upsampling. At 44.5°N that is **~1.7 m/px on the
+  ground**: enough to see that a clearing is a parking lot, not enough to count spaces. Its own service
+  description says *"1 meter pixel resolution"* and *"visible to the 1:9,028 zoom scale."* Keep it only
+  as a cheap low-zoom floor.
+- **NAIP is an airplane, not a satellite,** and this is the fact that shapes the phase: flown on a
+  **2–3 year per-state cycle, deliberately in mid-summer** for the USDA's crop program. **No NAIP frame
+  will ever show ice.** Burlington's current scene is `m_4407339_ne_18_030_20230621` — the summer
+  solstice, 2023.
+- **The acquisition date is queryable per lake**, which is what makes an honest date stamp possible:
+  `USGSNAIPPlus/ImageServer/identify?…&returnCatalogItems=true` returns the source scene with
+  `acquisition_date` in epoch ms. One cached call per body.
+- **Public domain.** USDA/USGS federal imagery: **no account, no key, no quota, no licence review.**
+- **Cost: €0**, with no tier to outgrow.
+- **What it's for:** reading *access*, not ice — which is why it pairs with N6d rather than the weather
+  work.
+- **The thing to watch is courtesy, and it's sharper than it was:** `USGSNAIPPlus` renders every request
+  dynamically with no CDN in front. v1 points at it and measures; the caching proxy is **the same
+  infrastructure the Sentinel timeline needs** (D148), so it gets designed once.
+- **Attribution string, read off the service:** `USDA, USGS The National Map: Orthoimagery. Data
+  refreshed June, 2024.`
+- ⚠ **Confirm at build:** ArcGIS tile axis order is `/tile/{z}/{y}/{x}` (**y before x** — a swapped pair
+  404'd in testing, but that is luck of the coordinate; elsewhere it returns tiles, just the wrong ones).
 
 ### 15. Windy — 💰 **evaluated and declined** (D75)
 

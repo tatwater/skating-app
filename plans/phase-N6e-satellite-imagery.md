@@ -1,323 +1,403 @@
-# Phase N6e — Satellite imagery in the app: the one map-layer toggle
+# Phase N6e — Imagery, scoped to a lake: the aerial reveal and the freeze-up timeline
 
-*The base map a skater can switch to a photograph. Two imagery tiers with different jobs, one switch, and
-everything we draw on top stays drawn.*
+*Not a base map you switch to. A photograph of **this lake**, clipped to its own shape and the way in,
+with a date on it — and behind it, a season of passes you can scrub through and watch the ice arrive.*
 
-> **Status:** 📋 Scoped, not built (2026-07-31). Founder ask, same day — *"Can you please spec out the
-> phase that will bring satellite imagery into the app while we're thinking about it? I don't want to lose
-> track of this, because I want to do it ASAP."*
-> **⚠ SCOPE GREW, 2026-08-09 (founder call at N6c-2 kickoff — D138): the Copernicus deep link is
-> now N6e's too.** *"Let's postpone any satellite imagery part until N6e so we can do it all
-> together."* N6c-2 shipped without it, so this phase now owns **all three** of B3's pieces:
+> **Status:** 📋 Re-scoped 2026-08-21 after a founder review of the original scoping. **Not built.**
+> Gated behind [N6d](./phase-N6d-lake-access-points.md), with **one item that must land inside N6d** —
+> see [Prerequisite](#prerequisite--the-one-thing-that-cannot-wait-for-this-phase).
 >
-> - the **Copernicus Browser deep link** per body (D75), built from `interiorPoint` — *not*
->   `centroid`, which is a shoreline point and would open the browser off the edge of the lake;
-> - the **`satelliteImagery: 'auto' | 'on' | 'off'`** per-row override and its
->   `SATELLITE_MIN_AREA_SQM` threshold, so a 10 m pixel never opens on a smear of pond;
-> - **B3a's proving run** — verifying the generated URL resolves per body. `scripts/seed-destinations`
->   already exists (D139) and already does the matching half, so this is a flag on a working script
->   rather than a new one.
+> **What changed, and why the rewrite rather than a patch.** The 2026-07-31 scoping specced a
+> **base-map toggle**: satellite replaces the vector basemap across the whole map, everywhere, and the
+> phase's risk lived in the style branch. Three things falsified that shape:
 >
-> The argument for the move: B3's three lessons (the URL shape is right, name-matching works, imagery
-> is legible at these sizes) all have to be re-established here anyway, against the same bodies. Doing
-> them a phase apart means the second pass re-derives the first, and the deep link spends a phase as
-> the product's only imagery surface — the "a toggle appears later and works differently" seam this
-> phase exists to avoid. `referenceLinks.ts` carries a test asserting no Copernicus URL is emitted, so
-> the link cannot creep back in ahead of the layer; delete it here.
+> 1. **The founder wants imagery scoped to a selected lake, not to the map** *(2026-08-21)* — a reveal
+>    inside the detail view, bounded to the body and its access, ideally feathered at the edge. That is
+>    **content**, not a base map, which contradicts D81's second half. See **D146**.
+> 2. **The source the plan named cannot do the job the founder wants.** `USGSImageryOnly` caps at
+>    **zoom 16** (~1.7 m/px at our latitude), not the "~0.6 m" the doc and
+>    [`05-accounts-and-credentials.md`](./05-accounts-and-credentials.md) both claimed — and NAIP is
+>    **summer aerial photography on a 2–3 year cycle**, so no NAIP frame will ever show ice. See
+>    **D147**, and §B for the 0.3 m endpoint that does exist.
+> 3. **The founder wants a scrubbable timeline of the freeze**, which promotes Workstream C from
+>    "gated on evidence" to shipping in the same PR. That brings the phase its own **infrastructure** —
+>    the first service we operate ourselves. See **D148**.
 >
-> **Split out of** [N6c](./phase-N6c-expanded-lake-profiles.md)'s Workstream B3, originally as the
-> in-app half alone. This is that deferral, specced — plus the deep link, as of D138.
-> **Sibling of** [N6b](./phase-N6b-bathymetry-layer.md) — the two share **D81**, the map's one-toggle
-> rule, from opposite sides: contours follow the detail view, satellite is the switch.
-> **N6 is now a five-way split:** N6a depth → N6b contours → N6c profiles → N6d access points → **N6e
-> imagery**.
-> **Decisions:** **D138** (the deep link ships with the layer, not a phase ahead), **D81** (second half — satellite is the map's only layer toggle and it replaces the base
-> map), **D84** (two imagery tiers). D75 stays true and is now the *first* half of a two-step.
+> **Decisions:** **D146** (imagery is body-scoped content — amends D81's second half), **D147** (free
+> sources only; the resolution/cadence trade is physical), **D148** (the timeline is our own archive:
+> one masked raster PMTiles per pass), **D149** (ingest is weather-gated; the archive turns over on the
+> first frame, not on a date), **D150** (derived ice classification is an observation, never counsel —
+> deferred to N6f). Carried in from D138: the Copernicus deep link, `satelliteImagery` and
+> `SATELLITE_MIN_AREA_SQM`. Still true: **D84** (two tiers, different jobs), **D75** (the licence
+> question was answered by Copernicus).
 
 ---
 
-## Why this is its own phase, and not a bullet in N6c
+## The finding that reshapes the phase
 
-The honest answer to *"does it fit in B3?"* is no, and the reason is worth stating because "it's just a
-raster layer" is a very reasonable thing to think.
+**"Satellite imagery" was three features wearing one word, and the third one is physically impossible
+for free.** Pulling them apart is what makes this buildable.
 
-B3 ships a **URL**. This ships a **base-map swap**: a second style branch on two clients, a toggle whose
-state persists, an attribution that changes with it, an offline story, an interaction with every layer
-already on the map, and — for one of the two tiers — a caching service with a quota to respect. Bundling
-that into a phase whose other four workstreams are strings and numbers would put a map-engine change
-inside a metadata review.
+Every fact in this table was verified against the live services on 2026-08-21, not read off a
+datasheet:
 
-It is also **more valuable than its size suggests**, which is why it earns a phase rather than a backlog
-line. Every other N6 workstream tells a skater something *about* a lake. This one shows them the lake.
+| Source | Resolution | Cadence | Winter-usable? | Cost |
+|---|---|---|---|---|
+| **NAIP** via `USGSNAIPPlus` | **0.3 m** | 2–3 yrs, **summer only** | **Never** | Free, no key |
+| NAIP via `USGSImageryOnly` | z16 ≈ 1.7 m/px here | same | Never | Free, no key |
+| **Sentinel-2 L2A** | 10 m | **~2–3 days at 44°N** | Yes — extent, snow, open water | Free |
+| **Sentinel-1 SAR** | 10–20 m | ~6 days, **cloud- and night-proof** | Yes — with a caveat, see C1 | Free |
+| PlanetScope | ~3 m | near-daily | Yes | Commercial quote |
+| SkySat / Pléiades Neo | 0.3–0.5 m | **tasked on request** | Yes — would show a ridge | ~$200–400 per lake per capture |
+
+> **D147 — We buy neither end of the trade. Free only, and we say plainly what free cannot do.**
+> A pressure ridge is 1–3 m wide: legible at 0.3 m, a smudge at 3 m, **nonexistent at 10 m**. The only
+> imagery that would answer *"where can I cross?"* is tasked commercial, at a few hundred dollars per
+> lake per pass, against a pilot with no revenue. So the honest scope is: **0.3 m for the landscape,
+> 10 m for the ice, and no promise about the surface.** Founder, 2026-08-21: *"Let's see how far we can
+> get with free imaging layers, build out a working feature set, and then launch… Even though it's only
+> 10 m now, which isn't good enough, it'll at least prove we can do it."* Revisit when there are users
+> to spread a paid layer across — and note D75's low-regret detail still holds: **Planet serves from
+> Sentinel Hub–compatible endpoints**, so building against Copernicus is not a lock-out.
+
+**The consolation worth remembering:** we already operate a 0.3 m winter sensor, and it is the
+skaters. N6d access photos, hazard reports and Phase 8 tracks are the "what does it look like today"
+channel. Imagery's job is the part a person standing on the shore cannot photograph — the whole lake
+at once, and the landscape around it.
 
 ---
 
-## The finding that shapes everything below
+## D146 — Imagery is content scoped to a body, not a base-map swap
 
-**The founder's ask contains two different features wearing one word.** Pulling them apart is what makes
-this buildable now instead of gated on a quota.
+> **Founder, 2026-08-21:** *"I'm actually tempted to only allow satellite imagery to be turned on for a
+> particular lake in the lake detail view… toggling satellite imagery on might somehow bound the image
+> to the confines of a single lake body somehow."*
 
-> **D84 — Satellite imagery is two tiers with different jobs, different sources, and different
-> constraints. They ship in that order.**
+**D81's second half is replaced.** It said satellite *replaces the base map, not the content*. It now
+says: **satellite *is* content, revealed for one body at a time, and the base map never changes.**
 
-| | **Tier 1 — Aerial base map** | **Tier 2 — Recent ice imagery** |
+The one-toggle rule survives — there is still exactly one imagery control and no layer menu — but it
+lives in the detail view and it governs a shape, not the screen.
+
+**This deletes most of the original phase's risk, which is why it's the right call and not just a
+preference.** Gone with the base-map swap: the style branch through `composeBasemapLayers`, the
+label-filtering problem, the decision about whether the region mask survives, the "imagery 404s over
+Québec past z10" trap, the attribution swap (both credits simply coexist), and — probably — the
+persisted per-device preference, because a per-body reveal is something you *do*, not a mode you live
+in.
+
+**What it costs:** you can no longer pan the Northeast in aerial to hunt for access. That was A2's
+original pitch in the 07-31 scoping. The founder accepted the trade explicitly.
+
+**Where the control lives** *(founder, 2026-08-21)*: only where a single body is selected **and the map
+is visible** — the route carries a body id and the drawer is not expanded to full screen. There is no
+imagery control on the browse map.
+
+---
+
+## Workstream A — The reveal: masking, feathering, and what else changes
+
+### A1 — The mask is a union of the lake and the way in
+
+> **Founder, 2026-08-21:** *"the same standard buffer distance (10 m maybe) from the polygon's edges
+> AND on both sides of the hiking trail for its whole length AND around the parking lot, all feathering
+> outward. So the final shape could be quite weird looking."*
+
+Weird is fine — it is baked offline and it is exactly the effect the inspiration images have. The
+algebra is cheap:
+
+```
+solid  = union( buffer(lake, r), buffer(trail, r), buffer(parking, r) )
+feather = buffer(solid, r₁ … rₙ) at stepped opacity, or a true alpha ramp when we own the raster
+```
+
+**Two sizing notes that are easy to get wrong:**
+
+- **The buffer must be per-tier, because a buffer is measured in pixels whether we like it or not.**
+  At Sentinel's 10 m, a 10 m buffer is **one pixel** and invisible. Start around **10 m solid + 30 m
+  fade for NAIP**, **30 m + 100 m for Sentinel**, and tune by eye.
+- **`parkingAreas` stores a `coord`, not a polygon** (`schema.ts:2179`) — so "around the parking lot"
+  is a buffered point, not a buffered lot outline. Fine, and worth knowing before someone is surprised
+  by a circle.
+
+### A2 — Three ways to clip, and which tier gets which
+
+MapLibre cannot blur a fill or vary `raster-opacity` spatially, so a soft edge has to be constructed:
+
+| Technique | How | Use for |
 |---|---|---|
-| **Answers** | *Where's the point? Which dirt road is the pull-off? Is that island or shoal?* | *Is there ice on it right now, and is it snow-covered?* |
-| **Source** | **USGS/NAIP** aerial orthoimagery — public domain | **Sentinel-2 L2A** via Copernicus Data Space |
-| **Resolution** | ~0.6 m | 10 m |
-| **Currency** | Refreshed every ~2–3 years, **leaf-on summer** | ~5-day revisit, cloud permitting |
-| **Quota** | **None.** Public domain, no key | 10,000 requests + 10,000 PU/month, 300/min |
-| **Cost** | €0 | €0 on the free tier, *if* caching keeps us inside it |
-| **Ships** | **v1 — this phase** | **v2 — gated on evidence, in this phase's Workstream C** |
+| **Inverse mask** | Draw the raster, then a polygon *with a hole* over it in the basemap colour | **Tier 1 (NAIP)** — hard edge, ships first |
+| **Concentric rings** | 6–8 stepped buffers as fills at stepped opacity | **Tier 1**, once the hard edge works |
+| **Baked alpha** | Clip and feather server-side; the archive carries its own transparency | **Tier 2 (Sentinel)** |
 
-**Why this split is the whole insight.** The quota problem that deferred in-app imagery is a
-**Sentinel-2** problem. It says nothing about NAIP, which is public-domain federal imagery with no key,
-no quota and no licence question. And the thing a skater does most often with a satellite view — read the
-landscape, find the access, understand the shoreline — is served **better** by 0.6 m summer aerial than
-by 10 m winter Sentinel-2. The high-value, high-frequency use case is the *unconstrained* one.
+**We have already shipped the inverse-mask trick.** `maskLayers` in both apps' `waterMap.ts` plus
+`REGION_FILTER` in `packages/core/src/basemapLayers.ts` is the "everywhere-but-here is nowhere" pattern,
+retargeted from five states to one buffered lake — **including the `fill-opacity: 0.999` gotcha**,
+which is documented, load-bearing, and will bite again here if anyone rounds it to 1.
 
-**And Tier 2 is honest about being a different thing.** A Sentinel-2 view is a **dated observation**, not
-a base map: it is from a specific pass on a specific day, it may be under cloud, and at 10 m a small pond
-is a smear (N6c's `SATELLITE_MIN_AREA_SQM` gate exists for exactly this). It wants a date stamp and a
-cloud caveat, which a base map does not. Rendering the two in the same affordance without that
-distinction would be the D3 trap in raster form — *"the lake looked frozen in the picture"* about an
-image from eleven days ago.
+**The split is not arbitrary.** NAIP is a live tile server we don't control, so the mask must be
+client-side and stays tunable. Sentinel is *our own archive*, so baking a true alpha ramp in is prettier
+and makes the client nearly free — at the cost of needing an ETL re-run to change the buffer.
 
----
+### A3 — What else changes when imagery is revealed
 
-## Workstream A — The toggle and the style swap *(v1)*
-
-### A1 — What the toggle does (D81, second half)
-
-> **Founder, 2026-07-31:** *"I think topographic lines should always be visible, but we should have a
-> toggle switch to turn on/off satellite imagery (which should replace the whole map layer, ditch the
-> topographic lines, but still show the hazards and skate paths)."*
-
-Read precisely, that sentence is a complete spec, and it draws the line in exactly the right place:
-
-> **D81 (second half) — Satellite is the map's only layer toggle, and it replaces the *base map*, not the
-> *content*.**
-> Everything we author or receive stays drawn. Everything cartographic is what gets swapped.
-
-| Layer | Satellite **off** | Satellite **on** | Why |
+| Layer | Imagery off | Imagery on | Why |
 |---|---|---|---|
-| Base map | Protomaps vector | **Aerial raster** | The swap |
-| Water-body fills/outlines | drawn | **suppressed** | The photograph *is* the water body. Outlining a lake on a picture of the lake is noise — and worse, our simplified polygon visibly disagrees with the real shoreline at that resolution. |
-| **Bathymetric contours** ([N6b](./phase-N6b-bathymetry-layer.md)) | drawn in detail view | **not drawn** | Base-map furniture; goes with the base map. Also unreadable over a photograph. |
-| **Hazards** | drawn | **drawn** | Founder call, and non-negotiable — this is a safety product. |
-| **Skate paths** ([Phase 8](./phase-8-native-capture.md)) | drawn | **drawn** | Founder call. Also the layer imagery flatters most: a GPS track over an aerial photo is legible in a way it isn't over an abstract fill. |
-| **Put-ins / parking** ([N6d](./phase-N6d-lake-access-points.md)) | drawn | **drawn** | The single best pairing in this phase — see A2. |
-| **Place labels** | from the vector style | **kept** | See A3. An unlabelled photograph is a puzzle. |
-| Attribution | OSM/ODbL | **imagery credit** | See A4. |
+| Base map | Protomaps vector | **unchanged** | D146 — this is the whole point |
+| Water-body **fill** | drawn | **suppressed** | The photograph is the lake |
+| Water-body **outline** | drawn | **kept, and it matters more** | It's what makes the masked patch read as *this lake* instead of a hole in the map. The founder's first inspiration image is precisely a bright outline containing dark imagery. |
+| **Bathymetric contours** | drawn in detail view | **not drawn** | D81's surviving half; unreadable over a photograph |
+| **Sub-area outlines + labels** | drawn | **not drawn** | Founder call, 2026-08-21 |
+| **Hazards** | drawn | **drawn** | Non-negotiable — this is a safety product |
+| **Skate paths** | drawn | **drawn** | The layer imagery flatters most |
+| **Put-ins / parking / toilets / approach** | drawn | **drawn** | They're inside the mask *by construction* — that's what the union in A1 is for |
+| **Place labels** | from the vector style | **kept** | The base map never changed, so this is free |
+| Attribution | OSM/ODbL | **OSM + imagery credit** | §A4 |
 
-### A2 — The pairing that justifies the phase: imagery + N6d access points
+### A4 — Attribution
 
-Worth naming because it is not obvious from either phase alone. N6d gives a skater a parking coordinate,
-an approach distance and a hike-in chip. **Aerial imagery is where those become checkable.** *"Park here,
-then 400 m on foot"* is a claim; a 0.6 m photograph showing the pull-off, the gap in the trees and the
-path to the shore is the confirmation — before the drive, at home, in daylight.
+Attach credits to **sources**, never compose a string by hand: MapLibre unions the attributions of
+active sources, which is correct automatically and is precisely what a hand-written string gets wrong
+the first time someone changes a layer. The vector basemap stays loaded, so ODbL is still owed and
+still surfaced; the imagery source adds its own.
 
-This is also the argument for **Tier 1 first**. NAIP's leaf-on summer imagery is nearly useless for
-reading ice and nearly ideal for reading access: roads, lots, trailheads and shorelines do not change
-between July and January.
+The USGS string, read off the service rather than paraphrased:
+`USDA, USGS The National Map: Orthoimagery. Data refreshed June, 2024.`
+Copernicus requires attribution under the free/full/open licence (D75).
 
-### A3 — The style branch, concretely
-
-Both clients build their style through a `buildMapStyle(pmtilesUrl, flavor)` function
-(`apps/web/src/lib/waterMap.ts:85` and its mobile counterpart), which returns a v8 style with one
-`protomaps` vector source and `layers()` from `@protomaps/basemaps`. So the change has a natural shape:
-
-- **A third argument, not a second function.** `buildMapStyle(pmtilesUrl, flavor, { imagery })`. One
-  place to change, one place to test, and web/mobile can't drift — the same property that has kept the
-  two map styles in agreement so far.
-- **Imagery on ⇒ prepend a `raster` source + layer, and filter the vector layers down to labels only.**
-  The Protomaps layer list is already partitioned by role, so keeping the symbol/label layers and
-  dropping fills and lines is a filter, not a rewrite. This is what makes A3's "keep the labels" cheap.
-- **Everything above the base map is untouched.** Hazards, paths, put-ins and bodies are added as our own
-  sources after the style loads; they don't care what's underneath. That's why the founder's
-  "still show the hazards and skate paths" costs nothing to honour — it is the default, and we'd have had
-  to write code to break it.
-- **One real gotcha: label legibility over photography.** Dark text on a vector basemap is tuned for a
-  pale background and vanishes over a dark lake or a forest. Labels need a halo (or the dark flavor's
-  treatment) when imagery is on. Small, and it is the difference between usable and not.
-
-### A4 — Attribution follows the base map
-
-The MapLibre attribution control currently carries `OSM_ATTRIBUTION`, wired to the `protomaps` source
-(`waterMap.ts:94`). With imagery on, **OSM is no longer the base map**, so the control should carry the
-imagery credit instead — USGS/NAIP for Tier 1, Copernicus Sentinel for Tier 2.
-
-**But not *only* the imagery credit**, and this is the easy mistake: the vector source is still loaded for
-labels (A3), so OSM attribution is still owed. The control carries **both** while imagery is on. Attaching
-attribution to each *source* rather than composing a string by hand is what makes this correct
-automatically — MapLibre unions the attributions of active sources, which is precisely the behaviour we
-want and precisely what a hand-written string would get wrong the first time someone changed a layer.
-
-*(N6b's contour credits go in the drawer, not here — different obligation, different placement. The
-reasoning is in [N6b §5](./phase-N6b-bathymetry-layer.md#5--attribution-the-minimum-is-smaller-than-it-looks-and-it-belongs-in-the-drawer).)*
-
-### A5 — Toggle state: persisted, per-device
-
-Contours needed no persisted state (D81 makes them derived), which leaves **exactly one** preference to
-store — so storing it properly is cheap.
-
-- **Persisted, not per-session.** A skater who prefers imagery prefers it tomorrow too. A toggle that
-  resets is a toggle that gets flipped every launch.
-- **Per-device, not per-account.** It's a display preference about a screen, and it rides local storage —
-  `localStorage` on web, the existing preference store on mobile. No schema change, no sync, and it works
-  logged out.
-- **Default off.** The vector base map is faster, lighter, works offline, and is what everything else is
-  styled against. Imagery is a thing you reach for.
-
-### A6 — Offline: online-only in v1, stated in the UI
-
-Raster imagery is heavy and we do not control the tile server. The Phase 9.5 `file://` PMTiles path (still
-awaiting one on-device confirmation) is a **vector** story; an offline raster pack is a separate,
-much larger artifact.
-
-**So: imagery requires a connection, and the toggle says so when there isn't one** — disabled with a
-reason, not silently blank. This matters more here than usual, because the moment a skater most wants to
-check the imagery is at a trailhead with one bar.
+⚠ **Verify on device:** MapLibre GL JS's `AttributionControl` unions source attributions; MapLibre
+**native**'s attribution button behaves differently and has not been checked. Mobile already passes
+`attribution` on `MapGL` (`apps/mobile/src/components/MapView.tsx:568`).
 
 ---
 
-## Workstream B — Tier 1: the aerial base map *(v1, the bulk of the value)*
+## Workstream B — Tier 1: the 0.3 m aerial, for reading access
 
-### B1 — Source: USGS / The National Map
+### B1 — The source, corrected
 
-The **USGS `USGSImageryOnly` tile service** (`basemap.nationalmap.gov`) serves NAIP-derived aerial
-orthoimagery for the conterminous US — the same imagery layer editors like iD offer for OSM tracing.
+**Not `USGSImageryOnly`.** That service's `maxScale` is 9027.977411 — **ArcGIS level 16** — and z17+
+returns a hard 404 rather than upsampling. At 44.5°N, z16 is **~1.7 m/px on the ground**. Enough to see
+that a clearing is a parking lot; not enough to count spaces, and a footpath under canopy is invisible.
 
-- **Public domain.** NAIP is USDA Farm Service Agency imagery; USGS distributes it as public-domain
-  federal work. **No key, no quota, no licence review** — the three things that deferred this feature are
-  all absent from Tier 1.
-- **~0.6 m** from 2018 onward.
-- **XYZ-compatible tiles**, so it drops into a MapLibre `raster` source directly.
+**Use `USGSNAIPPlus`** on `imagery.nationalmap.gov` — `pixelSizeX: 0.3`, no key,
+`access-control-allow-origin: *`. It is an **ImageServer**, not a tile cache, so there is no `/tile/`
+endpoint; MapLibre's **`{bbox-epsg-3857}`** token makes `exportImage` a drop-in raster source. Verified
+returning a 256×256 JPEG at a z18 extent over Burlington, in which individual cars are countable —
+which is the A5 use case exactly.
 
-> ⚠️ **Confirm at build:** the ArcGIS tile endpoint's axis order (`/tile/{z}/{y}/{x}` — **y before x**,
-> which is a classic silent-failure: wrong order returns tiles, just the wrong ones), the service's stated
-> usage expectations, and its behaviour at zoom levels past its native maximum. Put the URL template
-> behind one function with a test, same discipline N6c applies to the Copernicus link.
+**The trade:** dynamic rendering, no CDN. Courtesy load matters much more here than against a cached
+service, which is why §B3 exists. Keep `USGSImageryOnly` as the low-zoom floor if it proves useful;
+`0.3 m` is what the phase is for.
 
-**Alternatives considered and why not:** Esri World Imagery is higher quality in places but its terms
-restrict use outside Esri's platform; Mapbox/Maxar satellite is excellent and metered per tile; state
-orthoimagery programs (VT, NH, MA all have them) are higher-resolution still but are five separate
-integrations with five sets of terms, for a marginal gain over 0.6 m. **Revisit state imagery only if
-NAIP proves inadequate for the access use case**, which is the one job Tier 1 has.
+⚠ **Confirm at build:** ArcGIS tile axis order is `/tile/{z}/{y}/{x}` — **y before x**. A swapped pair
+404'd in testing, but that is luck of the coordinate; elsewhere it returns tiles, just the wrong ones.
+Put the URL behind one function with a test.
 
-### B2 — Caching and proxying
+### B2 — The date stamp is queryable, per lake
 
-USGS's service has no published quota, which is not the same as no limits, and it is not a CDN we control.
+`USGSNAIPPlus/ImageServer/identify?…&returnCatalogItems=true` returns the **source scene** for a point.
+For Burlington: `m_4407339_ne_18_030_20230621` — a NAIP quarter-quad, `030` = 0.3 m, acquired
+**2023-06-21**, with `acquisition_date` as epoch ms.
 
-**v1: point MapLibre at it directly.** Ship, measure, don't build infrastructure for load we don't have.
+So *"aerial: June 2023"* is a fact we can state per body rather than a hedge. One cached call per body,
+refreshed when the `Year` field moves. **This filename is also the phase's proof that NAIP cannot show
+ice** — it is a photograph taken on the summer solstice.
 
-**The trigger to revisit is explicit:** if usage becomes material, or the service proves slow or flaky
-from our users' networks, put a caching proxy in front of it. Public-domain imagery may be freely cached
-and redistributed, so there is no licence obstacle — only the question of whether it's worth the
-component. **The same caching layer serves Tier 2**, which is the argument for designing it once, when
-Tier 2 needs it, rather than twice.
+### B3 — Caching
+
+Public-domain imagery may be freely cached and redistributed, so there is no licence obstacle. **v1
+points at the service and measures**, but the trigger to put a proxy in front is much closer than it
+was for the cached tier, because every request renders. The Tier 2 pipeline (§C) is the same
+infrastructure, so it gets designed once.
 
 ---
 
-## Workstream C — Tier 2: recent Sentinel-2 ice imagery *(gated, not deferred)*
+## Workstream C — Tier 2: the freeze-up timeline
 
-The half the quota constrains. Kept in this doc rather than a future one, because the design decision that
-makes it affordable has to be made *before* Tier 1's caching is built or it gets built twice.
+The half the original scoping gated on evidence. **It ships here** — founder, 2026-08-21: *"let's build
+the timeline at the same time! We can still wait until we have a proven imaging pipeline, but we
+shouldn't push our PR until it's all in."*
 
-### C1 — What it is, and what it isn't
+### C1 — What the timeline honestly is
 
-A **dated observation layer**: the most recent low-cloud Sentinel-2 L2A true-colour pass over this body,
-with the date on it. Not a base map. At 10 m the open-water / black-ice / snow-covered-ice distinction is
-visually obvious, which is genuinely useful — and a small pond is a handful of pixels, which is what
-N6c's `SATELLITE_MIN_AREA_SQM` gate already governs.
+**~2–4 usable optical frames per month per lake.** Sentinel-2's revisit at 44°N is ~2–3 days (better
+than the advertised 5, because adjacent orbital swaths overlap at latitude), but Burlington averages
+60–70% cloud cover December–February. That is a scrubber with real content and it is not an animation.
 
-**The copy is the hard part, and D3 governs it.** An image is not a condition report, and an eleven-day-old
-image of a frozen lake is not evidence the lake is frozen today. The date is not a caption detail; **it is
-the content**. Render it prominently, render the cloud caveat, and never let the layer be the most recent
-thing on screen without saying how old it is.
+**Sentinel-1 SAR closes the gap and is in scope** *(founder call, 2026-08-21)*: radar sees through
+cloud and darkness, ~5 reliable frames a month. **But it must be described honestly, because its
+failure mode is our exact use case** — smooth new black ice is specular and returns dark, and *so does
+calm open water*. Rough, deformed or snow-covered ice lights up bright. So SAR is strong on "is this
+surface deformed" and weak on "black ice or open water," which is the distinction skaters care most
+about. S1 and S2 together resolve most of it; either alone does not.
 
-### C2 — The quota, and the shape that fits inside it
+**The bands are where the real signal is.** Not needed for v1's true-colour frames, but they are why
+N6f is worth doing and they should be captured while we're already downloading the granule:
 
-Copernicus Data Space's Sentinel Hub–compatible APIs: **10,000 requests + 10,000 processing units per
-month, 300/min**, free. A full-screen tile view is ~10–20 requests ⇒ ~500–1,000 lake views/month raw.
-Not enough for open use.
+- **SCL (Scene Classification Layer)** — shipped *inside* Sentinel-2 L2A, computed by ESA, with
+  per-pixel classes for water, **snow/ice**, cloud (high/medium), and cloud shadow. It is simultaneously
+  our ice signal and our cloud filter, for free. **This is the most valuable band in the product.**
+- **NDSI** (green vs. SWIR) separates snow/ice from cloud, which true colour cannot — both are white.
+- **SWIR generally** is why any of this works: water absorbs it almost totally, ice and snow reflect it.
 
-**Server-side tile caching converts the unit of cost**, and the open Copernicus licence permits it:
+### C2 — The archive: one masked raster PMTiles per pass
 
-- Per-view cost ⇒ **per-lake-per-revisit** cost (~5 days).
-- Cache in R2, beside the basemap PMTiles that `scripts/basemap/upload-r2.sh` already publishes.
-- **Pre-warm the destination shortlist** rather than fetching reactively — which is exactly what
-  `scripts/seed-satellite` was renamed to be able to grow into (N6c B3a). ~40 destination bodies × ~15
-  tiles × ~6 refreshes/month ≈ 3,600 requests: comfortably inside the tier, with headroom for reactive
-  fetches on everything else.
+> **D148 — The timeline is our own archive, not a metered API. One region-wide raster PMTiles per
+> pass, pre-masked to buffered bodies.**
 
-### C3 — The gate
+The founder's call to cover the whole region rather than a destination shortlist is what forces this,
+and it turns out to be both cheaper and simpler:
 
-**Build Tier 2 when we know reads concentrate.** Caching only wins if the same bodies are viewed
-repeatedly; right now that is an assumption. Phase 7b's analytics rollups are where the evidence will
-come from, and `seed-satellite`'s proving run is what starts producing it.
+- **Read the open COGs directly** (Copernicus S3 / AWS Earth Search STAC) instead of Sentinel Hub's
+  metered Process API. The five states are **~20–25 granules**; at ~6 passes/month that's ~150 granule
+  reads a month, and we cut *every body in the corpus* out of them. **The 10,000-request/month quota
+  stops being the ceiling at all** — which retires the entire C2/C3 quota argument from the 07-31 doc.
+- **Mask first, then store.** Water plus buffers is roughly 5% of the region's area, so masking shrinks
+  each pass ~20× — on the order of **40 MB per pass, ~1.2 GB per season**. Pennies in R2.
+- **PMTiles, because we already have the whole pipeline**: `scripts/basemap/upload-r2.sh`, the
+  bathymetry archive's shape, and a `pmtiles://` reader running natively on both clients.
+- **Scrubbing is then swapping an archive URL.** No per-body fetch, no image source, no tile math, and
+  the per-body mask and feather are already baked in (A2).
 
-**This is a gate with a named owner and a named signal**, not a vague "later" — the failure mode N6a
-called out (an evidence gate nobody points at is not a gate) applies here, so the check belongs in the
-Phase 7b tuning control-room's read-only view alongside the other metrics, where someone will actually
-see it.
+**This needs infrastructure we do not have.** Cutting and rendering granules is a GDAL-class batch job:
+not Convex, not a Vercel function. Costed 2026-08-21 against both providers; **Fly** is the
+recommendation, on two grounds — its per-job Machine model is exactly this workload (boot, do one
+granule, exit, pay per second, and 25 in parallel costs the same as 25 in series), and it is ~2× cheaper
+than Railway for the **always-warm, RAM-heavy** service we already know we want next (self-hosted ORS,
+~$46/mo vs ~$81/mo at 8 GB). Railway is the nicer developer experience and its $5 Hobby credit would
+cover this phase's batch job outright; the ORS workload is what breaks the tie. Fly volumes are
+host-pinned with no multi-attach — a real operational edge to know about going in.
+
+### C3 — Ingest gate and season turnover
+
+> **D149 — Ingest is weather-gated, and the archive turns over on the first frame of the new season,
+> never on a date.**
+
+> **Founder, 2026-08-21:** *"It's probably not worth much to even bother getting imagery after ice-out
+> each spring, until we start getting freezing temps again in the fall… I'm tempted to show the past
+> season's imagery from freeze to thaw all the way until it turns over again in November."*
+
+**No new constant, and nothing to tune:**
+
+- **Ingest turns on** when a regional freezing signal appears in the observed weather we already fetch
+  (D140's `.past` — never the forecast), and off after ice-out. We skip roughly half the year's passes,
+  which is half the bandwidth and half the compute.
+- **Retention is "keep the most recent season that has frames."** Last winter's scrubber stays live all
+  summer; the moment the first frame of the new winter lands, it flips. In a warm year it flips late,
+  by itself.
+- `packages/core/src/season.ts` (`seasonOf`, `currentSeason`, D63's July start) already supplies the
+  key. What changes is that the key stops being the **turnover** — it just labels the archive
+  (`winter-2024-25`), which is what the founder asked for over calendar-year invalidation.
+
+**Backfill last season on first build**, so the feature ships with a full scrubber instead of an empty
+one that fills up over three weeks. Copernicus' catalogue is open back to 2015, so depth of backfill is
+a storage question, not an availability one.
+
+### C4 — The scrubber, and the honesty that rides with it
+
+**The date is the content, not a caption** (D84, C1 of the original doc, and D3 behind both). A
+timeline invites inference far harder than a static image does, so every frame carries its own date and
+its own cloud caveat — they travel with the frame, they are not furniture around the control.
+
+---
+
+## Workstream D — The four pieces D138 moved here
+
+These were specced in N6c's B3, deferred wholesale, and never given a workstream. They are it.
+
+1. **The Copernicus Browser deep link** (D75), built from **`interiorPoint`** — *not* `centroid`, which
+   is a `pointOnFeature` result that lands **on the shoreline** and would open the browser off the edge
+   of the lake. See the memory note; Willoughby lands on ring vertex 199, Champlain 30.7 km off.
+2. **`satelliteImagery: 'auto' | 'on' | 'off'`** per row, resolved by `auto` against
+   `surfaceAreaSqM` (`schema.ts:683`, geodesic). Per-row **data**, so an operator edit needs no
+   redeploy — only the threshold behind `auto` is a code constant (D75, and the Phase 7 posture).
+3. **`SATELLITE_MIN_AREA_SQM`** — the threshold. ⚠ **It is now per-tier**, which the original doc could
+   not have known: a pond too small to resolve at Sentinel's 10 m may be perfectly legible at NAIP's
+   0.3 m. One constant cannot govern both.
+4. **The proving run** — a flag on `scripts/seed-destinations`, which already does the matching half
+   (D139). *(The 07-31 doc calls this script `seed-satellite` in two places; that name is two renames
+   stale.)*
+
+`packages/core/src/referenceLinks.ts` carries a test asserting **no** Copernicus URL is emitted
+(`referenceLinks.test.ts:167`), so the link cannot creep back in ahead of the layer. **Delete that test
+here.**
+
+---
+
+## Workstream E — The admin lake editor gets imagery, unmasked
+
+`LakeEditorMap.tsx:301` already re-exports `buildMapStyle`, and tracing a shoreline over a photograph is
+the obvious operator win. **Unmasked there** *(founder call, 2026-08-21)* — an operator correcting a
+polygon needs to see past its current edge, which is the opposite of what a skater needs.
+
+---
+
+## Prerequisite — the one thing that cannot wait for this phase
+
+**N6d must store the ORS route geometry, before its routing pass finishes.**
+
+A1's mask buffers the trail. **We have no trail geometry.** N6d's correction #9 dropped trail lines from
+the OSM extract on the reasoning that a successful `foot-hiking` route *is* the trail signal, so
+`amenities` carries a `trail` flag and the schema stores `approachMeters`, `approachAscentM` and
+`approachRouted` — but no line.
+
+**And we are already being handed it.** `packages/core/src/access.ts` calls ORS's **GeoJSON** directions
+endpoint, which returns the route geometry; the parser takes distance and ascent and discards the rest.
+Capturing it costs one optional field and **zero additional ORS quota**. Re-deriving it later means
+re-routing every put-in against a 2,000/day quota, paid twice.
+
+It also unlocks **drawing the approach on the map**, which does not exist today — N6d gives a distance
+and a hike-in chip, not a line.
 
 ---
 
 ## Out of scope
 
-- **Imagery as the *default* base map.** Slower, heavier, no offline, and every other layer is styled
-  against the vector map. Off by default (A5).
-- **A second toggle for anything.** D81 is a one-toggle rule and the value is in the constraint. Contours
-  follow the detail view; there is no layer menu.
-- **Historical imagery browsing / a date slider.** N6c B3's Copernicus Browser deep link already does
-  this, better, in a purpose-built tool, at zero cost (**D75** — a link is not an integration). Ship the
-  link; revisit only if it's demonstrably not enough.
-- **Offline raster packs** (A6).
-- **Deriving anything from imagery.** No ice detection, no classification, no automatic condition
-  inference. That's a research project and it would be a **prediction**, which D3 says isn't ours to make.
-  We show the picture; the skater reads it.
+- **Derived ice classification / hatch layers → N6f.** Deferred on PR size, not principle; see D150.
+- **Paid imagery** (D147). No PlanetScope, no tasking. Revisit with users and a cost-sharing story.
+- **A base-map swap** (D146). There is no map-wide satellite mode, and no layer menu.
+- **Offline raster.** Imagery requires a connection. Mobile has NetInfo already
+  (`OfflineDraftsContext.tsx:109`); **web has no online/offline detection anywhere**, and probably
+  doesn't need it.
+- **Historical browsing beyond the season archive.** The Copernicus deep link (D75) covers arbitrary
+  history in a purpose-built tool at zero cost. ⚠ But see open question 5 — we are now building a date
+  slider, which was the deep link's main justification.
+- **Deriving a condition, ever.** D3. We show the picture; the skater reads it.
 
 ---
 
 ## Sequencing
 
-1. **A3 + A4** — the style branch and source-based attribution. Nothing user-visible yet; entirely
-   testable, and it's where the design risk lives.
-2. **B1** — the USGS raster source. This is the moment the feature exists.
-3. **A1 + A5 + A6** — the toggle, its persistence, and the offline disable.
-4. **A2** — pair with [N6d](./phase-N6d-lake-access-points.md)'s access points, whenever both have
-   landed. No dependency in either direction; they just multiply.
-5. **C** — Tier 2, on the C3 evidence gate.
+0. **N6d captures the route geometry.** Blocking, and time-sensitive.
+1. **A1 + A2 against NAIP** — mask, inverse fill, hard edge. Where the design risk lives, and entirely
+   testable before anything is user-visible.
+2. **B1 + B2** — the 0.3 m source and its date stamp. The moment the feature exists.
+3. **A3 + the control** — the reveal, scoped to the detail view; then rings for the feather.
+4. **E** — the admin editor, unmasked. Cheap once 1–3 land, and it is where operators will stress it.
+5. **D** — the deep link and the `satelliteImagery` machinery.
+6. **C** — the pipeline, the box, the archive, the scrubber. The long pole, and the only part with an
+   external dependency.
 
-**Steps 1–3 are the shippable unit**, and they have no external dependency beyond a public-domain tile
-URL. That's the "ASAP" the founder asked for: the toggle, doing the thing they described, without
-touching a quota.
-
-**Relationship to N6b:** the two can ship in either order. If contours land first, A1's table gains a row
-that already has an answer; if imagery lands first, N6b's D81 rule is already implemented and contours
-just have to respect it. **Neither blocks the other**, which is a consequence of D81 having been decided
-for both at once.
+**Steps 1–5 are a shippable unit with no infrastructure.** Step 6 is where the phase becomes expensive,
+and the founder's call is that it ships in the same PR — so expect one large review rather than two.
 
 ---
 
 ## Open questions
 
-1. **Does the toggle live on the map or in the drawer?** A persistent map control is discoverable and
-   costs permanent screen space on mobile; a drawer control is out of the way and might never be found.
-   **Leaning a small map control**, because a base-map switch is a map thing and every mapping app puts it
-   there — but mobile screen budget is real and this is worth one look at the actual layout.
-2. **Does imagery suppress water-body fills for *all* bodies, or only the selected one?** The table above
-   says all, on the grounds that a photograph doesn't need an outline. The counter-argument is that fills
-   are how a skater *finds* bodies while panning, and a photo of the Northeast is a lot of green with some
-   blue in it. **Possible middle: suppress fills, keep a thin outline.** Worth trying both against real
-   imagery rather than deciding on paper.
-3. **What happens at zoom levels past NAIP's native maximum?** ArcGIS services typically stop serving
-   rather than upsampling. A blank map at high zoom would be a bad surprise at exactly the moment someone
-   is inspecting a put-in. Needs a max-zoom clamp on the raster source and possibly a graceful fall back
-   to the vector base map.
-4. **Tier 2's affordance: the same toggle, or a distinct one?** D81 says one toggle — but Tier 2 is a
-   *dated observation*, not a base map, and folding it into the same switch risks the exact conflation C1
-   warns about. **Possible resolution: it isn't a layer at all** — a dated Sentinel-2 still in the lake
-   drawer, beside the weather strip, where a date stamp reads naturally. That would keep D81 intact and
-   arguably present the imagery more honestly than a map layer could.
+1. **One control or two?** Tier 1 is a 0.3 m summer photograph; Tier 2 is a 10 m dated observation.
+   They are different enough that folding them into one switch risks the exact conflation D84 warns
+   about — but two controls in a detail view is clutter. *Possible resolution: one reveal, and the
+   scrubber's far-left position is labelled "aerial — June 2023" rather than a date.*
+2. **Where does the scrubber live on mobile,** where the map sits behind a bottom sheet and the control
+   only exists while the sheet is *not* expanded?
+3. **Is there a zoom floor for the reveal?** A 0.3 m fetch at z10 is pointless and a 10 m frame is a
+   smudge.
+4. **Do sub-areas get their own reveal,** or only parent bodies? They have geometry and they're
+   selectable-adjacent, but D60 says a bay is a name on a lake, not a thing you select.
+5. **Does the Copernicus deep link still earn its place?** D75 justified it as the right answer for
+   *historical browsing and a date slider* — and this phase builds a date slider. It may now be
+   redundant, or it may be the honest escape hatch for "show me more than our season."
+6. **How far back does the backfill go** — one season, or more?
+7. **Does any of this go to prod,** or stay dev-only like every phase since 2.5? This is the first phase
+   that adds recurring infrastructure cost, which changes the shape of that question.
