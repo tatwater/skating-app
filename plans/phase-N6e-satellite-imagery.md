@@ -308,6 +308,8 @@ These were specced in N6c's B3, deferred wholesale, and never given a workstream
 1. **The Copernicus Browser deep link** (D75), built from **`interiorPoint`** — *not* `centroid`, which
    is a `pointOnFeature` result that lands **on the shoreline** and would open the browser off the edge
    of the lake. See the memory note; Willoughby lands on ring vertex 199, Champlain 30.7 km off.
+   **It ships in the drawer's reference links, beside Windy** *(founder, 2026-08-21)* — it stays worth
+   keeping precisely *because* our own archive stops at the season boundary, and someone will want 2019.
 2. **`satelliteImagery: 'auto' | 'on' | 'off'`** per row, resolved by `auto` against
    `surfaceAreaSqM` (`schema.ts:683`, geodesic). Per-row **data**, so an operator edit needs no
    redeploy — only the threshold behind `auto` is a code constant (D75, and the Phase 7 posture).
@@ -383,21 +385,67 @@ and the founder's call is that it ships in the same PR — so expect one large r
 
 ---
 
+## Settled 2026-08-21 (founder review)
+
+- **The scrubber on mobile:** the skater **collapses the sheet without dismissing it** to see the
+  timeline. No new layout — the control exists only while the map is visible, which was already D146's
+  rule.
+- **No zoom floor.** *"They should be able to zoom so far out that it's not visible or so far in that
+  it's too blurry to read. That's up to them."* Free to honour: the archive's own tiling decides what
+  renders, and it matches the phase's posture — we show the picture, the skater reads it. (Client-side
+  restraint on *firing* NAIP requests at absurd zooms is courtesy, not a product rule.)
+- **Parent bodies only.** Search a bay, jump to it, turn imagery on, and **the whole lake reveals** —
+  not the bay. Consistent with D60: a bay is a name on a lake, not a thing you select.
+- **The Copernicus deep link stays**, in the drawer beside Windy (Workstream D).
+- **Dev-only; prod deferred**, like every phase since 2.5. This is the first phase with a *recurring
+  bill*, and paying it to serve a deployment with no users is a different proposition. Founder: *"Fewer
+  surfaces right now keeps life simpler until we're ready."*
+- **Hosting: Fly, and the reason changed.** The original tie-break was self-hosted ORS — a service still
+  sitting in *Later/deferred* that may never be built, which is thin ground. What actually justifies it
+  is **parallel fan-out during backfill**: one season is ~750 granule jobs, which is five days serial
+  and a few hours across 25 per-job Machines, at the same total cost. **Lock-in is low if orchestration
+  stays host-neutral** — make the container's entrypoint take *one granule id* and keep "which granules,
+  when" outside Fly's Machines API. Splitting hosts (Railway for batch, Fly for ORS) costs the same
+  ~$50/mo and buys two dashboards, two deploy paths and two bills.
+
 ## Open questions
 
-1. **One control or two?** Tier 1 is a 0.3 m summer photograph; Tier 2 is a 10 m dated observation.
-   They are different enough that folding them into one switch risks the exact conflation D84 warns
-   about — but two controls in a detail view is clutter. *Possible resolution: one reveal, and the
-   scrubber's far-left position is labelled "aerial — June 2023" rather than a date.*
-2. **Where does the scrubber live on mobile,** where the map sits behind a bottom sheet and the control
-   only exists while the sheet is *not* expanded?
-3. **Is there a zoom floor for the reveal?** A 0.3 m fetch at z10 is pointless and a 10 m frame is a
-   smudge.
-4. **Do sub-areas get their own reveal,** or only parent bodies? They have geometry and they're
-   selectable-adjacent, but D60 says a bay is a name on a lake, not a thing you select.
-5. **Does the Copernicus deep link still earn its place?** D75 justified it as the right answer for
-   *historical browsing and a date slider* — and this phase builds a date slider. It may now be
-   redundant, or it may be the honest escape hatch for "show me more than our season."
-6. **How far back does the backfill go** — one season, or more?
-7. **Does any of this go to prod,** or stay dev-only like every phase since 2.5? This is the first phase
-   that adds recurring infrastructure cost, which changes the shape of that question.
+1. **Does NAIP survive, and in what shape?** The founder's instinct is to drop the summer image
+   outright — *"that's useless to us"* — and it is a foreign object *inside a freeze-up timeline*.
+   But dropping it also drops **the only resolution at which access is legible** (a pull-off is 1–2
+   pixels at Sentinel's 10 m; the whole N6d pairing lives at 0.3 m) **and the only part of this phase
+   with no infrastructure dependency** — the thing that still ships if the pipeline slips.
+   *Proposed resolution: the aerial is the **home state** of the reveal and the scrubber swaps winter
+   frames over it.* One control, no summer frame in the timeline, access use case intact.
+2. **The all-time archive, and what it forces.** Founder, 2026-08-21: hold every available pass for the
+   region indefinitely, reveal only the current season, and mine the history for **ice-in / ice-out,
+   >90% coverage, first snow, melt events** per body — charted in the drawer. The economics are
+   friendly (~9 usable Sentinel-2 seasons ⇒ **~13 GB, ~$0.20/mo in R2**; backfill ≈ 8,000 granule jobs
+   ≈ **$43 on Fly**, a couple of days parallel). **But extracting phenology *is* the classifier D150
+   defers to N6f** — this is not a retention decision, it is a request to pull classification back in.
+   *Proposed resolution, on the N5c precedent: **derive dark**. N6e's pipeline computes and stores the
+   phenology series (a few hundred bytes per body per season, operator-visible, no user surface); N6f
+   ships the charts and the hatch layer that read it. The backfill then runs once, not twice.*
+   Three things to weigh first:
+   - **Cloud makes any single year's date soft — ±5–10 days.** Nine seasons average into a good
+     climatology; *"ice-in 2021"* alone would not be a number to quote. Sentinel-1 SAR is what tightens
+     it, which is a second reason it is in scope.
+   - **Landsat reaches back to the 1980s** at 30 m, free, same STAC access — too coarse for a pond,
+     ample for ice-or-not on anything above ~20 ha. **Forty seasons instead of nine** is a different
+     product, and a follow-on rather than v1.
+   - ⚠ **Check whether this is already solved.** Published lake-ice phenology datasets exist (NSIDC's
+     global database among them). One search before deriving nine seasons ourselves.
+3. **Does the phase split into two PRs, and where's the seam?** *Proposed:* **PR 1 — the reveal**
+   (mask, feather, control, NAIP + date stamp, Workstreams D and E, the N6d prerequisite): **zero
+   infrastructure**, ships against a keyless endpoint, could land while N6d settles. **PR 2 — the
+   timeline** (the box, STAC poll, granule reader, archive, scrubber, weather gate, backfill, phenology
+   derived dark). **PR 3 — what the archive knows** (hatch layer, charts). This *reverses* the
+   2026-08-21 call that the timeline ships in the same PR — it is the single biggest thing in the phase
+   and the only part with an external dependency.
+4. **Does the app-wide season turnover adopt D149's freeze signal?** *Proposed: no — separate two things
+   that look like one.* D63's July boundary is the **season key**, load-bearing across N5a hazards,
+   `contentPurge`, the D66 photo purge, `seasonWindow` and bounties; changing it is broad blast radius
+   for no visible gain. What the founder actually wants is the **display default** — when last season's
+   content stops reading as current — and that is a small, safe change. Most of it already happens
+   without a cliff (hazards decay on D56, reports age on their own curves). **Audit what hard-cuts at
+   July 1 that a skater would notice, and move only that.**
