@@ -3,16 +3,20 @@ import type { Id } from '@skating/convex/dataModel';
 import {
   APPROACH_LAYER_ID,
   APPROACH_SOURCE_ID,
+  aerialIdentifyUrl,
   applyDraftMapClick,
   approachesToFeatureCollection,
   approachLinePaint,
   type BBox,
   draftPlacementCount,
+  formatAerialCaptureDate,
   isDraftSubmittable,
   isRegionOffscreen,
   type LatLng,
+  parseAerialScene,
   polygonShape,
   profileRevealEnabled,
+  representativePoint,
   SUB_AREA_MIN_RENDER_ZOOM,
   undoDraftPlacement,
   withAccessDim,
@@ -74,6 +78,7 @@ import {
   WATER_PALETTE,
   waterBodiesToFeatureCollection,
 } from '../lib/waterMap';
+import { ImageryControl } from './ImageryControl';
 import { useMapSelection } from './MapSelectionContext';
 import { ReturnToRegion } from './ReturnToRegion';
 import {
@@ -151,7 +156,11 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
     setContourCredit,
     setViewportLakes,
     imageryOn,
+    setImageryOn,
     hazardsOverImagery,
+    setHazardsOverImagery,
+    aerialCaptureLabel,
+    setAerialCaptureLabel,
   } = useMapSelection();
 
   const [queryArgs, setQueryArgs] = useState<QueryArgs | null>(null);
@@ -992,6 +1001,36 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
     setLayersVisible(map, IMAGERY_HAZARD_LAYERS, !revealMask || hazardsOverImagery);
   }, [revealMask, hazardsOverImagery, loaded, mapRef.current]);
 
+  // When was this lake last photographed? (N6e B2.)
+  //
+  // One `identify` per reveal, straight from the client — the service is keyless and CORS-open, so a
+  // round trip through Convex would buy nothing but a hop. **Deliberately not a stored field yet:**
+  // the answer changes about once every 2–3 years per state, so caching it belongs in an ETL pass
+  // keyed on the service's `Year`, not in a schema column written by whoever opened the drawer first.
+  //
+  // A failure is silence, never a guess. `null` renders as no date at all, which is the correct
+  // output for a body outside NAIP coverage and for a service having a bad afternoon alike — the one
+  // unacceptable answer here is a plausible year we made up (D147).
+  useEffect(() => {
+    if (!imageryOn || !revealMask) return;
+    // `representativePoint` lands *on* the shoreline (it is Turf's `pointOnFeature`), and here that
+    // is fine: NAIP photographs land and water alike, and a quarter-quad scene is far larger than
+    // the error. It is emphatically **not** fine for Workstream D's Copernicus link, which opens a
+    // browser centred on the point — hence the stored `interiorPoint` there and this one here.
+    const centre = representativePoint(revealMask.polygon);
+    const controller = new AbortController();
+    fetch(aerialIdentifyUrl(centre), { signal: controller.signal })
+      .then((response) => (response.ok ? response.json() : null))
+      .then((body) => {
+        const scene = parseAerialScene(body);
+        setAerialCaptureLabel(scene ? formatAerialCaptureDate(scene.capturedAt) : null);
+      })
+      .catch(() => {
+        // Includes the abort on drawer-close, which is not a failure worth reporting.
+      });
+    return () => controller.abort();
+  }, [imageryOn, revealMask, setAerialCaptureLabel]);
+
   // Open-bounty pins across the viewport (D10/D17) — refreshed as the map pans + as bounties change.
   useEffect(() => {
     const map = mapRef.current;
@@ -1174,6 +1213,17 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
         onReturn={() =>
           mapRef.current?.flyTo({ center: INITIAL_CENTER, zoom: INITIAL_ZOOM, duration: 900 })
         }
+      />
+      {/* Only where a lake is open (D146). Hidden while the hazard author has the map, because two
+          overlapping "click the map" affordances is one too many. */}
+      <ImageryControl
+        visible={Boolean(highlightWaterBodyId) && !hazardDropMode && !pinDropMode}
+        imageryOn={imageryOn}
+        onToggleImagery={setImageryOn}
+        hazardsOn={hazardsOverImagery}
+        onToggleHazards={setHazardsOverImagery}
+        captureLabel={aerialCaptureLabel}
+        hasHazards={(hazards?.length ?? 0) > 0}
       />
       {/* The drawing bar. A circle needs one click and no controls, so it just says so; a polyline
           is a multi-click session and gets its own Undo/Done, kept on the map rather than in the
