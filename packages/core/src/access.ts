@@ -18,7 +18,7 @@
  * falsified by a dense state — see its own note.
  */
 
-import { bearingDegrees, haversineMeters, type LatLng } from './geometry';
+import { bearingDegrees, haversineMeters, type LatLng, simplifyPath } from './geometry';
 import { compassPointFor } from './lakeGeometry';
 import type { PostedAccess } from './postedAccess';
 
@@ -241,8 +241,33 @@ export interface OrsRouteResponse {
       ascent?: number;
       descent?: number;
     };
+    /**
+     * The line ORS walked. `elevation: true` makes these **three**-element positions
+     * (`[lng, lat, metres]`), which is why the reader indexes rather than destructures a pair.
+     */
+    geometry?: { type?: string; coordinates?: number[][] };
   }[];
 }
+
+/**
+ * How finely the approach line is kept.
+ *
+ * Five metres, matching the corpus shoreline's own simplification — a walking route is drawn beside a
+ * lake outline already generalised to that, and keeping the path finer than the shore it runs along
+ * would store precision the map cannot show. An ORS foot route through a switchbacked trail arrives
+ * with several hundred vertices; this typically takes a few dozen.
+ */
+export const APPROACH_PATH_TOLERANCE_M = 5;
+
+/**
+ * The vertex ceiling for a stored approach.
+ *
+ * A bound rather than a target, and it exists for the same reason `HAZARD_MAX_VERTICES` does: a
+ * pathological route (a lakeside loop trail ORS decides to follow the long way round) must not be
+ * able to put an unbounded array in a document every drawer read pays for. Simplification gets almost
+ * everything under this on its own; the cap is what makes "almost" not matter.
+ */
+export const APPROACH_PATH_MAX_VERTICES = 256;
 
 /** A resolved approach: how far, how much climb, and whether anybody actually routed it. */
 export interface ApproachLeg {
@@ -250,6 +275,34 @@ export interface ApproachLeg {
   ascentM?: number;
   /** `false` ⇒ straight-line. The number is a **floor**, not an estimate — say "at least". */
   routed: boolean;
+  /**
+   * The line the walk actually follows, parking → put-in, simplified (N6e Workstream 0).
+   *
+   * **Absent on a straight-line leg**, deliberately: drawing a crow-flies segment between a lot and a
+   * launch would render a trail that does not exist, straight through whatever lies between them,
+   * and it would look exactly like the routed lines beside it. The distance can honestly say *"at
+   * least 900 m"* because a number carries its own hedge; a line on a map cannot.
+   *
+   * Present only where it was asked for — the geometry is dropped from a leg nobody will draw, which
+   * is what keeps a 40 m drive-up ramp from carrying a path array (see `parseOrsFootHikingRoute`).
+   */
+  path?: LatLng[];
+}
+
+/**
+ * Should this leg's line be kept?
+ *
+ * The line exists to be drawn and to be buffered into N6e's mask, and both of those want the walk a
+ * skater has to think about. Below the hike-in line a path is a few metres of tarmac between a car
+ * and a bank — invisible at any zoom the drawer uses, invisible inside a 30 m mask buffer, and paid
+ * for on every read of the row.
+ *
+ * Stated as a predicate rather than inlined at the two call sites so the ETL's re-request decision
+ * and the parser's keep/drop decision cannot drift apart — if they did, a leg would be re-routed
+ * against the quota and then have its geometry thrown away.
+ */
+export function approachPathWanted(meters: number): boolean {
+  return meters > SHORT_WALK_MAX_M;
 }
 
 /**
@@ -285,15 +338,50 @@ export function orsFootHikingBody(from: LatLng, to: LatLng): Record<string, unkn
  * arriving in a different form), so the caller can fall back rather than record a zero.
  */
 export function parseOrsFootHikingRoute(response: OrsRouteResponse): ApproachLeg | null {
-  const properties = response.features?.[0]?.properties;
+  const feature = response.features?.[0];
+  const properties = feature?.properties;
   const meters = properties?.summary?.distance;
   if (typeof meters !== 'number' || !Number.isFinite(meters) || meters < 0) return null;
   const ascent = properties?.ascent;
+  const path = approachPathWanted(meters)
+    ? approachPathFrom(feature?.geometry?.coordinates)
+    : undefined;
   return {
     meters,
     ascentM: typeof ascent === 'number' && Number.isFinite(ascent) ? ascent : undefined,
     routed: true,
+    ...(path ? { path } : {}),
   };
+}
+
+/**
+ * The stored line, out of ORS's raw positions.
+ *
+ * Three things happen here and each of them has cost us something before:
+ *
+ * - **The third ordinate is dropped.** `elevation: true` is mandatory for `ascent` (see
+ *   `orsFootHikingBody`), so every position arrives as `[lng, lat, metres]`. A `LatLng` reader that
+ *   destructured a pair would silently keep the elevation as nothing at all; one that stored the
+ *   triple would put a third of the array's weight into a number no map reads. The climb is already
+ *   on the row as `approachAscentM`.
+ * - **It is simplified**, because the raw line is finer than the shoreline it runs beside.
+ * - **A path that still exceeds the cap after simplification is dropped rather than truncated.** A
+ *   truncated line is a route that stops in the woods, which is a wrong answer wearing the shape of a
+ *   right one; no line at all falls back to the distance, which is honest.
+ */
+function approachPathFrom(coordinates: number[][] | undefined): LatLng[] | undefined {
+  if (!coordinates || coordinates.length < 2) return undefined;
+  const points: LatLng[] = [];
+  for (const position of coordinates) {
+    const lng = position[0];
+    const lat = position[1];
+    if (typeof lat !== 'number' || typeof lng !== 'number') continue;
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) continue;
+    points.push({ lat, lng });
+  }
+  if (points.length < 2) return undefined;
+  const simplified = simplifyPath(points, APPROACH_PATH_TOLERANCE_M);
+  return simplified.length > APPROACH_PATH_MAX_VERTICES ? undefined : simplified;
 }
 
 /**
@@ -326,6 +414,11 @@ export interface AccessPutIn {
   approachMeters?: number;
   approachAscentM?: number;
   approachRouted?: boolean;
+  /**
+   * The walk, as a line to draw (N6e Workstream 0). Only ever present on a routed hike-in leg —
+   * see `ApproachLeg.path` for why a straight-line approach deliberately carries none.
+   */
+  approachPath?: LatLng[];
   approachKindOverride?: ApproachKind;
   /**
    * What the sign on *this launch* says (N6e).

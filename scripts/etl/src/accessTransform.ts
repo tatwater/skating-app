@@ -224,6 +224,14 @@ export interface PutInRecord {
   approachMeters?: number;
   approachAscentM?: number;
   approachRouted?: boolean;
+  /**
+   * The routed line from the lot to the launch, simplified (N6e Workstream 0).
+   *
+   * Only ever set on a routed hike-in leg — see `ApproachLeg.path`. The loader stores it verbatim;
+   * nothing between here and the row re-simplifies it, because the tolerance is a property of what
+   * the map can show rather than of this pass.
+   */
+  approachPath?: LatLng[];
 }
 
 /** What the pairing produced, plus the counters the run row reports. */

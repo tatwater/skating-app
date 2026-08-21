@@ -2137,6 +2137,27 @@ export default defineSchema({
     approachRouted: v.optional(v.boolean()),
 
     /**
+     * The line the walk follows, parking → put-in, simplified to `APPROACH_PATH_TOLERANCE_M`
+     * (N6e Workstream 0).
+     *
+     * **Only ever present on a routed hike-in leg**, and both halves of that are deliberate:
+     *
+     * - **Routed**, because a straight-line fallback's line does not exist. The distance can hedge
+     *   itself — *"at least 900 m"* — but a line drawn on a map cannot, and a crow-flies segment
+     *   through the woods would look exactly like the routed ones beside it.
+     * - **Hike-in**, because below `SHORT_WALK_MAX_M` the path is a few metres between a car and a
+     *   bank: invisible at the zoom the drawer uses, invisible inside N6e's mask buffer, and paid for
+     *   on every read of the row.
+     *
+     * Two consumers, and the second is why this field exists at all: the clients draw it, and N6e's
+     * reveal buffers it into the mask that clips the imagery to the lake **and the way in**. N6d had
+     * ORS's GeoJSON response in hand and read only `distance` and `ascent` off it, so recovering
+     * these cost a re-route of every hike-in leg against a 2,000/day quota — which is the note worth
+     * leaving here: the geometry is free at request time and expensive at any other.
+     */
+    approachPath: v.optional(v.array(latLng)),
+
+    /**
      * An operator's override of the derived `approachKind` (D144).
      *
      * **The kind itself is never stored.** It is a pure function of `approachMeters`

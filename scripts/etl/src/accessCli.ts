@@ -40,6 +40,7 @@ import { createInterface } from 'node:readline';
 import { fileURLToPath } from 'node:url';
 import {
   type ApproachLeg,
+  approachPathWanted,
   type LatLng,
   ORS_FOOT_HIKING_URL,
   type OrsRouteResponse,
@@ -182,7 +183,24 @@ async function readAccessFeatures(states: readonly string[], refresh: boolean) {
   return { features, refusedLines };
 }
 
-type RouteCache = Record<string, { meters: number; ascentM?: number; routed: boolean }>;
+/**
+ * A cached leg, plus **whether we have already asked for its line** (N6e Workstream 0).
+ *
+ * The flag exists because the geometry backfill has to be able to finish. N6d's parser read distance
+ * and ascent off the ORS response and dropped `features[0].geometry`, so 4,945 legs were archived
+ * without a line and the zero-cost window closed with the routing pass on 2026-08-13 — recovering
+ * them means re-spending the quota, once, and never again.
+ *
+ * `pathAsked` is what makes "never again" true. A routed leg whose line came back unusable — over
+ * `APPROACH_PATH_MAX_VERTICES` after simplification, or a response with no geometry at all — is a
+ * **real answer**, so it is remembered, exactly like the 404 that says there is no path between two
+ * points. Without the flag those legs would be re-requested on every run for ever, which is the
+ * mirror image of the 429-cached-as-an-answer bug the first run found: that one cached a failure as
+ * an answer, this one would refuse to cache an answer at all.
+ */
+type CachedLeg = ApproachLeg & { pathAsked?: boolean };
+
+type RouteCache = Record<string, CachedLeg>;
 
 function cacheKey(from: LatLng, to: LatLng): string {
   const r = (n: number) => n.toFixed(5);
@@ -311,6 +329,12 @@ async function main(): Promise<void> {
   let cacheHits = 0;
   /** Legs that flew straight for a *transient* reason — the number a re-run will retry. */
   let uncached = 0;
+  /** Hike-in legs re-requested purely to recover the line N6d's parser discarded. */
+  let pathBackfills = 0;
+  /** …of which came back with a usable line. */
+  let pathsRecovered = 0;
+  /** Hike-in legs still owed a line when this run ended — the operator's "run it again" number. */
+  let awaitingPath = 0;
 
   for (const putIn of pairing.putIns) {
     if (!putIn.parkingExternalId) continue;
@@ -321,9 +345,34 @@ async function main(): Promise<void> {
     let leg = cache[key];
     if (leg) {
       cacheHits++;
+      // The geometry backfill (N6e Workstream 0). Only hike-in legs, because only they will be drawn
+      // or buffered — `approachPathWanted` is the *same* predicate the parser keeps a line by, so a
+      // leg can never be re-routed against the quota and then have its geometry thrown away.
+      if (leg.routed && approachPathWanted(leg.meters) && !leg.path && !leg.pathAsked) {
+        pathBackfills++;
+        const refreshed = await routeApproach(lot.point, putIn.point, apiKey);
+        if (refreshed.leg.routed) {
+          // Replaced only on a routed answer. A transient straight-line fallback must never
+          // overwrite a distance we already paid for — that would spend the quota to make the row
+          // worse, and `approachRouted: false` would then render "at least" on a leg ORS had walked.
+          leg = { ...refreshed.leg, pathAsked: true };
+          cache[key] = leg;
+          writeFileSync(ROUTE_CACHE, `${JSON.stringify(cache)}\n`);
+          if (leg.path) pathsRecovered++;
+        }
+        if (apiKey) await sleep(ORS_GAP_MS);
+      }
+      // Retryable only. A leg already asked will never gain a line however many times we run, so
+      // counting it here would leave the operator waiting on a number that cannot reach zero.
+      if (leg.routed && approachPathWanted(leg.meters) && !leg.path && !leg.pathAsked) {
+        awaitingPath++;
+      }
     } else {
       const routedLeg = await routeApproach(lot.point, putIn.point, apiKey);
-      leg = routedLeg.leg;
+      // A leg routed *now* has been asked about its line by construction — the parser kept whatever
+      // came back. Marking it here is what stops a fresh hike-in leg with an unusable line from
+      // joining the backfill queue on the very next run.
+      leg = routedLeg.leg.routed ? { ...routedLeg.leg, pathAsked: true } : routedLeg.leg;
       // **Only real answers are archived.** A rate-limited fallback is a fact about our request rate,
       // not about this lake, and storing it would make the next run skip the leg for ever.
       if (routedLeg.cacheable) {
@@ -340,6 +389,7 @@ async function main(): Promise<void> {
     putIn.approachMeters = Math.round(leg.meters);
     putIn.approachAscentM = leg.ascentM === undefined ? undefined : Math.round(leg.ascentM);
     putIn.approachRouted = leg.routed;
+    putIn.approachPath = leg.path;
     if (leg.routed) {
       routed++;
       // The trail amenity, derived rather than extracted (correction 9): ORS routes over the same
@@ -378,6 +428,12 @@ async function main(): Promise<void> {
     // that says whether re-running tomorrow is worth anything.
     retryableFallbacks: uncached,
     cacheHits,
+    // The N6e Workstream 0 lane, reported apart from the routing counters because it is a different
+    // question: routing asks "how far is the walk", this asks "do we have the line to draw it".
+    pathBackfills,
+    pathsRecovered,
+    // Not a ratio (D137): the legs a re-run tomorrow would still pick up, named.
+    legsAwaitingPath: awaitingPath,
     routingEnabled: Boolean(apiKey),
     // The operator's "come back tomorrow" signal, stated rather than inferred from a ratio.
     quotaExhausted,
