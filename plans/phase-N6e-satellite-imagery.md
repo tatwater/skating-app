@@ -50,8 +50,28 @@ datasheet:
 | NAIP via `USGSImageryOnly` | z16 ≈ 1.7 m/px here | same | Never | Free, no key |
 | **Sentinel-2 L2A** | 10 m | **~2–3 days at 44°N** | Yes — extent, snow, open water | Free |
 | **Sentinel-1 SAR** | 10–20 m | ~6 days, **cloud- and night-proof** | Yes — with a caveat, see C1 | Free |
-| PlanetScope | ~3 m | near-daily | Yes | Commercial quote |
-| SkySat / Pléiades Neo | 0.3–0.5 m | **tasked on request** | Yes — would show a ridge | ~$200–400 per lake per capture |
+| PlanetScope | ~3 m | near-daily | Yes | ~$1.80/km², 250 km² order min |
+| SkySat | 0.5 m | **tasked on request** | Yes — would show a ridge | $6–40/km², **25 km² polygon + $15,000 order min** |
+
+**Priced region-wide, 2026-08-21, because "run the region through our masking pipeline" sounds like it
+should help and does not.** You pay for **the AOI you request**, and the minimum AOI is larger than most
+of our lakes — a typical 2 km² Vermont pond bills as SkySat's 25 km² floor. Masking saves storage, not
+money.
+
+| | Rate | Water + buffer (~15,000 km²) | Whole region (~310,000 km²) |
+|---|---|---|---|
+| PlanetScope archive | ~$1.80/km² | **~$27,000** | ~$558,000 |
+| SkySat archive | $6/km² | ~$90,000 | ~$1.9M |
+| SkySat flexible tasking | $12/km² | **~$180,000** | ~$3.7M |
+| SkySat assured tasking | $40/km² | ~$600,000 | ~$12.4M |
+
+**And that is one pass.** The entire point of paying is cadence, so a season multiplies by 30 (Sentinel-
+like) to 150 (near-daily). Three to four orders of magnitude outside a pilot.
+
+*Correcting the earlier "~$200–400 per lake per capture": right per lake (25 km² × $12 ≈ $300), wrong in
+practice — **SkySat carries a $15,000 minimum order**, so a single lake cannot be bought. Even the
+40-lake destination shortlist is ~$12–15k per pass.* **The realistic paid future is a shortlist tasked a
+handful of times a season at ~$15k an order** — a feature paying users fund, not a general layer.
 
 > **D147 — We buy neither end of the trade. Free only, and we say plainly what free cannot do.**
 > A pressure ridge is 1–3 m wide: legible at 0.3 m, a smudge at 3 m, **nonexistent at 10 m**. The only
@@ -150,27 +170,61 @@ and makes the client nearly free — at the cost of needing an ETL re-run to cha
 | Water-body **fill** | drawn | **suppressed** | The photograph is the lake |
 | Water-body **outline** | drawn | **kept, and it matters more** | It's what makes the masked patch read as *this lake* instead of a hole in the map. The founder's first inspiration image is precisely a bright outline containing dark imagery. |
 | **Bathymetric contours** | drawn in detail view | **not drawn** | D81's surviving half; unreadable over a photograph |
-| **Sub-area outlines + labels** | drawn | **not drawn** | Founder call, 2026-08-21 |
-| **Hazards** | drawn | **drawn** | Non-negotiable — this is a safety product |
-| **Skate paths** | drawn | **drawn** | The layer imagery flatters most |
+| **Sub-area outlines + labels** | drawn | **drawn, behind a flag** | Founder call reversed 2026-08-21b — *"I'm open to keeping [them] drawn… let's make that easy to turn on and off so we can play around with it."* |
+| **Hazards** | drawn | **not drawn** ⚠ | Founder call, 2026-08-21b — *"different user intents."* **See the safety note below; behind one constant.** |
+| **Skate paths** | drawn | **not drawn** | Same call. The least contentious half of it — a track is a record, not a warning. |
 | **Put-ins / parking / toilets / approach** | drawn | **drawn** | They're inside the mask *by construction* — that's what the union in A1 is for |
 | **Place labels** | from the vector style | **kept** | The base map never changed, so this is free |
-| Attribution | OSM/ODbL | **OSM + imagery credit** | §A4 |
+| Attribution | OSM/ODbL, on-map control | **drawer credits + an on-map ⓘ** | §A4 |
 
-### A4 — Attribution
+> ⚠ **The hazard row reverses a call this phase previously described as non-negotiable, and the
+> reversal is recorded rather than smoothed over.** D81 named this exact scenario: *"A skater who turns
+> on imagery to check a put-in must not lose the hazard pins doing it; that would be a safety
+> regression delivered by a display preference."* That sentence was written from the founder's own
+> earlier instruction to keep hazards drawn over imagery.
+>
+> **What makes the reversal defensible:** the drawer still lists every hazard on the body; Phase 9.5's
+> on-ice alerting is independent of map display entirely; and the reveal is a deliberate, temporary,
+> planning-mode act rather than a persisted mode someone forgets they left on (D146 killed the
+> persisted preference, which is what makes this true).
+>
+> **What it must therefore never become:** a default, a persisted state, or a mode that survives
+> navigation. If the reveal ever becomes sticky, this row has to change back.
+>
+> **Implementation rule:** one constant governs both hazard and path visibility, so flipping it — or
+> moving to the dimmed-rather-than-hidden middle — is a one-line change and not an archaeology
+> expedition.
 
-Attach credits to **sources**, never compose a string by hand: MapLibre unions the attributions of
-active sources, which is correct automatically and is precisely what a hand-written string gets wrong
-the first time someone changes a layer. The vector basemap stays loaded, so ODbL is still owed and
-still surfaced; the imagery source adds its own.
+### A4 — Attribution: credits in the drawer, one ⓘ on the map
 
-The USGS string, read off the service rather than paraphrased:
-`USDA, USGS The National Map: Orthoimagery. Data refreshed June, 2024.`
-Copernicus requires attribution under the free/full/open licence (D75).
+> **Founder, 2026-08-21b:** *"can we keep all attribution strings in the sidebar/drawer, instead of over
+> the map itself? Or is that against ToS"*
 
-⚠ **Verify on device:** MapLibre GL JS's `AttributionControl` unions source attributions; MapLibre
-**native**'s attribution button behaves differently and has not been checked. Mobile already passes
-`attribution` on `MapGL` (`apps/mobile/src/components/MapView.tsx:568`).
+**Mostly yes — and the three sources have three different obligations, which is what decides it:**
+
+| Source | Obligation | Drawer-only OK? |
+|---|---|---|
+| **USGS / NAIP** | **None.** Public-domain federal work | Yes — courtesy only |
+| **Copernicus** | Attribution required, **placement flexible** | Yes |
+| **OSM / ODbL** | Attribution *"reasonably calculated to make users aware"* | ⚠ **The binding one** |
+
+OSM's guidance for a browsable map wants the credit in the map corner, or — where that is impractical
+— reachable through a **clearly-labelled affordance on the map itself**. Credits that live only in a
+drawer, with no on-map path, is the configuration that risks non-compliance.
+
+**So: a small ⓘ on the map that opens the drawer's credits panel.** Clean map, compliant attribution,
+and one place that composes the whole credit list instead of a control that grows a string per layer.
+
+⚠ **This touches the existing map, not just imagery.** Both clients currently run a live MapLibre
+attribution control (`apps/web/src/components/MapView.tsx`, and `attribution` on mobile's `MapGL` at
+`MapView.tsx:568`), so this is a change to shipped behaviour and wants its own commit.
+
+**Strings, read off the services rather than paraphrased:**
+`USDA, USGS The National Map: Orthoimagery. Data refreshed June, 2024.` · `© OpenStreetMap
+contributors` · Copernicus Sentinel data \[year].
+
+⚠ **Verify on device:** MapLibre native's attribution button behaves differently from GL JS's control,
+and suppressing it in favour of our own ⓘ has not been checked on Android.
 
 ---
 
@@ -234,6 +288,13 @@ calm open water*. Rough, deformed or snow-covered ice lights up bright. So SAR i
 surface deformed" and weak on "black ice or open water," which is the distinction skaters care most
 about. S1 and S2 together resolve most of it; either alone does not.
 
+**A band selector ships with the scrubber** *(founder call, 2026-08-21b — "once imagery is turned on by
+the user, they should see an additional toggle to switch between the bands")*. True colour · NDSI ·
+a SWIR composite · SAR VV. **This sits comfortably inside D150** precisely because it is the raw
+observation with no interpretation layered on — the user reads the pixels, exactly as they read the
+photograph. It is also the honest precursor to PR 3's hatch layer: anyone who wants to check what the
+classification was derived *from* can look at it.
+
 **The bands are where the real signal is.** Not needed for v1's true-colour frames, but they are why
 N6f is worth doing and they should be captured while we're already downloading the granule:
 
@@ -295,6 +356,27 @@ host-pinned with no multi-attach — a real operational edge to know about going
 **Backfill last season on first build**, so the feature ships with a full scrubber instead of an empty
 one that fills up over three weeks. Copernicus' catalogue is open back to 2015, so depth of backfill is
 a storage question, not an availability one.
+
+#### The Mt Washington problem, and why it turns out to be cheap
+
+> **Founder, 2026-08-21b:** *"are we at risk of high-elevation weather readings causing the season to
+> occupy a lot more of the year than just Nov→Mar? I'm thinking specifically about the top of Mt
+> Washington, which can be incredibly cold, even in summer months."*
+
+Real, and worse than the summit: **Lakes of the Clouds is a body in our corpus at ~5,000 ft**, so
+"sample only at water bodies" does not save us. Three guards, and the third is the one that matters:
+
+1. **Sample at bodies, not a grid.** No summit stations enter the calculation at all.
+2. **Percentile, never minimum.** *The 25th-percentile body* must show sustained freezing — so a handful
+   of alpine tarns cannot drag the region into season. We have elevation on **99.5%** of bodies (N7-3),
+   so excluding the top decile is free if we want belt-and-braces.
+3. **The gate and the turnover are different things, and only one of them is user-visible.** Weather
+   decides *when we start looking*; **the first frame that shows ice decides when the app turns over**
+   (D149). So an over-eager gate costs a few dollars of granule fetches and nothing else. **Mt
+   Washington can make us start looking in September; it cannot make the app claim the season turned.**
+
+That asymmetry is licence to make the gate deliberately generous — the expensive failure is a *late*
+gate that misses freeze-up, not an early one that wastes compute.
 
 ### C4 — The scrubber, and the honesty that rides with it
 
@@ -358,6 +440,51 @@ What exists is more useful than a dataset anyway:
   pipeline works, and it is worth more than any dataset we could have borrowed.
 - **[Daily Lake Ice Phenology from AMSR-E/AMSR2](https://nsidc.org/data/nsidc-0726/versions/1)** — 5 km
   passive microwave. Useless for our ponds; a sanity check for Champlain.
+- **[Lake Stewards of Maine's ice-in / ice-out tracking map](https://www.lakestewardsofmaine.org/volunteer-programs-tools/ice-in-ice-out-tracking/ice-in-ice-out-tracking-map/)**
+  *(founder find, 2026-08-21b)* — **volunteer-submitted ice-in/ice-out with a downloadable JSON behind
+  an ArcGIS FeatureServer query endpoint.** Machine-readable ground truth, in one of our five states,
+  from people who watch these lakes. **This is the validation set**, and it is better than anything the
+  literature search turned up. ⚠ Two cautions: the site asserts *"©2026 Lake Stewards of Maine"* with no
+  stated licence, so **validating against it and republishing it are different acts** — ask before the
+  second. And citizen-science definitions drift between observers (first skim vs. full cover), which is
+  exactly what NSIDC's standard definitions are for.
+
+#### The window metrics — the most valuable thing in the archive
+
+> **Founder, 2026-08-21b:** *"The prime window for skating is often the brief period between ice-in and
+> first real snow (3–6+ inches) — after that, ice conditions get a lot more snow/weather-dependent."*
+
+Target sentence, per body: *"Usually freezes in early January · first lasting snow typically 5 days
+later · open ice roughly 30% of the season."*
+
+⚠ **One of those clauses cannot come from imagery, and the split is the design.** Optical imagery sees
+snow *presence* (SCL's snow/ice class, NDSI); it **cannot see 3–6 inches**. But the weather lane already
+fetches **Open-Meteo snowfall**. So: **imagery for the ice, weather for the snow**, joined on the
+imagery-derived ice-in date. Neither lane could produce this sentence alone.
+
+**Phrasing stays inside D151 and D3** — these are observed medians across nine seasons, and each clause
+is a description. *"Prime window"* and *"best ice"* are the phrasings to avoid; the sentence is more
+useful without them anyway.
+
+#### Two research lanes this archive opens — both deferred, one with a hard cap
+
+**Black ice from SAR + freeze rate → N6g, research, validation-gated.** Physically plausible: smooth ice
+is specular and returns dark in SAR, so *low backscatter **plus** Sentinel-2 classifying ice rather than
+water* is a smooth-ice signature, and how fast a body froze is a genuine covariate. Against it: 10–20 m
+pixels, black ice that changes character within hours, and **an incentive structure that makes a false
+positive the costliest error this product could make** — everyone wants black ice, which is exactly why
+they would trust the claim.
+
+> **Rule if it is ever built:** validated against our own condition reports first, and **the strongest
+> claim it may ever make is "smooth ice observed on \[date]."** Never *"black ice here."* D3, D150, D151
+> all point the same way.
+
+**Never-freezing bodies → demote, never delete.** Nine seasons of never-observed-ice is strong evidence
+for Cape Cod and coastal brackish water, and it is a genuinely good use of the archive. But evidence of
+absence has failure modes: **a sub-pixel pond cannot show ice at 10 m regardless of temperature**, and a
+missed cold year is a missed cold year. Deletion is the one irreversible operation in the corpus, and we
+already have demote lanes — `listed`, D49 prominence, N6f's access verdict. **So a body with nine dry
+seasons gets demoted, with the evidence shown to an operator**, and never removed.
 
 ---
 
