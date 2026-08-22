@@ -80,6 +80,7 @@ import {
   REMOVAL_REASONS,
   REPORT_SOURCES,
   REVIEW_STATUSES,
+  SATELLITE_IMAGERY_MODES,
   SUPPORT_CATEGORIES,
   SUPPORT_STATUSES,
   WATER_BODY_SOURCES,
@@ -836,6 +837,21 @@ export default defineSchema({
     displayScore: v.optional(v.number()),
     curatedBoost: v.optional(v.number()),
     minVisibleZoom: v.optional(v.number()),
+    /**
+     * Whether this body offers the Copernicus satellite link (N6e Workstream D, D70/D75).
+     *
+     * **`auto` is the value nearly every row holds, and it is not stored** — absent means `auto`,
+     * resolved against `surfaceAreaSqM` by `satelliteImageryAvailable` in `@skating/core`. What gets
+     * written here is only ever *an operator disagreeing with that derivation*, which is the same
+     * shape as `approachKindOverride`: never persist a derivation, always persist the exception.
+     *
+     * **Per-row data on purpose, so a correction needs no redeploy.** The Phase 7 posture is
+     * "constants stay in code" — that governs `SATELLITE_MIN_AREA_SQM`, the threshold. The exception
+     * to a threshold is a fact about one lake, and facts about lakes live in rows.
+     *
+     * Preserved across re-import like `curatedBoost`: an operator's judgement must survive an ETL run.
+     */
+    satelliteImagery: v.optional(literals(SATELLITE_IMAGERY_MODES)),
     /**
      * Operator-entered reference links (N6c Workstream B7) — the phase's **only** stored link.
      *

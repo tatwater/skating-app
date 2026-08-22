@@ -3,11 +3,17 @@ import {
   allReferenceLinks,
   communityFor,
   communityUrl,
+  copernicusUrl,
   linkCoordinate,
   referenceLinkError,
+  SATELLITE_MIN_AREA_SQM,
+  satelliteImageryAvailable,
   WINDY_ZOOM,
   windyUrl,
 } from './referenceLinks';
+
+/** A fixed clock, so the Copernicus window's shape can be asserted without re-dating the test. */
+const NOW = Date.parse('2026-01-15T12:00:00.000Z');
 
 /** Lake Champlain's two points, measured in N6c-1: they are 30.7 km apart. */
 const CHAMPLAIN_INTERIOR = { lat: 44.5325, lng: -73.3251 };
@@ -139,14 +145,19 @@ describe('allReferenceLinks', () => {
   });
 
   it('builds the derived links, then the operator-entered ones', () => {
-    const links = allReferenceLinks({
-      name: 'Lake Willoughby',
-      states: ['VT'],
-      interiorPoint: { lat: 44.7419, lng: -72.0537 },
-      referenceLinks: [{ label: 'Westmore Association', url: 'https://example.org/westmore' }],
-    });
-    expect(links.map((l) => l.id)).toEqual(['windy', 'community', 'stored:0']);
-    expect(links[2]?.label).toBe('Westmore Association');
+    const links = allReferenceLinks(
+      {
+        name: 'Lake Willoughby',
+        states: ['VT'],
+        interiorPoint: { lat: 44.7419, lng: -72.0537 },
+        referenceLinks: [{ label: 'Westmore Association', url: 'https://example.org/westmore' }],
+      },
+      NOW,
+    );
+    // Copernicus rides along on a fixture with no stored area — `satelliteImageryAvailable` fails
+    // open, on the grounds that withholding a free link over a missing field is the wrong direction.
+    expect(links.map((l) => l.id)).toEqual(['windy', 'copernicus', 'community', 'stored:0']);
+    expect(links[3]?.label).toBe('Westmore Association');
   });
 
   it('keeps a stored link that duplicates a derived one, because a human meant it', () => {
@@ -163,13 +174,90 @@ describe('allReferenceLinks', () => {
     expect(links.map((l) => l.id)).toEqual(['community']);
   });
 
-  /** N6e owns the Copernicus deep link now; nothing here should quietly reintroduce it. */
-  it('emits no satellite imagery link — that moved to N6e', () => {
-    const links = allReferenceLinks({
-      name: 'Lake Champlain',
-      states: ['VT'],
-      interiorPoint: CHAMPLAIN_INTERIOR,
-    });
-    expect(links.some((l) => l.url.includes('copernicus'))).toBe(false);
+  /**
+   * The guard that held the Copernicus link out until the reveal shipped (D138) is retired here —
+   * N6e is the phase that owns both, so the link is now expected rather than forbidden.
+   */
+  it('emits the Copernicus link beside Windy, for a body big enough to resolve', () => {
+    const links = allReferenceLinks(
+      {
+        name: 'Lake Champlain',
+        states: ['VT'],
+        interiorPoint: CHAMPLAIN_INTERIOR,
+        surfaceAreaSqM: 1.1e9,
+      },
+      NOW,
+    );
+    expect(links.map((l) => l.id)).toContain('copernicus');
+    // Directly after Windy: the two are the same kind of thing, and they read as a pair.
+    expect(links.findIndex((l) => l.id === 'copernicus')).toBe(
+      links.findIndex((l) => l.id === 'windy') + 1,
+    );
+  });
+
+  it('withholds it from a pond a 10 m pixel cannot resolve', () => {
+    const links = allReferenceLinks(
+      {
+        name: 'Tiny Pond',
+        states: ['VT'],
+        interiorPoint: CHAMPLAIN_INTERIOR,
+        surfaceAreaSqM: 8_000,
+      },
+      NOW,
+    );
+    expect(links.map((l) => l.id)).not.toContain('copernicus');
+  });
+});
+
+describe('satelliteImageryAvailable', () => {
+  it("takes an operator's word over the threshold, in both directions", () => {
+    expect(satelliteImageryAvailable({ surfaceAreaSqM: 100, satelliteImagery: 'on' })).toBe(true);
+    expect(satelliteImageryAvailable({ surfaceAreaSqM: 1e9, satelliteImagery: 'off' })).toBe(false);
+  });
+
+  it('resolves `auto` against the area', () => {
+    expect(satelliteImageryAvailable({ surfaceAreaSqM: SATELLITE_MIN_AREA_SQM })).toBe(true);
+    expect(satelliteImageryAvailable({ surfaceAreaSqM: SATELLITE_MIN_AREA_SQM - 1 })).toBe(false);
+  });
+
+  it('offers the link when the area is unknown — the wrong direction to fail is withholding', () => {
+    expect(satelliteImageryAvailable({ name: 'Unmeasured' })).toBe(true);
+  });
+
+  it("is far above the corpus's own admission floor, so it genuinely filters", () => {
+    // 1 acre = 4,046.86 m2 is what the corpus admits; this tier needs a great deal more.
+    expect(SATELLITE_MIN_AREA_SQM).toBeGreaterThan(20 * 4046.8564224);
+  });
+});
+
+describe('copernicusUrl', () => {
+  const coord = { lat: 44.5, lng: -73.2 };
+
+  it('opens a window rather than a date — cloud, not revisit, is the limiter', () => {
+    const url = new URL(copernicusUrl(coord, NOW));
+    const from = url.searchParams.get('fromTime') ?? '';
+    const to = url.searchParams.get('toTime') ?? '';
+    const days = (Date.parse(to) - Date.parse(from)) / 86_400_000;
+    expect(days).toBeGreaterThan(13);
+    expect(days).toBeLessThan(16);
+  });
+
+  it('frames the lake, unlike Windy which frames the region', () => {
+    expect(Number(new URL(copernicusUrl(coord, NOW)).searchParams.get('zoom'))).toBeGreaterThan(
+      WINDY_ZOOM,
+    );
+  });
+
+  it('asks for Sentinel-2 L2A true colour', () => {
+    const url = new URL(copernicusUrl(coord, NOW));
+    expect(url.searchParams.get('datasetId')).toBe('S2_L2A_CDAS');
+    expect(url.searchParams.get('layerId')).toBe('1_TRUE_COLOR');
+    expect(url.origin).toBe('https://browser.dataspace.copernicus.eu');
+  });
+
+  it('centres on the coordinate it was given', () => {
+    const url = new URL(copernicusUrl(coord, NOW));
+    expect(url.searchParams.get('lat')).toBe('44.5000');
+    expect(url.searchParams.get('lng')).toBe('-73.2000');
   });
 });

@@ -10,10 +10,10 @@
  * The one exception is B7 — a lake association's URL, which no algorithm produces from a lake's
  * name. That is stored on the row as `referenceLinks` and merged in by {@link allReferenceLinks}.
  *
- * **Satellite imagery is deliberately absent.** B3's Copernicus Browser deep link moved to
- * [N6e](../../../plans/phase-N6e-satellite-imagery.md) at the founder's ask (2026-08-09), so the
- * link, the `satelliteImagery` per-row override and `SATELLITE_MIN_AREA_SQM` all land together with
- * the in-app tier rather than shipping a deep link now and a layer later.
+ * **Satellite imagery arrives here in N6e**, with the in-app reveal rather than a phase ahead of it
+ * (D138). The deep link is the honest escape hatch the reveal cannot be: our own archive stops at
+ * the season boundary, and the Copernicus Browser has every pass back to 2015, a date slider, and
+ * band switching, in a purpose-built tool, at zero cost to us (D75 — a link is not an integration).
  */
 
 import type { LatLng } from './geometry';
@@ -47,6 +47,98 @@ export interface ReferenceLinkBody {
   centroid?: LatLng;
   /** Operator-entered links (B7), preserved across re-import like `curatedBoost`. */
   referenceLinks?: readonly { label: string; url: string }[];
+  /**
+   * Geodesic surface area, which decides whether a 10 m pixel can resolve this body at all.
+   * See {@link satelliteImageryAvailable}.
+   */
+  surfaceAreaSqM?: number;
+  /** The operator's override of that derivation (D70/D75). `auto` ⇒ decide from the area. */
+  satelliteImagery?: SatelliteImageryMode;
+}
+
+/**
+ * The three states of the per-row override (D70).
+ *
+ * Exported as a tuple so the Convex schema validates against the same list the resolver branches on
+ * — a second copy is how an operator ends up able to store a value nothing reads.
+ */
+export const SATELLITE_IMAGERY_MODES = ['auto', 'on', 'off'] as const;
+export type SatelliteImageryMode = (typeof SATELLITE_IMAGERY_MODES)[number];
+
+/**
+ * The surface area below which a Sentinel-2 view of a body is not worth offering.
+ *
+ * **A 10 m pixel cannot resolve a small pond**, and the failure is worse than useless: the browser
+ * opens, the skater sees a handful of grey-green pixels, and the honest conclusion available to them
+ * is *"this feature is broken"* rather than *"this sensor is too coarse."*
+ *
+ * 10 hectares is ~1,000 pixels of water — roughly 30 × 30 — which is the point where shape becomes
+ * legible and an ice/open-water distinction is something a person can actually see. Comfortably above
+ * the corpus's own 1-acre admission floor (`HARD_MIN_SURFACE_AREA_ACRES`), so this genuinely filters.
+ *
+ * ⚠ **Per-tier, and this one is Sentinel's.** N6e's aerial reveal runs at 0.3 m, where a 1-acre pond
+ * is ~45,000 pixels — legible by a factor of forty. One constant cannot govern both tiers, which the
+ * original N6c scoping could not have known because it only had one.
+ */
+export const SATELLITE_MIN_AREA_SQM = 100_000;
+
+/**
+ * Should this body offer a Copernicus link?
+ *
+ * `on`/`off` are an operator's word and win outright — **per-row data, so an operator's correction
+ * takes effect immediately with no redeploy** (D75, and the Phase 7 posture: "constants stay in code"
+ * governs the *threshold*, not the exception to it).
+ *
+ * `auto` resolves against area. A body with no stored area gets the link: the corpus floor already
+ * removed anything genuinely tiny, and withholding a free link on the strength of a missing field is
+ * the wrong direction to fail.
+ */
+export function satelliteImageryAvailable(body: ReferenceLinkBody): boolean {
+  if (body.satelliteImagery === 'on') return true;
+  if (body.satelliteImagery === 'off') return false;
+  if (body.surfaceAreaSqM === undefined) return true;
+  return body.surfaceAreaSqM >= SATELLITE_MIN_AREA_SQM;
+}
+
+/**
+ * Zoom for the Copernicus Browser deep link.
+ *
+ * **Framed to the lake, which is the opposite of {@link WINDY_ZOOM} and for the opposite reason.**
+ * Wind is synoptic and wants regional context; a satellite pass is about *this water*, so the view
+ * should open on it. z13 puts a few kilometres across the viewport, which fits the bodies that clear
+ * `SATELLITE_MIN_AREA_SQM` without cropping the large ones beyond recognition.
+ */
+export const COPERNICUS_ZOOM = 13;
+
+/** How far back the browser's window opens, in days. */
+export const COPERNICUS_WINDOW_DAYS = 14;
+
+/**
+ * The Copernicus Browser deep link: this lake, true-colour Sentinel-2 L2A, over a recent window.
+ *
+ * **A window and not a date** (D75). Cloud cover is the limiter in a Northeast winter, not revisit —
+ * roughly two to four usable optical frames a month — so opening on a single date lands on cloud more
+ * often than not. Fourteen days is wide enough to contain a usable pass and narrow enough that what
+ * it contains is still recent.
+ *
+ * Takes `now` rather than reading the clock, so the URL is a pure function of its inputs and the test
+ * asserting its shape does not have to be re-dated every fortnight.
+ */
+export function copernicusUrl(coord: LatLng, now: number, zoom: number = COPERNICUS_ZOOM): string {
+  const to = new Date(now);
+  const from = new Date(now - COPERNICUS_WINDOW_DAYS * 24 * 60 * 60 * 1000);
+  const day = (date: Date) => date.toISOString().slice(0, 10);
+  const params = new URLSearchParams({
+    zoom: String(zoom),
+    lat: coord.lat.toFixed(4),
+    lng: coord.lng.toFixed(4),
+    themeId: 'DEFAULT-THEME',
+    datasetId: 'S2_L2A_CDAS',
+    fromTime: `${day(from)}T00:00:00.000Z`,
+    toTime: `${day(to)}T23:59:59.999Z`,
+    layerId: '1_TRUE_COLOR',
+  });
+  return `https://browser.dataspace.copernicus.eu/?${params.toString()}`;
 }
 
 /**
@@ -208,7 +300,10 @@ export function referenceLinkError(link: { label: string; url: string }): string
  * Returns `[]` rather than a nullish value when there is nothing: the drawer's rule is that a
  * section with no content renders nothing at all, and an empty array is the cheapest way to say so.
  */
-export function allReferenceLinks(body: ReferenceLinkBody | null | undefined): ReferenceLink[] {
+export function allReferenceLinks(
+  body: ReferenceLinkBody | null | undefined,
+  now: number = Date.now(),
+): ReferenceLink[] {
   if (!body) return [];
   const links: ReferenceLink[] = [];
 
@@ -220,6 +315,16 @@ export function allReferenceLinks(body: ReferenceLinkBody | null | undefined): R
       url: windyUrl(coord),
       note: 'Animated wind, temperature and precipitation for the region',
     });
+    // Beside Windy, at the founder's ask — the two are the same kind of thing: somebody else's tool,
+    // better at its job than anything we would build, one tap away.
+    if (satelliteImageryAvailable(body)) {
+      links.push({
+        id: 'copernicus',
+        label: 'Recent satellite passes on Copernicus Browser',
+        url: copernicusUrl(coord, now),
+        note: 'Sentinel-2, last two weeks — every band, and history back to 2015',
+      });
+    }
   }
 
   const community = communityFor(body);

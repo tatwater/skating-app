@@ -15,6 +15,7 @@ import {
   APPROACH_KINDS as CORE_APPROACH_KINDS,
   BODY_FEATURE_TYPES as CORE_BODY_FEATURE_TYPES,
   PUBLIC_ACCESS_VERDICTS as CORE_PUBLIC_ACCESS_VERDICTS,
+  SATELLITE_IMAGERY_MODES as CORE_SATELLITE_IMAGERY_MODES,
   HAZARD_VERDICTS,
 } from '@skating/core';
 
@@ -470,6 +471,9 @@ export const ACCESS_AMENITIES = ['toilets', 'trail', 'boat_ramp'] as const;
  * agree until one of them doesn't.
  */
 export const APPROACH_KINDS = CORE_APPROACH_KINDS;
+
+/** Satellite-link override modes (N6e Workstream D / D70), from core for the same reason. */
+export const SATELLITE_IMAGERY_MODES = CORE_SATELLITE_IMAGERY_MODES;
 
 /** Access-alert vocabulary (N6d / D73) — all four re-exported from `@skating/core` for the same reason. */
 export const ACCESS_ALERT_REASONS = CORE_ACCESS_ALERT_REASONS;
