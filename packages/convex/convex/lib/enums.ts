@@ -315,6 +315,12 @@ export const MODERATION_ACTIONS = [
   // the rule every year"*. Auditing them under one verb would lose which of those a moderator meant,
   // which is the first thing anyone reviewing a wrong closure would want to know.
   'set_posted_access',
+  // Overrode whether a body offers the Copernicus satellite link (D70/D75). Audited because it is a
+  // human contradicting `SATELLITE_MIN_AREA_SQM` — the row records that a 10 m pixel was judged
+  // adequate (or inadequate) for *this* water, which is a claim about the lake and not about the
+  // threshold, and the next operator to wonder why one small pond has the link needs to see who said
+  // so. `auto` is a reversal rather than a third value, and it clears the field.
+  'set_satellite_imagery',
   // ── N6f ─────────────────────────────────────────────────────────────────────────────────────────
   // Ruled on whether a body can be lawfully reached. Distinct from `remove` even though both take a
   // lake off the browse path: `remove` says it should not be on the map at all, this says it is real

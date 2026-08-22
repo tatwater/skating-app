@@ -6,6 +6,7 @@ import {
   outerRingsOnly,
   revealShape,
   SENTINEL_MASK_METERS,
+  shapeSignature,
 } from './imageryMask';
 
 /** A ~1 km square pond near Burlington, big enough that metre-scale buffers are visible in it. */
@@ -120,5 +121,38 @@ describe('outerRingsOnly', () => {
 
   it('survives a polygon with no rings at all', () => {
     expect(outerRingsOnly({ type: 'Polygon', coordinates: [] })).toHaveLength(0);
+  });
+});
+
+describe('shapeSignature', () => {
+  it('is stable across a re-emit of structurally identical geometry', () => {
+    // What a Convex subscription hands back: same numbers, new arrays. The whole point.
+    const reEmitted: Polygon = JSON.parse(JSON.stringify(POND));
+    expect(reEmitted).not.toBe(POND);
+    expect(shapeSignature(reEmitted)).toBe(shapeSignature(POND));
+  });
+
+  it('changes when a hole is added, so a redraw refetches', () => {
+    expect(shapeSignature(POND_WITH_ISLAND)).not.toBe(shapeSignature(POND));
+  });
+
+  it('changes when a vertex moves', () => {
+    const moved: Polygon = {
+      type: 'Polygon',
+      coordinates: [[...(POND.coordinates[0] as number[][]).slice(0, -1), [-73.2, 44.4501]]],
+    };
+    expect(shapeSignature(moved)).not.toBe(shapeSignature(POND));
+  });
+
+  it('separates a polygon from the multipolygon wrapping the same ring', () => {
+    const wrapped: MultiPolygon = {
+      type: 'MultiPolygon',
+      coordinates: [POND.coordinates as number[][][]],
+    };
+    expect(shapeSignature(wrapped)).not.toBe(shapeSignature(POND));
+  });
+
+  it('survives an empty polygon rather than throwing', () => {
+    expect(shapeSignature({ type: 'Polygon', coordinates: [] })).toContain('Polygon');
   });
 });

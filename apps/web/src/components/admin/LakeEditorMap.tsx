@@ -1,4 +1,4 @@
-import type { BBox, LatLng } from '@skating/core';
+import { type BBox, type ImageryMaskInput, type LatLng, shapeSignature } from '@skating/core';
 import type maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { useTheme } from 'next-themes';
@@ -81,11 +81,24 @@ export function LakeEditorMap({
   const bounds = boundsForBody(data.body.bbox);
   // The editor is fenced to one lake (Decision 5), so the body's own polygon is both what the
   // operator is editing and a sufficient extent for the fetch — no separate bounds needed.
+  //
+  // **Identity is cached against a structural key, exactly as the skater map's is.** Depending on
+  // `data.body.polygon`'s identity looks equivalent and is not: the `waterBodies` query re-emits with
+  // a freshly-allocated polygon whenever anything on the row changes, so saving a sample point with
+  // Aerial on tore the reveal down and re-requested both images from USGS for ground already on
+  // screen. Keying on `shapeSignature` means a re-emit carrying the same geometry returns the same
+  // object — and a genuine redraw, which is the one change the operator *wants* to refetch for,
+  // changes the signature and does.
+  const maskRef = useRef<{ key: string; mask: ImageryMaskInput } | null>(null);
   const imageryMask = useMemo(() => {
     const polygon = data.body.polygon;
     if (!imagery || (polygon.type !== 'Polygon' && polygon.type !== 'MultiPolygon')) return null;
-    return { polygon };
-  }, [imagery, data.body.polygon]);
+    const key = `${data.body._id}|${shapeSignature(polygon)}`;
+    if (maskRef.current?.key === key) return maskRef.current.mask;
+    const mask: ImageryMaskInput = { polygon };
+    maskRef.current = { key, mask };
+    return mask;
+  }, [imagery, data.body._id, data.body.polygon]);
   const onMapClickRef = useRef(onMapClick);
   onMapClickRef.current = onMapClick;
   const onReadyRef = useRef(onReady);

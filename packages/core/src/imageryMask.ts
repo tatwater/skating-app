@@ -67,6 +67,42 @@ export interface ImageryMaskInput {
 }
 
 /**
+ * A cheap structural fingerprint of a shape, for **caching a mask's object identity**.
+ *
+ * ## The bug this exists to stop, which is a fetch storm and not a re-render
+ *
+ * The reveal is keyed on its `mask` object, and re-running its effect tears the canvas layers down
+ * and re-requests the photograph. A Convex subscription re-emits on its own schedule with
+ * structurally identical but newly-allocated geometry, so a memo that depends on `body.polygon`
+ * *identity* hands back a new mask roughly once a second — and on screen that is a steady flicker of
+ * basemap through the photograph, with a full dynamic render behind each one.
+ *
+ * So callers key on what the mask is **made of**. This is that key for the geometry half.
+ *
+ * **Deliberately not a hash of every coordinate.** A lake polygon runs to thousands of vertices and
+ * this is computed on every render; ring count, vertex count and the first and last positions change
+ * for any real redraw, at O(rings) rather than O(vertices). The failure it can theoretically miss —
+ * an edit that preserves all four and moves only interior vertices — is not a thing the editor's
+ * draw tools produce, and the cost of missing it is a stale photograph until the next pan, not a
+ * wrong one.
+ */
+export function shapeSignature(shape: Polygon | MultiPolygon): string {
+  const polygons = shape.type === 'Polygon' ? [shape.coordinates] : shape.coordinates;
+  let rings = 0;
+  let vertices = 0;
+  for (const polygon of polygons) {
+    rings += polygon.length;
+    for (const ring of polygon) vertices += ring.length;
+  }
+  const first = polygons[0]?.[0]?.[0];
+  const lastRing = polygons.at(-1)?.at(-1);
+  const last = lastRing?.at(-1);
+  const at = (position: Position | undefined) =>
+    position ? `${position[0]?.toFixed(6)},${position[1]?.toFixed(6)}` : '-';
+  return `${shape.type}:${polygons.length}:${rings}:${vertices}:${at(first)}:${at(last)}`;
+}
+
+/**
  * Every polygon's **outer ring only**, holes discarded.
  *
  * ## Why islands are not punched out — the first render answered this

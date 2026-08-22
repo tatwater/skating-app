@@ -61,6 +61,8 @@ import {
   type ReviewReason,
   referenceLinkError,
   resolveUpsert,
+  SATELLITE_IMAGERY_MODES,
+  satelliteImageryAvailable,
   searchTextFor,
   WATER_BODY_CLASSES,
 } from '@skating/core';
@@ -3421,6 +3423,62 @@ export const setReferenceLinks = mutation({
       // can answer "who changed this" and never "changed it from what", which is most of what someone
       // reading the timeline actually wants. Same convention as `setDepth`.
       metadata: { referenceLinks: trimmed, prev: { referenceLinks: body.referenceLinks ?? [] } },
+      createdAt: Date.now(),
+    });
+    return waterBodyId;
+  },
+});
+
+/**
+ * Moderator: override whether a body offers the Copernicus satellite link (N6c Workstream D, D70/D75).
+ *
+ * **The writer the schema field had been promising and did not have.** `satelliteImageryAvailable`
+ * has read `satelliteImagery` since N6c-2 and the field's own comment says "an operator's correction
+ * takes effect immediately with no redeploy" — but nothing wrote it, so the only way to correct a
+ * body was to hand-edit the row in the Convex dashboard. A documented escape hatch with no handle is
+ * worse than no escape hatch: it is a promise the surface silently fails to keep.
+ *
+ * **`auto` clears the field rather than storing the word**, which is the schema's own rule — never
+ * persist a derivation, only the exception to it. That matters beyond tidiness: absent means "follow
+ * `SATELLITE_MIN_AREA_SQM`", so a body left on `auto` tracks the threshold if we ever move it, while
+ * a stored `'auto'` would be indistinguishable in the data from a deliberate one and would have to be
+ * migrated by hand the day the constant changes.
+ *
+ * Survives re-import for free: `importCanonical` patches a named field list and does not name this
+ * one, the same way `curatedBoost` and `referenceLinks` survive.
+ */
+export const setSatelliteImagery = mutation({
+  args: {
+    waterBodyId: v.id('waterBodies'),
+    mode: literals(SATELLITE_IMAGERY_MODES),
+  },
+  handler: async (ctx, { waterBodyId, mode }) => {
+    const actor = await requireContributorRole(ctx, 'moderator');
+    const body = await ctx.db.get(waterBodyId);
+    if (!body) throw new ConvexError('Water body not found');
+
+    const before = satelliteImageryAvailable(body);
+    // `undefined` for `auto` — a patch with an explicit `undefined` removes the field in Convex,
+    // which is exactly the "store only the exception" rule above.
+    await ctx.db.patch(waterBodyId, { satelliteImagery: mode === 'auto' ? undefined : mode });
+    const after = satelliteImageryAvailable({ ...body, satelliteImagery: mode });
+
+    await ctx.db.insert('moderationActions', {
+      actorId: actor._id,
+      action: 'set_satellite_imagery',
+      targetType: 'waterbody',
+      targetId: waterBodyId,
+      // The verdict, not the mode: "off" and "auto" can mean the same thing on a small pond, and the
+      // line a person reads in the timeline should say what changed for the skater.
+      reason:
+        mode === 'auto'
+          ? `Satellite link back to automatic (now ${after ? 'offered' : 'withheld'})`
+          : `Satellite link forced ${mode} (was ${before ? 'offered' : 'withheld'})`,
+      metadata: {
+        satelliteImagery: mode,
+        available: after,
+        prev: { satelliteImagery: body.satelliteImagery ?? 'auto', available: before },
+      },
       createdAt: Date.now(),
     });
     return waterBodyId;

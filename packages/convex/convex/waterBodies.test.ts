@@ -1,4 +1,9 @@
-import { HARD_MIN_SURFACE_AREA_SQM, meetsAreaFloor, type ReviewReason } from '@skating/core';
+import {
+  HARD_MIN_SURFACE_AREA_SQM,
+  meetsAreaFloor,
+  type ReviewReason,
+  satelliteImageryAvailable,
+} from '@skating/core';
 import { convexTest } from 'convex-test';
 import { describe, expect, test, vi } from 'vitest';
 import { api, internal } from './_generated/api';
@@ -1964,6 +1969,106 @@ describe('waterBodies.setCuratedBoost (D49, moderator — D37 refined 2026-07-23
     });
     await expect(
       asAdmin.mutation(api.waterBodies.setCuratedBoost, { waterBodyId: dangling, curatedBoost: 1 }),
+    ).rejects.toThrow(/not found/i);
+  });
+});
+
+describe('waterBodies.setSatelliteImagery (N6c D70/D75, moderator)', () => {
+  test('a member cannot override the satellite link', async () => {
+    const t = convexTestWithGeo();
+    await t.mutation(internal.waterBodies.importCanonical, { bodies: [CANONICAL_ITEM] });
+    const id = await onlyBodyId(t);
+    const asMember = await seedUser(t, 'clerk_member');
+    await expect(
+      asMember.mutation(api.waterBodies.setSatelliteImagery, { waterBodyId: id, mode: 'off' }),
+    ).rejects.toThrow(/moderator/i);
+  });
+
+  test('`off` withholds the link on a body the area would have offered it to', async () => {
+    const t = convexTestWithGeo();
+    // 1,000,000 m² — ten times SATELLITE_MIN_AREA_SQM, so `auto` offers it.
+    await t.mutation(internal.waterBodies.importCanonical, { bodies: [CANONICAL_ITEM] });
+    const id = await onlyBodyId(t);
+    const asMod = await seedUser(t, 'clerk_mod', 'moderator');
+
+    await asMod.mutation(api.waterBodies.setSatelliteImagery, { waterBodyId: id, mode: 'off' });
+    const after = await t.run((ctx) => ctx.db.get(id));
+    expect(after?.satelliteImagery).toBe('off');
+    expect(satelliteImageryAvailable(after as never)).toBe(false);
+
+    const actions = await t.run((ctx) => ctx.db.query('moderationActions').collect());
+    expect(actions).toHaveLength(1);
+    expect(actions[0]?.action).toBe('set_satellite_imagery');
+    // The audit records the verdict on both sides, not just the mode — see the mutation's note.
+    expect(actions[0]?.metadata?.available).toBe(false);
+    expect(actions[0]?.metadata?.prev?.available).toBe(true);
+    expect(actions[0]?.metadata?.prev?.satelliteImagery).toBe('auto');
+  });
+
+  test('`on` offers the link on a pond too small for the threshold', async () => {
+    const t = convexTestWithGeo();
+    await t.mutation(internal.waterBodies.importCanonical, {
+      // 4 ha — well under the 10 ha floor, so `auto` withholds.
+      bodies: [{ ...CANONICAL_ITEM, surfaceAreaSqM: 40_000 }],
+    });
+    const id = await onlyBodyId(t);
+    const asMod = await seedUser(t, 'clerk_mod', 'moderator');
+
+    const before = await t.run((ctx) => ctx.db.get(id));
+    expect(satelliteImageryAvailable(before as never)).toBe(false);
+
+    await asMod.mutation(api.waterBodies.setSatelliteImagery, { waterBodyId: id, mode: 'on' });
+    const after = await t.run((ctx) => ctx.db.get(id));
+    expect(satelliteImageryAvailable(after as never)).toBe(true);
+  });
+
+  test('`auto` clears the field rather than storing the word', async () => {
+    const t = convexTestWithGeo();
+    await t.mutation(internal.waterBodies.importCanonical, { bodies: [CANONICAL_ITEM] });
+    const id = await onlyBodyId(t);
+    const asMod = await seedUser(t, 'clerk_mod', 'moderator');
+
+    await asMod.mutation(api.waterBodies.setSatelliteImagery, { waterBodyId: id, mode: 'off' });
+    await asMod.mutation(api.waterBodies.setSatelliteImagery, { waterBodyId: id, mode: 'auto' });
+
+    const after = await t.run((ctx) => ctx.db.get(id));
+    // Absent, not `'auto'` — the schema's "store only the exception" rule, so the row keeps
+    // tracking SATELLITE_MIN_AREA_SQM if the constant ever moves.
+    expect(after?.satelliteImagery).toBeUndefined();
+    expect(satelliteImageryAvailable(after as never)).toBe(true);
+  });
+
+  test('an override survives a re-import', async () => {
+    const t = convexTestWithGeo();
+    await t.mutation(internal.waterBodies.importCanonical, { bodies: [CANONICAL_ITEM] });
+    const id = await onlyBodyId(t);
+    const asMod = await seedUser(t, 'clerk_mod', 'moderator');
+    await asMod.mutation(api.waterBodies.setSatelliteImagery, { waterBodyId: id, mode: 'off' });
+
+    // The same discipline that keeps `curatedBoost`: `importCanonical` patches a named field list
+    // and does not name this one. Worth pinning, because the failure is silent.
+    await t.mutation(internal.waterBodies.importCanonical, { bodies: [CANONICAL_ITEM] });
+    const after = await t.run((ctx) => ctx.db.get(id));
+    expect(after?.satelliteImagery).toBe('off');
+  });
+
+  test('throws for a missing body', async () => {
+    const t = convexTestWithGeo();
+    const asAdmin = await seedUser(t, 'clerk_admin', 'admin');
+    const dangling = await t.run(async (ctx) => {
+      const cid = await ctx.db.insert('waterBodies', {
+        ...SAMPLE_BODY,
+        source: 'osm',
+        externalId: 'osm/gone2',
+        osmId: 'osm/gone2',
+        dedupStatus: 'clean',
+        createdAt: Date.now(),
+      });
+      await ctx.db.delete(cid);
+      return cid;
+    });
+    await expect(
+      asAdmin.mutation(api.waterBodies.setSatelliteImagery, { waterBodyId: dangling, mode: 'on' }),
     ).rejects.toThrow(/not found/i);
   });
 });
