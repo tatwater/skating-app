@@ -121,6 +121,26 @@ export interface ImageryRevealOptions {
    */
   onLoadingChange?: (loading: boolean) => void;
   /**
+   * The bodies that currently **have a photograph on screen**, whenever that set changes.
+   *
+   * ## Why the cartography cannot be driven from `masks`
+   *
+   * The reveal set is an *intention*: it is computed the moment a body appears in the viewport
+   * answer, and the photograph for it lands whenever the service gets round to it — up to half a
+   * minute on a cold cell. Suppressing `water-fill` off the intention meant the fill went the instant
+   * you panned, and nothing replaced it until the fetch returned. Founder: *"panning will make all
+   * drawn body polygons disappear for a second before reappearing."* With a viewport-wide reveal that
+   * is not one lake blinking, it is every lake on screen at once.
+   *
+   * So the hook reports what it actually painted, and the cartography follows *that*. The vector fill
+   * stays up until the pixels that replace it exist, which also makes toggling imagery on a crossfade
+   * rather than a blank.
+   *
+   * ⚠ Not the same set as the loading pulse's, and deliberately: the pulse belongs on the bodies
+   * still *waiting*, which is the intention. Painted is "here", intended is "coming".
+   */
+  onPaintedChange?: (ids: readonly string[]) => void;
+  /**
    * Skip the clip and show the photograph across the whole view (Workstream E).
    *
    * **The admin lake editor's mode, and the reason is the opposite of the skater's.** A skater is
@@ -145,6 +165,7 @@ export function useImageryReveal({
   masks,
   unmasked = false,
   onLoadingChange,
+  onPaintedChange,
 }: ImageryRevealOptions): void {
   // The canvas outlives individual fetches, so a pan reuses it rather than churning a DOM node and a
   // GPU texture per view.
@@ -166,6 +187,14 @@ export function useImageryReveal({
   const refreshRef = useRef<(() => void) | null>(null);
   /** The set the last mount already drew, so the redraw effect below doesn't double up on it. */
   const drawnMasksRef = useRef<readonly KeyedMask[] | null>(null);
+  /**
+   * The painted set as last reported, so an unchanged one is not re-announced.
+   *
+   * `onPaintedChange` hands out a fresh array, and the consumer holds it in state — so firing on
+   * every compose would re-render and re-set three MapLibre filters each time a pan repainted the
+   * same bodies, which is the cost the redraw skip exists to avoid.
+   */
+  const reportedRef = useRef<string | null>(null);
 
   const enabled = Boolean(map && loaded && masks && masks.length > 0);
 
@@ -283,6 +312,15 @@ export function useImageryReveal({
       // Recorded only once the paint succeeded, so a view that failed half-way is retried rather
       // than remembered as drawn.
       drawnRef.current = signature;
+      // The cartography's cue, and it is emitted here rather than when the set was decided — see
+      // `onPaintedChange`. Unmasked mode paints the whole box and replaces nobody's fill, so it
+      // reports nothing.
+      const painted = unmasked ? [] : revealing.map((entry) => entry.id);
+      const reported = painted.join(',');
+      if (reported !== reportedRef.current) {
+        reportedRef.current = reported;
+        onPaintedChange?.(painted);
+      }
 
       const corners = imageryCorners({
         minLat: mercatorYToLat(canvasBounds.minY),
@@ -331,13 +369,20 @@ export function useImageryReveal({
       inFlight?.abort();
       refreshRef.current = null;
       onLoadingChange?.(false);
+      // The photograph is about to be removed, so nothing is painted any more — without this the
+      // fills would stay suppressed against a reveal that no longer exists.
+      if (reportedRef.current !== '') {
+        reportedRef.current = '';
+        onPaintedChange?.([]);
+      }
+      drawnRef.current = null;
       map.off('moveend', onMoveEnd);
       // Layers before sources, always: MapLibre throws when removing a source still in use, and a
       // throw inside a cleanup runs during React's commit — so it would take the next render with it.
       if (map.getLayer(IMAGERY_LAYER_ID)) map.removeLayer(IMAGERY_LAYER_ID);
       if (map.getSource(IMAGERY_SOURCE_ID)) map.removeSource(IMAGERY_SOURCE_ID);
     };
-  }, [map, loaded, enabled, unmasked, onLoadingChange]);
+  }, [map, loaded, enabled, unmasked, onLoadingChange, onPaintedChange]);
 
   // ── What is revealed, redrawn in place.
   //

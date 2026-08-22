@@ -112,6 +112,8 @@ import {
  * (the drawers push them up, since they're siblings of this persistent map).
  */
 const EMPTY_FEATURES: GeoJSON.FeatureCollection = { type: 'FeatureCollection', features: [] };
+/** A stable identity for "nothing is painted", so the initial state cannot itself trigger a re-run. */
+const EMPTY_IDS: readonly string[] = [];
 
 /**
  * A terra-draw ring → the corners a `HazardDraft` holds.
@@ -1046,12 +1048,25 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
   const revealedIds = useMemo(() => (revealMasks ?? []).map((entry) => entry.id), [revealMasks]);
 
   const [imageryLoading, setImageryLoading] = useState(false);
+  // **What actually has a photograph on it**, as opposed to what is queued for one. The cartography
+  // keys off this and the loading pulse keys off `revealedIds` — see `onPaintedChange`. Held in
+  // state rather than a ref because three effects read it and all three have to re-run when it moves.
+  const [paintedIds, setPaintedIds] = useState<readonly string[]>(EMPTY_IDS);
   useImageryReveal({
     map: mapRef.current,
     loaded,
     masks: revealMasks,
     onLoadingChange: setImageryLoading,
+    onPaintedChange: setPaintedIds,
   });
+
+  // The wash belongs on the bodies still **waiting** for a photograph, which is the reveal set minus
+  // whatever is already on screen. Pulsing a lake that is already showing its imagery says the wrong
+  // thing twice: that something is coming for it, and that what is there is not it.
+  const pendingIds = useMemo(
+    () => revealedIds.filter((id) => !paintedIds.includes(id)),
+    [revealedIds, paintedIds],
+  );
 
   // Layers step aside for the photograph, except the ones the skater decides about.
   //
@@ -1076,8 +1091,8 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !loaded) return;
-    setLayersHiddenForBodies(map, IMAGERY_REPLACED_LAYERS, revealedIds, baseFiltersRef.current);
-    setLayersVisible(map, IMAGERY_REPLACED_WHOLE_LAYERS, revealedIds.length === 0);
+    setLayersHiddenForBodies(map, IMAGERY_REPLACED_LAYERS, paintedIds, baseFiltersRef.current);
+    setLayersVisible(map, IMAGERY_REPLACED_WHOLE_LAYERS, paintedIds.length === 0);
     // The shoreline survives the reveal and changes job while it does — status colour off the vector
     // map, edge-of-the-photograph on it. Set here rather than in the reveal hook because the layer
     // belongs to the map's own init, and the hook owns only what it added.
@@ -1085,18 +1100,18 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
       map.setPaintProperty(
         'water-outline',
         'line-color',
-        waterOutlineColor(flavor, revealedIds) as never,
+        waterOutlineColor(flavor, paintedIds) as never,
       );
     }
-  }, [revealedIds, loaded, contourBodyKey, flavor, mapRef.current]);
+  }, [paintedIds, loaded, contourBodyKey, flavor, mapRef.current]);
 
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !loaded) return;
     // Hazards are visible unless the skater has *chosen* to hide them while looking at imagery —
     // never merely because imagery is on (D81's safety line, and the founder's toggle answering it).
-    setLayersVisible(map, IMAGERY_HAZARD_LAYERS, revealedIds.length === 0 || hazardsOverImagery);
-  }, [revealedIds, hazardsOverImagery, loaded, mapRef.current]);
+    setLayersVisible(map, IMAGERY_HAZARD_LAYERS, paintedIds.length === 0 || hazardsOverImagery);
+  }, [paintedIds, hazardsOverImagery, loaded, mapRef.current]);
 
   // The gentle wash over the lake while its photograph is on the way (N6e).
   //
@@ -1110,13 +1125,13 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !loaded || !map.getLayer(IMAGERY_LOADING_LAYER_ID)) return;
-    if (!imageryLoading || revealedIds.length === 0) {
+    if (!imageryLoading || pendingIds.length === 0) {
       map.setPaintProperty(IMAGERY_LOADING_LAYER_ID, 'fill-opacity', 0);
       return;
     }
     // Every body awaiting pixels, not just the open one — with the reveal covering the viewport, a
     // pulse on one lake while five others sit blank would say the wrong thing about which is loading.
-    map.setFilter(IMAGERY_LOADING_LAYER_ID, ['in', ['get', '_id'], ['literal', [...revealedIds]]]);
+    map.setFilter(IMAGERY_LOADING_LAYER_ID, ['in', ['get', '_id'], ['literal', [...pendingIds]]]);
     let bright = true;
     map.setPaintProperty(IMAGERY_LOADING_LAYER_ID, 'fill-opacity', IMAGERY_PULSE_MAX);
     const timer = setInterval(() => {
@@ -1133,7 +1148,7 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
         map.setPaintProperty(IMAGERY_LOADING_LAYER_ID, 'fill-opacity', 0);
       }
     };
-  }, [imageryLoading, revealedIds, loaded, mapRef.current]);
+  }, [imageryLoading, pendingIds, loaded, mapRef.current]);
 
   // When was this lake last photographed? (N6e B2.)
   //
