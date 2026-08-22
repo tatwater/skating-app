@@ -1,5 +1,5 @@
 /**
- * `pnpm --filter @skating/seed-destinations seed [--apply]` (N6c B3a / Workstream D).
+ * `pnpm --filter @skating/seed-destinations seed [--apply] [--verify-imagery]` (N6c B3a / N6e D).
  *
  * **Two commands, and the default is the safe one.** Without `--apply` this writes a reviewable
  * report and touches nothing — the founder asked to see the seed list before boosts go in, and the
@@ -14,6 +14,12 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
+import {
+  copernicusUrl,
+  linkCoordinate,
+  SATELLITE_MIN_AREA_SQM,
+  satelliteImageryAvailable,
+} from '@skating/core';
 import { convexRun, RunLogger, resolveDeployment } from '@skating/run-log';
 import {
   type CandidateBody,
@@ -25,10 +31,92 @@ import {
 
 const SHORTLIST = fileURLToPath(new URL('../destinations.json', import.meta.url));
 const REPORT = fileURLToPath(new URL('../.report.json', import.meta.url));
+const IMAGERY_REPORT = fileURLToPath(new URL('../.imagery-report.json', import.meta.url));
+
+/**
+ * B3a's proving run, moved here with the link it proves (D138) — **and it is not a link checker.**
+ *
+ * "Does the URL resolve" is the weakest question available: the Copernicus Browser is a single-page
+ * app, so it answers 200 for any coordinate on earth, including ones in the middle of the Atlantic.
+ * A green tick from that check would prove only that a hostname exists.
+ *
+ * The three things worth establishing before the link ships to 25,000 bodies, in the order they can
+ * actually go wrong:
+ *
+ * 1. **Does the threshold gate the right lakes?** `SATELLITE_MIN_AREA_SQM` is a guess at where a 10 m
+ *    pixel stops resolving a pond. If a name from the destination shortlist — lakes chosen precisely
+ *    because people travel to skate them — comes back gated *off*, the constant is wrong, and that
+ *    is the finding this run exists to surface.
+ * 2. **Is the link built from a point on the water?** `linkCoordinate` prefers `interiorPoint` over
+ *    the shoreline `centroid` (N6c-1), and a body still missing one opens the browser on its bank.
+ * 3. **Is the host reachable at all**, checked once rather than per body — a rate-limit or an outage
+ *    is a fact about the service, not about a lake.
+ *
+ * Everything lands in the report as URLs a human can click, because the last question — *is the
+ * imagery legible at these sizes* — is the one no script can answer.
+ */
+async function verifyImageryLinks(matched: ReturnType<typeof matchAll>): Promise<void> {
+  const rows = matched.flatMap((outcome) => {
+    if (outcome.kind !== 'matched') return [];
+    const body = outcome.body;
+    const coord = linkCoordinate(body);
+    const linked = satelliteImageryAvailable(body);
+    return [
+      {
+        name: outcome.destination.name,
+        state: outcome.destination.state,
+        areaSqM: body.surfaceAreaSqM,
+        // `on`/`off` are an operator's word; anything else is the area deciding.
+        gatedOffByArea:
+          !linked && body.satelliteImagery !== 'off' && (body.surfaceAreaSqM ?? 0) > 0,
+        // The shoreline fallback is the failure that looks like success — a valid coordinate for the
+        // wrong place. Champlain's two points are 30.7 km apart.
+        pointIsShorelineFallback: !body.interiorPoint && Boolean(coord),
+        url: coord && linked ? copernicusUrl(coord, Date.now()) : null,
+      },
+    ];
+  });
+
+  const gated = rows.filter((r) => r.gatedOffByArea);
+  const shoreline = rows.filter((r) => r.pointIsShorelineFallback);
+
+  let hostReachable: boolean | null = null;
+  const sample = rows.find((r) => r.url)?.url;
+  if (sample) {
+    try {
+      const response = await fetch(sample, { method: 'HEAD' });
+      hostReachable = response.ok;
+    } catch {
+      hostReachable = false;
+    }
+  }
+
+  writeFileSync(
+    IMAGERY_REPORT,
+    `${JSON.stringify({ threshold: SATELLITE_MIN_AREA_SQM, hostReachable, rows }, null, 2)}\n`,
+  );
+
+  process.stderr.write(
+    `[seed] imagery: ${rows.length - gated.length}/${rows.length} destinations linked · ` +
+      `host ${hostReachable === null ? 'unchecked' : hostReachable ? 'reachable' : 'UNREACHABLE'}\n` +
+      `[seed] imagery report written to ${IMAGERY_REPORT}\n`,
+  );
+  // Named individually for the same reason unmatched destinations are: a *destination* the threshold
+  // excludes is evidence about the threshold, and a count would let it pass as a statistic.
+  for (const row of gated) {
+    process.stderr.write(
+      `[seed]   gated off (${Math.round((row.areaSqM ?? 0) / 10_000)} ha): ${row.name} (${row.state})\n`,
+    );
+  }
+  for (const row of shoreline) {
+    process.stderr.write(`[seed]   shoreline coordinate: ${row.name} (${row.state})\n`);
+  }
+}
 
 async function main() {
   const args = process.argv.slice(2);
   const apply = args.includes('--apply');
+  const verifyImagery = args.includes('--verify-imagery');
   const campaignId = args.find((a) => a.startsWith('--campaign='))?.slice('--campaign='.length);
 
   const destinations = JSON.parse(readFileSync(SHORTLIST, 'utf8')) as Destination[];
@@ -88,6 +176,8 @@ async function main() {
       2,
     )}\n`,
   );
+
+  if (verifyImagery) await verifyImageryLinks(matched);
 
   process.stderr.write(
     `[seed] ${matched.length} matched · ${ambiguous.length} ambiguous · ${unmatched.length} unmatched\n` +

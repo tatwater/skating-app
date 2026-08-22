@@ -6119,6 +6119,9 @@ export const listNamedForSeeding = internalQuery({
         states: body.states,
         surfaceAreaSqM: body.surfaceAreaSqM,
         curatedBoost: body.curatedBoost,
+        // Read by `seed-destinations --verify-imagery` so an operator's `off` doesn't get reported
+        // as the area threshold's doing (N6e Workstream D).
+        satelliteImagery: body.satelliteImagery,
         interiorPoint: body.interiorPoint,
         representativePoint: body.representativePoint,
         centroid: body.centroid,
