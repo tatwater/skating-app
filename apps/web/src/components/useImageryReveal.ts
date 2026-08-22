@@ -36,10 +36,12 @@ import {
   aerialBoundsFor,
   aerialExportUrl,
   type BBox,
+  groundMetersPerPixel,
   IMAGERY_LAYER_ID,
   IMAGERY_SOURCE_ID,
   type ImageryMaskInput,
   revealShape,
+  toMercatorBox,
 } from '@skating/core';
 import type maplibregl from 'maplibre-gl';
 import { useEffect, useRef } from 'react';
@@ -82,6 +84,31 @@ function insertBeforeLayerId(map: maplibregl.Map): string | undefined {
   if (anyRoad) return anyRoad.id;
   return map.getLayer('water-fill') ? 'water-fill' : undefined;
 }
+
+/** The whole-lake image beneath the detail one. Its own source so either can update alone. */
+const IMAGERY_OVERVIEW_SOURCE_ID = 'imagery-overview';
+const IMAGERY_OVERVIEW_LAYER_ID = 'imagery-overview-raster';
+
+/**
+ * How large the overview may be.
+ *
+ * Half the service's cap, on purpose: the overview's job is **coverage**, and it is fetched for every
+ * reveal including the many where the detail pass then supersedes it. 2,048 px is sharp enough to be
+ * the only image a normal lake ever needs and cheap enough to be wasted on a big one.
+ */
+const OVERVIEW_MAX_PX = 2048;
+
+/**
+ * How much sharper a detail fetch must be before it is worth making.
+ *
+ * Below this the request buys a barely-visible improvement at the cost of a full render on a service
+ * we do not own. 1.5× is roughly where a difference in sharpness becomes something a person notices
+ * rather than something a measurement finds.
+ */
+const DETAIL_GAIN = 1.5;
+
+/** How far the detail image fades into the overview at its box edge. See `edgeFadePx`. */
+const DETAIL_EDGE_FADE_PX = 24;
 
 export interface ImageryRevealOptions {
   map: maplibregl.Map | null;
@@ -126,9 +153,10 @@ export function useImageryReveal({
   unmasked = false,
   onLoadingChange,
 }: ImageryRevealOptions): void {
-  // The canvas outlives individual fetches, so a pan reuses it rather than churning a DOM node and a
+  // Canvases outlive individual fetches, so a pan reuses them rather than churning a DOM node and a
   // GPU texture per view.
-  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const detailCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const overviewCanvasRef = useRef<HTMLCanvasElement | null>(null);
 
   useEffect(() => {
     if (!map || !loaded || !mask) return;
@@ -141,11 +169,117 @@ export function useImageryReveal({
     // shape slices the gradient off with a straight line wherever the lake touches its own bbox.
     const revealBounds = aerialBoundsFor(shape, AERIAL_MASK_METERS.feather);
 
-    const canvas = canvasRef.current ?? document.createElement('canvas');
-    canvasRef.current = canvas;
+    const detailCanvas = detailCanvasRef.current ?? document.createElement('canvas');
+    detailCanvasRef.current = detailCanvas;
+    const overviewCanvas = overviewCanvasRef.current ?? document.createElement('canvas');
+    overviewCanvasRef.current = overviewCanvas;
 
     let disposed = false;
     let inFlight: HTMLImageElement | null = null;
+
+    /** Fetch one box into one canvas, then add or update its source and layer. */
+    const load = (options: {
+      canvas: HTMLCanvasElement;
+      box: BBox;
+      size: { width: number; height: number };
+      sourceId: string;
+      layerId: string;
+      edgeFadePx: number;
+      /** Overview loads are silent: the detail image drives the spinner, and one lake, one signal. */
+      announce: boolean;
+      track: boolean;
+    }) => {
+      const { canvas, box, size, sourceId, layerId, edgeFadePx, announce, track } = options;
+      if (announce) onLoadingChange?.(true);
+      const image = new Image();
+      // Required to read the pixels back off a canvas. USGS sends `access-control-allow-origin: *`;
+      // without this the canvas is tainted and the `destination-in` composite throws a security error.
+      image.crossOrigin = 'anonymous';
+      if (track) inFlight = image;
+      image.onload = () => {
+        // A superseded fetch must not paint: a slow render for a view the skater has already left
+        // would otherwise land after the fast one and put stale ground back on screen.
+        if (disposed || (track && inFlight !== image)) return;
+        if (announce) onLoadingChange?.(false);
+        canvas.width = size.width;
+        canvas.height = size.height;
+        drawClippedImagery({
+          canvas,
+          image,
+          box,
+          shape,
+          // A zero feather with no clip is a plain photograph of the box — see `unmasked`.
+          featherMeters: AERIAL_MASK_METERS.feather,
+          clip: !unmasked,
+          edgeFadePx,
+        });
+
+        const existing = map.getSource(sourceId) as maplibregl.CanvasSource | undefined;
+        if (existing) {
+          existing.setCoordinates(imageryCorners(box));
+          // The pair that actually re-uploads the texture — see the module note.
+          existing.play();
+          existing.pause();
+          return;
+        }
+        map.addSource(sourceId, {
+          type: 'canvas',
+          canvas,
+          coordinates: imageryCorners(box),
+          // Static between fetches; `play()`/`pause()` handles the updates.
+          animate: false,
+          attribution: AERIAL_ATTRIBUTION,
+        } as never);
+        map.addLayer(
+          {
+            id: layerId,
+            type: 'raster',
+            source: sourceId,
+            paint: { 'raster-opacity': 1, 'raster-fade-duration': 0 },
+          },
+          // The detail image goes above the overview and below the roads; the overview goes below
+          // both. Anchoring the detail on the overview's *layer* rather than on the basemap keeps the
+          // pair together however the style around them changes.
+          layerId === IMAGERY_LAYER_ID && map.getLayer(IMAGERY_OVERVIEW_LAYER_ID)
+            ? undefined
+            : insertBeforeLayerId(map),
+        );
+      };
+      image.onerror = () => {
+        // A failed render leaves the previous image in place, which is more useful than a blank —
+        // but the spinner has to stop regardless, or a dead service reads as a permanent load.
+        if (announce && (!track || inFlight === image)) onLoadingChange?.(false);
+      };
+      image.src = aerialExportUrl(box, size.width, size.height);
+    };
+
+    // ── The overview: the whole lake, once, at whatever resolution fits the cap.
+    //
+    // **This is what stops the photograph ending in mid-lake.** The detail image is clipped to the
+    // viewport, so zooming out on a big lake used to reveal its box edge as a hard rectangle across
+    // the water until the next fetch landed — founder: *"the satellite tile just ends harshly without
+    // covering the lake."* An overview underneath always covers the whole reveal, so a zoom-out
+    // degrades in *sharpness* rather than in coverage, which is the failure a person forgives.
+    //
+    // For Champlain, 2,048 px across ~200 km is ~100 m/px — coarse, and exactly right for the job it
+    // has, which is being there. For the great majority of lakes it is sharp enough to be the only
+    // image needed, which is why the detail pass skips itself when it would not improve on it.
+    const overviewSize = imageryCanvasSize(
+      revealBounds,
+      revealBounds,
+      { width: OVERVIEW_MAX_PX, height: OVERVIEW_MAX_PX },
+      1,
+    );
+    load({
+      canvas: overviewCanvas,
+      box: revealBounds,
+      size: overviewSize,
+      sourceId: IMAGERY_OVERVIEW_SOURCE_ID,
+      layerId: IMAGERY_OVERVIEW_LAYER_ID,
+      edgeFadePx: 0,
+      announce: true,
+      track: false,
+    });
 
     const refresh = () => {
       if (disposed) return;
@@ -168,61 +302,26 @@ export function useImageryReveal({
         window.devicePixelRatio || 1,
       );
 
-      onLoadingChange?.(true);
-      const image = new Image();
-      // Required to read the pixels back off a canvas. USGS sends `access-control-allow-origin: *`;
-      // without this the canvas is tainted and the `destination-in` composite throws a security error.
-      image.crossOrigin = 'anonymous';
-      inFlight = image;
-      image.onload = () => {
-        // A superseded fetch must not paint: a slow render for a view the skater has already left
-        // would otherwise land after the fast one and put stale ground back on screen.
-        if (disposed || inFlight !== image) return;
-        onLoadingChange?.(false);
-        canvas.width = size.width;
-        canvas.height = size.height;
-        drawClippedImagery({
-          canvas,
-          image,
-          box,
-          shape,
-          // A zero feather with no clip is a plain photograph of the box — see `unmasked`.
-          featherMeters: AERIAL_MASK_METERS.feather,
-          clip: !unmasked,
-        });
+      // **Skip the detail pass when it would not beat the overview.** Zoomed out, the view box is
+      // most of the reveal at a similar density, so fetching it is a second render of the same ground
+      // — on a service where every request is compute. Comparing metres-per-pixel rather than box
+      // size is what makes this hold for a small lake (where the overview is already sharp) and a
+      // huge one (where it never is) with one rule.
+      const detailMpp = groundMetersPerPixel(toMercatorBox(box), size.width);
+      const overviewMpp = groundMetersPerPixel(toMercatorBox(revealBounds), overviewSize.width);
+      if (detailMpp >= overviewMpp * DETAIL_GAIN) return;
 
-        const existing = map.getSource(IMAGERY_SOURCE_ID) as maplibregl.CanvasSource | undefined;
-        if (existing) {
-          existing.setCoordinates(imageryCorners(box));
-          // The pair that actually re-uploads the texture — see the module note.
-          existing.play();
-          existing.pause();
-          return;
-        }
-        map.addSource(IMAGERY_SOURCE_ID, {
-          type: 'canvas',
-          canvas,
-          coordinates: imageryCorners(box),
-          // Static between fetches; `play()`/`pause()` handles the updates.
-          animate: false,
-          attribution: AERIAL_ATTRIBUTION,
-        } as never);
-        map.addLayer(
-          {
-            id: IMAGERY_LAYER_ID,
-            type: 'raster',
-            source: IMAGERY_SOURCE_ID,
-            paint: { 'raster-opacity': 1, 'raster-fade-duration': 0 },
-          },
-          insertBeforeLayerId(map),
-        );
-      };
-      image.onerror = () => {
-        // A failed render leaves the previous image in place, which is more useful than a blank —
-        // but the spinner has to stop regardless, or a dead service reads as a permanent load.
-        if (inFlight === image) onLoadingChange?.(false);
-      };
-      image.src = aerialExportUrl(box, size.width, size.height);
+      load({
+        canvas: detailCanvas,
+        box,
+        size,
+        sourceId: IMAGERY_SOURCE_ID,
+        layerId: IMAGERY_LAYER_ID,
+        // Its box stops mid-lake by design, so it has to blend into the overview beneath it.
+        edgeFadePx: DETAIL_EDGE_FADE_PX,
+        announce: true,
+        track: true,
+      });
     };
 
     refresh();
@@ -233,10 +332,14 @@ export function useImageryReveal({
       onLoadingChange?.(false);
       map.off('moveend', refresh);
       if (inFlight) inFlight.onload = null;
-      // Layer before source, always: MapLibre throws when removing a source still in use, and a throw
-      // inside a cleanup runs during React's commit — so it would take the next render with it.
-      if (map.getLayer(IMAGERY_LAYER_ID)) map.removeLayer(IMAGERY_LAYER_ID);
-      if (map.getSource(IMAGERY_SOURCE_ID)) map.removeSource(IMAGERY_SOURCE_ID);
+      // Layers before sources, always: MapLibre throws when removing a source still in use, and a
+      // throw inside a cleanup runs during React's commit — so it would take the next render with it.
+      for (const layerId of [IMAGERY_LAYER_ID, IMAGERY_OVERVIEW_LAYER_ID]) {
+        if (map.getLayer(layerId)) map.removeLayer(layerId);
+      }
+      for (const sourceId of [IMAGERY_SOURCE_ID, IMAGERY_OVERVIEW_SOURCE_ID]) {
+        if (map.getSource(sourceId)) map.removeSource(sourceId);
+      }
     };
   }, [map, loaded, mask, unmasked, onLoadingChange]);
 }

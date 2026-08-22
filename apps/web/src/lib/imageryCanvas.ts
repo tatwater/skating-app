@@ -174,6 +174,15 @@ export interface ClipOptions {
   featherMeters: number;
   /** `false` ⇒ keep the whole box, shape untouched (the admin editor's unmasked mode). */
   clip?: boolean;
+  /**
+   * Fade the image out at the edges of its own **box**, in pixels — for the detail image, which stops
+   * where the viewport does and would otherwise meet the overview beneath it at a hard line.
+   *
+   * The seam is not a coverage gap, it is a *sharpness* gap: the same ground at two resolutions,
+   * abutting. A hard boundary between them reads as a rendering artefact; a short ramp reads as
+   * nothing at all. Zero for the overview, whose box edges sit outside the feathered shape already.
+   */
+  edgeFadePx?: number;
 }
 
 /**
@@ -199,6 +208,7 @@ export function drawClippedImagery({
   shape,
   featherMeters,
   clip,
+  edgeFadePx = 0,
 }: ClipOptions): boolean {
   const ctx = canvas.getContext('2d');
   if (!ctx) return false;
@@ -227,5 +237,18 @@ export function drawClippedImagery({
   traceShape(ctx, shape, box, width, height);
   ctx.fill();
   ctx.restore();
+
+  // A second `destination-in`, this time against a blurred inset rectangle, ramps the alpha at the
+  // box's own border. Where a box edge coincides with the shape's edge the first pass already took
+  // the alpha to zero, so this is a no-op there rather than a double fade.
+  if (edgeFadePx > 0.5) {
+    ctx.save();
+    ctx.globalCompositeOperation = 'destination-in';
+    if ('filter' in ctx) ctx.filter = `blur(${edgeFadePx.toFixed(2)}px)`;
+    ctx.fillStyle = '#ffffff';
+    const inset = edgeFadePx;
+    ctx.fillRect(inset, inset, Math.max(0, width - inset * 2), Math.max(0, height - inset * 2));
+    ctx.restore();
+  }
   return feathered;
 }
