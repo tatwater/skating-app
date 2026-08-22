@@ -78,6 +78,7 @@ import {
   TRACK_PALETTE,
   WATER_PALETTE,
   waterBodiesToFeatureCollection,
+  waterOutlineColor,
 } from '../lib/waterMap';
 import { ImageryControl } from './ImageryControl';
 import { useMapSelection } from './MapSelectionContext';
@@ -414,14 +415,12 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
         type: 'line',
         source: 'water',
         paint: {
-          // Favorited bodies read gold (D#1); the selected/tapped body keeps the theme outline. A
-          // favorited-and-selected body still shows gold — the favorite is the more persistent signal.
-          'line-color': [
-            'case',
-            ['boolean', ['feature-state', 'favorite'], false],
-            '#eab308', // amber-500 — the favorite gold
-            water.outline,
-          ],
+          // Favorited gold, else the theme outline — and plain white while imagery is revealed.
+          // See `waterOutlineColor`; the reveal effect below re-sets this when the toggle flips.
+          'line-color': waterOutlineColor(
+            flavor,
+            false,
+          ) as maplibregl.DataDrivenPropertyValueSpecification<string>,
           // The outline dims with the fill (N6f). A full-strength outline around a ghost fill reads
           // as a rendering bug rather than as a statement about the lake.
           'line-opacity': withAccessDim(
@@ -1009,7 +1008,17 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
     const map = mapRef.current;
     if (!map || !loaded) return;
     setLayersVisible(map, IMAGERY_REPLACED_LAYERS, !revealMask);
-  }, [revealMask, loaded, contourBodyKey, mapRef.current]);
+    // The shoreline survives the reveal and changes job while it does — status colour off the vector
+    // map, edge-of-the-photograph on it. Set here rather than in the reveal hook because the layer
+    // belongs to the map's own init, and the hook owns only what it added.
+    if (map.getLayer('water-outline')) {
+      map.setPaintProperty(
+        'water-outline',
+        'line-color',
+        waterOutlineColor(flavor, Boolean(revealMask)) as never,
+      );
+    }
+  }, [revealMask, loaded, contourBodyKey, flavor, mapRef.current]);
 
   useEffect(() => {
     const map = mapRef.current;

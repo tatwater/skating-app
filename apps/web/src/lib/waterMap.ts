@@ -51,6 +51,31 @@ export const MAP_FLAVORS = { light: 'white', dark: 'dark' } as const;
 export type MapFlavor = (typeof MAP_FLAVORS)[keyof typeof MAP_FLAVORS];
 
 /**
+ * The shoreline's colour, which depends on what is inside it (N6e).
+ *
+ * Normally: favorited reads gold (D#1), everything else takes the theme outline, and a
+ * favorited-and-selected body stays gold because the favorite is the more persistent signal.
+ *
+ * **Over imagery it is plain white, and that overrides both.** The outline is the one piece of our
+ * cartography the reveal keeps (see `IMAGERY_REPLACED_LAYERS`), and its job changes when it is the
+ * only thing left: it stops being a status colour and becomes the line that makes a clipped
+ * photograph read as *this lake* rather than a hole in the map. Gold against aerial photography reads
+ * as a highlight on the picture; white reads as an edge of it.
+ *
+ * Scoped to the reveal rather than to selection generally, because white on the light basemap's own
+ * near-white earth is an outline nobody can see.
+ */
+export function waterOutlineColor(flavor: MapFlavor, revealed: boolean): unknown {
+  if (revealed) return '#ffffff';
+  return [
+    'case',
+    ['boolean', ['feature-state', 'favorite'], false],
+    '#eab308', // amber-500 — the favorite gold
+    WATER_PALETTE[flavor].outline,
+  ];
+}
+
+/**
  * Icy water fill/outline per theme, layered over the basemap. Pale ice-blue on the white basemap;
  * a deeper glacial blue on the dark one. `AttributionControl` still surfaces the ODbL credit.
  */
