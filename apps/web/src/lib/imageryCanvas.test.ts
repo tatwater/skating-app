@@ -1,4 +1,4 @@
-import type { BBox } from '@skating/core';
+import { type BBox, toMercatorBox } from '@skating/core';
 import type { Polygon } from 'geojson';
 import { describe, expect, it } from 'vitest';
 import { imageryCanvasSize, imageryCorners, imageryViewBox, traceShape } from './imageryCanvas';
@@ -44,11 +44,38 @@ describe('imageryViewBox', () => {
 describe('imageryCanvasSize', () => {
   const viewport = { width: 1200, height: 800 };
 
-  it('sizes to the box share of the viewport, at device pixel ratio', () => {
-    // Reveal fills the view ⇒ roughly one image pixel per screen pixel, doubled for retina.
+  /** The invariant that matters: the pixel grid must match the bbox the URL asks for. */
+  const aspectMatchesBox = (box: BBox, size: { width: number; height: number }) => {
+    const merc = toMercatorBox(box);
+    const boxAspect = (merc.maxX - merc.minX) / (merc.maxY - merc.minY);
+    return Math.abs(size.width / size.height - boxAspect) / boxAspect;
+  };
+
+  it('always matches the Mercator aspect — a mismatch makes the service widen the extent', () => {
+    // Measured 2026-08-21: a 3000x3000 m bbox asked for at 512x300 came back covering 5120x3000 m,
+    // announced only in `f=json`. Painting that on the requested corners is the misregistration.
+    for (const box of [
+      { minLat: 44.45, minLng: -73.2, maxLat: 44.46, maxLng: -73.19 },
+      // Champlain-shaped: very tall, very narrow — the worst case, and the one that showed it.
+      { minLat: 43.6, minLng: -73.45, maxLat: 45.05, maxLng: -73.15 },
+      // And the opposite, a wide shallow box.
+      { minLat: 44.45, minLng: -73.6, maxLat: 44.47, maxLng: -72.9 },
+    ]) {
+      expect(aspectMatchesBox(box, imageryCanvasSize(box, box, viewport, 2))).toBeLessThan(0.01);
+    }
+  });
+
+  it('does not derive height from degrees, which is a 40% error at our latitude', () => {
+    const tall = { minLat: 43.6, minLng: -73.45, maxLat: 45.05, maxLng: -73.15 };
+    const size = imageryCanvasSize(tall, tall, viewport, 1);
+    const degreeAspect = (tall.maxLng - tall.minLng) / (tall.maxLat - tall.minLat);
+    // Mercator stretches latitude by 1/cos(phi); a degrees-derived height would be visibly wider.
+    expect(Math.abs(size.width / size.height - degreeAspect)).toBeGreaterThan(0.05);
+  });
+
+  it('sizes width to the box share of the viewport, at device pixel ratio', () => {
     const size = imageryCanvasSize(REVEAL, REVEAL, viewport, 2);
     expect(size.width).toBe(2400);
-    expect(size.height).toBe(1600);
   });
 
   it('shrinks with the box when the reveal is a small part of the view', () => {
@@ -58,11 +85,11 @@ describe('imageryCanvasSize', () => {
     expect(size.width).toBeGreaterThan(0);
   });
 
-  it('never exceeds what the service will render', () => {
-    const size = imageryCanvasSize(REVEAL, REVEAL, { width: 8000, height: 8000 }, 3);
-    // Over the cap the ImageServer silently returns a *smaller* image, which would rescale the mask.
-    expect(size.width).toBeLessThanOrEqual(4000);
-    expect(size.height).toBeLessThanOrEqual(4000);
+  it('clamps the longer side and lets the other follow, so the cap cannot skew the aspect', () => {
+    const tall: BBox = { minLat: 43.6, minLng: -73.45, maxLat: 45.05, maxLng: -73.15 };
+    const size = imageryCanvasSize(tall, tall, { width: 8000, height: 8000 }, 3);
+    expect(Math.max(size.width, size.height)).toBeLessThanOrEqual(4000);
+    expect(aspectMatchesBox(tall, size)).toBeLessThan(0.01);
   });
 
   it('is at least one pixel — a zero-size canvas throws in MapLibre', () => {

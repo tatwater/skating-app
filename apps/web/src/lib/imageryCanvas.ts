@@ -74,12 +74,29 @@ export function imageryViewBox(view: BBox, reveal: BBox): BBox | null {
 
 /**
  * Pixel dimensions for that box: enough to be sharp on this screen, never more than the service will
- * render.
+ * render, and **always the bbox's own aspect ratio**.
  *
- * Sized off **the box's share of the viewport**, at device pixel ratio, so the image is drawn at
- * roughly one image pixel per screen pixel. Asking for more is bytes nobody sees; asking for less is
- * a blurry photograph, which on a 0.3 m source is the one thing that would make the whole tier
- * pointless.
+ * ## The aspect ratio is not a nicety, and getting it wrong misregisters the imagery
+ *
+ * `exportImage` will not letterbox and will not distort. If the requested `size` does not match the
+ * requested `bbox`, it **silently widens the extent** to keep pixels square, and reports the
+ * substitution only in the `f=json` response — the JPEG carries no notice at all. Measured against
+ * the live service on 2026-08-21:
+ *
+ * ```
+ * bbox 3000 × 3000 m,  size 512×512  ⇒  returned 3000 × 3000 m   ✓
+ * bbox 3000 × 3000 m,  size 512×300  ⇒  returned 5120 × 3000 m   ✗ 70% more ground, unannounced
+ * ```
+ *
+ * We then paint that image onto the corners of the bbox we *asked* for, so every feature lands
+ * off-position by a factor of the aspect mismatch. It reads as the imagery being badly georeferenced
+ * — the founder's *"peninsulas don't line up"* — and it is worst on tall lakes like Champlain, whose
+ * bbox aspect is furthest from a landscape viewport's.
+ *
+ * So: width comes from the box's share of the screen, and **height is derived from the Mercator
+ * span**, never from the screen independently. Deriving it from *degrees* would be wrong too, and
+ * subtly: Mercator stretches latitude by 1/cos(φ), ~1.4× at 44°N, so a degrees-derived height is a
+ * 40% aspect error dressed as arithmetic.
  */
 export function imageryCanvasSize(
   box: BBox,
@@ -87,14 +104,25 @@ export function imageryCanvasSize(
   viewportPx: { width: number; height: number },
   pixelRatio = 1,
 ): { width: number; height: number } {
-  const fracLng = (box.maxLng - box.minLng) / Math.max(1e-12, view.maxLng - view.minLng);
-  const fracLat = (box.maxLat - box.minLat) / Math.max(1e-12, view.maxLat - view.minLat);
-  const clamp = (value: number) =>
-    Math.max(1, Math.min(AERIAL_MAX_EXPORT_PX, Math.round(value * pixelRatio)));
-  return {
-    width: clamp(Math.min(1, fracLng) * viewportPx.width),
-    height: clamp(Math.min(1, fracLat) * viewportPx.height),
-  };
+  const merc = toMercatorBox(box);
+  const spanX = Math.max(1e-9, merc.maxX - merc.minX);
+  const spanY = Math.max(1e-9, merc.maxY - merc.minY);
+
+  const fracLng = Math.min(
+    1,
+    (box.maxLng - box.minLng) / Math.max(1e-12, view.maxLng - view.minLng),
+  );
+  let width = Math.max(1, Math.round(fracLng * viewportPx.width * pixelRatio));
+  let height = Math.max(1, Math.round((width * spanY) / spanX));
+
+  // Clamp on the *longer* side and let the other follow, so the cap can never itself introduce the
+  // mismatch it is protecting against.
+  if (width > AERIAL_MAX_EXPORT_PX || height > AERIAL_MAX_EXPORT_PX) {
+    const scale = AERIAL_MAX_EXPORT_PX / Math.max(width, height);
+    width = Math.max(1, Math.round(width * scale));
+    height = Math.max(1, Math.round(height * scale));
+  }
+  return { width, height };
 }
 
 /** The four corners MapLibre wants for an image/canvas source: TL, TR, BR, BL. */

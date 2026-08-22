@@ -89,6 +89,16 @@ export interface ImageryRevealOptions {
   /** `null` ⇒ nothing to reveal. Both "no lake open" and "reveal off" arrive as `null`. */
   mask: ImageryMaskInput | null;
   /**
+   * Called when a fetch starts and when it settles.
+   *
+   * A photograph over a big lake is a multi-megabyte render on somebody else's machine, and it
+   * arrives *seconds* after the toggle. Without a signal the map simply sits there — and the second,
+   * subtler case is a **fidelity** refresh: zooming in fires a sharper fetch while a usable but
+   * coarser image is already on screen, so nothing appears broken and nothing appears to be
+   * happening either.
+   */
+  onLoadingChange?: (loading: boolean) => void;
+  /**
    * Skip the clip and show the photograph across the whole view (Workstream E).
    *
    * **The admin lake editor's mode, and the reason is the opposite of the skater's.** A skater is
@@ -114,6 +124,7 @@ export function useImageryReveal({
   loaded,
   mask,
   unmasked = false,
+  onLoadingChange,
 }: ImageryRevealOptions): void {
   // The canvas outlives individual fetches, so a pan reuses it rather than churning a DOM node and a
   // GPU texture per view.
@@ -157,6 +168,7 @@ export function useImageryReveal({
         window.devicePixelRatio || 1,
       );
 
+      onLoadingChange?.(true);
       const image = new Image();
       // Required to read the pixels back off a canvas. USGS sends `access-control-allow-origin: *`;
       // without this the canvas is tainted and the `destination-in` composite throws a security error.
@@ -166,6 +178,7 @@ export function useImageryReveal({
         // A superseded fetch must not paint: a slow render for a view the skater has already left
         // would otherwise land after the fast one and put stale ground back on screen.
         if (disposed || inFlight !== image) return;
+        onLoadingChange?.(false);
         canvas.width = size.width;
         canvas.height = size.height;
         drawClippedImagery({
@@ -205,7 +218,9 @@ export function useImageryReveal({
         );
       };
       image.onerror = () => {
-        // A failed render leaves the previous image in place, which is more useful than a blank.
+        // A failed render leaves the previous image in place, which is more useful than a blank —
+        // but the spinner has to stop regardless, or a dead service reads as a permanent load.
+        if (inFlight === image) onLoadingChange?.(false);
       };
       image.src = aerialExportUrl(box, size.width, size.height);
     };
@@ -215,6 +230,7 @@ export function useImageryReveal({
 
     return () => {
       disposed = true;
+      onLoadingChange?.(false);
       map.off('moveend', refresh);
       if (inFlight) inFlight.onload = null;
       // Layer before source, always: MapLibre throws when removing a source still in use, and a throw
@@ -222,7 +238,7 @@ export function useImageryReveal({
       if (map.getLayer(IMAGERY_LAYER_ID)) map.removeLayer(IMAGERY_LAYER_ID);
       if (map.getSource(IMAGERY_SOURCE_ID)) map.removeSource(IMAGERY_SOURCE_ID);
     };
-  }, [map, loaded, mask, unmasked]);
+  }, [map, loaded, mask, unmasked, onLoadingChange]);
 }
 
 /**
@@ -250,6 +266,21 @@ export const IMAGERY_REPLACED_LAYERS = [
   // photograph and read as nested rings in every shallow bay.
   'bathymetry-contours',
 ] as const;
+
+/**
+ * The loading skeleton's layer and its rhythm.
+ *
+ * A **wash, not a spinner-on-the-lake**: it never fully hides the water and it moves slowly enough to
+ * read as breathing rather than flashing. 900 ms with the paint transition doing the easing lands
+ * near a resting breath, which is the pace that says *working* without saying *stuck*.
+ *
+ * The floor is deliberately above zero — a pulse that reaches nothing reads as a flicker, which is
+ * the exact thing the once-a-second teardown bug looked like.
+ */
+export const IMAGERY_LOADING_LAYER_ID = 'imagery-loading';
+export const IMAGERY_PULSE_MS = 900;
+export const IMAGERY_PULSE_MIN = 0.08;
+export const IMAGERY_PULSE_MAX = 0.26;
 
 export const IMAGERY_HAZARD_LAYERS = [
   'hazard-fill',

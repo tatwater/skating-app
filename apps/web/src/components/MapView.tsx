@@ -85,6 +85,10 @@ import { useMapSelection } from './MapSelectionContext';
 import { ReturnToRegion } from './ReturnToRegion';
 import {
   IMAGERY_HAZARD_LAYERS,
+  IMAGERY_LOADING_LAYER_ID,
+  IMAGERY_PULSE_MAX,
+  IMAGERY_PULSE_MIN,
+  IMAGERY_PULSE_MS,
   IMAGERY_REPLACED_LAYERS,
   setLayersVisible,
   useImageryReveal,
@@ -408,6 +412,21 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
             0.6,
             0.35,
           ]) as maplibregl.DataDrivenPropertyValueSpecification<number>,
+        },
+      });
+      // The reveal's loading skeleton (N6e). Its own layer on the existing water source rather than
+      // a borrowed `water-fill`, because that layer's opacity is a data-driven expression carrying
+      // the D47 selection and the N6f access dim — animating a scalar over it would flatten both and
+      // then have to reconstruct them. A separate layer animates one number and owns nothing else.
+      map.addLayer({
+        id: IMAGERY_LOADING_LAYER_ID,
+        type: 'fill',
+        source: 'water',
+        filter: ['==', ['get', '_id'], ''],
+        paint: {
+          'fill-color': water.outline,
+          'fill-opacity': 0,
+          'fill-opacity-transition': { duration: IMAGERY_PULSE_MS, delay: 0 },
         },
       });
       map.addLayer({
@@ -990,7 +1009,13 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
     return mask;
   }, [imageryOn, highlightWaterBodyId, features, putIns]);
 
-  useImageryReveal({ map: mapRef.current, loaded, mask: revealMask });
+  const [imageryLoading, setImageryLoading] = useState(false);
+  useImageryReveal({
+    map: mapRef.current,
+    loaded,
+    mask: revealMask,
+    onLoadingChange: setImageryLoading,
+  });
 
   // Layers step aside for the photograph, except the ones the skater decides about.
   //
@@ -1027,6 +1052,41 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
     // never merely because imagery is on (D81's safety line, and the founder's toggle answering it).
     setLayersVisible(map, IMAGERY_HAZARD_LAYERS, !revealMask || hazardsOverImagery);
   }, [revealMask, hazardsOverImagery, loaded, mapRef.current]);
+
+  // The gentle wash over the lake while its photograph is on the way (N6e).
+  //
+  // **Two states look identical without it**, which is why a spinner alone would not have been
+  // enough: a first fetch on a big lake takes seconds, and a *fidelity* refresh on zoom-in leaves a
+  // usable coarser image on screen the whole time. The pulse says "something is arriving" in both,
+  // on the lake it is arriving for.
+  //
+  // Driven by an interval rather than a CSS animation because the thing being animated is a MapLibre
+  // paint property; the transition does the easing, so this only has to flip a target twice a cycle.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !loaded || !map.getLayer(IMAGERY_LOADING_LAYER_ID)) return;
+    if (!imageryLoading || !highlightWaterBodyId) {
+      map.setPaintProperty(IMAGERY_LOADING_LAYER_ID, 'fill-opacity', 0);
+      return;
+    }
+    map.setFilter(IMAGERY_LOADING_LAYER_ID, ['==', ['get', '_id'], highlightWaterBodyId]);
+    let bright = true;
+    map.setPaintProperty(IMAGERY_LOADING_LAYER_ID, 'fill-opacity', IMAGERY_PULSE_MAX);
+    const timer = setInterval(() => {
+      bright = !bright;
+      map.setPaintProperty(
+        IMAGERY_LOADING_LAYER_ID,
+        'fill-opacity',
+        bright ? IMAGERY_PULSE_MAX : IMAGERY_PULSE_MIN,
+      );
+    }, IMAGERY_PULSE_MS);
+    return () => {
+      clearInterval(timer);
+      if (map.getLayer(IMAGERY_LOADING_LAYER_ID)) {
+        map.setPaintProperty(IMAGERY_LOADING_LAYER_ID, 'fill-opacity', 0);
+      }
+    };
+  }, [imageryLoading, highlightWaterBodyId, loaded, mapRef.current]);
 
   // When was this lake last photographed? (N6e B2.)
   //
@@ -1250,6 +1310,7 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
         hazardsOn={hazardsOverImagery}
         onToggleHazards={setHazardsOverImagery}
         captureLabel={aerialCaptureLabel}
+        loading={imageryLoading}
         hasHazards={(hazards?.length ?? 0) > 0}
       />
       {/* The drawing bar. A circle needs one click and no controls, so it just says so; a polyline

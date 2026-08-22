@@ -1,4 +1,4 @@
-import { Layers, TriangleAlert } from 'lucide-react';
+import { Layers, Loader2, TriangleAlert } from 'lucide-react';
 import { Button } from './ui/button';
 
 /**
@@ -19,6 +19,7 @@ export function ImageryControl({
   hazardsOn,
   onToggleHazards,
   captureLabel,
+  loading,
   hasHazards,
 }: {
   visible: boolean;
@@ -28,6 +29,8 @@ export function ImageryControl({
   onToggleHazards: (on: boolean) => void;
   /** *"June 2023"* — `null` until the scene is known, or where NAIP does not reach. */
   captureLabel: string | null;
+  /** A fetch is in flight — a first load, or a sharper one on zoom-in. */
+  loading: boolean;
   /** No hazards on this lake ⇒ no hazard toggle. A switch that governs nothing is noise. */
   hasHazards: boolean;
 }) {
@@ -47,6 +50,12 @@ export function ImageryControl({
         {imageryOn ? 'Hide imagery' : 'Show imagery'}
       </Button>
 
+      {/* Announced, not only animated. The lake's own pulse is the ambient signal; this is the one a
+          screen reader gets, which is why the status lives here and not just on the canvas. */}
+      <p aria-live="polite" className="sr-only">
+        {loading ? 'Loading aerial imagery' : ''}
+      </p>
+
       {imageryOn ? (
         <div className="flex flex-col items-end gap-1.5 rounded-md bg-background/95 p-2 shadow-lg">
           {/*
@@ -54,7 +63,12 @@ export function ImageryControl({
            * on a 2–3 year cycle, so a skater looking at green trees in January has to be told why —
            * and `null` renders as nothing at all rather than as a guessed year.
            */}
-          {captureLabel ? (
+          {loading ? (
+            <p className="flex items-center gap-1.5 px-1 text-muted-foreground text-xs">
+              <Loader2 aria-hidden className="size-3 animate-spin" />
+              Loading imagery…
+            </p>
+          ) : captureLabel ? (
             <p className="px-1 text-muted-foreground text-xs">Aerial · {captureLabel}</p>
           ) : null}
 
