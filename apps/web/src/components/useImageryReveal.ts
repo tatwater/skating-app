@@ -1,197 +1,217 @@
 /**
  * The aerial reveal, added and removed with the open lake (N6e / D146).
  *
- * Its own module rather than a fourteenth effect in `MapView`, because it owns a source, a raster
- * layer, a variable number of mask layers and their teardown — and because the layer *order* it
- * establishes is the whole feature. Read `imageryMask.ts` first; the geometry decisions are there and
- * this file is the MapLibre half.
+ * ## The second architecture, and why the first one had to go
  *
- * ## The stack, bottom to top, and why it is this way round
+ * v1 clipped by **covering**: a tiled raster drawn edge-to-edge, then the basemap's own colour
+ * painted over everything outside the lake. It worked and it cost the map — a mask hides whatever is
+ * beneath it, so the roads, the landuse and the labels went too. MapLibre has no way to clip a raster
+ * to a polygon (no `clip` layer in 5.24; `raster-opacity` cannot vary within a layer), so covering is
+ * the only option *as long as someone else owns the pixels*.
  *
- *   1. **the raster** — inserted *beneath the water fill*, so it sits under everything we draw
- *   2. **the mask layers** — outermost buffer first, hugging the shape last, alpha accumulating inward
- *   3. everything already on the map — pins, tracks, hazards, labels
+ * v2 owns the pixels. One `exportImage` per view, drawn to a canvas, alpha punched in against the
+ * lake's shape (`imageryCanvas`), handed to MapLibre as a **canvas source**. Nothing is painted over:
+ * the entire vector basemap survives outside the reveal, the feather is a real gradient rather than
+ * six stacked fills, and roads and labels draw *over* the photograph — which for reading an access
+ * road is the point rather than a compromise.
  *
- * The masks go **above the raster and below the app's own layers**, which is the only arrangement
- * that works: above the app layers they would grey out the put-in pins the reveal exists to show;
- * below the raster they would do nothing at all.
+ * ## Where it sits in the stack
  *
- * ## What it deliberately does not do
+ * Inserted **below the basemap's own road layers**, so:
  *
- * **It never touches the base map.** D146's whole point is that the vector style is untouched — so
- * there is no style branch here, no label filtering, and no attribution swap. The photograph is a
- * patch laid over the map, and closing the drawer removes the patch.
+ *   basemap fills → **photograph** → basemap roads + labels → our pins, tracks, hazards
+ *
+ * Buildings land under the photograph (they come before roads in the Protomaps order), which is
+ * right: a vector building footprint drawn on top of a photograph of that building is noise.
+ *
+ * ## Updating the texture
+ *
+ * MapLibre's `CanvasSource.prepare()` only re-uploads when the canvas resized or the source is
+ * "playing". Redrawing the canvas alone changes nothing on screen. `play()` then `pause()` is the
+ * pair that works — `pause()` calls `prepare()` synchronously — so one redraw is one upload with no
+ * animation loop left running.
  */
 
 import {
+  AERIAL_ATTRIBUTION,
+  AERIAL_MASK_METERS,
   aerialBoundsFor,
-  aerialSourceSpec,
-  buildImageryMask,
-  FEATHER_STEPS,
+  aerialExportUrl,
+  type BBox,
   IMAGERY_LAYER_ID,
-  IMAGERY_MASK_SOURCE_ID,
   IMAGERY_SOURCE_ID,
   type ImageryMaskInput,
-  imageryMaskLayerId,
+  revealShape,
 } from '@skating/core';
 import type maplibregl from 'maplibre-gl';
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
+import {
+  drawClippedImagery,
+  imageryCanvasSize,
+  imageryCorners,
+  imageryViewBox,
+} from '../lib/imageryCanvas';
 
 /**
- * The layer the raster is inserted beneath.
+ * The basemap layer the photograph is inserted beneath.
  *
- * `water-fill` is added at map init and is the lowest of our own layers, so anchoring here puts the
- * photograph under every single thing the app draws — which is what makes "the reveal cannot hide
- * content" structural rather than a rule someone has to remember when adding the next layer.
+ * Resolved by scanning the live style rather than hard-coded, because the two-archive basemap composes
+ * its layer list at runtime (`composeBasemapLayers`) and the first road layer's id is not a constant
+ * anyone here should be asserting. Falls back to our own lowest layer, which puts the photograph under
+ * everything — the v1 behaviour, and a safe degradation rather than a crash.
  */
-const IMAGERY_BEFORE_LAYER_ID = 'water-fill';
-
-/**
- * How long the photograph takes to arrive.
- *
- * Same reasoning the contours settled on: *fading in reads as a detail revealing itself; popping in
- * reads as a bug*. Shorter than the contour fade because a raster covers the lake rather than
- * decorating it — a slow fade on something this large reads as the map struggling.
- */
-const IMAGERY_FADE_MS = 320;
+function insertBeforeLayerId(map: maplibregl.Map): string | undefined {
+  const layers = map.getStyle()?.layers ?? [];
+  const road = layers.find((layer) => layer.id.startsWith('roads'));
+  if (road) return road.id;
+  return map.getLayer('water-fill') ? 'water-fill' : undefined;
+}
 
 export interface ImageryRevealOptions {
   map: maplibregl.Map | null;
   loaded: boolean;
   /** `null` ⇒ nothing to reveal. Both "no lake open" and "reveal off" arrive as `null`. */
   mask: ImageryMaskInput | null;
-  /**
-   * What the mask paints with — the basemap flavour's own land colour, never a hard-coded white.
-   * See `basemapEarthColor`; a white mask on the dark map reads as a hole punched in it.
-   */
-  maskColor: string;
 }
 
 /**
- * Add the reveal while `mask` is non-null; tear it down the moment it isn't.
+ * Add the reveal while `mask` is non-null, refresh it when the map settles somewhere new, and tear it
+ * down the moment it isn't.
  *
- * The teardown is the part worth reading. A raster source left behind on drawer-close keeps its tiles
- * warm and keeps requesting them on pan — against a **dynamic renderer we do not own** (see
- * `aerialImagery.ts`), so a leak here is not a memory cost, it is a stream of compute requests to
- * USGS for a lake nobody is looking at. Hence removing layers before the source, unconditionally,
- * and on every dependency change rather than only on unmount.
+ * Refreshing on **`moveend`** and not on every frame is deliberate: one fetch per settled view is
+ * fewer requests than the tile path made (every tile there was a dynamic render too), and it means a
+ * drag costs nothing until the hand comes off.
  */
-export function useImageryReveal({ map, loaded, mask, maskColor }: ImageryRevealOptions): void {
+export function useImageryReveal({ map, loaded, mask }: ImageryRevealOptions): void {
+  // The canvas outlives individual fetches, so a pan reuses it rather than churning a DOM node and a
+  // GPU texture per view.
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+
   useEffect(() => {
     if (!map || !loaded || !mask) return;
 
-    const built = buildImageryMask(mask);
-    // Fails closed (see `buildImageryMask`): no shape ⇒ no photograph. Revealing an unmasked raster
-    // would show five states of imagery with no way to tell which lake was selected.
-    if (!built) return;
+    const shape = revealShape(mask, AERIAL_MASK_METERS.solid);
+    // Fails closed (see `revealShape`): no shape ⇒ no photograph. An unclipped raster would show five
+    // states of imagery with no way to tell which lake was selected.
+    if (!shape) return;
+    const revealBounds = aerialBoundsFor(shape);
 
-    const bounds = aerialBoundsFor(built.shape);
-    map.addSource(IMAGERY_SOURCE_ID, aerialSourceSpec(bounds));
-    map.addLayer(
-      {
-        id: IMAGERY_LAYER_ID,
-        type: 'raster',
-        source: IMAGERY_SOURCE_ID,
-        paint: {
-          'raster-opacity': 0,
-          'raster-opacity-transition': { duration: IMAGERY_FADE_MS, delay: 0 },
-          // The photograph is the subject; nothing about it should be sharpened or dimmed for us.
-          'raster-fade-duration': 0,
-        },
-      },
-      map.getLayer(IMAGERY_BEFORE_LAYER_ID) ? IMAGERY_BEFORE_LAYER_ID : undefined,
-    );
+    const canvas = canvasRef.current ?? document.createElement('canvas');
+    canvasRef.current = canvas;
 
-    // One GeoJSON source holding every ring, discriminated by a `step` property, rather than N
-    // sources. N sources would mean N tile pipelines for geometry that is already in memory.
-    map.addSource(IMAGERY_MASK_SOURCE_ID, {
-      type: 'geojson',
-      data: {
-        type: 'FeatureCollection',
-        features: built.rings.map((ring, index) => ({
-          type: 'Feature' as const,
-          geometry: ring.geometry,
-          properties: { step: index },
-        })),
-      },
-    });
+    let disposed = false;
+    let inFlight: HTMLImageElement | null = null;
 
-    const maskLayerIds = built.rings.map((ring, index) => {
-      const id = imageryMaskLayerId(index);
-      map.addLayer(
-        {
-          id,
-          type: 'fill',
-          source: IMAGERY_MASK_SOURCE_ID,
-          filter: ['==', ['get', 'step'], index],
-          paint: {
-            // The basemap's own paint, not a scrim: the mask is not a dimming effect over a
-            // photograph, it is the map resuming where the photograph stops.
-            'fill-color': maskColor,
-            'fill-opacity': 0,
-            'fill-opacity-transition': { duration: IMAGERY_FADE_MS, delay: 0 },
-            'fill-antialias': true,
-          },
-        },
-        map.getLayer(IMAGERY_BEFORE_LAYER_ID) ? IMAGERY_BEFORE_LAYER_ID : undefined,
+    const refresh = () => {
+      if (disposed) return;
+      const bounds = map.getBounds();
+      const view: BBox = {
+        minLat: bounds.getSouth(),
+        maxLat: bounds.getNorth(),
+        minLng: bounds.getWest(),
+        maxLng: bounds.getEast(),
+      };
+      const box = imageryViewBox(view, revealBounds);
+      // Reveal off screen: keep the last image rather than clearing, so panning back does not blink.
+      if (!box) return;
+
+      const container = map.getContainer();
+      const size = imageryCanvasSize(
+        box,
+        view,
+        { width: container.clientWidth, height: container.clientHeight },
+        window.devicePixelRatio || 1,
       );
-      return { id, opacity: ring.opacity };
-    });
 
-    // Reveal on the next frame so the transition has a starting value to animate *from*. Setting the
-    // target opacity in the same tick as `addLayer` skips the transition entirely and pops.
-    const raf = requestAnimationFrame(() => {
-      if (!map.getLayer(IMAGERY_LAYER_ID)) return;
-      map.setPaintProperty(IMAGERY_LAYER_ID, 'raster-opacity', 1);
-      for (const layer of maskLayerIds) {
-        map.setPaintProperty(layer.id, 'fill-opacity', layer.opacity);
-      }
-    });
+      const image = new Image();
+      // Required to read the pixels back off a canvas. USGS sends `access-control-allow-origin: *`;
+      // without this the canvas is tainted and the `destination-in` composite throws a security error.
+      image.crossOrigin = 'anonymous';
+      inFlight = image;
+      image.onload = () => {
+        // A superseded fetch must not paint: a slow render for a view the skater has already left
+        // would otherwise land after the fast one and put stale ground back on screen.
+        if (disposed || inFlight !== image) return;
+        canvas.width = size.width;
+        canvas.height = size.height;
+        drawClippedImagery({
+          canvas,
+          image,
+          box,
+          shape,
+          featherMeters: AERIAL_MASK_METERS.feather,
+        });
+
+        const existing = map.getSource(IMAGERY_SOURCE_ID) as maplibregl.CanvasSource | undefined;
+        if (existing) {
+          existing.setCoordinates(imageryCorners(box));
+          // The pair that actually re-uploads the texture — see the module note.
+          existing.play();
+          existing.pause();
+          return;
+        }
+        map.addSource(IMAGERY_SOURCE_ID, {
+          type: 'canvas',
+          canvas,
+          coordinates: imageryCorners(box),
+          // Static between fetches; `play()`/`pause()` handles the updates.
+          animate: false,
+          attribution: AERIAL_ATTRIBUTION,
+        } as never);
+        map.addLayer(
+          {
+            id: IMAGERY_LAYER_ID,
+            type: 'raster',
+            source: IMAGERY_SOURCE_ID,
+            paint: { 'raster-opacity': 1, 'raster-fade-duration': 0 },
+          },
+          insertBeforeLayerId(map),
+        );
+      };
+      image.onerror = () => {
+        // A failed render leaves the previous image in place, which is more useful than a blank.
+      };
+      image.src = aerialExportUrl(box, size.width, size.height);
+    };
+
+    refresh();
+    map.on('moveend', refresh);
 
     return () => {
-      cancelAnimationFrame(raf);
-      // Layers before sources, always: MapLibre throws on removing a source still in use, and a throw
-      // in a cleanup runs during React's commit — so the leak would take the next render with it.
-      for (const layer of maskLayerIds) {
-        if (map.getLayer(layer.id)) map.removeLayer(layer.id);
-      }
+      disposed = true;
+      map.off('moveend', refresh);
+      if (inFlight) inFlight.onload = null;
+      // Layer before source, always: MapLibre throws when removing a source still in use, and a throw
+      // inside a cleanup runs during React's commit — so it would take the next render with it.
       if (map.getLayer(IMAGERY_LAYER_ID)) map.removeLayer(IMAGERY_LAYER_ID);
-      if (map.getSource(IMAGERY_MASK_SOURCE_ID)) map.removeSource(IMAGERY_MASK_SOURCE_ID);
       if (map.getSource(IMAGERY_SOURCE_ID)) map.removeSource(IMAGERY_SOURCE_ID);
     };
-    // `mask` is rebuilt by the caller only when the lake or its access changes; `FEATHER_STEPS` is a
-    // constant and named here so a change to it cannot leave a stale ring count on screen in dev.
-  }, [map, loaded, mask, maskColor]);
+  }, [map, loaded, mask]);
 }
-
-export { FEATHER_STEPS, IMAGERY_BEFORE_LAYER_ID, IMAGERY_FADE_MS };
 
 /**
  * The layers the photograph replaces, and the ones the skater decides about.
  *
- * `REPLACED` is the A3 table in one array: the fill is redundant over a photograph of the water, and
- * the founder's call took sub-area outlines and skate paths with it. **`water-outline` is
- * deliberately absent** — the bright ring is what makes a masked patch read as *this lake* rather
- * than a hole in the map, and it is the one piece of cartography that gets *more* useful under
- * imagery, not less.
+ * Much shorter than it was, and that is v2's doing: with the basemap intact underneath, **roads,
+ * labels and landuse no longer need suppressing** — they draw over the photograph, which for finding
+ * an access road is the feature. What remains is our own cartography, which a photograph of the water
+ * genuinely does replace.
+ *
+ * **`water-outline` is deliberately absent** — the bright ring is what makes the revealed patch read
+ * as *this lake* rather than a hole in the map, and it is the one piece of our cartography that gets
+ * more useful under imagery, not less.
  *
  * `HAZARD_LAYERS` is separate because it is not ours to decide (see `hazardsOverImagery`). Keeping
- * the two lists apart is the "one constant" promise from the phase doc: flipping the hazard default,
- * or moving to dimmed-rather-than-hidden, touches this array and nothing else.
+ * the two lists apart is the "one constant" promise from the phase doc.
  */
 export const IMAGERY_REPLACED_LAYERS = [
   'water-fill',
   'sub-area-outline',
   'sub-area-label',
   'track-line',
-  // **The one this list was missing, and the first render found it.** D81 has said since N6b that
-  // contours go with the base map — they are cartographic furniture and they fight a photograph for
-  // legibility. Omitting the id here did not disable the rule, it just stopped implementing it: the
-  // isobaths kept drawing over the imagery and read as nested rings in every shallow bay.
-  //
-  // It is the same id `contourLayer.ts` exports, spelled out rather than imported, because this
-  // array is the A3 table and a reader checking the table against the code should not have to
-  // resolve a constant to do it.
+  // D81 has said since N6b that contours go with the base map. Omitting this id in the first build
+  // did not disable the rule, it just stopped implementing it — the isobaths kept drawing over the
+  // photograph and read as nested rings in every shallow bay.
   'bathymetry-contours',
 ] as const;
 

@@ -7,28 +7,21 @@
  * > body somehow… except we also mark other things on the map now, like parking, put-ins, bathrooms,
  * > an access trail, so we probably want our satellite imagery to cover those markings as well."*
  *
- * So the reveal is a **shape**, not a screen. This module computes that shape and the rings that
- * feather its edge, and it computes nothing about rendering — the apps turn these geometries into
- * fill layers, because the ids and the alpha ramp are the only parts that differ between them.
+ * So the reveal is a **shape**, not a screen. This module computes that shape and nothing about
+ * rendering — where the alpha gets punched in is the client's business (the web app's
+ * `imageryCanvas`, and PR 2's archive for the Sentinel tier).
  *
- * ## The mask is drawn inside-out, and that is the whole trick
+ * ## What used to live here, and why it doesn't
  *
- * MapLibre cannot clip a raster to a polygon. What it *can* do is draw the raster edge-to-edge and
- * then paint over everything that isn't the shape — a polygon whose **outer ring is the viewport and
- * whose holes are the shape**. We already ship this exact inversion: the region mask that stops
- * Connecticut rendering in full (`composeBasemapLayers`, and `maskLayers` in either app). This is that
- * pattern retargeted from five states to one buffered lake, and it inherits the same gotcha —
- * see `MASK_FILL_OPACITY`.
+ * The first build clipped by **covering**: draw the raster edge-to-edge, then paint over everything
+ * outside the lake with an inverted polygon — the region mask's trick, retargeted from five states to
+ * one buffered lake. A stack of those at increasing buffers faked a feather.
  *
- * ## The feather is stacked masks, not a gradient
- *
- * MapLibre cannot blur a fill or vary `fill-opacity` across one. So a soft edge is built by stacking
- * several inverse masks at increasing buffer distances: near the shape only the outermost few cover a
- * pixel, far from it they all do, and the cumulative alpha ramps on its own. `featherRings` returns
- * them ordered outermost-first with the alpha each should carry.
- *
- * **This is the tunable, client-side half of A2.** The Sentinel timeline bakes a true alpha ramp into
- * its own archive instead (we own those pixels); this is for the live NAIP tier, where we do not.
+ * It shipped, and the render killed it: a mask hides whatever is beneath it, so the roads and labels
+ * went with the map. Owning the pixels instead — fetching the photograph and punching its alpha
+ * channel ourselves — leaves the whole basemap intact and turns the feather into a real gradient. So
+ * `inverseMask`, `featherRings` and the stacked-opacity arithmetic are gone, and what remains is the
+ * geometry that was always the useful part.
  */
 
 import buffer from '@turf/buffer';
@@ -39,66 +32,22 @@ import { type LatLng, polygonUnion } from './geometry';
 /** Source and layer ids, so the two clients cannot name the same thing differently. */
 export const IMAGERY_SOURCE_ID = 'imagery';
 export const IMAGERY_LAYER_ID = 'imagery-raster';
-export const IMAGERY_MASK_SOURCE_ID = 'imagery-mask';
-/** Layer id for feather ring `i`, outermost first. */
-export function imageryMaskLayerId(index: number): string {
-  return `imagery-mask-${index}`;
-}
-
-/**
- * A thousandth short of opaque, and it is not a rounding artefact — the same constant, for the same
- * reason, as the region mask's.
- *
- * MapLibre sends a fill to the *opaque* render pass only at exactly opacity 1, and that pass runs
- * before the translucent one with depth testing off. An opaque mask would therefore be drawn *before*
- * the symbols it is meant to sit under, and place labels would punch straight through it. A
- * thousandth of transparency moves the mask into the same pass as the labels, where being later in
- * the layer list finally means being on top.
- *
- * If this ever goes back to `1`, the symptom is labels floating over a masked-out photograph.
- */
-export const MASK_FILL_OPACITY = 0.999;
 
 /**
  * How far the reveal extends past what it is revealing, per tier — **and the units are pixels
  * whether we write them in metres or not.**
  *
  * At Sentinel's 10 m ground sample, a 10 m buffer is **one pixel**: invisible, and a feather built
- * from it would be a hard edge with extra layers. So the aerial tier's numbers cannot simply be
- * reused, and the ratio between the two is roughly the ratio of their resolutions.
+ * from it is a hard edge with extra steps. So the aerial tier's numbers cannot simply be reused, and
+ * the ratio between the two pairs is roughly the ratio of their resolutions.
  *
  * **Set by looking at a render, which is the only way these were ever going to be right.** The first
- * pass guessed 10 m solid + 30 m fade; against a 0.3 m photograph that read as a hard edge with
- * extra steps, because six stacked masks across 30 m is a 5 m band each — under a pixel at the zoom
- * anyone inspects a put-in at. Founder's call on seeing it: *"the feathering is too minimal — I think
- * we could go to 20 m solid and a fade over the next 50-100 m."* 80 m splits that range.
- *
- * The Sentinel numbers move with them by the same ratio, and for a reason the aerial pair does not
- * have: at 10 m per pixel, a 20 m band is two pixels, so the tier needs the whole ramp scaled up or
- * the feather is quantised away by the sensor before it ever reaches a screen.
+ * pass guessed 10 m solid + 30 m fade; against a 0.3 m photograph that read as no fade at all.
+ * Founder, on seeing it: *"the feathering is too minimal — I think we could go to 20 m solid and a
+ * fade over the next 50-100 m."* 80 m splits that range.
  */
 export const AERIAL_MASK_METERS = { solid: 20, feather: 80 } as const;
 export const SENTINEL_MASK_METERS = { solid: 60, feather: 240 } as const;
-
-/** How many stacked masks build the fade. Six reads as smooth; more is layers for nothing. */
-export const FEATHER_STEPS = 6;
-
-/**
- * The world-covering outer ring every inverse mask is cut from.
- *
- * Deliberately the whole sphere rather than the current viewport: a viewport-sized ring has to be
- * recomputed on every pan and is wrong for exactly one frame each time, which reads as the mask
- * flickering off at the edges. A static ring is computed once and is never wrong.
- *
- * Latitude stops short of the poles because Web Mercator has no ±90.
- */
-const WORLD_RING: Position[] = [
-  [-180, -85],
-  [180, -85],
-  [180, 85],
-  [-180, 85],
-  [-180, -85],
-];
 
 /** The pieces of a body's access that the reveal has to cover, alongside the water itself. */
 export interface ImageryMaskInput {
@@ -118,10 +67,37 @@ export interface ImageryMaskInput {
 }
 
 /**
+ * Every polygon's **outer ring only**, holes discarded.
+ *
+ * ## Why islands are not punched out — the first render answered this
+ *
+ * v1 treated a lake's islands as part of the mask, on the reasoning that *an island is not the lake,
+ * so the photograph should stop at the water*. Rendering it falsified that twice over:
+ *
+ * 1. **It looked wrong.** An island is exactly the thing a skater orients by, and a lake full of
+ *    white holes reads as damage rather than cartography. The founder's call on seeing it: *"maybe for
+ *    imagery we can use only the outermost perimeter of the polygon for masking, and allow islands to
+ *    show in full."*
+ * 2. **It rendered wrong**, which is the part worth keeping. Inverting put the world in ring 0 and
+ *    everything else after it, so an island became **a hole inside a hole** — and triangulation
+ *    resolves nested rings by nesting depth, not by which ring belonged to which shape. The output
+ *    was white wedges radiating from the shoreline.
+ *
+ * The covering approach is gone, but this rule outlived it, because it also removes the harder half
+ * of the *buffer*: growing a polygon outward shrinks its holes, so an island narrower than twice the
+ * feather would collapse or self-intersect on the way out. Islands never enter the geometry, so they
+ * cannot break it.
+ */
+export function outerRingsOnly(shape: Polygon | MultiPolygon): Position[][] {
+  const polygons = shape.type === 'Polygon' ? [shape.coordinates] : shape.coordinates;
+  return polygons.flatMap((rings) => (rings[0] ? [rings[0]] : []));
+}
+
+/**
  * The solid core of the reveal: everything we are showing, buffered by `solidMeters` and unioned.
  *
  * Returns `null` only if the union fails outright, which the caller must treat as *"do not reveal"*
- * rather than *"reveal everything"* — a mask that fails open is a photograph of the whole Northeast
+ * rather than *"reveal everything"* — a reveal that fails open is a photograph of the whole Northeast
  * with no way to tell which lake you were looking at.
  *
  * The founder's description is the spec, weird outline and all: *"the same standard buffer distance
@@ -134,9 +110,7 @@ export function revealShape(
 ): Polygon | MultiPolygon | null {
   const parts: (Polygon | MultiPolygon)[] = [];
 
-  // Holes are dropped *before* buffering, not just before inverting (see `outerRingsOnly`). Growing
-  // a polygon outward shrinks its holes, so an island narrower than twice the buffer collapses to a
-  // sliver or self-intersects — and a broken ring here would propagate into every feather step.
+  // Holes dropped before buffering, not just before drawing — see `outerRingsOnly`.
   const water = bufferGeometry(
     { type: 'MultiPolygon', coordinates: outerRingsOnly(input.polygon).map((ring) => [ring]) },
     solidMeters,
@@ -167,7 +141,7 @@ export function revealShape(
  * `turf.buffer` with its failure modes handled, because it has several and they are all quiet.
  *
  * A degenerate ring, a self-intersection, or a zero-extent input can throw or come back `undefined`,
- * and each of those is one *part* of a mask rather than the whole thing — so a failure here drops
+ * and each of those is one *part* of a reveal rather than the whole thing — so a failure here drops
  * that part and lets the union carry the rest.
  */
 function bufferGeometry(
@@ -183,112 +157,4 @@ function bufferGeometry(
   } catch {
     return null;
   }
-}
-
-/**
- * Every polygon's **outer ring only**, holes discarded.
- *
- * ## Why islands are not punched out — the first render answered this
- *
- * The first version treated a lake's islands as part of the mask, on the reasoning that *an island is
- * not the lake, so the photograph should stop at the water*. Rendering it falsified that twice over:
- *
- * 1. **It looked wrong.** An island in a lake is exactly the thing a skater is orienting by, and a
- *    lake full of white holes reads as damage, not as cartography. The founder's call on seeing it:
- *    *"maybe for imagery we can use only the outermost perimeter of the polygon for masking, and
- *    allow islands to show in full."*
- * 2. **It rendered wrong**, which is the part worth keeping in the comment. `inverseMask` puts the
- *    world in ring 0 and everything else after it, so a lake's island became **a hole inside a
- *    hole** — and MapLibre's triangulation resolves nested rings by nesting depth, not by which ring
- *    belonged to which shape. The output was white wedges radiating from the shoreline, which is the
- *    signature of an earcut failure and not the shape anyone asked for.
- *
- * Stripping holes fixes both at once, and it also removes the harder half of the *buffer*: growing a
- * polygon outward shrinks its holes, so an island narrower than the feather distance would collapse
- * or self-intersect on the way out. Islands never enter the geometry now, so they cannot.
- */
-export function outerRingsOnly(shape: Polygon | MultiPolygon): Position[][] {
-  const polygons = shape.type === 'Polygon' ? [shape.coordinates] : shape.coordinates;
-  return polygons.flatMap((rings) => (rings[0] ? [rings[0]] : []));
-}
-
-/**
- * Invert a shape into a mask: a polygon covering the world with the shape punched out of it.
- *
- * **One hole per polygon, never per ring** — see `outerRingsOnly`. Ring winding is not normalised
- * because MapLibre's fill rule treats any subsequent ring as a hole regardless of direction, which
- * is the one place the renderer is more forgiving than the GeoJSON standard.
- */
-export function inverseMask(shape: Polygon | MultiPolygon): Polygon {
-  const rings: Position[][] = [WORLD_RING, ...outerRingsOnly(shape)];
-  return { type: 'Polygon', coordinates: rings };
-}
-
-/** One stacked mask: the geometry to paint, and the alpha it carries. */
-export interface FeatherRing {
-  geometry: Polygon;
-  opacity: number;
-}
-
-/**
- * The stacked inverse masks that fade the reveal's edge, **outermost first**.
- *
- * Ring `i` is the reveal grown by `feather · i/steps` and inverted, so the first entry covers the most
- * and the last hugs the shape. Painted in that order, a pixel just outside the shape is covered by
- * one mask and a pixel far outside is covered by all of them — the alpha accumulates into a ramp
- * without anything having to interpolate.
- *
- * Each layer carries the alpha that makes **the layers actually built** compose to
- * ~`MASK_FILL_OPACITY`: `1 − (1 − a)ⁿ = MASK_FILL_OPACITY`, solved for the final `n`.
- *
- * **Solved after the geometries exist, not before, and the first test written here caught why.** The
- * count is `steps + 1` (the buffers, plus the un-grown shape), and any buffer may drop out — so an
- * alpha derived from the *requested* step count is wrong twice over. Both errors land in the far
- * field: over-compose and the mask is effectively opaque, under-compose and the basemap *never quite*
- * covers the photograph. The second is a faint ghost of imagery across the whole map, which is easy to
- * see and very annoying to attribute to a constant.
- *
- * A zero-length result means the shape could not be built, and the caller must not draw the raster.
- */
-export function featherRings(
-  shape: Polygon | MultiPolygon,
-  featherMeters: number,
-  steps: number = FEATHER_STEPS,
-): FeatherRing[] {
-  if (steps < 1) return [];
-
-  const shapes: Polygon[] = [];
-  // A hard edge is the degenerate case of a feather, not a separate code path — it simply has no
-  // grown rings, leaving the shape itself as the only mask.
-  if (featherMeters > 0) {
-    for (let i = steps; i >= 1; i--) {
-      const grown = bufferGeometry(shape, (featherMeters * i) / steps);
-      // A dropped buffer costs a step of smoothness, never the mask — the alpha below re-solves.
-      if (grown) shapes.push(inverseMask(grown));
-    }
-  }
-  // The shape itself, un-grown, is the innermost mask — without it the reveal bleeds by one step.
-  shapes.push(inverseMask(shape));
-
-  const perLayer = 1 - (1 - MASK_FILL_OPACITY) ** (1 / shapes.length);
-  return shapes.map((geometry) => ({ geometry, opacity: perLayer }));
-}
-
-/**
- * The whole client-side mask in one call: solid core, then the rings that fade it.
- *
- * `null` is the "do not reveal" signal (see `revealShape`), and it is deliberately not an empty array
- * — an empty array is a shape that covers nothing, which paints no mask at all, which is the failure
- * that shows a skater a photograph of five states.
- */
-export function buildImageryMask(
-  input: ImageryMaskInput,
-  meters: { solid: number; feather: number } = AERIAL_MASK_METERS,
-  steps: number = FEATHER_STEPS,
-): { shape: Polygon | MultiPolygon; rings: FeatherRing[] } | null {
-  const shape = revealShape(input, meters.solid);
-  if (!shape) return null;
-  const rings = featherRings(shape, meters.feather, steps);
-  if (rings.length === 0) return null;
-  return { shape, rings };
 }

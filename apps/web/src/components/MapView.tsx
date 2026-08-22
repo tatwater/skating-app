@@ -61,7 +61,6 @@ import {
 import { useMapCanvas } from '../lib/mapCanvas';
 import { createPolygonDraw, type PolygonDrawControl } from '../lib/polygonDraw';
 import {
-  basemapEarthColor,
   DEMO_PMTILES_URL,
   favoriteFeatureIds,
   featureIdForBody,
@@ -992,12 +991,7 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
     return mask;
   }, [imageryOn, highlightWaterBodyId, features, putIns]);
 
-  useImageryReveal({
-    map: mapRef.current,
-    loaded,
-    mask: revealMask,
-    maskColor: basemapEarthColor(flavor),
-  });
+  useImageryReveal({ map: mapRef.current, loaded, mask: revealMask });
 
   // Layers step aside for the photograph, except the ones the skater decides about.
   //

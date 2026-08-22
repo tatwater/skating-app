@@ -3,12 +3,6 @@ import { describe, expect, it } from 'vitest';
 import { pointInPolygon, surfaceAreaSqM } from './geometry';
 import {
   AERIAL_MASK_METERS,
-  buildImageryMask,
-  FEATHER_STEPS,
-  featherRings,
-  imageryMaskLayerId,
-  inverseMask,
-  MASK_FILL_OPACITY,
   outerRingsOnly,
   revealShape,
   SENTINEL_MASK_METERS,
@@ -28,7 +22,7 @@ const POND: Polygon = {
   ],
 };
 
-/** The same pond with an island in it — the case that decides whether holes survive inversion. */
+/** The same pond with an island in it — the case the first render decided. */
 const POND_WITH_ISLAND: Polygon = {
   type: 'Polygon',
   coordinates: [
@@ -64,7 +58,7 @@ describe('revealShape', () => {
     );
     expect(water).not.toBeNull();
     expect(withWalk).not.toBeNull();
-    // The lot is off the water's own mask and inside the one that includes the walk.
+    // The lot is off the water's own reveal and inside the one that includes the walk.
     expect(pointInPolygon(parking, water as Polygon | MultiPolygon)).toBe(false);
     expect(pointInPolygon(parking, withWalk as Polygon | MultiPolygon)).toBe(true);
   });
@@ -88,38 +82,25 @@ describe('revealShape', () => {
     expect(pointInPolygon(stray, shape as Polygon | MultiPolygon)).toBe(false);
   });
 
+  it('covers an island rather than buffering around it', () => {
+    // Holes are stripped before the buffer runs, so the reveal is solid across the whole lake.
+    const shape = revealShape({ polygon: POND_WITH_ISLAND }, 20);
+    expect(pointInPolygon({ lat: 44.455, lng: -73.195 }, shape as Polygon | MultiPolygon)).toBe(
+      true,
+    );
+  });
+
   it('returns null rather than an empty shape when there is nothing to reveal', () => {
     const empty: Polygon = { type: 'Polygon', coordinates: [] };
     expect(revealShape({ polygon: empty }, 10)).toBeNull();
   });
-});
 
-describe('inverseMask', () => {
-  it('covers the far field and leaves a hole where the shape is', () => {
-    const mask = inverseMask(POND);
-    // Kansas is masked; the middle of the pond is not.
-    expect(pointInPolygon({ lat: 38.5, lng: -98.3 }, mask)).toBe(true);
-    expect(pointInPolygon({ lat: 44.455, lng: -73.195 }, mask)).toBe(false);
-  });
-
-  it('lets islands show in full rather than punching them out', () => {
-    const mask = inverseMask(POND_WITH_ISLAND);
-    // The island is revealed with the rest of the lake — it is what a skater orients by, and as a
-    // hole-inside-a-hole it triangulated into white wedges (see `outerRingsOnly`).
-    expect(pointInPolygon({ lat: 44.455, lng: -73.195 }, mask)).toBe(false);
-    expect(pointInPolygon({ lat: 44.4515, lng: -73.1975 }, mask)).toBe(false);
-    // ...and the far field is still masked.
-    expect(pointInPolygon({ lat: 38.5, lng: -98.3 }, mask)).toBe(true);
-  });
-
-  it('is one hole per polygon, never per ring', () => {
-    const two: MultiPolygon = {
-      type: 'MultiPolygon',
-      coordinates: [POND.coordinates as number[][][], POND_WITH_ISLAND.coordinates as number[][][]],
-    };
-    // World ring + one outer per polygon. The island's ring must not appear: nested holes are what
-    // MapLibre's triangulation resolved by depth rather than by parent shape.
-    expect(inverseMask(two).coordinates).toHaveLength(3);
+  it("the Sentinel tier's buffers are wider, because 10 m pixels swallow the aerial ones", () => {
+    expect(SENTINEL_MASK_METERS.solid).toBeGreaterThan(AERIAL_MASK_METERS.solid);
+    expect(SENTINEL_MASK_METERS.feather).toBeGreaterThan(AERIAL_MASK_METERS.feather);
+    const aerial = revealShape({ polygon: POND }, AERIAL_MASK_METERS.solid);
+    const sentinel = revealShape({ polygon: POND }, SENTINEL_MASK_METERS.solid);
+    expect(surfaceAreaSqM(sentinel as Polygon)).toBeGreaterThan(surfaceAreaSqM(aerial as Polygon));
   });
 });
 
@@ -129,83 +110,15 @@ describe('outerRingsOnly', () => {
     expect(outerRingsOnly(POND_WITH_ISLAND)[0]).toEqual(POND.coordinates[0]);
   });
 
+  it('keeps one ring per polygon of a multipolygon', () => {
+    const two: MultiPolygon = {
+      type: 'MultiPolygon',
+      coordinates: [POND.coordinates as number[][][], POND_WITH_ISLAND.coordinates as number[][][]],
+    };
+    expect(outerRingsOnly(two)).toHaveLength(2);
+  });
+
   it('survives a polygon with no rings at all', () => {
     expect(outerRingsOnly({ type: 'Polygon', coordinates: [] })).toHaveLength(0);
-  });
-});
-
-describe('featherRings', () => {
-  it('is ordered outermost first, so stacking them ramps the alpha inward', () => {
-    const rings = featherRings(POND, 100, 4);
-    expect(rings.length).toBeGreaterThan(1);
-    const holeArea = (index: number) => {
-      const ring = rings[index]?.geometry.coordinates[1];
-      return ring ? Math.abs(ring.length) : 0;
-    };
-    // Not a size assertion — just that every ring carries a hole to reveal through.
-    for (let i = 0; i < rings.length; i++) expect(holeArea(i)).toBeGreaterThan(0);
-    // The first mask's hole must contain the last one's: outermost buffer, biggest hole.
-    const outer = rings[0] as { geometry: Polygon };
-    const inner = rings[rings.length - 1] as { geometry: Polygon };
-    const justOutside = { lat: 44.4605, lng: -73.195 };
-    expect(pointInPolygon(justOutside, outer.geometry)).toBe(false);
-    expect(pointInPolygon(justOutside, inner.geometry)).toBe(true);
-  });
-
-  it('composes to a fully opaque far field regardless of step count', () => {
-    for (const steps of [1, 3, 6, 12]) {
-      const rings = featherRings(POND, 80, steps);
-      const cumulative = rings.reduce((covered, r) => covered + (1 - covered) * r.opacity, 0);
-      expect(cumulative).toBeCloseTo(MASK_FILL_OPACITY, 6);
-    }
-  });
-
-  it('never paints a fully opaque fill — labels would punch through it', () => {
-    for (const ring of featherRings(POND, 80)) {
-      expect(ring.opacity).toBeLessThan(1);
-      expect(ring.opacity).toBeGreaterThan(0);
-    }
-  });
-
-  it('degrades a zero feather to a single hard-edged mask', () => {
-    const rings = featherRings(POND, 0);
-    expect(rings).toHaveLength(1);
-    expect(rings[0]?.opacity).toBe(MASK_FILL_OPACITY);
-  });
-
-  it('returns nothing when asked for no steps, rather than a mask that reveals everything', () => {
-    expect(featherRings(POND, 50, 0)).toHaveLength(0);
-  });
-});
-
-describe('buildImageryMask', () => {
-  it('defaults to the aerial tier and yields a shape plus its rings', () => {
-    const built = buildImageryMask({ polygon: POND });
-    expect(built).not.toBeNull();
-    expect(built?.rings.length).toBe(FEATHER_STEPS + 1);
-  });
-
-  it("the Sentinel tier's buffers are wider, because 10 m pixels swallow the aerial ones", () => {
-    // A 10 m buffer is one pixel at Sentinel's ground sample: a feather built from it is a hard edge.
-    expect(SENTINEL_MASK_METERS.solid).toBeGreaterThan(AERIAL_MASK_METERS.solid);
-    expect(SENTINEL_MASK_METERS.feather).toBeGreaterThan(AERIAL_MASK_METERS.feather);
-    const aerial = buildImageryMask({ polygon: POND }, AERIAL_MASK_METERS);
-    const sentinel = buildImageryMask({ polygon: POND }, SENTINEL_MASK_METERS);
-    expect(surfaceAreaSqM(sentinel?.shape as Polygon)).toBeGreaterThan(
-      surfaceAreaSqM(aerial?.shape as Polygon),
-    );
-  });
-
-  it('fails closed — an unbuildable shape reveals nothing', () => {
-    const empty: Polygon = { type: 'Polygon', coordinates: [] };
-    expect(buildImageryMask({ polygon: empty })).toBeNull();
-  });
-});
-
-describe('imageryMaskLayerId', () => {
-  it('is stable and unique per ring', () => {
-    const ids = new Set([0, 1, 2, 3].map(imageryMaskLayerId));
-    expect(ids.size).toBe(4);
-    expect(imageryMaskLayerId(0)).toBe('imagery-mask-0');
   });
 });

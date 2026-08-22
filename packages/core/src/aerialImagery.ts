@@ -32,6 +32,7 @@
 
 import type { MultiPolygon, Polygon } from 'geojson';
 import { type BBox, type LatLng, polygonBBox } from './geometry';
+import { toMercatorBox } from './webMercator';
 
 /** The ImageServer's dynamic render endpoint. */
 const NAIP_IMAGE_SERVER =
@@ -70,6 +71,40 @@ export function aerialTileTemplate(): string {
   });
   // `URLSearchParams` percent-encodes the braces, which MapLibre then fails to recognise as a token.
   return `${NAIP_IMAGE_SERVER}/exportImage?${params.toString().replace('%7Bbbox-epsg-3857%7D', '{bbox-epsg-3857}')}`;
+}
+
+/**
+ * The largest image the ImageServer will render in one call (`maxImageHeight`/`maxImageWidth`).
+ *
+ * Read off the service rather than guessed. Asking for more does not fail loudly — it returns a
+ * *smaller* image than requested, which would silently rescale the alpha mask against it.
+ */
+export const AERIAL_MAX_EXPORT_PX = 4000;
+
+/**
+ * One rendered image covering `box` at `width` × `height` — the request behind the clipped reveal.
+ *
+ * `format=jpg` and **no transparency asked for**, deliberately: the alpha that clips this to the lake
+ * is punched in on our side (see the web app's `imageryCanvas`), so asking the service for a PNG
+ * would triple the bytes to carry an alpha channel we immediately overwrite.
+ */
+export function aerialExportUrl(
+  box: { minLat: number; minLng: number; maxLat: number; maxLng: number },
+  width: number,
+  height: number,
+): string {
+  const merc = toMercatorBox(box);
+  const params = new URLSearchParams({
+    bbox: `${merc.minX},${merc.minY},${merc.maxX},${merc.maxY}`,
+    bboxSR: '3857',
+    imageSR: '3857',
+    size: `${Math.round(Math.min(width, AERIAL_MAX_EXPORT_PX))},${Math.round(
+      Math.min(height, AERIAL_MAX_EXPORT_PX),
+    )}`,
+    format: 'jpg',
+    f: 'image',
+  });
+  return `${NAIP_IMAGE_SERVER}/exportImage?${params.toString()}`;
 }
 
 /** A MapLibre raster source, bounded to the reveal. */

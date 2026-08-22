@@ -96,6 +96,7 @@ export * from './waterClass';
 export * from './weather';
 export * from './weatherConditions';
 export * from './weatherStrip';
+export * from './webMercator';
 export * from './windRose';
 export * from './windRoseChart';
 export * from './zonedTime';
