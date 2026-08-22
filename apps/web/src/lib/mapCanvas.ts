@@ -145,7 +145,7 @@ export function useMapCanvas(options: MapCanvasOptions): MapCanvas {
       zoom: lastViewRef.current?.zoom ?? initialView.zoom,
       ...(maxBounds ? { maxBounds } : {}),
       ...(initialView.minZoom !== undefined ? { minZoom: initialView.minZoom } : {}),
-      attributionControl: false, // replaced below with an always-visible (non-compact) control
+      attributionControl: false, // replaced below — see the `compact` note on `addControl`
       // **North is up, always.** A rotated map is a trap here rather than a feature: the navigation
       // control is built with `showCompass: false`, so once a two-finger twist or a right-drag has
       // spun the view there is no affordance anywhere to put it back — and nobody rotates a map on
@@ -164,7 +164,20 @@ export function useMapCanvas(options: MapCanvasOptions): MapCanvas {
     // enabled — pinch-to-zoom is essential — with only its rotation half switched off.
     map.touchZoomRotate.disableRotation();
     map.keyboard.disableRotation();
-    map.addControl(new maplibregl.AttributionControl({ compact: false }));
+    // **Compact: the credits live behind an ⓘ rather than across the map** (N6e A4, founder ask:
+    // *"can we keep all attribution strings in the sidebar/drawer, instead of over the map itself?"*).
+    //
+    // MapLibre's own compact mode *is* that affordance, and using it beats hand-rolling one for a
+    // reason that outlives this phase: the control unions the `attribution` of every **active
+    // source**, so the aerial credit appears the moment the reveal adds its source and disappears
+    // when it removes it, with nothing to remember. A hand-composed string is the version that goes
+    // stale the first time someone adds a layer.
+    //
+    // It also settles the ODbL question rather than skirting it. OSM's guidance wants the credit in
+    // the corner of a browsable map *or* behind a clearly-labelled affordance on the map itself —
+    // an ⓘ is the second of those. Credits reachable only from a drawer, on a map that renders
+    // perfectly well with no drawer open, would be the configuration that risks it.
+    map.addControl(new maplibregl.AttributionControl({ compact: true }));
     if (navigationControl) {
       map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right');
     }
