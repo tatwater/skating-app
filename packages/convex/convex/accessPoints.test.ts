@@ -305,6 +305,42 @@ describe('accessPoints.matchAndImportPutIns', () => {
   });
 
   /**
+   * The N6e prerequisite, end to end: ORS hands us the line, the ETL carries it, the row keeps it and
+   * the drawer's own query returns it. Pinned as a round trip rather than a field assertion because
+   * every one of those four hops is somewhere it was dropped before — N6d's parser discarded it at
+   * the first, and recovering it cost a re-route of every hike-in leg against a 2,000/day quota.
+   */
+  test('carries the routed line through to the surface that draws it', async () => {
+    const t = convexTest(schema, modules);
+    await seedSquareBody(t);
+    const path = [
+      { lat: 44.0009, lng: -72.0002 },
+      { lat: 44.0005, lng: -72.0004 },
+      { lat: 44.0002, lng: -72.0001 },
+    ];
+
+    await t.mutation(internal.accessPoints.matchAndImportPutIns, {
+      putIns: [
+        {
+          ...LAUNCH,
+          point: northOfShore(10),
+          approachMeters: 1_240,
+          approachAscentM: 96,
+          approachRouted: true,
+          approachPath: path,
+        },
+      ],
+    });
+
+    const rows = await t.run((ctx) => ctx.db.query('putIns').collect());
+    expect(rows[0]?.approachPath).toEqual(path);
+    const access = await t.query(api.accessPoints.accessForBody, {
+      waterBodyId: rows[0]?.waterBodyId as Id<'waterBodies'>,
+    });
+    expect(access.putIns[0]?.approachPath).toEqual(path);
+  });
+
+  /**
    * The tight radius is what stops a launch claiming the lake across the road. A slipway is *on* the
    * water by definition, so the only slack it needs is the shoreline disagreement between OSM and us.
    */
@@ -858,6 +894,66 @@ describe('the operator write path (D72 amendment / D144)', () => {
 
     await mod.mutation(api.accessPoints.setPutInAccess, { putInId, parkingAreaId });
     expect((await t.run((ctx) => ctx.db.get(putInId)))?.parkingAreaId).toBe(parkingAreaId);
+  });
+
+  /**
+   * The line is retracted by **every** path that re-points the association (N6e Workstream 0).
+   *
+   * A wrong distance reads as a wrong distance. A wrong line is drawn on the map from the new lot's
+   * marker, tracing a trail that starts somewhere else, and it looks exactly as authoritative as the
+   * routed lines beside it — which is the same shape as the stale-chip defect the pre-PR review found,
+   * moved one field over.
+   */
+  describe('the approach line does not survive a re-association', () => {
+    const LINE = [
+      { lat: 44.0006, lng: -72 },
+      { lat: 44.0004, lng: -72.0004 },
+      { lat: 44.0001, lng: -72.0006 },
+    ];
+
+    const seedLaunchWithLine = async (t: ReturnType<typeof convexTest>, body: Id<'waterBodies'>) =>
+      (await t.run((ctx) =>
+        ctx.db.insert('putIns', {
+          waterBodyId: body,
+          coord: northOfShore(5),
+          source: 'osm' as const,
+          status: 'visible' as const,
+          approachMeters: 1_100,
+          approachRouted: true,
+          approachPath: LINE,
+          createdAt: Date.now(),
+        }),
+      )) as Id<'putIns'>;
+
+    test('clearing the parking retracts it', async () => {
+      const t = convexTest(schema, modules);
+      const body = await seedSquareBody(t);
+      const mod = await seedModerator(t);
+      const putInId = await seedLaunchWithLine(t, body);
+
+      await mod.mutation(api.accessPoints.setPutInAccess, { putInId, clearParking: true });
+      expect((await t.run((ctx) => ctx.db.get(putInId)))?.approachPath).toBeUndefined();
+    });
+
+    test('pointing it at a different lot retracts it, because the walk now starts elsewhere', async () => {
+      const t = convexTest(schema, modules);
+      const body = await seedSquareBody(t);
+      const mod = await seedModerator(t);
+      const putInId = await seedLaunchWithLine(t, body);
+      const parkingAreaId = await mod.mutation(api.accessPoints.setOfficialParking, {
+        coord: northOfShore(120),
+        amenities: [],
+        waterBodyIds: [body],
+      });
+
+      await mod.mutation(api.accessPoints.setPutInAccess, { putInId, parkingAreaId });
+      const row = await t.run((ctx) => ctx.db.get(putInId));
+      expect(row?.parkingAreaId).toBe(parkingAreaId);
+      // The straight-line replacement is deliberately lineless: a crow-flies segment through the
+      // woods would be indistinguishable on the map from a route somebody walked.
+      expect(row?.approachRouted).toBe(false);
+      expect(row?.approachPath).toBeUndefined();
+    });
   });
 
   /** A distance with nothing to walk from is worse than no distance. */

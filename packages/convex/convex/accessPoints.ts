@@ -337,6 +337,7 @@ export const matchAndImportPutIns = internalMutation({
         approachMeters: v.optional(v.number()),
         approachAscentM: v.optional(v.number()),
         approachRouted: v.optional(v.boolean()),
+        approachPath: v.optional(v.array(latLng)),
       }),
     ),
   },
@@ -409,6 +410,7 @@ export const matchAndImportPutIns = internalMutation({
         approachMeters: candidate.approachMeters,
         approachAscentM: candidate.approachAscentM,
         approachRouted: candidate.approachRouted,
+        approachPath: candidate.approachPath,
       };
 
       if (!existing) {
@@ -430,6 +432,7 @@ export const matchAndImportPutIns = internalMutation({
           approachMeters: candidate.approachMeters,
           approachAscentM: candidate.approachAscentM,
           approachRouted: candidate.approachRouted,
+          approachPath: candidate.approachPath,
         });
         notes.push({
           key: candidate.externalId,
@@ -760,6 +763,10 @@ export const accessForBody = query({
       approachMeters: r.approachMeters,
       approachAscentM: r.approachAscentM,
       approachRouted: r.approachRouted,
+      // The line to draw (N6e Workstream 0). Sent whole rather than as a count, because the drawer
+      // and the map read the same document — a second query for a few dozen points a body already
+      // has in hand would be a read to save a read.
+      approachPath: r.approachPath,
       approachKindOverride: r.approachKindOverride,
       // The rule posted on *this launch* (N6e). Never merged with the body's — a reservoir open around
       // the clock with one launch shut at dusk is not a reservoir shut at dusk.
@@ -897,6 +904,16 @@ export const setPutInAccess = mutation({
     let approachRouted = putIn.approachRouted;
     let approachAscentM = putIn.approachAscentM;
     let parkingAreaId = putIn.parkingAreaId;
+    /**
+     * The stored line describes a walk **from a particular lot** (N6e Workstream 0), so it is retracted
+     * by both branches below and never carried across a re-association.
+     *
+     * The distance failing this way is recoverable — a wrong number reads as a wrong number. A line is
+     * worse: it would be drawn on the map from the *new* lot's marker, tracing a trail that starts
+     * somewhere else entirely, and it would look precisely as authoritative as the routed lines beside
+     * it. Silence until the next ETL pass re-routes the pair.
+     */
+    let approachPath = putIn.approachPath;
 
     if (args.clearParking) {
       parkingAreaId = undefined;
@@ -906,6 +923,7 @@ export const setPutInAccess = mutation({
       approachMeters = undefined;
       approachAscentM = undefined;
       approachRouted = undefined;
+      approachPath = undefined;
     } else if (args.parkingAreaId) {
       const lot = await ctx.db.get(args.parkingAreaId);
       if (!lot) throw new ConvexError('Parking area not found');
@@ -917,6 +935,7 @@ export const setPutInAccess = mutation({
       approachMeters = Math.round(leg.meters);
       approachAscentM = undefined;
       approachRouted = false;
+      approachPath = undefined;
     }
 
     const override = args.clearApproachOverride
@@ -934,6 +953,7 @@ export const setPutInAccess = mutation({
       approachMeters,
       approachAscentM,
       approachRouted,
+      approachPath,
       approachKindOverride: override,
     });
 

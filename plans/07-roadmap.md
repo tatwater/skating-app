@@ -1311,29 +1311,62 @@ a new lifecycle. Independent of N6c; either order.
 > author can associate a trailhead lot a mile from the ice. That makes `parkingAreas` **many-to-many** with
 > bodies (a trailhead serving three ponds is normal here), which is cheap now and awkward later.
 
-**N6e — Satellite imagery in the app: the one map-layer toggle.** 📋 Scoped 2026-07-31, unbuilt — see
-[`phase-N6e-satellite-imagery.md`](./phase-N6e-satellite-imagery.md); decisions **D81** (second half —
-satellite is the map's only layer toggle and it replaces the base map) and **D84** (two imagery tiers).
-**Split out of N6c's Workstream B3** at the founder's ask — *"I don't want to lose track of this, because
-I want to do it ASAP."* The Copernicus deep link (D75) ships in N6c either way.
+**N6e — Imagery, scoped to a lake: the aerial reveal and the freeze-up timeline.** 📋 **Re-scoped
+2026-08-21**; imagery unbuilt, **Workstream 0 built the same day** — see
+[`phase-N6e-satellite-imagery.md`](./phase-N6e-satellite-imagery.md);
+decisions **D146**–**D151**, plus **D84** (two tiers) and **D75** (the licence question is answered).
+Gated behind N6d, which is complete on dev.
 
-- **It doesn't fit inside B3, and the reason is the phase.** B3 ships a URL. This ships a **base-map
-  swap**: a style branch on two clients, a persisted toggle, an attribution that changes with it, an
-  offline story, and an interaction with every layer already on the map.
-- **The quota that deferred this binds only half of it (D84).** Sentinel-2's 10,000 requests/month says
-  nothing about **USGS/NAIP aerial** — public domain, no key, no quota, ~0.6 m. And the highest-frequency
-  use of a satellite view (*where's the pull-off, which dirt road, is that an island*) is served **better**
-  by 0.6 m summer aerial than by 10 m winter Sentinel-2. **The valuable tier is the unconstrained one.**
-- **Tier 2 is a dated observation, not a base map.** A Sentinel-2 pass from eleven days ago rendered
-  without its date foregrounded is the D3 trap in raster form. Its date is not a caption detail; it is the
-  content — which is why the phase's last open question asks whether it belongs in the drawer rather than
-  on the map at all.
-- **The swap line is content vs. chrome (D81).** Hazards, skate paths, put-ins and parking stay drawn;
-  fills, outlines and contours are what the photograph replaces. A skater who turns on imagery to check a
-  put-in must not lose the hazard pins doing it.
-- **The pairing that justifies it: imagery + N6d.** *"Park here, then 400 m on foot"* is a claim; a 0.6 m
-  photo of the pull-off, the gap in the trees and the path to the shore is the confirmation — at home, in
-  daylight, before the drive. NAIP's leaf-on summer imagery is useless for ice and ideal for access.
+*The 2026-07-31 scoping specced a map-wide **base-map toggle**. A founder review falsified that shape
+three ways, so the doc was rewritten rather than patched.*
+
+- **Imagery is content scoped to a body, not a base map (D146).** One reveal, in the detail view,
+  clipped to the lake **and its way in** — a union of buffered lake, trail and parking, feathered
+  outward. This **replaces D81's second half** and deletes most of the original phase's risk with it:
+  no style branch, no label filtering, no region-mask question, no attribution swap. Smaller *and* the
+  thing the founder wanted. The cost, accepted: no panning the region in aerial.
+- **The constraint was never really the quota — it's physics (D147).** NAIP is **aerial photography
+  flown every 2–3 years in mid-summer**; Burlington's current scene is dated the 2023 summer solstice,
+  so **no NAIP frame will ever show ice.** And the `USGSImageryOnly` service the old doc named caps at
+  **z16 (~1.7 m/px here)**, not the "~0.6 m" it and `05-accounts-and-credentials` both claimed.
+  **`USGSNAIPPlus` does serve 0.3 m**, keyless, via `exportImage` + MapLibre's `{bbox-epsg-3857}`.
+- **A pressure ridge is 1–3 m wide** — legible at 0.3 m, nonexistent at 10 m. The imagery that would
+  answer *"where can I cross?"* is **tasked commercial at ~$200–400 per lake per capture**. We buy
+  neither end: 0.3 m for the landscape, 10 m for the ice, no promise about the surface.
+- **The freeze-up timeline ships in the same PR (D148),** region-wide rather than a shortlist. Reading
+  the open COGs directly instead of Sentinel Hub's metered API means **~20–25 granules covers five
+  states** and the 10,000-request quota stops being the ceiling at all. Stored as **one masked raster
+  PMTiles per pass** (~40 MB/pass, ~1.2 GB/season) on the pipeline the basemap and bathymetry archives
+  already use. **Sentinel-1 SAR is in scope** — cloud-proof, but smooth black ice and calm open water
+  look alike in radar, which is the one distinction skaters care most about.
+- **This phase buys our first owned infrastructure.** A GDAL-class granule job runs on neither Convex
+  nor Vercel. **Fly** over Railway — its per-job Machine model *is* the workload, and it's ~2× cheaper
+  for the always-warm RAM-heavy service we want next (self-hosted ORS, ~$46 vs ~$81/mo at 8 GB).
+- **Ingest is weather-gated and the archive turns over on a frame, not a date (D149).** D63's July
+  season boundary is right for reports and absurd for imagery — it would blank the scrubber in
+  midsummer. Last winter's frames stay live until the first frame of the new winter lands; in a warm
+  year that flips late, by itself.
+- **Ice classification is an observation, never counsel (D150) — deferred to N6f.** The band data (SCL,
+  NDSI, SWIR) is where the real signal is, and ESA computes the snow/ice classification for us inside
+  L2A. Amended onto D140's line: dated per-pass classification is permitted, the hop to *skateable*
+  is not. **Capture the bands during N6e's reads anyway** — re-fetching a season later is the
+  expensive version.
+- ✅ **Workstream 0 — the way in, built 2026-08-21** (on the N6e branch, not as an N6d follow-up). The
+  prerequisite was *"store the ORS route geometry **before** N6d's routing pass finishes"*, and it
+  arrived eight days late: the pass completed 2026-08-13 and the cache holds only
+  `{meters, ascentM, routed}`, so the free window had shut. Re-routing the **262 hike-in legs**
+  (founder call, over 4,945 or 2,349) bought the lines back for under a day of quota. **The trail
+  connectivity fast-follow N6d sized and declined shipped with it** at the founder's ask — 1.15M ways
+  hashed into a graph by byte-identical endpoints, never stored, budget capped at `HIKE_IN_ASSERT_M`
+  because D144 already said an association at that range must be asserted rather than derived. And the
+  approach is **drawn** on both clients, from the marker query so a moderator's `hide` takes the line
+  with it. **254 of 262 lines recovered; 30 launches across 22 lakes now draw a walk.** The trail pass
+  found **69 pairings against the 150–300 it was sized at** (+12 launches that gained a lot once
+  loaded) — N6d's *"don't, yet"* was right about the yield, and the launch side was always the
+  ceiling. ⚠ **And drawing the lines exposed 30 approaches that were never walks**: legs ORS routed
+  around the water, up to **99 km** between a lot and a launch 250 m apart, which N6d has been
+  rendering as *"about 99 km on foot"* since August. `MAX_PLAUSIBLE_APPROACH_M` demotes them to the
+  straight-line rung; dev now carries none.
 
 **N7 — The unified corpus: one record per lake, two catalogues behind it, and a full data campaign.**
 ✅ **Corpus + campaign complete on dev, 2026-08-09** (the 250 m wind fetch runs on; prod deferred) — the phase this roadmap had no entry for at all until now. See [`phase-N7-unified-corpus.md`](./phase-N7-unified-corpus.md) — the one N7 document, with the

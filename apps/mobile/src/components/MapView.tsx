@@ -14,7 +14,11 @@ import {
 import { api } from '@skating/convex/api';
 import type { Id } from '@skating/convex/dataModel';
 import {
+  APPROACH_LAYER_ID,
+  APPROACH_SOURCE_ID,
   applyDraftMapClick,
+  approachesToFeatureCollection,
+  approachLinePaint,
   type BBox,
   isRegionOffscreen,
   SUB_AREA_MIN_RENDER_ZOOM,
@@ -60,6 +64,7 @@ import {
 import { ensureForegroundPermission } from '../lib/location';
 import { ensureOfflineBasemap, resolveBasemapSource } from '../lib/offlineBasemap';
 import {
+  APPROACH_LINE_COLOR,
   boundsToViewport,
   buildMapStyle,
   DEMO_PMTILES_URL,
@@ -302,6 +307,7 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
     highlightWaterBodyId ? { waterBodyId: highlightWaterBodyId as Id<'waterBodies'> } : 'skip',
   );
   const putInsFC = useMemo(() => putInsToFeatureCollection(putIns ?? []), [putIns]);
+  const approachesFC = useMemo(() => approachesToFeatureCollection(putIns ?? []), [putIns]);
 
   // Hazards + known features for the focused lake (Phase 9, D54 Layer 0). Scoped to the open body,
   // not the viewport — hazards are only ever queried per body, which is what keeps this off the
@@ -732,6 +738,18 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
               'circle-stroke-color': '#ffffff',
               'circle-stroke-width': 2,
             }}
+          />
+        </GeoJSONSource>
+
+        {/* The walk from the car to the ice (N6e Workstream 0), drawn under the pins at its two
+          ends. Built from the same markers, so a launch and its walk can never disagree about
+          whether the launch is there — including when a moderator's `hide` removes it. */}
+        <GeoJSONSource id={APPROACH_SOURCE_ID} data={approachesFC}>
+          <Layer
+            id={APPROACH_LAYER_ID}
+            type="line"
+            layout={{ 'line-cap': 'round', 'line-join': 'round' }}
+            paint={approachLinePaint(APPROACH_LINE_COLOR) as never}
           />
         </GeoJSONSource>
 

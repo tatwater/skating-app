@@ -80,6 +80,7 @@ import {
   REMOVAL_REASONS,
   REPORT_SOURCES,
   REVIEW_STATUSES,
+  SATELLITE_IMAGERY_MODES,
   SUPPORT_CATEGORIES,
   SUPPORT_STATUSES,
   WATER_BODY_SOURCES,
@@ -836,6 +837,21 @@ export default defineSchema({
     displayScore: v.optional(v.number()),
     curatedBoost: v.optional(v.number()),
     minVisibleZoom: v.optional(v.number()),
+    /**
+     * Whether this body offers the Copernicus satellite link (N6e Workstream D, D70/D75).
+     *
+     * **`auto` is the value nearly every row holds, and it is not stored** — absent means `auto`,
+     * resolved against `surfaceAreaSqM` by `satelliteImageryAvailable` in `@skating/core`. What gets
+     * written here is only ever *an operator disagreeing with that derivation*, which is the same
+     * shape as `approachKindOverride`: never persist a derivation, always persist the exception.
+     *
+     * **Per-row data on purpose, so a correction needs no redeploy.** The Phase 7 posture is
+     * "constants stay in code" — that governs `SATELLITE_MIN_AREA_SQM`, the threshold. The exception
+     * to a threshold is a fact about one lake, and facts about lakes live in rows.
+     *
+     * Preserved across re-import like `curatedBoost`: an operator's judgement must survive an ETL run.
+     */
+    satelliteImagery: v.optional(literals(SATELLITE_IMAGERY_MODES)),
     /**
      * Operator-entered reference links (N6c Workstream B7) — the phase's **only** stored link.
      *
@@ -2135,6 +2151,27 @@ export default defineSchema({
      * it is just a floor rather than an estimate, and a caption has to be able to say so.
      */
     approachRouted: v.optional(v.boolean()),
+
+    /**
+     * The line the walk follows, parking → put-in, simplified to `APPROACH_PATH_TOLERANCE_M`
+     * (N6e Workstream 0).
+     *
+     * **Only ever present on a routed hike-in leg**, and both halves of that are deliberate:
+     *
+     * - **Routed**, because a straight-line fallback's line does not exist. The distance can hedge
+     *   itself — *"at least 900 m"* — but a line drawn on a map cannot, and a crow-flies segment
+     *   through the woods would look exactly like the routed ones beside it.
+     * - **Hike-in**, because below `SHORT_WALK_MAX_M` the path is a few metres between a car and a
+     *   bank: invisible at the zoom the drawer uses, invisible inside N6e's mask buffer, and paid for
+     *   on every read of the row.
+     *
+     * Two consumers, and the second is why this field exists at all: the clients draw it, and N6e's
+     * reveal buffers it into the mask that clips the imagery to the lake **and the way in**. N6d had
+     * ORS's GeoJSON response in hand and read only `distance` and `ascent` off it, so recovering
+     * these cost a re-route of every hike-in leg against a 2,000/day quota — which is the note worth
+     * leaving here: the geometry is free at request time and expensive at any other.
+     */
+    approachPath: v.optional(v.array(latLng)),
 
     /**
      * An operator's override of the derived `approachKind` (D144).

@@ -39,6 +39,8 @@ export interface CandidateBody {
   states?: string[];
   surfaceAreaSqM?: number;
   curatedBoost?: number;
+  /** The operator's satellite-link override (N6e Workstream D) — read by the `--verify-imagery` run. */
+  satelliteImagery?: 'auto' | 'on' | 'off';
   interiorPoint?: { lat: number; lng: number };
   representativePoint?: { lat: number; lng: number };
   centroid?: { lat: number; lng: number };

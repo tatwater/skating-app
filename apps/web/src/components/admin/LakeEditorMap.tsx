@@ -1,8 +1,8 @@
-import type { BBox, LatLng } from '@skating/core';
+import { type BBox, type LatLng, shapeSignature } from '@skating/core';
 import type maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { useTheme } from 'next-themes';
-import { useEffect, useRef } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import { env } from '../../lib/env';
 import { useMapCanvas } from '../../lib/mapCanvas';
 import {
@@ -15,6 +15,7 @@ import {
   WATER_PALETTE,
   waterBodiesToFeatureCollection,
 } from '../../lib/waterMap';
+import { type KeyedMask, useImageryReveal } from '../useImageryReveal';
 
 const EMPTY: GeoJSON.FeatureCollection = { type: 'FeatureCollection', features: [] };
 
@@ -56,12 +57,20 @@ export function LakeEditorMap({
   data,
   onMapClick,
   onReady,
+  imagery = false,
 }: {
   data: LakeEditorData;
   /** A click on the canvas — the sample-point placement tool consumes these. */
   onMapClick?: (coord: LatLng) => void;
   /** Hand the raw map up, so the lazy-loaded draw control can attach to it. */
   onReady?: (map: maplibregl.Map) => void;
+  /**
+   * Show the 0.3 m aerial under the editor (N6e Workstream E) — **unmasked**, unlike the skater's
+   * reveal. An operator is correcting the polygon that decides where the lake is, so clipping the
+   * photograph to that polygon would hide the one thing they need: the ground just past the line
+   * they are about to move.
+   */
+  imagery?: boolean;
 }) {
   const { resolvedTheme } = useTheme();
   const flavor = resolvedTheme === 'dark' ? MAP_FLAVORS.dark : MAP_FLAVORS.light;
@@ -70,6 +79,28 @@ export function LakeEditorMap({
   const pmtilesUrl = env.pmtilesUrl || DEMO_PMTILES_URL;
 
   const bounds = boundsForBody(data.body.bbox);
+  // The editor is fenced to one lake (Decision 5), so the body's own polygon is both what the
+  // operator is editing and a sufficient extent for the fetch — no separate bounds needed.
+  //
+  // **Identity is cached against a structural key, exactly as the skater map's is.** Depending on
+  // `data.body.polygon`'s identity looks equivalent and is not: the `waterBodies` query re-emits with
+  // a freshly-allocated polygon whenever anything on the row changes, so saving a sample point with
+  // Aerial on tore the reveal down and re-requested both images from USGS for ground already on
+  // screen. Keying on `shapeSignature` means a re-emit carrying the same geometry returns the same
+  // object — and a genuine redraw, which is the one change the operator *wants* to refetch for,
+  // changes the signature and does.
+  const maskRef = useRef<{ key: string; masks: KeyedMask[] } | null>(null);
+  const imageryMask = useMemo(() => {
+    const polygon = data.body.polygon;
+    if (!imagery || (polygon.type !== 'Polygon' && polygon.type !== 'MultiPolygon')) return null;
+    const key = `${data.body._id}|${shapeSignature(polygon)}`;
+    if (maskRef.current?.key === key) return maskRef.current.masks;
+    // A one-body list: the editor is fenced to one lake, so the viewport-wide reveal the skater map
+    // uses collapses here to the single subject the camera is locked onto.
+    const masks: KeyedMask[] = [{ id: data.body._id, key, mask: { polygon } }];
+    maskRef.current = { key, masks };
+    return masks;
+  }, [imagery, data.body._id, data.body.polygon]);
   const onMapClickRef = useRef(onMapClick);
   onMapClickRef.current = onMapClick;
   const onReadyRef = useRef(onReady);
@@ -319,6 +350,8 @@ export function LakeEditorMap({
   // the route, and a screen reader landing on an unlabelled full-page div has nothing to announce.
   // The tools beside it are the operable surface; this is the subject they act on. MapLibre takes any
   // `HTMLElement` as its container, so the semantic element costs nothing.
+  useImageryReveal({ map: mapRef.current, loaded, masks: imageryMask, unmasked: true });
+
   return (
     <section
       ref={containerRef}

@@ -40,6 +40,27 @@ export interface PutInMarker {
   coord: LatLng;
   source: 'derived' | 'osm' | 'official';
   /**
+   * The row's id, on markers that are rows. Absent on a `derived` cluster, which is computed from
+   * report points each read and has nothing stable to be identified by.
+   */
+  id?: string;
+  /**
+   * The walk from the lot to here, as a line to draw (N6e Workstream 0).
+   *
+   * Carried on the marker rather than fetched separately because the map is already holding it: this
+   * query loads the whole row for the pin, and the drawer's `accessForBody` is a different read on a
+   * different surface. Only ever present on a routed hike-in leg.
+   *
+   * **It inherits this query's suppression rules for free, which is the point of putting it here.**
+   * A moderator's `hide` is a coordinate, not a status, so a hidden launch is filtered out of
+   * `markers` before it can contribute — and its approach line goes with it. Drawing the line from a
+   * second query would have re-created the PR #43 defect exactly: the marker gone from the map while
+   * a dashed line still walked to where it used to be.
+   */
+  approachPath?: LatLng[];
+  approachMeters?: number;
+  approachAscentM?: number;
+  /**
    * The launch's name (N6d/A3) — OSM's where it has one, else the derived compass label.
    *
    * *"Lake Fairlee Boat Ramp"* is what makes a pin worth tapping rather than a dot, and it is the
@@ -94,6 +115,25 @@ async function loadPutInRows(ctx: QueryCtx, waterBodyId: Id<'waterBodies'>) {
   return { official, osm, persisted, hidden };
 }
 
+/**
+ * The approach fields a stored row contributes to its marker, or nothing.
+ *
+ * One helper for the two buckets that can have them, so a launch's line and its distance can never
+ * be included by one and forgotten by the other — the enumeration failure that cost N6d four
+ * separate defects.
+ */
+function approachOf(row: Doc<'putIns'>): {
+  approachPath?: LatLng[];
+  approachMeters?: number;
+  approachAscentM?: number;
+} {
+  return {
+    ...(row.approachPath ? { approachPath: row.approachPath } : {}),
+    ...(row.approachMeters === undefined ? {} : { approachMeters: row.approachMeters }),
+    ...(row.approachAscentM === undefined ? {} : { approachAscentM: row.approachAscentM }),
+  };
+}
+
 /** Is `coord` within the suppression radius of any moderator-hidden coord? */
 function isSuppressed(coord: LatLng, hidden: Doc<'putIns'>[]): boolean {
   return hidden.some((h) => haversineMeters(coord, h.coord) <= HIDE_SUPPRESS_METERS);
@@ -140,7 +180,13 @@ export const listForBody = query({
     // Official markers first (priority styling), unless a hidden coord suppresses them.
     for (const o of official) {
       if (!isSuppressed(o.coord, hidden)) {
-        markers.push({ coord: o.coord, source: 'official', ...(o.name ? { name: o.name } : {}) });
+        markers.push({
+          coord: o.coord,
+          source: 'official',
+          id: o._id,
+          ...(o.name ? { name: o.name } : {}),
+          ...approachOf(o),
+        });
       }
     }
 
@@ -156,7 +202,9 @@ export const listForBody = query({
       markers.push({
         coord: row.coord,
         source: 'osm',
+        id: row._id,
         ...(row.name ? { name: row.name } : {}),
+        ...approachOf(row),
       });
     }
 

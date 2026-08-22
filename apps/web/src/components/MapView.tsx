@@ -1,15 +1,24 @@
 import { api } from '@skating/convex/api';
 import type { Id } from '@skating/convex/dataModel';
 import {
+  APPROACH_LAYER_ID,
+  APPROACH_SOURCE_ID,
+  aerialIdentifyUrl,
   applyDraftMapClick,
+  approachesToFeatureCollection,
+  approachLinePaint,
   type BBox,
   draftPlacementCount,
+  formatAerialCaptureDate,
   isDraftSubmittable,
   isRegionOffscreen,
   type LatLng,
+  parseAerialScene,
   polygonShape,
   profileRevealEnabled,
+  representativePoint,
   SUB_AREA_MIN_RENDER_ZOOM,
+  shapeSignature,
   undoDraftPlacement,
   withAccessDim,
 } from '@skating/core';
@@ -69,9 +78,25 @@ import {
   TRACK_PALETTE,
   WATER_PALETTE,
   waterBodiesToFeatureCollection,
+  waterOutlineColor,
 } from '../lib/waterMap';
+import { ImageryControl } from './ImageryControl';
 import { useMapSelection } from './MapSelectionContext';
 import { ReturnToRegion } from './ReturnToRegion';
+import {
+  IMAGERY_HAZARD_LAYERS,
+  IMAGERY_LOADING_LAYER_ID,
+  IMAGERY_MIN_ZOOM,
+  IMAGERY_PULSE_MAX,
+  IMAGERY_PULSE_MIN,
+  IMAGERY_PULSE_MS,
+  IMAGERY_REPLACED_LAYERS,
+  IMAGERY_REPLACED_WHOLE_LAYERS,
+  type KeyedMask,
+  setLayersHiddenForBodies,
+  setLayersVisible,
+  useImageryReveal,
+} from './useImageryReveal';
 
 /**
  * Interactive MapLibre map — the read side of the Phase 2 loop (§D, D5/D6/D47/D49). Imperative
@@ -87,6 +112,8 @@ import { ReturnToRegion } from './ReturnToRegion';
  * (the drawers push them up, since they're siblings of this persistent map).
  */
 const EMPTY_FEATURES: GeoJSON.FeatureCollection = { type: 'FeatureCollection', features: [] };
+/** A stable identity for "nothing is painted", so the initial state cannot itself trigger a re-run. */
+const EMPTY_IDS: readonly string[] = [];
 
 /**
  * A terra-draw ring → the corners a `HazardDraft` holds.
@@ -140,6 +167,12 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
     contourBodyKey,
     setContourCredit,
     setViewportLakes,
+    imageryOn,
+    setImageryOn,
+    hazardsOverImagery,
+    setHazardsOverImagery,
+    aerialCaptureLabel,
+    setAerialCaptureLabel,
   } = useMapSelection();
 
   const [queryArgs, setQueryArgs] = useState<QueryArgs | null>(null);
@@ -387,19 +420,31 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
           ]) as maplibregl.DataDrivenPropertyValueSpecification<number>,
         },
       });
+      // The reveal's loading skeleton (N6e). Its own layer on the existing water source rather than
+      // a borrowed `water-fill`, because that layer's opacity is a data-driven expression carrying
+      // the D47 selection and the N6f access dim — animating a scalar over it would flatten both and
+      // then have to reconstruct them. A separate layer animates one number and owns nothing else.
+      map.addLayer({
+        id: IMAGERY_LOADING_LAYER_ID,
+        type: 'fill',
+        source: 'water',
+        filter: ['==', ['get', '_id'], ''],
+        paint: {
+          'fill-color': water.outline,
+          'fill-opacity': 0,
+          'fill-opacity-transition': { duration: IMAGERY_PULSE_MS, delay: 0 },
+        },
+      });
       map.addLayer({
         id: 'water-outline',
         type: 'line',
         source: 'water',
         paint: {
-          // Favorited bodies read gold (D#1); the selected/tapped body keeps the theme outline. A
-          // favorited-and-selected body still shows gold — the favorite is the more persistent signal.
-          'line-color': [
-            'case',
-            ['boolean', ['feature-state', 'favorite'], false],
-            '#eab308', // amber-500 — the favorite gold
-            water.outline,
-          ],
+          // Favorited gold, else the theme outline — and plain white while imagery is revealed.
+          // See `waterOutlineColor`; the reveal effect below re-sets this when the toggle flips.
+          'line-color': waterOutlineColor(
+            flavor,
+          ) as maplibregl.DataDrivenPropertyValueSpecification<string>,
           // The outline dims with the fill (N6f). A full-strength outline around a ghost fill reads
           // as a rendering bug rather than as a statement about the lake.
           'line-opacity': withAccessDim(
@@ -481,6 +526,20 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
           'circle-stroke-color': '#ffffff',
           'circle-stroke-width': 2,
         },
+      });
+      // The walk from the car to the ice (N6e Workstream 0), under the pins at its two ends: a
+      // hike-in lake's whole problem is that the way in is not obvious, and N6d could say "1.1 km on
+      // foot" without being able to say *where*. Added before the markers so the route never covers
+      // the launch it leads to.
+      map.addSource(APPROACH_SOURCE_ID, { type: 'geojson', data: EMPTY_FEATURES });
+      map.addLayer({
+        id: APPROACH_LAYER_ID,
+        type: 'line',
+        source: APPROACH_SOURCE_ID,
+        layout: { 'line-cap': 'round', 'line-join': 'round' },
+        // Amber-700: warm against the cool put-in blues, and not the danger red the hazard layer
+        // owns — a long walk is a thing to plan for, not a thing to avoid.
+        paint: approachLinePaint('#b45309') as never,
       });
       // Put-in markers for the focused lake (Phase 4, decision #7): official markers read as a solid
       // teardrop-ish dot, derived clusters a lighter ring — both distinct from the report photo pins.
@@ -740,6 +799,10 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
     if (!map || !loaded) return;
     const source = map.getSource('put-in-markers') as maplibregl.GeoJSONSource | undefined;
     source?.setData(putInsToFeatureCollection(putIns ?? []));
+    // The approach lines ride the same query and the same effect, deliberately: they are drawn from
+    // the markers themselves, so a launch and its walk can never disagree about whether it is there.
+    const approaches = map.getSource(APPROACH_SOURCE_ID) as maplibregl.GeoJSONSource | undefined;
+    approaches?.setData(approachesToFeatureCollection(putIns ?? []));
   }, [putIns, loaded, mapRef.current]);
 
   // The recorded path behind the open report (Phase 8) — cleared when the drawer closes. The drawer
@@ -909,6 +972,223 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
       }
     };
   }, [contourBodyKey, contourPalette, loaded, mapRef.current, setContourCredit]);
+
+  // ── The aerial reveal for the open lake (N6e / D146).
+  //
+  // The mask is a union of the water, the walk and the parking, so it is rebuilt only when one of
+  // those three changes — a memo and not an effect, because a new object identity here tears the
+  // raster down and re-adds it, which against a dynamic renderer we don't own means re-rendering
+  // every tile. `null` whenever the reveal is off, which is also how "no lake open" arrives.
+  //
+  // **Identity is cached against a key, and that is the fix for a visible bug rather than a
+  // micro-optimisation.** `features` is replaced every time the viewport subscription re-emits, and
+  // a Convex subscription re-emits on its own schedule — so a plain memo over `features` handed back
+  // a new object roughly once a second, tearing the raster down and re-adding it each time. On
+  // screen that was a steady flicker of the road map showing through the photograph. Keying on what
+  // the mask is actually *made of* means a re-emit carrying identical geometry returns the identical
+  // object, and the reveal effect never runs again.
+  // Each replaced layer's filter as the style defined it, captured the first time we compose over it
+  // — so the reveal's "not these bodies" clause can be removed without taking the layer's own rule
+  // with it. `sub-area-label` filters on `label`, and losing that draws every outline as a label.
+  const baseFiltersRef = useRef(new Map<string, unknown>());
+  const revealMasksRef = useRef<{ key: string; masks: KeyedMask[] } | null>(null);
+  const revealMasks = useMemo(() => {
+    // **Gated on the zoom the reveal itself is gated on.** The hook declines to fetch below
+    // `IMAGERY_MIN_ZOOM`, and the cartography has to agree with it: a reveal set the photograph never
+    // arrives for still filters `water-fill` off every body on screen, whites their outlines and
+    // hides the hazard layers — so zooming out used to turn the whole viewport into empty outlines
+    // with nothing drawn in their place.
+    if (!imageryOn || (queryArgs?.zoom ?? 0) < IMAGERY_MIN_ZOOM) return null;
+    const launches = putIns ?? [];
+    // The open lake's access is part of *its* reveal and nothing else's: `putIns` is a per-body
+    // query, so the other bodies on screen have water and no walk. That is the correct asymmetry
+    // rather than a gap — a lake you have not opened has no approach drawn over it either.
+    const accessKey = launches
+      .map((p) => `${p.coord.lat},${p.coord.lng},${p.approachPath?.length ?? 0}`)
+      .join(';');
+
+    const entries: KeyedMask[] = [];
+    for (const feature of features.features) {
+      const id = feature.properties?._id;
+      const polygon = feature.geometry;
+      if (typeof id !== 'string') continue;
+      if (polygon?.type !== 'Polygon' && polygon?.type !== 'MultiPolygon') continue;
+      const open = id === highlightWaterBodyId;
+      entries.push({
+        id,
+        // The key is what caches the buffered shape in the hook, so it has to change exactly when
+        // the geometry or the access does — hence the signature rather than object identity, and
+        // hence the access half only on the body that has any.
+        key: `${id}|${shapeSignature(polygon)}|${open ? accessKey : ''}`,
+        mask: {
+          polygon,
+          // Only routed hike-in legs carry a path, which is the correct set — a drive-up ramp's
+          // walk is already inside the water's own buffer. See `approachLayer`'s module note.
+          approachPaths: open
+            ? launches.flatMap((p) => (p.approachPath ? [p.approachPath] : []))
+            : undefined,
+          markerCoords: open ? launches.map((p) => p.coord) : undefined,
+        },
+      });
+    }
+    if (entries.length === 0) return null;
+
+    // Identity is cached against the joined keys, and that is a fix for a visible bug rather than a
+    // micro-optimisation. `features` is replaced every time the viewport subscription re-emits, and
+    // a Convex subscription re-emits on its own schedule — so a plain memo handed back a new array
+    // roughly once a second, tearing the reveal down and re-adding it each time. On screen that was
+    // a steady flicker of the road map through the photograph.
+    const key = entries.map((entry) => entry.key).join('~');
+    if (revealMasksRef.current?.key === key) return revealMasksRef.current.masks;
+    revealMasksRef.current = { key, masks: entries };
+    return entries;
+  }, [imageryOn, highlightWaterBodyId, features, putIns, queryArgs?.zoom]);
+
+  /** The ids with a photograph under them — what the cartography has to agree with. */
+  const revealedIds = useMemo(() => (revealMasks ?? []).map((entry) => entry.id), [revealMasks]);
+
+  const [imageryLoading, setImageryLoading] = useState(false);
+  // **What actually has a photograph on it**, as opposed to what is queued for one. The cartography
+  // keys off this and the loading pulse keys off `revealedIds` — see `onPaintedChange`. Held in
+  // state rather than a ref because three effects read it and all three have to re-run when it moves.
+  const [paintedIds, setPaintedIds] = useState<readonly string[]>(EMPTY_IDS);
+  useImageryReveal({
+    map: mapRef.current,
+    loaded,
+    masks: revealMasks,
+    onLoadingChange: setImageryLoading,
+    onPaintedChange: setPaintedIds,
+  });
+
+  // The wash belongs on the bodies still **waiting** for a photograph — the reveal set minus whatever
+  // is already on screen. Pulsing a lake that is already showing its imagery says the wrong thing
+  // twice: that something is coming for it, and that what is there is not it.
+  //
+  // **Unless nothing is waiting and we are still loading**, which is the *fidelity* refresh — zoom in
+  // on a revealed lake and a sharper level is fetched while the coarser one stays up. Every body is
+  // painted, so the difference is empty, and taking that literally would remove the wash from the
+  // exact case `onLoadingChange`'s docstring calls the subtle one: nothing appears broken and nothing
+  // appears to be happening either. A refresh with nothing outstanding is a refresh of all of it.
+  const pendingIds = useMemo(() => {
+    const waiting = revealedIds.filter((id) => !paintedIds.includes(id));
+    return waiting.length > 0 ? waiting : revealedIds;
+  }, [revealedIds, paintedIds]);
+
+  // Layers step aside for the photograph, except the ones the skater decides about.
+  //
+  // Two effects rather than one, and deliberately: the replaced set is ours (the A3 table) and the
+  // hazard set is the skater's. Folding them together would put a safety layer's visibility inside a
+  // code path that also owns cartography.
+  //
+  // **Per feature where the feature can be asked, per layer where it cannot** (v3). A `visibility`
+  // flip is all-or-nothing, so revealing one pond stripped the fill, the sub-area labels and the
+  // tracks from every lake on screen — and now that the reveal covers the viewport, the set that
+  // keeps its cartography is exactly the set that did not get pixels. `setLayersHiddenForBodies`
+  // composes with each layer's own filter rather than replacing it, which `sub-area-label` depends
+  // on. Tracks and contours are drawn only for the open lake and carry no body id to filter on, so
+  // they keep the wholesale flip — see `IMAGERY_REPLACED_WHOLE_LAYERS`.
+  //
+  // **`contourBodyKey` is in the deps and is not decoration.** This started as a callback fired once
+  // when the reveal mounted, which is wrong for any layer that can be re-added underneath it — and
+  // the contour layer is exactly that: its own effect adds it on drawer-open and would hand back a
+  // visible isobath set over the photograph. Re-running whenever either changes is what makes the
+  // suppression a *state* rather than an event.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: contourBodyKey is a re-run trigger, not a read — the contour effect re-adds its layer on drawer-open and this has to re-hide it.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !loaded) return;
+    setLayersHiddenForBodies(map, IMAGERY_REPLACED_LAYERS, paintedIds, baseFiltersRef.current);
+    setLayersVisible(map, IMAGERY_REPLACED_WHOLE_LAYERS, paintedIds.length === 0);
+    // The shoreline survives the reveal and changes job while it does — status colour off the vector
+    // map, edge-of-the-photograph on it. Set here rather than in the reveal hook because the layer
+    // belongs to the map's own init, and the hook owns only what it added.
+    if (map.getLayer('water-outline')) {
+      map.setPaintProperty(
+        'water-outline',
+        'line-color',
+        waterOutlineColor(flavor, paintedIds) as never,
+      );
+    }
+  }, [paintedIds, loaded, contourBodyKey, flavor, mapRef.current]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !loaded) return;
+    // Hazards are visible unless the skater has *chosen* to hide them while looking at imagery —
+    // never merely because imagery is on (D81's safety line, and the founder's toggle answering it).
+    setLayersVisible(map, IMAGERY_HAZARD_LAYERS, paintedIds.length === 0 || hazardsOverImagery);
+  }, [paintedIds, hazardsOverImagery, loaded, mapRef.current]);
+
+  // The gentle wash over the lake while its photograph is on the way (N6e).
+  //
+  // **Two states look identical without it**, which is why a spinner alone would not have been
+  // enough: a first fetch on a big lake takes seconds, and a *fidelity* refresh on zoom-in leaves a
+  // usable coarser image on screen the whole time. The pulse says "something is arriving" in both,
+  // on the lake it is arriving for.
+  //
+  // Driven by an interval rather than a CSS animation because the thing being animated is a MapLibre
+  // paint property; the transition does the easing, so this only has to flip a target twice a cycle.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !loaded || !map.getLayer(IMAGERY_LOADING_LAYER_ID)) return;
+    if (!imageryLoading || pendingIds.length === 0) {
+      map.setPaintProperty(IMAGERY_LOADING_LAYER_ID, 'fill-opacity', 0);
+      return;
+    }
+    // Every body awaiting pixels, not just the open one — with the reveal covering the viewport, a
+    // pulse on one lake while five others sit blank would say the wrong thing about which is loading.
+    map.setFilter(IMAGERY_LOADING_LAYER_ID, ['in', ['get', '_id'], ['literal', [...pendingIds]]]);
+    let bright = true;
+    map.setPaintProperty(IMAGERY_LOADING_LAYER_ID, 'fill-opacity', IMAGERY_PULSE_MAX);
+    const timer = setInterval(() => {
+      bright = !bright;
+      map.setPaintProperty(
+        IMAGERY_LOADING_LAYER_ID,
+        'fill-opacity',
+        bright ? IMAGERY_PULSE_MAX : IMAGERY_PULSE_MIN,
+      );
+    }, IMAGERY_PULSE_MS);
+    return () => {
+      clearInterval(timer);
+      if (map.getLayer(IMAGERY_LOADING_LAYER_ID)) {
+        map.setPaintProperty(IMAGERY_LOADING_LAYER_ID, 'fill-opacity', 0);
+      }
+    };
+  }, [imageryLoading, pendingIds, loaded, mapRef.current]);
+
+  // When was this lake last photographed? (N6e B2.)
+  //
+  // One `identify` per reveal, straight from the client — the service is keyless and CORS-open, so a
+  // round trip through Convex would buy nothing but a hop. **Deliberately not a stored field yet:**
+  // the answer changes about once every 2–3 years per state, so caching it belongs in an ETL pass
+  // keyed on the service's `Year`, not in a schema column written by whoever opened the drawer first.
+  //
+  // A failure is silence, never a guess. `null` renders as no date at all, which is the correct
+  // output for a body outside NAIP coverage and for a service having a bad afternoon alike — the one
+  // unacceptable answer here is a plausible year we made up (D147).
+  useEffect(() => {
+    // The caption is about **the open lake**, not the viewport: it sits in that lake's drawer, and a
+    // date averaged over whatever else happens to be on screen would be a claim about nothing. Read
+    // off the reveal set rather than off `features` so it is stable across a subscription re-emit.
+    const open = revealMasks?.find((entry) => entry.key.startsWith(`${highlightWaterBodyId}|`));
+    if (!imageryOn || !open) return;
+    // `representativePoint` lands *on* the shoreline (it is Turf's `pointOnFeature`), and here that
+    // is fine: NAIP photographs land and water alike, and a quarter-quad scene is far larger than
+    // the error. It is emphatically **not** fine for Workstream D's Copernicus link, which opens a
+    // browser centred on the point — hence the stored `interiorPoint` there and this one here.
+    const centre = representativePoint(open.mask.polygon);
+    const controller = new AbortController();
+    fetch(aerialIdentifyUrl(centre), { signal: controller.signal })
+      .then((response) => (response.ok ? response.json() : null))
+      .then((body) => {
+        const scene = parseAerialScene(body);
+        setAerialCaptureLabel(scene ? formatAerialCaptureDate(scene.capturedAt) : null);
+      })
+      .catch(() => {
+        // Includes the abort on drawer-close, which is not a failure worth reporting.
+      });
+    return () => controller.abort();
+  }, [imageryOn, revealMasks, highlightWaterBodyId, setAerialCaptureLabel]);
 
   // Open-bounty pins across the viewport (D10/D17) — refreshed as the map pans + as bounties change.
   useEffect(() => {
@@ -1092,6 +1372,18 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
         onReturn={() =>
           mapRef.current?.flyTo({ center: INITIAL_CENTER, zoom: INITIAL_ZOOM, duration: 900 })
         }
+      />
+      {/* Only where a lake is open (D146). Hidden while the hazard author has the map, because two
+          overlapping "click the map" affordances is one too many. */}
+      <ImageryControl
+        visible={Boolean(highlightWaterBodyId) && !hazardDropMode && !pinDropMode}
+        imageryOn={imageryOn}
+        onToggleImagery={setImageryOn}
+        hazardsOn={hazardsOverImagery}
+        onToggleHazards={setHazardsOverImagery}
+        captureLabel={aerialCaptureLabel}
+        loading={imageryLoading}
+        hasHazards={(hazards?.length ?? 0) > 0}
       />
       {/* The drawing bar. A circle needs one click and no controls, so it just says so; a polyline
           is a multi-click session and gets its own Undo/Done, kept on the map rather than in the

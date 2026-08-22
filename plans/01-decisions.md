@@ -4561,3 +4561,204 @@ weather trigger (D56's lane) plus the never-hide invariant. **Not built, not sch
 would read is already stored, which is the point of having derived it.
 
 **Related:** [D3](#d3--never-a-safety-verdict), [D82](#d82--bathymetry-is-context-not-counsel), [D90](#d90--wind-exposure-is-frequency-times-fetch-never-fetch-alone-n6c-1), [D134](#d134--the-wind-lane-archives-responses-and-captures-the-speed-it-was-already-fetching-n7-3), [`phase-N6c`](./phase-N6c-expanded-lake-profiles.md).
+
+---
+
+## D146 — Satellite imagery is body-scoped **content**, not a base-map swap (N6e)
+
+**2026-08-21, founder call re-scoping N6e:** *"I'm actually tempted to only allow satellite imagery to
+be turned on for a particular lake in the lake detail view… toggling satellite imagery on might somehow
+bound the image to the confines of a single lake body somehow."*
+
+**This replaces the second half of [D81](#d81--the-map-has-exactly-one-layer-toggle-and-it-is-satellite-n6bn6e).**
+D81 said satellite *replaces the base map, not the content*. It now says: **satellite *is* content,
+revealed one body at a time, clipped to that body and its access, and the base map never changes.**
+
+The one-toggle rule survives intact — one imagery control, no layer menu — but it lives in the detail
+view (route carries a body id, drawer not expanded to full screen) and it governs a **shape** rather
+than the screen. Contours stay drawer-only; D81's first half is untouched.
+
+**Because the base-map framing was carrying risk the feature never needed.** Deleted along with the
+swap: the style branch through `composeBasemapLayers`, the label-filtering problem, the question of
+whether the region mask survives, the "imagery 404s over Québec past z10" trap, the attribution swap
+(both credits now simply coexist), and most likely the persisted per-device preference — a per-body
+reveal is something you *do*, not a mode you live in. **A smaller feature that is also the one the
+founder wanted**, which is the shape of most good re-scopings.
+
+**What it costs, stated plainly:** you can no longer pan the region in aerial to hunt for access, which
+was the original scoping's headline pairing with N6d. Accepted explicitly.
+
+**Related:** [D81](#d81--the-map-has-exactly-one-layer-toggle-and-it-is-satellite-n6bn6e), [D84](#d84--satellite-imagery-is-two-tiers-with-different-jobs-n6e), D147, D148, [`phase-N6e`](./phase-N6e-satellite-imagery.md).
+
+---
+
+## D147 — Free imagery only: the resolution/cadence trade is physical, and we buy neither end (N6e)
+
+**2026-08-21, founder call.** *"No, we should not pay right now. Let's see how far we can get with free
+imaging layers, build out a working feature set, and then launch… Even though it's only 10 m now, which
+isn't good enough, it'll at least prove we can do it."*
+
+**The scoping pass assumed the constraint was cost. It is physics first, cost second.** Verified against
+the live services 2026-08-21:
+
+- **NAIP is aerial photography, not satellite** — 0.3 m via `USGSNAIPPlus`, but flown on a **2–3 year
+  per-state cycle, deliberately in mid-summer** for the USDA's crop program. There is no winter NAIP and
+  there never will be. Burlington's current scene is `m_4407339_ne_18_030_20230621` — the summer
+  solstice, 2023.
+- **Sentinel-2 is 10 m**, ~2–3 days at 44°N. **Sentinel-1 SAR is 10–20 m**, cloud- and night-proof.
+- **A pressure ridge is 1–3 m wide**: legible at 0.3 m, a smudge at 3 m, **nonexistent at 10 m**.
+
+So the imagery that would answer *"where can I cross?"* is **tasked commercial** — SkySat or Pléiades
+Neo at roughly $200–400 per lake per capture — against a pilot with no revenue. **The honest scope is
+0.3 m for the landscape, 10 m for the ice, and no promise about the surface.**
+
+**Revisit when there are users to spread the cost across.** D75's low-regret detail still holds: Planet
+serves from Sentinel Hub–compatible endpoints, so building against Copernicus now is not a lock-out.
+
+**Worth remembering:** the product already runs a 0.3 m winter sensor — the skaters. N6d access photos,
+hazard reports and Phase 8 tracks are the "what does it look like today" channel. Imagery's job is what
+a person on the shore cannot photograph: the whole lake at once, and the landscape around it.
+
+**Related:** [D75](#d75--satellite-imagery-ships-as-a-link-first-the-licence-blocker-is-resolved-the-cost-one-isnt-n6c), [D84](#d84--satellite-imagery-is-two-tiers-with-different-jobs-n6e), D146, [`phase-N6e`](./phase-N6e-satellite-imagery.md).
+
+---
+
+## D148 — The timeline is our own archive: one masked raster PMTiles per pass (N6e)
+
+**2026-08-21, founder call.** The freeze-up scrubber ships **with** the imagery layer — *"let's build the
+timeline at the same time… we shouldn't push our PR until it's all in"* — and it covers **the whole
+region**, not a destination shortlist: *"I think we should get imagery for our entire region… I like your
+idea of grabbing all 20-25 granules and cutting every body from them."*
+
+Covering the region is what forces the architecture, and the architecture turns out to be cheaper:
+
+- **Read the open COGs directly** (Copernicus S3 / AWS Earth Search STAC), not Sentinel Hub's metered
+  Process API. The five states are ~20–25 granules; ~150 granule reads a month yields every body in the
+  corpus. **The 10,000-request/month quota stops being the ceiling** — which retires the whole
+  quota-and-shortlist argument the 2026-07-31 scoping was built around.
+- **Mask before storing.** Water plus buffers is ~5% of the region's area, so each pass shrinks ~20× —
+  ~40 MB per pass, ~1.2 GB per season.
+- **PMTiles**, reusing `scripts/basemap/upload-r2.sh`, the bathymetry archive's shape, and a
+  `pmtiles://` reader already running natively on both clients. Scrubbing becomes swapping an archive
+  URL, with the per-body mask and feather baked in.
+
+**The cost is infrastructure we have never had.** A GDAL-class batch job runs on neither Convex nor
+Vercel. Costed against both candidates 2026-08-21: **Fly**, because its per-job Machine model *is* this
+workload (boot, one granule, exit, per-second billing; 25 in parallel costs what 25 in series does) and
+because it is ~2× cheaper than Railway for the always-warm RAM-heavy service we already know we want
+next — self-hosted ORS at ~$46/mo vs ~$81/mo for 8 GB. Railway is the better developer experience and
+its $5 Hobby credit would cover this phase's batch job outright; **ORS breaks the tie.** Fly volumes are
+host-pinned with no multi-attach — a real operational edge, known going in.
+
+**Related:** D147, D149, [`phase-N6e`](./phase-N6e-satellite-imagery.md), [`phase-4`](./phase-4-drive-time-and-filtering.md).
+
+---
+
+## D149 — Imagery ingest is weather-gated, and the archive turns over on a frame, never a date (N6e)
+
+**2026-08-21, founder call.** *"It's probably not worth much to even bother getting imagery after ice-out
+each spring, until we start getting freezing temps again in the fall… I'm tempted to show the past
+season's imagery from freeze to thaw all the way until it turns over again in November."*
+
+**Two rules, and neither needs a constant:**
+
+- **Ingest turns on** when a regional freezing signal appears in the **observed** weather we already
+  fetch — D140's `.past`, never the forecast — and off after ice-out. Roughly half the year's passes are
+  never fetched, which is half the bandwidth and half the compute.
+- **Retention keeps the most recent season that has frames.** Last winter's scrubber stays live all
+  summer; it flips the moment the first frame of the new winter lands. **In a warm year it flips late,
+  by itself**, and nobody tunes anything.
+
+**Because a date constant would be wrong in exactly the years it mattered.** D63's season boundary is
+**July 1**, which is correct for reports and hazards and absurd for imagery — it would blank the
+scrubber in midsummer, months before there was anything to replace it with. Hinging on the data instead
+of the calendar makes the turnover self-timing.
+
+`packages/core/src/season.ts` still supplies the key (`seasonOf`, `currentSeason`); what changes is that
+the key **labels** the archive (`winter-2024-25`) rather than triggering its expiry — which is what the
+founder asked for over calendar-year invalidation.
+
+**Backfill last season on first build**, so the feature ships with a full scrubber rather than an empty
+one that fills over three weeks.
+
+**Related:** [D56](#d56), [D63](#d63), [D140](#d140--a-forecast-and-an-observation-are-separated-by-a-type-not-a-rule-n6c-2--b5b), D148, [`phase-N6e`](./phase-N6e-satellite-imagery.md).
+
+---
+
+## D150 — Derived ice classification is an **observation**, never counsel (N6e → N6f)
+
+**2026-08-21, founder call.** *"I'm picturing vector lines/hatches drawn in-app over the non-satellite
+polygon derived from the latest imagery passes."* And, on the framing: *"I do [accept it]! I don't think
+we need any sort of user-facing warning about that, but I think that's a defensible enough position for
+us to hold / document."*
+
+N6e's own scoping had forbidden this outright — *"no ice detection, no classification, no automatic
+condition inference… it would be a prediction, which D3 says isn't ours to make."* **That boundary is
+amended, on the line D140 already drew for weather: an observation is not a forecast.**
+
+- **Permitted:** *"on Jan 14 at 10:47, these pixels classified as snow-covered ice and these as open
+  water."* Dated, sourced, per-pass — the same category as the weather-since strip.
+- **Forbidden, unchanged:** any hop from that to **skateable**. Classification never feeds a
+  recommendation, a notification, a bounty gate or a trust signal.
+
+**The physics enforces the line, which is why it holds.** At 10–20 m we can distinguish frozen from open
+and snow-covered from bare; we **cannot** distinguish two inches from six. The claim the data supports
+and the claim D3 forbids are separated by the sensor itself.
+
+**No warning copy — the date is the caveat.** A banner would be furniture; the frame's own timestamp,
+carried per frame rather than around the control, is the honest version and is already required by D84.
+
+**Deferred to N6f on PR size, not principle.** N6e already carries the reveal on two clients, mask and
+feather geometry, the NAIP tier, the granule pipeline, our first owned infrastructure, the archive, the
+scrubber and the four pieces D138 moved in. Classification is a downstream consumer of that pipeline, so
+deferring costs nothing structurally. **Capture the SCL and SWIR bands during N6e's granule reads
+anyway** — we are already paying for the download, and re-fetching a season later is the expensive
+version.
+
+**Related:** [D3](#d3--never-a-safety-verdict), [D140](#d140--a-forecast-and-an-observation-are-separated-by-a-type-not-a-rule-n6c-2--b5b), D147, D148, [`phase-N6e`](./phase-N6e-satellite-imagery.md).
+
+---
+
+## D151 — A phenology date is a **bracket between two passes**, and the claim is about our observation (N6e)
+
+**2026-08-21, founder call, scoping the nine-season archive.** *"We could say something along the lines
+of 'satellite/radar observed 100% ice coverage on X date' instead of '100% ice coverage on X date' so
+that it's about the **observed** date, not the actual date."*
+
+**Two rules, and the second falls out of the first:**
+
+- **The subject of the sentence is us, not the lake.** *"Satellite observed full ice coverage on Jan 8"*
+  is a fact about a photograph. *"The lake froze on Jan 8"* is a claim about the world that a cloudy
+  fortnight can make false. Same grammar D140 applies to weather, one sensor over.
+- **A date is published as the two passes that bracket it**, never as a point with an error bar:
+  **"open water observed Dec 29 · fully frozen observed Jan 8."** The gap *is* the uncertainty, expressed
+  as the two things we actually saw. A cloudy stretch widens the bracket, which reads as precisely what
+  happened — no statistics, nothing to explain, and nothing that can be quoted out of context as
+  precision we don't have.
+
+**Because cloud cover in a Northeast winter is the dominant error term and it is not random.** Sentinel-2
+yields ~2–4 usable optical frames a month here. Any single season's ice-in date is soft by 5–10 days, and
+an error bar invites the reader to treat the midpoint as the answer. A bracket has no midpoint to
+mistake.
+
+**Aggregation is where this pays off.** Nine seasons of brackets converge on the sentence actually
+wanted — *"usually freezes in early January"* — and **climatology gets more reliable as individual dates
+get fuzzier**, which is the opposite of how the uncertainty feels.
+
+⚠ **Central tendency yes; trend claims no.** Sentinel-1's revisit is **not uniform across the archive** —
+S1B failed December 2021 and S1C only reached orbit at the end of 2024, so 2017-22 and 2024-26 have
+~6-day radar coverage while 2022-23 and 2023-24 have ~12-day. Brackets absorb that honestly, but *"freeze-
+up is getting later"* computed across these seasons would be measuring **observation frequency**, not
+climate. The archive supports averages, not trends.
+
+**Scope:** derived **dark** in N6e's PR 2 (operator-visible, no skater surface); the charts that read it
+ship in PR 3. Nine complete seasons, 2017-18 through 2025-26 — the window where Sentinel-2 has two
+satellites, which makes the number an event rather than a preference.
+
+**Prior art, checked 2026-08-21:** nobody has done this for ~25,000 bodies, but
+[NSIDC G01377](https://nsidc.org/data/g01377/versions/1) supplies the standard variable definitions and a
+[published algorithm for small lakes validated on 296 Maine lakes](https://doi.org/10.3390/rs11141718)
+is the closest thing to a reference implementation. Maine's **human ice-out records** give us ground
+truth inside our own region — worth more than any dataset we could have borrowed.
+
+**Related:** [D3](#d3--never-a-safety-verdict), [D140](#d140--a-forecast-and-an-observation-are-separated-by-a-type-not-a-rule-n6c-2--b5b), D149, D150, [`phase-N6e`](./phase-N6e-satellite-imagery.md).

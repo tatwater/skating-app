@@ -6,6 +6,7 @@
  *   pnpm --filter @skating/etl access-transform VT                    # one
  *   pnpm --filter @skating/etl access-transform --refresh             # re-run osmium
  *   pnpm --filter @skating/etl access-transform --no-route            # skip ORS entirely
+ *   pnpm --filter @skating/etl access-transform --no-trails           # skip the connectivity pass
  *   pnpm --filter @skating/etl access-transform --parking-radius=400  # eyeball a different radius
  *
  * Writes `.scratch/access/parking.ndjson` and `.scratch/access/put-ins.ndjson`, plus a
@@ -40,21 +41,30 @@ import { createInterface } from 'node:readline';
 import { fileURLToPath } from 'node:url';
 import {
   type ApproachLeg,
+  approachPathWanted,
   type LatLng,
   ORS_FOOT_HIKING_URL,
   type OrsRouteResponse,
   orsFootHikingBody,
   PARKING_INFER_RADIUS_M,
   parseOrsFootHikingRoute,
+  plausibleApproach,
   straightLineApproach,
 } from '@skating/core';
 import {
   type AccessFeature,
+  applyTrailPairings,
   type OsmAccessFeature,
   pairAccessFeatures,
   parseAccessFeature,
 } from './accessTransform';
-import { osmAccessExportArgs, osmAccessFilterArgs } from './extract';
+import {
+  osmAccessExportArgs,
+  osmAccessFilterArgs,
+  osmTrailExportArgs,
+  osmTrailFilterArgs,
+} from './extract';
+import { createTrailGraphBuilder, pairByTrailConnectivity } from './trailGraph';
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
 const OSM_DIR = join(ROOT, '.raw');
@@ -145,6 +155,94 @@ function accessFeatureFile(state: string, refresh: boolean): string {
   return out;
 }
 
+/** Extract one state's trail lines, cached in `.scratch` (N6e Workstream 0). */
+function trailFile(state: string, refresh: boolean): string {
+  const out = join(SCRATCH, `osm-trails-${state}.geojsonseq`);
+  if (existsSync(out) && !refresh) return out;
+
+  const dir = join(OSM_DIR, state);
+  const manifestPath = join(dir, 'manifest.json');
+  if (!existsSync(manifestPath)) {
+    throw new Error(
+      `${state}: no archived extract at ${dir}. Run \`pnpm --filter @skating/etl archive ${state.toUpperCase()}\` first.`,
+    );
+  }
+  const { filename } = JSON.parse(readFileSync(manifestPath, 'utf8')) as { filename: string };
+
+  const filtered = join(SCRATCH, `osm-trails-${state}.pbf`);
+  log(`${state}: filtering trails…`);
+  const step1 = spawnSync('osmium', osmTrailFilterArgs(join(dir, filename), filtered), {
+    encoding: 'utf8',
+  });
+  if (step1.status !== 0) throw new Error(`${state}: osmium tags-filter exited ${step1.status}`);
+
+  const step2 = spawnSync('osmium', osmTrailExportArgs(filtered, out), { encoding: 'utf8' });
+  if (step2.status !== 0) throw new Error(`${state}: osmium export exited ${step2.status}`);
+  return out;
+}
+
+/**
+ * Stream every state's trail lines into one graph.
+ *
+ * **Streamed, one way at a time, and this is not a style preference.** Vermont alone is 40,840 ways
+ * and 642k vertices; five states is on the order of 600–900k ways. Parsing them into an array of
+ * GeoJSON features before building the graph would materialise the loose representation the compact
+ * one exists to avoid, and the builder's whole point is that a way's coordinates are copied into a
+ * `Float64Array` and the parsed object is left for the collector immediately.
+ */
+async function buildTrails(states: readonly string[], refresh: boolean) {
+  const builder = createTrailGraphBuilder();
+  let refusedLines = 0;
+
+  for (const state of states) {
+    const file = trailFile(state, refresh);
+    let kept = 0;
+    const reader = createInterface({
+      input: createReadStream(file, 'utf8'),
+      crlfDelay: Infinity,
+    });
+    for await (const raw of reader) {
+      const trimmed = raw.trim();
+      const line = trimmed.startsWith(RECORD_SEPARATOR) ? trimmed.slice(1) : trimmed;
+      if (line.length === 0) continue;
+      let feature: {
+        // `-a type,id` writes these as `@type` and `@id`, which is what `parseAccessFeature` reads
+        // too. Getting it wrong is silent and total: every way lands under the id `way/undefined`,
+        // the dedupe folds the whole state into one edge, and the pass reports a graph of two ways
+        // and 40,838 "cross-border duplicates" without erroring once.
+        properties?: { '@type'?: string; '@id'?: string | number };
+        geometry?: { type?: string; coordinates?: number[][] };
+      };
+      try {
+        feature = JSON.parse(line) as typeof feature;
+      } catch {
+        refusedLines++;
+        continue;
+      }
+      const coordinates = feature.geometry?.coordinates;
+      if (feature.geometry?.type !== 'LineString' || !coordinates) continue;
+      const rawId = feature.properties?.['@id'];
+      if (rawId === undefined) {
+        refusedLines++;
+        continue;
+      }
+      const id = `${feature.properties?.['@type'] ?? 'way'}/${rawId}`;
+      builder.addWay({
+        id,
+        coords: coordinates.map(([lng, lat]) => ({ lat: lat as number, lng: lng as number })),
+      });
+      kept++;
+    }
+    log(`${state}: ${kept} trail ways`);
+  }
+
+  const graph = builder.build();
+  log(
+    `trail graph: ${graph.stats.ways} ways, ${graph.stats.nodes} nodes, ${graph.stats.duplicates} cross-border duplicates, ${graph.stats.degenerate} degenerate`,
+  );
+  return { graph, refusedLines };
+}
+
 async function readAccessFeatures(states: readonly string[], refresh: boolean) {
   // The five extracts overlap at every border, so the same OSM id appears in two files. Deduped on
   // the id rather than the coordinate: the two copies are the same feature and may carry different
@@ -182,7 +280,32 @@ async function readAccessFeatures(states: readonly string[], refresh: boolean) {
   return { features, refusedLines };
 }
 
-type RouteCache = Record<string, { meters: number; ascentM?: number; routed: boolean }>;
+/**
+ * A cached leg, plus **whether we have already asked for its line** (N6e Workstream 0).
+ *
+ * The flag exists because the geometry backfill has to be able to finish. N6d's parser read distance
+ * and ascent off the ORS response and dropped `features[0].geometry`, so 4,945 legs were archived
+ * without a line and the zero-cost window closed with the routing pass on 2026-08-13 — recovering
+ * them means re-spending the quota, once, and never again.
+ *
+ * `pathAsked` is what makes "never again" true. A routed leg whose line came back unusable — over
+ * `APPROACH_PATH_MAX_VERTICES` after simplification, or a response with no geometry at all — is a
+ * **real answer**, so it is remembered, exactly like the 404 that says there is no path between two
+ * points. Without the flag those legs would be re-requested on every run for ever, which is the
+ * mirror image of the 429-cached-as-an-answer bug the first run found: that one cached a failure as
+ * an answer, this one would refuse to cache an answer at all.
+ */
+type CachedLeg = ApproachLeg & { pathAsked?: boolean };
+
+/**
+ * Is this leg still owed a line? Said once, because the backfill and the operator's "run it again"
+ * counter are the same question asked before and after the request, and two copies of a four-term
+ * predicate is how they drift.
+ */
+const owesPath = (leg: CachedLeg): boolean =>
+  Boolean(leg.routed) && approachPathWanted(leg.meters) && !leg.path && !leg.pathAsked;
+
+type RouteCache = Record<string, CachedLeg>;
 
 function cacheKey(from: LatLng, to: LatLng): string {
   const r = (n: number) => n.toFixed(5);
@@ -280,6 +403,7 @@ async function main(): Promise<void> {
   const args = process.argv.slice(2);
   const refresh = args.includes('--refresh');
   const noRoute = args.includes('--no-route');
+  const noTrails = args.includes('--no-trails');
   const radiusArg = args.find((a) => a.startsWith('--parking-radius='));
   const parkingRadius = radiusArg
     ? Number.parseFloat(radiusArg.slice('--parking-radius='.length))
@@ -290,10 +414,41 @@ async function main(): Promise<void> {
   mkdirSync(SCRATCH, { recursive: true });
 
   const { features, refusedLines } = await readAccessFeatures(selected, refresh);
-  const pairing = pairAccessFeatures(features, parkingRadius);
+  let pairing = pairAccessFeatures(features, parkingRadius);
   log(
     `paired at ${parkingRadius} m: ${pairing.putIns.length} put-ins (${pairing.stats.putInsWithParking} with parking), ${pairing.parking.length} lots (${pairing.stats.parkingWithoutPutIn} unpaired)`,
   );
+
+  /**
+   * The trail pass (N6e Workstream 0) — connectivity where proximity has already given up.
+   *
+   * Run **before** routing, deliberately: a pairing found here is indistinguishable downstream from
+   * one found by proximity, so it goes through the same ORS leg and comes back with the same
+   * distance, ascent and line. Running it after would leave exactly the longest approaches in the
+   * corpus — the ones this pass exists to find — as the only unrouted ones.
+   */
+  let trailStats: Record<string, number> | undefined;
+  if (!noTrails) {
+    const { graph, refusedLines: refusedTrailLines } = await buildTrails(selected, refresh);
+    const unpairedPutIns = pairing.putIns
+      .filter((p) => !p.parkingExternalId)
+      .map((p) => ({ externalId: p.externalId, point: p.point }));
+    const unpairedLots = pairing.parking
+      .filter((p) => !p.paired)
+      .map((p) => ({ externalId: p.externalId, point: p.point }));
+
+    const trails = pairByTrailConnectivity(graph, unpairedPutIns, unpairedLots);
+    pairing = applyTrailPairings(pairing, trails.pairings);
+    trailStats = {
+      ...graph.stats,
+      ...trails.stats,
+      refusedTrailLines,
+      trailPairings: trails.pairings.length,
+    };
+    log(
+      `trails: ${trails.pairings.length} new pairings from ${trails.stats.putInsOnTrail}/${unpairedPutIns.length} unpaired launches on a trail and ${trails.stats.lotsOnTrail}/${unpairedLots.length} unpaired lots`,
+    );
+  }
 
   const env = { ...readEnvFile(new URL('../.env.local', import.meta.url)), ...process.env };
   const apiKey = noRoute ? undefined : env.ORS_API_KEY;
@@ -311,6 +466,14 @@ async function main(): Promise<void> {
   let cacheHits = 0;
   /** Legs that flew straight for a *transient* reason — the number a re-run will retry. */
   let uncached = 0;
+  /** Hike-in legs re-requested purely to recover the line N6d's parser discarded. */
+  let pathBackfills = 0;
+  /** …of which came back with a usable line. */
+  let pathsRecovered = 0;
+  /** Hike-in legs still owed a line when this run ended — the operator's "run it again" number. */
+  let awaitingPath = 0;
+  /** Legs ORS routed the long way round the water, demoted to straight-line (D87 rung 2). */
+  let implausible = 0;
 
   for (const putIn of pairing.putIns) {
     if (!putIn.parkingExternalId) continue;
@@ -321,9 +484,32 @@ async function main(): Promise<void> {
     let leg = cache[key];
     if (leg) {
       cacheHits++;
+      // The geometry backfill (N6e Workstream 0). Only hike-in legs, because only they will be drawn
+      // or buffered — `approachPathWanted` is the *same* predicate the parser keeps a line by, so a
+      // leg can never be re-routed against the quota and then have its geometry thrown away.
+      if (owesPath(leg)) {
+        pathBackfills++;
+        const refreshed = await routeApproach(lot.point, putIn.point, apiKey);
+        if (refreshed.leg.routed) {
+          // Replaced only on a routed answer. A transient straight-line fallback must never
+          // overwrite a distance we already paid for — that would spend the quota to make the row
+          // worse, and `approachRouted: false` would then render "at least" on a leg ORS had walked.
+          leg = { ...refreshed.leg, pathAsked: true };
+          cache[key] = leg;
+          writeFileSync(ROUTE_CACHE, `${JSON.stringify(cache)}\n`);
+          if (leg.path) pathsRecovered++;
+        }
+        if (apiKey) await sleep(ORS_GAP_MS);
+      }
+      // Retryable only. A leg already asked will never gain a line however many times we run, so
+      // counting it here would leave the operator waiting on a number that cannot reach zero.
+      if (owesPath(leg)) awaitingPath++;
     } else {
       const routedLeg = await routeApproach(lot.point, putIn.point, apiKey);
-      leg = routedLeg.leg;
+      // A leg routed *now* has been asked about its line by construction — the parser kept whatever
+      // came back. Marking it here is what stops a fresh hike-in leg with an unusable line from
+      // joining the backfill queue on the very next run.
+      leg = routedLeg.leg.routed ? { ...routedLeg.leg, pathAsked: true } : routedLeg.leg;
       // **Only real answers are archived.** A rate-limited fallback is a fact about our request rate,
       // not about this lake, and storing it would make the next run skip the leg for ever.
       if (routedLeg.cacheable) {
@@ -337,9 +523,17 @@ async function main(): Promise<void> {
       if (apiKey) await sleep(ORS_GAP_MS);
     }
 
+    // A leg ORS routed the long way round the water is not an approach (N6e Workstream 0). Applied
+    // here rather than at the request, so the 30 already sitting in the cache from N6d's pass are
+    // demoted too — the cache keeps ORS's true answer and the row gets the usable one.
+    const applied = plausibleApproach(leg, lot.point, putIn.point);
+    if (applied !== leg) implausible++;
+    leg = applied;
+
     putIn.approachMeters = Math.round(leg.meters);
     putIn.approachAscentM = leg.ascentM === undefined ? undefined : Math.round(leg.ascentM);
     putIn.approachRouted = leg.routed;
+    putIn.approachPath = leg.path;
     if (leg.routed) {
       routed++;
       // The trail amenity, derived rather than extracted (correction 9): ORS routes over the same
@@ -378,6 +572,16 @@ async function main(): Promise<void> {
     // that says whether re-running tomorrow is worth anything.
     retryableFallbacks: uncached,
     cacheHits,
+    // The N6e Workstream 0 lane, reported apart from the routing counters because it is a different
+    // question: routing asks "how far is the walk", this asks "do we have the line to draw it".
+    pathBackfills,
+    pathsRecovered,
+    // Named rather than folded into `fellBackToStraightLine`: these are legs ORS *did* route, and
+    // the number says how often a lot and its launch are on opposite sides of the water.
+    implausibleRoutes: implausible,
+    ...(trailStats ? { trails: trailStats } : {}),
+    // Not a ratio (D137): the legs a re-run tomorrow would still pick up, named.
+    legsAwaitingPath: awaitingPath,
     routingEnabled: Boolean(apiKey),
     // The operator's "come back tomorrow" signal, stated rather than inferred from a ratio.
     quotaExhausted,

@@ -1,6 +1,7 @@
 import { api } from '@skating/convex/api';
 import type { Id } from '@skating/convex/dataModel';
 import {
+  AERIAL_ATTRIBUTION,
   buildLakeCaption,
   contourBodyKey,
   describeLakeDepth,
@@ -72,7 +73,14 @@ export function WaterBodyDetail({
   const focusSubArea = focusSubAreaId
     ? subAreas?.find((s) => s._id === focusSubAreaId && !s.removed)
     : undefined;
-  const { setFocus, setHighlightWaterBodyId, setContourBodyKey, contourCredit } = useMapSelection();
+  const {
+    setFocus,
+    setHighlightWaterBodyId,
+    setContourBodyKey,
+    contourCredit,
+    imageryOn,
+    aerialCaptureLabel,
+  } = useMapSelection();
   // Mirrors the server's `requireContributor` — see `LeavingNotice`.
   const leaving = isLeaving(useQuery(api.profiles.current, {}));
   // Five rows of aggregate geography, fetched whole rather than per-state: it keeps the caption a
@@ -254,6 +262,19 @@ export function WaterBodyDetail({
             asking where a number came from looks in one place. Provenance only — D82 means there is
             no sentence here about what a depth implies for ice. */}
         {contourCredit ? <p className="text-foreground-muted text-xs">{contourCredit}</p> : null}
+        {/* The aerial credit, alongside the bathymetry one and for the same reason: somebody asking
+            where something came from should find every answer in one place. The map's ⓘ carries the
+            legally-required copy (`mapCanvas`); this is the discoverable copy, and it adds the thing
+            the control cannot — **when the photograph was taken**, which on a source flown every 2–3
+            years in midsummer is the difference between reading the landscape and misreading the
+            season (D147). Rendered only while the reveal is on, because a credit for a layer nobody
+            is looking at is noise. */}
+        {imageryOn ? (
+          <p className="text-foreground-muted text-xs">
+            Aerial imagery: {AERIAL_ATTRIBUTION}
+            {aerialCaptureLabel ? ` — flown ${aerialCaptureLabel}` : ''}
+          </p>
+        ) : null}
       </div>
       {formOpen ? (
         <ReportForm

@@ -15,6 +15,9 @@ import {
   minVisibleZoom,
   type PromotionTarget,
   referenceLinkError,
+  SATELLITE_MIN_AREA_SQM,
+  type SatelliteImageryMode,
+  satelliteImageryAvailable,
   seasonOf,
   snapToEdge,
   suggestSamplePoints,
@@ -68,6 +71,7 @@ function LakeEditor() {
   const [draft, setDraft] = useState<GeoJSON.Polygon | GeoJSON.MultiPolygon | null>(null);
   const [suggested, setSuggested] = useState<LatLng[]>([]);
   const [banner, setBanner] = useState<{ tone: 'ok' | 'error'; text: string } | null>(null);
+  const [editorImagery, setEditorImagery] = useState(false);
   // The live map handle, so the lazily-created draw control can attach to the canvas. A ref on the
   // component rather than a module-level object: a module singleton outlives the route, holding a
   // removed map that the next visit's draw control would happily attach to.
@@ -130,8 +134,21 @@ function LakeEditor() {
       ) : null}
 
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_380px]">
-        <div className="h-[70vh] min-h-96 overflow-hidden rounded-lg border border-border">
+        <div className="relative h-[70vh] min-h-96 overflow-hidden rounded-lg border border-border">
+          {/* Unmasked aerial under the editor (N6e Workstream E). Off by default: tracing against
+              the vector map is the ordinary case, and a photograph is what you reach for when the
+              stored shoreline and the real one disagree. */}
+          <label className="absolute top-2 right-2 z-10 flex cursor-pointer items-center gap-2 rounded-md bg-background/95 px-2 py-1 text-xs shadow-lg">
+            <input
+              type="checkbox"
+              checked={editorImagery}
+              onChange={(event) => setEditorImagery(event.target.checked)}
+              className="size-3.5"
+            />
+            Aerial
+          </label>
           <LakeEditorMap
+            imagery={editorImagery}
             data={{
               body: {
                 _id: body._id,
@@ -241,6 +258,9 @@ function LakeEditor() {
           <ToolCard title="Posted rules">
             <PostedAccessTool body={body} onResult={setBanner} />
           </ToolCard>
+          {/* Beside the links because that is what it governs: the Copernicus row in the drawer's
+              link list, not the aerial reveal on the map. */}
+          <SatelliteTool body={body} onResult={setBanner} />
           <ReferenceLinkTool body={body} onResult={setBanner} />
           {/* The one lever here that removes rather than refines, so it sits below all of them and
               above only the log that records it. */}
@@ -2151,6 +2171,89 @@ function PromotionTool({
       <p className="text-foreground-muted text-xs">
         Ranked by how the type behaves and how many people confirmed it — a queue for your
         judgement, not a prediction that any of them will be back.
+      </p>
+    </ToolCard>
+  );
+}
+
+/**
+ * The Copernicus link's per-row override (N6c Workstream D, D70/D75).
+ *
+ * **Shows the derivation before it shows the lever**, which is the same argument `ProminenceTool`
+ * makes: `auto`/`on`/`off` is an abstract tri-state, while "10 m pixels over 4 ha — about 400 pixels
+ * of water" is the thing an operator is actually judging. Without the area beside it, the only way to
+ * decide is to guess what the threshold was.
+ *
+ * The three buttons are a segmented control rather than a select, because there are exactly three
+ * values and the current one should be readable without opening anything — and `auto` is deliberately
+ * first and labelled with its consequence, since it is both the default and the undo.
+ */
+function SatelliteTool({ body, onResult }: { body: Doc<'waterBodies'>; onResult: SetBanner }) {
+  const setMode = useMutation(api.waterBodies.setSatelliteImagery);
+  const [busy, setBusy] = useState(false);
+  const mode: SatelliteImageryMode = body.satelliteImagery ?? 'auto';
+
+  const areaSqM = body.surfaceAreaSqM;
+  // What `auto` would decide on its own — the number the override is agreeing or disagreeing with.
+  const autoWould = satelliteImageryAvailable({ ...body, satelliteImagery: 'auto' });
+  const offered = satelliteImageryAvailable(body);
+  const hectares = areaSqM === undefined ? null : areaSqM / 10_000;
+  // 10 m ground sample distance, so a pixel is 100 m² — the figure that makes the threshold concrete.
+  const pixels = areaSqM === undefined ? null : Math.round(areaSqM / 100);
+
+  async function save(next: SatelliteImageryMode) {
+    setBusy(true);
+    try {
+      await setMode({ waterBodyId: body._id, mode: next });
+      onResult({ tone: 'ok', text: `Satellite link set to ${next}.` });
+    } catch (err) {
+      onResult({ tone: 'error', text: errorText(err) });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const choices: { value: SatelliteImageryMode; label: string }[] = [
+    { value: 'auto', label: `Auto (${autoWould ? 'offer' : 'withhold'})` },
+    { value: 'on', label: 'Always offer' },
+    { value: 'off', label: 'Never offer' },
+  ];
+
+  return (
+    <ToolCard title="Satellite link">
+      <div className="flex flex-wrap gap-2">
+        {choices.map((choice) => (
+          <Button
+            key={choice.value}
+            size="sm"
+            variant={mode === choice.value ? 'secondary' : 'outline'}
+            disabled={busy || mode === choice.value}
+            onClick={() => save(choice.value)}
+          >
+            {choice.label}
+          </Button>
+        ))}
+      </div>
+      <p className="text-foreground-muted text-sm">
+        {hectares === null ? (
+          <>
+            No stored area, so auto offers the link — a missing field is the wrong thing to withhold
+            on.
+          </>
+        ) : (
+          <>
+            {hectares.toFixed(1)} ha ≈{' '}
+            <span className="text-foreground">{pixels?.toLocaleString()}</span> Sentinel pixels; the
+            floor is {(SATELLITE_MIN_AREA_SQM / 10_000).toFixed(0)} ha.
+          </>
+        )}{' '}
+        Currently{' '}
+        <span className="font-medium text-foreground">{offered ? 'offered' : 'withheld'}</span>
+        {mode !== 'auto' && offered !== autoWould ? ' — an override, against the area' : null}.
+      </p>
+      <p className="text-foreground-muted text-xs">
+        Copernicus only (10 m). The 0.3 m aerial reveal on the map is a different tier and is not
+        governed by this.
       </p>
     </ToolCard>
   );

@@ -143,6 +143,68 @@ export function osmAccessExportArgs(filtered: string, out: string): string[] {
 }
 
 /**
+ * The OSM tags the **trail** pass keeps (N6e Workstream 0).
+ *
+ * ⚠ **This is the class N6d correction 9 dropped, admitted back for a different question.** That
+ * correction was right about what it was answering: ORS `foot-hiking` routes over these ways, so a
+ * successful approach route is the evidence a trail exists, and extracting lines to re-derive that
+ * would have been work for an answer already paid for.
+ *
+ * What it could not answer is the case the routing never reaches. `pairAccessFeatures` caps at
+ * `PARKING_INFER_RADIUS_M`, so a lot a kilometre up a trail from a launch **never pairs**, and a leg
+ * that is never requested is never routed. The mile-in trailhead is invisible to the pipeline by
+ * construction — measured over 3,000 unpaired lots, the distance curve to the nearest launch rises
+ * monotonically out to 3–8 km with no trailhead population sitting at a characteristic distance, so
+ * no radius finds it either. **Connectivity is a signal where proximity is only a guess**, and that
+ * is what these lines are for. They are not stored: they build a graph in the transform and are
+ * discarded.
+ *
+ * `route=hiking` is a **relation** tag; its member ways carry the `highway` tags, so the three
+ * `highway` values are what actually match. It is kept in the filter anyway for the ways that carry
+ * it directly, on the same superset discipline as the other two passes.
+ */
+export const OSM_TRAIL_TAGS = [
+  'highway=path',
+  'highway=footway',
+  'highway=track',
+  'route=hiking',
+] as const;
+
+/** `osmium tags-filter` argv — the trail subset of a state extract (N6e Workstream 0). */
+export function osmTrailFilterArgs(pbf: string, out: string): string[] {
+  return ['tags-filter', '-t', pbf, ...OSM_TRAIL_TAGS, '-o', out, '--overwrite'];
+}
+
+/**
+ * `osmium export` argv for the trail pass — **linestrings, and nothing else**.
+ *
+ * The one geometry class the other two passes exclude, and the reason this is a third configuration
+ * rather than a flag on the second: a trail is a line, an access point never is, and a pass that
+ * admitted both would have to decide what a "parking area that is a line" means.
+ *
+ * **`-a type,id` is load-bearing here for a reason it is not elsewhere.** In the other passes the id
+ * is an upsert key. Here nothing is stored, and the id is what lets a way appear in two state
+ * extracts — every one of these files overlaps its neighbours at the border — and be recognised as
+ * one edge rather than two parallel ones, which would double a walk that crosses a state line.
+ */
+export function osmTrailExportArgs(filtered: string, out: string): string[] {
+  return [
+    'export',
+    filtered,
+    '--geometry-types=linestring',
+    '-a',
+    'type,id',
+    '-f',
+    'geojsonseq',
+    '-x',
+    'print_record_separator=false',
+    '-o',
+    out,
+    '--overwrite',
+  ];
+}
+
+/**
  * One acre in km², the unit NHD and 3DHP both publish `areasqkm` in.
  *
  * Expressed exactly rather than rounded, because it is compared with `>=` against a float the

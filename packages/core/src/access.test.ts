@@ -3,7 +3,9 @@ import {
   type AccessParking,
   type AccessPutIn,
   APPROACH_KINDS,
+  APPROACH_PATH_MAX_VERTICES,
   approachKindFor,
+  approachPathWanted,
   bodyAccessKind,
   chooseAccessTarget,
   compassSideLabel,
@@ -11,10 +13,12 @@ import {
   describeApproach,
   HIKE_IN_ASSERT_M,
   isHikeIn,
+  MAX_PLAUSIBLE_APPROACH_M,
   orsFootHikingBody,
   PARKING_INFER_RADIUS_M,
   PUTIN_SHORE_RADIUS_M,
   parseOrsFootHikingRoute,
+  plausibleApproach,
   requiresHikeInAssertion,
   resolveApproachKind,
   resolvePutInName,
@@ -256,6 +260,150 @@ describe('the approach leg (D87)', () => {
       features: [{ properties: { summary: { distance: 400 } } }],
     });
     expect(leg).toEqual({ meters: 400, ascentM: undefined, routed: true });
+  });
+
+  /**
+   * The N6e Workstream 0 half: the line ORS hands us for free, which the first version of this
+   * parser dropped on the floor. Recovering it cost a re-route of every hike-in leg against a
+   * 2,000/day quota, so these tests pin the shape rather than the happy path alone.
+   */
+  describe('the approach line', () => {
+    /** `[lng, lat, elevation]` — the shape `elevation: true` actually returns. */
+    const legWithLine = (distance: number, coordinates: number[][]) =>
+      parseOrsFootHikingRoute({
+        features: [
+          { properties: { summary: { distance }, ascent: 40 }, geometry: { coordinates } },
+        ],
+      });
+
+    test('keeps the routed line on a hike-in leg, with the elevation ordinate stripped', () => {
+      const leg = legWithLine(1200, [
+        [-72.5, 44.5, 210],
+        [-72.502, 44.5008, 232],
+        [-72.504, 44.502, 251],
+      ]);
+      expect(leg?.path).toEqual([
+        { lat: 44.5, lng: -72.5 },
+        { lat: 44.5008, lng: -72.502 },
+        { lat: 44.502, lng: -72.504 },
+      ]);
+      // A stored triple would be a third of the array's weight in a number no map reads, and the
+      // climb is already on the row as `approachAscentM`.
+      expect(JSON.stringify(leg?.path)).not.toContain('210');
+    });
+
+    test('simplifies to the shoreline tolerance rather than storing every ORS vertex', () => {
+      // Eleven points on one straight line: everything between the ends is within tolerance of it.
+      const straight = Array.from({ length: 11 }, (_, i) => [-72.5 + i * 0.0002, 44.5, 200]);
+      expect(legWithLine(1000, straight)?.path).toHaveLength(2);
+    });
+
+    /**
+     * The whole reason `approachPathWanted` is a shared predicate: the ETL decides what to re-route
+     * with it, and the parser decides what to keep with it. Were they to drift, a leg would be paid
+     * for against the quota and then have its geometry discarded.
+     */
+    test('drops the line below the hike-in threshold, however much geometry came back', () => {
+      const line = [
+        [-72.5, 44.5, 200],
+        [-72.5004, 44.5006, 204],
+      ];
+      expect(legWithLine(SHORT_WALK_MAX_M, line)?.path).toBeUndefined();
+      expect(legWithLine(SHORT_WALK_MAX_M + 1, line)?.path).toBeDefined();
+    });
+
+    /**
+     * A truncated route is a walk that stops in the woods — a wrong answer wearing the shape of a
+     * right one. No line falls back to the distance, which is honest.
+     */
+    test('drops a path that survives simplification over the cap, rather than truncating it', () => {
+      const zigzag = Array.from({ length: APPROACH_PATH_MAX_VERTICES * 3 }, (_, i) => [
+        -72.5 + i * 0.0002,
+        44.5 + (i % 2) * 0.0003,
+        200,
+      ]);
+      const leg = legWithLine(9_000, zigzag);
+      expect(leg?.meters).toBe(9_000);
+      expect(leg?.path).toBeUndefined();
+    });
+
+    test.each([
+      ['no geometry at all', undefined],
+      ['a single position', [[-72.5, 44.5, 200]]],
+      ['positions that are not numbers', [['a', 'b'], [null]] as unknown as number[][]],
+    ])('yields a distance with no line for %s', (_label, coordinates) => {
+      const leg = parseOrsFootHikingRoute({
+        features: [
+          {
+            properties: { summary: { distance: 1200 } },
+            ...(coordinates ? { geometry: { coordinates } } : {}),
+          },
+        ],
+      });
+      expect(leg?.meters).toBe(1200);
+      expect(leg?.path).toBeUndefined();
+    });
+
+    /**
+     * Drawing a crow-flies segment would render a trail that does not exist, straight through
+     * whatever lies between the lot and the launch — and it would look exactly like the routed lines
+     * beside it. A number can carry the hedge "at least"; a line on a map cannot.
+     */
+    test('a straight-line fallback carries no line', () => {
+      expect(straightLineApproach(LOT, LAUNCH).path).toBeUndefined();
+    });
+
+    test('approachPathWanted is the hike-in line, and it is exclusive at the boundary', () => {
+      expect(approachPathWanted(SHORT_WALK_MAX_M)).toBe(false);
+      expect(approachPathWanted(SHORT_WALK_MAX_M + 1)).toBe(true);
+    });
+  });
+
+  /**
+   * Found by drawing the lines: three legs in the corpus are **99 km** long, between a lot and a
+   * launch 250 m apart. ORS is not wrong — that is the shortest walk when the two are on opposite
+   * sides of an inlet with no bridge. It is not an *approach*, and once drawn it is a dashed trail
+   * crossing three counties out of a lake's parking marker.
+   */
+  describe('plausibleApproach', () => {
+    const LOT = { lat: 44.5, lng: -72.5 };
+    const LAUNCH = destinationPoint(LOT, 90, 250);
+
+    test('leaves an ordinary walk alone', () => {
+      const leg = { meters: 1_240, ascentM: 96, routed: true, path: [LOT, LAUNCH] };
+      expect(plausibleApproach(leg, LOT, LAUNCH)).toBe(leg);
+    });
+
+    test('demotes a leg routed the long way round the water to the straight-line rung', () => {
+      const demoted = plausibleApproach(
+        { meters: 99_151, ascentM: 900, routed: true, path: [LOT, LAUNCH] },
+        LOT,
+        LAUNCH,
+      );
+      expect(demoted.routed).toBe(false);
+      expect(demoted.meters).toBeCloseTo(250, 0);
+      // Both halves matter: the number was wrong, and the line would have drawn it.
+      expect(demoted.path).toBeUndefined();
+      expect(demoted.ascentM).toBeUndefined();
+    });
+
+    test('holds at the boundary rather than a metre either side of it', () => {
+      const at = { meters: MAX_PLAUSIBLE_APPROACH_M, routed: true };
+      const over = { meters: MAX_PLAUSIBLE_APPROACH_M + 1, routed: true };
+      expect(plausibleApproach(at, LOT, LAUNCH).routed).toBe(true);
+      expect(plausibleApproach(over, LOT, LAUNCH).routed).toBe(false);
+    });
+
+    /** A straight-line leg is already the fallback; re-deriving it would be a no-op with a cost. */
+    test('leaves an unrouted leg untouched, however long', () => {
+      const leg = { meters: 40_000, routed: false };
+      expect(plausibleApproach(leg, LOT, LAUNCH)).toBe(leg);
+    });
+
+    /** The ceiling has to sit well clear of the range a human is made to assert (D144). */
+    test('is far above the distance at which a person must assert the association', () => {
+      expect(MAX_PLAUSIBLE_APPROACH_M).toBeGreaterThan(HIKE_IN_ASSERT_M * 2);
+    });
   });
 
   test.each([
