@@ -110,6 +110,28 @@ const DETAIL_GAIN = 1.5;
 /** How far the detail image fades into the overview at its box edge. See `edgeFadePx`. */
 const DETAIL_EDGE_FADE_PX = 24;
 
+/**
+ * Clamp a size to `OVERVIEW_MAX_PX` on its **longer** side, aspect intact.
+ *
+ * `imageryCanvasSize` derives height from the box's Mercator span and clamps only at the service's
+ * own 4,000 px ceiling, so the viewport it is handed bounds the *width* alone. On a lake as tall as
+ * Champlain — whose box is nearly seven times higher than it is wide — that lets the overview reach
+ * the full service cap: twice the pixel budget this pass is supposed to spend, on the one image that
+ * exists to be coarse.
+ */
+function cappedOverviewSize(size: { width: number; height: number }): {
+  width: number;
+  height: number;
+} {
+  const longest = Math.max(size.width, size.height);
+  if (longest <= OVERVIEW_MAX_PX) return size;
+  const scale = OVERVIEW_MAX_PX / longest;
+  return {
+    width: Math.max(1, Math.round(size.width * scale)),
+    height: Math.max(1, Math.round(size.height * scale)),
+  };
+}
+
 export interface ImageryRevealOptions {
   map: maplibregl.Map | null;
   loaded: boolean;
@@ -177,6 +199,21 @@ export function useImageryReveal({
     let disposed = false;
     let inFlight: HTMLImageElement | null = null;
 
+    /**
+     * Fetches still outstanding, so the signal clears when the **last** one settles.
+     *
+     * A boolean per load was the first shape and it was wrong in the ordinary case: the overview and
+     * the detail image are in flight together, and the overview usually lands first, so whichever
+     * settled first turned the spinner off over a lake still waiting for the sharp pass. That reads
+     * as "finished" on a half-drawn photograph, which is the exact confusion `onLoadingChange` exists
+     * to prevent.
+     */
+    let pending = 0;
+    const settle = () => {
+      pending = Math.max(0, pending - 1);
+      if (pending === 0) onLoadingChange?.(false);
+    };
+
     /** Fetch one box into one canvas, then add or update its source and layer. */
     const load = (options: {
       canvas: HTMLCanvasElement;
@@ -185,22 +222,27 @@ export function useImageryReveal({
       sourceId: string;
       layerId: string;
       edgeFadePx: number;
-      /** Overview loads are silent: the detail image drives the spinner, and one lake, one signal. */
+      /** Count this fetch in the loading signal — see `pending`. */
       announce: boolean;
       track: boolean;
     }) => {
       const { canvas, box, size, sourceId, layerId, edgeFadePx, announce, track } = options;
-      if (announce) onLoadingChange?.(true);
+      if (announce) {
+        pending++;
+        onLoadingChange?.(true);
+      }
       const image = new Image();
       // Required to read the pixels back off a canvas. USGS sends `access-control-allow-origin: *`;
       // without this the canvas is tainted and the `destination-in` composite throws a security error.
       image.crossOrigin = 'anonymous';
       if (track) inFlight = image;
       image.onload = () => {
+        // Settled before anything else, superseded or not: a fetch that finished is a fetch that is
+        // no longer pending, and leaving it counted would pin the signal on until the reveal closed.
+        if (announce) settle();
         // A superseded fetch must not paint: a slow render for a view the skater has already left
         // would otherwise land after the fast one and put stale ground back on screen.
         if (disposed || (track && inFlight !== image)) return;
-        if (announce) onLoadingChange?.(false);
         canvas.width = size.width;
         canvas.height = size.height;
         drawClippedImagery({
@@ -238,17 +280,20 @@ export function useImageryReveal({
             paint: { 'raster-opacity': 1, 'raster-fade-duration': 0 },
           },
           // The detail image goes above the overview and below the roads; the overview goes below
-          // both. Anchoring the detail on the overview's *layer* rather than on the basemap keeps the
-          // pair together however the style around them changes.
-          layerId === IMAGERY_LAYER_ID && map.getLayer(IMAGERY_OVERVIEW_LAYER_ID)
-            ? undefined
+          // both — **and the anchor is always a layer id**, because the two fetches race and
+          // `undefined` does not mean "wherever the other one is". It means the top of the style:
+          // above the roads, above the pins, above the hazard layers the D81 toggle exists to keep
+          // visible. So the detail always anchors on the basemap, and the overview anchors on the
+          // detail whenever the detail landed first.
+          layerId === IMAGERY_OVERVIEW_LAYER_ID && map.getLayer(IMAGERY_LAYER_ID)
+            ? IMAGERY_LAYER_ID
             : insertBeforeLayerId(map),
         );
       };
       image.onerror = () => {
         // A failed render leaves the previous image in place, which is more useful than a blank —
         // but the spinner has to stop regardless, or a dead service reads as a permanent load.
-        if (announce && (!track || inFlight === image)) onLoadingChange?.(false);
+        if (announce) settle();
       };
       image.src = aerialExportUrl(box, size.width, size.height);
     };
@@ -264,11 +309,13 @@ export function useImageryReveal({
     // For Champlain, 2,048 px across ~200 km is ~100 m/px — coarse, and exactly right for the job it
     // has, which is being there. For the great majority of lakes it is sharp enough to be the only
     // image needed, which is why the detail pass skips itself when it would not improve on it.
-    const overviewSize = imageryCanvasSize(
-      revealBounds,
-      revealBounds,
-      { width: OVERVIEW_MAX_PX, height: OVERVIEW_MAX_PX },
-      1,
+    const overviewSize = cappedOverviewSize(
+      imageryCanvasSize(
+        revealBounds,
+        revealBounds,
+        { width: OVERVIEW_MAX_PX, height: OVERVIEW_MAX_PX },
+        1,
+      ),
     );
     load({
       canvas: overviewCanvas,

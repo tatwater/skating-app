@@ -27,14 +27,13 @@ import type { LatLng } from './geometry';
 export const APPROACH_SOURCE_ID = 'approach-paths';
 export const APPROACH_LAYER_ID = 'approach-path-line';
 
-/**
- * The layer the approach is inserted *beneath*.
- *
- * Above the lake and its contours, below every pin: the line is context for the markers at its two
- * ends, and a route drawn over the put-in it leads to would hide the thing it is explaining. Same
- * anchor `contourLayer` uses, one level up.
- */
-export const APPROACH_BEFORE_LAYER_ID = 'put-in-markers';
+// Where the line sits: above the lake and its contours, **below every pin** — the line is context
+// for the markers at its two ends, and a route drawn over the put-in it leads to would hide the
+// thing it is explaining.
+//
+// There is deliberately no `beforeLayerId` constant for that. Both clients add this layer *before*
+// the put-in markers exist, so an anchor naming a layer that is not there yet would be a no-op
+// dressed as a rule; web gets the order from `addLayer` sequence and mobile from JSX order.
 
 /**
  * A launch with a walk worth drawing.

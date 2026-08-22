@@ -297,6 +297,14 @@ async function readAccessFeatures(states: readonly string[], refresh: boolean) {
  */
 type CachedLeg = ApproachLeg & { pathAsked?: boolean };
 
+/**
+ * Is this leg still owed a line? Said once, because the backfill and the operator's "run it again"
+ * counter are the same question asked before and after the request, and two copies of a four-term
+ * predicate is how they drift.
+ */
+const owesPath = (leg: CachedLeg): boolean =>
+  Boolean(leg.routed) && approachPathWanted(leg.meters) && !leg.path && !leg.pathAsked;
+
 type RouteCache = Record<string, CachedLeg>;
 
 function cacheKey(from: LatLng, to: LatLng): string {
@@ -479,7 +487,7 @@ async function main(): Promise<void> {
       // The geometry backfill (N6e Workstream 0). Only hike-in legs, because only they will be drawn
       // or buffered — `approachPathWanted` is the *same* predicate the parser keeps a line by, so a
       // leg can never be re-routed against the quota and then have its geometry thrown away.
-      if (leg.routed && approachPathWanted(leg.meters) && !leg.path && !leg.pathAsked) {
+      if (owesPath(leg)) {
         pathBackfills++;
         const refreshed = await routeApproach(lot.point, putIn.point, apiKey);
         if (refreshed.leg.routed) {
@@ -495,9 +503,7 @@ async function main(): Promise<void> {
       }
       // Retryable only. A leg already asked will never gain a line however many times we run, so
       // counting it here would leave the operator waiting on a number that cannot reach zero.
-      if (leg.routed && approachPathWanted(leg.meters) && !leg.path && !leg.pathAsked) {
-        awaitingPath++;
-      }
+      if (owesPath(leg)) awaitingPath++;
     } else {
       const routedLeg = await routeApproach(lot.point, putIn.point, apiKey);
       // A leg routed *now* has been asked about its line by construction — the parser kept whatever

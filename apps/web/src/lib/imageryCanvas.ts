@@ -216,35 +216,44 @@ export function drawClippedImagery({
   const { width, height } = canvas;
   ctx.clearRect(0, 0, width, height);
   ctx.drawImage(image, 0, 0, width, height);
-  // No clip ⇒ the photograph *is* the output. Returning before the composite rather than filling the
-  // whole box with an opaque rect: `destination-in` against a full-canvas fill is a no-op that still
-  // costs a full-resolution blur, which at 4000 px is not free.
-  if (clip === false) return false;
 
-  const metersPerPixel = groundMetersPerPixel(toMercatorBox(box), width);
-  // Half the feather, because a blur spreads in both directions from the edge it is applied to — so a
-  // radius of `feather / 2` produces a ramp `feather` wide overall.
-  const blurPx = metersPerPixel > 0 ? featherMeters / 2 / metersPerPixel : 0;
-
-  ctx.save();
-  ctx.globalCompositeOperation = 'destination-in';
   let feathered = false;
-  if (featherMeters > 0 && blurPx >= 0.5 && 'filter' in ctx) {
-    ctx.filter = `blur(${blurPx.toFixed(2)}px)`;
-    feathered = ctx.filter !== 'none';
+  // No clip ⇒ the photograph *is* the output, so the shape composite is skipped rather than run
+  // against a full-canvas fill: `destination-in` against one is a no-op that still costs a
+  // full-resolution blur, which at 4000 px is not free.
+  //
+  // **The box fade below still runs.** It is skipping it that was the bug: the detail image's edge
+  // meets the overview's at a hard rectangle whether or not it was clipped to a lake, so the
+  // unmasked editor got the seam v2 exists to remove.
+  if (clip !== false) {
+    const metersPerPixel = groundMetersPerPixel(toMercatorBox(box), width);
+    // Half the feather, because a blur spreads in both directions from the edge it is applied to —
+    // so a radius of `feather / 2` produces a ramp `feather` wide overall.
+    const blurPx = metersPerPixel > 0 ? featherMeters / 2 / metersPerPixel : 0;
+
+    ctx.save();
+    ctx.globalCompositeOperation = 'destination-in';
+    if (featherMeters > 0 && blurPx >= 0.5 && 'filter' in ctx) {
+      ctx.filter = `blur(${blurPx.toFixed(2)}px)`;
+      feathered = ctx.filter !== 'none';
+    }
+    ctx.fillStyle = '#ffffff';
+    traceShape(ctx, shape, box, width, height);
+    ctx.fill();
+    ctx.restore();
   }
-  ctx.fillStyle = '#ffffff';
-  traceShape(ctx, shape, box, width, height);
-  ctx.fill();
-  ctx.restore();
 
   // A second `destination-in`, this time against a blurred inset rectangle, ramps the alpha at the
   // box's own border. Where a box edge coincides with the shape's edge the first pass already took
   // the alpha to zero, so this is a no-op there rather than a double fade.
-  if (edgeFadePx > 0.5) {
+  //
+  // **Skipped outright without `filter` support**, because an unblurred inset fill is not a soft
+  // edge — it is a hard crop `edgeFadePx` further in than the seam it was asked to soften, which is
+  // strictly worse than leaving the seam alone.
+  if (edgeFadePx > 0.5 && 'filter' in ctx) {
     ctx.save();
     ctx.globalCompositeOperation = 'destination-in';
-    if ('filter' in ctx) ctx.filter = `blur(${edgeFadePx.toFixed(2)}px)`;
+    ctx.filter = `blur(${edgeFadePx.toFixed(2)}px)`;
     ctx.fillStyle = '#ffffff';
     const inset = edgeFadePx;
     ctx.fillRect(inset, inset, Math.max(0, width - inset * 2), Math.max(0, height - inset * 2));

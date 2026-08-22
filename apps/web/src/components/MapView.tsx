@@ -27,7 +27,7 @@ import { useQuery } from 'convex/react';
 import type maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { useTheme } from 'next-themes';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   CONTOUR_BEFORE_LAYER_ID,
   CONTOUR_FADE_MS,
@@ -994,9 +994,14 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
     const feature = features.features.find((f) => f.properties?._id === highlightWaterBodyId);
     const polygon = feature?.geometry;
     // The body may not be in the viewport answer yet on a deep link. Hold the previous mask rather
-    // than flashing to `null` and back, which would be the same teardown by a different route.
+    // than flashing to `null` and back, which would be the same teardown by a different route —
+    // **but only this body's**, which the first version did not check. The key is prefixed with the
+    // id, so a mask built for the *previous* lake would otherwise survive a change of selection and
+    // clip the photograph to the wrong shoreline: a hold-the-last-frame guard turned into a wrong
+    // answer, which is the failure it was written to avoid wearing the other way round.
     if (polygon?.type !== 'Polygon' && polygon?.type !== 'MultiPolygon') {
-      return revealMaskRef.current?.mask ?? null;
+      const held = revealMaskRef.current;
+      return held?.key.startsWith(`${highlightWaterBodyId}|`) ? held.mask : null;
     }
     const mask: ImageryMaskInput = {
       polygon,

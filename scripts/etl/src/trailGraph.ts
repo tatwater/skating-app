@@ -391,18 +391,33 @@ export function trailWalkMeters(
   push(fromWay.endNode, from.toEnd);
 
   let settled = 0;
+  /**
+   * The cheapest arrival seen, and **not** the first one, which is what the search used to return.
+   *
+   * Dijkstra settles nodes in order of *node* cost, but the answer is `nodeCost + arrival`, and
+   * `arrival` differs between the target way's two ends. A launch that snapped one vertex in from a
+   * 2 km way's start has `toEnd ≈ 2 km`, so reaching that end first would have returned a two
+   * kilometre walk for a two hundred metre one — inside the budget, so it was returned rather than
+   * rejected, and `pairByTrailConnectivity` then compared lots on it.
+   *
+   * Recorded and carried on instead: an arrival can only improve, and once the frontier's cheapest
+   * node already costs as much as the best total, nothing left can beat it.
+   */
+  let bestTotal = Number.POSITIVE_INFINITY;
   const done = new Set<number>();
   while (heap.length > 0) {
     const next = pop();
     if (!next) break;
     if (done.has(next.node)) continue;
     done.add(next.node);
-    if (next.cost > budget) break; // The cheapest thing left is already too far.
+    // The cheapest thing left is already too far, or already no better than the answer in hand.
+    if (next.cost > budget || next.cost >= bestTotal) break;
     if (++settled > MAX_NODES_SETTLED) break;
 
     const arrival = targets.get(next.node);
-    if (arrival !== undefined && next.cost + arrival <= budget) {
-      return finish(next.cost + arrival);
+    if (arrival !== undefined) {
+      const total = next.cost + arrival;
+      if (total <= budget && total < bestTotal) bestTotal = total;
     }
 
     for (const edge of graph.adjacency.get(next.node) ?? []) {
@@ -412,7 +427,7 @@ export function trailWalkMeters(
   }
   // No graph route inside the budget — but an along-way walk may still be one, which is why every
   // exit from this search goes through `finish` rather than returning `undefined` directly.
-  return finish(undefined);
+  return finish(bestTotal);
 }
 
 /** One lot↔launch pairing the trail network found and proximity could not. */
