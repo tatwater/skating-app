@@ -11,16 +11,21 @@
  * is a parking lot; you cannot count spaces, and a footpath under canopy is invisible. Which is the
  * entire job this tier has (D147, and N6e §A2's pairing with N6d).
  *
- * ## It is an ImageServer, not a tile cache, and that changes three things
+ * ## It is an ImageServer, not a tile cache, and that shapes everything downstream
  *
- * There is no `/tile/{z}/{y}/{x}` endpoint. Every request is rendered on demand from `exportImage`,
- * which MapLibre can drive because it substitutes **`{bbox-epsg-3857}`** into a raster template. So:
+ * There is no `/tile/{z}/{y}/{x}` endpoint — every request is rendered on demand from `exportImage`.
+ * Three consequences:
  *
- * 1. **No max-zoom cliff.** The renderer will draw any bbox at any scale, so there is nothing to clamp
- *    and no blank map at high zoom — the failure mode that made the old service unusable here.
- * 2. **No CDN, and therefore a courtesy problem.** Every tile is compute on somebody else's machine.
- *    `bounds` is the answer — see `aerialSourceSpec`.
+ * 1. **No max-zoom cliff.** The renderer draws any bbox at any scale, so there is nothing to clamp and
+ *    no blank map at high zoom — the failure mode that made the old service unusable here.
+ * 2. **No CDN, and therefore a courtesy problem.** Every request is compute on somebody else's
+ *    machine, which is why the client asks for *one image per settled view* clipped to the lake
+ *    rather than a tile pyramid (`imageryViewBox`) — fewer requests than tiles would have made.
  * 3. **The acquisition date is queryable**, which is what lets B2 state a date rather than hedge.
+ *
+ * An earlier build drove this through MapLibre's `{bbox-epsg-3857}` raster template, one tile per
+ * request. That is gone: clipping a photograph to a lake means owning its alpha channel, and owning
+ * the alpha channel means fetching the image ourselves. See the web app's `imageryCanvas`.
  *
  * ## D147 — this imagery can never show ice
  *
@@ -43,35 +48,6 @@ const NAIP_IMAGE_SERVER =
  * refresh date, which is the honest half. Read off the service, not paraphrased.
  */
 export const AERIAL_ATTRIBUTION = 'USDA, USGS The National Map: Orthoimagery';
-
-/**
- * Tile edge in pixels. 256 matches what `size` asks the renderer for, and the two must agree or every
- * tile is silently resampled — which at 0.3 m looks like the imagery is blurrier than it is.
- */
-export const AERIAL_TILE_SIZE = 256;
-
-/**
- * The raster tile template MapLibre expands per tile.
- *
- * `{bbox-epsg-3857}` is substituted with `minx,miny,maxx,maxy` in Web Mercator metres, which is the
- * order `exportImage` wants — so `bboxSR` and `imageSR` both pin 3857 and no reprojection happens
- * anywhere in the round trip.
- *
- * `format=jpg` because this is photography: PNG would triple the bytes for no visible gain, and there
- * is no transparency to preserve (the mask is a separate fill layer — see `imageryMask`).
- */
-export function aerialTileTemplate(): string {
-  const params = new URLSearchParams({
-    bbox: '{bbox-epsg-3857}',
-    bboxSR: '3857',
-    imageSR: '3857',
-    size: `${AERIAL_TILE_SIZE},${AERIAL_TILE_SIZE}`,
-    format: 'jpg',
-    f: 'image',
-  });
-  // `URLSearchParams` percent-encodes the braces, which MapLibre then fails to recognise as a token.
-  return `${NAIP_IMAGE_SERVER}/exportImage?${params.toString().replace('%7Bbbox-epsg-3857%7D', '{bbox-epsg-3857}')}`;
-}
 
 /**
  * The largest image the ImageServer will render in one call (`maxImageHeight`/`maxImageWidth`).
@@ -105,44 +81,6 @@ export function aerialExportUrl(
     f: 'image',
   });
   return `${NAIP_IMAGE_SERVER}/exportImage?${params.toString()}`;
-}
-
-/** A MapLibre raster source, bounded to the reveal. */
-export interface AerialSourceSpec {
-  type: 'raster';
-  tiles: string[];
-  tileSize: number;
-  attribution: string;
-  bounds: [number, number, number, number];
-  maxzoom: number;
-}
-
-/**
- * `bounds` is the courtesy mechanism, and it is doing more work than it looks like.
- *
- * MapLibre requests tiles for the whole **viewport**, not for the part of it a mask leaves visible —
- * so without bounds, panning around at a regional zoom with the reveal on would fire hundreds of
- * on-demand renders for pixels that are 99.9% painted over. Handing the source the reveal's own bbox
- * means it never asks for a tile outside the lake, at any zoom, however far the map is panned.
- *
- * **This is also what lets the founder's "no zoom floor" call stand** *(2026-08-21: "they should be
- * able to zoom so far out that it's not visible or so far in that it's too blurry to read — that's up
- * to them")*. The alternative to bounds would have been a minimum zoom, which is a rule about the
- * user; bounds is a rule about the request, and only one of those is our business.
- *
- * `maxzoom` is high rather than absent because a dynamic renderer will happily draw a 5 cm bbox from
- * 30 cm pixels forever. Past z21 that is pure upsampling served at real compute cost, so we let
- * MapLibre overzoom locally instead of asking USGS to.
- */
-export function aerialSourceSpec(bounds: BBox): AerialSourceSpec {
-  return {
-    type: 'raster',
-    tiles: [aerialTileTemplate()],
-    tileSize: AERIAL_TILE_SIZE,
-    attribution: AERIAL_ATTRIBUTION,
-    bounds: [bounds.minLng, bounds.minLat, bounds.maxLng, bounds.maxLat],
-    maxzoom: 21,
-  };
 }
 
 /**

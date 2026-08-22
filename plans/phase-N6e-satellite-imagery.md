@@ -725,7 +725,7 @@ route geometry, the trail connectivity pass the founder took at the same time, a
 on both clients. See [Workstream 0](#workstream-0--getting-the-way-in-into-the-app--built-2026-08-21)
 — including why *"while the routing pass is still running"* arrived eight days too late to be free.
 
-**PR 1 — the reveal. Zero infrastructure.**
+**PR 1 — the reveal, web only. Zero infrastructure.**
 
 1. **A1 + A2 against NAIP** — mask, inverse fill, hard edge. Where the design risk lives, and entirely
    testable before anything is user-visible.
@@ -737,9 +737,40 @@ on both clients. See [Workstream 0](#workstream-0--getting-the-way-in-into-the-a
 Ships against a keyless public endpoint with no box, no archive and no cron. **Could land while N6d is
 still settling**, which is the point of putting the seam here.
 
-**PR 2 — the timeline.** The Fly box, the STAC poll, the granule reader, the masked PMTiles archive,
-the scrubber, D149's weather gate and turnover, the 9-season backfill, and the phenology series
-**derived dark** (§C5). The long pole, and the only part with an external dependency.
+> ### ⚠ Mobile is deferred to PR 2, and it is a dependency decision rather than a port
+>
+> **React Native has no `CanvasRenderingContext2D`.** The web reveal clips by punching the alpha
+> channel of a fetched photograph on a canvas (`imageryCanvas`), and mobile has no equivalent —
+> `expo-image-manipulator` does crop, resize, rotate and flip, and no path clipping at any radius.
+> Everything *else* already ports: `imageryMask`, `aerialImagery` and `webMercator` are
+> platform-free, and `@maplibre/maplibre-react-native` exports both `RasterSource` and `ImageSource`.
+> The missing piece is exactly one thing, and it is the one thing RN does not have.
+>
+> Three ways out, evaluated 2026-08-21:
+>
+> | | Cost | Result |
+> |---|---|---|
+> | Add **`@shopify/react-native-skia`** | A native dependency + a fresh dev-client build | Parity now |
+> | **Defer to PR 2** ✅ | Web-only imagery until then | **Never needs a canvas at all** |
+> | Ship **v1's covering mask** on mobile | None | Parity now, covers the basemap — the thing the render already rejected |
+>
+> **Deferred, at the founder's call** — *"If PR 2 will give us the parity we want, I can be patient…
+> either way we should probably defer for now."*
+>
+> **Because PR 2 removes the problem rather than solving it twice.** D148's archive is *defined* as
+> pre-masked imagery with its alpha baked in server-side — so once it exists, mobile's reveal is an
+> `ImageSource` pointed at a URL, and the aerial tier can ride the same clipping path. Adding Skia
+> now would mean building the clip twice and maintaining a second copy of the projection-and-feather
+> logic that the render loop has already caught three separate bugs in.
+>
+> **The cost, stated plainly:** mobile skaters get the Copernicus deep link and no reveal until PR 2.
+> **The fallback if PR 2's clipping does not generalise:** Skia, revisited then rather than now.
+
+**PR 2 — the timeline, and mobile's reveal.** The Fly box, the STAC poll, the granule reader, the
+masked PMTiles archive, the scrubber, D149's weather gate and turnover, the 9-season backfill, and the
+phenology series **derived dark** (§C5). The long pole, and the only part with an external dependency.
+**Mobile's imagery lands here too**, riding the server-side clipping this PR builds anyway — see the
+deferral note under PR 1.
 
 **PR 3 — what the archive knows.** The ice-coverage charts in the drawer and the live hatch layer —
 everything user-facing that reads what PR 2 derived. This is N6f's content, and D150's real home.

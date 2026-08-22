@@ -1,12 +1,10 @@
 import type { Polygon } from 'geojson';
 import { describe, expect, it } from 'vitest';
 import {
-  AERIAL_ATTRIBUTION,
-  AERIAL_TILE_SIZE,
+  AERIAL_MAX_EXPORT_PX,
   aerialBoundsFor,
+  aerialExportUrl,
   aerialIdentifyUrl,
-  aerialSourceSpec,
-  aerialTileTemplate,
   formatAerialCaptureDate,
   parseAerialScene,
   resolutionFromSceneName,
@@ -60,44 +58,37 @@ const IDENTIFY_RESPONSE = {
   },
 };
 
-describe('aerialTileTemplate', () => {
-  it('leaves the bbox token unencoded — MapLibre matches it literally', () => {
-    const url = aerialTileTemplate();
-    expect(url).toContain('bbox={bbox-epsg-3857}');
-    expect(url).not.toContain('%7Bbbox');
-  });
+describe('aerialExportUrl', () => {
+  const BOX = { minLat: 44.45, minLng: -73.2, maxLat: 44.46, maxLng: -73.19 };
 
-  it('pins both spatial references to 3857, so nothing reprojects mid-round-trip', () => {
-    const url = aerialTileTemplate();
-    expect(url).toContain('bboxSR=3857');
-    expect(url).toContain('imageSR=3857');
-  });
-
-  it('asks for exactly the tile size it declares', () => {
-    expect(aerialTileTemplate()).toContain(`size=${AERIAL_TILE_SIZE}%2C${AERIAL_TILE_SIZE}`);
+  it('sends a Web Mercator bbox, because the mask is traced in the same projection', () => {
+    const url = new URL(aerialExportUrl(BOX, 512, 512));
+    const [minX, minY, maxX, maxY] = (url.searchParams.get('bbox') ?? '').split(',').map(Number);
+    // Projected metres, not degrees — a degrees bbox here is the units bug that misregisters the mask.
+    expect(Math.abs(minX as number)).toBeGreaterThan(1e6);
+    expect(maxX as number).toBeGreaterThan(minX as number);
+    expect(maxY as number).toBeGreaterThan(minY as number);
+    expect(url.searchParams.get('bboxSR')).toBe('3857');
+    expect(url.searchParams.get('imageSR')).toBe('3857');
   });
 
   it('targets the 0.3 m ImageServer, not the z16 tile cache', () => {
-    const url = aerialTileTemplate();
+    const url = aerialExportUrl(BOX, 256, 256);
     expect(url).toContain('USGSNAIPPlus/ImageServer');
     expect(url).not.toContain('USGSImageryOnly');
     // The cache's endpoint shape — if this ever appears we are back on 1.7 m/px.
     expect(url).not.toContain('/tile/');
   });
-});
 
-describe('aerialSourceSpec', () => {
-  it('bounds the source to the reveal, so panning never fires a render outside the lake', () => {
-    const spec = aerialSourceSpec(aerialBoundsFor(POND));
-    expect(spec.bounds).toEqual([-73.2, 44.45, -73.19, 44.46]);
+  it('clamps to what the service will render', () => {
+    // Past the cap the ImageServer returns a *smaller* image than asked for, silently rescaling the
+    // alpha mask against it — so the clamp belongs here rather than at the call site.
+    const url = new URL(aerialExportUrl(BOX, 9000, 9000));
+    expect(url.searchParams.get('size')).toBe(`${AERIAL_MAX_EXPORT_PX},${AERIAL_MAX_EXPORT_PX}`);
   });
 
-  it('carries the imagery credit on the source, so attribution composes rather than concatenates', () => {
-    expect(aerialSourceSpec(aerialBoundsFor(POND)).attribution).toBe(AERIAL_ATTRIBUTION);
-  });
-
-  it('caps zoom so upsampling happens locally rather than on the USGS renderer', () => {
-    expect(aerialSourceSpec(aerialBoundsFor(POND)).maxzoom).toBeLessThanOrEqual(22);
+  it('asks for jpg — the alpha is punched in on our side, so a PNG would be bytes we overwrite', () => {
+    expect(new URL(aerialExportUrl(BOX, 256, 256)).searchParams.get('format')).toBe('jpg');
   });
 });
 
