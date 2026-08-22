@@ -29,6 +29,7 @@
 
 import {
   groundMetersPerPixel,
+  type ImageryMaskInput,
   type ImageryTile,
   type LatLng,
   type MercatorBox,
@@ -146,18 +147,120 @@ export interface DrawableTile {
   image: CanvasImageSource;
 }
 
+/**
+ * How much of the composite's resolution the mask is painted at.
+ *
+ * The mask is a solid shape with a soft edge — it carries far less detail than the photograph it
+ * clips, so half resolution costs nothing visible and quarters a second full-size canvas. At the
+ * 4,096 px ceiling that is 17 MB rather than 67 MB, which on a phone is the difference between a
+ * working map and a reloaded tab.
+ */
+export const MASK_SCALE = 0.5;
+
 export interface ComposeOptions {
   canvas: HTMLCanvasElement;
+  /** Scratch canvas for the alpha mask — supplied by the caller so it is allocated once, not per view. */
+  maskCanvas: HTMLCanvasElement;
   /** The cells that resolved. Any that did not are simply absent — see `composeImagery`. */
   tiles: readonly DrawableTile[];
   /** The projected box the canvas covers — the union of the requested cells. */
   bounds: MercatorBox;
   /** Every body being revealed. Empty ⇒ nothing is kept, which is the fail-closed direction. */
-  shapes: readonly (Polygon | MultiPolygon)[];
-  /** Metres over which the edge fades to nothing. `0` ⇒ a hard edge. */
+  masks: readonly ImageryMaskInput[];
+  /** How far the reveal extends past what it reveals, at full opacity. */
+  solidMeters: number;
+  /** Metres over which the edge then fades to nothing. `0` ⇒ a hard edge. */
   featherMeters: number;
-  /** `false` ⇒ keep the whole composite, shapes untouched (the admin editor's unmasked mode). */
+  /** `false` ⇒ keep the whole composite, masks untouched (the admin editor's unmasked mode). */
   clip?: boolean;
+}
+
+/**
+ * Paint the reveal's alpha — **rasterised, where it used to be geometry**.
+ *
+ * ## Why the buffer stopped being a Turf buffer
+ *
+ * The solid ring around a lake used to come from `revealShape`: a real geodesic buffer, unioned
+ * across the water, the walk and the parking. That is the right shape and the wrong place to compute
+ * it. Viewport-wide reveal means up to fifty bodies, each a polygon of thousands of vertices, and
+ * `buffer` + `union` over that set ran **synchronously on the main thread** on the first refresh of
+ * every new view.
+ *
+ * A worker was the obvious fix and the wrong one: PR 2 puts this on React Native, which has no Web
+ * Workers, so it would have bought a smooth web build and left mobile with the same stall.
+ *
+ * Dilating in *pixel space* removes the work instead of moving it. A stroke is centred on its path,
+ * so filling a ring and stroking it at `2 × solid` yields exactly the ring dilated outward by
+ * `solid` — with round joins, which is what Turf's default buffer produces too. The rasteriser does
+ * it, so fifty bodies cost fifty fills rather than fifty buffers, and there is no union to compute:
+ * overlapping alpha *is* the union.
+ *
+ * The same trick covers the rest of the reveal. An approach path is a stroked line at the same width;
+ * a put-in or a parking coordinate is a disc of radius `solid`. D146's *"the same standard buffer
+ * distance from the polygon's edges AND on both sides of the hiking trail AND around the parking
+ * lot"* is three canvas operations.
+ *
+ * ⚠ **Painted opaque on its own canvas, never straight onto the photograph.** `destination-in`
+ * *intersects*, so a fill followed by a stroke would keep only their overlap — the interior — and
+ * throw the ring away. The mask has to be fully assembled before it meets the composite, which is
+ * what `maskCanvas` is for.
+ *
+ * `revealShape` stays in `@skating/core`: PR 2's Sentinel archive bakes its alpha server-side, where
+ * there is no rasteriser and the real geometry is the answer.
+ */
+function paintRevealMask(
+  maskCanvas: HTMLCanvasElement,
+  masks: readonly ImageryMaskInput[],
+  bounds: MercatorBox,
+  width: number,
+  height: number,
+  solidPx: number,
+): boolean {
+  const ctx = maskCanvas.getContext('2d');
+  if (!ctx) return false;
+
+  ctx.clearRect(0, 0, width, height);
+  ctx.fillStyle = '#ffffff';
+  ctx.strokeStyle = '#ffffff';
+  // Round everywhere, so the dilation is a true buffer rather than a mitred one — a sharp spit of
+  // shoreline would otherwise grow a spike several times the buffer distance.
+  ctx.lineJoin = 'round';
+  ctx.lineCap = 'round';
+  // Centred on the path ⇒ `solidPx` outward and `solidPx` inward, and the inward half lands inside
+  // the fill. Net: dilated outward by exactly `solidPx`.
+  ctx.lineWidth = Math.max(0.01, solidPx * 2);
+
+  const toPixel = (point: LatLng) => projectToPixel(point, bounds, width, height);
+
+  for (const mask of masks) {
+    ctx.beginPath();
+    traceShape(ctx, mask.polygon, bounds, width, height);
+    ctx.fill();
+    // Only worth stroking when it would show — below half a pixel the fill already is the answer.
+    if (solidPx >= 0.25) ctx.stroke();
+
+    for (const path of mask.approachPaths ?? []) {
+      // A single point is a marker that lost its other end (`revealShape` refuses these too), and
+      // stroking it would draw nothing anyway.
+      if (path.length < 2) continue;
+      ctx.beginPath();
+      path.forEach((point, index) => {
+        const { x, y } = toPixel(point);
+        if (index === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      });
+      ctx.stroke();
+    }
+
+    const points = [...(mask.parkingCoords ?? []), ...(mask.markerCoords ?? [])];
+    for (const point of points) {
+      const { x, y } = toPixel(point);
+      ctx.beginPath();
+      ctx.arc(x, y, Math.max(0.5, solidPx), 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+  return true;
 }
 
 /**
@@ -165,9 +268,9 @@ export interface ComposeOptions {
  * `featherMeters`.
  *
  * `destination-in` is the operator that makes this work: it multiplies what is already on the canvas
- * by the alpha of what is drawn next, so filling the shapes *keeps* the photograph there and erases
- * it everywhere else. The blur on that fill is what turns a hard edge into a gradient — one `filter`
- * rather than stacked fills, and a true ramp rather than steps of one.
+ * by the alpha of what is drawn next, so drawing the mask *keeps* the photograph where the mask is
+ * opaque and erases it everywhere else. The blur on that draw is what turns a hard edge into a
+ * gradient — one `filter` rather than stacked fills, and a true ramp rather than steps of one.
  *
  * **Blur is measured in ground metres and converted here.** A radius in pixels would mean the feather
  * changed width every time the zoom did — the sort of thing that looks like a rendering bug and is
@@ -183,9 +286,11 @@ export interface ComposeOptions {
  */
 export function composeImagery({
   canvas,
+  maskCanvas,
   tiles,
   bounds,
-  shapes,
+  masks,
+  solidMeters,
   featherMeters,
   clip,
 }: ComposeOptions): boolean {
@@ -217,6 +322,16 @@ export function composeImagery({
   // Half the feather, because a blur spreads both ways from the edge it is applied to — so a radius
   // of `feather / 2` produces a ramp `feather` wide overall.
   const blurPx = groundPerPixel > 0 ? featherMeters / 2 / groundPerPixel : 0;
+  const solidPx = groundPerPixel > 0 ? solidMeters / groundPerPixel : 0;
+
+  const maskWidth = Math.max(1, Math.round(width * MASK_SCALE));
+  const maskHeight = Math.max(1, Math.round(height * MASK_SCALE));
+  maskCanvas.width = maskWidth;
+  maskCanvas.height = maskHeight;
+  // The mask's pixels are its own, so the buffer converts into *its* scale rather than the composite's.
+  if (!paintRevealMask(maskCanvas, masks, bounds, maskWidth, maskHeight, solidPx * MASK_SCALE)) {
+    return false;
+  }
 
   let feathered = false;
   ctx.save();
@@ -225,12 +340,9 @@ export function composeImagery({
     ctx.filter = `blur(${blurPx.toFixed(2)}px)`;
     feathered = ctx.filter !== 'none';
   }
-  ctx.fillStyle = '#ffffff';
-  ctx.beginPath();
-  // Every body in one path, filled once. Nonzero winding unions them for free, which is why a
-  // viewport of overlapping reveals needs no geometric union at all.
-  for (const shape of shapes) traceShape(ctx, shape, bounds, width, height);
-  ctx.fill();
+  // Scaled back up to the composite. The upsample softens the mask very slightly, which for an edge
+  // that is about to be blurred by tens of pixels is beneath notice.
+  ctx.drawImage(maskCanvas, 0, 0, width, height);
   ctx.restore();
   return feathered;
 }

@@ -46,15 +46,13 @@ import {
   type ImageryTile,
   mercatorXToLng,
   mercatorYToLat,
-  revealShape,
   tileKey,
   tilesBounds,
   toMercatorBox,
 } from '@skating/core';
-import type { MultiPolygon, Polygon } from 'geojson';
 import type maplibregl from 'maplibre-gl';
 import { useEffect, useRef } from 'react';
-import { loadTile } from '../lib/imageryCache';
+import { isTileResident, loadTile } from '../lib/imageryCache';
 import { composeImagery, compositeCanvasSize, imageryCorners } from '../lib/imageryCanvas';
 
 /**
@@ -100,16 +98,7 @@ function insertBeforeLayerId(map: maplibregl.Map): string | undefined {
  */
 export const IMAGERY_MIN_ZOOM = 12;
 
-/**
- * How many buffered reveal shapes to hold.
- *
- * A buffered lake is a polygon with as many vertices as the lake it came from, so this is a real
- * budget rather than a nicety once the reveal covers a viewport rather than a body. A few viewports'
- * worth, which is what a pan away and back needs.
- */
-const MAX_CACHED_SHAPES = 200;
-
-/** A body to reveal, with a stable key so its buffered shape can be cached across pans. */
+/** A body to reveal, with a stable key so an unchanged view can be recognised as unchanged. */
 export interface KeyedMask {
   /** The body's Convex `_id` — what the cartography filters on. Carried, never re-parsed from `key`. */
   id: string;
@@ -160,14 +149,17 @@ export function useImageryReveal({
   // The canvas outlives individual fetches, so a pan reuses it rather than churning a DOM node and a
   // GPU texture per view.
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  // Buffered shapes are Turf work over thousands of vertices, and a viewport can hold fifty bodies —
-  // but a body's geometry does not change while you look at it, so each is computed once per session
-  // and keyed by the same string that decides whether the mask itself changed.
-  //
-  // **Bounded**, because "once per session" over a viewport-wide reveal is not a fixed set: every pan
-  // brings new keys, and a session browsing the corpus would otherwise retain a buffered polygon per
-  // body it ever passed over.
-  const shapeCacheRef = useRef(new Map<string, Polygon | MultiPolygon | null>());
+  // The alpha mask's scratch canvas, allocated once alongside the composite rather than per view.
+  const maskCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  /**
+   * What is currently painted, so an unchanged view costs nothing.
+   *
+   * **The founder's report, and it was not the network.** A small pan usually lands on the cells it
+   * started on, so every tile was already resident and no request was made — but the refresh still
+   * cleared a multi-megapixel canvas, redrew every cell, repainted the mask and ran a full-size blur,
+   * then re-uploaded the texture. That is the work a pan appeared to be doing.
+   */
+  const drawnRef = useRef<string | null>(null);
   /** The reveal set `refresh` reads, so a change of set redraws rather than re-mounting the layer. */
   const masksRef = useRef(masks);
   masksRef.current = masks;
@@ -189,35 +181,14 @@ export function useImageryReveal({
 
     const canvas = canvasRef.current ?? document.createElement('canvas');
     canvasRef.current = canvas;
-    const shapeCache = shapeCacheRef.current;
+    const maskCanvas = maskCanvasRef.current ?? document.createElement('canvas');
+    maskCanvasRef.current = maskCanvas;
 
     let disposed = false;
     /** The view this hook is currently fetching for; a later one supersedes it. */
     let generation = 0;
     /** The superseded view's fetches, so a pan stops paying for ground nobody is looking at. */
     let inFlight: AbortController | null = null;
-
-    /** Every revealed body, buffered — cached, because this is the expensive half. */
-    const shapesFor = (list: readonly KeyedMask[]): (Polygon | MultiPolygon)[] => {
-      const shapes: (Polygon | MultiPolygon)[] = [];
-      for (const { key, mask } of list) {
-        if (!shapeCache.has(key)) {
-          shapeCache.set(key, revealShape(mask, AERIAL_MASK_METERS.solid));
-          // Insertion-ordered, so the first key is the oldest. A cap rather than a clear, because the
-          // bodies about to be asked for again are the ones just added.
-          while (shapeCache.size > MAX_CACHED_SHAPES) {
-            const oldest = shapeCache.keys().next().value;
-            if (oldest === undefined) break;
-            shapeCache.delete(oldest);
-          }
-        }
-        const shape = shapeCache.get(key);
-        // `revealShape` fails closed and so does this: a body whose buffer failed is simply not
-        // revealed, rather than revealing everything.
-        if (shape) shapes.push(shape);
-      }
-      return shapes;
-    };
 
     const refresh = async () => {
       if (disposed) return;
@@ -251,6 +222,17 @@ export function useImageryReveal({
       const canvasBounds = tilesBounds(tiles);
       if (!canvasBounds) return;
 
+      // **What this view would draw.** Compared before anything is fetched or painted, so a pan that
+      // resolves to the same cells and the same bodies stops here rather than repeating the work.
+      const signature = [
+        level,
+        tiles.map(tileKey).join(','),
+        revealing.map((entry) => entry.key).join(','),
+        unmasked,
+      ].join('|');
+      const unchanged = signature === drawnRef.current && map.getSource(IMAGERY_SOURCE_ID);
+      if (unchanged) return;
+
       const mine = ++generation;
       // The concurrency cap is per *view*, and without this it was only ever per view: a drag fires a
       // `moveend` a second, and ten unabandoned views is forty parallel cold renders against a service
@@ -260,7 +242,12 @@ export function useImageryReveal({
       const controller = new AbortController();
       inFlight = controller;
 
-      onLoadingChange?.(true);
+      // **Announced only when something is actually going to be fetched.** Every cell already decoded
+      // in memory means this view costs no network at all, and flashing the wash over a lake whose
+      // photograph is about to be drawn synchronously is the signal crying wolf — which is worse than
+      // no signal, because it teaches the skater to ignore the one that means something.
+      const announces = tiles.some((tile: ImageryTile) => !isTileResident(tileKey(tile)));
+      if (announces) onLoadingChange?.(true);
       // Every cell, concurrently — bounded by `AERIAL_MAX_TILES_PER_VIEW`, which is set from what the
       // renderer tolerates rather than from what the network would allow.
       const fetched = await Promise.all(
@@ -273,7 +260,7 @@ export function useImageryReveal({
       // Superseded, or torn down, while the fetches were in flight. Drawing now would put ground the
       // skater has already left back on screen.
       if (disposed || mine !== generation) return;
-      onLoadingChange?.(false);
+      if (announces) onLoadingChange?.(false);
 
       const present = fetched.filter((entry) => entry !== null);
       // Nothing arrived at all: keep whatever is on screen. A blank reveal is strictly worse than a
@@ -285,12 +272,17 @@ export function useImageryReveal({
       canvas.height = size.height;
       composeImagery({
         canvas,
+        maskCanvas,
         tiles: present,
         bounds: canvasBounds,
-        shapes: shapesFor(revealing),
+        masks: revealing.map((entry) => entry.mask),
+        solidMeters: AERIAL_MASK_METERS.solid,
         featherMeters: AERIAL_MASK_METERS.feather,
         clip: !unmasked,
       });
+      // Recorded only once the paint succeeded, so a view that failed half-way is retried rather
+      // than remembered as drawn.
+      drawnRef.current = signature;
 
       const corners = imageryCorners({
         minLat: mercatorYToLat(canvasBounds.minY),

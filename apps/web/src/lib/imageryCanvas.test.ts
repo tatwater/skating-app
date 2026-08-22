@@ -1,7 +1,14 @@
-import { type BBox, toMercatorBox } from '@skating/core';
+import { type BBox, groundMetersPerPixel, toMercatorBox } from '@skating/core';
 import type { Polygon } from 'geojson';
 import { describe, expect, it } from 'vitest';
-import { compositeCanvasSize, imageryCorners, MAX_COMPOSITE_PX, traceShape } from './imageryCanvas';
+import {
+  composeImagery,
+  compositeCanvasSize,
+  imageryCorners,
+  MASK_SCALE,
+  MAX_COMPOSITE_PX,
+  traceShape,
+} from './imageryCanvas';
 
 const REVEAL: BBox = { minLat: 44.45, minLng: -73.2, maxLat: 44.46, maxLng: -73.19 };
 const REVEAL_M = toMercatorBox(REVEAL);
@@ -161,5 +168,156 @@ describe('traceShape', () => {
     const { calls, ctx } = recorder();
     traceShape(ctx, POND, REVEAL_M, 100, 100);
     expect(calls.filter((c) => c.op === 'begin')).toHaveLength(0);
+  });
+});
+
+/** A canvas stub that records every drawing call and every state assignment. */
+function fakeCanvas(width = 0, height = 0) {
+  const ops: Record<string, unknown>[] = [];
+  const state: Record<string, unknown> = {};
+  const ctx = {
+    clearRect: () => ops.push({ op: 'clearRect' }),
+    drawImage: (image: unknown, ...rest: number[]) => ops.push({ op: 'drawImage', image, rest }),
+    beginPath: () => ops.push({ op: 'beginPath' }),
+    closePath: () => ops.push({ op: 'closePath' }),
+    moveTo: (x: number, y: number) => ops.push({ op: 'moveTo', x, y }),
+    lineTo: (x: number, y: number) => ops.push({ op: 'lineTo', x, y }),
+    arc: (x: number, y: number, r: number) => ops.push({ op: 'arc', x, y, r }),
+    fill: () => ops.push({ op: 'fill' }),
+    stroke: () =>
+      ops.push({
+        op: 'stroke',
+        lineWidth: state.lineWidth,
+        lineJoin: state.lineJoin,
+        lineCap: state.lineCap,
+      }),
+    save: () => ops.push({ op: 'save' }),
+    restore: () => ops.push({ op: 'restore' }),
+  } as Record<string, unknown>;
+  for (const key of [
+    'lineWidth',
+    'lineJoin',
+    'lineCap',
+    'fillStyle',
+    'strokeStyle',
+    'globalCompositeOperation',
+    'filter',
+  ]) {
+    Object.defineProperty(ctx, key, {
+      get: () => state[key] ?? 'none',
+      set: (value) => {
+        state[key] = value;
+        ops.push({ op: `set:${key}`, value });
+      },
+      enumerable: true,
+      configurable: true,
+    });
+  }
+  const canvas = {
+    width,
+    height,
+    getContext: () => ctx as unknown as CanvasRenderingContext2D,
+  } as unknown as HTMLCanvasElement;
+  return { canvas, ops, state };
+}
+
+const TILE_IMAGE = {} as CanvasImageSource;
+
+function compose(masks: Parameters<typeof composeImagery>[0]['masks'], clip = true) {
+  const target = fakeCanvas(1000, 1000);
+  const mask = fakeCanvas();
+  const feathered = composeImagery({
+    canvas: target.canvas,
+    maskCanvas: mask.canvas,
+    tiles: [{ tile: { level: 12, x: 0, y: 0, box: REVEAL_M }, image: TILE_IMAGE }],
+    bounds: REVEAL_M,
+    masks,
+    solidMeters: 20,
+    featherMeters: 80,
+    clip,
+  });
+  return { target, mask, feathered };
+}
+
+describe('composeImagery — the buffer is rasterised, not geometry', () => {
+  it('dilates a lake by stroking its own ring at twice the buffer', () => {
+    // The whole reason `revealShape`'s Turf buffer left the render path: a stroke is centred on its
+    // path, so fill + stroke(2 × solid) IS the ring dilated outward by `solid` — at rasteriser cost
+    // rather than fifty geodesic buffers on the main thread, and portable to a canvas with no Turf.
+    const { mask } = compose([{ polygon: POND }]);
+    const stroke = mask.ops.find((o) => o.op === 'stroke');
+    expect(stroke).toBeDefined();
+
+    const groundPerPixel = groundMetersPerPixel(REVEAL_M, 1000);
+    const expected = (20 / groundPerPixel) * MASK_SCALE * 2;
+    expect(stroke?.lineWidth as number).toBeCloseTo(expected, 4);
+  });
+
+  it('rounds its joins, so a spit of shoreline cannot grow a mitre spike', () => {
+    const { mask } = compose([{ polygon: POND }]);
+    const stroke = mask.ops.find((o) => o.op === 'stroke');
+    expect(stroke?.lineJoin).toBe('round');
+    expect(stroke?.lineCap).toBe('round');
+  });
+
+  it('fills as well as strokes — the stroke is the ring, the fill is the water', () => {
+    const { mask } = compose([{ polygon: POND }]);
+    expect(mask.ops.filter((o) => o.op === 'fill').length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('covers the walk and the parking, which is what D146 asked for', () => {
+    const { mask } = compose([
+      {
+        polygon: POND,
+        approachPaths: [
+          [
+            { lat: 44.451, lng: -73.199 },
+            { lat: 44.452, lng: -73.198 },
+          ],
+        ],
+        parkingCoords: [{ lat: 44.4515, lng: -73.1985 }],
+        markerCoords: [{ lat: 44.4525, lng: -73.1975 }],
+      },
+    ]);
+    // Two strokes: the shoreline ring and the approach line.
+    expect(mask.ops.filter((o) => o.op === 'stroke')).toHaveLength(2);
+    // A disc each for the lot and the put-in, at the buffer radius.
+    expect(mask.ops.filter((o) => o.op === 'arc')).toHaveLength(2);
+  });
+
+  it('ignores a one-point approach — a marker that lost its other end', () => {
+    const { mask } = compose([{ polygon: POND, approachPaths: [[{ lat: 44.451, lng: -73.199 }]] }]);
+    expect(mask.ops.filter((o) => o.op === 'stroke')).toHaveLength(1);
+  });
+
+  it('unions many bodies by overlapping alpha, with no geometry to merge', () => {
+    const { mask } = compose([{ polygon: POND }, { polygon: POND }]);
+    expect(mask.ops.filter((o) => o.op === 'stroke')).toHaveLength(2);
+  });
+
+  it('applies the mask with one destination-in, never a fill and then a stroke', () => {
+    // Two sequential `destination-in` passes would INTERSECT — keeping only the interior and
+    // throwing the buffer ring away. That is why the mask is assembled on its own canvas first.
+    const { target } = compose([{ polygon: POND }]);
+    const composites = target.ops.filter((o) => o.op === 'set:globalCompositeOperation');
+    expect(composites).toHaveLength(1);
+    expect(composites[0]?.value).toBe('destination-in');
+    // The tile, then the finished mask.
+    expect(target.ops.filter((o) => o.op === 'drawImage')).toHaveLength(2);
+  });
+
+  it('feathers in ground metres, so the ramp does not change width with the zoom', () => {
+    const { target, feathered } = compose([{ polygon: POND }]);
+    expect(feathered).toBe(true);
+    const blur = target.ops.find((o) => o.op === 'set:filter');
+    const groundPerPixel = groundMetersPerPixel(REVEAL_M, 1000);
+    expect(blur?.value).toBe(`blur(${(80 / 2 / groundPerPixel).toFixed(2)}px)`);
+  });
+
+  it('skips the mask entirely when unmasked — the editor needs the ground past the line', () => {
+    const { target, mask, feathered } = compose([{ polygon: POND }], false);
+    expect(feathered).toBe(false);
+    expect(mask.ops).toHaveLength(0);
+    expect(target.ops.filter((o) => o.op === 'set:globalCompositeOperation')).toHaveLength(0);
   });
 });
