@@ -68,6 +68,7 @@ function LakeEditor() {
   const [draft, setDraft] = useState<GeoJSON.Polygon | GeoJSON.MultiPolygon | null>(null);
   const [suggested, setSuggested] = useState<LatLng[]>([]);
   const [banner, setBanner] = useState<{ tone: 'ok' | 'error'; text: string } | null>(null);
+  const [editorImagery, setEditorImagery] = useState(false);
   // The live map handle, so the lazily-created draw control can attach to the canvas. A ref on the
   // component rather than a module-level object: a module singleton outlives the route, holding a
   // removed map that the next visit's draw control would happily attach to.
@@ -130,8 +131,21 @@ function LakeEditor() {
       ) : null}
 
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_380px]">
-        <div className="h-[70vh] min-h-96 overflow-hidden rounded-lg border border-border">
+        <div className="relative h-[70vh] min-h-96 overflow-hidden rounded-lg border border-border">
+          {/* Unmasked aerial under the editor (N6e Workstream E). Off by default: tracing against
+              the vector map is the ordinary case, and a photograph is what you reach for when the
+              stored shoreline and the real one disagree. */}
+          <label className="absolute top-2 right-2 z-10 flex cursor-pointer items-center gap-2 rounded-md bg-background/95 px-2 py-1 text-xs shadow-lg">
+            <input
+              type="checkbox"
+              checked={editorImagery}
+              onChange={(event) => setEditorImagery(event.target.checked)}
+              className="size-3.5"
+            />
+            Aerial
+          </label>
           <LakeEditorMap
+            imagery={editorImagery}
             data={{
               body: {
                 _id: body._id,

@@ -88,6 +88,17 @@ export interface ImageryRevealOptions {
   loaded: boolean;
   /** `null` ⇒ nothing to reveal. Both "no lake open" and "reveal off" arrive as `null`. */
   mask: ImageryMaskInput | null;
+  /**
+   * Skip the clip and show the photograph across the whole view (Workstream E).
+   *
+   * **The admin lake editor's mode, and the reason is the opposite of the skater's.** A skater is
+   * looking *at* a lake, so the reveal stops where the lake does. An operator is correcting the
+   * polygon that says where the lake is — so clipping the imagery to that polygon would hide the
+   * evidence they need, which is the ground just past the line they are about to move.
+   *
+   * The shape still sets the *extent* fetched, so the editor does not ask USGS to render the region.
+   */
+  unmasked?: boolean;
 }
 
 /**
@@ -98,7 +109,12 @@ export interface ImageryRevealOptions {
  * fewer requests than the tile path made (every tile there was a dynamic render too), and it means a
  * drag costs nothing until the hand comes off.
  */
-export function useImageryReveal({ map, loaded, mask }: ImageryRevealOptions): void {
+export function useImageryReveal({
+  map,
+  loaded,
+  mask,
+  unmasked = false,
+}: ImageryRevealOptions): void {
   // The canvas outlives individual fetches, so a pan reuses it rather than churning a DOM node and a
   // GPU texture per view.
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -157,7 +173,9 @@ export function useImageryReveal({ map, loaded, mask }: ImageryRevealOptions): v
           image,
           box,
           shape,
+          // A zero feather with no clip is a plain photograph of the box — see `unmasked`.
           featherMeters: AERIAL_MASK_METERS.feather,
+          clip: !unmasked,
         });
 
         const existing = map.getSource(IMAGERY_SOURCE_ID) as maplibregl.CanvasSource | undefined;
@@ -204,7 +222,7 @@ export function useImageryReveal({ map, loaded, mask }: ImageryRevealOptions): v
       if (map.getLayer(IMAGERY_LAYER_ID)) map.removeLayer(IMAGERY_LAYER_ID);
       if (map.getSource(IMAGERY_SOURCE_ID)) map.removeSource(IMAGERY_SOURCE_ID);
     };
-  }, [map, loaded, mask]);
+  }, [map, loaded, mask, unmasked]);
 }
 
 /**

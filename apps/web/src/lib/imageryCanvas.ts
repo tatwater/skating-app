@@ -144,6 +144,8 @@ export interface ClipOptions {
   shape: Polygon | MultiPolygon;
   /** Metres over which the edge fades to nothing. `0` ⇒ a hard edge. */
   featherMeters: number;
+  /** `false` ⇒ keep the whole box, shape untouched (the admin editor's unmasked mode). */
+  clip?: boolean;
 }
 
 /**
@@ -168,6 +170,7 @@ export function drawClippedImagery({
   box,
   shape,
   featherMeters,
+  clip,
 }: ClipOptions): boolean {
   const ctx = canvas.getContext('2d');
   if (!ctx) return false;
@@ -175,6 +178,10 @@ export function drawClippedImagery({
   const { width, height } = canvas;
   ctx.clearRect(0, 0, width, height);
   ctx.drawImage(image, 0, 0, width, height);
+  // No clip ⇒ the photograph *is* the output. Returning before the composite rather than filling the
+  // whole box with an opaque rect: `destination-in` against a full-canvas fill is a no-op that still
+  // costs a full-resolution blur, which at 4000 px is not free.
+  if (clip === false) return false;
 
   const metersPerPixel = groundMetersPerPixel(toMercatorBox(box), width);
   // Half the feather, because a blur spreads in both directions from the edge it is applied to — so a

@@ -2,7 +2,7 @@ import type { BBox, LatLng } from '@skating/core';
 import type maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { useTheme } from 'next-themes';
-import { useEffect, useRef } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import { env } from '../../lib/env';
 import { useMapCanvas } from '../../lib/mapCanvas';
 import {
@@ -15,6 +15,7 @@ import {
   WATER_PALETTE,
   waterBodiesToFeatureCollection,
 } from '../../lib/waterMap';
+import { useImageryReveal } from '../useImageryReveal';
 
 const EMPTY: GeoJSON.FeatureCollection = { type: 'FeatureCollection', features: [] };
 
@@ -56,12 +57,20 @@ export function LakeEditorMap({
   data,
   onMapClick,
   onReady,
+  imagery = false,
 }: {
   data: LakeEditorData;
   /** A click on the canvas — the sample-point placement tool consumes these. */
   onMapClick?: (coord: LatLng) => void;
   /** Hand the raw map up, so the lazy-loaded draw control can attach to it. */
   onReady?: (map: maplibregl.Map) => void;
+  /**
+   * Show the 0.3 m aerial under the editor (N6e Workstream E) — **unmasked**, unlike the skater's
+   * reveal. An operator is correcting the polygon that decides where the lake is, so clipping the
+   * photograph to that polygon would hide the one thing they need: the ground just past the line
+   * they are about to move.
+   */
+  imagery?: boolean;
 }) {
   const { resolvedTheme } = useTheme();
   const flavor = resolvedTheme === 'dark' ? MAP_FLAVORS.dark : MAP_FLAVORS.light;
@@ -70,6 +79,13 @@ export function LakeEditorMap({
   const pmtilesUrl = env.pmtilesUrl || DEMO_PMTILES_URL;
 
   const bounds = boundsForBody(data.body.bbox);
+  // The editor is fenced to one lake (Decision 5), so the body's own polygon is both what the
+  // operator is editing and a sufficient extent for the fetch — no separate bounds needed.
+  const imageryMask = useMemo(() => {
+    const polygon = data.body.polygon;
+    if (!imagery || (polygon.type !== 'Polygon' && polygon.type !== 'MultiPolygon')) return null;
+    return { polygon };
+  }, [imagery, data.body.polygon]);
   const onMapClickRef = useRef(onMapClick);
   onMapClickRef.current = onMapClick;
   const onReadyRef = useRef(onReady);
@@ -319,6 +335,8 @@ export function LakeEditorMap({
   // the route, and a screen reader landing on an unlabelled full-page div has nothing to announce.
   // The tools beside it are the operable surface; this is the subject they act on. MapLibre takes any
   // `HTMLElement` as its container, so the semantic element costs nothing.
+  useImageryReveal({ map: mapRef.current, loaded, mask: imageryMask, unmasked: true });
+
   return (
     <section
       ref={containerRef}
