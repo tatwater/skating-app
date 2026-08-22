@@ -64,15 +64,21 @@ export type MapFlavor = (typeof MAP_FLAVORS)[keyof typeof MAP_FLAVORS];
  *
  * Scoped to the reveal rather than to selection generally, because white on the light basemap's own
  * near-white earth is an outline nobody can see.
+ *
+ * **`revealedIds` and not a boolean, since v3 reveals the whole viewport.** The boolean version
+ * painted *every* shoreline white the moment the toggle flipped, including lakes with no photograph
+ * under them — so a favourited lake elsewhere on screen silently lost its gold to a reveal it was not
+ * part of. Now the white applies feature by feature, to exactly the bodies that got pixels.
  */
-export function waterOutlineColor(flavor: MapFlavor, revealed: boolean): unknown {
-  if (revealed) return '#ffffff';
-  return [
+export function waterOutlineColor(flavor: MapFlavor, revealedIds: readonly string[] = []): unknown {
+  const normal = [
     'case',
     ['boolean', ['feature-state', 'favorite'], false],
     '#eab308', // amber-500 — the favorite gold
     WATER_PALETTE[flavor].outline,
   ];
+  if (revealedIds.length === 0) return normal;
+  return ['case', ['in', ['get', '_id'], ['literal', [...revealedIds]]], '#ffffff', normal];
 }
 
 /**

@@ -1,4 +1,4 @@
-import { type BBox, type ImageryMaskInput, type LatLng, shapeSignature } from '@skating/core';
+import { type BBox, type LatLng, shapeSignature } from '@skating/core';
 import type maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { useTheme } from 'next-themes';
@@ -15,7 +15,7 @@ import {
   WATER_PALETTE,
   waterBodiesToFeatureCollection,
 } from '../../lib/waterMap';
-import { useImageryReveal } from '../useImageryReveal';
+import { type KeyedMask, useImageryReveal } from '../useImageryReveal';
 
 const EMPTY: GeoJSON.FeatureCollection = { type: 'FeatureCollection', features: [] };
 
@@ -89,15 +89,17 @@ export function LakeEditorMap({
   // screen. Keying on `shapeSignature` means a re-emit carrying the same geometry returns the same
   // object — and a genuine redraw, which is the one change the operator *wants* to refetch for,
   // changes the signature and does.
-  const maskRef = useRef<{ key: string; mask: ImageryMaskInput } | null>(null);
+  const maskRef = useRef<{ key: string; masks: KeyedMask[] } | null>(null);
   const imageryMask = useMemo(() => {
     const polygon = data.body.polygon;
     if (!imagery || (polygon.type !== 'Polygon' && polygon.type !== 'MultiPolygon')) return null;
     const key = `${data.body._id}|${shapeSignature(polygon)}`;
-    if (maskRef.current?.key === key) return maskRef.current.mask;
-    const mask: ImageryMaskInput = { polygon };
-    maskRef.current = { key, mask };
-    return mask;
+    if (maskRef.current?.key === key) return maskRef.current.masks;
+    // A one-body list: the editor is fenced to one lake, so the viewport-wide reveal the skater map
+    // uses collapses here to the single subject the camera is locked onto.
+    const masks: KeyedMask[] = [{ key, mask: { polygon } }];
+    maskRef.current = { key, masks };
+    return masks;
   }, [imagery, data.body._id, data.body.polygon]);
   const onMapClickRef = useRef(onMapClick);
   onMapClickRef.current = onMapClick;
@@ -348,7 +350,7 @@ export function LakeEditorMap({
   // the route, and a screen reader landing on an unlabelled full-page div has nothing to announce.
   // The tools beside it are the operable surface; this is the subject they act on. MapLibre takes any
   // `HTMLElement` as its container, so the semantic element costs nothing.
-  useImageryReveal({ map: mapRef.current, loaded, mask: imageryMask, unmasked: true });
+  useImageryReveal({ map: mapRef.current, loaded, masks: imageryMask, unmasked: true });
 
   return (
     <section

@@ -10,7 +10,6 @@ import {
   type BBox,
   draftPlacementCount,
   formatAerialCaptureDate,
-  type ImageryMaskInput,
   isDraftSubmittable,
   isRegionOffscreen,
   type LatLng,
@@ -19,6 +18,7 @@ import {
   profileRevealEnabled,
   representativePoint,
   SUB_AREA_MIN_RENDER_ZOOM,
+  shapeSignature,
   undoDraftPlacement,
   withAccessDim,
 } from '@skating/core';
@@ -90,6 +90,8 @@ import {
   IMAGERY_PULSE_MIN,
   IMAGERY_PULSE_MS,
   IMAGERY_REPLACED_LAYERS,
+  type KeyedMask,
+  setLayersHiddenForBodies,
   setLayersVisible,
   useImageryReveal,
 } from './useImageryReveal';
@@ -438,7 +440,6 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
           // See `waterOutlineColor`; the reveal effect below re-sets this when the toggle flips.
           'line-color': waterOutlineColor(
             flavor,
-            false,
           ) as maplibregl.DataDrivenPropertyValueSpecification<string>,
           // The outline dims with the fill (N6f). A full-strength outline around a ghost fill reads
           // as a rendering bug rather than as a statement about the lake.
@@ -982,43 +983,68 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
   // screen that was a steady flicker of the road map showing through the photograph. Keying on what
   // the mask is actually *made of* means a re-emit carrying identical geometry returns the identical
   // object, and the reveal effect never runs again.
-  const revealMaskRef = useRef<{ key: string; mask: ImageryMaskInput } | null>(null);
-  const revealMask = useMemo(() => {
-    if (!imageryOn || !highlightWaterBodyId) return null;
+  // Each replaced layer's filter as the style defined it, captured the first time we compose over it
+  // — so the reveal's "not these bodies" clause can be removed without taking the layer's own rule
+  // with it. `sub-area-label` filters on `label`, and losing that draws every outline as a label.
+  const baseFiltersRef = useRef(new Map<string, unknown>());
+  const revealMasksRef = useRef<{ key: string; masks: KeyedMask[] } | null>(null);
+  const revealMasks = useMemo(() => {
+    if (!imageryOn) return null;
     const launches = putIns ?? [];
-    const key = `${highlightWaterBodyId}|${launches
+    // The open lake's access is part of *its* reveal and nothing else's: `putIns` is a per-body
+    // query, so the other bodies on screen have water and no walk. That is the correct asymmetry
+    // rather than a gap — a lake you have not opened has no approach drawn over it either.
+    const accessKey = launches
       .map((p) => `${p.coord.lat},${p.coord.lng},${p.approachPath?.length ?? 0}`)
-      .join(';')}`;
-    if (revealMaskRef.current?.key === key) return revealMaskRef.current.mask;
+      .join(';');
 
-    const feature = features.features.find((f) => f.properties?._id === highlightWaterBodyId);
-    const polygon = feature?.geometry;
-    // The body may not be in the viewport answer yet on a deep link. Hold the previous mask rather
-    // than flashing to `null` and back, which would be the same teardown by a different route —
-    // **but only this body's**, which the first version did not check. The key is prefixed with the
-    // id, so a mask built for the *previous* lake would otherwise survive a change of selection and
-    // clip the photograph to the wrong shoreline: a hold-the-last-frame guard turned into a wrong
-    // answer, which is the failure it was written to avoid wearing the other way round.
-    if (polygon?.type !== 'Polygon' && polygon?.type !== 'MultiPolygon') {
-      const held = revealMaskRef.current;
-      return held?.key.startsWith(`${highlightWaterBodyId}|`) ? held.mask : null;
+    const entries: KeyedMask[] = [];
+    for (const feature of features.features) {
+      const id = feature.properties?._id;
+      const polygon = feature.geometry;
+      if (typeof id !== 'string') continue;
+      if (polygon?.type !== 'Polygon' && polygon?.type !== 'MultiPolygon') continue;
+      const open = id === highlightWaterBodyId;
+      entries.push({
+        // The key is what caches the buffered shape in the hook, so it has to change exactly when
+        // the geometry or the access does — hence the signature rather than object identity, and
+        // hence the access half only on the body that has any.
+        key: `${id}|${shapeSignature(polygon)}|${open ? accessKey : ''}`,
+        mask: {
+          polygon,
+          // Only routed hike-in legs carry a path, which is the correct set — a drive-up ramp's
+          // walk is already inside the water's own buffer. See `approachLayer`'s module note.
+          approachPaths: open
+            ? launches.flatMap((p) => (p.approachPath ? [p.approachPath] : []))
+            : undefined,
+          markerCoords: open ? launches.map((p) => p.coord) : undefined,
+        },
+      });
     }
-    const mask: ImageryMaskInput = {
-      polygon,
-      // Only routed hike-in legs carry a path, which is the correct set — a drive-up ramp's walk is
-      // already inside the water's own buffer. See `approachLayer`'s module note.
-      approachPaths: launches.flatMap((p) => (p.approachPath ? [p.approachPath] : [])),
-      markerCoords: launches.map((p) => p.coord),
-    };
-    revealMaskRef.current = { key, mask };
-    return mask;
+    if (entries.length === 0) return null;
+
+    // Identity is cached against the joined keys, and that is a fix for a visible bug rather than a
+    // micro-optimisation. `features` is replaced every time the viewport subscription re-emits, and
+    // a Convex subscription re-emits on its own schedule — so a plain memo handed back a new array
+    // roughly once a second, tearing the reveal down and re-adding it each time. On screen that was
+    // a steady flicker of the road map through the photograph.
+    const key = entries.map((entry) => entry.key).join('~');
+    if (revealMasksRef.current?.key === key) return revealMasksRef.current.masks;
+    revealMasksRef.current = { key, masks: entries };
+    return entries;
   }, [imageryOn, highlightWaterBodyId, features, putIns]);
+
+  /** The ids with a photograph under them — what the cartography has to agree with. */
+  const revealedIds = useMemo(
+    () => (revealMasks ?? []).map((entry) => entry.key.split('|')[0] ?? ''),
+    [revealMasks],
+  );
 
   const [imageryLoading, setImageryLoading] = useState(false);
   useImageryReveal({
     map: mapRef.current,
     loaded,
-    mask: revealMask,
+    masks: revealMasks,
     onLoadingChange: setImageryLoading,
   });
 
@@ -1027,6 +1053,12 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
   // Two effects rather than one, and deliberately: the replaced set is ours (the A3 table) and the
   // hazard set is the skater's. Folding them together would put a safety layer's visibility inside a
   // code path that also owns cartography.
+  //
+  // **Per feature, not per layer** (v3). A `visibility` flip is all-or-nothing, so revealing one pond
+  // stripped the fill, the sub-area labels and the tracks from every lake on screen — and now that
+  // the reveal covers the viewport, the set that keeps its cartography is exactly the set that did
+  // not get pixels. `setLayersHiddenForBodies` composes with each layer's own filter rather than
+  // replacing it, which `sub-area-label` depends on.
   //
   // **`contourBodyKey` is in the deps and is not decoration.** This started as a callback fired once
   // when the reveal mounted, which is wrong for any layer that can be re-added underneath it — and
@@ -1037,7 +1069,7 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !loaded) return;
-    setLayersVisible(map, IMAGERY_REPLACED_LAYERS, !revealMask);
+    setLayersHiddenForBodies(map, IMAGERY_REPLACED_LAYERS, revealedIds, baseFiltersRef.current);
     // The shoreline survives the reveal and changes job while it does — status colour off the vector
     // map, edge-of-the-photograph on it. Set here rather than in the reveal hook because the layer
     // belongs to the map's own init, and the hook owns only what it added.
@@ -1045,18 +1077,18 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
       map.setPaintProperty(
         'water-outline',
         'line-color',
-        waterOutlineColor(flavor, Boolean(revealMask)) as never,
+        waterOutlineColor(flavor, revealedIds) as never,
       );
     }
-  }, [revealMask, loaded, contourBodyKey, flavor, mapRef.current]);
+  }, [revealedIds, loaded, contourBodyKey, flavor, mapRef.current]);
 
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !loaded) return;
     // Hazards are visible unless the skater has *chosen* to hide them while looking at imagery —
     // never merely because imagery is on (D81's safety line, and the founder's toggle answering it).
-    setLayersVisible(map, IMAGERY_HAZARD_LAYERS, !revealMask || hazardsOverImagery);
-  }, [revealMask, hazardsOverImagery, loaded, mapRef.current]);
+    setLayersVisible(map, IMAGERY_HAZARD_LAYERS, revealedIds.length === 0 || hazardsOverImagery);
+  }, [revealedIds, hazardsOverImagery, loaded, mapRef.current]);
 
   // The gentle wash over the lake while its photograph is on the way (N6e).
   //
@@ -1070,11 +1102,13 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !loaded || !map.getLayer(IMAGERY_LOADING_LAYER_ID)) return;
-    if (!imageryLoading || !highlightWaterBodyId) {
+    if (!imageryLoading || revealedIds.length === 0) {
       map.setPaintProperty(IMAGERY_LOADING_LAYER_ID, 'fill-opacity', 0);
       return;
     }
-    map.setFilter(IMAGERY_LOADING_LAYER_ID, ['==', ['get', '_id'], highlightWaterBodyId]);
+    // Every body awaiting pixels, not just the open one — with the reveal covering the viewport, a
+    // pulse on one lake while five others sit blank would say the wrong thing about which is loading.
+    map.setFilter(IMAGERY_LOADING_LAYER_ID, ['in', ['get', '_id'], ['literal', [...revealedIds]]]);
     let bright = true;
     map.setPaintProperty(IMAGERY_LOADING_LAYER_ID, 'fill-opacity', IMAGERY_PULSE_MAX);
     const timer = setInterval(() => {
@@ -1091,7 +1125,7 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
         map.setPaintProperty(IMAGERY_LOADING_LAYER_ID, 'fill-opacity', 0);
       }
     };
-  }, [imageryLoading, highlightWaterBodyId, loaded, mapRef.current]);
+  }, [imageryLoading, revealedIds, loaded, mapRef.current]);
 
   // When was this lake last photographed? (N6e B2.)
   //
@@ -1104,12 +1138,16 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
   // output for a body outside NAIP coverage and for a service having a bad afternoon alike — the one
   // unacceptable answer here is a plausible year we made up (D147).
   useEffect(() => {
-    if (!imageryOn || !revealMask) return;
+    // The caption is about **the open lake**, not the viewport: it sits in that lake's drawer, and a
+    // date averaged over whatever else happens to be on screen would be a claim about nothing. Read
+    // off the reveal set rather than off `features` so it is stable across a subscription re-emit.
+    const open = revealMasks?.find((entry) => entry.key.startsWith(`${highlightWaterBodyId}|`));
+    if (!imageryOn || !open) return;
     // `representativePoint` lands *on* the shoreline (it is Turf's `pointOnFeature`), and here that
     // is fine: NAIP photographs land and water alike, and a quarter-quad scene is far larger than
     // the error. It is emphatically **not** fine for Workstream D's Copernicus link, which opens a
     // browser centred on the point — hence the stored `interiorPoint` there and this one here.
-    const centre = representativePoint(revealMask.polygon);
+    const centre = representativePoint(open.mask.polygon);
     const controller = new AbortController();
     fetch(aerialIdentifyUrl(centre), { signal: controller.signal })
       .then((response) => (response.ok ? response.json() : null))
@@ -1121,7 +1159,7 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
         // Includes the abort on drawer-close, which is not a failure worth reporting.
       });
     return () => controller.abort();
-  }, [imageryOn, revealMask, setAerialCaptureLabel]);
+  }, [imageryOn, revealMasks, highlightWaterBodyId, setAerialCaptureLabel]);
 
   // Open-bounty pins across the viewport (D10/D17) — refreshed as the map pans + as bounties change.
   useEffect(() => {

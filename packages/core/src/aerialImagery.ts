@@ -18,14 +18,23 @@
  *
  * 1. **No max-zoom cliff.** The renderer draws any bbox at any scale, so there is nothing to clamp and
  *    no blank map at high zoom — the failure mode that made the old service unusable here.
- * 2. **No CDN, and therefore a courtesy problem.** Every request is compute on somebody else's
- *    machine, which is why the client asks for *one image per settled view* clipped to the lake
- *    rather than a tile pyramid (`imageryViewBox`) — fewer requests than tiles would have made.
+ * 2. **There IS a CDN, and it is the whole performance story.** This note used to say the opposite —
+ *    *"no CDN, and therefore a courtesy problem"* — and building on that was expensive. Measured
+ *    against the live service on 2026-08-21, `exportImage` answers with `cache-control: max-age=43200`
+ *    through CloudFront, and a repeat of an identical URL is **0.08 s against 29.3 s** for a fresh
+ *    render. A one-metre change of bbox, or a one-pixel change of size, is a full miss.
+ *
+ *    So the courtesy problem is real but it is not the one that was written down: the cost is not
+ *    "every request is compute", it is *"every request we make is compute **because we never repeat a
+ *    URL**"*. That is why requests are snapped to a fixed grid — see `imageryTiles`.
  * 3. **The acquisition date is queryable**, which is what lets B2 state a date rather than hedge.
  *
  * An earlier build drove this through MapLibre's `{bbox-epsg-3857}` raster template, one tile per
  * request. That is gone: clipping a photograph to a lake means owning its alpha channel, and owning
  * the alpha channel means fetching the image ourselves. See the web app's `imageryCanvas`.
+ *
+ * ⚠ **Call this with a grid cell's box and `AERIAL_TILE_PX`, not with a live camera's.** The URL is
+ * the cache key, so a bbox derived from `map.getBounds()` guarantees a miss — that is the 350×.
  *
  * ## D147 — this imagery can never show ice
  *
