@@ -193,8 +193,23 @@ export function useImageryReveal({
    * `onPaintedChange` hands out a fresh array, and the consumer holds it in state — so firing on
    * every compose would re-render and re-set three MapLibre filters each time a pan repainted the
    * same bodies, which is the cost the redraw skip exists to avoid.
+   *
+   * **Starts at `''`, which is "nothing painted" rather than "never asked".** A `null` start makes the
+   * teardown's own `!== ''` check true on a mount that never painted, so every unmount — and every
+   * StrictMode double-invoke — handed the consumer a fresh `[]`, which is a state change, a render and
+   * three MapLibre writes for no change at all.
    */
-  const reportedRef = useRef<string | null>(null);
+  const reportedRef = useRef<string>('');
+  /**
+   * Whether the consumer currently believes something is loading.
+   *
+   * The signal is edge-triggered for the consumer and level-held here, because **the view that
+   * supersedes another has to settle the signal for both**. A superseded fetch returns at its own
+   * `mine !== generation` check and never reports `false`; if its replacement then declines to
+   * announce — every cell resident, which is the common case for a pan back — nobody ever does, and
+   * the wash runs for ever over a lake nothing is being fetched for.
+   */
+  const loadingRef = useRef(false);
 
   const enabled = Boolean(map && loaded && masks && masks.length > 0);
 
@@ -218,6 +233,18 @@ export function useImageryReveal({
     let generation = 0;
     /** The superseded view's fetches, so a pan stops paying for ground nobody is looking at. */
     let inFlight: AbortController | null = null;
+
+    /**
+     * Report the loading signal, at most once per change — see `loadingRef`.
+     *
+     * Every path that claims a generation reports the truth for the view it just superseded as well
+     * as its own, which is what makes "announce only when something is actually being fetched" safe.
+     */
+    const signalLoading = (next: boolean) => {
+      if (loadingRef.current === next) return;
+      loadingRef.current = next;
+      onLoadingChange?.(next);
+    };
 
     const refresh = async () => {
       if (disposed) return;
@@ -259,8 +286,19 @@ export function useImageryReveal({
         revealing.map((entry) => entry.key).join(','),
         unmasked,
       ].join('|');
-      const unchanged = signature === drawnRef.current && map.getSource(IMAGERY_SOURCE_ID);
-      if (unchanged) return;
+      if (signature === drawnRef.current && map.getSource(IMAGERY_SOURCE_ID)) {
+        // ⚠ **Skipping the work still has to supersede the work already running.** A pan away and
+        // straight back leaves the earlier view's fetch in flight, and it passes its own
+        // `mine !== generation` check when it lands — so it paints *that* ground over the view we are
+        // actually sitting on and moves the source's coordinates with it, and nothing refreshes until
+        // the next `moveend`. The symptom is the photograph disappearing from a view it had already
+        // drawn. Claim the generation, drop the fetch, and settle its signal.
+        generation += 1;
+        inFlight?.abort();
+        inFlight = null;
+        signalLoading(false);
+        return;
+      }
 
       const mine = ++generation;
       // The concurrency cap is per *view*, and without this it was only ever per view: a drag fires a
@@ -276,7 +314,7 @@ export function useImageryReveal({
       // photograph is about to be drawn synchronously is the signal crying wolf — which is worse than
       // no signal, because it teaches the skater to ignore the one that means something.
       const announces = tiles.some((tile: ImageryTile) => !isTileResident(tileKey(tile)));
-      if (announces) onLoadingChange?.(true);
+      signalLoading(announces);
       // Every cell, concurrently — bounded by `AERIAL_MAX_TILES_PER_VIEW`, which is set from what the
       // renderer tolerates rather than from what the network would allow.
       const fetched = await Promise.all(
@@ -289,7 +327,7 @@ export function useImageryReveal({
       // Superseded, or torn down, while the fetches were in flight. Drawing now would put ground the
       // skater has already left back on screen.
       if (disposed || mine !== generation) return;
-      if (announces) onLoadingChange?.(false);
+      signalLoading(false);
 
       const present = fetched.filter((entry) => entry !== null);
       // Nothing arrived at all: keep whatever is on screen. A blank reveal is strictly worse than a
@@ -309,9 +347,11 @@ export function useImageryReveal({
         featherMeters: AERIAL_MASK_METERS.feather,
         clip: !unmasked,
       });
-      // Recorded only once the paint succeeded, so a view that failed half-way is retried rather
-      // than remembered as drawn.
-      drawnRef.current = signature;
+      // Recorded only once **every** cell arrived. A composite with a hole in it is not this view
+      // drawn: remembering it as drawn makes the hole permanent, because every later pan back
+      // computes the same signature and skips the redraw that would have filled it — and the bodies
+      // over that hole still have their `water-fill` suppressed by the painted set below.
+      drawnRef.current = present.length === tiles.length ? signature : null;
       // The cartography's cue, and it is emitted here rather than when the set was decided — see
       // `onPaintedChange`. Unmasked mode paints the whole box and replaces nobody's fill, so it
       // reports nothing.
@@ -368,7 +408,7 @@ export function useImageryReveal({
       disposed = true;
       inFlight?.abort();
       refreshRef.current = null;
-      onLoadingChange?.(false);
+      signalLoading(false);
       // The photograph is about to be removed, so nothing is painted any more — without this the
       // fills would stay suppressed against a reveal that no longer exists.
       if (reportedRef.current !== '') {

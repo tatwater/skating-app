@@ -330,6 +330,11 @@ export function composeImagery({
   maskCanvas.height = maskHeight;
   // The mask's pixels are its own, so the buffer converts into *its* scale rather than the composite's.
   if (!paintRevealMask(maskCanvas, masks, bounds, maskWidth, maskHeight, solidPx * MASK_SCALE)) {
+    // **Fails closed, like an empty mask does.** No second context means no alpha to punch, and
+    // returning here with the composite untouched would publish the whole *rectangle* — a photograph
+    // over the land, the roads and every lake we were not asked to reveal, which is exactly what
+    // clipping exists to prevent. Nothing kept is the honest answer to a mask we could not build.
+    ctx.clearRect(0, 0, width, height);
     return false;
   }
 

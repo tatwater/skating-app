@@ -1060,13 +1060,19 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
     onPaintedChange: setPaintedIds,
   });
 
-  // The wash belongs on the bodies still **waiting** for a photograph, which is the reveal set minus
-  // whatever is already on screen. Pulsing a lake that is already showing its imagery says the wrong
-  // thing twice: that something is coming for it, and that what is there is not it.
-  const pendingIds = useMemo(
-    () => revealedIds.filter((id) => !paintedIds.includes(id)),
-    [revealedIds, paintedIds],
-  );
+  // The wash belongs on the bodies still **waiting** for a photograph — the reveal set minus whatever
+  // is already on screen. Pulsing a lake that is already showing its imagery says the wrong thing
+  // twice: that something is coming for it, and that what is there is not it.
+  //
+  // **Unless nothing is waiting and we are still loading**, which is the *fidelity* refresh — zoom in
+  // on a revealed lake and a sharper level is fetched while the coarser one stays up. Every body is
+  // painted, so the difference is empty, and taking that literally would remove the wash from the
+  // exact case `onLoadingChange`'s docstring calls the subtle one: nothing appears broken and nothing
+  // appears to be happening either. A refresh with nothing outstanding is a refresh of all of it.
+  const pendingIds = useMemo(() => {
+    const waiting = revealedIds.filter((id) => !paintedIds.includes(id));
+    return waiting.length > 0 ? waiting : revealedIds;
+  }, [revealedIds, paintedIds]);
 
   // Layers step aside for the photograph, except the ones the skater decides about.
   //

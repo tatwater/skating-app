@@ -34,15 +34,25 @@ function fakeMap(zoom = 14) {
   const sources = new Map<string, unknown>();
   const layers = new Map<string, unknown>();
   const handlers = new Map<string, () => void>();
+  /** The camera, mutable — a pan is what supersedes a view, so the tests need to be able to do one. */
+  let box = { south: 44.44, north: 44.47, west: -73.21, east: -73.18 };
   return {
     handlers,
+    /** Somewhere else entirely, so the next `moveend` resolves to different cells. */
+    away: () => {
+      box = { south: 44.5, north: 44.53, west: -73.3, east: -73.27 };
+    },
+    /** Back to the view the hook first drew. */
+    back: () => {
+      box = { south: 44.44, north: 44.47, west: -73.21, east: -73.18 };
+    },
     map: {
       getZoom: () => zoom,
       getBounds: () => ({
-        getSouth: () => 44.44,
-        getNorth: () => 44.47,
-        getWest: () => -73.21,
-        getEast: () => -73.18,
+        getSouth: () => box.south,
+        getNorth: () => box.north,
+        getWest: () => box.west,
+        getEast: () => box.east,
       }),
       getContainer: () => ({ clientWidth: 1200, clientHeight: 800 }) as HTMLElement,
       getStyle: () => ({ layers: [{ id: 'water' }, { id: 'roads_minor' }] }),
@@ -189,6 +199,34 @@ describe('the loading signal', () => {
     await waitFor(() => expect(onLoadingChange).toHaveBeenCalledWith(true));
     await waitFor(() => expect(onLoadingChange).toHaveBeenCalledWith(false));
   });
+
+  it('settles when the view that supersedes it has nothing to fetch', async () => {
+    // The stuck wash. A superseded fetch returns at its own generation check and never reports
+    // `false` — so if the view replacing it declines to announce, which is exactly what a pan onto
+    // resident cells does, nobody ever settles the signal and the pulse runs for ever.
+    let release: (value: unknown) => void = () => {};
+    const pending = new Promise((resolve) => {
+      release = resolve;
+    });
+    let cold = true;
+    loadTile.mockImplementation(() => (cold ? pending : Promise.resolve({} as ImageBitmap)));
+
+    const onLoadingChange = vi.fn();
+    const { map, handlers, away } = fakeMap();
+    renderHook(() => useImageryReveal({ map, loaded: true, masks: MASKS, onLoadingChange }));
+    await waitFor(() => expect(onLoadingChange).toHaveBeenCalledWith(true));
+
+    // Somewhere new, whose cells are all already in memory.
+    cold = false;
+    isTileResident.mockReturnValue(true);
+    away();
+    handlers.get('moveend')?.();
+
+    await waitFor(() => expect(onLoadingChange).toHaveBeenLastCalledWith(false));
+    // The abandoned fetch landing later must not put it back up either.
+    release({});
+    await waitFor(() => expect(onLoadingChange).toHaveBeenLastCalledWith(false));
+  });
 });
 
 describe('the redraw skip', () => {
@@ -203,5 +241,53 @@ describe('the redraw skip', () => {
     await Promise.resolve();
     await Promise.resolve();
     expect(loadTile.mock.calls.length).toBe(first);
+  });
+
+  it('abandons the fetch for the view it left when the map comes straight back', async () => {
+    // Skipping the redraw still has to supersede the work already running. Otherwise the fetch for
+    // the ground you panned away from passes its own generation check when it lands, paints *that*
+    // ground over the view you are sitting on and moves the source's coordinates with it — so the
+    // photograph disappears from a view it had already drawn, until the next `moveend`.
+    loadTile.mockResolvedValue({} as ImageBitmap);
+    const { map, handlers, away, back } = fakeMap();
+    renderHook(() => useImageryReveal({ map, loaded: true, masks: MASKS }));
+    await waitFor(() => expect(loadTile).toHaveBeenCalled());
+
+    let hold: (value: unknown) => void = () => {};
+    loadTile.mockReturnValue(
+      new Promise((resolve) => {
+        hold = resolve;
+      }),
+    );
+    const drawn = loadTile.mock.calls.length;
+    away();
+    handlers.get('moveend')?.();
+    await waitFor(() => expect(loadTile.mock.calls.length).toBeGreaterThan(drawn));
+    const abandoned = loadTile.mock.calls.at(-1)?.[2] as AbortSignal;
+    expect(abandoned.aborted).toBe(false);
+
+    back();
+    handlers.get('moveend')?.();
+    expect(abandoned.aborted).toBe(true);
+    hold(null);
+  });
+
+  it('retries a view whose cells did not all arrive', async () => {
+    // A composite with a hole in it is not this view drawn. Remembering it as drawn makes the hole
+    // permanent: every later pan back computes the same signature and skips the redraw that would
+    // have filled it, while the bodies over that hole keep their vector fill suppressed.
+    let call = 0;
+    loadTile.mockImplementation(() => {
+      call += 1;
+      return Promise.resolve(call === 2 ? null : ({} as ImageBitmap));
+    });
+    const { map, handlers } = fakeMap();
+    renderHook(() => useImageryReveal({ map, loaded: true, masks: MASKS }));
+    await waitFor(() => expect(loadTile.mock.calls.length).toBe(2));
+    // The composite is painted (one cell arrived), so this is not the everything-failed path.
+    await waitFor(() => expect(map.getSource('imagery')).toBeDefined());
+
+    handlers.get('moveend')?.();
+    await waitFor(() => expect(loadTile.mock.calls.length).toBeGreaterThan(2));
   });
 });
