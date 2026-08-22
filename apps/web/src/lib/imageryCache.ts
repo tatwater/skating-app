@@ -96,6 +96,11 @@ const bitmaps = new Map<string, ImageBitmap>();
 const MAX_RESIDENT_BITMAPS = 12;
 
 function remember(key: string, bitmap: ImageBitmap): void {
+  // Two views can be in flight over the same cell, and the loser's bitmap would otherwise be dropped
+  // from the map with nothing releasing it — 16 MB of GPU-backed memory per occurrence, invisible to
+  // every counter that matters. Replacing an entry is a release, not just an overwrite.
+  const previous = bitmaps.get(key);
+  if (previous && previous !== bitmap) previous.close();
   bitmaps.set(key, bitmap);
   // Insertion-ordered, so the first key is the least recently added. `close()` releases the backing
   // memory immediately rather than waiting for the collector to notice a few hundred megabytes.
@@ -115,6 +120,38 @@ function touch(key: string): ImageBitmap | undefined {
     bitmaps.set(key, bitmap);
   }
   return bitmap;
+}
+
+/**
+ * How many cells the disk store may hold.
+ *
+ * **A cache with no ceiling is not a cache, it is a disk leak.** Nothing here expires — that is the
+ * point, since outliving the CDN's twelve hours is the whole reason this layer exists — so the bound
+ * has to be a count. A 2,048-square NAIP JPEG runs 300 KB to 2 MB, so 400 cells is roughly a few
+ * hundred megabytes: generous for a season of looking at the same handful of lakes, and well short of
+ * the origin quota, past which the browser evicts the *whole* bucket and takes everything else we
+ * store with it.
+ */
+const MAX_CACHED_TILES = 400;
+
+/**
+ * Drop the oldest entries once the store is over budget.
+ *
+ * `cache.keys()` answers in insertion order, which is not recency — a cell you look at every morning
+ * is still evicted on its original birthday. That is the honest trade for not writing a second index
+ * to track access times: the CDN and the in-memory map both still answer, and the cost of being wrong
+ * is one refetch.
+ */
+async function trim(cache: Cache): Promise<void> {
+  try {
+    const keys = await cache.keys();
+    if (keys.length <= MAX_CACHED_TILES) return;
+    for (const request of keys.slice(0, keys.length - MAX_CACHED_TILES)) {
+      await cache.delete(request);
+    }
+  } catch {
+    // Storage errors are not imagery errors. An untrimmed store is a worse cache, not a broken one.
+  }
 }
 
 async function decode(blob: Blob): Promise<ImageBitmap | null> {
@@ -175,7 +212,10 @@ export async function loadTile(
     // Stored after the decode succeeded, so a truncated body is never written under a key we would
     // then trust. Failure to store is not failure to draw.
     if (cache) {
-      cache.put(url, new Response(blob, { headers: response.headers })).catch(() => {});
+      cache
+        .put(url, new Response(blob, { headers: response.headers }))
+        .then(() => trim(cache))
+        .catch(() => {});
     }
     return bitmap;
   } catch {

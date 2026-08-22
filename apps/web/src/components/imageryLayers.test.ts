@@ -5,6 +5,7 @@ import { waterOutlineColor } from '../lib/waterMap';
 import {
   IMAGERY_MIN_ZOOM,
   IMAGERY_REPLACED_LAYERS,
+  IMAGERY_REPLACED_WHOLE_LAYERS,
   setLayersHiddenForBodies,
 } from './useImageryReveal';
 
@@ -61,7 +62,10 @@ describe('waterOutlineColor', () => {
 /** A map stub recording filters, with a style that already filters one of the layers. */
 function fakeMap(existing: Record<string, unknown> = {}) {
   const filters = new Map<string, unknown>(Object.entries(existing));
-  const known = new Set([...IMAGERY_REPLACED_LAYERS, ...Object.keys(existing)]);
+  const known = new Set([
+    ...IMAGERY_REPLACED_LAYERS.map((layer) => layer.id),
+    ...Object.keys(existing),
+  ]);
   return {
     filters,
     map: {
@@ -72,10 +76,13 @@ function fakeMap(existing: Record<string, unknown> = {}) {
   };
 }
 
+const WATER_FILL = [{ id: 'water-fill', idProperty: '_id' }];
+const SUB_AREA_LABEL = [{ id: 'sub-area-label', idProperty: 'waterBodyId' }];
+
 describe('setLayersHiddenForBodies', () => {
   it('hides only the revealed bodies, leaving every other feature drawn', () => {
     const { map, filters } = fakeMap();
-    setLayersHiddenForBodies(map, ['water-fill'], ['a', 'b'], new Map());
+    setLayersHiddenForBodies(map, WATER_FILL, ['a', 'b'], new Map());
     const compiled = expression.createExpression(filters.get('water-fill'), {
       type: 'boolean',
       'property-type': 'data-driven',
@@ -84,11 +91,27 @@ describe('setLayersHiddenForBodies', () => {
     expect(compiled.result).toBe('success');
   });
 
+  it('asks each layer for the property that layer actually carries', () => {
+    // The bug this replaced: every layer was filtered on `_id`, but a sub-area's `_id` is its own
+    // row and never a revealed body — so `in` answered false, `!` answered true, and the bay label
+    // kept drawing over the photograph. MapLibre does not throw on a missing property, so the
+    // failure was silent and open.
+    const { map, filters } = fakeMap();
+    setLayersHiddenForBodies(map, SUB_AREA_LABEL, ['a'], new Map());
+    expect(JSON.stringify(filters.get('sub-area-label'))).toContain('waterBodyId');
+    setLayersHiddenForBodies(map, WATER_FILL, ['a'], new Map());
+    expect(JSON.stringify(filters.get('water-fill'))).toContain('_id');
+  });
+
+  it('every layer in the list names a property, since a missing one fails silently open', () => {
+    for (const layer of IMAGERY_REPLACED_LAYERS) expect(layer.idProperty).toBeTruthy();
+  });
+
   it('composes with the style own filter rather than replacing it', () => {
     // `sub-area-label` filters on `label`; dropping that draws every outline as a label.
     const base = ['==', ['get', 'label'], true];
     const { map, filters } = fakeMap({ 'sub-area-label': base });
-    setLayersHiddenForBodies(map, ['sub-area-label'], ['a'], new Map());
+    setLayersHiddenForBodies(map, SUB_AREA_LABEL, ['a'], new Map());
     expect(JSON.stringify(filters.get('sub-area-label'))).toContain('label');
   });
 
@@ -96,8 +119,8 @@ describe('setLayersHiddenForBodies', () => {
     const base = ['==', ['get', 'label'], true];
     const { map, filters } = fakeMap({ 'sub-area-label': base });
     const captured = new Map<string, unknown>();
-    setLayersHiddenForBodies(map, ['sub-area-label'], ['a'], captured);
-    setLayersHiddenForBodies(map, ['sub-area-label'], [], captured);
+    setLayersHiddenForBodies(map, SUB_AREA_LABEL, ['a'], captured);
+    setLayersHiddenForBodies(map, SUB_AREA_LABEL, [], captured);
     expect(filters.get('sub-area-label')).toEqual(base);
   });
 
@@ -106,15 +129,25 @@ describe('setLayersHiddenForBodies', () => {
     // grow without bound across a session of panning.
     const { map, filters } = fakeMap({ 'water-fill': null });
     const captured = new Map<string, unknown>();
-    setLayersHiddenForBodies(map, ['water-fill'], ['a'], captured);
+    setLayersHiddenForBodies(map, WATER_FILL, ['a'], captured);
     const once = JSON.stringify(filters.get('water-fill'));
-    setLayersHiddenForBodies(map, ['water-fill'], ['a'], captured);
+    setLayersHiddenForBodies(map, WATER_FILL, ['a'], captured);
     expect(JSON.stringify(filters.get('water-fill'))).toBe(once);
   });
 
   it('skips a layer the style has not added yet rather than throwing', () => {
     const { map } = fakeMap();
-    expect(() => setLayersHiddenForBodies(map, ['not-a-layer'], ['a'], new Map())).not.toThrow();
+    expect(() =>
+      setLayersHiddenForBodies(map, [{ id: 'not-a-layer', idProperty: '_id' }], ['a'], new Map()),
+    ).not.toThrow();
+  });
+
+  it('keeps the per-lake contour filter out of the captured set entirely', () => {
+    // `bathymetry-contours` is re-added with a filter naming the open lake, so capturing it once and
+    // replaying it would restore the *previous* lake's filter over the current one and draw nothing.
+    // It belongs to the wholesale list instead.
+    expect(IMAGERY_REPLACED_LAYERS.map((layer) => layer.id)).not.toContain('bathymetry-contours');
+    expect(IMAGERY_REPLACED_WHOLE_LAYERS).toContain('bathymetry-contours');
   });
 });
 

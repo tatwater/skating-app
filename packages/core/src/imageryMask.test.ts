@@ -144,6 +144,18 @@ describe('shapeSignature', () => {
     expect(shapeSignature(moved)).not.toBe(shapeSignature(POND));
   });
 
+  it('changes when an *interior* vertex moves on a properly closed ring', () => {
+    // The case a first-and-last sample could never see: a GeoJSON ring's last position IS its first,
+    // so the two ends were one point wearing two hats, and dragging any other corner left the
+    // signature identical — a redraw the operator asked for that never refetched.
+    const ring = [...(POND.coordinates[0] as number[][])];
+    ring[2] = [-73.1901, 44.4599];
+    const moved: Polygon = { type: 'Polygon', coordinates: [ring] };
+    // Still closed, which is the whole premise: the ends are unchanged and equal.
+    expect(ring[0]).toEqual(ring.at(-1));
+    expect(shapeSignature(moved)).not.toBe(shapeSignature(POND));
+  });
+
   it('separates a polygon from the multipolygon wrapping the same ring', () => {
     const wrapped: MultiPolygon = {
       type: 'MultiPolygon',

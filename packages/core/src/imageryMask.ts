@@ -80,26 +80,31 @@ export interface ImageryMaskInput {
  * So callers key on what the mask is **made of**. This is that key for the geometry half.
  *
  * **Deliberately not a hash of every coordinate.** A lake polygon runs to thousands of vertices and
- * this is computed on every render; ring count, vertex count and the first and last positions change
- * for any real redraw, at O(rings) rather than O(vertices). The failure it can theoretically miss —
- * an edit that preserves all four and moves only interior vertices — is not a thing the editor's
- * draw tools produce, and the cost of missing it is a stale photograph until the next pan, not a
+ * this is computed on every render, so the sample is O(rings) rather than O(vertices).
+ *
+ * ⚠ **The sample is per ring, and the *middle* vertex is not decoration.** A GeoJSON ring is closed,
+ * so its last position is its first — sampling "the first and last position of the shape" was one
+ * point wearing two hats, and it meant any edit that moved something other than the closing vertex
+ * produced an identical signature. Three positions spread across each ring's vertex order is what
+ * makes an ordinary drag change the string. What it can still miss is an edit that preserves the
+ * counts and all three, and the cost of missing that is a stale photograph until the next pan, not a
  * wrong one.
  */
 export function shapeSignature(shape: Polygon | MultiPolygon): string {
   const polygons = shape.type === 'Polygon' ? [shape.coordinates] : shape.coordinates;
   let rings = 0;
   let vertices = 0;
-  for (const polygon of polygons) {
-    rings += polygon.length;
-    for (const ring of polygon) vertices += ring.length;
-  }
-  const first = polygons[0]?.[0]?.[0];
-  const lastRing = polygons.at(-1)?.at(-1);
-  const last = lastRing?.at(-1);
   const at = (position: Position | undefined) =>
     position ? `${position[0]?.toFixed(6)},${position[1]?.toFixed(6)}` : '-';
-  return `${shape.type}:${polygons.length}:${rings}:${vertices}:${at(first)}:${at(last)}`;
+  const sampled: string[] = [];
+  for (const polygon of polygons) {
+    rings += polygon.length;
+    for (const ring of polygon) {
+      vertices += ring.length;
+      sampled.push(at(ring[0]), at(ring[ring.length >> 1]), at(ring[ring.length - 1]));
+    }
+  }
+  return `${shape.type}:${polygons.length}:${rings}:${vertices}:${sampled.join(',')}`;
 }
 
 /**

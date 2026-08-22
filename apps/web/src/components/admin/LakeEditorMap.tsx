@@ -97,7 +97,7 @@ export function LakeEditorMap({
     if (maskRef.current?.key === key) return maskRef.current.masks;
     // A one-body list: the editor is fenced to one lake, so the viewport-wide reveal the skater map
     // uses collapses here to the single subject the camera is locked onto.
-    const masks: KeyedMask[] = [{ key, mask: { polygon } }];
+    const masks: KeyedMask[] = [{ id: data.body._id, key, mask: { polygon } }];
     maskRef.current = { key, masks };
     return masks;
   }, [imagery, data.body._id, data.body.polygon]);

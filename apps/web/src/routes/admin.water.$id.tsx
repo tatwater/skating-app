@@ -2177,14 +2177,6 @@ function PromotionTool({
 }
 
 /**
- * Operator-entered reference links (N6c Workstream B7) — the phase's only stored link.
- *
- * Everything else in the lake drawer's link list is derived from the row at render time (P2/D71) and
- * has no editor because there is nothing to edit. A lake association's URL is genuinely
- * non-derivable, so it gets one, and it is expected to be used on **tens** of bodies rather than
- * thousands. That is the exception proving the rule, not a coverage gap.
- */
-/**
  * The Copernicus link's per-row override (N6c Workstream D, D70/D75).
  *
  * **Shows the derivation before it shows the lever**, which is the same argument `ProminenceTool`
@@ -2267,6 +2259,14 @@ function SatelliteTool({ body, onResult }: { body: Doc<'waterBodies'>; onResult:
   );
 }
 
+/**
+ * Operator-entered reference links (N6c Workstream B7) — the phase's only stored link.
+ *
+ * Everything else in the lake drawer's link list is derived from the row at render time (P2/D71) and
+ * has no editor because there is nothing to edit. A lake association's URL is genuinely
+ * non-derivable, so it gets one, and it is expected to be used on **tens** of bodies rather than
+ * thousands. That is the exception proving the rule, not a coverage gap.
+ */
 function ReferenceLinkTool({ body, onResult }: { body: Doc<'waterBodies'>; onResult: SetBanner }) {
   const setLinks = useMutation(api.waterBodies.setReferenceLinks);
   const [links, setLinks_] = useState<{ label: string; url: string }[]>(body.referenceLinks ?? []);

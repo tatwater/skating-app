@@ -37,6 +37,7 @@
 import {
   AERIAL_ATTRIBUTION,
   AERIAL_MASK_METERS,
+  CONTOUR_LAYER_ID,
   fitGridLevel,
   gridResolution,
   IMAGERY_LAYER_ID,
@@ -99,8 +100,19 @@ function insertBeforeLayerId(map: maplibregl.Map): string | undefined {
  */
 export const IMAGERY_MIN_ZOOM = 12;
 
+/**
+ * How many buffered reveal shapes to hold.
+ *
+ * A buffered lake is a polygon with as many vertices as the lake it came from, so this is a real
+ * budget rather than a nicety once the reveal covers a viewport rather than a body. A few viewports'
+ * worth, which is what a pan away and back needs.
+ */
+const MAX_CACHED_SHAPES = 200;
+
 /** A body to reveal, with a stable key so its buffered shape can be cached across pans. */
 export interface KeyedMask {
+  /** The body's Convex `_id` — what the cartography filters on. Carried, never re-parsed from `key`. */
+  id: string;
   key: string;
   mask: ImageryMaskInput;
 }
@@ -151,10 +163,29 @@ export function useImageryReveal({
   // Buffered shapes are Turf work over thousands of vertices, and a viewport can hold fifty bodies —
   // but a body's geometry does not change while you look at it, so each is computed once per session
   // and keyed by the same string that decides whether the mask itself changed.
+  //
+  // **Bounded**, because "once per session" over a viewport-wide reveal is not a fixed set: every pan
+  // brings new keys, and a session browsing the corpus would otherwise retain a buffered polygon per
+  // body it ever passed over.
   const shapeCacheRef = useRef(new Map<string, Polygon | MultiPolygon | null>());
+  /** The reveal set `refresh` reads, so a change of set redraws rather than re-mounting the layer. */
+  const masksRef = useRef(masks);
+  masksRef.current = masks;
+  const refreshRef = useRef<(() => void) | null>(null);
+  /** The set the last mount already drew, so the redraw effect below doesn't double up on it. */
+  const drawnMasksRef = useRef<readonly KeyedMask[] | null>(null);
 
+  const enabled = Boolean(map && loaded && masks && masks.length > 0);
+
+  // ── The layer's lifetime. **Deliberately not keyed on `masks`.**
+  //
+  // A body entering the viewport must not take the photograph off screen. `masks` changes on
+  // essentially every pan — a lake appearing in the answer is a new joined key — and with it in the
+  // deps the cleanup ran each time, removing the source and the layer and leaving blank ground for as
+  // long as the next cells took, which on a cold cell is half a minute. What the layer *shows* is the
+  // effect below; this one owns only whether it exists at all.
   useEffect(() => {
-    if (!map || !loaded || !masks || masks.length === 0) return;
+    if (!map || !loaded || !enabled) return;
 
     const canvas = canvasRef.current ?? document.createElement('canvas');
     canvasRef.current = canvas;
@@ -163,6 +194,8 @@ export function useImageryReveal({
     let disposed = false;
     /** The view this hook is currently fetching for; a later one supersedes it. */
     let generation = 0;
+    /** The superseded view's fetches, so a pan stops paying for ground nobody is looking at. */
+    let inFlight: AbortController | null = null;
 
     /** Every revealed body, buffered — cached, because this is the expensive half. */
     const shapesFor = (list: readonly KeyedMask[]): (Polygon | MultiPolygon)[] => {
@@ -170,6 +203,13 @@ export function useImageryReveal({
       for (const { key, mask } of list) {
         if (!shapeCache.has(key)) {
           shapeCache.set(key, revealShape(mask, AERIAL_MASK_METERS.solid));
+          // Insertion-ordered, so the first key is the oldest. A cap rather than a clear, because the
+          // bodies about to be asked for again are the ones just added.
+          while (shapeCache.size > MAX_CACHED_SHAPES) {
+            const oldest = shapeCache.keys().next().value;
+            if (oldest === undefined) break;
+            shapeCache.delete(oldest);
+          }
         }
         const shape = shapeCache.get(key);
         // `revealShape` fails closed and so does this: a body whose buffer failed is simply not
@@ -181,10 +221,16 @@ export function useImageryReveal({
 
     const refresh = async () => {
       if (disposed) return;
-      const mine = ++generation;
+      const revealing = masksRef.current;
+      if (!revealing || revealing.length === 0) return;
 
       // The usefulness floor. Leaving the last image up rather than clearing means a zoom out and
       // back does not blink — and the layers come down with the effect anyway when the reveal ends.
+      //
+      // ⚠ **Checked before the generation is claimed.** Bumping `generation` and then bailing orphans
+      // whatever is in flight: it comes back, fails its own `mine !== generation` check, and never
+      // reaches `onLoadingChange?.(false)` — so the pulse runs for ever over a lake nothing is being
+      // fetched for. Every early exit above the claim, every exit below it settles the signal.
       if (map.getZoom() < IMAGERY_MIN_ZOOM) return;
 
       const bounds = map.getBounds();
@@ -205,12 +251,21 @@ export function useImageryReveal({
       const canvasBounds = tilesBounds(tiles);
       if (!canvasBounds) return;
 
+      const mine = ++generation;
+      // The concurrency cap is per *view*, and without this it was only ever per view: a drag fires a
+      // `moveend` a second, and ten unabandoned views is forty parallel cold renders against a service
+      // that starts answering 200-with-a-1-KB-body past about four. Superseding a view has to stop
+      // paying for it.
+      inFlight?.abort();
+      const controller = new AbortController();
+      inFlight = controller;
+
       onLoadingChange?.(true);
       // Every cell, concurrently — bounded by `AERIAL_MAX_TILES_PER_VIEW`, which is set from what the
       // renderer tolerates rather than from what the network would allow.
-      const loaded = await Promise.all(
+      const fetched = await Promise.all(
         tiles.map(async (tile: ImageryTile) => {
-          const image = await loadTile(tile, tileKey(tile));
+          const image = await loadTile(tile, tileKey(tile), controller.signal);
           return image ? { tile, image } : null;
         }),
       );
@@ -220,7 +275,7 @@ export function useImageryReveal({
       if (disposed || mine !== generation) return;
       onLoadingChange?.(false);
 
-      const present = loaded.filter((entry) => entry !== null);
+      const present = fetched.filter((entry) => entry !== null);
       // Nothing arrived at all: keep whatever is on screen. A blank reveal is strictly worse than a
       // stale one, and this is also the shape a dead service takes.
       if (present.length === 0) return;
@@ -232,7 +287,7 @@ export function useImageryReveal({
         canvas,
         tiles: present,
         bounds: canvasBounds,
-        shapes: shapesFor(masks),
+        shapes: shapesFor(revealing),
         featherMeters: AERIAL_MASK_METERS.feather,
         clip: !unmasked,
       });
@@ -273,12 +328,16 @@ export function useImageryReveal({
       );
     };
 
+    refreshRef.current = () => void refresh();
+    drawnMasksRef.current = masksRef.current;
     void refresh();
     const onMoveEnd = () => void refresh();
     map.on('moveend', onMoveEnd);
 
     return () => {
       disposed = true;
+      inFlight?.abort();
+      refreshRef.current = null;
       onLoadingChange?.(false);
       map.off('moveend', onMoveEnd);
       // Layers before sources, always: MapLibre throws when removing a source still in use, and a
@@ -286,7 +345,17 @@ export function useImageryReveal({
       if (map.getLayer(IMAGERY_LAYER_ID)) map.removeLayer(IMAGERY_LAYER_ID);
       if (map.getSource(IMAGERY_SOURCE_ID)) map.removeSource(IMAGERY_SOURCE_ID);
     };
-  }, [map, loaded, masks, unmasked, onLoadingChange]);
+  }, [map, loaded, enabled, unmasked, onLoadingChange]);
+
+  // ── What is revealed, redrawn in place.
+  //
+  // The other half of keeping `masks` out of the effect above: a change of reveal set has to reach
+  // the canvas, and this is the path that does it without the source and the layer going away first.
+  useEffect(() => {
+    if (drawnMasksRef.current === masks) return;
+    drawnMasksRef.current = masks;
+    refreshRef.current?.();
+  }, [masks]);
 }
 
 /**
@@ -301,23 +370,44 @@ export function useImageryReveal({
  * as *this lake* rather than a hole in the map, and it is the one piece of our cartography that gets
  * more useful under imagery, not less.
  *
- * ⚠ **Every layer here must be filterable by `_id`**, because v3 hides them per body rather than
- * globally (`setLayersHiddenForBodies`). A layer whose source has no `_id` cannot participate and
- * would have to go back to an all-or-nothing rule.
+ * ⚠ **A layer can only be hidden per body if its own features carry the body's `_id`, and most of
+ * them do not.** `water-fill` carries `_id`; a sub-area carries its *own* `_id` and the parent's
+ * `waterBodyId`; a track carries neither; a contour tile carries `bodyId`, which is the OSM
+ * `externalId` rather than a Convex id. MapLibre's `in` answers `false` for a null needle rather than
+ * throwing, so filtering all of them on `_id` fails **silently open** — the bay outlines, the labels,
+ * the tracks and the isobaths all keep drawing over the photograph, which is the D81/A3 rule
+ * unimplemented again. So the list is split by what the layer can actually be asked.
  *
  * `HAZARD_LAYERS` is separate because it is not ours to decide (see `hazardsOverImagery`). Keeping
- * the two lists apart is the "one constant" promise from the phase doc.
+ * the lists apart is the "one constant" promise from the phase doc.
  */
-export const IMAGERY_REPLACED_LAYERS = [
-  'water-fill',
-  'sub-area-outline',
-  'sub-area-label',
-  'track-line',
-  // D81 has said since N6b that contours go with the base map. Omitting this id in the first build
-  // did not disable the rule, it just stopped implementing it — the isobaths kept drawing over the
-  // photograph and read as nested rings in every shallow bay.
-  'bathymetry-contours',
-] as const;
+export interface ReplacedLayer {
+  id: string;
+  /** The feature property carrying the revealed body's Convex `_id`. */
+  idProperty: string;
+}
+
+export const IMAGERY_REPLACED_LAYERS: readonly ReplacedLayer[] = [
+  { id: 'water-fill', idProperty: '_id' },
+  // A bay's own `_id` is a `subAreas` row and never matches a revealed body. `waterBodyId` is the
+  // parent it is drawn inside, which is exactly the question being asked.
+  { id: 'sub-area-outline', idProperty: 'waterBodyId' },
+  { id: 'sub-area-label', idProperty: 'waterBodyId' },
+];
+
+/**
+ * The replaced layers that are **already scoped to the open lake**, so they flip wholesale.
+ *
+ * Neither can be filtered per body — a track feature carries only its `opacity`, and a contour tile
+ * carries the OSM `externalId` the archive was stamped with. Neither needs to be: both are only ever
+ * drawn for the lake whose drawer is open, and that lake is in the reveal set by construction, so
+ * "any body revealed ⇒ hide" is the same answer a per-feature filter would give.
+ *
+ * D81 has said since N6b that contours go with the base map. Omitting this id in the first build did
+ * not disable the rule, it just stopped implementing it — the isobaths kept drawing over the
+ * photograph and read as nested rings in every shallow bay.
+ */
+export const IMAGERY_REPLACED_WHOLE_LAYERS = ['track-line', CONTOUR_LAYER_ID] as const;
 
 /**
  * The loading skeleton's layer and its rhythm.
@@ -361,14 +451,19 @@ export function setLayersVisible(
  *
  * `ids` empty ⇒ the filter is removed rather than set to a never-matching expression, so a layer
  * returns to precisely the filter the style gave it.
+ *
+ * ⚠ **Only for layers whose style filter is static.** The base filter is captured once and re-applied
+ * on every call, so a layer whose *own* filter changes over time would have the stale one written
+ * back over it — which is precisely why the contour layer, whose filter names the open lake, is in
+ * `IMAGERY_REPLACED_WHOLE_LAYERS` and not here.
  */
 export function setLayersHiddenForBodies(
   map: maplibregl.Map,
-  layerIds: readonly string[],
+  layers: readonly ReplacedLayer[],
   ids: readonly string[],
   baseFilters: Map<string, unknown>,
 ): void {
-  for (const id of layerIds) {
+  for (const { id, idProperty } of layers) {
     if (!map.getLayer(id)) continue;
     // The style's own filter is captured once and re-composed, never replaced: `sub-area-label`
     // filters on `label`, and dropping that would draw every sub-area's outline as a label.
@@ -378,7 +473,7 @@ export function setLayersHiddenForBodies(
       map.setFilter(id, (base ?? null) as never);
       continue;
     }
-    const notRevealed = ['!', ['in', ['get', '_id'], ['literal', [...ids]]]];
+    const notRevealed = ['!', ['in', ['get', idProperty], ['literal', [...ids]]]];
     map.setFilter(id, (base ? ['all', base, notRevealed] : notRevealed) as never);
   }
 }

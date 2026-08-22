@@ -86,10 +86,12 @@ import { ReturnToRegion } from './ReturnToRegion';
 import {
   IMAGERY_HAZARD_LAYERS,
   IMAGERY_LOADING_LAYER_ID,
+  IMAGERY_MIN_ZOOM,
   IMAGERY_PULSE_MAX,
   IMAGERY_PULSE_MIN,
   IMAGERY_PULSE_MS,
   IMAGERY_REPLACED_LAYERS,
+  IMAGERY_REPLACED_WHOLE_LAYERS,
   type KeyedMask,
   setLayersHiddenForBodies,
   setLayersVisible,
@@ -989,7 +991,12 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
   const baseFiltersRef = useRef(new Map<string, unknown>());
   const revealMasksRef = useRef<{ key: string; masks: KeyedMask[] } | null>(null);
   const revealMasks = useMemo(() => {
-    if (!imageryOn) return null;
+    // **Gated on the zoom the reveal itself is gated on.** The hook declines to fetch below
+    // `IMAGERY_MIN_ZOOM`, and the cartography has to agree with it: a reveal set the photograph never
+    // arrives for still filters `water-fill` off every body on screen, whites their outlines and
+    // hides the hazard layers — so zooming out used to turn the whole viewport into empty outlines
+    // with nothing drawn in their place.
+    if (!imageryOn || (queryArgs?.zoom ?? 0) < IMAGERY_MIN_ZOOM) return null;
     const launches = putIns ?? [];
     // The open lake's access is part of *its* reveal and nothing else's: `putIns` is a per-body
     // query, so the other bodies on screen have water and no walk. That is the correct asymmetry
@@ -1006,6 +1013,7 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
       if (polygon?.type !== 'Polygon' && polygon?.type !== 'MultiPolygon') continue;
       const open = id === highlightWaterBodyId;
       entries.push({
+        id,
         // The key is what caches the buffered shape in the hook, so it has to change exactly when
         // the geometry or the access does — hence the signature rather than object identity, and
         // hence the access half only on the body that has any.
@@ -1032,13 +1040,10 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
     if (revealMasksRef.current?.key === key) return revealMasksRef.current.masks;
     revealMasksRef.current = { key, masks: entries };
     return entries;
-  }, [imageryOn, highlightWaterBodyId, features, putIns]);
+  }, [imageryOn, highlightWaterBodyId, features, putIns, queryArgs?.zoom]);
 
   /** The ids with a photograph under them — what the cartography has to agree with. */
-  const revealedIds = useMemo(
-    () => (revealMasks ?? []).map((entry) => entry.key.split('|')[0] ?? ''),
-    [revealMasks],
-  );
+  const revealedIds = useMemo(() => (revealMasks ?? []).map((entry) => entry.id), [revealMasks]);
 
   const [imageryLoading, setImageryLoading] = useState(false);
   useImageryReveal({
@@ -1054,11 +1059,13 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
   // hazard set is the skater's. Folding them together would put a safety layer's visibility inside a
   // code path that also owns cartography.
   //
-  // **Per feature, not per layer** (v3). A `visibility` flip is all-or-nothing, so revealing one pond
-  // stripped the fill, the sub-area labels and the tracks from every lake on screen — and now that
-  // the reveal covers the viewport, the set that keeps its cartography is exactly the set that did
-  // not get pixels. `setLayersHiddenForBodies` composes with each layer's own filter rather than
-  // replacing it, which `sub-area-label` depends on.
+  // **Per feature where the feature can be asked, per layer where it cannot** (v3). A `visibility`
+  // flip is all-or-nothing, so revealing one pond stripped the fill, the sub-area labels and the
+  // tracks from every lake on screen — and now that the reveal covers the viewport, the set that
+  // keeps its cartography is exactly the set that did not get pixels. `setLayersHiddenForBodies`
+  // composes with each layer's own filter rather than replacing it, which `sub-area-label` depends
+  // on. Tracks and contours are drawn only for the open lake and carry no body id to filter on, so
+  // they keep the wholesale flip — see `IMAGERY_REPLACED_WHOLE_LAYERS`.
   //
   // **`contourBodyKey` is in the deps and is not decoration.** This started as a callback fired once
   // when the reveal mounted, which is wrong for any layer that can be re-added underneath it — and
@@ -1070,6 +1077,7 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
     const map = mapRef.current;
     if (!map || !loaded) return;
     setLayersHiddenForBodies(map, IMAGERY_REPLACED_LAYERS, revealedIds, baseFiltersRef.current);
+    setLayersVisible(map, IMAGERY_REPLACED_WHOLE_LAYERS, revealedIds.length === 0);
     // The shoreline survives the reveal and changes job while it does — status colour off the vector
     // map, edge-of-the-photograph on it. Set here rather than in the reveal hook because the layer
     // belongs to the map's own init, and the hook owns only what it added.

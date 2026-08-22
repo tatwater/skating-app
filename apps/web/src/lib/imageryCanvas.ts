@@ -207,7 +207,9 @@ export function composeImagery({
     );
   }
 
-  if (clip === false) return true;
+  // No clip ⇒ the composite *is* the output, and its edge is hard by construction. `false` is the
+  // honest answer to "did this feather?", which is the only question the return value asks.
+  if (clip === false) return false;
 
   // Mercator metres are not ground metres — they are inflated by 1/cos(φ), ~1.4× at our latitude.
   // `groundMetersPerPixel` already carries that conversion, and having one copy of it is the point.
