@@ -17,12 +17,10 @@
  *
  * ## Where it sits in the stack
  *
- * Inserted **below the basemap's own road layers**, so:
+ *   basemap fills incl. water → **photograph** → basemap roads + labels → our pins, tracks, hazards
  *
- *   basemap fills → **photograph** → basemap roads + labels → our pins, tracks, hazards
- *
- * Buildings land under the photograph (they come before roads in the Protomaps order), which is
- * right: a vector building footprint drawn on top of a photograph of that building is noise.
+ * The anchor is `water`, not "the first road layer" — see `insertBeforeLayerId` for why that
+ * distinction cost a render.
  *
  * ## Updating the texture
  *
@@ -55,15 +53,33 @@ import {
 /**
  * The basemap layer the photograph is inserted beneath.
  *
- * Resolved by scanning the live style rather than hard-coded, because the two-archive basemap composes
- * its layer list at runtime (`composeBasemapLayers`) and the first road layer's id is not a constant
- * anyone here should be asserting. Falls back to our own lowest layer, which puts the photograph under
- * everything — the v1 behaviour, and a safe degradation rather than a crash.
+ * **Anchored on `water`, and the first version's anchor was subtly wrong.** It took the first layer
+ * whose id started with `roads`, on the reasonable assumption that roads come after water. In the
+ * Protomaps order they do not — **`roads_runway` is index 11 and `water` is index 14** — so the
+ * photograph was inserted below the basemap's own water fill, and the lake's polygon painted over the
+ * imagery exactly inside the shoreline. The symptom was a photograph visible only as a fringe in the
+ * buffer ring, which reads as the clip being wrong rather than the z-order.
+ *
+ * So: find `water`, then the first road layer *after* it. That puts the stack at
+ *
+ *   basemap fills incl. water → **photograph** → roads + labels → our pins, tracks, hazards
+ *
+ * and leaves buildings under the photograph, where a vector footprint drawn on a picture of that
+ * building belongs.
+ *
+ * Every step degrades rather than throws: no road layer after water ⇒ sit directly on top of water;
+ * no `water` at all ⇒ the old behaviour; no style yet ⇒ append, which is v1's look and not a crash.
  */
 function insertBeforeLayerId(map: maplibregl.Map): string | undefined {
   const layers = map.getStyle()?.layers ?? [];
-  const road = layers.find((layer) => layer.id.startsWith('roads'));
-  if (road) return road.id;
+  const waterIndex = layers.findIndex((layer) => layer.id === 'water');
+  if (waterIndex >= 0) {
+    const road = layers.slice(waterIndex + 1).find((layer) => layer.id.startsWith('roads'));
+    if (road) return road.id;
+    return layers[waterIndex + 1]?.id;
+  }
+  const anyRoad = layers.find((layer) => layer.id.startsWith('roads'));
+  if (anyRoad) return anyRoad.id;
   return map.getLayer('water-fill') ? 'water-fill' : undefined;
 }
 
@@ -94,7 +110,9 @@ export function useImageryReveal({ map, loaded, mask }: ImageryRevealOptions): v
     // Fails closed (see `revealShape`): no shape ⇒ no photograph. An unclipped raster would show five
     // states of imagery with no way to tell which lake was selected.
     if (!shape) return;
-    const revealBounds = aerialBoundsFor(shape);
+    // Grown by the feather: the fade runs outward from the solid shape, so a box cropped to that
+    // shape slices the gradient off with a straight line wherever the lake touches its own bbox.
+    const revealBounds = aerialBoundsFor(shape, AERIAL_MASK_METERS.feather);
 
     const canvas = canvasRef.current ?? document.createElement('canvas');
     canvasRef.current = canvas;

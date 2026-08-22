@@ -31,7 +31,7 @@
  */
 
 import type { MultiPolygon, Polygon } from 'geojson';
-import { type BBox, type LatLng, polygonBBox } from './geometry';
+import { type BBox, expandBBox, type LatLng, polygonBBox } from './geometry';
 import { toMercatorBox } from './webMercator';
 
 /** The ImageServer's dynamic render endpoint. */
@@ -145,9 +145,21 @@ export function aerialSourceSpec(bounds: BBox): AerialSourceSpec {
   };
 }
 
-/** The reveal's own extent, which is what the source should be bounded to. */
-export function aerialBoundsFor(shape: Polygon | MultiPolygon): BBox {
-  return polygonBBox(shape);
+/**
+ * The reveal's extent, **grown by the feather** — the box the imagery has to cover.
+ *
+ * `padMeters` is not an optional nicety, and leaving it at zero is a visible bug. The feather fades
+ * outward from the *solid* shape, so an image cropped to that shape's bounding box cuts the fade off
+ * wherever the shape touches its own bbox — which is every lake, at the northernmost and southernmost
+ * points at minimum. On screen that is a **hard straight line across the middle of a soft gradient**,
+ * and it reads as a rendering artefact because it is one.
+ *
+ * Pass the tier's feather distance. Erring generous costs a few metres of image nobody sees; erring
+ * tight costs the edge the feather exists to create.
+ */
+export function aerialBoundsFor(shape: Polygon | MultiPolygon, padMeters = 0): BBox {
+  const box = polygonBBox(shape);
+  return padMeters > 0 ? expandBBox(box, padMeters) : box;
 }
 
 /**

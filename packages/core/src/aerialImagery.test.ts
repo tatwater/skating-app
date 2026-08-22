@@ -189,3 +189,28 @@ describe('formatAerialCaptureDate', () => {
     expect(formatAerialCaptureDate(Number.NaN)).toBe('');
   });
 });
+
+describe('aerialBoundsFor', () => {
+  const POND_SHAPE: Polygon = POND;
+
+  it('is the plain bbox when nothing is asked for', () => {
+    expect(aerialBoundsFor(POND_SHAPE)).toEqual({
+      minLat: 44.45,
+      minLng: -73.2,
+      maxLat: 44.46,
+      maxLng: -73.19,
+    });
+  });
+
+  it('grows by the feather, because the fade runs outside the shape', () => {
+    // Cropping to the shape's own bbox slices the gradient with a straight line at the north and
+    // south extremes of every lake — a hard cut through the middle of a soft edge.
+    const padded = aerialBoundsFor(POND_SHAPE, 80);
+    expect(padded.maxLat).toBeGreaterThan(44.46);
+    expect(padded.minLat).toBeLessThan(44.45);
+    expect(padded.maxLng).toBeGreaterThan(-73.19);
+    expect(padded.minLng).toBeLessThan(-73.2);
+    // 80 m is ~0.0007° of latitude; a sanity bound so a unit slip shows up here.
+    expect(padded.maxLat - 44.46).toBeLessThan(0.002);
+  });
+});
