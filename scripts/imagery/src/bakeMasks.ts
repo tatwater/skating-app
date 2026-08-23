@@ -35,7 +35,7 @@
  */
 
 import { execFileSync } from 'node:child_process';
-import { closeSync, mkdirSync, openSync, writeFileSync, writeSync } from 'node:fs';
+import { closeSync, mkdirSync, openSync, rmSync, writeFileSync, writeSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import process from 'node:process';
 
@@ -109,11 +109,15 @@ async function main(): Promise<void> {
   }
 
   // GeoJSONSeq → FlatGeobuf. The index is built on write, which is the whole reason for the format.
-  execFileSync(
-    'ogr2ogr',
-    ['-f', 'FlatGeobuf', fgbPath, seqPath, '-nln', 'reveal_masks', '-overwrite'],
-    { stdio: 'inherit' },
-  );
+  //
+  // ⚠ **Unlink first; `-overwrite` does not work here.** The FlatGeobuf driver has no `DeleteLayer`,
+  // so ogr2ogr fails with "DeleteLayer() not supported by this dataset" the moment the target exists
+  // — which means a *first* run succeeds and every run after it dies. Found the expensive way: a full
+  // 25,000-body scan ran for forty minutes and then threw this away at the final command.
+  rmSync(fgbPath, { force: true });
+  execFileSync('ogr2ogr', ['-f', 'FlatGeobuf', fgbPath, seqPath, '-nln', 'reveal_masks'], {
+    stdio: 'inherit',
+  });
 
   // The sidecar the container reads, and the reason it exists.
   //

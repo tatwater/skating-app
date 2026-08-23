@@ -10,7 +10,8 @@
     "test:watch": "vitest",
     "bake-masks": "tsx src/bakeMasks.ts",
     "select-granules": "tsx src/selectGranules.ts",
-    "fan-out": "./fan-out.sh"
+    "fan-out": "./fan-out.sh",
+    "ingest-window": "tsx src/ingestWindowCli.ts"
   },
   "dependencies": {
     "@skating/core": "workspace:*",

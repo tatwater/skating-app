@@ -13,7 +13,13 @@ export default defineConfig({
       // Measured here is the logic that can be wrong in a way that still looks right: which granules
       // a season selects, and the mask geometry the archive is cut against. The CLIs are argv +
       // stderr shells over that logic, and `corpus.ts` is a subprocess boundary (`convex run`).
-      exclude: ['src/**/*.test.ts', 'src/bakeMasks.ts', 'src/selectGranules.ts', 'src/corpus.ts'],
+      exclude: [
+        'src/**/*.test.ts',
+        'src/bakeMasks.ts',
+        'src/selectGranules.ts',
+        'src/ingestWindowCli.ts',
+        'src/corpus.ts',
+      ],
       thresholds: {
         lines: 90,
         functions: 90,
