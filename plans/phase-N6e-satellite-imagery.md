@@ -784,6 +784,45 @@ is deliberately separate. Nothing user-facing.
 **PR 5 — what the archive knows.** The ice-coverage charts in the drawer and the live hatch layer —
 everything user-facing that reads what PR 4 derived. This is N6f's content, and D150's real home.
 
+> #### 🔔 Founder ask, 2026-08-23 — notify on freeze-up, not just chart it
+>
+> > *"As a new season begins, it would be so cool to be able to notify people 'One of your favorites,
+> > Lake George, just reached 100% ice coverage, according to the latest imaging data!' to let people
+> > know that it's potentially worth investigating in person!"*
+>
+> **The archive's first genuinely proactive feature**, and the reason it belongs in PR 5 rather than
+> anywhere earlier: it needs the derived ice-coverage series PR 4 computes, and it needs enough of a
+> season behind it to know that a jump is real rather than a cloud artifact.
+>
+> **Who gets told, in the founder's order of preference:** a body the user has **favourited** first,
+> then bodies inside their **drive-time** radius (Phase 4 already models this, and its
+> quality-weighting distinguishes *browse* from *notify* — this is squarely the notify side), then
+> **popular** bodies generally.
+>
+> **What has to be true before this can ship, and each of these is a real constraint rather than a
+> checklist item:**
+>
+> - **It is an observation, never counsel.** D150 governs: *"just reached 100% ice coverage according
+>   to the latest imaging data"* reports a measurement and a source. It must never become *"Lake
+>   George is ready to skate"* — 10 m imagery cannot see a pressure ridge (D147), and a notification
+>   is the most authoritative-feeling surface in the app.
+> - **Coalescing, not a firehose.** Phase 4 built the queue and the 8pm digest for exactly this shape
+>   of event, and a regional freeze-up fires on *many* bodies within days. Reuse it; do not invent a
+>   second delivery path.
+> - **The 2–4 usable frames a month problem is sharper here than anywhere else** (§C1). "Just reached"
+>   implies a transition we watched happen, and with a fortnight of cloud between frames we may only
+>   be able to say "was open on the 3rd, was frozen by the 18th". The honest phrasing has to survive
+>   that, and the frame's own date travels with the claim (C4).
+> - **A notification is a decay-sensitive claim in a way a chart is not.** A chart is read now and
+>   understood as history; a push arrives once and is remembered. D56's weather-driven decay should
+>   gate whether a freeze-up notice is still worth sending by the time we could send it.
+> - **Opt-in, per D57 and Phase 4's `notificationPrefs`.** A new preference key, defaulted off, and
+>   minors read-only as ever.
+>
+> **The one thing worth prototyping early:** whether "100%" is a number we can honestly report at all,
+> or whether the honest unit is a coarser band. That is a PR 4 question — the phrasing of the
+> notification depends on what the derived series can actually support.
+
 ### Why the producer/consumer seam, and not the workstream seam *(settled 2026-08-23)*
 
 The split is by **review surface**, because Greptile reviews best when a diff has one lens. A single
