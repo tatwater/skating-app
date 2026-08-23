@@ -35,11 +35,11 @@
  */
 
 import { execFileSync } from 'node:child_process';
-import { closeSync, mkdirSync, openSync, writeSync } from 'node:fs';
+import { closeSync, mkdirSync, openSync, writeFileSync, writeSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import process from 'node:process';
 
-import { currentSeason } from '@skating/core';
+import { currentSeason, SENTINEL_MASK_METERS } from '@skating/core';
 import { scanCorpusMasks } from './corpus';
 import { emptyTally, maskFeatureFor, recordOutcome } from './revealMasks';
 
@@ -115,6 +115,26 @@ async function main(): Promise<void> {
     { stdio: 'inherit' },
   );
 
+  // The sidecar the container reads, and the reason it exists.
+  //
+  // `cut-granule` needs `SENTINEL_MASK_METERS.feather` to size its distance transform, and that
+  // constant lives in `@skating/core` — TypeScript, which the GDAL image is not. Hardcoding 240 in
+  // the shell would be a second copy of a tuned number, and the failure of the two drifting apart is
+  // invisible: the archive would simply feather over a different distance than the web client does,
+  // on lakes nobody is looking at side by side.
+  //
+  // Shipping it *with the masks* means the container can never read a feather that disagrees with
+  // the geometry it was baked against. The two travel as one artifact or not at all.
+  const sidecar = {
+    season: label,
+    solidMeters: SENTINEL_MASK_METERS.solid,
+    featherMeters: SENTINEL_MASK_METERS.feather,
+    bodies: tally.masked,
+    omitted: tally.omitted,
+  };
+  const sidecarPath = fgbPath.replace(/\.fgb$/, '.json');
+  writeFileSync(sidecarPath, `${JSON.stringify(sidecar, null, 2)}\n`);
+
   console.error('');
   console.error(`[bake-masks] masked   ${tally.masked}`);
   console.error(`[bake-masks] omitted  ${tally.omitted}`, tally.omitted ? tally.byReason : '');
@@ -127,6 +147,9 @@ async function main(): Promise<void> {
     console.error(`[bake-masks]   … and ${tally.omitted - tally.omissions.length} more`);
   }
   console.error(`[bake-masks] wrote ${fgbPath}`);
+  console.error(
+    `[bake-masks] wrote ${sidecarPath} (solid ${sidecar.solidMeters} m, feather ${sidecar.featherMeters} m)`,
+  );
 
   if (has('upload')) {
     if (Number.isFinite(limit)) {
@@ -140,14 +163,17 @@ async function main(): Promise<void> {
     need('rclone', 'brew install rclone');
     // `--s3-no-check-bucket` for the same reason every other upload here passes it: our R2 tokens are
     // bucket-scoped and 403 on the account-level HeadBucket probe rclone runs by default.
-    execFileSync(
-      'rclone',
-      ['copyto', fgbPath, `r2:${bucket}/${key}`, '--s3-no-check-bucket', '--progress'],
-      {
-        stdio: 'inherit',
-      },
-    );
-    console.error(`[bake-masks] uploaded r2:${bucket}/${key}`);
+    for (const [from, to] of [
+      [fgbPath, key],
+      [sidecarPath, key.replace(/\.fgb$/, '.json')],
+    ]) {
+      execFileSync(
+        'rclone',
+        ['copyto', from as string, `r2:${bucket}/${to}`, '--s3-no-check-bucket', '--progress'],
+        { stdio: 'inherit' },
+      );
+      console.error(`[bake-masks] uploaded r2:${bucket}/${to}`);
+    }
   }
 }
 

@@ -31,7 +31,7 @@ SMOKE=false
 
 if [[ -z "$GRANULE_ID" ]]; then
   echo "usage: cut-granule <granule-id> [--smoke]" >&2
-  echo "  e.g. cut-granule S2B_18TXP_20260115_0_L2A" >&2
+  echo "  e.g. cut-granule S2C_18TXP_20260215_0_L2A" >&2
   exit 64
 fi
 
@@ -39,6 +39,10 @@ WORKDIR="${GRANULE_WORKDIR:-/data}"
 STAC_URL="${STAC_URL:-https://earth-search.aws.element84.com/v1}"
 STAC_COLLECTION="${STAC_COLLECTION:-sentinel-2-l2a}"
 R2_BUCKET="${R2_BUCKET:-skating-imagery}"
+# Which season's masks to clip against. The bake names its artifact for a season and the cutter has
+# to be told which one — deriving it from the granule's own date would silently cut a January frame
+# against a mask baked for the wrong winter the first time a backfill crosses a July.
+MASK_SEASON="${MASK_SEASON:-}"
 
 log() { echo "[cut-granule] $*" >&2; }
 die() { echo "[cut-granule] FATAL: $*" >&2; exit 1; }
@@ -95,37 +99,186 @@ resolve_granule() {
 asset_href() { jq -r --arg k "$1" '.assets[$k].href // empty' granule.json; }
 
 # --- The transform ---------------------------------------------------------------------------------
+#
+# Six GDAL steps, each of which was run against a real granule before it was written down here
+# (S2C_18TXP_20260215, Champlain, 7.6% cloud). The order matters and the reasons are inline.
+
+# Pull only the reveal masks this granule's footprint touches.
+#
+# The mask file is one FlatGeobuf for the whole corpus. FlatGeobuf carries a packed Hilbert R-tree
+# **inside the file**, and GDAL uses it over HTTP range requests — so `-spat` against a `/vsicurl/`
+# URL fetches the index and then only the intersecting features. A 25,000-body, ~150 MB artifact is
+# read as a few megabytes, without this job ever knowing how big it was.
+fetch_masks() {
+  [[ -n "$MASK_SEASON" ]] || die "MASK_SEASON is unset — which season's masks should this cut against?"
+
+  local base="masks/${MASK_SEASON}"
+
+  # Read over `/vsis3/` with the credentials this job already has, rather than over a public URL.
+  #
+  # The archive of *frames* will eventually be public, because the clients have to fetch it. The
+  # masks never need to be — so requiring a public bucket here would widen the archive's exposure to
+  # buy nothing, and it would couple this job to a Cloudflare setting rather than to a secret it is
+  # already holding. R2 is S3-compatible; path-style addressing is what it wants.
+  export AWS_ACCESS_KEY_ID="$R2_ACCESS_KEY_ID"
+  export AWS_SECRET_ACCESS_KEY="$R2_SECRET_ACCESS_KEY"
+  export AWS_S3_ENDPOINT="${R2_ENDPOINT#https://}"
+  export AWS_VIRTUAL_HOSTING=FALSE
+  export AWS_DEFAULT_REGION=auto
+
+  # The sidecar carries the buffer distances the masks were baked with, so the container never holds
+  # its own copy of a tuned constant. See the note in bakeMasks.ts for why they travel together.
+  rclone --config "$RCLONE_CONF" copyto "r2:${R2_BUCKET}/${base}.json" mask-meta.json \
+    --s3-no-check-bucket \
+    || die "no mask sidecar at ${base}.json — has bake-masks run for $MASK_SEASON?"
+  FEATHER_M="$(jq -r '.featherMeters' mask-meta.json)"
+  [[ "$FEATHER_M" =~ ^[0-9.]+$ ]] || die "mask sidecar has no usable featherMeters"
+
+  read -r MINLNG MINLAT MAXLNG MAXLAT <<<"$(jq -r '.bbox | "\(.[0]) \(.[1]) \(.[2]) \(.[3])"' granule.json)"
+  log "granule footprint $MINLNG $MINLAT $MAXLNG $MAXLAT"
+
+  # Reprojected to 3857 on the way out, because everything downstream is. EPSG:3857 is not optional
+  # anywhere in this pipeline: a linear lat/lng mask sits ~20 m off the shoreline at 44°N and reads
+  # as the imagery being misregistered rather than as our bug (packages/core/src/webMercator.ts).
+  ogr2ogr -f GeoJSON masks.geojson \
+    -spat "$MINLNG" "$MINLAT" "$MAXLNG" "$MAXLAT" -spat_srs EPSG:4326 \
+    -t_srs EPSG:3857 \
+    "/vsis3/${R2_BUCKET}/${base}.fgb" \
+    || die "could not read masks from ${base}.fgb"
+
+  MASK_COUNT="$(jq '.features | length' masks.geojson)"
+  log "masks intersecting this granule: $MASK_COUNT"
+}
+
+# The projected extent the masks occupy, which is all of the granule worth warping.
+mask_extent() {
+  jq -r '
+    [.features[].geometry | (if .type=="Polygon" then [.coordinates] else .coordinates end)[][][]]
+    | (map(.[0]) | min), (map(.[1]) | min), (map(.[0]) | max), (map(.[1]) | max)
+  ' masks.geojson | paste -sd' ' -
+}
+
 transform_granule() {
-  # ⚠ NOT IMPLEMENTED — this is PR 2a. What belongs here, in order:
+  fetch_masks
+
+  # **Nothing to cut is a success, not a failure.** Plenty of granules in a five-state region cover
+  # only land, or Québec, or ocean. Exiting non-zero would light up a fan-out with red for jobs that
+  # did exactly the right thing, and the noise would hide a real failure.
+  if [[ "$MASK_COUNT" -eq 0 ]]; then
+    log "no corpus bodies under this granule — nothing to cut"
+    return 0
+  fi
+
+  local href
+  href="$(asset_href visual)"
+  [[ -n "$href" ]] || die "no 'visual' (TCI) asset on $GRANULE_ID"
+
+  read -r MINX MINY MAXX MAXY <<<"$(mask_extent)"
+  log "mask extent (3857) $MINX $MINY $MAXX $MAXY"
+
+  # ⚠ **Mercator metres are not ground metres, and this is where that bites.**
   #
-  #   1. Fetch the pre-baked reveal mask for this granule's footprint. **Not computed here.** The
-  #      shape comes from `revealShape` in `@skating/core`, which is TypeScript, and putting Node in
-  #      this image to call it would be the wrong trade twice over: the masks depend on body polygons
-  #      and access points, which change rarely, while ~1,000 granules a season clip against the
-  #      identical shapes. So `pnpm --filter @skating/imagery bake-masks` computes them once per
-  #      season and stages one GeoJSON in R2; this job downloads it. Keeping geometry out of the
-  #      container is also what keeps D148's host-neutrality claim true.
-  #   2. `gdal raster clip` against that union. Masking first is what makes the numbers work: water
-  #      plus buffers is ~5% of the region, so this is the ~20× shrink D148 depends on.
-  #   3. Bake the alpha. `outerRingsOnly` semantics — islands are revealed in full, never punched
-  #      out; the first render settled that a lake full of holes "reads as damage rather than
-  #      cartography". The feather is a **distance transform** (`gdal_proximity`), not a blur:
-  #      alpha ramps by true ground distance from the reveal edge over SENTINEL_MASK_METERS.feather.
-  #      The web client blurs instead only because a rasteriser is what a canvas has — see the note
-  #      at the end of `paintRevealMask` in apps/web/src/lib/imageryCanvas.ts, which hands this case
-  #      to us explicitly: *"PR 2's Sentinel archive bakes its alpha server-side, where there is no
-  #      rasteriser and the real geometry is the answer."*
-  #   4. `gdal raster tile` (WebMercatorQuad) then `pmtiles convert`. EPSG:3857 is not optional: a
-  #      linear lat/lng mask sits ~20 m off the shoreline at 44°N and reads as the source being
-  #      misregistered (see packages/core/src/webMercator.ts).
+  # Web Mercator inflates distance by 1/cos(latitude) — ~1.39× at 44°N. `gdal_proximity -distunits
+  # GEO` measures in the raster's own units, so feeding it 240 would ramp the feather over 240
+  # *projected* metres, which is only ~173 m on the ground: a 28% error that looks like a slightly
+  # tight edge rather than like a units bug. `groundMetersPerPixel` carries the same correction on
+  # the client, and this is the server's copy of it.
+  local centre_lat feather_projected
+  centre_lat="$(awk -v miny="$MINY" -v maxy="$MAXY" 'BEGIN{
+    mw=20037508.342789244; cy=(miny+maxy)/2;
+    printf "%.6f", (2*atan2(exp((cy/mw)*3.14159265358979),1)-3.14159265358979/2)*180/3.14159265358979
+  }')"
+  feather_projected="$(awk -v f="$FEATHER_M" -v lat="$centre_lat" 'BEGIN{
+    printf "%.1f", f/cos(lat*3.14159265358979/180)
+  }')"
+  log "feather ${FEATHER_M} ground m -> ${feather_projected} projected m at ${centre_lat}°N"
+
+  # 1. Warp the granule into 3857 over just the mask extent. 14 m/px is ~10 m on the ground here,
+  #    which is Sentinel-2's native sample — upsampling would invent detail, downsampling would throw
+  #    away the only resolution we have.
+  log "warping $href"
+  gdalwarp -q -t_srs EPSG:3857 -te "$MINX" "$MINY" "$MAXX" "$MAXY" -tr 14 14 \
+    -r bilinear -multi -co COMPRESS=DEFLATE -overwrite \
+    "/vsicurl/${href}" scene.tif \
+    || die "gdalwarp failed"
+
+  # 2. Burn the reveal shapes into a byte mask on exactly that grid.
+  gdal_rasterize -q -burn 255 -init 0 -ot Byte \
+    -te "$MINX" "$MINY" "$MAXX" "$MAXY" -tr 14 14 -co COMPRESS=DEFLATE \
+    masks.geojson mask.tif \
+    || die "gdal_rasterize failed"
+
+  # 3. Distance from every pixel to the nearest revealed one. This is the feather, and it is a true
+  #    ramp by ground distance rather than a blur — which is the whole reason the archive bakes alpha
+  #    server-side instead of leaving it to a rasteriser (see imageryCanvas.ts's closing note).
+  gdal_proximity -q mask.tif dist.tif -values 255 -distunits GEO \
+    -maxdist "$feather_projected" -nodata "$feather_projected" -ot Float32 -co COMPRESS=DEFLATE \
+    || die "gdal_proximity failed"
+
+  # 4. Distance -> alpha, via a colour ramp.
   #
-  # ⚠ **Fail closed.** If the mask cannot be built, produce nothing — never an unclipped granule.
-  # `composeImagery` takes the same care on the client, and for the same reason: a reveal that fails
-  # open is a photograph of the whole Northeast with no way to tell which lake you were looking at.
+  #    `gdaldem color-relief` rather than `gdal raster calc`, deliberately: calc needs muparser, which
+  #    this GDAL build does not carry ("Dialect 'muparser' is not supported by this GDAL build"), and
+  #    `gdal_calc.py` needs the Python bindings the -small image may not ship. color-relief is core
+  #    C++ with neither dependency, and a two-stop ramp linearly interpolated *is* the feather.
   #
-  # Kept as a hard failure rather than a silent no-op: a job that exits 0 having produced nothing is
-  # the one outcome a fan-out over 750 granules cannot afford to hide.
-  die "transform not implemented — this is PR 2a (see plans/phase-N6e-satellite-imagery.md §C2)"
+  #    No `nv` entry. `gdal_proximity -nodata` sets the *fill value* for pixels past maxdist but does
+  #    not flag them as nodata, so color-relief warns "Input dataset has no nodata value. Ignoring
+  #    'nv' entry" on every single job. It is redundant anyway: the fill is `feather_projected`, which
+  #    is precisely where the ramp already reaches zero. Confirmed against a real run — distance spans
+  #    exactly 0→333.6 and the alpha it produces spans 0→255. Dropping it costs nothing and keeps a
+  #    fan-out's logs free of a warning that would train everyone to ignore warnings.
+  printf '%s\n' '0 255 255 255' "$feather_projected 0 0 0" > ramp.txt
+  gdaldem color-relief dist.tif ramp.txt alpha_rgb.tif -co COMPRESS=DEFLATE -q \
+    || die "gdaldem color-relief failed"
+  gdal_translate -q -b 1 -ot Byte -co COMPRESS=DEFLATE alpha_rgb.tif alpha.tif \
+    || die "alpha extraction failed"
+
+  # 5. RGB + alpha into one four-band image. VRTs all the way, so nothing is copied until tiling.
+  local i
+  for i in 1 2 3; do
+    gdal_translate -q -of VRT -b "$i" scene.tif "band${i}.vrt" || die "band $i split failed"
+  done
+  gdalbuildvrt -q -separate rgba.vrt band1.vrt band2.vrt band3.vrt alpha.tif || die "gdalbuildvrt failed"
+  gdal_translate -q -of VRT -colorinterp red,green,blue,alpha rgba.vrt rgba_ci.vrt \
+    || die "colorinterp assignment failed"
+
+  # 6. Tile, then convert.
+  #
+  #    ⚠ `ZOOM_LEVEL_STRATEGY=UPPER` is load-bearing. The MBTiles driver defaults to the *nearest*
+  #    zoom, and at our 14 m/px that is z13 (19.1 projected m/px) — coarser than the source, so the
+  #    default silently throws away resolution we paid to fetch. UPPER picks z14 and keeps it. The
+  #    founder's "no zoom floor" call cuts the same way: what renders is the archive's business, and
+  #    discarding detail up front removes a choice the skater is supposed to have.
+  rm -f archive.mbtiles archive.pmtiles
+  gdal_translate -q -of MBTILES rgba_ci.vrt archive.mbtiles \
+    -co TILE_FORMAT=WEBP -co QUALITY=80 -co ZOOM_LEVEL_STRATEGY=UPPER \
+    || die "MBTiles tiling failed"
+  gdaladdo -q -r average archive.mbtiles || die "overview build failed"
+  pmtiles convert archive.mbtiles archive.pmtiles >/dev/null 2>&1 || die "pmtiles convert failed"
+
+  # The manifest, because a raster cannot say when it was taken or how cloudy it was — and D84/C4
+  # make the date content rather than a caption. Whatever reads this archive reads dates from here.
+  jq -n \
+    --arg granule "$GRANULE_ID" \
+    --arg captured "$CAPTURED_AT" \
+    --arg season "$MASK_SEASON" \
+    --arg collection "$STAC_COLLECTION" \
+    --argjson cloud "${CLOUD_PCT:-null}" \
+    --argjson bodies "$MASK_COUNT" \
+    --argjson feather "$FEATHER_M" \
+    '{granuleId:$granule, capturedAt:$captured, cloudCoverPct:$cloud, season:$season,
+      collection:$collection, bodies:$bodies, featherMeters:$feather, band:"visual"}' \
+    > manifest.json || die "manifest build failed"
+
+  local key_base="frames/${MASK_SEASON}/${GRANULE_ID}"
+  log "uploading $(du -h archive.pmtiles | cut -f1) -> r2:${R2_BUCKET}/${key_base}.pmtiles"
+  rclone --config "$RCLONE_CONF" copyto archive.pmtiles "r2:${R2_BUCKET}/${key_base}.pmtiles" \
+    --s3-no-check-bucket --s3-chunk-size=64M || die "R2 upload failed"
+  rclone --config "$RCLONE_CONF" copyto manifest.json "r2:${R2_BUCKET}/${key_base}.json" \
+    --s3-no-check-bucket || die "R2 manifest upload failed"
+
+  log "cut $MASK_COUNT bodies from $GRANULE_ID ($CAPTURED_AT, ${CLOUD_PCT:-?}% cloud)"
 }
 
 # --- Smoke test ------------------------------------------------------------------------------------

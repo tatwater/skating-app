@@ -69,7 +69,7 @@ export interface MaskProperties {
  * reads.
  */
 export function maskFeatureFor(row: CorpusMaskRow): MaskOutcome {
-  if (!row.polygon || !row.polygon.type) {
+  if (!row.polygon?.type) {
     return { ok: false, waterBodyId: row.waterBodyId, name: row.name, reason: 'no-geometry' };
   }
 

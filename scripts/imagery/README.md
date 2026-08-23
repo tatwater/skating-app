@@ -7,15 +7,16 @@ Phase doc: [`plans/phase-N6e-satellite-imagery.md`](../../plans/phase-N6e-satell
 **§C2 (D148)** is the decision this directory implements, and the *Settled 2026-08-21* section is
 where the hosting call and its one condition live.
 
-> ⚠ **Scaffold, not a working pipeline.** The Fly plumbing, the image, the run model and the R2 push
-> are real and can be smoke-tested today. The masking transform is PR 2 and is a deliberate hard
-> failure — see `transform_granule` in `cut-granule.sh`. `--smoke` exercises everything else.
+> **Working end to end as of 2026-08-23.** A granule id in, a masked PMTiles archive and its manifest
+> in R2, on Fly, in about twenty seconds. What is *not* here yet is granule selection and the D149
+> weather gate — the cutter has to be told which granules to cut. `--smoke` still runs the plumbing
+> alone (one band, no masking) when you want to prove credentials and connectivity without the work.
 
 ---
 
-## ⚠ Four ways to get this wrong, each of which costs money
+## ⚠ Five ways to get this wrong, each of which costs money
 
-**Read this before running any `fly` command in this directory.** All four are cases where the
+**Read this before running any `fly` command in this directory.** All five are cases where the
 obvious command is the wrong one — in #2, it is the command flyctl itself recommends — the failure is
 silent, and what it costs you is a recurring bill rather than an error message. They are listed here rather than left in the runbook below because the
 runbook is where you look when things are going well.
@@ -79,6 +80,29 @@ bad granule crash-loops forever, re-reading it, on your bill. This fan-out has n
 policy that cannot distinguish a bad granule from a bad build — a failure should be one dead job and
 one log line. `--rm` then destroys the Machine when the process exits, so nothing lingers.
 
+### 5. `fly machine run` ignores `fly.toml`'s `[[vm]]` block
+
+```bash
+fly machine run "$IMAGE" --vm-size shared-cpu-4x --rm --restart no -- <granule-id>   # ✅
+fly machine run "$IMAGE" --rm --restart no -- <granule-id>                           # ❌ Fly's default size
+```
+
+`fly.toml` sizes machines created by `fly deploy` — and this app never deploys, so **that `[[vm]]`
+block has never applied to a single job**. A machine spawned without an explicit `--vm-size` gets
+Fly's small default.
+
+Found the hard way on 2026-08-23, and the failure mode is the reason it is listed here: the first real
+transform died with
+
+```
+/usr/local/bin/cut-granule: line 161: 676 Killed    gdalwarp -q -t_srs EPSG:3857 ...
+```
+
+**`Killed` is an OOM wearing a generic exit code.** Nothing says "out of memory," nothing says "wrong
+machine size," and the same granule warps comfortably in 8 GB. `fan-out.sh` now always passes
+`--vm-size` (`FLY_VM_SIZE`, default `shared-cpu-4x`); the danger is a hand-typed `fly machine run`
+that forgets it and reads as a GDAL bug.
+
 ### How to check you did not do any of these
 
 ```bash
@@ -86,7 +110,7 @@ fly machine list --app skating-imagery
 ```
 
 **Empty between runs is the whole cost model in one command.** If anything is listed while no backfill
-is in flight, one of the four above happened. `fly machine destroy <id> --force` to fix it.
+is in flight, one of the five above happened. `fly machine destroy <id> --force` to fix it.
 
 ---
 
@@ -155,6 +179,46 @@ mask, where ground distance is measurable in pixels and a ramp is one operation.
 geometry would mean either a second ring (a step, not a ramp) or dozens of them — which is the
 stacked-opacity approach `imageryMask`'s own module note records as tried and abandoned.
 
+### The six GDAL steps, and the two that are not obvious
+
+Every one of these was run against a real granule before it was written down —
+`S2C_18TXP_20260215_0_L2A`, Champlain, 7.6% cloud, nine bodies under it.
+
+1. **Read only the intersecting masks** — `ogr2ogr -spat` over `/vsis3/`, using the R2 credentials the
+   job already holds rather than a public URL. The frames archive will need public access eventually;
+   the masks never will, so requiring it here would widen exposure to buy nothing.
+2. **Warp to EPSG:3857** at 14 m/px, over the mask extent only. 14 projected metres is ~10 ground
+   metres here — Sentinel-2's native sample, so we neither invent detail nor discard it.
+3. **Rasterize the masks** onto exactly that grid.
+4. **Distance transform** (`gdal_proximity`) — this is the feather, and it is a true ramp by ground
+   distance rather than a blur.
+5. **Distance → alpha** via a `gdaldem color-relief` two-stop ramp.
+6. **Tile and convert** — MBTiles/WEBP, overviews, `pmtiles convert`.
+
+**⚠ The feather is measured in projected metres, and they are not ground metres.** Web Mercator
+inflates distance by 1/cos(φ) — ~1.39× at 44°N. Handing `gdal_proximity` a bare 240 would ramp over
+240 *projected* metres, which is **173 m on the ground**: a 28% error that reads as a slightly tight
+edge rather than as a units bug. `groundMetersPerPixel` carries the identical correction on the
+client; step 4 is the server's copy of it.
+
+**⚠ `ZOOM_LEVEL_STRATEGY=UPPER` is load-bearing.** The MBTiles driver defaults to the *nearest* zoom,
+and at 14 m/px that is z13 (19.1 projected m/px) — coarser than the source. The default silently
+throws away resolution we paid to fetch. UPPER picks z14 and keeps it, which is also what the
+founder's "no zoom floor" call implies: what renders is the archive's business, and discarding detail
+up front removes a choice the skater is supposed to have.
+
+Two smaller notes. `gdaldem color-relief` is used instead of `gdal raster calc` because calc needs
+muparser (*"Dialect 'muparser' is not supported by this GDAL build"*) and `gdal_calc.py` needs Python
+bindings the `-small` image may not ship — color-relief is core C++ with neither dependency. And
+rclone logs one `NotImplemented` failure against R2 before succeeding on its retry; it is benign and
+self-correcting, but it is noise worth eventually silencing rather than learning to skip past.
+
+### A granule with nothing under it is a success
+
+Plenty of granules over five states cover only land, or Québec, or ocean. Those exit **0** with
+"nothing to cut". Exiting non-zero would light up a fan-out with red for jobs that did exactly the
+right thing, and that noise is how a real failure gets missed.
+
 ### Two failure directions, and which one this takes
 
 `revealShape` returns `null` when a union collapses, and core is explicit that this means *"do not
@@ -209,7 +273,7 @@ R2_BUCKET=skating-imagery
 ```
 
 `--stage` is load-bearing — see
-[Four ways to get this wrong](#-four-ways-to-get-this-wrong-each-of-which-costs-money).
+[Five ways to get this wrong](#-five-ways-to-get-this-wrong-each-of-which-costs-money).
 
 Values come from the **bucket-scoped** R2 API token (Cloudflare dashboard → R2 → Manage API Tokens).
 The account endpoint and key pair are the same ones the basemap uses; they are recorded locally in
@@ -277,7 +341,7 @@ fly machine list --app skating-imagery   # empty between runs
 fly status --app skating-imagery
 ```
 
-See [Four ways to get this wrong](#-four-ways-to-get-this-wrong-each-of-which-costs-money) for what
+See [Five ways to get this wrong](#-five-ways-to-get-this-wrong-each-of-which-costs-money) for what
 a non-empty list means and how to clear it.
 
 ## Local development, no Fly involved

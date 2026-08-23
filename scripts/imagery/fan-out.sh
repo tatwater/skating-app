@@ -37,6 +37,13 @@ APP="${FLY_APP:-skating-imagery}"
 REGION="${FLY_REGION:-sjc}"
 IMAGE="${FLY_IMAGE:-}"
 MAX_PARALLEL="${MAX_PARALLEL:-25}"
+MASK_SEASON="${MASK_SEASON:-}"
+
+# ⚠ **`fly machine run` does NOT read `fly.toml`'s `[[vm]]` block.** That file sizes machines created
+# by `fly deploy`, and this app never deploys — so a job spawned without an explicit size gets Fly's
+# default, which is far smaller. Found the hard way on 2026-08-23: the first real transform died with
+# `gdalwarp ... Killed`, an OOM wearing a generic exit code, on a granule that warps fine in 8 GB.
+VM_SIZE="${FLY_VM_SIZE:-shared-cpu-4x}"
 
 INPUT="${1:-}"
 SMOKE_FLAG=""
@@ -90,9 +97,11 @@ for granule in "${GRANULES[@]}"; do
     fly machine run "$IMAGE" \
       --app "$APP" \
       --region "$REGION" \
+      --vm-size "$VM_SIZE" \
       --detach \
       --rm \
       --restart no \
+      ${MASK_SEASON:+--env "MASK_SEASON=$MASK_SEASON"} \
       # Naming the Machine after its granule is what makes the dashboard and `fly logs` readable
       # during a 750-job backfill. The tradeoff: names must be unique, so re-spawning a granule whose
       # previous Machine has not finished being destroyed will fail the spawn (reported below, not
