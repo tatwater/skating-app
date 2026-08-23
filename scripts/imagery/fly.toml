@@ -1,0 +1,51 @@
+# Fly app config for the N6e granule cutter (D148).
+#
+# ## Read this before adding anything to this file
+#
+# This app has **no services, no public IP, no health checks, and no always-on Machine**. Nothing ever
+# connects to it. That is not an oversight to be tidied up later — it is the entire cost model. A Fly
+# app with zero running Machines bills nothing; the meter runs only while a per-job Machine is alive.
+# Adding an `[http_service]` block would give this thing an idle footprint it has no use for.
+#
+# The deploy path is correspondingly unusual and is documented in README.md: we **never** run
+# `fly deploy` on its own, because that would create and health-check a long-lived Machine. We build
+# and push the image (`fly deploy --build-only --push`) and then spawn one throwaway Machine per
+# granule with `fly machine run --rm --restart no`.
+
+app = 'skating-imagery'
+
+# `sjc` is San Jose, the closest live Fly region to AWS `us-west-2` (Oregon), where the public
+# `sentinel-cogs` bucket lives.
+#
+# It is San Jose rather than Seattle because **`sea` is deprecated and will not provision new
+# resources** — Fly rejects it outright ("Region sea is deprecated... consider using an alternate
+# region such as sjc"). Confirmed 2026-08-22 against `fly platform regions`, which lists no Pacific
+# Northwest region at all; `sjc` and `lax` are the only West Coast options left.
+#
+# This is a *compute* placement and it has nothing to do with where skaters are. The Machine boots,
+# reads a granule inbound (free on Fly), cuts it, pushes ~40 MB of tiles to R2, and dies — no user
+# ever opens a connection to it. Artifacts are served to skaters from Cloudflare's edge, which is a
+# separate question answered by R2, not by this line.
+#
+# It is also only a *default*: `primary_region` is what `fly deploy` uses, while every job passes
+# `--region` explicitly (see fan-out.sh). If the granule source settles on Copernicus CDSE instead of
+# AWS Earth Search, the fix is a flag at the call site, not a redeploy.
+primary_region = 'sjc'
+
+[build]
+  dockerfile = 'Dockerfile'
+
+[env]
+  # Where cut-granule does its scratch work. Ephemeral root disk, never a volume — see the Dockerfile.
+  GRANULE_WORKDIR = '/data'
+  RCLONE_CONFIG = '/data/rclone.conf'
+
+# Sizing is a starting point, not a measurement — the honest position for a transform nobody has
+# profiled yet. A Sentinel-2 L2A granule is ~1 GB across its bands and GDAL warps tile-by-tile, so
+# this should be generous; confirm against `fly logs` on the first real backfill and cut it if the
+# working set turns out small. Cost note: with per-second billing and no barrier between jobs, 25
+# Machines for one hour bills the same as one Machine for 25 hours, so a right-sized box matters far
+# more than a small one.
+[[vm]]
+  size = 'shared-cpu-4x'
+  memory = '8gb'
