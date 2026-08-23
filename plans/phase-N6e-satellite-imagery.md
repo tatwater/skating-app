@@ -296,7 +296,7 @@ about. S1 and S2 together resolve most of it; either alone does not.
 the user, they should see an additional toggle to switch between the bands")*. True colour · NDSI ·
 a SWIR composite · SAR VV. **This sits comfortably inside D150** precisely because it is the raw
 observation with no interpretation layered on — the user reads the pixels, exactly as they read the
-photograph. It is also the honest precursor to PR 3's hatch layer: anyone who wants to check what the
+photograph. It is also the honest precursor to PR 5's hatch layer: anyone who wants to check what the
 classification was derived *from* can look at it.
 
 **The bands are where the real signal is.** Not needed for v1's true-colour frames, but they are why
@@ -402,7 +402,7 @@ gate that misses freeze-up, not an early one that wastes compute.
 timeline invites inference far harder than a static image does, so every frame carries its own date and
 its own cloud caveat — they travel with the frame, they are not furniture around the control.
 
-### C5 — The nine-season archive and the phenology it yields *(derived dark in PR 2)*
+### C5 — The nine-season archive and the phenology it yields *(derived dark in PR 4)*
 
 > **Founder, 2026-08-21:** hold every available pass for the region, reveal only the current season, and
 > mine the history for **ice-in / ice-out, >90% coverage, first snow, melt events** per body.
@@ -717,7 +717,7 @@ coastal launches we do not carry.
 
 ---
 
-## Sequencing — three PRs *(settled 2026-08-21)*
+## Sequencing — six PRs *(settled 2026-08-21, resplit 2026-08-23)*
 
 **PR 0 — the way in.** ✅ **Built 2026-08-21**, on this branch rather than inside N6d (founder call —
 N6d is merged, and a follow-up PR against it would have been a second review of the same code). The
@@ -725,7 +725,7 @@ route geometry, the trail connectivity pass the founder took at the same time, a
 on both clients. See [Workstream 0](#workstream-0--getting-the-way-in-into-the-app--built-2026-08-21)
 — including why *"while the routing pass is still running"* arrived eight days too late to be free.
 
-**PR 1 — the reveal, web only. Zero infrastructure.**
+**PR 1 — the reveal, web only. Zero infrastructure.** ✅ **Merged 2026-08-23** (PR #45).
 
 1. **A1 + A2 against NAIP** — mask, inverse fill, hard edge. Where the design risk lives, and entirely
    testable before anything is user-visible.
@@ -737,7 +737,7 @@ on both clients. See [Workstream 0](#workstream-0--getting-the-way-in-into-the-a
 Ships against a keyless public endpoint with no box, no archive and no cron. **Could land while N6d is
 still settling**, which is the point of putting the seam here.
 
-> ### ⚠ Mobile is deferred to PR 2, and it is a dependency decision rather than a port
+> ### ⚠ Mobile is deferred to PR 3, and it is a dependency decision rather than a port
 >
 > **React Native has no `CanvasRenderingContext2D`.** The web reveal clips by punching the alpha
 > channel of a fetched photograph on a canvas (`imageryCanvas`), and mobile has no equivalent —
@@ -751,33 +751,76 @@ still settling**, which is the point of putting the seam here.
 > | | Cost | Result |
 > |---|---|---|
 > | Add **`@shopify/react-native-skia`** | A native dependency + a fresh dev-client build | Parity now |
-> | **Defer to PR 2** ✅ | Web-only imagery until then | **Never needs a canvas at all** |
+> | **Defer to PR 3** ✅ | Web-only imagery until then | **Never needs a canvas at all** |
 > | Ship **v1's covering mask** on mobile | None | Parity now, covers the basemap — the thing the render already rejected |
 >
-> **Deferred, at the founder's call** — *"If PR 2 will give us the parity we want, I can be patient…
+> **Deferred, at the founder's call** — *"If PR 3 will give us the parity we want, I can be patient…
 > either way we should probably defer for now."*
 >
-> **Because PR 2 removes the problem rather than solving it twice.** D148's archive is *defined* as
+> **Because PR 3 removes the problem rather than solving it twice.** D148's archive is *defined* as
 > pre-masked imagery with its alpha baked in server-side — so once it exists, mobile's reveal is an
 > `ImageSource` pointed at a URL, and the aerial tier can ride the same clipping path. Adding Skia
 > now would mean building the clip twice and maintaining a second copy of the projection-and-feather
 > logic that the render loop has already caught three separate bugs in.
 >
-> **The cost, stated plainly:** mobile skaters get the Copernicus deep link and no reveal until PR 2.
-> **The fallback if PR 2's clipping does not generalise:** Skia, revisited then rather than now.
+> **The cost, stated plainly:** mobile skaters get the Copernicus deep link and no reveal until PR 3.
+> **The fallback if PR 3's clipping does not generalise:** Skia, revisited then rather than now.
 
-**PR 2 — the timeline, and mobile's reveal.** The Fly box, the STAC poll, the granule reader, the
-masked PMTiles archive, the scrubber, D149's weather gate and turnover, the 9-season backfill, and the
-phenology series **derived dark** (§C5). The long pole, and the only part with an external dependency.
-**Mobile's imagery lands here too**, riding the server-side clipping this PR builds anyway — see the
-deferral note under PR 1.
+**PR 2 — the producer.** ⏳ *In progress.* Everything server-side and nothing a skater can see: the
+Fly box, the mask pre-bake, the granule transform, the masked PMTiles archive, STAC selection with its
+cloud gate, D149's weather gate and season turnover, and the provenance manifest. Ends by running the
+**single-season** backfill, so it is verified by an artifact you can open rather than by a screenshot.
 
-**PR 3 — what the archive knows.** The ice-coverage charts in the drawer and the live hatch layer —
-everything user-facing that reads what PR 2 derived. This is N6f's content, and D150's real home.
+**PR 3 — the consumer.** The Convex read path, the web scrubber, the band selector, **mobile's
+reveal**, attribution, and the per-frame date and cloud caveat. Web and mobile belong together here:
+they consume one archive contract, and splitting them means reviewing that contract twice and risking
+two readings of it. Mobile rides the server-side clipping PR 2 builds anyway — see the deferral note
+under PR 1.
+
+**PR 4 — phenology, derived dark.** §C5's window metrics over the nine-season archive. This one
+*defers itself*: the metrics want eight more seasons than the first backfill produces, and that spend
+is deliberately separate. Nothing user-facing.
+
+**PR 5 — what the archive knows.** The ice-coverage charts in the drawer and the live hatch layer —
+everything user-facing that reads what PR 4 derived. This is N6f's content, and D150's real home.
+
+### Why the producer/consumer seam, and not the workstream seam *(settled 2026-08-23)*
+
+The split is by **review surface**, because Greptile reviews best when a diff has one lens. A single
+PR spanning a Dockerfile, a GDAL transform, a React reducer and a React Native `ImageSource` is where
+its feedback goes vague — and the whole reason to split at all is to keep the feedback sharp while
+paying for as few reviews as possible. Two reviews get the timeline shipped; one cannot, without
+handing a reviewer a diff that spans a container and a hook.
 
 *This reverses the earlier 2026-08-21 call that the timeline ships with the layer. The timeline is the
 biggest thing in the phase and the only part needing infrastructure; keeping it out of PR 1 is what
 makes PR 1 reviewable.*
+
+### The backfill is a selection problem, not a scheduling one *(settled 2026-08-23)*
+
+> **Founder:** *"I'm okay with doing a single-season backfill to start, learn from it, and figure out
+> the cheapest way to run the previous 8 seasons after that… we can use whatever Fly.io provides that
+> trades long processing time for cost."*
+
+**That lever does not exist, and a better one does.** Fly bills per machine-second, linearly: one
+Machine for 25 hours costs what 25 Machines cost for one hour, and there is no spot or preemptible
+tier. Running the backfill slowly saves nothing.
+
+What saves money is **not booting a Machine for a frame we will discard**. STAC carries
+`eo:cloud_cover` in item metadata, so the filter runs in the *query* — free, before any compute
+exists. Measured against Earth Search over Champlain, Jan–Mar 2026: **only 3 frames under 15% cloud in
+ten weeks**, against many at 97–100%. If that ratio roughly holds, nine seasons' ~6,750 jobs becomes
+closer to 1,000.
+
+Two smaller multipliers ride along: D149's freeze-to-thaw window already skips half the year, and the
+job is **~83% I/O-bound** (the first smoke run spent 9s reading and 6s uploading out of 18s), so
+dropping from `shared-cpu-4x` to `1x` costs materially less per second while barely moving wall time.
+
+**The gate wants to be generous**, for §C3's asymmetry: an over-eager gate wastes a few dollars of
+granule reads, while a strict one silently drops the frame that showed freeze-up. SCL may beat
+`eo:cloud_cover` later — ESA's scene classification knows cloud *over our specific lakes*, where a
+granule-wide percentage does not — but that is a refinement for after the first season teaches us
+something.
 
 ---
 
@@ -821,8 +864,8 @@ makes PR 1 reviewable.*
   ⚠ **"Best summer imagery each year" is not annual:** NAIP flies each state on a **2–3 year cycle**,
   so the refresh mechanism is watching the ImageServer's `Year` field per state and re-reading when it
   moves — not a yearly fetch.
-- **Nine seasons, derived dark in PR 2, surfaced for real in PR 3.** See §C5 and **D151**.
-- **Three PRs.** See [Sequencing](#sequencing--three-prs-settled-2026-08-21).
+- **Nine seasons, derived dark in PR 4, surfaced for real in PR 5.** See §C5 and **D151**.
+- **Six PRs.** See [Sequencing](#sequencing--six-prs-settled-2026-08-21-resplit-2026-08-23).
 - **App-wide season turnover: the surgical version, at the founder's delegation** (*"I'll follow your
   lead"*). D63's July boundary stays as the **season key** — it is load-bearing across N5a hazards,
   `contentPurge`, the D66 photo purge, `seasonWindow` and bounties, and changing it is wide blast radius
