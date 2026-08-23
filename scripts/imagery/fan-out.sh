@@ -45,6 +45,15 @@ MASK_SEASON="${MASK_SEASON:-}"
 # `gdalwarp ... Killed`, an OOM wearing a generic exit code, on a granule that warps fine in 8 GB.
 VM_SIZE="${FLY_VM_SIZE:-shared-cpu-4x}"
 
+# ⚠ **And `--vm-size` sets CPUs, not memory.** `shared-cpu-4x` comes with 1 GB by default, so passing
+# only the size fixes half the OOM and leaves the other half looking fixed — `fly machine list` shows
+# `shared-cpu-4x:1024MB`. A 20-granule slice then cut 49–498 bodies happily and lost one job to
+# `FATAL: overview build failed`, which is `gdaladdo` running out of room on a big tile.
+#
+# The two flags are independent and both are required. There is no size name that implies the memory
+# this workload needs.
+VM_MEMORY="${FLY_VM_MEMORY:-8192}"
+
 INPUT="${1:-}"
 SMOKE_FLAG=""
 [[ "${2:-}" == "--smoke" ]] && SMOKE_FLAG="--smoke"
@@ -72,7 +81,8 @@ mapfile -t GRANULES < <(if [[ "$INPUT" == "-" ]]; then cat; else cat "$INPUT"; f
 COUNT=${#GRANULES[@]}
 [[ $COUNT -gt 0 ]] || { echo "no granule ids in $INPUT" >&2; exit 1; }
 
-echo "[fan-out] $COUNT granules -> app=$APP region=$REGION image=$IMAGE"
+echo "[fan-out] $COUNT granules -> app=$APP region=$REGION vm=$VM_SIZE/${VM_MEMORY}MB"
+echo "[fan-out] image=$IMAGE"
 [[ -n "$SMOKE_FLAG" ]] && echo "[fan-out] SMOKE MODE — plumbing only, no masking"
 
 running=0
@@ -94,18 +104,25 @@ for granule in "${GRANULES[@]}"; do
     # make the MAX_PARALLEL throttle below meter spawn *monitoring* rather than spawn *concurrency*,
     # and stall a 750-granule backfill for hours. Measured 2026-08-22: a job that ran and exited in
     # ~2s held the CLI for over 5 minutes. Watch jobs with `fly logs`, not with the spawning process.
+    # ⚠ **No comments inside this command.** A `#` line between backslash-continuations does not
+    # comment "within" the command — the continuation splices the lines, so the `#` terminates the
+    # whole thing and every argument after it silently disappears. A comment sat between `--restart`
+    # and `-- "$granule"` here on 2026-08-23 and twenty Machines booted, ran `cut-granule` with no
+    # granule id at all, and exited 64. Nothing in the spawn output said anything was wrong.
+    #
+    # `--name` makes the dashboard and `fly logs` readable during a backfill. The tradeoff: names must
+    # be unique, so re-spawning a granule whose previous Machine is still being destroyed fails the
+    # spawn (reported below, not swallowed) — the right failure, since it means the earlier job is
+    # still on the bill.
     fly machine run "$IMAGE" \
       --app "$APP" \
       --region "$REGION" \
       --vm-size "$VM_SIZE" \
+      --vm-memory "$VM_MEMORY" \
       --detach \
       --rm \
       --restart no \
       ${MASK_SEASON:+--env "MASK_SEASON=$MASK_SEASON"} \
-      # Naming the Machine after its granule is what makes the dashboard and `fly logs` readable
-      # during a 750-job backfill. The tradeoff: names must be unique, so re-spawning a granule whose
-      # previous Machine has not finished being destroyed will fail the spawn (reported below, not
-      # swallowed). That is the right failure — it means the earlier job is still on the bill.
       --name "granule-$(echo "$granule" | tr '[:upper:]_' '[:lower:]-')" \
       -- "$granule" $SMOKE_FLAG \
       >/dev/null 2>&1 \
@@ -116,5 +133,15 @@ for granule in "${GRANULES[@]}"; do
 done
 
 wait
-echo "[fan-out] all $COUNT spawn calls returned. Machines run detached — watch them with:"
-echo "  fly logs --app $APP"
+echo ""
+echo "[fan-out] all $COUNT spawn calls returned."
+echo ""
+# **A spawn is not a result, and this script cannot tell you otherwise.** Jobs run detached, so
+# "spawned" means Fly accepted the request — nothing more. The 2026-08-23 comment bug spawned twenty
+# Machines that all exited 64 without cutting anything, and every line here said "spawned".
+#
+# `build-index` is the check, because it builds from what is actually in the bucket: if a job did not
+# produce a frame, there is no entry for it. Compare its count against $COUNT.
+echo "[fan-out] watch:    fly logs --app $APP"
+echo "[fan-out] verify:   pnpm --filter @skating/imagery build-index --dry-run"
+echo "[fan-out]           (a spawn is not a result — only the bucket knows what landed)"

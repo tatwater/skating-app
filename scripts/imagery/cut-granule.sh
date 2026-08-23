@@ -156,17 +156,33 @@ fetch_masks() {
   read -r MINLNG MINLAT MAXLNG MAXLAT <<<"$(jq -r '.bbox | "\(.[0]) \(.[1]) \(.[2]) \(.[3])"' granule.json)"
   log "granule footprint $MINLNG $MINLAT $MAXLNG $MAXLAT"
 
+  local src="/vsis3/${R2_BUCKET}/${base}.fgb"
+
+  # ⚠ **Count first, and do not let `ogr2ogr` discover the empty case.**
+  #
+  # `ogr2ogr -t_srs` on a spatial filter that matches nothing does not produce an empty file — it
+  # fails, with `ERROR 1: Reprojection failed`. Over five states an enormous number of granules match
+  # nothing: the Atlantic off Cape Cod, the Gulf of Maine, Québec, western New York. Without this
+  # branch every one of them dies as an error instead of taking the "nothing to cut" path a few lines
+  # down, and a backfill reports a 65% failure rate for doing exactly the right thing.
+  #
+  # Measured 2026-08-23 on a 20-granule slice: 13 "failures", all of them ocean tiles, all of them
+  # this. `-skipfailures` would silence it and would also silence a real reprojection error, so the
+  # count is asked for explicitly instead.
+  MASK_COUNT="$(ogrinfo -so -al -spat "$MINLNG" "$MINLAT" "$MAXLNG" "$MAXLAT" "$src" 2>/dev/null \
+    | sed -n 's/^Feature Count: //p' | head -1)"
+  MASK_COUNT="${MASK_COUNT:-0}"
+  log "masks intersecting this granule: $MASK_COUNT"
+  [[ "$MASK_COUNT" -eq 0 ]] && return 0
+
   # Reprojected to 3857 on the way out, because everything downstream is. EPSG:3857 is not optional
   # anywhere in this pipeline: a linear lat/lng mask sits ~20 m off the shoreline at 44°N and reads
   # as the imagery being misregistered rather than as our bug (packages/core/src/webMercator.ts).
   ogr2ogr -f GeoJSON masks.geojson \
     -spat "$MINLNG" "$MINLAT" "$MAXLNG" "$MAXLAT" -spat_srs EPSG:4326 \
     -t_srs EPSG:3857 \
-    "/vsis3/${R2_BUCKET}/${base}.fgb" \
+    "$src" \
     || die "could not read masks from ${base}.fgb"
-
-  MASK_COUNT="$(jq '.features | length' masks.geojson)"
-  log "masks intersecting this granule: $MASK_COUNT"
 }
 
 # The projected extent the masks occupy, which is all of the granule worth warping.
@@ -273,7 +289,15 @@ transform_granule() {
   gdal_translate -q -of MBTILES rgba_ci.vrt archive.mbtiles \
     -co TILE_FORMAT=WEBP -co QUALITY=80 -co ZOOM_LEVEL_STRATEGY=UPPER \
     || die "MBTiles tiling failed"
-  gdaladdo -q -r average archive.mbtiles || die "overview build failed"
+  # ⚠ **Overview levels are explicit, and they have to be.** With no levels given, `gdaladdo` derives
+  # factors from the raster's own size, and the MBTiles driver rejects anything that is not a power of
+  # two — on a 672-body eastern-Maine extent it derived 129 and died with `ERROR 5: Overview factor
+  # '129' is not a power of 2`. Small granules never hit it, so this fails only on the biggest jobs,
+  # which are the ones a backfill can least afford to lose.
+  #
+  # Seven levels take z14 down to about z7, which covers the whole zoom range a scrubber is looked at
+  # across — including the founder's "no zoom floor", where a skater is free to pull right out.
+  gdaladdo -q -r average archive.mbtiles 2 4 8 16 32 64 128 || die "overview build failed"
   pmtiles convert archive.mbtiles archive.pmtiles >/dev/null 2>&1 || die "pmtiles convert failed"
 
   # The manifest, because a raster cannot say when it was taken or how cloudy it was — and D84/C4
