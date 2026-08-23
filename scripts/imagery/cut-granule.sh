@@ -15,14 +15,18 @@
 # another, 25 at once is the same total spend as 25 in a row (§C2), and a crash takes exactly one
 # granule with it.
 #
-# ## Status: plumbing only
+# ## Two seasons, and they are not the same season
 #
-# ⚠ The masking transform is PR 2's work and is NOT implemented here — see `transform_granule` below,
-# which spells out precisely what has to land in it. What *is* real is everything around it: argument
-# handling, secret checks, the STAC resolve, the R2 push, and `--smoke`, which runs the whole path
-# end to end on one band so the Fly + R2 + GDAL wiring can be proven before any of the interesting
-# code exists. Prove the boring parts first; a masking bug is much easier to read when you already
-# know the box can reach the bucket.
+# `MASK_SEASON` says which reveal geometry to clip against; the frame's own season comes from its
+# capture date. A backfill of winter 2025-26 is cut against *today's* corpus, because that is the best
+# shape of those lakes we have — but the picture is of February 2026 and belongs in that winter's
+# scrubber. Conflating them files a whole backfill under the wrong year.
+#
+# ## `--smoke`
+#
+# Runs the plumbing alone: resolve, read one band over the network, write it to R2, exit. No masks, no
+# transform, no claim about the picture. For proving credentials and connectivity when something is
+# broken and you want the boring half eliminated first.
 set -euo pipefail
 
 GRANULE_ID="${1:-}"
@@ -87,7 +91,22 @@ resolve_granule() {
   CLOUD_PCT="$(jq -r '.properties["eo:cloud_cover"] // empty' granule.json)"
   [[ -n "$CAPTURED_AT" ]] || die "no datetime on $GRANULE_ID"
 
-  log "captured $CAPTURED_AT, cloud ${CLOUD_PCT:-unknown}%"
+  # ⚠ **The frame's season is its own, not the masks'.** These are two different things and filing a
+  # frame under the mask label conflates them: a backfill of winter 2025-26 is cut against *today's*
+  # corpus geometry (`winter-2026-27`), because that is the best shape of those lakes we have — but
+  # the picture is of February 2026 and belongs in that season's scrubber. Deriving it from the
+  # capture date is also what makes the whole backfill fall into the right buckets without anybody
+  # passing a flag per granule.
+  #
+  # D63's July boundary, in shell: anything from July onward belongs to the season named by that
+  # calendar year, anything before it to the one that started the previous July.
+  local year month season_year
+  year="${CAPTURED_AT:0:4}"
+  month="${CAPTURED_AT:5:2}"
+  if [[ "$((10#$month))" -ge 7 ]]; then season_year="$year"; else season_year="$((year - 1))"; fi
+  FRAME_SEASON="$(printf 'winter-%d-%02d' "$season_year" "$(((season_year + 1) % 100))")"
+
+  log "captured $CAPTURED_AT, cloud ${CLOUD_PCT:-unknown}%, season $FRAME_SEASON"
 }
 
 # Assets we care about, and why each one (§C1). True colour is what PR 2 ships; the rest are the
@@ -262,16 +281,18 @@ transform_granule() {
   jq -n \
     --arg granule "$GRANULE_ID" \
     --arg captured "$CAPTURED_AT" \
-    --arg season "$MASK_SEASON" \
+    --arg season "$FRAME_SEASON" \
+    --arg maskSeason "$MASK_SEASON" \
     --arg collection "$STAC_COLLECTION" \
     --argjson cloud "${CLOUD_PCT:-null}" \
     --argjson bodies "$MASK_COUNT" \
     --argjson feather "$FEATHER_M" \
     '{granuleId:$granule, capturedAt:$captured, cloudCoverPct:$cloud, season:$season,
-      collection:$collection, bodies:$bodies, featherMeters:$feather, band:"visual"}' \
+      maskSeason:$maskSeason, collection:$collection, bodies:$bodies, featherMeters:$feather,
+      band:"visual"}' \
     > manifest.json || die "manifest build failed"
 
-  local key_base="frames/${MASK_SEASON}/${GRANULE_ID}"
+  local key_base="frames/${FRAME_SEASON}/${GRANULE_ID}"
   log "uploading $(du -h archive.pmtiles | cut -f1) -> r2:${R2_BUCKET}/${key_base}.pmtiles"
   rclone --config "$RCLONE_CONF" copyto archive.pmtiles "r2:${R2_BUCKET}/${key_base}.pmtiles" \
     --s3-no-check-bucket --s3-chunk-size=64M || die "R2 upload failed"

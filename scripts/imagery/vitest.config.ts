@@ -18,6 +18,7 @@ export default defineConfig({
         'src/bakeMasks.ts',
         'src/selectGranules.ts',
         'src/ingestWindowCli.ts',
+        'src/buildIndex.ts',
         'src/corpus.ts',
       ],
       thresholds: {

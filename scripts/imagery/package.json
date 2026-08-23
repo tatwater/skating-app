@@ -11,7 +11,8 @@
     "bake-masks": "tsx src/bakeMasks.ts",
     "select-granules": "tsx src/selectGranules.ts",
     "fan-out": "./fan-out.sh",
-    "ingest-window": "tsx src/ingestWindowCli.ts"
+    "ingest-window": "tsx src/ingestWindowCli.ts",
+    "build-index": "tsx src/buildIndex.ts"
   },
   "dependencies": {
     "@skating/core": "workspace:*",
