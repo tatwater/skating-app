@@ -96,22 +96,36 @@ asset_href() { jq -r --arg k "$1" '.assets[$k].href // empty' granule.json; }
 
 # --- The transform ---------------------------------------------------------------------------------
 transform_granule() {
-  # ⚠ NOT IMPLEMENTED — this is PR 2. What belongs here, in order:
+  # ⚠ NOT IMPLEMENTED — this is PR 2a. What belongs here, in order:
   #
-  #   1. Fetch the buffered body geometries intersecting this granule's footprint (A1's union of lake
-  #      + the way in). Source of truth is the corpus, so this is a Convex read or a pre-baked
-  #      GeoJSON the caller stages — decide it in PR 2, but note the second option keeps this
-  #      container's only network dependencies the granule store and R2.
+  #   1. Fetch the pre-baked reveal mask for this granule's footprint. **Not computed here.** The
+  #      shape comes from `revealShape` in `@skating/core`, which is TypeScript, and putting Node in
+  #      this image to call it would be the wrong trade twice over: the masks depend on body polygons
+  #      and access points, which change rarely, while ~1,000 granules a season clip against the
+  #      identical shapes. So `pnpm --filter @skating/imagery bake-masks` computes them once per
+  #      season and stages one GeoJSON in R2; this job downloads it. Keeping geometry out of the
+  #      container is also what keeps D148's host-neutrality claim true.
   #   2. `gdal raster clip` against that union. Masking first is what makes the numbers work: water
   #      plus buffers is ~5% of the region, so this is the ~20× shrink D148 depends on.
-  #   3. `gdal raster tile` (WebMercatorQuad, --add-alpha) so the per-body mask and feather are baked
-  #      into the alpha channel server-side. That baked alpha is precisely what lets mobile render
-  #      the reveal with an ImageSource and no canvas — see the PR 1 deferral note.
-  #   4. `pmtiles convert` to the single-file archive both clients already read.
+  #   3. Bake the alpha. `outerRingsOnly` semantics — islands are revealed in full, never punched
+  #      out; the first render settled that a lake full of holes "reads as damage rather than
+  #      cartography". The feather is a **distance transform** (`gdal_proximity`), not a blur:
+  #      alpha ramps by true ground distance from the reveal edge over SENTINEL_MASK_METERS.feather.
+  #      The web client blurs instead only because a rasteriser is what a canvas has — see the note
+  #      at the end of `paintRevealMask` in apps/web/src/lib/imageryCanvas.ts, which hands this case
+  #      to us explicitly: *"PR 2's Sentinel archive bakes its alpha server-side, where there is no
+  #      rasteriser and the real geometry is the answer."*
+  #   4. `gdal raster tile` (WebMercatorQuad) then `pmtiles convert`. EPSG:3857 is not optional: a
+  #      linear lat/lng mask sits ~20 m off the shoreline at 44°N and reads as the source being
+  #      misregistered (see packages/core/src/webMercator.ts).
+  #
+  # ⚠ **Fail closed.** If the mask cannot be built, produce nothing — never an unclipped granule.
+  # `composeImagery` takes the same care on the client, and for the same reason: a reveal that fails
+  # open is a photograph of the whole Northeast with no way to tell which lake you were looking at.
   #
   # Kept as a hard failure rather than a silent no-op: a job that exits 0 having produced nothing is
   # the one outcome a fan-out over 750 granules cannot afford to hide.
-  die "transform not implemented — this is PR 2 (see plans/phase-N6e-satellite-imagery.md §C2)"
+  die "transform not implemented — this is PR 2a (see plans/phase-N6e-satellite-imagery.md §C2)"
 }
 
 # --- Smoke test ------------------------------------------------------------------------------------

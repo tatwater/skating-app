@@ -32,6 +32,7 @@ import type * as hazardConfirmations from "../hazardConfirmations.js";
 import type * as hazards from "../hazards.js";
 import type * as hazardWeather from "../hazardWeather.js";
 import type * as http from "../http.js";
+import type * as imageryMasks from "../imageryMasks.js";
 import type * as importRuns from "../importRuns.js";
 import type * as isochrones from "../isochrones.js";
 import type * as lib_accessLimits from "../lib/accessLimits.js";
@@ -108,6 +109,7 @@ declare const fullApi: ApiFromModules<{
   "hazards": typeof hazards;
   "hazardWeather": typeof hazardWeather;
   "http": typeof http;
+  "imageryMasks": typeof imageryMasks;
   "importRuns": typeof importRuns;
   "isochrones": typeof isochrones;
   "lib/accessLimits": typeof lib_accessLimits;

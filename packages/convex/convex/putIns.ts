@@ -103,7 +103,7 @@ export interface PutInMarker {
  * writes a `derived` row any more. The reader stays because rows written by the old path exist on dev
  * and a marker vanishing is precisely the outcome all of this was trying to prevent.
  */
-async function loadPutInRows(ctx: QueryCtx, waterBodyId: Id<'waterBodies'>) {
+export async function loadPutInRows(ctx: QueryCtx, waterBodyId: Id<'waterBodies'>) {
   const rows = await ctx.db
     .query('putIns')
     .withIndex('by_water_body', (q) => q.eq('waterBodyId', waterBodyId))

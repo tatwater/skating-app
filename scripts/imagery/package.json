@@ -1,0 +1,26 @@
+{
+  "name": "@skating/imagery",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "description": "Imagery ETL (N6e PR 2): reveal-mask pre-bake + STAC granule selection for the freeze-up archive. Not built or deployed; the cutting itself runs in the Fly container (see README).",
+  "scripts": {
+    "check-types": "tsc --noEmit",
+    "test": "vitest run --coverage",
+    "test:watch": "vitest",
+    "bake-masks": "tsx src/bakeMasks.ts",
+    "select-granules": "tsx src/selectGranules.ts",
+    "fan-out": "./fan-out.sh"
+  },
+  "dependencies": {
+    "@skating/core": "workspace:*",
+    "@skating/run-log": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/geojson": "^7946.0.16",
+    "@types/node": "^22.10.0",
+    "@vitest/coverage-v8": "^3.2.7",
+    "tsx": "^4.19.0",
+    "vitest": "^3.2.7"
+  }
+}

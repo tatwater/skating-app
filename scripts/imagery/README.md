@@ -94,7 +94,7 @@ is in flight, one of the four above happened. `fly machine destroy <id> --force`
 
 | | Lives in | Knows about |
 | --- | --- | --- |
-| **What to cut** | upstream — a season's granule list, the D149 weather gate | the corpus, the season, STAC |
+| **What to cut** | `src/` — the mask bake, the granule selection, the D149 weather gate | the corpus, the season, STAC |
 | **How to cut it** | `Dockerfile` + `cut-granule.sh` | one granule id, GDAL, R2 |
 | **Where it runs** | `fly.toml` + `fan-out.sh` | Fly |
 
@@ -112,6 +112,63 @@ Machines, **at the same total cost** because billing is per-second and the jobs 
 
 The operational edge to know going in: **Fly volumes are host-pinned with no multi-attach.** Which is
 why nothing here uses one. Every job works on the Machine's ephemeral root disk and dies with it.
+
+---
+
+## The mask bake — why the geometry is not computed in the container
+
+```bash
+pnpm --filter @skating/imagery bake-masks --limit=40    # smoke: a few bodies, never uploaded
+pnpm --filter @skating/imagery bake-masks --upload      # the real artifact
+```
+
+The reveal is a **shape** (D146): the lake, the walk in, and the parking, each buffered and unioned.
+That shape comes from `revealShape` in `@skating/core` — the same function the web client uses — and
+it is TypeScript, which the GDAL container is not.
+
+Putting Node in the image to call it would be the wrong trade twice over. The masks depend on body
+polygons and access points, which change rarely, while **~1,000 granules a season clip against the
+identical shapes** — so computing them per granule repeats the expensive half of the job a thousand
+times. Baking once per season and staging the result also keeps geometry out of the container, which
+is what keeps D148's host-neutrality claim true rather than aspirational.
+
+### FlatGeobuf, and the design it replaced
+
+The corpus is ~25,000 buffered shapes — call it 150 MB as GeoJSON — and each granule job needs only
+the handful of bodies its own granule covers. GeoJSON gives a reader no way to ask that question: it
+would download and parse the lot to find sixty lakes, once per job.
+
+FlatGeobuf carries a packed Hilbert R-tree **inside the file**, and GDAL uses it over HTTP range
+requests. So a job runs `-spat` against a `/vsicurl/` URL, fetches the index, and reads only the
+intersecting features. Verified locally before it was built on: a two-feature file with a spatial
+filter returned exactly the intersecting one.
+
+The alternative was one mask file per Sentinel MGRS tile, keyed off the granule id
+(`S2C_`**`18TXP`**`_20260215`). It works, and it costs a tiling scheme, a naming convention, and a
+story for bodies that straddle two tiles. The spatial index answers the same question with none of it.
+
+### What the bake does *not* produce
+
+**The feather.** `SENTINEL_MASK_METERS` is `{solid: 60, feather: 240}`; only the 60 m solid core is
+geometry. The 240 m ramp is applied in the container as a distance transform against the rasterised
+mask, where ground distance is measurable in pixels and a ramp is one operation. Baking it into
+geometry would mean either a second ring (a step, not a ramp) or dozens of them — which is the
+stacked-opacity approach `imageryMask`'s own module note records as tried and abandoned.
+
+### Two failure directions, and which one this takes
+
+`revealShape` returns `null` when a union collapses, and core is explicit that this means *"do not
+reveal"* rather than *"reveal everything"* — a reveal that fails open is a photograph of the whole
+Northeast with no way to tell which lake you were looking at. So a body that fails is **omitted**, and
+the archive simply never shows it.
+
+That is the safe direction and it is also a silent one, which is why the bake **counts and prints
+every omission** by reason and refuses to write an empty artifact at all. Silent truncation across
+25,197 bodies reads as "covered everything" when it did not.
+
+`--limit` runs are marked PARTIAL and refuse `--upload`, for the same reason: a partial bake published
+under the season's real key is indistinguishable from a good one, and every granule cut against it
+would quietly drop most of the region.
 
 ---
 
