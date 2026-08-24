@@ -6,8 +6,8 @@ const manifest = (over: Partial<FrameManifest> = {}): FrameManifest => ({
   capturedAt: '2026-02-15T15:51:05Z',
   cloudCoverPct: 7.6,
   season: 'winter-2025-26',
-  bodies: 9,
-  band: 'visual',
+  bodyCount: 9,
+  bands: ['visual'],
   ...over,
 });
 
@@ -15,7 +15,9 @@ describe('buildSeasonIndex', () => {
   it('indexes a frame with the key a client composes its URL from', () => {
     const index = buildSeasonIndex('winter-2025-26', [manifest()]);
     expect(index.frames).toHaveLength(1);
-    expect(index.frames[0]?.key).toBe('frames/winter-2025-26/S2C_18TXP_20260215_0_L2A.pmtiles');
+    expect(index.frames[0]?.key).toBe(
+      'frames/winter-2025-26/S2C_18TXP_20260215_0_L2A-visual.pmtiles',
+    );
   });
 
   it('sorts by capture time, the axis the scrubber moves along', () => {
@@ -34,8 +36,8 @@ describe('buildSeasonIndex', () => {
     // ocean. A frame with no bodies is an empty picture, and a date in the scrubber that shows a
     // skater nothing, with no explanation, is worse than a gap.
     const index = buildSeasonIndex('winter-2025-26', [
-      manifest({ granuleId: 'empty', bodies: 0 }),
-      manifest({ granuleId: 'real', bodies: 4 }),
+      manifest({ granuleId: 'empty', bodyCount: 0 }),
+      manifest({ granuleId: 'real', bodyCount: 4 }),
     ]);
     expect(index.frames.map((f) => f.granuleId)).toEqual(['real']);
   });
@@ -94,5 +96,43 @@ describe('buildSeasonIndex', () => {
     // classifies every old frame as covering nowhere.
     const index = buildSeasonIndex('winter-2025-26', [manifest()]);
     expect('footprint' in (index.frames[0] as object)).toBe(false);
+  });
+});
+
+describe('bands', () => {
+  it('publishes one frame per band, keyed so they cannot collide', () => {
+    // A granule now yields true colour AND ESA's scene classification. `<granuleId>.pmtiles` could
+    // only ever name one of them.
+    const index = buildSeasonIndex('winter-2025-26', [manifest({ bands: ['visual', 'scl'] })]);
+    expect(index.frames.map((f) => f.band)).toEqual(['visual', 'scl']);
+    expect(index.frames.map((f) => f.key)).toEqual([
+      'frames/winter-2025-26/S2C_18TXP_20260215_0_L2A-visual.pmtiles',
+      'frames/winter-2025-26/S2C_18TXP_20260215_0_L2A-scl.pmtiles',
+    ]);
+  });
+
+  it('⚠ dedupes on granule AND band, not granule alone', () => {
+    // Keying on the granule would silently drop every SCL frame, since it shares its granule's id.
+    const index = buildSeasonIndex('winter-2025-26', [
+      manifest({ bands: ['visual', 'scl'] }),
+      manifest({ bands: ['visual', 'scl'] }),
+    ]);
+    expect(index.frames).toHaveLength(2);
+  });
+
+  it('falls back to visual for a manifest with no band list', () => {
+    const index = buildSeasonIndex('winter-2025-26', [manifest({ bands: undefined })]);
+    expect(index.frames.map((f) => f.band)).toEqual(['visual']);
+  });
+
+  it('⚠ never carries the per-body list into the index', () => {
+    // ~4,500 frames a season x up to ~2,700 bodies per granule is millions of entries in one JSON
+    // file that every client would download to draw one lake. The list stays in the manifest; the
+    // index carries only the count.
+    const index = buildSeasonIndex('winter-2025-26', [
+      manifest({ bodies: [{ waterBodyId: 'w1', clearPct: 0.93, pixels: 4107 }] }),
+    ]);
+    expect(index.frames[0]?.bodies).toBe(9);
+    expect(JSON.stringify(index)).not.toContain('clearPct');
   });
 });

@@ -278,7 +278,46 @@ transform_granule() {
   gdal_translate -q -of VRT -colorinterp red,green,blue,alpha rgba.vrt rgba_ci.vrt \
     || die "colorinterp assignment failed"
 
-  # 6. Tile, then convert.
+  # 6. SCL — ESA's per-pixel scene classification, and the number the product actually wants.
+  #
+  # ⚠ **Nearest neighbour, never bilinear.** SCL values are *class labels* (4 = vegetation, 6 = water,
+  # 9 = high-probability cloud, 11 = snow/ice). Interpolating between class 8 and class 10 yields class
+  # 9 — a different category, invented out of arithmetic. Every resample of this band is nearest.
+  #
+  # ⚠ **Onto the same grid as the mask**, via the identical `-te`/`-tr`, because the zonal statistic is
+  # a per-pixel join. A half-pixel offset silently attributes one lake's cloud to its neighbour, and
+  # the result still looks like a plausible percentage.
+  local scl_href
+  scl_href="$(asset_href scl)"
+  if [[ -n "$scl_href" ]]; then
+    log "warping SCL (20 m -> grid, nearest)"
+    gdalwarp -q -t_srs EPSG:3857 -te "$MINX" "$MINY" "$MAXX" "$MAXY" -tr 14 14 \
+      -r near -multi -co COMPRESS=DEFLATE -overwrite \
+      "/vsicurl/${scl_href}" scl.tif \
+      || die "SCL warp failed"
+
+    # Zones: each mask feature burned as its own integer, so one sweep can cross-tabulate class
+    # against body. `-a zone` needs a numeric attribute, hence the index jq adds here — the corpus id
+    # is a string and cannot be burned into a raster.
+    jq -c '{type:"FeatureCollection", features:[.features | to_entries[] | .value * {properties: (.value.properties + {zone: (.key + 1)})}]}' \
+      masks.geojson > masks-zoned.geojson || die "zone numbering failed"
+    jq -c '[.features[] | {key: (.properties.zone|tostring), value: .properties.waterBodyId}] | from_entries' \
+      masks-zoned.geojson > zone-to-id.json || die "zone mapping failed"
+
+    gdal_rasterize -q -a zone -a_nodata 0 -init 0 -ot UInt32 \
+      -te "$MINX" "$MINY" "$MAXX" "$MAXY" -tr 14 14 -co COMPRESS=DEFLATE \
+      masks-zoned.geojson zones.tif \
+      || die "zone rasterize failed"
+
+    python3 /usr/local/bin/zonal-clear.py zones.tif scl.tif zone-to-id.json > bodies.json \
+      || die "zonal clear-fraction failed"
+    log "per-body clear fractions: $(jq 'length' bodies.json) bodies"
+  else
+    log "no SCL asset on this granule — shipping without per-body clear fractions"
+    echo '[]' > bodies.json
+  fi
+
+  # 7. Tile, then convert.
   #
   #    ⚠ `ZOOM_LEVEL_STRATEGY=UPPER` is load-bearing. The MBTiles driver defaults to the *nearest*
   #    zoom, and at our 14 m/px that is z13 (19.1 projected m/px) — coarser than the source, so the
@@ -300,6 +339,32 @@ transform_granule() {
   gdaladdo -q -r average archive.mbtiles 2 4 8 16 32 64 128 || die "overview build failed"
   pmtiles convert archive.mbtiles archive.pmtiles >/dev/null 2>&1 || die "pmtiles convert failed"
 
+  # SCL as its own *frame* is OFF by default — measured, 2026-08-24.
+  #
+  # §3's per-body clear fraction is the valuable half and always runs; this is the raster. Tiling it
+  # took a 923-body Champlain extent (11,532 x 20,608 px) past **17 minutes** without finishing,
+  # against ~2 minutes for the same granule's true colour alone. Across 4,485 granules a season that
+  # is not a rounding error, it is the budget.
+  #
+  # The "own the pixels" argument does not carry here the way it does for the granule. We are not
+  # protecting against losing access — Copernicus keeps SCL for these exact granule ids indefinitely —
+  # only against the cost of re-deriving, and the manifest's `bodies` array already saves us that.
+  # Set `EMIT_SCL_FRAME=1` when the raster itself is wanted (N6g research, or a band selector that
+  # ends up showing the classification).
+  BANDS='["visual"]'
+  if [[ -s scl.tif && "${EMIT_SCL_FRAME:-}" == "1" ]]; then
+    rm -f scl.mbtiles scl.pmtiles
+    # LOWER, not UPPER: SCL is 20 m native, so z13 (~13.7 ground m/px here) already exceeds the
+    # source. UPPER would generate 4x the tiles to encode detail the band does not contain.
+    log "tiling SCL (EMIT_SCL_FRAME=1)"
+    gdal_translate -q -of MBTILES scl.tif scl.mbtiles \
+      -co TILE_FORMAT=PNG -co ZOOM_LEVEL_STRATEGY=LOWER \
+      || die "SCL tiling failed"
+    gdaladdo -q -r nearest scl.mbtiles 2 4 8 16 32 64 128 || die "SCL overview build failed"
+    pmtiles convert scl.mbtiles scl.pmtiles >/dev/null 2>&1 || die "SCL pmtiles convert failed"
+    BANDS='["visual","scl"]'
+  fi
+
   # The manifest, because a raster cannot say when it was taken or how cloudy it was — and D84/C4
   # make the date content rather than a caption. Whatever reads this archive reads dates from here.
   #
@@ -315,18 +380,26 @@ transform_granule() {
     --arg maskSeason "$MASK_SEASON" \
     --arg collection "$STAC_COLLECTION" \
     --argjson cloud "${CLOUD_PCT:-null}" \
-    --argjson bodies "$MASK_COUNT" \
+    --argjson bodyCount "$MASK_COUNT" \
+    --argjson bodies "$(cat bodies.json)" \
+    --argjson bands "$BANDS" \
     --argjson feather "$FEATHER_M" \
     --argjson footprint "$(jq -c '.geometry' granule.json)" \
     '{granuleId:$granule, capturedAt:$captured, cloudCoverPct:$cloud, season:$season,
-      maskSeason:$maskSeason, collection:$collection, bodies:$bodies, featherMeters:$feather,
-      band:"visual", footprint:$footprint}' \
+      maskSeason:$maskSeason, collection:$collection, bodyCount:$bodyCount, bodies:$bodies,
+      bands:$bands, featherMeters:$feather, footprint:$footprint}' \
     > manifest.json || die "manifest build failed"
 
+  # Keyed by band, because a granule now yields more than one frame and `<granuleId>.pmtiles` could
+  # only ever name one of them.
   local key_base="frames/${FRAME_SEASON}/${GRANULE_ID}"
-  log "uploading $(du -h archive.pmtiles | cut -f1) -> r2:${R2_BUCKET}/${key_base}.pmtiles"
-  rclone --config "$RCLONE_CONF" copyto archive.pmtiles "r2:${R2_BUCKET}/${key_base}.pmtiles" \
+  log "uploading $(du -h archive.pmtiles | cut -f1) -> r2:${R2_BUCKET}/${key_base}-visual.pmtiles"
+  rclone --config "$RCLONE_CONF" copyto archive.pmtiles "r2:${R2_BUCKET}/${key_base}-visual.pmtiles" \
     --s3-no-check-bucket --s3-chunk-size=64M || die "R2 upload failed"
+  if [[ -s scl.pmtiles ]]; then
+    rclone --config "$RCLONE_CONF" copyto scl.pmtiles "r2:${R2_BUCKET}/${key_base}-scl.pmtiles" \
+      --s3-no-check-bucket --s3-chunk-size=64M || die "R2 SCL upload failed"
+  fi
   rclone --config "$RCLONE_CONF" copyto manifest.json "r2:${R2_BUCKET}/${key_base}.json" \
     --s3-no-check-bucket || die "R2 manifest upload failed"
 

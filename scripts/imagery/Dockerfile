@@ -14,13 +14,17 @@
 # that let GDAL read a remote COG's windows without downloading the whole granule) and omits the ~2 GB
 # of Oracle/HDF/FileGDB drivers we do not.
 #
-# ## Why no Python
+# ## Python: not added, but used where it is the right tool
 #
-# The tempting stack here is rasterio/rio-tiler, and it is a fine stack. It is not *this repo's* stack:
-# every ETL under `scripts/` is TypeScript orchestration shelling out to GDAL/tippecanoe/pmtiles CLIs
-# (see `scripts/bathymetry/tile.sh`). GDAL 3.13's unified `gdal raster` CLI covers the whole transform
-# — clip, warp, tile — so adding a Python runtime would buy a second dependency tree and a second set
-# of version pins for capability we already have on the PATH.
+# The transform itself is GDAL CLI, matching this repo's stack — every ETL under `scripts/` is
+# TypeScript orchestration shelling out to GDAL/tippecanoe/pmtiles (see `scripts/bathymetry/tile.sh`),
+# and rasterio/rio-tiler would be a second dependency tree for capability already on the PATH.
+#
+# **But the base image already ships Python 3, the GDAL bindings and numpy** — probed on a real
+# Machine, 2026-08-24: `PYTHON+GDAL OK 3.13.2 2.3.5`. So the per-body zonal statistic (§3) costs no new
+# dependency, and doing it in numpy is one sweep over two arrays where the pure-CLI equivalent is a
+# cross-tabulation GDAL has no command for. Using what is already installed is not the same as adding
+# a stack.
 FROM ghcr.io/osgeo/gdal:ubuntu-small-3.13.2
 
 # rclone is how every other artifact in this repo reaches R2 (`scripts/basemap/upload-r2.sh`,
@@ -65,7 +69,8 @@ ENV GDAL_DISABLE_READDIR_ON_OPEN=EMPTY_DIR \
 WORKDIR /data
 
 COPY cut-granule.sh /usr/local/bin/cut-granule
-RUN chmod +x /usr/local/bin/cut-granule
+COPY zonal-clear.py /usr/local/bin/zonal-clear.py
+RUN chmod +x /usr/local/bin/cut-granule /usr/local/bin/zonal-clear.py
 
 # The contract, and the reason it is this narrow: `docker run <image> <granule-id>`. One granule id in,
 # one artifact in R2 out, a nonzero exit if that did not happen. Nothing about Fly appears below this

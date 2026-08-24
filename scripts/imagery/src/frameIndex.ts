@@ -35,7 +35,21 @@ export interface FrameManifest {
   season: string;
   maskSeason?: string;
   collection?: string;
-  bodies: number;
+  /**
+   * How many corpus bodies the frame contains. This is what reaches the season index.
+   */
+  bodyCount: number;
+  /**
+   * Which bodies, and how much of each was unobscured — from SCL, at cut time.
+   *
+   * ⚠ **This must never reach the season index.** ~4,500 frames a season × up to ~2,700 bodies per
+   * granule is millions of entries in one JSON file that every client would download to draw one
+   * lake. It stays in the per-granule manifest, which PR 3 fetches lazily for only the handful of
+   * frames covering the lake on screen.
+   */
+  bodies?: { waterBodyId: string; clearPct: number | null; pixels: number }[];
+  /** Which bands this granule produced — one published frame each. */
+  bands?: string[];
   band?: string;
   /**
    * The granule's acquisition polygon, copied from the STAC item at cut time.
@@ -60,29 +74,33 @@ export interface FrameManifest {
  */
 export function buildSeasonIndex(season: string, manifests: readonly FrameManifest[]): SeasonIndex {
   const frames = manifests
-    .filter((m) => m.season === season && m.bodies > 0)
-    .map(
-      (m): IndexedFrame => ({
+    .filter((m) => m.season === season && m.bodyCount > 0)
+    // One published frame per band. A granule now yields true colour AND ESA's scene classification,
+    // and `<granuleId>.pmtiles` could only ever name one of them.
+    .flatMap((m): IndexedFrame[] =>
+      (m.bands ?? [m.band ?? 'visual']).map((band) => ({
         granuleId: m.granuleId,
         capturedAt: m.capturedAt,
         cloudCoverPct: m.cloudCoverPct ?? null,
-        bodies: m.bodies,
-        band: m.band ?? 'visual',
-        key: `frames/${season}/${m.granuleId}.pmtiles`,
+        bodies: m.bodyCount,
+        band,
+        key: `frames/${season}/${m.granuleId}-${band}.pmtiles`,
         // Omitted rather than nulled when absent: `footprint?` means "we do not know", and a reader
         // must distinguish that from a frame that covers nothing.
         ...(m.footprint ? { footprint: m.footprint } : {}),
-      }),
+      })),
     )
     .sort((a, b) => a.capturedAt.localeCompare(b.capturedAt));
 
-  // Deduped by granule id. A re-run of the same granule overwrites its object in R2 but would list
-  // twice if a manifest were ever written under two keys, and two identical dates in a scrubber is
-  // the same correctness problem the superseded-reprocessing rule exists to prevent.
+  // Deduped by granule AND band. A re-run overwrites its object in R2 but would list twice if a
+  // manifest were ever written under two keys, and two identical dates in a scrubber is the same
+  // correctness problem the superseded-reprocessing rule exists to prevent. Keying on granule alone
+  // would now silently drop every SCL frame, since it shares its granule's id.
   const seen = new Set<string>();
   const deduped = frames.filter((f) => {
-    if (seen.has(f.granuleId)) return false;
-    seen.add(f.granuleId);
+    const key = `${f.granuleId}:${f.band}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
     return true;
   });
 
