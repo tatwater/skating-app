@@ -103,6 +103,24 @@ machine size," and the same granule warps comfortably in 8 GB. `fan-out.sh` now 
 `--vm-size` (`FLY_VM_SIZE`, default `shared-cpu-4x`); the danger is a hand-typed `fly machine run`
 that forgets it and reads as a GDAL bug.
 
+**But do not answer an OOM by reaching for 8 GB — RAM is the bill.** Fly's dashboard, 2026-08-24,
+against $6.36 of lifetime spend: **$5.19 was "Machines Shared 4x — Additional RAM"**, $1.15 CPU,
+$0.00 egress. Per machine-hour, `shared-cpu-4x` costs $0.0112 at 1 GB, $0.0184 at 2 GB, $0.0329 at
+4 GB and $0.0617 at 8 GB, so at ~148s mean over 4,485 granules a season lands at:
+
+| RAM | one season | nine seasons |
+| --- | --- | --- |
+| 1 GB | $2.07 | $18.64 |
+| **2 GB** *(the default now)* | **$3.40** | **$30.59** |
+| 4 GB | $6.06 | $54.54 |
+| 8 GB *(what it had been running at)* | $11.38 | $102.39 |
+
+The largest granule in the corpus (Champlain, `S2C_18TXP_20260215`, 923 bodies, 237.7 Mpixels)
+completes in 1024 MB. `FLY_VM_MEMORY` defaults to **2048**, which is tested-safe with headroom and
+brings nine seasons inside the founder's $40 ceiling. Dropping the RAM does **not** shrink the GDAL
+block cache with it — see the `GDAL_CACHEMAX` note in the `Dockerfile` for why that is pinned in
+absolute megabytes.
+
 ### How to check you did not do any of these
 
 ```bash
@@ -193,7 +211,8 @@ Every one of these was run against a real granule before it was written down —
 4. **Distance transform** (`gdal_proximity`) — this is the feather, and it is a true ramp by ground
    distance rather than a blur.
 5. **Distance → alpha** via a `gdaldem color-relief` two-stop ramp.
-6. **Tile and convert** — MBTiles/WEBP, overviews, `pmtiles convert`.
+6. **Tile, pack and convert** — `gdal raster tile` writes the whole z7–z14 pyramid as a WEBP tile
+   directory, `tiles-to-mbtiles.py` packs it into MBTiles, `pmtiles convert` finishes.
 
 **⚠ The feather is measured in projected metres, and they are not ground metres.** Web Mercator
 inflates distance by 1/cos(φ) — ~1.39× at 44°N. Handing `gdal_proximity` a bare 240 would ramp over
@@ -201,11 +220,36 @@ inflates distance by 1/cos(φ) — ~1.39× at 44°N. Handing `gdal_proximity` a 
 edge rather than as a units bug. `groundMetersPerPixel` carries the identical correction on the
 client; step 4 is the server's copy of it.
 
-**⚠ `ZOOM_LEVEL_STRATEGY=UPPER` is load-bearing.** The MBTiles driver defaults to the *nearest* zoom,
-and at 14 m/px that is z13 (19.1 projected m/px) — coarser than the source. The default silently
-throws away resolution we paid to fetch. UPPER picks z14 and keeps it, which is also what the
-founder's "no zoom floor" call implies: what renders is the archive's business, and discarding detail
-up front removes a choice the skater is supposed to have.
+**⚠ Step 6's tiler is load-bearing for correctness, not only for speed.** It replaced
+`gdal_translate -of MBTILES` + `gdaladdo` on 2026-08-24, and the swap did two things.
+
+*It is 2.6× faster.* On the largest granule in the corpus, at four threads to match `shared-cpu-4x`:
+75.0s (50.6 base + 24.3 overviews + 0.1 convert) against 28.9s (28.6 pyramid + 0.1 pack + 0.1
+convert). Tiling was 63% of a job, so the median job goes ~114s → ~70s.
+
+*And it stopped the archive rendering lakes as solid black.* The alpha is burned from **mask
+geometry**, which knows nothing about where the satellite was looking: the raster is the bounding box
+of every body the granule touches, while the acquisition swath is a rotated quadrilateral inside it.
+Lakes in the corners the swath misses got nodata black under a fully-opaque alpha — **843 of 3,213
+tiles on that granule, 26% of its output**, including the northern third of Lake Champlain as a black
+lake-shaped blob. `gdal raster tile` honours the source's per-band nodata (`scene.tif` inherits
+`NoData=0` from Sentinel's TCI) and applies it **per pixel**, so out-of-swath pixels come out
+transparent even inside tiles it keeps. Verified against a build with the alpha explicitly clipped to
+a `-dstalpha` validity band: zero pixels differed, which is why no separate clipping stage exists.
+
+**So do not swap the tiler back without restoring that property.** `gdal_translate -of MBTILES` reads
+band 4 as alpha and consults nothing else — exactly how the black lakes got written.
+
+Two flags in step 6 that fail quietly if dropped. **`--convention tms`**: MBTiles numbers rows from
+the bottom and the tiler defaults to `xyz`, so packing without it yields a vertically mirrored
+archive — every tile individually correct, the map upside down, and no error anywhere.
+**`--min-zoom 7 --max-zoom 14`**: z14 is 9.55 projected m/px against our 14 m/px warp, so it keeps
+everything we paid to fetch where z13 (19.1) would throw it away — the founder's "no zoom floor" call
+cuts the same way. The range is coupled to step 2's `-tr`; change one and the other has to move.
+
+This also retired an old trap: `gdaladdo` needed explicit power-of-two levels because it derived a
+factor of 129 on large extents and the MBTiles driver rejected it, so only the biggest granules
+failed. Stating the zoom range directly leaves no derived factor to be wrong.
 
 Two smaller notes. `gdaldem color-relief` is used instead of `gdal raster calc` because calc needs
 muparser (*"Dialect 'muparser' is not supported by this GDAL build"*) and `gdal_calc.py` needs Python
@@ -388,8 +432,11 @@ If that ever stops working, the host-neutrality claim has quietly stopped being 
   S1 from one place but needs an account and sits in Europe. Sentinel-1 SAR is in scope (§C1) and is
   *not* free on AWS in the same shape, so this may end up split by band — which the per-job `--region`
   flag already accommodates.
-- **VM sizing.** `shared-cpu-4x` / 8 GB in `fly.toml` is a guess, not a measurement. Profile on the
-  first real backfill.
+- ~~**VM sizing.** `shared-cpu-4x` / 8 GB is a guess, not a measurement.~~ **Settled 2026-08-24:**
+  measured against Fly's billing dashboard, `FLY_VM_MEMORY` now defaults to 2048 and `GDAL_CACHEMAX`
+  is pinned so the block cache does not shrink with it. See
+  [Five ways to get this wrong](#-five-ways-to-get-this-wrong-each-of-which-costs-money). `fly.toml`'s
+  `[[vm]]` block still says 8192 and is still ignored by `fly machine run` — see trap 1.
 - **Where buffered geometries come from.** A Convex read per job, or a pre-baked GeoJSON the caller
   stages. The second keeps this container's only network dependencies the granule store and R2, which
   is worth something.

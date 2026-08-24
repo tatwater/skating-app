@@ -337,31 +337,85 @@ transform_granule() {
       || die "zonal clear-fraction failed"
     log "per-body clear fractions: $(jq 'length' bodies.json) bodies"
   else
-    log "no SCL asset on this granule — shipping without per-body clear fractions"
-    echo '[]' > bodies.json
+    # ⚠ **An empty list would say "this frame contains no lakes", which is a different claim.**
+    #
+    # PR 3 reads `bodies[]` as exact frame membership — it is the whole reason the field replaced a
+    # bare count. So a granule that ships `[]` while `bodyCount` says 672 makes every one of those 672
+    # lakes silently invisible in the scrubber: not an error, just a timeline missing a date.
+    #
+    # Membership does not depend on SCL — the ids are right there in the mask clip. Only the
+    # *statistics* do, so those go out as `null` ("unmeasured"), never as 0 ("we looked and saw
+    # nothing"). Same distinction zonal-clear.py draws for a body with no valid pixels.
+    log "no SCL asset on this granule — membership without clear fractions"
+    jq -c '[.features[].properties.waterBodyId
+            | {waterBodyId: ., clearPct: null, coveragePct: null, pixels: 0}]' \
+      masks.geojson > bodies.json || die "body membership fallback failed"
   fi
 
-  # 7. Tile, then convert.
+  # 7. Tile the whole pyramid in one pass, pack it, convert it.
   #
-  #    ⚠ `ZOOM_LEVEL_STRATEGY=UPPER` is load-bearing. The MBTiles driver defaults to the *nearest*
-  #    zoom, and at our 14 m/px that is z13 (19.1 projected m/px) — coarser than the source, so the
-  #    default silently throws away resolution we paid to fetch. UPPER picks z14 and keeps it. The
-  #    founder's "no zoom floor" call cuts the same way: what renders is the archive's business, and
-  #    discarding detail up front removes a choice the skater is supposed to have.
-  rm -f archive.mbtiles archive.pmtiles
-  stage tile_visual gdal_translate -q -of MBTILES rgba_ci.vrt archive.mbtiles \
-    -co TILE_FORMAT=WEBP -co QUALITY=80 -co ZOOM_LEVEL_STRATEGY=UPPER \
-    || die "MBTiles tiling failed"
-  # ⚠ **Overview levels are explicit, and they have to be.** With no levels given, `gdaladdo` derives
-  # factors from the raster's own size, and the MBTiles driver rejects anything that is not a power of
-  # two — on a 672-body eastern-Maine extent it derived 129 and died with `ERROR 5: Overview factor
-  # '129' is not a power of 2`. Small granules never hit it, so this fails only on the biggest jobs,
-  # which are the ones a backfill can least afford to lose.
+  # ## Why `gdal raster tile` and not `gdal_translate -of MBTILES` + `gdaladdo`
   #
-  # Seven levels take z14 down to about z7, which covers the whole zoom range a scrubber is looked at
-  # across — including the founder's "no zoom floor", where a skater is free to pull right out.
-  stage overviews_visual gdaladdo -q -r average archive.mbtiles 2 4 8 16 32 64 128 \
-    || die "overview build failed"
+  # The old path wrote the base zoom with the MBTiles driver and then built seven overview levels with
+  # `gdaladdo`. Measured 2026-08-24 on the corpus's largest granule (this one — Champlain,
+  # S2C_18TXP_20260215, 923 bodies, 237.7 Mpixels), at four threads to match `shared-cpu-4x`:
+  #
+  #     gdal_translate -of MBTILES   50.6s  +  gdaladdo  24.3s  +  pmtiles  0.1s  =  75.0s
+  #     gdal raster tile  28.6s  +  pack  0.1s  +  pmtiles  0.1s              =  28.9s
+  #
+  # **2.6x**, because this builds every zoom in one parallel sweep instead of a single-threaded base
+  # pass followed by a separate overview pass. Tiling was 63% of a job, so this takes the median job
+  # from ~114s to ~70s.
+  #
+  # It also deletes trap 12 outright: `gdaladdo` needed explicit power-of-two levels because it
+  # derived a factor of 129 on a large extent and the MBTiles driver rejected it — a failure that hit
+  # only the biggest granules. `--min-zoom/--max-zoom` states the range directly, so there is no
+  # derived factor to be wrong.
+  #
+  # ## ⚠ The nodata handling here is load-bearing for correctness, not just for speed
+  #
+  # **The old path rendered lakes as solid black.** The alpha we burn comes from *mask geometry*, which
+  # knows nothing about where the satellite was looking: the raster is the bounding box of every body
+  # the granule touches, while the acquisition swath is a rotated quadrilateral inside it. Any lake in
+  # a corner the swath misses got `gdalwarp`'s nodata black under an alpha saying **fully opaque**.
+  # On this granule that was **843 of 3,213 tiles** — 26% of the output — including the whole northern
+  # third of Lake Champlain as a black lake-shaped blob. It read as "this lake is black" rather than
+  # "this lake was not photographed", the exact confusion `footprint` and §C4 exist to prevent.
+  #
+  # `gdal raster tile` honours the source's per-band nodata — which `scene.tif` inherits from Sentinel's
+  # TCI (`NoData Value=0`) — and applies it **per pixel**, not merely per tile. So out-of-swath pixels
+  # come out transparent whether or not the tile containing them is entirely blank. Verified by
+  # building the same granule with the alpha explicitly clipped against a `-dstalpha` validity band:
+  # **zero pixels differed.** That is why there is no separate alpha-clipping stage here.
+  #
+  # ⚠ **So do not swap this tiler back without restoring that property another way.** The old
+  # `gdal_translate -of MBTILES` path reads band 4 as alpha and consults nothing else, which is
+  # precisely how the black lakes got written.
+  #
+  # ## The zoom range is coupled to the warp above
+  #
+  # Step 1 warps at `-tr 14 14` (projected). Web Mercator z14 is 9.55 projected m/px — finer than the
+  # source, so it preserves everything we paid to fetch; z13 is 19.1, which would throw resolution
+  # away. z7 is the bottom of the range a scrubber is looked at across, including the founder's "no
+  # zoom floor" where a skater pulls right out. **Change `-tr` and this range has to change with it.**
+  #
+  # ⚠ **`--convention tms` is not optional.** MBTiles numbers rows from the bottom; `gdal raster tile`
+  # defaults to `xyz`, which numbers from the top. Packing xyz tiles into MBTiles yields an archive
+  # that is *vertically mirrored* — every tile individually correct, the map upside down. It renders
+  # rather than erroring, which is the worst way for it to be wrong.
+  #
+  # `--webviewer none` suppresses the leaflet/openlayers/mapml scaffolding the tiler writes by
+  # default; we are packing tiles, not publishing a viewer.
+  rm -rf tiles archive.mbtiles archive.pmtiles
+  stage tile_visual gdal raster tile -q --input rgba_ci.vrt --output tiles \
+    -f WEBP --co QUALITY=80 \
+    --min-zoom 7 --max-zoom 14 \
+    --convention tms --skip-blank --webviewer none \
+    -r bilinear --overview-resampling average \
+    || die "tiling failed"
+  stage pack_visual python3 /usr/local/bin/tiles-to-mbtiles.py tiles archive.mbtiles \
+    --format webp --name "$GRANULE_ID" \
+    || die "MBTiles packing failed"
   stage pmtiles_visual sh -c 'pmtiles convert archive.mbtiles archive.pmtiles >/dev/null 2>&1' \
     || die "pmtiles convert failed"
 
@@ -379,14 +433,25 @@ transform_granule() {
   # ends up showing the classification).
   BANDS='["visual"]'
   if [[ -s scl.tif && "${EMIT_SCL_FRAME:-}" == "1" ]]; then
-    rm -f scl.mbtiles scl.pmtiles
-    # LOWER, not UPPER: SCL is 20 m native, so z13 (~13.7 ground m/px here) already exceeds the
-    # source. UPPER would generate 4x the tiles to encode detail the band does not contain.
+    rm -rf scl-tiles scl.mbtiles scl.pmtiles
+    # z13, not z14: SCL is 20 m native, so z13 (~13.7 ground m/px here) already exceeds the source.
+    # Going a zoom deeper would generate 4x the tiles to encode detail the band does not contain.
+    #
+    # ⚠ **Nearest at every level, for the reason given at the SCL warp above** — these are class
+    # labels, and averaging class 8 against class 10 invents class 9. That applies to the overview
+    # pyramid exactly as it applies to the warp, which is why `--overview-resampling` is set here
+    # rather than left at its default of `average`.
+    #
+    # PNG rather than WEBP: lossy compression on a label band is the same category of error as
+    # interpolating one.
     log "tiling SCL (EMIT_SCL_FRAME=1)"
-    gdal_translate -q -of MBTILES scl.tif scl.mbtiles \
-      -co TILE_FORMAT=PNG -co ZOOM_LEVEL_STRATEGY=LOWER \
+    stage tile_scl gdal raster tile -q --input scl.tif --output scl-tiles \
+      -f PNG --min-zoom 7 --max-zoom 13 \
+      --convention tms --skip-blank --webviewer none \
+      -r nearest --overview-resampling nearest \
       || die "SCL tiling failed"
-    gdaladdo -q -r nearest scl.mbtiles 2 4 8 16 32 64 128 || die "SCL overview build failed"
+    python3 /usr/local/bin/tiles-to-mbtiles.py scl-tiles scl.mbtiles \
+      --format png --name "${GRANULE_ID}-scl" || die "SCL MBTiles packing failed"
     pmtiles convert scl.mbtiles scl.pmtiles >/dev/null 2>&1 || die "SCL pmtiles convert failed"
     BANDS='["visual","scl"]'
   fi

@@ -55,10 +55,25 @@ RUN set -eux; \
 
 # GDAL tuning for reading remote COGs. These matter more than they look: the whole cost argument in
 # D148 rests on reading *windows* of a granule over HTTP rather than pulling the file down.
+#
+# ## ⚠ `GDAL_CACHEMAX` is set in absolute megabytes, and that is deliberate
+#
+# GDAL defaults its block cache to **5% of available RAM**, which quietly couples cache size to the
+# single most expensive dial on the Machine. Fly bills RAM at roughly 5.6x the CPU for this shape of
+# job — of $6.36 spent through 2026-08-24, **$5.19 was "Additional RAM"** — so the backfill wants
+# 2048 MB rather than the 8192 MB it had been running at. Left on the default, that drop would have
+# taken the block cache from ~410 MB to ~102 MB along with it, slowing exactly the tiling stages that
+# dominate a job and clawing back part of the saving in machine-seconds.
+#
+# 410 MB restores the cache the 8 GB Machine had (8192 x 5%) inside a 2 GB one, and states it as a
+# number so that changing `FLY_VM_MEMORY` never silently moves it again. Headroom checks out: the
+# largest granule completed in 1024 MB with a ~51 MB cache, so its non-cache working set is ~970 MB,
+# and 970 + 410 leaves ~660 MB spare at 2048.
 ENV GDAL_DISABLE_READDIR_ON_OPEN=EMPTY_DIR \
     GDAL_HTTP_MULTIPLEX=YES \
     GDAL_HTTP_VERSION=2 \
     GDAL_NUM_THREADS=ALL_CPUS \
+    GDAL_CACHEMAX=410 \
     VSI_CACHE=TRUE \
     VSI_CACHE_SIZE=536870912 \
     CPL_TMPDIR=/data
@@ -70,7 +85,9 @@ WORKDIR /data
 
 COPY cut-granule.sh /usr/local/bin/cut-granule
 COPY zonal-clear.py /usr/local/bin/zonal-clear.py
-RUN chmod +x /usr/local/bin/cut-granule /usr/local/bin/zonal-clear.py
+COPY tiles-to-mbtiles.py /usr/local/bin/tiles-to-mbtiles.py
+RUN chmod +x /usr/local/bin/cut-granule /usr/local/bin/zonal-clear.py \
+      /usr/local/bin/tiles-to-mbtiles.py
 
 # The contract, and the reason it is this narrow: `docker run <image> <granule-id>`. One granule id in,
 # one artifact in R2 out, a nonzero exit if that did not happen. Nothing about Fly appears below this
