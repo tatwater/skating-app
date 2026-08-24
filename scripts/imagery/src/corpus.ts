@@ -14,6 +14,7 @@ interface MaskPage {
   masks: CorpusMaskRow[];
   scanned: number;
   belowFloor: number;
+  unlisted: number;
   cursor: string | null;
   isDone: boolean;
 }
@@ -22,6 +23,8 @@ export interface CorpusScanProgress {
   pages: number;
   scanned: number;
   belowFloor: number;
+  /** Delisted, rejected or merged bodies — off the map, so deliberately off the photograph (D48). */
+  unlisted: number;
 }
 
 /**
@@ -36,7 +39,7 @@ export async function* scanCorpusMasks(
   onProgress?: (progress: CorpusScanProgress) => void,
 ): AsyncGenerator<CorpusMaskRow> {
   let cursor: string | undefined;
-  const progress: CorpusScanProgress = { pages: 0, scanned: 0, belowFloor: 0 };
+  const progress: CorpusScanProgress = { pages: 0, scanned: 0, belowFloor: 0, unlisted: 0 };
 
   for (;;) {
     const page = convexRun<MaskPage>('imageryMasks:listForImageryMask', {
@@ -47,6 +50,7 @@ export async function* scanCorpusMasks(
     progress.pages++;
     progress.scanned += page.scanned;
     progress.belowFloor += page.belowFloor;
+    progress.unlisted += page.unlisted ?? 0;
     onProgress?.(progress);
 
     for (const row of page.masks) yield row;

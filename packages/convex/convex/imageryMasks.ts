@@ -17,7 +17,8 @@ import { belongsInCorpus } from '@skating/core';
 import { v } from 'convex/values';
 import { internalQuery } from './_generated/server';
 import { loadParkingForBody } from './accessPoints';
-import { loadPutInRows } from './putIns';
+import { isListed } from './lib/listing';
+import { isSuppressed, loadPutInRows } from './putIns';
 
 /**
  * Every corpus body's geometry and the way in, buffered later into the reveal mask.
@@ -58,7 +59,23 @@ export const listForImageryMask = internalQuery({
 
     const masks = [];
     let belowFloor = 0;
+    let unlisted = 0;
     for (const body of page.page) {
+      // ⚠ **A body that is off the map must be off the photograph too** (D48, `lib/listing`).
+      //
+      // `removedAt` is an admin soft-delisting: a curation call or a **landowner takedown**. The
+      // reveal mask is the shape a satellite frame is allowed to show through, so baking one for a
+      // delisted body publishes an aerial photograph of exactly the ground somebody asked us to stop
+      // showing — months later, in an archive nobody re-reads. The same applies to a moderator's
+      // `rejected` body and to a `merged` duplicate, which would otherwise be masked twice.
+      //
+      // This is the one filter here whose omission fails *open*, which is why it runs before the
+      // corpus floor rather than after it.
+      if (!isListed(body)) {
+        unlisted++;
+        continue;
+      }
+
       // The import's own predicate rather than a copied threshold — `listNeedingElevation` documents
       // why a parameterised floor drifts out of sync within hours of somebody changing the real rule.
       if (
@@ -75,7 +92,16 @@ export const listForImageryMask = internalQuery({
       const putIns = await loadPutInRows(ctx, body._id);
       // `hidden` is a moderator suppressing a bad coordinate, so it must not pull the reveal out to
       // cover a place we have decided not to show.
-      const visiblePutIns = [...putIns.official, ...putIns.osm, ...putIns.persisted];
+      //
+      // ⚠ **Status is only half of that, and the other half is the radius.** A hidden row suppresses
+      // every marker within `HIDE_SUPPRESS_METERS` of it, not just itself — that is how a moderator
+      // kills a bad access point that OSM and a report cluster both re-derive. Filtering on
+      // `status === 'visible'` alone (which `loadPutInRows` has already done) would let the OSM
+      // launch 30 m from the hidden coord buffer the very ground the hide was protecting, on the
+      // one surface where nobody would ever notice.
+      const visiblePutIns = [...putIns.official, ...putIns.osm, ...putIns.persisted].filter(
+        (p) => !isSuppressed(p.coord, putIns.hidden),
+      );
       const parking = await loadParkingForBody(ctx, body._id);
 
       masks.push({
@@ -96,8 +122,11 @@ export const listForImageryMask = internalQuery({
       masks,
       scanned: page.page.length,
       // Counted so a run can say how much of the corpus it deliberately walked past, rather than
-      // leaving "scanned 25,197, masked 18,400" reading as a 27% failure.
+      // leaving "scanned 25,197, masked 18,400" reading as a 27% failure. Two numbers rather than
+      // one because they mean different things: `belowFloor` is a body the import would never have
+      // taken, `unlisted` is one somebody took *off* the map.
       belowFloor,
+      unlisted,
       cursor: page.continueCursor,
       isDone: page.isDone,
     };

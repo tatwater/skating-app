@@ -170,6 +170,22 @@ describe('ingestWindow — closing', () => {
     expect(ingestWindow(sites).closesOn).toBe('2026-12-11');
   });
 
+  it('⚠ a site that goes dark cannot close the season on the survivors', () => {
+    // `fetchLows` drops null readings per site, so a series going dark is what a real Open-Meteo gap
+    // looks like. Testing `.every()` against only the sites that reported treats the missing one as
+    // thawed — four of five dropping out for a fortnight would then let the one warm survivor end the
+    // season and truncate the melt-out record §C5's metrics are computed from.
+    const warm = Array<number>(DEFAULT_THAW_RUN_DAYS + 2).fill(12);
+    const sites = [
+      series('valley-a', '2026-12-01', [-5, ...warm]),
+      // Froze on day one alongside valley-a, establishing winter, and then stopped reporting.
+      series('valley-b', '2026-12-01', [-5]),
+    ];
+    const window = ingestWindow(sites);
+    expect(window.winterFrom).toBe('2026-12-01');
+    expect(window.closesOn).toBeNull();
+  });
+
   it('a day nobody reported does not count toward the thaw run', () => {
     // A missing series must not be able to end a season — the same reasoning that makes opening an OR.
     const days = [{ date: '2026-12-01', minTempC: -5 }];

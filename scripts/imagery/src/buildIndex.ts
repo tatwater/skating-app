@@ -17,9 +17,11 @@
  */
 
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import process from 'node:process';
+import { fileURLToPath } from 'node:url';
 
 import {
   buildSeasonIndex,
@@ -28,7 +30,7 @@ import {
   type SeasonIndex,
 } from './frameIndex';
 
-const HERE = dirname(new URL(import.meta.url).pathname);
+const HERE = dirname(fileURLToPath(import.meta.url));
 const SCRATCH = join(HERE, '..', '.scratch');
 
 function flag(name: string): string | undefined {
@@ -44,17 +46,38 @@ function rclone(args: string[]): string {
   });
 }
 
+/** Every `.json` under `dir`, as paths relative to it. */
+function jsonFilesUnder(dir: string, prefix = ''): string[] {
+  const out: string[] = [];
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const relative = prefix ? `${prefix}/${entry.name}` : entry.name;
+    if (entry.isDirectory()) out.push(...jsonFilesUnder(join(dir, entry.name), relative));
+    else if (entry.name.endsWith('.json')) out.push(relative);
+  }
+  return out;
+}
+
 function main(): void {
   const bucket = flag('bucket') ?? 'skating-imagery';
   const dryRun = has('dry-run');
 
-  // `lsf -R` over the frames prefix. Manifests only — the .pmtiles beside each one is the payload and
-  // listing it would double the work for nothing.
-  const listing = rclone(['lsf', '-R', `r2:${bucket}/frames/`])
-    .split('\n')
-    .map((l) => l.trim())
-    .filter((l) => l.endsWith('.json'));
+  // ⚠ **One `rclone copy`, not one `rclone cat` per manifest, and the reason is correctness before
+  // it is speed.**
+  //
+  // Nine seasons is ~6,750 manifests. Spawning a process and opening a TLS connection for each one
+  // spends minutes of handshakes on kilobytes of JSON — but the worse half is the failure mode: a
+  // per-object `cat` has to be wrapped in a `try`, and that `try` cannot tell a corrupt manifest
+  // from a network blip. A blip then drops a frame that is sitting in the bucket right now, and the
+  // index — the thing this whole file exists to make trustworthy, the check a fan-out is verified
+  // against — quietly claims fewer frames than landed, and exits 0 while doing it.
+  //
+  // One copy fails loudly and completely, which is the only honest answer for a table of contents.
+  // Manifests only: the .pmtiles beside each one is the payload and pulling it would move gigabytes.
+  const staged = mkdtempSync(join(tmpdir(), 'imagery-index-'));
+  process.on('exit', () => rmSync(staged, { recursive: true, force: true }));
+  rclone(['copy', `r2:${bucket}/frames/`, staged, '--include', '*.json', '--transfers', '16']);
 
+  const listing = jsonFilesUnder(staged);
   if (listing.length === 0) {
     console.error('[build-index] no frame manifests in the bucket — nothing to index');
     process.exit(1);
@@ -65,12 +88,11 @@ function main(): void {
   const unreadable: string[] = [];
   for (const relative of listing) {
     try {
-      manifests.push(
-        JSON.parse(rclone(['cat', `r2:${bucket}/frames/${relative}`])) as FrameManifest,
-      );
+      manifests.push(JSON.parse(readFileSync(join(staged, relative), 'utf8')) as FrameManifest);
     } catch {
-      // Counted rather than thrown on: one corrupt manifest out of 750 should cost its own frame, not
-      // the whole index. It is reported below so the number cannot hide.
+      // Now unambiguously *corrupt*, because the bytes are already on local disk — the transport
+      // failed the copy above or it did not fail at all. One bad manifest out of 750 costs its own
+      // frame rather than the whole index, and it is reported below so the number cannot hide.
       unreadable.push(relative);
     }
   }

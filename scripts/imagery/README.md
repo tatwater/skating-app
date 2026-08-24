@@ -317,14 +317,17 @@ always-on footprint the cost model is avoiding. `--build-only --push` builds, pu
 ## Running it
 
 ```bash
-cp .env.example .env.local          # then set FLY_IMAGE to the ref from step 5
+cp .env.example .env.local          # then set FLY_IMAGE (step 5) and MASK_SEASON
 
 # One granule, plumbing only — proves the box reads COGs and writes R2.
 fly machine run "$FLY_IMAGE" --app skating-imagery --region sjc --rm --restart no \
   -- S2B_18TXP_20260115_0_L2A --smoke
 
-# A whole pass, 25 at a time.
+# A whole pass, MAX_PARALLEL Machines alive at a time.
 ./fan-out.sh granules.txt
+
+# The same pass, run to completion: spawn, drain, ask the bucket what landed, re-run the difference.
+./backfill.sh granules.txt winter-2025-26
 ```
 
 `--rm --restart no` is what makes a Machine a batch job. flyctl defaults to `on-failure`, which for
@@ -332,7 +335,27 @@ this workload means a crash-looping Machine re-reading the same granule on your 
 fan-out has no use for a retry policy that cannot tell a bad granule from a bad build.
 
 Watch with `fly logs --app skating-imagery`. Jobs run detached — `fan-out.sh` returns when the spawn
-calls return, not when the cutting finishes.
+calls return, not when the cutting finishes (pass `--drain` to make it wait, which is what
+`backfill.sh` does between rounds).
+
+### ⚠ `MASK_SEASON` is required, and it is not the frame's season
+
+`cut-granule` clips against `masks/$MASK_SEASON.fgb` and dies in its first second without it, so an
+unset one spawns the whole list, every Machine exits 1, and every line still says `spawned`.
+`fan-out.sh` refuses up front for that reason (except under `--smoke`, which reads no mask).
+
+Set it to whichever season `bake-masks` last uploaded — normally the newest, because today's corpus
+is the best shape of those lakes we have. The season a frame is *filed* under is a different thing,
+derived from its own capture date: a backfill of winter 2025-26 is cut against `winter-2026-27`
+masks and lands in `frames/winter-2025-26/`. `backfill.sh`'s `<season>` argument is that second one.
+
+### `backfill.sh` — because a spawn is not a result
+
+A few thousand jobs against any cloud provider will lose a small fraction in ways that leave nothing
+behind. Rather than diagnose each, `backfill.sh` reconciles: list the bucket, re-run the difference,
+repeat until a round adds nothing new. The miss set never reaches zero — roughly 40% of a five-state
+granule list is ocean, Québec or dry land, and those jobs correctly produce nothing — so the plateau
+*is* the empty-granule count.
 
 ## Verifying the bill is what you think
 

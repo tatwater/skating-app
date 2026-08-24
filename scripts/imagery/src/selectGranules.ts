@@ -28,10 +28,13 @@ import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, readdirSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import process from 'node:process';
+import { fileURLToPath } from 'node:url';
 
 import { DEFAULT_MAX_CLOUD_PCT, type GranuleCandidate, selectGranules } from './granuleSelection';
 
-const HERE = dirname(new URL(import.meta.url).pathname);
+// `fileURLToPath`, never `new URL(...).pathname` — the latter is percent-encoded, so a checkout under
+// a directory with a space in it resolves `.scratch` to a path that does not exist.
+const HERE = dirname(fileURLToPath(import.meta.url));
 const SCRATCH = join(HERE, '..', '.scratch');
 
 const STAC_URL = process.env.STAC_URL ?? 'https://earth-search.aws.element84.com/v1';
@@ -56,11 +59,26 @@ interface StacItem {
 }
 
 /**
+ * A cap on how far a `next` chain may be followed.
+ *
+ * A season is a handful of pages at 250 items each. 200 is far beyond any real search and exists
+ * only so that a server handing back a `next` link identical to the request that produced it turns
+ * into an error rather than a loop nobody is watching.
+ */
+const MAX_STAC_PAGES = 200;
+
+/**
  * Page through a STAC search.
  *
  * STAC caps a page at a few hundred items and hands back a `next` link. A season across ~25 tiles is
  * comfortably more than one page, and silently taking only the first would look exactly like a quiet
  * season — the failure this whole file exists to make loud.
+ *
+ * ⚠ **A `next` link comes in two shapes and only one of them carries a `body`.** Earth Search's POST
+ * search returns the continuation token inside `body`; the GET form puts it in the `href` instead.
+ * Treating an absent `body` as "no more pages" reads the second shape as the end of the search — the
+ * quiet truncation this function is supposed to prevent, arriving through the door left open for it.
+ * So the request shape follows the link rather than being assumed.
  */
 async function searchAll(
   bbox: [number, number, number, number],
@@ -68,21 +86,25 @@ async function searchAll(
   to: string,
 ): Promise<GranuleCandidate[]> {
   const items: GranuleCandidate[] = [];
-  let body: Record<string, unknown> | null = {
-    collections: [STAC_COLLECTION],
-    bbox,
-    datetime: `${from}T00:00:00Z/${to}T23:59:59Z`,
-    limit: 250,
+  let request: { url: string; body: Record<string, unknown> | null } | null = {
+    url: `${STAC_URL}/search`,
+    body: {
+      collections: [STAC_COLLECTION],
+      bbox,
+      datetime: `${from}T00:00:00Z/${to}T23:59:59Z`,
+      limit: 250,
+    },
   };
-  let url = `${STAC_URL}/search`;
   let pages = 0;
 
-  while (body) {
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    });
+  while (request) {
+    const response = request.body
+      ? await fetch(request.url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(request.body),
+        })
+      : await fetch(request.url);
     if (!response.ok)
       throw new Error(`STAC search failed: ${response.status} ${response.statusText}`);
     const page = (await response.json()) as {
@@ -101,8 +123,12 @@ async function searchAll(
     }
     const next = page.links?.find((l) => l.rel === 'next');
     if (!next) break;
-    url = next.href;
-    body = next.body ?? null;
+    if (pages >= MAX_STAC_PAGES) {
+      throw new Error(
+        `STAC still offering a next link after ${pages} pages — refusing to keep following it`,
+      );
+    }
+    request = { url: next.href, body: next.body ?? null };
   }
 
   console.error(`[select-granules] ${items.length} items across ${pages} STAC page(s)`);

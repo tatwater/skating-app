@@ -104,6 +104,49 @@ describe('listForImageryMask', () => {
     expect(masks[0]?.markerCoords).toHaveLength(0);
   });
 
+  test('⚠ a hidden coord suppresses its neighbours here too, not just itself', async () => {
+    const t = convexTest(schema, modules);
+    const bodyId = await seedBody(t);
+    // A hide kills every marker within `HIDE_SUPPRESS_METERS`, which is how a moderator kills a bad
+    // access point that OSM and a report cluster both keep re-deriving. Filtering on `status` alone
+    // would let the visible twin a few metres away buffer the exact ground the hide was protecting —
+    // the map suppression, defeated on the one surface nobody looks at.
+    await seedPutIn(t, bodyId, { status: 'hidden' as const, coord: { lat: 44.02, lng: -72 } });
+    await seedPutIn(t, bodyId, { coord: { lat: 44.02001, lng: -72.00001 } });
+
+    const { masks } = await run(t);
+    expect(masks[0]?.markerCoords).toHaveLength(0);
+  });
+
+  test('⚠ a delisted body gets no mask, because a takedown must reach the photograph too', async () => {
+    const t = convexTest(schema, modules);
+    // `removedAt` is an admin soft-delisting — curation, or a landowner takedown (D48). The reveal
+    // mask is the shape a satellite frame shows through, so baking one publishes an aerial photo of
+    // exactly the ground somebody asked us to stop showing. This is the one filter here that fails
+    // *open*, which is why it runs before the corpus floor.
+    const bodyId = await seedBody(t, { name: 'Taken Down Pond' });
+    await t.run((ctx) => ctx.db.patch(bodyId, { removedAt: Date.now() }));
+
+    const { masks, unlisted, belowFloor } = await run(t);
+    expect(masks).toHaveLength(0);
+    expect(unlisted).toBe(1);
+    // Counted apart from the floor: one is a body the import would never have taken, the other is a
+    // body somebody took off the map.
+    expect(belowFloor).toBe(0);
+  });
+
+  test('a merged duplicate and a rejected body are unlisted too', async () => {
+    const t = convexTest(schema, modules);
+    const merged = await seedBody(t, { name: 'Loser Of A Dedup' });
+    await t.run((ctx) => ctx.db.patch(merged, { dedupStatus: 'merged' as const }));
+    const rejected = await seedBody(t, { name: 'Rejected Draw', lng: -72.4 });
+    await t.run((ctx) => ctx.db.patch(rejected, { reviewStatus: 'rejected' as const }));
+
+    const { masks, unlisted } = await run(t);
+    expect(masks).toHaveLength(0);
+    expect(unlisted).toBe(2);
+  });
+
   test('keeps a visible put-in as a marker coordinate', async () => {
     const t = convexTest(schema, modules);
     const bodyId = await seedBody(t);

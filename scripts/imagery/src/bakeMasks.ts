@@ -38,12 +38,15 @@ import { execFileSync } from 'node:child_process';
 import { closeSync, mkdirSync, openSync, rmSync, writeFileSync, writeSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import process from 'node:process';
+import { fileURLToPath } from 'node:url';
 
 import { currentSeason, SENTINEL_MASK_METERS } from '@skating/core';
 import { scanCorpusMasks } from './corpus';
 import { emptyTally, maskFeatureFor, recordOutcome } from './revealMasks';
 
-const HERE = dirname(new URL(import.meta.url).pathname);
+// `fileURLToPath`, never `new URL(...).pathname` — the latter hands back a percent-encoded path, so
+// a checkout under a directory with a space in it resolves `.scratch` to somewhere that isn't there.
+const HERE = dirname(fileURLToPath(import.meta.url));
 const SCRATCH = join(HERE, '..', '.scratch');
 
 function flag(name: string): string | undefined {
@@ -76,7 +79,8 @@ async function main(): Promise<void> {
 
   // `--limit` stops after N masks. For smoke-testing the pipeline end to end without a full corpus
   // scan — the artifact it produces covers a fraction of the region and must never be uploaded.
-  const limit = flag('limit') === undefined ? Infinity : Number(flag('limit'));
+  const limitFlag = flag('limit');
+  const limit = limitFlag === undefined ? Infinity : Number(limitFlag);
 
   // Streamed a line at a time. Buffering 25,000 buffered polygons to build one JSON string is how a
   // bake turns into an out-of-memory crash on the largest corpus we have.
@@ -85,7 +89,9 @@ async function main(): Promise<void> {
   try {
     for await (const row of scanCorpusMasks(batchSize, (p) => {
       if (p.pages % 40 === 0) {
-        console.error(`[bake-masks]   scanned ${p.scanned} (${p.belowFloor} below floor)…`);
+        console.error(
+          `[bake-masks]   scanned ${p.scanned} (${p.belowFloor} below floor, ${p.unlisted} delisted)…`,
+        );
       }
     })) {
       const outcome = maskFeatureFor(row);
@@ -136,7 +142,13 @@ async function main(): Promise<void> {
     bodies: tally.masked,
     omitted: tally.omitted,
   };
-  const sidecarPath = fgbPath.replace(/\.fgb$/, '.json');
+  // ⚠ **Append rather than substitute when `--out` has no `.fgb` suffix.** A bare `.replace()` is a
+  // no-op on `--out=/tmp/masks`, which makes `sidecarPath === fgbPath` — and the `writeFileSync`
+  // below would then overwrite the FlatGeobuf that a forty-minute corpus scan just produced, with a
+  // five-line JSON, silently.
+  const sidecarPath = fgbPath.endsWith('.fgb')
+    ? fgbPath.replace(/\.fgb$/, '.json')
+    : `${fgbPath}.json`;
   writeFileSync(sidecarPath, `${JSON.stringify(sidecar, null, 2)}\n`);
 
   console.error('');

@@ -27,10 +27,13 @@ import { execFileSync } from 'node:child_process';
 import { existsSync, readdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import process from 'node:process';
+import { fileURLToPath } from 'node:url';
 
 import { ingestWindow, type SiteSeries } from './ingestGate';
 
-const HERE = dirname(new URL(import.meta.url).pathname);
+// `fileURLToPath`, never `new URL(...).pathname` — the latter is percent-encoded, so a checkout under
+// a directory with a space in it resolves `.scratch` to a path that does not exist.
+const HERE = dirname(fileURLToPath(import.meta.url));
 const SCRATCH = join(HERE, '..', '.scratch');
 const OPEN_METEO_URL = 'https://api.open-meteo.com/v1/forecast';
 

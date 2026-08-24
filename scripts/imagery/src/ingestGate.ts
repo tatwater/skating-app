@@ -105,11 +105,30 @@ function allDates(sites: readonly SiteSeries[]): string[] {
   return [...seen].sort();
 }
 
-function lowsOn(sites: readonly SiteSeries[], date: string): Map<string, number> {
+/**
+ * `siteId → date → low`, built once.
+ *
+ * The obvious shape is a `find` over `site.days` per date, which is a linear scan of a whole season
+ * for every one of that season's days at every site — quadratic in the length of the window, three
+ * times over, for a lookup that is a hash.
+ */
+type LowIndex = Map<string, Map<string, number>>;
+
+function indexLows(sites: readonly SiteSeries[]): LowIndex {
+  const out: LowIndex = new Map();
+  for (const site of sites) {
+    const byDate = out.get(site.siteId) ?? new Map<string, number>();
+    for (const day of site.days) byDate.set(day.date, day.minTempC);
+    out.set(site.siteId, byDate);
+  }
+  return out;
+}
+
+function lowsOn(sites: readonly SiteSeries[], date: string, index: LowIndex): Map<string, number> {
   const out = new Map<string, number>();
   for (const site of sites) {
-    const day = site.days.find((d) => d.date === date);
-    if (day) out.set(site.siteId, day.minTempC);
+    const low = index.get(site.siteId)?.get(date);
+    if (low !== undefined) out.set(site.siteId, low);
   }
   return out;
 }
@@ -128,8 +147,9 @@ function lowsOn(sites: readonly SiteSeries[], date: string): Map<string, number>
  * against a typical Vermont ice-out of mid-April to early May. Reluctant by about two weeks, which is
  * the intended direction.
  *
- * A site with no reading on a day is **not** counted as thawed. A missing series must not be able to
- * end a season — the same reasoning that makes the opening rule an OR.
+ * A site with no reading on a day is **not** counted as thawed — the day does not count toward the
+ * run at all, and the run resets. A missing series must not be able to end a season, which is the
+ * same reasoning that makes the opening rule an OR, pointed the other way.
  *
  * ## ⚠ The sentinel opens a season but does not hold it open, and that asymmetry is load-bearing
  *
@@ -157,12 +177,13 @@ export function ingestWindow(sites: readonly SiteSeries[], options: GateOptions 
   const sentinels = sites.filter((s) => s.sentinel);
   const others = sites.filter((s) => !s.sentinel);
   const dates = allDates(sites);
+  const index = indexLows(sites);
 
   let opensOn: string | null = null;
   const openedBy: GateWindow['openedBy'] = [];
 
   for (const date of dates) {
-    const lows = lowsOn(sites, date);
+    const lows = lowsOn(sites, date, index);
 
     const sentinelFroze = sentinels.some((s) => {
       const low = lows.get(s.siteId);
@@ -198,7 +219,7 @@ export function ingestWindow(sites: readonly SiteSeries[], options: GateOptions 
   let winterFrom: string | null = null;
   for (const date of dates) {
     if (date < opensOn) continue;
-    const lows = lowsOn(others, date);
+    const lows = lowsOn(others, date, index);
     const reporting = [...lows.values()];
     if (
       reporting.length > 0 &&
@@ -218,9 +239,18 @@ export function ingestWindow(sites: readonly SiteSeries[], options: GateOptions 
   let closesOn: string | null = null;
   for (const date of dates) {
     if (date <= winterFrom) continue;
-    const lows = lowsOn(closingSites, date);
+    const lows = lowsOn(closingSites, date, index);
     const reporting = [...lows.values()];
-    const allThawed = reporting.length > 0 && reporting.every((low) => low > thawC);
+    // ⚠ **Every closing site has to have reported, not just every site that happened to.**
+    //
+    // `reporting` holds only the sites with a reading that day, so testing `.every()` against it
+    // alone silently treats a site that went dark as thawed — and `fetchLows` drops null readings
+    // per site, which is precisely how a series goes dark. Four sites out of five dropping out for a
+    // fortnight would then let the one warm survivor close the season, truncating the melt-out
+    // record that §C5's window metrics are computed from. A missing series must not be able to end a
+    // season; the same reasoning that makes the opening rule an OR makes this an all-or-reset.
+    const allThawed =
+      reporting.length === closingSites.length && reporting.every((low) => low > thawC);
     run = allThawed ? run + 1 : 0;
     if (run >= thawRunDays) {
       closesOn = date;
