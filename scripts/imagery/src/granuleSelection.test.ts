@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { type GranuleCandidate, parseGranuleId, selectGranules } from './granuleSelection';
+import {
+  assertTileSurveyUsable,
+  type GranuleCandidate,
+  MAX_UNREADABLE_TILE_FRACTION,
+  parseGranuleId,
+  selectGranules,
+} from './granuleSelection';
 
 const at = (id: string, cloud?: number): GranuleCandidate => ({
   id,
@@ -159,5 +165,50 @@ describe('selectGranules', () => {
     const { considered, selected, cloud, superseded, unparseable, emptyTile } = result.counts;
     expect(considered).toBe(5);
     expect(selected + cloud + superseded + unparseable + emptyTile).toBe(considered);
+  });
+});
+
+describe('assertTileSurveyUsable', () => {
+  it('accepts an ordinary survey', () => {
+    expect(() => assertTileSurveyUsable({ surveyed: 100, unreadable: 0, empty: 50 })).not.toThrow();
+  });
+
+  it('tolerates a few transient read failures', () => {
+    // One flaky read should not stop a nine-season backfill; a kept tile costs one Machine that
+    // exits 0.
+    expect(() => assertTileSurveyUsable({ surveyed: 100, unreadable: 5, empty: 45 })).not.toThrow();
+  });
+
+  it('⚠ refuses a survey where everything failed to read', () => {
+    // The real bug this exists for: the first implementation called `ogrinfo -clipsrc`, an ogr2ogr
+    // flag ogrinfo does not have. All 100 tiles came back unreadable, the season stayed correct, and
+    // the only symptom was `empty tile 0` — a report nobody would think to question, on a run that
+    // silently cost twice as much.
+    expect(() => assertTileSurveyUsable({ surveyed: 100, unreadable: 100, empty: 0 })).toThrow(
+      /tile survey is broken/,
+    );
+  });
+
+  it('refuses just past the threshold, not at it', () => {
+    const n = 100;
+    const atLimit = Math.round(MAX_UNREADABLE_TILE_FRACTION * n);
+    expect(() =>
+      assertTileSurveyUsable({ surveyed: n, unreadable: atLimit, empty: 40 }),
+    ).not.toThrow();
+    expect(() =>
+      assertTileSurveyUsable({ surveyed: n, unreadable: atLimit + 1, empty: 40 }),
+    ).toThrow(/unreadable/);
+  });
+
+  it('⚠ refuses a survey where every tile read as empty', () => {
+    // The mirror image: five states do not genuinely contain no water, so this means the mask file is
+    // wrong, empty, or for another region.
+    expect(() => assertTileSurveyUsable({ surveyed: 100, unreadable: 0, empty: 100 })).toThrow(
+      /NO bodies in any/,
+    );
+  });
+
+  it('says nothing about an empty survey', () => {
+    expect(() => assertTileSurveyUsable({ surveyed: 0, unreadable: 0, empty: 0 })).not.toThrow();
   });
 });

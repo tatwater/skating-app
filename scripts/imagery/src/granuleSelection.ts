@@ -215,3 +215,55 @@ export function selectGranules(
     },
   };
 }
+
+/**
+ * How much of the tile survey may fail before a run is refused.
+ *
+ * Not zero: one transient read failure should not stop a nine-season backfill, and a kept tile costs
+ * one Machine that exits 0. But a broad failure means the survey is not working.
+ */
+export const MAX_UNREADABLE_TILE_FRACTION = 0.1;
+
+export interface TileSurvey {
+  surveyed: number;
+  unreadable: number;
+  empty: number;
+}
+
+/**
+ * Refuse a tile survey that is broken rather than merely unhelpful.
+ *
+ * ## ⚠ Why this is a hard failure and not a warning
+ *
+ * An unreadable tile is *kept*, which is the right default — a tile wrongly called empty is a lake
+ * that silently never receives a photograph. But keeping is also completely silent about cost: if
+ * every tile fails, the run looks entirely ordinary and simply spends twice as much.
+ *
+ * That is not hypothetical. The first implementation of the survey called `ogrinfo -clipsrc`, which is
+ * an `ogr2ogr` flag `ogrinfo` does not have. All 100 tiles came back unreadable and the only symptom
+ * was `empty tile 0` in a report nobody would think to question. This function is what turns that into
+ * a stop.
+ *
+ * The all-empty case is the mirror image: a five-state season does not genuinely contain no water, so
+ * every tile reading empty means the mask file is wrong, for another region, or not a mask file.
+ */
+export function assertTileSurveyUsable(survey: TileSurvey): void {
+  if (survey.surveyed === 0) return;
+
+  const unreadableFraction = survey.unreadable / survey.surveyed;
+  if (unreadableFraction > MAX_UNREADABLE_TILE_FRACTION) {
+    throw new Error(
+      `tile survey is broken: ${survey.unreadable}/${survey.surveyed} tiles unreadable ` +
+        `(>${Math.round(MAX_UNREADABLE_TILE_FRACTION * 100)}%). Refusing to run a backfill that would ` +
+        'quietly cost twice as much. Check that ogrinfo can read the mask file: ' +
+        'ogrinfo -so -al -spat <minx> <miny> <maxx> <maxy> <masks.fgb>',
+    );
+  }
+
+  if (survey.empty === survey.surveyed) {
+    throw new Error(
+      `tile survey found NO bodies in any of ${survey.surveyed} tiles. ` +
+        'The mask file is wrong, empty, or for another region.',
+    );
+  }
+}

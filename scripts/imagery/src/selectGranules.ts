@@ -30,7 +30,12 @@ import { dirname, join } from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 
-import { type GranuleCandidate, parseGranuleId, selectGranules } from './granuleSelection';
+import {
+  assertTileSurveyUsable,
+  type GranuleCandidate,
+  parseGranuleId,
+  selectGranules,
+} from './granuleSelection';
 
 // `fileURLToPath`, never `new URL(...).pathname` — the latter is percent-encoded, so a checkout under
 // a directory with a space in it resolves `.scratch` to a path that does not exist.
@@ -296,6 +301,10 @@ function findEmptyTiles(
     `[select-granules] ${perTile.size} tiles surveyed — ${empty.size} hold no corpus body` +
       (unreadable ? `, ${unreadable} unreadable (kept)` : ''),
   );
+
+  // The decision lives in `granuleSelection` so it can be tested; this file is the I/O around it.
+  assertTileSurveyUsable({ surveyed: perTile.size, unreadable, empty: empty.size });
+
   return empty;
 }
 
