@@ -53,7 +53,19 @@ VM_SIZE="${FLY_VM_SIZE:-shared-cpu-4x}"
 #
 # The two flags are independent and both are required. There is no size name that implies the memory
 # this workload needs.
-VM_MEMORY="${FLY_VM_MEMORY:-8192}"
+#
+# ## ⚠ 2048, not 8192 — RAM was 82% of everything this project has ever spent
+#
+# Fly's dashboard, 2026-08-24, against $6.36 of lifetime spend: **$5.19 "Machines Shared 4x —
+# Additional RAM"**, $1.15 CPU, $0.00 egress. Published `shared-cpu-4x` rates per machine-hour are
+# 1 GB $0.0112, 2 GB $0.0184, 4 GB $0.0329, 8 GB $0.0617 — so the RAM dial, not the CPU one, decides
+# whether nine seasons costs $19 or $102.
+#
+# The largest granule in the corpus (Champlain, 923 bodies, 237.7 Mpixels) completes in 1024 MB.
+# 2048 is the tested-safe setting with room to spare, and it is what makes the founder's $40 ceiling
+# comfortable rather than marginal. See the `GDAL_CACHEMAX` note in the Dockerfile for why dropping
+# the RAM does *not* drop the block cache with it.
+VM_MEMORY="${FLY_VM_MEMORY:-2048}"
 
 INPUT="${1:-}"
 SMOKE_FLAG=""
@@ -213,6 +225,12 @@ for granule in "${GRANULES[@]}"; do
     # be unique, so re-spawning a granule whose previous Machine is still being destroyed fails the
     # spawn (reported below, not swallowed) — the right failure, since it means the earlier job is
     # still on the bill.
+    #
+    # `FLY_VM_SIZE_LABEL` is what `cut-granule` stamps into every manifest's `cost.vmSize`. It had
+    # never been passed, so every manifest ever written recorded `"unknown"` — leaving the one
+    # artifact designed to compare cost across Machine sizes blind, at exactly the moment we started
+    # changing the most expensive setting on the box. The manifests are the permanent record (`fly
+    # logs` ages out in hours), so a size that is not stamped is a measurement that cannot be redone.
     fly machine run "$IMAGE" \
       --app "$APP" \
       --region "$REGION" \
@@ -222,6 +240,7 @@ for granule in "${GRANULES[@]}"; do
       --rm \
       --restart no \
       ${MASK_SEASON:+--env "MASK_SEASON=$MASK_SEASON"} \
+      --env "FLY_VM_SIZE_LABEL=$VM_SIZE/${VM_MEMORY}MB" \
       --name "granule-$(echo "$granule" | tr '[:upper:]_' '[:lower:]-')" \
       -- "$granule" $SMOKE_FLAG \
       >/dev/null 2>&1 \

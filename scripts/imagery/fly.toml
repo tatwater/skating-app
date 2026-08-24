@@ -40,12 +40,20 @@ primary_region = 'sjc'
   GRANULE_WORKDIR = '/data'
   RCLONE_CONFIG = '/data/rclone.conf'
 
-# Sizing is a starting point, not a measurement — the honest position for a transform nobody has
-# profiled yet. A Sentinel-2 L2A granule is ~1 GB across its bands and GDAL warps tile-by-tile, so
-# this should be generous; confirm against `fly logs` on the first real backfill and cut it if the
-# working set turns out small. Cost note: with per-second billing and no barrier between jobs, 25
-# Machines for one hour bills the same as one Machine for 25 hours, so a right-sized box matters far
-# more than a small one.
+# Sizing, measured 2026-08-24 — and ⚠ **this block is NOT what a fan-out runs on.**
+#
+# `fly machine run` ignores `[[vm]]` entirely; it sizes only Machines created by `fly deploy`, and this
+# app never deploys. `fan-out.sh` passes `--vm-size`/`--vm-memory` explicitly and those are the numbers
+# that reach a job. This block is kept in step with them so the two do not tell different stories, not
+# because anything reads it.
+#
+# 2 GB rather than the original 8: RAM was **82% of everything this project had spent** ($5.19 of
+# $6.36), and the corpus's largest granule — Champlain, 923 bodies, 237.7 Mpixels — completes in
+# 1024 MB. See the README's cost table. `GDAL_CACHEMAX` is pinned in the Dockerfile so the block cache
+# does not shrink along with the RAM.
+#
+# Cost note: with per-second billing and no barrier between jobs, 25 Machines for one hour bills the
+# same as one Machine for 25 hours, so a right-sized box matters far more than a small one.
 [[vm]]
   size = 'shared-cpu-4x'
-  memory = '8gb'
+  memory = '2gb'
