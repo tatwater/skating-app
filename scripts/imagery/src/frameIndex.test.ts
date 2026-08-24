@@ -69,4 +69,30 @@ describe('buildSeasonIndex', () => {
       lastCapturedAt: null,
     });
   });
+
+  it('carries the granule footprint through to the index', () => {
+    const footprint = {
+      type: 'Polygon' as const,
+      coordinates: [
+        [
+          [-73.7, 43.2],
+          [-72.4, 43.2],
+          [-72.4, 44.2],
+          [-73.7, 44.2],
+          [-73.7, 43.2],
+        ],
+      ],
+    };
+    const index = buildSeasonIndex('winter-2025-26', [manifest({ footprint })]);
+    expect(index.frames[0]?.footprint).toEqual(footprint);
+  });
+
+  it('⚠ omits footprint entirely when absent, so "unknown" cannot read as "covers nothing"', () => {
+    // A scrubber uses this to say "that lake was not photographed that day". A frame with no footprint
+    // is one we cannot make that claim about — frames cut before 2026-08-24 predate the field — and a
+    // reader must treat it as unknown. Writing `null` would invite a truthy check that silently
+    // classifies every old frame as covering nowhere.
+    const index = buildSeasonIndex('winter-2025-26', [manifest()]);
+    expect('footprint' in (index.frames[0] as object)).toBe(false);
+  });
 });

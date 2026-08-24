@@ -16,6 +16,8 @@
  * manifest. What a client sees is the index built from them.
  */
 
+import type { MultiPolygon, Polygon } from 'geojson';
+
 /**
  * One frame in a season's scrubber.
  *
@@ -41,6 +43,24 @@ export interface IndexedFrame {
    * dev and prod point at different buckets without the artifact knowing.
    */
   key: string;
+  /**
+   * Where this frame has pixels — the satellite's own acquisition polygon, from the STAC item.
+   *
+   * **Without it a scrubber cannot tell "this lake was not photographed that day" from "this lake was
+   * photographed and looked like nothing",** and the timeline degrades to showing every frame and
+   * hoping. A Sentinel pass covers one ~110 km tile; a season's frames are scattered across ~54 of
+   * them, so most frames are irrelevant to any given lake and saying so is the whole job.
+   *
+   * The **granule** footprint rather than the cut's raster extent, deliberately. The raster is sized
+   * to the bounding box of every mask the granule touches, which can reach past the granule's own
+   * edge — those pixels come back transparent. The acquisition polygon is the honest bound on where
+   * imagery exists at all, and it is a real quadrilateral rather than a bbox, so it does not claim
+   * the corners of a rotated swath.
+   *
+   * Optional because frames cut before 2026-08-24 predate the field. A reader with no footprint
+   * should treat coverage as unknown and say so, never as universal.
+   */
+  footprint?: Polygon | MultiPolygon;
 }
 
 /** A season's frames, ascending by capture time — the axis a scrubber moves along. */

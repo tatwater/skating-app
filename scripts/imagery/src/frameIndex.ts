@@ -24,6 +24,7 @@
  */
 
 import type { IndexedFrame, SeasonIndex } from '@skating/core';
+import type { MultiPolygon, Polygon } from 'geojson';
 
 /** One cut granule, as the Machine that cut it recorded. Producer-side only. */
 export interface FrameManifest {
@@ -36,6 +37,14 @@ export interface FrameManifest {
   collection?: string;
   bodies: number;
   band?: string;
+  /**
+   * The granule's acquisition polygon, copied from the STAC item at cut time.
+   *
+   * Recorded by the cutter rather than looked up when the index is built, because it is a statement
+   * about *what we cut* — ESA reprocesses, and a footprint fetched months later could describe a
+   * different granule than the one whose pixels are in the archive.
+   */
+  footprint?: Polygon | MultiPolygon;
 }
 
 /**
@@ -60,6 +69,9 @@ export function buildSeasonIndex(season: string, manifests: readonly FrameManife
         bodies: m.bodies,
         band: m.band ?? 'visual',
         key: `frames/${season}/${m.granuleId}.pmtiles`,
+        // Omitted rather than nulled when absent: `footprint?` means "we do not know", and a reader
+        // must distinguish that from a frame that covers nothing.
+        ...(m.footprint ? { footprint: m.footprint } : {}),
       }),
     )
     .sort((a, b) => a.capturedAt.localeCompare(b.capturedAt));

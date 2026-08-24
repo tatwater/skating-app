@@ -302,6 +302,12 @@ transform_granule() {
 
   # The manifest, because a raster cannot say when it was taken or how cloudy it was — and D84/C4
   # make the date content rather than a caption. Whatever reads this archive reads dates from here.
+  #
+  # `footprint` is the STAC item's own `geometry` — the acquisition polygon, which is where this frame
+  # has pixels at all. Without it a scrubber cannot tell "this lake was not photographed that day"
+  # from "it was photographed and looked like nothing", and has to show every frame and hope. Copied
+  # here rather than looked up when the index is built, because it is a claim about the granule we
+  # actually cut: ESA reprocesses, and a footprint fetched months later may describe a different one.
   jq -n \
     --arg granule "$GRANULE_ID" \
     --arg captured "$CAPTURED_AT" \
@@ -311,9 +317,10 @@ transform_granule() {
     --argjson cloud "${CLOUD_PCT:-null}" \
     --argjson bodies "$MASK_COUNT" \
     --argjson feather "$FEATHER_M" \
+    --argjson footprint "$(jq -c '.geometry' granule.json)" \
     '{granuleId:$granule, capturedAt:$captured, cloudCoverPct:$cloud, season:$season,
       maskSeason:$maskSeason, collection:$collection, bodies:$bodies, featherMeters:$feather,
-      band:"visual"}' \
+      band:"visual", footprint:$footprint}' \
     > manifest.json || die "manifest build failed"
 
   local key_base="frames/${FRAME_SEASON}/${GRANULE_ID}"
