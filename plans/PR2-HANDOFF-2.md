@@ -207,6 +207,101 @@ founder is explicit that clarity over bodies is not negotiable.
 
 ---
 
+## 4b. The 50-granule run — ✅ **2026-08-24**: concurrency answered, and a latent bug caught
+
+Run on Fly against the rebuilt image. Two questions asked, three answered.
+
+### `MAX_PARALLEL=50` is safe — raise it
+
+The throttle held at **exactly 50** live Machines and drained cleanly. **50/50 frames landed**, no
+drops. The 2026-08-23 flood that motivated the cap of 25 was an *unthrottled spawn-rate* bug, not a
+Fly ceiling, and per-second billing with no barrier means concurrency is free.
+
+**A season's wall clock: ~7.4h → ~1.7h** (4,485 ÷ 50 × 67s). `.env.local` now carries `MAX_PARALLEL=50`.
+
+### ⚠ Five granules failed, and they were the five worth having
+
+The first pass landed 45 of 50. The five missing were **not** empty — they held **1,767–2,277 bodies
+each**, the largest in the sample, while the contrast granule that succeeded held 370. Re-running them
+at `MAX_PARALLEL=5` reproduced the failure, which ruled out concurrency.
+
+The cause was `--argjson bodies "$(cat bodies.json)"` in the manifest build. **Linux caps a single
+argument at `MAX_ARG_STRLEN` = 128 KiB** — a different and far lower ceiling than the ~2 MB total
+`ARG_MAX`. At 98 bytes per body entry that breaks above **~1,342 bodies**, which is precisely where the
+sample split. Fixed with `--slurpfile`; 50/50 now land.
+
+**Three reasons this was nearly missed, all worth remembering:**
+
+- It hides from small samples. The earlier 23-granule cost profile peaked at 923 bodies.
+- **It does not reproduce on macOS**, where a 255 KB argument passes cleanly.
+- It fails *loudly per job* but *silently in aggregate* — a backfill would have reported success on 82%
+  of granules and quietly lost the densest frames, over the regions with the most lakes.
+
+### The metered numbers, from 50 real manifests
+
+`cost.vmSize` is populated on **50/50** — the label fix works, and the archive can now be costed from
+its own artifacts.
+
+| | old (23-granule sample, pre-swap) | new (50 granules) |
+| --- | --- | --- |
+| median job | 114s | **66.9s** |
+| mean job | 148s | 63.9s |
+| s/Mpixel | 1.53 | **0.65** |
+| tiling share | 63% (`tile` + `overviews`) | **30%** (`tile_visual` 19.9s) |
+| pack | — | 0.1s (0.2%) |
+
+**A season now extrapolates to ~79.6 machine-hours ≈ $1.46**, against the $3.40 §3 projected and the
+$11.38 it would have cost at 8 GB. Nine seasons ≈ $13.
+
+Verified end to end: `build-index` reads all 50, and 130 z13 tiles probed from the 2,277-body frame
+carry real imagery with **zero** black tiles.
+
+---
+
+## 4c. SAR spike — ✅ **2026-08-24**: legible, but not the way §C1 assumed
+
+Answered locally for about two cents, before building any S1 path. **Champlain, winter 2025-26, one
+track (2242/2243 ascending), 14 VV passes, all at 100% coverage.**
+
+**SAR is markedly more legible over our lakes than optical — on a snow-covered day, decisively so.**
+Lake-vs-land separation on 2026-02-13, measured inside the corpus masks:
+
+| sensor | lake | land | Cohen's *d* |
+| --- | --- | --- | --- |
+| **S1 VV** | 39.10 dB | 43.27 dB | **1.33** |
+| S2 true colour | 248.0 DN | 223.0 DN | 0.49 |
+
+The optical frame nearly loses the lake among snowy fields; SAR renders it crisply. **2.7× better
+separation.**
+
+**But §C1's warning is confirmed by measurement.** Same platform, same track: November open water
+reads **38.85 dB** and January ice reads **39.52 dB** — 0.67 dB apart. **VV alone cannot tell smooth
+ice from calm open water.** The only unambiguous excursion in the whole season is a ~3 dB brightening
+on 2026-03-09/15 (both platforms agree), which is ice *decay* roughening the surface — the wrong end
+of the winter for a freeze-up alert.
+
+**⚠ And the S1 path is not "gdalwarp with a different band".** Raw GRD DN is uncalibrated: across the
+season S1A reads **+1.01 dB (VV) and +2.17 dB (VH)** above S1C on the same track. VH — the standard
+ice/water discriminator — is *swamped* by that offset. A multi-platform timeline built on raw DN would
+render an instrument difference as an ice change. Real work needs sigma0 calibration (the per-granule
+`calibration-iw-vv.xml` LUT that Earth Search already exposes) or an RTC product.
+
+**Other findings that change the plan:**
+
+- **Revisit is far better than S2**: 13 passes over Champlain in Feb 2026 alone, vs S2's 2–4 usable.
+- **It is free on AWS after all.** `sentinel-s1-l1c` reads anonymously over HTTPS — the README's
+  "not free on AWS in the same shape" was wrong about access, right about the transform.
+- **Geocoding needs no SNAP.** GRD carries GCPs; `gdalwarp -tps` geocodes a window in ~2.7s, and
+  terrain correction matters little over a flat lake.
+- **⚠ Polarization is mixed across passes** — some HH/HV, some VV/VH. An archive must not mix them,
+  which cuts the usable pass count for any single-polarization series roughly in half.
+
+**Recommendation: SAR is worth a pilot, but scope it as calibrated sigma0, not a band swap** — and do
+not expect it to date freeze-up on its own. Its clear strength is delineation under snow, where optical
+is weakest.
+
+---
+
 ## 5. Founder decisions already made — do not reopen
 
 - **Cut and store everything; no cloud gate.** Hit Copernicus once, own the pixels, so re-derivation is
@@ -284,19 +379,24 @@ Done 2026-08-24, all on the branch and unpushed — `pnpm --filter @skating/imag
 - ✅ **`coveragePct` added to `FrameManifest`** — `zonal-clear.py` has always emitted it and the type
   never declared it, on the exact field the split-body seam depends on.
 
+Also done 2026-08-24 (see §4b, §4c):
+
+- ✅ **Image rebuilt and pushed** — `deployment-01M0V0M19S7WJACE0S53EPGF7B`, pinned in `.env.local`.
+- ✅ **50-granule metered run** — 50/50 frames in R2, `cost.vmSize` populated on all of them.
+- ✅ **`MAX_PARALLEL=50` proven safe** and adopted; a season's wall clock is now ~1.7h.
+- ✅ **`MAX_ARG_STRLEN` manifest bug found and fixed** — it would have silently dropped ~18% of a
+  season, specifically the densest granules.
+- ✅ **SAR spiked before building.** Legible and better than optical under snow, but VV cannot
+  separate ice from calm water, and raw GRD DN is uncalibrated across platforms.
+
 Left:
 
-1. **Rebuild and push the image**, then a **~20-granule metered sample across size buckets** — mirrors
-   the existing 23-granule sample so the numbers are directly comparable. Confirms 2048 MB holds on
-   the 923-body worst case and gives a real per-job cost before the season runs.
-2. **Then the single-season backfill** (winter 2025-26), ~4,485 granules, ~$2 and ~4.5h.
-3. **S1 path** for the SAR pilot — but **spike before building** (§8).
-4. **N6g label fixes** in the three files listed in §5.
-
-⚠ **`MAX_PARALLEL` is the cheapest untried lever on wall clock.** 25 was chosen after the 2026-08-23
-flood, but that flood was an *unthrottled spawn-rate* bug, not a Fly ceiling — and per-second billing
-with no barrier between jobs means concurrency is free. A bounded test at 50 would halve a season's
-wall clock for no code.
+1. **The single-season backfill** (winter 2025-26). ⚠ **Re-run `select-granules` first** — the list in
+   `.scratch/granules-2025-11-01-to-2026-05-05.txt` holds 2,560 ids and predates the ungating; the
+   real figure is **4,485**. At the measured 66.9s and `MAX_PARALLEL=50` that is **~1.7h and ~$1.46**.
+2. **S1 pilot**, scoped as calibrated sigma0 rather than a band swap (§4c).
+3. **N6g label fixes** in the three files listed in §5.
+4. Consider whether `MAX_PARALLEL` should go higher still — 50 was proven, 100 was never tried.
 
 ## 7b. Is the architecture flexible? Yes, and in the direction that matters
 
@@ -332,12 +432,16 @@ Three of the four are now closed:
 - ~~Does per-cluster cutting pay for its complexity?~~ **Not now.** The tiler swap took the stage it
   would have optimised; revisit only if the recurring winter cost ever stops being ~$0.57/month.
 
+- ~~Is SAR legible over our lakes at all?~~ **Yes, and better than optical under snow** — but VV
+  cannot separate ice from calm water, and the path needs calibrated sigma0. See §4c.
+- ~~Is `MAX_PARALLEL=25` leaving wall clock on the table?~~ **Yes** — 50 is proven, see §4b.
+
 Still open:
 
-- **Is SAR legible over our lakes at all?** §C1 warns black ice and open water both return dark.
-  ⚠ **Spike before building the S1 path.** Cut one S1 granule over Champlain in a week we know was
-  frozen and look at it — that is about two cents and an afternoon, against building a whole separate
-  collection, id grammar and single-band transform toward a picture that may be unreadable.
-  Relevant to the season question either way: **S1B failed in Dec 2021 and S1C did not launch until
-  Dec 2024**, so the middle seasons of any nine-season SAR backfill have 12-day revisit, not 6.
-- **Is `MAX_PARALLEL=25` leaving wall clock on the table?** See §7.
+- **Can SAR date freeze-up at all, or only delineate?** §4c found the only unambiguous seasonal
+  excursion is March ice *decay*. Whether calibrated VH separates November open water from January ice
+  is the question a pilot has to answer, and it is the one that decides if SAR earns a place in the
+  timeline or stays a delineation aid.
+- **Does `MAX_PARALLEL` go higher than 50?** Untested. Each doubling halves a 1.7h season.
+- **S1B failed Dec 2021, S1C launched Dec 2024** — so any nine-season SAR backfill has 12-day revisit
+  through the middle seasons, not 6. Bears on whether earlier seasons are worth the S1 spend at all.
