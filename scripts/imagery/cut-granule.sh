@@ -464,6 +464,26 @@ transform_granule() {
   # from "it was photographed and looked like nothing", and has to show every frame and hope. Copied
   # here rather than looked up when the index is built, because it is a claim about the granule we
   # actually cut: ESA reprocesses, and a footprint fetched months later may describe a different one.
+  #
+  # ⚠ **`--slurpfile` for `bodies`, never `--argjson "$(cat …)"` — that fails only on the granules
+  # that matter most, and only on Linux.**
+  #
+  # The limit is **`MAX_ARG_STRLEN`: 128 KiB for a single argument** on Linux (32 pages), which is a
+  # separate and much lower ceiling than the ~2 MB total `ARG_MAX` everyone reaches for first. A
+  # per-body entry measures **98 bytes** in a real manifest, so the manifest build dies above roughly
+  # **1,342 bodies** with `jq: Argument list too long` → `FATAL: manifest build failed` → no frame in
+  # the bucket.
+  #
+  # Measured 2026-08-24 on a 50-granule sample: **exactly the five granules with 1,767–2,277 bodies
+  # failed**, and all 45 below the threshold succeeded. ~18% of a season's granules sit on 1,000+ body
+  # tiles, so a backfill would have quietly lost its densest frames — over the regions holding the most
+  # lakes — while reporting success everywhere else.
+  #
+  # ⚠ **It does not reproduce on macOS**, where a 255 KB argument passes cleanly. Anyone testing this
+  # path locally will conclude it works. The container is Linux; only the container's answer counts.
+  #
+  # `--slurpfile` reads the file directly, so nothing crosses argv. It wraps the contents in an array,
+  # hence `$bodies[0]` at the point of use.
   jq -n \
     --arg granule "$GRANULE_ID" \
     --arg captured "$CAPTURED_AT" \
@@ -472,7 +492,7 @@ transform_granule() {
     --arg collection "$STAC_COLLECTION" \
     --argjson cloud "${CLOUD_PCT:-null}" \
     --argjson bodyCount "$MASK_COUNT" \
-    --argjson bodies "$(cat bodies.json)" \
+    --slurpfile bodies bodies.json \
     --argjson bands "$BANDS" \
     --argjson stageMs "$STAGE_JSON" \
     --argjson totalMs "$(( $(now_ms) - RUN_STARTED_MS ))" \
@@ -481,7 +501,7 @@ transform_granule() {
     --argjson feather "$FEATHER_M" \
     --argjson footprint "$(jq -c '.geometry' granule.json)" \
     '{granuleId:$granule, capturedAt:$captured, cloudCoverPct:$cloud, season:$season,
-      maskSeason:$maskSeason, collection:$collection, bodyCount:$bodyCount, bodies:$bodies,
+      maskSeason:$maskSeason, collection:$collection, bodyCount:$bodyCount, bodies:$bodies[0],
       bands:$bands, featherMeters:$feather, footprint:$footprint,
       cost:{stageMs:$stageMs, totalMs:$totalMs, gridPixels:$pixels, vmSize:$vmSize}}' \
     > manifest.json || die "manifest build failed"
