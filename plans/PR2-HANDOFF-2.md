@@ -28,9 +28,9 @@ per-body statistics, and a season index come out.
 | Retry loop | `scripts/imagery/backfill.sh` | reconcile-until-converged |
 | Status check | `scripts/imagery/status.sh` | **use this, not ad-hoc greps** |
 
-**In R2 right now:** `masks/winter-2026-27.fgb` (24,831 bodies) + sidecar + tile survey;
-`frames/winter-2025-26/` with 1,494 frames and 1,486 manifests. ⚠ **That frame set is stale** — cut
-before `footprint`, `bodies[]` and `cost` existed. It must be purged before any real backfill.
+**In R2 right now:** `masks/winter-2026-27.fgb` (24,831 bodies) + its sidecar. **Nothing else.**
+The stale `frames/winter-2025-26/` set (2,980 objects, cut before `footprint`, `bodies[]` and `cost`
+existed) and its index were purged 2026-08-24. The next backfill starts from an empty frame prefix.
 
 **Fly:** app `skating-imagery`, org `personal`, region `sjc`, zero machines at rest.
 
@@ -87,24 +87,40 @@ than a 220-body one at 44 Mpixels.
 
 ---
 
-## 3. ⚠ Cost is UNRESOLVED and blocks the season decision
+## 3. Cost — RESOLVED 2026-08-24, and RAM was the whole story
 
-**Do not run a multi-season backfill until this is pinned.**
+`flyctl` has no billing command, so every figure before this was inferred and **the inference was 3×
+too high**. Fly's own dashboard settles it. Lifetime spend $6.36:
 
-`flyctl` has no billing command, so $/machine-hour has only ever been *inferred*. The founder reports
-the Fly bill at **$6.36 and unchanged** after a 24-granule sample — which is consistent with either a
-dashboard lag or with the true rate being far below the $0.19/machine-hour assumed so far.
+| line item | total |
+| --- | --- |
+| Machines Shared 4x: **Additional RAM** (sjc) | **$5.19** |
+| Machines Shared CPU 4x (sjc) | $1.15 |
+| Bandwidth egress | $0.00 |
 
-**The number to get:** fly.io Dashboard → org → Billing/Usage → **current-month usage** (not the last
-invoice), before and after a known run. With ~148s mean and 4,485 granules, one season is ~184
-machine-hours; nine is ~1,660. The rate turns that into dollars and nothing else does.
+**RAM is 82% of everything spent.** Published `shared-cpu-4x` rates, per machine-hour: 1 GB $0.0112,
+2 GB $0.0184, 4 GB $0.0329, **8 GB $0.0617**.
 
-Founder's budget: *"a $40 one-time expense for all 9 seasons is acceptable… what I wouldn't want is to
-run that several times and end up pushing $100."* Founder is content with **fewer seasons** — possibly
-one — until the MVP proves out.
+At ~148s mean over 4,485 granules a season is ~184 machine-hours:
 
-**The recurring cost matters more than the backfill.** ~6 passes/month over the region is roughly half
-a season's granules every month, forever. Optimising per-granule cost is not a backfill concern.
+| RAM | per season | nine seasons |
+| --- | --- | --- |
+| **1 GB** | $2.07 | **$18.64** |
+| 2 GB | $3.40 | $30.59 |
+| 4 GB | $6.06 | $54.54 |
+| 8 GB *(what was being used)* | $11.38 | $102.39 |
+
+⚠ **The single most valuable change in this document: stop passing `--vm-memory 8192`.** The largest
+granule in the corpus (672 bodies) completes at 1024 MB. 2048 MB is the tested-safe setting and still
+brings nine seasons in around $30. The founder's $40 target is comfortably reachable; at 8 GB it was
+not.
+
+This also reorders §4. Considerable effort went into hunting a 6× tiling speedup while the dominant
+cost was a flag set wrong. Tiling still matters — it is the *recurring* winter cost, roughly half a
+season's granules every month forever — but it is no longer what stands between us and nine seasons.
+
+Founder is content with **fewer seasons** — possibly one — until the MVP proves out. That is now a
+product-pacing choice rather than a budget constraint.
 
 ---
 
@@ -188,16 +204,43 @@ founder is explicit that clarity over bodies is not negotiable.
 
 ## 7. What is left
 
-1. **Pin $/machine-hour** (§3) — blocks everything.
-2. **Purge `frames/winter-2025-26/`** — stale, pre-dates `footprint`/`bodies[]`/`cost`.
-3. **Prototype the tiling lead** (§4) — 63% of the job.
+1. **Set `FLY_VM_MEMORY=2048`** (or 1024) before anything runs at scale — §3. Cheapest change here.
+2. **Prototype the tiling lead** (§4) — 63% of the job, and the recurring winter cost.
 4. **S1 path** for the SAR pilot.
 5. **N6g label fixes** in the three files listed in §5.
 6. Then a metered single-season pilot, and only then a season-count decision.
 
+## 7b. Is the architecture flexible? Yes, and in the direction that matters
+
+A founder question worth recording, because the answer is load-bearing for PR 3 and beyond.
+
+**Imagined pipeline:** store the whole region's raw imagery → cut a chunk per body (bbox + feather) →
+mask each into a body-shaped blob.
+
+**Built pipeline:** read granule COGs directly from AWS (never stored) → cut ONE raster per granule
+covering every body it touches → bake alpha → PMTiles per granule.
+
+Per-body would be ~24,831 bodies × ~90 passes ≈ **2.2 million artifacts a season** against 4,485.
+Better pixel efficiency, far worse file count. Per-cluster (§4) sits between them.
+
+**On "what if imagery should reveal every body in the viewport, not just the selected lake?"** — the
+current design already does this and the per-body design would fight it. The archive is **region-wide
+and pre-masked**: every body a granule touches is in that granule's PMTiles with alpha baked in, so
+revealing a viewport is rendering the archive over that area. No per-body fetch, no tile math — which
+is exactly what D148 chose it for (*"scrubbing is swapping an archive URL"*).
+
+The per-lake restriction is **D146, a product decision about where the control lives**, not an
+architectural limit. Lifting it is a client change. Under the per-body design, showing 50 lakes in a
+viewport would mean 50 fetches. The one thing to watch: a viewport spanning several granules needs
+several sources, which MapLibre handles.
+
 ## 8. Open questions
 
-- Is `$6.36` stale, or is the real rate far below $0.19/machine-hour?
+- ⚠ **Did "cut & store all imagery" mean store the RESULTS or the RAW granules?** This was read as
+  "cut every granule (no cloud gate) and store the frames", and that is what is built — raw COGs are
+  read from AWS on demand and never kept. Storing raw would make re-derivation offline and fast at the
+  cost of ~1.2 TB/season; the founder's stated reason ("we can rerun whatever we want without hitting
+  them again") is ambiguous between the two. Worth settling before a nine-season run.
 - Can `gdal raster tile`'s output reach PMTiles without an expensive intermediate?
 - Does per-cluster cutting pay for its complexity, or does the tiler swap suffice?
 - Is SAR legible over our lakes at all? §C1 warns black ice and open water both return dark.
