@@ -5,7 +5,7 @@
 
 Replaces the manifest's `bodies: 12` — a count that never said *which* twelve — with
 
-    [{"waterBodyId": "...", "clearPct": 0.93, "pixels": 4107}, ...]
+    [{"waterBodyId": "...", "clearPct": 0.93, "coveragePct": 0.31, "pixels": 4107}, ...]
 
 ## Why this is the highest-value number in the pipeline
 
@@ -33,6 +33,20 @@ ESA's L2A scene classification, per pixel:
   excluded from the denominator entirely. A body half outside the granule would otherwise report ~50%
   clear when the half we can see is perfectly clear — punishing a frame for the shape of a swath.
   A body with no valid pixels at all reports `null`, never 0: "we cannot see it" is not "it is cloudy".
+
+## ⚠ `coveragePct` — the reason a lake can appear in two granules and neither is wrong
+
+Champlain spans several Sentinel tiles, and any body can be bisected by a granule edge. Each granule
+sees only its own part, so `clearPct` alone is a claim about *the part this granule saw* while reading
+exactly like a claim about the lake.
+
+`coveragePct` is how much of the body this granule actually reached: the mask file returns whole
+features, so the zone raster carries each body's **complete** footprint, while SCL is valid only where
+the granule reaches. Their ratio is the coverage, and it is exact rather than inferred.
+
+A consumer combining a date's frames should weight each `clearPct` by its `coveragePct` — that is what
+makes "was Champlain clear on the 14th" answerable from parts, and what lets PR 3 draw the split-body
+seam knowing which side came from which pass.
 """
 
 import json
@@ -93,6 +107,9 @@ def main() -> int:
     scl_band = scl_ds.GetRasterBand(1)
     valid_counts = np.zeros(max_zone + 1, dtype=np.int64)
     clear_counts = np.zeros(max_zone + 1, dtype=np.int64)
+    # Every pixel of the body's mask, whether or not the granule has data there. The denominator for
+    # coverage, and the only way to tell a sliver of a lake from the whole thing.
+    total_counts = np.zeros(max_zone + 1, dtype=np.int64)
     clear_lut = np.zeros(256, dtype=bool)
     valid_lut = np.ones(256, dtype=bool)
     for c in CLEAR:
@@ -111,6 +128,7 @@ def main() -> int:
         s = scl[inside]
         # A lookup table rather than `np.isin`: SCL is a Byte band, so class membership is an index.
         v = valid_lut[s]
+        total_counts += np.bincount(z, minlength=max_zone + 1)
         valid_counts += np.bincount(z[v], minlength=max_zone + 1)
         clear_counts += np.bincount(z[clear_lut[s] & v], minlength=max_zone + 1)
 
@@ -118,11 +136,15 @@ def main() -> int:
     for zone, water_body_id in sorted(zone_to_id.items()):
         v = int(valid_counts[zone])
         c = int(clear_counts[zone])
+        t = int(total_counts[zone])
         out.append(
             {
                 "waterBodyId": water_body_id,
                 # null, not 0 — "we cannot see it" is a different claim from "it is cloudy".
                 "clearPct": round(c / v, 4) if v > 0 else None,
+                # How much of this body the granule reached. 1.0 = the whole lake is in this frame;
+                # 0.31 = a third of it, and this frame's clearPct describes only that third.
+                "coveragePct": round(v / t, 4) if t > 0 else 0.0,
                 "pixels": v,
             }
         )

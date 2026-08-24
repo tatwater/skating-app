@@ -51,6 +51,30 @@ MASK_SEASON="${MASK_SEASON:-}"
 log() { echo "[cut-granule] $*" >&2; }
 die() { echo "[cut-granule] FATAL: $*" >&2; exit 1; }
 
+# --- Stage timing --------------------------------------------------------------------------------
+#
+# Every expensive step is wrapped so the manifest can say where its seconds went. Without this,
+# "which line item costs money" is a guess — and the answer decides whether a nine-season backfill is
+# affordable, whether SAR is worth adding, and what an every-few-days winter cadence will cost to run.
+#
+# Written into the manifest rather than only logged, because `fly logs` ages out within hours while
+# the manifest is the permanent record beside the frame it describes. An aggregate across a sample of
+# granules is then a bucket listing, not a log-scraping exercise.
+STAGE_JSON="{}"
+now_ms() { python3 -c 'import time; print(int(time.time()*1000))'; }
+RUN_STARTED_MS="$(now_ms)"
+
+# stage <name> <command…> — runs it, records elapsed milliseconds, preserves the exit status.
+stage() {
+  local name="$1"; shift
+  local started ended status=0
+  started="$(now_ms)"
+  "$@" || status=$?
+  ended="$(now_ms)"
+  STAGE_JSON="$(jq -c --arg k "$name" --argjson v "$((ended - started))" '. + {($k): $v}' <<<"$STAGE_JSON")"
+  return $status
+}
+
 # --- Secrets ---------------------------------------------------------------------------------------
 # Checked up front and by name. A batch job that discovers a missing credential after paying for the
 # granule read is a job that wasted the expensive half of its runtime; these are `fly secrets` (see
@@ -84,7 +108,7 @@ EOF
 resolve_granule() {
   local url="${STAC_URL}/collections/${STAC_COLLECTION}/items/${GRANULE_ID}"
   log "resolving $GRANULE_ID via $url"
-  curl -fsSL --retry 3 --retry-delay 2 "$url" -o granule.json \
+  stage stac_resolve curl -fsSL --retry 3 --retry-delay 2 "$url" -o granule.json \
     || die "STAC lookup failed for $GRANULE_ID"
 
   CAPTURED_AT="$(jq -r '.properties.datetime // empty' granule.json)"
@@ -178,7 +202,7 @@ fetch_masks() {
   # Reprojected to 3857 on the way out, because everything downstream is. EPSG:3857 is not optional
   # anywhere in this pipeline: a linear lat/lng mask sits ~20 m off the shoreline at 44°N and reads
   # as the imagery being misregistered rather than as our bug (packages/core/src/webMercator.ts).
-  ogr2ogr -f GeoJSON masks.geojson \
+  stage fetch_masks ogr2ogr -f GeoJSON masks.geojson \
     -spat "$MINLNG" "$MINLAT" "$MAXLNG" "$MAXLAT" -spat_srs EPSG:4326 \
     -t_srs EPSG:3857 \
     "$src" \
@@ -232,13 +256,13 @@ transform_granule() {
   #    which is Sentinel-2's native sample — upsampling would invent detail, downsampling would throw
   #    away the only resolution we have.
   log "warping $href"
-  gdalwarp -q -t_srs EPSG:3857 -te "$MINX" "$MINY" "$MAXX" "$MAXY" -tr 14 14 \
+  stage warp_visual gdalwarp -q -t_srs EPSG:3857 -te "$MINX" "$MINY" "$MAXX" "$MAXY" -tr 14 14 \
     -r bilinear -multi -co COMPRESS=DEFLATE -overwrite \
     "/vsicurl/${href}" scene.tif \
     || die "gdalwarp failed"
 
   # 2. Burn the reveal shapes into a byte mask on exactly that grid.
-  gdal_rasterize -q -burn 255 -init 0 -ot Byte \
+  stage rasterize_mask gdal_rasterize -q -burn 255 -init 0 -ot Byte \
     -te "$MINX" "$MINY" "$MAXX" "$MAXY" -tr 14 14 -co COMPRESS=DEFLATE \
     masks.geojson mask.tif \
     || die "gdal_rasterize failed"
@@ -246,7 +270,7 @@ transform_granule() {
   # 3. Distance from every pixel to the nearest revealed one. This is the feather, and it is a true
   #    ramp by ground distance rather than a blur — which is the whole reason the archive bakes alpha
   #    server-side instead of leaving it to a rasteriser (see imageryCanvas.ts's closing note).
-  gdal_proximity -q mask.tif dist.tif -values 255 -distunits GEO \
+  stage feather_proximity gdal_proximity -q mask.tif dist.tif -values 255 -distunits GEO \
     -maxdist "$feather_projected" -nodata "$feather_projected" -ot Float32 -co COMPRESS=DEFLATE \
     || die "gdal_proximity failed"
 
@@ -291,7 +315,7 @@ transform_granule() {
   scl_href="$(asset_href scl)"
   if [[ -n "$scl_href" ]]; then
     log "warping SCL (20 m -> grid, nearest)"
-    gdalwarp -q -t_srs EPSG:3857 -te "$MINX" "$MINY" "$MAXX" "$MAXY" -tr 14 14 \
+    stage warp_scl gdalwarp -q -t_srs EPSG:3857 -te "$MINX" "$MINY" "$MAXX" "$MAXY" -tr 14 14 \
       -r near -multi -co COMPRESS=DEFLATE -overwrite \
       "/vsicurl/${scl_href}" scl.tif \
       || die "SCL warp failed"
@@ -304,12 +328,12 @@ transform_granule() {
     jq -c '[.features[] | {key: (.properties.zone|tostring), value: .properties.waterBodyId}] | from_entries' \
       masks-zoned.geojson > zone-to-id.json || die "zone mapping failed"
 
-    gdal_rasterize -q -a zone -a_nodata 0 -init 0 -ot UInt32 \
+    stage rasterize_zones gdal_rasterize -q -a zone -a_nodata 0 -init 0 -ot UInt32 \
       -te "$MINX" "$MINY" "$MAXX" "$MAXY" -tr 14 14 -co COMPRESS=DEFLATE \
       masks-zoned.geojson zones.tif \
       || die "zone rasterize failed"
 
-    python3 /usr/local/bin/zonal-clear.py zones.tif scl.tif zone-to-id.json > bodies.json \
+    stage zonal_stats sh -c 'python3 /usr/local/bin/zonal-clear.py zones.tif scl.tif zone-to-id.json > bodies.json' \
       || die "zonal clear-fraction failed"
     log "per-body clear fractions: $(jq 'length' bodies.json) bodies"
   else
@@ -325,7 +349,7 @@ transform_granule() {
   #    founder's "no zoom floor" call cuts the same way: what renders is the archive's business, and
   #    discarding detail up front removes a choice the skater is supposed to have.
   rm -f archive.mbtiles archive.pmtiles
-  gdal_translate -q -of MBTILES rgba_ci.vrt archive.mbtiles \
+  stage tile_visual gdal_translate -q -of MBTILES rgba_ci.vrt archive.mbtiles \
     -co TILE_FORMAT=WEBP -co QUALITY=80 -co ZOOM_LEVEL_STRATEGY=UPPER \
     || die "MBTiles tiling failed"
   # ⚠ **Overview levels are explicit, and they have to be.** With no levels given, `gdaladdo` derives
@@ -336,8 +360,10 @@ transform_granule() {
   #
   # Seven levels take z14 down to about z7, which covers the whole zoom range a scrubber is looked at
   # across — including the founder's "no zoom floor", where a skater is free to pull right out.
-  gdaladdo -q -r average archive.mbtiles 2 4 8 16 32 64 128 || die "overview build failed"
-  pmtiles convert archive.mbtiles archive.pmtiles >/dev/null 2>&1 || die "pmtiles convert failed"
+  stage overviews_visual gdaladdo -q -r average archive.mbtiles 2 4 8 16 32 64 128 \
+    || die "overview build failed"
+  stage pmtiles_visual sh -c 'pmtiles convert archive.mbtiles archive.pmtiles >/dev/null 2>&1' \
+    || die "pmtiles convert failed"
 
   # SCL as its own *frame* is OFF by default — measured, 2026-08-24.
   #
@@ -383,18 +409,24 @@ transform_granule() {
     --argjson bodyCount "$MASK_COUNT" \
     --argjson bodies "$(cat bodies.json)" \
     --argjson bands "$BANDS" \
+    --argjson stageMs "$STAGE_JSON" \
+    --argjson totalMs "$(( $(now_ms) - RUN_STARTED_MS ))" \
+    --argjson pixels "$(( ( ${MAXX%.*} - ${MINX%.*} ) / 14 * ( ${MAXY%.*} - ${MINY%.*} ) / 14 ))" \
+    --arg vmSize "${FLY_VM_SIZE_LABEL:-unknown}" \
     --argjson feather "$FEATHER_M" \
     --argjson footprint "$(jq -c '.geometry' granule.json)" \
     '{granuleId:$granule, capturedAt:$captured, cloudCoverPct:$cloud, season:$season,
       maskSeason:$maskSeason, collection:$collection, bodyCount:$bodyCount, bodies:$bodies,
-      bands:$bands, featherMeters:$feather, footprint:$footprint}' \
+      bands:$bands, featherMeters:$feather, footprint:$footprint,
+      cost:{stageMs:$stageMs, totalMs:$totalMs, gridPixels:$pixels, vmSize:$vmSize}}' \
     > manifest.json || die "manifest build failed"
 
   # Keyed by band, because a granule now yields more than one frame and `<granuleId>.pmtiles` could
   # only ever name one of them.
   local key_base="frames/${FRAME_SEASON}/${GRANULE_ID}"
   log "uploading $(du -h archive.pmtiles | cut -f1) -> r2:${R2_BUCKET}/${key_base}-visual.pmtiles"
-  rclone --config "$RCLONE_CONF" copyto archive.pmtiles "r2:${R2_BUCKET}/${key_base}-visual.pmtiles" \
+  stage upload_visual rclone --config "$RCLONE_CONF" copyto archive.pmtiles \
+    "r2:${R2_BUCKET}/${key_base}-visual.pmtiles" \
     --s3-no-check-bucket --s3-chunk-size=64M || die "R2 upload failed"
   if [[ -s scl.pmtiles ]]; then
     rclone --config "$RCLONE_CONF" copyto scl.pmtiles "r2:${R2_BUCKET}/${key_base}-scl.pmtiles" \
