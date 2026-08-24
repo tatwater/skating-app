@@ -24,6 +24,7 @@ per-body statistics, and a season index come out.
 | Weather gate | `scripts/imagery/src/ingestGate.ts` | calibrated against 2025-26 |
 | Archive index | `scripts/imagery/src/buildIndex.ts` | one frame per band |
 | Published types | `packages/core/src/imageryArchive.ts` | for PR 3 |
+| Tile packer | `scripts/imagery/tiles-to-mbtiles.py` | dir → MBTiles, 0.14s |
 | Fan-out | `scripts/imagery/fan-out.sh` | machine-count throttle |
 | Retry loop | `scripts/imagery/backfill.sh` | reconcile-until-converged |
 | Status check | `scripts/imagery/status.sh` | **use this, not ad-hoc greps** |
@@ -53,6 +54,11 @@ Everything here was measured on real data. Where an earlier document disagrees, 
 is 80,028; with the prefilter, 40,365.
 
 ### Where a job's time goes — 23-granule sample, all size buckets
+
+⚠ **Measured before the §4 tiler swap.** `tile_visual` + `overviews_visual` below are the old path;
+they are now one `tile_visual` stage plus a `pack_visual` of ~0.1s, at ~2.6× the speed. The table is
+kept because it is what established that tiling *was* 63% of a job — the finding the swap acted on.
+Re-measure on the metered sample.
 
 Median job **114s**, mean **148s**, range 22–555s.
 
@@ -124,23 +130,76 @@ product-pacing choice rather than a budget constraint.
 
 ---
 
-## 4. The optimisation lead worth taking first
+## 4. The tiler swap — ✅ **DONE 2026-08-24, and it was also a bug fix**
 
-**63% of every job is `tile_visual` + `overviews_visual`,** and both scale with raster extent. Each
-granule builds ONE bounding box around every body it touches — on a tile like Champlain's that is
-essentially the whole 110 km granule — and **~88% of those pixels are transparent**.
+Prototyped and shipped. The format gap turned out to be shallow and the prize turned out to be
+different from the one we were chasing.
 
-Two directions, measured:
+### The speed half
 
-1. **`gdal raster tile` is ~6× faster than `gdal_translate -of MBTILES`** for the same base zoom
-   (5.6s vs 34.0s on a real 108-Mpixel composite, comparable output bytes; both already skip fully
-   transparent tiles). ⚠ **Blocked on a format gap**: `--output` is always a *directory*, and
-   `pmtiles convert` only accepts MBTiles. Needs a directory→MBTiles/PMTiles step to be usable. This
-   is the cheapest big win if that gap can be closed.
-2. **Per-cluster cutting** — group nearby bodies and cut a small raster per cluster instead of one
-   giant per-granule extent. **No resolution is lost**; only empty space shrinks. Costs: multiple
-   artifacts per granule, more index entries, and PR 3 fetching several archives per date. A real
-   architecture change — prototype before committing.
+Measured on the corpus's **largest** granule (`S2C_18TXP_20260215`, Champlain, 923 bodies,
+237.7 Mpixels), pinned to 4 threads to match `shared-cpu-4x`, at `GDAL_CACHEMAX=410`:
+
+| | old path | new path |
+| --- | --- | --- |
+| base tiling (`gdal_translate -of MBTILES`) | 50.6s | — |
+| overviews (`gdaladdo`) | 24.3s | — |
+| `gdal raster tile`, whole z7–z14 pyramid | — | 28.6s |
+| `tiles-to-mbtiles.py` | — | 0.14s |
+| `pmtiles convert` | 0.13s | 0.11s |
+| **total** | **75.0s** | **28.9s** |
+
+**2.6×, not the 6× §4 previously claimed** — that figure was base-zoom-only, on a smaller composite,
+and probably unpinned threads. Tiling was 63% of a job, so the median job goes ~114s → ~70s, a season
+7.4h → ~4.5h and ~$3.40 → ~$2.10.
+
+**The format gap was not a wall.** MBTiles is SQLite: a `tiles(zoom_level, tile_column, tile_row,
+tile_data)` table plus a `metadata` table. `tiles-to-mbtiles.py` is ~30 lines and costs 0.14s. And
+`--min-zoom/--max-zoom` builds the *whole pyramid*, so it replaced `gdaladdo` too — the win was
+against 63% of the job, not the 43% the base-zoom comparison implied.
+
+### ⚠ The half nobody was looking for: the archive was rendering lakes as solid black
+
+The old path wrote 3,213 tiles for that granule; the new one writes 2,369. All 844 of the difference
+were checked: **843 are pure black under fully-opaque alpha.** One held 27 pixels of a swath-edge
+artifact at 245 brightness.
+
+**Cause:** alpha is burned from *mask geometry*, which knows nothing about where the satellite was
+looking. The raster is the bounding box of every body the granule touches; the acquisition swath is a
+rotated quadrilateral inside it. Every lake in a corner the swath misses got `gdalwarp`'s nodata black
+under an alpha saying opaque — including **the northern third of Lake Champlain as a black
+lake-shaped blob**. It reads as "this lake is black" rather than "this lake was not photographed",
+which is the exact confusion `footprint` and §C4 exist to prevent.
+
+**Why the new tiler fixes it on principle, not by luck:** `scene.tif` inherits `NoData=0` from
+Sentinel's TCI, and `gdal raster tile` honours per-band nodata **per pixel**, so out-of-swath pixels
+come out transparent even inside tiles it keeps. `gdal_translate -of MBTILES` reads band 4 as alpha
+and consults nothing else.
+
+**Two things that limit the blast radius, both verified:**
+
+- **The per-body statistics were never wrong.** `zonal-clear.py` excludes SCL class 0, so an
+  out-of-swath body already reported `coveragePct: 0.0` and `clearPct: null`.
+- **Nothing in R2 carries it** — the stale frame set was purged before this was found.
+
+### A dead end worth recording, so nobody rebuilds it
+
+An explicit alpha-clipping stage (`gdalwarp -dstalpha` + a windowed numpy `min`) was built and then
+deleted. It clipped 13.2M pixels — but that is *the same region* the tiler already drops
+(843 z14 tiles ≈ 13.7M source pixels), and a pixel-level diff of the two builds found **zero pixels
+different**. It was a redundant stage. The reasoning lives in `cut-granule.sh` step 7 instead, because
+the property it protects is real even though the code was not.
+
+⚠ **Also do not re-derive this:** a "black fringe" of ~26,000 pixels appears to survive on the swath
+edge. It is not an artifact — it is **dark water and dark ice against snow**, which is precisely what
+the product exists to show. A `rgb.max <= 2` heuristic measures lakes, not bugs.
+
+### Still open: per-cluster cutting
+
+Group nearby bodies and cut a small raster per cluster instead of one giant per-granule extent
+(~88% of the current extent is transparent). No resolution lost; only empty space shrinks. Costs:
+multiple artifacts per granule, more index entries, PR 3 fetching several archives per date. **Now
+much weaker** — the tiler swap took the stage it would have optimised.
 
 **Do not** reduce max zoom to save time. Our warp is 14 projected m/px ≈ 10.1 ground m/px, matching
 Sentinel's native 10 m. z14 is 6.9 ground m/px (oversampled, lossless); z13 is 13.8 (lossy). The
@@ -158,7 +217,12 @@ founder is explicit that clarity over bodies is not negotiable.
 - **Ice classification folds into N6g**, not a new N6f/N6h. Three files still defer it to "N6f", a
   label the shipped public-access phase already holds: `plans/01-decisions.md:4688` (D150's title),
   `plans/07-roadmap.md:1349`, and several §C1/§C5 references in the N6e doc. **Not yet updated.**
-- **Fewer seasons is acceptable.** One may be all we do for a while.
+- **Fewer seasons is acceptable.** One may be all we do for a while. **Settled 2026-08-24: the first
+  real backfill is winter 2025-26 only**, then decide.
+- **Store the RESULTS, not the raw granules** (2026-08-24, closing §8's first open question). Raw is
+  ~600 GB–1.2 TB per season → ~$9–18/month *per season, forever* in R2, against ~$0.20/month for the
+  cut frames. Re-cutting from AWS is free — Sentinel-2 COGs are open data with no egress charge — so
+  raw storage would buy only insurance against AWS deleting the open-data bucket.
 - **Split bodies render as a seam** — both frames, hairline border, each date on its own side. PR 3's
   job; the producer supports it via `coveragePct`.
 
@@ -204,11 +268,35 @@ founder is explicit that clarity over bodies is not negotiable.
 
 ## 7. What is left
 
-1. **Set `FLY_VM_MEMORY=2048`** (or 1024) before anything runs at scale — §3. Cheapest change here.
-2. **Prototype the tiling lead** (§4) — 63% of the job, and the recurring winter cost.
-4. **S1 path** for the SAR pilot.
-5. **N6g label fixes** in the three files listed in §5.
-6. Then a metered single-season pilot, and only then a season-count decision.
+Done 2026-08-24, all on the branch and unpushed — `pnpm --filter @skating/imagery test` 75/75 green,
+`check-types` clean:
+
+- ✅ **Tiler swap + black-lake fix** (§4) — `cut-granule.sh` step 7, `tiles-to-mbtiles.py`.
+- ✅ **`FLY_VM_MEMORY` now defaults to 2048**, with `GDAL_CACHEMAX=410` pinned in the Dockerfile so
+  the block cache does **not** shrink with the RAM (8192 × 5% = 2048 × 20% = 410 MB — the founder's
+  arithmetic, confirmed; the whole benchmark above ran at it).
+- ✅ **`FLY_VM_SIZE_LABEL` is finally passed** by `fan-out.sh`. It had never been, so every manifest
+  ever written recorded `cost.vmSize: "unknown"` — the one artifact built to compare cost across
+  Machine sizes was blind, right as the most expensive setting was about to change.
+- ✅ **A frame with no SCL no longer claims zero bodies.** `bodies.json` fell back to `[]` while
+  `bodyCount` still said 672, which would make every one of those lakes silently invisible to PR 3's
+  membership lookup. Now emits ids with `clearPct: null, coveragePct: null`.
+- ✅ **`coveragePct` added to `FrameManifest`** — `zonal-clear.py` has always emitted it and the type
+  never declared it, on the exact field the split-body seam depends on.
+
+Left:
+
+1. **Rebuild and push the image**, then a **~20-granule metered sample across size buckets** — mirrors
+   the existing 23-granule sample so the numbers are directly comparable. Confirms 2048 MB holds on
+   the 923-body worst case and gives a real per-job cost before the season runs.
+2. **Then the single-season backfill** (winter 2025-26), ~4,485 granules, ~$2 and ~4.5h.
+3. **S1 path** for the SAR pilot — but **spike before building** (§8).
+4. **N6g label fixes** in the three files listed in §5.
+
+⚠ **`MAX_PARALLEL` is the cheapest untried lever on wall clock.** 25 was chosen after the 2026-08-23
+flood, but that flood was an *unthrottled spawn-rate* bug, not a Fly ceiling — and per-second billing
+with no barrier between jobs means concurrency is free. A bounded test at 50 would halve a season's
+wall clock for no code.
 
 ## 7b. Is the architecture flexible? Yes, and in the direction that matters
 
@@ -236,11 +324,20 @@ several sources, which MapLibre handles.
 
 ## 8. Open questions
 
-- ⚠ **Did "cut & store all imagery" mean store the RESULTS or the RAW granules?** This was read as
-  "cut every granule (no cloud gate) and store the frames", and that is what is built — raw COGs are
-  read from AWS on demand and never kept. Storing raw would make re-derivation offline and fast at the
-  cost of ~1.2 TB/season; the founder's stated reason ("we can rerun whatever we want without hitting
-  them again") is ambiguous between the two. Worth settling before a nine-season run.
-- Can `gdal raster tile`'s output reach PMTiles without an expensive intermediate?
-- Does per-cluster cutting pay for its complexity, or does the tiler swap suffice?
-- Is SAR legible over our lakes at all? §C1 warns black ice and open water both return dark.
+Three of the four are now closed:
+
+- ~~Did "cut & store all imagery" mean the RESULTS or the RAW granules?~~ **Results** — see §5.
+- ~~Can `gdal raster tile`'s output reach PMTiles without an expensive intermediate?~~ **Yes**, 0.14s
+  — see §4.
+- ~~Does per-cluster cutting pay for its complexity?~~ **Not now.** The tiler swap took the stage it
+  would have optimised; revisit only if the recurring winter cost ever stops being ~$0.57/month.
+
+Still open:
+
+- **Is SAR legible over our lakes at all?** §C1 warns black ice and open water both return dark.
+  ⚠ **Spike before building the S1 path.** Cut one S1 granule over Champlain in a week we know was
+  frozen and look at it — that is about two cents and an afternoon, against building a whole separate
+  collection, id grammar and single-band transform toward a picture that may be unreadable.
+  Relevant to the season question either way: **S1B failed in Dec 2021 and S1C did not launch until
+  Dec 2024**, so the middle seasons of any nine-season SAR backfill have 12-day revisit, not 6.
+- **Is `MAX_PARALLEL=25` leaving wall clock on the table?** See §7.
