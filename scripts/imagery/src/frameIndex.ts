@@ -1,7 +1,16 @@
 /**
- * The archive's table of contents, and where D149's turnover actually happens (N6e §C2/§C4).
+ * Folding a season's manifests into the index a client reads (N6e §C2/§C4).
  *
- * > **D149 — the archive turns over on the first frame of the new season, never on a date.**
+ * ## What is here, and what moved to core
+ *
+ * The **published shape** — `IndexedFrame`, `SeasonIndex`, `ArchivePointer` and D149's
+ * `latestSeasonWithFrames` — lives in `@skating/core`, because both apps read the archive and neither
+ * should have to depend on the package that shells out to GDAL and `fly machine run` just to type the
+ * JSON it fetched. See `packages/core/src/imageryArchive.ts`.
+ *
+ * What stays here is the half only the producer ever sees: `FrameManifest`, which is what one cut
+ * Machine writes beside its `.pmtiles`, and the fold that turns a pile of them into an index. No
+ * client reads a manifest.
  *
  * ## Why this is a file in R2 and not a Convex table
  *
@@ -12,46 +21,21 @@
  * A Convex table would buy queryability nobody has asked for, at the cost of a schema, a migration,
  * and a second place for the truth about the archive to live. An index file cannot disagree with the
  * bucket it was built by listing.
- *
- * ## The turnover is `latest.json`, and that is the whole mechanism
- *
- * > **Founder, 2026-08-21:** *"I'm tempted to show the past season's imagery from freeze to thaw all
- * > the way until it turns over again in November."*
- *
- * `latest` names the most recent season that **has frames**. Last winter's scrubber therefore stays
- * live all summer, and the moment the first frame of the new winter lands it flips — by itself, with
- * no cron, no date, and no calendar rule to be wrong about in a warm year. D63's season key still
- * labels the archive; it just stopped being the trigger.
  */
 
-/** One cut granule, as its manifest records it. */
+import type { IndexedFrame, SeasonIndex } from '@skating/core';
+
+/** One cut granule, as the Machine that cut it recorded. Producer-side only. */
 export interface FrameManifest {
   granuleId: string;
   capturedAt: string;
   cloudCoverPct?: number | null;
+  /** The season the *capture date* falls in — not the mask season it was clipped against. */
   season: string;
+  maskSeason?: string;
   collection?: string;
   bodies: number;
   band?: string;
-}
-
-/** A frame as the scrubber reads it. */
-export interface IndexedFrame {
-  granuleId: string;
-  capturedAt: string;
-  cloudCoverPct: number | null;
-  bodies: number;
-  band: string;
-  /** Key within the bucket, so a client composes its own URL from whatever base it was given. */
-  key: string;
-}
-
-export interface SeasonIndex {
-  season: string;
-  frames: IndexedFrame[];
-  /** The span the scrubber's ends snap to. */
-  firstCapturedAt: string | null;
-  lastCapturedAt: string | null;
 }
 
 /**
@@ -96,19 +80,4 @@ export function buildSeasonIndex(season: string, manifests: readonly FrameManife
     firstCapturedAt: deduped[0]?.capturedAt ?? null,
     lastCapturedAt: deduped[deduped.length - 1]?.capturedAt ?? null,
   };
-}
-
-/**
- * Which season the app should be showing — D149's turnover, as one function.
- *
- * **The most recent season that has frames.** Not the current calendar season, and not the newest
- * directory: an empty `winter-2027-28` created the moment ingest started looking in September must
- * not blank out the scrubber that has been serving last winter perfectly well since April.
- *
- * Seasons sort correctly as strings because the label is `winter-YYYY-YY`.
- */
-export function latestSeasonWithFrames(indexes: readonly SeasonIndex[]): string | null {
-  const populated = indexes.filter((index) => index.frames.length > 0);
-  if (populated.length === 0) return null;
-  return populated.map((index) => index.season).sort()[populated.length - 1] ?? null;
 }

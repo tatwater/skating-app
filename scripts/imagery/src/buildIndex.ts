@@ -23,12 +23,8 @@ import { dirname, join } from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 
-import {
-  buildSeasonIndex,
-  type FrameManifest,
-  latestSeasonWithFrames,
-  type SeasonIndex,
-} from './frameIndex';
+import { latestSeasonWithFrames, type SeasonIndex } from '@skating/core';
+import { buildSeasonIndex, type FrameManifest } from './frameIndex';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const SCRATCH = join(HERE, '..', '.scratch');

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildSeasonIndex, type FrameManifest, latestSeasonWithFrames } from './frameIndex';
+import { buildSeasonIndex, type FrameManifest } from './frameIndex';
 
 const manifest = (over: Partial<FrameManifest> = {}): FrameManifest => ({
   granuleId: 'S2C_18TXP_20260215_0_L2A',
@@ -68,50 +68,5 @@ describe('buildSeasonIndex', () => {
       firstCapturedAt: null,
       lastCapturedAt: null,
     });
-  });
-});
-
-describe('latestSeasonWithFrames — D149 turnover', () => {
-  it('picks the newest season that actually has frames', () => {
-    const seasons = [
-      buildSeasonIndex('winter-2024-25', [manifest({ season: 'winter-2024-25' })]),
-      buildSeasonIndex('winter-2025-26', [manifest({ season: 'winter-2025-26' })]),
-    ];
-    expect(latestSeasonWithFrames(seasons)).toBe('winter-2025-26');
-  });
-
-  it('⚠ an empty new season does not blank out the one still being served', () => {
-    // Ingest starts *looking* in September (the summit trigger), so an empty winter-2026-27 exists
-    // for weeks before its first frame lands. Turning over on the directory rather than on the frames
-    // would take last winter's working scrubber away and replace it with nothing.
-    const seasons = [
-      buildSeasonIndex('winter-2025-26', [manifest({ season: 'winter-2025-26' })]),
-      buildSeasonIndex('winter-2026-27', []),
-    ];
-    expect(latestSeasonWithFrames(seasons)).toBe('winter-2025-26');
-  });
-
-  it('flips the moment the new season has its first frame', () => {
-    const seasons = [
-      buildSeasonIndex('winter-2025-26', [manifest({ season: 'winter-2025-26' })]),
-      buildSeasonIndex('winter-2026-27', [
-        manifest({ season: 'winter-2026-27', granuleId: 'first' }),
-      ]),
-    ];
-    expect(latestSeasonWithFrames(seasons)).toBe('winter-2026-27');
-  });
-
-  it('returns null when nothing has been cut at all', () => {
-    expect(latestSeasonWithFrames([])).toBeNull();
-    expect(latestSeasonWithFrames([buildSeasonIndex('winter-2026-27', [])])).toBeNull();
-  });
-
-  it('does not depend on the order the seasons were listed in', () => {
-    const seasons = [
-      buildSeasonIndex('winter-2026-27', [manifest({ season: 'winter-2026-27' })]),
-      buildSeasonIndex('winter-2024-25', [manifest({ season: 'winter-2024-25' })]),
-      buildSeasonIndex('winter-2025-26', [manifest({ season: 'winter-2025-26' })]),
-    ];
-    expect(latestSeasonWithFrames(seasons)).toBe('winter-2026-27');
   });
 });
