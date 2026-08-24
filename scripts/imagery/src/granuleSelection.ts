@@ -1,6 +1,25 @@
 /**
  * Deciding which granules are worth booting a Machine for (N6e PR 2, §C1/§C3).
  *
+ * ## ⚠ The cloud gate is OFF by default — founder override, 2026-08-24
+ *
+ * > *"Let's always cut & store all imagery regardless of cloud cover? Then we know we have everything
+ * > from Copernicus and we can rerun whatever we want on it without hitting them again."*
+ *
+ * The reasoning below is kept as history rather than deleted, because it is still *true* — the gate
+ * really does refuse ~70% of a window for the price of a query parameter. It is simply no longer what
+ * we want. Owning the pixels means every later re-derivation (SCL thresholds, a better per-lake cloud
+ * statistic, N6g's research) is free, where a gated archive would send us back to Copernicus for
+ * frames we chose not to keep.
+ *
+ * `maxCloudPct` remains an option and still works; it just no longer has a default. **Measured cost of
+ * the override:** one season goes from 2,560 granules to 8,892, a 3.47× multiplier.
+ *
+ * The cheap lever that replaced it is `emptyTiles` — see below. It removes ~44% of jobs without
+ * discarding a single frame, which the cloud gate could not claim.
+ *
+ * ## The original argument, retained
+ *
  * ## This is the cheapest lever in the phase, and it is not a compute lever
  *
  * Fly bills per machine-second, linearly — one Machine for 25 hours costs what 25 Machines cost for
@@ -26,11 +45,21 @@
  * evaluate, so it belongs after the first season has taught us what the crude one actually costs.
  */
 
+import type { MultiPolygon, Polygon } from 'geojson';
+
 /** One STAC item, reduced to what selection cares about. */
 export interface GranuleCandidate {
   id: string;
   datetime: string;
   cloudCoverPct?: number;
+  /**
+   * The acquisition polygon, straight off the STAC item.
+   *
+   * Carried because the search already returned it and two later steps want it: the empty-tile survey
+   * tests it against the mask file, and the cutter writes it into the manifest so a scrubber can say
+   * "that lake was not photographed that day".
+   */
+  footprint?: Polygon | MultiPolygon;
 }
 
 /** A granule id decomposed. Sentinel-2 ids read `S2C_18TXP_20260215_0_L2A`. */
@@ -59,26 +88,41 @@ export interface SelectionOptions {
   /**
    * Granules cloudier than this are not worth a Machine.
    *
-   * 60 rather than the 15 the measurement used, on purpose. 15% is what a *clear* frame looks like;
-   * as a gate it would refuse a 40%-clouded granule whose clouds all sit over the next county. The
-   * expensive failure is a missed freeze-up, not a wasted dollar (§C3).
+   * **No default any more** (founder, 2026-08-24 — see the module note). Passing it still gates, which
+   * is what a cheap experiment wants; leaving it off keeps everything, which is what an archive we
+   * intend to re-derive from wants.
    */
   maxCloudPct?: number;
+  /**
+   * MGRS tiles known to contain no corpus body at all.
+   *
+   * **The lever that replaced the cloud gate, and a strictly better one.** A granule over the Gulf of
+   * Maine or western New York is not a *cheap* frame we are choosing to skip — it is a frame with
+   * nothing in it, and the cutter proves that by booting a Machine, reading a mask file and exiting 0.
+   * Measured across one season: **44.3% of granules sit in tiles with zero bodies.**
+   *
+   * Unlike a cloud threshold this discards no data, so it does not have to be argued against §C3's
+   * asymmetry — there is no frame here that could have shown freeze-up.
+   */
+  emptyTiles?: ReadonlySet<string>;
 }
-
-export const DEFAULT_MAX_CLOUD_PCT = 60;
 
 export interface SelectionResult {
   /** The granule ids to cut, in a stable order. */
   selected: string[];
   /** Everything the gate refused, with a reason — never a silent drop. */
-  rejected: { id: string; reason: 'cloud' | 'superseded' | 'unparseable'; detail?: string }[];
+  rejected: {
+    id: string;
+    reason: 'cloud' | 'superseded' | 'unparseable' | 'empty-tile';
+    detail?: string;
+  }[];
   counts: {
     considered: number;
     selected: number;
     cloud: number;
     superseded: number;
     unparseable: number;
+    emptyTile: number;
   };
 }
 
@@ -100,7 +144,8 @@ export function selectGranules(
   candidates: readonly GranuleCandidate[],
   options: SelectionOptions = {},
 ): SelectionResult {
-  const maxCloud = options.maxCloudPct ?? DEFAULT_MAX_CLOUD_PCT;
+  const maxCloud = options.maxCloudPct;
+  const emptyTiles = options.emptyTiles;
   const rejected: SelectionResult['rejected'] = [];
   const best = new Map<string, { key: GranuleKey; candidate: GranuleCandidate }>();
 
@@ -113,7 +158,16 @@ export function selectGranules(
 
     // An item with no cloud figure is kept, not dropped. Absent metadata is not a cloudy scene, and
     // the generous direction is the safe one — the cutter records whatever it finds in the manifest.
-    if (candidate.cloudCoverPct !== undefined && candidate.cloudCoverPct > maxCloud) {
+    if (emptyTiles?.has(key.tile)) {
+      rejected.push({ id: candidate.id, reason: 'empty-tile', detail: key.tile });
+      continue;
+    }
+
+    if (
+      maxCloud !== undefined &&
+      candidate.cloudCoverPct !== undefined &&
+      candidate.cloudCoverPct > maxCloud
+    ) {
       rejected.push({
         id: candidate.id,
         reason: 'cloud',
@@ -157,6 +211,7 @@ export function selectGranules(
       cloud: rejected.filter((r) => r.reason === 'cloud').length,
       superseded: rejected.filter((r) => r.reason === 'superseded').length,
       unparseable: rejected.filter((r) => r.reason === 'unparseable').length,
+      emptyTile: rejected.filter((r) => r.reason === 'empty-tile').length,
     },
   };
 }

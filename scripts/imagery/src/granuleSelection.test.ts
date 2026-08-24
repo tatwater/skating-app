@@ -1,10 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import {
-  DEFAULT_MAX_CLOUD_PCT,
-  type GranuleCandidate,
-  parseGranuleId,
-  selectGranules,
-} from './granuleSelection';
+import { type GranuleCandidate, parseGranuleId, selectGranules } from './granuleSelection';
 
 const at = (id: string, cloud?: number): GranuleCandidate => ({
   id,
@@ -41,8 +36,16 @@ describe('selectGranules', () => {
     expect(result.counts.selected).toBe(1);
   });
 
-  it('refuses a fully clouded frame, and says why rather than dropping it silently', () => {
+  it('⚠ keeps a fully clouded frame by default — we cut and store everything', () => {
+    // Founder override, 2026-08-24: hit Copernicus once and own the pixels, so every later
+    // re-derivation is free. A 100%-cloud frame is still a frame we chose to have.
     const result = selectGranules([at('S2B_18TXP_20260223_0_L2A', 100)]);
+    expect(result.selected).toEqual(['S2B_18TXP_20260223_0_L2A']);
+    expect(result.counts.cloud).toBe(0);
+  });
+
+  it('still gates when a threshold is passed, and says why rather than dropping silently', () => {
+    const result = selectGranules([at('S2B_18TXP_20260223_0_L2A', 100)], { maxCloudPct: 60 });
     expect(result.selected).toEqual([]);
     expect(result.rejected[0]).toMatchObject({ reason: 'cloud' });
     // The count is the point — a gate that cannot report what it refused reads as "nothing was there".
@@ -57,10 +60,22 @@ describe('selectGranules', () => {
     expect(result.selected).toHaveLength(1);
   });
 
-  it('is generous by default — 40% cloud is a keeper, not a reject', () => {
-    expect(DEFAULT_MAX_CLOUD_PCT).toBe(60);
-    // Clouds over the next county should not cost us this lake.
-    expect(selectGranules([at('S2C_18TXP_20260215_0_L2A', 40)]).selected).toHaveLength(1);
+  it('skips a granule whose tile holds no corpus body', () => {
+    // The lever that replaced the cloud gate, and a strictly better one: this frame contains nothing,
+    // so skipping it discards no data. Measured at 44.3% of a season.
+    const result = selectGranules([at('S2C_19TDF_20251101_0_L2A', 5)], {
+      emptyTiles: new Set(['19TDF']),
+    });
+    expect(result.selected).toEqual([]);
+    expect(result.counts.emptyTile).toBe(1);
+    expect(result.rejected[0]).toMatchObject({ reason: 'empty-tile', detail: '19TDF' });
+  });
+
+  it('keeps a granule whose tile does hold bodies', () => {
+    const result = selectGranules([at('S2C_18TXP_20260215_0_L2A', 5)], {
+      emptyTiles: new Set(['19TDF']),
+    });
+    expect(result.selected).toHaveLength(1);
   });
 
   it('honours an explicit threshold', () => {
@@ -131,15 +146,18 @@ describe('selectGranules', () => {
   });
 
   it('counts everything it considered, so the arithmetic is checkable', () => {
-    const result = selectGranules([
-      at('S2C_18TXP_20260215_0_L2A', 7),
-      at('S2B_18TXP_20260223_0_L2A', 100),
-      at('S2B_18TXP_20260220_0_L2A', 5),
-      at('S2B_18TXP_20260220_1_L2A', 5),
-      at('garbage', 0),
-    ]);
-    const { considered, selected, cloud, superseded, unparseable } = result.counts;
+    const result = selectGranules(
+      [
+        at('S2C_18TXP_20260215_0_L2A', 7),
+        at('S2B_18TXP_20260223_0_L2A', 100),
+        at('S2B_18TXP_20260220_0_L2A', 5),
+        at('S2B_18TXP_20260220_1_L2A', 5),
+        at('garbage', 0),
+      ],
+      { maxCloudPct: 60 },
+    );
+    const { considered, selected, cloud, superseded, unparseable, emptyTile } = result.counts;
     expect(considered).toBe(5);
-    expect(selected + cloud + superseded + unparseable).toBe(considered);
+    expect(selected + cloud + superseded + unparseable + emptyTile).toBe(considered);
   });
 });

@@ -30,7 +30,7 @@ import { dirname, join } from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 
-import { DEFAULT_MAX_CLOUD_PCT, type GranuleCandidate, selectGranules } from './granuleSelection';
+import { type GranuleCandidate, parseGranuleId, selectGranules } from './granuleSelection';
 
 // `fileURLToPath`, never `new URL(...).pathname` — the latter is percent-encoded, so a checkout under
 // a directory with a space in it resolves `.scratch` to a path that does not exist.
@@ -55,6 +55,7 @@ function maskExtent(fgbPath: string): [number, number, number, number] {
 
 interface StacItem {
   id: string;
+  geometry?: { type: 'Polygon' | 'MultiPolygon'; coordinates: unknown };
   properties: { datetime: string; 'eo:cloud_cover'?: number };
 }
 
@@ -119,6 +120,9 @@ async function searchAll(
         ...(feature.properties['eo:cloud_cover'] === undefined
           ? {}
           : { cloudCoverPct: feature.properties['eo:cloud_cover'] }),
+        ...(feature.geometry
+          ? { footprint: feature.geometry as GranuleCandidate['footprint'] }
+          : {}),
       });
     }
     const next = page.links?.find((l) => l.rel === 'next');
@@ -144,7 +148,12 @@ async function main(): Promise<void> {
     process.exit(64);
   }
 
-  const maxCloudPct = Number(flag('cloud') ?? DEFAULT_MAX_CLOUD_PCT);
+  // No default (founder, 2026-08-24): we cut and store everything, so a later re-derivation never has
+  // to go back to Copernicus. `--cloud=60` still gates when a cheap experiment wants one.
+  const cloudFlag = flag('cloud');
+  const maxCloudPct = cloudFlag === undefined ? undefined : Number(cloudFlag);
+
+  const masksPath = flag('masks') ?? findLatestMasks();
 
   let bbox: [number, number, number, number];
   const explicit = flag('bbox');
@@ -156,16 +165,24 @@ async function main(): Promise<void> {
     }
     bbox = parts as [number, number, number, number];
   } else {
-    const masks = flag('masks') ?? findLatestMasks();
-    bbox = maskExtent(masks);
-    console.error(`[select-granules] search box from ${masks}`);
+    bbox = maskExtent(masksPath);
+    console.error(`[select-granules] search box from ${masksPath}`);
   }
   console.error(
     `[select-granules] bbox ${bbox.join(', ')}  window ${from} → ${to}  cloud ≤ ${maxCloudPct}%`,
   );
 
   const candidates = await searchAll(bbox, from, to);
-  const result = selectGranules(candidates, { maxCloudPct });
+
+  // Which MGRS tiles hold no corpus body at all — measured once per tile against the mask file, not
+  // per granule. A season spans ~100 tiles and ~9,000 granules, so this is ~100 cheap local reads
+  // that remove ~44% of the Machines a backfill would otherwise boot only to exit 0.
+  const emptyTiles = flag('bbox') ? undefined : findEmptyTiles(candidates, masksPath);
+
+  const result = selectGranules(candidates, {
+    ...(maxCloudPct === undefined ? {} : { maxCloudPct }),
+    ...(emptyTiles === undefined ? {} : { emptyTiles }),
+  });
 
   mkdirSync(SCRATCH, { recursive: true });
   const outPath = flag('out') ?? join(SCRATCH, `granules-${from}-to-${to}.txt`);
@@ -177,6 +194,7 @@ async function main(): Promise<void> {
   console.error(`[select-granules] selected    ${selected}`);
   // Every drop is named. A selection step that reports only its output reads as "that is all there
   // was", and the whole cost argument here rests on knowing how much the gate refused.
+  console.error(`[select-granules] empty tile  ${result.counts.emptyTile}`);
   console.error(`[select-granules] too cloudy  ${cloud}`);
   console.error(`[select-granules] superseded  ${superseded}`);
   if (unparseable) console.error(`[select-granules] unparseable ${unparseable}`);
@@ -188,6 +206,97 @@ async function main(): Promise<void> {
   console.error('');
   console.error(`[select-granules] wrote ${outPath}`);
   if (selected > 0) console.error(`[select-granules] next:  ./fan-out.sh ${outPath}`);
+}
+
+/**
+ * Which MGRS tiles contain no corpus body at all.
+ *
+ * ## Why per tile and not per granule
+ *
+ * A tile is a fixed patch of ground — every granule sharing an MGRS code covers the same square — so
+ * emptiness is a property of the tile, tested once, not of the ~90 granules a season puts through it.
+ * One season is ~9,000 granules across ~100 tiles, which turns 9,000 spatial queries into 100.
+ *
+ * ## The footprint's bounding box, and why over-inclusion is the safe error here
+ *
+ * `ogrinfo` has no `-clipsrc` — that is an `ogr2ogr` flag — so the test is `-spat` against the
+ * footprint's bounding box rather than the rotated polygon itself.
+ *
+ * That is deliberately the *generous* direction. A bbox covers strictly more ground than the swath
+ * inside it, so a tile this calls empty is genuinely empty, while a tile with bodies only in the
+ * corners the swath misses is kept and costs one Machine that exits 0. The reverse error — calling a
+ * populated tile empty — would mean a lake silently never receiving a photograph, which is the
+ * failure nobody would notice.
+ *
+ * Failure is **not** treated as empty. A tile whose footprint cannot be read is left in, because the
+ * cost of a wrong "empty" is a lake that silently never gets a photograph, while the cost of a wrong
+ * "keep" is one Machine that exits 0.
+ */
+/** Bounding box of a footprint polygon, as `-spat` wants it: minX minY maxX maxY. */
+function footprintBbox(
+  footprint: NonNullable<GranuleCandidate['footprint']>,
+): [number, number, number, number] {
+  const polygons = footprint.type === 'Polygon' ? [footprint.coordinates] : footprint.coordinates;
+  let minX = Number.POSITIVE_INFINITY;
+  let minY = Number.POSITIVE_INFINITY;
+  let maxX = Number.NEGATIVE_INFINITY;
+  let maxY = Number.NEGATIVE_INFINITY;
+  for (const rings of polygons) {
+    for (const ring of rings) {
+      for (const position of ring) {
+        const x = position[0] as number;
+        const y = position[1] as number;
+        if (x < minX) minX = x;
+        if (y < minY) minY = y;
+        if (x > maxX) maxX = x;
+        if (y > maxY) maxY = y;
+      }
+    }
+  }
+  if (!Number.isFinite(minX)) throw new Error('footprint has no coordinates');
+  return [minX, minY, maxX, maxY];
+}
+
+function findEmptyTiles(
+  candidates: readonly GranuleCandidate[],
+  masksPath: string,
+): ReadonlySet<string> {
+  type Footprint = NonNullable<GranuleCandidate['footprint']>;
+  const perTile = new Map<string, Footprint>();
+  for (const candidate of candidates) {
+    const key = parseGranuleId(candidate.id);
+    if (key && candidate.footprint && !perTile.has(key.tile)) {
+      perTile.set(key.tile, candidate.footprint);
+    }
+  }
+
+  const empty = new Set<string>();
+  let unreadable = 0;
+  for (const [tile, footprint] of perTile) {
+    let count: number;
+    try {
+      const box = footprintBbox(footprint);
+      const out = execFileSync('ogrinfo', ['-so', '-al', '-spat', ...box.map(String), masksPath], {
+        encoding: 'utf8',
+        maxBuffer: 64 * 1024 * 1024,
+        stdio: ['ignore', 'pipe', 'ignore'],
+      });
+      count = Number(/^Feature Count: (\d+)/m.exec(out)?.[1] ?? Number.NaN);
+    } catch {
+      count = Number.NaN;
+    }
+    if (Number.isNaN(count)) {
+      unreadable++;
+      continue;
+    }
+    if (count === 0) empty.add(tile);
+  }
+
+  console.error(
+    `[select-granules] ${perTile.size} tiles surveyed — ${empty.size} hold no corpus body` +
+      (unreadable ? `, ${unreadable} unreadable (kept)` : ''),
+  );
+  return empty;
 }
 
 /**
