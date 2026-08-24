@@ -130,9 +130,14 @@ describe('bands', () => {
     // file that every client would download to draw one lake. The list stays in the manifest; the
     // index carries only the count.
     const index = buildSeasonIndex('winter-2025-26', [
-      manifest({ bodies: [{ waterBodyId: 'w1', clearPct: 0.93, pixels: 4107 }] }),
+      manifest({
+        bodies: [{ waterBodyId: 'w1', clearPct: 0.93, coveragePct: 0.31, pixels: 4107 }],
+      }),
     ]);
     expect(index.frames[0]?.bodies).toBe(9);
     expect(JSON.stringify(index)).not.toContain('clearPct');
+    // `coveragePct` is the split-body seam's input and is the largest per-body field by name length;
+    // it must stay manifest-side for the same size reason `clearPct` does.
+    expect(JSON.stringify(index)).not.toContain('coveragePct');
   });
 });

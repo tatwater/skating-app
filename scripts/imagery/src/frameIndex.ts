@@ -47,7 +47,20 @@ export interface FrameManifest {
    * lake. It stays in the per-granule manifest, which PR 3 fetches lazily for only the handful of
    * frames covering the lake on screen.
    */
-  bodies?: { waterBodyId: string; clearPct: number | null; pixels: number }[];
+  bodies?: {
+    waterBodyId: string;
+    /** Unobscured fraction of the pixels this granule actually saw. `null` = we could not see it. */
+    clearPct: number | null;
+    /**
+     * How much of the body this granule reached, 0–1 — the weight `clearPct` carries.
+     *
+     * **This is what makes the split-body seam drawable.** A body bisected by a granule edge appears
+     * in two frames and neither is wrong; the ratio says which side came from which pass. `null` when
+     * the granule shipped without SCL, because coverage is then unmeasured rather than zero.
+     */
+    coveragePct: number | null;
+    pixels: number;
+  }[];
   /** Which bands this granule produced — one published frame each. */
   bands?: string[];
   band?: string;
