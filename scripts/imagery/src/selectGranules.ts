@@ -25,7 +25,7 @@
  */
 
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, readdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
@@ -36,6 +36,13 @@ import {
   parseGranuleId,
   selectGranules,
 } from './granuleSelection';
+import {
+  emptyTilesFromCollection,
+  type TileSurveyCollection,
+  type TileSurveyEntry,
+  tileSurveyKey,
+  toTileSurveyCollection,
+} from './tileSurvey';
 
 // `fileURLToPath`, never `new URL(...).pathname` — the latter is percent-encoded, so a checkout under
 // a directory with a space in it resolves `.scratch` to a path that does not exist.
@@ -49,6 +56,7 @@ function flag(name: string): string | undefined {
   const hit = process.argv.find((a) => a.startsWith(`--${name}=`));
   return hit?.slice(name.length + 3);
 }
+const has = (name: string) => process.argv.includes(`--${name}`);
 
 /** The mask file's own extent, via ogrinfo — see the module note for why this and not REGION_BOUNDS. */
 function maskExtent(fgbPath: string): [number, number, number, number] {
@@ -182,7 +190,9 @@ async function main(): Promise<void> {
   // Which MGRS tiles hold no corpus body at all — measured once per tile against the mask file, not
   // per granule. A season spans ~100 tiles and ~9,000 granules, so this is ~100 cheap local reads
   // that remove ~44% of the Machines a backfill would otherwise boot only to exit 0.
-  const emptyTiles = flag('bbox') ? undefined : findEmptyTiles(candidates, masksPath);
+  const emptyTiles = flag('bbox')
+    ? undefined
+    : findEmptyTiles(candidates, masksPath, { resurvey: has('resurvey') });
 
   const result = selectGranules(candidates, {
     ...(maxCloudPct === undefined ? {} : { maxCloudPct }),
@@ -265,7 +275,41 @@ function footprintBbox(
 function findEmptyTiles(
   candidates: readonly GranuleCandidate[],
   masksPath: string,
+  options: { resurvey: boolean },
 ): ReadonlySet<string> {
+  // The cache key comes from the mask sidecar, so any corpus change invalidates it by construction.
+  // No sidecar means no key, which means survey — never "assume the old answer still holds".
+  const surveyPath = masksPath.replace(/\.fgb$/, '-tiles.geojson');
+  const sidecarPath = masksPath.replace(/\.fgb$/, '.json');
+  let expectedKey: string | null = null;
+  try {
+    const sidecar = JSON.parse(readFileSync(sidecarPath, 'utf8')) as {
+      season?: string;
+      bodies?: number;
+    };
+    if (sidecar.season && typeof sidecar.bodies === 'number') {
+      expectedKey = tileSurveyKey(sidecar.season, sidecar.bodies);
+    }
+  } catch {
+    expectedKey = null;
+  }
+
+  if (!options.resurvey && expectedKey) {
+    let cached: TileSurveyCollection | null = null;
+    try {
+      cached = JSON.parse(readFileSync(surveyPath, 'utf8')) as TileSurveyCollection;
+    } catch {
+      cached = null;
+    }
+    const fromCache = emptyTilesFromCollection(cached, expectedKey);
+    if (fromCache) {
+      console.error(
+        `[select-granules] tile survey from cache — ${fromCache.size} tiles hold no corpus body`,
+      );
+      console.error(`[select-granules] inspect: ${surveyPath} (open in geojson.io or QGIS)`);
+      return fromCache;
+    }
+  }
   type Footprint = NonNullable<GranuleCandidate['footprint']>;
   const perTile = new Map<string, Footprint>();
   for (const candidate of candidates) {
@@ -276,6 +320,7 @@ function findEmptyTiles(
   }
 
   const empty = new Set<string>();
+  const entries: TileSurveyEntry[] = [];
   let unreadable = 0;
   for (const [tile, footprint] of perTile) {
     let count: number;
@@ -295,6 +340,7 @@ function findEmptyTiles(
       continue;
     }
     if (count === 0) empty.add(tile);
+    entries.push({ tile, bodies: count, kept: count > 0, bbox: footprintBbox(footprint) });
   }
 
   console.error(
@@ -303,7 +349,16 @@ function findEmptyTiles(
   );
 
   // The decision lives in `granuleSelection` so it can be tested; this file is the I/O around it.
+  // Checked BEFORE the artifact is written, so a broken survey is never cached as an authority.
   assertTileSurveyUsable({ surveyed: perTile.size, unreadable, empty: empty.size });
+
+  if (expectedKey) {
+    writeFileSync(
+      surveyPath,
+      `${JSON.stringify(toTileSurveyCollection(entries, expectedKey, new Date().toISOString()), null, 2)}\n`,
+    );
+    console.error(`[select-granules] wrote ${surveyPath} (open in geojson.io or QGIS)`);
+  }
 
   return empty;
 }
