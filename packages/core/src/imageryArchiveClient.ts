@@ -127,6 +127,43 @@ export async function loadFrameStats(
 }
 
 /**
+ * Warm the browser's cache for a season's frames, so scrubbing does not start a cold load per notch.
+ *
+ * > **Founder, 2026-08-25:** *"lazy-load all images from the currently-selected imagery source for
+ * > the whole season […] so that loading doesn't start fresh at each notch."*
+ *
+ * ⚠ **Only the header of each archive is fetched, not the whole thing.** A `.pmtiles` frame is
+ * ~700 KB and a season is thousands of them; pulling all of that would be hundreds of megabytes to
+ * make a scrubber feel smooth. But the *first* range read of any pmtiles is its header and directory,
+ * and that read is what a cold tile request has to wait for — so a `Range: bytes=0-16383` per frame
+ * buys most of the latency back for a few kilobytes each.
+ *
+ * Sequential and abortable on purpose. A lake can sit under dozens of passes, and a burst of parallel
+ * requests would compete with the tiles of the frame the skater is actually looking at — which is the
+ * one load that must not get slower for this.
+ *
+ * Failures are ignored entirely: this is a cache warm, so a frame that does not preload simply loads
+ * when it is asked for, exactly as it did before.
+ */
+export async function prefetchFrames(
+  baseUrl: string,
+  keys: readonly string[],
+  signal?: AbortSignal,
+): Promise<void> {
+  for (const key of keys) {
+    if (signal?.aborted) return;
+    try {
+      await fetch(archiveUrl(baseUrl, key), {
+        headers: { Range: 'bytes=0-16383' },
+        ...(signal ? { signal } : {}),
+      });
+    } catch {
+      // A warm that did not warm. The frame still loads on demand.
+    }
+  }
+}
+
+/**
  * Every already-resolved manifest, as the lookup {@link buildBodyTimeline} takes.
  *
  * **Synchronous by design.** The timeline has to render while manifests are still arriving —

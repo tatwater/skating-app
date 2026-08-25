@@ -390,3 +390,55 @@ describe('FreezeUpScrubber — dragging the track', () => {
     rect.mockRestore();
   });
 });
+
+describe('FreezeUpScrubber — settling after a drag', () => {
+  it('⚠ slides off a blocked notch on release, rather than parking there', () => {
+    // Leaving the thumb on a clouded date would leave the caption and the held image disagreeing at
+    // rest — the one state `frameToRender`'s transient mismatch is not allowed to settle into.
+    const onSelect = vi.fn();
+    render(
+      <FreezeUpScrubber
+        timeline={timelineOf([
+          stop({ frame: frame({ granuleId: 'a' }) }),
+          stop({ frame: frame({ granuleId: 'b' }), landable: false, blockedBy: 'cloud' }),
+          stop({ frame: frame({ granuleId: 'c' }) }),
+        ])}
+        index={indexOf(['visual'])}
+        band="visual"
+        onBandChange={vi.fn()}
+        selected={1}
+        onSelect={onSelect}
+        loading={false}
+      />,
+    );
+
+    fireEvent.pointerUp(screen.getByRole('group'));
+    expect(onSelect).toHaveBeenCalledWith(expect.any(Number));
+    expect(onSelect.mock.calls[0]?.[0]).not.toBe(1);
+  });
+
+  it('leaves a landable notch alone', () => {
+    const onSelect = vi.fn();
+    render(
+      <FreezeUpScrubber
+        timeline={timelineOf([stop(), stop()])}
+        index={indexOf(['visual'])}
+        band="visual"
+        onBandChange={vi.fn()}
+        selected={0}
+        onSelect={onSelect}
+        loading={false}
+      />,
+    );
+
+    fireEvent.pointerUp(screen.getByRole('group'));
+    expect(onSelect).not.toHaveBeenCalled();
+  });
+
+  it('⚠ keeps the caveat line present even with nothing to say', () => {
+    // Its length varies with the cloud figure, so appearing and vanishing would change the panel's
+    // height under a cursor that is mid-drag.
+    const { container } = render(<Harness timeline={timelineOf([stop({ stats: undefined })])} />);
+    expect(container.querySelector('.min-h-4')).toBeTruthy();
+  });
+});

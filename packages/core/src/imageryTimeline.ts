@@ -520,6 +520,35 @@ export function buildBodyTimeline(
 }
 
 /**
+ * Which stop's picture should actually be on screen, given where the thumb is.
+ *
+ * > **Founder, 2026-08-25:** *"I shouldn't see imagery disappear and return to the polygon geometry
+ * > ever while in 'Show imagery' mode."*
+ *
+ * **A blocked notch holds the last good picture rather than clearing to bare cartography.** Dragging
+ * across a fortnight of cloud should feel like passing over dates, not like the feature switching
+ * itself off and on — and the flash back to a plain polygon reads as breakage every time, however
+ * correct it is about that particular date.
+ *
+ * ⚠ **So the picture and the caption can disagree, and only transiently.** Mid-drag the scrubber may
+ * say *"Feb 3 — 94% cloud"* over an image taken on Jan 28. That is tolerable **because it does not
+ * settle there**: releasing on a blocked notch slides to a landable one (see
+ * {@link nearestLandableStop}), so every resting state has the picture and the date agreeing again.
+ * If that ever stops being true, this becomes a D84 problem — a date presented over the wrong
+ * photograph — and the caption would have to name the frame it is actually showing.
+ */
+export function frameToRender(
+  stops: readonly TimelineStop[],
+  selected: number | null,
+  previous: TimelineStop | null,
+): TimelineStop | null {
+  if (selected === null) return previous;
+  const stop = stops[selected];
+  if (!stop) return previous;
+  return stop.landable ? stop : previous;
+}
+
+/**
  * The landable stop nearest `position`, preferring the earlier one on a tie.
  *
  * **What the thumb does when it is dragged onto a blocked stop.** The blocked stops stay drawn — that
@@ -536,16 +565,25 @@ export function buildBodyTimeline(
 export function nearestLandableStop(
   stops: readonly TimelineStop[],
   position: number,
+  direction: 1 | -1 | 0 = 0,
 ): number | null {
   let best: number | null = null;
   let bestDistance = Number.POSITIVE_INFINITY;
+  let bestAgrees = false;
 
   for (const [i, stop] of stops.entries()) {
     if (!stop.landable) continue;
     const distance = Math.abs(i - position);
-    if (distance < bestDistance) {
+    // ⚠ **Ties break toward the way the finger was moving**, which is why `direction` exists at all.
+    // A drag that stalls on a clouded date sits exactly between two usable ones about as often as
+    // not, and resolving that backwards sends the skater to a date they had already scrubbed past —
+    // *"counter to the user's intended direction"*, and the reason a plain nearest-search is not
+    // enough on release.
+    const agrees = direction !== 0 && Math.sign(i - position) === direction;
+    if (distance < bestDistance || (distance === bestDistance && agrees && !bestAgrees)) {
       best = i;
       bestDistance = distance;
+      bestAgrees = agrees;
     }
   }
 

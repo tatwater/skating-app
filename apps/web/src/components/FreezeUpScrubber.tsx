@@ -75,6 +75,7 @@ export function FreezeUpScrubber({
   const refs = useRef<(HTMLButtonElement | null)[]>([]);
   const trackRef = useRef<HTMLDivElement | null>(null);
   const lastNotch = useRef<number | null>(null);
+  const dragDirection = useRef<1 | -1 | 0>(0);
   const stops = useMemo(() => timeline?.stops ?? [], [timeline]);
   const bands = useMemo(() => (index ? bandsIn(index) : []), [index]);
 
@@ -103,6 +104,17 @@ export function FreezeUpScrubber({
     },
     [stops.length, onSelect],
   );
+
+  // ⚠ **Releasing on a clouded date slides to one with a picture**, in the direction the cursor was
+  // travelling. Leaving the thumb parked on a blocked notch would leave the caption and the image
+  // disagreeing at rest — and snapping *back* to the last good date would send the skater somewhere
+  // they had already scrubbed past, which is counter to what the drag was for.
+  const settle = useCallback(() => {
+    dragDirection.current = 0;
+    if (selected === null || stops[selected]?.landable !== false) return;
+    const landable = nearestLandableStop(stops, selected, dragDirection.current);
+    if (landable !== null) onSelect(landable);
+  }, [selected, stops, onSelect]);
 
   const move = useCallback(
     (from: number, direction: 1 | -1) => {
@@ -191,8 +203,13 @@ export function FreezeUpScrubber({
           const next = rect
             ? notchAtOffset(event.clientX - rect.left, rect.width, stops.length)
             : null;
-          if (crossedNotch(lastNotch.current, next)) scrubTo(event.clientX);
+          if (crossedNotch(lastNotch.current, next)) {
+            dragDirection.current = (next ?? 0) > (lastNotch.current ?? 0) ? 1 : -1;
+            scrubTo(event.clientX);
+          }
         }}
+        onPointerUp={settle}
+        onPointerCancel={settle}
       >
         {stops.map((stop, i) => (
           <StopMark
@@ -220,11 +237,14 @@ export function FreezeUpScrubber({
             <span className="font-medium"> + {companionCaption.date}</span>
           ) : null}
           <span className="text-muted-foreground"> · {caption.source}</span>
-          {caption.caveat ? (
-            <span className="text-muted-foreground"> · {caption.caveat}</span>
-          ) : null}
         </p>
       ) : null}
+
+      {/* ⚠ **Always rendered, even when there is nothing to say.** The caveat's length varies with the
+          cloud figure, so letting it wrap or vanish changes the panel's height — and the panel sits
+          under a cursor that is mid-drag. A control that resizes out from under the finger operating
+          it is the one thing a scrubber must never do. */}
+      <p className="min-h-4 text-muted-foreground text-xs">{caption?.caveat ?? '\u00a0'}</p>
       {companionCaption ? (
         <p className="text-muted-foreground text-xs">
           Two passes, joined — this lake sits across a granule edge, so each half was photographed

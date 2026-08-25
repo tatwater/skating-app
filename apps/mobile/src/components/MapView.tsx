@@ -20,8 +20,11 @@ import {
   approachesToFeatureCollection,
   approachLinePaint,
   type BBox,
+  frameToRender,
   isRegionOffscreen,
+  prefetchFrames,
   SUB_AREA_MIN_RENDER_ZOOM,
+  type TimelineStop,
   withAccessDim,
 } from '@skating/core';
 import { useQuery } from 'convex/react';
@@ -354,8 +357,29 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
     setFreezeUpStop(null);
   }, [highlightWaterBodyId, freezeUpBand]);
 
-  const freezeUpSelected =
-    freezeUpStop !== null ? (freezeUpTimeline?.stops[freezeUpStop] ?? null) : null;
+  // ⚠ **The picture never goes away while imagery is on** (founder, 2026-08-25). A blocked notch
+  // holds the last good frame rather than clearing to bare cartography — dragging across a fortnight
+  // of cloud should feel like passing over dates, not like the feature switching itself off. Held in
+  // a ref because it is the *previous* render's answer, which is not derivable from this one.
+  const heldFrameRef = useRef<TimelineStop | null>(null);
+  const freezeUpSelected = frameToRender(
+    freezeUpTimeline?.stops ?? [],
+    freezeUpStop,
+    heldFrameRef.current,
+  );
+  heldFrameRef.current = freezeUpSelected;
+
+  // Warm the season's frames once the timeline appears, so scrubbing does not start a cold load per
+  // notch. Header ranges only — see `prefetchFrames`. Aborted when the lake or band changes, so a
+  // warm cannot outlive the timeline it was for.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: keyed on the frame list, not its identity.
+  useEffect(() => {
+    const keys = freezeUpTimeline?.stops.map((s) => s.frame.key) ?? [];
+    if (keys.length === 0) return;
+    const controller = new AbortController();
+    void prefetchFrames(env.imageryArchiveUrl, keys, controller.signal);
+    return () => controller.abort();
+  }, [freezeUpTimeline?.stops.length, freezeUpSeason, freezeUpBand]);
   const favoriteIds = useMemo(() => (favorites ?? []).map((f) => f.waterBodyId), [favorites]);
 
   // Put-in markers for the currently-focused lake (decision #7) — bounded to the open lake. `skip`

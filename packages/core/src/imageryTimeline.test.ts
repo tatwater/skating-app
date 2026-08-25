@@ -5,6 +5,7 @@ import {
   buildBodyTimeline,
   candidateFramesFor,
   FRAME_MAX_CLOUD_PCT,
+  frameToRender,
   MIN_BODY_CLEAR_FRACTION,
   MIN_BODY_COVERAGE,
   nearestLandableStop,
@@ -724,5 +725,69 @@ describe('buildBodyTimeline — radar holds one orbit direction', () => {
 
     expect(timeline.orbit).toBeNull();
     expect(timeline.stops).toHaveLength(1);
+  });
+});
+
+describe('nearestLandableStop — the direction a finger was going', () => {
+  const s = (landable: boolean): TimelineStop =>
+    landable
+      ? { frame: frame(), landable: true, basis: 'measured' }
+      : { frame: frame(), landable: false, blockedBy: 'cloud', basis: 'measured' };
+
+  const around = [s(true), s(false), s(true)];
+
+  it('⚠ breaks an exact tie toward the way the drag was heading', () => {
+    // A drag that stalls on a clouded date sits exactly between two usable ones about as often as
+    // not. Resolving that backwards sends the skater to a date they had already scrubbed past.
+    expect(nearestLandableStop(around, 1, 1)).toBe(2);
+    expect(nearestLandableStop(around, 1, -1)).toBe(0);
+  });
+
+  it('still prefers the genuinely nearer stop over the direction of travel', () => {
+    // Direction breaks ties; it does not override distance, or a flick would jump the length of a
+    // winter to reach a date on the correct side of the finger.
+    const lopsided = [s(true), s(false), s(false), s(false), s(true)];
+    expect(nearestLandableStop(lopsided, 1, 1)).toBe(0);
+  });
+
+  it('keeps the old earlier-on-tie behaviour when no direction is given', () => {
+    expect(nearestLandableStop(around, 1)).toBe(0);
+  });
+});
+
+describe('frameToRender — the picture never goes away', () => {
+  const good = (id: string): TimelineStop => ({
+    frame: frame({ granuleId: id }),
+    landable: true,
+    basis: 'measured',
+  });
+  const clouded: TimelineStop = {
+    frame: frame({ granuleId: 'clouded' }),
+    landable: false,
+    blockedBy: 'cloud',
+    basis: 'measured',
+  };
+
+  it('⚠ holds the last good picture while the thumb sits on a clouded date', () => {
+    // Dragging across a fortnight of cloud should feel like passing over dates, not like the feature
+    // switching itself off and on. The flash back to a bare polygon reads as breakage every time,
+    // however correct it is about that particular date.
+    const stops = [good('a'), clouded, good('c')];
+    expect(frameToRender(stops, 1, stops[0] ?? null)?.frame.granuleId).toBe('a');
+  });
+
+  it('takes over the moment a landable stop is chosen', () => {
+    const stops = [good('a'), clouded, good('c')];
+    expect(frameToRender(stops, 2, stops[0] ?? null)?.frame.granuleId).toBe('c');
+  });
+
+  it('holds through an out-of-range index rather than clearing', () => {
+    // The stop list can shrink as manifests sharpen coverage, and a stale index must not blank the
+    // map on the way through.
+    expect(frameToRender([good('a')], 9, good('a'))?.frame.granuleId).toBe('a');
+  });
+
+  it('has nothing to show before anything has been chosen', () => {
+    expect(frameToRender([good('a')], null, null)).toBeNull();
   });
 });

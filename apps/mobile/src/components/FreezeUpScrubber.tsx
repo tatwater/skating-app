@@ -71,6 +71,7 @@ export function FreezeUpScrubber({
   const [trackWidth, setTrackWidth] = useState(0);
   // The notch the finger was last over, so a tick fires on *crossing* rather than on every sample.
   const lastNotch = useRef<number | null>(null);
+  const dragDirection = useRef<1 | -1 | 0>(0);
 
   const scrubTo = useCallback(
     (x: number) => {
@@ -80,13 +81,37 @@ export function FreezeUpScrubber({
       // landable stop would make the thumb outrun the finger and feel broken — and it would hide that
       // a date exists and is unusable, which is the entire reason blocked stops are drawn.
       if (crossedNotch(lastNotch.current, notch)) {
-        void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+        dragDirection.current = notch > (lastNotch.current ?? 0) ? 1 : -1;
+        // ⚠ **Two weights, because they mean different things.** A firm tick says *there is a picture
+        // here*; a faint one says *this date exists and you cannot land on it*. That is the same
+        // distinction the drawn marks make, in the only channel available while a thumb is covering
+        // them — and it is what lets a skater feel their way to a usable frame without watching.
+        void Haptics.impactAsync(
+          stops[notch]?.landable
+            ? Haptics.ImpactFeedbackStyle.Medium
+            : Haptics.ImpactFeedbackStyle.Light,
+        );
       }
       lastNotch.current = notch;
       onSelect(notch);
     },
-    [trackWidth, stops.length, onSelect],
+    [trackWidth, stops, onSelect],
   );
+
+  // ⚠ Releasing on a clouded date slides to one with a picture, in the direction the finger was
+  // going. Parking on a blocked notch would leave caption and image disagreeing at rest; snapping
+  // *back* would send the skater to a date they had already scrubbed past.
+  const settle = useCallback(() => {
+    const direction = dragDirection.current;
+    dragDirection.current = 0;
+    lastNotch.current = null;
+    if (selected === null || stops[selected]?.landable !== false) return;
+    const landable = nearestLandableStop(stops, selected, direction);
+    if (landable !== null) {
+      void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      onSelect(landable);
+    }
+  }, [selected, stops, onSelect]);
 
   // ⚠ `.runOnJS(true)`, so the handlers are plain JS callbacks rather than worklets. The selection
   // lives in React state and the haptic is a native module call — neither is worklet-safe, and the
@@ -101,7 +126,8 @@ export function FreezeUpScrubber({
       lastNotch.current = null;
       scrubTo(event.x);
     })
-    .onUpdate((event) => scrubTo(event.x));
+    .onUpdate((event) => scrubTo(event.x))
+    .onFinalize(settle);
 
   // Open on the most recent usable pass: a skater asking about a lake is asking about now.
   useEffect(() => {
@@ -186,14 +212,15 @@ export function FreezeUpScrubber({
             {' · '}
             {caption.source}
           </Text>
-          {caption.caveat ? (
-            <Text color="$foregroundMuted">
-              {' · '}
-              {caption.caveat}
-            </Text>
-          ) : null}
         </Text>
       ) : null}
+
+      {/* ⚠ Always rendered. The caveat's length varies with the cloud figure, so letting it appear
+          and vanish changes the panel's height — under a thumb that is mid-drag. A control that
+          resizes out from under the finger operating it is the one thing a scrubber must not do. */}
+      <Text color="$foregroundMuted" fontSize="$1" minHeight={16}>
+        {caption?.caveat ?? ' '}
+      </Text>
 
       {companionCaption ? (
         <Text color="$foregroundMuted" fontSize="$1">

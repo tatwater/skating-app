@@ -4,6 +4,7 @@ import {
   loadArchiveSeason,
   loadFrameStats,
   loadSeasonIndex,
+  prefetchFrames,
   resetArchiveCache,
   statsLookup,
 } from './imageryArchiveClient';
@@ -133,5 +134,46 @@ describe('loadSeasonIndex', () => {
     await expect(loadSeasonIndex(BASE, 'winter-2025-26')).resolves.toMatchObject({
       season: 'winter-2025-26',
     });
+  });
+});
+
+describe('prefetchFrames — warming, not downloading', () => {
+  it('⚠ asks for a header range rather than the whole frame', () => {
+    // A frame is ~700 KB and a season is thousands of them. The first range read of any pmtiles is
+    // its header and directory, and that read is what a cold tile request waits for — so a few KB
+    // per frame buys most of the latency back without pulling hundreds of megabytes.
+    const calls: [string, RequestInit | undefined][] = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string, init?: RequestInit) => {
+        calls.push([url, init]);
+        return { ok: true, status: 206 } as Response;
+      }),
+    );
+
+    return prefetchFrames(BASE, ['frames/w/a.pmtiles']).then(() => {
+      expect(calls[0]?.[0]).toBe(`${BASE}/frames/w/a.pmtiles`);
+      expect((calls[0]?.[1]?.headers as Record<string, string>).Range).toBe('bytes=0-16383');
+    });
+  });
+
+  it('stops early when aborted, so it cannot outlive the lake it was for', async () => {
+    const controller = new AbortController();
+    const fetchMock = vi.fn(async () => {
+      controller.abort();
+      return { ok: true, status: 206 } as Response;
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    await prefetchFrames(BASE, ['a', 'b', 'c', 'd'], controller.signal);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('swallows a failure, because a warm that did not warm costs nothing', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => Promise.reject(new Error('offline'))),
+    );
+    await expect(prefetchFrames(BASE, ['a'])).resolves.toBeUndefined();
   });
 });
