@@ -793,6 +793,21 @@ transform_granule() {
     reconcile_bodies "$OPTICAL_NULL_BODY"
   fi
 
+  # ⚠ **Drop the statistics' intermediates before tiling, because RAM is the whole budget.**
+  #
+  # Measured 2026-08-25 on the corpus's largest granule (Champlain, 237.7 Mpixels): `tile_visual` took
+  # **402.7s**, against ~0.2 s/Mpixel — about 48s — everywhere else in the same archive. Nothing in the
+  # tiling path had changed; what changed was that the statistics now leave `zones.tif` (UInt32),
+  # `interior.tif` (Float32), `green.tif` and `swir16.tif` behind them. At 237 Mpixels those are
+  # roughly a gigabyte apiece, on a Machine with 2 GB — so the page cache holding `scene.tif` is
+  # evicted and the tiler re-reads every block from disk.
+  #
+  # They have all been consumed by this point: `bodies.json` holds everything they were read for.
+  # `scl.tif` survives only if it is about to become a frame.
+  rm -f zones.tif interior.tif green.tif swir16.tif water-zoned.geojson dist.tif mask.tif \
+    alpha_rgb.tif
+  [[ "${EMIT_SCL_FRAME:-1}" == "1" ]] || rm -f scl.tif
+
   # 7. Tile the whole pyramid in one pass, pack it, convert it.
   #
   # ## Why `gdal raster tile` and not `gdal_translate -of MBTILES` + `gdaladdo`
