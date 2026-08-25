@@ -186,6 +186,12 @@ export interface BodyTimeline {
   coverageInferred: number;
   /** Stops with neither a manifest nor a footprint. Kept, and counted so they cannot hide. */
   coverageUnknown: number;
+  /**
+   * Which orbit direction these stops were held to, and what else this lake was passed from.
+   *
+   * `null` on an optical timeline, where the question does not arise.
+   */
+  orbit: { showing: string; available: string[] } | null;
 }
 
 /** Per-granule statistics a consumer has already fetched. Returns `undefined` for "not loaded". */
@@ -222,6 +228,20 @@ export interface BodyTimelineOptions {
   minClearFraction?: number;
   /** Override the standalone coverage floor. Same reason. */
   minCoverage?: number;
+  /**
+   * Which radar orbit direction to build from. Defaults to whichever passed this lake most often.
+   *
+   * ⚠ **A radar timeline must hold this constant, and the reason is visible rather than statistical.**
+   * Sentinel-1 is right-looking, so ascending passes view a lake from the east and descending from
+   * the west. A GRD is geocoded from ground-control points at a reference height, with no terrain
+   * correction, so anything above that reference is displaced *in the range direction* — which is
+   * opposite for the two orbit directions. Observed live 2026-08-25 on Mascoma: a pair of islands
+   * jumped east, then west, then east as the scrubber advanced through alternating passes.
+   *
+   * The same geometry is behind the measured 1.18 dB that S1C disagrees with *itself* by across orbit
+   * directions, so this filter is what the `vhDb` comparability note has been asking for all along.
+   */
+  orbitDirection?: string;
 }
 
 /**
@@ -298,7 +318,38 @@ function emptyTimeline(season: string): BodyTimeline {
     notCovered: 0,
     coverageInferred: 0,
     coverageUnknown: 0,
+    orbit: null,
   };
+}
+
+/**
+ * Which orbit direction a radar timeline should be built from, and what else is on offer.
+ *
+ * Only radar manifests carry `orbitDirection`, so an optical season yields `null` here and the filter
+ * never engages — no mission check needed, the data shape decides again.
+ *
+ * The default is whichever direction passed this lake most often, because that is the longest
+ * self-consistent series available and a timeline's job is to let dates be compared to each other.
+ */
+function resolveOrbit(
+  frames: readonly IndexedFrame[],
+  stats: FrameStatsLookup | undefined,
+  requested: string | undefined,
+): { showing: string; available: string[] } | null {
+  if (!stats) return null;
+  const counts = new Map<string, number>();
+  for (const frame of frames) {
+    const direction = stats(frame.granuleId)?.orbitDirection;
+    if (direction) counts.set(direction, (counts.get(direction) ?? 0) + 1);
+  }
+  if (counts.size === 0) return null;
+
+  const available = [...counts.keys()].sort();
+  const showing =
+    requested && counts.has(requested)
+      ? requested
+      : ([...counts.entries()].sort((a, b) => b[1] - a[1])[0] as [string, number])[0];
+  return { showing, available };
 }
 
 /**
@@ -386,15 +437,24 @@ export function buildBodyTimeline(
   const minClear = options.minClearFraction ?? MIN_BODY_CLEAR_FRACTION;
   const minCoverage = options.minCoverage ?? MIN_BODY_COVERAGE;
 
+  const banded = index.frames.filter((frame) => frame.band === band);
+  const orbit = resolveOrbit(banded, options.stats, options.orbitDirection);
+
   const stops: TimelineStop[] = [];
   let notCovered = 0;
   let coverageInferred = 0;
   let coverageUnknown = 0;
 
-  for (const frame of index.frames) {
-    if (frame.band !== band) continue;
-
+  for (const frame of banded) {
     const frameStats = options.stats?.(frame.granuleId);
+
+    // ⚠ Held to one orbit direction, or the lake visibly moves between dates — see
+    // {@link BodyTimelineOptions.orbitDirection}. Not counted in `notCovered`: this pass did reach
+    // the lake, it is just not comparable to the ones on either side of it.
+    if (orbit && frameStats?.orbitDirection && frameStats.orbitDirection !== orbit.showing) {
+      continue;
+    }
+
     const row = frameStats && body._id ? bodyStatsIn(frameStats, body._id) : undefined;
 
     let basis: CoverageBasis;
@@ -455,6 +515,7 @@ export function buildBodyTimeline(
     notCovered,
     coverageInferred,
     coverageUnknown,
+    orbit,
   };
 }
 

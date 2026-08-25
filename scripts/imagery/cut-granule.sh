@@ -615,8 +615,17 @@ transform_granule() {
 #
 #   * **No colour composite.** VV and VH are single-band intensity, so there is no RGB to assemble.
 #   * **No map projection in the source.** A GRD sits in *radar* geometry and carries ground-control
-#     points instead of a geotransform, so `-tps` does the geocoding. Over a lake — flat, at a known
-#     elevation — that is accurate enough without terrain correction.
+#     points instead of a geotransform, so `-tps` does the geocoding.
+#
+#     ⚠ **This was assumed accurate enough without terrain correction, and it is not — 2026-08-25.**
+#     The GCPs geocode at a reference height, so ground above it is displaced along the RANGE
+#     direction by roughly `dh / tan(theta)` — ~140 m per 100 m of elevation error at IW incidence.
+#     Sentinel-1 is right-looking, so ascending views from the east and descending from the west and
+#     the shift flips sign between them. Watched live on Mascoma: two islands jumping east, west,
+#     east as the scrubber advanced through alternating passes. "Over a lake it is flat" is true and
+#     insufficient — what matters is the lake's height above the GCP reference, not its own flatness.
+#     PR 3 mitigates by holding one orbit direction per timeline; the fix is a DEM-corrected geocode.
+#     See the N6e plan's open question 8, and note it may share a cause with question 7.
 #   * **The pixels are not the measurement.** They are detector counts; the calibration annotation is
 #     what turns them into `sigma0`. See `sar-cal-lut.py` for why skipping it is a 1.5 dB error inside
 #     a single scene, against a ~2 dB signal.

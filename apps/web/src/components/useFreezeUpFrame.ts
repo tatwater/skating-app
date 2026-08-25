@@ -52,6 +52,22 @@ const layerIdFor = (slot: FreezeUpSlot) =>
 const FADE_MS = 180;
 
 /**
+ * How long to wait for a clean "loaded" before showing the frame anyway.
+ *
+ * ⚠ **A floor under a whole class of bug, not a nicety.** `isSourceLoaded` is a statement about the
+ * tiles the *current viewport* needs, so a source can sit un-loaded indefinitely — a tile that 404s,
+ * a range read that stalls, a viewport MapLibre has not asked about yet. Every one of those leaves a
+ * fully-downloaded frame at zero opacity, and the user has no way to know: the map just shows the
+ * summer aerial and the scrubber looks broken. Observed live twice on 2026-08-25.
+ *
+ * **A partially-drawn frame is strictly better than an invisible one.** Tiles that do arrive keep
+ * arriving and fill in; the alternative is a control that silently does nothing. Two seconds is long
+ * enough that a healthy load reveals through the normal path and short enough that a stall does not
+ * read as a dead feature.
+ */
+const REVEAL_TIMEOUT_MS = 2000;
+
+/**
  * Mount the selected frame, and tear it down when the scrubber closes.
  *
  * `frame` is `null` whenever there is nothing to show — the reveal is off, the archive is not
@@ -91,12 +107,18 @@ export function useFreezeUpFrame({
     // The symptom is the cruellest available, because it looks like the archive is broken and the
     // fix is a zoom nobody thinks to try.
     let revealed = false;
-    const reveal = () => {
-      if (revealed || !map.getLayer(layerId) || !map.getSource(sourceId)) return;
-      if (!map.isSourceLoaded(sourceId)) return;
+    const show = () => {
+      if (revealed || !map.getLayer(layerId)) return;
       revealed = true;
       map.setPaintProperty(layerId, 'raster-opacity', 1);
     };
+    const reveal = () => {
+      if (revealed || !map.getLayer(layerId) || !map.getSource(sourceId)) return;
+      if (!map.isSourceLoaded(sourceId)) return;
+      show();
+    };
+    // The floor. Cleared on teardown so a swapped-away frame cannot paint over its successor.
+    const timer = setTimeout(show, REVEAL_TIMEOUT_MS);
     const onSourceData = (event: maplibregl.MapSourceDataEvent) => {
       if (event.sourceId !== sourceId) return;
       reveal();
@@ -138,6 +160,7 @@ export function useFreezeUpFrame({
     reveal();
 
     return () => {
+      clearTimeout(timer);
       map.off('sourcedata', onSourceData);
       // Order matters: a source with a layer still attached throws on removal.
       if (map.getLayer(layerId)) map.removeLayer(layerId);

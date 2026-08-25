@@ -632,3 +632,97 @@ describe('buildBodyTimeline — the split-body seam', () => {
     expect(timeline.stops.every((s) => s.companion === undefined)).toBe(true);
   });
 });
+
+describe('buildBodyTimeline — radar holds one orbit direction', () => {
+  const radarStats = (passes: { id: string; direction: string }[]) => {
+    const map = new Map(
+      passes.map((p) => [
+        p.id,
+        {
+          granuleId: p.id,
+          capturedAt: '2026-02-15T22:51:23Z',
+          mission: 's1',
+          platform: 'S1A',
+          orbitDirection: p.direction,
+          bodies: [{ waterBodyId: 'champlain', coveragePct: 0.98, vhDb: -21.4, pixels: 4107 }],
+        },
+      ]),
+    );
+    return (id: string) => map.get(id);
+  };
+
+  const radarSeason = (ids: string[]) =>
+    season(ids.map((id) => frame({ granuleId: id, band: 'vh', cloudCoverPct: null })));
+
+  it('⚠ drops the passes that would make the lake move between dates', () => {
+    // Sentinel-1 is right-looking, so ascending views a lake from the east and descending from the
+    // west. A GRD geocoded from GCPs at a reference height displaces higher ground along the range
+    // direction, which flips sign between the two. Observed live 2026-08-25 on Mascoma: two islands
+    // jumping east, then west, as the scrubber advanced through alternating passes.
+    const timeline = buildBodyTimeline(radarSeason(['a', 'b', 'c']), CHAMPLAIN, {
+      band: 'vh',
+      stats: radarStats([
+        { id: 'a', direction: 'descending' },
+        { id: 'b', direction: 'ascending' },
+        { id: 'c', direction: 'descending' },
+      ]),
+    });
+
+    expect(timeline.stops.map((s) => s.frame.granuleId)).toEqual(['a', 'c']);
+    expect(timeline.orbit).toEqual({
+      showing: 'descending',
+      available: ['ascending', 'descending'],
+    });
+  });
+
+  it('defaults to whichever direction passed this lake most often', () => {
+    const timeline = buildBodyTimeline(radarSeason(['a', 'b', 'c']), CHAMPLAIN, {
+      band: 'vh',
+      stats: radarStats([
+        { id: 'a', direction: 'ascending' },
+        { id: 'b', direction: 'ascending' },
+        { id: 'c', direction: 'descending' },
+      ]),
+    });
+
+    expect(timeline.orbit?.showing).toBe('ascending');
+  });
+
+  it('honours an explicit direction', () => {
+    const timeline = buildBodyTimeline(radarSeason(['a', 'b']), CHAMPLAIN, {
+      band: 'vh',
+      orbitDirection: 'descending',
+      stats: radarStats([
+        { id: 'a', direction: 'ascending' },
+        { id: 'b', direction: 'descending' },
+      ]),
+    });
+
+    expect(timeline.stops.map((s) => s.frame.granuleId)).toEqual(['b']);
+  });
+
+  it('⚠ does not count a filtered pass as "not covered", because it did reach the lake', () => {
+    // It is excluded for comparability, not for absence. Folding it into `notCovered` would misreport
+    // the archive's reach over this body.
+    const timeline = buildBodyTimeline(radarSeason(['a', 'b']), CHAMPLAIN, {
+      band: 'vh',
+      stats: radarStats([
+        { id: 'a', direction: 'descending' },
+        { id: 'b', direction: 'ascending' },
+      ]),
+    });
+
+    expect(timeline.notCovered).toBe(0);
+  });
+
+  it('leaves an optical timeline alone, with no mission check needed', () => {
+    // Only radar manifests carry `orbitDirection`, so the filter never engages on optical — the data
+    // shape decides, exactly as it does for the cloud gate.
+    const timeline = buildBodyTimeline(season([frame()]), CHAMPLAIN, {
+      stats: statsFor('S2C_18TXP_20260215_0_L2A', [{ waterBodyId: 'champlain' }]),
+    });
+
+    expect(timeline.orbit).toBeNull();
+    expect(timeline.stops).toHaveLength(1);
+  });
+});

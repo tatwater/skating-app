@@ -28,6 +28,7 @@ const timelineOf = (stops: TimelineStop[]): BodyTimeline => ({
   notCovered: 0,
   coverageInferred: 0,
   coverageUnknown: 0,
+  orbit: null,
 });
 
 const indexOf = (bands: string[]): SeasonIndex => ({

@@ -244,3 +244,35 @@ describe('useFreezeUpFrame — the load race', () => {
     expect(harness.paint['raster-opacity']).toBe(1);
   });
 });
+
+describe('useFreezeUpFrame — the reveal floor', () => {
+  it('⚠ shows a frame anyway when "loaded" never arrives', () => {
+    // `isSourceLoaded` is about the tiles the current viewport needs, so a 404 tile, a stalled range
+    // read, or a viewport MapLibre has not asked about all leave a downloaded frame at zero opacity
+    // with no way for a user to tell. A partly-drawn frame beats an invisible one.
+    vi.useFakeTimers();
+    try {
+      const harness = fakeMap();
+      mount(harness, frame());
+      expect(harness.paint['raster-opacity']).toBeUndefined();
+
+      vi.advanceTimersByTime(2000);
+      expect(harness.paint['raster-opacity']).toBe(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('does not let a torn-down frame paint over its successor', () => {
+    vi.useFakeTimers();
+    try {
+      const harness = fakeMap();
+      const { unmount } = mount(harness, frame());
+      unmount();
+      vi.advanceTimersByTime(5000);
+      expect(harness.paint['raster-opacity']).toBeUndefined();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});

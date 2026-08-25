@@ -1110,6 +1110,29 @@ so it may be stale in the good direction; either way, one granule first.
    independently, which is the strongest reason to expect it back. See
    [`docs/reading-ice-from-orbit.md`](../docs/reading-ice-from-orbit.md) ch. 9 for the measurement.
 
+8. **⚠ Radar is not terrain-corrected, and it is visible — new, 2026-08-25.** `cut-granule.sh`
+   geocodes a GRD with `gdalwarp -tps` from its ground-control points, on the stated assumption that
+   *"over a lake — flat, at a known elevation — that is accurate enough without terrain correction."*
+   **A skater falsified that in the first session with the scrubber**: a pair of islands in the
+   north-west of Mascoma visibly jumped east, then west, then east again as the timeline advanced.
+
+   The GCPs geocode at a reference height, so anything above it is displaced along the **range**
+   direction by roughly `Δh / tan(θ)` — about 140 m per 100 m of elevation error at IW's incidence
+   angles. Sentinel-1 is right-looking, so ascending passes view from the east and descending from
+   the west, and the displacement flips sign between them. Mascoma's radar passes alternate direction
+   almost every date, which is exactly the bounce.
+
+   ⚠ **This is very likely the same root cause as question 7.** S1C disagrees with *itself* across
+   orbit directions by 1.18 dB, and uncorrected viewing geometry would produce both symptoms — the
+   radiometric one and the planimetric one — from one cause. Worth testing together rather than
+   separately.
+
+   **PR 3 mitigates rather than fixes**: a radar timeline now holds one orbit direction, so the lake
+   stops moving between dates. That is also what the `vhDb` comparability note was already asking
+   for. The real fix is a terrain-corrected geocode against a DEM, which is producer work and should
+   ride the re-run queue rather than a pass of its own. The corpus already carries elevation at 99.5%
+   coverage, so a per-body reference height is available if a full DEM correction proves too costly.
+
 **Still open on the producer side, carried forward from PR 2:**
 
 4. **Can SAR *date* freeze-up, or only delineate it?** The spike found the only unambiguous seasonal
