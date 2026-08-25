@@ -124,7 +124,17 @@ def platform_heading(root: ET.Element, points: list[dict[str, float]]) -> float:
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("annotation")
-    parser.add_argument("height", type=float, help="target surface height, metres above ellipsoid")
+    parser.add_argument(
+        "height",
+        type=float,
+        nargs="?",
+        help="target surface height, metres above ellipsoid (omit with --grid)",
+    )
+    parser.add_argument(
+        "--grid",
+        action="store_true",
+        help="emit the geolocation grid itself, for per-body interpolation",
+    )
     parser.add_argument(
         "--look-right",
         action=argparse.BooleanOptionalAction,
@@ -138,13 +148,53 @@ def main() -> None:
     if not points:
         raise SystemExit(f"no geolocation grid points in {args.annotation}")
 
-    # The reference the GCPs were computed at, and the look angle at scene centre. Both are averages
-    # over the grid: incidence varies across the swath by several degrees, and using mid-swath rather
-    # than per-point keeps this a single translation, which is the whole reason it is cheap.
+    # ⚠ **Scene averages, and they are the WRONG reference for any particular lake.** Kept because a
+    # single figure is a useful thing to print, and because the calibration below is stated against
+    # them — but nothing should geocode with them. See the `--grid` note.
     reference_height = sum(p["height"] for p in points) / len(points)
     incidence = sum(p["incidence"] for p in points) / len(points)
     heading = platform_heading(root, points)
 
+    if args.grid:
+        # ## Why the grid rather than a scene average — measured 2026-08-25
+        #
+        # The product is geocoded against **this grid**, whose points each carry their own terrain
+        # height and incidence angle. A scene average is dominated by whatever the pass happened to
+        # cover: measured across five real tracks over the same region, `referenceHeightM` ranged from
+        # **7.9 m** (a pass mostly over the Gulf of Maine) to **369.6 m** (a pass over the White
+        # Mountains) — a spread that says nothing about where any given lake sits.
+        #
+        # Against 10 lake-passes with a spread of elevations:
+        #
+        #     scene average h_ref + scene incidence   RMS residual 325.6 m   corr 0.28
+        #     LOCAL h_ref + LOCAL incidence           RMS residual  44.7 m   corr 0.75
+        #     no correction at all                    RMS residual  96.5 m
+        #
+        # ⚠ **The scene average was worse than not correcting**, which is the whole reason this mode
+        # exists. Local incidence matters on its own too: it ranged 30.9°–44.8° across those lakes
+        # while the scene mean sat at 38.6°, and `1/tan` changes by 60% over that span.
+        json.dump(
+            {
+                "headingDeg": round(heading, 3),
+                "sceneReferenceHeightM": round(reference_height, 2),
+                "sceneIncidenceDeg": round(incidence, 3),
+                "points": [
+                    {
+                        "lat": p["lat"],
+                        "lng": p["lng"],
+                        "heightM": p["height"],
+                        "incidenceDeg": p["incidence"],
+                    }
+                    for p in points
+                ],
+            },
+            sys.stdout,
+        )
+        sys.stdout.write("\n")
+        return
+
+    if args.height is None:
+        raise SystemExit("give a height, or --grid")
 
     delta = args.height - reference_height
     magnitude = delta / math.tan(math.radians(incidence))

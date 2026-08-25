@@ -506,18 +506,20 @@ resolve_geocode() {
   # ⚠ **Redirected to a file rather than captured with `$(stage …)`.** Command substitution runs
   # `stage` in a subshell, so its append to `STAGE_JSON` would be discarded and the step would cost
   # nothing according to the manifest — the one place the cost model is read from.
+  # ⚠ **The whole grid, not a scene average.** Each lake interpolates its own reference height and
+  # incidence from the points around it; averaging the grid made the correction worse than doing
+  # nothing (325.6 m RMS against 96.5 m). See `local_reference` in `sar-deshift.py`.
   if ! stage sar_geocode sh -c \
-      'python3 /usr/local/bin/sar-geocode.py annotation.xml 0 > geocode.json'; then
-    log "geocode parameters unreadable — this pass stays uncorrected"
+      'python3 /usr/local/bin/sar-geocode.py annotation.xml --grid > geocode-grid.json'; then
+    log "geolocation grid unreadable — this pass stays uncorrected"
     return 0
   fi
-  GEOCODE_JSON="$(cat geocode.json)"
-  GEOCODE_ARGS=(
-    --reference-height "$(jq -r '.referenceHeightM' geocode.json)"
-    --incidence "$(jq -r '.incidenceDeg' geocode.json)"
-    --heading "$(jq -r '.headingDeg' geocode.json)"
-  )
-  log "geocode: $(jq -c '{referenceHeightM, incidenceDeg, headingDeg}' geocode.json)"
+  GEOCODE_ARGS=(--grid geocode-grid.json)
+  # The manifest records the scene summary, which is a fair description of the pass even though it is
+  # not what any lake is corrected with.
+  GEOCODE_JSON="$(jq -c '{headingDeg, sceneReferenceHeightM, sceneIncidenceDeg,
+                          gridPoints: (.points | length)}' geocode-grid.json)"
+  log "geocode: $GEOCODE_JSON"
 }
 
 # Widen the warp extent to cover where the pixels currently ARE, not only where they belong.

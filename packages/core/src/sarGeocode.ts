@@ -108,6 +108,89 @@ export function geocodeOffsetMeters({
   return { eastM: magnitude * Math.sin(rad), northM: magnitude * Math.cos(rad) };
 }
 
+/** One geolocation grid point, as a GRD's annotation records it. */
+export interface GeolocationGridPoint {
+  lat: number;
+  lng: number;
+  /** Terrain height the product was geocoded at here. */
+  heightM: number;
+  incidenceDeg: number;
+}
+
+/**
+ * How many grid points to blend. Measured over 10 lake-passes: k=3 gave 53.7 m RMS, k=6 44.4 m,
+ * k=12 44.1 m. It plateaus, and 8 sits on the flat part.
+ */
+export const GEOCODE_GRID_NEIGHBOURS = 8;
+
+/**
+ * The reference height and incidence angle **at one lake**, from the grid points around it.
+ *
+ * ## ⚠ A scene average is not a usable stand-in, and using one is worse than not correcting
+ *
+ * A GRD is geocoded against its geolocation grid, whose points each carry their own terrain height
+ * and incidence. Averaging the grid produces a number describing *what the pass flew over* rather
+ * than where any lake sits: measured across five real tracks over one region, the scene-average
+ * height ranged **7.9 m** (a pass mostly over the Gulf of Maine) to **369.6 m** (one over the White
+ * Mountains).
+ *
+ * Against 10 lake-passes spanning −1 m to 649 m of elevation:
+ *
+ * | | RMS residual | correlation |
+ * |---|---|---|
+ * | scene-average height and incidence | **325.6 m** | 0.28 |
+ * | **local height and incidence** | **44.7 m** | **0.75** |
+ * | no correction at all | 96.5 m | — |
+ *
+ * Incidence matters on its own: it ranged 30.9°–44.8° across those lakes while the scene mean sat at
+ * 38.6°, and `1/tan` changes by 60% over that span.
+ *
+ * On the Mascoma ascending/descending pair this took the per-pass error from 150 m to **30 m** and the
+ * disagreement *between* the two passes from 291 m to **39 m** — 1.4 pixels, which is what makes a
+ * timeline able to mix orbit directions at all.
+ *
+ * ⚠ **~30–45 m is the floor, and it is ours rather than the radar's.** Sentinel-2 needs no geometric
+ * correction and its lake masks still sit 31–71 m off the imagery, because that is how accurate our
+ * OSM/NHD shorelines are. Refining this model further would be fitting our own polygon error.
+ *
+ * Inverse-distance-squared rather than a triangulation: the surface is smooth, the grid is dense
+ * enough, and the container has no library for the alternative.
+ */
+export function localGeocodeReference(
+  points: readonly GeolocationGridPoint[],
+  lat: number,
+  lng: number,
+  neighbours: number = GEOCODE_GRID_NEIGHBOURS,
+): { referenceHeightM: number; incidenceDeg: number } | null {
+  if (points.length === 0) return null;
+
+  const scale = Math.cos((lat * Math.PI) / 180);
+  const squared = (p: GeolocationGridPoint) =>
+    (p.lat - lat) ** 2 + ((p.lng - lng) * scale) ** 2;
+
+  const nearest = [...points].sort((a, b) => squared(a) - squared(b)).slice(0, neighbours);
+
+  let weightTotal = 0;
+  let heightTotal = 0;
+  let incidenceTotal = 0;
+  for (const point of nearest) {
+    const d2 = squared(point);
+    // A lake sitting exactly on a grid point would divide by zero, and needs no interpolation anyway.
+    if (d2 <= 1e-18) {
+      return { referenceHeightM: point.heightM, incidenceDeg: point.incidenceDeg };
+    }
+    const weight = 1 / d2;
+    weightTotal += weight;
+    heightTotal += point.heightM * weight;
+    incidenceTotal += point.incidenceDeg * weight;
+  }
+
+  return {
+    referenceHeightM: heightTotal / weightTotal,
+    incidenceDeg: incidenceTotal / weightTotal,
+  };
+}
+
 /**
  * The same displacement, in the direction a **mask** has to move.
  *

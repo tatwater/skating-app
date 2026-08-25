@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
+  type GeolocationGridPoint,
   geocodeOffsetMeters,
   granuleGeocodeHeight,
+  localGeocodeReference,
   maskOffsetMeters,
   rangeDisplacementPerMetre,
   shiftCoordinate,
@@ -96,7 +98,10 @@ describe('maskOffsetMeters — the direction that was actually measured', () => 
   // inflates distance by 1/cos(φ) — 1.382 at Mascoma's 43.65°N — while everything in this module is
   // in *ground* metres. The first reading of this measurement compared the two directly and
   // concluded the model agreed to within half a pixel. It does not; see the magnitude test below.
-  const MASCOMA_M = 224;
+  // ⚠ The corpus value, not a remembered one. An earlier pass through this used 224 m from memory;
+  // 3.9 m of height is 6 m of ground displacement, which is small but it is exactly the kind of
+  // slop that gets attributed to the model instead of to the input.
+  const MASCOMA_M = 227.93;
   const MEASURED_PROJECTED_M = 150;
   const INFLATION = 1 / Math.cos((43.65 * Math.PI) / 180);
   const MEASURED_GROUND_M = MEASURED_PROJECTED_M / INFLATION; // ~108.5 m
@@ -129,22 +134,37 @@ describe('maskOffsetMeters — the direction that was actually measured', () => 
     }
   });
 
-  it('⚠ OVER-predicts the magnitude, by 20 m on one pass and 54 m on the other', () => {
-    // Pinned as the known residual rather than as a pass mark. The flat-lake model gets most of the
-    // displacement and not all of it, and one lake on two passes is not enough to say why — the
-    // candidates are the corpus height, the scene-average reference height, and mid-swath incidence
-    // standing in for the lake's own. Local grid interpolation was tried and did not clearly win.
+  it('⚠ over-predicts when fed SCENE AVERAGES, which is what sent the calibration looking', () => {
+    // ⚠ These two scenes' `referenceHeightM` are the *average over the whole grid* — 353.93 m and
+    // 326.84 m. That is not the height either product geocoded Mascoma at, and it is why the offsets
+    // come out 20–54 m long. The arithmetic is not at fault; the inputs are.
     //
-    // If a calibration ever narrows this, these bounds are what should move.
+    // Kept as a regression on the failure mode rather than on the numbers: if someone reintroduces a
+    // scene average as the reference, this is the shape of what they will see.
     const errors = [ASC, DESC].map(
-      (scene) => alongRange(maskOffsetMeters({ ...scene, heightM: MASCOMA_M }), scene) - MEASURED_GROUND_M,
+      (scene) =>
+        alongRange(maskOffsetMeters({ ...scene, heightM: MASCOMA_M }), scene) - MEASURED_GROUND_M,
     );
     for (const error of errors) {
       expect(error).toBeGreaterThan(0); // over, never under
       expect(error).toBeLessThan(60);
     }
-    // Still a large net improvement: uncorrected, each pass is ~108 m out.
-    for (const error of errors) expect(Math.abs(error)).toBeLessThan(MEASURED_GROUND_M);
+  });
+
+  it('✅ lands within a pixel once the reference comes from the LOCAL grid', () => {
+    // The same two passes, with the height and incidence `localGeocodeReference` interpolates at
+    // Mascoma instead of the scene means. Measured on the real rasters afterwards: per-pass error
+    // 150 m -> 30 m, and the disagreement BETWEEN the passes 291 m -> 39 m (1.4 px).
+    // What `localGeocodeReference` actually returns at Mascoma for these two annotations.
+    const LOCAL = {
+      asc: { referenceHeightM: 327.1, incidenceDeg: 39.57, headingDeg: ASC.headingDeg },
+      desc: { referenceHeightM: 330.1, incidenceDeg: 37.74, headingDeg: DESC.headingDeg },
+    };
+    for (const scene of [LOCAL.asc, LOCAL.desc]) {
+      const along = alongRange(maskOffsetMeters({ ...scene, heightM: MASCOMA_M }), scene);
+      // Inside one 28 m radar pixel of the ~108 m ground truth.
+      expect(Math.abs(along - MEASURED_GROUND_M)).toBeLessThan(28);
+    }
   });
 
   it('⚠ the un-negated offset is worse than doing nothing at all', () => {
@@ -154,6 +174,62 @@ describe('maskOffsetMeters — the direction that was actually measured', () => 
       const wrong = alongRange(geocodeOffsetMeters({ ...scene, heightM: MASCOMA_M }), scene);
       expect(Math.abs(wrong - MEASURED_GROUND_M)).toBeGreaterThan(2 * MEASURED_GROUND_M);
     }
+  });
+});
+
+describe('localGeocodeReference — the fix that made the correction work at all', () => {
+  // A grid over a valley: low in the middle, high on both shoulders. The scene mean is ~400 m and
+  // describes none of it, which is the whole point.
+  const GRID: GeolocationGridPoint[] = [
+    { lat: 44.0, lng: -72.4, heightM: 900, incidenceDeg: 31 },
+    { lat: 44.0, lng: -72.2, heightM: 900, incidenceDeg: 33 },
+    { lat: 43.8, lng: -72.4, heightM: 100, incidenceDeg: 39 },
+    { lat: 43.8, lng: -72.2, heightM: 100, incidenceDeg: 41 },
+    { lat: 43.6, lng: -72.4, heightM: 900, incidenceDeg: 44 },
+    { lat: 43.6, lng: -72.2, heightM: 900, incidenceDeg: 45 },
+  ];
+
+  it('reads the terrain the lake actually sits in, not the average of the pass', () => {
+    const valley = localGeocodeReference(GRID, 43.8, -72.3, 2);
+    expect(valley).not.toBeNull();
+    // The two nearest points are both the 100 m valley floor.
+    expect(valley?.referenceHeightM).toBeCloseTo(100, 0);
+
+    const sceneMean = GRID.reduce((sum, p) => sum + p.heightM, 0) / GRID.length;
+    expect(sceneMean).toBeCloseTo(633, 0);
+    // ⚠ 533 m of difference, which at IW incidence is ~660 m of ground displacement — twenty-three
+    // pixels of "correction" applied in the wrong direction. Measured on real passes, the scene
+    // average was worse than not correcting at all: 325.6 m RMS against 96.5 m.
+    expect(Math.abs(sceneMean - (valley?.referenceHeightM ?? 0))).toBeGreaterThan(500);
+  });
+
+  it('carries incidence with it, because that varies across the swath too', () => {
+    const near = localGeocodeReference(GRID, 44.0, -72.4, 1);
+    const far = localGeocodeReference(GRID, 43.6, -72.2, 1);
+    expect(near?.incidenceDeg).toBeCloseTo(31, 5);
+    expect(far?.incidenceDeg).toBeCloseTo(45, 5);
+    // 1/tan changes by ~60% over that span — using mid-swath for both is a 60% magnitude error.
+    const ratio = rangeDisplacementPerMetre(31) / rangeDisplacementPerMetre(45);
+    expect(ratio).toBeGreaterThan(1.5);
+  });
+
+  it('returns a grid point exactly when the lake sits on one, rather than dividing by zero', () => {
+    const on = localGeocodeReference(GRID, 43.8, -72.4);
+    expect(on?.referenceHeightM).toBe(100);
+    expect(on?.incidenceDeg).toBe(39);
+  });
+
+  it('weights by inverse square, so the near point dominates a far one', () => {
+    // Just inside the valley, but nearer the 100 m corner than the 900 m one.
+    const blended = localGeocodeReference(GRID, 43.79, -72.39, 6);
+    expect(blended?.referenceHeightM).toBeLessThan(300);
+    expect(blended?.referenceHeightM).toBeGreaterThan(100);
+  });
+
+  it('returns null on an empty grid rather than a confident zero', () => {
+    // Sea level is a real height. A caller must read this as "do not correct", exactly as
+    // `granuleGeocodeHeight` requires.
+    expect(localGeocodeReference([], 44, -72)).toBeNull();
   });
 });
 

@@ -2,18 +2,27 @@
 """Move each lake's pixels back under its own polygon (N6e open question 8).
 
     sar-deshift.py <reveal.geojson> <in.tif> <out.tif>
-                   --reference-height M --incidence DEG --heading DEG
-                   --feather-projected-m M [--no-look-right]
+                   --grid <grid.json> --feather-projected-m M [--no-look-right]
 
-Emits `{"corrected": 41, "uncorrected": 3, "offSwath": 2, "maxShiftPx": 14}`.
+`grid.json` is `sar-geocode.py <annotation.xml> --grid`.
+
+Emits `{"corrected": 41, "uncorrected": 3, "offSwath": 2, "invalidGeometry": 0,
+"maxShiftPx": 14}`.
 
 ## What this is for
 
-A GRD carries no map projection — only ground-control points computed at **one average scene height**.
-A lake above or below that reference is drawn displaced along range by `(h - h_ref)/tan(θ)`, and
-because Sentinel-1 is right-looking, ascending views a lake from one side and descending from the
-other, so **the displacement flips between them**. That is what made two islands in Mascoma jump east,
-west, east as a scrubber advanced through alternating passes.
+A GRD carries no map projection — only a **geolocation grid**, whose points each record the terrain
+height and incidence angle the product was geocoded at. A lake above or below its local grid height is
+drawn displaced along range by `(h - h_ref)/tan(θ)`, and because Sentinel-1 is right-looking, ascending
+views a lake from one side and descending from the other, so **the displacement flips between them**.
+That is what made two islands in Mascoma jump east, west, east as a scrubber advanced through
+alternating passes.
+
+⚠ **`h_ref` is LOCAL to the lake, and a scene average is not a usable stand-in.** Measured across five
+real tracks, the scene-average height ranged 7.9 m (a pass mostly over the Gulf of Maine) to 369.6 m
+(one over the White Mountains) — a spread describing the pass's coverage rather than any lake under it.
+Correcting with it was **worse than not correcting**: 325.6 m RMS against 96.5 m for doing nothing.
+With local values it is **44.7 m**. See `local_reference`.
 
 This reads each body's pixels from where the product actually put them and writes them where the body
 actually is. Afterwards every other stage — the alpha, the zones, the statistics, the tiles — works at
@@ -66,14 +75,50 @@ def latitude_of(northing: float) -> float:
     return math.degrees(2 * math.atan(math.exp(northing / MW * math.pi)) - math.pi / 2)
 
 
+# How many geolocation grid points to blend. The grid is spaced every ~10–20 km, so a handful of
+# neighbours spans the terrain a lake actually sits in. Measured over 10 lake-passes: k=3 gave 53.7 m
+# RMS, k=6 44.4 m, k=12 44.1 m — it plateaus, and 8 is on the flat part.
+GRID_NEIGHBOURS = 8
+
+
+def local_reference(points, lat: float, lng: float) -> tuple[float, float]:
+    """Terrain height and incidence angle at one lake, from the geolocation grid around it.
+
+    ⚠ **Never the scene average.** The product is geocoded against the grid, whose points each carry
+    their own height and incidence. A scene average is dominated by whatever the pass covered —
+    measured across five real tracks over one region it ranged from 7.9 m (mostly ocean) to 369.6 m
+    (the White Mountains). Using it made the correction **worse than not correcting**: 325.6 m RMS
+    against 96.5 m for doing nothing, versus 44.7 m for the local values.
+
+    Inverse-distance-squared over the nearest few, which is enough for a surface this smooth and
+    avoids a triangulation the container has no library for.
+    """
+    scale = math.cos(math.radians(lat))
+    nearest = sorted(
+        points,
+        key=lambda p: (p["lat"] - lat) ** 2 + ((p["lng"] - lng) * scale) ** 2,
+    )[:GRID_NEIGHBOURS]
+
+    weights = []
+    for p in nearest:
+        d2 = (p["lat"] - lat) ** 2 + ((p["lng"] - lng) * scale) ** 2
+        # A lake sitting exactly on a grid point would divide by zero; it also needs no interpolation.
+        if d2 <= 1e-18:
+            return float(p["heightM"]), float(p["incidenceDeg"])
+        weights.append(1.0 / d2)
+
+    total = sum(weights)
+    height = sum(p["heightM"] * w for p, w in zip(nearest, weights)) / total
+    incidence = sum(p["incidenceDeg"] * w for p, w in zip(nearest, weights)) / total
+    return height, incidence
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("reveal")
     parser.add_argument("source")
     parser.add_argument("out")
-    parser.add_argument("--reference-height", type=float, required=True)
-    parser.add_argument("--incidence", type=float, required=True)
-    parser.add_argument("--heading", type=float, required=True)
+    parser.add_argument("--grid", required=True, help="`sar-geocode.py <ann> --grid` output")
     parser.add_argument("--feather-projected-m", type=float, required=True)
     parser.add_argument("--look-right", action=argparse.BooleanOptionalAction, default=True)
     args = parser.parse_args()
@@ -100,10 +145,12 @@ def main() -> int:
     srs.ImportFromEPSG(3857)
     srs.SetAxisMappingStrategy(osr.OAMS_TRADITIONAL_GIS_ORDER)
 
-    per_metre = 1.0 / math.tan(math.radians(args.incidence))
-    bearing = math.radians(args.heading + (90.0 if args.look_right else -90.0))
+    with open(args.grid) as handle:
+        grid = json.load(handle)
+    points = grid["points"]
+    bearing = math.radians(grid["headingDeg"] + (90.0 if args.look_right else -90.0))
 
-    corrected = uncorrected = off_swath = 0
+    corrected = uncorrected = off_swath = invalid_geometry = 0
     max_shift_px = 0
 
     for feature in features:
@@ -113,7 +160,24 @@ def main() -> int:
         geom = ogr.CreateGeometryFromJson(json.dumps(geometry))
         # The feather moves with the lake, or there would be a visible step partway up the ramp
         # where corrected pixels met uncorrected ones.
-        geom = geom.Buffer(args.feather_projected_m)
+        #
+        # ⚠ **GEOS throws on a self-intersecting ring, and one bad lake must not lose the granule.**
+        # `TopologyException: side location conflict` on a corpus polygon killed a calibration run
+        # outright; here the same throw would abort a job that had already paid for its granule read.
+        # `MakeValid` fixes the ordinary case, and a body that still will not buffer falls back to its
+        # unbuffered shape — the feather ring around it stays uncorrected, which is a cosmetic loss on
+        # one lake rather than a lost frame.
+        try:
+            buffered = geom.Buffer(args.feather_projected_m)
+        except RuntimeError:
+            try:
+                buffered = geom.MakeValid().Buffer(args.feather_projected_m)
+            except RuntimeError:
+                buffered = None
+        if buffered is None or buffered.IsEmpty():
+            invalid_geometry += 1
+            buffered = geom
+        geom = buffered
         if geom.IsEmpty():
             continue
 
@@ -130,8 +194,13 @@ def main() -> int:
             # ⚠ **Negated.** `sar-geocode.py` prints where the pixels SHOULD BE DRAWN; this needs
             # where they ARE, so it can go and fetch them. See `maskOffsetMeters` in core — the
             # wrong direction here does not halve the correction, it doubles the error.
-            magnitude = -(float(elevation) - args.reference_height) * per_metre
-            inflation = 1.0 / math.cos(math.radians(latitude_of((miny + maxy) / 2)))
+            lat = latitude_of((miny + maxy) / 2)
+            lng = (minx + maxx) / 2 / MW * 180.0
+            # Per lake, from the grid around it — see `local_reference`. The scene average that
+            # stood here made the correction worse than doing nothing.
+            reference, incidence = local_reference(points, lat, lng)
+            magnitude = -(float(elevation) - reference) / math.tan(math.radians(incidence))
+            inflation = 1.0 / math.cos(math.radians(lat))
             east = magnitude * math.sin(bearing) * inflation
             north = magnitude * math.cos(bearing) * inflation
             d_col = int(round(east / gt[1]))
@@ -204,6 +273,9 @@ def main() -> int:
             "corrected": corrected,
             "uncorrected": uncorrected,
             "offSwath": off_swath,
+            # Bodies whose reveal would not buffer, so their feather ring stayed uncorrected. Should
+            # be zero; a nonzero count is a corpus geometry problem worth chasing, not a cutter one.
+            "invalidGeometry": invalid_geometry,
             "maxShiftPx": max_shift_px,
         },
         sys.stdout,
