@@ -14,9 +14,19 @@ Normalising each frame to its own extremes makes every frame look about the same
 between-date change the whole thing was built to show: a lake that darkened by 2 dB when it froze
 would be re-brightened by the stretch, and the difference would vanish into the rendering.
 
-So the mapping is a constant. −30 dB to 0 dB spans open water (dark) through bright land at C-band, it
-is the same on every frame in every season, and two frames a month apart can be compared by eye
-because the same grey means the same backscatter.
+So the mapping is a constant. It is the same on every frame in every season, and two frames a month
+apart can be compared by eye because the same grey means the same backscatter.
+
+⚠ **The window is the caller's, and it moved on 2026-08-26 from −30..0 to −29..−12.** The defaults
+below are unchanged so an ad-hoc run still spans everything; `cut-granule.sh` passes the narrower
+range and carries the measurement that chose it. In short: −30..0 is 30 dB across 256 levels while
+the freeze-up signal `sar-zonal.py` measures is ~2 dB, so ~93% of the greyscale was spent on
+backscatter nobody is asking about and the founder — correctly — could not read the result. Two
+published frames from different platforms, tracks and months put every masked-in pixel between
+−28.6 and −13.1 dB.
+
+**None of that weakens the argument above**, which is about the stretch being *fixed* rather than
+about how wide it is. A narrower constant is still a constant.
 
 ## What this does not do
 

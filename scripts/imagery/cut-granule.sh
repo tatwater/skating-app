@@ -1124,11 +1124,41 @@ transform_sar() {
   # physical quantity with no natural colour; anything rendered is a choice of stretch. A FIXED range
   # is used rather than a per-scene one, because a scrubber compares dates — and a per-scene stretch
   # would make every frame look the same and the differences vanish, which is the one thing this
-  # archive exists to show. -30..0 dB spans open water through bright land at C-band.
+  # archive exists to show.
+  #
+  # ## ⚠ The window is now -29..-12, and -30..0 was spending most of the greyscale on nothing
+  #
+  # > **Founder, 2026-08-26:** *"I don't really know how to read it (it all looks like grey fuzz to
+  # > me) so I'm not sure how helpful it will be to others either."*
+  #
+  # -30..0 dB is 30 dB across 256 levels, and `sar-zonal.py` measures the whole freeze-up signal at
+  # **~2 dB** — about 17 grey levels, under 7% of the range. The measurement was real and the picture
+  # threw it away. The fixed-stretch argument above is untouched by this: the same grey still means
+  # the same backscatter on every frame in every season, which is what makes two dates comparable.
+  # Only the range changed, and it changed to where the pixels actually are.
+  #
+  # Measured 2026-08-26 on the published archive, over ~340k and ~289k masked-in pixels of two frames
+  # deliberately chosen to disagree — S1A on 1 Feb (midwinter, 10,157 bodies) and S1C on 9 Nov (open
+  # water, different platform, different track):
+  #
+  #     percentile     p1      p5     p25     p50     p75     p95     p99
+  #     1 Feb       -23.6   -22.8   -20.6   -17.5   -16.1   -14.5   -13.1
+  #     9 Nov       -28.6   -27.8   -20.2   -18.0   -16.8   -15.3   -14.2
+  #
+  # The middles agree to within 0.4-0.8 dB — and in the right direction, February reading brighter,
+  # which is the seasonal signal rather than noise. The tails are what set the window: November's
+  # dark end is **calm open water returning specularly**, which is the single most diagnostic thing
+  # radar shows us and must not be clipped away. So the range spans both frames' extremes with a
+  # little headroom, and 17 dB across 256 levels is **1.76x the contrast** on everything a skater is
+  # looking at.
+  #
+  # ⚠ Widening it back is a one-line change; the reason not to reach for a tighter window is in that
+  # table. Anything above ~-13 dB is land and bright rough ice, and clipping it costs nothing — but
+  # the -28 dB end is the picture, not the margin.
   local render="${pols[-1]}"
-  log "rendering ${render^^} at a fixed -30..0 dB stretch"
+  log "rendering ${render^^} at a fixed -29..-12 dB stretch"
   stage render_db python3 /usr/local/bin/sar-render.py "${render}.tif" "a-${render}.vrt" \
-    dn.tif --min-db -30 --max-db 0 || die "dB render failed"
+    dn.tif --min-db -29 --max-db -12 || die "dB render failed"
 
   build_alpha "$MINX" "$MINY" "$MAXX" "$MAXY"
   gdalbuildvrt -q -separate rgba.vrt dn.tif dn.tif dn.tif alpha.tif || die "gdalbuildvrt failed"
