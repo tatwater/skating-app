@@ -27,9 +27,11 @@ import {
 import { useQuery } from 'convex/react';
 import * as Location from 'expo-location';
 import { useRouter } from 'expo-router';
+import type { MultiPolygon, Polygon } from 'geojson';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { NativeSyntheticEvent } from 'react-native';
 import { StyleSheet, Text, useColorScheme, useWindowDimensions, View } from 'react-native';
+import { Button, YStack } from 'tamagui';
 import { cacheBody } from '../lib/bodyCache';
 import {
   CONTOUR_BEFORE_LAYER_ID,
@@ -87,8 +89,11 @@ import {
   waterBodiesToFeatureCollection,
   zoomForViewport,
 } from '../lib/waterMap';
+import { FreezeUpFrames } from './FreezeUpFrames';
+import { FreezeUpScrubber } from './FreezeUpScrubber';
 import { useMapSelection } from './MapSelectionContext';
 import { ReturnToRegion } from './ReturnToRegion';
+import { useFreezeUpTimeline } from './useFreezeUpTimeline';
 
 /**
  * Interactive native MapLibre map — the read side of the Phase 2 loop (§F, D5/D6/D47/D49), the
@@ -128,6 +133,20 @@ const INITIAL_QUERY: { viewport: BBox; zoom: number } = {
  * small and is plausibly "lakes near where I am". A floor, not a guarantee — it just bounds the writes.
  */
 const CACHE_SEED_MIN_ZOOM = 11;
+
+/**
+ * A stored geometry narrowed to the two shapes a lake is ever stored as.
+ *
+ * `waterBodies.polygon` is typed as the whole GeoJSON geometry union because the validator accepts
+ * one, but a body is a `Polygon` or a `MultiPolygon` and nothing else. Returning `null` for anything
+ * else keeps the seam from being computed against a point.
+ */
+function polygonOf(geometry: unknown): Polygon | MultiPolygon | null {
+  const type = (geometry as { type?: string } | null)?.type;
+  return type === 'Polygon' || type === 'MultiPolygon'
+    ? (geometry as Polygon | MultiPolygon)
+    : null;
+}
 
 export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolean }) {
   const scheme = useColorScheme();
@@ -298,6 +317,44 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
   // The viewer's favorited bodies (Phase 4, decision #1) — the highlight is a data-driven `in` filter
   // on a dedicated outline layer (RN has no feature-state). Empty when signed out.
   const favorites = useQuery(api.waterBodyFavorites.listForUser, {});
+
+  // ## The freeze-up timeline (N6e §C, D148)
+  //
+  // Mobile has no Tier 1 aerial — that one needs a canvas React Native does not have — so here
+  // "imagery" means the archive and nothing else. One toggle per lake, per D146, and it lives on the
+  // map because the sheet it would otherwise sit in is a thing the map is behind.
+  const [imageryOn, setImageryOn] = useState(false);
+  const [freezeUpBand, setFreezeUpBand] = useState('visual');
+  const [freezeUpStop, setFreezeUpStop] = useState<number | null>(null);
+  const timelineBody = useQuery(
+    api.waterBodies.get,
+    imageryOn && highlightWaterBodyId
+      ? { waterBodyId: highlightWaterBodyId as Id<'waterBodies'> }
+      : 'skip',
+  );
+  const {
+    timeline: freezeUpTimeline,
+    loading: freezeUpLoading,
+    season: freezeUpSeason,
+    index: freezeUpIndex,
+    error: freezeUpError,
+  } = useFreezeUpTimeline({
+    // ⚠ `available: false` is a delisting, and it must arrive as "no lake" rather than an empty one:
+    // `imageryMasks` refuses to bake a mask for a delisted body, so the archive has no pixels to
+    // offer and asking would be requesting frames that were never cut.
+    body: timelineBody?.available ? timelineBody.body : null,
+    band: freezeUpBand,
+    enabled: Boolean(imageryOn && highlightWaterBodyId),
+  });
+
+  // A new lake is a new timeline; an index into the old one means nothing against the new stops.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: resetting *because* these changed is the point.
+  useEffect(() => {
+    setFreezeUpStop(null);
+  }, [highlightWaterBodyId, freezeUpBand]);
+
+  const freezeUpSelected =
+    freezeUpStop !== null ? (freezeUpTimeline?.stops[freezeUpStop] ?? null) : null;
   const favoriteIds = useMemo(() => (favorites ?? []).map((f) => f.waterBodyId), [favorites]);
 
   // Put-in markers for the currently-focused lake (decision #7) — bounded to the open lake. `skip`
@@ -881,7 +938,65 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
             }}
           />
         </GeoJSONSource>
+
+        {imageryOn ? (
+          <FreezeUpFrames
+            stop={freezeUpSelected}
+            season={freezeUpSeason}
+            body={polygonOf(timelineBody?.available ? timelineBody.body.polygon : null)}
+          />
+        ) : null}
       </MapGL>
+      {/* One control per lake (D146), on the map rather than in the sheet — the sheet is the thing
+          the map is behind, so a control for the map cannot live inside it. Top-right, clear of
+          `BackToLakeButton` at y=112 and of the scrubber panel below. */}
+      {highlightWaterBodyId && !hazardDraft ? (
+        <Button
+          position="absolute"
+          top={56}
+          right={16}
+          zIndex={30}
+          size="$3"
+          backgroundColor={imageryOn ? '$primary' : '$surface'}
+          color={imageryOn ? '$primaryForeground' : '$foreground'}
+          borderColor="$border"
+          borderWidth={1}
+          onPress={() => setImageryOn((on) => !on)}
+          accessibilityLabel={imageryOn ? 'Hide satellite imagery' : 'Show satellite imagery'}
+        >
+          {imageryOn ? 'Hide imagery' : 'Show imagery'}
+        </Button>
+      ) : null}
+
+      {/* The scrubber, over the map for the same reason. Bottom-left, above the sheet's collapsed
+          height — D146's call is that the skater collapses the sheet to reach this without losing
+          the lake they were reading about. */}
+      {env.imageryArchiveUrl && imageryOn && highlightWaterBodyId && !hazardDraft ? (
+        <YStack
+          position="absolute"
+          bottom={140}
+          left={16}
+          right={16}
+          zIndex={30}
+          padding="$3"
+          borderRadius="$4"
+          backgroundColor="$surface"
+          borderColor="$border"
+          borderWidth={1}
+        >
+          <FreezeUpScrubber
+            timeline={freezeUpTimeline}
+            index={freezeUpIndex}
+            band={freezeUpBand}
+            onBandChange={setFreezeUpBand}
+            selected={freezeUpStop}
+            onSelect={setFreezeUpStop}
+            loading={freezeUpLoading}
+            error={freezeUpError}
+          />
+        </YStack>
+      ) : null}
+
       <ReturnToRegion
         visible={regionOffscreen}
         onReturn={() =>
