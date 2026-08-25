@@ -536,6 +536,19 @@ export function buildBodyTimeline(
  * {@link nearestLandableStop}), so every resting state has the picture and the date agreeing again.
  * If that ever stops being true, this becomes a D84 problem — a date presented over the wrong
  * photograph — and the caption would have to name the frame it is actually showing.
+ *
+ * ## ⚠ `revealing` is what makes the holding stop
+ *
+ * The hold is deliberately hard to interrupt: *every* other input can go quiet — no selection, a
+ * blocked stop, an empty stop list — and the last good picture stays up. Which means switching
+ * imagery **off** cannot be expressed by any of them. The stops outlive the toggle (they are built
+ * from an index and a body still in memory) and so does the selection, so the frame simply stayed on
+ * the map over a lake whose imagery the skater had just closed, with the polygon and the bathymetry
+ * drawn correctly underneath it. Observed by the founder, 2026-08-25.
+ *
+ * So there is exactly one input that means *show nothing*, it is separate from every input that means
+ * *nothing new to show*, and it also clears the hold — a caller that feeds the result back in as
+ * `previous` (both platforms do) cannot then resurrect a frame from before the toggle.
  */
 /** What is actually on the map: a primary picture, and the other half of a seam if there is one. */
 export interface RenderedFrames {
@@ -547,7 +560,10 @@ export function framesToRender(
   stops: readonly TimelineStop[],
   selected: number | null,
   previous: RenderedFrames | null,
+  /** Is imagery on at all? `false` shows nothing and drops the hold — see the note above. */
+  revealing = true,
 ): RenderedFrames {
+  if (!revealing) return { primary: null, companion: null };
   const held = previous ?? { primary: null, companion: null };
   if (selected === null) return held;
   const stop = stops[selected];

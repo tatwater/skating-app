@@ -260,6 +260,20 @@ export interface FrameStats {
  *
  * ⚠ Unlike NAIP's — public-domain federal work, and courtesy only — **this one is required.**
  */
+/**
+ * `winter-2025-26` → `winter 2025–26`, the season as a person says it.
+ *
+ * Shared rather than re-derived per platform because it is now read against
+ * {@link formatAerialSeason} in the same slot of the same heading — two spellings of a season would
+ * make the panel look like it was describing two different kinds of thing, which is the opposite of
+ * what putting them in one slot is for. An unparseable key degrades to itself: a raw `winter-2025-26`
+ * on screen is legible and obviously ours, where a guess would not be.
+ */
+export function formatSeasonLabel(season: string): string {
+  const match = /^winter-(\d{4})-(\d{2})$/.exec(season);
+  return match ? `winter ${match[1]}–${match[2]}` : season;
+}
+
 export function copernicusCredit(season: string): string {
   const match = /^winter-(\d{4})-(\d{2})$/.exec(season);
   if (!match) return 'Copernicus Sentinel data';

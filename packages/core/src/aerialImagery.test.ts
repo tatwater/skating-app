@@ -6,6 +6,7 @@ import {
   aerialExportUrl,
   aerialIdentifyUrl,
   formatAerialCaptureDate,
+  formatAerialSeason,
   parseAerialScene,
   resolutionFromSceneName,
 } from './aerialImagery';
@@ -203,5 +204,39 @@ describe('aerialBoundsFor', () => {
     expect(padded.minLng).toBeLessThan(-73.2);
     // 80 m is ~0.0007° of latitude; a sanity bound so a unit slip shows up here.
     expect(padded.maxLat - 44.46).toBeLessThan(0.002);
+  });
+});
+
+describe('formatAerialSeason — the aerial, in the archive’s grammar', () => {
+  const JUNE_2023 = Date.parse('2023-06-21T00:00:00Z');
+
+  it('names the season and the year, because that is what the other half of the slot does', () => {
+    expect(formatAerialSeason(JUNE_2023, Date.parse('2024-01-01'))).toBe('summer 2023');
+  });
+
+  it('⚠ qualifies "latest" as the aerial’s, sharing a line with a satellite season', () => {
+    // Unqualified, it would read as a claim about the freeze-up timeline it is sitting next to.
+    expect(formatAerialSeason(JUNE_2023, Date.parse('2027-01-01'))).toBe(
+      'summer 2023 · latest aerial available',
+    );
+  });
+
+  it('walks the year round', () => {
+    const on = (iso: string) => formatAerialSeason(Date.parse(iso), Date.parse('2024-01-01'));
+    expect(on('2023-04-02T00:00:00Z')).toBe('spring 2023');
+    expect(on('2023-08-31T00:00:00Z')).toBe('summer 2023');
+    expect(on('2023-10-05T00:00:00Z')).toBe('autumn 2023');
+  });
+
+  it('⚠ spans a winter across two years, exactly as the archive spells its own', () => {
+    // NAIP is flown leaf-on and should never land here. But a quiet `winter 2023` for a January
+    // flight, in a slot that also renders `winter 2025–26`, is the kind of wrong nobody checks for.
+    const on = (iso: string) => formatAerialSeason(Date.parse(iso), Date.parse('2026-06-01'));
+    expect(on('2023-12-15T00:00:00Z')).toBe('winter 2023–24');
+    expect(on('2024-01-15T00:00:00Z')).toBe('winter 2023–24');
+  });
+
+  it('says nothing at all about an unreadable timestamp', () => {
+    expect(formatAerialSeason(Number.NaN)).toBe('');
   });
 });

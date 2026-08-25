@@ -799,6 +799,26 @@ describe('framesToRender — the picture never goes away', () => {
   it('has nothing to show before anything has been chosen', () => {
     expect(framesToRender([good('a')], null, null).primary).toBeNull();
   });
+
+  it('⚠ shows nothing at all once imagery is switched off, holding or not', () => {
+    // The founder's bug, 2026-08-25: closing imagery left the raster on the map over a lake whose
+    // photograph had just been dismissed, with the polygon and bathymetry drawn correctly under it.
+    // Nothing else could express it — the stops outlive the toggle and so does the selection, and
+    // every other quiet input means "nothing *new* to show", which is precisely when it holds.
+    const stops = [good('a'), clouded, good('c')];
+    const showing = framesToRender(stops, 2, null);
+    expect(showing.primary?.frame.granuleId).toBe('c');
+
+    expect(framesToRender(stops, 2, showing, false).primary).toBeNull();
+  });
+
+  it('⚠ clears the hold when it goes off, so the old picture cannot come back on the next render', () => {
+    // Both platforms feed the result back in as `previous`. If "off" returned the held frames
+    // untouched, the very next render would hand them straight back and the picture would return.
+    const stops = [good('a')];
+    const off = framesToRender(stops, 0, framesToRender(stops, 0, null), false);
+    expect(framesToRender(stops, null, off).primary).toBeNull();
+  });
 });
 
 describe('framesToRender — a seam keeps both halves', () => {

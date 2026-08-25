@@ -42,12 +42,26 @@ export interface NotchPosition {
  */
 export function notchPositions(count: number): NotchPosition[] {
   if (count <= 0) return [];
-  if (count === 1) return [{ index: 0, fraction: 0.5 }];
-  const step = 1 / count;
   return Array.from({ length: count }, (_, index) => ({
     index,
-    fraction: step * (index + 0.5),
+    fraction: notchFraction(index, count) ?? 0.5,
   }));
+}
+
+/**
+ * Where a single notch sits — **where the thumb goes.**
+ *
+ * The exact inverse of {@link notchAtOffset}, and it has to stay that way: the thumb is drawn from
+ * this and the selection is read from that, so any drift between them is a handle that settles
+ * beside the notch it just selected. A property test pins the round-trip.
+ *
+ * `null` for an index the track does not have, which is the state before anything is selected and
+ * after a stop list shrinks under a stale index — both of which mean *draw no thumb* rather than
+ * *draw one at zero*.
+ */
+export function notchFraction(index: number, count: number): number | null {
+  if (count <= 0 || index < 0 || index >= count) return null;
+  return (index + 0.5) / count;
 }
 
 /**

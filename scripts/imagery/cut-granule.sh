@@ -330,11 +330,17 @@ fetch_masks() {
 }
 
 # The projected extent the masks occupy, which is all of the granule worth warping.
+#
+# ⚠ **Takes every file whose geometry has to fit, not just the reveal.** On the radar path the zones
+# are shifted by the geocode correction — up to ~450 m, sixteen 28 m pixels — while the reveal is only
+# 60 m of buffer wide. An extent computed from the reveal alone would leave a lake near the edge of it
+# with its corrected zone hanging off the raster, and the body would report a coverage shortfall that
+# looks exactly like a granule edge.
 mask_extent() {
-  jq -r '
-    [.features[].geometry | (if .type=="Polygon" then [.coordinates] else .coordinates end)[][][]]
+  jq -s -r '
+    [.[].features[].geometry | (if .type=="Polygon" then [.coordinates] else .coordinates end)[][][]]
     | (map(.[0]) | min), (map(.[1]) | min), (map(.[0]) | max), (map(.[1]) | max)
-  ' masks.geojson | paste -sd' ' -
+  ' "$@" | paste -sd' ' -
 }
 
 # Build `alpha.tif` — the reveal's soft edge — on a given extent at `$WARP_RES`.
@@ -420,8 +426,11 @@ build_alpha() {
 build_zones() {
   local MINX="$1" MINY="$2" MAXX="$3" MAXY="$4"
 
+  # `ZONE_SOURCE` is `water.geojson` except on the radar path, where it is the geocode-corrected copy
+  # — see `geocode_zones`. It is a variable rather than a second function because everything below
+  # here is identical and the two copies had already drifted once.
   jq -c '{type:"FeatureCollection", features:[.features | to_entries[] | .value * {properties: (.value.properties + {zone: (.key + 1)})}]}' \
-    water.geojson > water-zoned.geojson || die "zone numbering failed"
+    "$ZONE_SOURCE" > water-zoned.geojson || die "zone numbering failed"
   jq -c '[.features[] | {key: (.properties.zone|tostring), value: .properties.waterBodyId}] | from_entries' \
     water-zoned.geojson > zone-to-id.json || die "zone mapping failed"
 
@@ -432,6 +441,66 @@ build_zones() {
     || die "zone rasterize failed"
 
   build_interior "$MINY" "$MAXY"
+}
+
+# Where the zone polygons are read from. The radar path replaces it; see `geocode_zones`.
+ZONE_SOURCE=water.geojson
+GEOCODE_JSON=null
+
+# ## The DEM-corrected geocode — move the zones onto the pixels that actually depict the lake
+#
+# A GRD carries no map projection, only ground-control points computed at **one average scene
+# height**. A lake above or below that reference lands displaced along range by `(h - h_ref)/tan(θ)`
+# — and because Sentinel-1 is right-looking, the displacement flips sign between ascending and
+# descending. That is what made two islands in Mascoma jump east, west, east as a scrubber advanced
+# through alternating passes.
+#
+# ⚠ **A per-granule shift cannot fix this, and the numbers say so.** Measured on the ascending
+# Mascoma pass: a sea-level lake needs 429 m of correction and a 600 m lake needs 298 m the *other
+# way*, inside the same scene — a 750 m spread, **27 pixels**. So the correction is applied per body,
+# each from its own `elevationM`, which costs nothing because features are rasterised individually.
+#
+# ✅ **Verified before it was wired in** (2026-08-25), per the rule the tiler swap established. Two
+# real passes 24 h apart over Mascoma, range bearings 76° and 284°: predicted +162 m and +129 m
+# against measured +150 m and +150 m — under half a pixel and under one pixel. The un-negated
+# direction misses by 312 m and 279 m, so the sign is confirmed rather than reasoned about.
+#
+# ⚠ **This corrects the STATISTICS, not the picture.** The zones move onto the right pixels, so
+# `vhDb`, `sigma0Hist` and the rest describe the lake. The published frame is still one raster and
+# cannot carry twenty-seven pixels of per-lake translation, so it keeps the displacement — PR 3's
+# "hold one orbit direction per timeline" is what makes that a constant offset rather than a jump.
+# `SAR_GEOCODE_FRAME=1` additionally shifts the alpha, which trades a registration offset against the
+# reveal showing genuinely wrong ground; it is off until that is a decision somebody has made.
+geocode_zones() {
+  local href="$1" annotation_url
+
+  # STAC's `schema-product-*` asset points at the RFI annotation, not the product one, so the path is
+  # derived from the measurement href instead: `/measurement/iw-vh.tiff` -> `/annotation/iw-vh.xml`.
+  annotation_url="$(sed 's#/measurement/#/annotation/#; s#\.tiff$#.xml#' <<<"$href")"
+  if ! curl -fsSL --retry 3 "$annotation_url" -o annotation.xml; then
+    log "no product annotation at $annotation_url — zones stay uncorrected"
+    return 0
+  fi
+
+  # Any body without `elevationM` is passed through untouched and counted as skipped: the correction
+  # needs a height, and sea level is a real height rather than a stand-in for "unknown".
+  # ⚠ **Redirected to a file rather than captured with `$(stage …)`.** Command substitution runs
+  # `stage` in a subshell, so its append to `STAGE_JSON` would be discarded and this step would cost
+  # nothing according to the manifest — the one place the cost model is read from.
+  if ! stage sar_geocode sh -c 'python3 /usr/local/bin/sar-geocode.py annotation.xml \
+      --shift water.geojson water-geocoded.geojson > geocode.json'; then
+    log "geocode shift failed — zones stay uncorrected"
+    return 0
+  fi
+  GEOCODE_JSON="$(cat geocode.json)"
+  ZONE_SOURCE=water-geocoded.geojson
+  log "geocode: $(jq -c '{referenceHeightM, incidenceDeg, shifted, skipped}' <<<"$GEOCODE_JSON")"
+
+  if [[ "${SAR_GEOCODE_FRAME:-0}" == "1" ]]; then
+    python3 /usr/local/bin/sar-geocode.py annotation.xml --shift masks.geojson masks-geocoded.geojson \
+      >/dev/null && mv masks-geocoded.geojson masks.geojson \
+      && log "SAR_GEOCODE_FRAME on — the alpha moved with the zones"
+  fi
 }
 
 # ## `interior.tif` — the shoreline eroded off, because an edge pixel is not a lake pixel
@@ -586,7 +655,7 @@ transform_granule() {
   href="$(asset_href visual)"
   [[ -n "$href" ]] || die "no 'visual' (TCI) asset on $GRANULE_ID"
 
-  read -r MINX MINY MAXX MAXY <<<"$(mask_extent)"
+  read -r MINX MINY MAXX MAXY <<<"$(mask_extent masks.geojson)"
   log "mask extent (3857) $MINX $MINY $MAXX $MAXY"
 
   # 1. Warp the granule into 3857 over just the mask extent. 14 m/px is ~10 m on the ground here,
@@ -820,10 +889,11 @@ transform_granule() {
     --argjson pixels "$(( ( ${MAXX%.*} - ${MINX%.*} ) / 14 * ( ${MAXY%.*} - ${MINY%.*} ) / 14 ))" \
     --arg vmSize "${FLY_VM_SIZE_LABEL:-unknown}" \
     --argjson feather "$FEATHER_M" \
+    --argjson erosionM "$EROSION_M" \
     --argjson footprint "$(jq -c '.geometry' granule.json)" \
     '{granuleId:$granule, capturedAt:$captured, cloudCoverPct:$cloud, season:$season,
       maskSeason:$maskSeason, collection:$collection, bodyCount:$bodyCount, bodies:$bodies[0],
-      bands:$bands, featherMeters:$feather, footprint:$footprint,
+      bands:$bands, featherMeters:$feather, erosionMeters:$erosionM, footprint:$footprint,
       cost:{stageMs:$stageMs, totalMs:$totalMs, gridPixels:$pixels, vmSize:$vmSize}}' \
     > manifest.json || die "manifest build failed"
 
@@ -873,14 +943,25 @@ transform_sar() {
     return 0
   fi
 
-  read -r MINX MINY MAXX MAXY <<<"$(mask_extent)"
+  # ⚠ **The geocode runs before the extent is fixed, not after.** It moves the zones by up to ~450 m,
+  # and `mask_extent` has to be able to see where they landed — see the note on that function.
+  local p href annotation_href=""
+  for p in vh vv; do
+    href="$(asset_href "$p")"
+    [[ -n "$href" ]] || continue
+    annotation_href="${href/s3:\/\/sentinel-s1-l1c\//https:\/\/sentinel-s1-l1c.s3.amazonaws.com\/}"
+    break
+  done
+  [[ "$WATER_COUNT" -gt 0 && -n "$annotation_href" ]] && geocode_zones "$annotation_href"
+
+  read -r MINX MINY MAXX MAXY <<<"$(mask_extent masks.geojson "$ZONE_SOURCE")"
   log "mask extent (3857) $MINX $MINY $MAXX $MAXY at ${WARP_RES} m"
 
   # Both polarisations are cut. VH is the informative one for ice, but VV costs one more warp of a
   # granule already open, and their ratio is a standard discriminator we would otherwise have to come
   # back for — the same "own the pixels" argument that governs the optical side.
   local pols=() zonal_args=()
-  local p href cal_href
+  local cal_href
   for p in vv vh; do
     href="$(asset_href "$p")"
     [[ -n "$href" ]] || continue
@@ -1011,13 +1092,21 @@ transform_sar() {
     --arg vmSize "${FLY_VM_SIZE_LABEL:-unknown}" \
     --argjson feather "$FEATHER_M" \
     --argjson resolutionM "$WARP_RES" \
+    --argjson erosionM "$EROSION_M" \
+    --argjson geocode "${GEOCODE_JSON:-null}" \
+    --argjson geocodedFrame "$([[ "${SAR_GEOCODE_FRAME:-0}" == "1" ]] && echo true || echo false)" \
     --argjson footprint "$(jq -c '.geometry' granule.json)" \
     '{granuleId:$granule, capturedAt:$captured, cloudCoverPct:null, season:$season,
       maskSeason:$maskSeason, collection:$collection, mission:$mission, platform:$platform,
       band:$band, orbitDirection:(if $orbit == "" then null else $orbit end),
       relativeOrbit:$relOrbit, polarizations:$pols,
       bodyCount:$bodyCount, bodies:$bodies[0], bands:$bands, featherMeters:$feather,
-      resolutionM:$resolutionM, footprint:$footprint,
+      resolutionM:$resolutionM, erosionMeters:$erosionM,
+      # ⚠ null means the statistics were NOT geocode-corrected — an old image, a missing annotation,
+      # or a mask bake with no elevations. A consumer comparing frames across the archive has to be
+      # able to tell a corrected measurement from an uncorrected one, and the absence is the tell.
+      geocode:$geocode, geocodedFrame:$geocodedFrame,
+      footprint:$footprint,
       cost:{stageMs:$stageMs, totalMs:$totalMs, vmSize:$vmSize}}' \
     > manifest.json || die "manifest build failed"
 

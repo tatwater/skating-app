@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { crossedNotch, notchAtOffset, notchPositions } from './scrubberTrack';
+import { crossedNotch, notchAtOffset, notchFraction, notchPositions } from './scrubberTrack';
 
 describe('notchPositions', () => {
   it('spreads notches evenly across the track', () => {
@@ -60,6 +60,42 @@ describe('notchAtOffset', () => {
     for (const { index, fraction } of notchPositions(7)) {
       expect(notchAtOffset(fraction * width, width, 7)).toBe(index);
     }
+  });
+});
+
+describe('notchFraction — where the thumb goes', () => {
+  it('⚠ round-trips through notchAtOffset at every count a season can have', () => {
+    // The thumb is drawn from this and the selection is read from `notchAtOffset`. Any drift between
+    // the two is a handle that comes to rest beside the notch it just selected — visible, and exactly
+    // the kind of half-pixel disagreement that survives review. So: every count, every index.
+    const width = 411;
+    for (const count of [1, 2, 3, 7, 12, 31, 60, 97]) {
+      for (let index = 0; index < count; index++) {
+        const fraction = notchFraction(index, count);
+        expect(fraction).not.toBeNull();
+        expect(notchAtOffset((fraction ?? 0) * width, width, count)).toBe(index);
+      }
+    }
+  });
+
+  it('agrees with notchPositions, which is built from it', () => {
+    expect(notchPositions(4).map((n) => n.fraction)).toEqual([
+      notchFraction(0, 4),
+      notchFraction(1, 4),
+      notchFraction(2, 4),
+      notchFraction(3, 4),
+    ]);
+  });
+
+  it('puts a lone notch in the centre, having no range to sit at one end of', () => {
+    expect(notchFraction(0, 1)).toBe(0.5);
+  });
+
+  it('has no position for an index the track does not have — draw no thumb, not a thumb at zero', () => {
+    // A stop list can shrink as manifests sharpen coverage, leaving a stale index behind.
+    expect(notchFraction(9, 4)).toBeNull();
+    expect(notchFraction(-1, 4)).toBeNull();
+    expect(notchFraction(0, 0)).toBeNull();
   });
 });
 

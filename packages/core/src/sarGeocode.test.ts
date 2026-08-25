@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   geocodeOffsetMeters,
   granuleGeocodeHeight,
+  maskOffsetMeters,
   rangeDisplacementPerMetre,
   shiftCoordinate,
 } from './sarGeocode';
@@ -81,6 +82,61 @@ describe('geocodeOffsetMeters — the sign is the part to get right', () => {
     const right = geocodeOffsetMeters(args);
     const left = geocodeOffsetMeters({ ...args, lookRight: false });
     expect(Math.sign(right.eastM)).toBe(-Math.sign(left.eastM));
+  });
+});
+
+describe('maskOffsetMeters — the direction that was actually measured', () => {
+  // ## The Mascoma pair, 2026-08-25
+  //
+  // Two real passes 24 hours apart, scanned to find the offset at which the lake mask covers the
+  // darkest pixels — i.e. where the water really is in the product. These are the scene parameters
+  // as their annotations state them, and the expectations are what the scan measured.
+  //
+  // This is the regression test for a mistake that cannot be caught by inspection: the wrong
+  // direction does not halve the correction, it doubles the error, and what comes out is still a
+  // perfectly plausible backscatter figure.
+  const MASCOMA_M = 224;
+  const ASC = { referenceHeightM: 353.93, incidenceDeg: 38.688, headingDeg: 346.064 };
+  const DESC = { referenceHeightM: 327.0, incidenceDeg: 38.6, headingDeg: 194.0 };
+
+  function alongRange(
+    offset: { eastM: number; northM: number },
+    { headingDeg }: { headingDeg: number },
+  ): number {
+    const rad = ((headingDeg + 90) * Math.PI) / 180;
+    return offset.eastM * Math.sin(rad) + offset.northM * Math.cos(rad);
+  }
+
+  it('points where the pixels are, which is opposite to the imagery correction', () => {
+    const params = { ...ASC, heightM: MASCOMA_M };
+    const mask = maskOffsetMeters(params);
+    const imagery = geocodeOffsetMeters(params);
+    expect(mask.eastM).toBeCloseTo(-imagery.eastM, 6);
+    expect(mask.northM).toBeCloseTo(-imagery.northM, 6);
+  });
+
+  it('matches the ascending pass to under half a pixel', () => {
+    // Measured +150 m; a 28 m pixel, so anything inside ~14 m is agreement.
+    const along = alongRange(maskOffsetMeters({ ...ASC, heightM: MASCOMA_M }), ASC);
+    expect(along).toBeGreaterThan(136);
+    expect(along).toBeLessThan(164);
+  });
+
+  it('matches the descending pass, whose range points almost the other way', () => {
+    // Range bearing 284° against the ascending pass's 76°. Both land at +150 m along their OWN
+    // range direction, which is the sense in which the correction makes the two passes agree —
+    // and is what stops the islands moving as a scrubber crosses between them.
+    const along = alongRange(maskOffsetMeters({ ...DESC, heightM: MASCOMA_M }), DESC);
+    expect(along).toBeGreaterThan(115);
+    expect(along).toBeLessThan(165);
+  });
+
+  it('⚠ the un-negated offset misses by an order of magnitude more', () => {
+    // 312 m and 279 m on the real pair — about eleven pixels, in the wrong direction.
+    for (const scene of [ASC, DESC]) {
+      const wrong = alongRange(geocodeOffsetMeters({ ...scene, heightM: MASCOMA_M }), scene);
+      expect(Math.abs(wrong - 150)).toBeGreaterThan(250);
+    }
   });
 });
 

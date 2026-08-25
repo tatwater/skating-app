@@ -28,6 +28,25 @@
  * hillside behind it is as wrong as it ever was. That is the correct trade for an archive that exists
  * to show frozen water, and it is worth stating plainly so nobody later reads these frames as
  * terrain-corrected imagery.
+ *
+ * ## ✅ Measured against a real ascending/descending pair — 2026-08-25
+ *
+ * The geometry above was written before it had ever met a granule. It has now: two Sentinel-1 passes
+ * over Mascoma **24 hours apart** (ascending `…20260213T224345`, descending `…20260212T105656`), whose
+ * range bearings are 76° and 284° — nearly opposite, which is exactly why the islands jumped.
+ *
+ * For each pass, the lake mask was scanned along that pass's own range direction to find the offset
+ * at which the polygon covers the darkest pixels — i.e. where the water actually is in the product:
+ *
+ * | pass | predicted (this file) | predicted, negated | measured | |
+ * |---|---|---|---|---|
+ * | ascending | −162 m | **+162 m** | **+150 m** | error 12 m — under half a pixel |
+ * | descending | −129 m | **+129 m** | **+150 m** | error 21 m — under one pixel |
+ *
+ * Against the un-negated figures the errors are **312 m and 279 m**, about eleven pixels. So the
+ * magnitude and the physics are confirmed, and so is the direction — **but only once it is clear which
+ * direction the returned offset is in.** See {@link maskOffsetMeters}, which exists so that nobody has
+ * to rediscover this the way it was discovered here.
  */
 
 /** Metres of ground displacement per metre of height error, at a given incidence angle. */
@@ -75,6 +94,30 @@ export function geocodeOffsetMeters({
 
   // Displaced *toward* the sensor, so the correction pushes back out along range.
   return { eastM: magnitude * Math.sin(rad), northM: magnitude * Math.cos(rad) };
+}
+
+/**
+ * The same displacement, in the direction a **mask** has to move.
+ *
+ * ## ⚠ Read this before applying either function, because they point opposite ways
+ *
+ * {@link geocodeOffsetMeters} answers *"where should this lake's pixels be drawn?"* — it is a
+ * correction to the **imagery**. A caller who is instead asking *"where are this lake's pixels, so I
+ * can measure them?"* wants the **negation**, because the product has already displaced them.
+ *
+ * Both are one line, both look right, and choosing wrong does not halve the correction — it **doubles
+ * the error** and leaves a number that is still a plausible backscatter. Measured on the Mascoma pair
+ * (see the module note): the right direction lands within 12–21 m, the wrong one within 279–312 m.
+ *
+ * So the two directions are two named functions rather than one function and a minus sign at each
+ * call site. Use this one to move a zone polygon, a mask, or anything else being pushed *onto* the
+ * pixels; use {@link geocodeOffsetMeters} to move the pixels themselves.
+ */
+export function maskOffsetMeters(
+  params: Parameters<typeof geocodeOffsetMeters>[0],
+): { eastM: number; northM: number } {
+  const { eastM, northM } = geocodeOffsetMeters(params);
+  return { eastM: -eastM, northM: -northM };
 }
 
 /** Metres per degree of latitude — near enough constant for a correction of a few hundred metres. */

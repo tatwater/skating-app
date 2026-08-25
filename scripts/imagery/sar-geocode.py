@@ -36,12 +36,29 @@ part that would look plausible while doubling the error. This file is the same a
 pipeline can reach it. **If you change one, change both**, and check the TS tests still describe what
 this does.
 
-## ⚠ NOT YET RUN AGAINST A REAL GRANULE
+## ✅ Measured against a real ascending/descending pair — 2026-08-25
 
-Written ahead of the re-run it needs, per the rule the tiler swap established: verified-but-unapplied
-is a safe state, unwritten-and-remembered is not. Prototype on one granule over a lake with known
-islands — Mascoma is the one that exposed the bug — and confirm the islands stop moving between an
-ascending and a descending pass *before* this touches a season.
+Two Sentinel-1 passes over Mascoma **24 hours apart** (ascending `…20260213T224345`, descending
+`…20260212T105656`), whose range bearings are 76° and 284° — nearly opposite, which is why the
+islands appeared to jump. For each, the lake mask was scanned along that pass's own range direction
+to find where it covers the darkest pixels, i.e. where the water actually is in the product:
+
+    pass         this file says   negated    measured    error
+    ascending      -162 m         +162 m     +150 m      12 m   (under half a pixel)
+    descending     -129 m         +129 m     +150 m      21 m   (under one pixel)
+
+Against the un-negated figures the errors are **312 m and 279 m** — about eleven pixels.
+
+## ⚠⚠ So mind which direction you are asking for
+
+What this prints is the correction to apply to the **imagery** — *"where should these pixels be
+drawn?"* A caller asking *"where ARE these pixels, so I can measure them?"* wants the **negation**,
+because the product has already displaced them. `--shift` below does that negation, which is why it
+exists rather than leaving a minus sign at the call site. `packages/core/src/sarGeocode.ts` names the
+two directions `geocodeOffsetMeters` and `maskOffsetMeters` for the same reason.
+
+Choosing wrong does not halve the correction. It **doubles the error**, and what comes out is still a
+perfectly plausible backscatter number.
 """
 
 import argparse
@@ -98,10 +115,94 @@ def platform_heading(root: ET.Element, points: list[dict[str, float]]) -> float:
     return math.degrees(math.atan2(d_lng, d_lat)) % 360.0
 
 
+MW = 20037508.342789244
+
+
+def shift_geojson(path: str, out_path: str, reference: float, incidence: float, heading: float,
+                  look_right: bool) -> tuple[int, int]:
+    """Translate every feature onto the pixels that actually depict it.
+
+    Reads a **EPSG:3857** FeatureCollection (what `ogr2ogr -t_srs EPSG:3857` writes) and moves each
+    feature by `maskOffsetMeters` for its own `elevationM` — the NEGATION of what this script prints,
+    per the module note.
+
+    ⚠ **Per feature, not per granule, and the spread is the reason.** Measured on the ascending
+    Mascoma pass: a sea-level lake needs 429 m and a 600 m lake needs 298 m the *other* way, inside
+    one scene — a 750 m spread, 27 pixels. Any single per-granule shift is therefore wrong for most
+    of the lakes under it. Per-feature costs nothing because they are rasterised individually anyway.
+
+    ⚠ **Web Mercator metres are not ground metres**, the same 1/cos(φ) inflation the feather corrects
+    for. A bare ground offset applied in 3857 would under-shift by 28% at 44°N — which reads as the
+    correction being slightly too weak rather than as a units bug.
+
+    Returns (shifted, skipped). A feature with no `elevationM` is passed through untouched: the
+    correction needs a height, and sea level is a real height rather than a stand-in for "unknown".
+    """
+    with open(path) as handle:
+        collection = json.load(handle)
+
+    per_metre = 1.0 / math.tan(math.radians(incidence))
+    bearing = math.radians(heading + (90.0 if look_right else -90.0))
+    shifted = skipped = 0
+
+    for feature in collection.get("features", []):
+        elevation = (feature.get("properties") or {}).get("elevationM")
+        geometry = feature.get("geometry")
+        if elevation is None or not geometry:
+            skipped += 1
+            continue
+
+        # Negated: this is where the pixels ARE, not where they should be drawn.
+        magnitude = -(float(elevation) - reference) * per_metre
+        east = magnitude * math.sin(bearing)
+        north = magnitude * math.cos(bearing)
+
+        # Latitude from the feature's own northing, so the inflation is right for this lake rather
+        # than for the granule's centre — they can differ by two degrees across a 250 km pass.
+        ys = [c for c in _coords(geometry["coordinates"], 1)]
+        lat = math.degrees(2 * math.atan(math.exp((sum(ys) / len(ys)) / MW * math.pi)) - math.pi / 2)
+        inflation = 1.0 / math.cos(math.radians(lat))
+
+        geometry["coordinates"] = _translate(
+            geometry["coordinates"], east * inflation, north * inflation
+        )
+        shifted += 1
+
+    with open(out_path, "w") as handle:
+        json.dump(collection, handle)
+    return shifted, skipped
+
+
+def _coords(node, index: int):
+    """Every coordinate's `index`-th component, at any nesting depth."""
+    if node and isinstance(node[0], (int, float)):
+        yield node[index]
+        return
+    for child in node:
+        yield from _coords(child, index)
+
+
+def _translate(node, dx: float, dy: float):
+    if node and isinstance(node[0], (int, float)):
+        return [node[0] + dx, node[1] + dy, *node[2:]]
+    return [_translate(child, dx, dy) for child in node]
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("annotation")
-    parser.add_argument("height", type=float, help="target surface height, metres above ellipsoid")
+    parser.add_argument(
+        "height",
+        type=float,
+        nargs="?",
+        help="target surface height, metres above ellipsoid (omit when using --shift)",
+    )
+    parser.add_argument(
+        "--shift",
+        nargs=2,
+        metavar=("IN.geojson", "OUT.geojson"),
+        help="translate each feature onto its own pixels, using its elevationM",
+    )
     parser.add_argument(
         "--look-right",
         action=argparse.BooleanOptionalAction,
@@ -109,6 +210,8 @@ def main() -> None:
         help="Sentinel-1 is right-looking; the flag exists so the assumption is visible",
     )
     args = parser.parse_args()
+    if args.height is None and not args.shift:
+        parser.error("give a height, or --shift IN OUT")
 
     root = ET.parse(args.annotation).getroot()
     points = grid_points(root)
@@ -121,6 +224,23 @@ def main() -> None:
     reference_height = sum(p["height"] for p in points) / len(points)
     incidence = sum(p["incidence"] for p in points) / len(points)
     heading = platform_heading(root, points)
+
+    if args.shift:
+        shifted, skipped = shift_geojson(
+            args.shift[0], args.shift[1], reference_height, incidence, heading, args.look_right
+        )
+        json.dump(
+            {
+                "referenceHeightM": round(reference_height, 2),
+                "incidenceDeg": round(incidence, 3),
+                "headingDeg": round(heading, 3),
+                "shifted": shifted,
+                "skipped": skipped,
+            },
+            sys.stdout,
+        )
+        sys.stdout.write("\n")
+        return
 
     delta = args.height - reference_height
     magnitude = delta / math.tan(math.radians(incidence))
