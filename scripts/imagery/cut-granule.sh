@@ -496,20 +496,29 @@ transform_granule() {
   stage pmtiles_visual sh -c 'pmtiles convert archive.mbtiles archive.pmtiles >/dev/null 2>&1' \
     || die "pmtiles convert failed"
 
-  # SCL as its own *frame* is OFF by default — measured, 2026-08-24.
+  # SCL as its own *frame* is ON by default — founder call, 2026-08-25, reversing the 08-24 default.
   #
-  # §3's per-body clear fraction is the valuable half and always runs; this is the raster. Tiling it
-  # took a 923-body Champlain extent (11,532 x 20,608 px) past **17 minutes** without finishing,
-  # against ~2 minutes for the same granule's true colour alone. Across 4,485 granules a season that
-  # is not a rounding error, it is the budget.
+  # PR 3's band selector shows the classification alongside true colour, which is what §C1 argues makes
+  # a band selector honest rather than decorative: a skater who wants to know what a claim was derived
+  # *from* can look at it. That is a product reason, and it outranks the cost reason the flag was
+  # originally set for. Set `EMIT_SCL_FRAME=0` to go back to statistics-only.
   #
-  # The "own the pixels" argument does not carry here the way it does for the granule. We are not
-  # protecting against losing access — Copernicus keeps SCL for these exact granule ids indefinitely —
-  # only against the cost of re-deriving, and the manifest's `bodies` array already saves us that.
-  # Set `EMIT_SCL_FRAME=1` when the raster itself is wanted (N6g research, or a band selector that
-  # ends up showing the classification).
+  # §3's per-body clear fraction is the valuable half and always runs regardless; this is only the
+  # raster. Note the "own the pixels" argument does not carry here — Copernicus keeps SCL for these
+  # granule ids indefinitely, and the manifest's `bodies` array already saves the re-derivation cost.
+  #
+  # ⚠ **MEASURE THIS ON A DENSE GRANULE BEFORE COMMITTING A SEASON TO IT.** On 2026-08-24 tiling SCL
+  # took a 923-body Champlain extent (11,532 x 20,608 px) past **17 minutes without finishing**,
+  # against ~2 minutes for the same granule's true colour — while the season-wide average came out at
+  # only +24% job time and +33% storage. Those two numbers describe the same change, and the gap
+  # between them is the risk: ~18% of a season's granules sit on 1,000+ body tiles, so an average that
+  # looks affordable can hide a tail that does not finish.
+  #
+  # That measurement also predates the tiler swap landed the same day (~2.6x on the visual path), so
+  # it may already be stale in the good direction. Either way the rule from that swap applies — it was
+  # prototyped on one granule before it touched a season, and that is what caught the black lakes.
   BANDS='["visual"]'
-  if [[ -s scl.tif && "${EMIT_SCL_FRAME:-}" == "1" ]]; then
+  if [[ -s scl.tif && "${EMIT_SCL_FRAME:-1}" == "1" ]]; then
     rm -rf scl-tiles scl.mbtiles scl.pmtiles
     # z13, not z14: SCL is 20 m native, so z13 (~13.7 ground m/px here) already exceeds the source.
     # Going a zoom deeper would generate 4x the tiles to encode detail the band does not contain.
@@ -521,7 +530,7 @@ transform_granule() {
     #
     # PNG rather than WEBP: lossy compression on a label band is the same category of error as
     # interpolating one.
-    log "tiling SCL (EMIT_SCL_FRAME=1)"
+    log "tiling SCL (EMIT_SCL_FRAME on)"
     stage tile_scl gdal raster tile -q --input scl.tif --output scl-tiles \
       -f PNG --min-zoom 7 --max-zoom 13 \
       --convention tms --skip-blank --webviewer none \
