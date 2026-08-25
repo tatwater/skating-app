@@ -87,19 +87,33 @@ landed() {
     echo "[backfill] FATAL: cannot list r2:${BUCKET}/frames/${SEASON}/ (rclone exit $status)" >&2
     return 1
   fi
-  # ⚠ **A frame object is `<granuleId>-<band>.pmtiles`, not `<granuleId>.pmtiles`.**
+  # ⚠ **Landed is the MANIFEST, `<granuleId>.json` — never the `.pmtiles`.**
   #
-  # `cut-granule` started keying uploads by band the moment a granule could yield more than one
-  # frame (`-visual`, `-scl`, `-vv`, `-vh`) — and stripping only the extension leaves
-  # `S2C_18TXP_20260215_0_L2A-visual`, which never equals the id in `asked.txt`. Every round then
-  # reads as "nothing landed", re-spawns the entire list, and after two rounds exits 1 claiming the
-  # season prefix is wrong: a whole backfill re-run for a suffix.
+  # Two reasons, and the second is the one that bites.
   #
-  # Granule ids contain no `-` (S2 `S2C_18TXP_…`, S1 `S1A_IW_GRDH_…`), so the trailing `-<band>` is
-  # unambiguous. `sort -u` because two bands of one granule are one landed granule, not two.
+  # 1. A granule yields more than one frame, keyed by band (`-visual`, `-scl`, `-vv`, `-vh`), so
+  #    `<granuleId>.pmtiles` names none of them. Matching `.pmtiles` at all therefore needs the band
+  #    suffix stripped back off, which needs "granule ids contain no `-`" to hold forever on every
+  #    mission we ever add. It happens to hold today. It is not a thing to depend on.
+  #
+  # 2. **A frame object does not mean the job finished.** `cut-granule` uploads visual, then SCL,
+  #    then the manifest, each `|| die` — so a network blip on the SCL or manifest PUT, or a Machine
+  #    killed between them, leaves `-visual.pmtiles` sitting in the bucket with no manifest behind
+  #    it. Reducing that object to its granule id marks the granule landed, and it is then never
+  #    retried; meanwhile `build-index` derives the season index from `*.json` under `frames/` and
+  #    only from those, so the frame is invisible to every client forever. A silent permanent hole,
+  #    paid for in storage, on the one loop whose whole job is noticing holes.
+  #
+  # The manifest is written last and is a single small PUT, which R2 stores atomically — so its
+  # presence means every earlier step succeeded. That makes "landed" mean "will appear in the index",
+  # which is the property this loop actually cares about, and it needs no suffix stripping at all.
+  # A half-uploaded granule now reads as missing and gets re-spawned, which overwrites the orphan.
+  #
+  # The only `.json` under `frames/<season>/` is the per-granule manifest; the mask sidecar lives at
+  # `masks/<season>.json`, a different prefix, and `lsf` does not recurse.
   #
   # `sed -n …p` rather than `grep | sed`: it selects and strips in one pass and exits 0 on no match.
-  printf '%s\n' "$listing" | sed -n 's/\.pmtiles$//p' | sed 's/-[A-Za-z0-9]\{1,\}$//' | sort -u
+  printf '%s\n' "$listing" | sed -n 's/\.json$//p' | sort
 }
 
 previous_missing=-1
