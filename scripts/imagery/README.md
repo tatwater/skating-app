@@ -141,6 +141,18 @@ Removing `zones.tif`, `interior.tif`, `green.tif` and `swir16.tif` before tiling
 at this size those are about a gigabyte apiece and they evict the page cache holding `scene.tif`. That
 is worth having and it is not the main term.
 
+**⚠ And more RAM does not buy the rest of it back.** The same granule, same code, at 4 GB with
+`GDAL_CACHEMAX` raised to 1200:
+
+| | `tile_visual` | total | cost for this granule |
+|---|---|---|---|
+| **2 GB** | **316.5s** | **491.1s** | **$0.00251** |
+| 4 GB | 330.2s | 501.6s | $0.00458 |
+
+Within noise on time, and **1.8× the money**. So the tail is not memory-starved, it is CPU-bound on a
+shared vCPU — which settles the sizing question the other way from the usual instinct. **2 GB stays.**
+Reach for `shared-cpu-8x` before reaching for RAM if this ever needs to be faster.
+
 ⚠ **Do not read the plan's "28.9s tiling on this granule" as a Fly figure.** That was measured
 locally, at four threads to imitate `shared-cpu-4x`. A shared vCPU is not four of your cores.
 
