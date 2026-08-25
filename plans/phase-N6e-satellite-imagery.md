@@ -1127,6 +1127,32 @@ so it may be stale in the good direction; either way, one granule first.
    radiometric one and the planimetric one — from one cause. Worth testing together rather than
    separately.
 
+   > **Founder, 2026-08-25:** *"Should we find a way to use the radar information from both
+   > directions by calculating their respective offsets? Then we get double the frequency."*
+   >
+   > **Geometrically, yes — and analytically rather than empirically.** A lake is a constant-elevation
+   > surface, so over *the lake* the displacement is a near-constant translation rather than a
+   > per-pixel warp: `(h_lake − h_ref) / tan(θ)` along range. Every term is already in hand — the
+   > corpus carries elevation at 99.5%, and `θ` and the reference height live in the same product
+   > annotation `sar-cal-lut.py` already opens for calibration. Correcting each pass to truth removes
+   > the bounce *and* lands both directions in the same place, with no image matching and no pairing.
+   >
+   > **Radiometrically, only partly, and the caveat bites where it matters.** `sigma0` genuinely
+   > varies with incidence angle — physics, not calibration error — and **ice and water have different
+   > angular responses.** So an offset fitted on open water in November is wrong for ice in February:
+   > the correction is least valid exactly at the transition it would be used to date.
+   >
+   > **So: two parallel series, not one pooled one.** Keep ascending and descending internally
+   > consistent and read them together. That is the doubled observation frequency without asserting
+   > the two are one measurement — and a drop seen in one series and confirmed in the other days later
+   > is *stronger* evidence than a merged series, for the same reason two independent estimators are
+   > what caught the S1C anomaly in question 7.
+   >
+   > ⚠ **`sat:relative_orbit` is published by STAC and we do not record it.** Orbit direction is the
+   > coarse key; two passes from the same direction on different tracks still differ in incidence
+   > angle. Recording it costs nothing at cut time and is the finer comparability filter both this and
+   > question 7 will want.
+
    **PR 3 mitigates rather than fixes**: a radar timeline now holds one orbit direction, so the lake
    stops moving between dates. That is also what the `vhDb` comparability note was already asking
    for. The real fix is a terrain-corrected geocode against a DEM, which is producer work and should
