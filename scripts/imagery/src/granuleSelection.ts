@@ -91,6 +91,15 @@ export interface GranuleCandidate {
    * "that lake was not photographed that day".
    */
   footprint?: Polygon | MultiPolygon;
+  /**
+   * `sat:orbit_state` — ascending or descending. Sentinel-1 only; absent on optical items.
+   *
+   * ⚠ **Not a selection filter, and that is deliberate** (see `sarSelection`). The two directions see
+   * a lake at different incidence angles, so their backscatter is not comparable and a *timeline*
+   * must not blend them — but discarding half the passes at selection time is irreversible, where
+   * recording the direction and filtering at read time is not.
+   */
+  orbitDirection?: 'ascending' | 'descending';
 }
 
 /** A granule id decomposed. Sentinel-2 ids read `S2C_18TXP_20260215_0_L2A`. */
