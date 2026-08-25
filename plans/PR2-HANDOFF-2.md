@@ -588,14 +588,35 @@ Done 2026-08-25:
   `archiveSeasonLabel`/`archiveSeasonAt` collapsed the `winter-YYYY-YY` construction that had been
   written twice in TypeScript.
 
+### ✅ Sentinel-1 — built and verified end to end, 2026-08-25
+
+| piece | file | verified on |
+| --- | --- | --- |
+| id grammar + selection | `src/sarSelection.ts` | 14 tests |
+| `--mission=s1` search | `src/selectGranules.ts` | 45 items → 25 dual-pol over Morey/Mascoma |
+| calibration LUT | `sar-cal-lut.py` | 1.50 dB span on a real scene |
+| per-body sigma0 | `sar-zonal.py` | 1,222 bodies, VH −17.69 dB |
+| fixed-stretch render | `sar-render.py` | 67/67 tiles carry signal, 0 black |
+| cutter branch | `cut-granule.sh` `transform_sar` | one pass, end to end on Fly |
+
+**Measured, one pass:** 454s, 5,081 bodies, 12 MB frame, 3,452 tiles z7–z13. Against S2's 67s — radar
+is ~7× the per-granule cost, and there are far fewer passes. ⚠ **Two stages dominate and both are
+soft:** tiling 213s (47%) and the two calibration warps 88s (19%). The LUT is a smooth 27×649 grid
+warped to a 175-megapixel raster; warping it far coarser would cost nothing in accuracy. Worth doing
+before a season of radar, not before a pilot.
+
+**Key calls, all recorded in the code:** the mission comes from the id, not a flag; radar warps at
+28 m because 10 m pixel *spacing* oversamples a 20×22 m *resolution*; acquisition parameters ride in
+the manifest because selection keeps every pass; and the render stretch is fixed at −30..0 dB because
+a per-scene stretch would erase the between-date change the scrubber exists to show.
+
 Left:
 
 1. **The `fan-out.sh` throttle fix** (§4b) — one line, deliberately deferred until the run finished
    because bash reads a running script incrementally. Then a multi-wave check, and `MAX_PARALLEL` can
    be set deliberately (70 was the founder's suggestion) rather than drifting.
-2. **Sentinel-1 — now PR 2 work, not a separate lane** *(founder, 2026-08-25)*. ⏳ **Selection is
-   built** (`sarSelection.ts`, 14 tests) and `--mission=s1` runs end to end; the transform and sigma0
-   remain. Scope it as calibrated
+2. ~~**Sentinel-1**~~ ✅ **built** — see above. What remains is a **pilot run** of one season's radar
+   over the region, and the two cost stages worth trimming first. Scope it as calibrated
    sigma0 in **VH**, not a band swap: §4c found VV cannot separate ice from calm water while VH shows
    ~2 dB on lakes that actually freeze. `granuleSelection`'s module doc lists what has to move — a
    second id grammar with no MGRS tile to dedup on, a different collection and bucket, and the trap
