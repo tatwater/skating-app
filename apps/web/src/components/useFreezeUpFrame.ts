@@ -31,8 +31,22 @@ import { useEffect } from 'react';
 import { env } from '../lib/env';
 import { insertBeforeLayerId } from './useImageryReveal';
 
+/**
+ * Which half of a seam a mount is for.
+ *
+ * Two slots rather than one, because a lake bisected by a granule edge needs both halves on screen at
+ * once — see `TimelineStop.companion`. They are separate sources with separate lifecycles so that
+ * scrubbing to a date with no companion tears down exactly one of them.
+ */
+export type FreezeUpSlot = 'primary' | 'companion';
+
 export const FREEZE_UP_SOURCE_ID = 'freeze-up-frame';
 export const FREEZE_UP_LAYER_ID = 'freeze-up-frame-raster';
+
+const sourceIdFor = (slot: FreezeUpSlot) =>
+  slot === 'primary' ? FREEZE_UP_SOURCE_ID : `${FREEZE_UP_SOURCE_ID}-companion`;
+const layerIdFor = (slot: FreezeUpSlot) =>
+  slot === 'primary' ? FREEZE_UP_LAYER_ID : `${FREEZE_UP_LAYER_ID}-companion`;
 
 /** Long enough to read as a cross-fade, short enough not to feel like latency. */
 const FADE_MS = 180;
@@ -48,11 +62,13 @@ export function useFreezeUpFrame({
   loaded,
   frame,
   season,
+  slot = 'primary',
 }: {
   mapRef: { current: maplibregl.Map | null };
   loaded: boolean;
   frame: IndexedFrame | null;
   season: string | null;
+  slot?: FreezeUpSlot;
 }): void {
   const baseUrl = env.imageryArchiveUrl;
   const key = frame?.key ?? null;
@@ -61,8 +77,10 @@ export function useFreezeUpFrame({
     const map = mapRef.current;
     if (!map || !loaded || !baseUrl || !key || !season) return;
 
+    const sourceId = sourceIdFor(slot);
+    const layerId = layerIdFor(slot);
     const url = `pmtiles://${archiveUrl(baseUrl, key)}`;
-    map.addSource(FREEZE_UP_SOURCE_ID, {
+    map.addSource(sourceId, {
       type: 'raster',
       url,
       // The cutter tiles at 512 and the frames are WEBP; saying so saves MapLibre a probe request and
@@ -77,9 +95,9 @@ export function useFreezeUpFrame({
     });
     map.addLayer(
       {
-        id: FREEZE_UP_LAYER_ID,
+        id: layerId,
         type: 'raster',
-        source: FREEZE_UP_SOURCE_ID,
+        source: sourceId,
         paint: {
           'raster-opacity': 0,
           'raster-opacity-transition': { duration: FADE_MS, delay: 0 },
@@ -95,19 +113,19 @@ export function useFreezeUpFrame({
     // Gate the fade on this source reporting, never on `idle` — see the module note.
     let revealed = false;
     const reveal = (event: maplibregl.MapSourceDataEvent) => {
-      if (revealed || event.sourceId !== FREEZE_UP_SOURCE_ID || !event.isSourceLoaded) return;
-      if (!map.getLayer(FREEZE_UP_LAYER_ID)) return;
+      if (revealed || event.sourceId !== sourceId || !event.isSourceLoaded) return;
+      if (!map.getLayer(layerId)) return;
       revealed = true;
-      map.setPaintProperty(FREEZE_UP_LAYER_ID, 'raster-opacity', 1);
+      map.setPaintProperty(layerId, 'raster-opacity', 1);
     };
     map.on('sourcedata', reveal);
 
     return () => {
       map.off('sourcedata', reveal);
       // Order matters: a source with a layer still attached throws on removal.
-      if (map.getLayer(FREEZE_UP_LAYER_ID)) map.removeLayer(FREEZE_UP_LAYER_ID);
-      if (map.getSource(FREEZE_UP_SOURCE_ID)) map.removeSource(FREEZE_UP_SOURCE_ID);
+      if (map.getLayer(layerId)) map.removeLayer(layerId);
+      if (map.getSource(sourceId)) map.removeSource(sourceId);
     };
     // `baseUrl` is inlined by Vite at build and cannot change within a session.
-  }, [mapRef, loaded, key, season]);
+  }, [mapRef, loaded, key, season, slot]);
 }

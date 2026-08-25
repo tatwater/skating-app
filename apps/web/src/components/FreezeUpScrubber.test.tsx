@@ -227,3 +227,37 @@ describe('FreezeUpScrubber — the empty states are not errors', () => {
     expect(screen.getByText(/Loading the freeze-up timeline/)).toBeTruthy();
   });
 });
+
+describe('FreezeUpScrubber — the split-body seam', () => {
+  const seamed = (companionAt: string) =>
+    timelineOf([
+      stop({
+        frame: frame({ granuleId: 'west', capturedAt: '2025-12-22T15:51:05Z' }),
+        companion: {
+          frame: frame({ granuleId: 'east', capturedAt: companionAt }),
+          stats: { waterBodyId: 'x', coveragePct: 0.45, clearPct: 0.9, pixels: 900 },
+        },
+        stats: { waterBodyId: 'x', coveragePct: 0.55, clearPct: 0.9, pixels: 900 },
+      }),
+    ]);
+
+  it('⚠ names the second date at the same weight as the first', () => {
+    // Both halves are on screen. Presenting one date would put a single day's label over ground
+    // observed twice, which is the inference the seam exists to prevent.
+    render(<Harness timeline={seamed('2025-12-24T15:51:05Z')} />);
+    expect(screen.getByText(/Dec 22, 2025/)).toBeTruthy();
+    expect(screen.getByText(/\+ Dec 24, 2025/)).toBeTruthy();
+  });
+
+  it('explains why there are two, rather than leaving a bare "+"', () => {
+    render(<Harness timeline={seamed('2025-12-24T15:51:05Z')} />);
+    expect(screen.getByText(/sits across a granule edge/)).toBeTruthy();
+  });
+
+  it('says nothing extra when both halves came from the same pass', () => {
+    // The common case: one pass, two adjacent granules, same day. There is no second date to name and
+    // a "+ Dec 22" beside "Dec 22" would read as a bug.
+    render(<Harness timeline={seamed('2025-12-22T15:51:05Z')} />);
+    expect(screen.queryByText(/sits across a granule edge/)).toBeNull();
+  });
+});

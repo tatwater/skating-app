@@ -1102,9 +1102,24 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
     setFreezeUpStop(null);
   }, [highlightWaterBodyId, freezeUpBand]);
 
-  const freezeUpFrame =
-    freezeUpStop !== null ? (freezeUpTimeline?.stops[freezeUpStop]?.frame ?? null) : null;
-  useFreezeUpFrame({ mapRef, loaded, frame: freezeUpFrame, season: freezeUpSeason });
+  const freezeUpSelected =
+    freezeUpStop !== null ? (freezeUpTimeline?.stops[freezeUpStop] ?? null) : null;
+  useFreezeUpFrame({
+    mapRef,
+    loaded,
+    frame: freezeUpSelected?.frame ?? null,
+    season: freezeUpSeason,
+  });
+  // The other half of a bisected lake (§C4's seam). Its own slot, so scrubbing to a date with no
+  // companion tears down exactly this one and leaves the primary alone. Both are alpha-masked to the
+  // same corpus shapes, so they abut along the granule edge that split them rather than overlapping.
+  useFreezeUpFrame({
+    mapRef,
+    loaded,
+    frame: freezeUpSelected?.companion?.frame ?? null,
+    season: freezeUpSeason,
+    slot: 'companion',
+  });
 
   // The wash belongs on the bodies still **waiting** for a photograph — the reveal set minus whatever
   // is already on screen. Pulsing a lake that is already showing its imagery says the wrong thing

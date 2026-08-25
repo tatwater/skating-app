@@ -101,6 +101,33 @@ export const MIN_BODY_CLEAR_FRACTION = 0.6;
  */
 export const MIN_BODY_COVERAGE = 0.5;
 
+/**
+ * How far apart two frames may be and still be shown side by side (§C4's seam).
+ *
+ * > **Founder, 2026-08-24:** *"If a single body is split across two images from different dates, we
+ * > should provide a hairline border between the two images, with their respective dates on either
+ * > side."*
+ *
+ * The common case is **zero** — a lake bisected by a tile boundary, photographed by the same pass on
+ * the same day, arriving as two granules. The hard case is two dates, and the cap is what stops a
+ * seam from becoming a collage: pairing a December half with an April half would present one picture
+ * of a lake that was never in that state.
+ *
+ * Sixteen days is roughly the observed spacing of usable optical frames in a Northeast winter
+ * (11–12 a season), so this admits a neighbouring pass and refuses a distant one. **The dates are
+ * always drawn on both sides regardless** — the cap is not what makes the seam honest, the labels
+ * are. It only stops the pairing from being absurd.
+ */
+export const SEAM_MAX_GAP_DAYS = 16;
+
+/**
+ * How much a second frame must add before it is worth a seam.
+ *
+ * Below this the join costs a skater more attention than the sliver of lake it buys, and a hairline
+ * across 3% of a shoreline reads as a rendering artifact rather than as two observations.
+ */
+export const SEAM_MIN_ADDED_COVERAGE = 0.1;
+
 /** Why a covered frame is not landable. Carries no words — see the module note on phrasing. */
 export type StopBlockReason = 'cloud' | 'coverage';
 
@@ -129,6 +156,18 @@ export interface TimelineStop {
    * `vhDb` for radar. Absent whenever `basis` is not `'measured'`.
    */
   stats?: FrameBodyStats;
+  /**
+   * A second frame covering what this one missed — the split-body seam.
+   *
+   * **Both halves render, with a hairline between them and each date on its own side.** A granule
+   * edge can bisect a lake, and when it does neither frame is wrong: they are two photographs of two
+   * halves. Cropping to one would present a single date over ground observed twice, weeks apart,
+   * with nothing on screen to say so — the inference §C4 exists to prevent.
+   *
+   * Set only where a companion genuinely helps: {@link SEAM_MIN_ADDED_COVERAGE} of new lake, within
+   * {@link SEAM_MAX_GAP_DAYS}. A stop blocked on coverage can become landable through one.
+   */
+  companion?: { frame: IndexedFrame; stats?: FrameBodyStats };
 }
 
 /**
@@ -183,6 +222,71 @@ export interface BodyTimelineOptions {
   minClearFraction?: number;
   /** Override the standalone coverage floor. Same reason. */
   minCoverage?: number;
+}
+
+/**
+ * Pair each partial stop with the nearest frame that fills what it missed — §C4's seam.
+ *
+ * ## The overlap we cannot measure, and the direction we err in
+ *
+ * ⚠ **Two coverage fractions do not tell us whether they cover the *same* half.** `coveragePct` says
+ * how much of the lake a pass reached, not which part, so a pair reading 0.6 and 0.5 might together
+ * be the whole lake or might be the same 0.6 twice. The added coverage is therefore bounded as
+ * `min(companion, 1 − primary)` — an optimistic estimate.
+ *
+ * **Optimistic is the right direction here** because the failure is visible and the alternative is
+ * not: an over-eager seam draws a hairline a skater can see and judge, while a conservative one
+ * silently keeps showing half a lake with no indication the other half was ever photographed. The
+ * geometry that would settle it exactly is the granule footprint intersected with the body polygon,
+ * which is a fair amount of work for a handful of tile-straddling lakes.
+ *
+ * In practice the common case is not ambiguous at all: adjacent granules from the *same pass*, whose
+ * coverages really are complementary because the boundary that split them is the same boundary.
+ */
+function attachSeams(stops: TimelineStop[], minCoverage: number): void {
+  const capMs = SEAM_MAX_GAP_DAYS * 86_400_000;
+
+  for (const stop of stops) {
+    const own = stop.stats?.coveragePct ?? null;
+    if (own === null || own >= 1) continue;
+
+    const at = new Date(stop.frame.capturedAt).getTime();
+    if (Number.isNaN(at)) continue;
+
+    let best: TimelineStop | undefined;
+    let bestGap = Number.POSITIVE_INFINITY;
+
+    for (const other of stops) {
+      if (other === stop || other.frame.granuleId === stop.frame.granuleId) continue;
+      const theirs = other.stats?.coveragePct ?? null;
+      if (theirs === null) continue;
+      // A companion that adds nothing is not a seam, it is a second copy of the same view.
+      if (Math.min(theirs, 1 - own) < SEAM_MIN_ADDED_COVERAGE) continue;
+
+      const otherAt = new Date(other.frame.capturedAt).getTime();
+      if (Number.isNaN(otherAt)) continue;
+      const gap = Math.abs(otherAt - at);
+      if (gap > capMs || gap >= bestGap) continue;
+
+      best = other;
+      bestGap = gap;
+    }
+
+    if (!best) continue;
+    stop.companion = {
+      frame: best.frame,
+      ...(best.stats ? { stats: best.stats } : {}),
+    };
+
+    // A sliver that was blocked for showing too little lake is no longer showing too little lake.
+    const combined = own + Math.min(best.stats?.coveragePct ?? 0, 1 - own);
+    if (stop.blockedBy === 'coverage' && combined >= minCoverage) {
+      stop.landable = true;
+      // Deleted rather than set to `undefined`, so a stop that recovered is structurally identical
+      // to one that was never blocked — otherwise a `toEqual` comparison can tell them apart.
+      delete stop.blockedBy;
+    }
+  }
 }
 
 /** An empty timeline, for the several honest ways a body has no scrubber. */
@@ -341,6 +445,8 @@ export function buildBodyTimeline(
       ...(row ? { stats: row } : {}),
     });
   }
+
+  attachSeams(stops, minCoverage);
 
   return {
     season: index.season,

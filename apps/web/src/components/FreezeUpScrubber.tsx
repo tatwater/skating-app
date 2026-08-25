@@ -112,6 +112,10 @@ export function FreezeUpScrubber({
 
   const current = selected !== null ? stops[selected] : undefined;
   const caption = current ? stopCaption(current) : null;
+  const companionCaption =
+    current?.companion && current.companion.frame.capturedAt !== current.frame.capturedAt
+      ? stopCaption({ ...current, frame: current.companion.frame })
+      : null;
 
   return (
     <div className="flex flex-col gap-2">
@@ -146,10 +150,22 @@ export function FreezeUpScrubber({
       {caption ? (
         <p aria-live="polite" className="text-sm">
           <span className="font-medium">{caption.date}</span>
+          {/* ⚠ A seam's second date is named at the same weight as the first, never as a footnote.
+              Both halves are on screen; presenting one date would put a single day's label over
+              ground observed twice — the inference the seam exists to prevent. */}
+          {companionCaption ? (
+            <span className="font-medium"> + {companionCaption.date}</span>
+          ) : null}
           <span className="text-muted-foreground"> · {caption.source}</span>
           {caption.caveat ? (
             <span className="text-muted-foreground"> · {caption.caveat}</span>
           ) : null}
+        </p>
+      ) : null}
+      {companionCaption ? (
+        <p className="text-muted-foreground text-xs">
+          Two passes, joined — this lake sits across a granule edge, so each half was photographed
+          on its own date.
         </p>
       ) : null}
 

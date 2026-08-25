@@ -8,6 +8,8 @@ import {
   MIN_BODY_CLEAR_FRACTION,
   MIN_BODY_COVERAGE,
   nearestLandableStop,
+  SEAM_MAX_GAP_DAYS,
+  SEAM_MIN_ADDED_COVERAGE,
   type TimelineBody,
   type TimelineStop,
 } from './imageryTimeline';
@@ -460,5 +462,173 @@ describe('the branches that only show up at the edges', () => {
 
     expect(timeline.stops[0]?.landable).toBe(true);
     expect(timeline.stops[0]?.stats).toBeUndefined();
+  });
+});
+
+describe('buildBodyTimeline — the split-body seam', () => {
+  const pairStats = (
+    a: { granuleId: string; coveragePct: number },
+    b: { granuleId: string; coveragePct: number },
+  ) => {
+    const map = new Map(
+      [a, b].map((g) => [
+        g.granuleId,
+        {
+          granuleId: g.granuleId,
+          capturedAt: '2026-02-15T15:51:05Z',
+          bodies: [
+            { waterBodyId: 'champlain', coveragePct: g.coveragePct, clearPct: 0.95, pixels: 4107 },
+          ],
+        },
+      ]),
+    );
+    return (id: string) => map.get(id);
+  };
+
+  it('pairs a lake bisected by a tile boundary on the same pass', () => {
+    // The common case, and the one with no ambiguity: two granules from one pass, split by the same
+    // boundary, so their coverages really are complementary.
+    const timeline = buildBodyTimeline(
+      season([
+        frame({ granuleId: 'west', capturedAt: '2026-02-15T15:51:05Z' }),
+        frame({ granuleId: 'east', capturedAt: '2026-02-15T15:51:05Z' }),
+      ]),
+      CHAMPLAIN,
+      {
+        stats: pairStats(
+          { granuleId: 'west', coveragePct: 0.55 },
+          { granuleId: 'east', coveragePct: 0.45 },
+        ),
+      },
+    );
+
+    expect(timeline.stops[0]?.companion?.frame.granuleId).toBe('east');
+    expect(timeline.stops[1]?.companion?.frame.granuleId).toBe('west');
+  });
+
+  it('⚠ makes a coverage-blocked sliver landable once its other half is attached', () => {
+    // Without the seam this frame is drawn, blocked, and useless. With it, a skater sees the whole
+    // lake — as two dated halves rather than as one picture pretending to be whole.
+    const timeline = buildBodyTimeline(
+      season([
+        frame({ granuleId: 'sliver', capturedAt: '2026-02-15T15:51:05Z' }),
+        frame({ granuleId: 'rest', capturedAt: '2026-02-17T15:51:05Z' }),
+      ]),
+      CHAMPLAIN,
+      {
+        stats: pairStats(
+          { granuleId: 'sliver', coveragePct: 0.2 },
+          { granuleId: 'rest', coveragePct: 0.8 },
+        ),
+      },
+    );
+
+    expect(timeline.stops[0]?.landable).toBe(true);
+    expect(timeline.stops[0]?.blockedBy).toBeUndefined();
+    expect(timeline.stops[0]?.companion?.frame.granuleId).toBe('rest');
+  });
+
+  it('prefers the nearest pass in time, so the two dates are as close as the archive allows', () => {
+    const stats = (id: string) =>
+      ({
+        near: {
+          granuleId: 'near',
+          capturedAt: '2026-02-17T00:00:00Z',
+          bodies: [{ waterBodyId: 'champlain', coveragePct: 0.5, clearPct: 0.9, pixels: 100 }],
+        },
+        far: {
+          granuleId: 'far',
+          capturedAt: '2026-02-25T00:00:00Z',
+          bodies: [{ waterBodyId: 'champlain', coveragePct: 0.5, clearPct: 0.9, pixels: 100 }],
+        },
+        primary: {
+          granuleId: 'primary',
+          capturedAt: '2026-02-15T00:00:00Z',
+          bodies: [{ waterBodyId: 'champlain', coveragePct: 0.5, clearPct: 0.9, pixels: 100 }],
+        },
+      })[id];
+
+    const timeline = buildBodyTimeline(
+      season([
+        frame({ granuleId: 'primary', capturedAt: '2026-02-15T00:00:00Z' }),
+        frame({ granuleId: 'near', capturedAt: '2026-02-17T00:00:00Z' }),
+        frame({ granuleId: 'far', capturedAt: '2026-02-25T00:00:00Z' }),
+      ]),
+      CHAMPLAIN,
+      { stats },
+    );
+
+    expect(timeline.stops[0]?.companion?.frame.granuleId).toBe('near');
+  });
+
+  it('⚠ refuses a pairing wider than the gap cap, so a seam does not become a collage', () => {
+    // A December half beside an April half would be one picture of a lake that was never in that
+    // state. The labels make a seam honest; the cap stops it being absurd.
+    const stats = (id: string) =>
+      ({
+        a: {
+          granuleId: 'a',
+          capturedAt: '2025-12-01T00:00:00Z',
+          bodies: [{ waterBodyId: 'champlain', coveragePct: 0.5, clearPct: 0.9, pixels: 100 }],
+        },
+        b: {
+          granuleId: 'b',
+          capturedAt: '2026-04-01T00:00:00Z',
+          bodies: [{ waterBodyId: 'champlain', coveragePct: 0.5, clearPct: 0.9, pixels: 100 }],
+        },
+      })[id];
+
+    const timeline = buildBodyTimeline(
+      season([
+        frame({ granuleId: 'a', capturedAt: '2025-12-01T00:00:00Z' }),
+        frame({ granuleId: 'b', capturedAt: '2026-04-01T00:00:00Z' }),
+      ]),
+      CHAMPLAIN,
+      { stats },
+    );
+
+    expect(timeline.stops[0]?.companion).toBeUndefined();
+    expect(SEAM_MAX_GAP_DAYS).toBeLessThan(120);
+  });
+
+  it('does not seam a frame that already has the whole lake', () => {
+    const timeline = buildBodyTimeline(
+      season([frame({ granuleId: 'whole' }), frame({ granuleId: 'other' })]),
+      CHAMPLAIN,
+      {
+        stats: pairStats(
+          { granuleId: 'whole', coveragePct: 1 },
+          { granuleId: 'other', coveragePct: 0.5 },
+        ),
+      },
+    );
+
+    expect(timeline.stops[0]?.companion).toBeUndefined();
+  });
+
+  it('refuses a companion that adds almost nothing', () => {
+    const timeline = buildBodyTimeline(
+      season([frame({ granuleId: 'most' }), frame({ granuleId: 'crumb' })]),
+      CHAMPLAIN,
+      {
+        stats: pairStats(
+          { granuleId: 'most', coveragePct: 0.96 },
+          { granuleId: 'crumb', coveragePct: 0.9 },
+        ),
+      },
+    );
+
+    // 1 − 0.96 = 0.04 of new lake, under SEAM_MIN_ADDED_COVERAGE. A hairline across 4% of a shoreline
+    // reads as an artifact rather than as two observations.
+    expect(timeline.stops[0]?.companion).toBeUndefined();
+    expect(SEAM_MIN_ADDED_COVERAGE).toBeGreaterThan(0.04);
+  });
+
+  it('never seams when coverage was never measured', () => {
+    const timeline = buildBodyTimeline(
+      season([frame({ granuleId: 'a' }), frame({ granuleId: 'b' })]),
+      CHAMPLAIN,
+    );
+    expect(timeline.stops.every((s) => s.companion === undefined)).toBe(true);
   });
 });
