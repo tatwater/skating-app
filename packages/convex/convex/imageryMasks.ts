@@ -57,7 +57,7 @@ export const listForImageryMask = internalQuery({
     const numItems = Math.min(100, Math.max(1, batchSize ?? 25));
     const page = await ctx.db.query('waterBodies').paginate({ cursor: cursor ?? null, numItems });
 
-    const masks = [];
+    const eligible = [];
     let belowFloor = 0;
     let unlisted = 0;
     for (const body of page.page) {
@@ -89,34 +89,51 @@ export const listForImageryMask = internalQuery({
         continue;
       }
 
-      const putIns = await loadPutInRows(ctx, body._id);
-      // `hidden` is a moderator suppressing a bad coordinate, so it must not pull the reveal out to
-      // cover a place we have decided not to show.
-      //
-      // ⚠ **Status is only half of that, and the other half is the radius.** A hidden row suppresses
-      // every marker within `HIDE_SUPPRESS_METERS` of it, not just itself — that is how a moderator
-      // kills a bad access point that OSM and a report cluster both re-derive. Filtering on
-      // `status === 'visible'` alone (which `loadPutInRows` has already done) would let the OSM
-      // launch 30 m from the hidden coord buffer the very ground the hide was protecting, on the
-      // one surface where nobody would ever notice.
-      const visiblePutIns = [...putIns.official, ...putIns.osm, ...putIns.persisted].filter(
-        (p) => !isSuppressed(p.coord, putIns.hidden),
-      );
-      const parking = await loadParkingForBody(ctx, body._id);
-
-      masks.push({
-        waterBodyId: body._id,
-        name: body.name,
-        polygon: body.polygon,
-        // Only routed hike-in legs carry a path. A drive-up ramp's "walk" is a few metres already
-        // inside the water's buffer, so it would add vertices and no shape (`ImageryMaskInput`).
-        approachPaths: visiblePutIns.flatMap((p) =>
-          p.approachPath && p.approachPath.length >= 2 ? [p.approachPath] : [],
-        ),
-        parkingCoords: parking.map((lot) => lot.coord),
-        markerCoords: visiblePutIns.map((p) => p.coord),
-      });
+      eligible.push(body);
     }
+
+    // ⚠ **The two access reads run concurrently, per body and across the page.**
+    //
+    // Sequentially this is two awaited round trips per body — 50 in a 25-row page, ~2,000 across the
+    // corpus's ~1,008 pages, every one of them waiting on the last for no reason: the reads are
+    // independent, they touch different tables, and none of them feeds another's arguments. `map` +
+    // `Promise.all` keeps the output order identical to the page order (so `masks[i]` still lines up
+    // with the body the caller scanned), which is what makes this a free change rather than a
+    // behavioural one.
+    const masks = await Promise.all(
+      eligible.map(async (body) => {
+        const [putIns, parking] = await Promise.all([
+          loadPutInRows(ctx, body._id),
+          loadParkingForBody(ctx, body._id),
+        ]);
+
+        // `hidden` is a moderator suppressing a bad coordinate, so it must not pull the reveal out to
+        // cover a place we have decided not to show.
+        //
+        // ⚠ **Status is only half of that, and the other half is the radius.** A hidden row suppresses
+        // every marker within `HIDE_SUPPRESS_METERS` of it, not just itself — that is how a moderator
+        // kills a bad access point that OSM and a report cluster both re-derive. Filtering on
+        // `status === 'visible'` alone (which `loadPutInRows` has already done) would let the OSM
+        // launch 30 m from the hidden coord buffer the very ground the hide was protecting, on the
+        // one surface where nobody would ever notice.
+        const visiblePutIns = [...putIns.official, ...putIns.osm, ...putIns.persisted].filter(
+          (p) => !isSuppressed(p.coord, putIns.hidden),
+        );
+
+        return {
+          waterBodyId: body._id,
+          name: body.name,
+          polygon: body.polygon,
+          // Only routed hike-in legs carry a path. A drive-up ramp's "walk" is a few metres already
+          // inside the water's buffer, so it would add vertices and no shape (`ImageryMaskInput`).
+          approachPaths: visiblePutIns.flatMap((p) =>
+            p.approachPath && p.approachPath.length >= 2 ? [p.approachPath] : [],
+          ),
+          parkingCoords: parking.map((lot) => lot.coord),
+          markerCoords: visiblePutIns.map((p) => p.coord),
+        };
+      }),
+    );
 
     return {
       masks,

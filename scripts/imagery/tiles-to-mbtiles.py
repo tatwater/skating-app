@@ -80,7 +80,17 @@ def main() -> int:
     )
     db.execute("CREATE TABLE metadata (name TEXT, value TEXT)")
 
-    rows = []
+    # ⚠ **Inserted in batches, never accumulated.** Holding every tile's bytes in one list before a
+    # single `executemany` makes peak memory the size of the whole pyramid — and the pyramid is
+    # driven by where the lakes are, with nothing capping it. On the box this actually runs on
+    # (`FLY_VM_MEMORY=2048`, of which `GDAL_CACHEMAX` has already claimed 410 MB) that is the one
+    # allocation in this file that can OOM, and an OOM here arrives as `Killed` with no message —
+    # after the expensive tiling stage has already been paid for.
+    #
+    # A batch is bounded work: the blobs are handed to SQLite and released.
+    BATCH = 512
+    pending: list[tuple[int, int, int, sqlite3.Binary]] = []
+    total = 0
     zooms: set[int] = set()
     # Per-zoom extents, so bounds can be taken from the deepest zoom — the one that actually
     # circumscribes the data. An overview zoom's tiles are coarser and would round the box outward.
@@ -97,7 +107,11 @@ def main() -> int:
                 # Not a z/x/y.ext triple — a stray file, not a tile. Skipped rather than guessed at.
                 continue
             with open(os.path.join(dirpath, filename), "rb") as handle:
-                rows.append((z, x, y, sqlite3.Binary(handle.read())))
+                pending.append((z, x, y, sqlite3.Binary(handle.read())))
+            total += 1
+            if len(pending) >= BATCH:
+                db.executemany("INSERT INTO tiles VALUES (?, ?, ?, ?)", pending)
+                pending.clear()
             zooms.add(z)
             box = extent.get(z)
             if box is None:
@@ -108,11 +122,14 @@ def main() -> int:
                 box[2] = min(box[2], y)
                 box[3] = max(box[3], y)
 
-    if not rows:
+    if pending:
+        db.executemany("INSERT INTO tiles VALUES (?, ?, ?, ?)", pending)
+        pending.clear()
+
+    if total == 0:
         print(f"no {suffix} tiles under {args.tile_dir}", file=sys.stderr)
         return 1
 
-    db.executemany("INSERT INTO tiles VALUES (?, ?, ?, ?)", rows)
     # The spec's index, and the one every reader looks a tile up by.
     db.execute(
         "CREATE UNIQUE INDEX tile_index ON tiles (zoom_level, tile_column, tile_row)"
@@ -136,7 +153,7 @@ def main() -> int:
     db.close()
 
     print(
-        f"{len(rows)} tiles, z{min_zoom}-z{max_zoom} -> {args.out}",
+        f"{total} tiles, z{min_zoom}-z{max_zoom} -> {args.out}",
         file=sys.stderr,
     )
     return 0
