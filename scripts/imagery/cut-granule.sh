@@ -41,7 +41,39 @@ fi
 
 WORKDIR="${GRANULE_WORKDIR:-/data}"
 STAC_URL="${STAC_URL:-https://earth-search.aws.element84.com/v1}"
-STAC_COLLECTION="${STAC_COLLECTION:-sentinel-2-l2a}"
+# ## Which mission this id belongs to, decided from the id itself
+#
+# `cut-granule <id>` stays a one-argument contract (D148) — the caller does not pass a mission, because
+# the id already says. Sentinel-2 ids read `S2C_18TXP_20260215_0_L2A`; Sentinel-1 ids read
+# `S1A_IW_GRDH_1SDV_20260213T224345_…`. Getting this from a flag instead would mean every caller —
+# fan-out, a cron, a person with Docker — has to agree about a fact the id already carries.
+case "$GRANULE_ID" in
+  S1*) MISSION=s1 ;;
+  *)   MISSION=s2 ;;
+esac
+if [[ "$MISSION" == s1 ]]; then
+  STAC_COLLECTION="${STAC_COLLECTION:-sentinel-1-grd}"
+else
+  STAC_COLLECTION="${STAC_COLLECTION:-sentinel-2-l2a}"
+fi
+
+# ⚠ **Radar is warped at 28 m, optical at 14 m, and that is not a downgrade.**
+#
+# A GRD IW product has 10 m pixel *spacing* but its true spatial *resolution* is 20 x 22 m — the
+# spacing oversamples the instrument. 28 projected metres is ~20 m on the ground at 44°N, which is
+# what the sensor actually resolves. Warping radar to the optical grid would invent detail Sentinel-1
+# does not have and pay four times over for it: a single S1 slice covers ~275 x 210 km, which at 14 m
+# is a **700-megapixel** raster (2.8 GB as float32, on a 2 GB Machine) against 175 Mpixels at 28 m.
+#
+# The zoom range follows: z13 is 19.1 projected m/px, finer than the 28 m source, where z14 would be
+# four times the tiles to encode detail the band does not contain.
+if [[ "$MISSION" == s1 ]]; then
+  WARP_RES=28
+  MAX_ZOOM=13
+else
+  WARP_RES=14
+  MAX_ZOOM=14
+fi
 R2_BUCKET="${R2_BUCKET:-skating-imagery}"
 # Which season's masks to clip against. The bake names its artifact for a season and the cutter has
 # to be told which one — deriving it from the granule's own date would silently cut a January frame
@@ -114,6 +146,15 @@ resolve_granule() {
   CAPTURED_AT="$(jq -r '.properties.datetime // empty' granule.json)"
   CLOUD_PCT="$(jq -r '.properties["eo:cloud_cover"] // empty' granule.json)"
   [[ -n "$CAPTURED_AT" ]] || die "no datetime on $GRANULE_ID"
+
+  # ⚠ **The radar acquisition parameters are content, not trivia.** Ascending and descending passes
+  # view a lake at different incidence angles, and S1A/S1C/S1D differ from each other — so a per-body
+  # timeline that blends them reads an instrument difference as an ice change. Selection deliberately
+  # keeps every pass (dropping half of them would be irreversible), which makes recording these the
+  # thing that lets a consumer filter to comparable frames. Absent on optical items, and null there.
+  ORBIT_STATE="$(jq -r '.properties["sat:orbit_state"] // empty' granule.json)"
+  POLARISATIONS="$(jq -c '.properties["sar:polarizations"] // empty' granule.json)"
+  PLATFORM="${GRANULE_ID%%_*}"
 
   # ⚠ **The frame's season is its own, not the masks'.** These are two different things and filing a
   # frame under the mask label conflates them: a backfill of winter 2025-26 is cut against *today's*
@@ -217,31 +258,19 @@ mask_extent() {
   ' masks.geojson | paste -sd' ' -
 }
 
-transform_granule() {
-  fetch_masks
-
-  # **Nothing to cut is a success, not a failure.** Plenty of granules in a five-state region cover
-  # only land, or Québec, or ocean. Exiting non-zero would light up a fan-out with red for jobs that
-  # did exactly the right thing, and the noise would hide a real failure.
-  if [[ "$MASK_COUNT" -eq 0 ]]; then
-    log "no corpus bodies under this granule — nothing to cut"
-    return 0
-  fi
-
-  local href
-  href="$(asset_href visual)"
-  [[ -n "$href" ]] || die "no 'visual' (TCI) asset on $GRANULE_ID"
-
-  read -r MINX MINY MAXX MAXY <<<"$(mask_extent)"
-  log "mask extent (3857) $MINX $MINY $MAXX $MAXY"
-
-  # ⚠ **Mercator metres are not ground metres, and this is where that bites.**
-  #
-  # Web Mercator inflates distance by 1/cos(latitude) — ~1.39× at 44°N. `gdal_proximity -distunits
-  # GEO` measures in the raster's own units, so feeding it 240 would ramp the feather over 240
-  # *projected* metres, which is only ~173 m on the ground: a 28% error that looks like a slightly
-  # tight edge rather than like a units bug. `groundMetersPerPixel` carries the same correction on
-  # the client, and this is the server's copy of it.
+# Build `alpha.tif` — the reveal's soft edge — on a given extent at `$WARP_RES`.
+#
+# Shared by both missions, because the feather is a property of the *lake outline* rather than of the
+# sensor: the same 240 ground metres of ramp, whether the pixels underneath came from a camera or a
+# radar. A second copy would be a second chance for optical and radar frames to disagree about where a
+# lake ends, which would show up as a seam wherever a scrubber crossed between them.
+#
+# ⚠ **Mercator metres are not ground metres**, and this is where that bites. Web Mercator inflates
+# distance by 1/cos(latitude) — ~1.39x at 44°N — so feeding `gdal_proximity` a bare 240 would ramp over
+# 240 *projected* metres, which is ~173 m on the ground: a 28% error that looks like a slightly tight
+# edge rather than like a units bug.
+build_alpha() {
+  local MINX="$1" MINY="$2" MAXX="$3" MAXY="$4"
   local centre_lat feather_projected
   centre_lat="$(awk -v miny="$MINY" -v maxy="$MAXY" 'BEGIN{
     mw=20037508.342789244; cy=(miny+maxy)/2;
@@ -252,18 +281,9 @@ transform_granule() {
   }')"
   log "feather ${FEATHER_M} ground m -> ${feather_projected} projected m at ${centre_lat}°N"
 
-  # 1. Warp the granule into 3857 over just the mask extent. 14 m/px is ~10 m on the ground here,
-  #    which is Sentinel-2's native sample — upsampling would invent detail, downsampling would throw
-  #    away the only resolution we have.
-  log "warping $href"
-  stage warp_visual gdalwarp -q -t_srs EPSG:3857 -te "$MINX" "$MINY" "$MAXX" "$MAXY" -tr 14 14 \
-    -r bilinear -multi -co COMPRESS=DEFLATE -overwrite \
-    "/vsicurl/${href}" scene.tif \
-    || die "gdalwarp failed"
-
-  # 2. Burn the reveal shapes into a byte mask on exactly that grid.
+  # 1. Burn the reveal shapes into a byte mask on exactly that grid.
   stage rasterize_mask gdal_rasterize -q -burn 255 -init 0 -ot Byte \
-    -te "$MINX" "$MINY" "$MAXX" "$MAXY" -tr 14 14 -co COMPRESS=DEFLATE \
+    -te "$MINX" "$MINY" "$MAXX" "$MAXY" -tr "$WARP_RES" "$WARP_RES" -co COMPRESS=DEFLATE \
     masks.geojson mask.tif \
     || die "gdal_rasterize failed"
 
@@ -292,6 +312,37 @@ transform_granule() {
     || die "gdaldem color-relief failed"
   gdal_translate -q -b 1 -ot Byte -co COMPRESS=DEFLATE alpha_rgb.tif alpha.tif \
     || die "alpha extraction failed"
+}
+
+transform_granule() {
+  fetch_masks
+
+  # **Nothing to cut is a success, not a failure.** Plenty of granules in a five-state region cover
+  # only land, or Québec, or ocean. Exiting non-zero would light up a fan-out with red for jobs that
+  # did exactly the right thing, and the noise would hide a real failure.
+  if [[ "$MASK_COUNT" -eq 0 ]]; then
+    log "no corpus bodies under this granule — nothing to cut"
+    return 0
+  fi
+
+  local href
+  href="$(asset_href visual)"
+  [[ -n "$href" ]] || die "no 'visual' (TCI) asset on $GRANULE_ID"
+
+  read -r MINX MINY MAXX MAXY <<<"$(mask_extent)"
+  log "mask extent (3857) $MINX $MINY $MAXX $MAXY"
+
+  # 1. Warp the granule into 3857 over just the mask extent. 14 m/px is ~10 m on the ground here,
+  #    which is Sentinel-2's native sample — upsampling would invent detail, downsampling would throw
+  #    away the only resolution we have.
+  log "warping $href"
+  stage warp_visual gdalwarp -q -t_srs EPSG:3857 -te "$MINX" "$MINY" "$MAXX" "$MAXY" -tr 14 14 \
+    -r bilinear -multi -co COMPRESS=DEFLATE -overwrite \
+    "/vsicurl/${href}" scene.tif \
+    || die "gdalwarp failed"
+
+  # 2-4. The reveal, feathered — shared with the radar path, see `build_alpha`.
+  build_alpha "$MINX" "$MINY" "$MAXX" "$MAXY"
 
   # 5. RGB + alpha into one four-band image. VRTs all the way, so nothing is copied until tiling.
   local i
@@ -524,6 +575,145 @@ transform_granule() {
   log "cut $MASK_COUNT bodies from $GRANULE_ID ($CAPTURED_AT, ${CLOUD_PCT:-?}% cloud)"
 }
 
+# --- The radar transform ---------------------------------------------------------------------------
+#
+# Sentinel-1's path is genuinely different from Sentinel-2's, not a variation on it:
+#
+#   * **No colour composite.** VV and VH are single-band intensity, so there is no RGB to assemble.
+#   * **No map projection in the source.** A GRD sits in *radar* geometry and carries ground-control
+#     points instead of a geotransform, so `-tps` does the geocoding. Over a lake — flat, at a known
+#     elevation — that is accurate enough without terrain correction.
+#   * **The pixels are not the measurement.** They are detector counts; the calibration annotation is
+#     what turns them into `sigma0`. See `sar-cal-lut.py` for why skipping it is a 1.5 dB error inside
+#     a single scene, against a ~2 dB signal.
+#   * **No cloud, ever.** Which is the entire reason it is here: optical loses ~75% of passes to
+#     weather, and radar loses none.
+transform_sar() {
+  fetch_masks
+  if [[ "$MASK_COUNT" -eq 0 ]]; then
+    log "no corpus bodies under this pass — nothing to cut"
+    return 0
+  fi
+
+  read -r MINX MINY MAXX MAXY <<<"$(mask_extent)"
+  log "mask extent (3857) $MINX $MINY $MAXX $MAXY at ${WARP_RES} m"
+
+  # Both polarisations are cut. VH is the informative one for ice, but VV costs one more warp of a
+  # granule already open, and their ratio is a standard discriminator we would otherwise have to come
+  # back for — the same "own the pixels" argument that governs the optical side.
+  local pols=() zonal_args=()
+  local p href cal_href
+  for p in vv vh; do
+    href="$(asset_href "$p")"
+    [[ -n "$href" ]] || continue
+    # STAC gives these as `s3://` into a bucket that also serves anonymously over HTTPS, which is what
+    # `/vsicurl/` wants. Measured 2026-08-24: readable without credentials, unlike its own scheme.
+    href="${href/s3:\/\/sentinel-s1-l1c\//https:\/\/sentinel-s1-l1c.s3.amazonaws.com\/}"
+    log "warping ${p^^}"
+    stage "warp_${p}" gdalwarp -q -tps -t_srs EPSG:3857 -te "$MINX" "$MINY" "$MAXX" "$MAXY" \
+      -tr "$WARP_RES" "$WARP_RES" -r bilinear -multi -co COMPRESS=DEFLATE -co TILED=YES -overwrite \
+      "/vsicurl/${href}" "${p}.tif" \
+      || die "${p} warp failed"
+
+    cal_href="$(jq -r --arg k "schema-calibration-${p}" '.assets[$k].href // empty' granule.json)"
+    [[ -n "$cal_href" ]] || die "no calibration annotation for ${p} — refusing to ship uncalibrated"
+    cal_href="${cal_href/s3:\/\/sentinel-s1-l1c\//https:\/\/sentinel-s1-l1c.s3.amazonaws.com\/}"
+    curl -fsSL --retry 3 "$cal_href" -o "cal-${p}.xml" || die "calibration fetch failed for ${p}"
+    stage "callut_${p}" python3 /usr/local/bin/sar-cal-lut.py "cal-${p}.xml" \
+      "/vsicurl/${href}" "callut-${p}.tif" || die "calibration LUT build failed for ${p}"
+    # The LUT is warped by the same transform as the image it calibrates, which is the whole reason it
+    # was written out with scaled ground-control points rather than applied in radar geometry.
+    stage "calwarp_${p}" gdalwarp -q -tps -t_srs EPSG:3857 -te "$MINX" "$MINY" "$MAXX" "$MAXY" \
+      -tr "$WARP_RES" "$WARP_RES" -r bilinear -co COMPRESS=DEFLATE -overwrite \
+      "callut-${p}.tif" "a-${p}.tif" || die "calibration warp failed for ${p}"
+
+    pols+=("$p")
+    zonal_args+=("${p}:${p}.tif:a-${p}.tif")
+  done
+  [[ ${#pols[@]} -gt 0 ]] || die "no usable polarisation on $GRANULE_ID"
+
+  # Per-body statistics, on the same grid — see `sar-zonal.py` for why the average is taken in linear
+  # power rather than in decibels.
+  jq -c '{type:"FeatureCollection", features:[.features | to_entries[] | .value * {properties: (.value.properties + {zone: (.key + 1)})}]}' \
+    masks.geojson > masks-zoned.geojson || die "zone numbering failed"
+  jq -c '[.features[] | {key: (.properties.zone|tostring), value: .properties.waterBodyId}] | from_entries' \
+    masks-zoned.geojson > zone-to-id.json || die "zone mapping failed"
+  stage rasterize_zones gdal_rasterize -q -a zone -a_nodata 0 -init 0 -ot UInt32 \
+    -te "$MINX" "$MINY" "$MAXX" "$MAXY" -tr "$WARP_RES" "$WARP_RES" -co COMPRESS=DEFLATE -co TILED=YES \
+    masks-zoned.geojson zones.tif || die "zone rasterize failed"
+  stage sar_zonal sh -c "python3 /usr/local/bin/sar-zonal.py zones.tif zone-to-id.json $(printf '%s ' "${zonal_args[@]}") > bodies.json" \
+    || die "per-body radar statistics failed"
+  log "per-body sigma0: $(jq 'length' bodies.json) bodies, pols ${pols[*]}"
+
+  # ⚠ **The published frame is a picture, and the numbers above are the measurement.** `sigma0` is a
+  # physical quantity with no natural colour; anything rendered is a choice of stretch. A FIXED range
+  # is used rather than a per-scene one, because a scrubber compares dates — and a per-scene stretch
+  # would make every frame look the same and the differences vanish, which is the one thing this
+  # archive exists to show. -30..0 dB spans open water through bright land at C-band.
+  local render="${pols[-1]}"
+  log "rendering ${render^^} at a fixed -30..0 dB stretch"
+  stage render_db python3 /usr/local/bin/sar-render.py "${render}.tif" "a-${render}.tif" \
+    dn.tif --min-db -30 --max-db 0 || die "dB render failed"
+
+  build_alpha "$MINX" "$MINY" "$MAXX" "$MAXY"
+  gdalbuildvrt -q -separate rgba.vrt dn.tif dn.tif dn.tif alpha.tif || die "gdalbuildvrt failed"
+  gdal_translate -q -of VRT -colorinterp red,green,blue,alpha rgba.vrt rgba_ci.vrt \
+    || die "colorinterp assignment failed"
+
+  rm -rf tiles archive.mbtiles archive.pmtiles
+  stage tile_sar gdal raster tile -q --input rgba_ci.vrt --output tiles \
+    -f WEBP --co QUALITY=80 --min-zoom 7 --max-zoom "$MAX_ZOOM" \
+    --convention tms --skip-blank --webviewer none \
+    -r bilinear --overview-resampling average || die "tiling failed"
+  stage pack_sar python3 /usr/local/bin/tiles-to-mbtiles.py tiles archive.mbtiles \
+    --format webp --name "$GRANULE_ID" || die "MBTiles packing failed"
+  stage pmtiles_sar sh -c 'pmtiles convert archive.mbtiles archive.pmtiles >/dev/null 2>&1' \
+    || die "pmtiles convert failed"
+
+  # The manifest. Written separately from the optical one on purpose: the fields genuinely differ
+  # (there is no cloud fraction; there *are* acquisition parameters a timeline must filter on), and
+  # the optical block has just produced 4,381 frames — merging them to save a dozen lines would put
+  # that at risk for no gain a reader benefits from.
+  BANDS="$(printf '%s\n' "${pols[@]}" | jq -R . | jq -sc .)"
+  jq -n \
+    --arg granule "$GRANULE_ID" \
+    --arg captured "$CAPTURED_AT" \
+    --arg season "$FRAME_SEASON" \
+    --arg maskSeason "$MASK_SEASON" \
+    --arg collection "$STAC_COLLECTION" \
+    --arg mission "s1" \
+    --arg platform "$PLATFORM" \
+    --arg band "$render" \
+    --arg orbit "${ORBIT_STATE:-}" \
+    --argjson pols "${POLARISATIONS:-null}" \
+    --argjson bodyCount "$MASK_COUNT" \
+    --slurpfile bodies bodies.json \
+    --argjson bands "$BANDS" \
+    --argjson stageMs "$STAGE_JSON" \
+    --argjson totalMs "$(( $(now_ms) - RUN_STARTED_MS ))" \
+    --arg vmSize "${FLY_VM_SIZE_LABEL:-unknown}" \
+    --argjson feather "$FEATHER_M" \
+    --argjson resolutionM "$WARP_RES" \
+    --argjson footprint "$(jq -c '.geometry' granule.json)" \
+    '{granuleId:$granule, capturedAt:$captured, cloudCoverPct:null, season:$season,
+      maskSeason:$maskSeason, collection:$collection, mission:$mission, platform:$platform,
+      band:$band, orbitDirection:(if $orbit == "" then null else $orbit end), polarizations:$pols,
+      bodyCount:$bodyCount, bodies:$bodies[0], bands:$bands, featherMeters:$feather,
+      resolutionM:$resolutionM, footprint:$footprint,
+      cost:{stageMs:$stageMs, totalMs:$totalMs, vmSize:$vmSize}}' \
+    > manifest.json || die "manifest build failed"
+
+  local key_base="frames/${FRAME_SEASON}/${GRANULE_ID}"
+  log "uploading $(du -h archive.pmtiles | cut -f1) -> r2:${R2_BUCKET}/${key_base}-${render}.pmtiles"
+  stage upload_sar rclone --config "$RCLONE_CONF" copyto archive.pmtiles \
+    "r2:${R2_BUCKET}/${key_base}-${render}.pmtiles" --s3-no-check-bucket --s3-chunk-size=64M \
+    || die "R2 upload failed"
+  rclone --config "$RCLONE_CONF" copyto manifest.json "r2:${R2_BUCKET}/${key_base}.json" \
+    --s3-no-check-bucket || die "R2 manifest upload failed"
+
+  log "cut $MASK_COUNT bodies from $GRANULE_ID ($CAPTURED_AT, ${ORBIT_STATE:-?})"
+}
+
 # --- Smoke test ------------------------------------------------------------------------------------
 # The whole path on one small band, to prove Fly can reach the granule store, GDAL can read a remote
 # COG, and rclone can write to R2. No masking, no corpus, no correctness claim about the picture.
@@ -559,6 +749,8 @@ smoke_test() {
 resolve_granule
 if [[ "$SMOKE" == true ]]; then
   smoke_test
+elif [[ "$MISSION" == s1 ]]; then
+  transform_sar
 else
   transform_granule
 fi
