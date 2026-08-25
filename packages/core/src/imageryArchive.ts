@@ -131,6 +131,137 @@ export interface ArchivePointer {
 }
 
 /**
+ * What one pass measured about one lake.
+ *
+ * ## Why this lives in core, when the manifest around it does not
+ *
+ * The per-granule manifest is mostly producer bookkeeping — stage timings, VM size, the mask season it
+ * was clipped against — and none of that is a client's business. **But the `bodies` array is**, because
+ * it is the only place per-lake coverage and cloud exist, and a scrubber cannot be built without them:
+ * the season index deliberately carries a body *count* and not a body *list*, since ~4,500 frames a
+ * season × up to ~2,700 bodies per granule is millions of entries in one file every client would
+ * download to draw one lake.
+ *
+ * So the shape a consumer reads is declared here and the envelope stays with the producer.
+ *
+ * ## ⚠ Optical and radar fill in different halves of this
+ *
+ * `zonal-clear.py` writes the SCL statistics; `sar-zonal.py` writes `vvDb`/`vhDb` and **neither**
+ * `clearPct` nor `waterPct` nor `snowIcePct` — there is no scene classification on a radar pass and no
+ * cloud to be clear of. Only `waterBodyId`, `coveragePct` and `pixels` are common to both, which is
+ * why every mission-specific field is optional and has to be.
+ */
+export interface FrameBodyStats {
+  waterBodyId: string;
+  /**
+   * Unobscured fraction of the pixels this granule actually saw. `null` = we could not see it.
+   *
+   * **This is the per-lake cloud figure, and it is the one to gate a scrubber on** — `cloudCoverPct`
+   * on the frame is granule-wide, so a pass 70% clouded over the White Mountains says nothing about
+   * whether Champlain was visible.
+   *
+   * Optical only; absent on radar, where there is nothing to be obscured by.
+   */
+  clearPct?: number | null;
+  /**
+   * How much of the body this granule reached, 0–1 — the weight `clearPct` carries.
+   *
+   * **This is what makes the split-body seam drawable.** A body bisected by a granule edge appears in
+   * two frames and neither is wrong; the ratio says which side came from which pass. `null` when the
+   * granule shipped without SCL, because coverage is then unmeasured rather than zero.
+   */
+  coveragePct: number | null;
+  /**
+   * Fraction of the pixels this granule saw that SCL called snow/ice (class 11).
+   *
+   * ⚠ **It is `snowIcePct` because it measures SNOW.** SCL's class 11 finds *bright* frozen surfaces,
+   * and black ice is transparent — the light returns off the dark lake bottom, so the classifier calls
+   * it water. Measured: Mascoma Lake, 22 December 2025, 98% clear, **2.3% "ice", 82.5% water** — and
+   * the founder skated its full length the next morning. So a high number means *snow-covered ice*, a
+   * low number means *water **or** the best skating ice of the year*, and anything reading this as
+   * "is it frozen" will be wrong in December.
+   *
+   * ⚠ **A measurement, not a verdict** (D147, D150). Read it through {@link snowIceFractionOf}, which
+   * handles the pre-rename key. See `docs/reading-ice-from-orbit.md`.
+   */
+  snowIcePct?: number | null;
+  /**
+   * @deprecated The pre-2026-08-25 name for `snowIcePct`. Identical measurement, misleading label.
+   *
+   * Exactly one of the two is present, decided by when the frame was cut — the 4,381 optical frames of
+   * winter 2025-26 carry this one. Use {@link snowIceFractionOf} rather than reaching for either.
+   */
+  icePct?: number | null;
+  /** Fraction SCL called water, over the same denominator as `snowIcePct`. Optical only. */
+  waterPct?: number | null;
+  /**
+   * Mean `sigma0` over the body in decibels, per polarisation — **radar only**.
+   *
+   * `VH` is the informative channel: it separates open water from midwinter ice by ~2 dB where `VV`
+   * manages 0.6–0.8. `null` when the pass reached the body but no pixel was usable.
+   *
+   * ⚠ **Comparable only within one platform and one orbit direction, and this is measured rather than
+   * assumed.** Across all 503 radar passes of winter 2025-26, calibration leaves an S1A−S1C offset of
+   * −0.52 dB VH ascending and +1.53 dB VH descending. Pooled across directions it reads −0.03 dB,
+   * which is two opposite biases cancelling — **so a consumer that drops those filters sees agreement
+   * that is not there**, at a scale comparable to the signal.
+   */
+  vvDb?: number | null;
+  vhDb?: number | null;
+  /** How many raster pixels backed these numbers. A floor on this is how you avoid reading noise. */
+  pixels: number;
+}
+
+/**
+ * The client-readable half of a per-granule manifest.
+ *
+ * Structural rather than exhaustive: the producer's `FrameManifest` has more, and a consumer that
+ * fetches the JSON gets all of it — this names only the part a client has business reading, so the
+ * producer stays free to change its bookkeeping without a client noticing.
+ */
+export interface FrameStats {
+  granuleId: string;
+  capturedAt: string;
+  /** `s1` for radar, `s2` for optical. The cheapest way to know which half of the stats to expect. */
+  mission?: string;
+  /** ⚠ Radar only, and load-bearing for comparability — see {@link FrameBodyStats.vhDb}. */
+  platform?: string;
+  orbitDirection?: string;
+  bodies?: FrameBodyStats[];
+}
+
+/**
+ * Where a frame's manifest sits in the bucket.
+ *
+ * ⚠ **Keyed on the granule, not the frame**, and the difference bites: one granule now publishes
+ * several frames (`-visual.pmtiles`, `-scl.pmtiles`) that all share a single `<granuleId>.json`.
+ * Deriving this by string-replacing a frame's `key` would produce `…-visual.json`, which does not
+ * exist — and the 404 would look like a missing manifest rather than a malformed path.
+ */
+export function manifestKeyFor(season: string, granuleId: string): string {
+  return `frames/${season}/${granuleId}.json`;
+}
+
+/**
+ * The snow/ice fraction, whichever key this frame happens to carry.
+ *
+ * **The rename is a contract change mid-archive**, so every reader needs this fallback until the
+ * optical season is re-cut. One function rather than `?? ` at each call site: the moment a consumer
+ * forgets, it silently reads `undefined` on 4,381 frames and reports no snow across an entire winter.
+ */
+export function snowIceFractionOf(stats: FrameBodyStats): number | null {
+  return stats.snowIcePct ?? stats.icePct ?? null;
+}
+
+/** One lake's row in a frame's statistics, or `undefined` if the pass did not reach it. */
+export function bodyStatsIn(
+  frame: Pick<FrameStats, 'bodies'>,
+  waterBodyId: string,
+): FrameBodyStats | undefined {
+  return frame.bodies?.find((b) => b.waterBodyId === waterBodyId);
+}
+
+/**
  * Which season the app should be showing — D149's turnover, as one function.
  *
  * > **D149 — the archive turns over on the first frame of the new season, never on a date.**
