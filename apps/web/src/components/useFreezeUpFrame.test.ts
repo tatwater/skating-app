@@ -189,3 +189,16 @@ describe('useFreezeUpFrame — scrubbing and teardown', () => {
     expect(harness.paint['raster-opacity']).toBeUndefined();
   });
 });
+
+describe('useFreezeUpFrame — attribution', () => {
+  it('⚠ declares Copernicus on the source, because that credit is required', () => {
+    // AttributionControl unions the `attribution` of every active source, so declaring it here is
+    // what makes the credit appear with the frame and vanish with it. A frame mounted without this
+    // renders a required credit nowhere at all.
+    const harness = fakeMap();
+    mount(harness, frame());
+    expect((harness.sources.get(FREEZE_UP_SOURCE_ID) as { attribution?: string }).attribution).toBe(
+      'Copernicus Sentinel data 2025–2026',
+    );
+  });
+});

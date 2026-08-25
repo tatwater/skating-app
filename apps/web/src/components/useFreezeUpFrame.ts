@@ -25,7 +25,7 @@
  */
 
 import type { IndexedFrame } from '@skating/core';
-import { archiveUrl } from '@skating/core';
+import { archiveUrl, copernicusCredit } from '@skating/core';
 import type maplibregl from 'maplibre-gl';
 import { useEffect } from 'react';
 import { env } from '../lib/env';
@@ -68,6 +68,12 @@ export function useFreezeUpFrame({
       // The cutter tiles at 512 and the frames are WEBP; saying so saves MapLibre a probe request and
       // stops it assuming the 256 default, which would draw every frame at half scale.
       tileSize: 512,
+      // ⚠ **Copernicus' credit is required, and this is how it gets rendered.** `AttributionControl`
+      // unions the `attribution` of every *active source*, so declaring it here makes the credit
+      // appear the moment a frame mounts and disappear when it unmounts, with nothing to remember —
+      // the same mechanism the basemap and the aerial reveal already use. A hand-composed credit
+      // string elsewhere is the version that goes stale the first time someone adds a layer.
+      attribution: copernicusCredit(season),
     });
     map.addLayer(
       {
