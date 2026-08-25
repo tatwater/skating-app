@@ -25,6 +25,18 @@
  * So there is no reveal gate here, and deliberately no zero-opacity mount. Tiles paint as they
  * arrive, which is exactly what web's timeout floor settled on after those races — arrived at here by
  * construction rather than by correction.
+ *
+ * ## ⚠ Every source is keyed AND id'd by the frame, and both are load-bearing
+ *
+ * A raster source's URL is immutable in MapLibre — the fact web works around by tearing the source
+ * down and rebuilding it. Declarative bindings hide that: React sees the same component in the same
+ * position, reconciles it as a *prop update*, and hands the native side a new `url` it will not act
+ * on. **Observed on device 2026-08-25: the first frame of each band rendered and no later tap changed
+ * anything**, not even a zoom, because unlike web there was no second load event to rescue it.
+ *
+ * `key` forces the unmount/remount that actually recreates the native source. The id is derived from
+ * the frame as well, so that even if a binding defers its teardown the incoming source cannot collide
+ * with the outgoing one under a shared name.
  */
 
 import { GeoJSONSource, Layer, RasterSource } from '@maplibre/maplibre-react-native';
@@ -49,17 +61,14 @@ export const FREEZE_UP_SEAM_LAYER_ID = 'freeze-up-seam-line';
 /** Matches web's hairline: deliberate at any zoom, never competing with the shoreline beside it. */
 const SEAM_WIDTH = 1.25;
 
-function Frame({
-  frame,
-  season,
-  sourceId,
-  layerId,
-}: {
-  frame: IndexedFrame;
-  season: string;
-  sourceId: string;
-  layerId: string;
-}) {
+/** Ids unique to the frame, so an outgoing source can never share a name with its replacement. */
+const idsFor = (prefix: string, frame: IndexedFrame) => ({
+  sourceId: `${prefix}-${frame.granuleId}-${frame.band}`,
+  layerId: `${prefix}-${frame.granuleId}-${frame.band}-layer`,
+});
+
+function Frame({ frame, season, prefix }: { frame: IndexedFrame; season: string; prefix: string }) {
+  const { sourceId, layerId } = idsFor(prefix, frame);
   return (
     <RasterSource
       id={sourceId}
@@ -115,17 +124,17 @@ export function FreezeUpFrames({
     <>
       {companion ? (
         <Frame
+          key={`companion:${companion.key}`}
           frame={companion}
           season={season}
-          sourceId={FREEZE_UP_COMPANION_SOURCE_ID}
-          layerId={FREEZE_UP_COMPANION_LAYER_ID}
+          prefix={FREEZE_UP_COMPANION_SOURCE_ID}
         />
       ) : null}
       <Frame
+        key={`primary:${stop.frame.key}`}
         frame={stop.frame}
         season={season}
-        sourceId={FREEZE_UP_SOURCE_ID}
-        layerId={FREEZE_UP_LAYER_ID}
+        prefix={FREEZE_UP_SOURCE_ID}
       />
       {seam ? (
         <GeoJSONSource id={FREEZE_UP_SEAM_SOURCE_ID} data={seam}>

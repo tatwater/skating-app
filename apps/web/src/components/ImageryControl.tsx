@@ -37,7 +37,9 @@ export function ImageryControl({
   if (!visible) return null;
 
   return (
-    <div className="absolute top-4 right-4 z-10 flex flex-col items-end gap-2">
+    // ⚠ `top-20`, not `top-4`: MapLibre's own `NavigationControl` owns the top-right corner and this
+    // sat directly on the +/- buttons. Observed 2026-08-25.
+    <div className="absolute top-20 right-4 z-10 flex flex-col items-end gap-2">
       <Button
         type="button"
         variant={imageryOn ? 'default' : 'secondary'}

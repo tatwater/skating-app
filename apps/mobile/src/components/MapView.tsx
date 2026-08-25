@@ -91,6 +91,7 @@ import {
 } from '../lib/waterMap';
 import { FreezeUpFrames } from './FreezeUpFrames';
 import { FreezeUpScrubber } from './FreezeUpScrubber';
+import { coveredFractionForIndex, DRAWER_PEEK } from './MapDrawer';
 import { useMapSelection } from './MapSelectionContext';
 import { ReturnToRegion } from './ReturnToRegion';
 import { useFreezeUpTimeline } from './useFreezeUpTimeline';
@@ -953,7 +954,9 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
       {highlightWaterBodyId && !hazardDraft ? (
         <Button
           position="absolute"
-          top={56}
+          // ⚠ Below `LakeSearchBox`, which spans the full width at the top inset, and below
+          // `BackToLakeButton` at 112. Observed on device 2026-08-25 sitting on the search input.
+          top={168}
           right={16}
           zIndex={30}
           size="$3"
@@ -971,13 +974,23 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
       {/* The scrubber, over the map for the same reason. Bottom-left, above the sheet's collapsed
           height — D146's call is that the skater collapses the sheet to reach this without losing
           the lake they were reading about. */}
-      {env.imageryArchiveUrl && imageryOn && highlightWaterBodyId && !hazardDraft ? (
+      {env.imageryArchiveUrl &&
+      imageryOn &&
+      highlightWaterBodyId &&
+      !hazardDraft &&
+      // ⚠ **The drawer takes the map back.** D146 says the skater *collapses* the sheet to reach this
+      // — so once it is pulled up to read about the lake, the scrubber goes rather than floating over
+      // drawer content it has nothing to do with. Peek and closed are the states where the map is
+      // what is being looked at; anything above that is not.
+      drawerCoveredFraction <= coveredFractionForIndex(DRAWER_PEEK) ? (
         <YStack
           position="absolute"
           bottom={140}
           left={16}
           right={16}
-          zIndex={30}
+          // Under the drawer rather than over it, so the hide above is a design choice and not the
+          // only thing standing between a skater and a control drawn on top of their reading.
+          zIndex={20}
           padding="$3"
           borderRadius="$4"
           backgroundColor="$surface"
