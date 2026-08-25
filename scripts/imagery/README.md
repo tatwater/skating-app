@@ -14,9 +14,9 @@ where the hosting call and its one condition live.
 
 ---
 
-## ⚠ Five ways to get this wrong, each of which costs money
+## ⚠ Six ways to get this wrong, each of which costs money
 
-**Read this before running any `fly` command in this directory.** All five are cases where the
+**Read this before running any `fly` command in this directory.** The first five are cases where the
 obvious command is the wrong one — in #2, it is the command flyctl itself recommends — the failure is
 silent, and what it costs you is a recurring bill rather than an error message. They are listed here rather than left in the runbook below because the
 runbook is where you look when things are going well.
@@ -120,6 +120,29 @@ completes in 1024 MB. `FLY_VM_MEMORY` defaults to **2048**, which is tested-safe
 brings nine seasons inside the founder's $40 ceiling. Dropping the RAM does **not** shrink the GDAL
 block cache with it — see the `GDAL_CACHEMAX` note in the `Dockerfile` for why that is pinned in
 absolute megabytes.
+
+### ⚠ 6. The tail granules are superlinear, and the season mean hides them
+
+Measured 2026-08-25 on the corpus's largest granule (Champlain, `S2C_18TXP_20260215`, 923 bodies,
+237.7 Mpixels) on a **real** `shared-cpu-4x/2048` Machine — not locally:
+
+| | `tile_visual` | total |
+|---|---|---|
+| with the statistics' intermediates left on disk | 402.7s | 598.2s |
+| with them removed before tiling | **316.5s** | **491.1s** |
+| what ~0.2 s/Mpixel predicts | ~48s | — |
+
+Fourteen manifests sampled across the existing archive give tiling a flat **~0.2 s/Mpixel** from 0.9 to
+108 Mpixels, with no upward trend. Champlain is 2.2× the largest of those and takes **13×** the time.
+So the cost model's ~148s mean is real for the body of the distribution and **says nothing about the
+tail**, and ~18% of a season sits on 1,000+ body tiles.
+
+Removing `zones.tif`, `interior.tif`, `green.tif` and `swir16.tif` before tiling recovers 86s of it —
+at this size those are about a gigabyte apiece and they evict the page cache holding `scene.tif`. That
+is worth having and it is not the main term.
+
+⚠ **Do not read the plan's "28.9s tiling on this granule" as a Fly figure.** That was measured
+locally, at four threads to imitate `shared-cpu-4x`. A shared vCPU is not four of your cores.
 
 ### How to check you did not do any of these
 
