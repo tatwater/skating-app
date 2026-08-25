@@ -234,9 +234,16 @@ fetch_masks() {
   # Measured 2026-08-23 on a 20-granule slice: 13 "failures", all of them ocean tiles, all of them
   # this. `-skipfailures` would silence it and would also silence a real reprojection error, so the
   # count is asked for explicitly instead.
+  # ⚠ **And "no count" is NOT zero.** `${MASK_COUNT:-0}` used to stand here, which meant any way of
+  # failing that still exits 0 — a driver change, a renamed layer, an `ogrinfo` whose output format
+  # moved — reported "nothing to cut", exited 0, and produced no frame. Across a fan-out that is a
+  # whole backfill returning success having written nothing, which is exactly the failure
+  # `assertTileSurveyUsable` exists to stop one layer up; the container had no equivalent.
+  MASK_COUNT=""
   MASK_COUNT="$(ogrinfo -so -al -spat "$MINLNG" "$MINLAT" "$MAXLNG" "$MAXLAT" "$src" 2>/dev/null \
-    | sed -n 's/^Feature Count: //p' | head -1)"
-  MASK_COUNT="${MASK_COUNT:-0}"
+    | sed -n 's/^Feature Count: //p' | head -1)" || true
+  [[ "$MASK_COUNT" =~ ^[0-9]+$ ]] \
+    || die "no feature count from ${base}.fgb — refusing to report 'nothing to cut' on a read failure"
   log "masks intersecting this granule: $MASK_COUNT"
   [[ "$MASK_COUNT" -eq 0 ]] && return 0
 
@@ -314,6 +321,31 @@ build_alpha() {
     || die "alpha extraction failed"
 }
 
+# Build `zones.tif` + `zone-to-id.json` — the per-body integer raster every zonal statistic joins on.
+#
+# Shared by both missions for the same reason `build_alpha` is: the zone raster is a property of the
+# *mask geometry*, not of the sensor, and the optical and radar copies of these three commands had
+# already drifted (one carried `-co TILED=YES`, the other hardcoded `14` where `$WARP_RES` belongs).
+# A zone grid that disagrees with the image grid is the silent failure `zonal-clear.py` and
+# `sar-zonal.py` both refuse to run into — so there is exactly one place it can be wrong.
+#
+# `-a zone` needs a numeric attribute, hence the index `jq` adds here: the corpus id is a string and
+# cannot be burned into a raster.
+build_zones() {
+  local MINX="$1" MINY="$2" MAXX="$3" MAXY="$4"
+
+  jq -c '{type:"FeatureCollection", features:[.features | to_entries[] | .value * {properties: (.value.properties + {zone: (.key + 1)})}]}' \
+    masks.geojson > masks-zoned.geojson || die "zone numbering failed"
+  jq -c '[.features[] | {key: (.properties.zone|tostring), value: .properties.waterBodyId}] | from_entries' \
+    masks-zoned.geojson > zone-to-id.json || die "zone mapping failed"
+
+  stage rasterize_zones gdal_rasterize -q -a zone -a_nodata 0 -init 0 -ot UInt32 \
+    -te "$MINX" "$MINY" "$MAXX" "$MAXY" -tr "$WARP_RES" "$WARP_RES" \
+    -co COMPRESS=DEFLATE -co TILED=YES \
+    masks-zoned.geojson zones.tif \
+    || die "zone rasterize failed"
+}
+
 transform_granule() {
   fetch_masks
 
@@ -336,7 +368,8 @@ transform_granule() {
   #    which is Sentinel-2's native sample — upsampling would invent detail, downsampling would throw
   #    away the only resolution we have.
   log "warping $href"
-  stage warp_visual gdalwarp -q -t_srs EPSG:3857 -te "$MINX" "$MINY" "$MAXX" "$MAXY" -tr 14 14 \
+  stage warp_visual gdalwarp -q -t_srs EPSG:3857 -te "$MINX" "$MINY" "$MAXX" "$MAXY" \
+    -tr "$WARP_RES" "$WARP_RES" \
     -r bilinear -multi -co COMPRESS=DEFLATE -overwrite \
     "/vsicurl/${href}" scene.tif \
     || die "gdalwarp failed"
@@ -366,23 +399,15 @@ transform_granule() {
   scl_href="$(asset_href scl)"
   if [[ -n "$scl_href" ]]; then
     log "warping SCL (20 m -> grid, nearest)"
-    stage warp_scl gdalwarp -q -t_srs EPSG:3857 -te "$MINX" "$MINY" "$MAXX" "$MAXY" -tr 14 14 \
+    stage warp_scl gdalwarp -q -t_srs EPSG:3857 -te "$MINX" "$MINY" "$MAXX" "$MAXY" \
+      -tr "$WARP_RES" "$WARP_RES" \
       -r near -multi -co COMPRESS=DEFLATE -overwrite \
       "/vsicurl/${scl_href}" scl.tif \
       || die "SCL warp failed"
 
     # Zones: each mask feature burned as its own integer, so one sweep can cross-tabulate class
-    # against body. `-a zone` needs a numeric attribute, hence the index jq adds here — the corpus id
-    # is a string and cannot be burned into a raster.
-    jq -c '{type:"FeatureCollection", features:[.features | to_entries[] | .value * {properties: (.value.properties + {zone: (.key + 1)})}]}' \
-      masks.geojson > masks-zoned.geojson || die "zone numbering failed"
-    jq -c '[.features[] | {key: (.properties.zone|tostring), value: .properties.waterBodyId}] | from_entries' \
-      masks-zoned.geojson > zone-to-id.json || die "zone mapping failed"
-
-    stage rasterize_zones gdal_rasterize -q -a zone -a_nodata 0 -init 0 -ot UInt32 \
-      -te "$MINX" "$MINY" "$MAXX" "$MAXY" -tr 14 14 -co COMPRESS=DEFLATE \
-      masks-zoned.geojson zones.tif \
-      || die "zone rasterize failed"
+    # against body — shared with the radar path, see `build_zones`.
+    build_zones "$MINX" "$MINY" "$MAXX" "$MAXY"
 
     stage zonal_stats sh -c 'python3 /usr/local/bin/zonal-clear.py zones.tif scl.tif zone-to-id.json > bodies.json' \
       || die "zonal clear-fraction failed"
@@ -654,13 +679,7 @@ transform_sar() {
 
   # Per-body statistics, on the same grid — see `sar-zonal.py` for why the average is taken in linear
   # power rather than in decibels.
-  jq -c '{type:"FeatureCollection", features:[.features | to_entries[] | .value * {properties: (.value.properties + {zone: (.key + 1)})}]}' \
-    masks.geojson > masks-zoned.geojson || die "zone numbering failed"
-  jq -c '[.features[] | {key: (.properties.zone|tostring), value: .properties.waterBodyId}] | from_entries' \
-    masks-zoned.geojson > zone-to-id.json || die "zone mapping failed"
-  stage rasterize_zones gdal_rasterize -q -a zone -a_nodata 0 -init 0 -ot UInt32 \
-    -te "$MINX" "$MINY" "$MAXX" "$MAXY" -tr "$WARP_RES" "$WARP_RES" -co COMPRESS=DEFLATE -co TILED=YES \
-    masks-zoned.geojson zones.tif || die "zone rasterize failed"
+  build_zones "$MINX" "$MINY" "$MAXX" "$MAXY"
   stage sar_zonal sh -c "python3 /usr/local/bin/sar-zonal.py zones.tif zone-to-id.json $(printf '%s ' "${zonal_args[@]}") > bodies.json" \
     || die "per-body radar statistics failed"
   log "per-body sigma0: $(jq 'length' bodies.json) bodies, pols ${pols[*]}"
@@ -694,7 +713,17 @@ transform_sar() {
   # (there is no cloud fraction; there *are* acquisition parameters a timeline must filter on), and
   # the optical block has just produced 4,381 frames — merging them to save a dozen lines would put
   # that at risk for no gain a reader benefits from.
-  BANDS="$(printf '%s\n' "${pols[@]}" | jq -R . | jq -sc .)"
+  # ⚠ **`bands` is the list of frames PUBLISHED, not the list of polarisations measured.**
+  #
+  # `buildSeasonIndex` reads it as exactly that — one `IndexedFrame` per entry, keyed
+  # `<granuleId>-<band>.pmtiles` — so listing both polarisations here while uploading only
+  # `-${render}.pmtiles` puts a `-vv.pmtiles` entry into every radar season's index that 404s for
+  # every client that follows it. Rendering is a *choice of one* channel (see the fixed-stretch note
+  # above), so exactly one frame is published.
+  #
+  # Which polarisations were read is not lost: `polarizations` carries the STAC list, and
+  # `bodies[].vvDb`/`.vhDb` carry the per-body measurement for each one that was cut.
+  BANDS="$(jq -nc --arg band "$render" '[$band]')"
   jq -n \
     --arg granule "$GRANULE_ID" \
     --arg captured "$CAPTURED_AT" \
