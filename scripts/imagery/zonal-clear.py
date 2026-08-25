@@ -6,7 +6,7 @@
 Replaces the manifest's `bodies: 12` — a count that never said *which* twelve — with
 
     [{"waterBodyId": "...", "clearPct": 0.93, "coveragePct": 0.31,
-      "icePct": 0.88, "waterPct": 0.04, "pixels": 4107}, ...]
+      "snowIcePct": 0.88, "waterPct": 0.04, "pixels": 4107}, ...]
 
 ## Why this is the highest-value number in the pipeline
 
@@ -179,7 +179,13 @@ def main() -> int:
                 # the same confident number as one in full view. Keeping both raw against `valid`
                 # lets a consumer form that ratio *and* know what it rests on; the reverse is not
                 # recoverable.
-                "icePct": round(i / v, 4) if v > 0 else None,
+                # ⚠ **`snowIcePct`, not `icePct`, and the name is the whole point.** SCL's class 11
+                # finds *bright* frozen surfaces. Black ice is transparent — the light comes back off
+                # the dark bottom — so it is classified as **water**, and a lake somebody skated can
+                # read 2% here. Measured: Mascoma Lake, 22 Dec 2025, 98% clear, 2.3% "ice", 82.5%
+                # water; the founder skated its full length the next morning. The name has to say
+                # snow, because the number does.
+                "snowIcePct": round(i / v, 4) if v > 0 else None,
                 "waterPct": round(w / v, 4) if v > 0 else None,
                 "pixels": v,
             }

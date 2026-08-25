@@ -400,7 +400,7 @@ transform_granule() {
     log "no SCL asset on this granule — membership without clear fractions"
     jq -c '[.features[].properties.waterBodyId
             | {waterBodyId: ., clearPct: null, coveragePct: null,
-               icePct: null, waterPct: null, pixels: 0}]' \
+               snowIcePct: null, waterPct: null, pixels: 0}]' \
       masks.geojson > bodies.json || die "body membership fallback failed"
   fi
 

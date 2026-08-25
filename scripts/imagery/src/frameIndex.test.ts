@@ -136,7 +136,7 @@ describe('bands', () => {
             waterBodyId: 'w1',
             clearPct: 0.93,
             coveragePct: 0.31,
-            icePct: 0.88,
+            snowIcePct: 0.88,
             waterPct: 0.04,
             pixels: 4107,
           },
@@ -146,8 +146,8 @@ describe('bands', () => {
     expect(index.frames[0]?.bodies).toBe(9);
     expect(JSON.stringify(index)).not.toContain('clearPct');
     // Every per-body field stays manifest-side for the same size reason `clearPct` does — including
-    // `icePct`, which is the one a freeze-up chart most wants and would most tempt someone to hoist.
-    for (const field of ['coveragePct', 'icePct', 'waterPct']) {
+    // `snowIcePct`, which is the one a freeze-up chart most wants and would most tempt someone to hoist.
+    for (const field of ['coveragePct', 'snowIcePct', 'waterPct']) {
       expect(JSON.stringify(index)).not.toContain(field);
     }
   });

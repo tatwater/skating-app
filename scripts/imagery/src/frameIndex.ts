@@ -67,13 +67,37 @@ export interface FrameManifest {
      * already read per pixel per body to compute `clearPct`, so these cost nothing — and deriving
      * them afterwards would mean re-reading every granule of a season.
      *
-     * ⚠ **A measurement, not a verdict.** Class 11 does not separate lake ice from snow lying on it
-     * and is known to confuse with cloud; nothing here sees thickness, and D147 is explicit that
+     * ## ⚠ It is `snowIcePct` because it measures SNOW, and the old name lied
+     *
+     * SCL's class 11 finds *bright* frozen surfaces. **Black ice is transparent** — the light comes
+     * back off the dark lake bottom — so the classifier calls it **water**, correctly by its own
+     * lights and uselessly by ours. Measured: Mascoma Lake, 22 December 2025, 98% clear, **2.3%
+     * "ice", 82.5% water** — and the founder skated its full length the next morning. Lake Morey the
+     * same day read 45% ice, because Morey had snow on it.
+     *
+     * So a high number means *snow-covered ice*, a low number means *water **or** the best skating
+     * ice of the year*, and anything reading this as "is it frozen" will be wrong in December.
+     * See `docs/reading-ice-from-orbit.md`.
+     *
+     * ⚠ **A measurement, not a verdict.** Nothing here sees thickness, and D147 is explicit that
      * 10 m imagery cannot see a pressure ridge. D150 governs every claim built on it.
      *
      * `null` when the granule shipped without SCL — unmeasured, not zero.
      */
-    icePct: number | null;
+    snowIcePct?: number | null;
+    /**
+     * @deprecated The pre-2026-08-25 name for `snowIcePct`. Identical measurement, misleading label.
+     *
+     * ⚠ **Both fields are optional and exactly one will be present**, decided by when the frame was
+     * cut. The 4,381 optical frames of winter 2025-26 predate the rename and carry this; everything
+     * cut since carries `snowIcePct`. A reader wants `snowIcePct ?? icePct` until the archive is
+     * re-cut, at which point this field disappears and the `?` on `snowIcePct` should go with it.
+     *
+     * The rename landed without a re-run deliberately: it is a *contract* change, so its cost grows
+     * with every consumer written against the wrong name, while the re-run it needs is owed to a
+     * batch of additive work (NDSI) that blocks nothing. See `plans/PR2-HANDOFF-2.md` §7.
+     */
+    icePct?: number | null;
     waterPct: number | null;
     pixels: number;
   }[];
