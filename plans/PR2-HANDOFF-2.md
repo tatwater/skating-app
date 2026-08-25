@@ -274,11 +274,33 @@ Lake-vs-land separation on 2026-02-13, measured inside the corpus masks:
 The optical frame nearly loses the lake among snowy fields; SAR renders it crisply. **2.7× better
 separation.**
 
-**But §C1's warning is confirmed by measurement.** Same platform, same track: November open water
-reads **38.85 dB** and January ice reads **39.52 dB** — 0.67 dB apart. **VV alone cannot tell smooth
-ice from calm open water.** The only unambiguous excursion in the whole season is a ~3 dB brightening
-on 2026-03-09/15 (both platforms agree), which is ice *decay* roughening the surface — the wrong end
-of the winter for a freeze-up alert.
+### ⚠ The first reading of the season series was wrong — a confound, corrected
+
+The initial pass reported "November open water 38.85 dB, January ice 39.52 dB, so §C1 is confirmed and
+SAR cannot tell ice from water." **That conclusion was an artifact of the mask.** Lake Champlain is
+**87.0% of the lake pixels** in that box, and Champlain's main lake frequently does not freeze at all.
+The series was measuring one lake that stayed open, and reading its flatness as a failure of the
+sensor.
+
+Split by target, S1A and S1C computed separately so the platform offset cancels:
+
+| target | polarisation | open (Nov+Apr) | midwinter | Δ |
+| --- | --- | --- | --- | --- |
+| **Champlain** *(rarely freezes)* | VH | 33.38 / 30.89 | 33.14 / 30.41 | **+0.24 / +0.48 dB** |
+| **small lakes** *(do freeze)* | VH | 38.67 / 37.23 | 36.79 / 34.95 | **+1.88 / +2.28 dB** |
+| Champlain | VV | 37.05 / 36.58 | 38.64 / 37.31 | −1.59 / −0.73 dB |
+| small lakes | VV | 43.64 / 42.67 | 42.85 / 42.04 | +0.79 / +0.63 dB |
+
+**VH separates; VV does not** — the textbook result. And **Champlain is an accidental control group**:
+the lake that does not freeze shows no seasonal VH change, while the lakes that do show ~2 dB, and both
+platforms replicate both results independently.
+
+**What survives of §C1's warning:** November and April open water is likely wind-roughened, so part of
+that 2 dB is Bragg scattering rather than phase. **Calm** open water could still mimic smooth ice. That
+is the residual risk, and quantifying it is the pilot's job.
+
+The other seasonal feature is a ~3 dB brightening on 2026-03-09/15 (both platforms agree) — ice *decay*
+roughening the surface, the wrong end of winter for a freeze-up alert but a clean ice-out signal.
 
 **⚠ And the S1 path is not "gdalwarp with a different band".** Raw GRD DN is uncalibrated: across the
 season S1A reads **+1.01 dB (VV) and +2.17 dB (VH)** above S1C on the same track. VH — the standard
@@ -296,9 +318,16 @@ render an instrument difference as an ice change. Real work needs sigma0 calibra
 - **⚠ Polarization is mixed across passes** — some HH/HV, some VV/VH. An archive must not mix them,
   which cuts the usable pass count for any single-polarization series roughly in half.
 
-**Recommendation: SAR is worth a pilot, but scope it as calibrated sigma0, not a band swap** — and do
-not expect it to date freeze-up on its own. Its clear strength is delineation under snow, where optical
-is weakest.
+**Recommendation: SAR is worth a pilot, in VH, and it does not block anything.** S1 is a separate STAC
+collection with its own backfill, and ice classification is N6g — so the S2 season run is independent
+of every question here.
+
+**Calibration is not a prerequisite (founder call, 2026-08-24).** The signal is already visible
+within-platform, which is exactly what calibration would have been needed to reveal. What sigma0 or an
+RTC product actually buys is *pooling* S1A and S1C into one ~6-day series instead of two ~12-day ones.
+That is a real gain and a pilot-time refinement, not a gate. Planetary Computer's `sentinel-1-rtc` is
+analysis-ready and would be less work than hand-rolling the LUT, at the cost of a token and a
+non-AWS dependency — evaluate then.
 
 ---
 
@@ -389,14 +418,31 @@ Also done 2026-08-24 (see §4b, §4c):
 - ✅ **SAR spiked before building.** Legible and better than optical under snow, but VV cannot
   separate ice from calm water, and raw GRD DN is uncalibrated across platforms.
 
-Left:
+- ✅ **Per-body `icePct` / `waterPct`** — `zonal-clear.py` already read SCL per pixel per body and
+  folded snow/ice into "clear". Two more bincounts, no extra I/O. Validated on two granules that
+  disagree correctly: 2026-01-04 inland VT/NY reads ice=1.00 on its clear bodies, 2026-01-13 Cape Cod
+  reads water=0.75–0.79 on 210 clear bodies. **The SCL raster stays off** (founder call) — measured at
+  +24% job time and +33% storage.
+- ✅ **`select-granules` re-run** — the stale 2,560 list is replaced with the real **4,485**.
 
-1. **The single-season backfill** (winter 2025-26). ⚠ **Re-run `select-granules` first** — the list in
-   `.scratch/granules-2025-11-01-to-2026-05-05.txt` holds 2,560 ids and predates the ungating; the
-   real figure is **4,485**. At the measured 66.9s and `MAX_PARALLEL=50` that is **~1.7h and ~$1.46**.
-2. **S1 pilot**, scoped as calibrated sigma0 rather than a band swap (§4c).
-3. **N6g label fixes** in the three files listed in §5.
-4. Consider whether `MAX_PARALLEL` should go higher still — 50 was proven, 100 was never tried.
+### Ready to run
+
+| | |
+| --- | --- |
+| image | `deployment-01M0V4XY74HSXFZPC7YGYTZ6YX` (tiler + `--slurpfile` + ice/water) |
+| granules | 4,485 (`.scratch/granules-2025-11-01-to-2026-05-05.txt`) |
+| settings | `MAX_PARALLEL=50`, `FLY_VM_MEMORY=2048`, `MASK_SEASON=winter-2026-27` |
+| estimate | **~1.7h, ~$1.46, ~19 GB** |
+
+⚠ The 50 frames already in R2 were cut by three different images and only two carry `icePct`. The
+season run re-cuts every id in the list, so the schema converges — but do not build the index off the
+current mixed set.
+
+Left after the backfill:
+
+1. **S1 pilot** in VH (§4c) — independent of everything above.
+2. **N6g label fixes** in the three files listed in §5.
+3. Consider whether `MAX_PARALLEL` should go higher still — 50 was proven, 100 was never tried.
 
 ## 7b. Is the architecture flexible? Yes, and in the direction that matters
 
