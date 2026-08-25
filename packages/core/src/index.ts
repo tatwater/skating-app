@@ -47,6 +47,7 @@ export * from './hazardRecurrence';
 export * from './hazardWeatherDecay';
 export * from './imageryArchive';
 export * from './imageryMask';
+export * from './imagerySeam';
 export * from './imageryTiles';
 export * from './imageryTimeline';
 export * from './ingestGate';

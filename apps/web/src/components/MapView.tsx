@@ -24,6 +24,7 @@ import {
 } from '@skating/core';
 import { useNavigate } from '@tanstack/react-router';
 import { useQuery } from 'convex/react';
+import type { MultiPolygon, Polygon } from 'geojson';
 import type maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { useTheme } from 'next-themes';
@@ -85,6 +86,7 @@ import { ImageryControl } from './ImageryControl';
 import { useMapSelection } from './MapSelectionContext';
 import { ReturnToRegion } from './ReturnToRegion';
 import { useFreezeUpFrame } from './useFreezeUpFrame';
+import { useFreezeUpSeam } from './useFreezeUpSeam';
 import { useFreezeUpTimeline } from './useFreezeUpTimeline';
 import {
   IMAGERY_HAZARD_LAYERS,
@@ -100,6 +102,20 @@ import {
   setLayersVisible,
   useImageryReveal,
 } from './useImageryReveal';
+
+/**
+ * A stored geometry narrowed to the two shapes a lake is ever stored as.
+ *
+ * `waterBodies.polygon` is typed as the whole GeoJSON geometry union because the validator accepts
+ * one, but a body is a `Polygon` or a `MultiPolygon` and nothing else. Returning `null` for anything
+ * else keeps the seam from being computed against a point.
+ */
+function polygonOf(geometry: unknown): Polygon | MultiPolygon | null {
+  const type = (geometry as { type?: string } | null)?.type;
+  return type === 'Polygon' || type === 'MultiPolygon'
+    ? (geometry as Polygon | MultiPolygon)
+    : null;
+}
 
 /**
  * Interactive MapLibre map — the read side of the Phase 2 loop (§D, D5/D6/D47/D49). Imperative
@@ -1119,6 +1135,15 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
     frame: freezeUpSelected?.companion?.frame ?? null,
     season: freezeUpSeason,
     slot: 'companion',
+  });
+  // The hairline where the two meet. Derived from the *primary* footprint, because that is the frame
+  // drawn on top and therefore the one whose edge is the visible join — clipped to the lake, since
+  // the same granule edge also runs a hundred kilometres across land nobody is looking at.
+  useFreezeUpSeam({
+    mapRef,
+    loaded,
+    footprint: freezeUpSelected?.companion ? (freezeUpSelected.frame.footprint ?? null) : null,
+    body: polygonOf(timelineBody?.available ? timelineBody.body.polygon : null),
   });
 
   // The wash belongs on the bodies still **waiting** for a photograph — the reveal set minus whatever
