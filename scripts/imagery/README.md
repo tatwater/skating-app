@@ -142,7 +142,7 @@ is in flight, one of the five above happened. `fly machine destroy <id> --force`
 
 ---
 
-## ⚠ Twelve ways a tool reports success and means nothing of the kind
+## ⚠ Thirteen ways a tool reports success and means nothing of the kind
 
 The section above is about money. **This one is about silence** — every entry here is a command that
 exits 0, prints something reassuring, and leaves you with wrong data. They are collected because each
@@ -198,6 +198,18 @@ can least afford to lose.
 exactly as it applies to the warp, which is why `--overview-resampling` is set explicitly rather than
 left at its default of `average`. Interpolating class 8 against class 10 invents class 9 — a different
 category, silently.
+
+**9b. L2A reflectance is `DN * scale + offset`, and the offset changed mid-archive.** Processing
+baseline **04.00 (2022-01-25)** introduced `BOA_ADD_OFFSET = -1000`, so `offset` is `-0.1` on recent
+granules and `0` on older ones. In a normalised index the scale cancels and **the offset does not**:
+on the synthetic snow pixel used to verify `zonal-ndsi.py`, the same DN pair yields **NDSI 1.000 under
+the new baseline and 0.778 under the old** — either side of the 0.4 threshold the snow literature
+uses.
+
+A nine-season backfill spans January 2022, so a hardcoded offset puts a **step change at the baseline
+switch that is indistinguishable from a climate signal**, in a series whose whole purpose is comparing
+seasons. Both values are read per granule from STAC's `raster:bands`, and `measure_ndsi` skips NDSI
+entirely rather than assuming them — `null` is recoverable, a plausible wrong number is not.
 
 ### Scale
 
@@ -274,6 +286,45 @@ filter returned exactly the intersecting one.
 The alternative was one mask file per Sentinel MGRS tile, keyed off the granule id
 (`S2C_`**`18TXP`**`_20260215`). It works, and it costs a tiling scheme, a naming convention, and a
 story for bodies that straddle two tiles. The spatial index answers the same question with none of it.
+
+### ⚠ Two artifacts, because the picture and the measurement are different shapes
+
+A bake writes **`masks/<season>.fgb`** (the reveal — lake ∪ walk ∪ parking, each +60 m, island holes
+dropped) and **`masks/<season>-water.fgb`** (the body polygon exactly as the corpus holds it, holes
+intact). The first is burned into alpha; the second is burned into the zone grid every per-body
+statistic joins on. The sidecar's `waterMasks: true` is what tells the container the pair exists, and
+`fetch_masks` **refuses to run against a bake that predates it** rather than falling back.
+
+**Until 2026-08-25 there was only the reveal, and it was used as the zone grid.** So `clearPct`,
+`coveragePct`, `snowIcePct`, `waterPct`, `vhDb` and `vvDb` were all measured over a lake *plus* a 60 m
+ring of shore, *plus* its islands, *plus* a trail corridor and a car park.
+
+The error is a fixed-width ring, so its share scales with perimeter over area — **negligible on
+Champlain, 7× a circular 1-acre pond's own area (86% land)**. Two consequences worth stating plainly:
+
+- **N6g Lane 2** eliminates bodies on *"never observed frozen"*, and the size class it targets is the
+  one where the surrounding woods were casting the vote.
+- **Radar is worse.** Forest is the classic bright `VH` target at ~−13 dB against smooth ice near −22,
+  a ~10 dB contaminant on the ~2 dB separation the archive exists to detect. The 2 dB was measured
+  *through* the contamination, so the real separation is larger than the recorded figure.
+
+Nothing errored, because a contaminated percentage is still a percentage. The corroboration was in the
+repo the whole time: `zonal-clear.py` recorded Mascoma at 98% clear reporting **82.5% water**, and a
+60 m ring on ~16 km of shoreline is about the missing 17.5%.
+
+### The interior statistics, and why the count matters more than the percentage
+
+`build_interior` runs one `gdal_proximity` pass over the zone grid so each statistic also reports what
+it looked like with the shoreline eroded off. ⚠ **`EROSION_M` is a centre-to-centre distance, so it
+erodes one ring fewer than it reads**: a threshold of *k* pixel widths removes *k−1* rings. Verified on
+a synthetic 20×20 lake — at 20 m (≈2 grid pixels) the interior came out **18×18, not 16×16**. Optical
+uses 20 m (one ring, the mixed-pixel fix); radar uses 60 m (two rings, because a bank pixel there is a
+10 dB target whose energy spreads further than one pixel).
+
+**The point is the denominator, not the cleaner number.** N6g Lane 2 warns that a body too small to
+classify reads exactly like a body that never froze. On the same fixture a **3×3-pixel pond comes out
+with exactly one interior pixel** — so `interiorPixels` and `interiorTotalPixels` put that caution in
+the manifest, where an operator confirming a removal can see it, instead of in a footnote.
 
 ### What the bake does *not* produce
 

@@ -2,10 +2,13 @@
 """Per-body radar brightness from a calibrated Sentinel-1 pass (N6e PR 2, §C1).
 
     sar-zonal.py <zones.tif> <zone-to-id.json> <pol>:<dn.tif>:<a.tif> [<pol>:<dn.tif>:<a.tif> …]
+                 [--interior <interior.tif> --erode-projected-m <m>]
 
 Emits the radar counterpart of `zonal-clear.py`:
 
-    [{"waterBodyId": "…", "vhDb": -21.4, "vvDb": -14.8, "coveragePct": 0.98, "pixels": 4107}, …]
+    [{"waterBodyId": "…", "vhDb": -21.4, "vvDb": -14.8, "coveragePct": 0.98, "pixels": 4107,
+      "interiorVhDb": -22.9, "interiorPixels": 3140,
+      "sigma0Hist": {"vh": [...45 bins over -35..10 dB...], "vv": [...]}}, …]
 
 ## What the number means, and what it does not
 
@@ -50,6 +53,32 @@ almost as much as freezing does. It would look like geography, not like a bug.
 A Sentinel-1 slice covers ~275 x 210 km — at native resolution that is a 175-megapixel grid, and the
 zone array alone is 700 MB as UInt32 before numpy copies anything. Reading in row bands bounds memory
 to one band regardless of how large the pass is.
+
+## ⚠ The shoreline has to come off, and here it matters more than anywhere else in the pipeline
+
+Forest is the classic bright `VH` target: volume scattering inside a canopy puts energy into the
+cross-polarised channel that a smooth surface cannot. Bank vegetation sits near **−13 dB** while
+smooth ice and calm water sit near **−22**, against the **~2 dB** of season-long separation this
+measurement exists to detect. A ring of shoreline inside the zone does not add noise to the ice
+signal — it swamps it, and worst on the smallest lakes, where the ring is the largest share.
+
+Until 2026-08-25 the zone raster was the *reveal* shape, so every figure this script produced carried
+a 60 m band of bank, a trail corridor and a car park. The frames already in R2 carry that. The 2 dB
+separation was measured through the contamination, which means the real separation is **larger** than
+the number recorded above.
+
+## `sigma0Hist` — because a mean cannot answer the question the archive was built for
+
+The mean is one number for a whole lake, and it cannot distinguish a uniformly medium-rough surface
+from one that is half glassy and half ridged. **That distinction is the entire premise of N6g Lane 1**
+— smooth ice is specular and returns dark, so "40% of this lake sat below −22 dB" is a claim about
+smoothness that "this lake averaged −20 dB" cannot make.
+
+A histogram is one more `bincount` over arrays already in memory, and it subsumes every statistic
+anyone might later want: mean, variance, any percentile, any specular-fraction threshold. Deriving
+those afterwards means re-reading all 40,365 granules of a nine-season backfill. The bins are fixed
+rather than per-scene for the same reason the rendered stretch is (see `cut-granule.sh`): a per-scene
+range makes every frame look alike and the differences vanish.
 """
 
 import argparse
@@ -63,17 +92,53 @@ gdal.UseExceptions()
 
 ROWS_PER_WINDOW = 512
 
+# 1 dB bins from −35 to +10. The low end is below anything C-band returns from a lake (calm water
+# bottoms out around −25 and the noise floor is near −27); the high end clears bright urban and
+# double-bounce returns. Fixed edges, so two lakes, two dates and two seasons are comparable.
+HIST_MIN_DB = -35.0
+HIST_MAX_DB = 10.0
+HIST_BINS = 45
+
+
+def db(linear_sum: float, n: int) -> float | None:
+    """Mean linear power to decibels, or `null` when nothing was visible."""
+    return round(10 * float(np.log10(linear_sum / n)), 3) if n > 0 else None
+
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("zones")
     parser.add_argument("mapping")
     parser.add_argument("bands", nargs="+", help="pol:dn.tif:a.tif")
+    parser.add_argument(
+        "--interior",
+        help="distance-to-bank raster from `build_interior`; enables the eroded statistics",
+    )
+    parser.add_argument(
+        "--erode-projected-m",
+        type=float,
+        help="how far from the bank a pixel must sit to count as interior, in PROJECTED metres",
+    )
     args = parser.parse_args()
 
     zones_ds = gdal.Open(args.zones)
     width, height = zones_ds.RasterXSize, zones_ds.RasterYSize
     zones_band = zones_ds.GetRasterBand(1)
+
+    interior_ds = None
+    if args.interior:
+        if args.erode_projected_m is None:
+            print("--interior needs --erode-projected-m", file=sys.stderr)
+            return 64
+        interior_ds = gdal.Open(args.interior)
+        if (interior_ds.RasterXSize, interior_ds.RasterYSize) != (width, height):
+            print(
+                f"grid mismatch: interior {interior_ds.RasterXSize}x"
+                f"{interior_ds.RasterYSize}, zones are {width}x{height}",
+                file=sys.stderr,
+            )
+            return 1
+    interior_band = interior_ds.GetRasterBand(1) if interior_ds else None
 
     with open(args.mapping) as handle:
         zone_to_id = {int(k): v for k, v in json.load(handle).items()}
@@ -106,9 +171,15 @@ def main() -> int:
                 return 1
         channels.append((pol, dn.GetRasterBand(1), a.GetRasterBand(1)))
 
-    linear = {pol: np.zeros(max_zone + 1) for pol, _, _ in channels}
-    counts = {pol: np.zeros(max_zone + 1, dtype=np.int64) for pol, _, _ in channels}
-    total = np.zeros(max_zone + 1, dtype=np.int64)
+    zone_slots = max_zone + 1
+    linear = {pol: np.zeros(zone_slots) for pol, _, _ in channels}
+    counts = {pol: np.zeros(zone_slots, dtype=np.int64) for pol, _, _ in channels}
+    inner_linear = {pol: np.zeros(zone_slots) for pol, _, _ in channels}
+    inner_counts = {pol: np.zeros(zone_slots, dtype=np.int64) for pol, _, _ in channels}
+    hist = {pol: np.zeros(zone_slots * HIST_BINS, dtype=np.int64) for pol, _, _ in channels}
+    total = np.zeros(zone_slots, dtype=np.int64)
+    inner_total = np.zeros(zone_slots, dtype=np.int64)
+    bin_width = (HIST_MAX_DB - HIST_MIN_DB) / HIST_BINS
 
     for y in range(0, height, ROWS_PER_WINDOW):
         rows = min(ROWS_PER_WINDOW, height - y)
@@ -116,7 +187,14 @@ def main() -> int:
         inside = zones > 0
         if not inside.any():
             continue
-        total += np.bincount(zones[inside].astype(np.int64), minlength=max_zone + 1)
+        total += np.bincount(zones[inside].astype(np.int64), minlength=zone_slots)
+
+        if interior_band is not None:
+            distance = interior_band.ReadAsArray(0, y, width, rows)
+            deep = inside & (distance >= args.erode_projected_m)
+            inner_total += np.bincount(zones[deep].astype(np.int64), minlength=zone_slots)
+        else:
+            deep = None
 
         for pol, dn_band, a_band in channels:
             dn = dn_band.ReadAsArray(0, y, width, rows)
@@ -128,22 +206,65 @@ def main() -> int:
                 continue
             z = zones[usable].astype(np.int64)
             sigma0 = (dn[usable].astype(np.float64) / gain[usable].astype(np.float64)) ** 2
-            linear[pol] += np.bincount(z, weights=sigma0, minlength=max_zone + 1)
-            counts[pol] += np.bincount(z, minlength=max_zone + 1)
+            linear[pol] += np.bincount(z, weights=sigma0, minlength=zone_slots)
+            counts[pol] += np.bincount(z, minlength=zone_slots)
+
+            if deep is None:
+                continue
+            # The histogram is built over the eroded body only. A shoreline pixel at −13 dB would
+            # otherwise put a second mode in every small lake's distribution and read as roughness.
+            inner_usable = deep & (dn > 0) & (gain > 0)
+            if not inner_usable.any():
+                continue
+            iz = zones[inner_usable].astype(np.int64)
+            inner_sigma0 = (
+                dn[inner_usable].astype(np.float64) / gain[inner_usable].astype(np.float64)
+            ) ** 2
+            inner_linear[pol] += np.bincount(iz, weights=inner_sigma0, minlength=zone_slots)
+            inner_counts[pol] += np.bincount(iz, minlength=zone_slots)
+
+            # ⚠ **Per-pixel dB here, unlike every mean in this file.** Averaging decibels is the
+            # error the module docstring exists to warn about — but *binning* them is not averaging,
+            # it is classifying each pixel by its own brightness, which is exactly the distribution
+            # a specular-fraction question asks about. The mean stays linear; only the bin edges are
+            # logarithmic.
+            pixel_db = np.clip(
+                10 * np.log10(inner_sigma0), HIST_MIN_DB, HIST_MAX_DB
+            )
+            bins = np.minimum(
+                ((pixel_db - HIST_MIN_DB) / bin_width).astype(np.int64), HIST_BINS - 1
+            )
+            hist[pol] += np.bincount(iz * HIST_BINS + bins, minlength=zone_slots * HIST_BINS)
+
+    shaped = {pol: hist[pol].reshape(zone_slots, HIST_BINS) for pol, _, _ in channels}
 
     out = []
     for zone, water_body_id in sorted(zone_to_id.items()):
         entry: dict[str, object] = {"waterBodyId": water_body_id}
         seen = 0
+        inner_seen = 0
         for pol, _, _ in channels:
             n = int(counts[pol][zone])
             seen = max(seen, n)
             # null, never a number, when nothing was visible — "we could not see it" and "it was dark"
             # are different claims and only one of them is a measurement.
-            entry[f"{pol}Db"] = round(10 * np.log10(linear[pol][zone] / n), 3) if n > 0 else None
+            entry[f"{pol}Db"] = db(linear[pol][zone], n)
+            if interior_band is None:
+                continue
+            inner_n = int(inner_counts[pol][zone])
+            inner_seen = max(inner_seen, inner_n)
+            entry[f"interior{pol.capitalize()}Db"] = db(inner_linear[pol][zone], inner_n)
         t = int(total[zone])
         entry["coveragePct"] = round(seen / t, 4) if t > 0 else 0.0
         entry["pixels"] = seen
+        if interior_band is not None:
+            entry["interiorPixels"] = inner_seen
+            entry["interiorTotalPixels"] = int(inner_total[zone])
+            entry["sigma0Hist"] = (
+                {pol: [int(v) for v in shaped[pol][zone]] for pol, _, _ in channels}
+                if inner_seen > 0
+                else None
+            )
         out.append(entry)
 
     json.dump(out, sys.stdout)

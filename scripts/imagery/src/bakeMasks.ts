@@ -44,6 +44,18 @@ import { flag, has, SCRATCH } from './cli';
 import { scanCorpusMasks } from './corpus';
 import { emptyTally, maskFeatureFor, recordOutcome } from './revealMasks';
 
+/**
+ * Swap a `.fgb` suffix for another, or append when there is none.
+ *
+ * ⚠ **Append rather than substitute, and that is not tidiness.** A bare `.replace()` is a no-op on
+ * `--out=/tmp/masks`, which would make the sidecar path equal the FlatGeobuf path — and the
+ * `writeFileSync` below would then overwrite the artifact a forty-minute corpus scan just produced
+ * with five lines of JSON, silently. The same hazard applies to the water file's path.
+ */
+function suffixed(fgbPath: string, suffix: string): string {
+  return fgbPath.endsWith('.fgb') ? fgbPath.replace(/\.fgb$/, suffix) : `${fgbPath}${suffix}`;
+}
+
 function need(binary: string, install: string): void {
   try {
     execFileSync(binary, ['--version'], { stdio: 'ignore' });
@@ -63,6 +75,10 @@ async function main(): Promise<void> {
   mkdirSync(SCRATCH, { recursive: true });
   const seqPath = join(SCRATCH, `masks-${label}.geojsonl`);
   const fgbPath = flag('out') ?? join(SCRATCH, `masks-${label}.fgb`);
+  // The second artifact, and it is a second *file* rather than a second layer because FlatGeobuf is
+  // single-layer by construction. Named by suffixing the reveal's path so `--out` still works.
+  const waterSeqPath = join(SCRATCH, `masks-${label}-water.geojsonl`);
+  const waterFgbPath = suffixed(fgbPath, '-water.fgb');
 
   console.error(`[bake-masks] season ${label}, batch ${batchSize}`);
 
@@ -73,7 +89,12 @@ async function main(): Promise<void> {
 
   // Streamed a line at a time. Buffering 25,000 buffered polygons to build one JSON string is how a
   // bake turns into an out-of-memory crash on the largest corpus we have.
+  //
+  // ⚠ **Both files are written from the same outcome, in the same loop.** Two passes over the corpus
+  // would be two chances for the artifacts to disagree about which bodies exist, and a body pictured
+  // but not measured (or measured but not pictured) is silent in both directions.
   const fd = openSync(seqPath, 'w');
+  const waterFd = openSync(waterSeqPath, 'w');
   let tally = emptyTally();
   try {
     for await (const row of scanCorpusMasks(batchSize, (p) => {
@@ -85,7 +106,10 @@ async function main(): Promise<void> {
     })) {
       const outcome = maskFeatureFor(row);
       tally = recordOutcome(tally, outcome);
-      if (outcome.ok) writeSync(fd, `${JSON.stringify(outcome.feature)}\n`);
+      if (outcome.ok) {
+        writeSync(fd, `${JSON.stringify(outcome.feature)}\n`);
+        writeSync(waterFd, `${JSON.stringify(outcome.waterFeature)}\n`);
+      }
       if (tally.masked >= limit) {
         console.error(`[bake-masks] stopping at --limit=${limit} — PARTIAL, do not upload`);
         break;
@@ -93,6 +117,7 @@ async function main(): Promise<void> {
     }
   } finally {
     closeSync(fd);
+    closeSync(waterFd);
   }
 
   if (tally.masked === 0) {
@@ -113,6 +138,10 @@ async function main(): Promise<void> {
   execFileSync('ogr2ogr', ['-f', 'FlatGeobuf', fgbPath, seqPath, '-nln', 'reveal_masks'], {
     stdio: 'inherit',
   });
+  rmSync(waterFgbPath, { force: true });
+  execFileSync('ogr2ogr', ['-f', 'FlatGeobuf', waterFgbPath, waterSeqPath, '-nln', 'water_masks'], {
+    stdio: 'inherit',
+  });
 
   // The sidecar the container reads, and the reason it exists.
   //
@@ -130,14 +159,18 @@ async function main(): Promise<void> {
     featherMeters: SENTINEL_MASK_METERS.feather,
     bodies: tally.masked,
     omitted: tally.omitted,
+    // ⚠ **The flag the cutter refuses to run without.** Bakes before 2026-08-25 shipped one file, and
+    // `cut-granule.sh` rasterised the reveal shape as its zone grid — which measured a 60 m ring of
+    // shore as lake. A cutter that silently fell back to that behaviour against an old bake would
+    // reintroduce the bug on exactly the runs nobody was watching, so the sidecar asserts the second
+    // artifact exists and the container dies without it. See `revealMasks.ts` for the arithmetic.
+    waterMasks: true,
   };
   // ⚠ **Append rather than substitute when `--out` has no `.fgb` suffix.** A bare `.replace()` is a
   // no-op on `--out=/tmp/masks`, which makes `sidecarPath === fgbPath` — and the `writeFileSync`
   // below would then overwrite the FlatGeobuf that a forty-minute corpus scan just produced, with a
   // five-line JSON, silently.
-  const sidecarPath = fgbPath.endsWith('.fgb')
-    ? fgbPath.replace(/\.fgb$/, '.json')
-    : `${fgbPath}.json`;
+  const sidecarPath = suffixed(fgbPath, '.json');
   writeFileSync(sidecarPath, `${JSON.stringify(sidecar, null, 2)}\n`);
 
   console.error('');
@@ -151,7 +184,8 @@ async function main(): Promise<void> {
   if (tally.omitted > tally.omissions.length) {
     console.error(`[bake-masks]   … and ${tally.omitted - tally.omissions.length} more`);
   }
-  console.error(`[bake-masks] wrote ${fgbPath}`);
+  console.error(`[bake-masks] wrote ${fgbPath} (reveal — the picture)`);
+  console.error(`[bake-masks] wrote ${waterFgbPath} (water — the measurement)`);
   console.error(
     `[bake-masks] wrote ${sidecarPath} (solid ${sidecar.solidMeters} m, feather ${sidecar.featherMeters} m)`,
   );
@@ -168,9 +202,13 @@ async function main(): Promise<void> {
     need('rclone', 'brew install rclone');
     // `--s3-no-check-bucket` for the same reason every other upload here passes it: our R2 tokens are
     // bucket-scoped and 403 on the account-level HeadBucket probe rclone runs by default.
+    // ⚠ **The sidecar goes LAST, and the order is the interlock.** It carries `waterMasks: true`,
+    // which is what tells a cutter the water file is there — so publishing it before the file it
+    // vouches for opens a window where every job spawned dies on a missing `-water.fgb`.
     for (const [from, to] of [
       [fgbPath, key],
-      [sidecarPath, key.replace(/\.fgb$/, '.json')],
+      [waterFgbPath, suffixed(key, '-water.fgb')],
+      [sidecarPath, suffixed(key, '.json')],
     ]) {
       execFileSync(
         'rclone',
