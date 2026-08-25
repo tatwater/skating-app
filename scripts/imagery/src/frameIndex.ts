@@ -46,11 +46,26 @@ export interface FrameManifest {
    * granule is millions of entries in one JSON file that every client would download to draw one
    * lake. It stays in the per-granule manifest, which PR 3 fetches lazily for only the handful of
    * frames covering the lake on screen.
+   *
+   * ## ⚠ Optical and radar manifests fill in different halves of this
+   *
+   * `zonal-clear.py` writes the SCL statistics; `sar-zonal.py` writes `vvDb`/`vhDb` and **neither**
+   * `clearPct` nor `waterPct` nor `snowIcePct` — there is no scene classification on a radar pass and
+   * no cloud to be clear of. Only `waterBodyId`, `coveragePct` and `pixels` are common to both.
+   *
+   * So every mission-specific field is optional, and it has to be: `buildIndex` parses manifests with
+   * an unchecked `as FrameManifest`, so a required-looking `clearPct` is a promise TypeScript will
+   * make to a consumer on behalf of a radar manifest that never had one. `mission` is what says which
+   * half to expect.
    */
   bodies?: {
     waterBodyId: string;
-    /** Unobscured fraction of the pixels this granule actually saw. `null` = we could not see it. */
-    clearPct: number | null;
+    /**
+     * Unobscured fraction of the pixels this granule actually saw. `null` = we could not see it.
+     *
+     * Optical only — absent on radar manifests, where there is nothing to be obscured by.
+     */
+    clearPct?: number | null;
     /**
      * How much of the body this granule reached, 0–1 — the weight `clearPct` carries.
      *
@@ -98,10 +113,28 @@ export interface FrameManifest {
      * batch of additive work (NDSI) that blocks nothing. See `plans/PR2-HANDOFF-2.md` §7.
      */
     icePct?: number | null;
-    waterPct: number | null;
+    /** Fraction SCL called water. Optical only. */
+    waterPct?: number | null;
+    /**
+     * Mean `sigma0` over the body, in decibels, per polarisation — **radar only** (`sar-zonal.py`).
+     *
+     * `VH` is the informative channel: it separates open water from midwinter ice by ~2 dB where
+     * `VV` manages 0.6–0.8. `null` when the pass reached the body but no pixel was usable.
+     *
+     * ⚠ Comparable only across frames of the same orbit direction and platform — see the manifest's
+     * `orbitDirection`/`platform`, which exist for exactly this filter.
+     */
+    vvDb?: number | null;
+    vhDb?: number | null;
     pixels: number;
   }[];
-  /** Which bands this granule produced — one published frame each. */
+  /**
+   * Which frames this granule PUBLISHED — one `IndexedFrame` and one `.pmtiles` object each.
+   *
+   * ⚠ **Not the list of bands read.** A radar cut warps and measures both polarisations but renders
+   * exactly one, so its `bands` is `["vh"]` while `polarizations` says `["VV","VH"]`. Listing both
+   * here would put a key into the season index that nothing ever uploaded.
+   */
   bands?: string[];
   band?: string;
   /**
