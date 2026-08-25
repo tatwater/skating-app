@@ -4,6 +4,7 @@ import {
   archiveSeasonAt,
   archiveSeasonLabel,
   archiveUrl,
+  bandsIn,
   bodyStatsIn,
   type FrameBodyStats,
   type IndexedFrame,
@@ -189,5 +190,35 @@ describe('archiveUrl — composing an address from a key', () => {
 
   it('names a season index the way build-index writes it', () => {
     expect(seasonIndexKeyFor('winter-2025-26')).toBe('index/winter-2025-26.json');
+  });
+});
+
+describe('bandsIn — what a band selector should be built from', () => {
+  it('lists each band once, with true colour first', () => {
+    expect(
+      bandsIn(
+        season('winter-2025-26', [
+          frame({ band: 'vh' }),
+          frame({ band: 'visual' }),
+          frame({ band: 'scl' }),
+          frame({ band: 'visual' }),
+        ]),
+      ),
+    ).toEqual(['visual', 'scl', 'vh']);
+  });
+
+  it('⚠ reports only what this season actually published', () => {
+    // The archive's bands have changed twice: `scl` was statistics-only until 2026-08-25 and `vh` did
+    // not exist until Sentinel-1 was wired. A hardcoded list would offer a tab leading to an empty
+    // scrubber for every season cut under an older policy.
+    expect(bandsIn(season('winter-2025-26', [frame({ band: 'visual' })]))).toEqual(['visual']);
+  });
+
+  it('does not invent true colour for a season that has none', () => {
+    expect(bandsIn(season('winter-2025-26', [frame({ band: 'vh' })]))).toEqual(['vh']);
+  });
+
+  it('is empty for an empty season', () => {
+    expect(bandsIn(season('winter-2026-27', []))).toEqual([]);
   });
 });

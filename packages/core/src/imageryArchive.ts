@@ -231,6 +231,22 @@ export interface FrameStats {
 }
 
 /**
+ * Which bands a season actually published, in a stable order.
+ *
+ * **What a band selector should be built from**, rather than a hardcoded list. The archive's bands
+ * have changed twice already — `scl` was statistics-only until 2026-08-25, and `vh` did not exist
+ * until Sentinel-1 was wired — and frames cut under an older policy stay in the bucket. A control
+ * offering a band the season has no frames for is a tab that leads to an empty scrubber.
+ *
+ * `visual` sorts first where present, because it is the one a skater came for; the rest follow
+ * alphabetically so the order does not depend on which granule happened to be indexed first.
+ */
+export function bandsIn(index: SeasonIndex): string[] {
+  const bands = [...new Set(index.frames.map((f) => f.band))].sort();
+  return bands.includes('visual') ? ['visual', ...bands.filter((b) => b !== 'visual')] : bands;
+}
+
+/**
  * The pointer object, and D149's turnover as a path.
  *
  * A fixed key rather than a season-derived one, because the whole point is that a client does not
