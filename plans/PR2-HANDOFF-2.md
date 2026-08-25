@@ -524,12 +524,34 @@ Left:
 1. **The `fan-out.sh` throttle fix** (§4b) — one line, deliberately deferred until the run finished
    because bash reads a running script incrementally. Then a multi-wave check, and `MAX_PARALLEL` can
    be set deliberately (70 was the founder's suggestion) rather than drifting.
-2. **Sentinel-1 — now PR 2 work, not a separate lane** *(founder, 2026-08-25)*. Scope it as calibrated
+2. **Sentinel-1 — now PR 2 work, not a separate lane** *(founder, 2026-08-25)*. ⏳ **Selection is
+   built** (`sarSelection.ts`, 14 tests) and `--mission=s1` runs end to end; the transform and sigma0
+   remain. Scope it as calibrated
    sigma0 in **VH**, not a band swap: §4c found VV cannot separate ice from calm water while VH shows
    ~2 dB on lakes that actually freeze. `granuleSelection`'s module doc lists what has to move — a
    second id grammar with no MGRS tile to dedup on, a different collection and bucket, and the trap
    that a season mixes VV/VH with HH/HV acquisitions whose backscatter is not comparable.
 3. **Push and open the PR.** Nothing is pushed yet.
+
+### ⏸ Deferred on purpose: the batched re-run queue
+
+Things that would be **free during a pass we are already doing**, and cost a full re-read of the
+season if done alone. A re-run is ~$1.46 and ~1.7h, so none of these is expensive — but running them
+one at a time pays that repeatedly, and PR 3 is very likely to add to this list.
+
+**The base rate says wait.** The last time this archive was consumed from the client side, that work
+produced `PR2-HANDOFF.md` — **seven producer-side changes**, written from the PR 3 worktree. Expect
+PR 3 to generate more, batch them, and re-run once.
+
+| item | why it wants a pass | blocks |
+| --- | --- | --- |
+| **Per-body NDSI** (green + swir16) | §C1 calls it *"the only way to tell snow/ice from cloud"* — true colour cannot. An independent second opinion on `icePct`, useful exactly where SCL is weakest: its known snow/cloud confusion, which we saw on the 22 Nov Morey frame reading 99% clear through visible haze. | nothing in PR 3; it is a PR 4 / N6g input |
+
+⚠ **Write the code before the re-run, not with it.** Verified-but-unapplied is a safe state — the
+tiler swap was prototyped on one granule before it touched a season, and that is what caught the black
+lakes. Unwritten-and-remembered is not.
+
+---
 
 Not PR 2, and now written down as such: the split-body seam and the aerial-vs-scrubber affordance
 question are PR 3's; ice classification is N6g's.
