@@ -47,6 +47,7 @@ export * from './hazardWeatherDecay';
 export * from './imageryArchive';
 export * from './imageryMask';
 export * from './imageryTiles';
+export * from './imageryTimeline';
 export * from './ingestGate';
 export * from './lakeCaption';
 export * from './lakeDepth';

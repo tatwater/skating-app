@@ -58,11 +58,35 @@ export interface IndexedFrame {
   granuleId: string;
   /** ISO instant the satellite took this picture. */
   capturedAt: string;
-  /** Granule-wide cloud fraction, or `null` when the source did not report one — never a guess. */
+  /**
+   * Granule-wide cloud fraction, or `null` when the source did not report one — never a guess.
+   *
+   * ⚠ **Optical only, and `null` means two different things depending on the mission.** On a
+   * `visual` frame it means the catalogue did not report a figure. On a **radar** frame it means the
+   * question does not apply — radar sees straight through cloud, so `null` there is not a gap in the
+   * metadata and must not be shown as a caveat or treated as an unknown worth flagging.
+   */
   cloudCoverPct: number | null;
   /** How many corpus bodies this frame actually contains. */
   bodies: number;
-  /** Which band the frame renders — `visual` is the true-colour composite. */
+  /**
+   * Which band this frame renders — **and, by implication, which mission it came from.**
+   *
+   * ⚠ **One index holds both missions**, so `band` is the discriminator and a consumer must never
+   * assume. Today: `visual` is Sentinel-2's true-colour composite; `vh` is Sentinel-1's calibrated
+   * radar brightness. A timeline built without filtering on this interleaves photographs and radar
+   * greyscale on one scrubber, which is not a rendering glitch but two different measurements
+   * presented as one series.
+   *
+   * The per-body statistics split the same way, and a reader wants the right half: optical frames
+   * carry `clearPct`/`snowIcePct`/`waterPct`, radar frames carry `vvDb`/`vhDb`. Only `coveragePct`
+   * and `pixels` are common to both. See `FrameManifest` in `@skating/imagery`.
+   *
+   * ⚠ **Radar readings do not pool across satellites or flight directions** — measured 2026-08-25,
+   * the surviving post-calibration offset is up to 1.5 dB against a ~2 dB ice signal. Anything
+   * building a `vh` series must hold `platform` and `orbitDirection` constant. See
+   * `docs/reading-ice-from-orbit.md`, *Calibration helps a great deal and is not enough*.
+   */
   band: string;
   /**
    * Key within the archive bucket.
