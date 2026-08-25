@@ -1,13 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import {
+  ARCHIVE_POINTER_KEY,
   archiveSeasonAt,
   archiveSeasonLabel,
+  archiveUrl,
   bodyStatsIn,
   type FrameBodyStats,
   type IndexedFrame,
   latestSeasonWithFrames,
   manifestKeyFor,
   type SeasonIndex,
+  seasonIndexKeyFor,
   snowIceFractionOf,
 } from './imageryArchive';
 
@@ -164,5 +167,27 @@ describe('bodyStatsIn', () => {
     // Frames cut before the per-body pass predate `bodies` entirely, and a reader must not crash on
     // the archive's own history.
     expect(bodyStatsIn({}, 'morey')).toBeUndefined();
+  });
+});
+
+describe('archiveUrl — composing an address from a key', () => {
+  it('joins a base and a key', () => {
+    expect(archiveUrl('https://cdn.example/imagery', ARCHIVE_POINTER_KEY)).toBe(
+      'https://cdn.example/imagery/index/latest.json',
+    );
+  });
+
+  it('⚠ tolerates a trailing slash, because a doubled one is a 404 on most object stores', () => {
+    // Half the ways of setting an environment variable add one, and the failure is remote and silent.
+    expect(archiveUrl('https://cdn.example/imagery/', 'index/latest.json')).toBe(
+      'https://cdn.example/imagery/index/latest.json',
+    );
+    expect(archiveUrl('https://cdn.example/imagery///', '/index/latest.json')).toBe(
+      'https://cdn.example/imagery/index/latest.json',
+    );
+  });
+
+  it('names a season index the way build-index writes it', () => {
+    expect(seasonIndexKeyFor('winter-2025-26')).toBe('index/winter-2025-26.json');
   });
 });

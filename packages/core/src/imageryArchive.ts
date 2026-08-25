@@ -231,6 +231,33 @@ export interface FrameStats {
 }
 
 /**
+ * The pointer object, and D149's turnover as a path.
+ *
+ * A fixed key rather than a season-derived one, because the whole point is that a client does not
+ * know which season it should be showing until it reads this.
+ */
+export const ARCHIVE_POINTER_KEY = 'index/latest.json';
+
+/** Where a season's table of contents sits. */
+export function seasonIndexKeyFor(season: string): string {
+  return `index/${season}.json`;
+}
+
+/**
+ * Compose an address from the base a deployment was configured with and a key from the archive.
+ *
+ * **A key rather than a URL is what the artifacts carry**, so dev and prod can point at different
+ * buckets without anything in the archive knowing which one it landed in — the same split the basemap
+ * and bathymetry archives already use.
+ *
+ * Tolerates a trailing slash on the base, because half the ways of setting an environment variable
+ * add one and a doubled slash is a 404 on most object stores.
+ */
+export function archiveUrl(baseUrl: string, key: string): string {
+  return `${baseUrl.replace(/\/+$/, '')}/${key.replace(/^\/+/, '')}`;
+}
+
+/**
  * Where a frame's manifest sits in the bucket.
  *
  * ⚠ **Keyed on the granule, not the frame**, and the difference bites: one granule now publishes

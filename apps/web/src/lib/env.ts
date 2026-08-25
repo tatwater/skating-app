@@ -26,6 +26,15 @@ export const env = {
   // unconfigured deployment simply shows a flat lake exactly as it does for the majority of bodies
   // that no agency ever surveyed. Public.
   bathymetryPmtilesUrl: import.meta.env.VITE_BATHYMETRY_PMTILES_URL ?? '',
+  // The freeze-up archive (N6e, D148) — a *base URL*, not a file, because unlike the three above this
+  // is a directory of thousands of `.pmtiles` frames plus the JSON index that lists them. The client
+  // composes addresses from it with `archiveUrl` and keys the artifacts carry, so dev and prod can
+  // point at different buckets without anything in the archive knowing which one it landed in.
+  //
+  // Blank ⇒ no scrubber, which is correct rather than degraded: the reveal itself is Tier 1 and needs
+  // none of this, so an unconfigured deployment shows the aerial and simply offers no timeline.
+  // Public.
+  imageryArchiveUrl: import.meta.env.VITE_IMAGERY_ARCHIVE_URL ?? '',
 } as const;
 
 /** True once the corresponding real key has been provisioned (not a placeholder). */

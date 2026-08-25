@@ -31,6 +31,12 @@ export const env = {
   // unconfigured build shows a flat lake exactly as it does for the majority of bodies no agency
   // ever surveyed.
   bathymetryPmtilesUrl: process.env.EXPO_PUBLIC_BATHYMETRY_PMTILES_URL ?? '',
+  // The freeze-up archive (N6e, D148), mirroring web's VITE_IMAGERY_ARCHIVE_URL. A *base URL* rather
+  // than a file, because this one is a directory of thousands of `.pmtiles` frames plus the JSON
+  // index listing them; addresses are composed with `archiveUrl` from keys the artifacts carry.
+  // Blank ⇒ no scrubber, which is correct rather than degraded — the reveal is Tier 1 and needs none
+  // of this.
+  imageryArchiveUrl: process.env.EXPO_PUBLIC_IMAGERY_ARCHIVE_URL ?? '',
 } as const;
 
 /** True once the corresponding real key has been provisioned (not a placeholder). */
