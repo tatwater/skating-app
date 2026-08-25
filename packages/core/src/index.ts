@@ -46,6 +46,7 @@ export * from './hazardQueue';
 export * from './hazardRecurrence';
 export * from './hazardWeatherDecay';
 export * from './imageryArchive';
+export * from './imageryArchiveClient';
 export * from './imageryMask';
 export * from './imagerySeam';
 export * from './imageryTiles';

@@ -22,17 +22,15 @@ import {
   type BodyTimeline,
   buildBodyTimeline,
   candidateFramesFor,
+  loadArchiveSeason,
+  loadFrameStats,
+  loadSeasonIndex,
   type SeasonIndex,
+  statsLookup,
   type TimelineBody,
 } from '@skating/core';
 import { useEffect, useState } from 'react';
 import { env } from '../lib/env';
-import {
-  loadArchiveSeason,
-  loadFrameStats,
-  loadSeasonIndex,
-  statsLookup,
-} from '../lib/freezeUpArchive';
 
 export interface FreezeUpTimeline {
   /** `null` until the season index has landed, or where the archive is not configured at all. */

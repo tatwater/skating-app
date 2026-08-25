@@ -6,7 +6,7 @@ import {
   loadSeasonIndex,
   resetArchiveCache,
   statsLookup,
-} from './freezeUpArchive';
+} from './imageryArchiveClient';
 
 const BASE = 'https://cdn.example/imagery';
 

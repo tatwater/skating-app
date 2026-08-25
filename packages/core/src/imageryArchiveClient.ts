@@ -22,6 +22,13 @@
  * is *no timeline* rather than a broken drawer. But a silent `null` is also how a misconfigured base
  * URL looks exactly like an empty archive, so every failure logs once per key and {@link archiveError}
  * reports whether anything has gone wrong at all.
+ *
+ * ## Why this sits in core rather than in each app
+ *
+ * It touches no platform API beyond `fetch`, which both a browser and React Native provide, and takes
+ * its base URL as an argument rather than reading an environment. So the alternative was two copies of
+ * a cache policy and a failure convention — and the moment they drifted, one client would be silently
+ * re-fetching an immutable object on every render while the other reported a 404 as an empty archive.
  */
 
 import {
@@ -32,7 +39,7 @@ import {
   manifestKeyFor,
   type SeasonIndex,
   seasonIndexKeyFor,
-} from '@skating/core';
+} from './imageryArchive';
 
 /** Resolved payloads, keyed by full URL. `null` means "we tried and it is not there". */
 const cache = new Map<string, unknown>();
