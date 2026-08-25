@@ -30,10 +30,15 @@ per-body statistics, and a season index come out.
 | Status check | `scripts/imagery/status.sh` | **use this, not ad-hoc greps** |
 | Season watcher | `packages/convex/convex/imageryIngest.ts` | daily cron from 1 Oct; notices, does not spend |
 
-**In R2 right now:** `masks/winter-2026-27.fgb` (24,831 bodies) + its sidecar, and
-`frames/winter-2025-26/` — the full season, cut 2026-08-25 on one image so the schema is uniform. The
-prefix has been purged twice on the way here: once for frames predating `footprint`/`bodies[]`/`cost`,
-and again before the season run to clear 95 frames cut by three different images.
+**In R2 right now — ✅ the season is complete:** `masks/winter-2026-27.fgb` (24,831 bodies) + sidecar,
+`frames/winter-2025-26/` (**4,381 frames**, one image, one schema), and `index/` carrying
+`winter-2025-26.json` + `latest.json`. **8,770 objects, 19.1 GB.** Every frame carries a `footprint`;
+median 443 bodies per frame; span 2025-11-01 → 2026-05-05.
+
+**4,381 frames from 4,485 granules**, and the 104-granule gap is the empty-granule plateau — verified
+tile by tile against the mask file rather than assumed. The prefix was purged twice on the way here:
+once for frames predating `footprint`/`bodies[]`/`cost`, and again before the season run to clear 95
+frames cut by three different images.
 
 **Fly:** app `skating-imagery`, org `personal`, region `sjc`, zero machines at rest.
 
@@ -248,6 +253,30 @@ Fly ceiling, and per-second billing with no barrier means concurrency is free.
 >
 > **Nothing was harmed:** billing is per-second, no jobs dropped, the run simply went faster. The
 > reason to fix it is that a cap you cannot predict is not a cap.
+>
+> ✅ **Both fixed 2026-08-25**, after the run finished — plus a second fault the same run exposed.
+
+### ⚠ A hung spawn wedged the reconcile loop, and it looked like a stall
+
+The season run appeared to sit at 4,365 of 4,485 frames for over an hour. It was not working.
+
+**Four `fly machine run` calls had not returned for 1h19m–1h58m, with zero Machines alive.** Nothing
+was billing and nothing was progressing: the parent fan-out's closing `wait` blocked forever, so
+`--drain` was never reached and `backfill.sh` sat on a round whose work was already done.
+
+Only **16 granules** were genuinely outstanding. The other 104 were the empty-granule plateau, which a
+per-tile check against the mask file confirmed: 7 tiles holding literally zero bodies accounted for 60,
+and `18TWR`/`18TWP` — 1 body each by the *generous* bbox test, so almost certainly zero under the
+actual swath — for another 44. Re-running all 120 produced exactly 16 frames, which is the
+classification confirming itself.
+
+**Both faults now have fixes in `fan-out.sh`:** the batch `wait` above, and a `SPAWN_TIMEOUT`
+(default 120s) so a hung spawn becomes a reported failure the reconcile loop already knows how to
+retry, rather than a wedge.
+
+⚠ **And a lesson about watching a long run:** it was launched as `./backfill.sh … | tail -60`, and
+`tail` buffers everything until the pipe closes. Round-by-round progress was invisible for two hours.
+Pipe a long run to a file, or watch the bucket.
 
 ### ⚠ Five granules failed, and they were the five worth having
 
@@ -402,6 +431,46 @@ returns neighbours.
 
 ---
 
+## 4f. ⚠ Black ice reads as *water* — the finding that reframes the phase
+
+Found 2026-08-25 by checking the archive against the founder's own Strava history. Full write-up for
+non-specialists: [`docs/reading-ice-from-orbit.md`](../docs/reading-ice-from-orbit.md).
+
+**22 December 2025**, both lakes nearly cloud-free, same sky:
+
+| | clear | ice | water |
+| --- | --- | --- | --- |
+| Lake Morey (VT) | 85% | **45.2%** | 28.6% |
+| Mascoma Lake (NH) | 98% | **2.3%** | **82.5%** |
+
+The founder had been skating Mascoma since **10 December** and skated its full length on the **23rd**.
+The satellite called a lake somebody skated the next morning 82.5% water.
+
+**Cause: black ice is transparent.** The returning light has passed through the ice, off the dark
+bottom and back out — spectrally almost exactly open water. SCL's class 11 looks for *bright* frozen
+surfaces. The Morey contrast the same day carries its own proof: the founder *"missed getting on it
+before the first snow fell"*, so Morey had snow on its ice, which is precisely why the satellite saw it.
+
+**Consequences, in order of importance:**
+
+1. **`icePct` is a snow-cover index, not an ice index.** Honest measurement, misleading name — see the
+   rename queued in §7.
+2. **NDSI would not rescue it.** It is a snow index built on the same brightness, so it agrees with
+   SCL for the same reason. Still worth having for cloud discrimination; it is not the black-ice answer.
+3. **A freeze-up alert on optical alone fires late and misses the black-ice window** — the best skating
+   of the year, and the reason anyone opens the app in December. This directly constrains PR 5.
+4. **Radar becomes the only candidate for black ice**, which promotes S1 from "worth a pilot" to
+   "the sensor that sees the thing we are for". Over these two lakes, VH dropped between 9 Nov and
+   3 Dec — during the freeze-up optical would not report for another seven weeks. Six passes on one
+   track, uncalibrated: suggestive, not proven.
+
+⚠ **One number for a whole lake is also now a known limit.** Mascoma has a bridge at a narrows and its
+north end froze ~2 weeks before its south; our 11 Jan reading of `27% ice / 65% water` cannot
+distinguish "patchy everywhere" from "the north half is ready". Sub-areas (N2) are the mechanism if we
+ever want to fix it. **Founder call 2026-08-25: wait, address later.**
+
+---
+
 ## 5. Founder decisions already made — do not reopen
 
 - **Cut and store everything; no cloud gate.** Hit Copernicus once, own the pixels, so re-derivation is
@@ -545,7 +614,9 @@ PR 3 to generate more, batch them, and re-run once.
 
 | item | why it wants a pass | blocks |
 | --- | --- | --- |
-| **Per-body NDSI** (green + swir16) | §C1 calls it *"the only way to tell snow/ice from cloud"* — true colour cannot. An independent second opinion on `icePct`, useful exactly where SCL is weakest: its known snow/cloud confusion, which we saw on the 22 Nov Morey frame reading 99% clear through visible haze. | nothing in PR 3; it is a PR 4 / N6g input |
+| **Rename `icePct` → `snowIcePct`** | ⚠ **The field does not measure what its name says.** Black ice reads as *water* to SCL (see §4f), so this is a snow-cover index. Every future reader will misread the current name. The rename is one line in `zonal-clear.py` and the type — but the 4,381 existing manifests carry `icePct`, so it wants a pass to stay consistent. | nothing; PR 3 has not consumed it yet |
+| **Per-body NDSI** (green + swir16) | §C1 calls it *"the only way to tell snow/ice from cloud"* — true colour cannot. ⚠ **It will NOT fix the black-ice problem** (it is a snow index built on the same brightness), but it is an independent second opinion where SCL is weakest: its snow/cloud confusion, which we saw on the 22 Nov Morey frame reading 99% clear through visible haze. | nothing in PR 3; it is a PR 4 / N6g input |
+| **Per-body radar statistics** | Mean VV/VH per body per pass, plus polarisation, orbit direction and platform so a consumer can filter to comparable frames. Same "free while the raster is open" argument. Rides the S1 build rather than the S2 re-run. | PR 4/5's fusion |
 
 ⚠ **Write the code before the re-run, not with it.** Verified-but-unapplied is a safe state — the
 tiler swap was prototyped on one granule before it touched a season, and that is what caught the black
