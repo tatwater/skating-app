@@ -36,6 +36,7 @@ import {
   parseGranuleId,
   selectGranules,
 } from './granuleSelection';
+import { type SarSelectionResult, selectSarGranules } from './sarSelection';
 import {
   emptyTilesFromCollection,
   type TileSurveyCollection,
@@ -50,7 +51,20 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const SCRATCH = join(HERE, '..', '.scratch');
 
 const STAC_URL = process.env.STAC_URL ?? 'https://earth-search.aws.element84.com/v1';
-const STAC_COLLECTION = process.env.STAC_COLLECTION ?? 'sentinel-2-l2a';
+
+/**
+ * Which mission's catalogue to search.
+ *
+ * ⚠ **Two collections, and almost nothing downstream is shared.** Sentinel-2 items carry
+ * `eo:cloud_cover` and an MGRS tile in the id; Sentinel-1 items carry neither and add
+ * `sat:orbit_state` instead. So the mission decides the collection, the id grammar, the selection
+ * function *and* whether the empty-tile prefilter can run at all — see `--mission` in `main`.
+ */
+const COLLECTIONS = {
+  s2: process.env.STAC_COLLECTION ?? 'sentinel-2-l2a',
+  s1: process.env.STAC_COLLECTION_S1 ?? 'sentinel-1-grd',
+} as const;
+type Mission = keyof typeof COLLECTIONS;
 
 function flag(name: string): string | undefined {
   const hit = process.argv.find((a) => a.startsWith(`--${name}=`));
@@ -69,7 +83,12 @@ function maskExtent(fgbPath: string): [number, number, number, number] {
 interface StacItem {
   id: string;
   geometry?: { type: 'Polygon' | 'MultiPolygon'; coordinates: unknown };
-  properties: { datetime: string; 'eo:cloud_cover'?: number };
+  properties: {
+    datetime: string;
+    'eo:cloud_cover'?: number;
+    /** Sentinel-1 only. Recorded, never filtered on — see `sarSelection`. */
+    'sat:orbit_state'?: 'ascending' | 'descending';
+  };
 }
 
 /**
@@ -98,12 +117,13 @@ async function searchAll(
   bbox: [number, number, number, number],
   from: string,
   to: string,
+  collection: string,
 ): Promise<GranuleCandidate[]> {
   const items: GranuleCandidate[] = [];
   let request: { url: string; body: Record<string, unknown> | null } | null = {
     url: `${STAC_URL}/search`,
     body: {
-      collections: [STAC_COLLECTION],
+      collections: [collection],
       bbox,
       datetime: `${from}T00:00:00Z/${to}T23:59:59Z`,
       limit: 250,
@@ -136,6 +156,12 @@ async function searchAll(
         ...(feature.geometry
           ? { footprint: feature.geometry as GranuleCandidate['footprint'] }
           : {}),
+        // Recorded rather than filtered on. Ascending and descending see a lake at different
+        // incidence angles, so a *timeline* must not blend them — but that is a read-time
+        // correction, and dropping half the passes here would be irreversible.
+        ...(feature.properties['sat:orbit_state']
+          ? { orbitDirection: feature.properties['sat:orbit_state'] }
+          : {}),
       });
     }
     const next = page.links?.find((l) => l.rel === 'next');
@@ -152,12 +178,53 @@ async function searchAll(
   return items;
 }
 
+/**
+ * Write and report a Sentinel-1 selection.
+ *
+ * Separate from the S2 reporting because the drops are different — there is no cloud to gate on and
+ * no tile to be empty — and because of the last two lines, which have no S2 equivalent.
+ *
+ * ⚠ **The mix is printed, not filtered.** A per-body radar timeline must not blend orbit directions
+ * (different incidence angles) or platforms (S1A reads ~1 dB above S1C uncalibrated). Selection keeps
+ * both on purpose — dropping half the passes here would be irreversible — so this is where an
+ * operator finds out what the archive will actually contain.
+ */
+function reportSar(result: SarSelectionResult, from: string, to: string): void {
+  mkdirSync(SCRATCH, { recursive: true });
+  const outPath = flag('out') ?? join(SCRATCH, `sar-${from}-to-${to}.txt`);
+  writeFileSync(outPath, `${result.selected.join('\n')}\n`);
+
+  const c = result.counts;
+  console.error('');
+  console.error(`[select-granules] considered   ${c.considered}`);
+  console.error(`[select-granules] selected     ${c.selected}`);
+  console.error(`[select-granules] wrong pol    ${c.polarisation}`);
+  console.error(`[select-granules] wrong mode   ${c.mode}`);
+  console.error(`[select-granules] wrong product ${c.product}`);
+  console.error(`[select-granules] duplicate    ${c.duplicate}`);
+  if (c.unparseable) console.error(`[select-granules] unparseable  ${c.unparseable}`);
+  console.error('');
+  console.error(`[select-granules] platforms    ${JSON.stringify(result.mix.byPlatform)}`);
+  console.error(`[select-granules] orbit dirs   ${JSON.stringify(result.mix.byOrbitDirection)}`);
+  console.error('[select-granules] ⚠ a timeline must not blend those — filter at read time');
+  console.error('');
+  console.error(`[select-granules] wrote ${outPath}`);
+}
+
 async function main(): Promise<void> {
   const from = flag('from');
   const to = flag('to');
   if (!from || !to) {
-    console.error('usage: select-granules --from=YYYY-MM-DD --to=YYYY-MM-DD [--cloud=60]');
+    console.error(
+      'usage: select-granules --from=YYYY-MM-DD --to=YYYY-MM-DD [--mission=s2|s1] [--cloud=60]',
+    );
     console.error('  the window is D149 ingest gate territory — see the phase doc §C3');
+    process.exit(64);
+  }
+
+  const mission = (flag('mission') ?? 's2') as Mission;
+  if (!(mission in COLLECTIONS)) {
+    console.error(`--mission wants s2 or s1, not "${mission}"`);
     process.exit(64);
   }
 
@@ -182,10 +249,17 @@ async function main(): Promise<void> {
     console.error(`[select-granules] search box from ${masksPath}`);
   }
   console.error(
-    `[select-granules] bbox ${bbox.join(', ')}  window ${from} → ${to}  cloud ≤ ${maxCloudPct}%`,
+    `[select-granules] ${mission.toUpperCase()} (${COLLECTIONS[mission]})  bbox ${bbox.join(', ')}  ` +
+      `window ${from} → ${to}` +
+      (mission === 's2' ? `  cloud ≤ ${maxCloudPct ?? 'off'}` : ''),
   );
 
-  const candidates = await searchAll(bbox, from, to);
+  const candidates = await searchAll(bbox, from, to, COLLECTIONS[mission]);
+
+  if (mission === 's1') {
+    reportSar(selectSarGranules(candidates), from, to);
+    return;
+  }
 
   // Which MGRS tiles hold no corpus body at all — measured once per tile against the mask file, not
   // per granule. A season spans ~100 tiles and ~9,000 granules, so this is ~100 cheap local reads
