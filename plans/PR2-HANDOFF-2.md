@@ -665,9 +665,9 @@ PR 3 to generate more, batch them, and re-run once.
 
 | item | why it wants a pass | blocks |
 | --- | --- | --- |
-| **Rename `icePct` → `snowIcePct`** | ⚠ **The field does not measure what its name says.** Black ice reads as *water* to SCL (see §4f), so this is a snow-cover index. Every future reader will misread the current name. The rename is one line in `zonal-clear.py` and the type — but the 4,381 existing manifests carry `icePct`, so it wants a pass to stay consistent. | nothing; PR 3 has not consumed it yet |
+| ⚠ **Rename `icePct` → `snowIcePct`** — **do NOT batch this one** | **The field does not measure what its name says.** Black ice reads as *water* to SCL (§4f), so it is a snow-cover index. It is four code sites and **zero consumers today**, and it is a *contract* change — so unlike everything else here its cost **grows**: every line PR 3 writes against the old name is another line to change, and the re-run happens anyway. Contract changes land before the consumer is written; additive fields can wait. | PR 3, increasingly |
 | **Per-body NDSI** (green + swir16) | §C1 calls it *"the only way to tell snow/ice from cloud"* — true colour cannot. ⚠ **It will NOT fix the black-ice problem** (it is a snow index built on the same brightness), but it is an independent second opinion where SCL is weakest: its snow/cloud confusion, which we saw on the 22 Nov Morey frame reading 99% clear through visible haze. | nothing in PR 3; it is a PR 4 / N6g input |
-| **Per-body radar statistics** | Mean VV/VH per body per pass, plus polarisation, orbit direction and platform so a consumer can filter to comparable frames. Same "free while the raster is open" argument. Rides the S1 build rather than the S2 re-run. | PR 4/5's fusion |
+| ~~**Per-body radar statistics**~~ ✅ **shipped with the S1 build** — every radar manifest carries per-body `vvDb`/`vhDb` plus `platform`, `orbitDirection`, `polarizations` and `resolutionM`. It never needed the optical re-run; it rode its own pipeline. | — |
 
 ⚠ **Write the code before the re-run, not with it.** Verified-but-unapplied is a safe state — the
 tiler swap was prototyped on one granule before it touched a season, and that is what caught the black
