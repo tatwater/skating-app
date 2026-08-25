@@ -41,3 +41,11 @@ yarn-debug.log*
 # Training data
 training_data/
 app_ui_inspiration/
+
+# Per-run scratch, at the ROOT this time.
+#
+# Every script package already ignores its own `.scratch/` (etl, imagery, lake-depth, basemap,
+# admin-areas, bathymetry) — but a script invoked from the repo root writes here instead, and this
+# was missing, so a one-off zonal-statistics fixture sat in `git status` as an untracked directory
+# nobody could place. Same rule as the others: disposable, regenerable, never the source of truth.
+.scratch/
