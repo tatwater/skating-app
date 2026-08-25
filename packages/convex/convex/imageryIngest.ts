@@ -39,9 +39,8 @@
  * threshold below leans early on purpose, and so does the site sampling.
  */
 
+import { archiveSeasonAt, ingestWindow, type SiteSeries, seasonOf } from '@skating/core';
 import { v } from 'convex/values';
-
-import { archiveSeasonAt, ingestWindow, type SiteSeries } from '@skating/core';
 
 import { internal } from './_generated/api';
 import type { Doc } from './_generated/dataModel';
@@ -85,10 +84,26 @@ const OPEN_METEO_URL = 'https://api.open-meteo.com/v1/forecast';
 export const gateSites = internalQuery({
   args: {},
   handler: async (ctx) => {
-    const sentinel = await ctx.db
-      .query('waterBodies')
-      .withSearchIndex('search_name', (q) => q.search('searchText', SENTINEL_NAME))
-      .take(1);
+    // ⚠ **A search hit is not the sentinel until its name says so.**
+    //
+    // `withSearchIndex` ranks by relevance and always answers if *anything* tokenises close enough —
+    // so `.take(1)` alone crowns whichever lake scores highest on "lake"/"clouds" and hands it the
+    // one privilege no other site has: opening a whole region's season on its own. The corpus holds
+    // thousands of bodies with "Lake" in the name, so the wrong one is the likely outcome the day
+    // this pond is renamed, merged or purged — and it fails *silently*, because a valley lake
+    // freezing in November is a perfectly plausible-looking `openedBy: ['sentinel']`.
+    //
+    // Same shape as `waterBodies.applyCuratedBoosts`: take a handful and filter on the exact name.
+    // No match means no sentinel, and the corpus signal carries the gate alone — which is precisely
+    // what the OR rule exists for.
+    const sentinel = (
+      await ctx.db
+        .query('waterBodies')
+        .withSearchIndex('search_name', (q) => q.search('searchText', SENTINEL_NAME))
+        .take(10)
+    )
+      .filter((b) => b.name?.toLowerCase() === SENTINEL_NAME.toLowerCase())
+      .slice(0, 1);
 
     const sample = await ctx.db
       .query('waterBodies')
@@ -210,7 +225,11 @@ async function fetchDailyLows(
  * the cause — hence this note.
  */
 type SeasonWatchResult =
-  | { skipped: 'before October' | 'already recorded' | 'no sites' | 'no observations'; season: string; opensOn?: string }
+  | {
+      skipped: 'before October' | 'already recorded' | 'no sites' | 'no observations';
+      season: string;
+      opensOn?: string;
+    }
   | { open: false; season: string; sitesSampled: number }
   | { open: true; season: string; opensOn: string; openedBy: string[] };
 
@@ -230,7 +249,6 @@ export const maybeCheckSeasonOpen = internalAction({
   handler: async (ctx): Promise<SeasonWatchResult> => {
     const now = new Date();
     const month = now.getUTCMonth() + 1;
-    const year = now.getUTCFullYear();
 
     // D63's July boundary, via the one definition of the label. `bakeMasks` names the mask artifact
     // with the same function, so a cut and the row recording why it happened cannot disagree.
@@ -247,7 +265,24 @@ export const maybeCheckSeasonOpen = internalAction({
     const sites = await ctx.runQuery(internal.imageryIngest.gateSites, {});
     if (sites.length === 0) return { skipped: 'no sites' as const, season };
 
-    const series = await fetchDailyLows(sites);
+    const fetched = await fetchDailyLows(sites);
+
+    // ⚠ **The October floor has to bound the OBSERVATIONS, not just the tick.**
+    //
+    // Gating only on `month` delays *when we look* and does nothing about *what we look at*:
+    // `past_days` is 92, so the very first tick on 1 October carries the series back to roughly
+    // 1 July. `ingestWindow` returns the earliest freeze in whatever it is handed — and the module
+    // note above says plainly that the summit pond can freeze in August. The gate would therefore
+    // record `opensOn` in August on day one, print it as the `--from=` an operator pastes into
+    // `select-granules`, and spend exactly the money the founder's October call was made to avoid.
+    //
+    // So the series is clipped to 1 October of the season's own opening year. `seasonOf` is the same
+    // July boundary `archiveSeasonAt` uses, so a January tick clips to the *previous* October rather
+    // than to one that has not happened yet.
+    const floor = `${seasonOf(now.getTime())}-${String(START_MONTH).padStart(2, '0')}-01`;
+    const series = fetched
+      .map((s) => ({ ...s, days: s.days.filter((d) => d.date >= floor) }))
+      .filter((s) => s.days.length > 0);
     if (series.length === 0) return { skipped: 'no observations' as const, season };
 
     const window = ingestWindow(series);

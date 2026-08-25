@@ -234,6 +234,18 @@ export function ingestWindow(sites: readonly SiteSeries[], options: GateOptions 
   // Ordinary sites only — see the asymmetry note above. Falls back to the full roster when the
   // corpus is all sentinel, so a single-site run still terminates rather than never closing.
   const closingSites = others.length > 0 ? others : sites;
+  // ⚠ **Counted as distinct ids, because `lowsOn` returns a Map and a Map cannot hold a duplicate.**
+  //
+  // The completeness test below compares "how many sites reported" against "how many closing sites
+  // there are", and those two are counted differently the moment two sites share a `siteId`: the Map
+  // collapses them, the array does not. The comparison is then unsatisfiable on every single day and
+  // the season **never closes** — silently, with ingest running through the summer.
+  //
+  // Not hypothetical: `ingestWindowCli` uses the body *name* as its `siteId`, and the corpus is full
+  // of duplicate names (there are many "Mud Pond"s in Vermont alone), so any stride sample that
+  // happens to draw two of them disables closing entirely. Convex's `gateSites` keys on `_id` and is
+  // safe, which is exactly why this would only ever break on the operator's side.
+  const closingSiteIds = new Set(closingSites.map((s) => s.siteId));
 
   let run = 0;
   let closesOn: string | null = null;
@@ -250,7 +262,7 @@ export function ingestWindow(sites: readonly SiteSeries[], options: GateOptions 
     // record that §C5's window metrics are computed from. A missing series must not be able to end a
     // season; the same reasoning that makes the opening rule an OR makes this an all-or-reset.
     const allThawed =
-      reporting.length === closingSites.length && reporting.every((low) => low > thawC);
+      reporting.length === closingSiteIds.size && reporting.every((low) => low > thawC);
     run = allThawed ? run + 1 : 0;
     if (run >= thawRunDays) {
       closesOn = date;

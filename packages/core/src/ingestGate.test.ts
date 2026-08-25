@@ -186,6 +186,19 @@ describe('ingestWindow — closing', () => {
     expect(window.closesOn).toBeNull();
   });
 
+  it('⚠ two sites sharing a siteId can still close the season', () => {
+    // `ingestWindowCli` keys sites on the body NAME, and the corpus is full of duplicate names — a
+    // stride sample that draws two "Mud Pond"s used to make the completeness test unsatisfiable
+    // forever, because the per-date lookup is a Map (one entry) while the roster is an array (two).
+    // The season then never closed and ingest ran through the summer, silently.
+    const warm = Array<number>(DEFAULT_THAW_RUN_DAYS).fill(12);
+    const sites = [
+      series('Mud Pond', '2026-12-01', [-5, ...warm]),
+      series('Mud Pond', '2026-12-01', [-5, ...warm]),
+    ];
+    expect(ingestWindow(sites).closesOn).toBe('2026-12-11');
+  });
+
   it('a day nobody reported does not count toward the thaw run', () => {
     // A missing series must not be able to end a season — the same reasoning that makes opening an OR.
     const days = [{ date: '2026-12-01', minTempC: -5 }];
