@@ -56,7 +56,6 @@ export * from './lakeForecast';
 export * from './lakeGeometry';
 export * from './lakeProfile';
 export * from './lakeSearch';
-export * from './mapCredits';
 export * from './mapRegion';
 export * from './metrics';
 export * from './nameClaims';

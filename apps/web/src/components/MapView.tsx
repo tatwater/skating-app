@@ -80,9 +80,12 @@ import {
   waterBodiesToFeatureCollection,
   waterOutlineColor,
 } from '../lib/waterMap';
+import { FreezeUpScrubber } from './FreezeUpScrubber';
 import { ImageryControl } from './ImageryControl';
 import { useMapSelection } from './MapSelectionContext';
 import { ReturnToRegion } from './ReturnToRegion';
+import { useFreezeUpFrame } from './useFreezeUpFrame';
+import { useFreezeUpTimeline } from './useFreezeUpTimeline';
 import {
   IMAGERY_HAZARD_LAYERS,
   IMAGERY_LOADING_LAYER_ID,
@@ -1060,6 +1063,49 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
     onPaintedChange: setPaintedIds,
   });
 
+  // ## Tier 2 — the freeze-up timeline (N6e §C, D148)
+  //
+  // Rides the same switch as the aerial rather than getting its own. D146's rule is one control per
+  // lake, and the founder's open question — whether these ever want separate affordances — is
+  // explicitly a "look at it first" call, so this is the version that can be looked at.
+  //
+  // The archived frame sits **above** the aerial canvas, so scrubbing to a date replaces the
+  // photograph inside the mask and closing the scrubber reveals it again. Both are clipped to the
+  // same shapes, so nothing outside the lake changes hands.
+  const [freezeUpBand, setFreezeUpBand] = useState('visual');
+  const [freezeUpStop, setFreezeUpStop] = useState<number | null>(null);
+  const timelineBody = useQuery(
+    api.waterBodies.get,
+    imageryOn && highlightWaterBodyId
+      ? { waterBodyId: highlightWaterBodyId as Id<'waterBodies'> }
+      : 'skip',
+  );
+  const {
+    timeline: freezeUpTimeline,
+    loading: freezeUpLoading,
+    season: freezeUpSeason,
+    index: freezeUpIndex,
+  } = useFreezeUpTimeline({
+    // ⚠ `available: false` is a delisting — a takedown or a moderator's rejection — and it must reach
+    // here as "no lake" rather than as an empty one. `imageryMasks` already refuses to bake a mask
+    // for a delisted body, so the archive has no pixels to offer; passing the absent case through
+    // keeps the two ends agreeing instead of asking for frames that were never cut.
+    body: timelineBody?.available ? timelineBody.body : null,
+    band: freezeUpBand,
+    enabled: Boolean(imageryOn && highlightWaterBodyId),
+  });
+
+  // A new lake is a new timeline, and a stop index into the old one means nothing against the new
+  // stops. Clearing lets the scrubber's own effect re-open on the most recent usable pass.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: resetting *because* the lake or band changed is the point.
+  useEffect(() => {
+    setFreezeUpStop(null);
+  }, [highlightWaterBodyId, freezeUpBand]);
+
+  const freezeUpFrame =
+    freezeUpStop !== null ? (freezeUpTimeline?.stops[freezeUpStop]?.frame ?? null) : null;
+  useFreezeUpFrame({ mapRef, loaded, frame: freezeUpFrame, season: freezeUpSeason });
+
   // The wash belongs on the bodies still **waiting** for a photograph — the reveal set minus whatever
   // is already on screen. Pulsing a lake that is already showing its imagery says the wrong thing
   // twice: that something is coming for it, and that what is there is not it.
@@ -1385,6 +1431,24 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
         loading={imageryLoading}
         hasHazards={(hazards?.length ?? 0) > 0}
       />
+      {/* **Over the map, not in the drawer** (founder, 2026-08-25). The scrubber is a control for
+          what the map is showing, so it belongs on the thing it changes — and on mobile D146 already
+          settled the same question the same way, where the sheet collapses to reveal it. Bottom-left
+          keeps it clear of the imagery toggle at top-right and of MapLibre's attribution ⓘ at
+          bottom-right, which is the affordance carrying the ODbL obligation and must stay reachable. */}
+      {imageryOn && highlightWaterBodyId && !hazardDropMode && !pinDropMode ? (
+        <div className="absolute bottom-4 left-4 z-10 max-w-[min(28rem,calc(100%-2rem))] rounded-md bg-background/95 p-3 shadow-lg">
+          <FreezeUpScrubber
+            timeline={freezeUpTimeline}
+            index={freezeUpIndex}
+            band={freezeUpBand}
+            onBandChange={setFreezeUpBand}
+            selected={freezeUpStop}
+            onSelect={setFreezeUpStop}
+            loading={freezeUpLoading}
+          />
+        </div>
+      ) : null}
       {/* The drawing bar. A circle needs one click and no controls, so it just says so; a polyline
           is a multi-click session and gets its own Undo/Done, kept on the map rather than in the
           form because the form is hidden for the whole draw.

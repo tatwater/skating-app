@@ -41,6 +41,13 @@ export interface FreezeUpTimeline {
   loading: boolean;
   /** The season being shown, per D149's pointer. */
   season: string | null;
+  /**
+   * The season's table of contents, once it has landed.
+   *
+   * Exposed because a band selector must be built from what this season *published* rather than a
+   * hardcoded list — the archive's bands have changed twice already. See `bandsIn`.
+   */
+  index: SeasonIndex | null;
 }
 
 /**
@@ -130,5 +137,5 @@ export function useFreezeUpTimeline({
         })
       : null;
 
-  return { timeline, loading, season };
+  return { timeline, loading, season, index };
 }

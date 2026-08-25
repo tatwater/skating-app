@@ -231,6 +231,34 @@ export interface FrameStats {
 }
 
 /**
+ * Copernicus' required credit, with the years the frames were actually taken in.
+ *
+ * ## Why a required credit lives beside the archive rather than in a credits module
+ *
+ * ⚠ **Attribution here is source-derived, not hand-composed.** MapLibre's `AttributionControl` unions
+ * the `attribution` of every *active source*, so a credit appears the moment its layer mounts and
+ * disappears when it unmounts, with nothing to remember — which is what `mapCanvas` chose it for, and
+ * why the basemap and the aerial reveal declare theirs on their own sources. A separate list of
+ * credits somewhere else is the version that goes stale the first time someone adds a layer.
+ *
+ * So this is not a credits registry. It is the string the freeze-up *source* declares, next to the
+ * keys and the season label it is built from.
+ *
+ * ESA's terms ask for *"Copernicus Sentinel data [year]"*. A winter spans two calendar years and the
+ * archive is keyed by season, so both are named rather than picking one and being wrong for half the
+ * frames. An unparseable season degrades to the bare required form: a wrong year is worse than none,
+ * and neither is a reason to omit a credit a licence compels.
+ *
+ * ⚠ Unlike NAIP's — public-domain federal work, and courtesy only — **this one is required.**
+ */
+export function copernicusCredit(season: string): string {
+  const match = /^winter-(\d{4})-(\d{2})$/.exec(season);
+  if (!match) return 'Copernicus Sentinel data';
+  const start = Number(match[1]);
+  return `Copernicus Sentinel data ${start}–${start + 1}`;
+}
+
+/**
  * Which bands a season actually published, in a stable order.
  *
  * **What a band selector should be built from**, rather than a hardcoded list. The archive's bands

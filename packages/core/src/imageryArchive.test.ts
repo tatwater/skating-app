@@ -6,6 +6,7 @@ import {
   archiveUrl,
   bandsIn,
   bodyStatsIn,
+  copernicusCredit,
   type FrameBodyStats,
   type IndexedFrame,
   latestSeasonWithFrames,
@@ -220,5 +221,18 @@ describe('bandsIn — what a band selector should be built from', () => {
 
   it('is empty for an empty season', () => {
     expect(bandsIn(season('winter-2026-27', []))).toEqual([]);
+  });
+});
+
+describe('copernicusCredit — a winter spans two calendar years', () => {
+  it('names both, because the frames come from both', () => {
+    expect(copernicusCredit('winter-2025-26')).toBe('Copernicus Sentinel data 2025–2026');
+    expect(copernicusCredit('winter-2099-00')).toBe('Copernicus Sentinel data 2099–2100');
+  });
+
+  it('⚠ degrades to the bare required form rather than inventing a year', () => {
+    // A wrong year is worse than none, and an unparseable season is not a reason to omit a credit a
+    // licence compels — unlike NAIP's, which is courtesy only.
+    expect(copernicusCredit('not-a-season')).toBe('Copernicus Sentinel data');
   });
 });
