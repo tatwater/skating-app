@@ -336,6 +336,47 @@ than Railway for the **always-warm, RAM-heavy** service we already know we want 
 cover this phase's batch job outright; the ORS workload is what breaks the tie. Fly volumes are
 host-pinned with no multi-attach — a real operational edge to know about going in.
 
+#### Why one raster per granule, and not one per body *(founder question, 2026-08-25)*
+
+Worth recording, because the answer is load-bearing for anything PR 3 or later wants to draw.
+
+**The pipeline someone imagines:** store the region's raw imagery → cut a chunk per body → mask each
+into a body-shaped blob. **What is built:** read granule COGs from AWS without storing them → cut
+**one** raster per granule covering every body it touches → bake alpha → one PMTiles per granule.
+
+Per-body would be ~24,831 bodies × ~90 passes ≈ **2.2 million artifacts a season**, against 4,485.
+Better pixel efficiency, catastrophically worse file count.
+
+**And it answers a question that sounds like it needs a redesign** — *what if imagery should reveal
+every body in the viewport, not just the selected lake?* **The current design already does that; the
+per-body design would fight it.** The archive is region-wide and pre-masked, so every body a granule
+touches is already in that granule's PMTiles with its alpha baked in. Revealing a viewport is rendering
+the archive over that area — no per-body fetch, no tile math, which is what D148 chose this shape for.
+Under a per-body design, fifty lakes on screen would mean fifty fetches.
+
+**So the per-lake restriction is D146 — a product decision about where the control lives — and not an
+architectural limit.** Lifting it is a client change. The one thing to watch is that a viewport
+spanning several granules needs several sources, which MapLibre handles.
+
+#### "Cut and store everything" means the results, not the raw granules *(founder, 2026-08-24)*
+
+The ungating call — *"then we know we have everything from Copernicus and we can rerun whatever we want
+on it without hitting them again"* — reads at first like an argument for hoarding the source granules.
+It is not, and the arithmetic is one-sided:
+
+| | per season | monthly, forever |
+| --- | --- | --- |
+| Raw granules | ~600 GB – 1.2 TB | **~$9–18 *per season*** |
+| Cut frames | ~2 GB | **~$0.20** |
+
+**Re-cutting from AWS is free** — Sentinel-2 COGs are open data with no egress charge — so raw storage
+would buy exactly one thing: insurance against AWS deleting the open-data bucket. That is not a risk
+worth $9–18 a month per season in perpetuity, and the insurance is worse than it sounds, since a
+deletion would also take the granules we would want to re-cut *from*.
+
+⚠ **Worth re-reading before anyone proposes it again**, because "own the pixels" is a phrase that
+sounds like it settles this and does not.
+
 ### C3 — Ingest gate and season turnover
 
 > **D149 — Ingest is weather-gated, and the archive turns over on the first frame of the new season,
@@ -402,6 +443,26 @@ gate that misses freeze-up, not an early one that wastes compute.
 timeline invites inference far harder than a static image does, so every frame carries its own date and
 its own cloud caveat — they travel with the frame, they are not furniture around the control.
 
+#### A split body shows a seam, not one picture *(founder call, 2026-08-24 — PR 3's to build)*
+
+> **Founder:** *"If a single body is split across two images from different dates, we should provide a
+> hairline border between the two images, with their respective dates on either side."*
+
+**A granule edge can bisect a lake**, and when it does neither frame is wrong — they are two
+photographs of two halves, taken on different days. The tempting fix is to pick one and crop, which
+would present a single date over ground that was observed twice, weeks apart. That is precisely the
+inference C4 exists to prevent, and it fails silently: nothing on screen would say the eastern half is
+a fortnight older than the western.
+
+So both render, with a hairline between them and each date on its own side. **The producer already
+supports this** — `coveragePct` in the per-granule manifest says which share of the body came from
+which pass, which is the number the seam is drawn from. A footprint alone cannot: it says a frame
+partially covers a body, not where the join falls.
+
+⚠ **This is why coverage must be read from the manifest rather than inferred from geometry.** A
+point-in-polygon test against the footprint returns one frame per date and would call a half-covering
+pass "not covered", which throws away the half we have.
+
 ### C5 — The nine-season archive and the phenology it yields *(derived dark in PR 4)*
 
 > **Founder, 2026-08-21:** hold every available pass for the region, reveal only the current season, and
@@ -431,8 +492,8 @@ The first winter (2025-26) has been cut end to end; these are its numbers, not p
 **The job count was 6× low and the price 3× high, and they were wrong for unrelated reasons.** The job
 count assumed the cloud gate that §"The backfill is a selection problem" argued for and the founder
 later abandoned; the price assumed 8 GB Machines when the largest granule in the corpus completes in
-1 GB. Both corrections are documented where they were made — see `scripts/imagery/README.md` and
-`plans/PR2-HANDOFF-2.md`.
+1 GB. Both corrections are documented where they were made — see `scripts/imagery/README.md`, whose
+trap 5 carries the per-RAM cost table the second correction came from.
 
 Storage was the least accurate estimate of the three (13 GB against 170 GB, 13× low) and remains the
 least important: at $2.55/month for the full nine seasons it is still a rounding error next to the
@@ -973,6 +1034,39 @@ irreversibly.
   cuts at July 1 that a skater would notice**, and moving only that. Scoped as its own small task, not
   part of this phase's PRs.
 
+## The batched re-run queue *(established 2026-08-25)*
+
+**Things that are free during a pass we are already making, and cost a full re-read of the season if
+done alone.** A single-season re-run is ~$1.46 and ~1.7h — cheap enough that no one item justifies
+holding the list, and repeated often enough that doing them one at a time pays that over and over.
+
+**The base rate says batch.** The last time this archive was consumed from the client side, that work
+produced seven producer-side changes in one document. Expect PR 3 to add more; collect them and re-run
+once.
+
+| item | why it wants a pass we are already making |
+| --- | --- |
+| **Per-body NDSI** (green + swir16) | §C1 calls it *"the only way to tell snow/ice from cloud"*, which true colour cannot do. ⚠ **It will not fix the black-ice problem** — it is a snow index built on the same brightness that misleads SCL — but it is an independent second opinion where SCL is weakest: the snow/cloud confusion behind a 22 Nov Morey frame reading 99% clear through visible haze. A PR 4 / N6g input; blocks nothing in PR 3. |
+| **The SCL raster, now that it is on by default** *(founder, 2026-08-25)* | `EMIT_SCL_FRAME` now defaults on, so every *future* cut publishes a `scl` frame — but the **4,381 optical frames already in R2 predate it**, so the band selector has real data for `visual` and `vh` and an empty third option until a re-cut. Additive and blocks nothing: PR 3 should build the selector to render whatever bands the index actually offers rather than a hardcoded three. |
+
+⚠ **Measure the SCL raster on a dense granule before committing a season to it.** The season-wide
+average was +24% job time and +33% storage, but a 923-body Champlain extent went **past 17 minutes
+without finishing** — and ~18% of a season sits on 1,000+ body tiles. Those are the same change
+measured two ways, and the gap between them is the risk. The measurement also predates the tiler swap,
+so it may be stale in the good direction; either way, one granule first.
+
+> ### ⚠ Two rules this queue exists to enforce
+>
+> **Write the code before the re-run, not with it.** Verified-but-unapplied is a safe state — the tiler
+> swap was prototyped on one granule before it touched a season, and that is what caught the archive
+> rendering lakes as solid black. *Unwritten-and-remembered* is not a safe state.
+>
+> **Contract changes do not belong in this queue.** Their cost *grows* with every consumer line written
+> against the old shape, while an additive field's cost stays flat. That asymmetry is why
+> `icePct → snowIcePct` was renamed immediately rather than batched: four code sites, zero consumers,
+> and a re-run owed anyway. ⚠ **Until that re-run happens the 4,381 frames in R2 still carry `icePct`,
+> so a reader wants `snowIcePct ?? icePct`.**
+
 ## Open questions
 
 *(None blocking. The phase is decided end-to-end; what remains is what a screen will tell us.)*
@@ -997,3 +1091,54 @@ irreversibly.
    together. One control is the intent; if it reads as two features wearing one switch, that is worth
    revisiting *after* seeing it, not before. **This could not be answered by PR 1** — it needs the
    scrubber, which is PR 3, so it moves there rather than staying here.
+
+**Deferred with a decision attached *(founder, 2026-08-25 — "wait, address later")*:**
+
+7. **Sub-area freeze-up, so a lake stops being one number.** Every statistic the archive produces is
+   one figure for a whole body, and winter 2025-26 showed that failing on a lake the founder skates:
+   Mascoma read `27% ice / 65% water` on 11 January, which cannot distinguish *"patchy everywhere"*
+   from *"the north half is ready"* — and the skate log says it was the second, with the bridge at the
+   narrows as the divide for two weeks.
+
+   **The mechanism already exists.** N2's sub-areas (bays, arms, basins) were built for *naming*, and
+   narrows and bridges are precisely where a lake stops behaving as one surface — where flow
+   concentrates and ice forms last. Zoning the raster by sub-area rather than by body is a change to
+   `zonal-clear.py`'s zone raster, not a new pipeline.
+
+   **The cost is that every statistic gets more expensive and more complicated**, and it rides a
+   re-run. Recorded because the winter's data and the founder's skate log pointed at the same seam
+   independently, which is the strongest reason to expect it back. See
+   [`docs/reading-ice-from-orbit.md`](../docs/reading-ice-from-orbit.md) ch. 9 for the measurement.
+
+**Still open on the producer side, carried forward from PR 2:**
+
+4. **Can SAR *date* freeze-up, or only delineate it?** The spike found the only unambiguous seasonal
+   excursion is March ice *decay*. Whether calibrated VH separates November open water from January ice
+   is what decides if radar earns a place in the timeline or stays a delineation aid — and it matters
+   more than it looks, because §4f's black-ice finding makes radar the only candidate for seeing the
+   surface skaters actually care about. A pilot season answers it; nothing else will.
+5. **Does `MAX_PARALLEL` go above 50?** Untested. 50 is proven safe and puts a season at ~1.7h, and
+   each doubling halves that. ⚠ On a multi-wave run the cap is not exact — 58–71 machines were observed
+   against a nominal 50 — so headroom is not the same as the number in the variable.
+6. **Is a nine-season SAR backfill worth it at all?** **S1B failed December 2021 and S1C launched
+   December 2024**, so the middle seasons have 12-day revisit rather than 6. Earlier seasons are
+   materially thinner than winter 2025-26, which is the one being piloted — so the pilot's numbers
+   flatter what a backfill would actually return. ⚠ **And question 7 makes this worse**, because if
+   platforms cannot be pooled then a "6-day" season is really two 12-day series.
+
+7. **⚠ Why does S1C disagree with itself? — new, 2026-08-25, and it gates the cadence.** Measured
+   across all 503 radar passes of winter 2025-26: calibration leaves an S1A−S1C offset of **−0.52 dB
+   VH ascending and +1.53 dB VH descending**, against a ~2 dB ice signal. The anomaly is not general
+   viewing geometry — **S1A agrees with itself across flight directions to +0.19 dB while S1C manages
+   only +1.18 dB.** S1D, compared to S1A seven minutes apart, sits ~1 dB off.
+
+   `sar-cal-lut.py`'s claim that *"calibration is what lets two satellites be one time series"* was
+   the design intent and is now corrected in place. **Until this is understood, a radar time series
+   stays inside one platform and one flight direction**, which is what `frameIndex.ts` already
+   enforces — that conservative note turns out to have been right for a reason nobody had measured.
+
+   Worth attacking because the prize is real: pooling platforms is the difference between a 12-day and
+   a 6-day look at a lake, and freeze-up happens on a timescale where that matters. Prime suspects are
+   S1C-specific calibration-annotation handling and incidence-angle differences the manifest does not
+   currently record. ⚠ **A fourth platform, S1D, is already appearing in the data** (4 passes, late
+   April 2026) — the id grammar accepts it, so this question will only get more crowded.

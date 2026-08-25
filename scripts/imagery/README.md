@@ -130,6 +130,92 @@ fly machine list --app skating-imagery
 **Empty between runs is the whole cost model in one command.** If anything is listed while no backfill
 is in flight, one of the five above happened. `fly machine destroy <id> --force` to fix it.
 
+### Three more Fly flags that are not optional
+
+- **`--detach`**, or the CLI sits and monitors each Machine for minutes. On a fan-out of fifty that is
+  the difference between a spawn loop and a stall.
+- **`--region sjc`.** `sea` is deprecated and refuses new resources. It is also the closest live region
+  to the AWS bucket the granules are read from.
+- **`fly machine run` needs `--vm-size` AND `--vm-memory`** — they are independent, and
+  `shared-cpu-4x` defaults to 1024 MB regardless of the size flag. See trap 5 for why `Killed` is how
+  that surfaces.
+
+---
+
+## ⚠ Twelve ways a tool reports success and means nothing of the kind
+
+The section above is about money. **This one is about silence** — every entry here is a command that
+exits 0, prints something reassuring, and leaves you with wrong data. They are collected because each
+one cost real debugging time at least once, and because the failure mode is always the same shape: the
+thing that should have screamed said `spawned`, or `0 features`, or nothing at all.
+
+### Shell
+
+**1. A `#` comment between backslash-continuations eats every argument after it.**
+
+```bash
+fly machine run "$IMAGE" \
+  # the granule id follows          ← ❌ everything below is silently dropped
+  --rm -- "$GRANULE_ID"
+```
+
+Twenty Machines once ran with no granule id at all, and every log line said `spawned`. There is no
+warning; the continuation simply ends at the comment.
+
+**2. zsh does not word-split unquoted parameters the way bash does.**
+
+`ogrinfo -spat $bbox …` passes the whole bbox as **one** argument in zsh. Paired with `2>/dev/null` it
+reads as *"zero features"* — which is a perfectly plausible answer for a granule over open ocean, so
+it produced a confident all-clear across an entire tile sweep. Quote and split explicitly, and be
+suspicious of any `2>/dev/null` sitting next to a count.
+
+**3. `pgrep` exits 1 when nothing matches, which kills a script under `pipefail`.** "No jobs running"
+is the normal state of a reconcile loop, so this fails exactly when things are going well.
+
+**4. `MAX_ARG_STRLEN` truncates a large `jq` argv, and only on Linux.** Every granule on a 1,000+ body
+tile failed to write its manifest, while all the smaller ones succeeded — so ~18% of a season would
+have vanished, specifically the densest frames over the regions holding the most lakes. **It does not
+reproduce on macOS**, where a 255 KB argument passes cleanly, so anyone testing locally concludes the
+path works. `cut-granule.sh` now uses `--slurpfile`; see the note there.
+
+### GDAL / OGR
+
+**5. `ogr2ogr -t_srs` on a spatial filter that matches nothing *fails*** with `Reprojection failed`
+rather than returning an empty layer. Count with `ogrinfo` first, then convert.
+
+**6. `ogrinfo` has no `-clipsrc`** — that is `ogr2ogr`. Passing it anyway made all 100 tiles in a
+sweep unreadable.
+
+**7. FlatGeobuf has no `DeleteLayer`, so `ogr2ogr -overwrite` fails** the moment the target exists.
+Unlink first.
+
+**8. `gdaladdo` needs explicit power-of-two levels.** With none given it derives factors from the
+raster's own size and the MBTiles driver rejects them — `Overview factor '129' is not a power of 2`.
+Small granules never hit it, so this breaks **only the biggest jobs**, which are the ones a backfill
+can least afford to lose.
+
+**9. SCL is class labels, so every resample is `-r near`.** This applies to the overview pyramid
+exactly as it applies to the warp, which is why `--overview-resampling` is set explicitly rather than
+left at its default of `average`. Interpolating class 8 against class 10 invents class 9 — a different
+category, silently.
+
+### Scale
+
+**10. Throttle on *running* Machines, not on spawn calls.** A detached spawn returns in under a second,
+so counting spawns counts nothing.
+
+**11. Counting only `state == started` undercounts.** `created` and `starting` are invisible to it.
+Use `status.sh`, which counts every row and reports UNKNOWN rather than 0 when the API call fails —
+a 0 from a failed API call reads exactly like a finished run.
+
+**12. A spawn is not a result.** Verify against the bucket with `build-index`, which is built by
+listing R2 rather than by remembering what was launched. This is the same reasoning `backfill.sh`
+encodes; see [because a spawn is not a result](#backfillsh--because-a-spawn-is-not-a-result).
+
+⚠ **Related, and not a trap so much as a memory ceiling:** the zonal statistic must be **windowed**.
+A 237-Mpixel UInt32 zone array is 950 MB before numpy copies it, which is an OOM on any Machine size
+this workload should be paying for.
+
 ---
 
 ## The three-part shape, and why it is three parts
@@ -381,6 +467,10 @@ fan-out has no use for a retry policy that cannot tell a bad granule from a bad 
 Watch with `fly logs --app skating-imagery`. Jobs run detached — `fan-out.sh` returns when the spawn
 calls return, not when the cutting finishes (pass `--drain` to make it wait, which is what
 `backfill.sh` does between rounds).
+
+**For "how many are still running", use `status.sh` and not an ad-hoc `fly machine list | grep`.** It
+counts every row rather than only `state == started`, and it reports UNKNOWN instead of 0 when the API
+call fails — see traps 11 and 12, both of which are ways a hand-rolled count reads as "finished".
 
 ### ⚠ `MASK_SEASON` is required, and it is not the frame's season
 

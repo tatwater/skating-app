@@ -110,7 +110,8 @@ export interface FrameManifest {
      *
      * The rename landed without a re-run deliberately: it is a *contract* change, so its cost grows
      * with every consumer written against the wrong name, while the re-run it needs is owed to a
-     * batch of additive work (NDSI) that blocks nothing. See `plans/PR2-HANDOFF-2.md` §7.
+     * batch of additive work (NDSI) that blocks nothing. See *The batched re-run queue* in
+     * `plans/phase-N6e-satellite-imagery.md`.
      */
     icePct?: number | null;
     /** Fraction SCL called water. Optical only. */
@@ -123,6 +124,11 @@ export interface FrameManifest {
      *
      * ⚠ Comparable only across frames of the same orbit direction and platform — see the manifest's
      * `orbitDirection`/`platform`, which exist for exactly this filter.
+     *
+     * **Measured, not assumed** (2026-08-25, all 503 radar passes of winter 2025-26): calibration
+     * leaves an S1A−S1C offset of −0.52 dB VH ascending and +1.53 dB VH descending, against a ~2 dB
+     * ice signal. Pooled across directions it reads −0.03 dB, which is the two biases cancelling —
+     * so a consumer that drops these filters will see agreement that is not there.
      */
     vvDb?: number | null;
     vhDb?: number | null;
