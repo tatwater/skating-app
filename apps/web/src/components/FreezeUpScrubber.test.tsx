@@ -293,11 +293,14 @@ describe('FreezeUpScrubber — the split-body seam', () => {
     expect(screen.getByText(/sits across a granule edge/)).toBeTruthy();
   });
 
-  it('says nothing extra when both halves came from the same pass', () => {
-    // The common case: one pass, two adjacent granules, same day. There is no second date to name and
-    // a "+ Dec 22" beside "Dec 22" would read as a bug.
-    render(<Harness timeline={seamed('2025-12-22T15:51:05Z')} />);
+  it('⚠ says nothing extra when both halves came from the same pass, seconds apart', () => {
+    // Two granules from ONE pass are seconds apart, not identical — which is what the first version
+    // of this test got wrong by using the same instant for both. Comparing instants called them
+    // different and a device rendered "Dec 12, 2025 + Dec 12, 2025" on Quabbin. The question is
+    // whether a reader sees two dates, which is a question about the rendered strings.
+    render(<Harness timeline={seamed('2025-12-22T15:51:33Z')} />);
     expect(screen.queryByText(/sits across a granule edge/)).toBeNull();
+    expect(screen.queryByText(/\+ Dec 22, 2025/)).toBeNull();
   });
 });
 
@@ -440,5 +443,28 @@ describe('FreezeUpScrubber — settling after a drag', () => {
     // height under a cursor that is mid-drag.
     const { container } = render(<Harness timeline={timelineOf([stop({ stats: undefined })])} />);
     expect(container.querySelector('.min-h-4')).toBeTruthy();
+  });
+});
+
+describe('FreezeUpScrubber — captioning a held seam half', () => {
+  it('⚠ names the half that is on the map, not the one this stop declares', () => {
+    // A held companion outlives the stop that supplied it. Reading `current.companion` would leave
+    // half the lake showing a date the caption never named — the D84 failure this module is arranged
+    // to avoid.
+    render(
+      <FreezeUpScrubber
+        timeline={timelineOf([stop({ frame: frame({ capturedAt: '2025-12-22T15:51:05Z' }) })])}
+        index={indexOf(['visual'])}
+        band="visual"
+        onBandChange={vi.fn()}
+        selected={0}
+        onSelect={vi.fn()}
+        loading={false}
+        renderedCompanion={frame({ granuleId: 'held', capturedAt: '2025-12-08T15:51:05Z' })}
+      />,
+    );
+
+    expect(screen.getByText(/\+ Dec 8, 2025/)).toBeTruthy();
+    expect(screen.getByText(/sits across a granule edge/)).toBeTruthy();
   });
 });

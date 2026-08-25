@@ -35,6 +35,7 @@ import {
   bandsIn,
   crossedNotch,
   frameSourceLabel,
+  type IndexedFrame,
   nearestLandableStop,
   notchAtOffset,
   stopCaption,
@@ -59,6 +60,7 @@ export function FreezeUpScrubber({
   onSelect,
   loading,
   error = false,
+  renderedCompanion = null,
 }: {
   timeline: BodyTimeline | null;
   /** The season index, for the bands it actually published — never a hardcoded list. */
@@ -71,6 +73,14 @@ export function FreezeUpScrubber({
   loading: boolean;
   /** The archive is configured but unreadable — a fact about the archive, never about the lake. */
   error?: boolean;
+  /**
+   * The seam half actually on the map, which can outlive the stop that supplied it.
+   *
+   * Passed in rather than read off the stop because the holding happens where the frames are mounted
+   * — and a caption naming a different frame from the one on screen is the D84 failure this whole
+   * module is arranged to avoid.
+   */
+  renderedCompanion?: IndexedFrame | null;
 }) {
   const refs = useRef<(HTMLButtonElement | null)[]>([]);
   const trackRef = useRef<HTMLDivElement | null>(null);
@@ -170,9 +180,20 @@ export function FreezeUpScrubber({
 
   const current = selected !== null ? stops[selected] : undefined;
   const caption = current ? stopCaption(current) : null;
+  // ⚠ **Captions what is on the map, not what this stop declares.** A held companion outlives the
+  // stop that supplied it (see `framesToRender`), so reading `current.companion` would leave half the
+  // lake showing a date the caption never named.
+  const shownCompanion = renderedCompanion ?? current?.companion?.frame ?? null;
+  const companionCaptionRaw = shownCompanion
+    ? stopCaption({ ...(current as TimelineStop), frame: shownCompanion })
+    : null;
+  // ⚠ Compared as **rendered labels**, not as instants. Two granules from one pass are seconds apart,
+  // so an instant comparison called them different and rendered "Dec 12, 2025 + Dec 12, 2025" — which
+  // is what a device showed on Quabbin. The question is whether a reader sees two dates, and that is
+  // a question about the strings.
   const companionCaption =
-    current?.companion && current.companion.frame.capturedAt !== current.frame.capturedAt
-      ? stopCaption({ ...current, frame: current.companion.frame })
+    companionCaptionRaw && caption && companionCaptionRaw.date !== caption.date
+      ? companionCaptionRaw
       : null;
 
   return (

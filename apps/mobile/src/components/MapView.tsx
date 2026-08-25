@@ -20,9 +20,10 @@ import {
   approachesToFeatureCollection,
   approachLinePaint,
   type BBox,
-  frameToRender,
+  framesToRender,
   isRegionOffscreen,
   prefetchFrames,
+  type RenderedFrames,
   SUB_AREA_MIN_RENDER_ZOOM,
   type TimelineStop,
   withAccessDim,
@@ -361,13 +362,14 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
   // holds the last good frame rather than clearing to bare cartography — dragging across a fortnight
   // of cloud should feel like passing over dates, not like the feature switching itself off. Held in
   // a ref because it is the *previous* render's answer, which is not derivable from this one.
-  const heldFrameRef = useRef<TimelineStop | null>(null);
-  const freezeUpSelected = frameToRender(
+  const heldFramesRef = useRef<RenderedFrames | null>(null);
+  const freezeUpRendered = framesToRender(
     freezeUpTimeline?.stops ?? [],
     freezeUpStop,
-    heldFrameRef.current,
+    heldFramesRef.current,
   );
-  heldFrameRef.current = freezeUpSelected;
+  heldFramesRef.current = freezeUpRendered;
+  const freezeUpSelected = freezeUpRendered.primary;
 
   // Warm the season's frames once the timeline appears, so scrubbing does not start a cold load per
   // notch. Header ranges only — see `prefetchFrames`. Aborted when the lake or band changes, so a
@@ -967,6 +969,7 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
         {imageryOn ? (
           <FreezeUpFrames
             stop={freezeUpSelected}
+            companion={freezeUpRendered.companion?.frame ?? null}
             season={freezeUpSeason}
             body={polygonOf(timelineBody?.available ? timelineBody.body.polygon : null)}
           />
@@ -1030,6 +1033,7 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
             onSelect={setFreezeUpStop}
             loading={freezeUpLoading}
             error={freezeUpError}
+            renderedCompanion={freezeUpRendered.companion?.frame ?? null}
           />
         </YStack>
       ) : null}

@@ -10,7 +10,7 @@ import {
   type BBox,
   draftPlacementCount,
   formatAerialCaptureDate,
-  frameToRender,
+  framesToRender,
   isDraftSubmittable,
   isRegionOffscreen,
   type LatLng,
@@ -18,6 +18,7 @@ import {
   polygonShape,
   prefetchFrames,
   profileRevealEnabled,
+  type RenderedFrames,
   representativePoint,
   SUB_AREA_MIN_RENDER_ZOOM,
   shapeSignature,
@@ -1126,13 +1127,14 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
   // holds the last good frame rather than clearing to bare cartography — dragging across a fortnight
   // of cloud should feel like passing over dates, not like the feature switching itself off. Held in
   // a ref because it is the *previous* render's answer, which is not derivable from this one.
-  const heldFrameRef = useRef<TimelineStop | null>(null);
-  const freezeUpSelected = frameToRender(
+  const heldFramesRef = useRef<RenderedFrames | null>(null);
+  const freezeUpRendered = framesToRender(
     freezeUpTimeline?.stops ?? [],
     freezeUpStop,
-    heldFrameRef.current,
+    heldFramesRef.current,
   );
-  heldFrameRef.current = freezeUpSelected;
+  heldFramesRef.current = freezeUpRendered;
+  const freezeUpSelected = freezeUpRendered.primary;
 
   // Warm the season's frames once the timeline appears, so scrubbing does not start a cold load per
   // notch. Header ranges only — see `prefetchFrames`. Aborted when the lake or band changes, so a
@@ -1157,7 +1159,7 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
   useFreezeUpFrame({
     mapRef,
     loaded,
-    frame: freezeUpSelected?.companion?.frame ?? null,
+    frame: freezeUpRendered.companion?.frame ?? null,
     season: freezeUpSeason,
     slot: 'companion',
   });
@@ -1167,7 +1169,7 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
   useFreezeUpSeam({
     mapRef,
     loaded,
-    footprint: freezeUpSelected?.companion ? (freezeUpSelected.frame.footprint ?? null) : null,
+    footprint: freezeUpRendered.companion ? (freezeUpSelected?.frame.footprint ?? null) : null,
     body: polygonOf(timelineBody?.available ? timelineBody.body.polygon : null),
   });
 
@@ -1485,7 +1487,18 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
         }
       />
       {/* Only where a lake is open (D146). Hidden while the hazard author has the map, because two
-          overlapping "click the map" affordances is one too many. */}
+          overlapping "click the map" affordances is one too many.
+
+          **Over the map, not in the drawer** (founder, 2026-08-25). The scrubber is a control for
+          what the map is showing, so it belongs on the thing it changes — and on mobile D146 already
+          settled the same question the same way, where the sheet collapses to reveal it. The toggle
+          moved down from the top-right corner to meet it: the box a skater presses is the box the
+          timeline grows out of.
+
+          `imageryArchiveUrl` gates the scrubber and nothing else. With no archive configured there is
+          nothing to scrub and nothing true to say about why, so the correct render is none at all —
+          the same call the bathymetry layer makes when its own URL is blank. The imagery toggle still
+          stands, because the NAIP aerial does not come from that archive. */}
       <ImageryControl
         visible={Boolean(highlightWaterBodyId) && !hazardDropMode && !pinDropMode}
         imageryOn={imageryOn}
@@ -1495,21 +1508,8 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
         captureLabel={aerialCaptureLabel}
         loading={imageryLoading}
         hasHazards={(hazards?.length ?? 0) > 0}
-      />
-      {/* **Over the map, not in the drawer** (founder, 2026-08-25). The scrubber is a control for
-          what the map is showing, so it belongs on the thing it changes — and on mobile D146 already
-          settled the same question the same way, where the sheet collapses to reveal it. Bottom-left
-          keeps it clear of the imagery toggle at top-right and of MapLibre's attribution ⓘ at
-          bottom-right, which is the affordance carrying the ODbL obligation and must stay reachable. */}
-      {/* `imageryArchiveUrl` gates the panel itself: with no archive configured there is nothing to
-          scrub and nothing true to say about why, so the correct render is none at all — the same
-          call the bathymetry layer makes when its own URL is blank. */}
-      {env.imageryArchiveUrl &&
-      imageryOn &&
-      highlightWaterBodyId &&
-      !hazardDropMode &&
-      !pinDropMode ? (
-        <div className="absolute bottom-4 left-4 z-10 max-w-[min(28rem,calc(100%-2rem))] rounded-md bg-background/95 p-3 shadow-lg">
+      >
+        {env.imageryArchiveUrl ? (
           <FreezeUpScrubber
             timeline={freezeUpTimeline}
             index={freezeUpIndex}
@@ -1519,9 +1519,10 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
             onSelect={setFreezeUpStop}
             loading={freezeUpLoading}
             error={freezeUpError}
+            renderedCompanion={freezeUpRendered.companion?.frame ?? null}
           />
-        </div>
-      ) : null}
+        ) : null}
+      </ImageryControl>
       {/* The drawing bar. A circle needs one click and no controls, so it just says so; a polyline
           is a multi-click session and gets its own Undo/Done, kept on the map rather than in the
           form because the form is hidden for the whole draw.

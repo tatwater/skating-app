@@ -5,7 +5,7 @@ import {
   buildBodyTimeline,
   candidateFramesFor,
   FRAME_MAX_CLOUD_PCT,
-  frameToRender,
+  framesToRender,
   MIN_BODY_CLEAR_FRACTION,
   MIN_BODY_COVERAGE,
   nearestLandableStop,
@@ -755,7 +755,7 @@ describe('nearestLandableStop — the direction a finger was going', () => {
   });
 });
 
-describe('frameToRender — the picture never goes away', () => {
+describe('framesToRender — the picture never goes away', () => {
   const good = (id: string): TimelineStop => ({
     frame: frame({ granuleId: id }),
     landable: true,
@@ -773,21 +773,86 @@ describe('frameToRender — the picture never goes away', () => {
     // switching itself off and on. The flash back to a bare polygon reads as breakage every time,
     // however correct it is about that particular date.
     const stops = [good('a'), clouded, good('c')];
-    expect(frameToRender(stops, 1, stops[0] ?? null)?.frame.granuleId).toBe('a');
+    expect(
+      framesToRender(stops, 1, { primary: stops[0] ?? null, companion: null }).primary?.frame
+        .granuleId,
+    ).toBe('a');
   });
 
   it('takes over the moment a landable stop is chosen', () => {
     const stops = [good('a'), clouded, good('c')];
-    expect(frameToRender(stops, 2, stops[0] ?? null)?.frame.granuleId).toBe('c');
+    expect(
+      framesToRender(stops, 2, { primary: stops[0] ?? null, companion: null }).primary?.frame
+        .granuleId,
+    ).toBe('c');
   });
 
   it('holds through an out-of-range index rather than clearing', () => {
     // The stop list can shrink as manifests sharpen coverage, and a stale index must not blank the
     // map on the way through.
-    expect(frameToRender([good('a')], 9, good('a'))?.frame.granuleId).toBe('a');
+    expect(
+      framesToRender([good('a')], 9, { primary: good('a'), companion: null }).primary?.frame
+        .granuleId,
+    ).toBe('a');
   });
 
   it('has nothing to show before anything has been chosen', () => {
-    expect(frameToRender([good('a')], null, null)).toBeNull();
+    expect(framesToRender([good('a')], null, null).primary).toBeNull();
+  });
+});
+
+describe('framesToRender — a seam keeps both halves', () => {
+  const half = (id: string, companionId?: string): TimelineStop => ({
+    frame: frame({ granuleId: id }),
+    landable: true,
+    basis: 'measured',
+    stats: { waterBodyId: 'x', coveragePct: 0.6, clearPct: 0.95, pixels: 900 },
+    ...(companionId ? { companion: { frame: frame({ granuleId: companionId }) } } : {}),
+  });
+
+  it('⚠ holds the other half when the next stop has no companion of its own', () => {
+    // The reported bug, on Quabbin: sliding from a seamed stop to an unseamed one left half the lake
+    // as bare cartography. A partial frame with nothing under it shows 60% of a reservoir.
+    const stops = [half('west', 'east'), half('west2')];
+    const first = framesToRender(stops, 0, null);
+    const second = framesToRender(stops, 1, first);
+
+    expect(second.primary?.frame.granuleId).toBe('west2');
+    expect(second.companion?.frame.granuleId).toBe('east');
+  });
+
+  it('replaces the held half when a stop supplies its own', () => {
+    const stops = [half('a', 'a-east'), half('b', 'b-east')];
+    const held = framesToRender(stops, 0, null);
+    expect(framesToRender(stops, 1, held).companion?.frame.granuleId).toBe('b-east');
+  });
+
+  it('is safe to hold indefinitely, because the primary draws over it', () => {
+    // A full-coverage primary occludes whatever is underneath; a partial one lets the held half show
+    // through exactly where it is missing. So there is no state where a stale companion is visible
+    // over ground the current frame already covers.
+    const whole: TimelineStop = {
+      frame: frame({ granuleId: 'whole' }),
+      landable: true,
+      basis: 'measured',
+      stats: { waterBodyId: 'x', coveragePct: 1, clearPct: 1, pixels: 4107 },
+    };
+    const stops = [half('west', 'east'), whole];
+    const after = framesToRender(stops, 1, framesToRender(stops, 0, null));
+    expect(after.primary?.frame.granuleId).toBe('whole');
+    expect(after.companion?.frame.granuleId).toBe('east');
+  });
+
+  it('holds both halves across a blocked notch', () => {
+    const blocked: TimelineStop = {
+      frame: frame({ granuleId: 'clouded' }),
+      landable: false,
+      blockedBy: 'cloud',
+      basis: 'measured',
+    };
+    const stops = [half('west', 'east'), blocked];
+    const after = framesToRender(stops, 1, framesToRender(stops, 0, null));
+    expect(after.primary?.frame.granuleId).toBe('west');
+    expect(after.companion?.frame.granuleId).toBe('east');
   });
 });

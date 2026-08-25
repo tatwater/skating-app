@@ -520,7 +520,7 @@ export function buildBodyTimeline(
 }
 
 /**
- * Which stop's picture should actually be on screen, given where the thumb is.
+ * Which pictures should actually be on screen, given where the thumb is.
  *
  * > **Founder, 2026-08-25:** *"I shouldn't see imagery disappear and return to the polygon geometry
  * > ever while in 'Show imagery' mode."*
@@ -537,15 +537,35 @@ export function buildBodyTimeline(
  * If that ever stops being true, this becomes a D84 problem — a date presented over the wrong
  * photograph — and the caption would have to name the frame it is actually showing.
  */
-export function frameToRender(
+/** What is actually on the map: a primary picture, and the other half of a seam if there is one. */
+export interface RenderedFrames {
+  primary: TimelineStop | null;
+  companion: { frame: IndexedFrame; stats?: FrameBodyStats } | null;
+}
+
+export function framesToRender(
   stops: readonly TimelineStop[],
   selected: number | null,
-  previous: TimelineStop | null,
-): TimelineStop | null {
-  if (selected === null) return previous;
+  previous: RenderedFrames | null,
+): RenderedFrames {
+  const held = previous ?? { primary: null, companion: null };
+  if (selected === null) return held;
   const stop = stops[selected];
-  if (!stop) return previous;
-  return stop.landable ? stop : previous;
+  if (!stop) return held;
+
+  const primary = stop.landable ? stop : held.primary;
+
+  // ⚠ **The companion is held independently, and it is safe to hold it indefinitely.** Both halves
+  // are alpha-masked to the same lake, and the primary is drawn *over* the companion — so where the
+  // primary covers the water it occludes whatever is underneath, and where it does not, the held half
+  // shows through. A stale companion under a frame that covers the lake outright is invisible; under
+  // one that covers 60% it is the missing 40%, which is exactly the point.
+  //
+  // Clearing it instead is what produced the bug this exists for: sliding from a stop with a
+  // companion to one without left half of Quabbin as bare cartography.
+  const companion = stop.landable ? (stop.companion ?? held.companion) : held.companion;
+
+  return { primary, companion };
 }
 
 /**

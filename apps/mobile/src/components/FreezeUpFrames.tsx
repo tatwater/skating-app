@@ -106,17 +106,24 @@ function Frame({ frame, season, prefix }: { frame: IndexedFrame; season: string;
  */
 export function FreezeUpFrames({
   stop,
+  companion,
   season,
   body,
 }: {
   stop: TimelineStop | null;
+  /**
+   * The seam half to draw, which **outlives the stop that supplied it** (`framesToRender`).
+   *
+   * Passed in rather than read off `stop.companion`: sliding from a seamed pass to an unseamed one
+   * would otherwise unmount half the lake and leave bare cartography where 40% of a reservoir was.
+   */
+  companion: IndexedFrame | null;
   season: string | null;
   /** The lake, which clips the granule edge down to the part anyone can see. */
   body: Polygon | MultiPolygon | null;
 }) {
   if (!stop || !season || !env.imageryArchiveUrl) return null;
 
-  const companion = stop.companion?.frame ?? null;
   const seam =
     companion && stop.frame.footprint && body ? seamFeature(stop.frame.footprint, body) : null;
 
