@@ -113,7 +113,21 @@ if [[ -z "$MASK_SEASON" && -z "$SMOKE_FLAG" ]]; then
   exit 1
 fi
 
-mapfile -t GRANULES < <(if [[ "$INPUT" == "-" ]]; then cat; else cat "$INPUT"; fi | sed 's/#.*//' | tr -d '\r' | grep -v '^[[:space:]]*$')
+# ⚠ **The same `awk` `backfill.sh` uses, character for character, because the two must agree.**
+#
+# `backfill.sh` trims surrounding whitespace when it builds `asked.txt`; this used to only strip
+# comments, CRs and blank lines. A hand-annotated line like `  S2C_…_L2A  ` — the common case for a
+# retry list — was therefore trimmed on the reconciling side and passed *untrimmed* here, so the
+# Machine ran `cut-granule "  S2C_…  "`, died on a granule id that does not exist, and the entry
+# could never land. The miss set then never shrinks past it and the loop reports it as the
+# empty-granule plateau: exactly the divergence backfill.sh's own comment says it is preventing.
+#
+# One `awk` rather than `sed | tr | grep`: under `pipefail` a `grep` that filters everything out
+# exits 1, which is a landmine even inside a process substitution.
+mapfile -t GRANULES < <(
+  if [[ "$INPUT" == "-" ]]; then cat; else cat "$INPUT"; fi |
+    awk '{ sub(/#.*/, ""); gsub(/\r/, ""); gsub(/^[[:space:]]+|[[:space:]]+$/, ""); if ($0 != "") print }'
+)
 COUNT=${#GRANULES[@]}
 [[ $COUNT -gt 0 ]] || { echo "no granule ids in $INPUT" >&2; exit 1; }
 
@@ -211,12 +225,7 @@ BATCH=$(( MAX_PARALLEL / 4 ))
 (( BATCH < 1 )) && BATCH=1
 
 SPAWNED=0
-running=0
 for granule in "${GRANULES[@]}"; do
-  if (( running >= MAX_PARALLEL )); then
-    wait -n
-    running=$((running - 1))
-  fi
   # Re-checked every `BATCH` spawns rather than every spawn, so the poll cost stays proportional to
   # batches and not to granules.
   # ⚠ **`wait` before polling, or the cap is fiction.**
@@ -232,7 +241,11 @@ for granule in "${GRANULES[@]}"; do
   # returned, `fly machine list` has seen every Machine we asked for and the next poll is accurate.
   # That puts the peak at exactly `MAX_PARALLEL` — which is what makes a cap something you can set
   # deliberately rather than drift into.
-  (( SPAWNED % BATCH == 0 )) && { wait; running=0; await_capacity; }
+  #
+  # The batch `wait` is also the *only* throttle on in-flight spawn subshells: it drains every one of
+  # them before the next poll, so at most `BATCH` are ever alive. A second `wait -n` guard against
+  # `MAX_PARALLEL` used to sit above this and could never fire — `BATCH` is a quarter of the cap.
+  (( SPAWNED % BATCH == 0 )) && { wait; await_capacity; }
   SPAWNED=$((SPAWNED + 1))
 
   (
@@ -276,7 +289,6 @@ for granule in "${GRANULES[@]}"; do
       && echo "[fan-out]   spawned $granule" \
       || echo "[fan-out]   FAILED to spawn $granule" >&2
   ) &
-  running=$((running + 1))
 done
 
 wait

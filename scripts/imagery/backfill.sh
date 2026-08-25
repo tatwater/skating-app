@@ -87,8 +87,19 @@ landed() {
     echo "[backfill] FATAL: cannot list r2:${BUCKET}/frames/${SEASON}/ (rclone exit $status)" >&2
     return 1
   fi
+  # ⚠ **A frame object is `<granuleId>-<band>.pmtiles`, not `<granuleId>.pmtiles`.**
+  #
+  # `cut-granule` started keying uploads by band the moment a granule could yield more than one
+  # frame (`-visual`, `-scl`, `-vv`, `-vh`) — and stripping only the extension leaves
+  # `S2C_18TXP_20260215_0_L2A-visual`, which never equals the id in `asked.txt`. Every round then
+  # reads as "nothing landed", re-spawns the entire list, and after two rounds exits 1 claiming the
+  # season prefix is wrong: a whole backfill re-run for a suffix.
+  #
+  # Granule ids contain no `-` (S2 `S2C_18TXP_…`, S1 `S1A_IW_GRDH_…`), so the trailing `-<band>` is
+  # unambiguous. `sort -u` because two bands of one granule are one landed granule, not two.
+  #
   # `sed -n …p` rather than `grep | sed`: it selects and strips in one pass and exits 0 on no match.
-  printf '%s\n' "$listing" | sed -n 's/\.pmtiles$//p' | sort
+  printf '%s\n' "$listing" | sed -n 's/\.pmtiles$//p' | sed 's/-[A-Za-z0-9]\{1,\}$//' | sort -u
 }
 
 previous_missing=-1
