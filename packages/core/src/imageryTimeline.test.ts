@@ -3,11 +3,14 @@ import { describe, expect, it } from 'vitest';
 import type { IndexedFrame, SeasonIndex } from './imageryArchive';
 import {
   buildBodyTimeline,
+  candidateFramesFor,
   FRAME_MAX_CLOUD_PCT,
+  MIN_BODY_CLEAR_FRACTION,
+  MIN_BODY_COVERAGE,
   nearestLandableStop,
+  type TimelineBody,
   type TimelineStop,
 } from './imageryTimeline';
-import type { ReferenceLinkBody } from './referenceLinks';
 
 /** A square granule footprint around a coordinate, in degrees. */
 const boxAround = (lat: number, lng: number, half = 0.5): Polygon => ({
@@ -24,7 +27,8 @@ const boxAround = (lat: number, lng: number, half = 0.5): Polygon => ({
 });
 
 /** Champlain-ish, and comfortably over `SATELLITE_MIN_AREA_SQM`. */
-const CHAMPLAIN: ReferenceLinkBody = {
+const CHAMPLAIN: TimelineBody = {
+  _id: 'champlain',
   name: 'Lake Champlain',
   interiorPoint: { lat: 44.5, lng: -73.3 },
   surfaceAreaSqM: 1_127_000_000,
@@ -121,14 +125,14 @@ describe('buildBodyTimeline — the gates that run before coverage', () => {
   it('offers no scrubber to a body too small for a 10 m pixel', () => {
     // D70/D75's floor. A pond resolves to a handful of grey-green pixels, and the conclusion available
     // to a skater looking at those is "this is broken" rather than "this sensor is coarse".
-    const pond: ReferenceLinkBody = { ...CHAMPLAIN, surfaceAreaSqM: 4_107 };
+    const pond: TimelineBody = { ...CHAMPLAIN, surfaceAreaSqM: 4_107 };
 
     expect(buildBodyTimeline(season([frame()]), pond).stops).toEqual([]);
   });
 
   it("⚠ respects an operator's `off` even on a body that clears the floor", () => {
     // The override is takedown-shaped, so it has to win outright rather than be weighed.
-    const suppressed: ReferenceLinkBody = { ...CHAMPLAIN, satelliteImagery: 'off' };
+    const suppressed: TimelineBody = { ...CHAMPLAIN, satelliteImagery: 'off' };
 
     expect(buildBodyTimeline(season([frame()]), suppressed).stops).toEqual([]);
   });
@@ -138,7 +142,7 @@ describe('buildBodyTimeline — the gates that run before coverage', () => {
     // point on the body most likely to fall the wrong side of a granule boundary. Here the stored
     // centroid is outside the granule and the interior point is inside; preferring the centroid would
     // drop a frame that covers the lake perfectly well.
-    const body: ReferenceLinkBody = {
+    const body: TimelineBody = {
       ...CHAMPLAIN,
       centroid: { lat: 44.5, lng: -74.9 },
     };
@@ -147,7 +151,7 @@ describe('buildBodyTimeline — the gates that run before coverage', () => {
   });
 
   it('returns an empty timeline when the body has no coordinate at all', () => {
-    const placeless: ReferenceLinkBody = { name: 'nowhere', surfaceAreaSqM: 1_000_000 };
+    const placeless: TimelineBody = { name: 'nowhere', surfaceAreaSqM: 1_000_000 };
 
     expect(buildBodyTimeline(season([frame()]), placeless).stops).toEqual([]);
   });
@@ -209,8 +213,8 @@ describe('buildBodyTimeline — footprints, bands and counting', () => {
 describe('nearestLandableStop', () => {
   const stop = (landable: boolean): TimelineStop =>
     landable
-      ? { frame: frame(), landable: true }
-      : { frame: frame(), landable: false, blockedBy: 'cloud' };
+      ? { frame: frame(), landable: true, basis: 'inferred' }
+      : { frame: frame(), landable: false, blockedBy: 'cloud', basis: 'inferred' };
 
   it('slides past a blocked stop to the nearest one with a picture behind it', () => {
     expect(nearestLandableStop([stop(true), stop(false), stop(true)], 1)).toBe(0);
@@ -235,5 +239,226 @@ describe('nearestLandableStop', () => {
     // A real outcome, not an error — the caller has to render something honest for it.
     expect(nearestLandableStop([stop(false), stop(false)], 0)).toBeNull();
     expect(nearestLandableStop([], 0)).toBeNull();
+  });
+});
+
+const statsFor = (
+  granuleId: string,
+  bodies: { waterBodyId: string; coveragePct?: number | null; clearPct?: number | null }[],
+) => {
+  const map = new Map([
+    [
+      granuleId,
+      {
+        granuleId,
+        capturedAt: '2026-02-15T15:51:05Z',
+        bodies: bodies.map((b) => ({
+          waterBodyId: b.waterBodyId,
+          coveragePct: b.coveragePct ?? 1,
+          clearPct: b.clearPct ?? 0.95,
+          pixels: 4107,
+        })),
+      },
+    ],
+  ]);
+  return (id: string) => map.get(id);
+};
+
+describe('buildBodyTimeline — exact coverage, once a manifest is in hand', () => {
+  it('⚠ a manifest that omits this lake is a real answer, not a gap', () => {
+    // The cut is the authority on what it cut. Before manifests, a footprint containing the lake was
+    // the best available guess and this frame would have become a stop that renders nothing.
+    const timeline = buildBodyTimeline(season([frame()]), CHAMPLAIN, {
+      stats: statsFor('S2C_18TXP_20260215_0_L2A', [{ waterBodyId: 'someone-else' }]),
+    });
+
+    expect(timeline.stops).toEqual([]);
+    expect(timeline.notCovered).toBe(1);
+  });
+
+  it('marks a measured stop as such, and carries the row for the caption', () => {
+    const timeline = buildBodyTimeline(season([frame()]), CHAMPLAIN, {
+      stats: statsFor('S2C_18TXP_20260215_0_L2A', [
+        { waterBodyId: 'champlain', coveragePct: 0.92, clearPct: 0.88 },
+      ]),
+    });
+
+    expect(timeline.stops[0]?.basis).toBe('measured');
+    expect(timeline.stops[0]?.stats?.clearPct).toBe(0.88);
+    expect(timeline.coverageInferred).toBe(0);
+  });
+
+  it('⚠ rescues a half-covering pass that the footprint test would have thrown away', () => {
+    // Champlain straddles tiles. The interior point sits outside this granule, so inference calls it
+    // "not covered" — but the manifest says the pass reached 60% of the lake, which is most of it.
+    const timeline = buildBodyTimeline(season([frame({ footprint: OVER_MOOSEHEAD })]), CHAMPLAIN, {
+      stats: statsFor('S2C_18TXP_20260215_0_L2A', [{ waterBodyId: 'champlain', coveragePct: 0.6 }]),
+    });
+
+    expect(timeline.stops).toHaveLength(1);
+    expect(timeline.stops[0]?.landable).toBe(true);
+    expect(timeline.notCovered).toBe(0);
+  });
+
+  it('falls back to footprint inference with no manifest, and says so', () => {
+    const timeline = buildBodyTimeline(season([frame()]), CHAMPLAIN);
+
+    expect(timeline.stops[0]?.basis).toBe('inferred');
+    expect(timeline.coverageInferred).toBe(1);
+    expect(timeline.stops[0]?.stats).toBeUndefined();
+  });
+
+  it('falls back to inference when the body carries no id to look up', () => {
+    const { _id, ...anonymous } = CHAMPLAIN;
+    const timeline = buildBodyTimeline(season([frame()]), anonymous, {
+      stats: statsFor('S2C_18TXP_20260215_0_L2A', [{ waterBodyId: 'champlain' }]),
+    });
+
+    expect(timeline.stops[0]?.basis).toBe('inferred');
+  });
+});
+
+describe('buildBodyTimeline — the gates, once they are per-body', () => {
+  it('prefers this lake’s own clear fraction over the granule figure', () => {
+    // The whole point of the per-body pass: a granule 94% clouded over the White Mountains says
+    // nothing about Champlain, and the granule-wide gate would have blocked this date.
+    const timeline = buildBodyTimeline(season([frame({ cloudCoverPct: 94 })]), CHAMPLAIN, {
+      stats: statsFor('S2C_18TXP_20260215_0_L2A', [{ waterBodyId: 'champlain', clearPct: 0.97 }]),
+    });
+
+    expect(timeline.stops[0]?.landable).toBe(true);
+  });
+
+  it('blocks on the per-body figure even when the granule looked fine', () => {
+    const timeline = buildBodyTimeline(season([frame({ cloudCoverPct: 3 })]), CHAMPLAIN, {
+      stats: statsFor('S2C_18TXP_20260215_0_L2A', [{ waterBodyId: 'champlain', clearPct: 0.1 }]),
+    });
+
+    expect(timeline.stops[0]?.landable).toBe(false);
+    expect(timeline.stops[0]?.blockedBy).toBe('cloud');
+  });
+
+  it('keeps the same strictness the granule gate had, so accuracy changes and tolerance does not', () => {
+    expect(MIN_BODY_CLEAR_FRACTION).toBeCloseTo(1 - FRAME_MAX_CLOUD_PCT / 100);
+  });
+
+  it('blocks a sliver on coverage rather than dropping it or calling it cloudy', () => {
+    const timeline = buildBodyTimeline(season([frame()]), CHAMPLAIN, {
+      stats: statsFor('S2C_18TXP_20260215_0_L2A', [
+        { waterBodyId: 'champlain', coveragePct: 0.15, clearPct: 0.99 },
+      ]),
+    });
+
+    expect(timeline.stops).toHaveLength(1);
+    expect(timeline.stops[0]?.blockedBy).toBe('coverage');
+  });
+
+  it('⚠ coverage outranks cloud, so a cloudy sliver explains the right problem', () => {
+    const timeline = buildBodyTimeline(season([frame()]), CHAMPLAIN, {
+      stats: statsFor('S2C_18TXP_20260215_0_L2A', [
+        { waterBodyId: 'champlain', coveragePct: 0.1, clearPct: 0.05 },
+      ]),
+    });
+
+    expect(timeline.stops[0]?.blockedBy).toBe('coverage');
+  });
+
+  it('does not block on coverage the granule never measured', () => {
+    // `coveragePct: null` is "the granule shipped without SCL", which is unmeasured rather than zero.
+    const timeline = buildBodyTimeline(season([frame()]), CHAMPLAIN, {
+      stats: statsFor('S2C_18TXP_20260215_0_L2A', [
+        { waterBodyId: 'champlain', coveragePct: null, clearPct: null },
+      ]),
+    });
+
+    expect(timeline.stops[0]?.landable).toBe(true);
+  });
+
+  it('⚠ never gates radar on cloud, and needs no mission check to get that right', () => {
+    // A `vh` frame carries no clearPct and a null cloudCoverPct — not because the figure is missing
+    // but because Sentinel-1 sees through cloud. The data shape alone produces the right answer.
+    const timeline = buildBodyTimeline(
+      season([frame({ granuleId: 'S1A', band: 'vh', cloudCoverPct: null })]),
+      CHAMPLAIN,
+      {
+        band: 'vh',
+        stats: (id) =>
+          id === 'S1A'
+            ? {
+                granuleId: 'S1A',
+                capturedAt: '2026-02-15T22:51:23Z',
+                mission: 's1',
+                platform: 'S1A',
+                orbitDirection: 'ascending',
+                bodies: [
+                  { waterBodyId: 'champlain', coveragePct: 0.98, vhDb: -21.4, pixels: 4107 },
+                ],
+              }
+            : undefined,
+      },
+    );
+
+    expect(timeline.stops[0]?.landable).toBe(true);
+    expect(timeline.stops[0]?.stats?.vhDb).toBe(-21.4);
+  });
+
+  it('honours the coverage override, for the admin editor that sees everything', () => {
+    const timeline = buildBodyTimeline(season([frame()]), CHAMPLAIN, {
+      minCoverage: 0,
+      stats: statsFor('S2C_18TXP_20260215_0_L2A', [
+        { waterBodyId: 'champlain', coveragePct: 0.02 },
+      ]),
+    });
+
+    expect(timeline.landableCount).toBe(1);
+    expect(MIN_BODY_COVERAGE).toBeGreaterThan(0);
+  });
+});
+
+describe('candidateFramesFor — what to fetch manifests for', () => {
+  it('narrows a season to the frames whose footprint reaches this lake', () => {
+    const frames = candidateFramesFor(
+      season([frame(), frame({ granuleId: 'moosehead', footprint: OVER_MOOSEHEAD })]),
+      CHAMPLAIN,
+    );
+
+    expect(frames.map((f) => f.granuleId)).toEqual(['S2C_18TXP_20260215_0_L2A']);
+  });
+
+  it('keeps a footprint-less frame, because it cannot be ruled out', () => {
+    expect(candidateFramesFor(season([frame({ footprint: undefined })]), CHAMPLAIN)).toHaveLength(
+      1,
+    );
+  });
+
+  it('respects the band, so a radar sweep does not fetch optical manifests', () => {
+    const frames = candidateFramesFor(
+      season([frame(), frame({ granuleId: 'S1A', band: 'vh' })]),
+      CHAMPLAIN,
+      { band: 'vh' },
+    );
+
+    expect(frames.map((f) => f.granuleId)).toEqual(['S1A']);
+  });
+
+  it('offers nothing for a body that gets no scrubber at all', () => {
+    expect(
+      candidateFramesFor(season([frame()]), { ...CHAMPLAIN, satelliteImagery: 'off' }),
+    ).toEqual([]);
+  });
+});
+
+describe('the branches that only show up at the edges', () => {
+  it('candidateFramesFor offers nothing for a body with no coordinate', () => {
+    expect(candidateFramesFor(season([frame()]), { name: 'nowhere' })).toEqual([]);
+  });
+
+  it('⚠ a coverage-blocked stop with no manifest row carries no stats to caption from', () => {
+    // Reachable only through the override, since without a row `coveragePct` is null and the gate
+    // never fires. Worth pinning: the stop must still be well-formed rather than half-built.
+    const timeline = buildBodyTimeline(season([frame()]), CHAMPLAIN, { minCoverage: 0.5 });
+
+    expect(timeline.stops[0]?.landable).toBe(true);
+    expect(timeline.stops[0]?.stats).toBeUndefined();
   });
 });
