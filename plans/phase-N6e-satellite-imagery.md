@@ -30,7 +30,7 @@ with a date on it — and behind it, a season of passes you can scrub through an
 > sources only; the resolution/cadence trade is physical), **D148** (the timeline is our own archive:
 > one masked raster PMTiles per pass), **D149** (ingest is weather-gated; the archive turns over on the
 > first frame, not on a date), **D150** (derived ice classification is an observation, never counsel —
-> deferred to N6f). Carried in from D138: the Copernicus deep link, `satelliteImagery` and
+> deferred to N6g). Carried in from D138: the Copernicus deep link, `satelliteImagery` and
 > `SATELLITE_MIN_AREA_SQM`. Still true: **D84** (two tiers, different jobs), **D75** (the licence
 > question was answered by Copernicus).
 
@@ -300,7 +300,7 @@ photograph. It is also the honest precursor to PR 5's hatch layer: anyone who wa
 classification was derived *from* can look at it.
 
 **The bands are where the real signal is.** Not needed for v1's true-colour frames, but they are why
-N6f is worth doing and they should be captured while we're already downloading the granule:
+N6g is worth doing and they should be captured while we're already downloading the granule:
 
 - **SCL (Scene Classification Layer)** — shipped *inside* Sentinel-2 L2A, computed by ESA, with
   per-pixel classes for water, **snow/ice**, cloud (high/medium), and cloud shadow. It is simultaneously
@@ -415,9 +415,29 @@ Northeast winter is one or two usable frames a month — and are excluded, along
 regardless of source *(founder: "not bother with any imagery data older than 9 years")*. That retires
 the Landsat-to-the-1980s option; it stays noted as a future product, not this one.
 
-Economics: **~13 GB in R2 (~$0.20/mo)**, backfill ≈ 8,000 granule jobs ≈ **$43 on Fly**, a couple of
-days across 25 parallel Machines. Keeping the pixels as well as the derived series is cheap insurance
-against wanting to re-derive with a better algorithm.
+**Economics — ✅ measured 2026-08-25, and every figure below replaces an estimate that was wrong.**
+The first winter (2025-26) has been cut end to end; these are its numbers, not projections.
+
+| | estimated | **measured** |
+| --- | --- | --- |
+| granule jobs, one season | ~750 | **4,485** |
+| granule jobs, nine seasons | ~8,000 | **40,365** |
+| Fly cost, one season | — | **~$1.46** |
+| Fly cost, nine seasons | ~$43 | **~$13** |
+| R2, one season | — | **~19 GB** |
+| R2, nine seasons | ~13 GB | **~170 GB (~$2.55/mo)** |
+| wall clock, one season | "a couple of days" | **~1.7 h** at 50 parallel Machines |
+
+**The job count was 6× low and the price 3× high, and they were wrong for unrelated reasons.** The job
+count assumed the cloud gate that §"The backfill is a selection problem" argued for and the founder
+later abandoned; the price assumed 8 GB Machines when the largest granule in the corpus completes in
+1 GB. Both corrections are documented where they were made — see `scripts/imagery/README.md` and
+`plans/PR2-HANDOFF-2.md`.
+
+Storage was the least accurate estimate of the three (13 GB against 170 GB, 13× low) and remains the
+least important: at $2.55/month for the full nine seasons it is still a rounding error next to the
+compute. Keeping the pixels as well as the derived series stays cheap insurance against wanting to
+re-derive with a better algorithm.
 
 > **D151 — A phenology date is a bracket between two passes, never a point, and the claim is about our
 > observation rather than the lake.**
@@ -704,7 +724,7 @@ coastal launches we do not carry.
 
 ## Out of scope
 
-- **Derived ice classification / hatch layers → N6f.** Deferred on PR size, not principle; see D150.
+- **Derived ice classification / hatch layers → N6g.** Deferred on PR size, not principle; see D150.
 - **Paid imagery** (D147). No PlanetScope, no tasking. Revisit with users and a cost-sharing story.
 - **A base-map swap** (D146). There is no map-wide satellite mode, and no layer menu.
 - **Offline raster.** Imagery requires a connection. Mobile has NetInfo already
@@ -766,10 +786,20 @@ still settling**, which is the point of putting the seam here.
 > **The cost, stated plainly:** mobile skaters get the Copernicus deep link and no reveal until PR 3.
 > **The fallback if PR 3's clipping does not generalise:** Skia, revisited then rather than now.
 
-**PR 2 — the producer.** ⏳ *In progress.* Everything server-side and nothing a skater can see: the
-Fly box, the mask pre-bake, the granule transform, the masked PMTiles archive, STAC selection with its
-cloud gate, D149's weather gate and season turnover, and the provenance manifest. Ends by running the
-**single-season** backfill, so it is verified by an artifact you can open rather than by a screenshot.
+**PR 2 — the producer.** ⏳ *In progress.* **Everything server-side, so that PR 3 can be everything
+client-side** *(founder, 2026-08-25 — this is the seam, and it is what decides where a question
+belongs)*: the Fly box, the mask pre-bake, the granule transform, the masked PMTiles archive, STAC
+selection, D149's weather gate and season turnover, the provenance manifest, and **the Sentinel-1
+pipeline**. Ends by running the **single-season** backfill, so it is verified by an artifact you can
+open rather than by a screenshot.
+
+*Two changes from how this was originally written.* **The cloud gate is gone** — the founder's
+"cut and store everything, hit Copernicus once, own the pixels" (2026-08-24) replaced it with an
+empty-tile prefilter that removes ~51% of a season's jobs on geography rather than on weather. And
+**Sentinel-1 moved in here** rather than being deferred: *"S1 is a new imagery pipeline… it's
+Copernicus and all similar processing to what we've just built"* (founder, 2026-08-25). It is a
+separate STAC collection, a separate id grammar and a single-band transform, but every one of those is
+producer work, and splitting it out would put server-side code in a client-side PR.
 
 **PR 3 — the consumer.** The Convex read path, the web scrubber, the band selector, **mobile's
 reveal**, attribution, and the per-frame date and cloud caveat. Web and mobile belong together here:
@@ -782,7 +812,7 @@ under PR 1.
 is deliberately separate. Nothing user-facing.
 
 **PR 5 — what the archive knows.** The ice-coverage charts in the drawer and the live hatch layer —
-everything user-facing that reads what PR 4 derived. This is N6f's content, and D150's real home.
+everything user-facing that reads what PR 4 derived. This is N6g's content, and D150's real home.
 
 > #### 🔔 Founder ask, 2026-08-23 — notify on freeze-up, not just chart it
 >
@@ -845,21 +875,50 @@ makes PR 1 reviewable.*
 Machine for 25 hours costs what 25 Machines cost for one hour, and there is no spot or preemptible
 tier. Running the backfill slowly saves nothing.
 
-What saves money is **not booting a Machine for a frame we will discard**. STAC carries
-`eo:cloud_cover` in item metadata, so the filter runs in the *query* — free, before any compute
-exists. Measured against Earth Search over Champlain, Jan–Mar 2026: **only 3 frames under 15% cloud in
-ten weeks**, against many at 97–100%. If that ratio roughly holds, nine seasons' ~6,750 jobs becomes
-closer to 1,000.
+What saves money is **not booting a Machine for a frame we will discard**. That much held. *Which*
+frames to discard did not.
 
-Two smaller multipliers ride along: D149's freeze-to-thaw window already skips half the year, and the
-job is **~83% I/O-bound** (the first smoke run spent 9s reading and 6s uploading out of 18s), so
-dropping from `shared-cpu-4x` to `1x` costs materially less per second while barely moving wall time.
+> ### ⚠ The selection lever this section originally proposed was abandoned — read this before citing it
+>
+> This section argued for gating on STAC's `eo:cloud_cover`, and estimated that doing so would cut nine
+> seasons from ~6,750 jobs to ~1,000. **Both the lever and the number are dead**, for two separate
+> reasons, and the §C5 economics table now carries the measured figures.
+>
+> **The founder overrode the gate (2026-08-24):** *"Let's always cut & store all imagery regardless of
+> cloud cover. Then we know we have everything from Copernicus and we can rerun whatever we want on it
+> without hitting them again."* Cloud is a property of a *granule*, but usability is a property of a
+> *lake* — a pass 70% clouded over the White Mountains can be perfectly clear over Champlain, so a
+> granule-wide gate throws away the good lake with the bad one. Hitting the archive once and owning the
+> pixels makes every future re-derivation free.
+>
+> **And the ratio never held.** The "3 frames under 15% cloud in ten weeks" measurement was
+> Champlain-only and did not extrapolate: gating a real season at 60% cloud selected **2,560** of
+> 9,201 granules, not the ~110 the ~1,000-over-nine-seasons figure implied.
 
-**The gate wants to be generous**, for §C3's asymmetry: an over-eager gate wastes a few dollars of
-granule reads, while a strict one silently drops the frame that showed freeze-up. SCL may beat
-`eo:cloud_cover` later — ESA's scene classification knows cloud *over our specific lakes*, where a
-granule-wide percentage does not — but that is a refinement for after the first season teaches us
-something.
+**The lever that replaced it is geography, not weather.** Roughly half the MGRS tiles a season's search
+returns hold **no corpus body at all** — Ohio, Québec, the Atlantic, the Gulf of Maine. Emptiness is a
+property of the *tile*, so it is tested once per tile rather than once per granule: ~100 cheap local
+queries against the mask file remove ~51% of the Machines a backfill would otherwise boot only to exit
+0. Measured on winter 2025-26: **9,201 STAC items → 4,485 jobs**, with 4,574 dropped as empty-tile and
+142 as superseded reprocessings.
+
+That lever is strictly better than the cloud gate on both counts. It is **free** (the survey is cached
+and keyed to the corpus, so extending the corpus invalidates it by construction) and it is **lossless** —
+it discards only granules that contain nothing of ours, where the cloud gate discarded pictures of
+lakes we care about.
+
+**The real cost lever turned out to be neither.** RAM was 82% of everything the project had spent, and
+`FLY_VM_MEMORY` was set to 8192 while the largest granule in the corpus completes in 1024. See §C5.
+
+D149's freeze-to-thaw window still rides along, skipping half the year. **The "~83% I/O-bound, so drop
+to `shared-cpu-4x`→`1x`" note was wrong** — that reading came from a smoke test that fetched one band
+and did no masking. A real job is compute-bound in tiling, and CPU is the cheap half of the bill anyway.
+
+**Per-lake cloud beat `eo:cloud_cover` in the end, but as a recorded statistic rather than a gate.**
+Every frame's manifest now carries per-body `clearPct`, `coveragePct`, `icePct` and `waterPct` from
+ESA's scene classification — the "SCL may beat `eo:cloud_cover` later" refinement this section
+anticipated, arriving as data the consumer filters on instead of a decision the producer makes
+irreversibly.
 
 ---
 
@@ -918,9 +977,23 @@ something.
 
 *(None blocking. The phase is decided end-to-end; what remains is what a screen will tell us.)*
 
-1. **Hard edge vs. feathered rings** — build the inverse mask first, try the rings, keep whichever
-   survives being looked at (§A2).
-2. **Buffer distances per tier** — the starting numbers in §A1 are estimates, not measurements.
+**Resolved 2026-08-25 by PR 1 shipping** — both were "look at it and decide", and looking decided them:
+
+1. ~~**Hard edge vs. feathered rings**~~ — **neither won.** A third technique replaced both: the web
+   reveal punches the alpha channel of the fetched photograph on a canvas, so the feather is a true
+   per-pixel ramp rather than a stack of stepped fills. `packages/core/src/imageryMask.ts` records the
+   retirement — *"`inverseMask`, `featherRings` and the stacked-opacity arithmetic are gone"* — and with
+   them went the `fill-opacity: 0.999` gotcha §A2 warned would bite again. It cannot; there is no fill.
+   The baked-alpha choice for Tier 2 is unaffected and is what PR 2 built.
+2. ~~**Buffer distances per tier**~~ — **measured by looking, then frozen as constants.**
+   `AERIAL_MASK_METERS = { solid: 20, feather: 80 }` and `SENTINEL_MASK_METERS = { solid: 60,
+   feather: 240 }`. The numbers moved once, on the founder seeing the first render: *"the feathering is
+   too minimal — I think we could go to 20 m solid and a much wider feather."* The Sentinel pair also
+   travels in the mask sidecar, so the container never holds its own copy of a tuned constant.
+
+**Still open, and it is PR 3's:**
+
 3. **Whether the aerial and the scrubber ever want separate affordances** after both are on screen
    together. One control is the intent; if it reads as two features wearing one switch, that is worth
-   revisiting *after* seeing it, not before.
+   revisiting *after* seeing it, not before. **This could not be answered by PR 1** — it needs the
+   scrubber, which is PR 3, so it moves there rather than staying here.

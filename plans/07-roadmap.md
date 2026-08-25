@@ -1346,7 +1346,7 @@ three ways, so the doc was rewritten rather than patched.*
   season boundary is right for reports and absurd for imagery — it would blank the scrubber in
   midsummer. Last winter's frames stay live until the first frame of the new winter lands; in a warm
   year that flips late, by itself.
-- **Ice classification is an observation, never counsel (D150) — deferred to N6f.** The band data (SCL,
+- **Ice classification is an observation, never counsel (D150) — deferred to N6g.** The band data (SCL,
   NDSI, SWIR) is where the real signal is, and ESA computes the snow/ice classification for us inside
   L2A. Amended onto D140's line: dated per-pass classification is permitted, the hop to *skateable*
   is not. **Capture the bands during N6e's reads anyway** — re-fetching a season later is the

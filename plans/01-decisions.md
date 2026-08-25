@@ -4685,7 +4685,7 @@ one that fills over three weeks.
 
 ---
 
-## D150 — Derived ice classification is an **observation**, never counsel (N6e → N6f)
+## D150 — Derived ice classification is an **observation**, never counsel (N6e → N6g)
 
 **2026-08-21, founder call.** *"I'm picturing vector lines/hatches drawn in-app over the non-satellite
 polygon derived from the latest imagery passes."* And, on the framing: *"I do [accept it]! I don't think
@@ -4708,7 +4708,7 @@ and the claim D3 forbids are separated by the sensor itself.
 **No warning copy — the date is the caveat.** A banner would be furniture; the frame's own timestamp,
 carried per frame rather than around the control, is the honest version and is already required by D84.
 
-**Deferred to N6f on PR size, not principle.** N6e already carries the reveal on two clients, mask and
+**Deferred to N6g on PR size, not principle.** N6e already carries the reveal on two clients, mask and
 feather geometry, the NAIP tier, the granule pipeline, our first owned infrastructure, the archive, the
 scrubber and the four pieces D138 moved in. Classification is a downstream consumer of that pipeline, so
 deferring costs nothing structurally. **Capture the SCL and SWIR bands during N6e's granule reads

@@ -15,8 +15,10 @@
  * `maxCloudPct` remains an option and still works; it just no longer has a default. **Measured cost of
  * the override:** one season goes from 2,560 granules to 8,892, a 3.47× multiplier.
  *
- * The cheap lever that replaced it is `emptyTiles` — see below. It removes ~44% of jobs without
- * discarding a single frame, which the cloud gate could not claim.
+ * The cheap lever that replaced it is `emptyTiles` — see below. It removes **~50%** of jobs without
+ * discarding a single frame, which the cloud gate could not claim. Measured over the full winter
+ * 2025-26 window: 9,201 STAC items → **4,485** selected, with 4,574 dropped as empty-tile and 142 as
+ * superseded reprocessings.
  *
  * ## The original argument, retained
  *
@@ -43,6 +45,35 @@
  * SCL band knows cloud **over our specific lakes**. A granule 80% clouded over the White Mountains
  * may be perfectly clear over Champlain. That is a better gate and it costs a granule read to
  * evaluate, so it belongs after the first season has taught us what the crude one actually costs.
+ *
+ * *(That refinement has since landed, as a statistic rather than a gate: every manifest now carries
+ * per-body `clearPct`, `coveragePct`, `icePct` and `waterPct`, so the consumer filters on what was
+ * actually visible over each lake and the producer never discards a frame irreversibly.)*
+ *
+ * ## ⚠ Sentinel-1 ids are rejected here as `unparseable`, and that is not a bug yet
+ *
+ * `GRANULE_ID` below matches `^(S2[A-D])_…` — **Sentinel-2 only**. Feed this a Sentinel-1 id such as
+ * `S1A_IW_GRDH_1SDV_20260213T224345_…` and it does not fall through to some generic path; it is
+ * counted under `unparseable` and dropped, silently as far as the caller is concerned.
+ *
+ * That is deliberate for now and is *not* a deferral out of the phase — **S1 is PR 2 work** (founder,
+ * 2026-08-25: *"S1 is a new imagery pipeline… it's Copernicus and all similar processing to what
+ * we've just built"*), so this file will grow a second grammar rather than stay S2-only. Three things
+ * have to move together when it does, and none of them are this regex alone:
+ *
+ * 1. **A different id grammar.** S1 ids carry an acquisition *timestamp* and a mode/polarisation
+ *    (`IW`, `1SDV`), not the `<tile>_<date>_<version>` triple `GranuleKey` assumes. The
+ *    superseded-reprocessing dedup keys off `tile + date`, and S1 has no MGRS tile — so
+ *    `supersededIds` needs an S1-aware key or it will silently dedup nothing.
+ * 2. **A different collection.** `sentinel-1-grd` on Earth Search, whose assets are `s3://` hrefs into
+ *    `sentinel-s1-l1c` (anonymously readable over HTTPS, measured 2026-08-24) rather than the
+ *    `sentinel-cogs` public bucket.
+ * 3. **⚠ Polarisation is not uniform across passes.** A season over the same ground mixes `VV/VH` and
+ *    `HH/HV` acquisitions. Backscatter is not comparable between them, so selection must *filter* to
+ *    one polarisation rather than take whatever the search returns — otherwise a timeline renders an
+ *    instrument difference as an ice change. The same caution applies to mixing orbit directions
+ *    (ascending/descending differ in incidence angle) and, for absolute values, to mixing S1A with
+ *    S1C without calibrating to sigma0: measured offsets are +1.01 dB (VV) and +2.17 dB (VH).
  */
 
 import type { MultiPolygon, Polygon } from 'geojson';
