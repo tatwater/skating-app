@@ -5,7 +5,7 @@ PR 3 worktree and whose §0–§4 are now **done**. That file is still worth rea
 N6f label) and §7 (the split-body contract); this one is what a new thread needs to avoid repeating
 work or repeating mistakes.
 
-**Branch:** `phase-n6e-satellite-imagery-2`, 17 commits ahead of `main`, nothing pushed.
+**Branch:** `phase-n6e-satellite-imagery-2`, ~28 commits ahead of `main`, **nothing pushed**.
 
 ---
 
@@ -219,6 +219,34 @@ Fly ceiling, and per-second billing with no barrier means concurrency is free.
 
 **A season's wall clock: ~7.4h → ~1.7h** (4,485 ÷ 50 × 67s). `.env.local` now carries `MAX_PARALLEL=50`.
 
+> #### ⚠ …but on a multi-wave run the cap is not accurate — 58–71 observed against 50
+>
+> It held at exactly 50 for the single-wave test above and drifted high across the season backfill.
+> **Two things compound.** `await_capacity` polls `fly machine list` and then spawns a batch, so a
+> spawn issued since the last poll is not yet in the count it acted on; and the spawn calls run as
+> background subshells capped at `MAX_PARALLEL` *spawn calls* rather than at Machines, so up to 50 can
+> be in flight while the count still reflects the world before them. Overshoot is bounded by about a
+> batch plus whatever is in flight, which matches the observed +8 to +21 against a `BATCH` of 12.
+>
+> **The fix is to wait for the batch's spawn calls to return before polling.** `fly machine run
+> --detach` returns once the Machine is *created*, so once every call in a batch has returned,
+> `fly machine list` has seen every Machine we asked for and the next poll is accurate — which puts
+> the peak at exactly `MAX_PARALLEL` and makes 70 something you can *set* rather than stumble into.
+>
+> ```diff
+> -  (( SPAWNED % BATCH == 0 )) && await_capacity
+> +  (( SPAWNED % BATCH == 0 )) && { wait; running=0; await_capacity; }
+> ```
+>
+> ⚠ **Not applied while the backfill was running.** `backfill.sh` re-invokes `fan-out.sh` every
+> reconcile round, and **bash reads a script incrementally rather than loading it whole** — editing a
+> file mid-execution can resume the running shell at a byte offset that is now the middle of a
+> different line. Apply after the run, then confirm the live count on a multi-wave run before raising
+> the cap.
+>
+> **Nothing was harmed:** billing is per-second, no jobs dropped, the run simply went faster. The
+> reason to fix it is that a cap you cannot predict is not a cap.
+
 ### ⚠ Five granules failed, and they were the five worth having
 
 The first pass landed 45 of 50. The five missing were **not** empty — they held **1,767–2,277 bodies
@@ -331,6 +359,47 @@ non-AWS dependency — evaluate then.
 
 ---
 
+## 4e. Ground truth — ✅ **2026-08-25**, two lakes the founder skates every year
+
+> **Founder:** *"Lake Morey in VT and Mascoma Lake in NH… those two would show open-water → full-freeze
+> → thaw within our seasonal window, every season, because I skate them every year."*
+
+Both lakes sit on tile 18TYP. All 45 of that tile's granules for the season were cut, and the per-body
+`icePct`/`waterPct` read out as an ice **share** — `ice / (ice + water)`, so cloud reduces confidence
+rather than faking a thaw.
+
+| | Lake Morey (VT), 223 ha, 12.9 m | Mascoma Lake (NH), 462 ha, 24.1 m |
+| --- | --- | --- |
+| 2025-11-22 | 0% | 0% |
+| 2025-12-22 | **61%** ← freeze-up | 3% |
+| 2026-01-11 / 16 | — | 30% / 20% |
+| 2026-02-05 | 97% | **99%** ← freeze-up |
+| 2026-03-02 | 99% | 99% |
+| 2026-03-17 | **0%** ← ice-out | **1%** ← ice-out |
+
+**The detail that says this is measuring physics rather than noise: Morey froze about a month before
+Mascoma**, which is what half the area and half the depth predicts — less thermal mass. Both went out
+in the same March window, which is also right, since ice-out is driven by sun and air temperature and
+is far more synchronous than freeze-up. **Nothing in the pipeline knows a lake's area or depth**; that
+ordering fell out of the pixels. Confirmed visually too: the same footprint reads dark open water on
+22 Nov and uniform white snow-covered ice on 2 Mar.
+
+**Three caveats, and they sharpen §C1 rather than contradict it:**
+
+- **Only 24–27% of frames are usable** (11 of 45 for Morey, 12 for Mascoma, at `clearPct ≥ 0.5`).
+  Transitions come out **bracketed, not dated**: Morey's freeze-up sits in a 30-day gap, Mascoma's in a
+  20-day gap, both ice-outs in 15 days. ⚠ **PR 5's "just reached 100% ice coverage" phrasing has to
+  survive that** — D151's observed-date framing is doing real work here, not hedging.
+- **Mascoma reads 9.7% ice on 8 Apr**, after ice-out. That is the noise floor of SCL class 11.
+- **The 22 Nov Morey frame carries visible haze that SCL called 99% clear.** It did not corrupt the ice
+  number — haze is not class 11 — but the cloud mask is not infallible.
+
+**A corpus note found on the way:** Mascoma is typed `reservoir` and Morey `lakePond`, and four
+unnamed NHD `wetland` polygons sit adjacent to Mascoma. Nothing broke, but a name search for Mascoma
+returns neighbours.
+
+---
+
 ## 5. Founder decisions already made — do not reopen
 
 - **Cut and store everything; no cloud gate.** Hit Copernicus once, own the pixels, so re-derivation is
@@ -338,9 +407,17 @@ non-AWS dependency — evaluate then.
 - **SAR: pilot one season first.** Build the S1 path, run winter 2025-26, measure cost *and* whether
   SAR is legible over our lakes, then decide on more. **Not built** — `granuleSelection` matches
   `^(S2[A-D])_…` so S1 ids are currently rejected as `unparseable`.
-- **Ice classification folds into N6g**, not a new N6f/N6h. Three files still defer it to "N6f", a
-  label the shipped public-access phase already holds: `plans/01-decisions.md:4688` (D150's title),
-  `plans/07-roadmap.md:1349`, and several §C1/§C5 references in the N6e doc. **Not yet updated.**
+- **Ice classification folds into N6g**, not a new N6f/N6h. ✅ **Applied 2026-08-25** — seven
+  references across `01-decisions.md` (including D150's title), `07-roadmap.md` and the N6e doc. N6f
+  remains the shipped public-access phase and keeps its own references in `phase-N7b`.
+- **PR 2 is everything server-side, so PR 3 can be everything client-side** *(founder, 2026-08-25)*.
+  That seam is what decides where a question belongs — and it moved **Sentinel-1 into PR 2**:
+  *"S1 is a new imagery pipeline… it's Copernicus and all similar processing to what we've just
+  built."* Separate collection, separate id grammar, single-band transform; all of it producer work.
+- **The season watcher starts in October, not September** *(founder, 2026-08-25)*: *"I don't think
+  anyone skates anywhere before November, so an Oct 1 start gives us plenty of time to catch extended
+  freezing temps."* §C3's summit trigger can fire in August on Mt Washington; the calendar floor is an
+  outer bound on nonsense, not a second gate.
 - **Fewer seasons is acceptable.** One may be all we do for a while. **Settled 2026-08-24: the first
   real backfill is winter 2025-26 only**, then decide.
 - **Store the RESULTS, not the raw granules** (2026-08-24, closing §8's first open question). Raw is
@@ -425,24 +502,35 @@ Also done 2026-08-24 (see §4b, §4c):
   +24% job time and +33% storage.
 - ✅ **`select-granules` re-run** — the stale 2,560 list is replaced with the real **4,485**.
 
-### Ready to run
+Done 2026-08-25:
 
-| | |
-| --- | --- |
-| image | `deployment-01M0V4XY74HSXFZPC7YGYTZ6YX` (tiler + `--slurpfile` + ice/water) |
-| granules | 4,485 (`.scratch/granules-2025-11-01-to-2026-05-05.txt`) |
-| settings | `MAX_PARALLEL=50`, `FLY_VM_MEMORY=2048`, `MASK_SEASON=winter-2026-27` |
-| estimate | **~1.7h, ~$1.46, ~19 GB** |
+- ✅ **The single-season backfill ran** — winter 2025-26, 4,485 granules, on
+  `deployment-01M0V4XY74HSXFZPC7YGYTZ6YX` at `MAX_PARALLEL=50` / 2048 MB. The frame prefix was purged
+  first so the season carries one schema throughout; the 95 frames cut earlier that day were by three
+  different images and only two had `icePct`.
+- ✅ **Validated against ground truth before committing to the run.** Lake Morey (VT) and Mascoma Lake
+  (NH), two lakes the founder skates every year — see §4e.
+- ✅ **The N6e doc caught up with the code** — §C5's economics, the selection-problem section, PR 2's
+  definition, PR 1's open questions, and the N6f→N6g label collision.
+- ✅ **The October season watcher** — `convex/imageryIngest.ts` + a daily cron. `ingestGate` moved to
+  `packages/core` so the cron and the CLI share one definition of when winter started, and
+  `archiveSeasonLabel`/`archiveSeasonAt` collapsed the `winter-YYYY-YY` construction that had been
+  written twice in TypeScript.
 
-⚠ The 50 frames already in R2 were cut by three different images and only two carry `icePct`. The
-season run re-cuts every id in the list, so the schema converges — but do not build the index off the
-current mixed set.
+Left:
 
-Left after the backfill:
+1. **The `fan-out.sh` throttle fix** (§4b) — one line, deliberately deferred until the run finished
+   because bash reads a running script incrementally. Then a multi-wave check, and `MAX_PARALLEL` can
+   be set deliberately (70 was the founder's suggestion) rather than drifting.
+2. **Sentinel-1 — now PR 2 work, not a separate lane** *(founder, 2026-08-25)*. Scope it as calibrated
+   sigma0 in **VH**, not a band swap: §4c found VV cannot separate ice from calm water while VH shows
+   ~2 dB on lakes that actually freeze. `granuleSelection`'s module doc lists what has to move — a
+   second id grammar with no MGRS tile to dedup on, a different collection and bucket, and the trap
+   that a season mixes VV/VH with HH/HV acquisitions whose backscatter is not comparable.
+3. **Push and open the PR.** Nothing is pushed yet.
 
-1. **S1 pilot** in VH (§4c) — independent of everything above.
-2. **N6g label fixes** in the three files listed in §5.
-3. Consider whether `MAX_PARALLEL` should go higher still — 50 was proven, 100 was never tried.
+Not PR 2, and now written down as such: the split-body seam and the aerial-vs-scrubber affordance
+question are PR 3's; ice classification is N6g's.
 
 ## 7b. Is the architecture flexible? Yes, and in the direction that matters
 
