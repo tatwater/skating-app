@@ -24,6 +24,8 @@ function fakeMap() {
   const layers = new Map<string, unknown>();
   const handlers = new Map<string, ((event: unknown) => void)[]>();
   const paint: Record<string, unknown> = {};
+  /** Which sources MapLibre would report as loaded. */
+  const loadedSources = new Set<string>();
   /** Every add/remove in order, so "layer before source" is assertable rather than assumed. */
   const ops: string[] = [];
 
@@ -32,6 +34,7 @@ function fakeMap() {
     layers,
     paint,
     ops,
+    loadedSources,
     emit(type: string, event: unknown) {
       for (const fn of handlers.get(type) ?? []) fn(event);
     },
@@ -39,6 +42,7 @@ function fakeMap() {
       getStyle: () => ({ layers: [{ id: 'water' }, { id: 'roads_minor' }] }),
       getLayer: (id: string) => (layers.has(id) ? {} : undefined),
       getSource: (id: string) => (sources.has(id) ? {} : undefined),
+      isSourceLoaded: (id: string) => loadedSources.has(id),
       addSource: (id: string, spec: { type: string; url: string; tileSize?: number }) => {
         sources.set(id, spec);
         ops.push(`+source:${id}`);
@@ -60,6 +64,7 @@ function fakeMap() {
       },
       on: (type: string, fn: (event: unknown) => void) => {
         handlers.set(type, [...(handlers.get(type) ?? []), fn]);
+        ops.push(`+listen:${type}`);
       },
       off: (type: string, fn: (event: unknown) => void) => {
         handlers.set(
@@ -118,8 +123,9 @@ describe('useFreezeUpFrame — the reveal', () => {
 
   it('fades in when its own source reports loaded', () => {
     const harness = fakeMap();
+    harness.loadedSources.add(FREEZE_UP_SOURCE_ID);
     mount(harness, frame());
-    harness.emit('sourcedata', { sourceId: FREEZE_UP_SOURCE_ID, isSourceLoaded: true });
+    harness.emit('sourcedata', { sourceId: FREEZE_UP_SOURCE_ID });
     expect(harness.paint['raster-opacity']).toBe(1);
   });
 
@@ -128,23 +134,24 @@ describe('useFreezeUpFrame — the reveal', () => {
     // tiles have not arrived — the flash the zero-opacity mount exists to prevent.
     const harness = fakeMap();
     mount(harness, frame());
-    harness.emit('sourcedata', { sourceId: 'basemap', isSourceLoaded: true });
+    harness.emit('sourcedata', { sourceId: 'basemap' });
     expect(harness.paint['raster-opacity']).toBeUndefined();
   });
 
   it('does not reveal on a partial load', () => {
     const harness = fakeMap();
     mount(harness, frame());
-    harness.emit('sourcedata', { sourceId: FREEZE_UP_SOURCE_ID, isSourceLoaded: false });
+    harness.emit('sourcedata', { sourceId: FREEZE_UP_SOURCE_ID });
     expect(harness.paint['raster-opacity']).toBeUndefined();
   });
 
   it('reveals once, not on every subsequent tile', () => {
     const harness = fakeMap();
+    harness.loadedSources.add(FREEZE_UP_SOURCE_ID);
     mount(harness, frame());
-    harness.emit('sourcedata', { sourceId: FREEZE_UP_SOURCE_ID, isSourceLoaded: true });
+    harness.emit('sourcedata', { sourceId: FREEZE_UP_SOURCE_ID });
     harness.paint['raster-opacity'] = 'untouched';
-    harness.emit('sourcedata', { sourceId: FREEZE_UP_SOURCE_ID, isSourceLoaded: true });
+    harness.emit('sourcedata', { sourceId: FREEZE_UP_SOURCE_ID });
     expect(harness.paint['raster-opacity']).toBe('untouched');
   });
 });
@@ -185,7 +192,8 @@ describe('useFreezeUpFrame — scrubbing and teardown', () => {
     const harness = fakeMap();
     const { unmount } = mount(harness, frame());
     unmount();
-    harness.emit('sourcedata', { sourceId: FREEZE_UP_SOURCE_ID, isSourceLoaded: true });
+    harness.loadedSources.add(FREEZE_UP_SOURCE_ID);
+    harness.emit('sourcedata', { sourceId: FREEZE_UP_SOURCE_ID });
     expect(harness.paint['raster-opacity']).toBeUndefined();
   });
 });
@@ -200,5 +208,39 @@ describe('useFreezeUpFrame — attribution', () => {
     expect((harness.sources.get(FREEZE_UP_SOURCE_ID) as { attribution?: string }).attribution).toBe(
       'Copernicus Sentinel data 2025–2026',
     );
+  });
+});
+
+describe('useFreezeUpFrame — the load race', () => {
+  it('⚠ reveals a source that was already loaded when the layer mounted', () => {
+    // Observed live 2026-08-25: registering the listener *after* `addSource` lost the race whenever
+    // the source resolved quickly, so the frame sat at zero opacity until a camera move produced a
+    // second `sourcedata`. The symptom is the cruellest available — it looks like the archive is
+    // broken, and the fix is a zoom nobody thinks to try.
+    const harness = fakeMap();
+    harness.loadedSources.add(FREEZE_UP_SOURCE_ID);
+    mount(harness, frame());
+
+    // No event emitted at all. The synchronous check is what has to carry this.
+    expect(harness.paint['raster-opacity']).toBe(1);
+  });
+
+  it('listens before it adds, so an event during addSource is not missed', () => {
+    const harness = fakeMap();
+    mount(harness, frame());
+    const listenIndex = harness.ops.indexOf('+listen:sourcedata');
+    const addIndex = harness.ops.indexOf(`+source:${FREEZE_UP_SOURCE_ID}`);
+    expect(listenIndex).toBeGreaterThanOrEqual(0);
+    expect(listenIndex).toBeLessThan(addIndex);
+  });
+
+  it('still reveals on a later event when the source was not ready at mount', () => {
+    const harness = fakeMap();
+    mount(harness, frame());
+    expect(harness.paint['raster-opacity']).toBeUndefined();
+
+    harness.loadedSources.add(FREEZE_UP_SOURCE_ID);
+    harness.emit('sourcedata', { sourceId: FREEZE_UP_SOURCE_ID });
+    expect(harness.paint['raster-opacity']).toBe(1);
   });
 });

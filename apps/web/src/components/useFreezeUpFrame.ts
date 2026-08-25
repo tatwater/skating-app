@@ -80,6 +80,29 @@ export function useFreezeUpFrame({
     const sourceId = sourceIdFor(slot);
     const layerId = layerIdFor(slot);
     const url = `pmtiles://${archiveUrl(baseUrl, key)}`;
+
+    // ⚠ **Listen before adding, or the event that matters has already gone.**
+    //
+    // Registering after `addSource` loses the race whenever the source resolves quickly — a warm
+    // pmtiles header, a cached range read — and the layer then sits at zero opacity until *something
+    // else* makes MapLibre re-emit. Observed live 2026-08-25: nothing appeared until the camera
+    // moved, at which point the new tile loads produced a second `sourcedata` and the frame revealed.
+    //
+    // The symptom is the cruellest available, because it looks like the archive is broken and the
+    // fix is a zoom nobody thinks to try.
+    let revealed = false;
+    const reveal = () => {
+      if (revealed || !map.getLayer(layerId) || !map.getSource(sourceId)) return;
+      if (!map.isSourceLoaded(sourceId)) return;
+      revealed = true;
+      map.setPaintProperty(layerId, 'raster-opacity', 1);
+    };
+    const onSourceData = (event: maplibregl.MapSourceDataEvent) => {
+      if (event.sourceId !== sourceId) return;
+      reveal();
+    };
+    map.on('sourcedata', onSourceData);
+
     map.addSource(sourceId, {
       type: 'raster',
       url,
@@ -110,18 +133,12 @@ export function useFreezeUpFrame({
       insertBeforeLayerId(map),
     );
 
-    // Gate the fade on this source reporting, never on `idle` — see the module note.
-    let revealed = false;
-    const reveal = (event: maplibregl.MapSourceDataEvent) => {
-      if (revealed || event.sourceId !== sourceId || !event.isSourceLoaded) return;
-      if (!map.getLayer(layerId)) return;
-      revealed = true;
-      map.setPaintProperty(layerId, 'raster-opacity', 1);
-    };
-    map.on('sourcedata', reveal);
+    // And ask once directly, for the case where it loaded between `addSource` and here. The event is
+    // the async path; this is the synchronous one, and needing both is what the race above means.
+    reveal();
 
     return () => {
-      map.off('sourcedata', reveal);
+      map.off('sourcedata', onSourceData);
       // Order matters: a source with a layer still attached throws on removal.
       if (map.getLayer(layerId)) map.removeLayer(layerId);
       if (map.getSource(sourceId)) map.removeSource(sourceId);
