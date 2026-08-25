@@ -1031,6 +1031,28 @@ export default defineSchema({
     externalId: v.string(),
   }).index('by_external_id', ['source', 'externalId']),
 
+  // When each imagery season's ingest window opened (N6e §C3 / D149). One row per season, written
+  // once by `imageryIngest.maybeCheckSeasonOpen` and never revised — the gate is a judgement made on
+  // the observations available at the time, and re-deciding it later with more data would silently
+  // rewrite the reason a backfill was started.
+  //
+  // ⚠ **This records that we should START LOOKING, not that the archive turned over.** D149 keeps
+  // those separate on purpose: weather opens the window, and the first frame actually showing ice is
+  // what flips the app to the new season (`latestSeasonWithFrames`). A row here with no frames behind
+  // it is the normal state for days or weeks.
+  imageryIngestSeasons: defineTable({
+    season: v.string(), // `winter-YYYY-YY`, D63's July boundary
+    /** Observed date the gate opened — from the weather series, not the date we noticed. */
+    opensOn: v.string(),
+    /** `sentinel` (the summit pond), `corpus` (the region-wide signal), or both on the same day. */
+    openedBy: v.array(v.string()),
+    /** First date the region itself froze, or `null` if winter had not established yet. */
+    winterFrom: v.union(v.string(), v.null()),
+    /** How many sites actually returned observations — the honest denominator for `openedBy`. */
+    sitesSampled: v.number(),
+    detectedAt: v.number(),
+  }).index('by_season', ['season']),
+
   // Per-state distribution basis for the derived caption (N6c A5). **One row per state**, holding
   // the 10th–90th percentiles of each metric across that state's listed bodies.
   //

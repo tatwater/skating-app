@@ -103,7 +103,7 @@ export interface PutInMarker {
  * writes a `derived` row any more. The reader stays because rows written by the old path exist on dev
  * and a marker vanishing is precisely the outcome all of this was trying to prevent.
  */
-async function loadPutInRows(ctx: QueryCtx, waterBodyId: Id<'waterBodies'>) {
+export async function loadPutInRows(ctx: QueryCtx, waterBodyId: Id<'waterBodies'>) {
   const rows = await ctx.db
     .query('putIns')
     .withIndex('by_water_body', (q) => q.eq('waterBodyId', waterBodyId))
@@ -134,8 +134,16 @@ function approachOf(row: Doc<'putIns'>): {
   };
 }
 
-/** Is `coord` within the suppression radius of any moderator-hidden coord? */
-function isSuppressed(coord: LatLng, hidden: Doc<'putIns'>[]): boolean {
+/**
+ * Is `coord` within the suppression radius of any moderator-hidden coord?
+ *
+ * Exported because a hidden coordinate has to suppress its neighbours **everywhere the coordinate is
+ * read**, not only in `listForBody`. The imagery reveal mask (`imageryMasks`) buffers put-ins into the
+ * shape a satellite photograph is allowed to show through, so a marker this predicate would hide on
+ * the map but not in the bake would reveal the ground anyway — the same suppression, defeated by the
+ * slower path.
+ */
+export function isSuppressed(coord: LatLng, hidden: Doc<'putIns'>[]): boolean {
   return hidden.some((h) => haversineMeters(coord, h.coord) <= HIDE_SUPPRESS_METERS);
 }
 
