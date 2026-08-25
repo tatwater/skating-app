@@ -20,6 +20,7 @@ import {
   approachesToFeatureCollection,
   approachLinePaint,
   type BBox,
+  formatSeasonLabel,
   framesToRender,
   isRegionOffscreen,
   prefetchFrames,
@@ -32,10 +33,9 @@ import { useQuery } from 'convex/react';
 import * as Location from 'expo-location';
 import { useRouter } from 'expo-router';
 import type { MultiPolygon, Polygon } from 'geojson';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { NativeSyntheticEvent } from 'react-native';
 import { StyleSheet, Text, useColorScheme, useWindowDimensions, View } from 'react-native';
-import { Button, YStack } from 'tamagui';
 import { cacheBody } from '../lib/bodyCache';
 import {
   CONTOUR_BEFORE_LAYER_ID,
@@ -95,6 +95,7 @@ import {
 } from '../lib/waterMap';
 import { FreezeUpFrames } from './FreezeUpFrames';
 import { FreezeUpScrubber } from './FreezeUpScrubber';
+import { ImageryDock } from './ImageryDock';
 import { coveredFractionForIndex, DRAWER_PEEK } from './MapDrawer';
 import { useMapSelection } from './MapSelectionContext';
 import { ReturnToRegion } from './ReturnToRegion';
@@ -170,6 +171,7 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
     setPutInPin,
     setPinDropMode,
     drawerCoveredFraction,
+    requestDrawerPeek,
     hazardDraft,
     setHazardDraft,
     hazardDraftType,
@@ -331,6 +333,12 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
   const [imageryOn, setImageryOn] = useState(false);
   const [freezeUpBand, setFreezeUpBand] = useState('visual');
   const [freezeUpStop, setFreezeUpStop] = useState<number | null>(null);
+  /**
+   * The capture date behind the current selection, so a band switch can land near where the skater
+   * was rather than at the end of the season (founder, 2026-08-26). Held as a date because that is
+   * what a scrubber position *is* — an index into one band's stops means nothing against another's.
+   */
+  const [freezeUpAnchorAt, setFreezeUpAnchorAt] = useState<string | null>(null);
   const timelineBody = useQuery(
     api.waterBodies.get,
     imageryOn && highlightWaterBodyId
@@ -363,13 +371,68 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
   // of cloud should feel like passing over dates, not like the feature switching itself off. Held in
   // a ref because it is the *previous* render's answer, which is not derivable from this one.
   const heldFramesRef = useRef<RenderedFrames | null>(null);
+  // `imageryOn` is passed for the same reason web passes it — see `framesToRender`. Mobile unmounts
+  // `FreezeUpFrames` with the toggle so the layers go anyway, but a hold that survives the toggle
+  // would show the old picture for a frame on the way back in, and the scrubber's caption reads off
+  // this too.
   const freezeUpRendered = framesToRender(
     freezeUpTimeline?.stops ?? [],
     freezeUpStop,
     heldFramesRef.current,
+    imageryOn,
   );
   heldFramesRef.current = freezeUpRendered;
   const freezeUpSelected = freezeUpRendered.primary;
+
+  /**
+   * Choosing a stop also records **when** it was, which is the part that survives a band switch.
+   *
+   * Read off the timeline rather than the scrubber, because the scrubber reports an index and this
+   * has to be a date — see `nearestLandableStopToDate`. Set on every selection, including the
+   * automatic one, so the anchor is always the position actually on screen.
+   */
+  const selectFreezeUpStop = useCallback(
+    (index: number) => {
+      setFreezeUpStop(index);
+      const at = freezeUpTimeline?.stops[index]?.frame.capturedAt;
+      if (at) setFreezeUpAnchorAt(at);
+    },
+    [freezeUpTimeline],
+  );
+
+  // ⚠ A held frame does not survive a **new lake**, though it does survive a new band on the same one
+  // — carried across lakes it would leave one lake's photograph under a scrubber captioned for
+  // another, which is the D84 failure the holding was written to avoid, one level up.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: dropping the hold *because* the lake changed is the point.
+  useEffect(() => {
+    heldFramesRef.current = null;
+    // ⚠ **And the anchor goes with it, so a new lake still opens on its most recent pass.** The
+    // anchor exists to survive a *band* switch, where the skater is asking the same question of a
+    // different instrument. Opening a lake is a different question — "a skater asking about a lake is
+    // asking about now" — and carrying February across would answer the one they did not ask.
+    setFreezeUpAnchorAt(null);
+  }, [highlightWaterBodyId]);
+
+  // Where the imagery dock sits, and whether the timeline fits there at all.
+  //
+  // ⚠ **`drawerCoveredFraction` only updates when the sheet *settles*** (`onChange`), never during the
+  // drag. That is the right trade here: a dock chasing a finger mid-drag would animate its own grow
+  // against the sheet's motion, and the two would fight. It does mean the button is briefly under a
+  // sheet being dragged upward, which resolves the moment it lands.
+  const sheetIsClear = drawerCoveredFraction <= coveredFractionForIndex(DRAWER_PEEK);
+  // 140 is the floor the scrubber has always used — clear of the peek on ordinary phones and of
+  // `OnIceModeControl` at 132. On a tall screen the peek is itself taller than that, so the sheet's
+  // own height wins; above the peek the dock rides on the sheet's top edge (rule 1 in `ImageryDock`).
+  //
+  // ⚠ **And it stops climbing before it reaches the search box.** At the sheet's tallest detent there
+  // is ~6% of screen left, which `LakeSearch` and `BackToLakeButton` already own; riding the edge up
+  // there would park the dock on top of them. Clamped, it slides behind the sheet instead — the same
+  // thing that happened to this button when it lived at y=168, and the honest outcome when the skater
+  // has pulled the map almost entirely off screen.
+  const dockBottom = Math.min(
+    windowHeight - 212,
+    Math.max(140, drawerCoveredFraction * windowHeight + 16),
+  );
 
   // Warm the season's frames once the timeline appears, so scrubbing does not start a cold load per
   // notch. Header ranges only — see `prefetchFrames`. Aborted when the lake or band changes, so a
@@ -976,67 +1039,49 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
         ) : null}
       </MapGL>
       {/* One control per lake (D146), on the map rather than in the sheet — the sheet is the thing
-          the map is behind, so a control for the map cannot live inside it. Top-right, clear of
-          `BackToLakeButton` at y=112 and of the scrubber panel below. */}
-      {highlightWaterBodyId && !hazardDraft ? (
-        <Button
-          position="absolute"
-          // ⚠ Below `LakeSearchBox`, which spans the full width at the top inset, and below
-          // `BackToLakeButton` at 112. Observed on device 2026-08-25 sitting on the search input.
-          top={168}
-          right={16}
-          zIndex={30}
-          size="$3"
-          backgroundColor={imageryOn ? '$primary' : '$surface'}
-          color={imageryOn ? '$primaryForeground' : '$foreground'}
-          borderColor="$border"
-          borderWidth={1}
-          onPress={() => setImageryOn((on) => !on)}
-          accessibilityLabel={imageryOn ? 'Hide satellite imagery' : 'Show satellite imagery'}
-        >
-          {imageryOn ? 'Hide imagery' : 'Show imagery'}
-        </Button>
-      ) : null}
+          the map is behind, so a control for the map cannot live inside it. Toggle and timeline are
+          the same box now (founder, 2026-08-25); `ImageryDock` holds the reasoning.
 
-      {/* The scrubber, over the map for the same reason. Bottom-left, above the sheet's collapsed
-          height — D146's call is that the skater collapses the sheet to reach this without losing
-          the lake they were reading about. */}
-      {env.imageryArchiveUrl &&
-      imageryOn &&
-      highlightWaterBodyId &&
-      !hazardDraft &&
-      // ⚠ **The drawer takes the map back.** D146 says the skater *collapses* the sheet to reach this
-      // — so once it is pulled up to read about the lake, the scrubber goes rather than floating over
-      // drawer content it has nothing to do with. Peek and closed are the states where the map is
-      // what is being looked at; anything above that is not.
-      drawerCoveredFraction <= coveredFractionForIndex(DRAWER_PEEK) ? (
-        <YStack
-          position="absolute"
-          bottom={140}
-          left={16}
-          right={16}
-          // Under the drawer rather than over it, so the hide above is a design choice and not the
-          // only thing standing between a skater and a control drawn on top of their reading.
-          zIndex={20}
-          padding="$3"
-          borderRadius="$4"
-          backgroundColor="$surface"
-          borderColor="$border"
-          borderWidth={1}
-        >
+          `imageryArchiveUrl` gates the scrubber and nothing else. With no archive configured there is
+          nothing to scrub and nothing true to say about why, so the correct render is none at all —
+          the same call the bathymetry layer makes when its own URL is blank. */}
+      <ImageryDock
+        visible={Boolean(highlightWaterBodyId) && !hazardDraft}
+        imageryOn={imageryOn}
+        expanded={imageryOn && sheetIsClear}
+        // No archive ⇒ no scrubber ⇒ nothing for a heading to head, which is the same gate the
+        // children below are behind.
+        heading={env.imageryArchiveUrl ? 'Freeze-up timeline' : null}
+        // Web fills this slot from the aerial when no archived frame is on the lake. Mobile has no
+        // aerial layer to fall back to, so the honest answer there is nothing at all.
+        seasonLabel={
+          freezeUpSelected && freezeUpTimeline ? formatSeasonLabel(freezeUpTimeline.season) : null
+        }
+        bottom={dockBottom}
+        onPress={() => {
+          // Both halves of the founder's rule, in the order they have to happen: ask the sheet down,
+          // then turn imagery on. Pressing this while imagery is *already* on is the "bring the
+          // timeline back" case — nothing to switch, only the sheet is in the way.
+          if (!sheetIsClear) requestDrawerPeek();
+          setImageryOn(true);
+        }}
+        onClose={() => setImageryOn(false)}
+      >
+        {env.imageryArchiveUrl ? (
           <FreezeUpScrubber
             timeline={freezeUpTimeline}
             index={freezeUpIndex}
             band={freezeUpBand}
             onBandChange={setFreezeUpBand}
             selected={freezeUpStop}
-            onSelect={setFreezeUpStop}
+            onSelect={selectFreezeUpStop}
+            anchorAt={freezeUpAnchorAt}
             loading={freezeUpLoading}
             error={freezeUpError}
             renderedCompanion={freezeUpRendered.companion?.frame ?? null}
           />
-        </YStack>
-      ) : null}
+        ) : null}
+      </ImageryDock>
 
       <ReturnToRegion
         visible={regionOffscreen}

@@ -5,6 +5,7 @@ import {
   buildLakeCaption,
   contourBodyKey,
   describeLakeDepth,
+  formatAerialCaptureDate,
   formatAreaAcres,
   formatSkateTime,
   humanizeEnum,
@@ -79,7 +80,7 @@ export function WaterBodyDetail({
     setContourBodyKey,
     contourCredit,
     imageryOn,
-    aerialCaptureLabel,
+    aerialCapturedAt,
   } = useMapSelection();
   // Mirrors the server's `requireContributor` — see `LeavingNotice`.
   const leaving = isLeaving(useQuery(api.profiles.current, {}));
@@ -272,7 +273,12 @@ export function WaterBodyDetail({
         {imageryOn ? (
           <p className="text-foreground-muted text-xs">
             Aerial imagery: {AERIAL_ATTRIBUTION}
-            {aerialCaptureLabel ? ` — flown ${aerialCaptureLabel}` : ''}
+            {/* The month, where the panel's heading says the season: somebody reading a provenance
+                block came for *when*, and `formatAerialSeason`'s coarser form is for the slot it
+                shares with the archive's own winters. One instant, two grammars. */}
+            {aerialCapturedAt === null
+              ? ''
+              : ` — flown ${formatAerialCaptureDate(aerialCapturedAt)}`}
           </p>
         ) : null}
       </div>

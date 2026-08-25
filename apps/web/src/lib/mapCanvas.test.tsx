@@ -25,6 +25,7 @@ class FakeMap {
   fitted: unknown[] = [];
   resizes = 0;
   rotationDisabled: string[] = [];
+  container: HTMLElement | null = null;
   touchZoomRotate = { disableRotation: () => this.rotationDisabled.push('touch') };
   keyboard = { disableRotation: () => this.rotationDisabled.push('keyboard') };
 
@@ -46,6 +47,20 @@ class FakeMap {
   }
   resize() {
     this.resizes++;
+  }
+  /**
+   * The map's own element, carrying an attribution control in MapLibre's mounted-expanded state —
+   * `maplibregl-compact-show` present — so the collapse in `useMapCanvas` has something real to act
+   * on rather than silently no-op'ing through an optional chain.
+   */
+  getContainer() {
+    if (!this.container) {
+      this.container = document.createElement('div');
+      const attrib = document.createElement('details');
+      attrib.className = 'maplibregl-ctrl-attrib maplibregl-compact maplibregl-compact-show';
+      this.container.append(attrib);
+    }
+    return this.container;
   }
   getCenter() {
     return { lng: -73, lat: 44.5 };
@@ -172,6 +187,22 @@ describe('useMapCanvas', () => {
     expect(map?.options.pitchWithRotate).toBe(false);
     expect(map?.options.touchPitch).toBe(false);
     expect(map?.rotationDisabled).toEqual(['touch', 'keyboard']);
+  });
+
+  /**
+   * ⚠ MapLibre mounts a `compact: true` attribution control **expanded**, and only minimises it on
+   * the first `drag` — so a map that is read rather than dragged wears every active source's credit
+   * across its bottom edge all session. The credits themselves are untouched (they are a licence
+   * obligation, and they stay one click behind the ⓘ); it is the rest state being wrong that this
+   * pins, because nothing about it is visible from the control's public API.
+   */
+  it('opens with the attribution credits collapsed behind the ⓘ', () => {
+    render(<Host tick={0} />);
+    const attrib = FakeMap.instances[0]?.getContainer().querySelector('.maplibregl-ctrl-attrib');
+    expect(attrib?.classList.contains('maplibregl-compact-show')).toBe(false);
+    // Still compact, so MapLibre's own `resize` handler cannot re-open it: `_updateCompact` only
+    // re-adds the show class to a container that has lost the `maplibregl-compact` one.
+    expect(attrib?.classList.contains('maplibregl-compact')).toBe(true);
   });
 
   /**

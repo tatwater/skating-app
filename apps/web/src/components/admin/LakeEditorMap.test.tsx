@@ -48,6 +48,10 @@ class FakeMap {
   remove() {}
   fitBounds() {}
   resize() {}
+  /** `useMapCanvas` reaches in to collapse the attribution ⓘ at mount — see its own test. */
+  getContainer() {
+    return document.createElement('div');
+  }
   touchZoomRotate = { disableRotation: () => {} };
   keyboard = { disableRotation: () => {} };
   getCenter() {

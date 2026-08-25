@@ -49,10 +49,13 @@ import {
   type TimelineStop,
 } from '@skating/core';
 import type { MultiPolygon, Polygon } from 'geojson';
+import { useRef } from 'react';
 import { env } from '../lib/env';
 
 export const FREEZE_UP_SOURCE_ID = 'freeze-up-frame';
 export const FREEZE_UP_LAYER_ID = 'freeze-up-frame-raster';
+/** The outgoing pass, held one notch behind so a scrub never uncovers bare cartography. */
+export const FREEZE_UP_PREVIOUS_SOURCE_ID = 'freeze-up-frame-previous';
 export const FREEZE_UP_COMPANION_SOURCE_ID = 'freeze-up-frame-companion';
 export const FREEZE_UP_COMPANION_LAYER_ID = 'freeze-up-frame-companion-raster';
 export const FREEZE_UP_SEAM_SOURCE_ID = 'freeze-up-seam';
@@ -122,6 +125,37 @@ export function FreezeUpFrames({
   /** The lake, which clips the granule edge down to the part anyone can see. */
   body: Polygon | MultiPolygon | null;
 }) {
+  // ⚠ **The frame the scrubber just left, kept underneath the one it moved to.**
+  //
+  // > **Founder, 2026-08-26:** *"sliding around its timeline […] the image disappears for a second or
+  // > two and then re-appears at every notch change."*
+  //
+  // Reported on web, and the cause is the same on both: React unmounts the outgoing `<Frame>` before
+  // the incoming one has any tiles, so every notch crossing had a window with nothing drawn. Web fixes
+  // it with two explicit lanes it can cross-fade (`useFreezeUpFrame`); here there is no load event to
+  // hang a fade on, so the declarative equivalent does the same job — **render the previous pass too,
+  // below the current one.** Both are masked to the same lake, so the new frame simply covers the old
+  // as its tiles arrive, and until then the old one is what is on screen. There is no moment with
+  // neither.
+  //
+  // A ref rather than state: this must not cause a render of its own, and it is read during the very
+  // render that replaces it.
+  //
+  // ⚠ **The pair moves only when the key genuinely changes**, which is not the same as "on every
+  // render". Holding a bare `previous` and rewriting it each pass looked equivalent and was not: this
+  // component re-renders for reasons that have nothing to do with the scrubber — the map's viewport
+  // query, a hazard arriving — and each of those would have retired the held frame, quite possibly
+  // before its replacement had a single tile. The outgoing frame has to be retired by *a new date*,
+  // not by the clock.
+  const framesRef = useRef<{ current: IndexedFrame | null; previous: IndexedFrame | null }>({
+    current: null,
+    previous: null,
+  });
+  if (stop && framesRef.current.current?.key !== stop.frame.key) {
+    framesRef.current = { current: stop.frame, previous: framesRef.current.current };
+  }
+  const previous = framesRef.current.previous;
+
   if (!stop || !season || !env.imageryArchiveUrl) return null;
 
   const seam =
@@ -129,6 +163,16 @@ export function FreezeUpFrames({
 
   return (
     <>
+      {/* Held one notch behind, and dropped as soon as there is a *newer* outgoing frame to hold —
+          so this is bounded at one extra raster, never a growing pool. */}
+      {previous && previous.key !== stop.frame.key ? (
+        <Frame
+          key={`previous:${previous.key}`}
+          frame={previous}
+          season={season}
+          prefix={FREEZE_UP_PREVIOUS_SOURCE_ID}
+        />
+      ) : null}
       {companion ? (
         <Frame
           key={`companion:${companion.key}`}

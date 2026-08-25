@@ -468,3 +468,201 @@ describe('FreezeUpScrubber — captioning a held seam half', () => {
     expect(screen.getByText(/sits across a granule edge/)).toBeTruthy();
   });
 });
+
+describe('FreezeUpScrubber — the thumb', () => {
+  const threeStops = timelineOf([
+    stop({ frame: frame({ granuleId: 'a' }) }),
+    stop({ frame: frame({ granuleId: 'b' }) }),
+    stop({ frame: frame({ granuleId: 'c' }) }),
+  ]);
+
+  const thumbOf = (container: HTMLElement) =>
+    container.querySelector<HTMLElement>('[data-testid="scrubber-thumb"]');
+
+  const at = (selected: number | null) =>
+    render(
+      <FreezeUpScrubber
+        timeline={threeStops}
+        index={indexOf(['visual'])}
+        band="visual"
+        onBandChange={vi.fn()}
+        selected={selected}
+        onSelect={vi.fn()}
+        loading={false}
+      />,
+    );
+
+  it('⚠ sits on the notch it has selected, at the position notchAtOffset reads back', () => {
+    // Half-step insets: three notches sit at 1/6, 3/6, 5/6. Pinned as literals rather than recomputed
+    // from `notchFraction`, so a change to the placement rule has to be looked at rather than
+    // silently agreed with by a test that shares the bug.
+    // Compared as numbers: the two ways of writing one sixth differ in the last bit of a double, and
+    // a string compare would fail on an arithmetic identity rather than on a placement.
+    const leftOf = (selected: number) =>
+      Number.parseFloat(thumbOf(at(selected).container)?.style.left ?? '');
+    expect(leftOf(0)).toBeCloseTo(100 / 6, 10);
+    expect(leftOf(1)).toBeCloseTo(50, 10);
+    expect(leftOf(2)).toBeCloseTo(500 / 6, 10);
+  });
+
+  it('is not there before a date has been chosen — no thumb, rather than one parked at zero', () => {
+    // `selected` is null only until the auto-select effect lands, but a handle that flashes at the
+    // left edge first would read as the control jumping.
+    const { container } = render(
+      <FreezeUpScrubber
+        timeline={timelineOf([])}
+        index={indexOf(['visual'])}
+        band="visual"
+        onBandChange={vi.fn()}
+        selected={null}
+        onSelect={vi.fn()}
+        loading={false}
+      />,
+    );
+    expect(thumbOf(container)).toBeNull();
+  });
+
+  it('⚠ never takes the pointer, so a drag can begin on the handle itself', () => {
+    // The most natural gesture on this control is to press the thumb and pull. The track owns the
+    // pointer (`setPointerCapture`), so a handle that accepted the `pointerdown` would make exactly
+    // that gesture the one that did nothing.
+    expect(thumbOf(at(1).container)?.className).toContain('pointer-events-none');
+  });
+
+  it('⚠ is a window, not a lozenge — the mark it stands on stays readable through it', () => {
+    // The thumb covers the one notch whose state the skater most needs: whether the date under it
+    // has a picture (tall, blue) or is clouded out (short, grey). Filling it in would black out that
+    // answer exactly where it is being asked, leaving nothing but memory of what was there before.
+    const thumb = thumbOf(at(1).container);
+    expect(thumb?.className).toContain('border-2');
+    expect(thumb?.className).toContain('border-primary');
+    expect(thumb?.className).not.toContain('bg-');
+  });
+
+  it('does not animate while a finger is on the control', () => {
+    // Same 120 ms ease reads as weight when the thumb moves on its own and as lag when it is chasing
+    // a pointer that is already ahead of it.
+    const { container } = at(1);
+    expect(thumbOf(container)?.className).toContain('transition-[left]');
+
+    const track = screen.getAllByRole('group')[0];
+    if (track) {
+      track.setPointerCapture = vi.fn();
+      fireEvent.pointerDown(track, { clientX: 10, pointerId: 1 });
+    }
+    expect(thumbOf(container)?.className).not.toContain('transition-[left]');
+  });
+
+  it('draws every stop as a mark, blocked ones shorter, and colours none of them by selection', () => {
+    // The thumb is standing on the selected mark, so colouring it too would draw the same fact twice
+    // — and the half the handle covers would read as the handle having a shadow.
+    const { container } = at(1);
+    const ticks = container.querySelectorAll('[role="group"] button > span');
+    expect(ticks).toHaveLength(3);
+    for (const tick of ticks) expect(tick.className).toContain('bg-primary/45');
+  });
+});
+
+describe('FreezeUpScrubber — a stale selection after a band switch', () => {
+  const nine = timelineOf(
+    Array.from({ length: 9 }, (_, i) => stop({ frame: frame({ granuleId: `S1A_${i}` }) })),
+  );
+
+  it('⚠ opens on a date instead of nothing when the index outruns the new band', () => {
+    // The founder's report, 2026-08-26: switching to radar showed imagery with no thumb and no date
+    // until you dragged. A winter has ~30 optical passes and ~9 radar ones, so the index chosen on
+    // true colour is past the end of radar — and `selected !== null` is exactly what made the
+    // auto-select effect decline to choose. Read as unselected, it recovers in the same render.
+    const onSelect = vi.fn();
+    render(
+      <FreezeUpScrubber
+        timeline={nine}
+        index={indexOf(['vh'])}
+        band="vh"
+        onBandChange={vi.fn()}
+        selected={29}
+        onSelect={onSelect}
+        loading={false}
+      />,
+    );
+    expect(onSelect).toHaveBeenCalledWith(8);
+  });
+
+  it('draws no thumb on an index the track does not have, rather than one at the end', () => {
+    const { container } = render(
+      <FreezeUpScrubber
+        timeline={nine}
+        index={indexOf(['vh'])}
+        band="vh"
+        onBandChange={vi.fn()}
+        selected={29}
+        onSelect={vi.fn()}
+        loading={false}
+      />,
+    );
+    expect(container.querySelector('[data-testid="scrubber-thumb"]')).toBeNull();
+  });
+});
+
+describe('FreezeUpScrubber — landing near where the skater was', () => {
+  const dated = (iso: string, granuleId = iso) =>
+    stop({ frame: frame({ granuleId, capturedAt: iso }) });
+
+  const radar = timelineOf([
+    dated('2025-12-05T00:00:00Z'),
+    dated('2026-02-11T00:00:00Z'),
+    dated('2026-03-25T00:00:00Z'),
+  ]);
+
+  it('⚠ opens on the nearest date to the anchor, not the end of the season', () => {
+    // Switching bands is the same question asked of a different instrument. Jumping to March because
+    // radar happens to have a March pass throws away the part of the winter being read.
+    const onSelect = vi.fn();
+    render(
+      <FreezeUpScrubber
+        timeline={radar}
+        index={indexOf(['vh'])}
+        band="vh"
+        onBandChange={vi.fn()}
+        selected={null}
+        onSelect={onSelect}
+        loading={false}
+        anchorAt="2026-02-14T00:00:00Z"
+      />,
+    );
+    expect(onSelect).toHaveBeenCalledWith(1);
+  });
+
+  it('falls back to the most recent pass with no anchor, which is how a lake opens', () => {
+    const onSelect = vi.fn();
+    render(
+      <FreezeUpScrubber
+        timeline={radar}
+        index={indexOf(['vh'])}
+        band="vh"
+        onBandChange={vi.fn()}
+        selected={null}
+        onSelect={onSelect}
+        loading={false}
+      />,
+    );
+    expect(onSelect).toHaveBeenCalledWith(2);
+  });
+
+  it('falls back rather than failing when the anchor cannot be honoured', () => {
+    const onSelect = vi.fn();
+    render(
+      <FreezeUpScrubber
+        timeline={radar}
+        index={indexOf(['vh'])}
+        band="vh"
+        onBandChange={vi.fn()}
+        selected={null}
+        onSelect={onSelect}
+        loading={false}
+        anchorAt="not a date"
+      />,
+    );
+    expect(onSelect).toHaveBeenCalledWith(2);
+  });
+});

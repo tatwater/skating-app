@@ -29,16 +29,26 @@ export function coveredFractionForIndex(index: number): number {
  */
 export function MapDrawer({
   snapIndex,
+  peekNonce = 0,
   onCoveredFractionChange,
   children,
 }: {
   snapIndex: number;
+  /**
+   * A counter a map control bumps to ask the sheet down to its peek — see `drawerPeekNonce`. Handled
+   * apart from `snapIndex` because `snapIndex` is *route*-derived: folding a transient request into it
+   * would make the drop a property of where you are rather than of what you just pressed, and the
+   * sheet could not be dragged back up without the route changing.
+   */
+  peekNonce?: number;
   /** Called with the covered-screen fraction whenever the sheet settles (drag or programmatic). */
   onCoveredFractionChange?: (fraction: number) => void;
   children: ReactNode;
 }) {
   const ref = useRef<BottomSheet>(null);
   const scrollRef = useRef<React.ComponentRef<typeof BottomSheetScrollView>>(null);
+  /** Where the sheet last settled, so a peek request can tell "in the way" from "already clear". */
+  const settledIndex = useRef(-1);
   const router = useRouter();
   const theme = useTheme();
   const snapPoints = useMemo(() => [...DRAWER_SNAP_POINTS], []);
@@ -47,6 +57,13 @@ export function MapDrawer({
     if (snapIndex < 0) ref.current?.close();
     else ref.current?.snapToIndex(snapIndex);
   }, [snapIndex]);
+
+  // ⚠ **Only ever downward.** The nonce means "get out of the way", so a request arriving while the
+  // sheet is already at the peek — or closed — must do nothing: `collapse()` on a closed sheet would
+  // *open* it, turning a tap on a map control into a drawer nobody asked for.
+  useEffect(() => {
+    if (peekNonce > 0 && settledIndex.current > DRAWER_PEEK) ref.current?.collapse();
+  }, [peekNonce]);
 
   // Exposed to drawer content (e.g. a deep-linked `?action=confirm` hazard) so it can pull a
   // below-the-fold control into view. Stable identity so consumers can depend on it in an effect.
@@ -65,7 +82,10 @@ export function MapDrawer({
       // so the programmatic `close()` on unmount/navigation doesn't cause a loop.
       onClose={() => router.navigate('/')}
       // Report the settled position so the map can re-fit the lake into the uncovered area.
-      onChange={(index) => onCoveredFractionChange?.(coveredFractionForIndex(index))}
+      onChange={(index) => {
+        settledIndex.current = index;
+        onCoveredFractionChange?.(coveredFractionForIndex(index));
+      }}
       backgroundStyle={{ backgroundColor: theme.surface?.val }}
       handleIndicatorStyle={{ backgroundColor: theme.foregroundMuted?.val }}
     >

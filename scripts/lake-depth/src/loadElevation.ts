@@ -244,6 +244,13 @@ async function main(): Promise<void> {
 
   const totals = {
     scanned: 0,
+    /**
+     * In-scope bodies this pass found **without** an elevation — the work it set out to do.
+     *
+     * Counted because it is the only honest denominator for an incremental pass, and its absence was
+     * actively misleading: see the rate below.
+     */
+    targets: 0,
     inArchive: 0,
     notInArchive: 0,
     updated: 0,
@@ -261,6 +268,8 @@ async function main(): Promise<void> {
       totals.scanned += page.scanned;
       totals.belowFloor += page.belowFloor;
       pageCount++;
+
+      totals.targets += page.targets.length;
 
       const records: {
         waterBodyId: string;
@@ -319,13 +328,32 @@ async function main(): Promise<void> {
   // `--import-floor` the pass deliberately walks past most of the corpus, and dividing by
   // everything it scanned reports a 14% success rate for a run that covered 100% of its target.
   const inScope = Math.max(0, totals.scanned - totals.belowFloor);
-  const rate = inScope > 0 ? ((totals.updated / inScope) * 100).toFixed(1) : '0.0';
+
+  /**
+   * ⚠ **Two numbers, because "how did this run do" and "how covered is the corpus" are different
+   * questions and one denominator cannot answer both.**
+   *
+   * This printed `updated / inScope` — which is right for the *first* pass over a fresh region and
+   * wrong for every pass after it. An incremental run finds a handful of gaps, fills all of them,
+   * and reports **`4/24839 stamped (0.0%)`**: a total success rendered as a total failure. Seen on
+   * 2026-08-26, and the danger is not the cosmetics — it is that the line a person checks after
+   * importing a new region cannot distinguish "nothing needed doing" from "nothing worked".
+   *
+   * So: the *rate* is against what the pass actually set out to do, and the number that matters for
+   * a new region — **how many in-scope bodies still have no elevation** — is stated outright rather
+   * than left to be inferred from a percentage.
+   */
+  const residual = Math.max(0, totals.targets - totals.updated);
+  const rate = totals.targets > 0 ? ((totals.updated / totals.targets) * 100).toFixed(1) : '100.0';
   process.stderr.write(
-    `[elevation] complete: ${totals.updated}/${inScope} in-scope bodies stamped (${rate}%) over ` +
-      `${pageCount} page(s)\n` +
-      `[elevation] of those: ${totals.notInArchive} not in the archive · ` +
-      `${totals.operatorHeld} held by a moderator's override · ` +
-      `${totals.implausible} outside the plausible window · ${totals.missing} rows gone\n`,
+    `[elevation] complete: ${totals.updated}/${totals.targets} gaps filled (${rate}%) over ` +
+      `${pageCount} page(s), ${inScope} in-scope bodies scanned\n` +
+      `[elevation] still without elevation: ${residual}` +
+      (residual > 0
+        ? ` — ${totals.notInArchive} not in the archive · ` +
+          `${totals.implausible} outside the plausible window · ${totals.missing} rows gone\n`
+        : '\n') +
+      `[elevation] ${totals.operatorHeld} left alone: a moderator's value, which is not a gap\n`,
   );
   if (totals.notInArchive > 0) {
     // **The archive is keyed on the interior point, and the corpus moves.** A body re-drawn by a
@@ -339,14 +367,31 @@ async function main(): Promise<void> {
     );
   }
 
+  /**
+   * ⚠ **Coverage is a claim about the corpus, so `covered` counts bodies that HAVE an elevation —
+   * not bodies this run wrote one to.**
+   *
+   * `covered: totals.updated` made an incremental pass report 4 of 24,839 covered, which as a
+   * corpus statement is off by four orders of magnitude and lands in the admin's coverage history
+   * as a catastrophic regression. Everything in scope that this pass did not have to touch was
+   * already covered — that is what "did not have to touch" means.
+   *
+   * ⚠ **And a moderator's override is not an omission.** It was listed as one, which was wrong on
+   * the facts, not just on the framing: there is no path in the schema that produces `operator`
+   * provenance *without* a number — `importElevations` requires `elevationM` and refuses the
+   * operator rung outright, the merge only inherits `elevationSource` alongside a defined
+   * `elevationM`, and no mutation sets elevation from the editor at all. So an operator-held row
+   * has a value by construction; counting it as missing inflated the gap with rows that are not
+   * merely fine but *better* than what this pass would have written.
+   */
   logger.coverage({
     unit: 'bodies',
     eligible: inScope,
-    covered: totals.updated,
+    covered: Math.max(0, inScope - residual),
     omissions: [
       { reason: 'not in the 3DEP archive', count: totals.notInArchive },
-      { reason: "held by a moderator's override", count: totals.operatorHeld },
       { reason: 'outside the plausible window', count: totals.implausible },
+      { reason: 'row deleted mid-pass', count: totals.missing },
     ].filter((o) => o.count > 0),
   });
   logger.succeed([

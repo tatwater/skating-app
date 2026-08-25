@@ -178,6 +178,23 @@ export function useMapCanvas(options: MapCanvasOptions): MapCanvas {
     // an ⓘ is the second of those. Credits reachable only from a drawer, on a map that renders
     // perfectly well with no drawer open, would be the configuration that risks it.
     map.addControl(new maplibregl.AttributionControl({ compact: true }));
+    // ⚠ **`compact` does not mean *collapsed*, and that is the whole of what looked wrong.**
+    //
+    // MapLibre mounts the compact control **expanded** (`_updateCompact` adds `maplibregl-compact`
+    // *and* `maplibregl-compact-show`) and only minimises it on the first `drag` — not on a zoom, not
+    // on a click, not on a fly-to. So a map that is opened and read rather than dragged shows every
+    // credit of every active source laid across the bottom edge for the entire session, growing each
+    // time a source mounts: adding the freeze-up frames is what turned it into
+    // *"© OpenStreetMap contributors | Copernicus Sentinel data 2025–2026"*.
+    //
+    // Removing that one class is exactly what MapLibre's own minimise path does, so this is its rest
+    // state arriving at mount instead of after a gesture. The ⓘ stays, the credits are one click
+    // behind it, and the licence surface is unchanged — which is why this, and not moving a required
+    // credit into a panel that can be closed while the imagery it credits is still on the map.
+    map
+      .getContainer()
+      .querySelector('.maplibregl-ctrl-attrib')
+      ?.classList.remove('maplibregl-compact-show');
     if (navigationControl) {
       map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right');
     }

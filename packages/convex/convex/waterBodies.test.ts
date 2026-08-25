@@ -1242,6 +1242,80 @@ describe('waterBodies elevation (N6c A1)', () => {
     const { targets } = await t.query(internal.waterBodies.listNeedingElevation, { refresh: true });
     expect(targets[0]).toMatchObject({ storedElevationM: 412, storedSource: 'dem_glo90' });
   });
+
+  test('⚠ retracts a value we no longer believe, which no additive write path could', async () => {
+    // Every other write here proposes a number and lets the ladder judge it. A pass that decides a
+    // stored reading is a river bottom produces no number to propose, so nothing was ever sent and
+    // the value outlived the rule that would now reject it — how an unnamed body near Albany still
+    // carried −10.62 m, the dredged navigation channel read as a lake surface.
+    const t = convexTestWithGeo();
+    const id = await seedBody(t, {
+      elevationM: -10.62,
+      elevationSource: 'dem_3dep',
+      elevationResolutionM: 10,
+      elevationRasterId: 5478,
+    });
+
+    expect(
+      await t.mutation(internal.waterBodies.retractElevations, {
+        waterBodyIds: [id],
+        reason: 'below-surface',
+      }),
+    ).toMatchObject({ retracted: 1, operatorHeld: 0, alreadyEmpty: 0, missing: 0 });
+
+    const body = await t.run((ctx) => ctx.db.get(id));
+    expect(body?.elevationM).toBeUndefined();
+    // The raster metadata goes with the reading: provenance for a number that is not there would
+    // make the row look stamped to anything counting coverage by source.
+    expect(body?.elevationSource).toBeUndefined();
+    expect(body?.elevationResolutionM).toBeUndefined();
+    expect(body?.elevationRasterId).toBeUndefined();
+
+    // And the row is now offered to the next pass, rather than being stuck holding a refusal.
+    const { targets } = await t.query(internal.waterBodies.listNeedingElevation, {});
+    expect(targets).toHaveLength(1);
+  });
+
+  test('⚠ will not retract a moderator’s elevation', async () => {
+    // The same rule `canOverwriteElevation` enforces on the way in. A sweep that quietly reverted a
+    // human would make the override worthless the next time any pass ran.
+    const t = convexTestWithGeo();
+    const id = await seedBody(t, { elevationM: 412, elevationSource: 'operator' });
+
+    expect(
+      await t.mutation(internal.waterBodies.retractElevations, {
+        waterBodyIds: [id],
+        reason: 'below-surface',
+      }),
+    ).toMatchObject({ retracted: 0, operatorHeld: 1 });
+    expect((await t.run((ctx) => ctx.db.get(id)))?.elevationM).toBe(412);
+  });
+
+  test('counts a row with nothing to retract as resumable, not as a failure', async () => {
+    // An ordinary state: a pass re-run after an interruption re-visits rows it already cleared.
+    const t = convexTestWithGeo();
+    const empty = await seedBody(t);
+    expect(
+      await t.mutation(internal.waterBodies.retractElevations, {
+        waterBodyIds: [empty],
+        reason: 'disputed',
+      }),
+    ).toMatchObject({ retracted: 0, alreadyEmpty: 1, missing: 0 });
+  });
+
+  test('counts a row that is gone separately, because that is the corpus moving', async () => {
+    // A different fact from "nothing to clear", and worth its own number: rows vanish between the
+    // read that selected them and the write, which is a merge having run, not a data problem.
+    const t = convexTestWithGeo();
+    const gone = await seedBody(t);
+    await t.run((ctx) => ctx.db.delete(gone));
+    expect(
+      await t.mutation(internal.waterBodies.retractElevations, {
+        waterBodyIds: [gone],
+        reason: 'disputed',
+      }),
+    ).toMatchObject({ retracted: 0, alreadyEmpty: 0, missing: 1 });
+  });
 });
 
 describe('waterBodies.importCanonical (idempotent OSM upsert, D14/D48)', () => {

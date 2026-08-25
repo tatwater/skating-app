@@ -1,6 +1,6 @@
 import type { BBox, HazardDraft, HazardType } from '@skating/core';
 import type { LineString } from 'geojson';
-import { createContext, type ReactNode, useContext, useMemo, useState } from 'react';
+import { createContext, type ReactNode, useCallback, useContext, useMemo, useState } from 'react';
 
 /**
  * Shared selection state for the persistent native map (Phase 2 §F), the mobile mirror of web's
@@ -55,6 +55,18 @@ interface MapSelectionValue {
    */
   drawerCoveredFraction: number;
   setDrawerCoveredFraction: (fraction: number) => void;
+  /**
+   * Bumped when a control *over* the map needs the sheet out of its way — currently the imagery
+   * dock, whose timeline only fits in the strip the sheet leaves at its peek (founder, 2026-08-25:
+   * tapping it with the sheet up should "cause the sheet to drop to its lowest open position").
+   *
+   * ⚠ **A nonce, not a boolean.** A latched flag would fight the skater: once set, dragging the sheet
+   * back up and tapping again changes nothing, because the value never transitioned. A counter makes
+   * every tap its own event, which is what a tap is. It also stays *a request* — the sheet moves once
+   * and the skater can move it straight back, rather than being held down by a piece of state.
+   */
+  drawerPeekNonce: number;
+  requestDrawerPeek: () => void;
   /**
    * The hazard being captured (Phase 9, D51) — the shared `@skating/core` draft, so the map previews
    * the *real* buffered footprint (the same shape the proximity evaluator measures) and mobile
@@ -145,6 +157,8 @@ export function MapSelectionProvider({ children }: { children: ReactNode }) {
   const [pinDropMode, setPinDropMode] = useState(false);
   const [browseSeason, setBrowseSeason] = useState<number | null>(null);
   const [drawerCoveredFraction, setDrawerCoveredFraction] = useState(0);
+  const [drawerPeekNonce, setDrawerPeekNonce] = useState(0);
+  const requestDrawerPeek = useCallback(() => setDrawerPeekNonce((n) => n + 1), []);
   const [hazardDraft, setHazardDraft] = useState<HazardDraft | null>(null);
   const [hazardDraftType, setHazardDraftType] = useState<HazardType | null>(null);
   const [hazardDropMode, setHazardDropMode] = useState(false);
@@ -172,6 +186,8 @@ export function MapSelectionProvider({ children }: { children: ReactNode }) {
       setPinDropMode,
       drawerCoveredFraction,
       setDrawerCoveredFraction,
+      drawerPeekNonce,
+      requestDrawerPeek,
       hazardDraft,
       setHazardDraft,
       hazardDraftType,
@@ -199,6 +215,8 @@ export function MapSelectionProvider({ children }: { children: ReactNode }) {
       putInPin,
       pinDropMode,
       drawerCoveredFraction,
+      drawerPeekNonce,
+      requestDrawerPeek,
       hazardDraft,
       hazardDraftType,
       hazardDropMode,

@@ -161,16 +161,21 @@ interface MapSelectionValue {
   hazardsOverImagery: boolean;
   setHazardsOverImagery: (on: boolean) => void;
   /**
-   * When the open lake was last photographed — *"June 2023"* — or `null` if we haven't asked or the
-   * body sits outside NAIP coverage.
+   * When the open lake was last photographed from the air, or `null` if we haven't asked or the body
+   * sits outside NAIP coverage.
    *
    * The third map → drawer wire, and it exists for the same reason `contourCredit` does: only the
    * side that talks to the service knows. **On this tier the date is not a footnote** — NAIP flies
    * in mid-summer on a 2–3 year cycle, so a skater looking at green trees in January needs to be
    * told why, and `null` must render as *nothing* rather than as a guessed year (D147).
+   *
+   * ⚠ **The instant, not a label.** It is read in two grammars now — `summer 2023 · latest aerial
+   * available` in the map panel's heading, where it shares a slot with the archive's own seasons, and
+   * `flown June 2023` in the drawer's provenance block, where the month is what somebody came for.
+   * Formatting here would have meant picking one and re-parsing it at the other end.
    */
-  aerialCaptureLabel: string | null;
-  setAerialCaptureLabel: (label: string | null) => void;
+  aerialCapturedAt: number | null;
+  setAerialCapturedAt: (capturedAt: number | null) => void;
 }
 
 const MapSelectionContext = createContext<MapSelectionValue | null>(null);
@@ -194,7 +199,7 @@ export function MapSelectionProvider({ children }: { children: ReactNode }) {
   const [viewportLakes, setViewportLakes] = useState<ViewportLake[] | null>(null);
   const [imageryOn, setImageryOn] = useState(false);
   const [hazardsOverImagery, setHazardsOverImagery] = useState(true);
-  const [aerialCaptureLabel, setAerialCaptureLabel] = useState<string | null>(null);
+  const [aerialCapturedAt, setAerialCapturedAt] = useState<number | null>(null);
 
   // Closing the lake takes the reveal — and the hazard choice — with it (D146).
   //
@@ -205,7 +210,7 @@ export function MapSelectionProvider({ children }: { children: ReactNode }) {
     if (contourBodyKey) return;
     setImageryOn(false);
     setHazardsOverImagery(true);
-    setAerialCaptureLabel(null);
+    setAerialCapturedAt(null);
   }, [contourBodyKey]);
 
   const value = useMemo(
@@ -242,8 +247,8 @@ export function MapSelectionProvider({ children }: { children: ReactNode }) {
       setImageryOn,
       hazardsOverImagery,
       setHazardsOverImagery,
-      aerialCaptureLabel,
-      setAerialCaptureLabel,
+      aerialCapturedAt,
+      setAerialCapturedAt,
     }),
     [
       highlightWaterBodyId,
@@ -262,7 +267,7 @@ export function MapSelectionProvider({ children }: { children: ReactNode }) {
       viewportLakes,
       imageryOn,
       hazardsOverImagery,
-      aerialCaptureLabel,
+      aerialCapturedAt,
     ],
   );
 

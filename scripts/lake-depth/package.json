@@ -16,7 +16,8 @@
     "snapshot-alsc": "tsx src/snapshotAlsc.ts",
     "corroborate-alsc": "tsx --max-old-space-size=8192 src/corroborateAlsc.ts",
     "snapshot-cslap": "tsx src/snapshotCslap.ts",
-    "snapshot-nh-bands": "tsx src/snapshotNhBands.ts"
+    "snapshot-nh-bands": "tsx src/snapshotNhBands.ts",
+    "probe-identify": "tsx src/probeIdentify.ts"
   },
   "dependencies": {
     "@skating/core": "workspace:*",

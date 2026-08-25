@@ -9,7 +9,8 @@ import {
   approachLinePaint,
   type BBox,
   draftPlacementCount,
-  formatAerialCaptureDate,
+  formatAerialSeason,
+  formatSeasonLabel,
   framesToRender,
   isDraftSubmittable,
   isRegionOffscreen,
@@ -32,7 +33,7 @@ import type { MultiPolygon, Polygon } from 'geojson';
 import type maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { useTheme } from 'next-themes';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   CONTOUR_BEFORE_LAYER_ID,
   CONTOUR_FADE_MS,
@@ -194,8 +195,8 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
     setImageryOn,
     hazardsOverImagery,
     setHazardsOverImagery,
-    aerialCaptureLabel,
-    setAerialCaptureLabel,
+    aerialCapturedAt,
+    setAerialCapturedAt,
   } = useMapSelection();
 
   const [queryArgs, setQueryArgs] = useState<QueryArgs | null>(null);
@@ -1094,6 +1095,12 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
   // same shapes, so nothing outside the lake changes hands.
   const [freezeUpBand, setFreezeUpBand] = useState('visual');
   const [freezeUpStop, setFreezeUpStop] = useState<number | null>(null);
+  /**
+   * The capture date behind the current selection, so a band switch can land near where the skater
+   * was rather than at the end of the season (founder, 2026-08-26). Held as a date because that is
+   * what a scrubber position *is* — an index into one band's stops means nothing against another's.
+   */
+  const [freezeUpAnchorAt, setFreezeUpAnchorAt] = useState<string | null>(null);
   const timelineBody = useQuery(
     api.waterBodies.get,
     imageryOn && highlightWaterBodyId
@@ -1128,13 +1135,48 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
   // of cloud should feel like passing over dates, not like the feature switching itself off. Held in
   // a ref because it is the *previous* render's answer, which is not derivable from this one.
   const heldFramesRef = useRef<RenderedFrames | null>(null);
+  // ⚠ **`imageryOn` goes *through* the hold, not around it.** Wrapping this in an `if` would leave the
+  // ref holding the frame from before the toggle, and the next render feeds the ref back in — so the
+  // picture would return the moment anything else re-rendered. Off has to be one of the inputs.
   const freezeUpRendered = framesToRender(
     freezeUpTimeline?.stops ?? [],
     freezeUpStop,
     heldFramesRef.current,
+    imageryOn,
   );
   heldFramesRef.current = freezeUpRendered;
   const freezeUpSelected = freezeUpRendered.primary;
+
+  /**
+   * Choosing a stop also records **when** it was, which is the part that survives a band switch.
+   *
+   * Read off the timeline rather than the scrubber, because the scrubber reports an index and this
+   * has to be a date — see `nearestLandableStopToDate`. Set on every selection, including the
+   * automatic one, so the anchor is always the position actually on screen.
+   */
+  const selectFreezeUpStop = useCallback(
+    (index: number) => {
+      setFreezeUpStop(index);
+      const at = freezeUpTimeline?.stops[index]?.frame.capturedAt;
+      if (at) setFreezeUpAnchorAt(at);
+    },
+    [freezeUpTimeline],
+  );
+
+  // ⚠ A held frame does not survive a **new lake**, though it does survive a new band on the same one.
+  // The hold exists so a clouded date does not blank the water; carried across lakes it would instead
+  // leave one lake's photograph on screen under a scrubber captioned for another — the D84 failure the
+  // holding was written to avoid, one level up. A band swap on the same lake keeps it, because there
+  // the picture and the caption still name the same water and only the flash is at stake.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: dropping the hold *because* the lake changed is the point.
+  useEffect(() => {
+    heldFramesRef.current = null;
+    // ⚠ **And the anchor goes with it, so a new lake still opens on its most recent pass.** The
+    // anchor exists to survive a *band* switch, where the skater is asking the same question of a
+    // different instrument. Opening a lake is a different question — "a skater asking about a lake is
+    // asking about now" — and carrying February across would answer the one they did not ask.
+    setFreezeUpAnchorAt(null);
+  }, [highlightWaterBodyId]);
 
   // Warm the season's frames once the timeline appears, so scrubbing does not start a cold load per
   // notch. Header ranges only — see `prefetchFrames`. Aborted when the lake or band changes, so a
@@ -1295,13 +1337,13 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
       .then((response) => (response.ok ? response.json() : null))
       .then((body) => {
         const scene = parseAerialScene(body);
-        setAerialCaptureLabel(scene ? formatAerialCaptureDate(scene.capturedAt) : null);
+        setAerialCapturedAt(scene?.capturedAt ?? null);
       })
       .catch(() => {
         // Includes the abort on drawer-close, which is not a failure worth reporting.
       });
     return () => controller.abort();
-  }, [imageryOn, revealMasks, highlightWaterBodyId, setAerialCaptureLabel]);
+  }, [imageryOn, revealMasks, highlightWaterBodyId, setAerialCapturedAt]);
 
   // Open-bounty pins across the viewport (D10/D17) — refreshed as the map pans + as bounties change.
   useEffect(() => {
@@ -1505,8 +1547,22 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
         onToggleImagery={setImageryOn}
         hazardsOn={hazardsOverImagery}
         onToggleHazards={setHazardsOverImagery}
-        captureLabel={aerialCaptureLabel}
-        loading={imageryLoading}
+        // No archive ⇒ no scrubber ⇒ nothing for a heading to head. The panel is then a bare toggle
+        // for the aerial, and it says so by saying nothing.
+        heading={env.imageryArchiveUrl ? 'Freeze-up timeline' : null}
+        // ⚠ **Which picture is actually on this lake decides which season is named.** The reveal
+        // paints every body in the viewport, so the aerial can be on screen without being *this*
+        // lake's picture — and naming its summer above a December frame is what sent the founder
+        // looking. An archived frame wins whenever there is one; otherwise the aerial answers, which
+        // is D147's case exactly (green trees in January, and the reason for them).
+        seasonLabel={
+          freezeUpSelected && freezeUpTimeline
+            ? formatSeasonLabel(freezeUpTimeline.season)
+            : aerialCapturedAt === null
+              ? null
+              : formatAerialSeason(aerialCapturedAt)
+        }
+        loading={imageryLoading && !freezeUpSelected}
         hasHazards={(hazards?.length ?? 0) > 0}
       >
         {env.imageryArchiveUrl ? (
@@ -1516,7 +1572,8 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
             band={freezeUpBand}
             onBandChange={setFreezeUpBand}
             selected={freezeUpStop}
-            onSelect={setFreezeUpStop}
+            onSelect={selectFreezeUpStop}
+            anchorAt={freezeUpAnchorAt}
             loading={freezeUpLoading}
             error={freezeUpError}
             renderedCompanion={freezeUpRendered.companion?.frame ?? null}

@@ -29,10 +29,13 @@ import {
   type BodyTimeline,
   bandsIn,
   crossedNotch,
+  formatSeasonLabel,
   frameSourceLabel,
   type IndexedFrame,
   nearestLandableStop,
+  nearestLandableStopToDate,
   notchAtOffset,
+  notchFraction,
   type SeasonIndex,
   stopCaption,
   type TimelineStop,
@@ -42,11 +45,12 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { Text, XStack, YStack } from 'tamagui';
 
-/** `winter-2025-26` → `winter 2025–26`. */
-function seasonLabel(season: string): string {
-  const match = /^winter-(\d{4})-(\d{2})$/.exec(season);
-  return match ? `winter ${match[1]}–${match[2]}` : season;
-}
+/**
+ * Wide enough to read as a handle and to leave a window worth looking through — 12 less two 2 px
+ * walls is 8 px of clear space over a 2 px mark, four times what it has to clear — and narrow enough
+ * not to bury its neighbours, which in a dense winter are 6 px apart.
+ */
+const THUMB_WIDTH = 12;
 
 export function FreezeUpScrubber({
   timeline,
@@ -56,6 +60,7 @@ export function FreezeUpScrubber({
   selected,
   onSelect,
   loading,
+  anchorAt = null,
   error = false,
   renderedCompanion = null,
 }: {
@@ -66,6 +71,11 @@ export function FreezeUpScrubber({
   selected: number | null;
   onSelect: (index: number) => void;
   loading: boolean;
+  /**
+   * Where the skater was, as a **date** — the capture time of whatever they last chose, which
+   * survives a band switch that the stop list does not. See web's note.
+   */
+  anchorAt?: string | null;
   error?: boolean;
   /**
    * The seam half actually on the map, which can outlive the stop that supplied it.
@@ -79,6 +89,15 @@ export function FreezeUpScrubber({
   const stops = timeline?.stops ?? [];
   const bands = index ? bandsIn(index) : [];
   const [trackWidth, setTrackWidth] = useState(0);
+  /**
+   * ⚠ **An index the current stops do not have is *nothing chosen*, not a choice** — web's note
+   * carries the argument. Switching bands swaps the stop list underneath the selection (a winter has
+   * ~30 optical passes and ~9 radar ones), and a stale index left the thumb and the caption blank
+   * while `selected` stayed non-null, which is the exact condition that stopped the auto-select
+   * effect from choosing anything.
+   */
+  const chosen = selected !== null && selected < stops.length ? selected : null;
+  const thumbFraction = chosen === null ? null : notchFraction(chosen, stops.length);
   // The notch the finger was last over, so a tick fires on *crossing* rather than on every sample.
   const lastNotch = useRef<number | null>(null);
   const dragDirection = useRef<1 | -1 | 0>(0);
@@ -115,13 +134,13 @@ export function FreezeUpScrubber({
     const direction = dragDirection.current;
     dragDirection.current = 0;
     lastNotch.current = null;
-    if (selected === null || stops[selected]?.landable !== false) return;
-    const landable = nearestLandableStop(stops, selected, direction);
+    if (chosen === null || stops[chosen]?.landable !== false) return;
+    const landable = nearestLandableStop(stops, chosen, direction);
     if (landable !== null) {
       void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
       onSelect(landable);
     }
-  }, [selected, stops, onSelect]);
+  }, [chosen, stops, onSelect]);
 
   // ⚠ `.runOnJS(true)`, so the handlers are plain JS callbacks rather than worklets. The selection
   // lives in React state and the haptic is a native module call — neither is worklet-safe, and the
@@ -141,10 +160,16 @@ export function FreezeUpScrubber({
 
   // Open on the most recent usable pass: a skater asking about a lake is asking about now.
   useEffect(() => {
-    if (selected !== null || stops.length === 0) return;
-    const last = nearestLandableStop(stops, stops.length - 1);
-    if (last !== null) onSelect(last);
-  }, [selected, stops, onSelect]);
+    if (chosen !== null || stops.length === 0) return;
+    // ⚠ **The anchor first, and it is a date rather than an index.** Switching bands swaps a ~30-pass
+    // optical season for a ~9-pass radar one; carrying the number across means nothing, and landing
+    // on "most recent" throws away the part of the winter the skater was reading. The date is what
+    // they meant. `nearestLandableStopToDate` returns null when the anchor cannot be honoured, and
+    // then this is an ordinary opening: the season runs forward to now, so now is where it starts.
+    const anchored = anchorAt ? nearestLandableStopToDate(stops, anchorAt) : null;
+    const landing = anchored ?? nearestLandableStop(stops, stops.length - 1);
+    if (landing !== null) onSelect(landing);
+  }, [chosen, stops, onSelect, anchorAt]);
 
   if (loading) {
     return (
@@ -173,7 +198,7 @@ export function FreezeUpScrubber({
     );
   }
 
-  const current = selected !== null ? stops[selected] : undefined;
+  const current = chosen !== null ? stops[chosen] : undefined;
   const caption = current ? stopCaption(current) : null;
   // ⚠ **Captions what is on the map, not what this stop declares.** A held companion outlives the
   // stop that supplied it (see `framesToRender`), so reading `current.companion` would leave half the
@@ -192,34 +217,82 @@ export function FreezeUpScrubber({
       : null;
 
   return (
+    // ⚠ **No heading here.** The title and the season live one level up, in the dock's heading row,
+    // sharing it with the close button — see `ImageryDock`, and web's `ImageryControl` for the whole
+    // argument. They had to move together: the X on that row has to exist even where this component
+    // does not. The track's accessible name still carries the season, because a screen reader
+    // reaching it has not necessarily read the heading.
     <YStack gap="$2">
-      <XStack justifyContent="space-between" alignItems="baseline" gap="$2">
-        <Text fontSize="$3" fontWeight="600">
-          Freeze-up timeline
-        </Text>
-        <Text color="$foregroundMuted" fontSize="$1">
-          {seasonLabel(timeline.season)}
-        </Text>
-      </XStack>
-
       <GestureDetector gesture={pan}>
         <XStack
-          height={32}
+          // The height is the thumb's, not the marks'. See the geometry note on the thumb: the
+          // handle stands 4 clear of the tallest mark at both ends, and 36 = 4 + 2 + 24 + 2 + 4.
+          height={36}
+          position="relative"
           alignItems="flex-end"
+          paddingBottom={6}
           onLayout={(event) => setTrackWidth(event.nativeEvent.layout.width)}
           accessibilityRole="adjustable"
-          accessibilityLabel={`Satellite passes over this lake, ${seasonLabel(timeline.season)}`}
+          accessibilityLabel={`Satellite passes over this lake, ${formatSeasonLabel(timeline.season)}`}
         >
           {stops.map((stop, i) => (
             <StopMark
               key={`${stop.frame.granuleId}:${stop.frame.band}`}
               stop={stop}
-              selected={i === selected}
+              selected={i === chosen}
               // `flex={1}` rather than a fixed width: the whole season fits the box, so a dense
               // winter packs tighter instead of scrolling out of reach of the drag.
               onPress={() => onSelect(i)}
             />
           ))}
+
+          {/*
+           * The thumb — **the thing being dragged**, and the reason the marks got thinner.
+           *
+           * > **Founder, 2026-08-26:** *"I'd love for this to feel more physical, like the user is
+           * > really dragging something. Then the notches themselves can become thinner, with more
+           * > space in-between, because they're not touch targets, the thumb is."*
+           *
+           * ⚠ **The whole track still takes the gesture**, which matters more here than on web: a
+           * 12 pt handle is under the minimum anything should have to be hit, and at sixty passes a
+           * thumb already covers the mark it is choosing. The handle says the control is grabbable;
+           * the `Gesture.Pan` on the track — `minDistance(0)`, so a tap counts — is what makes it
+           * forgiving. `pointerEvents="none"` keeps the handle from ever intercepting that.
+           *
+           * Placed from the measured width, so it cannot be drawn before the track has a size — and
+           * it is the same arithmetic `notchAtOffset` reads back, which is pinned as a round-trip in
+           * `scrubberTrack`. No animation: during a drag the handle is following a finger that is
+           * already there, and a tap elsewhere on a discrete track is a jump, not a journey.
+           *
+           * ## ⚠ Hollow, which matters more on a phone than anywhere
+           *
+           * > **Founder, 2026-08-26:** *"if you could see through it, then you could understand what
+           * > the notch you're covering is (short & gray vs tall & blue) to know whether you're ON
+           * > the date of the image you see vs in-between dates, without having to remember."*
+           *
+           * A filled handle hides the one mark whose state is being asked about. Here a **thumb** is
+           * over it as well, so the window is the only way that mark is ever seen during the gesture
+           * that selects it.
+           *
+           * ⚠ **And it contains the mark rather than meeting it.** An outline flush with the tick's
+           * ends reads as gripping it, not standing over it, so there is an equal 4 of clear space at
+           * both: `36 = 4 + 2 border + 24 tick + 2 border + 4`. Which is why the handle is the whole
+           * height of the track while the marks sit 6 up from its floor.
+           */}
+          {thumbFraction !== null && trackWidth > 0 ? (
+            <XStack
+              position="absolute"
+              bottom={0}
+              left={thumbFraction * trackWidth - THUMB_WIDTH / 2}
+              width={THUMB_WIDTH}
+              height={36}
+              borderRadius={THUMB_WIDTH / 2}
+              backgroundColor="transparent"
+              borderWidth={2}
+              borderColor="$primary"
+              pointerEvents="none"
+            />
+          ) : null}
         </XStack>
       </GestureDetector>
 
@@ -284,12 +357,16 @@ export function FreezeUpScrubber({
 }
 
 /**
- * One pass.
+ * One pass: a hairline tick, inside a row that is mostly empty space.
  *
  * Flexes to an equal share of the track rather than taking a fixed width, because the whole season
- * has to fit for a drag across it to mean anything. A sparse winter therefore gets fat targets and a
- * dense one gets thin ones — which is why the haptic tick matters: at sixty passes a mark is under
- * 6 px and a thumb covers the one it is choosing.
+ * has to fit for a drag across it to mean anything. A sparse winter therefore gets wide slices and a
+ * dense one narrow ones — which is why the haptic tick matters: at sixty passes a slice is under 6 px
+ * and a thumb covers the mark it is choosing.
+ *
+ * ⚠ **The row did not get smaller when the mark did.** It still takes its full share and still
+ * carries the accessible name and state, because that is what a screen reader walks and what a tap
+ * lands on. Only the ink shrank.
  */
 function StopMark({
   stop,
@@ -308,7 +385,9 @@ function StopMark({
   return (
     <XStack
       flex={1}
-      height={28}
+      // The tallest mark's own height, so the row's top edge *is* the tick's top edge and the gap to
+      // the thumb's outline is the track's padding and nothing else — see the geometry note there.
+      height={24}
       alignItems="flex-end"
       justifyContent="center"
       onPress={onPress}
@@ -316,11 +395,16 @@ function StopMark({
       accessibilityLabel={label}
       accessibilityState={{ selected, disabled: !stop.landable }}
     >
+      {/* ⚠ **No selected state — the thumb is standing on it.** Colouring the mark underneath would
+          draw the same fact twice, and the half the handle covers would read as a shadow on it. The
+          landable/blocked distinction stays, in height and colour, because that is the one a skater
+          has to be able to read at a glance. */}
       <XStack
-        width={4}
-        height={stop.landable ? 24 : 12}
-        borderRadius={2}
-        backgroundColor={stop.landable ? (selected ? '$primary' : '$foregroundMuted') : '$border'}
+        width={2}
+        height={stop.landable ? 24 : 10}
+        borderRadius={1}
+        backgroundColor={stop.landable ? '$primary' : '$border'}
+        opacity={stop.landable ? 0.5 : 1}
       />
     </XStack>
   );

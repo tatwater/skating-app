@@ -55,6 +55,7 @@ function MapLayoutInner() {
     setFocus,
     pinDropMode,
     setDrawerCoveredFraction,
+    drawerPeekNonce,
     setContourBodyKey,
     hazardDropMode,
     onIceCoord,
@@ -245,7 +246,11 @@ function MapLayoutInner() {
     <View style={{ flex: 1 }}>
       <MapView geolocateOnMount={geolocateOnMount} />
       <LakeSearch />
-      <MapDrawer snapIndex={snapIndex} onCoveredFractionChange={setDrawerCoveredFraction}>
+      <MapDrawer
+        snapIndex={snapIndex}
+        peekNonce={drawerPeekNonce}
+        onCoveredFractionChange={setDrawerCoveredFraction}
+      >
         <Slot />
       </MapDrawer>
       {/* All three sit above the drawer: a warning you can't see because a sheet is over it isn't a
