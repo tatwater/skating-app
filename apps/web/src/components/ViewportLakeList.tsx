@@ -1,8 +1,9 @@
+import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
+import { faStar } from '@fortawesome/sharp-solid-svg-icons';
 import { api } from '@skating/convex/api';
 import { formatAreaAcres, waterBodyClassLabel } from '@skating/core';
 import { Link } from '@tanstack/react-router';
 import { useQuery } from 'convex/react';
-import { StarIcon } from 'lucide-react';
 import { useMemo } from 'react';
 import { orderViewportLakes, type ViewportLake } from '../lib/viewportLakes';
 import { PanelDescription, PanelHeader, PanelTitle } from './DetailPanel';
@@ -92,9 +93,10 @@ export function ViewportLakeListView({
               >
                 <span className="flex min-w-0 items-baseline gap-1.5">
                   {row.isFavorite ? (
-                    <StarIcon
+                    <FontAwesomeIcon
+                      icon={faStar}
                       aria-label="Favorite"
-                      className="size-3 shrink-0 self-center fill-current text-primary"
+                      className="size-3 shrink-0 self-center text-primary"
                     />
                   ) : null}
                   <span

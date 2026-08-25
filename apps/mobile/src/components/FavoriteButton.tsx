@@ -1,3 +1,6 @@
+import { FontAwesomeIcon } from '@fortawesome/react-native-fontawesome';
+import { faStar as faStarOutline } from '@fortawesome/sharp-light-svg-icons';
+import { faStar as faStarSolid } from '@fortawesome/sharp-solid-svg-icons';
 import { api } from '@skating/convex/api';
 import type { Id } from '@skating/convex/dataModel';
 import {
@@ -8,17 +11,25 @@ import {
 } from '@skating/core';
 import { useMutation, useQuery } from 'convex/react';
 import { Linking, Platform } from 'react-native';
-import { Button, Text } from 'tamagui';
+import { Button, Text, useTheme } from 'tamagui';
 
 /**
  * Favorite toggle (Phase 4, decision #1) — the mobile mirror of web's `FavoriteButton`. Favoriting a
  * lake makes its reports notify by default, boost + badge in the feed, and highlight on the map. Uses
  * the reactive `isFavorite` query; the mutation requires auth.
+ *
+ * Filled star = favorited, outline star = not — the same Sharp solid/light pair web uses, so the two
+ * platforms read identically. Solid rather than light for the *on* state on purpose: the whole
+ * signal is "this one is filled in", and a light-weight star is an outline whichever state it is in.
+ * The icon takes a resolved hex rather than a `$token` because `FontAwesomeIcon` renders SVG, which
+ * has no idea what a Tamagui theme token is.
  */
 export function FavoriteButton({ waterBodyId }: { waterBodyId: Id<'waterBodies'> }) {
   const favorited = useQuery(api.waterBodyFavorites.isFavorite, { waterBodyId });
   const toggle = useMutation(api.waterBodyFavorites.toggle);
   const isFav = favorited === true;
+  const theme = useTheme();
+  const tint = (isFav ? theme.primary?.val : theme.foreground?.val) ?? undefined;
 
   return (
     <Button
@@ -30,7 +41,8 @@ export function FavoriteButton({ waterBodyId }: { waterBodyId: Id<'waterBodies'>
       disabled={favorited === undefined}
       aria-label={isFav ? 'Remove from favorites' : 'Add to favorites'}
     >
-      <Text color={isFav ? '$primary' : '$foreground'}>{isFav ? '★ Favorited' : '☆ Favorite'}</Text>
+      <FontAwesomeIcon icon={isFav ? faStarSolid : faStarOutline} color={tint} size={16} />
+      <Text color={isFav ? '$primary' : '$foreground'}>{isFav ? 'Favorited' : 'Favorite'}</Text>
     </Button>
   );
 }

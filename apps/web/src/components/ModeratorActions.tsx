@@ -1,6 +1,7 @@
+import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
+import { faShieldHalved } from '@fortawesome/sharp-light-svg-icons';
 import { api } from '@skating/convex/api';
 import { useMutation, useQuery } from 'convex/react';
-import { ShieldIcon } from 'lucide-react';
 import { useState } from 'react';
 import { useRole } from '@/lib/useRole';
 import { Button } from './ui/button';
@@ -61,7 +62,7 @@ export function ModeratorActions({
   return (
     <Dialog>
       <DialogTrigger render={<Button variant="ghost" size="sm" />}>
-        <ShieldIcon className="size-4" />
+        <FontAwesomeIcon icon={faShieldHalved} className="size-4" />
         Moderate
       </DialogTrigger>
       <DialogContent>

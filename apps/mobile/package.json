@@ -10,10 +10,17 @@
     "prebuild": "expo prebuild",
     "check-types": "tsc --noEmit",
     "test": "vitest run --coverage",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "eas-build-pre-install": "if [ -n \"$FONTAWESOME_NPM_AUTH_TOKEN\" ]; then printf '//npm.fontawesome.com/:_authToken=%s\\n' \"$FONTAWESOME_NPM_AUTH_TOKEN\" >> ~/.npmrc; else echo 'WARNING: FONTAWESOME_NPM_AUTH_TOKEN is unset - the @fortawesome install will 401. Set it in this EAS environment.'; fi"
   },
   "dependencies": {
     "@clerk/clerk-expo": "^2.19.31",
+    "@fortawesome/fontawesome-svg-core": "^7.3.1",
+    "@fortawesome/react-native-fontawesome": "^1.0.0",
+    "@fortawesome/sharp-duotone-solid-svg-icons": "^7.3.1",
+    "@fortawesome/sharp-light-svg-icons": "^7.3.1",
+    "@fortawesome/sharp-regular-svg-icons": "^7.3.1",
+    "@fortawesome/sharp-solid-svg-icons": "^7.3.1",
     "@gorhom/bottom-sheet": "^5.2.14",
     "@maplibre/maplibre-react-native": "^11.3.6",
     "@protomaps/basemaps": "^5.7.2",

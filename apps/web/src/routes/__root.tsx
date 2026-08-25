@@ -2,6 +2,7 @@ import { createRootRoute, HeadContent, Scripts } from '@tanstack/react-router';
 import type { ReactNode } from 'react';
 import { AppProviders } from '../components/AppProviders';
 import { AuthGate } from '../components/AuthGate';
+import '../lib/fontawesome';
 import appCss from '../styles/app.css?url';
 
 /**

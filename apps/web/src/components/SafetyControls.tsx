@@ -1,7 +1,8 @@
+import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
+import { faFlag } from '@fortawesome/sharp-light-svg-icons';
 import { api } from '@skating/convex/api';
 import type { Id } from '@skating/convex/dataModel';
 import { useMutation } from 'convex/react';
-import { FlagIcon } from 'lucide-react';
 import { useState } from 'react';
 import { Badge } from './ui/badge';
 import { Button } from './ui/button';
@@ -82,7 +83,7 @@ export function FlagDialog({
   return (
     <Dialog>
       <DialogTrigger render={<Button variant="ghost" size="sm" />}>
-        <FlagIcon className="size-4" />
+        <FontAwesomeIcon icon={faFlag} className="size-4" />
         {label}
       </DialogTrigger>
       <DialogContent>

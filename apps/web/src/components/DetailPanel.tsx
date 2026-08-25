@@ -1,5 +1,6 @@
+import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
+import { faXmark } from '@fortawesome/sharp-light-svg-icons';
 import { useNavigate } from '@tanstack/react-router';
-import { XIcon } from 'lucide-react';
 import { type ReactNode, useEffect } from 'react';
 import { cn } from '@/lib/utils';
 import { Button } from './ui/button';
@@ -60,7 +61,7 @@ export function DetailPanel({ children }: { children: ReactNode }) {
         className="absolute top-3 right-3 z-10"
         onClick={() => navigate({ to: '/' })}
       >
-        <XIcon />
+        <FontAwesomeIcon icon={faXmark} />
         <span className="sr-only">Close</span>
       </Button>
       {children}

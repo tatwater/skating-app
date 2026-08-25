@@ -349,28 +349,39 @@ per-body block copy at whole-pixel offsets — no resampling — and it must be 
 ascending pass a sea-level lake needs 429 m and a 600 m lake needs 298 m *the other way*, a 750 m
 spread inside one scene.
 
-**Measured on a real pair 24 h apart over Mascoma** (ascending `…20260213T224345`, descending
-`…20260212T105656`), scanning for the offset at which the mask covers the darkest pixels:
+### ⚠⚠ `h_ref` is LOCAL to the lake, and the scene average is worse than no correction
 
-| | ascending | descending |
+The reference is not one number per scene. A GRD is geocoded against its geolocation grid, whose
+points **each** carry a terrain height and an incidence angle. Averaging that grid describes what the
+pass flew over: across five real tracks over this region it ranged **7.9 m** (mostly Gulf of Maine) to
+**369.6 m** (the White Mountains).
+
+Calibrated with `sar-calibrate.py` against **21 lake-passes** — 19 lakes, 5 tracks, −1 m to 710 m:
+
+| | RMS residual | correlation |
 |---|---|---|
-| error before | 150 m | 150 m |
-| error after | **80 m** | **30 m** |
-| asc-vs-desc gap | **291 m (10.4 px) → 107 m (3.8 px)** | |
+| scene-average height + incidence | 287.4 m | 0.25 |
+| **local height + incidence** | **42.1 m** | **0.90** |
+| no correction at all | 116.2 m | — |
 
-✅ **The direction is confirmed and it is the load-bearing half** — both passes measured positive
-along their own range, in nearly opposite ground directions, which is the signature of a height effect
-rather than a polygon error. Applied backwards it would land ~270 m out, worse than not correcting.
+The measured **across-range** component is 9.4 m RMS — near zero, which independently confirms the
+displacement is along range as the geometry claims rather than the model happening to fit. Incidence
+matters on its own: it ranged 30.9°–44.8° across those lakes against a scene mean of 38.6°, and
+`1/tan` moves 60% over that span.
 
-⚠ **The magnitude is approximate and consistently over.** The flat-lake model predicts more
-displacement than is there (162 m and 129 m against ~108 m of ground truth). One lake on two passes
-cannot say why; the candidates are the corpus height, the scene-*average* reference height, and
-mid-swath incidence standing in for the lake's own. Interpolating the geolocation grid at the lake was
-tried and did not clearly win — it improved one pass and worsened the other.
+On the Mascoma ascending/descending pair (24 h apart, range bearings 76° and 284°):
 
-**So a timeline mixing orbit directions still shows ~4 px of movement, not zero.** Whether that is
-good enough is a product call; the statistics improve either way, because a zone 30–80 m off samples
-far more actual lake than one 150 m off.
+| | before | after |
+|---|---|---|
+| per-pass error | 150 m (5.4 px) | **30 m (1.1 px)** |
+| ascending-vs-descending gap | 291 m (10.4 px) | **39 m (1.4 px)** |
+
+**That gap is what decides whether a timeline can mix orbit directions**, and 1.4 px says it can — so
+the usable radar cadence doubles.
+
+⚠ **~40 m is the floor, and it is ours rather than the radar's.** Sentinel-2 needs no geometric
+correction and its lake masks still sit **31–71 m** off the imagery — that is how accurate our OSM/NHD
+shorelines are. Refining the radar model further would be fitting our own polygon error.
 
 ⚠ **`elevationM` must reach the mask file or none of this happens.** On 2026-08-25 a bake produced
 **0 of 40** bodies with an elevation, because `listForImageryMask` returned the field in source while

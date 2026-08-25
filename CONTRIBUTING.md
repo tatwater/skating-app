@@ -46,6 +46,13 @@ pnpm typecheck        # strict TypeScript — the first test tier
 pnpm test             # Vitest across packages
 ```
 
+> ⚠ **`pnpm install` currently needs a FontAwesome Pro token.** The icon set is FA Pro, and its
+> packages come from a private registry that covers the whole `@fortawesome` scope — so the install
+> fails without a seat, rather than merely falling back to free icons. Setup (one line in your
+> `~/.npmrc`) is in [docs/fontawesome-pro.md](./docs/fontawesome-pro.md). If this is blocking you
+> from contributing, please open an issue — it's a trade we made for the app's own design work, not
+> a decision we're attached to.
+
 > These commands are the *target* setup; until the scaffold is committed they may not
 > all exist yet. Check back, or open an issue if you'd like to help stand them up.
 
