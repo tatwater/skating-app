@@ -19,21 +19,12 @@
 import { execFileSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, join } from 'node:path';
+import { join } from 'node:path';
 import process from 'node:process';
-import { fileURLToPath } from 'node:url';
 
 import { latestSeasonWithFrames, type SeasonIndex } from '@skating/core';
+import { flag, has, SCRATCH } from './cli';
 import { buildSeasonIndex, type FrameManifest } from './frameIndex';
-
-const HERE = dirname(fileURLToPath(import.meta.url));
-const SCRATCH = join(HERE, '..', '.scratch');
-
-function flag(name: string): string | undefined {
-  const hit = process.argv.find((a) => a.startsWith(`--${name}=`));
-  return hit?.slice(name.length + 3);
-}
-const has = (name: string) => process.argv.includes(`--${name}`);
 
 function rclone(args: string[]): string {
   return execFileSync('rclone', [...args, '--s3-no-check-bucket'], {

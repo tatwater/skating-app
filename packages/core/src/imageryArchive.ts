@@ -123,7 +123,11 @@ export interface ArchivePointer {
  * ever lists seasons for itself applies the same rule instead of reinventing a near-miss of it.
  */
 export function latestSeasonWithFrames(indexes: readonly SeasonIndex[]): string | null {
-  const populated = indexes.filter((index) => index.frames.length > 0);
-  if (populated.length === 0) return null;
-  return populated.map((index) => index.season).sort()[populated.length - 1] ?? null;
+  return (
+    indexes
+      .filter((index) => index.frames.length > 0)
+      .map((index) => index.season)
+      .sort()
+      .at(-1) ?? null
+  );
 }

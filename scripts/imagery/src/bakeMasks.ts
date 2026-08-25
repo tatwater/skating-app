@@ -36,24 +36,13 @@
 
 import { execFileSync } from 'node:child_process';
 import { closeSync, mkdirSync, openSync, rmSync, writeFileSync, writeSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { join } from 'node:path';
 import process from 'node:process';
-import { fileURLToPath } from 'node:url';
 
 import { archiveSeasonLabel, currentSeason, SENTINEL_MASK_METERS } from '@skating/core';
+import { flag, has, SCRATCH } from './cli';
 import { scanCorpusMasks } from './corpus';
 import { emptyTally, maskFeatureFor, recordOutcome } from './revealMasks';
-
-// `fileURLToPath`, never `new URL(...).pathname` — the latter hands back a percent-encoded path, so
-// a checkout under a directory with a space in it resolves `.scratch` to somewhere that isn't there.
-const HERE = dirname(fileURLToPath(import.meta.url));
-const SCRATCH = join(HERE, '..', '.scratch');
-
-function flag(name: string): string | undefined {
-  const hit = process.argv.find((a) => a.startsWith(`--${name}=`));
-  return hit?.slice(name.length + 3);
-}
-const has = (name: string) => process.argv.includes(`--${name}`);
 
 function need(binary: string, install: string): void {
   try {

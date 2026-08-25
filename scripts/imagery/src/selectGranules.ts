@@ -25,11 +25,11 @@
  */
 
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import process from 'node:process';
-import { fileURLToPath } from 'node:url';
 
+import { findLatestMasks, flag, has, SCRATCH } from './cli';
 import {
   assertTileSurveyUsable,
   type GranuleCandidate,
@@ -44,11 +44,6 @@ import {
   tileSurveyKey,
   toTileSurveyCollection,
 } from './tileSurvey';
-
-// `fileURLToPath`, never `new URL(...).pathname` — the latter is percent-encoded, so a checkout under
-// a directory with a space in it resolves `.scratch` to a path that does not exist.
-const HERE = dirname(fileURLToPath(import.meta.url));
-const SCRATCH = join(HERE, '..', '.scratch');
 
 const STAC_URL = process.env.STAC_URL ?? 'https://earth-search.aws.element84.com/v1';
 
@@ -65,12 +60,6 @@ const COLLECTIONS = {
   s1: process.env.STAC_COLLECTION_S1 ?? 'sentinel-1-grd',
 } as const;
 type Mission = keyof typeof COLLECTIONS;
-
-function flag(name: string): string | undefined {
-  const hit = process.argv.find((a) => a.startsWith(`--${name}=`));
-  return hit?.slice(name.length + 3);
-}
-const has = (name: string) => process.argv.includes(`--${name}`);
 
 /** The mask file's own extent, via ogrinfo — see the module note for why this and not REGION_BOUNDS. */
 function maskExtent(fgbPath: string): [number, number, number, number] {
@@ -397,9 +386,12 @@ function findEmptyTiles(
   const entries: TileSurveyEntry[] = [];
   let unreadable = 0;
   for (const [tile, footprint] of perTile) {
+    // One `footprintBbox` per tile, and the box the survey RECORDS is the box it actually tested —
+    // computing it twice invites the artifact to describe a different rectangle than the query did.
+    let box: [number, number, number, number];
     let count: number;
     try {
-      const box = footprintBbox(footprint);
+      box = footprintBbox(footprint);
       const out = execFileSync('ogrinfo', ['-so', '-al', '-spat', ...box.map(String), masksPath], {
         encoding: 'utf8',
         maxBuffer: 64 * 1024 * 1024,
@@ -407,14 +399,15 @@ function findEmptyTiles(
       });
       count = Number(/^Feature Count: (\d+)/m.exec(out)?.[1] ?? Number.NaN);
     } catch {
-      count = Number.NaN;
+      unreadable++;
+      continue;
     }
     if (Number.isNaN(count)) {
       unreadable++;
       continue;
     }
     if (count === 0) empty.add(tile);
-    entries.push({ tile, bodies: count, kept: count > 0, bbox: footprintBbox(footprint) });
+    entries.push({ tile, bodies: count, kept: count > 0, bbox: box });
   }
 
   console.error(
@@ -435,27 +428,6 @@ function findEmptyTiles(
   }
 
   return empty;
-}
-
-/**
- * The most recent mask bake in `.scratch`, so the common case needs no flags.
- *
- * Sorted by name rather than mtime: the names carry the season (`masks-winter-2026-27.fgb`) and sort
- * correctly, while mtime would prefer whichever file was last *touched* — which after a re-download
- * or a `cp -r` is not the newest season.
- */
-function findLatestMasks(): string {
-  if (!existsSync(SCRATCH)) {
-    throw new Error('no .scratch — pass --masks=<path.fgb> or run bake-masks first');
-  }
-  const found = readdirSync(SCRATCH)
-    .filter((f) => f.startsWith('masks-') && f.endsWith('.fgb'))
-    .sort();
-  const latest = found[found.length - 1];
-  if (!latest) {
-    throw new Error('no mask file in .scratch — pass --masks=<path.fgb> or run bake-masks first');
-  }
-  return join(SCRATCH, latest);
 }
 
 main().catch((error: unknown) => {

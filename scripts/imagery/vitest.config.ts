@@ -15,6 +15,7 @@ export default defineConfig({
       // stderr shells over that logic, and `corpus.ts` is a subprocess boundary (`convex run`).
       exclude: [
         'src/**/*.test.ts',
+        'src/cli.ts',
         'src/bakeMasks.ts',
         'src/selectGranules.ts',
         'src/ingestWindowCli.ts',

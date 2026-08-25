@@ -24,20 +24,15 @@
  */
 
 import { execFileSync } from 'node:child_process';
-import { existsSync, readdirSync } from 'node:fs';
-import { dirname, join } from 'node:path';
 import process from 'node:process';
-import { fileURLToPath } from 'node:url';
 
 // `ingestGate` lives in core rather than beside this CLI: the same gate now runs from a Convex cron
 // that watches for the season opening (`convex/imageryIngest.ts`), and a second copy of a threshold
 // is a second chance to disagree about when winter started.
 import { ingestWindow, type SiteSeries } from '@skating/core';
 
-// `fileURLToPath`, never `new URL(...).pathname` — the latter is percent-encoded, so a checkout under
-// a directory with a space in it resolves `.scratch` to a path that does not exist.
-const HERE = dirname(fileURLToPath(import.meta.url));
-const SCRATCH = join(HERE, '..', '.scratch');
+import { findLatestMasks, flag } from './cli';
+
 const OPEN_METEO_URL = 'https://api.open-meteo.com/v1/forecast';
 
 /** Open-Meteo's forecast `past_days` ceiling — the same constant convex/weather.ts pins. */
@@ -45,11 +40,6 @@ const MAX_PAST_DAYS = 92;
 
 /** The pond the community treats as the season opener (founder, 2026-08-21c). */
 const SENTINEL_NAME = /lake of the clouds/i;
-
-function flag(name: string): string | undefined {
-  const hit = process.argv.find((a) => a.startsWith(`--${name}=`));
-  return hit?.slice(name.length + 3);
-}
 
 interface Site {
   siteId: string;
@@ -137,16 +127,6 @@ async function fetchLows(sites: Site[], pastDays: number): Promise<SiteSeries[]>
       .filter((d): d is { date: string; minTempC: number } => d.minTempC !== null);
     return { siteId: site.siteId, ...(site.sentinel ? { sentinel: true } : {}), days };
   });
-}
-
-function findLatestMasks(): string {
-  if (!existsSync(SCRATCH)) throw new Error('no .scratch — run bake-masks first, or pass --masks=');
-  const found = readdirSync(SCRATCH)
-    .filter((f) => f.startsWith('masks-') && f.endsWith('.fgb'))
-    .sort();
-  const latest = found[found.length - 1];
-  if (!latest) throw new Error('no mask file — run bake-masks first, or pass --masks=');
-  return join(SCRATCH, latest);
 }
 
 async function main(): Promise<void> {
