@@ -93,19 +93,32 @@ export function FreezeUpScrubber({
     [stops, onSelect],
   );
 
-  if (!timeline || stops.length === 0) {
+  if (loading) {
+    return (
+      <div className="flex items-center gap-1.5 text-muted-foreground text-sm">
+        <Loader2 aria-hidden className="size-3.5 animate-spin" />
+        Loading the freeze-up timeline…
+      </div>
+    );
+  }
+
+  // ⚠ **No timeline is not the same claim as no passes, and saying the second is a lie.**
+  //
+  // `timeline` is null whenever the season index has not arrived — an unconfigured archive, a fetch
+  // that failed, a read still in flight — and none of those is knowledge about this lake. Rendering
+  // "no satellite passes recorded" there tells a skater something false about Lake Champlain on the
+  // strength of a missing environment variable.
+  //
+  // So: nothing at all until we have an index. Only once we do can an empty stop list mean what it
+  // says, which for most of the corpus it genuinely will.
+  if (!timeline) return null;
+
+  if (stops.length === 0) {
     return (
       <div className="text-muted-foreground text-sm">
-        {loading ? (
-          <span className="flex items-center gap-1.5">
-            <Loader2 aria-hidden className="size-3.5 animate-spin" />
-            Loading the freeze-up timeline…
-          </span>
-        ) : (
-          // Not an error, and phrased so it does not read as one: most of the corpus sits under
-          // passes that never cut it, and a lake with no frames is an ordinary outcome.
-          <span>No satellite passes recorded over this lake{timeline ? ' this season' : ''}.</span>
-        )}
+        {/* Not an error, and phrased so it does not read as one: most of the corpus sits under passes
+            that never cut it, and a lake with no frames is an ordinary outcome. */}
+        No satellite passes recorded over this lake this season.
       </div>
     );
   }

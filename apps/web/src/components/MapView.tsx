@@ -1476,7 +1476,14 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
           settled the same question the same way, where the sheet collapses to reveal it. Bottom-left
           keeps it clear of the imagery toggle at top-right and of MapLibre's attribution ⓘ at
           bottom-right, which is the affordance carrying the ODbL obligation and must stay reachable. */}
-      {imageryOn && highlightWaterBodyId && !hazardDropMode && !pinDropMode ? (
+      {/* `imageryArchiveUrl` gates the panel itself: with no archive configured there is nothing to
+          scrub and nothing true to say about why, so the correct render is none at all — the same
+          call the bathymetry layer makes when its own URL is blank. */}
+      {env.imageryArchiveUrl &&
+      imageryOn &&
+      highlightWaterBodyId &&
+      !hazardDropMode &&
+      !pinDropMode ? (
         <div className="absolute bottom-4 left-4 z-10 max-w-[min(28rem,calc(100%-2rem))] rounded-md bg-background/95 p-3 shadow-lg">
           <FreezeUpScrubber
             timeline={freezeUpTimeline}

@@ -197,6 +197,24 @@ describe('FreezeUpScrubber — the band selector', () => {
 });
 
 describe('FreezeUpScrubber — the empty states are not errors', () => {
+  it('⚠ says NOTHING when the index has not arrived, because that is not a fact about the lake', () => {
+    // `timeline` is null for an unconfigured archive, a failed fetch, or a read in flight — none of
+    // which is knowledge about this water. Claiming "no passes recorded" there tells a skater
+    // something false on the strength of a missing environment variable. Observed live 2026-08-25.
+    const { container } = render(
+      <FreezeUpScrubber
+        timeline={null}
+        index={null}
+        band="visual"
+        onBandChange={vi.fn()}
+        selected={null}
+        onSelect={vi.fn()}
+        loading={false}
+      />,
+    );
+    expect(container.firstChild).toBeNull();
+  });
+
   it('says a lake simply had no passes, without sounding broken', () => {
     render(
       <FreezeUpScrubber
