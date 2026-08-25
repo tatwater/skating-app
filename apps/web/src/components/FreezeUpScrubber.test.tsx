@@ -300,3 +300,93 @@ describe('FreezeUpScrubber — the split-body seam', () => {
     expect(screen.queryByText(/sits across a granule edge/)).toBeNull();
   });
 });
+
+describe('FreezeUpScrubber — dragging the track', () => {
+  const threeStops = timelineOf([
+    stop({ frame: frame({ granuleId: 'a' }) }),
+    stop({ frame: frame({ granuleId: 'b' }), landable: false, blockedBy: 'cloud' }),
+    stop({ frame: frame({ granuleId: 'c' }) }),
+  ]);
+
+  /** jsdom reports zero-size boxes, so the track has to be told how wide it is. */
+  function withTrackWidth(width: number) {
+    return vi.spyOn(HTMLDivElement.prototype, 'getBoundingClientRect').mockReturnValue({
+      left: 0,
+      width,
+      top: 0,
+      height: 24,
+      right: width,
+      bottom: 24,
+      x: 0,
+      y: 0,
+      toJSON: () => ({}),
+    });
+  }
+
+  it('selects the notch under the pointer', () => {
+    const rect = withTrackWidth(300);
+    const onSelect = vi.fn();
+    render(
+      <FreezeUpScrubber
+        timeline={threeStops}
+        index={indexOf(['visual'])}
+        band="visual"
+        onBandChange={vi.fn()}
+        selected={0}
+        onSelect={onSelect}
+        loading={false}
+      />,
+    );
+
+    const track = screen.getByRole('group');
+    track.setPointerCapture = vi.fn();
+    // 250 of 300 across three notches is the last one.
+    fireEvent.pointerDown(track, { clientX: 250, pointerId: 1 });
+    expect(onSelect).toHaveBeenCalledWith(2);
+    rect.mockRestore();
+  });
+
+  it('⚠ snaps to a blocked notch rather than skipping past it', () => {
+    // Jumping ahead to the nearest landable stop would outrun the cursor and hide that a date exists
+    // and is unusable — which is the entire reason blocked stops are drawn.
+    const rect = withTrackWidth(300);
+    const onSelect = vi.fn();
+    render(
+      <FreezeUpScrubber
+        timeline={threeStops}
+        index={indexOf(['visual'])}
+        band="visual"
+        onBandChange={vi.fn()}
+        selected={0}
+        onSelect={onSelect}
+        loading={false}
+      />,
+    );
+
+    const track = screen.getByRole('group');
+    track.setPointerCapture = vi.fn();
+    fireEvent.pointerDown(track, { clientX: 150, pointerId: 1 });
+    expect(onSelect).toHaveBeenCalledWith(1);
+    rect.mockRestore();
+  });
+
+  it('ignores a move with no button held, so a hover does not scrub', () => {
+    const rect = withTrackWidth(300);
+    const onSelect = vi.fn();
+    render(
+      <FreezeUpScrubber
+        timeline={threeStops}
+        index={indexOf(['visual'])}
+        band="visual"
+        onBandChange={vi.fn()}
+        selected={0}
+        onSelect={onSelect}
+        loading={false}
+      />,
+    );
+
+    fireEvent.pointerMove(screen.getByRole('group'), { clientX: 250, buttons: 0 });
+    expect(onSelect).not.toHaveBeenCalled();
+    rect.mockRestore();
+  });
+});

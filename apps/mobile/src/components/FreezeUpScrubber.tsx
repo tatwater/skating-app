@@ -13,21 +13,33 @@
  * still carries its reason as an accessible label with `accessibilityState.disabled`, so VoiceOver
  * and TalkBack explain it exactly as a screen reader does on web.
  *
- * **Marks size up.** Web's 8 px hit target is a mouse target. These are 20 px wide with the visible
- * mark drawn inside, because a stop nobody can reliably tap is a stop that is not there.
+ * **Drag, with a tick at every notch.** A traditional scrubber, which is what a timeline reads as —
+ * so the track takes a pan gesture, snaps to the nearest notch under the finger, and fires a light
+ * haptic each time the finger crosses into a new one. The tick is what makes a dense track usable
+ * without watching it: sixty passes in a phone's width is under 6 px each, and a thumb covers the
+ * mark it is choosing.
+ *
+ * ⚠ **The whole season therefore has to fit.** A scrolling track can be read a section at a time; a
+ * track you *drag across* cannot, because the gesture has no meaning without both ends visible. So
+ * notches are placed by fraction of the measured width and a dense winter packs tighter — which is
+ * also honest about the sampling.
  */
 
 import {
   type BodyTimeline,
   bandsIn,
+  crossedNotch,
   frameSourceLabel,
   nearestLandableStop,
+  notchAtOffset,
   type SeasonIndex,
   stopCaption,
   type TimelineStop,
 } from '@skating/core';
-import { useEffect } from 'react';
-import { ScrollView, Text, XStack, YStack } from 'tamagui';
+import * as Haptics from 'expo-haptics';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+import { Text, XStack, YStack } from 'tamagui';
 
 /** `winter-2025-26` → `winter 2025–26`. */
 function seasonLabel(season: string): string {
@@ -56,6 +68,40 @@ export function FreezeUpScrubber({
 }) {
   const stops = timeline?.stops ?? [];
   const bands = index ? bandsIn(index) : [];
+  const [trackWidth, setTrackWidth] = useState(0);
+  // The notch the finger was last over, so a tick fires on *crossing* rather than on every sample.
+  const lastNotch = useRef<number | null>(null);
+
+  const scrubTo = useCallback(
+    (x: number) => {
+      const notch = notchAtOffset(x, trackWidth, stops.length);
+      if (notch === null) return;
+      // ⚠ **Snap to the nearest notch, including a blocked one.** Skipping ahead to the nearest
+      // landable stop would make the thumb outrun the finger and feel broken — and it would hide that
+      // a date exists and is unusable, which is the entire reason blocked stops are drawn.
+      if (crossedNotch(lastNotch.current, notch)) {
+        void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      }
+      lastNotch.current = notch;
+      onSelect(notch);
+    },
+    [trackWidth, stops.length, onSelect],
+  );
+
+  // ⚠ `.runOnJS(true)`, so the handlers are plain JS callbacks rather than worklets. The selection
+  // lives in React state and the haptic is a native module call — neither is worklet-safe, and the
+  // failure for both is a runtime crash on the UI thread rather than a type error here.
+  //
+  // `minDistance(0)` makes a tap scrub as well, so the track does not have two behaviours a finger
+  // has to know about before touching it.
+  const pan = Gesture.Pan()
+    .minDistance(0)
+    .runOnJS(true)
+    .onBegin((event) => {
+      lastNotch.current = null;
+      scrubTo(event.x);
+    })
+    .onUpdate((event) => scrubTo(event.x));
 
   // Open on the most recent usable pass: a skater asking about a lake is asking about now.
   useEffect(() => {
@@ -109,18 +155,26 @@ export function FreezeUpScrubber({
         </Text>
       </XStack>
 
-      <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-        <XStack alignItems="flex-end" accessibilityRole="tablist">
+      <GestureDetector gesture={pan}>
+        <XStack
+          height={32}
+          alignItems="flex-end"
+          onLayout={(event) => setTrackWidth(event.nativeEvent.layout.width)}
+          accessibilityRole="adjustable"
+          accessibilityLabel={`Satellite passes over this lake, ${seasonLabel(timeline.season)}`}
+        >
           {stops.map((stop, i) => (
             <StopMark
               key={`${stop.frame.granuleId}:${stop.frame.band}`}
               stop={stop}
               selected={i === selected}
-              onPress={() => stop.landable && onSelect(i)}
+              // `flex={1}` rather than a fixed width: the whole season fits the box, so a dense
+              // winter packs tighter instead of scrolling out of reach of the drag.
+              onPress={() => onSelect(i)}
             />
           ))}
         </XStack>
-      </ScrollView>
+      </GestureDetector>
 
       {/* The date is content, not furniture (D84/C4). */}
       {caption ? (
@@ -181,7 +235,14 @@ export function FreezeUpScrubber({
   );
 }
 
-/** One pass. 20 px of hit target around a hairline mark — a stop nobody can tap is not a stop. */
+/**
+ * One pass.
+ *
+ * Flexes to an equal share of the track rather than taking a fixed width, because the whole season
+ * has to fit for a drag across it to mean anything. A sparse winter therefore gets fat targets and a
+ * dense one gets thin ones — which is why the haptic tick matters: at sixty passes a mark is under
+ * 6 px and a thumb covers the one it is choosing.
+ */
 function StopMark({
   stop,
   selected,
@@ -198,7 +259,7 @@ function StopMark({
 
   return (
     <XStack
-      width={20}
+      flex={1}
       height={28}
       alignItems="flex-end"
       justifyContent="center"

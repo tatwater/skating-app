@@ -33,8 +33,10 @@ import type { SeasonIndex } from '@skating/core';
 import {
   type BodyTimeline,
   bandsIn,
+  crossedNotch,
   frameSourceLabel,
   nearestLandableStop,
+  notchAtOffset,
   stopCaption,
   type TimelineStop,
 } from '@skating/core';
@@ -71,6 +73,8 @@ export function FreezeUpScrubber({
   error?: boolean;
 }) {
   const refs = useRef<(HTMLButtonElement | null)[]>([]);
+  const trackRef = useRef<HTMLDivElement | null>(null);
+  const lastNotch = useRef<number | null>(null);
   const stops = useMemo(() => timeline?.stops ?? [], [timeline]);
   const bands = useMemo(() => (index ? bandsIn(index) : []), [index]);
 
@@ -82,6 +86,23 @@ export function FreezeUpScrubber({
     const last = nearestLandableStop(stops, stops.length - 1);
     if (last !== null) onSelect(last);
   }, [selected, stops, onSelect]);
+
+  // Pointer-drag across the track, matching mobile. `setPointerCapture` is what makes a drag that
+  // leaves the element keep working — without it the selection freezes the moment the cursor crosses
+  // a notch's edge into the gap, which reads as the control sticking.
+  const scrubTo = useCallback(
+    (clientX: number) => {
+      const rect = trackRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      const notch = notchAtOffset(clientX - rect.left, rect.width, stops.length);
+      if (notch === null) return;
+      // Snap to the nearest notch including a blocked one — skipping ahead to the nearest landable
+      // stop would outrun the cursor and hide that a date exists and is unusable.
+      lastNotch.current = notch;
+      onSelect(notch);
+    },
+    [stops.length, onSelect],
+  );
 
   const move = useCallback(
     (from: number, direction: 1 | -1) => {
@@ -151,10 +172,27 @@ export function FreezeUpScrubber({
 
       {/* The track. `group` rather than `slider` — see the module note on why. */}
       {/* biome-ignore lint/a11y/useSemanticElements: a slider's contract is a continuous value, and half these positions cannot be landed on. */}
+      {/* biome-ignore lint/a11y/noStaticElementInteractions: the keyboard path is the buttons inside, which is the accessible model — see the module note on why this is not a slider. */}
       <div
+        ref={trackRef}
         role="group"
         aria-label={`Satellite passes over this lake, ${seasonLabel(timeline.season)}`}
-        className="flex items-end gap-px overflow-x-auto pb-1"
+        // ⚠ No `overflow-x-auto`: the whole season fits, because a track you drag across has no
+        // meaning without both ends visible. A dense winter packs tighter instead of scrolling.
+        className="flex touch-none items-end pb-1"
+        onPointerDown={(event) => {
+          event.currentTarget.setPointerCapture(event.pointerId);
+          lastNotch.current = null;
+          scrubTo(event.clientX);
+        }}
+        onPointerMove={(event) => {
+          if (event.buttons === 0) return;
+          const rect = trackRef.current?.getBoundingClientRect();
+          const next = rect
+            ? notchAtOffset(event.clientX - rect.left, rect.width, stops.length)
+            : null;
+          if (crossedNotch(lastNotch.current, next)) scrubTo(event.clientX);
+        }}
       >
         {stops.map((stop, i) => (
           <StopMark
@@ -269,7 +307,8 @@ function StopMark({
         }
       }}
       className={[
-        'h-6 w-2 shrink-0 rounded-sm transition-colors',
+        // `flex-1` rather than a fixed width: the season fits the box, so the marks divide it.
+        'h-6 min-w-0 flex-1 rounded-sm transition-colors',
         stop.landable
           ? selected
             ? 'bg-primary'
