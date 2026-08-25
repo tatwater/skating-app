@@ -299,8 +299,19 @@ statistic joins on. The sidecar's `waterMasks: true` is what tells the container
 `coveragePct`, `snowIcePct`, `waterPct`, `vhDb` and `vvDb` were all measured over a lake *plus* a 60 m
 ring of shore, *plus* its islands, *plus* a trail corridor and a car park.
 
-The error is a fixed-width ring, so its share scales with perimeter over area — **negligible on
-Champlain, 7× a circular 1-acre pond's own area (86% land)**. Two consequences worth stating plainly:
+The error is a fixed-width ring, so its share scales with perimeter over area. **Measured on the first
+40 bodies of the real corpus**, comparing the two artifacts a bake now writes:
+
+| body size | n | median share of the old zone that was **not lake** |
+|---|---|---|
+| under 10 acres | 8 | **70%** |
+| 10–100 acres | 19 | 47% |
+| over 100 acres | 13 | 23% |
+| **all** | **40** | **44%** |
+
+Worst case in that sample is Skylight Pond, 1.3 acres, at **86% land** — which matches the arithmetic
+for a circular 1-acre pond exactly. Seymour Lake at 1,747 acres is 13%. Two consequences worth stating
+plainly:
 
 - **N6g Lane 2** eliminates bodies on *"never observed frozen"*, and the size class it targets is the
   one where the surrounding woods were casting the vote.
