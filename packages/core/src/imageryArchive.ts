@@ -227,6 +227,15 @@ export interface FrameStats {
   /** ⚠ Radar only, and load-bearing for comparability — see {@link FrameBodyStats.vhDb}. */
   platform?: string;
   orbitDirection?: string;
+  /**
+   * The repeat track, and a **finer** comparability key than `orbitDirection`.
+   *
+   * Direction separates east-looking from west-looking. This separates the individual tracks *within*
+   * a direction, which still view a lake at different incidence angles — so holding only direction
+   * constant holds most of the geometry constant, not all of it. Worth reaching for if a series built
+   * per-direction still looks noisier than it should.
+   */
+  relativeOrbit?: number | null;
   bodies?: FrameBodyStats[];
 }
 

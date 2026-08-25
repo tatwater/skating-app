@@ -124,6 +124,13 @@ export const listForImageryMask = internalQuery({
           waterBodyId: body._id,
           name: body.name,
           polygon: body.polygon,
+          // ⚠ **Carried for the radar geocode, not for display.** A Sentinel-1 GRD is projected onto
+          // an ellipsoid at one average scene height, so ground above or below that reference is
+          // displaced along range by `dh / tan(theta)` — roughly 140 m per 100 m at IW incidence.
+          // A lake is flat at a known height, which is exactly the case where that correction is a
+          // constant rather than a per-pixel warp, and this is the number it needs. Optional because
+          // the corpus is at 99.5% coverage, not 100%; a body without one is geocoded as before.
+          elevationM: body.elevationM,
           // Only routed hike-in legs carry a path. A drive-up ramp's "walk" is a few metres already
           // inside the water's buffer, so it would add vertices and no shape (`ImageryMaskInput`).
           approachPaths: visiblePutIns.flatMap((p) =>

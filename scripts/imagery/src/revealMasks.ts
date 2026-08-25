@@ -39,6 +39,8 @@ export interface CorpusMaskRow {
   approachPaths?: readonly (readonly LatLng[])[];
   parkingCoords?: readonly LatLng[];
   markerCoords?: readonly LatLng[];
+  /** Surface elevation in metres — the radar geocode's input. See {@link MaskProperties.elevationM}. */
+  elevationM?: number;
 }
 
 /** What a bake did with one row — a feature, or the reason there isn't one. */
@@ -55,6 +57,15 @@ export type MaskOutcome =
 export interface MaskProperties {
   waterBodyId: string;
   name?: string;
+  /**
+   * Surface elevation in metres, where the corpus has one.
+   *
+   * ⚠ **For the radar geocode rather than for anything a skater sees.** A GRD is projected onto an
+   * ellipsoid at a single average scene height, so a lake above or below that reference lands
+   * displaced along range — the effect that made two islands appear to jump east and west between
+   * dates. Over a flat surface at a known height the correction is a constant, and this is its input.
+   */
+  elevationM?: number;
 }
 
 /**
@@ -93,6 +104,7 @@ export function maskFeatureFor(row: CorpusMaskRow): MaskOutcome {
       properties: {
         waterBodyId: row.waterBodyId,
         ...(row.name === undefined ? {} : { name: row.name }),
+        ...(row.elevationM === undefined ? {} : { elevationM: row.elevationM }),
       },
     },
   };

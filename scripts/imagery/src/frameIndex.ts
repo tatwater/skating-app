@@ -72,6 +72,11 @@ export interface FrameManifest {
    */
   bands?: string[];
   band?: string;
+  /** Radar acquisition geometry, recorded so a consumer can filter to comparable frames. */
+  orbitDirection?: string;
+  /** ⚠ The finer comparability key — see `FrameStats.relativeOrbit` in core. */
+  relativeOrbit?: number | null;
+  platform?: string;
   /**
    * The granule's acquisition polygon, copied from the STAC item at cut time.
    *

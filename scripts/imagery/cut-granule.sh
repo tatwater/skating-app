@@ -154,6 +154,13 @@ resolve_granule() {
   # thing that lets a consumer filter to comparable frames. Absent on optical items, and null there.
   ORBIT_STATE="$(jq -r '.properties["sat:orbit_state"] // empty' granule.json)"
   POLARISATIONS="$(jq -c '.properties["sar:polarizations"] // empty' granule.json)"
+  # ⚠ **The track, which is a finer comparability key than the direction.** Orbit direction separates
+  # east-looking from west-looking; `relative_orbit` separates the individual repeat tracks *within* a
+  # direction, and two of those still view a lake at different incidence angles. A consumer holding
+  # only direction constant is holding most of the geometry constant, not all of it — which matters
+  # because the surviving S1A/S1C offset and the planimetric bounce are both incidence-angle effects.
+  # Free here, and impossible to recover later without re-reading every granule.
+  RELATIVE_ORBIT="$(jq -r '.properties["sat:relative_orbit"] // empty' granule.json)"
   PLATFORM="${GRANULE_ID%%_*}"
 
   # ⚠ **The frame's season is its own, not the masks'.** These are two different things and filing a
@@ -752,6 +759,7 @@ transform_sar() {
     --arg platform "$PLATFORM" \
     --arg band "$render" \
     --arg orbit "${ORBIT_STATE:-}" \
+    --argjson relOrbit "${RELATIVE_ORBIT:-null}" \
     --argjson pols "${POLARISATIONS:-null}" \
     --argjson bodyCount "$MASK_COUNT" \
     --slurpfile bodies bodies.json \
@@ -764,7 +772,8 @@ transform_sar() {
     --argjson footprint "$(jq -c '.geometry' granule.json)" \
     '{granuleId:$granule, capturedAt:$captured, cloudCoverPct:null, season:$season,
       maskSeason:$maskSeason, collection:$collection, mission:$mission, platform:$platform,
-      band:$band, orbitDirection:(if $orbit == "" then null else $orbit end), polarizations:$pols,
+      band:$band, orbitDirection:(if $orbit == "" then null else $orbit end),
+      relativeOrbit:$relOrbit, polarizations:$pols,
       bodyCount:$bodyCount, bodies:$bodies[0], bands:$bands, featherMeters:$feather,
       resolutionM:$resolutionM, footprint:$footprint,
       cost:{stageMs:$stageMs, totalMs:$totalMs, vmSize:$vmSize}}' \
