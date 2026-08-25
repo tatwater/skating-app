@@ -42,6 +42,15 @@ export interface FreezeUpTimeline {
   /** The season being shown, per D149's pointer. */
   season: string | null;
   /**
+   * The archive is configured but could not be read.
+   *
+   * ⚠ **Distinct from "no timeline yet", and the difference is what a client may say.** A read that
+   * failed is a fact about the *archive* — a bad base URL, a bucket without CORS, a network that
+   * dropped — and never a fact about the lake. Kept separate so no caller can collapse them back
+   * into a claim about water.
+   */
+  error: boolean;
+  /**
    * The season's table of contents, once it has landed.
    *
    * Exposed because a band selector must be built from what this season *published* rather than a
@@ -69,6 +78,7 @@ export function useFreezeUpTimeline({
   const [season, setSeason] = useState<string | null>(null);
   const [index, setIndex] = useState<SeasonIndex | null>(null);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(false);
   // Bumped as each manifest lands, purely to force a re-render against a fuller cache. The value is
   // never read — the stats live in the module cache, so this is a "something changed" signal rather
   // than state, and the recompute below is what turns it into a sharper timeline.
@@ -82,15 +92,19 @@ export function useFreezeUpTimeline({
 
     void (async () => {
       setLoading(true);
+      setError(false);
       const resolved = await loadArchiveSeason(baseUrl);
-      if (cancelled || !resolved) {
-        if (!cancelled) setLoading(false);
+      if (cancelled) return;
+      if (!resolved) {
+        setError(true);
+        setLoading(false);
         return;
       }
       const loaded = await loadSeasonIndex(baseUrl, resolved);
       if (cancelled) return;
       setSeason(resolved);
       setIndex(loaded);
+      setError(loaded === null);
       setLoading(false);
     })();
 
@@ -137,5 +151,5 @@ export function useFreezeUpTimeline({
         })
       : null;
 
-  return { timeline, loading, season, index };
+  return { timeline, loading, season, index, error };
 }

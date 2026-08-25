@@ -1101,6 +1101,7 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
     loading: freezeUpLoading,
     season: freezeUpSeason,
     index: freezeUpIndex,
+    error: freezeUpError,
   } = useFreezeUpTimeline({
     // ⚠ `available: false` is a delisting — a takedown or a moderator's rejection — and it must reach
     // here as "no lake" rather than as an empty one. `imageryMasks` already refuses to bake a mask
@@ -1493,6 +1494,7 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
             selected={freezeUpStop}
             onSelect={setFreezeUpStop}
             loading={freezeUpLoading}
+            error={freezeUpError}
           />
         </div>
       ) : null}

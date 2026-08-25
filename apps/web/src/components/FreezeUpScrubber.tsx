@@ -56,6 +56,7 @@ export function FreezeUpScrubber({
   selected,
   onSelect,
   loading,
+  error = false,
 }: {
   timeline: BodyTimeline | null;
   /** The season index, for the bands it actually published — never a hardcoded list. */
@@ -66,6 +67,8 @@ export function FreezeUpScrubber({
   selected: number | null;
   onSelect: (index: number) => void;
   loading: boolean;
+  /** The archive is configured but unreadable — a fact about the archive, never about the lake. */
+  error?: boolean;
 }) {
   const refs = useRef<(HTMLButtonElement | null)[]>([]);
   const stops = useMemo(() => timeline?.stops ?? [], [timeline]);
@@ -111,7 +114,16 @@ export function FreezeUpScrubber({
   //
   // So: nothing at all until we have an index. Only once we do can an empty stop list mean what it
   // says, which for most of the corpus it genuinely will.
-  if (!timeline) return null;
+  if (!timeline) {
+    // Configured and unreadable. Worth saying, because the alternative is an empty box that looks
+    // like a rendering bug — but phrased strictly about the archive: a bad URL, a bucket without
+    // CORS and a dropped network all land here, and none of them is news about this water.
+    return error ? (
+      <div className="text-muted-foreground text-sm">
+        The freeze-up archive could not be reached.
+      </div>
+    ) : null;
+  }
 
   if (stops.length === 0) {
     return (

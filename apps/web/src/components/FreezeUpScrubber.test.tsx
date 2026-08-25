@@ -215,6 +215,26 @@ describe('FreezeUpScrubber — the empty states are not errors', () => {
     expect(container.firstChild).toBeNull();
   });
 
+  it('⚠ blames the archive, never the lake, when a configured archive is unreadable', () => {
+    // Observed live 2026-08-25: the bucket was public but sent no CORS headers, so every fetch failed
+    // and the panel rendered an empty box. A bad URL, a missing CORS rule and a dropped network all
+    // land here, and none of them is news about this water.
+    render(
+      <FreezeUpScrubber
+        timeline={null}
+        index={null}
+        band="visual"
+        onBandChange={vi.fn()}
+        selected={null}
+        onSelect={vi.fn()}
+        loading={false}
+        error
+      />,
+    );
+    const text = screen.getByText(/could not be reached/).textContent ?? '';
+    expect(text).not.toMatch(/lake|pass|recorded/i);
+  });
+
   it('says a lake simply had no passes, without sounding broken', () => {
     render(
       <FreezeUpScrubber
