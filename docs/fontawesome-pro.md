@@ -98,9 +98,26 @@ the EAS environments the build profiles already reference:
 ```bash
 cd apps/mobile
 eas env:create --scope project --name FONTAWESOME_NPM_AUTH_TOKEN \
-  --value YOUR_TOKEN_HERE --type secret --environment development
-# repeat for --environment preview and --environment production
+  --value YOUR_TOKEN_HERE --visibility secret \
+  --environment development --environment preview --environment production
 ```
+
+⚠ **`--visibility secret`, not `--type secret`.** `--type` takes `string|file` and has nothing to
+do with confidentiality; the flag that protects the value is `--visibility`, which takes
+`plaintext|sensitive|secret`. Get this wrong and the variable is created **plaintext**, which means
+it is readable by anyone with project access — `eas env:list` simply prints it — and it can surface
+in build logs. `--environment` is repeatable, so one variable covers all three environments.
+
+Verify what you actually created, because the failure is silent:
+
+```bash
+eas env:list --environment production --format long   # Visibility must read SECRET
+```
+
+A `secret` variable is write-only: EAS injects it into builds but will never read it back. If
+`env:list` shows you the token, it is not a secret and needs
+`eas env:update --variable-name FONTAWESOME_NPM_AUTH_TOKEN --visibility secret` — plus a rotation,
+since it has been readable up to that point.
 
 The `development`, `preview`, and `production` profiles in `eas.json` each name an `environment`,
 and EAS injects that environment's variables into the build — including the pre-install hook. Miss
