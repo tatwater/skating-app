@@ -40,7 +40,7 @@ import { dirname, join } from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 
-import { currentSeason, SENTINEL_MASK_METERS } from '@skating/core';
+import { archiveSeasonLabel, currentSeason, SENTINEL_MASK_METERS } from '@skating/core';
 import { scanCorpusMasks } from './corpus';
 import { emptyTally, maskFeatureFor, recordOutcome } from './revealMasks';
 
@@ -67,7 +67,7 @@ function need(binary: string, install: string): void {
 async function main(): Promise<void> {
   const batchSize = Number(flag('batch') ?? 25);
   const season = Number(flag('season') ?? currentSeason(Date.now()));
-  const label = `winter-${season}-${String((season + 1) % 100).padStart(2, '0')}`;
+  const label = archiveSeasonLabel(season);
 
   need('ogr2ogr', 'brew install gdal');
 

@@ -29,7 +29,10 @@ import { dirname, join } from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 
-import { ingestWindow, type SiteSeries } from './ingestGate';
+// `ingestGate` lives in core rather than beside this CLI: the same gate now runs from a Convex cron
+// that watches for the season opening (`convex/imageryIngest.ts`), and a second copy of a threshold
+// is a second chance to disagree about when winter started.
+import { ingestWindow, type SiteSeries } from '@skating/core';
 
 // `fileURLToPath`, never `new URL(...).pathname` — the latter is percent-encoded, so a checkout under
 // a directory with a space in it resolves `.scratch` to a path that does not exist.

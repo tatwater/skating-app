@@ -18,6 +18,35 @@
 
 import type { MultiPolygon, Polygon } from 'geojson';
 
+import { type Season, seasonOf } from './season';
+
+/**
+ * The archive's season label — `winter-2025-26`.
+ *
+ * **One definition, because a second one is a second chance to disagree**, and this had already
+ * started: `bakeMasks` built the string inline to name a mask artifact, the ingest watcher built it
+ * again to key a row, and the two had to agree exactly or a cut would be filed against a prefix
+ * nothing reads. `cut-granule.sh` holds a third copy in shell that cannot import this — see the note
+ * there — which is precisely why the TypeScript side should not hold a fourth.
+ *
+ * The `-YY` half is the *following* year's last two digits, zero-padded, so the label sorts correctly
+ * as a string (`latestSeasonWithFrames` depends on that) and reads the way a skater says it.
+ */
+export function archiveSeasonLabel(season: Season): string {
+  return `winter-${season}-${String((season + 1) % 100).padStart(2, '0')}`;
+}
+
+/**
+ * The archive season an instant falls in — D63's July boundary, via `seasonOf`.
+ *
+ * Deriving it here rather than re-implementing the month test is the point: a January frame belongs to
+ * the winter that began the previous July, and getting that backwards files a whole backfill under the
+ * wrong year.
+ */
+export function archiveSeasonAt(ms: number): string {
+  return archiveSeasonLabel(seasonOf(ms));
+}
+
 /**
  * One frame in a season's scrubber.
  *

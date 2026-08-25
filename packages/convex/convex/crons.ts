@@ -158,6 +158,24 @@ crons.interval(
 );
 
 /**
+ * Watch for the imagery season to open (N6e §C3 / D149) — the other once-a-year job, same shape.
+ *
+ * Daily from 1 October, this asks the observed weather whether freeze-up has started, and records the
+ * answer once per season. It **does not** start a backfill: cutting granules spends money on
+ * infrastructure this deployment cannot see, so the cron notices and an operator acts.
+ *
+ * A no-op for ten months of the year, and a single indexed read for the rest of the season once the
+ * window has been recorded. See `imageryIngest.ts` for why the floor is October rather than
+ * September — the summit trigger can register a freeze on Mt Washington in August.
+ */
+crons.interval(
+  'watch for the imagery season to open',
+  { hours: 24 },
+  internal.imageryIngest.maybeCheckSeasonOpen,
+  {},
+);
+
+/**
  * NWS active alerts (N6c B5). Fifteen minutes because a winter storm warning is issued on that kind
  * of timescale and a skater deciding at 7am should not be reading 6am's picture — and because five
  * requests a quarter-hour is nothing to an unauthenticated public API that asks only for a
