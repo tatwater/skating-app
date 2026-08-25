@@ -9,6 +9,7 @@ import {
   MIN_BODY_CLEAR_FRACTION,
   MIN_BODY_COVERAGE,
   nearestLandableStop,
+  nearestLandableStopToDate,
   SEAM_MAX_GAP_DAYS,
   SEAM_MIN_ADDED_COVERAGE,
   type TimelineBody,
@@ -874,5 +875,49 @@ describe('framesToRender — a seam keeps both halves', () => {
     const after = framesToRender(stops, 1, framesToRender(stops, 0, null));
     expect(after.primary?.frame.granuleId).toBe('west');
     expect(after.companion?.frame.granuleId).toBe('east');
+  });
+});
+
+describe('nearestLandableStopToDate — where a band switch lands', () => {
+  const on = (iso: string, landable = true): TimelineStop => ({
+    frame: frame({ granuleId: iso, capturedAt: iso }),
+    landable,
+    basis: 'measured',
+  });
+
+  const winter = [
+    on('2025-12-05T00:00:00Z'),
+    on('2026-01-10T00:00:00Z'),
+    on('2026-02-14T00:00:00Z'),
+    on('2026-03-20T00:00:00Z'),
+  ];
+
+  it('⚠ keeps the skater roughly where they were, rather than jumping to the end of the season', () => {
+    // A position on a scrubber is a date, not an index. Switching bands swaps a ~30-pass optical
+    // season for a ~9-pass radar one, so carrying the number across is meaningless arithmetic — and
+    // landing on "most recent" throws away the part the skater was actually looking at.
+    expect(nearestLandableStopToDate(winter, '2026-02-09T00:00:00Z')).toBe(2);
+  });
+
+  it('takes the nearest either side, because a shared capture date is luck', () => {
+    expect(nearestLandableStopToDate(winter, '2025-11-01T00:00:00Z')).toBe(0);
+    expect(nearestLandableStopToDate(winter, '2026-06-01T00:00:00Z')).toBe(3);
+  });
+
+  it('never lands on a date with no picture behind it', () => {
+    const clouded = [on('2026-02-13T00:00:00Z', false), on('2026-03-20T00:00:00Z')];
+    expect(nearestLandableStopToDate(clouded, '2026-02-14T00:00:00Z')).toBe(1);
+  });
+
+  it('breaks a tie earlier, the way the season is read', () => {
+    const pair = [on('2026-02-10T00:00:00Z'), on('2026-02-20T00:00:00Z')];
+    expect(nearestLandableStopToDate(pair, '2026-02-15T00:00:00Z')).toBe(0);
+  });
+
+  it('says nothing rather than guessing, so the caller can fall back to the most recent', () => {
+    expect(nearestLandableStopToDate(winter, 'not a date')).toBeNull();
+    expect(
+      nearestLandableStopToDate([on('2026-01-01T00:00:00Z', false)], '2026-01-01T00:00:00Z'),
+    ).toBeNull();
   });
 });

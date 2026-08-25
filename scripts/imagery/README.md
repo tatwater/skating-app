@@ -337,6 +337,47 @@ classify reads exactly like a body that never froze. On the same fixture a **3×
 with exactly one interior pixel** — so `interiorPixels` and `interiorTotalPixels` put that caution in
 the manifest, where an operator confirming a removal can see it, instead of in a footnote.
 
+### The radar geocode, and how much of the jump it actually removes
+
+A GRD is geocoded at **one average scene height**, so a lake above or below it lands displaced along
+range by `(h − h_ref)/tan θ` — and because Sentinel-1 is right-looking, ascending and descending
+displace a lake in nearly opposite ground directions. That is the islands-jumping effect.
+
+`sar-deshift.py` moves each body's **pixels** back under its own polygon before anything else reads
+them, so the alpha, the zones, the statistics and the tiles all work at true positions. It is a
+per-body block copy at whole-pixel offsets — no resampling — and it must be per body: on one
+ascending pass a sea-level lake needs 429 m and a 600 m lake needs 298 m *the other way*, a 750 m
+spread inside one scene.
+
+**Measured on a real pair 24 h apart over Mascoma** (ascending `…20260213T224345`, descending
+`…20260212T105656`), scanning for the offset at which the mask covers the darkest pixels:
+
+| | ascending | descending |
+|---|---|---|
+| error before | 150 m | 150 m |
+| error after | **80 m** | **30 m** |
+| asc-vs-desc gap | **291 m (10.4 px) → 107 m (3.8 px)** | |
+
+✅ **The direction is confirmed and it is the load-bearing half** — both passes measured positive
+along their own range, in nearly opposite ground directions, which is the signature of a height effect
+rather than a polygon error. Applied backwards it would land ~270 m out, worse than not correcting.
+
+⚠ **The magnitude is approximate and consistently over.** The flat-lake model predicts more
+displacement than is there (162 m and 129 m against ~108 m of ground truth). One lake on two passes
+cannot say why; the candidates are the corpus height, the scene-*average* reference height, and
+mid-swath incidence standing in for the lake's own. Interpolating the geolocation grid at the lake was
+tried and did not clearly win — it improved one pass and worsened the other.
+
+**So a timeline mixing orbit directions still shows ~4 px of movement, not zero.** Whether that is
+good enough is a product call; the statistics improve either way, because a zone 30–80 m off samples
+far more actual lake than one 150 m off.
+
+⚠ **`elevationM` must reach the mask file or none of this happens.** On 2026-08-25 a bake produced
+**0 of 40** bodies with an elevation, because `listForImageryMask` returned the field in source while
+the deployed dev function predated it — every job would have exited 0 and built a nine-season archive
+with the correction silently disabled. `bake-masks` now **refuses** below 50% coverage (the corpus is
+at 99.5%) and prints the figure on every run. `pnpm convex-dev --once` is the fix.
+
 ### What the bake does *not* produce
 
 **The feather.** `SENTINEL_MASK_METERS` is `{solid: 60, feather: 240}`; only the 60 m solid core is

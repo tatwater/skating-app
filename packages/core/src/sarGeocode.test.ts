@@ -88,16 +88,20 @@ describe('geocodeOffsetMeters — the sign is the part to get right', () => {
 describe('maskOffsetMeters — the direction that was actually measured', () => {
   // ## The Mascoma pair, 2026-08-25
   //
-  // Two real passes 24 hours apart, scanned to find the offset at which the lake mask covers the
-  // darkest pixels — i.e. where the water really is in the product. These are the scene parameters
-  // as their annotations state them, and the expectations are what the scan measured.
+  // Two real passes 24 hours apart, scanned along each pass's own range direction to find where the
+  // lake mask covers the darkest pixels — i.e. where the water really is in the product. Both landed
+  // at **+150 m of EPSG:3857 easting**, which is the unit the scan worked in.
   //
-  // This is the regression test for a mistake that cannot be caught by inspection: the wrong
-  // direction does not halve the correction, it doubles the error, and what comes out is still a
-  // perfectly plausible backscatter figure.
+  // ⚠ **Projected metres, not ground metres, and conflating them cost an hour.** Web Mercator
+  // inflates distance by 1/cos(φ) — 1.382 at Mascoma's 43.65°N — while everything in this module is
+  // in *ground* metres. The first reading of this measurement compared the two directly and
+  // concluded the model agreed to within half a pixel. It does not; see the magnitude test below.
   const MASCOMA_M = 224;
+  const MEASURED_PROJECTED_M = 150;
+  const INFLATION = 1 / Math.cos((43.65 * Math.PI) / 180);
+  const MEASURED_GROUND_M = MEASURED_PROJECTED_M / INFLATION; // ~108.5 m
   const ASC = { referenceHeightM: 353.93, incidenceDeg: 38.688, headingDeg: 346.064 };
-  const DESC = { referenceHeightM: 327.0, incidenceDeg: 38.6, headingDeg: 194.0 };
+  const DESC = { referenceHeightM: 326.84, incidenceDeg: 38.648, headingDeg: 193.96 };
 
   function alongRange(
     offset: { eastM: number; northM: number },
@@ -115,27 +119,40 @@ describe('maskOffsetMeters — the direction that was actually measured', () => 
     expect(mask.northM).toBeCloseTo(-imagery.northM, 6);
   });
 
-  it('matches the ascending pass to under half a pixel', () => {
-    // Measured +150 m; a 28 m pixel, so anything inside ~14 m is agreement.
-    const along = alongRange(maskOffsetMeters({ ...ASC, heightM: MASCOMA_M }), ASC);
-    expect(along).toBeGreaterThan(136);
-    expect(along).toBeLessThan(164);
+  it('⚠ gets the direction right on both orbit directions, which is the load-bearing part', () => {
+    // The measurement is +150 projected in BOTH passes, along range bearings 76° and 284° — nearly
+    // opposite in ground terms. That is the signature of a height-driven displacement rather than a
+    // polygon error, and it means the sign is unambiguous even where the magnitude is not.
+    for (const scene of [ASC, DESC]) {
+      expect(alongRange(maskOffsetMeters({ ...scene, heightM: MASCOMA_M }), scene)).toBeGreaterThan(0);
+      expect(alongRange(geocodeOffsetMeters({ ...scene, heightM: MASCOMA_M }), scene)).toBeLessThan(0);
+    }
   });
 
-  it('matches the descending pass, whose range points almost the other way', () => {
-    // Range bearing 284° against the ascending pass's 76°. Both land at +150 m along their OWN
-    // range direction, which is the sense in which the correction makes the two passes agree —
-    // and is what stops the islands moving as a scrubber crosses between them.
-    const along = alongRange(maskOffsetMeters({ ...DESC, heightM: MASCOMA_M }), DESC);
-    expect(along).toBeGreaterThan(115);
-    expect(along).toBeLessThan(165);
+  it('⚠ OVER-predicts the magnitude, by 20 m on one pass and 54 m on the other', () => {
+    // Pinned as the known residual rather than as a pass mark. The flat-lake model gets most of the
+    // displacement and not all of it, and one lake on two passes is not enough to say why — the
+    // candidates are the corpus height, the scene-average reference height, and mid-swath incidence
+    // standing in for the lake's own. Local grid interpolation was tried and did not clearly win.
+    //
+    // If a calibration ever narrows this, these bounds are what should move.
+    const errors = [ASC, DESC].map(
+      (scene) => alongRange(maskOffsetMeters({ ...scene, heightM: MASCOMA_M }), scene) - MEASURED_GROUND_M,
+    );
+    for (const error of errors) {
+      expect(error).toBeGreaterThan(0); // over, never under
+      expect(error).toBeLessThan(60);
+    }
+    // Still a large net improvement: uncorrected, each pass is ~108 m out.
+    for (const error of errors) expect(Math.abs(error)).toBeLessThan(MEASURED_GROUND_M);
   });
 
-  it('⚠ the un-negated offset misses by an order of magnitude more', () => {
-    // 312 m and 279 m on the real pair — about eleven pixels, in the wrong direction.
+  it('⚠ the un-negated offset is worse than doing nothing at all', () => {
+    // This is why the direction gets two named functions. Applying the correction backwards moves a
+    // lake from ~108 m out to ~270 m out — and the backscatter it then reports is still plausible.
     for (const scene of [ASC, DESC]) {
       const wrong = alongRange(geocodeOffsetMeters({ ...scene, heightM: MASCOMA_M }), scene);
-      expect(Math.abs(wrong - 150)).toBeGreaterThan(250);
+      expect(Math.abs(wrong - MEASURED_GROUND_M)).toBeGreaterThan(2 * MEASURED_GROUND_M);
     }
   });
 });

@@ -354,16 +354,32 @@ mask_extent() {
 # distance by 1/cos(latitude) — ~1.39x at 44°N — so feeding `gdal_proximity` a bare 240 would ramp over
 # 240 *projected* metres, which is ~173 m on the ground: a 28% error that looks like a slightly tight
 # edge rather than like a units bug.
+# Web Mercator metres for a ground distance, at an extent's centre latitude.
+#
+# ⚠ **The single place this conversion lives.** Mercator inflates distance by 1/cos(φ) — ~1.39x at
+# 44°N — so a bare ground figure handed to `gdal_proximity` or to a pixel offset is 28% short. It is
+# needed by the feather, by the erosion and by the radar de-shift's padding, and three copies of one
+# trig expression is three chances for one of them to be the old one.
+project_ground_m() {
+  awk -v g="$1" -v miny="$2" -v maxy="$3" 'BEGIN{
+    pi=3.14159265358979; mw=20037508.342789244; cy=(miny+maxy)/2;
+    lat=(2*atan2(exp((cy/mw)*pi),1)-pi/2)*180/pi;
+    printf "%.1f", g/cos(lat*pi/180)
+  }'
+}
+
+centre_lat_of() {
+  awk -v miny="$1" -v maxy="$2" 'BEGIN{
+    pi=3.14159265358979; mw=20037508.342789244; cy=(miny+maxy)/2;
+    printf "%.6f", (2*atan2(exp((cy/mw)*pi),1)-pi/2)*180/pi
+  }'
+}
+
 build_alpha() {
   local MINX="$1" MINY="$2" MAXX="$3" MAXY="$4"
   local centre_lat feather_projected
-  centre_lat="$(awk -v miny="$MINY" -v maxy="$MAXY" 'BEGIN{
-    mw=20037508.342789244; cy=(miny+maxy)/2;
-    printf "%.6f", (2*atan2(exp((cy/mw)*3.14159265358979),1)-3.14159265358979/2)*180/3.14159265358979
-  }')"
-  feather_projected="$(awk -v f="$FEATHER_M" -v lat="$centre_lat" 'BEGIN{
-    printf "%.1f", f/cos(lat*3.14159265358979/180)
-  }')"
+  centre_lat="$(centre_lat_of "$MINY" "$MAXY")"
+  feather_projected="$(project_ground_m "$FEATHER_M" "$MINY" "$MAXY")"
   log "feather ${FEATHER_M} ground m -> ${feather_projected} projected m at ${centre_lat}°N"
 
   # 1. Burn the reveal shapes into a byte mask on exactly that grid.
@@ -443,64 +459,111 @@ build_zones() {
   build_interior "$MINY" "$MAXY"
 }
 
-# Where the zone polygons are read from. The radar path replaces it; see `geocode_zones`.
+# Where the zone polygons are read from. Always true positions — see `resolve_geocode`.
 ZONE_SOURCE=water.geojson
 GEOCODE_JSON=null
+GEOCODE_ARGS=()
 
-# ## The DEM-corrected geocode — move the zones onto the pixels that actually depict the lake
+# ## The DEM-corrected geocode — put each lake's pixels back under its own polygon
 #
 # A GRD carries no map projection, only ground-control points computed at **one average scene
 # height**. A lake above or below that reference lands displaced along range by `(h - h_ref)/tan(θ)`
-# — and because Sentinel-1 is right-looking, the displacement flips sign between ascending and
-# descending. That is what made two islands in Mascoma jump east, west, east as a scrubber advanced
-# through alternating passes.
+# — and because Sentinel-1 is right-looking, ascending views a lake from one side and descending from
+# the other, so the displacement flips between them. That is what made two islands in Mascoma jump
+# east, west, east as a scrubber advanced through alternating passes.
 #
-# ⚠ **A per-granule shift cannot fix this, and the numbers say so.** Measured on the ascending
-# Mascoma pass: a sea-level lake needs 429 m of correction and a 600 m lake needs 298 m the *other
-# way*, inside the same scene — a 750 m spread, **27 pixels**. So the correction is applied per body,
-# each from its own `elevationM`, which costs nothing because features are rasterised individually.
+# **Measured before it was wired in** (2026-08-25), per the rule the tiler swap established. Two real
+# passes 24 h apart over Mascoma, range bearings 76° and 284°, both measuring +150 m of EPSG:3857
+# easting = ~108 m on the ground:
 #
-# ✅ **Verified before it was wired in** (2026-08-25), per the rule the tiler swap established. Two
-# real passes 24 h apart over Mascoma, range bearings 76° and 284°: predicted +162 m and +129 m
-# against measured +150 m and +150 m — under half a pixel and under one pixel. The un-negated
-# direction misses by 312 m and 279 m, so the sign is confirmed rather than reasoned about.
+#   ✅ **The direction is confirmed** — both positive along their own range, in nearly opposite ground
+#      directions, which is the signature of a height effect rather than a polygon error. Un-negated,
+#      the correction moves a lake from ~108 m out to ~270 m out, i.e. worse than not correcting.
+#   ⚠ **The magnitude is approximate and consistently over** — predicted 162 m and 129 m against 108 m.
+#      Correcting halves the per-pass error and cuts the disagreement BETWEEN passes by about two
+#      thirds; it does not eliminate it. See `packages/core/src/sarGeocode.ts` for what was ruled out.
 #
-# ⚠ **This corrects the STATISTICS, not the picture.** The zones move onto the right pixels, so
-# `vhDb`, `sigma0Hist` and the rest describe the lake. The published frame is still one raster and
-# cannot carry twenty-seven pixels of per-lake translation, so it keeps the displacement — PR 3's
-# "hold one orbit direction per timeline" is what makes that a constant offset rather than a jump.
-# `SAR_GEOCODE_FRAME=1` additionally shifts the alpha, which trades a registration offset against the
-# reveal showing genuinely wrong ground; it is off until that is a decision somebody has made.
-geocode_zones() {
+# ⚠ **The correction moves the PIXELS, not the masks, and it lands before anything else reads them.**
+# `sar-deshift.py` rewrites each polarisation so every lake sits under its own polygon; afterwards the
+# alpha, the zones, the statistics and the tiles all work at true positions with no offset threaded
+# through any of them. A first version shifted the zone geometry instead — which fixed the numbers and
+# left the picture displaced, so the frame disagreed with the basemap and the islands still moved.
+#
+# **And that is what lets a timeline mix orbit directions again.** PR 3 holds one direction per
+# timeline precisely because the two disagreed about where a lake was. Corrected, they agree, and the
+# radar cadence doubles.
+resolve_geocode() {
   local href="$1" annotation_url
 
   # STAC's `schema-product-*` asset points at the RFI annotation, not the product one, so the path is
   # derived from the measurement href instead: `/measurement/iw-vh.tiff` -> `/annotation/iw-vh.xml`.
   annotation_url="$(sed 's#/measurement/#/annotation/#; s#\.tiff$#.xml#' <<<"$href")"
   if ! curl -fsSL --retry 3 "$annotation_url" -o annotation.xml; then
-    log "no product annotation at $annotation_url — zones stay uncorrected"
+    log "no product annotation at $annotation_url — this pass stays uncorrected"
     return 0
   fi
 
-  # Any body without `elevationM` is passed through untouched and counted as skipped: the correction
-  # needs a height, and sea level is a real height rather than a stand-in for "unknown".
   # ⚠ **Redirected to a file rather than captured with `$(stage …)`.** Command substitution runs
-  # `stage` in a subshell, so its append to `STAGE_JSON` would be discarded and this step would cost
+  # `stage` in a subshell, so its append to `STAGE_JSON` would be discarded and the step would cost
   # nothing according to the manifest — the one place the cost model is read from.
-  if ! stage sar_geocode sh -c 'python3 /usr/local/bin/sar-geocode.py annotation.xml \
-      --shift water.geojson water-geocoded.geojson > geocode.json'; then
-    log "geocode shift failed — zones stay uncorrected"
+  if ! stage sar_geocode sh -c \
+      'python3 /usr/local/bin/sar-geocode.py annotation.xml 0 > geocode.json'; then
+    log "geocode parameters unreadable — this pass stays uncorrected"
     return 0
   fi
   GEOCODE_JSON="$(cat geocode.json)"
-  ZONE_SOURCE=water-geocoded.geojson
-  log "geocode: $(jq -c '{referenceHeightM, incidenceDeg, shifted, skipped}' <<<"$GEOCODE_JSON")"
+  GEOCODE_ARGS=(
+    --reference-height "$(jq -r '.referenceHeightM' geocode.json)"
+    --incidence "$(jq -r '.incidenceDeg' geocode.json)"
+    --heading "$(jq -r '.headingDeg' geocode.json)"
+  )
+  log "geocode: $(jq -c '{referenceHeightM, incidenceDeg, headingDeg}' geocode.json)"
+}
 
-  if [[ "${SAR_GEOCODE_FRAME:-0}" == "1" ]]; then
-    python3 /usr/local/bin/sar-geocode.py annotation.xml --shift masks.geojson masks-geocoded.geojson \
-      >/dev/null && mv masks-geocoded.geojson masks.geojson \
-      && log "SAR_GEOCODE_FRAME on — the alpha moved with the zones"
-  fi
+# Widen the warp extent to cover where the pixels currently ARE, not only where they belong.
+#
+# ⚠ **Without this the correction silently truncates the lakes that need it most.** The de-shift
+# fetches each body's pixels from up to ~450 m outside its own footprint, so an extent drawn around
+# the masks alone leaves the outermost lakes reading partly from beyond the raster — and a body that
+# came back half-empty would report a coverage shortfall indistinguishable from a granule edge.
+#
+# The pad is the largest correction any body under THIS granule actually needs, so a pass over a flat
+# region pays nothing for one over the White Mountains.
+geocode_pad() {
+  [[ ${#GEOCODE_ARGS[@]} -gt 0 ]] || return 0
+  local reference incidence max_delta pad
+  reference="$(jq -r '.referenceHeightM' geocode.json)"
+  incidence="$(jq -r '.incidenceDeg' geocode.json)"
+  max_delta="$(jq -r --argjson ref "$reference" \
+    '[.features[].properties.elevationM // empty | . - $ref | if . < 0 then -. else . end]
+     | max // 0' masks.geojson)"
+  # One extra pixel of slack for the rounding to whole pixels the de-shift does.
+  pad="$(project_ground_m \
+    "$(awk -v d="$max_delta" -v i="$incidence" -v r="$WARP_RES" \
+      'BEGIN{printf "%.1f", d/(sin(i*3.14159265358979/180)/cos(i*3.14159265358979/180)) + r}')" \
+    "$MINY" "$MAXY")"
+  MINX="$(awk -v v="$MINX" -v p="$pad" 'BEGIN{printf "%.6f", v-p}')"
+  MAXX="$(awk -v v="$MAXX" -v p="$pad" 'BEGIN{printf "%.6f", v+p}')"
+  MINY="$(awk -v v="$MINY" -v p="$pad" 'BEGIN{printf "%.6f", v-p}')"
+  MAXY="$(awk -v v="$MAXY" -v p="$pad" 'BEGIN{printf "%.6f", v+p}')"
+  log "geocode pad ${pad} projected m (largest height error under this granule: ${max_delta} m)"
+}
+
+# Put one polarisation's pixels back under their lakes, in place.
+#
+# ⚠ **Fails the job rather than carrying on uncorrected.** A silently un-de-shifted band produces
+# statistics measured off the lake — the exact failure this path exists to remove — and nothing
+# downstream can tell the difference, because a displaced lake still yields a plausible backscatter.
+deshift_band() {
+  local pol="$1" feather_projected="$2"
+  [[ ${#GEOCODE_ARGS[@]} -gt 0 ]] || return 0
+
+  stage "deshift_${pol}" sh -c "python3 /usr/local/bin/sar-deshift.py masks.geojson \
+    ${pol}.tif ${pol}-deshifted.tif $(printf '%q ' "${GEOCODE_ARGS[@]}") \
+    --feather-projected-m ${feather_projected} > deshift-${pol}.json" \
+    || die "de-shift failed for ${pol}"
+  mv "${pol}-deshifted.tif" "${pol}.tif"
+  log "de-shifted ${pol^^}: $(cat "deshift-${pol}.json")"
 }
 
 # ## `interior.tif` — the shoreline eroded off, because an edge pixel is not a lake pixel
@@ -526,13 +589,8 @@ build_interior() {
   local MINY="$1" MAXY="$2"
   local centre_lat erode_projected far
 
-  centre_lat="$(awk -v miny="$MINY" -v maxy="$MAXY" 'BEGIN{
-    mw=20037508.342789244; cy=(miny+maxy)/2;
-    printf "%.6f", (2*atan2(exp((cy/mw)*3.14159265358979),1)-3.14159265358979/2)*180/3.14159265358979
-  }')"
-  erode_projected="$(awk -v e="$EROSION_M" -v lat="$centre_lat" 'BEGIN{
-    printf "%.1f", e/cos(lat*3.14159265358979/180)
-  }')"
+  centre_lat="$(centre_lat_of "$MINY" "$MAXY")"
+  erode_projected="$(project_ground_m "$EROSION_M" "$MINY" "$MAXY")"
   # Compute out to twice the threshold so a deep-interior pixel lands on the fill value strictly
   # ABOVE it. Filling at exactly the threshold would make the comparison a float-equality coin toss
   # on every pixel in the middle of every lake — i.e. it would be wrong on the largest bodies only.
@@ -943,8 +1001,8 @@ transform_sar() {
     return 0
   fi
 
-  # ⚠ **The geocode runs before the extent is fixed, not after.** It moves the zones by up to ~450 m,
-  # and `mask_extent` has to be able to see where they landed — see the note on that function.
+  # ⚠ **The scene geometry is read before the extent is fixed.** `geocode_pad` needs it to know how
+  # far outside the masks the de-shift will have to reach.
   local p href annotation_href=""
   for p in vh vv; do
     href="$(asset_href "$p")"
@@ -952,10 +1010,15 @@ transform_sar() {
     annotation_href="${href/s3:\/\/sentinel-s1-l1c\//https:\/\/sentinel-s1-l1c.s3.amazonaws.com\/}"
     break
   done
-  [[ "$WATER_COUNT" -gt 0 && -n "$annotation_href" ]] && geocode_zones "$annotation_href"
+  [[ -n "$annotation_href" ]] && resolve_geocode "$annotation_href"
 
-  read -r MINX MINY MAXX MAXY <<<"$(mask_extent masks.geojson "$ZONE_SOURCE")"
+  read -r MINX MINY MAXX MAXY <<<"$(mask_extent masks.geojson)"
+  geocode_pad
   log "mask extent (3857) $MINX $MINY $MAXX $MAXY at ${WARP_RES} m"
+
+  # Needed by `deshift_band` before `build_alpha` gets to compute it for itself.
+  local feather_projected
+  feather_projected="$(project_ground_m "$FEATHER_M" "$MINY" "$MAXY")"
 
   # Both polarisations are cut. VH is the informative one for ice, but VV costs one more warp of a
   # granule already open, and their ratio is a standard discriminator we would otherwise have to come
@@ -973,6 +1036,14 @@ transform_sar() {
       -tr "$WARP_RES" "$WARP_RES" -r bilinear -multi -co COMPRESS=DEFLATE -co TILED=YES -overwrite \
       "/vsicurl/${href}" "${p}.tif" \
       || die "${p} warp failed"
+
+    # Put the pixels back under their lakes, before anything measures or renders them. Everything
+    # downstream — alpha, zones, statistics, tiles — then works at true positions.
+    #
+    # ⚠ **The calibration LUT is deliberately NOT de-shifted with it.** Gain varies ~1.50 dB across a
+    # 275 km scene, so over a 450 m correction it moves ~0.0025 dB — four orders of magnitude under
+    # the ~2 dB signal. A second warp to buy that would be pure cost.
+    deshift_band "$p" "$feather_projected"
 
     cal_href="$(jq -r --arg k "schema-calibration-${p}" '.assets[$k].href // empty' granule.json)"
     [[ -n "$cal_href" ]] || die "no calibration annotation for ${p} — refusing to ship uncalibrated"
@@ -1094,7 +1165,7 @@ transform_sar() {
     --argjson resolutionM "$WARP_RES" \
     --argjson erosionM "$EROSION_M" \
     --argjson geocode "${GEOCODE_JSON:-null}" \
-    --argjson geocodedFrame "$([[ "${SAR_GEOCODE_FRAME:-0}" == "1" ]] && echo true || echo false)" \
+    --argjson deshift "$(cat "deshift-${render}.json" 2>/dev/null || echo null)" \
     --argjson footprint "$(jq -c '.geometry' granule.json)" \
     '{granuleId:$granule, capturedAt:$captured, cloudCoverPct:null, season:$season,
       maskSeason:$maskSeason, collection:$collection, mission:$mission, platform:$platform,
@@ -1102,10 +1173,11 @@ transform_sar() {
       relativeOrbit:$relOrbit, polarizations:$pols,
       bodyCount:$bodyCount, bodies:$bodies[0], bands:$bands, featherMeters:$feather,
       resolutionM:$resolutionM, erosionMeters:$erosionM,
-      # ⚠ null means the statistics were NOT geocode-corrected — an old image, a missing annotation,
-      # or a mask bake with no elevations. A consumer comparing frames across the archive has to be
-      # able to tell a corrected measurement from an uncorrected one, and the absence is the tell.
-      geocode:$geocode, geocodedFrame:$geocodedFrame,
+      # ⚠ null means this frame was NOT geocode-corrected — an old image, or a missing annotation.
+      # A consumer comparing frames across the archive has to be able to tell a corrected frame from
+      # an uncorrected one, and the absence is the tell. `deshift.uncorrected` counts the bodies that
+      # were placed without a height, which is the same question one body at a time.
+      geocode:$geocode, deshift:$deshift,
       footprint:$footprint,
       cost:{stageMs:$stageMs, totalMs:$totalMs, vmSize:$vmSize}}' \
     > manifest.json || die "manifest build failed"

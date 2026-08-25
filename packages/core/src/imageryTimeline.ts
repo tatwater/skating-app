@@ -625,3 +625,48 @@ export function nearestLandableStop(
 
   return best;
 }
+
+/**
+ * The landable stop nearest a **date** — where a band switch should land.
+ *
+ * > **Founder, 2026-08-26:** *"since we know it's not guaranteed that two bands will have imagery
+ * > from the same date, the next-best thing would be to try to preserve rough timeline positioning,
+ * > right? Jumping to the end of the season is even more jarring."*
+ *
+ * ⚠ **A position on a scrubber is a date, not an index**, and the two only look alike. A winter holds
+ * ~30 optical passes and ~9 radar ones, so index 20 is late February on one band and does not exist on
+ * the other; carrying the number across is meaningless arithmetic, and it is what left the control
+ * blank. Carrying the *date* is the thing a skater actually meant — they were looking at late
+ * February, and late February is a question radar can also answer.
+ *
+ * Nearest rather than exact, because the two constellations are on different orbits and a shared
+ * capture date is luck. The gap is not hidden: the caption names the date that was actually landed on,
+ * so a switch that moves ten days says so in the line under the track.
+ *
+ * Ties break earlier, matching {@link nearestLandableStop} — the season runs forward, so reading
+ * *toward* an ambiguous gap is the direction the archive is read in.
+ *
+ * `null` when nothing is landable or the anchor is unparseable, and the caller falls back to the
+ * most recent usable pass, which is where an unanchored scrubber opens anyway.
+ */
+export function nearestLandableStopToDate(
+  stops: readonly TimelineStop[],
+  isoDate: string,
+): number | null {
+  const target = Date.parse(isoDate);
+  if (Number.isNaN(target)) return null;
+
+  let best: number | null = null;
+  let bestDistance = Number.POSITIVE_INFINITY;
+  for (const [i, stop] of stops.entries()) {
+    if (!stop.landable) continue;
+    const at = Date.parse(stop.frame.capturedAt);
+    if (Number.isNaN(at)) continue;
+    const distance = Math.abs(at - target);
+    if (distance < bestDistance) {
+      best = i;
+      bestDistance = distance;
+    }
+  }
+  return best;
+}

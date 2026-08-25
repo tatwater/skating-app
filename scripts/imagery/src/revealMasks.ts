@@ -154,6 +154,20 @@ export function maskFeatureFor(row: CorpusMaskRow): MaskOutcome {
 export interface BakeTally {
   masked: number;
   omitted: number;
+  /**
+   * How many masked bodies carry an `elevationM`.
+   *
+   * ⚠ **Counted because its absence is silent everywhere downstream.** The radar de-shift needs a
+   * height per body; a body without one is copied unshifted, which is not an error and produces a
+   * perfectly ordinary frame — of the wrong ground. On 2026-08-25 a bake produced **0 of 40** because
+   * `listForImageryMask` returned the field in source but the deployed dev function predated it, and
+   * nothing anywhere would have said so: the cutter would have run, every job would have exited 0,
+   * and a nine-season radar archive would have been built with the correction silently disabled.
+   *
+   * The corpus is at 99.5% coverage, so anything near zero here means a stale deployment rather than
+   * a gap in the data.
+   */
+  withElevation: number;
   byReason: Record<'no-geometry' | 'union-failed', number>;
   /**
    * The bodies that produced no mask, capped for legibility.
@@ -172,6 +186,7 @@ export function emptyTally(): BakeTally {
   return {
     masked: 0,
     omitted: 0,
+    withElevation: 0,
     byReason: { 'no-geometry': 0, 'union-failed': 0 },
     omissions: [],
   };
@@ -181,6 +196,7 @@ export function emptyTally(): BakeTally {
 export function recordOutcome(tally: BakeTally, outcome: MaskOutcome): BakeTally {
   if (outcome.ok) {
     tally.masked++;
+    if (outcome.feature.properties.elevationM !== undefined) tally.withElevation++;
     return tally;
   }
   tally.omitted++;

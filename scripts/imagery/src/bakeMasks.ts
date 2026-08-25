@@ -159,6 +159,9 @@ async function main(): Promise<void> {
     featherMeters: SENTINEL_MASK_METERS.feather,
     bodies: tally.masked,
     omitted: tally.omitted,
+    // Recorded beside the geometry it describes, so a frame cut months later can say whether the
+    // radar correction had the input it needed. See `BakeTally.withElevation`.
+    withElevation: tally.withElevation,
     // ⚠ **The flag the cutter refuses to run without.** Bakes before 2026-08-25 shipped one file, and
     // `cut-granule.sh` rasterised the reveal shape as its zone grid — which measured a 60 m ring of
     // shore as lake. A cutter that silently fell back to that behaviour against an old bake would
@@ -175,6 +178,10 @@ async function main(): Promise<void> {
 
   console.error('');
   console.error(`[bake-masks] masked   ${tally.masked}`);
+  console.error(
+    `[bake-masks] with elevation ${tally.withElevation}` +
+      ` (${((100 * tally.withElevation) / tally.masked).toFixed(1)}% — the radar de-shift's input)`,
+  );
   console.error(`[bake-masks] omitted  ${tally.omitted}`, tally.omitted ? tally.byReason : '');
   for (const omission of tally.omissions) {
     console.error(
@@ -189,6 +196,26 @@ async function main(): Promise<void> {
   console.error(
     `[bake-masks] wrote ${sidecarPath} (solid ${sidecar.solidMeters} m, feather ${sidecar.featherMeters} m)`,
   );
+
+  // ⚠ **A bake with almost no elevations is a stale deployment, not a data gap.**
+  //
+  // The corpus is at 99.5% coverage. On 2026-08-25 a bake produced 0 of 40 because
+  // `listForImageryMask` returned `elevationM` in source while the deployed dev function predated it
+  // — and nothing downstream would have said so. The cutter would have run, every job would have
+  // exited 0, and a nine-season radar archive would have been built with the geocode correction
+  // silently disabled, unrecoverable without re-reading every granule.
+  //
+  // Fatal rather than a warning, because the failure it guards is invisible in every artifact it
+  // produces. `pnpm convex-dev --once` is the fix.
+  const elevationCoverage = tally.withElevation / tally.masked;
+  if (elevationCoverage < 0.5) {
+    console.error(
+      `[bake-masks] FATAL: only ${tally.withElevation}/${tally.masked} bodies carry elevationM.` +
+        ' The corpus is at ~99.5%, so this is almost certainly a dev deployment older than' +
+        " listForImageryMask's elevationM field — run `pnpm convex-dev --once` and re-bake.",
+    );
+    process.exit(1);
+  }
 
   if (has('upload')) {
     if (Number.isFinite(limit)) {

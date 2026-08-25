@@ -94,11 +94,12 @@ COPY sar-cal-lut.py /usr/local/bin/sar-cal-lut.py
 COPY sar-zonal.py /usr/local/bin/sar-zonal.py
 COPY sar-render.py /usr/local/bin/sar-render.py
 COPY sar-geocode.py /usr/local/bin/sar-geocode.py
+COPY sar-deshift.py /usr/local/bin/sar-deshift.py
 RUN chmod +x /usr/local/bin/cut-granule /usr/local/bin/zonal-clear.py \
       /usr/local/bin/zonal-ndsi.py \
       /usr/local/bin/tiles-to-mbtiles.py /usr/local/bin/sar-cal-lut.py \
       /usr/local/bin/sar-zonal.py /usr/local/bin/sar-render.py \
-      /usr/local/bin/sar-geocode.py
+      /usr/local/bin/sar-geocode.py /usr/local/bin/sar-deshift.py
 
 # The contract, and the reason it is this narrow: `docker run <image> <granule-id>`. One granule id in,
 # one artifact in R2 out, a nonzero exit if that did not happen. Nothing about Fly appears below this

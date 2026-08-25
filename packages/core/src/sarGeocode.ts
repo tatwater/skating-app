@@ -29,24 +29,36 @@
  * to show frozen water, and it is worth stating plainly so nobody later reads these frames as
  * terrain-corrected imagery.
  *
- * ## ✅ Measured against a real ascending/descending pair — 2026-08-25
+ * ## Measured against a real ascending/descending pair — 2026-08-25
  *
  * The geometry above was written before it had ever met a granule. It has now: two Sentinel-1 passes
  * over Mascoma **24 hours apart** (ascending `…20260213T224345`, descending `…20260212T105656`), whose
  * range bearings are 76° and 284° — nearly opposite, which is exactly why the islands jumped.
  *
- * For each pass, the lake mask was scanned along that pass's own range direction to find the offset
- * at which the polygon covers the darkest pixels — i.e. where the water actually is in the product:
+ * For each pass, the lake mask was scanned along that pass's own range direction to find where the
+ * polygon covers the darkest pixels — where the water actually is in the product. **Both passes
+ * landed at +150 m of EPSG:3857 easting, which is ~108 m on the ground** (Web Mercator inflates by
+ * 1/cos φ = 1.382 at 43.65°N).
  *
- * | pass | predicted (this file) | predicted, negated | measured | |
- * |---|---|---|---|---|
- * | ascending | −162 m | **+162 m** | **+150 m** | error 12 m — under half a pixel |
- * | descending | −129 m | **+129 m** | **+150 m** | error 21 m — under one pixel |
+ * | pass | this file predicts | measured | |
+ * |---|---|---|---|
+ * | ascending | +162 m | +108 m | over by 54 m — two pixels |
+ * | descending | +129 m | +108 m | over by 20 m — under one pixel |
  *
- * Against the un-negated figures the errors are **312 m and 279 m**, about eleven pixels. So the
- * magnitude and the physics are confirmed, and so is the direction — **but only once it is clear which
- * direction the returned offset is in.** See {@link maskOffsetMeters}, which exists so that nobody has
- * to rediscover this the way it was discovered here.
+ * **✅ The direction is confirmed and it is the load-bearing half.** Both passes measured *positive*
+ * along their own range, in nearly opposite ground directions — the signature of a height-driven
+ * displacement rather than a polygon error. Applying the offset un-negated moves a lake from ~108 m
+ * out to ~270 m out, so this is worse than doing nothing. See {@link maskOffsetMeters}.
+ *
+ * ⚠ **The magnitude is approximate, and consistently over.** The flat-lake model recovers most of the
+ * displacement and not all of it. One lake on two passes cannot say why; the candidates are the
+ * corpus height, the scene-*average* reference height, and mid-swath incidence standing in for the
+ * lake's own. Interpolating the geolocation grid locally was tried and did not clearly win — it
+ * improved the ascending pass and worsened the descending one.
+ *
+ * **What that means in practice:** correcting still cuts the error roughly in half per pass, and cuts
+ * the *disagreement between* passes by about two thirds. It does not make the two passes identical,
+ * so a timeline mixing orbit directions will still show a lake shifting by a pixel or three.
  */
 
 /** Metres of ground displacement per metre of height error, at a given incidence angle. */
