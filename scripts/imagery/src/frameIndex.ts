@@ -59,6 +59,22 @@ export interface FrameManifest {
      * the granule shipped without SCL, because coverage is then unmeasured rather than zero.
      */
     coveragePct: number | null;
+    /**
+     * Fraction of the pixels this granule saw that SCL called snow/ice (class 11), and water
+     * (class 6). Both over the same denominator as `clearPct`, never over each other.
+     *
+     * **This is the freeze-up series, recorded as a by-product of the cut.** The classifier is
+     * already read per pixel per body to compute `clearPct`, so these cost nothing — and deriving
+     * them afterwards would mean re-reading every granule of a season.
+     *
+     * ⚠ **A measurement, not a verdict.** Class 11 does not separate lake ice from snow lying on it
+     * and is known to confuse with cloud; nothing here sees thickness, and D147 is explicit that
+     * 10 m imagery cannot see a pressure ridge. D150 governs every claim built on it.
+     *
+     * `null` when the granule shipped without SCL — unmeasured, not zero.
+     */
+    icePct: number | null;
+    waterPct: number | null;
     pixels: number;
   }[];
   /** Which bands this granule produced — one published frame each. */

@@ -131,13 +131,24 @@ describe('bands', () => {
     // index carries only the count.
     const index = buildSeasonIndex('winter-2025-26', [
       manifest({
-        bodies: [{ waterBodyId: 'w1', clearPct: 0.93, coveragePct: 0.31, pixels: 4107 }],
+        bodies: [
+          {
+            waterBodyId: 'w1',
+            clearPct: 0.93,
+            coveragePct: 0.31,
+            icePct: 0.88,
+            waterPct: 0.04,
+            pixels: 4107,
+          },
+        ],
       }),
     ]);
     expect(index.frames[0]?.bodies).toBe(9);
     expect(JSON.stringify(index)).not.toContain('clearPct');
-    // `coveragePct` is the split-body seam's input and is the largest per-body field by name length;
-    // it must stay manifest-side for the same size reason `clearPct` does.
-    expect(JSON.stringify(index)).not.toContain('coveragePct');
+    // Every per-body field stays manifest-side for the same size reason `clearPct` does — including
+    // `icePct`, which is the one a freeze-up chart most wants and would most tempt someone to hoist.
+    for (const field of ['coveragePct', 'icePct', 'waterPct']) {
+      expect(JSON.stringify(index)).not.toContain(field);
+    }
   });
 });

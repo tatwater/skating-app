@@ -5,7 +5,8 @@
 
 Replaces the manifest's `bodies: 12` — a count that never said *which* twelve — with
 
-    [{"waterBodyId": "...", "clearPct": 0.93, "coveragePct": 0.31, "pixels": 4107}, ...]
+    [{"waterBodyId": "...", "clearPct": 0.93, "coveragePct": 0.31,
+      "icePct": 0.88, "waterPct": 0.04, "pixels": 4107}, ...]
 
 ## Why this is the highest-value number in the pipeline
 
@@ -60,6 +61,25 @@ gdal.UseExceptions()
 CLEAR = frozenset({4, 5, 6, 7, 11})
 INVALID = frozenset({0, 1})
 
+# ## The two classes worth keeping apart, and why they are counted here rather than derived later
+#
+# `clearPct` folds **snow/ice (11)** and **water (6)** into the same bucket — both are "we could see
+# the lake" — which answers *whether the frame is usable* and says nothing about *what was there*.
+# Those are different questions, and the second one is the whole point of a freeze-up archive.
+#
+# Counting them costs nothing. This sweep already holds both arrays in memory and already runs a
+# `bincount` per window; two more are the same pass over the same pixels, with no extra I/O and no
+# extra granule read. **Deriving them afterwards would mean re-reading all ~4,485 granules of a
+# season** — so the cheap moment is now, while the raster is open, and it will not come again.
+#
+# ⚠ **This is a measurement, not a verdict, and the gap is wide.** SCL's class 11 is "snow / ice" —
+# it does not separate lake ice from snow lying on it, and ESA's own documentation notes the class
+# confuses with cloud. It cannot see thickness, and D147 is explicit that 10 m imagery cannot see a
+# pressure ridge. So this records what the classifier said, at a stated date, and every downstream
+# claim stays bounded by D150: report the observation and its source, never a verdict on skating.
+SNOW_ICE = 11
+WATER = 6
+
 # Rows read at a time. 512 rows of an 11,500-wide UInt32 band is ~23 MB, so peak memory is flat in the
 # size of the granule rather than proportional to it.
 ROWS_PER_WINDOW = 512
@@ -107,6 +127,8 @@ def main() -> int:
     scl_band = scl_ds.GetRasterBand(1)
     valid_counts = np.zeros(max_zone + 1, dtype=np.int64)
     clear_counts = np.zeros(max_zone + 1, dtype=np.int64)
+    ice_counts = np.zeros(max_zone + 1, dtype=np.int64)
+    water_counts = np.zeros(max_zone + 1, dtype=np.int64)
     # Every pixel of the body's mask, whether or not the granule has data there. The denominator for
     # coverage, and the only way to tell a sliver of a lake from the whole thing.
     total_counts = np.zeros(max_zone + 1, dtype=np.int64)
@@ -131,12 +153,17 @@ def main() -> int:
         total_counts += np.bincount(z, minlength=max_zone + 1)
         valid_counts += np.bincount(z[v], minlength=max_zone + 1)
         clear_counts += np.bincount(z[clear_lut[s] & v], minlength=max_zone + 1)
+        # Two more bincounts over the arrays already loaded — see the note beside SNOW_ICE/WATER.
+        ice_counts += np.bincount(z[(s == SNOW_ICE) & v], minlength=max_zone + 1)
+        water_counts += np.bincount(z[(s == WATER) & v], minlength=max_zone + 1)
 
     out = []
     for zone, water_body_id in sorted(zone_to_id.items()):
         v = int(valid_counts[zone])
         c = int(clear_counts[zone])
         t = int(total_counts[zone])
+        i = int(ice_counts[zone])
+        w = int(water_counts[zone])
         out.append(
             {
                 "waterBodyId": water_body_id,
@@ -145,6 +172,15 @@ def main() -> int:
                 # How much of this body the granule reached. 1.0 = the whole lake is in this frame;
                 # 0.31 = a third of it, and this frame's clearPct describes only that third.
                 "coveragePct": round(v / t, 4) if t > 0 else 0.0,
+                # ⚠ **Both over `valid`, the same denominator as `clearPct` — deliberately not over
+                # each other.** A ratio like `ice / (ice + water)` ("of the lake we could actually
+                # see, how much was frozen") is the figure a chart wants, but storing only the ratio
+                # throws away how much was seen at all, and a lake 90% under cloud would then report
+                # the same confident number as one in full view. Keeping both raw against `valid`
+                # lets a consumer form that ratio *and* know what it rests on; the reverse is not
+                # recoverable.
+                "icePct": round(i / v, 4) if v > 0 else None,
+                "waterPct": round(w / v, 4) if v > 0 else None,
                 "pixels": v,
             }
         )

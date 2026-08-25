@@ -348,7 +348,8 @@ transform_granule() {
     # nothing"). Same distinction zonal-clear.py draws for a body with no valid pixels.
     log "no SCL asset on this granule — membership without clear fractions"
     jq -c '[.features[].properties.waterBodyId
-            | {waterBodyId: ., clearPct: null, coveragePct: null, pixels: 0}]' \
+            | {waterBodyId: ., clearPct: null, coveragePct: null,
+               icePct: null, waterPct: null, pixels: 0}]' \
       masks.geojson > bodies.json || die "body membership fallback failed"
   fi
 
