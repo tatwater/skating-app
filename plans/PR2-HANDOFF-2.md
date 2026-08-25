@@ -1,4 +1,4 @@
-# N6e PR 2 — state of play, 2026-08-24
+# N6e PR 2 — state of play, 2026-08-25
 
 Supersedes the operational half of [`PR2-HANDOFF.md`](./PR2-HANDOFF.md), which was written from the
 PR 3 worktree and whose §0–§4 are now **done**. That file is still worth reading for §5 (SAR), §6 (the
@@ -21,17 +21,19 @@ per-body statistics, and a season index come out.
 | Granule cutter | `scripts/imagery/cut-granule.sh` | in the Fly image |
 | Per-body clear fraction | `scripts/imagery/zonal-clear.py` | in the Fly image |
 | Granule selection | `scripts/imagery/src/selectGranules.ts` | ungated + tile prefilter |
-| Weather gate | `scripts/imagery/src/ingestGate.ts` | calibrated against 2025-26 |
+| Weather gate | `packages/core/src/ingestGate.ts` | shared by the CLI and the October cron |
 | Archive index | `scripts/imagery/src/buildIndex.ts` | one frame per band |
 | Published types | `packages/core/src/imageryArchive.ts` | for PR 3 |
 | Tile packer | `scripts/imagery/tiles-to-mbtiles.py` | dir → MBTiles, 0.14s |
 | Fan-out | `scripts/imagery/fan-out.sh` | machine-count throttle |
 | Retry loop | `scripts/imagery/backfill.sh` | reconcile-until-converged |
 | Status check | `scripts/imagery/status.sh` | **use this, not ad-hoc greps** |
+| Season watcher | `packages/convex/convex/imageryIngest.ts` | daily cron from 1 Oct; notices, does not spend |
 
-**In R2 right now:** `masks/winter-2026-27.fgb` (24,831 bodies) + its sidecar. **Nothing else.**
-The stale `frames/winter-2025-26/` set (2,980 objects, cut before `footprint`, `bodies[]` and `cost`
-existed) and its index were purged 2026-08-24. The next backfill starts from an empty frame prefix.
+**In R2 right now:** `masks/winter-2026-27.fgb` (24,831 bodies) + its sidecar, and
+`frames/winter-2025-26/` — the full season, cut 2026-08-25 on one image so the schema is uniform. The
+prefix has been purged twice on the way here: once for frames predating `footprint`/`bodies[]`/`cost`,
+and again before the season run to clear 95 frames cut by three different images.
 
 **Fly:** app `skating-imagery`, org `personal`, region `sjc`, zero machines at rest.
 
@@ -50,8 +52,8 @@ Everything here was measured on real data. Where an earlier document disagrees, 
 | Ungated | 8,892 |
 | **Ungated + empty-tile prefilter** | **4,485** |
 
-`plans/phase-N6e-satellite-imagery.md` §C5 says nine seasons ≈ 8,000 jobs. **It is 10× low.** Ungated
-is 80,028; with the prefilter, 40,365.
+Nine seasons: ungated 80,028; with the prefilter, **40,365**. *(§C5 used to say ~8,000 — corrected
+2026-08-25, along with the cost and storage figures beside it.)*
 
 ### Where a job's time goes — 23-granule sample, all size buckets
 
