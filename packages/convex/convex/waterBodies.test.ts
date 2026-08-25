@@ -1114,7 +1114,11 @@ describe('waterBodies elevation (N6c A1)', () => {
     const t = convexTestWithGeo();
     const id = await seedBody(t);
     const page = await t.query(internal.waterBodies.listNeedingElevation, {});
-    expect(page.targets).toEqual([{ waterBodyId: id, lat: AT.lat, lng: AT.lng }]);
+    // `toMatchObject`, not `toEqual`: the claim is about *which coordinate* is sampled, and pinning
+    // the whole shape made an additive field (`surfaceAreaSqM`, so a caller can scope to the bodies
+    // the radar geocode can reach) fail a test that has nothing to say about it.
+    expect(page.targets).toHaveLength(1);
+    expect(page.targets[0]).toMatchObject({ waterBodyId: id, lat: AT.lat, lng: AT.lng });
   });
 
   test('falls back to centroid for a body the re-import has not reached yet', async () => {

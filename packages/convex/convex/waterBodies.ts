@@ -2173,6 +2173,11 @@ export const listNeedingElevation = internalQuery({
           // handed. Free here: the document is already read.
           ...(body.elevationM !== undefined ? { storedElevationM: body.elevationM } : {}),
           ...(body.elevationSource !== undefined ? { storedSource: body.elevationSource } : {}),
+          // **So a caller can scope to the bodies its question actually reaches.** The radar geocode
+          // is the only path by which a wrong elevation gets in front of a skater, and it only ever
+          // touches bodies above `SATELLITE_MIN_AREA_SQM` — 9,004 of 24,838. Free here: the document
+          // is already read, and the alternative is a second pass to look up areas one at a time.
+          ...(body.surfaceAreaSqM !== undefined ? { surfaceAreaSqM: body.surfaceAreaSqM } : {}),
         };
       });
     return {
