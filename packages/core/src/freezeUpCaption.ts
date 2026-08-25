@@ -35,6 +35,31 @@ const SOURCE_LABELS: Record<string, string> = {
   vh: 'Sentinel-1 radar (VH)',
 };
 
+/**
+ * How to read this band — **one line, and it names the ambiguity rather than the strength.**
+ *
+ * > **Founder, 2026-08-26:** *"I don't really know how to read it (it all looks like grey fuzz to
+ * > me) so I'm not sure how helpful it will be to others either."*
+ *
+ * The band toggle says what instrument took the picture, which tells a skater nothing about what
+ * they are looking at. `Sentinel-1 radar (VH)` is a provenance label; *"dark is smooth ice **or**
+ * open water"* is the thing that decides whether they drive two hours.
+ *
+ * ⚠ **Each line leads with what the band cannot tell you**, because that is the part a picture
+ * cannot say for itself and the part that gets someone hurt. Radar's failure mode is precisely our
+ * use case — smooth new black ice is specular and returns dark, and so does calm open water — and a
+ * hint that led with *"sees through cloud!"* would sell the strength and bury the trap. Optical has
+ * the mirror-image problem: snow, ice and cloud are all simply white.
+ *
+ * `null` for a band with nothing honest and short to say, which renders as no line at all rather
+ * than as filler.
+ */
+const SOURCE_HINTS: Record<string, string> = {
+  visual: 'White may be snow, ice or cloud — true colour cannot tell them apart.',
+  vh: 'Sees through cloud and darkness. Bright is rough or snow-covered ice; dark is smooth ice — or open water.',
+  scl: "ESA's own guess at what each pixel is, made from bands the eye cannot see.",
+};
+
 /** A stop's own account of itself, in parts so a client can weight them differently. */
 export interface StopCaption {
   /** `22 Dec 2025`. The content (D84) — render it as such, not as a tooltip. */
@@ -60,6 +85,11 @@ export function frameDateLabel(capturedAt: string): string {
 /** What instrument produced this frame. Falls back to the raw band rather than inventing a name. */
 export function frameSourceLabel(band: string): string {
   return SOURCE_LABELS[band] ?? band;
+}
+
+/** How to read this band, or `null` where we have nothing honest and short to say. */
+export function frameSourceHint(band: string): string | null {
+  return SOURCE_HINTS[band] ?? null;
 }
 
 function pct(fraction: number): number {

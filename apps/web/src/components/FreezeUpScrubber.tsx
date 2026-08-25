@@ -45,6 +45,7 @@ import {
   bandsIn,
   crossedNotch,
   formatSeasonLabel,
+  frameSourceHint,
   frameSourceLabel,
   type IndexedFrame,
   nearestLandableStop,
@@ -410,6 +411,15 @@ export function FreezeUpScrubber({
             </ToggleGroupItem>
           ))}
         </ToggleGroup>
+      ) : null}
+
+      {/* ⚠ **How to read the band, which the band's own name does not say.** `Sentinel-1 radar (VH)`
+          is provenance; "dark is smooth ice — or open water" is the sentence that decides whether
+          somebody drives two hours. Rendered whether or not the toggle is — a season with one band
+          still leaves a reader looking at a picture they have not been told how to read — and absent
+          entirely for a band we have nothing short and true to say about, rather than padded. */}
+      {frameSourceHint(band) ? (
+        <p className="text-muted-foreground text-xs">{frameSourceHint(band)}</p>
       ) : null}
 
       {/* How much of this is a guess. Only shown when it is some of it — a count of zero is noise, and

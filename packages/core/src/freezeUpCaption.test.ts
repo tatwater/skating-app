@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   frameDateLabel,
+  frameSourceHint,
   frameSourceLabel,
   gapDaysBetween,
   stopCaption,
@@ -158,5 +159,27 @@ describe('gapDaysBetween — a date from space is a bracket', () => {
 
   it('returns null on an unparseable date', () => {
     expect(gapDaysBetween('nope', '2026-01-16T15:00:00Z')).toBeNull();
+  });
+});
+
+describe('frameSourceHint — how to read the band', () => {
+  it('⚠ leads with what radar CANNOT tell you, because that is the part that gets someone hurt', () => {
+    // Radar's failure mode is our exact use case: smooth new black ice is specular and returns dark,
+    // and so does calm open water. A hint that sold "sees through cloud!" and buried that would be
+    // worse than none.
+    const hint = frameSourceHint('vh') ?? '';
+    expect(hint).toMatch(/open water/);
+    expect(hint).toMatch(/smooth ice/);
+  });
+
+  it('names optical’s mirror-image ambiguity', () => {
+    // Snow, ice and cloud are all simply white — which is the entire reason NDSI exists.
+    expect(frameSourceHint('visual')).toMatch(/snow, ice or cloud/);
+  });
+
+  it('says nothing at all about a band it has nothing short and true to say about', () => {
+    // Renders as no line, never as filler.
+    expect(frameSourceHint('vv')).toBeNull();
+    expect(frameSourceHint('')).toBeNull();
   });
 });

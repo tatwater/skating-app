@@ -30,6 +30,7 @@ import {
   bandsIn,
   crossedNotch,
   formatSeasonLabel,
+  frameSourceHint,
   frameSourceLabel,
   type IndexedFrame,
   nearestLandableStop,
@@ -344,6 +345,15 @@ export function FreezeUpScrubber({
             </Text>
           ))}
         </XStack>
+      ) : null}
+
+      {/* ⚠ **How to read the band, which the band's own name does not say** — web's note carries the
+          argument. Rendered whether or not the toggle is: a season with one band still leaves a
+          reader looking at a picture nobody has told them how to read. */}
+      {frameSourceHint(band) ? (
+        <Text color="$foregroundMuted" fontSize="$1">
+          {frameSourceHint(band)}
+        </Text>
       ) : null}
 
       {timeline.coverageInferred + timeline.coverageUnknown > 0 ? (

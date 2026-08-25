@@ -666,3 +666,28 @@ describe('FreezeUpScrubber — landing near where the skater was', () => {
     expect(onSelect).toHaveBeenCalledWith(2);
   });
 });
+
+describe('FreezeUpScrubber — telling a skater how to read the band', () => {
+  it('⚠ names radar’s ambiguity, which its own label does not', () => {
+    // "Sentinel-1 radar (VH)" is provenance. The sentence that decides whether somebody drives two
+    // hours is that dark means smooth ice OR open water.
+    render(
+      <FreezeUpScrubber
+        timeline={timelineOf([stop({ frame: frame({ band: 'vh' }) })])}
+        index={indexOf(['visual', 'vh'])}
+        band="vh"
+        onBandChange={vi.fn()}
+        selected={0}
+        onSelect={vi.fn()}
+        loading={false}
+      />,
+    );
+    expect(screen.getByText(/dark is smooth ice — or open water/i)).toBeTruthy();
+  });
+
+  it('shows the hint even where there is only one band, since the toggle is then hidden', () => {
+    render(<Harness timeline={timelineOf([stop()])} index={indexOf(['visual'])} />);
+    expect(screen.getByText(/snow, ice or cloud/i)).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Sentinel-2 true colour' })).toBeNull();
+  });
+});
