@@ -1047,7 +1047,7 @@ once.
 | item | why it wants a pass we are already making |
 | --- | --- |
 | **Per-body NDSI** (green + swir16) | §C1 calls it *"the only way to tell snow/ice from cloud"*, which true colour cannot do. ⚠ **It will not fix the black-ice problem** — it is a snow index built on the same brightness that misleads SCL — but it is an independent second opinion where SCL is weakest: the snow/cloud confusion behind a 22 Nov Morey frame reading 99% clear through visible haze. A PR 4 / N6g input; blocks nothing in PR 3. |
-| **The DEM-corrected radar geocode** *(question 8)* | The geometry is written and unit-tested (`packages/core/src/sarGeocode.ts`, mirrored in `scripts/imagery/sar-geocode.py`), and `elevationM` now rides the mask file so the cutter knows how high each lake sits. ⚠ **Not yet applied to a warp and not yet run against a granule.** Prototype on one pass over Mascoma — the lake whose islands exposed the bug — and confirm they stop moving between an ascending and a descending pass before it touches a season. |
+| ~~**The DEM-corrected radar geocode**~~ *(question 8)* | ✅ **BUILT AND CALIBRATED 2026-08-25.** See [what the calibration found](#the-radar-geocode-calibrated-2026-08-25) — it is no longer a queue item, and two of the things it turned up were not what the queue expected. |
 | **The SCL raster, now that it is on by default** *(founder, 2026-08-25)* | `EMIT_SCL_FRAME` now defaults on, so every *future* cut publishes a `scl` frame — but the **4,381 optical frames already in R2 predate it**, so the band selector has real data for `visual` and `vh` and an empty third option until a re-cut. Additive and blocks nothing: PR 3 should build the selector to render whatever bands the index actually offers rather than a hardcoded three. |
 
 ⚠ **Measure the SCL raster on a dense granule before committing a season to it.** The season-wide
@@ -1055,6 +1055,51 @@ average was +24% job time and +33% storage, but a 923-body Champlain extent went
 without finishing** — and ~18% of a season sits on 1,000+ body tiles. Those are the same change
 measured two ways, and the gap between them is the risk. The measurement also predates the tiler swap,
 so it may be stale in the good direction; either way, one granule first.
+
+### The radar geocode, calibrated *(2026-08-25)*
+
+The queue item asked for a prototype over Mascoma before this touched a season. It got one, and then a
+proper calibration, and **three of the things it found were not what the queue expected.**
+
+**1. The correction moves the pixels, not the masks** *(founder call)*. The first build shifted the
+zone geometry onto the displaced pixels — which fixes the statistics and leaves the picture displaced,
+so the frame disagrees with the basemap and the islands still move. Moving the *pixels* was ruled out
+as impossible for one raster and it is not: the frame is already masked into disjoint per-lake patches
+(D146), so each carries its own whole-pixel block copy. `sar-deshift.py` runs before anything else
+reads the raster, and afterwards the alpha, the zones, the statistics and the tiles all work at true
+positions with no offset threaded through them.
+
+**2. The reference height is local to the lake, and the scene average was worse than no correction.**
+A GRD is geocoded against its geolocation grid, whose points *each* carry a terrain height and
+incidence angle. Averaging that grid describes what the pass flew over: across five real tracks over
+one region it ranged **7.9 m** (mostly Gulf of Maine) to **369.6 m** (the White Mountains). Measured
+against 21 lake-passes — 19 lakes, 5 tracks, −1 m to 710 m of elevation:
+
+| | RMS residual | correlation |
+| --- | --- | --- |
+| scene-average height + incidence | 287.4 m | 0.25 |
+| **local height + incidence** | **42.1 m** | **0.90** |
+| no correction at all | 116.2 m | — |
+
+The measured **across-range** component came out at 9.4 m RMS — near zero, independently confirming the
+displacement is along range as the geometry claims rather than the model happening to fit.
+
+**3. It is now good enough to mix orbit directions, which is the point.** On the Mascoma
+ascending/descending pair the per-pass error went **150 m → 30 m (1.1 px)** and the disagreement
+*between* the passes **291 m → 39 m (1.4 px)**. PR 3 holds one orbit direction per timeline precisely
+because the two disagreed about where a lake was; they now agree, and **the usable radar cadence
+doubles.** *(Founder: "that cut our read-frequency in half so I'd rather be able to take both.")*
+
+⚠ **~40 m is the floor and it is ours, not the radar's.** Sentinel-2 needs no geometric correction and
+its lake masks still sit **31–71 m** off the imagery — that is how accurate our OSM/NHD shorelines are.
+Refining the radar model further would be fitting our own polygon error. **Optical needs no correction
+at all**, which was checked rather than assumed.
+
+⚠ **And `elevationM` was reaching the mask file for none of it.** A bake produced **0 of 40** bodies
+with an elevation, because `listForImageryMask` returns the field in source while the deployed dev
+function predated it. Every job would have exited 0 and written an ordinary frame of the wrong ground.
+`bake-masks` now prints elevation coverage every run and **refuses below 50%**; the full bake reports
+24,830 of 24,831.
 
 > ### ⚠ Two rules this queue exists to enforce
 >

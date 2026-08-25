@@ -1987,7 +1987,13 @@ pnpm --filter @skating/etl retire-absorbed       # dry; --apply. MUST run after 
 
 # ── enrichment, in the order the data allows ──────────────────────────────────
 pnpm --filter @skating/lake-depth transform … && … load …        # depth (all rungs)
-pnpm --filter @skating/lake-depth load-elevation --import-floor  # 3DEP
+# ⚠ SNAPSHOT BEFORE LOAD, and this line was missing until 2026-08-26 — which is how a new region
+#   ends up with no elevation and nothing obviously wrong. The archive is keyed on each body's
+#   INTERIOR POINT, so bodies a merge has just drawn (or moved) are keys it has never been asked
+#   for: `load-elevation` alone then reports "N not in the archive" and stamps nothing. Incremental
+#   and cheap — it fetches only the difference, which on an unchanged corpus is zero requests.
+pnpm --filter @skating/lake-depth snapshot-elevation --from-convex --import-floor   # 3DEP → archive
+pnpm --filter @skating/lake-depth load-elevation --import-floor  # archive → corpus
 pnpm --filter @skating/bathymetry join --refresh                 # + D95's re-key lane
 pnpm --filter @skating/bathymetry build-contours
 scripts/bathymetry/tile.sh [--upload dev/bathymetry-<date>.pmtiles]

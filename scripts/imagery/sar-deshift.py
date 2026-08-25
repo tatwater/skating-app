@@ -21,8 +21,9 @@ alternating passes.
 ⚠ **`h_ref` is LOCAL to the lake, and a scene average is not a usable stand-in.** Measured across five
 real tracks, the scene-average height ranged 7.9 m (a pass mostly over the Gulf of Maine) to 369.6 m
 (one over the White Mountains) — a spread describing the pass's coverage rather than any lake under it.
-Correcting with it was **worse than not correcting**: 325.6 m RMS against 96.5 m for doing nothing.
-With local values it is **44.7 m**. See `local_reference`.
+Correcting with it was **worse than not correcting**: 287.4 m RMS against 116.2 m for doing nothing.
+With local values it is **42.1 m**, at a correlation of 0.90 over 21 lake-passes. See
+`local_reference`.
 
 This reads each body's pixels from where the product actually put them and writes them where the body
 actually is. Afterwards every other stage — the alpha, the zones, the statistics, the tiles — works at

@@ -40,25 +40,19 @@
  * landed at +150 m of EPSG:3857 easting, which is ~108 m on the ground** (Web Mercator inflates by
  * 1/cos φ = 1.382 at 43.65°N).
  *
- * | pass | this file predicts | measured | |
- * |---|---|---|---|
- * | ascending | +162 m | +108 m | over by 54 m — two pixels |
- * | descending | +129 m | +108 m | over by 20 m — under one pixel |
- *
  * **✅ The direction is confirmed and it is the load-bearing half.** Both passes measured *positive*
  * along their own range, in nearly opposite ground directions — the signature of a height-driven
  * displacement rather than a polygon error. Applying the offset un-negated moves a lake from ~108 m
  * out to ~270 m out, so this is worse than doing nothing. See {@link maskOffsetMeters}.
  *
- * ⚠ **The magnitude is approximate, and consistently over.** The flat-lake model recovers most of the
- * displacement and not all of it. One lake on two passes cannot say why; the candidates are the
- * corpus height, the scene-*average* reference height, and mid-swath incidence standing in for the
- * lake's own. Interpolating the geolocation grid locally was tried and did not clearly win — it
- * improved the ascending pass and worsened the descending one.
+ * **The magnitude needed one more thing, and it was the input rather than the arithmetic.** Fed the
+ * scene-*average* reference height these came out 20–54 m long; fed the height and incidence
+ * interpolated from the geolocation grid **at the lake**, they land inside a pixel. See
+ * {@link localGeocodeReference}, which carries the calibration.
  *
- * **What that means in practice:** correcting still cuts the error roughly in half per pass, and cuts
- * the *disagreement between* passes by about two thirds. It does not make the two passes identical,
- * so a timeline mixing orbit directions will still show a lake shifting by a pixel or three.
+ * Corrected that way, on this pair: **per-pass error 150 m → 30 m, and the disagreement *between* the
+ * two passes 291 m → 39 m (1.4 px)** — which is what lets a timeline mix orbit directions at all, and
+ * so doubles the usable radar cadence.
  */
 
 /** Metres of ground displacement per metre of height error, at a given incidence angle. */
@@ -134,13 +128,17 @@ export const GEOCODE_GRID_NEIGHBOURS = 8;
  * height ranged **7.9 m** (a pass mostly over the Gulf of Maine) to **369.6 m** (one over the White
  * Mountains).
  *
- * Against 10 lake-passes spanning −1 m to 649 m of elevation:
+ * Against **21 lake-passes** — 19 lakes, 5 tracks, elevations −1 m to 710 m:
  *
  * | | RMS residual | correlation |
  * |---|---|---|
- * | scene-average height and incidence | **325.6 m** | 0.28 |
- * | **local height and incidence** | **44.7 m** | **0.75** |
- * | no correction at all | 96.5 m | — |
+ * | scene-average height and incidence | **287.4 m** | 0.25 |
+ * | **local height and incidence** | **42.1 m** | **0.90** |
+ * | no correction at all | 116.2 m | — |
+ *
+ * The measured **across-range** component came out at 9.4 m RMS — near zero, which independently
+ * confirms the displacement really is along range as the geometry claims, rather than the model
+ * happening to fit.
  *
  * Incidence matters on its own: it ranged 30.9°–44.8° across those lakes while the scene mean sat at
  * 38.6°, and `1/tan` changes by 60% over that span.

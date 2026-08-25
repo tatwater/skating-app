@@ -11,10 +11,12 @@ Prints the scene's geocoding parameters as JSON, plus the east/north offset a su
 
 ## What is wrong, and why a lake is the easy case
 
-A GRD carries no map projection. It carries **ground-control points**, computed by projecting radar
-geometry onto an ellipsoid at a *single average scene height*. Everything at that height lands
-correctly; everything else is displaced along **range** by `(h - h_ref) / tan(theta)` — about 140 m
-per 100 m of height error at IW incidence.
+A GRD carries no map projection. It carries a **geolocation grid**, whose points each record the
+terrain height and incidence angle the product was geocoded at. Ground above or below its local grid
+height is displaced along **range** by `(h - h_ref) / tan(theta)` — about 140 m per 100 m of height
+error at IW incidence.
+
+⚠ **`h_ref` is local, and the scene average of this grid is not a stand-in for it** — see `--grid`.
 
 Sentinel-1 is right-looking, so ascending views a lake from the east and descending from the west,
 and **the displacement flips sign between them**. That is what made two islands in Mascoma appear to
@@ -46,13 +48,15 @@ to find where it covers the darkest pixels, i.e. where the water actually is in 
 ⚠ **The scan worked in EPSG:3857 metres; everything here is in GROUND metres.** Web Mercator inflates
 by 1/cos(φ) = 1.382 at 43.65°N, so the measured +150 projected is ~108 on the ground.
 
-    pass         this file says   negated    measured    error
-    ascending      -162 m         +162 m     +108 m      54 m   (two pixels, OVER)
-    descending     -129 m         +129 m     +108 m      20 m   (under one pixel, OVER)
+    pass         scene avg    LOCAL grid    measured
+    ascending      +162 m        +120 m       +108 m
+    descending     +129 m        +132 m       +108 m
 
 **The direction is confirmed** — both passes positive along their own range, in nearly opposite ground
-directions. Un-negated the correction lands ~270 m out, worse than not correcting at all. **The
-magnitude is approximate and consistently over**, and one lake on two passes cannot say why.
+directions. Un-negated the correction lands ~270 m out, worse than not correcting at all.
+
+**The magnitude needed the local grid rather than the scene average.** Corrected that way, the
+per-pass error on this pair went 150 m -> 30 m and the disagreement BETWEEN the passes 291 m -> 39 m.
 
 ## ⚠⚠ So mind which direction you are asking for
 
@@ -166,9 +170,9 @@ def main() -> None:
         #
         # Against 10 lake-passes with a spread of elevations:
         #
-        #     scene average h_ref + scene incidence   RMS residual 325.6 m   corr 0.28
-        #     LOCAL h_ref + LOCAL incidence           RMS residual  44.7 m   corr 0.75
-        #     no correction at all                    RMS residual  96.5 m
+        #     scene average h_ref + scene incidence   RMS residual 287.4 m   corr 0.25
+        #     LOCAL h_ref + LOCAL incidence           RMS residual  42.1 m   corr 0.90
+        #     no correction at all                    RMS residual 116.2 m
         #
         # ⚠ **The scene average was worse than not correcting**, which is the whole reason this mode
         # exists. Local incidence matters on its own too: it ranged 30.9°–44.8° across those lakes
