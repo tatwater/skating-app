@@ -47,7 +47,7 @@
  * evaluate, so it belongs after the first season has taught us what the crude one actually costs.
  *
  * *(That refinement has since landed, as a statistic rather than a gate: every manifest now carries
- * per-body `clearPct`, `coveragePct`, `icePct` and `waterPct`, so the consumer filters on what was
+ * per-body `clearPct`, `coveragePct`, `snowIcePct` and `waterPct`, so the consumer filters on what was
  * actually visible over each lake and the producer never discards a frame irreversibly.)*
  *
  * ## ⚠ Sentinel-1 ids are rejected here as `unparseable`, and that is not a bug yet

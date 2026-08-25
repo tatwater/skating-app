@@ -102,12 +102,13 @@ than they look:
 - **`clearPct`** — of the pixels we could see, how many were unobscured. Cloud, cloud shadow and
   terrain shadow all count as obscured. A lake in deep shadow is technically visible and completely
   unreadable, so calling it "clear" would flatter exactly the frames that are least useful.
-- **`icePct`** — the fraction SCL called snow/ice.
+- **`snowIcePct`** — the fraction SCL called snow/ice. Named for what it measures, not for what a
+  reader hopes it measures — see "What follows from that" below.
 - **`waterPct`** — the fraction SCL called water.
 
 **Two deliberate choices worth knowing.** A lake we could not see at all reports `null`, never zero —
 *"we couldn't look"* and *"we looked and saw no ice"* are different claims and collapsing them would
-quietly invent data. And `icePct`/`waterPct` are both measured against the same denominator rather
+quietly invent data. And `snowIcePct`/`waterPct` are both measured against the same denominator rather
 than against each other, so a lake 90% hidden by cloud can't report the same confident-looking number
 as one in full view.
 
@@ -151,8 +152,10 @@ sky — and the one with snow on it read 45% ice while the one with perfect skat
 
 ### What follows from that
 
-**`icePct` is a snow-cover index, not an ice index.** It is a perfectly good measurement; it is just
-not measuring the thing its name suggests, in exactly the case skaters care about most.
+**`snowIcePct` is a snow-cover index, not an ice index.** It is a perfectly good measurement; it is
+just not measuring the thing a reader hopes it measures, in exactly the case skaters care about most.
+It was called `icePct` until 2026-08-25, and the rename is the smallest honest fix available: frames
+cut before then still carry the old key, so a reader wants `snowIcePct ?? icePct`.
 
 **NDSI would not rescue this.** NDSI is the standard trick for separating snow from cloud: snow is
 bright in green and very dark in shortwave infrared, cloud is bright in both, so
@@ -300,7 +303,7 @@ input to a calculation, not something to look at.
 | Source | Sees | Catch |
 | --- | --- | --- |
 | Weather (observed overnight lows) | when to *start looking* | says nothing about a specific lake |
-| Optical `icePct` | snow-covered ice, confidently | ⚠ misses black ice; blocked by cloud ~75% of the time |
+| Optical `snowIcePct` | snow-covered ice, confidently | ⚠ misses black ice; blocked by cloud ~75% of the time |
 | Radar `VH` | a change in surface texture | needs calibration to combine satellites; calm water mimics ice |
 
 **And a date from any of them is a bracket, not a point.** With cloud knocking out three passes in
