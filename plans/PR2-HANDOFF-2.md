@@ -599,7 +599,37 @@ Done 2026-08-25:
 | fixed-stretch render | `sar-render.py` | 67/67 tiles carry signal, 0 black |
 | cutter branch | `cut-granule.sh` `transform_sar` | one pass, end to end on Fly |
 
-**Measured, one pass:** 454s, 5,081 bodies, 12 MB frame, 3,452 tiles z7–z13. Against S2's 67s — radar
+### The metered 50 — ✅ 2026-08-25
+
+50 granules spread across the season and all three platforms. **29 produced frames; 21 were empty** —
+all of them over Québec with literally zero bodies, exiting after the mask fetch rather than warping.
+There is no empty-tile prefilter for radar and there cannot be one (the saving on the optical side
+comes from MGRS being a fixed grid; S1 slices are not), but at ~15s per empty job that is worth
+about **$0.02 a season** — spawn churn rather than money.
+
+| | |
+| --- | --- |
+| median job | **173.5s** (mean 355.2 — a heavy tail; max 1,201.7s) |
+| bodies | median 1,129, **max 7,803** |
+| measurable body-observations | **18,880**, VH median −18.02 dB |
+| manifests with full acquisition metadata | 30/30 |
+| **season (753 granules)** | **~43 machine-hours, ~$0.79** |
+
+⚠ **Where a median radar job actually goes — and it is not where one big pass suggested.** The four
+warps dominate: `calwarp_vh` 28.0s, `warp_vv` 24.8s, `warp_vh` 23.9s, `calwarp_vv` 23.5s = **100.2s,
+58% of the job**. Tiling is only 20.3s (11.7%), against the 47% measured on the single 5,081-body pass
+— that pass was not representative, which is exactly what a 50-granule sample exists to catch.
+
+**So the optimisation is the calibration warps, at 29.6% of every job.** They project a smooth
+27 × 649 grid onto a full-resolution raster; the gain surface has nothing like that much structure, so
+warping the LUT at a fraction of the resolution and letting GDAL resample would recover most of it.
+Do that before a season of radar, not before a pilot.
+
+**Scale did what it was asked to.** The largest granule in the sample carried **7,803 bodies** — half
+again the single pass this was built against — and produced a correct manifest, which is the check the
+optical side failed at 1,342 bodies and only caught by running 50.
+
+**Measured, the single first pass:** 454s, 5,081 bodies, 12 MB frame, 3,452 tiles z7–z13. Against S2's 67s — radar
 is ~7× the per-granule cost, and there are far fewer passes. ⚠ **Two stages dominate and both are
 soft:** tiling 213s (47%) and the two calibration warps 88s (19%). The LUT is a smooth 27×649 grid
 warped to a 175-megapixel raster; warping it far coarser would cost nothing in accuracy. Worth doing
