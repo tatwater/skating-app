@@ -191,6 +191,22 @@ await_drain() {
 # Spawns between capacity checks. A quarter of the cap: `await_capacity` polls Fly once per batch, so
 # a batch of `MAX_PARALLEL` would make the overshoot as large as the cap itself, while a batch of one
 # would cost an API call per granule. A quarter is four calls per cap's worth of spawns.
+# ⚠ **A spawn that hangs must not wedge the backfill.**
+#
+# `fly machine run` normally returns in under a second with `--detach`. On 2026-08-25 four of them did
+# not return **for over an hour** — with zero Machines alive, so nothing was billing and nothing was
+# progressing. The parent's closing `wait` blocked forever, `--drain` was never reached, and
+# `backfill.sh` sat on a round that had already done its work. The season looked stalled at 4,365 of
+# 4,485 frames when in fact only 16 granules were outstanding.
+#
+# A bounded spawn turns that from a wedge into a reported failure, which the reconcile loop already
+# knows how to retry. macOS has no `timeout(1)`; `gtimeout` arrives with coreutils, and where neither
+# exists this degrades to calling `fly` directly rather than refusing to run.
+SPAWN_TIMEOUT="${SPAWN_TIMEOUT:-120}"
+if command -v timeout >/dev/null 2>&1; then :
+elif command -v gtimeout >/dev/null 2>&1; then timeout() { gtimeout "$@"; }
+else timeout() { shift; "$@"; }; fi
+
 BATCH=$(( MAX_PARALLEL / 4 ))
 (( BATCH < 1 )) && BATCH=1
 
@@ -203,7 +219,20 @@ for granule in "${GRANULES[@]}"; do
   fi
   # Re-checked every `BATCH` spawns rather than every spawn, so the poll cost stays proportional to
   # batches and not to granules.
-  (( SPAWNED % BATCH == 0 )) && await_capacity
+  # ⚠ **`wait` before polling, or the cap is fiction.**
+  #
+  # `await_capacity` reads `fly machine list` and then spawns a batch — so a spawn issued since the
+  # last poll is not in the count it acted on. Compounding that, the spawn calls run as background
+  # subshells capped at `MAX_PARALLEL` *spawn calls* rather than at Machines, so up to a cap's worth
+  # can be in flight against a reading that predates all of them. Measured 2026-08-25 on the season
+  # backfill: **58–71 live Machines against a cap of 50**, after the same script held at exactly 50 on
+  # a single-wave test.
+  #
+  # `fly machine run --detach` returns once the Machine is *created*, so once every call in a batch has
+  # returned, `fly machine list` has seen every Machine we asked for and the next poll is accurate.
+  # That puts the peak at exactly `MAX_PARALLEL` — which is what makes a cap something you can set
+  # deliberately rather than drift into.
+  (( SPAWNED % BATCH == 0 )) && { wait; running=0; await_capacity; }
   SPAWNED=$((SPAWNED + 1))
 
   (
@@ -231,7 +260,7 @@ for granule in "${GRANULES[@]}"; do
     # artifact designed to compare cost across Machine sizes blind, at exactly the moment we started
     # changing the most expensive setting on the box. The manifests are the permanent record (`fly
     # logs` ages out in hours), so a size that is not stamped is a measurement that cannot be redone.
-    fly machine run "$IMAGE" \
+    timeout "$SPAWN_TIMEOUT" fly machine run "$IMAGE" \
       --app "$APP" \
       --region "$REGION" \
       --vm-size "$VM_SIZE" \
