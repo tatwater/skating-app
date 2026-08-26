@@ -45,7 +45,7 @@ const PROFILES = {
     distanceInterval: 20,
     notificationTitle: 'On-ice mode is on',
     notificationBody:
-      'Watching for reported ice hazards ahead while you skate. Tap to open Skating.',
+      'Watching for reported ice hazards ahead while you skate. Tap to open Gli.',
   },
   record: {
     // BestForNavigation keeps the GPS radio on more than Balanced — this is the upper end of the

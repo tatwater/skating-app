@@ -10,13 +10,18 @@ import type { ExpoConfig } from 'expo/config';
  * Sentry's build-time org/project come from env at build time (see .env.example).
  */
 const config: ExpoConfig = {
-  name: 'Skating',
+  name: 'Gli',
+  // `slug` and `scheme` deliberately keep the old name. The slug identifies the project on
+  // EAS (it pairs with `extra.eas.projectId`), and `skating://` is registered with Strava as
+  // an OAuth callback and baked into every hazard deep link already in the wild — neither is
+  // user-visible, and renaming them buys nothing but a migration.
   slug: 'skating-app',
   owner: 'tatwater',
   scheme: 'skating',
   version: '0.0.1',
   orientation: 'portrait',
   userInterfaceStyle: 'automatic',
+  icon: './assets/icon.png',
   // EAS Update (OTA). Ships a new *JS bundle + assets* to installed builds without a rebuild
   // or a store round-trip — the `channel` in eas.json picks which branch a build subscribes to.
   //
@@ -33,10 +38,17 @@ const config: ExpoConfig = {
   },
   ios: {
     supportsTablet: true,
-    bundleIdentifier: 'com.teaganatwater.skating',
+    bundleIdentifier: 'com.teaganatwater.gli',
   },
   android: {
-    package: 'com.teaganatwater.skating',
+    package: 'com.teaganatwater.gli',
+    // Android masks this to whatever shape the launcher uses (circle, squircle, teardrop),
+    // so the foreground keeps the wordmark well inside the safe zone and the navy is painted
+    // by the OS behind it rather than baked into the image.
+    adaptiveIcon: {
+      foregroundImage: './assets/adaptive-icon.png',
+      backgroundColor: '#0b1620',
+    },
   },
   plugins: [
     'expo-router',
@@ -59,9 +71,9 @@ const config: ExpoConfig = {
       'expo-location',
       {
         locationWhenInUsePermission:
-          'Skating uses your location to frame the map on nearby lakes and mark where you skated.',
+          'Gli uses your location to frame the map on nearby lakes and mark where you skated.',
         locationAlwaysAndWhenInUsePermission:
-          'Skating uses your location in the background only while "on-ice mode" is on, to warn you about reported ice hazards ahead while you skate. It stays on your device and you can turn it off in one tap.',
+          'Gli uses your location in the background only while "on-ice mode" is on, to warn you about reported ice hazards ahead while you skate. It stays on your device and you can turn it off in one tap.',
         isAndroidBackgroundLocationEnabled: true,
         isAndroidForegroundServiceEnabled: true,
         isIosBackgroundLocationEnabled: true,
@@ -76,17 +88,29 @@ const config: ExpoConfig = {
     [
       'expo-image-picker',
       {
-        photosPermission: 'Skating accesses your photos so you can attach them to an ice report.',
+        photosPermission: 'Gli accesses your photos so you can attach them to an ice report.',
         cameraPermission:
-          'Skating uses the camera so you can photograph ice conditions for a report.',
+          'Gli uses the camera so you can photograph ice conditions for a report.',
       },
     ],
-    // Placeholder logo (D8) — swap `assets/splash-icon.png` for the real brand mark later.
-    // The image is required on Android: expo-splash-screen always references a splash
-    // drawable, so without one, resource linking fails at build time.
+    // The Gli wordmark. The image is required on Android: expo-splash-screen always references
+    // a splash drawable, so without one, resource linking fails at build time.
+    //
+    // `userInterfaceStyle` is 'automatic', so the splash follows the system theme: the black
+    // mark on white in light mode, the white mark on the app's navy in dark. Both PNGs are the
+    // mark on transparency — the background here is what's actually painted behind it — so the
+    // duotone accent is the only part that stays fixed across the two.
     [
       'expo-splash-screen',
-      { backgroundColor: '#0b1620', image: './assets/splash-icon.png', imageWidth: 180 },
+      {
+        backgroundColor: '#ffffff',
+        image: './assets/splash-icon-light.png',
+        imageWidth: 200,
+        dark: {
+          backgroundColor: '#0b1620',
+          image: './assets/splash-icon-dark.png',
+        },
+      },
     ],
     [
       '@sentry/react-native/expo',

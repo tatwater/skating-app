@@ -121,7 +121,7 @@ export default function OnboardingScreen() {
             {dobTouched && dobMs === null ? (
               <Text color="$danger">Enter a valid date as YYYY-MM-DD.</Text>
             ) : dobTouched && !oldEnough ? (
-              <Text color="$danger">You must be at least {MINIMUM_SIGNUP_AGE} to use Skating.</Text>
+              <Text color="$danger">You must be at least {MINIMUM_SIGNUP_AGE} to use Gli.</Text>
             ) : null}
           </YStack>
 
