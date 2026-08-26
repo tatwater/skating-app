@@ -409,6 +409,33 @@ labels) — the FUI aesthetic (00-vision) must never cost legibility.
 **Why:** The core use happens outdoors in bright sun with cold hands; readability
 is a safety feature, not a nicety.
 
+### D34 amendment — the theme is a *preference*, not just an OS reading
+**Decided.** Three stored values — `system` (the default), `light`, `dark` — resolved
+against the OS only while the preference is `system`. An explicit choice outranks the
+OS from then on, and **`system` stays selectable** so the choice is reversible.
+- **One source of truth per app.** The union, the type guard, the `system → light →
+  dark` cycle, and the resolution rule live in `@skating/design` (`themes.ts`), so the
+  two surfaces cannot drift into `'auto'` vs `'system'`. Mobile reads it through
+  `ThemePreferenceProvider`; nothing else may call `useColorScheme()` directly — the
+  map did, and would have kept following the OS while the rest of the app followed the
+  user.
+- **Persistence:** web is `next-themes`' `localStorage['theme']`; mobile is a row in
+  the existing `skating-prefs.db`, read **synchronously** so a dark-mode user never
+  gets a white first frame.
+- **Web's toggle cycles three states** rather than flipping two. The two-state version
+  started at `system` and had no way back to it, so "follow my OS" was a setting you
+  could only lose. Mobile shows the same three flat on the You page.
+- **Clerk** takes its palette as a prop, not from CSS, so `<ClerkProvider>` is given an
+  `appearance` built from our tokens. Driven by `appearance.variables`, **not**
+  `@clerk/themes`, which depends on `@clerk/shared@^3` and would reintroduce the exact
+  version conflict `apps/web`'s local `^4` pin exists to prevent.
+- **Known divergence:** `app.config.ts` keeps `userInterfaceStyle: 'automatic'`, so the
+  native splash screen and OS-drawn pickers still follow the device even when the app
+  is overridden. Forcing that to a fixed style would break the *other* two thirds of
+  users to fix a frame of splash for the few who override.
+**Why:** Following the OS is right for almost everyone and wrong for the people who
+care most — and an override you can't undo is a worse trap than no override at all.
+
 ## D35 — Cost posture / hosting philosophy
 **Decided.** Prefer **Vercel-hostable + hosted free-tier** services over
 self-hosted infra. Accept a small paid bill for convenience: the target is to stay

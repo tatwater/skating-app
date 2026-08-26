@@ -1,6 +1,17 @@
 import { describe, expect, it } from 'vitest';
 import { contrastRatio, WCAG_AA_LARGE, WCAG_AA_NORMAL } from './contrast';
-import { dark, light, type SemanticColorToken, THEME_NAMES, type Theme, themes } from './themes';
+import {
+  dark,
+  isThemePreference,
+  light,
+  nextThemePreference,
+  resolveThemeName,
+  type SemanticColorToken,
+  THEME_NAMES,
+  THEME_PREFERENCES,
+  type Theme,
+  themes,
+} from './themes';
 
 const HEX = /^#[0-9a-fA-F]{6}$/;
 
@@ -85,5 +96,74 @@ describe.each(THEME_NAMES)('%s theme contrast (D34)', (name) => {
     GRAPHICAL_TOKENS.flatMap((fg) => BACKGROUND_TOKENS.map((bg) => [fg, bg] as const)),
   )('graphical %s on %s meets WCAG non-text (3:1)', (fg, bg) => {
     expect(contrastRatio(theme[fg], theme[bg])).toBeGreaterThanOrEqual(WCAG_AA_LARGE);
+  });
+});
+
+describe('theme preference resolution (D34 amendment)', () => {
+  it('offers system plus every concrete theme, with system first', () => {
+    // Order is the render order of the mobile picker, and `system` leads because it's the default.
+    expect(THEME_PREFERENCES).toEqual(['system', ...THEME_NAMES]);
+  });
+
+  it('accepts exactly the three preference strings', () => {
+    for (const preference of THEME_PREFERENCES) expect(isThemePreference(preference)).toBe(true);
+    // `'auto'` is the near-miss worth pinning: it's the other obvious name for the same idea, and
+    // the two surfaces silently disagreeing on which one they store is the drift this guards.
+    for (const notAPreference of ['auto', 'Dark', '', 'system ', null, undefined, 0, {}]) {
+      expect(isThemePreference(notAPreference)).toBe(false);
+    }
+  });
+
+  it('lets an explicit choice outrank the OS in both directions', () => {
+    expect(resolveThemeName('light', 'dark')).toBe('light');
+    expect(resolveThemeName('dark', 'light')).toBe('dark');
+  });
+
+  it('follows the OS while the preference is system', () => {
+    expect(resolveThemeName('system', 'dark')).toBe('dark');
+    expect(resolveThemeName('system', 'light')).toBe('light');
+  });
+
+  it('treats an unknown OS scheme as light rather than stalling', () => {
+    // `useColorScheme()` is null before the OS answers, as is jsdom with no `matchMedia`.
+    expect(resolveThemeName('system', null)).toBe('light');
+    expect(resolveThemeName('system', undefined)).toBe('light');
+  });
+
+  it('ignores the OS entirely once overridden, even when unknown', () => {
+    expect(resolveThemeName('dark', null)).toBe('dark');
+    expect(resolveThemeName('light', undefined)).toBe('light');
+  });
+
+  it('cycles system → light → dark → system without stranding anyone', () => {
+    // The wrap-around is the point: web's old two-state toggle could reach `dark` and never return
+    // to `system`, so a user who tried dark once lost "follow my OS" permanently.
+    expect(nextThemePreference('system')).toBe('light');
+    expect(nextThemePreference('light')).toBe('dark');
+    expect(nextThemePreference('dark')).toBe('system');
+  });
+
+  it('reaches every preference from every starting point', () => {
+    for (const start of THEME_PREFERENCES) {
+      const seen = new Set([start]);
+      let at = start;
+      for (let i = 0; i < THEME_PREFERENCES.length - 1; i++) {
+        at = nextThemePreference(at);
+        seen.add(at);
+      }
+      expect(seen.size).toBe(THEME_PREFERENCES.length);
+      // …and one more step returns to where it started.
+      expect(nextThemePreference(at)).toBe(start);
+    }
+  });
+
+  it('resolves to a theme that actually exists in the config', () => {
+    // Guards the Tamagui/Tailwind handoff: the resolved name is used as a theme *key*, so a name
+    // with no matching entry would render an unstyled tree rather than fail loudly.
+    for (const preference of THEME_PREFERENCES) {
+      for (const scheme of ['light', 'dark', null] as const) {
+        expect(themes[resolveThemeName(preference, scheme)]).toBeDefined();
+      }
+    }
   });
 });

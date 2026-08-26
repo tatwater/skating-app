@@ -42,8 +42,9 @@ import {
   useState,
 } from 'react';
 import type { LayoutChangeEvent, NativeSyntheticEvent } from 'react-native';
-import { StyleSheet, Text, useColorScheme, useWindowDimensions, View } from 'react-native';
+import { StyleSheet, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Paragraph, YStack } from 'tamagui';
 import { cacheBody } from '../lib/bodyCache';
 import {
   CONTOUR_BEFORE_LAYER_ID,
@@ -89,6 +90,7 @@ import {
   MAP_FLAVORS,
   NORTHEAST_REGION_BOUNDS,
   PHOTO_PIN_COLOR,
+  PIN_HALO_COLOR,
   PUT_IN_MARKER_DERIVED_COLOR,
   PUT_IN_MARKER_OFFICIAL_COLOR,
   PUT_IN_MARKER_OSM_COLOR,
@@ -101,6 +103,7 @@ import {
   waterBodiesToFeatureCollection,
   zoomForViewport,
 } from '../lib/waterMap';
+import { useThemePreference } from '../providers/ThemeProvider';
 import { FreezeUpFrames } from './FreezeUpFrames';
 import { FreezeUpScrubber } from './FreezeUpScrubber';
 import { ImageryDock } from './ImageryDock';
@@ -167,10 +170,13 @@ function polygonOf(geometry: unknown): Polygon | MultiPolygon | null {
 }
 
 export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolean }) {
-  const scheme = useColorScheme();
-  const flavor = scheme === 'dark' ? MAP_FLAVORS.dark : MAP_FLAVORS.light;
+  // The app preference, not `useColorScheme()` — the basemap has to follow an explicit override or
+  // a user in forced-dark gets a white map under a dark UI (D34 amendment).
+  const { isDark } = useThemePreference();
+  const flavor = isDark ? MAP_FLAVORS.dark : MAP_FLAVORS.light;
   const water = WATER_PALETTE[flavor];
   const subAreaPalette = SUB_AREA_PALETTE[flavor];
+  const pinHalo = PIN_HALO_COLOR[flavor];
   const router = useRouter();
   const cameraRef = useRef<CameraRef>(null);
   const {
@@ -792,14 +798,22 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
   }
 
   // Release build with no basemap URL configured — block loudly rather than render a doomed map.
+  // Themed like any other screen: this used to be a hardcoded near-black panel, which was a dark
+  // rectangle dropped into a light app for the one audience least able to explain what they saw.
   if (!mapStyle) {
     return (
-      <View style={styles.configError}>
-        <Text style={styles.configErrorText}>
+      <YStack
+        flex={1}
+        alignItems="center"
+        justifyContent="center"
+        padding="$6"
+        backgroundColor="$background"
+      >
+        <Paragraph color="$foreground" textAlign="center" fontSize={15} lineHeight={22}>
           Map unavailable — this build is missing its basemap configuration
           (EXPO_PUBLIC_PMTILES_URL).
-        </Text>
-      </View>
+        </Paragraph>
+      </YStack>
     );
   }
 
@@ -956,7 +970,7 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
             paint={{
               'circle-radius': 6,
               'circle-color': PHOTO_PIN_COLOR,
-              'circle-stroke-color': '#ffffff',
+              'circle-stroke-color': pinHalo,
               'circle-stroke-width': 2,
             }}
           />
@@ -969,7 +983,7 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
             paint={{
               'circle-radius': 7,
               'circle-color': PUT_IN_PIN_COLOR,
-              'circle-stroke-color': '#ffffff',
+              'circle-stroke-color': pinHalo,
               'circle-stroke-width': 2,
             }}
           />
@@ -1004,7 +1018,7 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
                 PUT_IN_MARKER_OSM_COLOR,
                 PUT_IN_MARKER_DERIVED_COLOR,
               ],
-              'circle-stroke-color': '#ffffff',
+              'circle-stroke-color': pinHalo,
               'circle-stroke-width': 2,
             }}
           />
@@ -1110,7 +1124,7 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
             paint={{
               'circle-radius': 6,
               'circle-color': hazardColorExpression(hazardPalette) as never,
-              'circle-stroke-color': '#ffffff',
+              'circle-stroke-color': pinHalo,
               'circle-stroke-width': 2,
             }}
           />
@@ -1191,14 +1205,3 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
     </View>
   );
 }
-
-const styles = StyleSheet.create({
-  configError: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 24,
-    backgroundColor: '#1c1c1e',
-  },
-  configErrorText: { color: '#ffffff', textAlign: 'center', fontSize: 15, lineHeight: 22 },
-});

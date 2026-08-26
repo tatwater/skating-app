@@ -7,10 +7,11 @@ import {
   AGGREGATE_OPT_OUT_LABEL,
   DRIVE_TIME_BANDS,
 } from '@skating/core';
+import { THEME_PREFERENCES, type ThemePreference } from '@skating/design';
 import { useMutation, useQuery } from 'convex/react';
 import * as Location from 'expo-location';
 import { Link, useRouter } from 'expo-router';
-import { useState } from 'react';
+import { type ReactNode, useState } from 'react';
 import { ScrollView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Button, H1, Paragraph, Separator, Text, XStack, YStack } from 'tamagui';
@@ -20,6 +21,8 @@ import { Avatar } from '../../src/components/ProfileView';
 import { StravaConnect } from '../../src/components/StravaConnect';
 import { TrackHistory } from '../../src/components/TrackHistory';
 import { UnreportedSkates } from '../../src/components/UnreportedSkates';
+import { THEME_PREFERENCE_LABELS } from '../../src/lib/themePreference';
+import { useThemePreference } from '../../src/providers/ThemeProvider';
 
 /**
  * Profile / settings hub (D28). Who you're signed in as (with a link to your public profile),
@@ -68,6 +71,9 @@ export default function YouScreen() {
             Your profile
           </Text>
           <ProfileEdit />
+
+          <Separator borderColor="$border" />
+          <Appearance />
 
           <Separator borderColor="$border" />
           <HomeLocation />
@@ -166,6 +172,97 @@ function HomeLocation() {
   );
 }
 
+/**
+ * The note under the theme picker, for the two states where the user has overridden their device.
+ *
+ * Split per preference rather than shared: a single line about light mode read as a non-sequitur
+ * once `Dark` was the selected option — the interface recommending the thing you had just turned
+ * off. The `System` case is built from the live theme instead and lives at the call site.
+ */
+const APPEARANCE_NOTE: Record<Exclude<ThemePreference, 'system'>, string> = {
+  light: 'Built for reading the map in bright sun and glare on the ice.',
+  dark: 'Overriding your device — tap System to follow it again.',
+};
+
+/**
+ * Theme picker (D34 amendment) — three options rather than web's binary sun/moon toggle.
+ *
+ * `System` has to be selectable, not merely the state you start in: without it, the first tap ever
+ * made here is irreversible, and a user who wanted to see what dark looked like can never get back
+ * to following the OS. Web's toggle had exactly that trap.
+ *
+ * The live theme is named under the picker only while `System` is selected. On an explicit choice
+ * the button already says which theme is on, and repeating it there would be the interface telling
+ * you something you just told it.
+ */
+function Appearance() {
+  const { preference, resolved, setPreference } = useThemePreference();
+
+  return (
+    <YStack gap="$2">
+      <Text color="$foregroundMuted" fontSize={11} letterSpacing={1.5} textTransform="uppercase">
+        Appearance
+      </Text>
+      <XStack gap="$2" alignItems="center">
+        {THEME_PREFERENCES.map((option) => (
+          <SegmentButton
+            key={option}
+            selected={preference === option}
+            flex={1}
+            onPress={() => setPreference(option)}
+            aria-label={`Use ${THEME_PREFERENCE_LABELS[option]} theme`}
+          >
+            {THEME_PREFERENCE_LABELS[option]}
+          </SegmentButton>
+        ))}
+      </XStack>
+      <Paragraph color="$foregroundMuted" fontSize={11}>
+        {preference === 'system'
+          ? `Following your device — currently ${THEME_PREFERENCE_LABELS[resolved].toLowerCase()}.`
+          : APPEARANCE_NOTE[preference]}
+      </Paragraph>
+    </YStack>
+  );
+}
+
+/**
+ * One button in a picker: filled when it's the current value, chromeless with a hairline when it
+ * isn't.
+ *
+ * Three controls on this screen draw the same six style props — the notification toggles, the
+ * drive-time radii, and the theme picker. Written out at each of them, "selected" was a convention
+ * rather than a thing, and the fourth copy would have been where it quietly drifted.
+ */
+function SegmentButton({
+  selected,
+  onPress,
+  children,
+  flex,
+  'aria-label': ariaLabel,
+}: {
+  selected: boolean;
+  onPress: () => void;
+  children: ReactNode;
+  flex?: number;
+  'aria-label'?: string;
+}) {
+  return (
+    <Button
+      size="$2"
+      flex={flex}
+      backgroundColor={selected ? '$primary' : undefined}
+      color={selected ? '$primaryForeground' : undefined}
+      chromeless={!selected}
+      borderWidth={1}
+      borderColor={selected ? '$primary' : '$border'}
+      onPress={onPress}
+      aria-label={ariaLabel}
+    >
+      {children}
+    </Button>
+  );
+}
+
 /** An on/off toggle row rendered as a filled/outline button (matching the ProfileEdit pattern). */
 function ToggleRow({
   label,
@@ -181,17 +278,9 @@ function ToggleRow({
       <Text flex={1} color="$foreground" fontSize={14}>
         {label}
       </Text>
-      <Button
-        size="$2"
-        backgroundColor={value ? '$primary' : undefined}
-        color={value ? '$primaryForeground' : undefined}
-        chromeless={!value}
-        borderWidth={1}
-        borderColor={value ? '$primary' : '$border'}
-        onPress={() => onToggle(!value)}
-      >
+      <SegmentButton selected={value} onPress={() => onToggle(!value)}>
         {value ? 'On' : 'Off'}
-      </Button>
+      </SegmentButton>
     </XStack>
   );
 }
@@ -212,18 +301,9 @@ function RadiusRow({
         {label}
       </Text>
       {DRIVE_TIME_BANDS.map((m) => (
-        <Button
-          key={m}
-          size="$2"
-          backgroundColor={value === m ? '$primary' : undefined}
-          color={value === m ? '$primaryForeground' : undefined}
-          chromeless={value !== m}
-          borderWidth={1}
-          borderColor={value === m ? '$primary' : '$border'}
-          onPress={() => onChange(m)}
-        >
+        <SegmentButton key={m} selected={value === m} onPress={() => onChange(m)}>
           {`${m}m`}
-        </Button>
+        </SegmentButton>
       ))}
     </XStack>
   );

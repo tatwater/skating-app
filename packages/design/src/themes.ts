@@ -71,6 +71,82 @@ export const themes = { light, dark } as const;
 export const THEME_NAMES = ['light', 'dark'] as const;
 export type ThemeName = (typeof THEME_NAMES)[number];
 
+/**
+ * What the *user* chose, which is not the same thing as what gets rendered (D34 amendment).
+ *
+ * `'system'` is the default and means "keep following the OS" — it stays a live subscription, not a
+ * snapshot of the OS setting at first launch. The two concrete names are an explicit override that
+ * outranks the OS from then on. Resolving a preference to a `ThemeName` therefore needs the current
+ * OS scheme as a second input; only `'system'` actually consumes it.
+ *
+ * Both surfaces speak these exact three strings: web because they're `next-themes`' own vocabulary,
+ * mobile because `themePreference.ts` parses them out of the local prefs table. Keeping the union
+ * here rather than in either app is what stops the two from drifting into `'auto'` vs `'system'`.
+ */
+export const THEME_PREFERENCES = ['system', ...THEME_NAMES] as const;
+export type ThemePreference = (typeof THEME_PREFERENCES)[number];
+
+/**
+ * Narrow unknown storage/query-param input to a preference. A *guard*, not a parser — it reports
+ * whether the value is one of the three and leaves the fallback to the caller, since where to fall
+ * back to differs by surface (mobile's `parseThemePreference` picks `'system'`; web's toggle keeps
+ * whatever `next-themes` already has).
+ */
+export function isThemePreference(value: unknown): value is ThemePreference {
+  return typeof value === 'string' && (THEME_PREFERENCES as readonly string[]).includes(value);
+}
+
+/**
+ * The next preference in the cycle, for web's single-button control.
+ *
+ * Spelled out as a map rather than modular arithmetic over `THEME_PREFERENCES`: indexing that array
+ * needs an unreachable `?? fallback` to satisfy `noUncheckedIndexedAccess`, and dead code in the one
+ * function whose wrap-around is the entire point is the wrong trade. A test asserts this still
+ * visits every preference, so it can't silently drift out of step with the array.
+ */
+const THEME_PREFERENCE_CYCLE: Record<ThemePreference, ThemePreference> = {
+  system: 'light',
+  light: 'dark',
+  dark: 'system',
+};
+
+/**
+ * `system → light → dark → system`.
+ *
+ * Lives here rather than in the button so the wrap-around is covered by a test — an off-by-one
+ * would strand a user on `dark` with no way back, the exact failure the three-state control exists
+ * to fix.
+ */
+export function nextThemePreference(current: ThemePreference): ThemePreference {
+  return THEME_PREFERENCE_CYCLE[current];
+}
+
+/**
+ * Whatever the platform reports for the OS setting.
+ *
+ * Deliberately wider than `ThemeName | null`: React Native's `ColorSchemeName` also admits
+ * `'unspecified'`, and web reads a `matchMedia` boolean. Rather than make every caller pre-narrow
+ * into a shape neither platform actually produces, `resolveThemeName` accepts the raw value and
+ * treats everything that isn't literally `'dark'` as light.
+ */
+export type SystemColorScheme = string | null | undefined;
+
+/**
+ * The preference → rendered-theme resolution both apps share.
+ *
+ * Only `'dark'` is load-bearing; `'light'`, `'unspecified'`, `null` (React Native before the OS
+ * answers, or jsdom with no `matchMedia`) and anything unexpected all resolve to light. Treating the
+ * unknowns as light rather than as "wait and see" is deliberate: light is the D34 default, and a
+ * brief flash of the default beats rendering nothing at all.
+ */
+export function resolveThemeName(
+  preference: ThemePreference,
+  systemScheme: SystemColorScheme,
+): ThemeName {
+  if (preference !== 'system') return preference;
+  return systemScheme === 'dark' ? 'dark' : 'light';
+}
+
 /** A semantic color role (e.g. `'primary'`, `'foregroundMuted'`). */
 export type SemanticColorToken = keyof typeof light;
 /** A resolved theme: every semantic role → a hex string. */

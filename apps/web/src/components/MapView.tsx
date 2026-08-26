@@ -82,6 +82,7 @@ import {
   INITIAL_ZOOM,
   MAP_FLAVORS,
   OSM_ATTRIBUTION,
+  PIN_HALO_COLOR,
   putInsToFeatureCollection,
   SUB_AREA_PALETTE,
   SUMMARY_CARD_PALETTE,
@@ -215,6 +216,7 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
   const water = WATER_PALETTE[flavor];
   const subAreaPalette = SUB_AREA_PALETTE[flavor];
   const summaryCardPalette = SUMMARY_CARD_PALETTE[flavor];
+  const pinHalo = PIN_HALO_COLOR[flavor];
   const hazardPalette = HAZARD_PALETTE[flavor];
   const trackColor = TRACK_PALETTE[flavor];
   const contourPalette = CONTOUR_PALETTE[flavor];
@@ -542,7 +544,7 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
         paint: {
           'circle-radius': 6,
           'circle-color': '#f59e0b',
-          'circle-stroke-color': '#ffffff',
+          'circle-stroke-color': pinHalo,
           'circle-stroke-width': 2,
         },
       });
@@ -554,7 +556,7 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
         paint: {
           'circle-radius': 7,
           'circle-color': '#137138', // success green — the access point (§E put-in pin)
-          'circle-stroke-color': '#ffffff',
+          'circle-stroke-color': pinHalo,
           'circle-stroke-width': 2,
         },
       });
@@ -593,7 +595,7 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
             '#3d7ea6', // between the two — mapped by someone, but not vouched for by us
             '#5b8fb0', // muted blue — approximate, derived from report points
           ],
-          'circle-stroke-color': '#ffffff',
+          'circle-stroke-color': pinHalo,
           'circle-stroke-width': 2,
         },
       });
@@ -607,7 +609,7 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
         paint: {
           'circle-radius': 7,
           'circle-color': '#7c3aed', // violet-600 — a bounty "wanted: fresh eyes" pin
-          'circle-stroke-color': '#ffffff',
+          'circle-stroke-color': pinHalo,
           'circle-stroke-width': 2,
         },
       });
@@ -722,7 +724,7 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
           'circle-color': hazardColorExpression(
             hazardPalette,
           ) as maplibregl.ExpressionSpecification,
-          'circle-stroke-color': '#ffffff',
+          'circle-stroke-color': pinHalo,
           'circle-stroke-width': 2,
         },
       });

@@ -5,6 +5,7 @@ import { resolveAuthRoute } from '@skating/core';
 import { useQuery } from 'convex/react';
 import { Stack } from 'expo-router';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import { useTheme } from 'tamagui';
 import { initSentry } from '../src/lib/sentry';
 import { Providers } from '../src/providers/Providers';
 
@@ -31,12 +32,27 @@ function RootNavigator() {
   const { isLoaded, isSignedIn } = useAuth();
   // Skip until Clerk confirms a session — unauthenticated the query would just be null.
   const profile = useQuery(api.profiles.current, isSignedIn ? {} : 'skip');
+  const theme = useTheme();
 
   const route = resolveAuthRoute({ isLoaded, isSignedIn, profile });
   if (route === 'loading') return null;
 
   return (
-    <Stack screenOptions={{ headerShown: false }}>
+    <Stack
+      screenOptions={{
+        headerShown: false,
+        // React Navigation ships its own light/dark themes, but adopting them would put a second
+        // palette in the app that knows nothing about `@skating/design` — so the five `headerShown`
+        // modals below are dressed from our tokens instead, the same way the tab bar is. Without
+        // this they render Navigation's default *light* header inside a dark app.
+        headerStyle: { backgroundColor: theme.surface?.val },
+        headerTintColor: theme.foreground?.val,
+        headerTitleStyle: { color: theme.foreground?.val },
+        // The frame behind a screen — visible during push/modal transitions, and the reason a theme
+        // change used to flash white between routes.
+        contentStyle: { backgroundColor: theme.background?.val },
+      }}
+    >
       <Stack.Protected guard={route === 'app'}>
         <Stack.Screen name="(tabs)" />
         {/* Viewable profile (D13) — pushed from an author line, report, or profile search. */}

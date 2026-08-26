@@ -18,6 +18,7 @@ import {
   REVEAL_MARKER,
   summaryHasCard,
 } from '@skating/core';
+import { themes } from '@skating/design';
 import type { StyleSpecification } from 'maplibre-gl';
 import { REGION_FILTER_JSON, REGION_MASK_JSON } from '../assets/regionMask';
 
@@ -89,6 +90,24 @@ export const WATER_PALETTE = {
   white: { fill: '#8fbfe0', outline: '#2f6690' },
   dark: { fill: '#3a6ea5', outline: '#9ecae1' },
 } as const;
+
+/**
+ * The ring drawn around a point marker to lift it off whatever it lands on (D34 amendment).
+ *
+ * The twin of mobile's `PIN_HALO_COLOR`, and for the same reason: this was a flat `#ffffff` at every
+ * call site, which is only half a halo. A white ring works by *contrast with the map*, so on the
+ * dark basemap it stops being a separator and becomes a second bright thing competing with the pin
+ * it surrounds. Keyed to the flavor's own surface, the ring is always the tone the map is nearest
+ * to, and reads as a gap around the pin in both themes.
+ *
+ * The pin *fills* stay flavor-invariant on purpose: they're identity (green = a launch, amber = a
+ * photo, violet = a bounty), and a color that means something must not change meaning with the
+ * theme (D82).
+ */
+export const PIN_HALO_COLOR: Record<MapFlavor, string> = {
+  white: themes.light.surface,
+  dark: themes.dark.surface,
+};
 
 /**
  * The recorded-GPS-track line (Phase 8). Deliberately a warm accent, not part of the water ramp and

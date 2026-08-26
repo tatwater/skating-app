@@ -14,6 +14,7 @@ import { convertFilter, type StyleSpecification } from '@maplibre/maplibre-gl-st
 import type { LngLatBounds } from '@maplibre/maplibre-react-native';
 import { layers, namedFlavor } from '@protomaps/basemaps';
 import { type BBox, composeBasemapLayers, REGION_BOUNDS_CORNERS } from '@skating/core';
+import { themes } from '@skating/design';
 import { REGION_FILTER_JSON, REGION_MASK_JSON } from '../assets/regionMask';
 
 /** ODbL attribution for the Protomaps basemap + our OSM-derived water data — a launch gate. */
@@ -52,6 +53,22 @@ export const TRACK_PALETTE = {
 /** Access-point (put-in) + report-photo pin colors (§E/D42) — success green + amber, as on web. */
 export const PUT_IN_PIN_COLOR = '#137138';
 export const PHOTO_PIN_COLOR = '#f59e0b';
+
+/**
+ * The ring drawn around a point marker to lift it off whatever it lands on (D34 amendment).
+ *
+ * This was a flat `#ffffff` at every call site, which is only half a halo: a white ring works by
+ * *contrast with the map*, and on the dark basemap it stops being a separator and becomes a second
+ * bright thing competing with the pin it surrounds. Keyed to the flavor's own surface, the ring is
+ * always the tone the map is nearest to — so it reads as a gap around the pin in both themes.
+ *
+ * The pin *fills* above stay flavor-invariant on purpose: they're identity (green = a launch, amber
+ * = a photo), and a color that means something must not change meaning with the theme (D82).
+ */
+export const PIN_HALO_COLOR: Record<MapFlavor, string> = {
+  white: themes.light.surface,
+  dark: themes.dark.surface,
+} as const;
 
 /** Favorited-body outline gold (Phase 4, decision #1) — matches web's amber-500 favorite signal. */
 export const FAVORITE_OUTLINE_COLOR = '#eab308';

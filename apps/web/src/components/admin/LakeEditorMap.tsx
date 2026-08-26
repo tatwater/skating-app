@@ -10,6 +10,7 @@ import {
   buildMapStyle,
   DEMO_PMTILES_URL,
   MAP_FLAVORS,
+  PIN_HALO_COLOR,
   SUB_AREA_PALETTE,
   subAreasToFeatureCollection,
   WATER_PALETTE,
@@ -76,6 +77,7 @@ export function LakeEditorMap({
   const flavor = resolvedTheme === 'dark' ? MAP_FLAVORS.dark : MAP_FLAVORS.light;
   const water = WATER_PALETTE[flavor];
   const bays = SUB_AREA_PALETTE[flavor];
+  const pinHalo = PIN_HALO_COLOR[flavor];
   const pmtilesUrl = env.pmtilesUrl || DEMO_PMTILES_URL;
 
   const bounds = boundsForBody(data.body.bbox);
@@ -196,7 +198,7 @@ export function LakeEditorMap({
             '#94a3b8',
             '#64748b',
           ],
-          'circle-stroke-color': '#ffffff',
+          'circle-stroke-color': pinHalo,
           'circle-stroke-width': 2,
         },
       });
@@ -213,7 +215,7 @@ export function LakeEditorMap({
         paint: {
           'circle-radius': 7,
           'circle-color': ['case', ['==', ['get', 'source'], 'official'], '#f59e0b', '#b45309'],
-          'circle-stroke-color': '#ffffff',
+          'circle-stroke-color': pinHalo,
           'circle-stroke-width': 2,
         },
       });
