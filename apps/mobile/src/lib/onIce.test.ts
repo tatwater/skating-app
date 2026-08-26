@@ -6,6 +6,7 @@ import {
   dismissBanner,
   emptyAlertSession,
   type HazardRow,
+  onIceControlMode,
   type RealertCadence,
   resolveOnIceBody,
   shouldAutoSelectOnIce,
@@ -336,5 +337,55 @@ describe('shouldAutoSelectOnIce', () => {
 
   it('does nothing until a lake resolves', () => {
     expect(shouldAutoSelectOnIce({ ...base, resolvedBodyId: null })).toBe(false);
+  });
+});
+
+describe('onIceControlMode', () => {
+  const base = {
+    onIceWaterBodyId: 'lake' as string | null,
+    selectedWaterBodyId: 'lake' as string | null,
+    armed: false,
+    sessionActive: false,
+    capturingHazard: false,
+  };
+
+  it('offers the button on the lake the skater is standing on, once they select it', () => {
+    expect(onIceControlMode(base)).toBe('button');
+  });
+
+  it('stays out of the way while another lake is open — that is what "Your ice" is for', () => {
+    expect(onIceControlMode({ ...base, selectedWaterBodyId: 'other' })).toBe('hidden');
+    expect(onIceControlMode({ ...base, selectedWaterBodyId: null })).toBe('hidden');
+  });
+
+  it('offers nothing off the ice', () => {
+    expect(onIceControlMode({ ...base, onIceWaterBodyId: null, selectedWaterBodyId: null })).toBe(
+      'hidden',
+    );
+  });
+
+  it('opens the panel once on-ice mode is armed', () => {
+    expect(onIceControlMode({ ...base, armed: true })).toBe('panel');
+  });
+
+  // The Stop button has to be reachable from wherever the skater has wandered — including off any
+  // mapped water, and including with somebody else's lake open on the sheet.
+  it('keeps a running session reachable no matter what is selected', () => {
+    expect(
+      onIceControlMode({
+        ...base,
+        armed: true,
+        onIceWaterBodyId: null,
+        selectedWaterBodyId: 'other',
+      }),
+    ).toBe('panel');
+    expect(onIceControlMode({ ...base, sessionActive: true, onIceWaterBodyId: null })).toBe(
+      'panel',
+    );
+  });
+
+  it('yields the bottom of the screen to a hazard capture, session or not', () => {
+    expect(onIceControlMode({ ...base, capturingHazard: true })).toBe('hidden');
+    expect(onIceControlMode({ ...base, armed: true, capturingHazard: true })).toBe('hidden');
   });
 });

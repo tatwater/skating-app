@@ -18,7 +18,7 @@ function compileColor(value: unknown) {
   } as never);
 }
 
-/** Evaluate a compiled colour expression against one feature. */
+/** Evaluate a compiled color expression against one feature. */
 function colorFor(value: unknown, properties: Record<string, unknown>, favorite = false) {
   const compiled = compileColor(value);
   expect(compiled.result).toBe('success');
@@ -33,7 +33,7 @@ function colorFor(value: unknown, properties: Record<string, unknown>, favorite 
     .toLowerCase();
 }
 
-/** MapLibre serialises an opaque colour back as hex, so this is the whole of "white". */
+/** MapLibre serialises an opaque color back as hex, so this is the whole of "white". */
 const WHITE = '#ffffff';
 
 describe('waterOutlineColor', () => {

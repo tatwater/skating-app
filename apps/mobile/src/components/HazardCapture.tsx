@@ -648,10 +648,15 @@ export function HazardCapture() {
         </YStack>
       ) : null}
 
-      {/* The FAB. Present whenever there's a lake to attach to; off-ice it's simply the ordinary way
-          to flag one. Deliberately NOT an "you're on the ice!" mode — there should be nothing you
-          can be confused about being *in*. */}
-      {targetBodyId && !hazardDraft && !picking ? (
+      {/* The FAB — **on the ice you are standing on, and nowhere else** (founder, 2026-08-25).
+          ⚠ This reverses the original call, which was that it should appear wherever there was a lake
+          to attach to, on the reasoning that off-ice it is "simply the ordinary way to flag one". Two
+          things falsified that. It covered the freeze-up scrubber and the drawer's own content while
+          browsing, which is when a red circle is least earned; and a hazard flagged from a lake you
+          are only *reading about* is a claim about ice nobody is standing on.
+          Panning away now leaves `BackToLakeButton` and no FAB — you can get back to your ice, and
+          the affordance for reporting on it comes back with you. */}
+      {onIceWaterBodyId && onIceWaterBodyId === highlightWaterBodyId && !hazardDraft && !picking ? (
         <Button
           position="absolute"
           bottom={132}

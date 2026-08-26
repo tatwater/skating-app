@@ -223,3 +223,46 @@ export function formatAerialCaptureDate(capturedAt: number, now: number = Date.n
   const years = (now - capturedAt) / (365.25 * 24 * 60 * 60 * 1000);
   return years >= 3 ? `${label} · latest available` : label;
 }
+
+/**
+ * The same flight, named the way the **archive** names its winters — `summer 2023`, not `June 2023`.
+ *
+ * > **Founder, 2026-08-26:** *"when it's showing summer imagery, it can say 'Freeze-up timeline …
+ * > summer 2023 • latest aerial available'; when it's showing winter imagery … 'winter 2025–26'."*
+ *
+ * One slot in the panel's heading answers *what season is on this lake*, and it is filled from two
+ * different sources — an archived Sentinel frame or the aerial under it. Two grammars in one slot is
+ * a comparison a reader has to do arithmetic for, so the aerial adopts the archive's: a season and a
+ * year, which are also exactly the two facts {@link formatAerialCaptureDate} argues are the useful
+ * ones. The precise month survives in the drawer's provenance line, where somebody asking *when* is
+ * already looking.
+ */
+export function formatAerialSeason(capturedAt: number, now: number = Date.now()): string {
+  const date = new Date(capturedAt);
+  if (Number.isNaN(date.getTime())) return '';
+  const month = date.getUTCMonth();
+  const year = date.getUTCFullYear();
+  const season =
+    month === 11 || month <= 1
+      ? 'winter'
+      : month <= 4
+        ? 'spring'
+        : month <= 7
+          ? 'summer'
+          : 'autumn';
+  // ⚠ A winter spans two calendar years, and this slot also holds `winter 2025–26` — so a winter
+  // flight has to be named the same way or the one grammar the merge bought is lost again. NAIP is
+  // flown leaf-on and should never reach this branch; a label quietly reading `winter 2023` for a
+  // January flight is precisely the sort of wrong that nobody goes looking for.
+  const label =
+    season === 'winter'
+      ? month === 11
+        ? `winter ${year}–${String((year + 1) % 100).padStart(2, '0')}`
+        : `winter ${year - 1}–${String(year % 100).padStart(2, '0')}`
+      : `${season} ${year}`;
+  // "latest **aerial** available", where the month form says only "latest available": in the heading
+  // it sits beside a season the archive also publishes, and an unqualified "latest" there would read
+  // as a claim about the satellite timeline rather than about the flight programme.
+  const years = (now - capturedAt) / (365.25 * 24 * 60 * 60 * 1000);
+  return years >= 3 ? `${label} · latest aerial available` : label;
+}

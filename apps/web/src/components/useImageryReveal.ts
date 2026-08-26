@@ -71,7 +71,7 @@ import { composeImagery, compositeCanvasSize, imageryCorners } from '../lib/imag
  * Every step degrades rather than throws: no road layer after water ⇒ sit directly on top of water;
  * no `water` at all ⇒ the old behaviour; no style yet ⇒ append, which is v1's look and not a crash.
  */
-function insertBeforeLayerId(map: maplibregl.Map): string | undefined {
+export function insertBeforeLayerId(map: maplibregl.Map): string | undefined {
   const layers = map.getStyle()?.layers ?? [];
   const waterIndex = layers.findIndex((layer) => layer.id === 'water');
   if (waterIndex >= 0) {

@@ -41,13 +41,26 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 [[ -f "$HERE/.env.local" ]] && { set -a; . "$HERE/.env.local"; set +a; }
 BUCKET="${R2_BUCKET:-skating-imagery}"
 
-LIST="${1:-}"
-SEASON="${2:-}"
-MAX_ROUNDS="${3:-6}"
+# `--recut` may appear anywhere; everything else is positional as before.
+RECUT=false
+ARGS=()
+for arg in "$@"; do
+  if [[ "$arg" == "--recut" ]]; then RECUT=true; else ARGS+=("$arg"); fi
+done
+
+LIST="${ARGS[0]:-}"
+SEASON="${ARGS[1]:-}"
+MAX_ROUNDS="${ARGS[2]:-6}"
 if [[ -z "$LIST" || -z "$SEASON" ]]; then
-  echo "usage: backfill.sh <granules.txt> <season> [max-rounds]" >&2
+  echo "usage: backfill.sh <granules.txt> <season> [max-rounds] [--recut]" >&2
+  echo "  --recut  re-cut granules that already have a frame — see the note on landed()" >&2
   exit 64
 fi
+
+# The instant this run began, in the same UTC form the listing is forced into. Everything written
+# before it is last week's numbers as far as `--recut` is concerned.
+RUN_STARTED_ISO="$(date -u +"%Y-%m-%d %H:%M:%S")"
+[[ "$RECUT" == true ]] && echo "[backfill] --recut: a frame counts only if written after $RUN_STARTED_ISO"
 
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
@@ -80,8 +93,51 @@ echo "[backfill] $TOTAL granules -> season $SEASON"
 # The two cases are separated rather than blanketed with `|| true`, because they are not the same
 # thing: "no frames yet" is the normal start, while a credentials or network failure reading as "no
 # frames yet" would re-spawn the entire list against a bucket we cannot even see.
+# ## ⚠ `--recut` — because "already there" is the wrong question when replacing an archive
+#
+# This loop reconciles on **presence**: list the bucket, spawn the difference, repeat. That is exactly
+# right when filling a season for the first time, and exactly wrong when re-cutting one. Every frame is
+# already present, so a re-cut run reports `4,485/4,485 landed`, spawns nothing, exits 0 in thirty
+# seconds and looks like a triumph.
+#
+# Caught 2026-08-25 on a 42-granule Mascoma run that finished before it could have started one job.
+#
+# So `--recut` reconciles on **freshness** instead: a manifest counts as landed only if the bucket says
+# it was written *after this run began*. That keeps the retry property intact — a job that fails mid-run
+# leaves its OLD manifest in place, which is correctly still stale, so the next round tries it again.
+# Reconciling on presence there would see the stale frame, call it landed, and leave the re-cut with a
+# silent hole wearing last week's numbers.
+#
+# The modification time comes from the listing this already performs, so freshness costs nothing extra.
 landed() {
   local listing status=0
+  if [[ "$RECUT" == true ]]; then
+    # ⚠ **`lsf --format "tp"`, not `lsjson`.** `lsjson` emits full metadata per object, and on a
+    # season prefix holding 4,400+ frames that is slow enough to look like a hang — measured: it did
+    # not finish in ten minutes, while this returns in under a second. The listing runs once per
+    # round, so the difference is the whole loop.
+    #
+    # ⚠ **And both sides are forced to UTC.** rclone prints modification times in LOCAL time by
+    # default, so comparing them against a UTC run-start silently judges every fresh frame stale —
+    # nothing converges and the loop re-spawns the season once per round until it hits max-rounds.
+    # `TZ=UTC` on the listing and `date -u` on the marker put both in the same sortable form, which
+    # also means no daylight-saving jump can reorder them.
+    # ⚠ **`--use-server-modtime` is what makes this finish at all.** rclone's S3 backend stores its
+    # own modification time in object METADATA, so asking for a modtime without this flag issues a
+    # HEAD per object — 9,769 of them on this prefix, which did not complete in ten minutes. The flag
+    # reads `LastModified` straight from the listing instead: **5 seconds**. It is also the more
+    # correct clock here, being when the object was actually written rather than what an uploader
+    # claimed.
+    listing="$(TZ=UTC rclone lsf "r2:${BUCKET}/frames/${SEASON}/" --s3-no-check-bucket \
+      --use-server-modtime --format "tp" --separator ";" 2>/dev/null \
+      | awk -F';' -v since="$RUN_STARTED_ISO" '$1 > since { print $2 }')" || status=$?
+    if (( status != 0 && status != 3 )); then
+      echo "[backfill] FATAL: cannot list r2:${BUCKET}/frames/${SEASON}/ (rclone exit $status)" >&2
+      return 1
+    fi
+    printf '%s\n' "$listing" | sed -n 's/\.json$//p' | sort
+    return 0
+  fi
   listing="$(rclone lsf "r2:${BUCKET}/frames/${SEASON}/" --s3-no-check-bucket 2>/dev/null)" || status=$?
   if (( status != 0 && status != 3 )); then
     echo "[backfill] FATAL: cannot list r2:${BUCKET}/frames/${SEASON}/ (rclone exit $status)" >&2
@@ -145,7 +201,21 @@ for round in $(seq 1 "$MAX_ROUNDS"); do
       echo "[backfill]   then read one job's log: fly logs --app \${FLY_APP:-skating-imagery}"
       exit 1
     fi
-    echo "[backfill] converged — the remaining $missing granules have nothing under them"
+    # ⚠ **"Nothing under them" is an ASSERTION, and it is often wrong.**
+    #
+    # A granule produces no manifest for two very different reasons: it correctly had no corpus body
+    # under it and exited 0, or it died. `cut-granule` dies on a missing annotation, a failed LUT, a
+    # bad warp — and from here those look identical, because both leave the bucket unchanged.
+    #
+    # Measured on the Mascoma run: one granule was reported as having nothing under it while its log
+    # read `FATAL: noise LUT build failed for vv`. It had 10,157 bodies under it. At 4,485 granules
+    # that phrasing would quietly excuse every real failure in the season.
+    #
+    # So the outstanding ids are printed rather than characterised, and the reader is pointed at the
+    # one place that actually knows.
+    echo "[backfill] no longer converging — $missing granule(s) never produced a manifest:"
+    sed 's/^/[backfill]     /' "$WORK/missing.txt"
+    echo "[backfill] each either had nothing to cut (exit 0, correct) or FAILED. \`fly logs\` knows which."
     break
   fi
   previous_missing=$missing

@@ -12,8 +12,6 @@ import { LakeSearch } from '../../../src/components/LakeSearch';
 import { DRAWER_NORMAL, DRAWER_PEEK, MapDrawer } from '../../../src/components/MapDrawer';
 import { MapSelectionProvider, useMapSelection } from '../../../src/components/MapSelectionContext';
 import MapView from '../../../src/components/MapView';
-import { OnIceModeControl } from '../../../src/components/OnIceModeControl';
-import { RecorderControl } from '../../../src/components/RecorderControl';
 import { resolveCachedBody } from '../../../src/lib/bodyCache';
 import { noteDwell } from '../../../src/lib/dwellTracker';
 import { ensureForegroundPermission } from '../../../src/lib/location';
@@ -55,6 +53,7 @@ function MapLayoutInner() {
     setFocus,
     pinDropMode,
     setDrawerCoveredFraction,
+    drawerPeekNonce,
     setContourBodyKey,
     hazardDropMode,
     onIceCoord,
@@ -244,15 +243,27 @@ function MapLayoutInner() {
   return (
     <View style={{ flex: 1 }}>
       <MapView geolocateOnMount={geolocateOnMount} />
-      <LakeSearch />
-      <MapDrawer snapIndex={snapIndex} onCoveredFractionChange={setDrawerCoveredFraction}>
+      {/* Search is a pan-around affordance: it scoots up off the top edge the moment a drawer opens
+          and drops back in when the skater backs out (founder, 2026-08-26 — the strip is too much of
+          the screen to spend on a single-body view). Driven by `isDetail`, not the sheet's snap
+          point: a peek is still a body being looked at, so a put-in placement must not bring the
+          search bar back down over the map the skater is tapping. */}
+      <LakeSearch hidden={isDetail} />
+      <MapDrawer
+        snapIndex={snapIndex}
+        peekNonce={drawerPeekNonce}
+        onCoveredFractionChange={setDrawerCoveredFraction}
+      >
         <Slot />
       </MapDrawer>
-      {/* All three sit above the drawer: a warning you can't see because a sheet is over it isn't a
-          warning, and the flag button + on-ice control have to stay reachable while a drawer is open. */}
+      {/* The capture flow and the alert banner sit *above* the drawer: a warning you can't see because
+          a sheet is over it isn't a warning, and the flag button has to stay reachable while a drawer
+          is open. They hold that position by their own `zIndex` of 30, against the sheet's 25 — see
+          `DRAWER_Z_INDEX`, which threads between them and the map's own overlays below.
+          `BackToLakeButton` deliberately does *not*: see its own note. And the on-ice control moved
+          into `MapView` entirely (founder, 2026-08-26) — it belongs to the map's bottom rail now, and
+          it was one half of the button pile this pass cleared off the screen. */}
       <HazardCapture />
-      <OnIceModeControl />
-      <RecorderControl />
       <BackToLakeButton />
       <HazardBanner />
     </View>

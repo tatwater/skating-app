@@ -3,12 +3,29 @@
 *Not a base map you switch to. A photograph of **this lake**, clipped to its own shape and the way in,
 with a date on it — and behind it, a season of passes you can scrub through and watch the ice arrive.*
 
-> **Status:** 📋 Re-scoped 2026-08-21 after a founder review of the original scoping. **Imagery not
-> built; [Workstream 0](#workstream-0--getting-the-way-in-into-the-app--built-2026-08-21) is** — the
-> access prerequisite grew into a build of its own on 2026-08-21 (route geometry, the trail
-> connectivity pass, and the approach drawn on both clients) and landed on this phase's branch rather
-> than as an N6d follow-up (founder call). Gated behind
-> [N6d](./phase-N6d-lake-access-points.md), which is complete on dev.
+> **Status:** ✅ **Built through PR 3 — 2026-08-26.** The feature is on both clients: a lake can be
+> revealed as a photograph and its freeze-up scrubbed, on web and on mobile. Re-scoped 2026-08-21 after
+> a founder review of the original scoping; see [Sequencing](#sequencing--six-prs-settled-2026-08-21-resplit-2026-08-23)
+> for what each PR carried.
+>
+> | | | |
+> |---|---|---|
+> | **PR 0** — the way in | ✅ Built 2026-08-21 | [Workstream 0](#workstream-0--getting-the-way-in-into-the-app--built-2026-08-21) — the access prerequisite that grew into a build of its own, landed on this phase's branch rather than as an N6d follow-up (founder call) |
+> | **PR 1** — the reveal, web only | ✅ Merged 2026-08-23 | PR **#45** |
+> | **PR 2** — the producer | ✅ Merged 2026-08-25 | PR **#46** — the Fly box, the granule transform, the masked archive, the S1 pipeline, and the single-season backfill |
+> | **PR 3** — the consumer | ✅ **Built 2026-08-26**, branch `phase-n6e-satellite-imagery-3` — **no PR opened yet, undeployed** | The Convex read path, both scrubbers, the band selector, **mobile's reveal**, attribution, and the per-frame date and cloud caveat |
+> | **PR 4** — phenology, derived dark | ⏳ Not started | Needs the nine-season backfill, which is a deliberate separate spend |
+> | **PR 5** — what the archive knows | ⏳ Not started | N6g's content; D150's real home |
+>
+> ⚠ **PR 3's branch is not only client work.** Scrubbing a real season put a skater in front of the
+> producer's output for the first time, and that falsified four producer assumptions the artifact
+> review had passed: the radar was never denoised, every per-body statistic was measuring a 60 m ring
+> of shoreline, the geocode reference was an average of the pass rather than local to the lake, and the
+> SCL band would have shipped as a black rectangle. Those fixes live here rather than in PR 2 because
+> nothing before a scrubber could have found them — see [the batched re-run queue](#the-batched-re-run-queue-established-2026-08-25),
+> which is what they feed.
+>
+> Gated behind [N6d](./phase-N6d-lake-access-points.md), which is complete on dev.
 >
 > **What changed, and why the rewrite rather than a patch.** The 2026-07-31 scoping specced a
 > **base-map toggle**: satellite replaces the vector basemap across the whole map, everywhere, and the
@@ -149,7 +166,7 @@ MapLibre cannot blur a fill or vary `raster-opacity` spatially, so a soft edge h
 
 | Technique | How | Use for |
 |---|---|---|
-| **Inverse mask** | Draw the raster, then a polygon *with a hole* over it in the basemap colour | **Tier 1 (NAIP)** — hard edge, ships first |
+| **Inverse mask** | Draw the raster, then a polygon *with a hole* over it in the basemap color | **Tier 1 (NAIP)** — hard edge, ships first |
 | **Concentric rings** | 6–8 stepped buffers as fills at stepped opacity | **Tier 1**, once the hard edge works |
 | **Baked alpha** | Clip and feather server-side; the archive carries its own transparency | **Tier 2 (Sentinel)** |
 
@@ -293,19 +310,19 @@ surface deformed" and weak on "black ice or open water," which is the distinctio
 about. S1 and S2 together resolve most of it; either alone does not.
 
 **A band selector ships with the scrubber** *(founder call, 2026-08-21b — "once imagery is turned on by
-the user, they should see an additional toggle to switch between the bands")*. True colour · NDSI ·
+the user, they should see an additional toggle to switch between the bands")*. True color · NDSI ·
 a SWIR composite · SAR VV. **This sits comfortably inside D150** precisely because it is the raw
 observation with no interpretation layered on — the user reads the pixels, exactly as they read the
 photograph. It is also the honest precursor to PR 5's hatch layer: anyone who wants to check what the
 classification was derived *from* can look at it.
 
-**The bands are where the real signal is.** Not needed for v1's true-colour frames, but they are why
+**The bands are where the real signal is.** Not needed for v1's true-color frames, but they are why
 N6g is worth doing and they should be captured while we're already downloading the granule:
 
 - **SCL (Scene Classification Layer)** — shipped *inside* Sentinel-2 L2A, computed by ESA, with
   per-pixel classes for water, **snow/ice**, cloud (high/medium), and cloud shadow. It is simultaneously
   our ice signal and our cloud filter, for free. **This is the most valuable band in the product.**
-- **NDSI** (green vs. SWIR) separates snow/ice from cloud, which true colour cannot — both are white.
+- **NDSI** (green vs. SWIR) separates snow/ice from cloud, which true color cannot — both are white.
 - **SWIR generally** is why any of this works: water absorbs it almost totally, ice and snow reflect it.
 
 ### C2 — The archive: one masked raster PMTiles per pass
@@ -335,6 +352,47 @@ than Railway for the **always-warm, RAM-heavy** service we already know we want 
 ~$46/mo vs ~$81/mo at 8 GB). Railway is the nicer developer experience and its $5 Hobby credit would
 cover this phase's batch job outright; the ORS workload is what breaks the tie. Fly volumes are
 host-pinned with no multi-attach — a real operational edge to know about going in.
+
+#### Why one raster per granule, and not one per body *(founder question, 2026-08-25)*
+
+Worth recording, because the answer is load-bearing for anything PR 3 or later wants to draw.
+
+**The pipeline someone imagines:** store the region's raw imagery → cut a chunk per body → mask each
+into a body-shaped blob. **What is built:** read granule COGs from AWS without storing them → cut
+**one** raster per granule covering every body it touches → bake alpha → one PMTiles per granule.
+
+Per-body would be ~24,831 bodies × ~90 passes ≈ **2.2 million artifacts a season**, against 4,485.
+Better pixel efficiency, catastrophically worse file count.
+
+**And it answers a question that sounds like it needs a redesign** — *what if imagery should reveal
+every body in the viewport, not just the selected lake?* **The current design already does that; the
+per-body design would fight it.** The archive is region-wide and pre-masked, so every body a granule
+touches is already in that granule's PMTiles with its alpha baked in. Revealing a viewport is rendering
+the archive over that area — no per-body fetch, no tile math, which is what D148 chose this shape for.
+Under a per-body design, fifty lakes on screen would mean fifty fetches.
+
+**So the per-lake restriction is D146 — a product decision about where the control lives — and not an
+architectural limit.** Lifting it is a client change. The one thing to watch is that a viewport
+spanning several granules needs several sources, which MapLibre handles.
+
+#### "Cut and store everything" means the results, not the raw granules *(founder, 2026-08-24)*
+
+The ungating call — *"then we know we have everything from Copernicus and we can rerun whatever we want
+on it without hitting them again"* — reads at first like an argument for hoarding the source granules.
+It is not, and the arithmetic is one-sided:
+
+| | per season | monthly, forever |
+| --- | --- | --- |
+| Raw granules | ~600 GB – 1.2 TB | **~$9–18 *per season*** |
+| Cut frames | ~2 GB | **~$0.20** |
+
+**Re-cutting from AWS is free** — Sentinel-2 COGs are open data with no egress charge — so raw storage
+would buy exactly one thing: insurance against AWS deleting the open-data bucket. That is not a risk
+worth $9–18 a month per season in perpetuity, and the insurance is worse than it sounds, since a
+deletion would also take the granules we would want to re-cut *from*.
+
+⚠ **Worth re-reading before anyone proposes it again**, because "own the pixels" is a phrase that
+sounds like it settles this and does not.
 
 ### C3 — Ingest gate and season turnover
 
@@ -402,6 +460,26 @@ gate that misses freeze-up, not an early one that wastes compute.
 timeline invites inference far harder than a static image does, so every frame carries its own date and
 its own cloud caveat — they travel with the frame, they are not furniture around the control.
 
+#### A split body shows a seam, not one picture *(founder call, 2026-08-24 — built in PR 3)*
+
+> **Founder:** *"If a single body is split across two images from different dates, we should provide a
+> hairline border between the two images, with their respective dates on either side."*
+
+**A granule edge can bisect a lake**, and when it does neither frame is wrong — they are two
+photographs of two halves, taken on different days. The tempting fix is to pick one and crop, which
+would present a single date over ground that was observed twice, weeks apart. That is precisely the
+inference C4 exists to prevent, and it fails silently: nothing on screen would say the eastern half is
+a fortnight older than the western.
+
+So both render, with a hairline between them and each date on its own side. **The producer already
+supports this** — `coveragePct` in the per-granule manifest says which share of the body came from
+which pass, which is the number the seam is drawn from. A footprint alone cannot: it says a frame
+partially covers a body, not where the join falls.
+
+⚠ **This is why coverage must be read from the manifest rather than inferred from geometry.** A
+point-in-polygon test against the footprint returns one frame per date and would call a half-covering
+pass "not covered", which throws away the half we have.
+
 ### C5 — The nine-season archive and the phenology it yields *(derived dark in PR 4)*
 
 > **Founder, 2026-08-21:** hold every available pass for the region, reveal only the current season, and
@@ -431,8 +509,8 @@ The first winter (2025-26) has been cut end to end; these are its numbers, not p
 **The job count was 6× low and the price 3× high, and they were wrong for unrelated reasons.** The job
 count assumed the cloud gate that §"The backfill is a selection problem" argued for and the founder
 later abandoned; the price assumed 8 GB Machines when the largest granule in the corpus completes in
-1 GB. Both corrections are documented where they were made — see `scripts/imagery/README.md` and
-`plans/PR2-HANDOFF-2.md`.
+1 GB. Both corrections are documented where they were made — see `scripts/imagery/README.md`, whose
+trap 5 carries the per-RAM cost table the second correction came from.
 
 Storage was the least accurate estimate of the three (13 GB against 170 GB, 13× low) and remains the
 least important: at $2.55/month for the full nine seasons it is still a rounding error next to the
@@ -757,7 +835,11 @@ on both clients. See [Workstream 0](#workstream-0--getting-the-way-in-into-the-a
 Ships against a keyless public endpoint with no box, no archive and no cron. **Could land while N6d is
 still settling**, which is the point of putting the seam here.
 
-> ### ⚠ Mobile is deferred to PR 3, and it is a dependency decision rather than a port
+> ### ~~⚠ Mobile is deferred to PR 3~~ — ✅ **resolved by PR 3, and the argument held**
+>
+> *Kept because the reasoning is the record of why no native dependency was added. Mobile's reveal
+> shipped as an `ImageSource` pointed at a URL; the canvas was never needed, and Skia was never
+> revisited. The row marked ✅ below is what happened.*
 >
 > **React Native has no `CanvasRenderingContext2D`.** The web reveal clips by punching the alpha
 > channel of a fetched photograph on a canvas (`imageryCanvas`), and mobile has no equivalent —
@@ -786,12 +868,16 @@ still settling**, which is the point of putting the seam here.
 > **The cost, stated plainly:** mobile skaters get the Copernicus deep link and no reveal until PR 3.
 > **The fallback if PR 3's clipping does not generalise:** Skia, revisited then rather than now.
 
-**PR 2 — the producer.** ⏳ *In progress.* **Everything server-side, so that PR 3 can be everything
-client-side** *(founder, 2026-08-25 — this is the seam, and it is what decides where a question
-belongs)*: the Fly box, the mask pre-bake, the granule transform, the masked PMTiles archive, STAC
-selection, D149's weather gate and season turnover, the provenance manifest, and **the Sentinel-1
-pipeline**. Ends by running the **single-season** backfill, so it is verified by an artifact you can
+**PR 2 — the producer.** ✅ **Merged 2026-08-25** (PR #46). **Everything server-side, so that PR 3 can
+be everything client-side** *(founder, 2026-08-25 — this is the seam, and it is what decides where a
+question belongs)*: the Fly box, the mask pre-bake, the granule transform, the masked PMTiles archive,
+STAC selection, D149's weather gate and season turnover, the provenance manifest, and **the Sentinel-1
+pipeline**. Ended by running the **single-season** backfill, so it was verified by an artifact you can
 open rather than by a screenshot.
+
+> ⚠ **And that verification had a ceiling PR 3 found.** An artifact review confirms a frame is
+> *well-formed*; it cannot confirm the frame is *of the lake*. Four defects survived it and were caught
+> within days of a scrubber existing — see the note under PR 3.
 
 *Two changes from how this was originally written.* **The cloud gate is gone** — the founder's
 "cut and store everything, hit Copernicus once, own the pixels" (2026-08-24) replaced it with an
@@ -801,11 +887,38 @@ Copernicus and all similar processing to what we've just built"* (founder, 2026-
 separate STAC collection, a separate id grammar and a single-band transform, but every one of those is
 producer work, and splitting it out would put server-side code in a client-side PR.
 
-**PR 3 — the consumer.** The Convex read path, the web scrubber, the band selector, **mobile's
-reveal**, attribution, and the per-frame date and cloud caveat. Web and mobile belong together here:
-they consume one archive contract, and splitting them means reviewing that contract twice and risking
-two readings of it. Mobile rides the server-side clipping PR 2 builds anyway — see the deferral note
-under PR 1.
+**PR 3 — the consumer.** ✅ **Built 2026-08-26** on branch `phase-n6e-satellite-imagery-3`; **no PR
+opened, undeployed.** The Convex read path, the web scrubber, the band selector, **mobile's reveal**,
+attribution, and the per-frame date and cloud caveat. Web and mobile belonged together here: they
+consume one archive contract, and splitting them would have meant reviewing that contract twice and
+risking two readings of it.
+
+**The mobile deferral came out exactly as argued.** Mobile's reveal is an `ImageSource` pointed at a
+URL — *"painting a pass is adding a URL, which is what the archive was for"* — because PR 2's baked
+alpha meant there was no clip left to perform on the device. **No Skia, no second copy of the
+projection-and-feather logic, no native dependency.** The fallback was never needed.
+
+**What it grew beyond the plan,** in the order the screen forced it:
+
+- **The scrubber moved onto the map**, because it is a control for the map, and then became a real
+  drag rather than a stepper. It ends as the **imagery dock**: one box that grows from the "Show
+  imagery" button into the timeline card, at the founder's ask (**D146**'s UI corollary, 2026-08-25).
+- **A lake split across a granule edge shows both halves and both dates** — a case the archive's
+  one-frame-per-pass shape did not anticipate, and which is a *seam*, not a picture (founder call,
+  2026-08-24). See [§C4](#a-split-body-shows-a-seam-not-one-picture-founder-call-2026-08-24--built-in-pr-3).
+- **A radar timeline holds one orbit direction**, which stops the lake bouncing between dates. That is
+  a mitigation of open question 8, not a fix.
+- **Four producer defects, found by looking rather than by review.** The radar was never denoised;
+  every per-body statistic was measuring the shoreline rather than the lake; the geocode reference was
+  an average of the pass rather than local to the body; the SCL band would have shipped as a black
+  rectangle. All four feed the re-run queue.
+- **Mobile framing, 2026-08-26.** The search bar scoots off the top when a body is selected, and the
+  camera fit now measures its real occluders — the top of the timeline card or of the collapsed
+  button — rather than assuming a flat margin and the sheet.
+
+⚠ **The 2026-08-26 framing change is the one piece not yet seen on a device.** The rest of mobile has
+been, and a device is what caught the bug declarative bindings were hiding; but the search-bar slide
+and the re-derived camera padding have been through types and tests only.
 
 **PR 4 — phenology, derived dark.** §C5's window metrics over the nine-season archive. This one
 *defers itself*: the metrics want eight more seasons than the first backfill produces, and that spend
@@ -973,6 +1086,147 @@ irreversibly.
   cuts at July 1 that a skater would notice**, and moving only that. Scoped as its own small task, not
   part of this phase's PRs.
 
+## The batched re-run queue *(established 2026-08-25)*
+
+**Things that are free during a pass we are already making, and cost a full re-read of the season if
+done alone.** A single-season re-run is ~$1.46 and ~1.7h — cheap enough that no one item justifies
+holding the list, and repeated often enough that doing them one at a time pays that over and over.
+
+**The base rate says batch.** The last time this archive was consumed from the client side, that work
+produced seven producer-side changes in one document. Expect PR 3 to add more; collect them and re-run
+once.
+
+| item | why it wants a pass we are already making |
+| --- | --- |
+| ~~**Per-body NDSI**~~ (green + swir16) | ✅ **BUILT 2026-08-25** as `zonal-ndsi.py` — a statistic, not a frame (two band warps, no tiling). ⚠ **It found a trap that would have ruined the nine-season series:** L2A reflectance is `DN·scale + offset`, and baseline **04.00 (2022-01-25)** introduced `BOA_ADD_OFFSET = -1000`. The scale cancels in a normalised index; the offset does not. Same synthetic snow pixel reads **NDSI 1.000 on the new baseline and 0.778 on the old** — either side of the 0.4 threshold the literature uses. A nine-season backfill spans that date, so a hardcoded offset puts a step change at January 2022 indistinguishable from a climate signal. Read per granule from STAC's `raster:bands`, skipped rather than guessed. |
+| ~~**The DEM-corrected radar geocode**~~ *(question 8)* | ✅ **BUILT AND CALIBRATED 2026-08-25.** See [what the calibration found](#the-radar-geocode-calibrated-2026-08-25) — it is no longer a queue item, and two of the things it turned up were not what the queue expected. |
+| **The SCL raster, now that it is on by default** *(founder, 2026-08-25)* | `EMIT_SCL_FRAME` now defaults on, so every *future* cut publishes a `scl` frame — but the **4,381 optical frames already in R2 predate it**, so the band selector has real data for `visual` and `vh` and an empty third option until a re-cut. Additive and blocks nothing: PR 3 should build the selector to render whatever bands the index actually offers rather than a hardcoded three. |
+
+~~⚠ **Measure the SCL raster on a dense granule before committing a season to it.**~~ ✅ **MEASURED
+2026-08-26, and the gate passes.** The worry was that a season-wide average of +24% job time hid a
+tail: a 923-body Champlain extent had gone **past 17 minutes without finishing**, and ~18% of a season
+sits on 1,000+ body tiles. Re-measured on that same granule — `S2C_18TXP_20260215_0_L2A`, 923 bodies,
+237.7 Mpixels, on a real `shared-cpu-4x/2048`:
+
+| stage | ms |
+| --- | --- |
+| `warp_scl` | 2,975 |
+| `color_scl` | 24,643 |
+| `tile_scl` | 86,385 |
+| **SCL total** | **113,997** |
+| **job total** | **591,618** |
+
+**+24% on the worst granule in the corpus** — the tail and the mean are the same number, which is the
+opposite of what the gap implied. The 17-minute figure was stale in the good direction, as suspected:
+it predates both the tiler swap and the removal of the statistics' intermediates before tiling.
+
+⚠ **The gate was worth running for a second reason.** The first attempt ran against an image built
+from an earlier commit, which is invisible in any artifact — so the run *timed* the pipeline without
+proving which pipeline it timed. Rebuilding from `HEAD` and re-running is what made `color_scl`'s
+presence in the manifest the evidence that the four-colour palette shipped. **A season run should pin
+`FLY_IMAGE` to a freshly built image and record the commit**, or the manifests record cost for code
+nobody can identify afterwards.
+
+### The radar geocode, calibrated *(2026-08-25)*
+
+The queue item asked for a prototype over Mascoma before this touched a season. It got one, and then a
+proper calibration, and **three of the things it found were not what the queue expected.**
+
+**1. The correction moves the pixels, not the masks** *(founder call)*. The first build shifted the
+zone geometry onto the displaced pixels — which fixes the statistics and leaves the picture displaced,
+so the frame disagrees with the basemap and the islands still move. Moving the *pixels* was ruled out
+as impossible for one raster and it is not: the frame is already masked into disjoint per-lake patches
+(D146), so each carries its own whole-pixel block copy. `sar-deshift.py` runs before anything else
+reads the raster, and afterwards the alpha, the zones, the statistics and the tiles all work at true
+positions with no offset threaded through them.
+
+**2. The reference height is local to the lake, and the scene average was worse than no correction.**
+A GRD is geocoded against its geolocation grid, whose points *each* carry a terrain height and
+incidence angle. Averaging that grid describes what the pass flew over: across five real tracks over
+one region it ranged **7.9 m** (mostly Gulf of Maine) to **369.6 m** (the White Mountains). Measured
+against 21 lake-passes — 19 lakes, 5 tracks, −1 m to 710 m of elevation:
+
+| | RMS residual | correlation |
+| --- | --- | --- |
+| scene-average height + incidence | 287.4 m | 0.25 |
+| **local height + incidence** | **42.1 m** | **0.90** |
+| no correction at all | 116.2 m | — |
+
+The measured **across-range** component came out at 9.4 m RMS — near zero, independently confirming the
+displacement is along range as the geometry claims rather than the model happening to fit.
+
+**3. It is now good enough to mix orbit directions, which is the point.** On the Mascoma
+ascending/descending pair the per-pass error went **150 m → 30 m (1.1 px)** and the disagreement
+*between* the passes **291 m → 39 m (1.4 px)**. PR 3 holds one orbit direction per timeline precisely
+because the two disagreed about where a lake was; they now agree, and **the usable radar cadence
+doubles.** *(Founder: "that cut our read-frequency in half so I'd rather be able to take both.")*
+
+⚠ **~40 m is the floor and it is ours, not the radar's.** Sentinel-2 needs no geometric correction and
+its lake masks still sit **31–71 m** off the imagery — that is how accurate our OSM/NHD shorelines are.
+Refining the radar model further would be fitting our own polygon error. **Optical needs no correction
+at all**, which was checked rather than assumed.
+
+⚠ **And `elevationM` was reaching the mask file for none of it.** A bake produced **0 of 40** bodies
+with an elevation, because `listForImageryMask` returns the field in source while the deployed dev
+function predated it. Every job would have exited 0 and written an ordinary frame of the wrong ground.
+`bake-masks` now prints elevation coverage every run and **refuses below 50%**; the full bake reports
+24,830 of 24,831.
+
+### What the pre-run review found *(2026-08-25, founder: "I'd rather wait until we're confident")*
+
+The season backfill was started and stopped forty seconds in, because a read-through of this doc and
+[N6g](./phase-N6g-imagery-research.md) against the built pipeline turned up two things that a
+nine-season run would have baked in irreversibly. Both are now fixed.
+
+**1. Thermal noise was never removed.** `sar-cal-lut.py` reads the calibration annotation; the *noise*
+annotation sits beside it in the same bucket directory and nothing had ever opened it. Measured NESZ
+for VH: **S1A median −25.15 dB, S1C median −27.96 dB**, worst-across-swath −21.84 dB on S1A — against
+lakes that measure −20 to −22 dB. The bias is compressive and worst where the signal is darkest, which
+is exactly where N6g Lane 1's smooth ice lives. Applied to 3,276 real bodies:
+
+| | raw | denoised |
+| --- | --- | --- |
+| darkest decile | −19.72 dB | **−21.09** (−1.17) |
+| median decile | −17.20 dB | −18.00 (−0.74) |
+| brightest decile | −15.24 dB | −15.85 (−0.66) |
+
+The differential is the point: ~**0.5 dB of the ~2 dB ice/water separation was being compressed away**.
+
+> ### 🔬 And it is a testable suspect for open question 7
+>
+> S1C's noise floor is **2.80 dB quieter** than S1A's. Left in, that is a *platform-dependent* bias on
+> dark targets: on a −22 dB lake it predicts **−0.73 dB**, against the **−0.52 dB** the archive measures
+> ascending. **After the radar season lands, re-measure the S1A−S1C offset.** If it collapses, platforms
+> pool and a lake gets a 6-day look instead of a 12-day one. If it does not, one suspect is eliminated
+> for the price of a query.
+
+**2. The season list was optical-only** — 4,485 granules, zero S1 — so the run would have produced no
+corrected radar at all and left every bit of the geocode calibration unexercised. The S1 list is now
+built: **753 granules**, S1A 558 / S1C 187 / S1D 8, ascending 657 / descending 96.
+
+**3. Per-body viewing geometry is now recorded** — `incidenceDeg`, `geocodeReferenceHeightM`, and the
+whole-pixel `geocodeShiftM` applied. This is the field open question 7 calls out as missing. Local
+incidence spanned **30.9°–44.8°** across the calibration lakes against a scene mean of 38.6°, and
+`1/tan` moves 60% across that span, so the scene figure was never a stand-in for it.
+
+**4. Deferred question 7's first sub-areas exist.** Mascoma is split at the bridge — **Mascoma North**
+1.20 km² and **Mascoma South** 3.43 km², on a line the founder gave (43.630971, −72.15751 →
+43.633797, −72.155795, bearing 23.7°), landing on the 90 m neck between the peninsula's southern
+corner and the south shore. All three islands fall south; the halves sum to 100% of the lake. The lake
+that produced the `27% ice / 65% water` reading can now answer the question that number could not.
+
+> ### ⚠ Two rules this queue exists to enforce
+>
+> **Write the code before the re-run, not with it.** Verified-but-unapplied is a safe state — the tiler
+> swap was prototyped on one granule before it touched a season, and that is what caught the archive
+> rendering lakes as solid black. *Unwritten-and-remembered* is not a safe state.
+>
+> **Contract changes do not belong in this queue.** Their cost *grows* with every consumer line written
+> against the old shape, while an additive field's cost stays flat. That asymmetry is why
+> `icePct → snowIcePct` was renamed immediately rather than batched: four code sites, zero consumers,
+> and a re-run owed anyway. ⚠ **Until that re-run happens the 4,381 frames in R2 still carry `icePct`,
+> so a reader wants `snowIcePct ?? icePct`.**
+
 ## Open questions
 
 *(None blocking. The phase is decided end-to-end; what remains is what a screen will tell us.)*
@@ -991,9 +1245,116 @@ irreversibly.
    too minimal — I think we could go to 20 m solid and a much wider feather."* The Sentinel pair also
    travels in the mask sidecar, so the container never holds its own copy of a tuned constant.
 
-**Still open, and it is PR 3's:**
+**Now answerable — PR 3 put it on a screen (2026-08-26):**
 
 3. **Whether the aerial and the scrubber ever want separate affordances** after both are on screen
    together. One control is the intent; if it reads as two features wearing one switch, that is worth
-   revisiting *after* seeing it, not before. **This could not be answered by PR 1** — it needs the
-   scrubber, which is PR 3, so it moves there rather than staying here.
+   revisiting *after* seeing it, not before. **This could not be answered by PR 1** — it needed the
+   scrubber, which PR 3 built.
+
+   **PR 3 doubled down on one control rather than splitting it**, and did so at the founder's ask
+   (2026-08-25): the toggle and the timeline became *the same box*, the button growing into the card,
+   because *"the timeline is what imagery-on means"*. ⚠ That is a stronger commitment to the single
+   affordance than the question assumed, so **the question is now about whether the merged dock reads
+   correctly, not whether two controls are wanted.** Still a founder look rather than a measurement —
+   it just has something to look at now.
+
+**Deferred with a decision attached *(founder, 2026-08-25 — "wait, address later")*:**
+
+7. **Sub-area freeze-up, so a lake stops being one number.** Every statistic the archive produces is
+   one figure for a whole body, and winter 2025-26 showed that failing on a lake the founder skates:
+   Mascoma read `27% ice / 65% water` on 11 January, which cannot distinguish *"patchy everywhere"*
+   from *"the north half is ready"* — and the skate log says it was the second, with the bridge at the
+   narrows as the divide for two weeks.
+
+   **The mechanism already exists.** N2's sub-areas (bays, arms, basins) were built for *naming*, and
+   narrows and bridges are precisely where a lake stops behaving as one surface — where flow
+   concentrates and ice forms last. Zoning the raster by sub-area rather than by body is a change to
+   `zonal-clear.py`'s zone raster, not a new pipeline.
+
+   **The cost is that every statistic gets more expensive and more complicated**, and it rides a
+   re-run. Recorded because the winter's data and the founder's skate log pointed at the same seam
+   independently, which is the strongest reason to expect it back. See
+   [`docs/reading-ice-from-orbit.md`](../docs/reading-ice-from-orbit.md) ch. 9 for the measurement.
+
+8. **⚠ Radar is not terrain-corrected, and it is visible — new, 2026-08-25.** `cut-granule.sh`
+   geocodes a GRD with `gdalwarp -tps` from its ground-control points, on the stated assumption that
+   *"over a lake — flat, at a known elevation — that is accurate enough without terrain correction."*
+   **A skater falsified that in the first session with the scrubber**: a pair of islands in the
+   north-west of Mascoma visibly jumped east, then west, then east again as the timeline advanced.
+
+   The GCPs geocode at a reference height, so anything above it is displaced along the **range**
+   direction by roughly `Δh / tan(θ)` — about 140 m per 100 m of elevation error at IW's incidence
+   angles. Sentinel-1 is right-looking, so ascending passes view from the east and descending from
+   the west, and the displacement flips sign between them. Mascoma's radar passes alternate direction
+   almost every date, which is exactly the bounce.
+
+   ⚠ **This is very likely the same root cause as question 7.** S1C disagrees with *itself* across
+   orbit directions by 1.18 dB, and uncorrected viewing geometry would produce both symptoms — the
+   radiometric one and the planimetric one — from one cause. Worth testing together rather than
+   separately.
+
+   > **Founder, 2026-08-25:** *"Should we find a way to use the radar information from both
+   > directions by calculating their respective offsets? Then we get double the frequency."*
+   >
+   > **Geometrically, yes — and analytically rather than empirically.** A lake is a constant-elevation
+   > surface, so over *the lake* the displacement is a near-constant translation rather than a
+   > per-pixel warp: `(h_lake − h_ref) / tan(θ)` along range. Every term is already in hand — the
+   > corpus carries elevation at 99.5%, and `θ` and the reference height live in the same product
+   > annotation `sar-cal-lut.py` already opens for calibration. Correcting each pass to truth removes
+   > the bounce *and* lands both directions in the same place, with no image matching and no pairing.
+   >
+   > **Radiometrically, only partly, and the caveat bites where it matters.** `sigma0` genuinely
+   > varies with incidence angle — physics, not calibration error — and **ice and water have different
+   > angular responses.** So an offset fitted on open water in November is wrong for ice in February:
+   > the correction is least valid exactly at the transition it would be used to date.
+   >
+   > **So: two parallel series, not one pooled one.** Keep ascending and descending internally
+   > consistent and read them together. That is the doubled observation frequency without asserting
+   > the two are one measurement — and a drop seen in one series and confirmed in the other days later
+   > is *stronger* evidence than a merged series, for the same reason two independent estimators are
+   > what caught the S1C anomaly in question 7.
+   >
+   > ⚠ **`sat:relative_orbit` is published by STAC and we do not record it.** Orbit direction is the
+   > coarse key; two passes from the same direction on different tracks still differ in incidence
+   > angle. Recording it costs nothing at cut time and is the finer comparability filter both this and
+   > question 7 will want.
+
+   **PR 3 mitigates rather than fixes**: a radar timeline now holds one orbit direction, so the lake
+   stops moving between dates. That is also what the `vhDb` comparability note was already asking
+   for. The real fix is a terrain-corrected geocode against a DEM, which is producer work and should
+   ride the re-run queue rather than a pass of its own. The corpus already carries elevation at 99.5%
+   coverage, so a per-body reference height is available if a full DEM correction proves too costly.
+
+**Still open on the producer side, carried forward from PR 2:**
+
+4. **Can SAR *date* freeze-up, or only delineate it?** The spike found the only unambiguous seasonal
+   excursion is March ice *decay*. Whether calibrated VH separates November open water from January ice
+   is what decides if radar earns a place in the timeline or stays a delineation aid — and it matters
+   more than it looks, because §4f's black-ice finding makes radar the only candidate for seeing the
+   surface skaters actually care about. A pilot season answers it; nothing else will.
+5. **Does `MAX_PARALLEL` go above 50?** Untested. 50 is proven safe and puts a season at ~1.7h, and
+   each doubling halves that. ⚠ On a multi-wave run the cap is not exact — 58–71 machines were observed
+   against a nominal 50 — so headroom is not the same as the number in the variable.
+6. **Is a nine-season SAR backfill worth it at all?** **S1B failed December 2021 and S1C launched
+   December 2024**, so the middle seasons have 12-day revisit rather than 6. Earlier seasons are
+   materially thinner than winter 2025-26, which is the one being piloted — so the pilot's numbers
+   flatter what a backfill would actually return. ⚠ **And question 7 makes this worse**, because if
+   platforms cannot be pooled then a "6-day" season is really two 12-day series.
+
+7. **⚠ Why does S1C disagree with itself? — new, 2026-08-25, and it gates the cadence.** Measured
+   across all 503 radar passes of winter 2025-26: calibration leaves an S1A−S1C offset of **−0.52 dB
+   VH ascending and +1.53 dB VH descending**, against a ~2 dB ice signal. The anomaly is not general
+   viewing geometry — **S1A agrees with itself across flight directions to +0.19 dB while S1C manages
+   only +1.18 dB.** S1D, compared to S1A seven minutes apart, sits ~1 dB off.
+
+   `sar-cal-lut.py`'s claim that *"calibration is what lets two satellites be one time series"* was
+   the design intent and is now corrected in place. **Until this is understood, a radar time series
+   stays inside one platform and one flight direction**, which is what `frameIndex.ts` already
+   enforces — that conservative note turns out to have been right for a reason nobody had measured.
+
+   Worth attacking because the prize is real: pooling platforms is the difference between a 12-day and
+   a 6-day look at a lake, and freeze-up happens on a timescale where that matters. Prime suspects are
+   S1C-specific calibration-annotation handling and incidence-angle differences the manifest does not
+   currently record. ⚠ **A fourth platform, S1D, is already appearing in the data** (4 passes, late
+   April 2026) — the id grammar accepts it, so this question will only get more crowded.

@@ -2,7 +2,7 @@
  * How bathymetric contours are drawn, and what the drawer says about them (N6b).
  *
  * Shared by web and mobile for the same reason `hazardLayer` is: *what gets drawn* is decided once,
- * and only the colours are per-app. But the reason is different here, and it is worth naming, because
+ * and only the colors are per-app. But the reason is different here, and it is worth naming, because
  * these are the app's least important lines and its most easily misread ones.
  *
  * ## D81 — visibility is derived, never managed
@@ -21,7 +21,7 @@
  * > makes no claim at all."*
  *
  * The one styling rule that carries real weight. A blue-to-navy depth ramp a skater could read as a
- * severity scale would reintroduce **through colour** exactly the claim we declined to make in words,
+ * severity scale would reintroduce **through color** exactly the claim we declined to make in words,
  * and it would do it silently. So the ramp is a single hue varying only in lightness, hazards render
  * above contours, and if the two ever compete for legibility the contour is the one that loses.
  *
@@ -88,7 +88,7 @@ export function contourBodyKey(externalId: string | undefined, fallbackId: strin
  */
 export const CONTOUR_MIN_ZOOM = 11;
 
-/** Per-app colours. One hue; only lightness varies. See D82 above for why that is not a preference. */
+/** Per-app colors. One hue; only lightness varies. See D82 above for why that is not a preference. */
 export interface ContourPalette {
   /** The shallowest contour. */
   shallow: string;
@@ -121,7 +121,7 @@ export function contourFilter(bodyId: string | null | undefined): unknown[] {
 }
 
 /**
- * Colour by depth, within a single hue.
+ * Color by depth, within a single hue.
  *
  * `maxDepthFt` scales the ramp to the lake on screen rather than to the corpus: a 17 ft pond and a
  * 400 ft lake should both read as "shallow at the edge, deep in the middle", and a corpus-wide ramp

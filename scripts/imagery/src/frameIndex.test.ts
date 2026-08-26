@@ -97,11 +97,28 @@ describe('buildSeasonIndex', () => {
     const index = buildSeasonIndex('winter-2025-26', [manifest()]);
     expect('footprint' in (index.frames[0] as object)).toBe(false);
   });
+
+  it('⚠ carries the radar look direction, so the filter works before a manifest is fetched', () => {
+    // A radar timeline holds one orbit direction or it interleaves two series that are not comparable
+    // — up to 1.5 dB apart against a ~2 dB ice signal, which no geocoding fixes. The filter that does
+    // it could only read the per-granule manifest, which streams in one fetch at a time, so for the
+    // first few hundred milliseconds it could not tell the two apart. Two distinct strings across a
+    // season's frames; it costs nothing beside the footprint polygon already here.
+    const index = buildSeasonIndex('winter-2025-26', [
+      manifest({ granuleId: 'S1A_IW_GRDH_1SDV_20260215', orbitDirection: 'descending' }),
+    ]);
+    expect(index.frames[0]?.orbitDirection).toBe('descending');
+  });
+
+  it('omits the look direction on optical, where the question does not apply', () => {
+    const index = buildSeasonIndex('winter-2025-26', [manifest()]);
+    expect('orbitDirection' in (index.frames[0] as object)).toBe(false);
+  });
 });
 
 describe('bands', () => {
   it('publishes one frame per band, keyed so they cannot collide', () => {
-    // A granule now yields true colour AND ESA's scene classification. `<granuleId>.pmtiles` could
+    // A granule now yields true color AND ESA's scene classification. `<granuleId>.pmtiles` could
     // only ever name one of them.
     const index = buildSeasonIndex('winter-2025-26', [manifest({ bands: ['visual', 'scl'] })]);
     expect(index.frames.map((f) => f.band)).toEqual(['visual', 'scl']);

@@ -25,6 +25,17 @@ jobs:
           node-version: 22
           cache: pnpm
 
+      # The `@fortawesome` scope resolves from FontAwesome's private registry (see
+      # `.npmrc`), so the install — not just the Pro packages — needs the token.
+      # It is appended to the runner's `~/.npmrc` rather than referenced from the
+      # committed one as `${VAR}`: pnpm discards an entire .npmrc it cannot expand,
+      # which would take the scope mapping down with it. Repo secret:
+      # FONTAWESOME_NPM_AUTH_TOKEN. Note that fork PRs cannot read repo secrets.
+      - name: Authenticate to the FontAwesome registry
+        env:
+          FONTAWESOME_NPM_AUTH_TOKEN: ${{ secrets.FONTAWESOME_NPM_AUTH_TOKEN }}
+        run: echo "//npm.fontawesome.com/:_authToken=${FONTAWESOME_NPM_AUTH_TOKEN}" >> ~/.npmrc
+
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 

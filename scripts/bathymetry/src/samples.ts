@@ -178,7 +178,7 @@ function svg(
   const contours = drawn.lines
     .map((line, i) => {
       // A blue ramp, deliberately nothing like the hazard palette (D82): a depth ramp a skater could
-      // mistake for a severity scale would reintroduce through colour the claim we declined in words.
+      // mistake for a severity scale would reintroduce through color the claim we declined in words.
       const t = Math.min(1, (drawn.depths[i] ?? 0) / maxDepth);
       return `<path d="${path(line, false)}" fill="none" stroke="hsl(205 70% ${72 - t * 45}%)" stroke-width="1.05"/>`;
     })

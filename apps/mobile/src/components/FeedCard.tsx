@@ -1,6 +1,8 @@
+import { FontAwesomeIcon } from '@fortawesome/react-native-fontawesome';
+import { faStar } from '@fortawesome/sharp-solid-svg-icons';
 import { buildFeedCardView, type FeedCardData } from '@skating/core';
 import { Image, ScrollView } from 'react-native';
-import { Text, XStack, YStack } from 'tamagui';
+import { Text, useTheme, XStack, YStack } from 'tamagui';
 import { Badge } from './detailUi';
 import { BlockedChip } from './SafetyControls';
 import { TrustAvatar } from './TrustDisplay';
@@ -27,6 +29,7 @@ export function FeedCard({
 }) {
   const card = buildFeedCardView(data, now);
   const chips = card.chips.slice(0, MAX_CHIPS);
+  const theme = useTheme();
 
   return (
     <YStack
@@ -41,10 +44,17 @@ export function FeedCard({
     >
       <XStack justifyContent="space-between" gap="$3" alignItems="flex-start">
         <YStack flex={1}>
-          <Text color="$foreground" fontWeight="600" numberOfLines={1}>
-            {card.isFavorite ? <Text color="$primary">★ </Text> : null}
-            {card.locationPrimary}
-          </Text>
+          {/* The star sits beside the name rather than inside it: RN <Text> can only host text and
+              inline images, and FontAwesome renders an SVG. Shrinking the label instead of the icon
+              keeps the truncation on the long name, where it belongs. */}
+          <XStack alignItems="center" gap="$1.5">
+            {card.isFavorite ? (
+              <FontAwesomeIcon icon={faStar} color={theme.primary?.val} size={12} />
+            ) : null}
+            <Text color="$foreground" fontWeight="600" numberOfLines={1} flexShrink={1}>
+              {card.locationPrimary}
+            </Text>
+          </XStack>
           {card.locationSecondary ? (
             <Text color="$foregroundMuted" fontSize={13} numberOfLines={1}>
               {card.locationSecondary}

@@ -8,9 +8,16 @@
  * should have to depend on the package that shells out to GDAL and `fly machine run` just to type the
  * JSON it fetched. See `packages/core/src/imageryArchive.ts`.
  *
- * What stays here is the half only the producer ever sees: `FrameManifest`, which is what one cut
- * Machine writes beside its `.pmtiles`, and the fold that turns a pile of them into an index. No
- * client reads a manifest.
+ * What stays here is the **envelope** only the producer ever sees: `FrameManifest`'s bookkeeping —
+ * stage timings, VM size, the mask season it was clipped against — and the fold that turns a pile of
+ * them into an index.
+ *
+ * ⚠ **"No client reads a manifest" was true until 2026-08-25 and is not any more.** Per-lake coverage
+ * and cloud live only in `bodies[]`, and the season index carries a body *count* rather than a body
+ * *list* on purpose (millions of entries otherwise), so a scrubber has to fetch manifests lazily for
+ * the few frames covering the lake on screen. That element type therefore moved to `@skating/core` as
+ * `FrameBodyStats`, alongside `FrameStats` — the client-readable view of this envelope — and
+ * `manifestKeyFor`, which is where a consumer gets the path.
  *
  * ## Why this is a file in R2 and not a Convex table
  *
@@ -23,7 +30,7 @@
  * bucket it was built by listing.
  */
 
-import type { IndexedFrame, SeasonIndex } from '@skating/core';
+import type { FrameBodyStats, IndexedFrame, SeasonIndex } from '@skating/core';
 import type { MultiPolygon, Polygon } from 'geojson';
 
 /** One cut granule, as the Machine that cut it recorded. Producer-side only. */
@@ -40,94 +47,22 @@ export interface FrameManifest {
    */
   bodyCount: number;
   /**
-   * Which bodies, and how much of each was unobscured — from SCL, at cut time.
+   * Which bodies, and what each pass measured about them — written at cut time.
    *
    * ⚠ **This must never reach the season index.** ~4,500 frames a season × up to ~2,700 bodies per
    * granule is millions of entries in one JSON file that every client would download to draw one
    * lake. It stays in the per-granule manifest, which PR 3 fetches lazily for only the handful of
    * frames covering the lake on screen.
    *
-   * ## ⚠ Optical and radar manifests fill in different halves of this
-   *
-   * `zonal-clear.py` writes the SCL statistics; `sar-zonal.py` writes `vvDb`/`vhDb` and **neither**
-   * `clearPct` nor `waterPct` nor `snowIcePct` — there is no scene classification on a radar pass and
-   * no cloud to be clear of. Only `waterBodyId`, `coveragePct` and `pixels` are common to both.
-   *
-   * So every mission-specific field is optional, and it has to be: `buildIndex` parses manifests with
-   * an unchecked `as FrameManifest`, so a required-looking `clearPct` is a promise TypeScript will
-   * make to a consumer on behalf of a radar manifest that never had one. `mission` is what says which
-   * half to expect.
+   * The element type lives in `@skating/core` as {@link FrameBodyStats}, because unlike the rest of
+   * this envelope it **is** read by a client — per-lake coverage and cloud exist nowhere else, and a
+   * scrubber cannot be built without them. Optical and radar fill in different halves of it, which is
+   * why every mission-specific field there is optional: `buildIndex` parses manifests with an
+   * unchecked `as FrameManifest`, so a required-looking `clearPct` would be a promise TypeScript makes
+   * to a consumer on behalf of a radar manifest that never had one. `mission` says which half to
+   * expect.
    */
-  bodies?: {
-    waterBodyId: string;
-    /**
-     * Unobscured fraction of the pixels this granule actually saw. `null` = we could not see it.
-     *
-     * Optical only — absent on radar manifests, where there is nothing to be obscured by.
-     */
-    clearPct?: number | null;
-    /**
-     * How much of the body this granule reached, 0–1 — the weight `clearPct` carries.
-     *
-     * **This is what makes the split-body seam drawable.** A body bisected by a granule edge appears
-     * in two frames and neither is wrong; the ratio says which side came from which pass. `null` when
-     * the granule shipped without SCL, because coverage is then unmeasured rather than zero.
-     */
-    coveragePct: number | null;
-    /**
-     * Fraction of the pixels this granule saw that SCL called snow/ice (class 11), and water
-     * (class 6). Both over the same denominator as `clearPct`, never over each other.
-     *
-     * **This is the freeze-up series, recorded as a by-product of the cut.** The classifier is
-     * already read per pixel per body to compute `clearPct`, so these cost nothing — and deriving
-     * them afterwards would mean re-reading every granule of a season.
-     *
-     * ## ⚠ It is `snowIcePct` because it measures SNOW, and the old name lied
-     *
-     * SCL's class 11 finds *bright* frozen surfaces. **Black ice is transparent** — the light comes
-     * back off the dark lake bottom — so the classifier calls it **water**, correctly by its own
-     * lights and uselessly by ours. Measured: Mascoma Lake, 22 December 2025, 98% clear, **2.3%
-     * "ice", 82.5% water** — and the founder skated its full length the next morning. Lake Morey the
-     * same day read 45% ice, because Morey had snow on it.
-     *
-     * So a high number means *snow-covered ice*, a low number means *water **or** the best skating
-     * ice of the year*, and anything reading this as "is it frozen" will be wrong in December.
-     * See `docs/reading-ice-from-orbit.md`.
-     *
-     * ⚠ **A measurement, not a verdict.** Nothing here sees thickness, and D147 is explicit that
-     * 10 m imagery cannot see a pressure ridge. D150 governs every claim built on it.
-     *
-     * `null` when the granule shipped without SCL — unmeasured, not zero.
-     */
-    snowIcePct?: number | null;
-    /**
-     * @deprecated The pre-2026-08-25 name for `snowIcePct`. Identical measurement, misleading label.
-     *
-     * ⚠ **Both fields are optional and exactly one will be present**, decided by when the frame was
-     * cut. The 4,381 optical frames of winter 2025-26 predate the rename and carry this; everything
-     * cut since carries `snowIcePct`. A reader wants `snowIcePct ?? icePct` until the archive is
-     * re-cut, at which point this field disappears and the `?` on `snowIcePct` should go with it.
-     *
-     * The rename landed without a re-run deliberately: it is a *contract* change, so its cost grows
-     * with every consumer written against the wrong name, while the re-run it needs is owed to a
-     * batch of additive work (NDSI) that blocks nothing. See `plans/PR2-HANDOFF-2.md` §7.
-     */
-    icePct?: number | null;
-    /** Fraction SCL called water. Optical only. */
-    waterPct?: number | null;
-    /**
-     * Mean `sigma0` over the body, in decibels, per polarisation — **radar only** (`sar-zonal.py`).
-     *
-     * `VH` is the informative channel: it separates open water from midwinter ice by ~2 dB where
-     * `VV` manages 0.6–0.8. `null` when the pass reached the body but no pixel was usable.
-     *
-     * ⚠ Comparable only across frames of the same orbit direction and platform — see the manifest's
-     * `orbitDirection`/`platform`, which exist for exactly this filter.
-     */
-    vvDb?: number | null;
-    vhDb?: number | null;
-    pixels: number;
-  }[];
+  bodies?: FrameBodyStats[];
   /**
    * Which frames this granule PUBLISHED — one `IndexedFrame` and one `.pmtiles` object each.
    *
@@ -137,6 +72,11 @@ export interface FrameManifest {
    */
   bands?: string[];
   band?: string;
+  /** Radar acquisition geometry, recorded so a consumer can filter to comparable frames. */
+  orbitDirection?: string;
+  /** ⚠ The finer comparability key — see `FrameStats.relativeOrbit` in core. */
+  relativeOrbit?: number | null;
+  platform?: string;
   /**
    * The granule's acquisition polygon, copied from the STAC item at cut time.
    *
@@ -161,7 +101,7 @@ export interface FrameManifest {
 export function buildSeasonIndex(season: string, manifests: readonly FrameManifest[]): SeasonIndex {
   const frames = manifests
     .filter((m) => m.season === season && m.bodyCount > 0)
-    // One published frame per band. A granule now yields true colour AND ESA's scene classification,
+    // One published frame per band. A granule now yields true color AND ESA's scene classification,
     // and `<granuleId>.pmtiles` could only ever name one of them.
     .flatMap((m): IndexedFrame[] =>
       (m.bands ?? [m.band ?? 'visual']).map((band) => ({
@@ -174,6 +114,12 @@ export function buildSeasonIndex(season: string, manifests: readonly FrameManife
         // Omitted rather than nulled when absent: `footprint?` means "we do not know", and a reader
         // must distinguish that from a frame that covers nothing.
         ...(m.footprint ? { footprint: m.footprint } : {}),
+        // ⚠ **The one piece of acquisition geometry that reaches the index.** A radar timeline has to
+        // hold one look direction or it interleaves two incomparable series, and the filter that does
+        // it lived on the manifest alone — which streams in per granule, leaving the client unable to
+        // separate them until the fetches landed. It is a two-valued string; the cost is nothing.
+        // Omitted for optical, where the question does not apply.
+        ...(m.orbitDirection ? { orbitDirection: m.orbitDirection } : {}),
       })),
     )
     .sort((a, b) => a.capturedAt.localeCompare(b.capturedAt));

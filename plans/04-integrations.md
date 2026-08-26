@@ -271,7 +271,7 @@ a **build-time acceptance criterion**, the same class of obligation as "Powered 
   open Copernicus licence** — reproduce, distribute and adapt, **with attribution**. That licence is what
   retired the long-deferred satellite-layer blocker; the open question was never a missing source.
 - **Ships in N6c: a deep link** to `browser.dataspace.copernicus.eu` per body (centroid, zoom, Sentinel-2
-  L2A true colour, ~14-day window). **No account, no quota, no key.** ⚠ The query-param shape is the one
+  L2A true color, ~14-day window). **No account, no quota, no key.** ⚠ The query-param shape is the one
   URL format we don't control — verify against the live browser and keep it behind a single tested
   function.
 - **Imagery rendered in-app → [N6e](./phase-N6e-satellite-imagery.md) (D84, 2026-07-31)**, and the quota

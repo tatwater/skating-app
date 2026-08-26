@@ -3,13 +3,13 @@
  *
  * Everything else — the D81 filter, the depth ramp, the zoom floor, the drawer credit — lives in
  * `@skating/core/contourLayer`, shared with mobile. Same split as the hazard layers: *what gets
- * drawn* is decided once, and only the colours are per-app, because they come from the design tokens.
+ * drawn* is decided once, and only the colors are per-app, because they come from the design tokens.
  *
  * ## The one styling rule that carries real weight
  *
  * > **D82** — *"The contour palette must not resemble the hazard palette, which is the one styling
  * > rule that carries real weight here: a blue-to-navy depth ramp that a skater could mistake for a
- * > severity scale would reintroduce, through colour, exactly the claim we just declined to make in
+ * > severity scale would reintroduce, through color, exactly the claim we just declined to make in
  * > words."*
  *
  * So the ramp is drawn from **`ice`** — the brand hue — and varies only in lightness. The hazard

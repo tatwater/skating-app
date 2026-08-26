@@ -1,0 +1,78 @@
+# SCL class labels -> the four questions a skater actually has (N6e, 2026-08-26).
+#
+# `gdaldem color-relief` format: <class> <R> <G> <B> <A>. Fed with `-nearest_color_entry`, which
+# picks an entry outright instead of interpolating between two — the same rule every other resample
+# of this band follows, and for the same reason: a colour half way between "water" and "cloud" is a
+# category nobody classified.
+#
+# ## ⚠ Why this exists at all
+#
+# ESA's SCL is a band of CLASS LABELS, 0-11. Tiled as they are, `gdal raster tile` reads them as
+# brightness — and eleven over two hundred and fifty-five is black. Measured on a real granule
+# (S2C_18TXP_20260824, 1.44 Mpixels over Vermont) every class present rendered between **0.8% and
+# 3.9% brightness**: vegetation at 1.6%, water at 2.4%, high cloud at 3.5%. Water and vegetation, the
+# two most different things in the frame, were two grey levels apart out of 255.
+#
+# ## ⚠ Four colours, not twelve, and that is the product decision in this file
+#
+# The twelve classes are ESA's taxonomy. A skater has four questions: **is it frozen, is it open
+# water, can we not see, is this even the lake.** Rendering the taxonomy would answer a question
+# nobody asked in a palette nobody could hold in their head — and the colours it forces are worse
+# than useless: vegetation against bare soil measured **ΔE 3.7 for a protanope**, indistinguishable.
+#
+# Nothing is lost by collapsing. `zonal-clear.py` stores the full twelve-class histogram per body in
+# the manifest, so the picture gets four colours and the numbers keep every class. Same split the
+# radar path already makes: the frame is a picture, the manifest is the measurement.
+#
+# ## The palette, and why these four
+#
+# Validated rather than eyeballed — `dataviz/scripts/validate_palette.js --mode dark --pairs all`,
+# every pair not just adjacent ones, because on a map any two classes can share a border:
+#
+#     CVD separation      worst pair 11.3 dE (deutan), target >= 8      PASS
+#     Normal-vision floor worst pair 16.4 dE, target >= 15              PASS
+#
+# ⚠ The first two attempts FAILED that check, and both failures were instructive. Snow as pale cyan
+# beside cloud as near-white came out at **3.8 dE for a protanope** — putting the two classes this
+# band exists to tell apart into the two colours nobody can tell apart. Violet shadow against blue
+# water was worse, 2.0. The fix was fewer classes and more hue between them.
+#
+# **Lightness is deliberately NOT flattened**, which is the one check this palette knowingly fails.
+# That check keeps chart series at an even visual weight against a surface; here lightness carries
+# meaning — cloud is bright, water is dark, and a skater flips to true colour to compare. Forcing an
+# even band would make a dark cloud over a bright lake, which is the misreading the band exists to
+# prevent. The "reads gray" flag on cloud is intent, too: cloud is a veil, not an identity.
+
+# ── no information ──────────────────────────────────────────────────────────────────────────────
+# Transparent, so the basemap shows through and absence never reads as a class. `1` is saturated or
+# defective — a sensor fault, which is the absence of an observation rather than an observation.
+0   0   0   0     0
+1   0   0   0     0
+
+# ── snow and ice: the content ───────────────────────────────────────────────────────────────────
+# The brightest, most saturated thing in the frame, because it is the one a skater came for.
+# ⚠ It measures SNOW. SCL class 11 finds *bright* frozen surfaces; black ice is transparent and gets
+# classified as water. A lake somebody skated can read almost nothing here — see `zonal-clear.py`.
+11  34  211 238   255
+
+# ── open water ──────────────────────────────────────────────────────────────────────────────────
+# Deep blue, dark enough to separate from snow by lightness as well as hue, so the pair survives
+# both kinds of colour blindness.
+6   29  78  216   255
+
+# ── cannot see: cloud, cirrus, and the shadows they cast ────────────────────────────────────────
+# One neutral grey for every kind of obstruction, because the distinction between medium cloud, high
+# cloud and a cloud's shadow is a distinction about the sky rather than about the lake. `7` is
+# ESA declining to classify, which is the same answer: we do not know what is here.
+2   168 162 158   255
+3   168 162 158   255
+7   168 162 158   255
+8   168 162 158   255
+9   168 162 158   255
+10  168 162 158   255
+
+# ── not the lake ────────────────────────────────────────────────────────────────────────────────
+# Dark olive, recessive on purpose: land is context, and the frame is already clipped to the water
+# and its approach, so this is mostly the shoreline's own few pixels.
+4   63  98  18    255
+5   63  98  18    255

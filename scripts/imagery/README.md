@@ -14,9 +14,9 @@ where the hosting call and its one condition live.
 
 ---
 
-## ⚠ Five ways to get this wrong, each of which costs money
+## ⚠ Six ways to get this wrong, each of which costs money
 
-**Read this before running any `fly` command in this directory.** All five are cases where the
+**Read this before running any `fly` command in this directory.** The first five are cases where the
 obvious command is the wrong one — in #2, it is the command flyctl itself recommends — the failure is
 silent, and what it costs you is a recurring bill rather than an error message. They are listed here rather than left in the runbook below because the
 runbook is where you look when things are going well.
@@ -121,6 +121,41 @@ brings nine seasons inside the founder's $40 ceiling. Dropping the RAM does **no
 block cache with it — see the `GDAL_CACHEMAX` note in the `Dockerfile` for why that is pinned in
 absolute megabytes.
 
+### ⚠ 6. The tail granules are superlinear, and the season mean hides them
+
+Measured 2026-08-25 on the corpus's largest granule (Champlain, `S2C_18TXP_20260215`, 923 bodies,
+237.7 Mpixels) on a **real** `shared-cpu-4x/2048` Machine — not locally:
+
+| | `tile_visual` | total |
+|---|---|---|
+| with the statistics' intermediates left on disk | 402.7s | 598.2s |
+| with them removed before tiling | **316.5s** | **491.1s** |
+| what ~0.2 s/Mpixel predicts | ~48s | — |
+
+Fourteen manifests sampled across the existing archive give tiling a flat **~0.2 s/Mpixel** from 0.9 to
+108 Mpixels, with no upward trend. Champlain is 2.2× the largest of those and takes **13×** the time.
+So the cost model's ~148s mean is real for the body of the distribution and **says nothing about the
+tail**, and ~18% of a season sits on 1,000+ body tiles.
+
+Removing `zones.tif`, `interior.tif`, `green.tif` and `swir16.tif` before tiling recovers 86s of it —
+at this size those are about a gigabyte apiece and they evict the page cache holding `scene.tif`. That
+is worth having and it is not the main term.
+
+**⚠ And more RAM does not buy the rest of it back.** The same granule, same code, at 4 GB with
+`GDAL_CACHEMAX` raised to 1200:
+
+| | `tile_visual` | total | cost for this granule |
+|---|---|---|---|
+| **2 GB** | **316.5s** | **491.1s** | **$0.00251** |
+| 4 GB | 330.2s | 501.6s | $0.00458 |
+
+Within noise on time, and **1.8× the money**. So the tail is not memory-starved, it is CPU-bound on a
+shared vCPU — which settles the sizing question the other way from the usual instinct. **2 GB stays.**
+Reach for `shared-cpu-8x` before reaching for RAM if this ever needs to be faster.
+
+⚠ **Do not read the plan's "28.9s tiling on this granule" as a Fly figure.** That was measured
+locally, at four threads to imitate `shared-cpu-4x`. A shared vCPU is not four of your cores.
+
 ### How to check you did not do any of these
 
 ```bash
@@ -129,6 +164,104 @@ fly machine list --app skating-imagery
 
 **Empty between runs is the whole cost model in one command.** If anything is listed while no backfill
 is in flight, one of the five above happened. `fly machine destroy <id> --force` to fix it.
+
+### Three more Fly flags that are not optional
+
+- **`--detach`**, or the CLI sits and monitors each Machine for minutes. On a fan-out of fifty that is
+  the difference between a spawn loop and a stall.
+- **`--region sjc`.** `sea` is deprecated and refuses new resources. It is also the closest live region
+  to the AWS bucket the granules are read from.
+- **`fly machine run` needs `--vm-size` AND `--vm-memory`** — they are independent, and
+  `shared-cpu-4x` defaults to 1024 MB regardless of the size flag. See trap 5 for why `Killed` is how
+  that surfaces.
+
+---
+
+## ⚠ Thirteen ways a tool reports success and means nothing of the kind
+
+The section above is about money. **This one is about silence** — every entry here is a command that
+exits 0, prints something reassuring, and leaves you with wrong data. They are collected because each
+one cost real debugging time at least once, and because the failure mode is always the same shape: the
+thing that should have screamed said `spawned`, or `0 features`, or nothing at all.
+
+### Shell
+
+**1. A `#` comment between backslash-continuations eats every argument after it.**
+
+```bash
+fly machine run "$IMAGE" \
+  # the granule id follows          ← ❌ everything below is silently dropped
+  --rm -- "$GRANULE_ID"
+```
+
+Twenty Machines once ran with no granule id at all, and every log line said `spawned`. There is no
+warning; the continuation simply ends at the comment.
+
+**2. zsh does not word-split unquoted parameters the way bash does.**
+
+`ogrinfo -spat $bbox …` passes the whole bbox as **one** argument in zsh. Paired with `2>/dev/null` it
+reads as *"zero features"* — which is a perfectly plausible answer for a granule over open ocean, so
+it produced a confident all-clear across an entire tile sweep. Quote and split explicitly, and be
+suspicious of any `2>/dev/null` sitting next to a count.
+
+**3. `pgrep` exits 1 when nothing matches, which kills a script under `pipefail`.** "No jobs running"
+is the normal state of a reconcile loop, so this fails exactly when things are going well.
+
+**4. `MAX_ARG_STRLEN` truncates a large `jq` argv, and only on Linux.** Every granule on a 1,000+ body
+tile failed to write its manifest, while all the smaller ones succeeded — so ~18% of a season would
+have vanished, specifically the densest frames over the regions holding the most lakes. **It does not
+reproduce on macOS**, where a 255 KB argument passes cleanly, so anyone testing locally concludes the
+path works. `cut-granule.sh` now uses `--slurpfile`; see the note there.
+
+### GDAL / OGR
+
+**5. `ogr2ogr -t_srs` on a spatial filter that matches nothing *fails*** with `Reprojection failed`
+rather than returning an empty layer. Count with `ogrinfo` first, then convert.
+
+**6. `ogrinfo` has no `-clipsrc`** — that is `ogr2ogr`. Passing it anyway made all 100 tiles in a
+sweep unreadable.
+
+**7. FlatGeobuf has no `DeleteLayer`, so `ogr2ogr -overwrite` fails** the moment the target exists.
+Unlink first.
+
+**8. `gdaladdo` needs explicit power-of-two levels.** With none given it derives factors from the
+raster's own size and the MBTiles driver rejects them — `Overview factor '129' is not a power of 2`.
+Small granules never hit it, so this breaks **only the biggest jobs**, which are the ones a backfill
+can least afford to lose.
+
+**9. SCL is class labels, so every resample is `-r near`.** This applies to the overview pyramid
+exactly as it applies to the warp, which is why `--overview-resampling` is set explicitly rather than
+left at its default of `average`. Interpolating class 8 against class 10 invents class 9 — a different
+category, silently.
+
+**9b. L2A reflectance is `DN * scale + offset`, and the offset changed mid-archive.** Processing
+baseline **04.00 (2022-01-25)** introduced `BOA_ADD_OFFSET = -1000`, so `offset` is `-0.1` on recent
+granules and `0` on older ones. In a normalised index the scale cancels and **the offset does not**:
+on the synthetic snow pixel used to verify `zonal-ndsi.py`, the same DN pair yields **NDSI 1.000 under
+the new baseline and 0.778 under the old** — either side of the 0.4 threshold the snow literature
+uses.
+
+A nine-season backfill spans January 2022, so a hardcoded offset puts a **step change at the baseline
+switch that is indistinguishable from a climate signal**, in a series whose whole purpose is comparing
+seasons. Both values are read per granule from STAC's `raster:bands`, and `measure_ndsi` skips NDSI
+entirely rather than assuming them — `null` is recoverable, a plausible wrong number is not.
+
+### Scale
+
+**10. Throttle on *running* Machines, not on spawn calls.** A detached spawn returns in under a second,
+so counting spawns counts nothing.
+
+**11. Counting only `state == started` undercounts.** `created` and `starting` are invisible to it.
+Use `status.sh`, which counts every row and reports UNKNOWN rather than 0 when the API call fails —
+a 0 from a failed API call reads exactly like a finished run.
+
+**12. A spawn is not a result.** Verify against the bucket with `build-index`, which is built by
+listing R2 rather than by remembering what was launched. This is the same reasoning `backfill.sh`
+encodes; see [because a spawn is not a result](#backfillsh--because-a-spawn-is-not-a-result).
+
+⚠ **Related, and not a trap so much as a memory ceiling:** the zonal statistic must be **windowed**.
+A 237-Mpixel UInt32 zone array is 950 MB before numpy copies it, which is an OOM on any Machine size
+this workload should be paying for.
 
 ---
 
@@ -188,6 +321,108 @@ filter returned exactly the intersecting one.
 The alternative was one mask file per Sentinel MGRS tile, keyed off the granule id
 (`S2C_`**`18TXP`**`_20260215`). It works, and it costs a tiling scheme, a naming convention, and a
 story for bodies that straddle two tiles. The spatial index answers the same question with none of it.
+
+### ⚠ Two artifacts, because the picture and the measurement are different shapes
+
+A bake writes **`masks/<season>.fgb`** (the reveal — lake ∪ walk ∪ parking, each +60 m, island holes
+dropped) and **`masks/<season>-water.fgb`** (the body polygon exactly as the corpus holds it, holes
+intact). The first is burned into alpha; the second is burned into the zone grid every per-body
+statistic joins on. The sidecar's `waterMasks: true` is what tells the container the pair exists, and
+`fetch_masks` **refuses to run against a bake that predates it** rather than falling back.
+
+**Until 2026-08-25 there was only the reveal, and it was used as the zone grid.** So `clearPct`,
+`coveragePct`, `snowIcePct`, `waterPct`, `vhDb` and `vvDb` were all measured over a lake *plus* a 60 m
+ring of shore, *plus* its islands, *plus* a trail corridor and a car park.
+
+The error is a fixed-width ring, so its share scales with perimeter over area. **Measured on the first
+40 bodies of the real corpus**, comparing the two artifacts a bake now writes:
+
+| body size | n | median share of the old zone that was **not lake** |
+|---|---|---|
+| under 10 acres | 8 | **70%** |
+| 10–100 acres | 19 | 47% |
+| over 100 acres | 13 | 23% |
+| **all** | **40** | **44%** |
+
+Worst case in that sample is Skylight Pond, 1.3 acres, at **86% land** — which matches the arithmetic
+for a circular 1-acre pond exactly. Seymour Lake at 1,747 acres is 13%. Two consequences worth stating
+plainly:
+
+- **N6g Lane 2** eliminates bodies on *"never observed frozen"*, and the size class it targets is the
+  one where the surrounding woods were casting the vote.
+- **Radar is worse.** Forest is the classic bright `VH` target at ~−13 dB against smooth ice near −22,
+  a ~10 dB contaminant on the ~2 dB separation the archive exists to detect. The 2 dB was measured
+  *through* the contamination, so the real separation is larger than the recorded figure.
+
+Nothing errored, because a contaminated percentage is still a percentage. The corroboration was in the
+repo the whole time: `zonal-clear.py` recorded Mascoma at 98% clear reporting **82.5% water**, and a
+60 m ring on ~16 km of shoreline is about the missing 17.5%.
+
+### The interior statistics, and why the count matters more than the percentage
+
+`build_interior` runs one `gdal_proximity` pass over the zone grid so each statistic also reports what
+it looked like with the shoreline eroded off. ⚠ **`EROSION_M` is a centre-to-centre distance, so it
+erodes one ring fewer than it reads**: a threshold of *k* pixel widths removes *k−1* rings. Verified on
+a synthetic 20×20 lake — at 20 m (≈2 grid pixels) the interior came out **18×18, not 16×16**. Optical
+uses 20 m (one ring, the mixed-pixel fix); radar uses 60 m (two rings, because a bank pixel there is a
+10 dB target whose energy spreads further than one pixel).
+
+**The point is the denominator, not the cleaner number.** N6g Lane 2 warns that a body too small to
+classify reads exactly like a body that never froze. On the same fixture a **3×3-pixel pond comes out
+with exactly one interior pixel** — so `interiorPixels` and `interiorTotalPixels` put that caution in
+the manifest, where an operator confirming a removal can see it, instead of in a footnote.
+
+### The radar geocode, and how much of the jump it actually removes
+
+A GRD is geocoded at **one average scene height**, so a lake above or below it lands displaced along
+range by `(h − h_ref)/tan θ` — and because Sentinel-1 is right-looking, ascending and descending
+displace a lake in nearly opposite ground directions. That is the islands-jumping effect.
+
+`sar-deshift.py` moves each body's **pixels** back under its own polygon before anything else reads
+them, so the alpha, the zones, the statistics and the tiles all work at true positions. It is a
+per-body block copy at whole-pixel offsets — no resampling — and it must be per body: on one
+ascending pass a sea-level lake needs 429 m and a 600 m lake needs 298 m *the other way*, a 750 m
+spread inside one scene.
+
+### ⚠⚠ `h_ref` is LOCAL to the lake, and the scene average is worse than no correction
+
+The reference is not one number per scene. A GRD is geocoded against its geolocation grid, whose
+points **each** carry a terrain height and an incidence angle. Averaging that grid describes what the
+pass flew over: across five real tracks over this region it ranged **7.9 m** (mostly Gulf of Maine) to
+**369.6 m** (the White Mountains).
+
+Calibrated with `sar-calibrate.py` against **21 lake-passes** — 19 lakes, 5 tracks, −1 m to 710 m:
+
+| | RMS residual | correlation |
+|---|---|---|
+| scene-average height + incidence | 287.4 m | 0.25 |
+| **local height + incidence** | **42.1 m** | **0.90** |
+| no correction at all | 116.2 m | — |
+
+The measured **across-range** component is 9.4 m RMS — near zero, which independently confirms the
+displacement is along range as the geometry claims rather than the model happening to fit. Incidence
+matters on its own: it ranged 30.9°–44.8° across those lakes against a scene mean of 38.6°, and
+`1/tan` moves 60% over that span.
+
+On the Mascoma ascending/descending pair (24 h apart, range bearings 76° and 284°):
+
+| | before | after |
+|---|---|---|
+| per-pass error | 150 m (5.4 px) | **30 m (1.1 px)** |
+| ascending-vs-descending gap | 291 m (10.4 px) | **39 m (1.4 px)** |
+
+**That gap is what decides whether a timeline can mix orbit directions**, and 1.4 px says it can — so
+the usable radar cadence doubles.
+
+⚠ **~40 m is the floor, and it is ours rather than the radar's.** Sentinel-2 needs no geometric
+correction and its lake masks still sit **31–71 m** off the imagery — that is how accurate our OSM/NHD
+shorelines are. Refining the radar model further would be fitting our own polygon error.
+
+⚠ **`elevationM` must reach the mask file or none of this happens.** On 2026-08-25 a bake produced
+**0 of 40** bodies with an elevation, because `listForImageryMask` returned the field in source while
+the deployed dev function predated it — every job would have exited 0 and built a nine-season archive
+with the correction silently disabled. `bake-masks` now **refuses** below 50% coverage (the corpus is
+at 99.5%) and prints the figure on every run. `pnpm convex-dev --once` is the fix.
 
 ### What the bake does *not* produce
 
@@ -381,6 +616,10 @@ fan-out has no use for a retry policy that cannot tell a bad granule from a bad 
 Watch with `fly logs --app skating-imagery`. Jobs run detached — `fan-out.sh` returns when the spawn
 calls return, not when the cutting finishes (pass `--drain` to make it wait, which is what
 `backfill.sh` does between rounds).
+
+**For "how many are still running", use `status.sh` and not an ad-hoc `fly machine list | grep`.** It
+counts every row rather than only `state == started`, and it reports UNKNOWN instead of 0 when the API
+call fails — see traps 11 and 12, both of which are ways a hand-rolled count reads as "finished".
 
 ### ⚠ `MASK_SEASON` is required, and it is not the frame's season
 

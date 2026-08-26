@@ -1,4 +1,5 @@
-import { Moon, Sun } from 'lucide-react';
+import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
+import { faMoon, faSun } from '@fortawesome/sharp-light-svg-icons';
 import { useTheme } from 'next-themes';
 import { useEffect, useState } from 'react';
 import { Button } from './ui/button';
@@ -24,9 +25,9 @@ export function ThemeToggle() {
     >
       {mounted ? (
         isDark ? (
-          <Sun className="h-4 w-4" />
+          <FontAwesomeIcon icon={faSun} className="h-4 w-4" />
         ) : (
-          <Moon className="h-4 w-4" />
+          <FontAwesomeIcon icon={faMoon} className="h-4 w-4" />
         )
       ) : (
         <span className="h-4 w-4" />

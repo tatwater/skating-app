@@ -788,7 +788,7 @@ reproduce, distribute and adapt, with attribution. The terms question was the bl
 one.
 
 **Ship in this phase: the deep link.** To `https://browser.dataspace.copernicus.eu/` with lat/lng/zoom
-from the centroid, Sentinel-2 L2A true colour, and the time window pre-set to roughly the last 14 days.
+from the centroid, Sentinel-2 L2A true color, and the time window pre-set to roughly the last 14 days.
 Zero cost, zero quota, no license question, works today.
 
 > ⚠️ **Verify the exact query-param shape against the live browser at build time.** This is the one link

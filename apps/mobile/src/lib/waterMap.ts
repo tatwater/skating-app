@@ -61,7 +61,7 @@ export const PUT_IN_MARKER_DERIVED_COLOR = '#5b8fb0';
 /**
  * The middle rung (N6d/D143) — a slipway somebody mapped in OSM.
  *
- * Between the two existing colours on purpose: better evidence than a cluster of report points, and
+ * Between the two existing colors on purpose: better evidence than a cluster of report points, and
  * not a human vouching that you can get on the ice here. Rendering it in the `derived` blue, which is
  * what the two-way `case` did before this existed, said the opposite of the ladder.
  */
@@ -72,7 +72,7 @@ export const PUT_IN_MARKER_OSM_COLOR = '#3d7ea6';
  *
  * Warm against the cool put-in blues so the walk reads as a distinct kind of thing from the markers
  * it joins, and deliberately **not** the hazard palette's red: a long walk is something to plan for,
- * not something to avoid, and D82's rule about colour making claims words did not applies here too.
+ * not something to avoid, and D82's rule about color making claims words did not applies here too.
  */
 export const APPROACH_LINE_COLOR = '#b45309';
 
@@ -113,7 +113,7 @@ const MASK_FILL_OPACITY = 0.999;
  * The flat fills that make everywhere-but-here look like nowhere — the mobile mirror of web's.
  *
  * Three layers — **sea**, **land** over it, then the major **lakes** — so the whole neighbourhood is
- * covered rather than just its land, and coloured from the flavour itself so the mask is the same
+ * covered rather than just its land, and colored from the flavour itself so the mask is the same
  * white and pale grey the basemap already paints with.
  *
  * **`fill-opacity: 0.999` is load-bearing**, not a rounding artefact: MapLibre only sends a fill to

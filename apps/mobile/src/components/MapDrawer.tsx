@@ -16,6 +16,22 @@ export function coveredFractionForIndex(index: number): number {
 }
 
 /**
+ * Where the sheet paints among the map's overlays.
+ *
+ * Above everything `MapView` draws — the imagery dock at its own `zIndex: 20`, `ReturnToRegion` at 30
+ * — because those float in the strip the sheet is climbing through, and their `bottom` only moves when
+ * the sheet **settles** (`drawerCoveredFraction` is an `onChange` value). Painting under the sheet is
+ * what makes them vanish *continuously under the finger* during a drag instead of surviving on top of
+ * a sheet that has already covered their space and then blinking out when it lands.
+ *
+ * Below the 30-and-up overlays that are siblings of the sheet in the `(map)` layout — the hazard
+ * banner, the on-ice and recorder controls, the flag button. Those are deliberately *above* the sheet
+ * (a warning you can't see because a sheet is over it isn't a warning), so this has to stay under
+ * them: 25 is the only gap in the ladder, and it is exactly the gap this needs.
+ */
+const DRAWER_Z_INDEX = 25;
+
+/**
  * The bottom-sheet drawer that hosts a water-body / report detail over the persistent map (§F, D47)
  * — the mobile mirror of web's `DetailSheet`. Selection is URL-backed (`/water/[id]`, `/report/[id]`)
  * so it's deep-linkable off-platform; the sheet is **non-modal with no backdrop**, so the map behind
@@ -29,16 +45,26 @@ export function coveredFractionForIndex(index: number): number {
  */
 export function MapDrawer({
   snapIndex,
+  peekNonce = 0,
   onCoveredFractionChange,
   children,
 }: {
   snapIndex: number;
+  /**
+   * A counter a map control bumps to ask the sheet down to its peek — see `drawerPeekNonce`. Handled
+   * apart from `snapIndex` because `snapIndex` is *route*-derived: folding a transient request into it
+   * would make the drop a property of where you are rather than of what you just pressed, and the
+   * sheet could not be dragged back up without the route changing.
+   */
+  peekNonce?: number;
   /** Called with the covered-screen fraction whenever the sheet settles (drag or programmatic). */
   onCoveredFractionChange?: (fraction: number) => void;
   children: ReactNode;
 }) {
   const ref = useRef<BottomSheet>(null);
   const scrollRef = useRef<React.ComponentRef<typeof BottomSheetScrollView>>(null);
+  /** Where the sheet last settled, so a peek request can tell "in the way" from "already clear". */
+  const settledIndex = useRef(-1);
   const router = useRouter();
   const theme = useTheme();
   const snapPoints = useMemo(() => [...DRAWER_SNAP_POINTS], []);
@@ -47,6 +73,13 @@ export function MapDrawer({
     if (snapIndex < 0) ref.current?.close();
     else ref.current?.snapToIndex(snapIndex);
   }, [snapIndex]);
+
+  // ⚠ **Only ever downward.** The nonce means "get out of the way", so a request arriving while the
+  // sheet is already at the peek — or closed — must do nothing: `collapse()` on a closed sheet would
+  // *open* it, turning a tap on a map control into a drawer nobody asked for.
+  useEffect(() => {
+    if (peekNonce > 0 && settledIndex.current > DRAWER_PEEK) ref.current?.collapse();
+  }, [peekNonce]);
 
   // Exposed to drawer content (e.g. a deep-linked `?action=confirm` hazard) so it can pull a
   // below-the-fold control into view. Stable identity so consumers can depend on it in an effect.
@@ -65,7 +98,11 @@ export function MapDrawer({
       // so the programmatic `close()` on unmount/navigation doesn't cause a loop.
       onClose={() => router.navigate('/')}
       // Report the settled position so the map can re-fit the lake into the uncovered area.
-      onChange={(index) => onCoveredFractionChange?.(coveredFractionForIndex(index))}
+      onChange={(index) => {
+        settledIndex.current = index;
+        onCoveredFractionChange?.(coveredFractionForIndex(index));
+      }}
+      containerStyle={{ zIndex: DRAWER_Z_INDEX }}
       backgroundStyle={{ backgroundColor: theme.surface?.val }}
       handleIndicatorStyle={{ backgroundColor: theme.foregroundMuted?.val }}
     >

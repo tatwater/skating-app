@@ -1311,11 +1311,18 @@ a new lifecycle. Independent of N6c; either order.
 > author can associate a trailhead lot a mile from the ice. That makes `parkingAreas` **many-to-many** with
 > bodies (a trailhead serving three ponds is normal here), which is cheap now and awkward later.
 
-**N6e — Imagery, scoped to a lake: the aerial reveal and the freeze-up timeline.** 📋 **Re-scoped
-2026-08-21**; imagery unbuilt, **Workstream 0 built the same day** — see
-[`phase-N6e-satellite-imagery.md`](./phase-N6e-satellite-imagery.md);
+**N6e — Imagery, scoped to a lake: the aerial reveal and the freeze-up timeline.** ✅ **Built through
+PR 3, 2026-08-26** — a lake can be revealed as a photograph and its freeze-up scrubbed, on **both**
+clients. Re-scoped 2026-08-21; see [`phase-N6e-satellite-imagery.md`](./phase-N6e-satellite-imagery.md);
 decisions **D146**–**D151**, plus **D84** (two tiers) and **D75** (the licence question is answered).
 Gated behind N6d, which is complete on dev.
+
+**Four of six PRs done.** **PR 0** the way in (2026-08-21) · **PR 1** the web reveal (#45, 2026-08-23)
+· **PR 2** the producer (#46, 2026-08-25) · **PR 3** the consumer — both scrubbers, the band selector,
+mobile's reveal, attribution (built 2026-08-26 on `phase-n6e-satellite-imagery-3`, **no PR opened,
+undeployed**). **PR 4** (phenology, derived dark) and **PR 5** (the charts and the freeze-up
+notification) are not started; both want the nine-season backfill, which is a deliberate separate
+spend. Only the **single season** (winter 2025-26) is in R2 today.
 
 *The 2026-07-31 scoping specced a map-wide **base-map toggle**. A founder review falsified that shape
 three ways, so the doc was rewritten rather than patched.*
@@ -1367,6 +1374,24 @@ three ways, so the doc was rewritten rather than patched.*
   around the water, up to **99 km** between a lot and a launch 250 m apart, which N6d has been
   rendering as *"about 99 km on foot"* since August. `MAX_PLAUSIBLE_APPROACH_M` demotes them to the
   straight-line rung; dev now carries none.
+
+**Three things building it taught, all of them about verification.**
+
+- **An artifact review cannot tell you the frame is of the lake.** PR 2 shipped verified by files you
+  could open, which is a real standard and a higher one than a screenshot — and four defects still
+  survived it, each caught within days of a scrubber existing. The radar was never denoised; every
+  per-body statistic was measuring a 60 m ring of shoreline; the geocode reference was an average of
+  the pass rather than local to the body; the SCL band would have rendered as a black rectangle.
+  *Well-formed and correct are different questions, and only one of them has a cheap test.*
+- **The mobile deferral was right, and it was right for the stated reason.** PR 1 declined to add Skia
+  on the argument that PR 2's baked alpha would remove the need for a canvas entirely. It did: mobile's
+  reveal is an `ImageSource` pointed at a URL. No native dependency, no second copy of the
+  projection-and-feather logic. *A dependency deferred on a specific prediction is worth more than one
+  deferred on general caution — the prediction can be checked.*
+- **A skater falsified two things a review had passed.** Islands visibly bouncing east-west between
+  dates exposed that the radar geocode is not terrain-corrected (open question 8), and Mascoma reading
+  `27% ice / 65% water` on a day the skate log says the north half was ready exposed that one number
+  cannot describe two surfaces (deferred question 7). Both came from *use*, not inspection.
 
 **N7 — The unified corpus: one record per lake, two catalogues behind it, and a full data campaign.**
 ✅ **Corpus + campaign complete on dev, 2026-08-09** (the 250 m wind fetch runs on; prod deferred) — the phase this roadmap had no entry for at all until now. See [`phase-N7-unified-corpus.md`](./phase-N7-unified-corpus.md) — the one N7 document, with the
@@ -1533,6 +1558,43 @@ launches a boat onto, so each one is a corpus body below the N7 admission floor,
 it is the only one of the three that says the corpus is wrong rather than bounded — and it is a much
 larger population than the trail work above would ever reach. A sample of a few dozen against the map
 would settle which it mostly is; that is an afternoon, not a phase.
+
+### The rename to Gli is user-visibly done; the identifiers still say skating (2026-08-26)
+
+The app was renamed to **Gli** on 2026-08-26 across both clients. **Every user-visible surface is
+done** — verified by grep, not by memory: `apps/mobile` and `apps/web` contain zero occurrences of
+"Skating" as a product name.
+
+- **Mobile:** display name, the four permission strings the OS quotes in its own dialogs, the age
+  gate, the re-ack copy, the on-ice foreground-service notification, icon + adaptive icon, the
+  theme-following splash, and the bundle identifier (`com.teaganatwater.gli`). `about.tsx` reads the
+  name from `Constants.expoConfig` rather than hardcoding it, so that one cannot drift again.
+- **Web:** the text wordmark became the Gli mark itself (`assets/gli-*-duotone.svg`, `alt="Gli"`),
+  plus the document title, the About heading, the age gate, and the re-ack copy.
+
+**What remains is entirely internal identifiers.** Recorded here so nobody re-derives the list, and
+so nobody assumes it was missed rather than declined. None of it is broken and none of it is visible
+— which is exactly why it will sit until someone trips on it:
+
+| identifier | where | why it stayed |
+|---|---|---|
+| `scheme: 'skating'` | 8 files + **external registrations** | see below — the expensive one |
+| `slug: 'skating-app'` | `app.config.ts`, pairs with `extra.eas.projectId` | renaming means renaming the Expo project; the Sentry project is named to match |
+| `@skating/*` | 13 workspace packages + root `skating` | touches every import in the repo, buys nothing perceivable |
+| `skating-app` | the GitHub remote, and the local clone path | cosmetic; breaks everyone's remotes and muscle memory |
+
+**The one trap: do not fold `scheme` into a tidy-up.** It reads like the same class of change as the
+rest of this table and it is not. `skating://` is registered with **Strava as an OAuth callback** and
+is baked into every hazard deep link in already-installed builds. The eight code sites
+(`oauthRedirect.ts`, `strava.ts`, both hazard routes, `mapSelection.ts`, …) are the *cheap* half; the
+external registration and the installed base are the reason. It wants a period where **both** schemes
+resolve, not a flag day — and breaking it would be discovered by a user stuck mid-Strava-connect,
+not by a test.
+
+**Why not yet:** the rename already bought everything a user can perceive. The rest is churn with a
+live-OAuth hazard attached, so it should ride a phase that has reason to touch auth anyway — most
+likely the `@clerk/clerk-expo` → `@clerk/expo` Core 3 migration, which is separately unavoidable
+(the package is deprecated outright) and already lands in the same files.
 
 ### Waiting on a blocker
 

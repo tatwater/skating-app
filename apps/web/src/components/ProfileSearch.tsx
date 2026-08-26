@@ -1,7 +1,8 @@
+import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
+import { faMagnifyingGlass } from '@fortawesome/sharp-light-svg-icons';
 import { api } from '@skating/convex/api';
 import { useNavigate } from '@tanstack/react-router';
 import { useQuery } from 'convex/react';
-import { SearchIcon } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Avatar } from './ProfileView';
 import {
@@ -55,7 +56,10 @@ export function ProfileSearchBox({
       }}
     >
       <div className="relative">
-        <SearchIcon className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
+        <FontAwesomeIcon
+          icon={faMagnifyingGlass}
+          className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground"
+        />
         <ComboboxInput
           className="pl-8"
           placeholder="Search skaters by name…"

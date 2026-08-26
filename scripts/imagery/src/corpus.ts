@@ -7,6 +7,8 @@
  */
 
 import { convexRun } from '@skating/run-log';
+import type { MultiPolygon, Polygon } from 'geojson';
+
 import type { CorpusMaskRow } from './revealMasks';
 
 /** One page of `imageryMasks:listForImageryMask`. */
@@ -58,6 +60,63 @@ export async function* scanCorpusMasks(
     // `isDone` is the authority, not an empty page: a page can legitimately return zero masks when
     // every body in it fell below the corpus floor, and stopping on that would truncate the bake
     // somewhere in the middle of the alphabet with nothing saying so.
+    if (page.isDone || !page.cursor) return;
+    cursor = page.cursor;
+  }
+}
+
+/** One page of `imageryMasks:listSubAreasForImageryMask`. */
+interface SubAreaPage {
+  subAreas: CorpusSubAreaRow[];
+  scanned: number;
+  delisted: number;
+  parentUnavailable: number;
+  cursor: string | null;
+  isDone: boolean;
+}
+
+/** One sub-area, as it arrives over `convex run`. */
+export interface CorpusSubAreaRow {
+  subAreaId: string;
+  waterBodyId: string;
+  name: string;
+  polygon: Polygon | MultiPolygon;
+}
+
+export interface SubAreaScanProgress {
+  scanned: number;
+  delisted: number;
+  /** Sub-areas whose parent is delisted — off the map, so off the measurement too (Decision 11). */
+  parentUnavailable: number;
+}
+
+/**
+ * Yield every sub-area's geometry for the second zone grid.
+ *
+ * Far smaller than the body scan — 126 rows against 24,831 — so this is a handful of pages rather
+ * than a thousand. Still a generator, so the caller writes as it reads and the two artifacts are
+ * built the same way.
+ */
+export async function* scanCorpusSubAreas(
+  batchSize: number,
+  onProgress?: (progress: SubAreaScanProgress) => void,
+): AsyncGenerator<CorpusSubAreaRow> {
+  let cursor: string | undefined;
+  const progress: SubAreaScanProgress = { scanned: 0, delisted: 0, parentUnavailable: 0 };
+
+  for (;;) {
+    const page = convexRun<SubAreaPage>('imageryMasks:listSubAreasForImageryMask', {
+      ...(cursor === undefined ? {} : { cursor }),
+      batchSize,
+    });
+
+    progress.scanned += page.scanned;
+    progress.delisted += page.delisted;
+    progress.parentUnavailable += page.parentUnavailable;
+    onProgress?.(progress);
+
+    for (const row of page.subAreas) yield row;
+
     if (page.isDone || !page.cursor) return;
     cursor = page.cursor;
   }

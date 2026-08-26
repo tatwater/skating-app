@@ -51,14 +51,14 @@ export const MAP_FLAVORS = { light: 'white', dark: 'dark' } as const;
 export type MapFlavor = (typeof MAP_FLAVORS)[keyof typeof MAP_FLAVORS];
 
 /**
- * The shoreline's colour, which depends on what is inside it (N6e).
+ * The shoreline's color, which depends on what is inside it (N6e).
  *
  * Normally: favorited reads gold (D#1), everything else takes the theme outline, and a
  * favorited-and-selected body stays gold because the favorite is the more persistent signal.
  *
  * **Over imagery it is plain white, and that overrides both.** The outline is the one piece of our
  * cartography the reveal keeps (see `IMAGERY_REPLACED_LAYERS`), and its job changes when it is the
- * only thing left: it stops being a status colour and becomes the line that makes a clipped
+ * only thing left: it stops being a status color and becomes the line that makes a clipped
  * photograph read as *this lake* rather than a hole in the map. Gold against aerial photography reads
  * as a highlight on the picture; white reads as an edge of it.
  *
@@ -139,7 +139,7 @@ const MASK_FILL_OPACITY = 0.999;
  * Three layers, drawn in this order: **sea**, then **land** on top of it, then the major **lakes**.
  * Together they tile the whole neighbourhood, which matters more than it sounds — see below.
  *
- * Coloured from the flavour itself — `earth` for land, `water` for sea and lakes — so the mask is not
+ * Colored from the flavour itself — `earth` for land, `water` for sea and lakes — so the mask is not
  * a grey rectangle laid over a map but the same white and the same pale grey the basemap already
  * paints with. The seam where it meets the world overview's own earth is invisible by construction;
  * the only seam a user can see is where it meets *our* detail, which is the border, which is the point.

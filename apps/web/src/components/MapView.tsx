@@ -9,12 +9,16 @@ import {
   approachLinePaint,
   type BBox,
   draftPlacementCount,
-  formatAerialCaptureDate,
+  formatAerialSeason,
+  formatSeasonLabel,
+  holdFrames,
   isDraftSubmittable,
   isRegionOffscreen,
   type LatLng,
+  NO_HELD_FRAMES,
   parseAerialScene,
   polygonShape,
+  prefetchFrames,
   profileRevealEnabled,
   representativePoint,
   SUB_AREA_MIN_RENDER_ZOOM,
@@ -24,10 +28,19 @@ import {
 } from '@skating/core';
 import { useNavigate } from '@tanstack/react-router';
 import { useQuery } from 'convex/react';
+import type { MultiPolygon, Polygon } from 'geojson';
 import type maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { useTheme } from 'next-themes';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useReducer,
+  useRef,
+  useState,
+} from 'react';
 import {
   CONTOUR_BEFORE_LAYER_ID,
   CONTOUR_FADE_MS,
@@ -80,9 +93,13 @@ import {
   waterBodiesToFeatureCollection,
   waterOutlineColor,
 } from '../lib/waterMap';
+import { FreezeUpScrubber } from './FreezeUpScrubber';
 import { ImageryControl } from './ImageryControl';
 import { useMapSelection } from './MapSelectionContext';
 import { ReturnToRegion } from './ReturnToRegion';
+import { useFreezeUpFrame } from './useFreezeUpFrame';
+import { useFreezeUpSeam } from './useFreezeUpSeam';
+import { useFreezeUpTimeline } from './useFreezeUpTimeline';
 import {
   IMAGERY_HAZARD_LAYERS,
   IMAGERY_LOADING_LAYER_ID,
@@ -97,6 +114,20 @@ import {
   setLayersVisible,
   useImageryReveal,
 } from './useImageryReveal';
+
+/**
+ * A stored geometry narrowed to the two shapes a lake is ever stored as.
+ *
+ * `waterBodies.polygon` is typed as the whole GeoJSON geometry union because the validator accepts
+ * one, but a body is a `Polygon` or a `MultiPolygon` and nothing else. Returning `null` for anything
+ * else keeps the seam from being computed against a point.
+ */
+function polygonOf(geometry: unknown): Polygon | MultiPolygon | null {
+  const type = (geometry as { type?: string } | null)?.type;
+  return type === 'Polygon' || type === 'MultiPolygon'
+    ? (geometry as Polygon | MultiPolygon)
+    : null;
+}
 
 /**
  * Interactive MapLibre map — the read side of the Phase 2 loop (§D, D5/D6/D47/D49). Imperative
@@ -171,8 +202,8 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
     setImageryOn,
     hazardsOverImagery,
     setHazardsOverImagery,
-    aerialCaptureLabel,
-    setAerialCaptureLabel,
+    aerialCapturedAt,
+    setAerialCapturedAt,
   } = useMapSelection();
 
   const [queryArgs, setQueryArgs] = useState<QueryArgs | null>(null);
@@ -550,10 +581,10 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
         source: 'put-in-markers',
         paint: {
           'circle-radius': 6,
-          // Three rungs, three colours — `PUTIN_SOURCES` on screen (N6d/D143). An OSM slipway is
+          // Three rungs, three colors — `PUTIN_SOURCES` on screen (N6d/D143). An OSM slipway is
           // better evidence than a cluster of report points and worse than an operator's pin, and
           // rendering it in the `derived` blue said the opposite. The `case` already had a fallback,
-          // so the 3,588 imported launches drew — just in the wrong rung's colour.
+          // so the 3,588 imported launches drew — just in the wrong rung's color.
           'circle-color': [
             'case',
             ['==', ['get', 'source'], 'official'],
@@ -658,7 +689,7 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
         },
       });
       // The hazard being authored — rendered as the real metric footprint (circle or buffered band)
-      // so the skater sizes it against the lake, not against a fixed-pixel dot. Colour runs through
+      // so the skater sizes it against the lake, not against a fixed-pixel dot. Color runs through
       // the same expression as saved hazards, so a `ridge_crossing` previews green rather than red.
       map.addSource('hazard-draft', { type: 'geojson', data: EMPTY_FEATURES });
       map.addLayer({
@@ -1060,6 +1091,142 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
     onPaintedChange: setPaintedIds,
   });
 
+  // ## Tier 2 — the freeze-up timeline (N6e §C, D148)
+  //
+  // Rides the same switch as the aerial rather than getting its own. D146's rule is one control per
+  // lake, and the founder's open question — whether these ever want separate affordances — is
+  // explicitly a "look at it first" call, so this is the version that can be looked at.
+  //
+  // The archived frame sits **above** the aerial canvas, so scrubbing to a date replaces the
+  // photograph inside the mask and closing the scrubber reveals it again. Both are clipped to the
+  // same shapes, so nothing outside the lake changes hands.
+  const [freezeUpBand, setFreezeUpBand] = useState('visual');
+  const [freezeUpStop, setFreezeUpStop] = useState<number | null>(null);
+  /**
+   * The capture date behind the current selection, so a band switch can land near where the skater
+   * was rather than at the end of the season (founder, 2026-08-26). Held as a date because that is
+   * what a scrubber position *is* — an index into one band's stops means nothing against another's.
+   */
+  const [freezeUpAnchorAt, setFreezeUpAnchorAt] = useState<string | null>(null);
+  const timelineBody = useQuery(
+    api.waterBodies.get,
+    imageryOn && highlightWaterBodyId
+      ? { waterBodyId: highlightWaterBodyId as Id<'waterBodies'> }
+      : 'skip',
+  );
+  const {
+    timeline: freezeUpTimeline,
+    loading: freezeUpLoading,
+    season: freezeUpSeason,
+    index: freezeUpIndex,
+    error: freezeUpError,
+  } = useFreezeUpTimeline({
+    // ⚠ `available: false` is a delisting — a takedown or a moderator's rejection — and it must reach
+    // here as "no lake" rather than as an empty one. `imageryMasks` already refuses to bake a mask
+    // for a delisted body, so the archive has no pixels to offer; passing the absent case through
+    // keeps the two ends agreeing instead of asking for frames that were never cut.
+    body: timelineBody?.available ? timelineBody.body : null,
+    band: freezeUpBand,
+    enabled: Boolean(imageryOn && highlightWaterBodyId),
+  });
+
+  // A new lake is a new timeline, and a stop index into the old one means nothing against the new
+  // stops. Clearing lets the scrubber's own effect re-open on the most recent usable pass.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: resetting *because* the lake or band changed is the point.
+  useEffect(() => {
+    setFreezeUpStop(null);
+  }, [highlightWaterBodyId, freezeUpBand]);
+
+  // ⚠ **The picture never goes away while imagery is on** (founder, 2026-08-25). A blocked notch
+  // holds the last good frame rather than clearing to bare cartography — dragging across a fortnight
+  // of cloud should feel like passing over dates, not like the feature switching itself off.
+  //
+  // A reducer because that is what the hold is: `framesToRender` takes the previous answer and
+  // returns the next one, so `previous` is state with a history rather than anything derivable from
+  // this render. See {@link holdFrames} for why a ref written during render was the wrong home for
+  // it, and why the dispatch below is a *layout* effect.
+  const [freezeUpRendered, foldFreezeUpFrames] = useReducer(holdFrames, NO_HELD_FRAMES);
+  // ⚠ **`imageryOn` goes *through* the hold, not around it.** Gating the dispatch on it would leave
+  // the hold carrying the frame from before the toggle, and the next fold reads that back — so the
+  // picture would return the moment anything else re-rendered. Off has to be one of the inputs.
+  //
+  // `freezeUpTimeline?.stops` is passed straight through: `undefined` has a stable identity where a
+  // `?? []` fallback would allocate a fresh array and fire this on every render.
+  useLayoutEffect(() => {
+    foldFreezeUpFrames({
+      bodyId: highlightWaterBodyId ?? null,
+      stops: freezeUpTimeline?.stops,
+      selected: freezeUpStop,
+      revealing: imageryOn,
+    });
+  }, [highlightWaterBodyId, freezeUpTimeline, freezeUpStop, imageryOn]);
+  const freezeUpSelected = freezeUpRendered.primary;
+
+  /**
+   * Choosing a stop also records **when** it was, which is the part that survives a band switch.
+   *
+   * Read off the timeline rather than the scrubber, because the scrubber reports an index and this
+   * has to be a date — see `nearestLandableStopToDate`. Set on every selection, including the
+   * automatic one, so the anchor is always the position actually on screen.
+   */
+  const selectFreezeUpStop = useCallback(
+    (index: number) => {
+      setFreezeUpStop(index);
+      const at = freezeUpTimeline?.stops[index]?.frame.capturedAt;
+      if (at) setFreezeUpAnchorAt(at);
+    },
+    [freezeUpTimeline],
+  );
+
+  // Dropping the hold on a new lake used to live here, and now lives in `holdFrames` — an effect
+  // could only null the ref *after* the render that had already folded against it, so a new lake's
+  // first paint could still carry the old lake's picture. The anchor has no such race and stays.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: resetting *because* the lake changed is the point.
+  useEffect(() => {
+    // ⚠ **The anchor goes with the lake, so a new one still opens on its most recent pass.** The
+    // anchor exists to survive a *band* switch, where the skater is asking the same question of a
+    // different instrument. Opening a lake is a different question — "a skater asking about a lake is
+    // asking about now" — and carrying February across would answer the one they did not ask.
+    setFreezeUpAnchorAt(null);
+  }, [highlightWaterBodyId]);
+
+  // Warm the season's frames once the timeline appears, so scrubbing does not start a cold load per
+  // notch. Header ranges only — see `prefetchFrames`. Aborted when the lake or band changes, so a
+  // warm cannot outlive the timeline it was for.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: keyed on the frame list, not its identity.
+  useEffect(() => {
+    const keys = freezeUpTimeline?.stops.map((s) => s.frame.key) ?? [];
+    if (keys.length === 0) return;
+    const controller = new AbortController();
+    void prefetchFrames(env.imageryArchiveUrl, keys, controller.signal);
+    return () => controller.abort();
+  }, [freezeUpTimeline?.stops.length, freezeUpSeason, freezeUpBand]);
+  useFreezeUpFrame({
+    mapRef,
+    loaded,
+    frame: freezeUpSelected?.frame ?? null,
+    season: freezeUpSeason,
+  });
+  // The other half of a bisected lake (§C4's seam). Its own slot, so scrubbing to a date with no
+  // companion tears down exactly this one and leaves the primary alone. Both are alpha-masked to the
+  // same corpus shapes, so they abut along the granule edge that split them rather than overlapping.
+  useFreezeUpFrame({
+    mapRef,
+    loaded,
+    frame: freezeUpRendered.companion?.frame ?? null,
+    season: freezeUpSeason,
+    slot: 'companion',
+  });
+  // The hairline where the two meet. Derived from the *primary* footprint, because that is the frame
+  // drawn on top and therefore the one whose edge is the visible join — clipped to the lake, since
+  // the same granule edge also runs a hundred kilometres across land nobody is looking at.
+  useFreezeUpSeam({
+    mapRef,
+    loaded,
+    footprint: freezeUpRendered.companion ? (freezeUpSelected?.frame.footprint ?? null) : null,
+    body: polygonOf(timelineBody?.available ? timelineBody.body.polygon : null),
+  });
+
   // The wash belongs on the bodies still **waiting** for a photograph — the reveal set minus whatever
   // is already on screen. Pulsing a lake that is already showing its imagery says the wrong thing
   // twice: that something is coming for it, and that what is there is not it.
@@ -1099,7 +1266,7 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
     if (!map || !loaded) return;
     setLayersHiddenForBodies(map, IMAGERY_REPLACED_LAYERS, paintedIds, baseFiltersRef.current);
     setLayersVisible(map, IMAGERY_REPLACED_WHOLE_LAYERS, paintedIds.length === 0);
-    // The shoreline survives the reveal and changes job while it does — status colour off the vector
+    // The shoreline survives the reveal and changes job while it does — status color off the vector
     // map, edge-of-the-photograph on it. Set here rather than in the reveal hook because the layer
     // belongs to the map's own init, and the hook owns only what it added.
     if (map.getLayer('water-outline')) {
@@ -1182,13 +1349,13 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
       .then((response) => (response.ok ? response.json() : null))
       .then((body) => {
         const scene = parseAerialScene(body);
-        setAerialCaptureLabel(scene ? formatAerialCaptureDate(scene.capturedAt) : null);
+        setAerialCapturedAt(scene?.capturedAt ?? null);
       })
       .catch(() => {
         // Includes the abort on drawer-close, which is not a failure worth reporting.
       });
     return () => controller.abort();
-  }, [imageryOn, revealMasks, highlightWaterBodyId, setAerialCaptureLabel]);
+  }, [imageryOn, revealMasks, highlightWaterBodyId, setAerialCapturedAt]);
 
   // Open-bounty pins across the viewport (D10/D17) — refreshed as the map pans + as bounties change.
   useEffect(() => {
@@ -1374,22 +1541,62 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
         }
       />
       {/* Only where a lake is open (D146). Hidden while the hazard author has the map, because two
-          overlapping "click the map" affordances is one too many. */}
+          overlapping "click the map" affordances is one too many.
+
+          **Over the map, not in the drawer** (founder, 2026-08-25). The scrubber is a control for
+          what the map is showing, so it belongs on the thing it changes — and on mobile D146 already
+          settled the same question the same way, where the sheet collapses to reveal it. The toggle
+          moved down from the top-right corner to meet it: the box a skater presses is the box the
+          timeline grows out of.
+
+          `imageryArchiveUrl` gates the scrubber and nothing else. With no archive configured there is
+          nothing to scrub and nothing true to say about why, so the correct render is none at all —
+          the same call the bathymetry layer makes when its own URL is blank. The imagery toggle still
+          stands, because the NAIP aerial does not come from that archive. */}
       <ImageryControl
         visible={Boolean(highlightWaterBodyId) && !hazardDropMode && !pinDropMode}
         imageryOn={imageryOn}
         onToggleImagery={setImageryOn}
         hazardsOn={hazardsOverImagery}
         onToggleHazards={setHazardsOverImagery}
-        captureLabel={aerialCaptureLabel}
-        loading={imageryLoading}
+        // No archive ⇒ no scrubber ⇒ nothing for a heading to head. The panel is then a bare toggle
+        // for the aerial, and it says so by saying nothing.
+        heading={env.imageryArchiveUrl ? 'Freeze-up timeline' : null}
+        // ⚠ **Which picture is actually on this lake decides which season is named.** The reveal
+        // paints every body in the viewport, so the aerial can be on screen without being *this*
+        // lake's picture — and naming its summer above a December frame is what sent the founder
+        // looking. An archived frame wins whenever there is one; otherwise the aerial answers, which
+        // is D147's case exactly (green trees in January, and the reason for them).
+        seasonLabel={
+          freezeUpSelected && freezeUpTimeline
+            ? formatSeasonLabel(freezeUpTimeline.season)
+            : aerialCapturedAt === null
+              ? null
+              : formatAerialSeason(aerialCapturedAt)
+        }
+        loading={imageryLoading && !freezeUpSelected}
         hasHazards={(hazards?.length ?? 0) > 0}
-      />
+      >
+        {env.imageryArchiveUrl ? (
+          <FreezeUpScrubber
+            timeline={freezeUpTimeline}
+            index={freezeUpIndex}
+            band={freezeUpBand}
+            onBandChange={setFreezeUpBand}
+            selected={freezeUpStop}
+            onSelect={selectFreezeUpStop}
+            anchorAt={freezeUpAnchorAt}
+            loading={freezeUpLoading}
+            error={freezeUpError}
+            renderedCompanion={freezeUpRendered.companion?.frame ?? null}
+          />
+        ) : null}
+      </ImageryControl>
       {/* The drawing bar. A circle needs one click and no controls, so it just says so; a polyline
           is a multi-click session and gets its own Undo/Done, kept on the map rather than in the
           form because the form is hidden for the whole draw.
           It's a live region because arming placement mode is otherwise *entirely* silent: the dialog
-          vanishes and the only feedback is a colour bar. The polyline running point count announces
+          vanishes and the only feedback is a color bar. The polyline running point count announces
           through the same region, which is the only progress signal a non-visual trace has. */}
       {hazardDropMode ? (
         <div

@@ -13,7 +13,7 @@ export default function AboutScreen() {
   return (
     <ScrollView contentContainerStyle={{ padding: 16 }}>
       <YStack gap="$3" backgroundColor="$background">
-        <H2 color="$foreground">Skating</H2>
+        <H2 color="$foreground">{Constants.expoConfig?.name ?? 'Gli'}</H2>
         <Paragraph color="$foregroundMuted">
           Version {Constants.expoConfig?.version ?? '0.0.1'}. A map-first, peer ice-reporting app
           for Nordic (wild) ice skating. Reports are named peers' observations at a specific time

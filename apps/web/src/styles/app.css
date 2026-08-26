@@ -1,5 +1,15 @@
 @import "tailwindcss";
 
+/*
+ * FontAwesome's core stylesheet, pinned into the `base` layer on purpose. Its `.svg-inline--fa`
+ * rule sets `height: 1em`, which has the same specificity as Tailwind's `size-4` — unlayered, the
+ * winner would be decided by source order, and every icon sized by a utility class (or by a
+ * shadcn parent's `[&_svg:not([class*='size-'])]:size-4`) would silently render at font size.
+ * In `base` the cascade layer settles it: utilities always win. Paired with `autoAddCss = false`
+ * in `lib/fontawesome.ts`, which stops the runtime from injecting a second, unlayered copy.
+ */
+@import "@fortawesome/fontawesome-svg-core/styles.css" layer(base);
+
 /* Dark mode is class-driven (next-themes toggles `.dark` on <html>), not media-driven,
    so the user can pick a theme independent of OS (D34). */
 @custom-variant dark (&:where(.dark, .dark *));

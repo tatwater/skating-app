@@ -1,0 +1,24 @@
+# What the runtime-version fingerprint must not look at.
+#
+# `runtimeVersion: {policy:'fingerprint'}` hashes the native layer so an OTA update can never be
+# offered to a build whose native code it doesn't match. That only works if this machine and the EAS
+# builder hash the *same* tree — and on 2026-08-26 they stopped doing so, which failed every build at
+# the CONFIGURE_EXPO_UPDATES phase before a single line was compiled:
+#
+#   local:   9ecaf1224e912fea6a95356a5254a7af2fecccf3
+#   EAS:     eb641a5ba7ed3fb2ccd7ca4b574301127c25f4c0
+#
+# Diffing the two source lists (121 sources each) left exactly one disagreement: the directory below.
+# Every non-ignored file inside it — build.gradle, the manifest, all three Java sources, package.json
+# — hashes byte-identically on both sides, and the installed version matches the lockfile, so the
+# builder's copy carries extra content a clean install doesn't have. It survives `--clear-cache`; the
+# builder restores the same `android-ccache` key either way, right before it computes the fingerprint.
+#
+# ⚠ **This is a waiver with a cost, so it is scoped to one package.** Ignoring a native module means a
+# future change to *its* native code no longer bumps the runtime version on its own — an OTA could then
+# reach a build whose masked-view differs. Accepted because it is a transitive, effectively-frozen leaf
+# (a UI mask view, pinned by the lockfile, arriving via the bottom sheet), and because the alternative
+# was being unable to produce any build at all. If it is ever upgraded deliberately, cut a new build
+# rather than trusting the fingerprint to notice.
+**/node_modules/@react-native-masked-view/masked-view
+**/node_modules/@react-native-masked-view/masked-view/**

@@ -85,14 +85,27 @@ WORKDIR /data
 
 COPY cut-granule.sh /usr/local/bin/cut-granule
 COPY zonal-clear.py /usr/local/bin/zonal-clear.py
+# Not a script: the SCL class -> colour mapping, read by `gdaldem color-relief` at cut time.
+COPY scl-palette.txt /usr/local/share/scl-palette.txt
+# NDSI, the independent second opinion where SCL's snow class confuses with cloud. A statistic only —
+# it emits no raster and nothing is tiled from it.
+COPY zonal-ndsi.py /usr/local/bin/zonal-ndsi.py
 COPY tiles-to-mbtiles.py /usr/local/bin/tiles-to-mbtiles.py
 # The Sentinel-1 path: calibration LUT, per-body sigma0, and the fixed-stretch render.
 COPY sar-cal-lut.py /usr/local/bin/sar-cal-lut.py
+# Thermal noise: the second annotation beside the calibration one. Its absence biased the
+# dark end — where smooth ice lives — by up to 3.5 dB. See sar-noise-lut.py.
+COPY sar-noise-lut.py /usr/local/bin/sar-noise-lut.py
 COPY sar-zonal.py /usr/local/bin/sar-zonal.py
 COPY sar-render.py /usr/local/bin/sar-render.py
+COPY sar-geocode.py /usr/local/bin/sar-geocode.py
+COPY sar-deshift.py /usr/local/bin/sar-deshift.py
 RUN chmod +x /usr/local/bin/cut-granule /usr/local/bin/zonal-clear.py \
+      /usr/local/bin/zonal-ndsi.py \
       /usr/local/bin/tiles-to-mbtiles.py /usr/local/bin/sar-cal-lut.py \
-      /usr/local/bin/sar-zonal.py /usr/local/bin/sar-render.py
+      /usr/local/bin/sar-noise-lut.py \
+      /usr/local/bin/sar-zonal.py /usr/local/bin/sar-render.py \
+      /usr/local/bin/sar-geocode.py /usr/local/bin/sar-deshift.py
 
 # The contract, and the reason it is this narrow: `docker run <image> <granule-id>`. One granule id in,
 # one artifact in R2 out, a nonzero exit if that did not happen. Nothing about Fly appears below this

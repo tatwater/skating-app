@@ -67,12 +67,32 @@ fi
 #
 # The zoom range follows: z13 is 19.1 projected m/px, finer than the 28 m source, where z14 would be
 # four times the tiles to encode detail the band does not contain.
+#
+# ## `EROSION_M` — how far in from the bank a pixel must sit to count as interior
+#
+# ⚠ **It is a centre-to-centre distance, so the ring it removes is one less than it looks.**
+# `gdal_proximity` measures from a pixel's centre to the centre of the nearest pixel outside the lake,
+# so a pixel in the outermost ring measures exactly one pixel width, the next ring in measures two,
+# and so on. A threshold of *k* pixel widths therefore erodes **k−1** rings. Verified on a synthetic
+# 20x20 lake: at 20 m (≈2 grid pixels) the interior came out 18x18, not 16x16.
+#
+# **Optical: 20 m ≈ 2 grid pixels ⇒ one ring off.** That is the mixed-pixel fix and nothing more —
+# only the outermost ring can straddle the shoreline, and everything inside it is wholly water. The
+# lake-ice literature's usual 1–2 px, taken at the conservative end deliberately, because each extra
+# ring costs a small pond every pixel it had to vote with.
+#
+# **Radar: 60 m ≈ 3 grid pixels ⇒ two rings off**, and the asymmetry is the point. On the optical side
+# a bank pixel is a blend; on the radar side it is a ~10 dB brighter target whose energy speckle and
+# layover spread further than one pixel, against a ~2 dB signal. Under-eroding there does not blur the
+# measurement, it dominates it. See the shoreline note in `sar-zonal.py`.
 if [[ "$MISSION" == s1 ]]; then
   WARP_RES=28
   MAX_ZOOM=13
+  EROSION_M="${EROSION_M:-60}"
 else
   WARP_RES=14
   MAX_ZOOM=14
+  EROSION_M="${EROSION_M:-20}"
 fi
 R2_BUCKET="${R2_BUCKET:-skating-imagery}"
 # Which season's masks to clip against. The bake names its artifact for a season and the cutter has
@@ -118,6 +138,11 @@ done
 mkdir -p "$WORKDIR"
 cd "$WORKDIR"
 
+# ⚠ **An empty sub-area list has to be a FILE, not a missing one.** `jq --slurpfile` fails outright
+# on a path that does not exist, and the overwhelming majority of granules contain no sub-area — so
+# without this the manifest build dies on the normal case rather than the exceptional one.
+printf '[]' > subareas.json
+
 # rclone's config is written at runtime from the secrets rather than baked into the image, so the
 # image itself carries nothing sensitive and can live in a registry without care.
 RCLONE_CONF="${RCLONE_CONFIG:-$WORKDIR/rclone.conf}"
@@ -154,6 +179,13 @@ resolve_granule() {
   # thing that lets a consumer filter to comparable frames. Absent on optical items, and null there.
   ORBIT_STATE="$(jq -r '.properties["sat:orbit_state"] // empty' granule.json)"
   POLARISATIONS="$(jq -c '.properties["sar:polarizations"] // empty' granule.json)"
+  # ⚠ **The track, which is a finer comparability key than the direction.** Orbit direction separates
+  # east-looking from west-looking; `relative_orbit` separates the individual repeat tracks *within* a
+  # direction, and two of those still view a lake at different incidence angles. A consumer holding
+  # only direction constant is holding most of the geometry constant, not all of it — which matters
+  # because the surviving S1A/S1C offset and the planimetric bounce are both incidence-angle effects.
+  # Free here, and impossible to recover later without re-reading every granule.
+  RELATIVE_ORBIT="$(jq -r '.properties["sat:relative_orbit"] // empty' granule.json)"
   PLATFORM="${GRANULE_ID%%_*}"
 
   # ⚠ **The frame's season is its own, not the masks'.** These are two different things and filing a
@@ -174,13 +206,22 @@ resolve_granule() {
   log "captured $CAPTURED_AT, cloud ${CLOUD_PCT:-unknown}%, season $FRAME_SEASON"
 }
 
-# Assets we care about, and why each one (§C1). True colour is what PR 2 ships; the rest are the
+# Assets we care about, and why each one (§C1). True color is what PR 2 ships; the rest are the
 # bands N6f is built on and they cost nothing extra to note while we are already holding the granule.
 #   visual — the RGB composite, the frame a skater actually looks at
 #   scl    — ESA's per-pixel scene classification: snow/ice AND cloud mask in one band. The single
 #            most valuable asset here, per §C1.
-#   green, swir16 — the NDSI pair, the only way to tell snow/ice from cloud (true colour cannot).
+#   green, swir16 — the NDSI pair, the only way to tell snow/ice from cloud (true color cannot).
 asset_href() { jq -r --arg k "$1" '.assets[$k].href // empty' granule.json; }
+
+# What a body looks like in `bodies[]` when it is in the frame but was not measured — see
+# `reconcile_bodies`. Every statistic is `null` ("unmeasured"); only the counts are 0, because "no
+# pixels" is itself a measurement and the thing N6g Lane 2 has to be able to read.
+OPTICAL_NULL_BODY='{"clearPct":null,"coveragePct":null,"snowIcePct":null,"waterPct":null,
+  "ndsiMean":null,"pixels":0,"interiorPixels":0,"classHist":null,"interiorClassHist":null}'
+SAR_NULL_BODY='{"vvDb":null,"vhDb":null,"coveragePct":null,"pixels":0,"interiorPixels":0,
+  "interiorVvDb":null,"interiorVhDb":null,"sigma0Hist":null,"belowNoiseFloorPct":null,
+  "incidenceDeg":null,"geocodeReferenceHeightM":null,"geocodeShiftM":null}'
 
 # --- The transform ---------------------------------------------------------------------------------
 #
@@ -217,6 +258,18 @@ fetch_masks() {
     || die "no mask sidecar at ${base}.json — has bake-masks run for $MASK_SEASON?"
   FEATHER_M="$(jq -r '.featherMeters' mask-meta.json)"
   [[ "$FEATHER_M" =~ ^[0-9.]+$ ]] || die "mask sidecar has no usable featherMeters"
+
+  # ⚠ **Refuse a pre-2026-08-25 bake outright rather than falling back to reveal-shaped zones.**
+  #
+  # Until that date there was one mask file and this script rasterised it as the zone grid — so every
+  # per-body statistic in the archive counted the lake *plus* a 60 m ring of shore, plus its islands,
+  # plus the trail and the parking lot. On a 1-acre pond that ring is 7x the pond's own area.
+  #
+  # A silent fallback would put that back on exactly the runs nobody is watching, and the output looks
+  # completely normal — plausible percentages, no error, wrong denominator. So it is fatal, and the
+  # remedy is a sentence rather than a diagnosis.
+  [[ "$(jq -r '.waterMasks // false' mask-meta.json)" == "true" ]] \
+    || die "masks/${MASK_SEASON} predates the water-mask split — re-run \`bake-masks --upload\` for it"
 
   read -r MINLNG MINLAT MAXLNG MAXLAT <<<"$(jq -r '.bbox | "\(.[0]) \(.[1]) \(.[2]) \(.[3])"' granule.json)"
   log "granule footprint $MINLNG $MINLAT $MAXLNG $MAXLAT"
@@ -255,14 +308,95 @@ fetch_masks() {
     -t_srs EPSG:3857 \
     "$src" \
     || die "could not read masks from ${base}.fgb"
+
+  # The water polygons — the same bodies, unbuffered, holes intact. See `build_zones`.
+  #
+  # ⚠ **This clip can return FEWER features than the reveal clip, and that is correct.** The reveal is
+  # a superset of the buffered water, so a lake just outside the granule bbox whose parking lot is
+  # inside it intersects the reveal filter and not this one. That body genuinely has no water pixels
+  # here; `build_zones` reconciles it back into `bodies.json` with null statistics rather than
+  # dropping it, because PR 3 reads `bodies[]` as exact frame membership.
+  local water_src="/vsis3/${R2_BUCKET}/${base}-water.fgb"
+  WATER_COUNT=""
+  WATER_COUNT="$(ogrinfo -so -al -spat "$MINLNG" "$MINLAT" "$MAXLNG" "$MAXLAT" "$water_src" 2>/dev/null \
+    | sed -n 's/^Feature Count: //p' | head -1)" || true
+  # Same reasoning as `MASK_COUNT` above: "no count" is a read failure, not zero. A silent zero here
+  # would ship a frame whose every body carries null statistics and no indication why.
+  [[ "$WATER_COUNT" =~ ^[0-9]+$ ]] \
+    || die "no feature count from ${base}-water.fgb — refusing to measure nothing and call it a cut"
+  log "water polygons intersecting this granule: $WATER_COUNT of $MASK_COUNT"
+
+  if [[ "$WATER_COUNT" -gt 0 ]]; then
+    stage fetch_water_masks ogr2ogr -f GeoJSON water.geojson \
+      -spat "$MINLNG" "$MINLAT" "$MAXLNG" "$MAXLAT" -spat_srs EPSG:4326 \
+      -t_srs EPSG:3857 \
+      "$water_src" \
+      || die "could not read water masks from ${base}-water.fgb"
+  fi
+
+  # ## Sub-areas — a bay is inside its lake, so it needs its own raster
+  #
+  # A zone grid is single-valued: one pixel, one zone. Every pixel of Malletts Bay is also a pixel of
+  # Champlain, and no single raster can say both — burning sub-areas into the body grid would replace
+  # the parent's pixels with the bay's and destroy the whole-lake number the archive is built on.
+  #
+  # ⚠ **Absence is normal and must stay cheap.** 126 sub-areas exist against 24,831 bodies, so most
+  # granules contain none. The sidecar's count is what decides whether to look at all, so a corpus
+  # without sub-areas costs nothing rather than a 404 per granule.
+  SUBAREA_COUNT=0
+  if [[ "$(jq -r '.subAreas // 0' mask-meta.json)" -gt 0 ]]; then
+    local sub_src="/vsis3/${R2_BUCKET}/${base}-subareas.fgb"
+    SUBAREA_COUNT="$(ogrinfo -so -al -spat "$MINLNG" "$MINLAT" "$MAXLNG" "$MAXLAT" "$sub_src" 2>/dev/null \
+      | sed -n 's/^Feature Count: //p' | head -1)" || true
+    [[ "$SUBAREA_COUNT" =~ ^[0-9]+$ ]] || SUBAREA_COUNT=0
+    if [[ "$SUBAREA_COUNT" -gt 0 ]]; then
+      stage fetch_subarea_masks ogr2ogr -f GeoJSON subareas.geojson \
+        -spat "$MINLNG" "$MINLAT" "$MAXLNG" "$MAXLAT" -spat_srs EPSG:4326 \
+        -t_srs EPSG:3857 \
+        "$sub_src" \
+        || die "could not read sub-area masks from ${base}-subareas.fgb"
+      log "sub-areas intersecting this granule: $SUBAREA_COUNT"
+    fi
+  fi
 }
 
 # The projected extent the masks occupy, which is all of the granule worth warping.
+#
+# Takes one or more GeoJSON paths and unions their extents — `jq -s`, so a caller can hand it every
+# file whose geometry has to fit. Today both callers pass `masks.geojson` alone, and that is
+# sufficient rather than lazy: the reveal is `water ∪ walk ∪ parking` buffered outward, so the water
+# and sub-area artifacts are strict subsets of it by construction.
+#
+# ⚠ **What the reveal does NOT bound is the radar de-shift.** That reads each body's pixels from up
+# to ~450 m outside its own footprint, and the pad for it is computed per granule by `geocode_pad`,
+# which widens this extent after the fact. Do not fold that into a wider mask list — the zones are
+# never shifted (see `ZONE_SOURCE`), so no mask file knows about it.
 mask_extent() {
-  jq -r '
-    [.features[].geometry | (if .type=="Polygon" then [.coordinates] else .coordinates end)[][][]]
+  jq -s -r '
+    [.[].features[].geometry | (if .type=="Polygon" then [.coordinates] else .coordinates end)[][][]]
     | (map(.[0]) | min), (map(.[1]) | min), (map(.[0]) | max), (map(.[1]) | max)
-  ' masks.geojson | paste -sd' ' -
+  ' "$@" | paste -sd' ' -
+}
+
+# Web Mercator metres for a ground distance, at an extent's centre latitude.
+#
+# ⚠ **The single place this conversion lives.** Mercator inflates distance by 1/cos(φ) — ~1.39x at
+# 44°N — so a bare ground figure handed to `gdal_proximity` or to a pixel offset is 28% short. It is
+# needed by the feather, by the erosion and by the radar de-shift's padding, and three copies of one
+# trig expression is three chances for one of them to be the old one.
+project_ground_m() {
+  awk -v g="$1" -v miny="$2" -v maxy="$3" 'BEGIN{
+    pi=3.14159265358979; mw=20037508.342789244; cy=(miny+maxy)/2;
+    lat=(2*atan2(exp((cy/mw)*pi),1)-pi/2)*180/pi;
+    printf "%.1f", g/cos(lat*pi/180)
+  }'
+}
+
+centre_lat_of() {
+  awk -v miny="$1" -v maxy="$2" 'BEGIN{
+    pi=3.14159265358979; mw=20037508.342789244; cy=(miny+maxy)/2;
+    printf "%.6f", (2*atan2(exp((cy/mw)*pi),1)-pi/2)*180/pi
+  }'
 }
 
 # Build `alpha.tif` — the reveal's soft edge — on a given extent at `$WARP_RES`.
@@ -275,17 +409,12 @@ mask_extent() {
 # ⚠ **Mercator metres are not ground metres**, and this is where that bites. Web Mercator inflates
 # distance by 1/cos(latitude) — ~1.39x at 44°N — so feeding `gdal_proximity` a bare 240 would ramp over
 # 240 *projected* metres, which is ~173 m on the ground: a 28% error that looks like a slightly tight
-# edge rather than like a units bug.
+# edge rather than like a units bug. Hence `project_ground_m`.
 build_alpha() {
   local MINX="$1" MINY="$2" MAXX="$3" MAXY="$4"
   local centre_lat feather_projected
-  centre_lat="$(awk -v miny="$MINY" -v maxy="$MAXY" 'BEGIN{
-    mw=20037508.342789244; cy=(miny+maxy)/2;
-    printf "%.6f", (2*atan2(exp((cy/mw)*3.14159265358979),1)-3.14159265358979/2)*180/3.14159265358979
-  }')"
-  feather_projected="$(awk -v f="$FEATHER_M" -v lat="$centre_lat" 'BEGIN{
-    printf "%.1f", f/cos(lat*3.14159265358979/180)
-  }')"
+  centre_lat="$(centre_lat_of "$MINY" "$MAXY")"
+  feather_projected="$(project_ground_m "$FEATHER_M" "$MINY" "$MAXY")"
   log "feather ${FEATHER_M} ground m -> ${feather_projected} projected m at ${centre_lat}°N"
 
   # 1. Burn the reveal shapes into a byte mask on exactly that grid.
@@ -301,7 +430,7 @@ build_alpha() {
     -maxdist "$feather_projected" -nodata "$feather_projected" -ot Float32 -co COMPRESS=DEFLATE \
     || die "gdal_proximity failed"
 
-  # 4. Distance -> alpha, via a colour ramp.
+  # 4. Distance -> alpha, via a color ramp.
   #
   #    `gdaldem color-relief` rather than `gdal raster calc`, deliberately: calc needs muparser, which
   #    this GDAL build does not carry ("Dialect 'muparser' is not supported by this GDAL build"), and
@@ -321,7 +450,7 @@ build_alpha() {
     || die "alpha extraction failed"
 }
 
-# Build `zones.tif` + `zone-to-id.json` — the per-body integer raster every zonal statistic joins on.
+# Build `zones.tif` + `zone-to-id.json` + `interior.tif` — what every zonal statistic joins on.
 #
 # Shared by both missions for the same reason `build_alpha` is: the zone raster is a property of the
 # *mask geometry*, not of the sensor, and the optical and radar copies of these three commands had
@@ -329,21 +458,319 @@ build_alpha() {
 # A zone grid that disagrees with the image grid is the silent failure `zonal-clear.py` and
 # `sar-zonal.py` both refuse to run into — so there is exactly one place it can be wrong.
 #
+# ## ⚠ The zones come from `water.geojson`, and using `masks.geojson` here was a bug for two months
+#
+# `masks.geojson` is the **reveal** — `revealShape`, so the lake buffered 60 m outward, unioned with
+# the walk in and the parking, with island holes dropped. Burning that as the zone grid is what the
+# first version of this function did, and it meant `clearPct`, `snowIcePct`, `waterPct`, `vhDb` and
+# `vvDb` were measured over the lake *plus* a ring of shore, *plus* its islands, *plus* a trail
+# corridor and a car park.
+#
+# The contamination is a fixed-width ring, so its share of a zone scales with perimeter over area:
+# negligible on Champlain, **7x a circular 1-acre pond's own area** — 86% land. It reads as a
+# plausible percentage either way, which is why nothing caught it. Consistent with the measurement
+# recorded in `zonal-clear.py`: Mascoma at 98% clear reported 82.5% water, and a 60 m ring on ~16 km
+# of shoreline is about the missing 17.5%.
+#
 # `-a zone` needs a numeric attribute, hence the index `jq` adds here: the corpus id is a string and
 # cannot be burned into a raster.
 build_zones() {
   local MINX="$1" MINY="$2" MAXX="$3" MAXY="$4"
 
+  # `ZONE_SOURCE` is `water.geojson` except on the radar path, where it is the geocode-corrected copy
+  # — see `geocode_zones`. It is a variable rather than a second function because everything below
+  # here is identical and the two copies had already drifted once.
   jq -c '{type:"FeatureCollection", features:[.features | to_entries[] | .value * {properties: (.value.properties + {zone: (.key + 1)})}]}' \
-    masks.geojson > masks-zoned.geojson || die "zone numbering failed"
+    "$ZONE_SOURCE" > water-zoned.geojson || die "zone numbering failed"
   jq -c '[.features[] | {key: (.properties.zone|tostring), value: .properties.waterBodyId}] | from_entries' \
-    masks-zoned.geojson > zone-to-id.json || die "zone mapping failed"
+    water-zoned.geojson > zone-to-id.json || die "zone mapping failed"
 
   stage rasterize_zones gdal_rasterize -q -a zone -a_nodata 0 -init 0 -ot UInt32 \
     -te "$MINX" "$MINY" "$MAXX" "$MAXY" -tr "$WARP_RES" "$WARP_RES" \
     -co COMPRESS=DEFLATE -co TILED=YES \
-    masks-zoned.geojson zones.tif \
+    water-zoned.geojson zones.tif \
     || die "zone rasterize failed"
+
+  build_interior "$MINY" "$MAXY"
+}
+
+# Build `subzones.tif` + `subzone-to-id.json` — the same grid, keyed on sub-area rather than body.
+#
+# Deliberately a copy of `build_zones` rather than a parameterised version of it: the two differ in
+# which id they map and nothing else, and the shared parts (`-tr $WARP_RES`, the same `-te`) are the
+# parts that must not drift. A wrapper hiding one `jq` expression would make that harder to see, not
+# easier — and this is the file where a grid mismatch is the silent failure everything else guards.
+# Put each sub-area's PARENT body id and name on its row.
+#
+# Without the parent, a `subAreas[]` entry is an id a consumer has to resolve against Convex before it
+# can be shown beside the lake it belongs to — which is a round trip per bay, for a field the mask
+# file was already carrying. The name rides along for the same reason it does on a body: an id is not
+# a place when somebody opens the artifact to see why a number looks wrong.
+attach_subarea_parents() {
+  # A real file rather than process substitution: `--slurpfile` on a /dev/fd path is one more thing
+  # that behaves differently in the container than on a laptop, for no benefit.
+  jq -c '[.features[].properties]' subareas.geojson > subarea-props.json \
+    || die "sub-area property extract failed"
+  jq -c --slurpfile props subarea-props.json '
+      ($props[0] | map({key: .subAreaId, value: {waterBodyId, subAreaName: .name}}) | from_entries) as $p
+      | map(. + ($p[.subAreaId] // {}))
+    ' subareas.json > subareas-parented.json || die "sub-area parent join failed"
+  mv subareas-parented.json subareas.json
+}
+
+build_subzones() {
+  local MINX="$1" MINY="$2" MAXX="$3" MAXY="$4"
+
+  jq -c '{type:"FeatureCollection", features:[.features | to_entries[] | .value * {properties: (.value.properties + {zone: (.key + 1)})}]}' \
+    subareas.geojson > subareas-zoned.geojson || die "sub-area zone numbering failed"
+  jq -c '[.features[] | {key: (.properties.zone|tostring), value: .properties.subAreaId}] | from_entries' \
+    subareas-zoned.geojson > subzone-to-id.json || die "sub-area zone mapping failed"
+
+  stage rasterize_subzones gdal_rasterize -q -a zone -a_nodata 0 -init 0 -ot UInt32 \
+    -te "$MINX" "$MINY" "$MAXX" "$MAXY" -tr "$WARP_RES" "$WARP_RES" \
+    -co COMPRESS=DEFLATE -co TILED=YES \
+    subareas-zoned.geojson subzones.tif \
+    || die "sub-area zone rasterize failed"
+}
+
+# Where the zone polygons are read from. Always true positions — see `resolve_geocode`.
+ZONE_SOURCE=water.geojson
+GEOCODE_JSON=null
+GEOCODE_ARGS=()
+
+# ## The DEM-corrected geocode — put each lake's pixels back under its own polygon
+#
+# A GRD carries no map projection, only ground-control points computed at **one average scene
+# height**. A lake above or below that reference lands displaced along range by `(h - h_ref)/tan(θ)`
+# — and because Sentinel-1 is right-looking, ascending views a lake from one side and descending from
+# the other, so the displacement flips between them. That is what made two islands in Mascoma jump
+# east, west, east as a scrubber advanced through alternating passes.
+#
+# **Measured before it was wired in** (2026-08-25), per the rule the tiler swap established. Two real
+# passes 24 h apart over Mascoma, range bearings 76° and 284°, both measuring +150 m of EPSG:3857
+# easting = ~108 m on the ground:
+#
+#   ✅ **The direction is confirmed** — both positive along their own range, in nearly opposite ground
+#      directions, which is the signature of a height effect rather than a polygon error. Un-negated,
+#      the correction moves a lake from ~108 m out to ~270 m out, i.e. worse than not correcting.
+#   ⚠ **The magnitude is approximate and consistently over** — predicted 162 m and 129 m against 108 m.
+#      Correcting halves the per-pass error and cuts the disagreement BETWEEN passes by about two
+#      thirds; it does not eliminate it. See `packages/core/src/sarGeocode.ts` for what was ruled out.
+#
+# ⚠ **The correction moves the PIXELS, not the masks, and it lands before anything else reads them.**
+# `sar-deshift.py` rewrites each polarisation so every lake sits under its own polygon; afterwards the
+# alpha, the zones, the statistics and the tiles all work at true positions with no offset threaded
+# through any of them. A first version shifted the zone geometry instead — which fixed the numbers and
+# left the picture displaced, so the frame disagreed with the basemap and the islands still moved.
+#
+# **And that is what lets a timeline mix orbit directions again.** PR 3 holds one direction per
+# timeline precisely because the two disagreed about where a lake was. Corrected, they agree, and the
+# radar cadence doubles.
+resolve_geocode() {
+  local href="$1" annotation_url
+
+  # STAC's `schema-product-*` asset points at the RFI annotation, not the product one, so the path is
+  # derived from the measurement href instead: `/measurement/iw-vh.tiff` -> `/annotation/iw-vh.xml`.
+  annotation_url="$(sed 's#/measurement/#/annotation/#; s#\.tiff$#.xml#' <<<"$href")"
+  if ! curl -fsSL --retry 3 "$annotation_url" -o annotation.xml; then
+    log "no product annotation at $annotation_url — this pass stays uncorrected"
+    return 0
+  fi
+
+  # ⚠ **Redirected to a file rather than captured with `$(stage …)`.** Command substitution runs
+  # `stage` in a subshell, so its append to `STAGE_JSON` would be discarded and the step would cost
+  # nothing according to the manifest — the one place the cost model is read from.
+  # ⚠ **The whole grid, not a scene average.** Each lake interpolates its own reference height and
+  # incidence from the points around it; averaging the grid made the correction worse than doing
+  # nothing (325.6 m RMS against 96.5 m). See `local_reference` in `sar-deshift.py`.
+  if ! stage sar_geocode sh -c \
+      'python3 /usr/local/bin/sar-geocode.py annotation.xml --grid > geocode-grid.json'; then
+    log "geolocation grid unreadable — this pass stays uncorrected"
+    return 0
+  fi
+  GEOCODE_ARGS=(--grid geocode-grid.json)
+  # The manifest records the scene summary, which is a fair description of the pass even though it is
+  # not what any lake is corrected with.
+  GEOCODE_JSON="$(jq -c '{headingDeg, sceneReferenceHeightM, sceneIncidenceDeg,
+                          gridPoints: (.points | length)}' geocode-grid.json)"
+  log "geocode: $GEOCODE_JSON"
+}
+
+# Widen the warp extent to cover where the pixels currently ARE, not only where they belong.
+#
+# ⚠ **Without this the correction silently truncates the lakes that need it most.** The de-shift
+# fetches each body's pixels from up to ~450 m outside its own footprint, so an extent drawn around
+# the masks alone leaves the outermost lakes reading partly from beyond the raster — and a body that
+# came back half-empty would report a coverage shortfall indistinguishable from a granule edge.
+#
+# The pad is the largest correction any body under THIS granule actually needs, so a pass over a flat
+# region pays nothing for one over the White Mountains.
+geocode_pad() {
+  [[ ${#GEOCODE_ARGS[@]} -gt 0 ]] || return 0
+  local pad
+  # The largest correction any body under THIS mask actually needs, computed from the same local
+  # references the de-shift will use — not from the grid's extremes against every body, which is safe
+  # and can double the area warped on a small granule.
+  pad="$(project_ground_m \
+    "$(python3 /usr/local/bin/sar-deshift.py masks.geojson --grid geocode-grid.json --plan)" \
+    "$MINY" "$MAXY")"
+  # One pixel of slack for the de-shift's rounding to whole pixels.
+  pad="$(awk -v p="$pad" -v r="$WARP_RES" 'BEGIN{printf "%.1f", p + r}')"
+  MINX="$(awk -v v="$MINX" -v p="$pad" 'BEGIN{printf "%.6f", v-p}')"
+  MAXX="$(awk -v v="$MAXX" -v p="$pad" 'BEGIN{printf "%.6f", v+p}')"
+  MINY="$(awk -v v="$MINY" -v p="$pad" 'BEGIN{printf "%.6f", v-p}')"
+  MAXY="$(awk -v v="$MAXY" -v p="$pad" 'BEGIN{printf "%.6f", v+p}')"
+  log "geocode pad ${pad} projected m (the largest correction any body here needs)"
+}
+
+# Put one polarisation's pixels back under their lakes, in place.
+#
+# ⚠ **Fails the job rather than carrying on uncorrected.** A silently un-de-shifted band produces
+# statistics measured off the lake — the exact failure this path exists to remove — and nothing
+# downstream can tell the difference, because a displaced lake still yields a plausible backscatter.
+deshift_band() {
+  local pol="$1" feather_projected="$2"
+  [[ ${#GEOCODE_ARGS[@]} -gt 0 ]] || return 0
+
+  stage "deshift_${pol}" sh -c "python3 /usr/local/bin/sar-deshift.py masks.geojson \
+    ${pol}.tif ${pol}-deshifted.tif $(printf '%q ' "${GEOCODE_ARGS[@]}") \
+    --feather-projected-m ${feather_projected} --per-body geometry-${pol}.json \
+    > deshift-${pol}.json" \
+    || die "de-shift failed for ${pol}"
+  mv "${pol}-deshifted.tif" "${pol}.tif"
+  log "de-shifted ${pol^^}: $(cat "deshift-${pol}.json")"
+}
+
+# ## `interior.tif` — the shoreline eroded off, because an edge pixel is not a lake pixel
+#
+# A pixel straddling the shoreline mixes water with bank, and standard practice in the lake-ice
+# literature is to erode 1–2 pixels before classifying. N6g Lane 2 is the reason it is worth the extra
+# proximity pass: its elimination rule turns on *"never observed frozen"*, and **a body too small to
+# classify reads exactly like a body that never froze**. After erosion a 1-acre pond has under ten
+# pixels left to vote with — so the honest artifact is not a cleaner percentage, it is a **stated
+# denominator**, which is what an operator needs in front of them before confirming a removal.
+#
+# Measured on the synthetic fixture: a 3x3-pixel pond comes out of this with **exactly one** interior
+# pixel. That is the whole of Lane 2's caution in one number, and it is now in the manifest rather
+# than in a footnote.
+#
+# So this does not replace the full-zone statistic; it rides alongside it. `pixels` stays what the
+# whole body reported and `interiorPixels` says how much of that was clear of the bank.
+#
+# ⚠ **Ground metres, not projected ones** — the same 1/cos(φ) inflation `build_alpha` corrects for,
+# and getting it wrong here would erode 39% further at 44°N than intended, which on a small pond is
+# the difference between a few voting pixels and none.
+build_interior() {
+  local MINY="$1" MAXY="$2"
+  local centre_lat erode_projected far
+
+  centre_lat="$(centre_lat_of "$MINY" "$MAXY")"
+  erode_projected="$(project_ground_m "$EROSION_M" "$MINY" "$MAXY")"
+  # Compute out to twice the threshold so a deep-interior pixel lands on the fill value strictly
+  # ABOVE it. Filling at exactly the threshold would make the comparison a float-equality coin toss
+  # on every pixel in the middle of every lake — i.e. it would be wrong on the largest bodies only.
+  far="$(awk -v e="$erode_projected" 'BEGIN{printf "%.1f", e*2}')"
+  EROSION_PROJECTED_M="$erode_projected"
+  log "eroding ${EROSION_M} ground m -> ${erode_projected} projected m at ${centre_lat}°N"
+
+  # Distance from each pixel to the nearest pixel OUTSIDE any zone, so a lake's own interior measures
+  # its distance to the bank. `-use_input_nodata NO` is explicit rather than relied upon: `zones.tif`
+  # declares 0 as nodata, and the zero pixels are precisely the targets this needs to find.
+  stage erode_proximity gdal_proximity -q zones.tif interior.tif -values 0 -distunits GEO \
+    -maxdist "$far" -nodata "$far" -use_input_nodata NO -ot Float32 -co COMPRESS=DEFLATE \
+    || die "gdal_proximity (erosion) failed"
+}
+
+# Put every body the REVEAL clip found back into `bodies.json`, measured or not.
+#
+# ⚠ **PR 3 reads `bodies[]` as exact frame membership**, which is the whole reason the field replaced
+# a bare count — so a body missing from this array is a lake with a hole in its timeline rather than
+# an error anybody sees. The water clip can legitimately return fewer features than the reveal clip
+# (see `fetch_masks`), and a body with no water pixels in this granule still belongs to the frame.
+#
+# Unmeasured goes out as `null`, never as 0 — "we did not measure it" and "we measured zero" are
+# different claims and only one of them is a measurement. Same distinction `zonal-clear.py` draws.
+reconcile_bodies() {
+  local template="$1"
+  jq -c --slurpfile measured bodies.json --argjson template "$template" '
+      ($measured[0] | map({key: .waterBodyId, value: .}) | from_entries) as $m
+      | [.features[].properties.waterBodyId | $m[.] // ($template + {waterBodyId: .})]
+    ' masks.geojson > bodies-reconciled.json || die "body reconciliation failed"
+  mv bodies-reconciled.json bodies.json
+}
+
+# ## NDSI — a second opinion where the scene classification is weakest
+#
+# `(green − swir16) / (green + swir16)`. Snow and ice are bright in the visible and very dark in the
+# shortwave infrared; **cloud is bright in both.** That difference is the only thing that separates
+# them, and true color cannot do it — which is why a 22 Nov Morey frame read 99% clear through
+# visible haze. This is the independent check on SCL's snow/cloud confusion (§C1).
+#
+# ⚠ **It will not find black ice, and should never be sold as though it might.** NDSI is a *snow*
+# index built on the same brightness that misleads SCL: transparent ice over a dark bottom is dark in
+# both bands and reads as water, exactly as it does in class 11. Its value is as a disagreement
+# detector, not as a better ice classifier.
+#
+# **A statistic, not a frame.** No tiling, no PMTiles, no upload — two band warps and one windowed
+# sweep. Tiling is 63% of a job and there is no product surface asking to look at an NDSI raster; the
+# per-body number is what PR 4 and N6g want.
+#
+# ## ⚠⚠ The offset, which is the thing that would quietly ruin a nine-season backfill
+#
+# L2A reflectance is `DN * scale + offset`. Processing baseline **04.00 (2022-01-25)** introduced
+# `BOA_ADD_OFFSET = -1000` — so `offset` is `-0.1` on recent granules and `0` on older ones, and a
+# nine-season archive spans the change. The scale cancels in a normalised ratio; **the offset does
+# not.** For typical snow it moves the denominator by about a quarter.
+#
+# Hardcoding either value would therefore introduce a step change in NDSI at January 2022 that looks
+# exactly like a climate signal, in a series whose whole purpose is to compare seasons. So it is read
+# per granule from STAC's `raster:bands`, and a granule that will not say is skipped rather than
+# guessed at — `null` is recoverable, a wrong number that looks plausible is not.
+measure_ndsi() {
+  local MINX="$1" MINY="$2" MAXX="$3" MAXY="$4"
+  local green_href swir_href band scale offset
+
+  green_href="$(asset_href green)"
+  swir_href="$(asset_href swir16)"
+  if [[ -z "$green_href" || -z "$swir_href" ]]; then
+    log "no green/swir16 pair on this granule — skipping NDSI"
+    return 0
+  fi
+
+  local args=()
+  for band in green swir16; do
+    scale="$(jq -r --arg k "$band" '.assets[$k]["raster:bands"][0].scale // empty' granule.json)"
+    offset="$(jq -r --arg k "$band" '.assets[$k]["raster:bands"][0].offset // empty' granule.json)"
+    if [[ -z "$scale" || -z "$offset" ]]; then
+      log "no raster:bands scale/offset for ${band} — skipping NDSI rather than assuming a baseline"
+      return 0
+    fi
+    args+=("--${band}-scale" "$scale" "--${band}-offset" "$offset")
+  done
+  log "NDSI reflectance transform: green ${args[1]}/${args[3]}, swir16 ${args[5]}/${args[7]}"
+
+  # Nearest, not bilinear, for swir16: it is 20 m native onto a 14 m grid, and interpolating it would
+  # invent a shoreline gradient the sensor never resolved — the same reasoning as SCL, for a
+  # different reason (there, invented classes; here, invented sub-pixel structure at the bank, which
+  # is precisely where the erosion is trying to stop measuring).
+  stage warp_green gdalwarp -q -t_srs EPSG:3857 -te "$MINX" "$MINY" "$MAXX" "$MAXY" \
+    -tr "$WARP_RES" "$WARP_RES" -r bilinear -multi -co COMPRESS=DEFLATE -overwrite \
+    "/vsicurl/${green_href}" green.tif || die "green warp failed"
+  stage warp_swir gdalwarp -q -t_srs EPSG:3857 -te "$MINX" "$MINY" "$MAXX" "$MAXY" \
+    -tr "$WARP_RES" "$WARP_RES" -r near -multi -co COMPRESS=DEFLATE -overwrite \
+    "/vsicurl/${swir_href}" swir16.tif || die "swir16 warp failed"
+
+  stage zonal_ndsi sh -c "python3 /usr/local/bin/zonal-ndsi.py zones.tif green.tif swir16.tif \
+    zone-to-id.json ${args[*]} --interior interior.tif --erode-projected-m $EROSION_PROJECTED_M \
+    > ndsi.json" || die "per-body NDSI failed"
+
+  # Folded into the same per-body records rather than shipped as a parallel array, so a consumer
+  # never has to join two lists that could disagree about length.
+  jq -c --slurpfile ndsi ndsi.json '
+      ($ndsi[0] | map({key: .waterBodyId, value: .}) | from_entries) as $n
+      | map(. + ($n[.waterBodyId] // {} | del(.waterBodyId)))
+    ' bodies.json > bodies-ndsi.json || die "NDSI merge failed"
+  mv bodies-ndsi.json bodies.json
 }
 
 transform_granule() {
@@ -361,7 +788,7 @@ transform_granule() {
   href="$(asset_href visual)"
   [[ -n "$href" ]] || die "no 'visual' (TCI) asset on $GRANULE_ID"
 
-  read -r MINX MINY MAXX MAXY <<<"$(mask_extent)"
+  read -r MINX MINY MAXX MAXY <<<"$(mask_extent masks.geojson)"
   log "mask extent (3857) $MINX $MINY $MAXX $MAXY"
 
   # 1. Warp the granule into 3857 over just the mask extent. 14 m/px is ~10 m on the ground here,
@@ -397,7 +824,7 @@ transform_granule() {
   # the result still looks like a plausible percentage.
   local scl_href
   scl_href="$(asset_href scl)"
-  if [[ -n "$scl_href" ]]; then
+  if [[ -n "$scl_href" && "$WATER_COUNT" -gt 0 ]]; then
     log "warping SCL (20 m -> grid, nearest)"
     stage warp_scl gdalwarp -q -t_srs EPSG:3857 -te "$MINX" "$MINY" "$MAXX" "$MAXY" \
       -tr "$WARP_RES" "$WARP_RES" \
@@ -405,12 +832,33 @@ transform_granule() {
       "/vsicurl/${scl_href}" scl.tif \
       || die "SCL warp failed"
 
-    # Zones: each mask feature burned as its own integer, so one sweep can cross-tabulate class
+    # Zones: each water polygon burned as its own integer, so one sweep can cross-tabulate class
     # against body — shared with the radar path, see `build_zones`.
     build_zones "$MINX" "$MINY" "$MAXX" "$MAXY"
 
-    stage zonal_stats sh -c 'python3 /usr/local/bin/zonal-clear.py zones.tif scl.tif zone-to-id.json > bodies.json' \
+    stage zonal_stats sh -c "python3 /usr/local/bin/zonal-clear.py zones.tif scl.tif zone-to-id.json \
+      --interior interior.tif --erode-projected-m $EROSION_PROJECTED_M > bodies.json" \
       || die "zonal clear-fraction failed"
+
+    # NDSI — the second opinion where SCL is weakest. Costs two band warps and no tiling; see
+    # `measure_ndsi` for why it is a statistic rather than a frame, and for the offset that would
+    # silently bias the early seasons of a nine-season backfill against the late ones.
+    measure_ndsi "$MINX" "$MINY" "$MAXX" "$MAXY"
+
+    # The same sweep again over the sub-area grid — the answer to "is the north half ready when the
+    # south half is not", which one figure for a whole lake cannot give. Runs only where sub-areas
+    # actually exist, so it costs nothing on the overwhelming majority of granules.
+    if [[ "${SUBAREA_COUNT:-0}" -gt 0 ]]; then
+      build_subzones "$MINX" "$MINY" "$MAXX" "$MAXY"
+      stage zonal_subareas sh -c "python3 /usr/local/bin/zonal-clear.py subzones.tif scl.tif \
+        subzone-to-id.json --id-key subAreaId --interior interior.tif \
+        --erode-projected-m $EROSION_PROJECTED_M > subareas.json" \
+        || die "sub-area zonal statistics failed"
+      attach_subarea_parents
+      log "per-sub-area clear fractions: $(jq 'length' subareas.json)"
+    fi
+
+    reconcile_bodies "$OPTICAL_NULL_BODY"
     log "per-body clear fractions: $(jq 'length' bodies.json) bodies"
   else
     # ⚠ **An empty list would say "this frame contains no lakes", which is a different claim.**
@@ -422,12 +870,29 @@ transform_granule() {
     # Membership does not depend on SCL — the ids are right there in the mask clip. Only the
     # *statistics* do, so those go out as `null` ("unmeasured"), never as 0 ("we looked and saw
     # nothing"). Same distinction zonal-clear.py draws for a body with no valid pixels.
-    log "no SCL asset on this granule — membership without clear fractions"
-    jq -c '[.features[].properties.waterBodyId
-            | {waterBodyId: ., clearPct: null, coveragePct: null,
-               snowIcePct: null, waterPct: null, pixels: 0}]' \
-      masks.geojson > bodies.json || die "body membership fallback failed"
+    if [[ "$WATER_COUNT" -eq 0 ]]; then
+      log "no water polygons under this granule — membership without statistics"
+    else
+      log "no SCL asset on this granule — membership without clear fractions"
+    fi
+    printf '[]' > bodies.json
+    reconcile_bodies "$OPTICAL_NULL_BODY"
   fi
+
+  # ⚠ **Drop the statistics' intermediates before tiling, because RAM is the whole budget.**
+  #
+  # Measured 2026-08-25 on the corpus's largest granule (Champlain, 237.7 Mpixels): `tile_visual` took
+  # **402.7s**, against ~0.2 s/Mpixel — about 48s — everywhere else in the same archive. Nothing in the
+  # tiling path had changed; what changed was that the statistics now leave `zones.tif` (UInt32),
+  # `interior.tif` (Float32), `green.tif` and `swir16.tif` behind them. At 237 Mpixels those are
+  # roughly a gigabyte apiece, on a Machine with 2 GB — so the page cache holding `scene.tif` is
+  # evicted and the tiler re-reads every block from disk.
+  #
+  # They have all been consumed by this point: `bodies.json` holds everything they were read for.
+  # `scl.tif` survives only if it is about to become a frame.
+  rm -f zones.tif interior.tif green.tif swir16.tif water-zoned.geojson dist.tif mask.tif \
+    alpha_rgb.tif
+  [[ "${EMIT_SCL_FRAME:-1}" == "1" ]] || rm -f scl.tif
 
   # 7. Tile the whole pyramid in one pass, pack it, convert it.
   #
@@ -496,20 +961,34 @@ transform_granule() {
   stage pmtiles_visual sh -c 'pmtiles convert archive.mbtiles archive.pmtiles >/dev/null 2>&1' \
     || die "pmtiles convert failed"
 
-  # SCL as its own *frame* is OFF by default — measured, 2026-08-24.
+  # SCL as its own *frame* is ON by default — founder call, 2026-08-25, reversing the 08-24 default.
   #
-  # §3's per-body clear fraction is the valuable half and always runs; this is the raster. Tiling it
-  # took a 923-body Champlain extent (11,532 x 20,608 px) past **17 minutes** without finishing,
-  # against ~2 minutes for the same granule's true colour alone. Across 4,485 granules a season that
-  # is not a rounding error, it is the budget.
+  # PR 3's band selector shows the classification alongside true color, which is what §C1 argues makes
+  # a band selector honest rather than decorative: a skater who wants to know what a claim was derived
+  # *from* can look at it. That is a product reason, and it outranks the cost reason the flag was
+  # originally set for. Set `EMIT_SCL_FRAME=0` to go back to statistics-only.
   #
-  # The "own the pixels" argument does not carry here the way it does for the granule. We are not
-  # protecting against losing access — Copernicus keeps SCL for these exact granule ids indefinitely —
-  # only against the cost of re-deriving, and the manifest's `bodies` array already saves us that.
-  # Set `EMIT_SCL_FRAME=1` when the raster itself is wanted (N6g research, or a band selector that
-  # ends up showing the classification).
+  # §3's per-body clear fraction is the valuable half and always runs regardless; this is only the
+  # raster. Note the "own the pixels" argument does not carry here — Copernicus keeps SCL for these
+  # granule ids indefinitely, and the manifest's `bodies` array already saves the re-derivation cost.
+  #
+  # ✅ **MEASURED ON THE DENSE GRANULE, 2026-08-26 — the gate passes.** On 2026-08-24 tiling SCL took
+  # a 923-body Champlain extent (11,532 x 20,608 px) past **17 minutes without finishing**, against a
+  # season-wide average of only +24% job time. Those two numbers describe the same change, and the gap
+  # between them was the risk: ~18% of a season's granules sit on 1,000+ body tiles, so an average that
+  # looks affordable could hide a tail that does not finish.
+  #
+  # Re-measured on that same granule (`S2C_18TXP_20260215_0_L2A`) after the tiler swap and after the
+  # statistics' intermediates were removed before tiling: warp 3.0s + palette 24.6s + tile 86.4s =
+  # **114s of 592s total, or +24%.** The tail and the mean are the same number. The 17-minute figure
+  # was stale in the good direction exactly as suspected, so `EMIT_SCL_FRAME` staying on costs a
+  # quarter again on the worst granule in the corpus rather than an unbounded one.
+  #
+  # The rule that produced this measurement still stands for the next such change: prototype on one
+  # granule before touching a season. That is what caught the black lakes, and it is what caught SCL
+  # shipping as a black rectangle the day before this.
   BANDS='["visual"]'
-  if [[ -s scl.tif && "${EMIT_SCL_FRAME:-}" == "1" ]]; then
+  if [[ -s scl.tif && "${EMIT_SCL_FRAME:-1}" == "1" ]]; then
     rm -rf scl-tiles scl.mbtiles scl.pmtiles
     # z13, not z14: SCL is 20 m native, so z13 (~13.7 ground m/px here) already exceeds the source.
     # Going a zoom deeper would generate 4x the tiles to encode detail the band does not contain.
@@ -519,10 +998,37 @@ transform_granule() {
     # pyramid exactly as it applies to the warp, which is why `--overview-resampling` is set here
     # rather than left at its default of `average`.
     #
-    # PNG rather than WEBP: lossy compression on a label band is the same category of error as
-    # interpolating one.
-    log "tiling SCL (EMIT_SCL_FRAME=1)"
-    stage tile_scl gdal raster tile -q --input scl.tif --output scl-tiles \
+    # PNG rather than WEBP, still — but the reason has moved. It was "lossy compression on a label
+    # band is the same category of error as interpolating one", and once the labels are coloured
+    # that no longer applies. What does: four flat colours are what PNG is best at, while lossy
+    # WEBP would ring at every class boundary and paint a fringe of a colour no pixel was assigned,
+    # which reads as a fifth category along every edge.
+    # ⚠ **Colour the labels, or the frame is black.** SCL is class *labels* 0-11, and a tiler reads
+    # them as brightness: eleven over two hundred and fifty-five. Measured on a real granule, every
+    # class present rendered between **0.8% and 3.9% brightness** — water and vegetation two grey
+    # levels apart. `scl-palette.txt` carries the mapping and the argument for the four colours it
+    # collapses twelve classes into; `-nearest_color_entry` picks an entry rather than interpolating
+    # between two, which is the same rule the warp above follows and for the same reason.
+    stage color_scl gdaldem color-relief -q -nearest_color_entry \
+      scl.tif /usr/local/share/scl-palette.txt scl-rgb.tif \
+      || die "SCL colour-relief failed"
+
+    # ⚠ **And give it the photograph's own alpha.** The visual band composes RGB with `alpha.tif`
+    # into RGBA (step 5) so a frame is clipped to the lakes, their approaches and their parking. SCL
+    # was tiled raw — which would have blanketed the entire granule extent, covering every other
+    # lake's basemap and reading as a completely different kind of layer from the band beside it in
+    # the selector. Same mask, same feather, same contract.
+    local s
+    for s in 1 2 3; do
+      gdal_translate -q -of VRT -b "$s" scl-rgb.tif "sclband${s}.vrt" || die "SCL band $s split failed"
+    done
+    gdalbuildvrt -q -separate scl-rgba.vrt sclband1.vrt sclband2.vrt sclband3.vrt alpha.tif \
+      || die "SCL rgba vrt failed"
+    gdal_translate -q -of VRT -colorinterp red,green,blue,alpha scl-rgba.vrt scl-rgba-ci.vrt \
+      || die "SCL colorinterp assignment failed"
+
+    log "tiling SCL (EMIT_SCL_FRAME on)"
+    stage tile_scl gdal raster tile -q --input scl-rgba-ci.vrt --output scl-tiles \
       -f PNG --min-zoom 7 --max-zoom 13 \
       --convention tms --skip-blank --webviewer none \
       -r nearest --overview-resampling nearest \
@@ -570,16 +1076,18 @@ transform_granule() {
     --argjson cloud "${CLOUD_PCT:-null}" \
     --argjson bodyCount "$MASK_COUNT" \
     --slurpfile bodies bodies.json \
+    --slurpfile subAreas subareas.json \
     --argjson bands "$BANDS" \
     --argjson stageMs "$STAGE_JSON" \
     --argjson totalMs "$(( $(now_ms) - RUN_STARTED_MS ))" \
     --argjson pixels "$(( ( ${MAXX%.*} - ${MINX%.*} ) / 14 * ( ${MAXY%.*} - ${MINY%.*} ) / 14 ))" \
     --arg vmSize "${FLY_VM_SIZE_LABEL:-unknown}" \
     --argjson feather "$FEATHER_M" \
+    --argjson erosionM "$EROSION_M" \
     --argjson footprint "$(jq -c '.geometry' granule.json)" \
     '{granuleId:$granule, capturedAt:$captured, cloudCoverPct:$cloud, season:$season,
-      maskSeason:$maskSeason, collection:$collection, bodyCount:$bodyCount, bodies:$bodies[0],
-      bands:$bands, featherMeters:$feather, footprint:$footprint,
+      maskSeason:$maskSeason, collection:$collection, bodyCount:$bodyCount, bodies:$bodies[0], subAreas:$subAreas[0],
+      bands:$bands, featherMeters:$feather, erosionMeters:$erosionM, footprint:$footprint,
       cost:{stageMs:$stageMs, totalMs:$totalMs, gridPixels:$pixels, vmSize:$vmSize}}' \
     > manifest.json || die "manifest build failed"
 
@@ -604,10 +1112,19 @@ transform_granule() {
 #
 # Sentinel-1's path is genuinely different from Sentinel-2's, not a variation on it:
 #
-#   * **No colour composite.** VV and VH are single-band intensity, so there is no RGB to assemble.
+#   * **No color composite.** VV and VH are single-band intensity, so there is no RGB to assemble.
 #   * **No map projection in the source.** A GRD sits in *radar* geometry and carries ground-control
-#     points instead of a geotransform, so `-tps` does the geocoding. Over a lake — flat, at a known
-#     elevation — that is accurate enough without terrain correction.
+#     points instead of a geotransform, so `-tps` does the geocoding.
+#
+#     ⚠ **This was assumed accurate enough without terrain correction, and it is not — 2026-08-25.**
+#     The GCPs geocode at a reference height, so ground above it is displaced along the RANGE
+#     direction by roughly `dh / tan(theta)` — ~140 m per 100 m of elevation error at IW incidence.
+#     Sentinel-1 is right-looking, so ascending views from the east and descending from the west and
+#     the shift flips sign between them. Watched live on Mascoma: two islands jumping east, west,
+#     east as the scrubber advanced through alternating passes. "Over a lake it is flat" is true and
+#     insufficient — what matters is the lake's height above the GCP reference, not its own flatness.
+#     PR 3 mitigates by holding one orbit direction per timeline; the fix is a DEM-corrected geocode.
+#     See the N6e plan's open question 8, and note it may share a cause with question 7.
 #   * **The pixels are not the measurement.** They are detector counts; the calibration annotation is
 #     what turns them into `sigma0`. See `sar-cal-lut.py` for why skipping it is a 1.5 dB error inside
 #     a single scene, against a ~2 dB signal.
@@ -620,14 +1137,30 @@ transform_sar() {
     return 0
   fi
 
-  read -r MINX MINY MAXX MAXY <<<"$(mask_extent)"
+  # ⚠ **The scene geometry is read before the extent is fixed.** `geocode_pad` needs it to know how
+  # far outside the masks the de-shift will have to reach.
+  local p href annotation_href=""
+  for p in vh vv; do
+    href="$(asset_href "$p")"
+    [[ -n "$href" ]] || continue
+    annotation_href="${href/s3:\/\/sentinel-s1-l1c\//https:\/\/sentinel-s1-l1c.s3.amazonaws.com\/}"
+    break
+  done
+  [[ -n "$annotation_href" ]] && resolve_geocode "$annotation_href"
+
+  read -r MINX MINY MAXX MAXY <<<"$(mask_extent masks.geojson)"
+  geocode_pad
   log "mask extent (3857) $MINX $MINY $MAXX $MAXY at ${WARP_RES} m"
+
+  # Needed by `deshift_band` before `build_alpha` gets to compute it for itself.
+  local feather_projected
+  feather_projected="$(project_ground_m "$FEATHER_M" "$MINY" "$MAXY")"
 
   # Both polarisations are cut. VH is the informative one for ice, but VV costs one more warp of a
   # granule already open, and their ratio is a standard discriminator we would otherwise have to come
   # back for — the same "own the pixels" argument that governs the optical side.
   local pols=() zonal_args=()
-  local p href cal_href
+  local cal_href
   for p in vv vh; do
     href="$(asset_href "$p")"
     [[ -n "$href" ]] || continue
@@ -639,6 +1172,17 @@ transform_sar() {
       -tr "$WARP_RES" "$WARP_RES" -r bilinear -multi -co COMPRESS=DEFLATE -co TILED=YES -overwrite \
       "/vsicurl/${href}" "${p}.tif" \
       || die "${p} warp failed"
+
+    # Put the pixels back under their lakes, before anything measures or renders them. Everything
+    # downstream — alpha, zones, statistics, tiles — then works at true positions.
+    #
+    # ⚠ **Neither the calibration nor the noise LUT is de-shifted with it, and that is safe.** Both
+    # are smooth in range: gain varies ~1.50 dB across a 275 km scene, so over a 450 m correction it
+    # moves ~0.0025 dB. The one place the noise LUT is NOT smooth is the sub-swath seams, which sit
+    # ~80 km apart — a shift of a few hundred metres can only mis-assign a body sitting essentially on
+    # one, and the error there is bounded by the step itself. Warping either a second time would buy
+    # thousandths of a decibel.
+    deshift_band "$p" "$feather_projected"
 
     cal_href="$(jq -r --arg k "schema-calibration-${p}" '.assets[$k].href // empty' granule.json)"
     [[ -n "$cal_href" ]] || die "no calibration annotation for ${p} — refusing to ship uncalibrated"
@@ -672,32 +1216,153 @@ transform_sar() {
       -tr "$WARP_RES" "$WARP_RES" -r bilinear -srcnodata 0 -dstnodata 0 \
       "a-${p}-coarse.tif" "a-${p}.vrt" || die "calibration resample failed for ${p}"
 
+    # ## Thermal noise, by exactly the same route as the gain
+    #
+    # A GRD's DN is signal **plus the instrument's own noise**, and calibration does not remove it.
+    # Measured NESZ for VH: median −25.2 dB on S1A, −28.0 dB on S1C, against lakes that sit at −20 to
+    # −22 dB — so the floor is three to five decibels under the signal, and at the far edge of an S1A
+    # swath it reaches −21.8 dB. It biases the DARK end hardest, which is where smooth ice lives.
+    #
+    # ⚠ **It is also the prime suspect for the S1A/S1C offset that currently forbids pooling
+    # platforms** (open question 7). S1C's floor is 2.80 dB quieter, which on a −22 dB lake predicts a
+    # −0.73 dB platform bias against the −0.52 dB measured ascending. If denoising collapses that, a
+    # lake gets a 6-day look instead of a 12-day one.
+    #
+    # ⚠ **Fatal if missing, like calibration.** Shipping a frame with the noise left in is shipping a
+    # measurement whose bias depends on which satellite took it and where in the swath the lake sat.
+    noise_href="$(jq -r --arg k "schema-noise-${p}" '.assets[$k].href // empty' granule.json)"
+    [[ -n "$noise_href" ]] || die "no noise annotation for ${p} — refusing to ship un-denoised"
+    noise_href="${noise_href/s3:\/\/sentinel-s1-l1c\//https:\/\/sentinel-s1-l1c.s3.amazonaws.com\/}"
+    curl -fsSL --retry 3 "$noise_href" -o "noise-${p}.xml" || die "noise fetch failed for ${p}"
+    stage "noiselut_${p}" python3 /usr/local/bin/sar-noise-lut.py "noise-${p}.xml" \
+      "/vsicurl/${href}" "noiselut-${p}.tif" --calibration "cal-${p}.xml" \
+      || die "noise LUT build failed for ${p}"
+    # Coarse-then-resample, for the reason the gain is: the noise surface is smooth in range and the
+    # thin-plate-spline is what costs. ⚠ The one place it is NOT smooth is the sub-swath seams, which
+    # `sar-noise-lut.py` bakes into the grid before this ever sees it.
+    stage "noisewarp_${p}" gdalwarp -q -tps -t_srs EPSG:3857 -te "$MINX" "$MINY" "$MAXX" "$MAXY" \
+      -tr "$(( WARP_RES * 8 ))" "$(( WARP_RES * 8 ))" -r bilinear -dstnodata 0 \
+      -co COMPRESS=DEFLATE -overwrite "noiselut-${p}.tif" "n-${p}-coarse.tif" \
+      || die "noise warp failed for ${p}"
+    gdalwarp -q -of VRT -t_srs EPSG:3857 -te "$MINX" "$MINY" "$MAXX" "$MAXY" \
+      -tr "$WARP_RES" "$WARP_RES" -r bilinear -srcnodata 0 -dstnodata 0 \
+      "n-${p}-coarse.tif" "n-${p}.vrt" || die "noise resample failed for ${p}"
+
     pols+=("$p")
-    zonal_args+=("${p}:${p}.tif:a-${p}.vrt")
+    zonal_args+=("${p}:${p}.tif:a-${p}.vrt:n-${p}.vrt")
   done
   [[ ${#pols[@]} -gt 0 ]] || die "no usable polarisation on $GRANULE_ID"
 
   # Per-body statistics, on the same grid — see `sar-zonal.py` for why the average is taken in linear
   # power rather than in decibels.
-  build_zones "$MINX" "$MINY" "$MAXX" "$MAXY"
-  stage sar_zonal sh -c "python3 /usr/local/bin/sar-zonal.py zones.tif zone-to-id.json $(printf '%s ' "${zonal_args[@]}") > bodies.json" \
-    || die "per-body radar statistics failed"
+  #
+  # ⚠ **The erosion matters more here than on the optical side, not less.** Forest is the classic
+  # bright `VH` target — volume scattering inside a canopy puts energy into the cross-polarised
+  # channel that smooth ice and calm water cannot — so a shoreline pixel sits ~10 dB above the lake,
+  # against the ~2 dB of separation this measurement exists to detect. A ring of bank inside the zone
+  # does not add noise to the ice signal; it swamps it, and it does so worst on small lakes.
+  if [[ "$WATER_COUNT" -gt 0 ]]; then
+    build_zones "$MINX" "$MINY" "$MAXX" "$MAXY"
+    stage sar_zonal sh -c "python3 /usr/local/bin/sar-zonal.py zones.tif zone-to-id.json \
+      $(printf '%s ' "${zonal_args[@]}") --interior interior.tif \
+      --erode-projected-m $EROSION_PROJECTED_M > bodies.json" \
+      || die "per-body radar statistics failed"
+  else
+    log "no water polygons under this pass — membership without statistics"
+    printf '[]' > bodies.json
+  fi
+  # Fold the viewing geometry the de-shift already computed into each body's record. Both
+  # polarisations see the same geometry, so the first file that exists answers for the frame.
+  #
+  # ⚠ **This is the field open question 7 says is missing.** `sigma0` varies with incidence, ice and
+  # water have different angular responses, and without it a consumer cannot tell an instrument
+  # difference from an ice change — which is why platform and orbit direction are still read-time
+  # filters and the cadence is still 12-day rather than 6.
+  local geometry_file=""
+  for p in "${pols[@]}"; do
+    [[ -s "geometry-${p}.json" ]] && { geometry_file="geometry-${p}.json"; break; }
+  done
+  if [[ -n "$geometry_file" ]]; then
+    jq -c --slurpfile geom "$geometry_file" '
+        ($geom[0] | map({key: .waterBodyId, value: .}) | from_entries) as $g
+        | map(. + ($g[.waterBodyId] // {} | del(.waterBodyId)))
+      ' bodies.json > bodies-geom.json || die "geometry merge failed"
+    mv bodies-geom.json bodies.json
+  fi
+
+  if [[ "${SUBAREA_COUNT:-0}" -gt 0 && "$WATER_COUNT" -gt 0 ]]; then
+    build_subzones "$MINX" "$MINY" "$MAXX" "$MAXY"
+    stage sar_zonal_subareas sh -c "python3 /usr/local/bin/sar-zonal.py subzones.tif \
+      subzone-to-id.json --id-key subAreaId $(printf '%s ' "${zonal_args[@]}") \
+      --interior interior.tif --erode-projected-m $EROSION_PROJECTED_M > subareas.json" \
+      || die "sub-area radar statistics failed"
+    attach_subarea_parents
+    log "per-sub-area sigma0: $(jq 'length' subareas.json)"
+  fi
+
+  reconcile_bodies "$SAR_NULL_BODY"
   log "per-body sigma0: $(jq 'length' bodies.json) bodies, pols ${pols[*]}"
 
   # ⚠ **The published frame is a picture, and the numbers above are the measurement.** `sigma0` is a
-  # physical quantity with no natural colour; anything rendered is a choice of stretch. A FIXED range
+  # physical quantity with no natural color; anything rendered is a choice of stretch. A FIXED range
   # is used rather than a per-scene one, because a scrubber compares dates — and a per-scene stretch
   # would make every frame look the same and the differences vanish, which is the one thing this
-  # archive exists to show. -30..0 dB spans open water through bright land at C-band.
+  # archive exists to show.
+  #
+  # ## ⚠ The window is now -29..-12, and -30..0 was spending most of the greyscale on nothing
+  #
+  # > **Founder, 2026-08-26:** *"I don't really know how to read it (it all looks like grey fuzz to
+  # > me) so I'm not sure how helpful it will be to others either."*
+  #
+  # -30..0 dB is 30 dB across 256 levels, and `sar-zonal.py` measures the whole freeze-up signal at
+  # **~2 dB** — about 17 grey levels, under 7% of the range. The measurement was real and the picture
+  # threw it away. The fixed-stretch argument above is untouched by this: the same grey still means
+  # the same backscatter on every frame in every season, which is what makes two dates comparable.
+  # Only the range changed, and it changed to where the pixels actually are.
+  #
+  # Measured 2026-08-26 on the published archive, over ~340k and ~289k masked-in pixels of two frames
+  # deliberately chosen to disagree — S1A on 1 Feb (midwinter, 10,157 bodies) and S1C on 9 Nov (open
+  # water, different platform, different track):
+  #
+  #     percentile     p1      p5     p25     p50     p75     p95     p99
+  #     1 Feb       -23.6   -22.8   -20.6   -17.5   -16.1   -14.5   -13.1
+  #     9 Nov       -28.6   -27.8   -20.2   -18.0   -16.8   -15.3   -14.2
+  #
+  # The middles agree to within 0.4-0.8 dB — and in the right direction, February reading brighter,
+  # which is the seasonal signal rather than noise. The tails are what set the window: November's
+  # dark end is **calm open water returning specularly**, which is the single most diagnostic thing
+  # radar shows us and must not be clipped away. So the range spans both frames' extremes with a
+  # little headroom, and 17 dB across 256 levels is **1.76x the contrast** on everything a skater is
+  # looking at.
+  #
+  # ⚠ Widening it back is a one-line change; the reason not to reach for a tighter window is in that
+  # table. Anything above ~-13 dB is land and bright rough ice, and clipping it costs nothing — but
+  # the -28 dB end is the picture, not the margin.
+  # ⚠ **The picture is denoised too, and it has to be the SAME correction as the statistics.** A frame
+  # whose pixels disagree with the numbers beside them is worse than either alone: it invites a reader
+  # to check one against the other and find a discrepancy that is ours, not the lake's. The dark end of
+  # this stretch is where the noise floor sits, so leaving it in would brighten exactly the −29 dB end
+  # the comment above calls "the picture, not the margin".
   local render="${pols[-1]}"
-  log "rendering ${render^^} at a fixed -30..0 dB stretch"
+  log "rendering ${render^^} at a fixed -29..-12 dB stretch, denoised"
   stage render_db python3 /usr/local/bin/sar-render.py "${render}.tif" "a-${render}.vrt" \
-    dn.tif --min-db -30 --max-db 0 || die "dB render failed"
+    dn.tif --noise "n-${render}.vrt" --min-db -29 --max-db -12 || die "dB render failed"
 
   build_alpha "$MINX" "$MINY" "$MAXX" "$MAXY"
   gdalbuildvrt -q -separate rgba.vrt dn.tif dn.tif dn.tif alpha.tif || die "gdalbuildvrt failed"
   gdal_translate -q -of VRT -colorinterp red,green,blue,alpha rgba.vrt rgba_ci.vrt \
     || die "colorinterp assignment failed"
+
+  # ⚠ **The same page-cache eviction the optical path pays for, and this side had no cleanup.**
+  # `transform_granule` drops its statistics' intermediates before tiling because a 237 Mpixel
+  # `zones.tif` (UInt32) plus `interior.tif` (Float32) is ~2 GB on a 2 GB Machine, and the tiler then
+  # re-reads every block from disk — measured at 402.7 s against ~48 s. The radar path builds exactly
+  # the same two rasters, plus a per-polarisation DN and gain, and tiles a *larger* extent because
+  # `geocode_pad` widened it. Everything here has been consumed: `bodies.json` holds what the zones
+  # were read for, and `rgba_ci.vrt` references only `dn.tif` and `alpha.tif`.
+  rm -f zones.tif interior.tif subzones.tif water-zoned.geojson subareas-zoned.geojson \
+    dist.tif mask.tif alpha_rgb.tif
+  for p in "${pols[@]}"; do rm -f "${p}.tif"; done
 
   rm -rf tiles archive.mbtiles archive.pmtiles
   stage tile_sar gdal raster tile -q --input rgba_ci.vrt --output tiles \
@@ -734,21 +1399,34 @@ transform_sar() {
     --arg platform "$PLATFORM" \
     --arg band "$render" \
     --arg orbit "${ORBIT_STATE:-}" \
+    --argjson relOrbit "${RELATIVE_ORBIT:-null}" \
     --argjson pols "${POLARISATIONS:-null}" \
     --argjson bodyCount "$MASK_COUNT" \
     --slurpfile bodies bodies.json \
+    --slurpfile subAreas subareas.json \
     --argjson bands "$BANDS" \
     --argjson stageMs "$STAGE_JSON" \
     --argjson totalMs "$(( $(now_ms) - RUN_STARTED_MS ))" \
     --arg vmSize "${FLY_VM_SIZE_LABEL:-unknown}" \
     --argjson feather "$FEATHER_M" \
     --argjson resolutionM "$WARP_RES" \
+    --argjson erosionM "$EROSION_M" \
+    --argjson geocode "${GEOCODE_JSON:-null}" \
+    --argjson deshift "$(cat "deshift-${render}.json" 2>/dev/null || echo null)" \
     --argjson footprint "$(jq -c '.geometry' granule.json)" \
     '{granuleId:$granule, capturedAt:$captured, cloudCoverPct:null, season:$season,
       maskSeason:$maskSeason, collection:$collection, mission:$mission, platform:$platform,
-      band:$band, orbitDirection:(if $orbit == "" then null else $orbit end), polarizations:$pols,
-      bodyCount:$bodyCount, bodies:$bodies[0], bands:$bands, featherMeters:$feather,
-      resolutionM:$resolutionM, footprint:$footprint,
+      band:$band, orbitDirection:(if $orbit == "" then null else $orbit end),
+      relativeOrbit:$relOrbit, polarizations:$pols,
+      bodyCount:$bodyCount, bodies:$bodies[0], subAreas:$subAreas[0],
+      bands:$bands, featherMeters:$feather,
+      resolutionM:$resolutionM, erosionMeters:$erosionM,
+      # ⚠ null means this frame was NOT geocode-corrected — an old image, or a missing annotation.
+      # A consumer comparing frames across the archive has to be able to tell a corrected frame from
+      # an uncorrected one, and the absence is the tell. `deshift.uncorrected` counts the bodies that
+      # were placed without a height, which is the same question one body at a time.
+      geocode:$geocode, deshift:$deshift,
+      footprint:$footprint,
       cost:{stageMs:$stageMs, totalMs:$totalMs, vmSize:$vmSize}}' \
     > manifest.json || die "manifest build failed"
 

@@ -29,6 +29,14 @@ a stored field rather than a footnote — see *Sources*, below, and note that tw
 > which is what survives a corpus rebuild and what lets the *merge* read it before a body exists as
 > a row.
 >
+> ⚠ **That key is also why this has to run again after every merge, and why a new region needs it
+> before `load-elevation` rather than after.** A coordinate key survives a rebuild; it does not
+> survive the body *moving*. A merge that re-draws a lake gives it a new interior point, which is a
+> key the archive has never been asked for — so `load-elevation` alone reports *"N not in the
+> archive"* and stamps nothing, which is a silent no-op rather than a failure. `--from-convex`
+> is the form to use after a load and it is incremental: on an unchanged corpus it makes zero
+> requests, so there is no reason to skip it. The N7 runbook was missing this line until 2026-08-26.
+>
 > **`load-elevation` now reads that archive and the Open-Meteo module is deleted** (N7-3). Run
 > `load-elevation --compare` **first**: D101 asks for the datum comparison against the 5,692 rows
 > already stamped `dem_glo90` *before* re-stamping, because a swap that silently moves a datum moves

@@ -157,6 +157,95 @@ describe('maskFeatureFor', () => {
     expect(outcome.reason).toBe('no-geometry');
   });
 
+  // ## The water feature — the measurement's geometry, and why it is a second one
+  //
+  // These four pin the property the archive's every per-body number rests on: a zonal statistic
+  // counts the LAKE, and the reveal counts the lake plus the way in. They were the same shape until
+  // 2026-08-25, which put a 60 m ring of shore inside `snowIcePct`, `waterPct` and `vhDb`.
+
+  it('keeps the water polygon unbuffered — a statistic counts the lake, not its shoreline', () => {
+    const polygon = squareAt(BURLINGTON.lat, BURLINGTON.lng);
+    const outcome = maskFeatureFor({ waterBodyId: 'w1', polygon });
+    expect(outcome.ok).toBe(true);
+    if (!outcome.ok) return;
+
+    // Identical to the corpus geometry, and strictly inside the reveal that was baked beside it.
+    expect(outcome.waterFeature.geometry).toEqual(polygon);
+    const water = bboxOf(outcome.waterFeature.geometry);
+    const reveal = bboxOf(outcome.feature.geometry);
+    expect(water.minLat).toBeGreaterThan(reveal.minLat);
+    expect(water.maxLat).toBeLessThan(reveal.maxLat);
+    expect(water.minLng).toBeGreaterThan(reveal.minLng);
+    expect(water.maxLng).toBeLessThan(reveal.maxLng);
+  });
+
+  it('keeps islands as holes in the water polygon, though the reveal fills them in', () => {
+    const withIsland: Polygon = {
+      type: 'Polygon',
+      coordinates: [
+        squareAt(BURLINGTON.lat, BURLINGTON.lng, 0.004).coordinates[0] as number[][],
+        [
+          [BURLINGTON.lng + 0.001, BURLINGTON.lat + 0.001],
+          [BURLINGTON.lng + 0.002, BURLINGTON.lat + 0.001],
+          [BURLINGTON.lng + 0.002, BURLINGTON.lat + 0.002],
+          [BURLINGTON.lng + 0.001, BURLINGTON.lat + 0.002],
+          [BURLINGTON.lng + 0.001, BURLINGTON.lat + 0.001],
+        ],
+      ],
+    };
+    const outcome = maskFeatureFor({ waterBodyId: 'w1', polygon: withIsland });
+    expect(outcome.ok).toBe(true);
+    if (!outcome.ok) return;
+
+    // The picture shows the island (one ring, the hole dropped); the measurement excludes it (two).
+    // An island counted as lake is permanent land inside a freeze-up series, on every island lake in
+    // the corpus — and Winnipesaukee alone has over two hundred.
+    const revealRings =
+      outcome.feature.geometry.type === 'Polygon'
+        ? outcome.feature.geometry.coordinates
+        : outcome.feature.geometry.coordinates[0];
+    expect(revealRings?.length).toBe(1);
+    expect((outcome.waterFeature.geometry as Polygon).coordinates.length).toBe(2);
+  });
+
+  it('never lets access geometry into the water polygon', () => {
+    // The parking lot and the walk in are reasons to SHOW ground; they are not lake. A trail corridor
+    // inside a zone measures the woods either side of it and calls the result a lake's ice fraction.
+    const polygon = squareAt(BURLINGTON.lat, BURLINGTON.lng);
+    const outcome = maskFeatureFor({
+      waterBodyId: 'w1',
+      polygon,
+      parkingCoords: [{ lat: BURLINGTON.lat + 0.02, lng: BURLINGTON.lng }],
+      approachPaths: [
+        [
+          { lat: BURLINGTON.lat + 0.02, lng: BURLINGTON.lng },
+          { lat: BURLINGTON.lat + 0.002, lng: BURLINGTON.lng },
+        ],
+      ],
+    });
+    expect(outcome.ok).toBe(true);
+    if (!outcome.ok) return;
+
+    expect(outcome.waterFeature.geometry).toEqual(polygon);
+    // The reveal reached the lot 2 km north; the water polygon did not move at all.
+    expect(bboxOf(outcome.feature.geometry).maxLat).toBeGreaterThan(
+      bboxOf(outcome.waterFeature.geometry).maxLat,
+    );
+  });
+
+  it('gives both features the same properties, so the two artifacts join on id', () => {
+    const outcome = maskFeatureFor({
+      waterBodyId: 'w1',
+      name: 'Lake Iroquois',
+      polygon: squareAt(BURLINGTON.lat, BURLINGTON.lng),
+      elevationM: 96,
+    });
+    expect(outcome.ok).toBe(true);
+    if (!outcome.ok) return;
+    expect(outcome.waterFeature.properties).toEqual(outcome.feature.properties);
+    expect(outcome.waterFeature.properties.waterBodyId).toBe('w1');
+  });
+
   it('uses the Sentinel buffer, not the aerial one', () => {
     // The two tiers differ ~3× (60 m vs 20 m). A 10 m buffer is one Sentinel pixel, so picking the
     // aerial constant here would render as no reveal margin at all.

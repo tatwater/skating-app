@@ -20,16 +20,30 @@ import {
   approachesToFeatureCollection,
   approachLinePaint,
   type BBox,
+  formatSeasonLabel,
+  holdFrames,
   isRegionOffscreen,
+  NO_HELD_FRAMES,
+  prefetchFrames,
   SUB_AREA_MIN_RENDER_ZOOM,
   withAccessDim,
 } from '@skating/core';
 import { useQuery } from 'convex/react';
 import * as Location from 'expo-location';
 import { useRouter } from 'expo-router';
-import { useEffect, useMemo, useRef, useState } from 'react';
-import type { NativeSyntheticEvent } from 'react-native';
+import type { MultiPolygon, Polygon } from 'geojson';
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useReducer,
+  useRef,
+  useState,
+} from 'react';
+import type { LayoutChangeEvent, NativeSyntheticEvent } from 'react-native';
 import { StyleSheet, Text, useColorScheme, useWindowDimensions, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { cacheBody } from '../lib/bodyCache';
 import {
   CONTOUR_BEFORE_LAYER_ID,
@@ -87,8 +101,14 @@ import {
   waterBodiesToFeatureCollection,
   zoomForViewport,
 } from '../lib/waterMap';
+import { FreezeUpFrames } from './FreezeUpFrames';
+import { FreezeUpScrubber } from './FreezeUpScrubber';
+import { ImageryDock } from './ImageryDock';
+import { coveredFractionForIndex, DRAWER_PEEK } from './MapDrawer';
 import { useMapSelection } from './MapSelectionContext';
+import { OnIceDock } from './OnIceDock';
 import { ReturnToRegion } from './ReturnToRegion';
+import { useFreezeUpTimeline } from './useFreezeUpTimeline';
 
 /**
  * Interactive native MapLibre map — the read side of the Phase 2 loop (§F, D5/D6/D47/D49), the
@@ -108,6 +128,9 @@ const EMPTY_FC: GeoJSON.FeatureCollection = { type: 'FeatureCollection', feature
 
 /** How long a hazard tap suppresses the water-body tap underneath it (one gesture's worth). */
 const HAZARD_PRESS_PRECEDENCE_MS = 300;
+
+/** The breathing room between the two boxes on the map's bottom rail when one has to stack. */
+const RAIL_GAP = 8;
 
 // The initial query covers the whole pilot region at the state zoom, so the map shows the prominent
 // bodies (Champlain, boosted Morey) immediately — before the first `onRegionDidChange` — then each
@@ -129,6 +152,20 @@ const INITIAL_QUERY: { viewport: BBox; zoom: number } = {
  */
 const CACHE_SEED_MIN_ZOOM = 11;
 
+/**
+ * A stored geometry narrowed to the two shapes a lake is ever stored as.
+ *
+ * `waterBodies.polygon` is typed as the whole GeoJSON geometry union because the validator accepts
+ * one, but a body is a `Polygon` or a `MultiPolygon` and nothing else. Returning `null` for anything
+ * else keeps the seam from being computed against a point.
+ */
+function polygonOf(geometry: unknown): Polygon | MultiPolygon | null {
+  const type = (geometry as { type?: string } | null)?.type;
+  return type === 'Polygon' || type === 'MultiPolygon'
+    ? (geometry as Polygon | MultiPolygon)
+    : null;
+}
+
 export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolean }) {
   const scheme = useColorScheme();
   const flavor = scheme === 'dark' ? MAP_FLAVORS.dark : MAP_FLAVORS.light;
@@ -146,6 +183,7 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
     setPutInPin,
     setPinDropMode,
     drawerCoveredFraction,
+    requestDrawerPeek,
     hazardDraft,
     setHazardDraft,
     hazardDraftType,
@@ -157,7 +195,26 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
     contourBodyKey,
     setContourCredit,
   } = useMapSelection();
+  const insets = useSafeAreaInsets();
+  // The map's own height, measured — **not** the window's. The sheet's snap points are percentages of
+  // the map's container, and under a tab bar that container is shorter than the window; `windowHeight`
+  // therefore overstates what a 58% sheet covers by a whole tab bar, which is exactly the error this
+  // pass exists to remove. The window is only the seed, for the frames before the first layout.
   const { height: windowHeight } = useWindowDimensions();
+  const [mapHeight, setMapHeight] = useState(windowHeight);
+  const onMapLayout = useCallback((event: LayoutChangeEvent) => {
+    const { height } = event.nativeEvent.layout;
+    if (height > 0) setMapHeight((current) => (Math.abs(current - height) > 1 ? height : current));
+  }, []);
+  /**
+   * The imagery dock's measured height (0 when it isn't shown) — see `ImageryDock.onHeightChange`.
+   * Guarded against no-op writes because the dock re-reports on every layout pass, and a state write
+   * per pass would re-run the camera fit for a number that hadn't changed.
+   */
+  const [dockHeight, setDockHeight] = useState(0);
+  const onDockHeightChange = useCallback((height: number) => {
+    setDockHeight((current) => (current === height ? current : height));
+  }, []);
   const hazardPalette = HAZARD_PALETTE[flavor];
   const trackColor = TRACK_PALETTE[flavor];
   const contourPalette = CONTOUR_PALETTE[flavor];
@@ -298,6 +355,156 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
   // The viewer's favorited bodies (Phase 4, decision #1) — the highlight is a data-driven `in` filter
   // on a dedicated outline layer (RN has no feature-state). Empty when signed out.
   const favorites = useQuery(api.waterBodyFavorites.listForUser, {});
+
+  // ## The freeze-up timeline (N6e §C, D148)
+  //
+  // Mobile has no Tier 1 aerial — that one needs a canvas React Native does not have — so here
+  // "imagery" means the archive and nothing else. One toggle per lake, per D146, and it lives on the
+  // map because the sheet it would otherwise sit in is a thing the map is behind.
+  const [imageryOn, setImageryOn] = useState(false);
+  const [freezeUpBand, setFreezeUpBand] = useState('visual');
+  const [freezeUpStop, setFreezeUpStop] = useState<number | null>(null);
+  /**
+   * The capture date behind the current selection, so a band switch can land near where the skater
+   * was rather than at the end of the season (founder, 2026-08-26). Held as a date because that is
+   * what a scrubber position *is* — an index into one band's stops means nothing against another's.
+   */
+  const [freezeUpAnchorAt, setFreezeUpAnchorAt] = useState<string | null>(null);
+  const timelineBody = useQuery(
+    api.waterBodies.get,
+    imageryOn && highlightWaterBodyId
+      ? { waterBodyId: highlightWaterBodyId as Id<'waterBodies'> }
+      : 'skip',
+  );
+  const {
+    timeline: freezeUpTimeline,
+    loading: freezeUpLoading,
+    season: freezeUpSeason,
+    index: freezeUpIndex,
+    error: freezeUpError,
+  } = useFreezeUpTimeline({
+    // ⚠ `available: false` is a delisting, and it must arrive as "no lake" rather than an empty one:
+    // `imageryMasks` refuses to bake a mask for a delisted body, so the archive has no pixels to
+    // offer and asking would be requesting frames that were never cut.
+    body: timelineBody?.available ? timelineBody.body : null,
+    band: freezeUpBand,
+    enabled: Boolean(imageryOn && highlightWaterBodyId),
+  });
+
+  // A new lake is a new timeline; an index into the old one means nothing against the new stops.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: resetting *because* these changed is the point.
+  useEffect(() => {
+    setFreezeUpStop(null);
+  }, [highlightWaterBodyId, freezeUpBand]);
+
+  // ⚠ **The picture never goes away while imagery is on** (founder, 2026-08-25). A blocked notch
+  // holds the last good frame rather than clearing to bare cartography — dragging across a fortnight
+  // of cloud should feel like passing over dates, not like the feature switching itself off.
+  //
+  // A reducer for the reason web is: the hold is state with a history, and a ref written during
+  // render is not where that belongs. See {@link holdFrames}.
+  const [freezeUpRendered, foldFreezeUpFrames] = useReducer(holdFrames, NO_HELD_FRAMES);
+  // `imageryOn` goes through the fold for the same reason web passes it. Mobile unmounts
+  // `FreezeUpFrames` with the toggle so the layers go anyway, but a hold that survives the toggle
+  // would show the old picture for a frame on the way back in, and the scrubber's caption reads off
+  // this too.
+  useLayoutEffect(() => {
+    foldFreezeUpFrames({
+      bodyId: highlightWaterBodyId ?? null,
+      stops: freezeUpTimeline?.stops,
+      selected: freezeUpStop,
+      revealing: imageryOn,
+    });
+  }, [highlightWaterBodyId, freezeUpTimeline, freezeUpStop, imageryOn]);
+  const freezeUpSelected = freezeUpRendered.primary;
+
+  /**
+   * Choosing a stop also records **when** it was, which is the part that survives a band switch.
+   *
+   * Read off the timeline rather than the scrubber, because the scrubber reports an index and this
+   * has to be a date — see `nearestLandableStopToDate`. Set on every selection, including the
+   * automatic one, so the anchor is always the position actually on screen.
+   */
+  const selectFreezeUpStop = useCallback(
+    (index: number) => {
+      setFreezeUpStop(index);
+      const at = freezeUpTimeline?.stops[index]?.frame.capturedAt;
+      if (at) setFreezeUpAnchorAt(at);
+    },
+    [freezeUpTimeline],
+  );
+
+  // Dropping the hold on a new lake used to live here and now lives in `holdFrames`, because an
+  // effect could only null the ref after the render that had already folded against it.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: resetting *because* the lake changed is the point.
+  useEffect(() => {
+    // ⚠ **The anchor goes with the lake, so a new one still opens on its most recent pass.** The
+    // anchor exists to survive a *band* switch, where the skater is asking the same question of a
+    // different instrument. Opening a lake is a different question — "a skater asking about a lake is
+    // asking about now" — and carrying February across would answer the one they did not ask.
+    setFreezeUpAnchorAt(null);
+    // ⚠ **Closing the lake takes the reveal with it (D146)** — web does this in `MapSelectionContext`
+    // and mobile had no equivalent, because `imageryOn` is local state here. Left on, the dock
+    // vanished with the lake while `FreezeUpFrames` stayed mounted against the held frames, so the
+    // previous lake's photograph could sit on the map with no control anywhere to turn it off; and
+    // the next lake opened with imagery already on, which is not a choice anybody made about it.
+    setImageryOn(false);
+  }, [highlightWaterBodyId]);
+
+  // Where the imagery dock sits, and whether the timeline fits there at all.
+  //
+  // ⚠ **`drawerCoveredFraction` only updates when the sheet *settles*** (`onChange`), never during the
+  // drag. That is the right trade here: a dock chasing a finger mid-drag would animate its own grow
+  // against the sheet's motion, and the two would fight. It does mean the button is briefly under a
+  // sheet being dragged upward, which resolves the moment it lands.
+  const sheetIsClear = drawerCoveredFraction <= coveredFractionForIndex(DRAWER_PEEK);
+  const sheetTop = drawerCoveredFraction * mapHeight;
+  // 140 is the floor the scrubber has always used — clear of the peek on ordinary phones. On a tall
+  // screen the peek is itself taller than that, so the sheet's own height wins; above the peek the
+  // dock rides on the sheet's top edge (rule 1 in `ImageryDock`).
+  //
+  // ⚠ **And it stops climbing before it reaches the top of the map.** At the sheet's tallest detent
+  // there is ~6% of screen left, and a box riding that edge would hang off the top of the map into the
+  // status bar. Clamped, it slides behind the sheet instead — the honest outcome when the skater has
+  // pulled the map almost entirely off screen. (`LakeSearch` used to be the other claimant up there,
+  // but it scoots off the top the moment a body is selected, and the dock only exists when one is; and
+  // `BackToLakeButton` now paints *under* the sheet too.)
+  const railCeiling = mapHeight - 212;
+  const dockBottom = Math.min(railCeiling, Math.max(140, sheetTop + 16));
+
+  // The rail's other end (founder, 2026-08-26). "Show imagery" and "On ice" are the two things you can
+  // do to the map itself, so they share one line above the sheet — imagery left, on-ice right — and
+  // both ride `dockBottom`, which is what stops either from hovering over a sheet the skater has pulled
+  // up. Before this, the on-ice pair was pinned at a fixed `bottom: 132/188` and simply sat on top of
+  // whatever the drawer did.
+  //
+  // ⚠ **Only one box on the line may be wide.** A panel — the timeline, or a running on-ice session —
+  // takes the full width, so when either opens the other steps *above* it rather than under it. The
+  // on-ice session wins the line when both want it: it's live safety state, while the timeline is a
+  // planning tool, and folding the scrubber away is a move `ImageryDock` already makes for the sheet
+  // (rule 1 — the imagery layer itself stays on the map either way).
+  //
+  // The stack is held under the same ceiling as the rail itself, so a stacked box can't hang off the
+  // top of the map either. At the tallest detent that collapses the two back onto one line — which is
+  // fine, because there the whole rail is behind the sheet and there is nothing on screen to overlap.
+  const [onIceExpanded, setOnIceExpanded] = useState(false);
+  const imageryExpanded = imageryOn && sheetIsClear && !onIceExpanded;
+  const onIceBottom =
+    imageryExpanded || onIceExpanded
+      ? Math.min(railCeiling, dockBottom + dockHeight + RAIL_GAP)
+      : dockBottom;
+
+  // Warm the season's frames once the timeline appears, so scrubbing does not start a cold load per
+  // notch. Header ranges only — see `prefetchFrames`. Aborted when the lake or band changes, so a
+  // warm cannot outlive the timeline it was for.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: keyed on the frame list, not its identity.
+  useEffect(() => {
+    const keys = freezeUpTimeline?.stops.map((s) => s.frame.key) ?? [];
+    if (keys.length === 0) return;
+    const controller = new AbortController();
+    void prefetchFrames(env.imageryArchiveUrl, keys, controller.signal);
+    return () => controller.abort();
+  }, [freezeUpTimeline?.stops.length, freezeUpSeason, freezeUpBand]);
   const favoriteIds = useMemo(() => (favorites ?? []).map((f) => f.waterBodyId), [favorites]);
 
   // Put-in markers for the currently-focused lake (decision #7) — bounded to the open lake. `skip`
@@ -446,20 +653,45 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
     if (deepest !== undefined) setContourMaxDepthFt((seen) => Math.max(seen, deepest));
   }
 
-  // Frame a drawer's focus (a lake / report put-in) into the area the drawer does NOT cover, re-fitting
-  // whenever the drawer settles at a new snap point. A lake with a `bounds` gets zoom-to-fit
-  // (`fitBounds`); a bare point (report put-in) gets a fly at its zoom. The drawer's covered fraction
-  // becomes bottom camera padding, so the target lands in the visible strip above the sheet — not
-  // hidden behind it. Skipped when the sheet is near-full (little map visible) or closed.
+  /**
+   * Frame a drawer's focus (a lake / report put-in) into the part of the map nothing is sitting on —
+   * re-fitting whenever any of those things move. A lake with `bounds` gets zoom-to-fit (`fitBounds`);
+   * a bare point (a report's put-in) gets a fly at its zoom.
+   *
+   * ## What bounds the visible map (founder, 2026-08-26)
+   *
+   * > *"A selected body should be fully visible, horizontally and vertically, within the top, left and
+   * > right of the screen and the top of the Freeze-up Timeline card (when the timeline card is open)
+   * > or the top of the 'Show Imagery' button (when the timeline card is closed)."*
+   *
+   * - **Top** — the top of the *usable* screen, so `insets.top`. The map is full-bleed under the status
+   *   bar, and a lake tucked behind a notch is not visible. Nothing else is reserved up here any more:
+   *   `LakeSearch` scoots off the top edge whenever a body is selected, which is precisely the
+   *   condition under which anything gets framed at all. That reclaimed strip is the point of this pass.
+   * - **Left / right** — the screen edges. Nothing floats in the side margins.
+   * - **Bottom** — the higher of two occluders, because either can be the one in the way:
+   *   - the **sheet's** top edge, and
+   *   - the **dock's** top edge, `dockBottom + dockHeight`, which is a *measured* height and so covers
+   *     the founder's whole distinction for free — the expanded timeline card and the collapsed button
+   *     are the same expression at two heights, and `dockBottom` already moves with the sheet's detent,
+   *     which is why the button's top differs between the peek and the normal position.
+   *
+   *   Not simply the dock, because when the sheet climbs past the dock's clamp the dock slides *behind*
+   *   it and the sheet becomes the taller thing again; not simply the sheet, because the dock floats
+   *   above it by design. `Math.max` is the whole rule.
+   *
+   * `MARGIN` on every side is breathing room and nothing else — every real occluder is measured now,
+   * so the margin no longer has to double as a guess about one.
+   */
   useEffect(() => {
     const cam = cameraRef.current;
     if (!cam || !focus || drawerCoveredFraction <= 0 || drawerCoveredFraction >= 0.9) return;
-    const margin = 48;
+    const MARGIN = 24;
     const padding = {
-      top: margin,
-      right: margin,
-      left: margin,
-      bottom: margin + drawerCoveredFraction * windowHeight,
+      top: insets.top + MARGIN,
+      right: MARGIN,
+      left: MARGIN,
+      bottom: Math.max(sheetTop, dockHeight > 0 ? dockBottom + dockHeight : 0) + MARGIN,
     };
     if (focus.bounds) {
       cam.fitBounds(
@@ -474,7 +706,7 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
         duration: 600,
       });
     }
-  }, [focus, drawerCoveredFraction, windowHeight]);
+  }, [focus, drawerCoveredFraction, sheetTop, dockBottom, dockHeight, insets.top]);
 
   // Home/water framing on open via device geolocation (D12/D20): a fix inside the pilot region
   // recenters there; otherwise the default Vermont framing stands. Skipped on a deep-linked drawer,
@@ -573,8 +805,10 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
 
   return (
     // Wrapped so the return-to-region control can sit over the canvas. The map keeps the absolute
-    // fill it always had, so nothing about the layout changes.
-    <View style={StyleSheet.absoluteFill}>
+    // fill it always had, so nothing about the layout changes. `onLayout` measures this wrapper —
+    // it is the box the sheet's snap percentages and the dock's `bottom` are both relative to, so
+    // it is the only honest denominator for the camera-fit math above.
+    <View style={StyleSheet.absoluteFill} onLayout={onMapLayout}>
       <MapGL
         style={StyleSheet.absoluteFill}
         mapStyle={mapStyle}
@@ -755,7 +989,7 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
 
         {/* Put-in markers for the focused lake (Phase 4, decision #7; N6d/D143 added the middle
           rung): official = accurate cyan, osm = a mapped slipway, derived = approximate muted blue.
-          Three colours for three rungs of `PUTIN_SOURCES`. Distinct from the amber report-photo pins. */}
+          Three colors for three rungs of `PUTIN_SOURCES`. Distinct from the amber report-photo pins. */}
         <GeoJSONSource id="put-in-markers" data={putInsFC}>
           <Layer
             id="put-in-markers"
@@ -881,7 +1115,69 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
             }}
           />
         </GeoJSONSource>
+
+        {imageryOn ? (
+          <FreezeUpFrames
+            stop={freezeUpSelected}
+            companion={freezeUpRendered.companion?.frame ?? null}
+            season={freezeUpSeason}
+            body={polygonOf(timelineBody?.available ? timelineBody.body.polygon : null)}
+          />
+        ) : null}
       </MapGL>
+      {/* One control per lake (D146), on the map rather than in the sheet — the sheet is the thing
+          the map is behind, so a control for the map cannot live inside it. Toggle and timeline are
+          the same box now (founder, 2026-08-25); `ImageryDock` holds the reasoning.
+
+          `imageryArchiveUrl` gates the scrubber and nothing else. With no archive configured there is
+          nothing to scrub and nothing true to say about why, so the correct render is none at all —
+          the same call the bathymetry layer makes when its own URL is blank. */}
+      <ImageryDock
+        visible={Boolean(highlightWaterBodyId) && !hazardDraft}
+        imageryOn={imageryOn}
+        expanded={imageryExpanded}
+        // No archive ⇒ no scrubber ⇒ nothing for a heading to head, which is the same gate the
+        // children below are behind.
+        heading={env.imageryArchiveUrl ? 'Freeze-up timeline' : null}
+        // Web fills this slot from the aerial when no archived frame is on the lake. Mobile has no
+        // aerial layer to fall back to, so the honest answer there is nothing at all.
+        seasonLabel={
+          freezeUpSelected && freezeUpTimeline ? formatSeasonLabel(freezeUpTimeline.season) : null
+        }
+        bottom={dockBottom}
+        // Feeds the camera fit above: the lake is framed to end where this box starts.
+        onHeightChange={onDockHeightChange}
+        onPress={() => {
+          // Both halves of the founder's rule, in the order they have to happen: ask the sheet down,
+          // then turn imagery on. Pressing this while imagery is *already* on is the "bring the
+          // timeline back" case — nothing to switch, only the sheet is in the way.
+          if (!sheetIsClear) requestDrawerPeek();
+          setImageryOn(true);
+        }}
+        onClose={() => setImageryOn(false)}
+      >
+        {env.imageryArchiveUrl ? (
+          <FreezeUpScrubber
+            timeline={freezeUpTimeline}
+            index={freezeUpIndex}
+            band={freezeUpBand}
+            onBandChange={setFreezeUpBand}
+            selected={freezeUpStop}
+            onSelect={selectFreezeUpStop}
+            anchorAt={freezeUpAnchorAt}
+            loading={freezeUpLoading}
+            error={freezeUpError}
+            renderedCompanion={freezeUpRendered.companion?.frame ?? null}
+          />
+        ) : null}
+      </ImageryDock>
+
+      {/* The rail's right-hand end: going out on the ice, in one control (founder, 2026-08-26). It
+          lives here rather than in the `(map)` layout precisely so it paints *under* the sheet like
+          the imagery dock does — the pair of buttons it replaces sat above the sheet at a fixed
+          height and covered whatever the skater had opened. */}
+      <OnIceDock bottom={onIceBottom} onExpandedChange={setOnIceExpanded} />
+
       <ReturnToRegion
         visible={regionOffscreen}
         onReturn={() =>

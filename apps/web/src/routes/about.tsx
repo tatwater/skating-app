@@ -18,7 +18,7 @@ const links = [
 function AboutPage() {
   return (
     <div className="mx-auto flex max-w-prose flex-col gap-4 py-10">
-      <h1 className="font-semibold text-2xl text-foreground">Skating</h1>
+      <h1 className="font-semibold text-2xl text-foreground">Gli</h1>
       <p className="text-foreground-muted">
         A map-first, peer ice-reporting app for Nordic (wild) ice skating. Reports are named peers'
         observations at a specific time and place — never a guarantee that ice is safe. You alone

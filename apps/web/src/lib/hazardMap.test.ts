@@ -9,7 +9,7 @@ import { HAZARD_PALETTE } from './hazardMap';
  */
 describe('hazardColorExpression', () => {
   // Order matters: a passage marker is checked first, so `ridge_crossing` can never fall through to
-  // the danger colour — "⚠" on a way *across* a ridge would be actively wrong (research §4).
+  // the danger color — "⚠" on a way *across* a ridge would be actively wrong (research §4).
   it('resolves passage before healing before danger', () => {
     const expr = hazardColorExpression(HAZARD_PALETTE.white);
     expect(expr).toEqual([
@@ -23,7 +23,7 @@ describe('hazardColorExpression', () => {
   });
 
   // Danger / healing / passage mean three different things to someone standing on ice, so they must
-  // never resolve to the same colour in either theme (D34).
+  // never resolve to the same color in either theme (D34).
   it('keeps danger, healing and passage visually distinct in both themes', () => {
     for (const palette of [HAZARD_PALETTE.white, HAZARD_PALETTE.dark]) {
       const { danger, healing, passage } = palette;

@@ -1,24 +1,24 @@
 /**
- * Hue separation — "can these two colours be mistaken for each other?"
+ * Hue separation — "can these two colors be mistaken for each other?"
  *
- * Sibling to `contrast.ts` and the same kind of thing: colour math that exists so a *rule* about the
+ * Sibling to `contrast.ts` and the same kind of thing: color math that exists so a *rule* about the
  * palette can be held by a test rather than by a comment. Contrast holds legibility (D34); this holds
  * **distinguishability**, which is what [D82](../../../plans/01-decisions.md) needs when it says the
  * bathymetric contour ramp must not resemble the hazard palette. A blue-to-navy depth ramp a skater
- * could read as a severity scale would reintroduce, through colour, a claim we declined to make in
+ * could read as a severity scale would reintroduce, through color, a claim we declined to make in
  * words — and the only way that stays true through a token change is if something measures it.
  *
  * Deliberately hue-only. Lightness is free to vary (the contour ramp varies in nothing else), so
- * comparing full colours would answer a different and less useful question.
+ * comparing full colors would answer a different and less useful question.
  */
 
 import { hexToRgb } from './contrast';
 
 /**
- * The hue of a hex colour in degrees `[0, 360)`, or `undefined` when it has none.
+ * The hue of a hex color in degrees `[0, 360)`, or `undefined` when it has none.
  *
  * **Grey has no hue, and saying "0" for it would be a lie that reads as "red".** A neutral line
- * cannot be confused with the danger colour, but an achromatic colour reported as 0° sits exactly on
+ * cannot be confused with the danger color, but an achromatic color reported as 0° sits exactly on
  * top of red and would fail a separation check it should pass. So the absence is modelled rather than
  * flattened, and `hueDistance` is where that absence gets its meaning.
  */
@@ -40,10 +40,10 @@ export function hueOf(hex: string): number | undefined {
 export const MAX_HUE_DISTANCE = 180;
 
 /**
- * Shortest distance between two colours' hues, in degrees `[0, 180]`.
+ * Shortest distance between two colors' hues, in degrees `[0, 180]`.
  *
- * **An achromatic colour scores the maximum**, because the question this answers is whether one
- * colour can be mistaken for the other, and a grey cannot be mistaken for a red. Returning 0 there —
+ * **An achromatic color scores the maximum**, because the question this answers is whether one
+ * color can be mistaken for the other, and a grey cannot be mistaken for a red. Returning 0 there —
  * which is what treating "no hue" as "hue 0" does — would fail a palette that is in fact perfectly
  * safe, and it would fail it in a way whose cause is entirely invisible at the call site.
  */

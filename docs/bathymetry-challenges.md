@@ -378,7 +378,7 @@ Open questions before believing any of this:
    produced a conclusion that was exactly backwards.
 5. **The most legible version of a map is often the most misleading one.** A green→yellow→red depth
    ramp would be far easier to read than our single-hue one — and would read as a *danger scale*,
-   reintroducing through colour a claim we deliberately refuse to make in words. Legibility is not
+   reintroducing through color a claim we deliberately refuse to make in words. Legibility is not
    automatically the thing to optimise.
 
 ---

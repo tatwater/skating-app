@@ -19,10 +19,10 @@ import { Paragraph, Text, useTheme, XStack, YStack } from 'tamagui';
  * **The picture is not re-derived here.** Every coordinate comes from `windRoseChartModel` in
  * `@skating/core`, the same function the web app calls, so the two clients cannot drift into two
  * subtly different polar charts. This file is a renderer and nothing else: it maps the model onto
- * `react-native-svg` primitives and picks theme colours.
+ * `react-native-svg` primitives and picks theme colors.
  *
  * The encoding, and the reasons for it, are documented once on the core module — filled area is
- * frequency, arrow size is mean speed, and **nothing is coloured by value** because a warm ramp on
+ * frequency, arrow size is mean speed, and **nothing is colored by value** because a warm ramp on
  * wind speed would read as a danger scale (D145).
  */
 
@@ -62,7 +62,7 @@ export function WindExposure({ body }: { body: WindExposureBody }) {
   });
   const prose = summary?.sentences.join(' ') ?? '';
 
-  // Tamagui's shorthand colour props take theme tokens; `react-native-svg` needs raw values, so the
+  // Tamagui's shorthand color props take theme tokens; `react-native-svg` needs raw values, so the
   // SVG half reads them off the theme with fallbacks — the same pattern `TrustDisplay` uses.
   const gridColor = theme.borderColor?.val ?? '#c9d7e2';
   const areaColor = theme.primary?.val ?? '#0884ab';

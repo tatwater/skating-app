@@ -50,7 +50,7 @@ function ReAckPage() {
   return (
     <AuthCard title="One quick thing">
       <p className="text-foreground-muted text-sm">
-        We've updated our safety acknowledgment. Please review and accept it to keep using Skating —
+        We've updated our safety acknowledgment. Please review and accept it to keep using Gli —
         nothing else about your account changes.
       </p>
       <form onSubmit={onAccept} className="flex flex-col gap-3">

@@ -2,6 +2,7 @@ import { createRootRoute, HeadContent, Scripts } from '@tanstack/react-router';
 import type { ReactNode } from 'react';
 import { AppProviders } from '../components/AppProviders';
 import { AuthGate } from '../components/AuthGate';
+import '../lib/fontawesome';
 import appCss from '../styles/app.css?url';
 
 /**
@@ -14,7 +15,7 @@ export const Route = createRootRoute({
     meta: [
       { charSet: 'utf-8' },
       { name: 'viewport', content: 'width=device-width, initial-scale=1' },
-      { title: 'Skating' },
+      { title: 'Gli' },
     ],
     links: [{ rel: 'stylesheet', href: appCss }],
   }),

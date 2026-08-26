@@ -50,8 +50,8 @@ export default function ReAckScreen() {
         <YStack gap="$3" backgroundColor="$background">
           <H1 color="$foreground">One quick thing</H1>
           <Paragraph color="$foregroundMuted">
-            We’ve updated our safety acknowledgment. Please review and accept it to keep using
-            Skating — nothing else about your account changes.
+            We’ve updated our safety acknowledgment. Please review and accept it to keep using Gli —
+            nothing else about your account changes.
           </Paragraph>
 
           <RiskAckConsent checked={ack} onToggle={() => setAck((v) => !v)} />

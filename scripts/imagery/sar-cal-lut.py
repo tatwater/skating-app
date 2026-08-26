@@ -22,8 +22,16 @@ scales. It reads as a spatial pattern in the data — lakes on one side of the r
 lakes on the other — which is the kind of artifact that gets explained rather than debugged.
 
 Cross-platform, the same problem again: uncalibrated, S1A reads **+1.01 dB (VV)** and **+2.17 dB (VH)**
-above S1C on the same track. Calibration is what lets two satellites be one time series, which is the
-difference between a ~12-day and a ~6-day cadence over a lake.
+above S1C on the same track.
+
+⚠ **Calibration shrinks that gap and does not close it — measured 2026-08-25, do not assume otherwise.**
+Across all 503 radar passes of winter 2025-26 (53,486 same-lake comparisons ~24 h apart, same flight
+direction), the surviving S1A−S1C offset is **−0.52 dB VH ascending and +1.53 dB VH descending**. Pooled
+across directions it looks like −0.03 dB, which is two opposite biases cancelling and is the number most
+likely to mislead. The anomaly localises to S1C: S1A agrees with *itself* across flight directions to
++0.19 dB, S1C to only +1.18 dB. Against a ~2 dB ice signal that is not poolable, so `platform` and
+`orbitDirection` remain read-time filters and the ~6-day cadence is not yet available. See
+`docs/reading-ice-from-orbit.md`, *Calibration helps a great deal and is not enough*.
 
 ## Why a raster, rather than applying the gain directly
 

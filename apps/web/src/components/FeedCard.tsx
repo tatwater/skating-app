@@ -1,3 +1,5 @@
+import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
+import { faStar } from '@fortawesome/sharp-solid-svg-icons';
 import { buildFeedCardView, type FeedCardData } from '@skating/core';
 import { BlockedChip } from './SafetyControls';
 import { TrustAvatar } from './TrustDisplay';
@@ -35,8 +37,13 @@ export function FeedCard({
         <div className="min-w-0">
           <h3 className="flex items-center gap-1.5 truncate font-medium text-foreground">
             {card.isFavorite ? (
-              <span role="img" aria-label="Favorited" title="Favorited" className="text-primary">
-                ★
+              <span
+                role="img"
+                aria-label="Favorited"
+                title="Favorited"
+                className="flex shrink-0 text-primary"
+              >
+                <FontAwesomeIcon icon={faStar} aria-hidden className="size-3.5" />
               </span>
             ) : null}
             {/* The finest name the report carries — a bay when the lake has one (N2/D60). Composed

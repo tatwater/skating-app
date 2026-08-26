@@ -306,3 +306,46 @@ export function shouldAutoSelectOnIce(input: AutoSelectInput): boolean {
     input.onBareMapNow
   );
 }
+
+/** What the on-ice control is showing right now — see `onIceControlMode`. */
+export type OnIceControlMode =
+  /** Not on screen at all. */
+  | 'hidden'
+  /** The collapsed "On ice" button: an offer to start. */
+  | 'button'
+  /** The open panel: a session is running (alerting and/or recording) and must stay reachable. */
+  | 'panel';
+
+export interface OnIceControlInput {
+  /** The lake the skater's own GPS resolved to, or `null` off the ice. */
+  onIceWaterBodyId: string | null;
+  /** The lake whose sheet is open — the map's highlight — or `null` on the bare map. */
+  selectedWaterBodyId: string | null;
+  /** On-ice mode is armed. */
+  armed: boolean;
+  /** A recording is running/paused, or a just-finished one is still waiting for an answer. */
+  sessionActive: boolean;
+  /** A hazard is being captured; the adjust bar owns the bottom of the screen. */
+  capturingHazard: boolean;
+}
+
+/**
+ * What the on-ice control shows, given where the skater is and what's already running (founder,
+ * 2026-08-26 — the pass that folded "start on-ice mode" and "record my skate" into one action).
+ *
+ * **The offer is gated on the skater having selected the water they're standing on.** That's the exact
+ * mirror of `BackToLakeButton`, which appears only when they *haven't*: between them, the lake you're on
+ * always has exactly one affordance on screen, never two and never none. Before this, both buttons sat
+ * on the map permanently, on every route, over everything.
+ *
+ * ⚠ **A running session is never hidden by walking away from it.** Once armed or recording, the panel
+ * stays regardless of what's selected — a skater who panned to another lake still has to be able to
+ * reach Stop, and the alerts are still firing. Only a hazard capture takes the screen back, and only
+ * because that flow ends in a tap or two.
+ */
+export function onIceControlMode(input: OnIceControlInput): OnIceControlMode {
+  if (input.capturingHazard) return 'hidden';
+  if (input.armed || input.sessionActive) return 'panel';
+  if (input.onIceWaterBodyId === null) return 'hidden';
+  return input.selectedWaterBodyId === input.onIceWaterBodyId ? 'button' : 'hidden';
+}

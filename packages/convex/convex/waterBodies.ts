@@ -2173,6 +2173,11 @@ export const listNeedingElevation = internalQuery({
           // handed. Free here: the document is already read.
           ...(body.elevationM !== undefined ? { storedElevationM: body.elevationM } : {}),
           ...(body.elevationSource !== undefined ? { storedSource: body.elevationSource } : {}),
+          // **So a caller can scope to the bodies its question actually reaches.** The radar geocode
+          // is the only path by which a wrong elevation gets in front of a skater, and it only ever
+          // touches bodies above `SATELLITE_MIN_AREA_SQM` — 9,004 of 24,838. Free here: the document
+          // is already read, and the alternative is a second pass to look up areas one at a time.
+          ...(body.surfaceAreaSqM !== undefined ? { surfaceAreaSqM: body.surfaceAreaSqM } : {}),
         };
       });
     return {
@@ -2261,6 +2266,77 @@ export const importElevations = internalMutation({
       updated++;
     }
     return { updated, operatorHeld, implausible, missing };
+  },
+});
+
+/**
+ * Take back an elevation we no longer believe (N7-3 follow-up, 2026-08-26).
+ *
+ * > **Founder, 2026-08-26:** *"It sounds like we should build a path to fix elevations that appear
+ * > implausible so that existing bodies with weird elevations can be properly overwritten?"*
+ *
+ * ## ⚠ Why `importElevations` could not already do this
+ *
+ * Every write path here is *additive*: a pass proposes a number and the ladder decides whether it
+ * wins. That has no expression for **"the number we stored is not a water surface"**, because the
+ * pass that reaches that conclusion produces no number to propose — it produces a refusal, and a
+ * refusal was simply never sent. So a stored value outlives the rule that would now reject it, which
+ * is how an unnamed body near Albany still carries **−10.62 m**: the dredged navigation channel to
+ * Albany, which 3DEP mapped correctly and we read as a lake surface.
+ *
+ * Tightening a threshold therefore did nothing on its own. `isPlausibleElevationM` guards the door;
+ * nothing swept the room.
+ *
+ * ## What it will not do
+ *
+ * **A moderator's value is untouchable**, on exactly the reasoning `canOverwriteElevation` already
+ * encodes: a human who typed a surveyed number knows more than a DEM, and an automated sweep that
+ * quietly reverted them would make the override worthless the next time a pass ran.
+ *
+ * ⚠ **And it does not decide anything.** The judgement lives in the pass — see `demIdentify`, where
+ * a set of rasters is read for consensus and for whether that consensus is about water or about the
+ * ground under it. This clears what it is told to clear and counts what it did. **The caller owns
+ * the blast radius**: a service returning junk could refuse every point in the corpus, and the cap
+ * that stops 25,000 elevations being wiped on a bad afternoon belongs where the total is known, not
+ * in a mutation that only ever sees a batch of 200.
+ */
+export const retractElevations = internalMutation({
+  args: {
+    waterBodyIds: v.array(v.id('waterBodies')),
+    /** Why, for the audit trail — e.g. `below-surface` or `disputed`. Never shown to a skater. */
+    reason: v.string(),
+  },
+  handler: async (ctx, { waterBodyIds, reason }) => {
+    let retracted = 0;
+    let operatorHeld = 0;
+    let alreadyEmpty = 0;
+    let missing = 0;
+    for (const waterBodyId of waterBodyIds) {
+      const body = await ctx.db.get(waterBodyId);
+      if (!body) {
+        missing++;
+        continue;
+      }
+      if (!canOverwriteElevation(body.elevationSource)) {
+        operatorHeld++;
+        continue;
+      }
+      if (body.elevationM === undefined) {
+        alreadyEmpty++;
+        continue;
+      }
+      // The raster metadata goes with the reading. A resolution and a raster id describing a number
+      // that is no longer there would be provenance for nothing — and worse, would make the row look
+      // stamped to anything counting coverage by `elevationSource`.
+      await ctx.db.patch(waterBodyId, {
+        elevationM: undefined,
+        elevationSource: undefined,
+        elevationResolutionM: undefined,
+        elevationRasterId: undefined,
+      });
+      retracted++;
+    }
+    return { retracted, operatorHeld, alreadyEmpty, missing, reason };
   },
 });
 

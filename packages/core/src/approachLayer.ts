@@ -7,7 +7,7 @@
  * problem is that the way in is not obvious from the map.
  *
  * Shared by both clients for the same reason `hazardLayer` and `contourLayer` are: *what gets drawn*
- * is decided once and only the colours are per-app.
+ * is decided once and only the colors are per-app.
  *
  * ## The one rule this layer has
  *

@@ -21,6 +21,8 @@ export default defineConfig({
         'src/corroborateAlsc.ts', // read-only census joining the ALSC archive to the merge artifacts
         'src/load.ts',
         'src/loadElevation.ts', // reads the archive + writes; the rules are in elevationArchive/epqs
+        'src/probeIdentify.ts', // read-only census; argv + concurrency, rules are in demIdentify
+        'src/sweepElevations.ts', // paged read + fetch + write; the rules are in demIdentify
         'src/snapshotAlsc.ts', // serial fetch + file I/O; the parser is in alsc.ts and covered
         'src/snapshotCslap.ts', // one query + file I/O; the parser is in cslap.ts and covered
         'src/snapshotNhBands.ts', // paged query + file I/O; the rules are in nhBands.ts and covered

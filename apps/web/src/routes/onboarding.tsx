@@ -123,7 +123,7 @@ function OnboardingPage() {
             <p className="text-danger text-sm">Enter a valid date as YYYY-MM-DD.</p>
           ) : dobTouched && !oldEnough ? (
             <p className="text-danger text-sm">
-              You must be at least {MINIMUM_SIGNUP_AGE} to use Skating.
+              You must be at least {MINIMUM_SIGNUP_AGE} to use Gli.
             </p>
           ) : null}
         </div>

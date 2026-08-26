@@ -18,7 +18,8 @@
  *     SH  single  HH            DH  dual  HH + HV
  *
  * **VH is the one that matters.** Measured over Champlain across winter 2025-26 (see
- * `plans/PR2-HANDOFF-2.md` §4c), on lakes that actually freeze: **VH separates open water from
+ * `docs/reading-ice-from-orbit.md`, *Polarisation, and why VH is the useful one*), on lakes that
+ * actually freeze: **VH separates open water from
  * midwinter ice by ~2 dB and VV does not** (+1.88 / +2.28 dB against +0.79 / +0.63, replicated
  * independently on S1A and S1C). A single-pol `SV` acquisition carries no VH at all, so it cannot
  * answer the question the pilot exists to ask — which is why `DV` is the default and not merely a
