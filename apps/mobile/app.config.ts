@@ -95,6 +95,9 @@ const config: ExpoConfig = {
         project: process.env.SENTRY_PROJECT ?? 'PLACEHOLDER_PROJECT',
       },
     ],
+    // Gained a config plugin in 57.0.1, so it has to be registered here by hand — `expo install`
+    // can't write into a dynamic `app.config.ts` and errors out until this line exists.
+    'expo-status-bar',
   ],
   experiments: {
     typedRoutes: true,
