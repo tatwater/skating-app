@@ -4,6 +4,7 @@
  *   pnpm --filter @skating/lake-depth sweep-elevations              # dry; reports and writes nothing
  *   pnpm --filter @skating/lake-depth sweep-elevations --apply
  *   pnpm --filter @skating/lake-depth sweep-elevations --all        # re-check EVERY body, not just suspects
+ *   pnpm --filter @skating/lake-depth sweep-elevations --all --min-area=100000 --concurrency=8
  *
  * ## What it is for
  *
@@ -165,6 +166,8 @@ async function main(): Promise<void> {
   const minAreaSqM = Number(
     args.find((a) => a.startsWith('--min-area='))?.slice('--min-area='.length),
   );
+  const concurrency =
+    Number(args.find((a) => a.startsWith('--concurrency='))?.slice('--concurrency='.length)) || 8;
 
   const target = resolveDeployment();
   process.stderr.write(`[sweep] target deployment: ${target.label}\n`);
@@ -207,19 +210,46 @@ async function main(): Promise<void> {
       `${candidates.length.toLocaleString()} to re-check\n`,
   );
 
+  /**
+   * ⚠ **Concurrent, and the first cut was not — which cost three hours to notice.**
+   *
+   * A serial `for` loop over 9,011 points at ~4 s a request is ten hours, not the hour it was
+   * estimated at. The estimate came from `probe-identify`, which runs a worker pool and measured
+   * 2.36/s at concurrency 10 — a throughput figure quoted for a loop that had no workers in it. The
+   * request cost was right and the shape was wrong.
+   *
+   * Same pool as the probe, and deliberately modest: this is a public federal service with no
+   * documented cap, and the pass is not urgent enough to lean on it.
+   */
   const retract: Target[] = [];
-  const notes: string[] = [];
-  for (const [i, candidate] of candidates.entries()) {
-    const { retract: shouldRetract, note } = await verdictFor(candidate);
-    notes.push(
-      `${coordinateKey(candidate.lat, candidate.lng)}  stored ` +
-        `${candidate.storedElevationM?.toFixed(2)} → ${shouldRetract ? 'RETRACT' : 'keep'} · ${note}`,
-    );
-    if (shouldRetract) retract.push(candidate);
-    if ((i + 1) % 100 === 0) process.stderr.write(`[sweep] ${i + 1}/${candidates.length}\n`);
-  }
-
-  process.stderr.write(`\n[sweep] verdicts:\n  ${notes.slice(0, 40).join('\n  ')}\n`);
+  let done = 0;
+  let cursor = 0;
+  const worker = async (): Promise<void> => {
+    for (;;) {
+      const index = cursor++;
+      const candidate = candidates[index];
+      if (!candidate) return;
+      const { retract: shouldRetract, note } = await verdictFor(candidate);
+      done++;
+      // ⚠ **Findings stream; they are not held to the end.** The first cut accumulated every verdict
+      // in an array and printed the first forty after the last request returned — so an interrupted
+      // run taught you nothing at all, which is exactly what happened at 3,700 of 9,011. A pass this
+      // long has to be readable while it is running.
+      if (shouldRetract) {
+        retract.push(candidate);
+        process.stderr.write(
+          `[sweep] RETRACT ${coordinateKey(candidate.lat, candidate.lng)} stored ` +
+            `${candidate.storedElevationM?.toFixed(2)} · ${note}\n`,
+        );
+      }
+      if (done % 250 === 0) {
+        process.stderr.write(
+          `[sweep] ${done}/${candidates.length} · ${retract.length} to retract so far\n`,
+        );
+      }
+    }
+  };
+  await Promise.all(Array.from({ length: concurrency }, () => worker()));
   process.stderr.write(
     `\n[sweep] ${retract.length} of ${candidates.length} re-checked would be retracted ` +
       `(${stored.toLocaleString()} stored)\n`,
