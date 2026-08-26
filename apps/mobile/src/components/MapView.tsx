@@ -179,6 +179,11 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
   const pinHalo = PIN_HALO_COLOR[flavor];
   const router = useRouter();
   const cameraRef = useRef<CameraRef>(null);
+  /**
+   * Where the camera was at the last settled region change, so remounting the map on a theme
+   * change can put it back. The mobile twin of web's `lastViewRef` in `lib/mapCanvas`.
+   */
+  const lastViewRef = useRef<{ center: [number, number]; zoom: number } | null>(null);
   const {
     highlightWaterBodyId,
     focus,
@@ -791,10 +796,15 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
   }
 
   function onRegionDidChange(e: NativeSyntheticEvent<ViewStateChangeEvent>) {
-    setQueryArgs({
-      viewport: boundsToViewport(e.nativeEvent.bounds),
-      zoom: zoomForViewport(e.nativeEvent.zoom),
-    });
+    const viewport = boundsToViewport(e.nativeEvent.bounds);
+    // Remembered for the theme rebuild below, which remounts the map and would otherwise drop the
+    // skater back at Burlington. The *raw* zoom, not `zoomForViewport`'s — that one is quantized
+    // for the query's prominence filter, and restoring the camera to it would visibly jump.
+    lastViewRef.current = {
+      center: [(viewport.minLng + viewport.maxLng) / 2, (viewport.minLat + viewport.maxLat) / 2],
+      zoom: e.nativeEvent.zoom,
+    };
+    setQueryArgs({ viewport, zoom: zoomForViewport(e.nativeEvent.zoom) });
   }
 
   // Release build with no basemap URL configured — block loudly rather than render a doomed map.
@@ -824,6 +834,19 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
     // it is the only honest denominator for the camera-fit math above.
     <View style={StyleSheet.absoluteFill} onLayout={onMapLayout}>
       <MapGL
+        /**
+         * Rebuild the whole map when the theme changes, rather than handing the live map a new
+         * style object (D34 amendment). Web's `useMapCanvas` re-creates on `flavor` for the same
+         * reason, and on native it fixes a visible bug: a style *reload* re-adds these declarative
+         * `<Layer>` children in an order nothing guarantees, so `FreezeUpFrames` — the last child,
+         * which uses `beforeId` to sit *below* `sub-area-outline` — could re-register while that
+         * anchor didn't exist yet and end up under the water fill. The lake polygon then drew on
+         * top of the aerial imagery, and picking a new date kept feeding frames to the same wrong
+         * z-position. A remount re-adds every layer from scratch, in child order, once.
+         *
+         * `lastViewRef` is what keeps this from being a teleport back to Burlington.
+         */
+        key={flavor}
         style={StyleSheet.absoluteFill}
         mapStyle={mapStyle}
         attribution
@@ -849,7 +872,12 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
         {/* No `maxBounds`: with a whole-planet overview beneath the map there is a world worth
           looking at, so `ReturnToRegion` offers the way back instead of a fence forbidding the
           leaving (founder, 2026-08-05). */}
-        <Camera ref={cameraRef} initialViewState={{ center: INITIAL_CENTER, zoom: INITIAL_ZOOM }} />
+        <Camera
+          ref={cameraRef}
+          // Read at mount, which after a theme change is the remount above — so the skater keeps
+          // the view they were looking at. Null only on the genuine first mount.
+          initialViewState={lastViewRef.current ?? { center: INITIAL_CENTER, zoom: INITIAL_ZOOM }}
+        />
 
         <GeoJSONSource id="water" data={features} onPress={onWaterPress}>
           {/* The N6f access dim wraps each base opacity rather than replacing it, so the

@@ -85,6 +85,33 @@ export function insertBeforeLayerId(map: maplibregl.Map): string | undefined {
 }
 
 /**
+ * The freeze-up rasters' layer-id prefix, and **the reason it is declared here rather than beside
+ * the hook that adds them.**
+ *
+ * The aerial and the freeze-up frames are two rasters over one lake, so their order relative to each
+ * other is a fact about *this* file's stack — not something either hook can decide alone. Keeping the
+ * prefix here makes {@link aerialAnchorId} and `useFreezeUpFrame`'s `frameAnchorId` read the same
+ * string, so the two halves of the contract cannot drift apart. `useFreezeUpFrame` already imports
+ * `insertBeforeLayerId` from here, so this keeps the dependency one-directional.
+ */
+export const FREEZE_UP_LAYER_PREFIX = 'freeze-up-frame-raster';
+
+/**
+ * Where the summer aerial belongs: at the usual anchor, but **below any freeze-up frame**.
+ *
+ * ⚠ The aerial mounts when the camera crosses {@link IMAGERY_MIN_ZOOM}, which a skater does while a
+ * winter frame is on screen. Inserting it at the shared anchor put it above whatever was already
+ * there, so zooming in dropped the summer picture over the February one — indistinguishable, from
+ * the outside, from the winter frame failing to load.
+ */
+export function aerialAnchorId(map: maplibregl.Map): string | undefined {
+  const lowestFrame = (map.getStyle()?.layers ?? []).find((layer) =>
+    layer.id.startsWith(FREEZE_UP_LAYER_PREFIX),
+  );
+  return lowestFrame?.id ?? insertBeforeLayerId(map);
+}
+
+/**
  * The map zoom below which no photograph is fetched.
  *
  * **A usefulness floor, not a cost one** — the grid's level-stepping already keeps a wide view to a
@@ -394,7 +421,14 @@ export function useImageryReveal({
         // **Always a layer id, never `undefined`.** `undefined` does not mean "wherever is sensible";
         // it means the top of the style — above the roads, above the pins, above the hazard layers
         // the D81 toggle exists to keep visible.
-        insertBeforeLayerId(map),
+        //
+        // ⚠ **And under the freeze-up frames, never merely at the shared anchor.** Both this and
+        // `useFreezeUpFrame` insert before the same road layer, so the one that mounts *last* ends up
+        // on top — and this one mounts on crossing `IMAGERY_MIN_ZOOM`, which is a thing a skater does
+        // *while a winter frame is up*. Zooming in then dropped the summer aerial over the February
+        // picture and read as the winter frame vanishing. Mount order is not a z-order, so the order
+        // is stated here instead.
+        aerialAnchorId(map),
       );
     };
 

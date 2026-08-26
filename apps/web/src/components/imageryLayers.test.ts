@@ -3,6 +3,8 @@ import type maplibregl from 'maplibre-gl';
 import { describe, expect, it } from 'vitest';
 import { waterOutlineColor } from '../lib/waterMap';
 import {
+  aerialAnchorId,
+  FREEZE_UP_LAYER_PREFIX,
   IMAGERY_MIN_ZOOM,
   IMAGERY_REPLACED_LAYERS,
   IMAGERY_REPLACED_WHOLE_LAYERS,
@@ -155,5 +157,43 @@ describe('IMAGERY_MIN_ZOOM', () => {
   it('is a usefulness floor, above the zoom where a lake is a handful of pixels', () => {
     expect(IMAGERY_MIN_ZOOM).toBeGreaterThanOrEqual(11);
     expect(IMAGERY_MIN_ZOOM).toBeLessThanOrEqual(14);
+  });
+});
+
+describe('aerialAnchorId — the summer aerial goes UNDER the winter frame', () => {
+  /** Just enough style for an anchor lookup: ordered ids, bottom of the stack first. */
+  const styleOf = (ids: string[]) =>
+    ({ getStyle: () => ({ layers: ids.map((id) => ({ id })) }) }) as unknown as maplibregl.Map;
+
+  it('⚠ anchors under a mounted freeze-up frame rather than at the shared road anchor', () => {
+    // The bug this exists for: both rasters insert before the same road layer, so the one that mounts
+    // LAST lands on top. The aerial mounts on crossing IMAGERY_MIN_ZOOM — which a skater does while a
+    // winter frame is up — so zooming in dropped the summer photograph over the February one and read
+    // as the winter frame failing to load. Mount order is not a z-order.
+    const map = styleOf(['water', `${FREEZE_UP_LAYER_PREFIX}-0`, 'roads_minor', 'water-fill']);
+    expect(aerialAnchorId(map)).toBe(`${FREEZE_UP_LAYER_PREFIX}-0`);
+  });
+
+  it('takes the LOWEST frame layer, so it lands under every lane and not between two', () => {
+    const map = styleOf([
+      'water',
+      `${FREEZE_UP_LAYER_PREFIX}-companion-0`,
+      `${FREEZE_UP_LAYER_PREFIX}-1`,
+      'roads_minor',
+    ]);
+    expect(aerialAnchorId(map)).toBe(`${FREEZE_UP_LAYER_PREFIX}-companion-0`);
+  });
+
+  it('falls back to the road anchor when no frame is mounted', () => {
+    // The ordinary case — imagery on, no lake open — and it must keep the v2 behaviour exactly:
+    // the first road layer AFTER `water`, so the photograph is not buried under the basemap's own
+    // water fill.
+    expect(aerialAnchorId(styleOf(['roads_runway', 'water', 'roads_minor']))).toBe('roads_minor');
+  });
+
+  it('never returns undefined into a style that has layers, because undefined means the top', () => {
+    // `addLayer(l, undefined)` appends above the roads, the pins and the hazards the D81 toggle
+    // exists to keep visible. Anything is better than that.
+    expect(aerialAnchorId(styleOf(['water', 'roads_minor']))).toBeTruthy();
   });
 });

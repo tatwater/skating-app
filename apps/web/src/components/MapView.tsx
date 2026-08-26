@@ -1262,12 +1262,31 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
   // the contour layer is exactly that: its own effect adds it on drawer-open and would hand back a
   // visible isobath set over the photograph. Re-running whenever either changes is what makes the
   // suppression a *state* rather than an event.
+  // ⚠ **A freeze-up frame suppresses the cartography on its own account, not the aerial's.**
+  //
+  // `paintedIds` reports what the *summer* reveal has painted, and the winter frame used to inherit
+  // that set — which coupled it to a zoom threshold it has nothing to do with. Pan or zoom out past
+  // `IMAGERY_MIN_ZOOM` and the aerial unmounts, `onPaintedChange([])` fires, and the blue polygon and
+  // its isobaths come back **over a February satellite image that is still on the map.** Nothing
+  // recovered it either: `water-fill` is added without a `beforeId` so it sits at the top of the
+  // style, and no `moveLayer` the scrubber performs can lift a raster above it. Only a reload cleared
+  // it, which is exactly what was reported.
+  //
+  // So the frame's own body joins the set. Both rasters are content scoped to a lake (D146), and the
+  // cartography they replace is the same cartography.
+  const suppressedIds = useMemo(() => {
+    if (!freezeUpSelected || !highlightWaterBodyId) return paintedIds;
+    return paintedIds.includes(highlightWaterBodyId)
+      ? paintedIds
+      : [...paintedIds, highlightWaterBodyId];
+  }, [paintedIds, freezeUpSelected, highlightWaterBodyId]);
+
   // biome-ignore lint/correctness/useExhaustiveDependencies: contourBodyKey is a re-run trigger, not a read — the contour effect re-adds its layer on drawer-open and this has to re-hide it.
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !loaded) return;
-    setLayersHiddenForBodies(map, IMAGERY_REPLACED_LAYERS, paintedIds, baseFiltersRef.current);
-    setLayersVisible(map, IMAGERY_REPLACED_WHOLE_LAYERS, paintedIds.length === 0);
+    setLayersHiddenForBodies(map, IMAGERY_REPLACED_LAYERS, suppressedIds, baseFiltersRef.current);
+    setLayersVisible(map, IMAGERY_REPLACED_WHOLE_LAYERS, suppressedIds.length === 0);
     // The shoreline survives the reveal and changes job while it does — status color off the vector
     // map, edge-of-the-photograph on it. Set here rather than in the reveal hook because the layer
     // belongs to the map's own init, and the hook owns only what it added.
@@ -1275,10 +1294,10 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
       map.setPaintProperty(
         'water-outline',
         'line-color',
-        waterOutlineColor(flavor, paintedIds) as never,
+        waterOutlineColor(flavor, suppressedIds) as never,
       );
     }
-  }, [paintedIds, loaded, contourBodyKey, flavor, mapRef.current]);
+  }, [suppressedIds, loaded, contourBodyKey, flavor, mapRef.current]);
 
   useEffect(() => {
     const map = mapRef.current;

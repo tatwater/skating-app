@@ -50,7 +50,7 @@ import type maplibregl from 'maplibre-gl';
 import { useEffect, useRef } from 'react';
 import { env } from '../lib/env';
 import { FREEZE_UP_SEAM_LAYER_ID } from './useFreezeUpSeam';
-import { insertBeforeLayerId } from './useImageryReveal';
+import { FREEZE_UP_LAYER_PREFIX, insertBeforeLayerId } from './useImageryReveal';
 
 /**
  * Which half of a seam a mount is for.
@@ -62,7 +62,9 @@ import { insertBeforeLayerId } from './useImageryReveal';
 export type FreezeUpSlot = 'primary' | 'companion';
 
 export const FREEZE_UP_SOURCE_ID = 'freeze-up-frame';
-export const FREEZE_UP_LAYER_ID = 'freeze-up-frame-raster';
+// Re-exported from the module that owns the imagery stack, so the aerial's anchor and this one
+// cannot name different layers. See `FREEZE_UP_LAYER_PREFIX`.
+export const FREEZE_UP_LAYER_ID = FREEZE_UP_LAYER_PREFIX;
 
 /** Which of a slot's lanes. See the module note. */
 export type FreezeUpLane = number;

@@ -132,9 +132,15 @@ export function useFreezeUpTimeline({
 
     void (async () => {
       setLoading(true);
-      // Sequential rather than a flood: a lake can sit under dozens of passes, and firing them all at
-      // once buys nothing on an HTTP/2 connection while making the progressive upgrade jumpy.
-      for (const frame of candidates) {
+      // ⚠ **Newest first, and the order is the feature.** `candidateFramesFor` hands these back in
+      // index order, which is ascending by capture time — so a lake under thirty passes fetched
+      // November first and did not learn about *this week* until the last request landed. The
+      // scrubber auto-opens on the most recent landable stop, so the one manifest a skater is
+      // waiting for was reliably the one fetched last.
+      //
+      // Reversed, the first response is the one that decides what opens, and everything after it is
+      // history filling in behind. Patience is now only the price of looking further back.
+      for (const frame of [...candidates].reverse()) {
         if (cancelled) return;
         await loadFrameStats(baseUrl, season, frame.granuleId);
         if (cancelled) return;

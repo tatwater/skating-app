@@ -189,7 +189,18 @@ export function FreezeUpScrubber({
     [stops, onSelect],
   );
 
-  if (loading) {
+  // ⚠ **Only while there is genuinely nothing to draw, which is a much shorter window than `loading`.**
+  //
+  // `loading` covers two very different waits. The first is the *season index* — one fetch, and until
+  // it lands there are no stops and nothing honest to render. The second is the per-granule manifests,
+  // which is dozens of fetches and used to hide the whole control for all of them.
+  //
+  // But the stops exist before any manifest does: `buildBodyTimeline` falls back to footprint
+  // inference and says so in `basis`. So the track can be drawn, and scrubbed, while the measurements
+  // sharpen underneath it — and with the manifests now fetched newest-first, the pass it auto-opens on
+  // is the first one to become exact. Waiting for the whole season to arrive before showing anything
+  // was buying precision on dates the skater had not asked about yet.
+  if (loading && !timeline) {
     return (
       <div className="flex items-center gap-1.5 text-muted-foreground text-sm">
         <FontAwesomeIcon icon={faCircleNotch} aria-hidden className="size-3.5 animate-spin" />
@@ -534,6 +545,12 @@ function StopMark({
               // grey, which is the distinction doing real work now that neither one is colored by
               // selection — a skater has to be able to see, at a glance, which dates have a picture.
               'h-2.5 bg-muted-foreground/30',
+          // ⚠ **The skeleton, and it is a claim rather than a decoration.** A stop whose manifest has
+          // not arrived is standing on footprint inference (`basis`), so its date is real but its
+          // coverage and cloud are guesses — and it can still turn out to be blocked, or not to cover
+          // this lake at all, once the measurement lands. Pulsing says "this one is still settling",
+          // which is exactly true, and it stops the track from looking finished before it is.
+          stop.basis === 'measured' ? '' : 'animate-pulse',
         ].join(' ')}
       />
     </button>
