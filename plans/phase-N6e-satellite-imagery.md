@@ -1096,11 +1096,27 @@ holding the list, and repeated often enough that doing them one at a time pays t
 produced seven producer-side changes in one document. Expect PR 3 to add more; collect them and re-run
 once.
 
+> ✅ **The queue was drained by the 2026-08-26 re-cut, and it vindicated the batching argument.**
+> `winter-2025-26` is fully replaced — 4,381 `visual` + 4,381 `scl` + 503 `vh` + 4,884 manifests,
+> **every object fresh and zero stale**, audited by modification time rather than by presence. One
+> pass carried the SCL raster, the sub-area zone grids, thermal-noise removal, the local-`h_ref`
+> geocode correction and the four-colour SCL palette. Cut throughout by a single pinned image
+> (`ace80ca`), so every manifest's cost figures name identifiable code.
+>
+> ⚠ **The wall-clock estimate above is wrong for a re-cut, and the reason is worth keeping.** The
+> radar leg matched it (753 granules, 68 min), but optical ran ~22 granules/min against the ~45 the
+> estimate implies — SCL adds a warp, a palette pass and a second tiling to every job. Budget **~4h
+> for a full season re-cut**, not 1.7h. Cost held at roughly the predicted figure; only time moved.
+>
+> ⚠ **And `--recut` is mandatory.** `backfill.sh` reconciles on *presence* by default, so re-cutting
+> a season it already holds reports `4,485/4,485 landed`, spawns nothing, and exits 0 looking like a
+> success. See `515fe16`.
+
 | item | why it wants a pass we are already making |
 | --- | --- |
 | ~~**Per-body NDSI**~~ (green + swir16) | ✅ **BUILT 2026-08-25** as `zonal-ndsi.py` — a statistic, not a frame (two band warps, no tiling). ⚠ **It found a trap that would have ruined the nine-season series:** L2A reflectance is `DN·scale + offset`, and baseline **04.00 (2022-01-25)** introduced `BOA_ADD_OFFSET = -1000`. The scale cancels in a normalised index; the offset does not. Same synthetic snow pixel reads **NDSI 1.000 on the new baseline and 0.778 on the old** — either side of the 0.4 threshold the literature uses. A nine-season backfill spans that date, so a hardcoded offset puts a step change at January 2022 indistinguishable from a climate signal. Read per granule from STAC's `raster:bands`, skipped rather than guessed. |
 | ~~**The DEM-corrected radar geocode**~~ *(question 8)* | ✅ **BUILT AND CALIBRATED 2026-08-25.** See [what the calibration found](#the-radar-geocode-calibrated-2026-08-25) — it is no longer a queue item, and two of the things it turned up were not what the queue expected. |
-| **The SCL raster, now that it is on by default** *(founder, 2026-08-25)* | `EMIT_SCL_FRAME` now defaults on, so every *future* cut publishes a `scl` frame — but the **4,381 optical frames already in R2 predate it**, so the band selector has real data for `visual` and `vh` and an empty third option until a re-cut. Additive and blocks nothing: PR 3 should build the selector to render whatever bands the index actually offers rather than a hardcoded three. |
+| ~~**The SCL raster, now that it is on by default**~~ *(founder, 2026-08-25)* | ✅ **DONE 2026-08-26 by the season re-cut.** `scl` is now a real band at **4,381 frames, matching `visual` exactly** — the selector's third option has data. The queue's own argument is what paid off here: the item sat waiting for a pass rather than justifying one, and when the pass came it carried the sub-area grids, the de-noised radar, the geocode correction and the four-colour palette with it. PR 3 should still render whatever bands the index offers rather than a hardcoded three. |
 
 ~~⚠ **Measure the SCL raster on a dense granule before committing a season to it.**~~ ✅ **MEASURED
 2026-08-26, and the gate passes.** The worry was that a season-wide average of +24% job time hid a
