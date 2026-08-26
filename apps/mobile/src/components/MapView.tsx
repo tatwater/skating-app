@@ -21,10 +21,10 @@ import {
   approachLinePaint,
   type BBox,
   formatSeasonLabel,
-  framesToRender,
+  holdFrames,
   isRegionOffscreen,
+  NO_HELD_FRAMES,
   prefetchFrames,
-  type RenderedFrames,
   SUB_AREA_MIN_RENDER_ZOOM,
   withAccessDim,
 } from '@skating/core';
@@ -32,7 +32,15 @@ import { useQuery } from 'convex/react';
 import * as Location from 'expo-location';
 import { useRouter } from 'expo-router';
 import type { MultiPolygon, Polygon } from 'geojson';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useReducer,
+  useRef,
+  useState,
+} from 'react';
 import type { NativeSyntheticEvent } from 'react-native';
 import { StyleSheet, Text, useColorScheme, useWindowDimensions, View } from 'react-native';
 import { cacheBody } from '../lib/bodyCache';
@@ -367,20 +375,23 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
 
   // ⚠ **The picture never goes away while imagery is on** (founder, 2026-08-25). A blocked notch
   // holds the last good frame rather than clearing to bare cartography — dragging across a fortnight
-  // of cloud should feel like passing over dates, not like the feature switching itself off. Held in
-  // a ref because it is the *previous* render's answer, which is not derivable from this one.
-  const heldFramesRef = useRef<RenderedFrames | null>(null);
-  // `imageryOn` is passed for the same reason web passes it — see `framesToRender`. Mobile unmounts
+  // of cloud should feel like passing over dates, not like the feature switching itself off.
+  //
+  // A reducer for the reason web is: the hold is state with a history, and a ref written during
+  // render is not where that belongs. See {@link holdFrames}.
+  const [freezeUpRendered, foldFreezeUpFrames] = useReducer(holdFrames, NO_HELD_FRAMES);
+  // `imageryOn` goes through the fold for the same reason web passes it. Mobile unmounts
   // `FreezeUpFrames` with the toggle so the layers go anyway, but a hold that survives the toggle
   // would show the old picture for a frame on the way back in, and the scrubber's caption reads off
   // this too.
-  const freezeUpRendered = framesToRender(
-    freezeUpTimeline?.stops ?? [],
-    freezeUpStop,
-    heldFramesRef.current,
-    imageryOn,
-  );
-  heldFramesRef.current = freezeUpRendered;
+  useLayoutEffect(() => {
+    foldFreezeUpFrames({
+      bodyId: highlightWaterBodyId ?? null,
+      stops: freezeUpTimeline?.stops,
+      selected: freezeUpStop,
+      revealing: imageryOn,
+    });
+  }, [highlightWaterBodyId, freezeUpTimeline, freezeUpStop, imageryOn]);
   const freezeUpSelected = freezeUpRendered.primary;
 
   /**
@@ -399,13 +410,11 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
     [freezeUpTimeline],
   );
 
-  // ⚠ A held frame does not survive a **new lake**, though it does survive a new band on the same one
-  // — carried across lakes it would leave one lake's photograph under a scrubber captioned for
-  // another, which is the D84 failure the holding was written to avoid, one level up.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: dropping the hold *because* the lake changed is the point.
+  // Dropping the hold on a new lake used to live here and now lives in `holdFrames`, because an
+  // effect could only null the ref after the render that had already folded against it.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: resetting *because* the lake changed is the point.
   useEffect(() => {
-    heldFramesRef.current = null;
-    // ⚠ **And the anchor goes with it, so a new lake still opens on its most recent pass.** The
+    // ⚠ **The anchor goes with the lake, so a new one still opens on its most recent pass.** The
     // anchor exists to survive a *band* switch, where the skater is asking the same question of a
     // different instrument. Opening a lake is a different question — "a skater asking about a lake is
     // asking about now" — and carrying February across would answer the one they did not ask.

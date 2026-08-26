@@ -114,6 +114,22 @@ export interface IndexedFrame {
    * should treat coverage as unknown and say so, never as universal.
    */
   footprint?: Polygon | MultiPolygon;
+  /**
+   * Which side the radar looked from — `ascending` (east) or `descending` (west).
+   *
+   * ⚠ **In the index, and not only in the manifest, because the filter has to engage before a single
+   * manifest is fetched.** The per-granule manifest carries this too and is the authority, but it
+   * arrives one fetch at a time — so a timeline that could only read it there spent the first few
+   * hundred milliseconds unable to tell the two directions apart, and could open on a frame from the
+   * direction it was not showing. See {@link BodyTimelineOptions.orbitDirection} for what goes wrong
+   * when the two are mixed: it is not a geocoding failure but a comparability one, and it survives
+   * every correction the cutter applies.
+   *
+   * Two distinct strings across a season's frames, so it costs essentially nothing beside the
+   * `footprint` polygon already stored per frame. Absent on optical frames — the question does not
+   * apply — and on radar frames indexed before 2026-08-26, which fall back to the manifest.
+   */
+  orbitDirection?: string;
 }
 
 /** A season's frames, ascending by capture time — the axis a scrubber moves along. */
@@ -473,12 +489,34 @@ export interface FrameSubAreaStats extends Omit<FrameBodyStats, 'waterBodyId'> {
   subAreaName?: string;
 }
 
+/**
+ * Per-manifest lookup tables, built on first ask and dropped with the manifest.
+ *
+ * ⚠ **A linear scan here is not cheap at archive scale.** A granule's `bodies[]` runs to ~2,700 rows,
+ * and `buildBodyTimeline` asks twice per frame — once to count orbit directions, once to place the
+ * stop — across every loaded manifest, then does the whole fold again each time another manifest
+ * lands. That is millions of string comparisons to draw one scrubber. A `WeakMap` keyed on the
+ * manifest object costs nothing when it is collected and turns the repeat asks into hash lookups.
+ */
+const bodyIndexes = new WeakMap<object, Map<string, FrameBodyStats>>();
+
 /** One lake's row in a frame's statistics, or `undefined` if the pass did not reach it. */
 export function bodyStatsIn(
   frame: Pick<FrameStats, 'bodies'>,
   waterBodyId: string,
 ): FrameBodyStats | undefined {
-  return frame.bodies?.find((b) => b.waterBodyId === waterBodyId);
+  if (!frame.bodies) return undefined;
+  let index = bodyIndexes.get(frame);
+  if (!index) {
+    index = new Map();
+    // First wins, matching `find` — a manifest should never carry a body twice, and if one does the
+    // behaviour must not depend on whether this lookup happened to be memoised.
+    for (const body of frame.bodies) {
+      if (!index.has(body.waterBodyId)) index.set(body.waterBodyId, body);
+    }
+    bodyIndexes.set(frame, index);
+  }
+  return index.get(waterBodyId);
 }
 
 /**

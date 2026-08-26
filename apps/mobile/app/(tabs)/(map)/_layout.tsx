@@ -245,7 +245,12 @@ function MapLayoutInner() {
   return (
     <View style={{ flex: 1 }}>
       <MapView geolocateOnMount={geolocateOnMount} />
-      <LakeSearch />
+      {/* Search is a pan-around affordance: it scoots up off the top edge the moment a drawer opens
+          and drops back in when the skater backs out (founder, 2026-08-26 — the strip is too much of
+          the screen to spend on a single-body view). Driven by `isDetail`, not the sheet's snap
+          point: a peek is still a body being looked at, so a put-in placement must not bring the
+          search bar back down over the map the skater is tapping. */}
+      <LakeSearch hidden={isDetail} />
       <MapDrawer
         snapIndex={snapIndex}
         peekNonce={drawerPeekNonce}

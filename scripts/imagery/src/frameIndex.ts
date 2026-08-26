@@ -114,6 +114,12 @@ export function buildSeasonIndex(season: string, manifests: readonly FrameManife
         // Omitted rather than nulled when absent: `footprint?` means "we do not know", and a reader
         // must distinguish that from a frame that covers nothing.
         ...(m.footprint ? { footprint: m.footprint } : {}),
+        // ⚠ **The one piece of acquisition geometry that reaches the index.** A radar timeline has to
+        // hold one look direction or it interleaves two incomparable series, and the filter that does
+        // it lived on the manifest alone — which streams in per granule, leaving the client unable to
+        // separate them until the fetches landed. It is a two-valued string; the cost is nothing.
+        // Omitted for optical, where the question does not apply.
+        ...(m.orbitDirection ? { orbitDirection: m.orbitDirection } : {}),
       })),
     )
     .sort((a, b) => a.capturedAt.localeCompare(b.capturedAt));

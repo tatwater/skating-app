@@ -11,15 +11,15 @@ import {
   draftPlacementCount,
   formatAerialSeason,
   formatSeasonLabel,
-  framesToRender,
+  holdFrames,
   isDraftSubmittable,
   isRegionOffscreen,
   type LatLng,
+  NO_HELD_FRAMES,
   parseAerialScene,
   polygonShape,
   prefetchFrames,
   profileRevealEnabled,
-  type RenderedFrames,
   representativePoint,
   SUB_AREA_MIN_RENDER_ZOOM,
   shapeSignature,
@@ -32,7 +32,15 @@ import type { MultiPolygon, Polygon } from 'geojson';
 import type maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { useTheme } from 'next-themes';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useReducer,
+  useRef,
+  useState,
+} from 'react';
 import {
   CONTOUR_BEFORE_LAYER_ID,
   CONTOUR_FADE_MS,
@@ -1131,19 +1139,27 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
 
   // ⚠ **The picture never goes away while imagery is on** (founder, 2026-08-25). A blocked notch
   // holds the last good frame rather than clearing to bare cartography — dragging across a fortnight
-  // of cloud should feel like passing over dates, not like the feature switching itself off. Held in
-  // a ref because it is the *previous* render's answer, which is not derivable from this one.
-  const heldFramesRef = useRef<RenderedFrames | null>(null);
-  // ⚠ **`imageryOn` goes *through* the hold, not around it.** Wrapping this in an `if` would leave the
-  // ref holding the frame from before the toggle, and the next render feeds the ref back in — so the
+  // of cloud should feel like passing over dates, not like the feature switching itself off.
+  //
+  // A reducer because that is what the hold is: `framesToRender` takes the previous answer and
+  // returns the next one, so `previous` is state with a history rather than anything derivable from
+  // this render. See {@link holdFrames} for why a ref written during render was the wrong home for
+  // it, and why the dispatch below is a *layout* effect.
+  const [freezeUpRendered, foldFreezeUpFrames] = useReducer(holdFrames, NO_HELD_FRAMES);
+  // ⚠ **`imageryOn` goes *through* the hold, not around it.** Gating the dispatch on it would leave
+  // the hold carrying the frame from before the toggle, and the next fold reads that back — so the
   // picture would return the moment anything else re-rendered. Off has to be one of the inputs.
-  const freezeUpRendered = framesToRender(
-    freezeUpTimeline?.stops ?? [],
-    freezeUpStop,
-    heldFramesRef.current,
-    imageryOn,
-  );
-  heldFramesRef.current = freezeUpRendered;
+  //
+  // `freezeUpTimeline?.stops` is passed straight through: `undefined` has a stable identity where a
+  // `?? []` fallback would allocate a fresh array and fire this on every render.
+  useLayoutEffect(() => {
+    foldFreezeUpFrames({
+      bodyId: highlightWaterBodyId ?? null,
+      stops: freezeUpTimeline?.stops,
+      selected: freezeUpStop,
+      revealing: imageryOn,
+    });
+  }, [highlightWaterBodyId, freezeUpTimeline, freezeUpStop, imageryOn]);
   const freezeUpSelected = freezeUpRendered.primary;
 
   /**
@@ -1162,15 +1178,12 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
     [freezeUpTimeline],
   );
 
-  // ⚠ A held frame does not survive a **new lake**, though it does survive a new band on the same one.
-  // The hold exists so a clouded date does not blank the water; carried across lakes it would instead
-  // leave one lake's photograph on screen under a scrubber captioned for another — the D84 failure the
-  // holding was written to avoid, one level up. A band swap on the same lake keeps it, because there
-  // the picture and the caption still name the same water and only the flash is at stake.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: dropping the hold *because* the lake changed is the point.
+  // Dropping the hold on a new lake used to live here, and now lives in `holdFrames` — an effect
+  // could only null the ref *after* the render that had already folded against it, so a new lake's
+  // first paint could still carry the old lake's picture. The anchor has no such race and stays.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: resetting *because* the lake changed is the point.
   useEffect(() => {
-    heldFramesRef.current = null;
-    // ⚠ **And the anchor goes with it, so a new lake still opens on its most recent pass.** The
+    // ⚠ **The anchor goes with the lake, so a new one still opens on its most recent pass.** The
     // anchor exists to survive a *band* switch, where the skater is asking the same question of a
     // different instrument. Opening a lake is a different question — "a skater asking about a lake is
     // asking about now" — and carrying February across would answer the one they did not ask.

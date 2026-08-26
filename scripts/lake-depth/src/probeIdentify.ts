@@ -90,6 +90,11 @@ async function main(): Promise<void> {
       }
       latencyTotalMs += Date.now() - began;
       done++;
+      // ⚠ **Here, before any of the `continue`s below.** At the bottom of the loop this line sat
+      // after the early exits for "unreadable" and "agreed", so it only ever printed on a refusal —
+      // and a healthy run has none, which is precisely the run where a multi-hour `--all` pass looks
+      // hung. Progress has to be reported on progress, not on findings.
+      if (done % 50 === 0) process.stderr.write(`[probe] ${done}/${targets.length}\n`);
 
       if (readings.length === 0) {
         tally.unreadable++;
@@ -123,7 +128,6 @@ async function main(): Promise<void> {
               .join(' · '),
         );
       }
-      if (done % 50 === 0) process.stderr.write(`[probe] ${done}/${targets.length}\n`);
     }
   };
   await Promise.all(Array.from({ length: concurrency }, () => worker()));

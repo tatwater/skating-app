@@ -49,7 +49,7 @@ import {
   type TimelineStop,
 } from '@skating/core';
 import type { MultiPolygon, Polygon } from 'geojson';
-import { useRef } from 'react';
+import { useMemo, useState } from 'react';
 import { env } from '../lib/env';
 
 export const FREEZE_UP_SOURCE_ID = 'freeze-up-frame';
@@ -138,28 +138,49 @@ export function FreezeUpFrames({
   // as its tiles arrive, and until then the old one is what is on screen. There is no moment with
   // neither.
   //
-  // A ref rather than state: this must not cause a render of its own, and it is read during the very
-  // render that replaces it.
-  //
   // ⚠ **The pair moves only when the key genuinely changes**, which is not the same as "on every
   // render". Holding a bare `previous` and rewriting it each pass looked equivalent and was not: this
   // component re-renders for reasons that have nothing to do with the scrubber — the map's viewport
   // query, a hazard arriving — and each of those would have retired the held frame, quite possibly
   // before its replacement had a single tile. The outgoing frame has to be retired by *a new date*,
   // not by the clock.
-  const framesRef = useRef<{ current: IndexedFrame | null; previous: IndexedFrame | null }>({
-    current: null,
-    previous: null,
-  });
-  if (stop && framesRef.current.current?.key !== stop.frame.key) {
-    framesRef.current = { current: stop.frame, previous: framesRef.current.current };
+  //
+  // ## ⚠ Adjusted during render, and here that is the correct tool rather than a shortcut
+  //
+  // React's documented pattern for "state derived from a change in props" — call the setter during
+  // render, guarded so it cannot loop, and React re-runs this component immediately, discarding the
+  // first pass before it reaches children or the host. State rather than a ref, so a render React
+  // abandons cannot leave the pair advanced to a frame that was never shown.
+  //
+  // **A layout effect would be wrong here, unlike in `MapView`.** The new pass arrives as a prop, so
+  // the render that first sees it would commit with `previous` still empty — unmounting the outgoing
+  // `<Frame>` — and the effect would then re-mount it a commit later as a different element, which
+  // re-fetches its tiles. That is precisely the flicker this hold exists to remove, reintroduced by
+  // the fix. `MapView` can use an effect because *its* intermediate state is "still showing the old
+  // picture", which is what the hold wants anyway; here the intermediate is "showing nothing".
+  const [frames, setFrames] = useState<{
+    current: IndexedFrame | null;
+    previous: IndexedFrame | null;
+  }>({ current: null, previous: null });
+  if (stop && frames.current?.key !== stop.frame.key) {
+    setFrames({ current: stop.frame, previous: frames.current });
   }
-  const previous = framesRef.current.previous;
+  const previous = frames.previous;
+
+  // ⚠ **Memoised, and on this platform that is not a micro-optimisation.** `seamFeature` walks the
+  // granule footprint at 25 m spacing — a Sentinel edge is 110–250 km, so it is tens of thousands of
+  // point-in-polygon tests against a shoreline that can carry thousands of vertices — and it runs on
+  // the JS thread, the same one the pan gesture's callbacks are on (`runOnJS(true)`). Recomputed per
+  // render it fired on every viewport query and every arriving hazard, i.e. exactly the renders the
+  // note above says have nothing to do with the scrubber. It also handed `<GeoJSONSource>` a fresh
+  // object each time, so the native source was re-set on every one of them.
+  const footprint = companion ? (stop?.frame.footprint ?? null) : null;
+  const seam = useMemo(
+    () => (footprint && body ? seamFeature(footprint, body) : null),
+    [footprint, body],
+  );
 
   if (!stop || !season || !env.imageryArchiveUrl) return null;
-
-  const seam =
-    companion && stop.frame.footprint && body ? seamFeature(stop.frame.footprint, body) : null;
 
   return (
     <>

@@ -46,7 +46,7 @@
  * split `weatherConditions` already draws between a bucket and its label.
  */
 
-import { pointInPolygon } from './geometry';
+import { type LatLng, pointInPolygon } from './geometry';
 import {
   bodyStatsIn,
   type FrameBodyStats,
@@ -278,6 +278,12 @@ function attachSeams(stops: TimelineStop[], minCoverage: number): void {
 
     for (const other of stops) {
       if (other === stop || other.frame.granuleId === stop.frame.granuleId) continue;
+      // ⚠ **A clouded frame is not a half of a lake.** A stop blocked on *coverage* is exactly the
+      // complementary sliver this pairing exists for, so those stay eligible — but a stop blocked on
+      // cloud has nothing to contribute, and pairing one in could take a coverage-blocked stop over
+      // {@link MIN_BODY_COVERAGE} and land the thumb on a view that is half white rectangle, with
+      // the coverage caveat deleted and only the primary's clear fraction left in the caption.
+      if (other.blockedBy === 'cloud') continue;
       const theirs = other.stats?.coveragePct ?? null;
       if (theirs === null) continue;
       // A companion that adds nothing is not a seam, it is a second copy of the same view.
@@ -323,9 +329,29 @@ function emptyTimeline(season: string): BodyTimeline {
 }
 
 /**
+ * Which side the radar looked from, from whichever source knows yet.
+ *
+ * ⚠ **The manifest wins, but the index is what makes the filter work at all.** Both carry the field
+ * and they cannot disagree — the index is folded from the manifests — so the order is a statement
+ * about *authority* rather than about conflict: the manifest is the cut's own record, and a
+ * re-cut granule updates it without the index necessarily having been rebuilt.
+ *
+ * The index copy exists because manifests stream in one granule at a time. Reading only the manifest
+ * left every not-yet-fetched frame indistinguishable from an optical one, so the filter did not
+ * engage, and the auto-select could open the scrubber on a pass from the direction it was not
+ * showing — then drop it when the fetch landed. A flash of exactly the jump the filter prevents.
+ */
+function orbitDirectionOf(
+  frame: IndexedFrame,
+  frameStats: FrameStats | undefined,
+): string | undefined {
+  return frameStats?.orbitDirection ?? frame.orbitDirection;
+}
+
+/**
  * Which orbit direction a radar timeline should be built from, and what else is on offer.
  *
- * Only radar manifests carry `orbitDirection`, so an optical season yields `null` here and the filter
+ * Only radar frames carry `orbitDirection`, so an optical season yields `null` here and the filter
  * never engages — no mission check needed, the data shape decides again.
  *
  * The default is whichever direction passed this lake most often, because that is the longest
@@ -336,18 +362,30 @@ function resolveOrbit(
   stats: FrameStatsLookup | undefined,
   requested: string | undefined,
   waterBodyId: string | undefined,
+  coord: LatLng,
 ): { showing: string; available: string[] } | null {
-  if (!stats) return null;
   const counts = new Map<string, number>();
   for (const frame of frames) {
-    const frameStats = stats(frame.granuleId);
-    if (!frameStats) continue;
-    // ⚠ **Only the passes that actually reached this lake vote.** A manifest is loaded per *granule*,
-    // and plenty of them cover the region without cutting this body — counting those would let
-    // `available` advertise a direction with no stops behind it (a switch that lands on an empty
-    // scrubber) and could make `showing` default to the direction this lake was passed from least.
-    if (waterBodyId !== undefined && !bodyStatsIn(frameStats, waterBodyId)) continue;
-    const direction = frameStats.orbitDirection;
+    const frameStats = stats?.(frame.granuleId);
+
+    // ⚠ **Only the passes that actually reached this lake vote**, or `available` advertises a
+    // direction with no stops behind it (a switch that lands on an empty scrubber) and `showing` can
+    // default to the direction this lake was passed from least. A manifest is loaded per *granule*
+    // and plenty of them cover the region without cutting this body.
+    //
+    // Which evidence answers that depends only on whether the manifest has landed yet — the same two
+    // tiers the coverage basis below uses, for the same reason. The cut is the authority on what it
+    // cut; until it arrives, the acquisition footprint is the honest superset.
+    if (frameStats) {
+      if (waterBodyId !== undefined && !bodyStatsIn(frameStats, waterBodyId)) continue;
+    } else if (frame.footprint) {
+      if (!pointInPolygon(coord, frame.footprint)) continue;
+    } else {
+      // No manifest and no footprint: nothing connects this frame to this lake, so it does not vote.
+      continue;
+    }
+
+    const direction = orbitDirectionOf(frame, frameStats);
     if (direction) counts.set(direction, (counts.get(direction) ?? 0) + 1);
   }
   if (counts.size === 0) return null;
@@ -446,7 +484,7 @@ export function buildBodyTimeline(
   const minCoverage = options.minCoverage ?? MIN_BODY_COVERAGE;
 
   const banded = index.frames.filter((frame) => frame.band === band);
-  const orbit = resolveOrbit(banded, options.stats, options.orbitDirection, body._id);
+  const orbit = resolveOrbit(banded, options.stats, options.orbitDirection, body._id, coord);
 
   const stops: TimelineStop[] = [];
   let notCovered = 0;
@@ -459,7 +497,12 @@ export function buildBodyTimeline(
     // ⚠ Held to one orbit direction, or the lake visibly moves between dates — see
     // {@link BodyTimelineOptions.orbitDirection}. Not counted in `notCovered`: this pass did reach
     // the lake, it is just not comparable to the ones on either side of it.
-    if (orbit && frameStats?.orbitDirection && frameStats.orbitDirection !== orbit.showing) {
+    //
+    // Read through {@link orbitDirectionOf}, so a frame whose manifest has not arrived is still
+    // filtered. Reading `frameStats?.orbitDirection` alone let every unfetched radar frame through as
+    // though it were optical.
+    const frameOrbit = orbitDirectionOf(frame, frameStats);
+    if (orbit && frameOrbit && frameOrbit !== orbit.showing) {
       continue;
     }
 
@@ -590,6 +633,72 @@ export function framesToRender(
   const companion = stop.landable ? (stop.companion ?? held.companion) : held.companion;
 
   return { primary, companion };
+}
+
+/** Stable identity for "no timeline yet", so a fold keyed on the stops does not fire every render. */
+const NO_STOPS: readonly TimelineStop[] = Object.freeze([]);
+
+/** The hold, plus the lake it is a hold *for* — see {@link holdFrames}. */
+export interface HeldFrames extends RenderedFrames {
+  /** `null` before any lake is open. A change here drops the hold, in the fold rather than beside it. */
+  bodyId: string | null;
+}
+
+export const NO_HELD_FRAMES: HeldFrames = Object.freeze({
+  primary: null,
+  companion: null,
+  bodyId: null,
+});
+
+/** Everything the fold needs to know about this render. */
+export interface HoldFramesAction {
+  bodyId: string | null;
+  /** Pass the timeline's own array — `undefined` is a *stable* identity where `?? []` is not. */
+  stops: readonly TimelineStop[] | undefined;
+  selected: number | null;
+  revealing: boolean;
+}
+
+/**
+ * {@link framesToRender} as a reducer — which is what it has always been.
+ *
+ * ## ⚠ Why this is `useReducer` and not a ref written during render
+ *
+ * The signature gives it away: it takes `previous` and returns the next `previous`. That is state
+ * with a history, not derived state, and it was held in a ref that the render body wrote to. React
+ * may **start a render and abandon it** — a concurrent render pre-empted by a higher-priority
+ * update — and a ref written during that render keeps the value anyway. So the hold could be seeded
+ * from a stop the skater scrubbed through and never saw.
+ *
+ * (It survived this long because the fold is *idempotent*: `f(f(s, a), a) === f(s, a)` on every
+ * branch, which is exactly what makes StrictMode's double render harmless. The abandoned-render case
+ * is the one idempotency does not cover.)
+ *
+ * As a reducer, `previous` is whatever React last **committed**, so an abandoned render cannot move
+ * it. Dispatch from a **layout** effect, not a plain one: React flushes the resulting re-render
+ * before the browser paints, so there is no frame where the pre-update hold is visible. That matters
+ * for exactly one input — `revealing` going false, where a plain effect would paint the picture once
+ * more after the skater switched imagery off.
+ *
+ * ## The lake check moved in here
+ *
+ * ⚠ **A hold does not survive a new lake**, though it does survive a new band on the same one:
+ * carried across lakes it leaves one lake's photograph under a scrubber captioned for another, which
+ * is the D84 failure the holding exists to avoid, one level up. That used to be an effect nulling the
+ * ref, whose ordering against the render-time fold was implicit — and it lost the race, so a new
+ * lake's first paint could still carry the old lake's picture. Folding `bodyId` in makes it a
+ * property of the reducer instead, settled before anything renders.
+ */
+export function holdFrames(previous: HeldFrames, next: HoldFramesAction): HeldFrames {
+  const base = next.bodyId === previous.bodyId ? previous : NO_HELD_FRAMES;
+  const result = framesToRender(next.stops ?? NO_STOPS, next.selected, base, next.revealing);
+  // Identity-stable when nothing moved, so React bails out of the re-render rather than looping the
+  // layout effect against a fresh object every time.
+  return result.primary === base.primary &&
+    result.companion === base.companion &&
+    next.bodyId === previous.bodyId
+    ? previous
+    : { ...result, bodyId: next.bodyId };
 }
 
 /**

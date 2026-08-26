@@ -6,8 +6,11 @@ import {
   candidateFramesFor,
   FRAME_MAX_CLOUD_PCT,
   framesToRender,
+  type HoldFramesAction,
+  holdFrames,
   MIN_BODY_CLEAR_FRACTION,
   MIN_BODY_COVERAGE,
+  NO_HELD_FRAMES,
   nearestLandableStop,
   nearestLandableStopToDate,
   SEAM_MAX_GAP_DAYS,
@@ -717,6 +720,75 @@ describe('buildBodyTimeline — radar holds one orbit direction', () => {
     expect(timeline.notCovered).toBe(0);
   });
 
+  /** A radar frame carrying its direction in the *index*, as the season index now does. */
+  const indexedRadar = (
+    granuleId: string,
+    orbitDirection: string,
+    over: Partial<IndexedFrame> = {},
+  ) => frame({ granuleId, band: 'vh', cloudCoverPct: null, orbitDirection, ...over });
+
+  it('⚠ filters before a single manifest has landed, off the index copy', () => {
+    // Manifests stream in one granule at a time. Reading `orbitDirection` only from them left every
+    // not-yet-fetched radar frame indistinguishable from an optical one, so the filter did not engage
+    // — and the auto-select, which takes the most recent landable stop, could open the scrubber on a
+    // pass from the direction it was not showing, then drop it when the fetch landed and jump the
+    // thumb. A flash of exactly the island jump the filter exists to prevent, at the moment a skater
+    // first looks. `stats` is omitted entirely here: nothing has been fetched.
+    const timeline = buildBodyTimeline(
+      season([
+        indexedRadar('a', 'descending'),
+        indexedRadar('b', 'ascending'),
+        indexedRadar('c', 'descending'),
+      ]),
+      CHAMPLAIN,
+      { band: 'vh' },
+    );
+
+    expect(timeline.orbit).toEqual({
+      showing: 'descending',
+      available: ['ascending', 'descending'],
+    });
+    expect(timeline.stops.map((s) => s.frame.granuleId)).toEqual(['a', 'c']);
+  });
+
+  it('⚠ a pass that never reached this lake gets no vote, manifest or not', () => {
+    // Otherwise `available` advertises a direction with no stops behind it — a switch that lands on an
+    // empty scrubber — and `showing` can default to the direction this lake was passed from least.
+    // Two descending passes here against one ascending, but both descending are over Moosehead. Until
+    // the manifests arrive the acquisition footprint is what answers "did this reach us".
+    const timeline = buildBodyTimeline(
+      season([
+        indexedRadar('champlain-asc', 'ascending'),
+        indexedRadar('moosehead-1', 'descending', { footprint: OVER_MOOSEHEAD }),
+        indexedRadar('moosehead-2', 'descending', { footprint: OVER_MOOSEHEAD }),
+      ]),
+      CHAMPLAIN,
+      { band: 'vh' },
+    );
+
+    expect(timeline.orbit).toEqual({ showing: 'ascending', available: ['ascending'] });
+  });
+
+  it('takes the manifest over the index, because the cut is its own record', () => {
+    // They are folded from the same source and cannot disagree in the archive; the order is a
+    // statement about authority, for the case where a granule is re-cut and the index has not been
+    // rebuilt behind it.
+    const timeline = buildBodyTimeline(
+      season([indexedRadar('a', 'ascending'), indexedRadar('b', 'ascending')]),
+      CHAMPLAIN,
+      {
+        band: 'vh',
+        stats: radarStats([
+          { id: 'a', direction: 'descending' },
+          { id: 'b', direction: 'descending' },
+        ]),
+      },
+    );
+
+    expect(timeline.orbit?.showing).toBe('descending');
+    expect(timeline.stops.map((s) => s.frame.granuleId)).toEqual(['a', 'b']);
+  });
+
   it('leaves an optical timeline alone, with no mission check needed', () => {
     // Only radar manifests carry `orbitDirection`, so the filter never engages on optical — the data
     // shape decides, exactly as it does for the cloud gate.
@@ -819,6 +891,80 @@ describe('framesToRender — the picture never goes away', () => {
     const stops = [good('a')];
     const off = framesToRender(stops, 0, framesToRender(stops, 0, null), false);
     expect(framesToRender(stops, null, off).primary).toBeNull();
+  });
+});
+
+describe('holdFrames — the fold, as React actually drives it', () => {
+  const good = (id: string): TimelineStop => ({
+    frame: frame({ granuleId: id }),
+    landable: true,
+    basis: 'measured',
+  });
+  const clouded: TimelineStop = {
+    frame: frame({ granuleId: 'clouded' }),
+    landable: false,
+    blockedBy: 'cloud',
+    basis: 'measured',
+  };
+  const stops = [good('a'), clouded, good('c')];
+  const on = (over: Partial<HoldFramesAction> = {}): HoldFramesAction => ({
+    bodyId: 'champlain',
+    stops,
+    selected: 0,
+    revealing: true,
+    ...over,
+  });
+
+  it('⚠ is idempotent, which is what makes a double invocation harmless', () => {
+    // StrictMode renders twice and React may call a reducer twice for one dispatch. `f(f(s,a),a)` has
+    // to equal `f(s,a)` on every branch or the hold would advance a step per invocation — and it is
+    // this property, not the ref, that kept the old render-time version from misbehaving in dev.
+    for (const action of [
+      on(),
+      on({ selected: 1 }),
+      on({ selected: null }),
+      on({ revealing: false }),
+      on({ stops: undefined }),
+    ]) {
+      const once = holdFrames(NO_HELD_FRAMES, action);
+      expect(holdFrames(once, action)).toEqual(once);
+    }
+  });
+
+  it('returns the identical object when nothing moved, so React bails out of the re-render', () => {
+    // The dispatch below it lives in a layout effect. A fresh object every time would commit a render
+    // per fold and, worse, invite a loop.
+    const first = holdFrames(NO_HELD_FRAMES, on());
+    expect(holdFrames(first, on())).toBe(first);
+    expect(holdFrames(first, on({ selected: 1 }))).toBe(first);
+  });
+
+  it('⚠ drops the hold on a new lake, in the fold rather than beside it', () => {
+    // This used to be an effect nulling a ref, which could only run *after* the render that had
+    // already folded against it — so a new lake's first paint could still carry the old lake's
+    // photograph under a scrubber captioned for the new one. That is the D84 failure the hold exists
+    // to avoid, arriving through the mechanism meant to prevent it.
+    const champlain = holdFrames(NO_HELD_FRAMES, on({ selected: 0 }));
+    expect(champlain.primary?.frame.granuleId).toBe('a');
+
+    // The stop index has not been reset yet — its own effect has not run — and it points at a clouded
+    // stop, which is exactly the case that would otherwise hold.
+    const morey = holdFrames(champlain, on({ bodyId: 'morey', selected: 1 }));
+    expect(morey.primary).toBeNull();
+    expect(morey.bodyId).toBe('morey');
+  });
+
+  it('keeps the hold across a band switch on the same lake', () => {
+    // A band swap asks the same question of a different instrument, so the picture and the caption
+    // still name the same water and only the flash is at stake.
+    const first = holdFrames(NO_HELD_FRAMES, on({ selected: 0 }));
+    expect(holdFrames(first, on({ selected: 1 })).primary?.frame.granuleId).toBe('a');
+  });
+
+  it('treats an absent stop list as empty, so the caller can pass a stable `undefined`', () => {
+    // `freezeUpTimeline?.stops` goes straight into the action. A `?? []` at the call site would
+    // allocate a fresh array and fire the layout effect on every render.
+    expect(holdFrames(NO_HELD_FRAMES, on({ stops: undefined })).primary).toBeNull();
   });
 });
 

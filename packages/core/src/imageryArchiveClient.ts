@@ -69,12 +69,26 @@ async function loadJson<T>(url: string): Promise<T | null> {
   const existing = inFlight.get(url);
   if (existing) return (await existing) as T | null;
 
+  /**
+   * ⚠ **"Not there" is cacheable; "could not ask" is not.**
+   *
+   * A `null` used to be remembered forever whatever produced it, so one dropped request for
+   * `index/latest.json` — a tunnel, a sleeping laptop, a 503 — disabled the scrubber on *every* lake
+   * for the rest of the session and rendered *"The freeze-up archive could not be reached"* with no
+   * path back but a reload. A 404 genuinely is permanent within a session (the archive's objects are
+   * immutable), and plenty of frames predate the per-body pass, so that one stays cached.
+   */
+  let definitive = false;
+
   const request = (async (): Promise<T | null> => {
     try {
       const response = await fetch(url);
-      // A 404 on a manifest is ordinary — plenty of frames predate the per-body pass — so this is not
-      // an exceptional path, just an absent one.
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      if (!response.ok) {
+        // A client error is the server answering. A 5xx or a network throw is not.
+        definitive = response.status >= 400 && response.status < 500;
+        throw new Error(`HTTP ${response.status}`);
+      }
+      definitive = true;
       return (await response.json()) as T;
     } catch (error) {
       sawError = true;
@@ -89,7 +103,7 @@ async function loadJson<T>(url: string): Promise<T | null> {
   inFlight.set(url, request);
   try {
     const result = await request;
-    cache.set(url, result);
+    if (result !== null || definitive) cache.set(url, result);
     return result;
   } finally {
     inFlight.delete(url);

@@ -195,19 +195,29 @@ async function main(): Promise<void> {
   const candidates: Target[] = [];
   let scanned = 0;
   let stored = 0;
+  let areaUnknown = 0;
+  const areaFloor = Number.isFinite(minAreaSqM) && minAreaSqM > 0 ? minAreaSqM : null;
   for (const page of storedElevations()) {
     scanned += page.scanned;
     stored += page.targets.length;
     for (const t of page.targets) {
-      if (Number.isFinite(minAreaSqM) && minAreaSqM > 0 && (t.surfaceAreaSqM ?? 0) < minAreaSqM) {
+      if (areaFloor !== null && t.surfaceAreaSqM !== undefined && t.surfaceAreaSqM < areaFloor) {
         continue;
       }
+      // ⚠ **An unknown area is not a small one.** `?? 0` read a missing `surfaceAreaSqM` as below any
+      // floor, so a body whose area was never computed was skipped by `--min-area` and counted
+      // nowhere — silently outside the population the flag claims to scope to. Kept and counted
+      // instead: the scoping is a cost optimisation, and a handful of unmeasured bodies is cheaper
+      // than a gap nobody can see.
+      if (areaFloor !== null && t.surfaceAreaSqM === undefined) areaUnknown++;
       if (suspects === null || suspects.has(coordinateKey(t.lat, t.lng))) candidates.push(t);
     }
   }
   process.stderr.write(
     `[sweep] scanned ${scanned.toLocaleString()} · ${stored.toLocaleString()} hold an elevation · ` +
-      `${candidates.length.toLocaleString()} to re-check\n`,
+      `${candidates.length.toLocaleString()} to re-check` +
+      (areaUnknown > 0 ? ` (${areaUnknown.toLocaleString()} with no recorded area, kept)` : '') +
+      '\n',
   );
 
   /**

@@ -49,6 +49,7 @@ import { archiveUrl, copernicusCredit } from '@skating/core';
 import type maplibregl from 'maplibre-gl';
 import { useEffect, useRef } from 'react';
 import { env } from '../lib/env';
+import { FREEZE_UP_SEAM_LAYER_ID } from './useFreezeUpSeam';
 import { insertBeforeLayerId } from './useImageryReveal';
 
 /**
@@ -102,6 +103,38 @@ export function freezeUpLaneIds(
     sourceId: `${FREEZE_UP_SOURCE_ID}${suffix}-${lane}`,
     layerId: `${FREEZE_UP_LAYER_ID}${suffix}-${lane}`,
   };
+}
+
+/**
+ * Where this slot's raster belongs in the stack, as a `beforeId`.
+ *
+ * ⚠ **`insertBeforeLayerId` alone is not enough, because `show()` re-inserts.** Every layer added
+ * with the shared anchor lands *above* the ones added before it, so mount order used to be the whole
+ * ordering — and `moveLayer(layer, anchor)` on every notch crossing broke it silently in two ways:
+ *
+ * - **The seam went under the photograph.** `useFreezeUpSeam` adds its hairline with the same anchor
+ *   after the frames, so it starts on top; the first `show()` moved a raster back above it and the
+ *   §C4 join simply stopped being drawn.
+ * - **The companion could cover the primary.** `framesToRender` holds a stale companion precisely
+ *   *because* the primary occludes it wherever the primary has water — so whichever slot's tiles
+ *   happened to land last winning the stack turns a held half into a frame from another date drawn
+ *   over the one the caption names.
+ *
+ * So the order is stated rather than inherited: companion under primary, primary under the seam.
+ */
+function frameAnchorId(map: maplibregl.Map, slot: FreezeUpSlot): string | undefined {
+  if (slot === 'companion') {
+    // The lowest primary lane currently in the style — read from the style rather than from lane
+    // indices, because lane order is eviction order and says nothing about z.
+    const lowestPrimary = (map.getStyle()?.layers ?? []).find(
+      (layer) =>
+        layer.id.startsWith(`${FREEZE_UP_LAYER_ID}-`) &&
+        !layer.id.startsWith(`${FREEZE_UP_LAYER_ID}-companion-`),
+    );
+    if (lowestPrimary) return lowestPrimary.id;
+  }
+  if (map.getLayer(FREEZE_UP_SEAM_LAYER_ID)) return FREEZE_UP_SEAM_LAYER_ID;
+  return insertBeforeLayerId(map);
 }
 
 /** Long enough to read as a cross-fade, short enough not to feel like latency. */
@@ -205,7 +238,8 @@ export function useFreezeUpFrame({
       clearTimeout(mounted.revealTimer);
       // Raise it, because a re-shown lane is *underneath* the one it is replacing — it was added
       // first. Without this the outgoing frame stays on top and the fade happens invisibly.
-      map.moveLayer(mounted.layerId, insertBeforeLayerId(map));
+      // ⚠ To the top of *this slot's* band, never to the shared anchor — see `frameAnchorId`.
+      map.moveLayer(mounted.layerId, frameAnchorId(map, slot));
       map.setPaintProperty(mounted.layerId, 'raster-opacity', 1);
 
       // Only the lane being replaced needs hiding; every other mounted lane is already dark, held
@@ -312,7 +346,7 @@ export function useFreezeUpFrame({
           'raster-fade-duration': 0,
         },
       },
-      insertBeforeLayerId(map),
+      frameAnchorId(map, slot),
     );
 
     // And ask once directly, for the case where it loaded between `addSource` and here. The event is

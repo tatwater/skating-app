@@ -249,7 +249,10 @@ export function shiftCoordinate(
  * real height and a wrong one.
  */
 export function granuleGeocodeHeight(elevations: readonly (number | undefined)[]): number | null {
-  const known = elevations.filter((e): e is number => typeof e === 'number').sort((a, b) => a - b);
+  // ⚠ `Number.isFinite`, not `typeof === 'number'`: `NaN` is a number, it survives a sort in an
+  // arbitrary position, and one of them poisons the median — which would then geocode the whole
+  // granule at `NaN` and shift every lake by `NaN` pixels, silently.
+  const known = elevations.filter((e): e is number => Number.isFinite(e)).sort((a, b) => a - b);
   if (known.length === 0) return null;
   const mid = Math.floor(known.length / 2);
   return known.length % 2 === 1
