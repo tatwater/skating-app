@@ -41,13 +41,26 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 [[ -f "$HERE/.env.local" ]] && { set -a; . "$HERE/.env.local"; set +a; }
 BUCKET="${R2_BUCKET:-skating-imagery}"
 
-LIST="${1:-}"
-SEASON="${2:-}"
-MAX_ROUNDS="${3:-6}"
+# `--recut` may appear anywhere; everything else is positional as before.
+RECUT=false
+ARGS=()
+for arg in "$@"; do
+  if [[ "$arg" == "--recut" ]]; then RECUT=true; else ARGS+=("$arg"); fi
+done
+
+LIST="${ARGS[0]:-}"
+SEASON="${ARGS[1]:-}"
+MAX_ROUNDS="${ARGS[2]:-6}"
 if [[ -z "$LIST" || -z "$SEASON" ]]; then
-  echo "usage: backfill.sh <granules.txt> <season> [max-rounds]" >&2
+  echo "usage: backfill.sh <granules.txt> <season> [max-rounds] [--recut]" >&2
+  echo "  --recut  re-cut granules that already have a frame — see the note on landed()" >&2
   exit 64
 fi
+
+# The instant this run began, in the format R2 reports modification times in. Everything written
+# before it is last week's numbers as far as `--recut` is concerned.
+RUN_STARTED_ISO="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+[[ "$RECUT" == true ]] && echo "[backfill] --recut: a frame counts only if written after $RUN_STARTED_ISO"
 
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
@@ -80,8 +93,49 @@ echo "[backfill] $TOTAL granules -> season $SEASON"
 # The two cases are separated rather than blanketed with `|| true`, because they are not the same
 # thing: "no frames yet" is the normal start, while a credentials or network failure reading as "no
 # frames yet" would re-spawn the entire list against a bucket we cannot even see.
+# ## ⚠ `--recut` — because "already there" is the wrong question when replacing an archive
+#
+# This loop reconciles on **presence**: list the bucket, spawn the difference, repeat. That is exactly
+# right when filling a season for the first time, and exactly wrong when re-cutting one. Every frame is
+# already present, so a re-cut run reports `4,485/4,485 landed`, spawns nothing, exits 0 in thirty
+# seconds and looks like a triumph.
+#
+# Caught 2026-08-25 on a 42-granule Mascoma run that finished before it could have started one job.
+#
+# So `--recut` reconciles on **freshness** instead: a manifest counts as landed only if the bucket says
+# it was written *after this run began*. That keeps the retry property intact — a job that fails mid-run
+# leaves its OLD manifest in place, which is correctly still stale, so the next round tries it again.
+# Reconciling on presence there would see the stale frame, call it landed, and leave the re-cut with a
+# silent hole wearing last week's numbers.
+#
+# The modification time comes from the listing this already performs, so freshness costs nothing extra.
 landed() {
   local listing status=0
+  if [[ "$RECUT" == true ]]; then
+    # ⚠ **Epoch seconds, never a string compare.** rclone reports modification times in LOCAL time
+    # with an offset (`2026-08-25T22:31:02.234857910-04:00`) while the run's start is UTC with `Z`.
+    # Compared as text, `2026-08-25T22:36…-04:00` sorts BEFORE `2026-08-26T02:35…Z` even though it is
+    # a minute later — so every fresh frame would read as stale, nothing would ever converge, and the
+    # loop would re-spawn the whole season once per round until it hit `max-rounds`.
+    listing="$(rclone lsjson "r2:${BUCKET}/frames/${SEASON}/" --s3-no-check-bucket 2>/dev/null \
+      | jq -r --arg since "$RUN_STARTED_ISO" '
+          def epoch:
+            capture("(?<dt>[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2})(?:\\.[0-9]+)?(?<off>Z|[+-][0-9]{2}:[0-9]{2})")
+            | ((.dt + "Z") | fromdateiso8601)
+              - (if .off == "Z" then 0
+                 else (if .off[0:1] == "-" then -1 else 1 end)
+                      * ((.off[1:3] | tonumber) * 3600 + (.off[4:6] | tonumber) * 60)
+                 end);
+          ($since | epoch) as $cut
+          | .[] | select(.Name | endswith(".json")) | select((.ModTime | epoch) > $cut) | .Name
+        ')" || status=$?
+    if (( status != 0 && status != 3 )); then
+      echo "[backfill] FATAL: cannot list r2:${BUCKET}/frames/${SEASON}/ (rclone exit $status)" >&2
+      return 1
+    fi
+    printf '%s\n' "$listing" | sed -n 's/\.json$//p' | sort
+    return 0
+  fi
   listing="$(rclone lsf "r2:${BUCKET}/frames/${SEASON}/" --s3-no-check-bucket 2>/dev/null)" || status=$?
   if (( status != 0 && status != 3 )); then
     echo "[backfill] FATAL: cannot list r2:${BUCKET}/frames/${SEASON}/ (rclone exit $status)" >&2
