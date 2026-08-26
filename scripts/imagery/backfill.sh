@@ -57,9 +57,9 @@ if [[ -z "$LIST" || -z "$SEASON" ]]; then
   exit 64
 fi
 
-# The instant this run began, in the format R2 reports modification times in. Everything written
+# The instant this run began, in the same UTC form the listing is forced into. Everything written
 # before it is last week's numbers as far as `--recut` is concerned.
-RUN_STARTED_ISO="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+RUN_STARTED_ISO="$(date -u +"%Y-%m-%d %H:%M:%S")"
 [[ "$RECUT" == true ]] && echo "[backfill] --recut: a frame counts only if written after $RUN_STARTED_ISO"
 
 WORK="$(mktemp -d)"
@@ -112,23 +112,19 @@ echo "[backfill] $TOTAL granules -> season $SEASON"
 landed() {
   local listing status=0
   if [[ "$RECUT" == true ]]; then
-    # ⚠ **Epoch seconds, never a string compare.** rclone reports modification times in LOCAL time
-    # with an offset (`2026-08-25T22:31:02.234857910-04:00`) while the run's start is UTC with `Z`.
-    # Compared as text, `2026-08-25T22:36…-04:00` sorts BEFORE `2026-08-26T02:35…Z` even though it is
-    # a minute later — so every fresh frame would read as stale, nothing would ever converge, and the
-    # loop would re-spawn the whole season once per round until it hit `max-rounds`.
-    listing="$(rclone lsjson "r2:${BUCKET}/frames/${SEASON}/" --s3-no-check-bucket 2>/dev/null \
-      | jq -r --arg since "$RUN_STARTED_ISO" '
-          def epoch:
-            capture("(?<dt>[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2})(?:\\.[0-9]+)?(?<off>Z|[+-][0-9]{2}:[0-9]{2})")
-            | ((.dt + "Z") | fromdateiso8601)
-              - (if .off == "Z" then 0
-                 else (if .off[0:1] == "-" then -1 else 1 end)
-                      * ((.off[1:3] | tonumber) * 3600 + (.off[4:6] | tonumber) * 60)
-                 end);
-          ($since | epoch) as $cut
-          | .[] | select(.Name | endswith(".json")) | select((.ModTime | epoch) > $cut) | .Name
-        ')" || status=$?
+    # ⚠ **`lsf --format "tp"`, not `lsjson`.** `lsjson` emits full metadata per object, and on a
+    # season prefix holding 4,400+ frames that is slow enough to look like a hang — measured: it did
+    # not finish in ten minutes, while this returns in under a second. The listing runs once per
+    # round, so the difference is the whole loop.
+    #
+    # ⚠ **And both sides are forced to UTC.** rclone prints modification times in LOCAL time by
+    # default, so comparing them against a UTC run-start silently judges every fresh frame stale —
+    # nothing converges and the loop re-spawns the season once per round until it hits max-rounds.
+    # `TZ=UTC` on the listing and `date -u` on the marker put both in the same sortable form, which
+    # also means no daylight-saving jump can reorder them.
+    listing="$(TZ=UTC rclone lsf "r2:${BUCKET}/frames/${SEASON}/" --s3-no-check-bucket \
+      --format "tp" --separator ";" 2>/dev/null \
+      | awk -F';' -v since="$RUN_STARTED_ISO" '$1 > since { print $2 }')" || status=$?
     if (( status != 0 && status != 3 )); then
       echo "[backfill] FATAL: cannot list r2:${BUCKET}/frames/${SEASON}/ (rclone exit $status)" >&2
       return 1
