@@ -215,7 +215,8 @@ asset_href() { jq -r --arg k "$1" '.assets[$k].href // empty' granule.json; }
 OPTICAL_NULL_BODY='{"clearPct":null,"coveragePct":null,"snowIcePct":null,"waterPct":null,
   "ndsiMean":null,"pixels":0,"interiorPixels":0,"classHist":null,"interiorClassHist":null}'
 SAR_NULL_BODY='{"vvDb":null,"vhDb":null,"coveragePct":null,"pixels":0,"interiorPixels":0,
-  "interiorVvDb":null,"interiorVhDb":null,"sigma0Hist":null}'
+  "interiorVvDb":null,"interiorVhDb":null,"sigma0Hist":null,"belowNoiseFloorPct":null,
+  "incidenceDeg":null,"geocodeReferenceHeightM":null,"geocodeShiftM":null}'
 
 # --- The transform ---------------------------------------------------------------------------------
 #
@@ -533,22 +534,20 @@ resolve_geocode() {
 # region pays nothing for one over the White Mountains.
 geocode_pad() {
   [[ ${#GEOCODE_ARGS[@]} -gt 0 ]] || return 0
-  local reference incidence max_delta pad
-  reference="$(jq -r '.referenceHeightM' geocode.json)"
-  incidence="$(jq -r '.incidenceDeg' geocode.json)"
-  max_delta="$(jq -r --argjson ref "$reference" \
-    '[.features[].properties.elevationM // empty | . - $ref | if . < 0 then -. else . end]
-     | max // 0' masks.geojson)"
-  # One extra pixel of slack for the rounding to whole pixels the de-shift does.
+  local pad
+  # The largest correction any body under THIS mask actually needs, computed from the same local
+  # references the de-shift will use — not from the grid's extremes against every body, which is safe
+  # and can double the area warped on a small granule.
   pad="$(project_ground_m \
-    "$(awk -v d="$max_delta" -v i="$incidence" -v r="$WARP_RES" \
-      'BEGIN{printf "%.1f", d/(sin(i*3.14159265358979/180)/cos(i*3.14159265358979/180)) + r}')" \
+    "$(python3 /usr/local/bin/sar-deshift.py masks.geojson --grid geocode-grid.json --plan)" \
     "$MINY" "$MAXY")"
+  # One pixel of slack for the de-shift's rounding to whole pixels.
+  pad="$(awk -v p="$pad" -v r="$WARP_RES" 'BEGIN{printf "%.1f", p + r}')"
   MINX="$(awk -v v="$MINX" -v p="$pad" 'BEGIN{printf "%.6f", v-p}')"
   MAXX="$(awk -v v="$MAXX" -v p="$pad" 'BEGIN{printf "%.6f", v+p}')"
   MINY="$(awk -v v="$MINY" -v p="$pad" 'BEGIN{printf "%.6f", v-p}')"
   MAXY="$(awk -v v="$MAXY" -v p="$pad" 'BEGIN{printf "%.6f", v+p}')"
-  log "geocode pad ${pad} projected m (largest height error under this granule: ${max_delta} m)"
+  log "geocode pad ${pad} projected m (the largest correction any body here needs)"
 }
 
 # Put one polarisation's pixels back under their lakes, in place.
@@ -562,7 +561,8 @@ deshift_band() {
 
   stage "deshift_${pol}" sh -c "python3 /usr/local/bin/sar-deshift.py masks.geojson \
     ${pol}.tif ${pol}-deshifted.tif $(printf '%q ' "${GEOCODE_ARGS[@]}") \
-    --feather-projected-m ${feather_projected} > deshift-${pol}.json" \
+    --feather-projected-m ${feather_projected} --per-body geometry-${pol}.json \
+    > deshift-${pol}.json" \
     || die "de-shift failed for ${pol}"
   mv "${pol}-deshifted.tif" "${pol}.tif"
   log "de-shifted ${pol^^}: $(cat "deshift-${pol}.json")"
@@ -1057,9 +1057,12 @@ transform_sar() {
     # Put the pixels back under their lakes, before anything measures or renders them. Everything
     # downstream — alpha, zones, statistics, tiles — then works at true positions.
     #
-    # ⚠ **The calibration LUT is deliberately NOT de-shifted with it.** Gain varies ~1.50 dB across a
-    # 275 km scene, so over a 450 m correction it moves ~0.0025 dB — four orders of magnitude under
-    # the ~2 dB signal. A second warp to buy that would be pure cost.
+    # ⚠ **Neither the calibration nor the noise LUT is de-shifted with it, and that is safe.** Both
+    # are smooth in range: gain varies ~1.50 dB across a 275 km scene, so over a 450 m correction it
+    # moves ~0.0025 dB. The one place the noise LUT is NOT smooth is the sub-swath seams, which sit
+    # ~80 km apart — a shift of a few hundred metres can only mis-assign a body sitting essentially on
+    # one, and the error there is bounded by the step itself. Warping either a second time would buy
+    # thousandths of a decibel.
     deshift_band "$p" "$feather_projected"
 
     cal_href="$(jq -r --arg k "schema-calibration-${p}" '.assets[$k].href // empty' granule.json)"
@@ -1149,6 +1152,25 @@ transform_sar() {
     log "no water polygons under this pass — membership without statistics"
     printf '[]' > bodies.json
   fi
+  # Fold the viewing geometry the de-shift already computed into each body's record. Both
+  # polarisations see the same geometry, so the first file that exists answers for the frame.
+  #
+  # ⚠ **This is the field open question 7 says is missing.** `sigma0` varies with incidence, ice and
+  # water have different angular responses, and without it a consumer cannot tell an instrument
+  # difference from an ice change — which is why platform and orbit direction are still read-time
+  # filters and the cadence is still 12-day rather than 6.
+  local geometry_file=""
+  for p in "${pols[@]}"; do
+    [[ -s "geometry-${p}.json" ]] && { geometry_file="geometry-${p}.json"; break; }
+  done
+  if [[ -n "$geometry_file" ]]; then
+    jq -c --slurpfile geom "$geometry_file" '
+        ($geom[0] | map({key: .waterBodyId, value: .}) | from_entries) as $g
+        | map(. + ($g[.waterBodyId] // {} | del(.waterBodyId)))
+      ' bodies.json > bodies-geom.json || die "geometry merge failed"
+    mv bodies-geom.json bodies.json
+  fi
+
   reconcile_bodies "$SAR_NULL_BODY"
   log "per-body sigma0: $(jq 'length' bodies.json) bodies, pols ${pols[*]}"
 

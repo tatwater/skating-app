@@ -117,12 +117,53 @@ def local_reference(points, lat: float, lng: float) -> tuple[float, float]:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("reveal")
-    parser.add_argument("source")
-    parser.add_argument("out")
+    parser.add_argument("source", nargs="?")
+    parser.add_argument("out", nargs="?")
+    parser.add_argument(
+        "--plan",
+        action="store_true",
+        help="print the largest correction any body under this mask needs, in GROUND metres, "
+             "and exit — the caller sizes its warp extent from it",
+    )
     parser.add_argument("--grid", required=True, help="`sar-geocode.py <ann> --grid` output")
-    parser.add_argument("--feather-projected-m", type=float, required=True)
+    parser.add_argument("--feather-projected-m", type=float, default=0.0)
+    parser.add_argument(
+        "--per-body",
+        help="write per-body geometry (incidence, reference height, applied offset) as JSON",
+    )
     parser.add_argument("--look-right", action=argparse.BooleanOptionalAction, default=True)
     args = parser.parse_args()
+
+    if args.plan:
+        # ## Sizing the warp extent, exactly rather than generously
+        #
+        # The de-shift fetches each body's pixels from outside its own footprint, so the raster has to
+        # be wider than the masks. Bounding that by the grid's extremes over all bodies is safe and
+        # badly over-generous — on a small granule it can double the area warped. Every term needed
+        # for the real answer is already here, so this computes the actual per-body shifts and
+        # reports the largest.
+        with open(args.grid) as handle:
+            grid = json.load(handle)
+        with open(args.reveal) as handle:
+            features = json.load(handle).get("features", [])
+        worst = 0.0
+        for feature in features:
+            elevation = (feature.get("properties") or {}).get("elevationM")
+            geometry = feature.get("geometry")
+            if elevation is None or not geometry:
+                continue
+            g = ogr.CreateGeometryFromJson(json.dumps(geometry))
+            minx, maxx, miny, maxy = g.GetEnvelope()
+            lat = latitude_of((miny + maxy) / 2)
+            reference, incidence = local_reference(grid["points"], lat, (minx + maxx) / 2 / MW * 180.0)
+            worst = max(worst, abs(float(elevation) - reference) / math.tan(math.radians(incidence)))
+        print(round(worst, 1))
+        return 0
+
+    if not args.source or not args.out:
+        parser.error("give <source> and <out>, or --plan")
+    if args.feather_projected_m <= 0:
+        parser.error("--feather-projected-m is required for a real run")
 
     src = gdal.Open(args.source)
     gt = src.GetGeoTransform()
@@ -153,6 +194,15 @@ def main() -> int:
 
     corrected = uncorrected = off_swath = invalid_geometry = 0
     max_shift_px = 0
+    # ## Why the viewing geometry is recorded per body and not just per scene
+    #
+    # `sigma0` genuinely varies with incidence angle — physics, not calibration error — and ice and
+    # water have *different* angular responses, so an offset fitted on open water is wrong for ice.
+    # N6e open question 7 names "incidence-angle differences the manifest does not currently record"
+    # as a prime suspect for the S1A/S1C disagreement that forbids pooling platforms.
+    #
+    # It is computed here anyway, per body, to place the pixels. Recording it costs one dict.
+    per_body: list[dict] = []
 
     for feature in features:
         geometry = feature.get("geometry")
@@ -207,6 +257,17 @@ def main() -> int:
             d_col = int(round(east / gt[1]))
             d_row = int(round(north / gt[5]))
             has_height = True
+            geometry_row = {
+                "waterBodyId": (feature.get("properties") or {}).get("waterBodyId"),
+                "incidenceDeg": round(incidence, 3),
+                "geocodeReferenceHeightM": round(reference, 1),
+                # What was actually applied, in whole pixels — so a frame can be audited or undone
+                # rather than trusted. Ground metres, not the projected ones the shift was made in.
+                "geocodeShiftM": {
+                    "east": round(d_col * gt[1] / inflation, 1),
+                    "north": round(-d_row * gt[5] / inflation, 1),
+                },
+            }
 
         # Destination window: where this body is on the map.
         x0 = max(0, int(math.floor((minx - gt[0]) / gt[1])))
@@ -250,6 +311,7 @@ def main() -> int:
         if has_height:
             corrected += 1
             max_shift_px = max(max_shift_px, abs(d_col), abs(d_row))
+            per_body.append(geometry_row)
         else:
             uncorrected += 1
 
@@ -269,6 +331,9 @@ def main() -> int:
         return 1
 
     dst.FlushCache()
+    if args.per_body:
+        with open(args.per_body, "w") as handle:
+            json.dump(per_body, handle)
     json.dump(
         {
             "corrected": corrected,
