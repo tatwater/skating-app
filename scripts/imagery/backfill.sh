@@ -201,7 +201,21 @@ for round in $(seq 1 "$MAX_ROUNDS"); do
       echo "[backfill]   then read one job's log: fly logs --app \${FLY_APP:-skating-imagery}"
       exit 1
     fi
-    echo "[backfill] converged — the remaining $missing granules have nothing under them"
+    # ⚠ **"Nothing under them" is an ASSERTION, and it is often wrong.**
+    #
+    # A granule produces no manifest for two very different reasons: it correctly had no corpus body
+    # under it and exited 0, or it died. `cut-granule` dies on a missing annotation, a failed LUT, a
+    # bad warp — and from here those look identical, because both leave the bucket unchanged.
+    #
+    # Measured on the Mascoma run: one granule was reported as having nothing under it while its log
+    # read `FATAL: noise LUT build failed for vv`. It had 10,157 bodies under it. At 4,485 granules
+    # that phrasing would quietly excuse every real failure in the season.
+    #
+    # So the outstanding ids are printed rather than characterised, and the reader is pointed at the
+    # one place that actually knows.
+    echo "[backfill] no longer converging — $missing granule(s) never produced a manifest:"
+    sed 's/^/[backfill]     /' "$WORK/missing.txt"
+    echo "[backfill] each either had nothing to cut (exit 0, correct) or FAILED. \`fly logs\` knows which."
     break
   fi
   previous_missing=$missing

@@ -333,7 +333,17 @@ def main() -> int:
     if corrected == 0 and uncorrected == 0:
         # Everything outside a reveal is nodata, so an empty run writes a blank frame that looks
         # exactly like a granule over open ocean. Refuse instead.
+        #
+        # ⚠ **And take the file with it.** `Create` has already put a blank GTiff on disk, so a
+        # refusal that only sets an exit code leaves behind an output that is indistinguishable from
+        # a successful one — which `cut-granule.sh` would `mv` over the real band on a retry.
         print("no bodies placed — refusing to write a blank frame", file=sys.stderr)
+        dst_band = None
+        dst = None
+        try:
+            gdal.GetDriverByName("GTiff").Delete(args.out)
+        except RuntimeError:
+            pass
         return 1
 
     dst.FlushCache()

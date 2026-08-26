@@ -128,6 +128,69 @@ bank removed), `interiorPixels` (what the precision rests on), `interiorBelowNoi
 `sigma0Hist` for the distribution. ⚠ **`sigma0Hist`'s bottom bins hold everything at or under the
 floor** — read them against `neszDb` or they will read as exceptionally smooth ice.
 
+### ⚠⚠ Tested against ground truth 2026-08-26, and the conjunction does not survive it
+
+**Gate zero above asks whether there is range to work in. This asks the prior question — whether the
+signature exists at all — and on the one date where somebody was standing on the ice, it does not.**
+
+A full season of Mascoma was cut (32 optical passes, 10 radar, Nov 2025 → Mar 2026) specifically
+because the founder's skate log dates it: *"I skated the full length on beautiful black ice just
+before Christmas."*
+
+**22 December, 99% clear: `1% snow/ice, 96% water`.** The next morning it was skated end to end.
+
+The lane's premise is a **conjunction** — low radar backscatter AND optical classification of *ice, not
+water*. The second half is simply absent: optical calls black ice water, which is what
+[Chapter 4](../docs/reading-ice-from-orbit.md) has always said. So the question becomes whether
+anything else separates it. Measured, on the same lake, against two open-water dates:
+
+| | 22 Nov (open water) | **22 Dec (black ice)** | 27 Mar (open water) | 15 Feb (snow-covered) |
+| --- | --- | --- | --- | --- |
+| SCL | WATER 97% | **WATER 98%** | WATER 99% | SNOWICE 98% |
+| NDSI mean | +0.001 | **−0.313** | −0.542 | +0.991 |
+| NDSI p10–p90 width | 0.05 | **0.95** | 1.95 | 0.00 |
+
+And radar, on the two December passes eleven days apart in the same orbit direction:
+
+| | 2 Dec (open water) | **26 Dec (black ice)** |
+| --- | --- | --- |
+| interior VH mean | −31.9 dB | **−31.9 dB** |
+| VH p10 / p50 / p90 | −35 / −33 / −28 | **−35 / −34 / −28** |
+
+**Identical to a tenth of a decibel, and identical in distribution too** — so the `sigma0Hist` that
+exists precisely to catch "the mean hides the shape" finds no shape to catch either.
+
+⚠ **NDSI is worse than merely unhelpful here: it is unstable over water.** The two *open-water* dates
+differ by 0.54 in mean and by 0.05 against 1.95 in spread, and March's p90 reaches +0.95 — pixels
+reading as snow on an ice-free lake. Green and SWIR are both near zero over water, so a normalised
+difference between them amplifies noise rather than measuring anything. It is excellent at its actual
+job (snow, 0.991 at zero spread) and should never be pointed at this one.
+
+#### Why, physically — and it is not a resolution problem
+
+Black ice is **transparent**. Optically the light passes through and returns off the dark lake bottom,
+so it *is* water to a camera. To radar it is a smooth surface over that same substrate, so it is
+specular exactly like calm water. **Both instruments are correctly reporting the same physical thing.**
+There is no band on either satellite where transparent ice and liquid water diverge — which is why
+adding bands, sharpening pixels or being cleverer with the statistics does not reach it.
+
+#### The one refinement still worth testing, and it is a third variable rather than a fourth band
+
+**Wind.** Ice suppresses waves; open water does not. On a *windy* day, water is rough and bright in
+`VH` while ice stays specular and dark — so the pair above may be uninformative simply because both
+days were calm. That is checkable for free: Open-Meteo publishes historical hourly wind, the archive
+records `capturedAt` and the body's location, and the weather lane already fetches from it.
+
+**So the honest next step is not a bigger model, it is one join**: repeat this comparison conditioned
+on wind speed at the hour of each pass. If low `VH` only means "ice" when it was windy, the lane has a
+gate it can actually stand on. If ice and water are indistinguishable at every wind speed, the lane is
+finished and should be closed rather than left open as a maybe.
+
+**What survives regardless.** Whole-lake seasonal change is real and larger than previously recorded:
+Mascoma moved **+5.0 dB (descending) and +3.7 dB (ascending)** from December to March, flat through
+freeze-up and rising as snow accumulated. That is a snow-cover signal, not an ice-formation one, and it
+is solid — the two orbit directions agree independently.
+
 ### The rules, if it is ever built
 
 > **Validated first, capped forever.**

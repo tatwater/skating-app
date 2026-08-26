@@ -115,10 +115,17 @@ def platform_heading(root: ET.Element, points: list[dict[str, float]]) -> float:
         except ValueError:
             pass
 
-    near = sorted(points, key=lambda p: (p["pixel"], p["line"]))
-    if len(near) < 2:
-        raise SystemExit("cannot determine platform heading: too few grid points")
-    a, b = near[0], near[-1]
+    # ⚠ **One COLUMN of the grid, not its diagonal.** Sorting the whole grid by `(pixel, line)` and
+    # taking the first and last entries picks two opposite *corners* — the near-range/early-azimuth
+    # point and the far-range/late-azimuth one — so the bearing that comes out is the scene diagonal,
+    # tens of degrees off the flight direction on a 275 x 250 km slice. Range is 90 degrees from
+    # heading, so that error rotates the whole correction and the de-shift moves every lake sideways.
+    # Holding `pixel` fixed is what makes increasing `line` mean "along track".
+    near_range = min(p["pixel"] for p in points)
+    column = sorted((p for p in points if p["pixel"] == near_range), key=lambda p: p["line"])
+    if len(column) < 2:
+        raise SystemExit("cannot determine platform heading: too few grid points in a column")
+    a, b = column[0], column[-1]
     d_lat = b["lat"] - a["lat"]
     d_lng = (b["lng"] - a["lng"]) * math.cos(math.radians((a["lat"] + b["lat"]) / 2))
     return math.degrees(math.atan2(d_lng, d_lat)) % 360.0
