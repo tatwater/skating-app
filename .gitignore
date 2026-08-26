@@ -49,3 +49,9 @@ app_ui_inspiration/
 # was missing, so a one-off zonal-statistics fixture sat in `git status` as an untracked directory
 # nobody could place. Same rule as the others: disposable, regenerable, never the source of truth.
 .scratch/
+
+# Python bytecode. A `.pyc` is a build artifact of one interpreter version — ours came out of the
+# imagery container as `cpython-314` — so it is regenerable, version-locked, and churns on every run.
+# Ten of them were committed by accident on 2026-08-25.
+__pycache__/
+*.py[cod]

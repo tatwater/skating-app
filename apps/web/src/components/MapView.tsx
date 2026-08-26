@@ -23,7 +23,6 @@ import {
   representativePoint,
   SUB_AREA_MIN_RENDER_ZOOM,
   shapeSignature,
-  type TimelineStop,
   undoDraftPlacement,
   withAccessDim,
 } from '@skating/core';
@@ -574,10 +573,10 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
         source: 'put-in-markers',
         paint: {
           'circle-radius': 6,
-          // Three rungs, three colours — `PUTIN_SOURCES` on screen (N6d/D143). An OSM slipway is
+          // Three rungs, three colors — `PUTIN_SOURCES` on screen (N6d/D143). An OSM slipway is
           // better evidence than a cluster of report points and worse than an operator's pin, and
           // rendering it in the `derived` blue said the opposite. The `case` already had a fallback,
-          // so the 3,588 imported launches drew — just in the wrong rung's colour.
+          // so the 3,588 imported launches drew — just in the wrong rung's color.
           'circle-color': [
             'case',
             ['==', ['get', 'source'], 'official'],
@@ -682,7 +681,7 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
         },
       });
       // The hazard being authored — rendered as the real metric footprint (circle or buffered band)
-      // so the skater sizes it against the lake, not against a fixed-pixel dot. Colour runs through
+      // so the skater sizes it against the lake, not against a fixed-pixel dot. Color runs through
       // the same expression as saved hazards, so a `ridge_crossing` previews green rather than red.
       map.addSource('hazard-draft', { type: 'geojson', data: EMPTY_FEATURES });
       map.addLayer({
@@ -1254,7 +1253,7 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
     if (!map || !loaded) return;
     setLayersHiddenForBodies(map, IMAGERY_REPLACED_LAYERS, paintedIds, baseFiltersRef.current);
     setLayersVisible(map, IMAGERY_REPLACED_WHOLE_LAYERS, paintedIds.length === 0);
-    // The shoreline survives the reveal and changes job while it does — status colour off the vector
+    // The shoreline survives the reveal and changes job while it does — status color off the vector
     // map, edge-of-the-photograph on it. Set here rather than in the reveal hook because the layer
     // belongs to the map's own init, and the hook owns only what it added.
     if (map.getLayer('water-outline')) {
@@ -1584,7 +1583,7 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
           is a multi-click session and gets its own Undo/Done, kept on the map rather than in the
           form because the form is hidden for the whole draw.
           It's a live region because arming placement mode is otherwise *entirely* silent: the dialog
-          vanishes and the only feedback is a colour bar. The polyline running point count announces
+          vanishes and the only feedback is a color bar. The polyline running point count announces
           through the same region, which is the only progress signal a non-visual trace has. */}
       {hazardDropMode ? (
         <div

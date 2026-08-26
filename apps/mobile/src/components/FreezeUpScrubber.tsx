@@ -205,8 +205,11 @@ export function FreezeUpScrubber({
   // stop that supplied it (see `framesToRender`), so reading `current.companion` would leave half the
   // lake showing a date the caption never named.
   const shownCompanion = renderedCompanion ?? current?.companion?.frame ?? null;
+  // ⚠ **Built from the companion's own frame and nothing else.** Spreading the primary stop in
+  // carried the *primary's* `stats` across, so the companion's caveat would have reported the
+  // primary's cloud and coverage figures over the companion's date.
   const companionCaptionRaw = shownCompanion
-    ? stopCaption({ ...(current as TimelineStop), frame: shownCompanion })
+    ? stopCaption({ frame: shownCompanion, landable: true, basis: 'unknown' })
     : null;
   // ⚠ Compared as **rendered labels**, not as instants. Two granules from one pass are seconds apart,
   // so an instant comparison called them different and rendered "Dec 12, 2025 + Dec 12, 2025" — which
@@ -405,9 +408,9 @@ function StopMark({
       accessibilityLabel={label}
       accessibilityState={{ selected, disabled: !stop.landable }}
     >
-      {/* ⚠ **No selected state — the thumb is standing on it.** Colouring the mark underneath would
+      {/* ⚠ **No selected state — the thumb is standing on it.** Coloring the mark underneath would
           draw the same fact twice, and the half the handle covers would read as a shadow on it. The
-          landable/blocked distinction stays, in height and colour, because that is the one a skater
+          landable/blocked distinction stays, in height and color, because that is the one a skater
           has to be able to read at a glance. */}
       <XStack
         width={2}

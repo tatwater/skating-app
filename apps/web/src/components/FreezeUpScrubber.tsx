@@ -25,7 +25,7 @@
  * ## There is a real thumb, and it is why the marks are hairlines
  *
  * A drawn handle that travels the track and locks onto each notch, rather than a mark that changes
- * colour where the selection is. It is the difference between a control that reports a value and one
+ * color where the selection is. It is the difference between a control that reports a value and one
  * that is being *held* — and it frees the marks to become a 2 px scale with air between them, since
  * nothing has to be aimed at any more. What is still true is that the **whole track** takes the drag;
  * see the thumb's own note for why that is not a contradiction.
@@ -113,7 +113,7 @@ export function FreezeUpScrubber({
    * > start clicking & dragging on the timeline myself."*
    *
    * Switching bands swaps the stop list underneath the selection: a winter has ~30 optical passes and
-   * ~9 radar ones, so an index chosen on true colour is very often past the end of radar. The picture
+   * ~9 radar ones, so an index chosen on true color is very often past the end of radar. The picture
    * was already protected against exactly this — `framesToRender` holds the last good frame through an
    * out-of-range index — but the *thumb and the caption* were not, so the control went blank and
    * stayed blank: `selected` was non-null, which is precisely the condition that made the effect below
@@ -164,9 +164,14 @@ export function FreezeUpScrubber({
   // they had already scrubbed past, which is counter to what the drag was for.
   const settle = useCallback(() => {
     setDragging(false);
+    // ⚠ **Read before it is cleared.** Resetting the ref first and then passing it made every
+    // release resolve with `direction: 0` — the tie-break this argument exists for never engaged,
+    // and a drag that stalled between two usable dates could settle backwards. Mobile's `settle`
+    // has always captured it first; this is the same shape.
+    const direction = dragDirection.current;
     dragDirection.current = 0;
     if (chosen === null || stops[chosen]?.landable !== false) return;
-    const landable = nearestLandableStop(stops, chosen, dragDirection.current);
+    const landable = nearestLandableStop(stops, chosen, direction);
     if (landable !== null) onSelect(landable);
   }, [chosen, stops, onSelect]);
 
@@ -228,8 +233,12 @@ export function FreezeUpScrubber({
   // stop that supplied it (see `framesToRender`), so reading `current.companion` would leave half the
   // lake showing a date the caption never named.
   const shownCompanion = renderedCompanion ?? current?.companion?.frame ?? null;
+  // ⚠ **Built from the companion's own frame and nothing else.** Spreading the primary stop in
+  // carried the *primary's* `stats` across, so the companion's caveat would have reported the
+  // primary's cloud and coverage figures over the companion's date — a measurement attributed to a
+  // pass that did not make it. Only the date is read today; the trap is that nothing said so.
   const companionCaptionRaw = shownCompanion
-    ? stopCaption({ ...(current as TimelineStop), frame: shownCompanion })
+    ? stopCaption({ frame: shownCompanion, landable: true, basis: 'unknown' })
     : null;
   // ⚠ Compared as **rendered labels**, not as instants. Two granules from one pass are seconds apart,
   // so an instant comparison called them different and rendered "Dec 12, 2025 + Dec 12, 2025" — which
@@ -323,7 +332,7 @@ export function FreezeUpScrubber({
          * window: full height means the frame on the map is this date, a stub at the bottom means the
          * thumb is passing over a date that has none.
          *
-         * Which is also why the marks are **not** re-coloured by selection. The tick inside the
+         * Which is also why the marks are **not** re-colored by selection. The tick inside the
          * window has to mean precisely what the same tick means anywhere else on the track, or the
          * comparison the window exists to allow is a comparison between two different encodings.
          */}
@@ -494,12 +503,12 @@ function StopMark({
         className={[
           'w-0.5 rounded-full transition-colors',
           stop.landable
-            ? // ⚠ **No selected state on the tick any more — the thumb is standing on it.** Colouring
+            ? // ⚠ **No selected state on the tick any more — the thumb is standing on it.** Coloring
               // it too would be the same fact drawn twice, and the half of it the handle covers would
               // read as the handle having a shadow.
               'h-full bg-primary/45 group-hover:bg-primary/80'
             : // Blocked: drawn, obviously inert, and not mistakable for a landable one. Short and
-              // grey, which is the distinction doing real work now that neither one is coloured by
+              // grey, which is the distinction doing real work now that neither one is colored by
               // selection — a skater has to be able to see, at a glance, which dates have a picture.
               'h-2.5 bg-muted-foreground/30',
         ].join(' ')}

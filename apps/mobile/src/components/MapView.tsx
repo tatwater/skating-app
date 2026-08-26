@@ -26,7 +26,6 @@ import {
   prefetchFrames,
   type RenderedFrames,
   SUB_AREA_MIN_RENDER_ZOOM,
-  type TimelineStop,
   withAccessDim,
 } from '@skating/core';
 import { useQuery } from 'convex/react';
@@ -411,6 +410,12 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
     // different instrument. Opening a lake is a different question — "a skater asking about a lake is
     // asking about now" — and carrying February across would answer the one they did not ask.
     setFreezeUpAnchorAt(null);
+    // ⚠ **Closing the lake takes the reveal with it (D146)** — web does this in `MapSelectionContext`
+    // and mobile had no equivalent, because `imageryOn` is local state here. Left on, the dock
+    // vanished with the lake while `FreezeUpFrames` stayed mounted against the held frames, so the
+    // previous lake's photograph could sit on the map with no control anywhere to turn it off; and
+    // the next lake opened with imagery already on, which is not a choice anybody made about it.
+    setImageryOn(false);
   }, [highlightWaterBodyId]);
 
   // Where the imagery dock sits, and whether the timeline fits there at all.
@@ -902,7 +907,7 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
 
         {/* Put-in markers for the focused lake (Phase 4, decision #7; N6d/D143 added the middle
           rung): official = accurate cyan, osm = a mapped slipway, derived = approximate muted blue.
-          Three colours for three rungs of `PUTIN_SOURCES`. Distinct from the amber report-photo pins. */}
+          Three colors for three rungs of `PUTIN_SOURCES`. Distinct from the amber report-photo pins. */}
         <GeoJSONSource id="put-in-markers" data={putInsFC}>
           <Layer
             id="put-in-markers"

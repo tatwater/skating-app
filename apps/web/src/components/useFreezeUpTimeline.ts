@@ -29,7 +29,7 @@ import {
   statsLookup,
   type TimelineBody,
 } from '@skating/core';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { env } from '../lib/env';
 
 export interface FreezeUpTimeline {
@@ -77,10 +77,10 @@ export function useFreezeUpTimeline({
   const [index, setIndex] = useState<SeasonIndex | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(false);
-  // Bumped as each manifest lands, purely to force a re-render against a fuller cache. The value is
-  // never read — the stats live in the module cache, so this is a "something changed" signal rather
-  // than state, and the recompute below is what turns it into a sharper timeline.
-  const [, setStatsVersion] = useState(0);
+  // Bumped as each manifest lands, to force a recompute against a fuller cache. The stats live in
+  // the module cache, so this is a "something changed" signal rather than state — but it is also the
+  // memo key below, because a cache read is invisible to React and nothing else would invalidate.
+  const [statsVersion, setStatsVersion] = useState(0);
 
   // The season and its index are per-archive, not per-lake, so this runs once and every subsequent
   // lake reuses it.
@@ -120,7 +120,15 @@ export function useFreezeUpTimeline({
     let cancelled = false;
 
     const candidates = candidateFramesFor(index, body, { band });
-    if (candidates.length === 0) return;
+    // ⚠ **Clear it, never just skip.** A previous lake's manifest loop is cancelled mid-flight by
+    // this effect re-running, so its own `setLoading(false)` never lands — and a bare `return` here
+    // left `loading` stuck true forever. The scrubber then showed "Loading the freeze-up timeline…"
+    // in place of "No satellite passes recorded over this lake this season", which is the one claim
+    // it is allowed to make about a lake no pass ever cut.
+    if (candidates.length === 0) {
+      setLoading(false);
+      return;
+    }
 
     void (async () => {
       setLoading(true);
@@ -140,14 +148,25 @@ export function useFreezeUpTimeline({
     };
   }, [enabled, index, season, body, band]);
 
-  const timeline =
-    index && body
-      ? buildBodyTimeline(index, body, {
-          band,
-          // Re-read on every render; the version bump above is what makes that happen after a fetch.
-          stats: season ? statsLookup(baseUrl, season) : undefined,
-        })
-      : null;
+  // ⚠ **Memoised, and the manifest counter is what invalidates it.** Rebuilt on every render this
+  // folded ~4,900 index entries and ran a point-in-polygon per frame each time the map moved — and,
+  // worse, handed back a fresh `stops` array, which made every consumer's `useMemo`/effect deps
+  // change on renders that had nothing to do with the archive (the frame prefetch aborted and
+  // restarted, the auto-select effect re-ran). `statsVersion` is bumped as each manifest lands, so
+  // the progressive upgrade still happens — it just no longer happens for free.
+  // `statsVersion` is the invalidation key for a module-level cache the analyser cannot see, and
+  // `baseUrl` is what `statsLookup` composes its keys from — neither is inferable from the body.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: see above.
+  const timeline = useMemo(
+    () =>
+      index && body
+        ? buildBodyTimeline(index, body, {
+            band,
+            stats: season ? statsLookup(baseUrl, season) : undefined,
+          })
+        : null,
+    [index, body, band, season, baseUrl, statsVersion],
+  );
 
   return { timeline, loading, season, index, error };
 }

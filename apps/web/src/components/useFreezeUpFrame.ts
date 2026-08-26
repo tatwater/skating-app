@@ -24,7 +24,7 @@
  *
  * React runs a cleanup **before** the effect that replaces it. So every notch crossing had a window
  * with nothing on the map at all, opening the instant the old source was removed and closing only
- * when the new one's tiles arrived. On true colour that window is short enough to read as a flicker;
+ * when the new one's tiles arrived. On true color that window is short enough to read as a flicker;
  * on radar, where the difference between two dates is a couple of decibels of grey, it destroyed the
  * comparison the scrubber exists for — the eye has nothing to hold between the two pictures.
  *
@@ -234,8 +234,17 @@ export function useFreezeUpFrame({
 
     // A date nobody has a lane for. Take an empty one, or evict the least recently *shown* — never
     // the one on screen, which would be tearing down the picture to make room for its replacement.
+    //
+    // ⚠ **`recency` only holds lanes that have actually been *shown*.** Scrub faster than the tiles
+    // arrive and every lane is mounted while at most one of them is in that list — so the search
+    // below has to fall back to any lane that is not the visible one, and the previous `?? 0` did
+    // not: with lane 0 on screen and nothing else ever shown it evicted lane 0, blanking the map.
+    // That is precisely the failure the lanes exist to prevent, arriving through the eviction path.
     const empty = lanesRef.current.indexOf(null);
-    const stalest = [...recencyRef.current].reverse().find((lane) => lane !== shownRef.current);
+    const evictable = (lane: FreezeUpLane) => lane !== shownRef.current;
+    const stalest =
+      [...recencyRef.current].reverse().find(evictable) ??
+      lanesRef.current.map((_, lane) => lane).find(evictable);
     const target: FreezeUpLane = empty >= 0 ? empty : (stalest ?? 0);
     drop(target);
 
