@@ -91,6 +91,9 @@ COPY zonal-ndsi.py /usr/local/bin/zonal-ndsi.py
 COPY tiles-to-mbtiles.py /usr/local/bin/tiles-to-mbtiles.py
 # The Sentinel-1 path: calibration LUT, per-body sigma0, and the fixed-stretch render.
 COPY sar-cal-lut.py /usr/local/bin/sar-cal-lut.py
+# Thermal noise: the second annotation beside the calibration one. Its absence biased the
+# dark end — where smooth ice lives — by up to 3.5 dB. See sar-noise-lut.py.
+COPY sar-noise-lut.py /usr/local/bin/sar-noise-lut.py
 COPY sar-zonal.py /usr/local/bin/sar-zonal.py
 COPY sar-render.py /usr/local/bin/sar-render.py
 COPY sar-geocode.py /usr/local/bin/sar-geocode.py
@@ -98,6 +101,7 @@ COPY sar-deshift.py /usr/local/bin/sar-deshift.py
 RUN chmod +x /usr/local/bin/cut-granule /usr/local/bin/zonal-clear.py \
       /usr/local/bin/zonal-ndsi.py \
       /usr/local/bin/tiles-to-mbtiles.py /usr/local/bin/sar-cal-lut.py \
+      /usr/local/bin/sar-noise-lut.py \
       /usr/local/bin/sar-zonal.py /usr/local/bin/sar-render.py \
       /usr/local/bin/sar-geocode.py /usr/local/bin/sar-deshift.py
 

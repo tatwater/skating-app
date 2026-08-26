@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Per-body radar brightness from a calibrated Sentinel-1 pass (N6e PR 2, §C1).
 
-    sar-zonal.py <zones.tif> <zone-to-id.json> <pol>:<dn.tif>:<a.tif> [<pol>:<dn.tif>:<a.tif> …]
+    sar-zonal.py <zones.tif> <zone-to-id.json> <pol>:<dn.tif>:<a.tif>[:<noise.tif>] […]
                  [--interior <interior.tif> --erode-projected-m <m>]
 
 Emits the radar counterpart of `zonal-clear.py`:
@@ -39,6 +39,24 @@ This accumulates linear `sigma0` per body and converts once at the end:
 
 The difference is small on a uniform lake and grows with variance, which means it grows precisely
 where a lake is half frozen — the case the number exists to catch.
+
+## ⚠ Thermal noise is subtracted in POWER, before the division, and it is not optional either
+
+A GRD's digital numbers are signal **plus the instrument's own noise**, and calibration does not
+remove it:
+
+    measured = true + NESZ          (linear power)
+
+Measured NESZ for VH is a median of −25.2 dB on S1A and −28.0 dB on S1C, while our lakes sit at −20 to
+−22 dB. So the floor is three to five decibels under the signal, and at the far edge of an S1A swath it
+**reaches −21.8 dB**. Left in, a lake at a true −22 dB reads −20.3, and one at −26 dB reads −22.6 — a
+compressive bias that is worst exactly where smooth ice lives. See `sar-noise-lut.py`.
+
+⚠ **The subtraction is signed and stays signed until the mean is taken.** Speckle puts individual
+pixels below the floor, and `max(0, …)` per pixel would bias every dark body upward — reintroducing
+the error in a form that looks careful. Summing signed power over a body and converting once at the
+end is unbiased; a body whose mean still lands at or below zero has no measurable return, which is
+reported as `null` and counted in `belowNoiseFloorPct` rather than dressed up as a number.
 
 ## ⚠ Calibration is not optional
 
@@ -101,15 +119,25 @@ HIST_BINS = 45
 
 
 def db(linear_sum: float, n: int) -> float | None:
-    """Mean linear power to decibels, or `null` when nothing was visible."""
-    return round(10 * float(np.log10(linear_sum / n)), 3) if n > 0 else None
+    """Mean linear power to decibels, or `null` when there is nothing to take a logarithm of.
+
+    ⚠ **Two different nulls, and they mean the same thing here on purpose.** `n == 0` is "we could not
+    see it"; a mean at or below zero after noise subtraction is "we saw it and it returned nothing
+    measurably above the instrument's own floor". Both are honestly `null` — the alternative is
+    clamping to some very negative decibel figure, which would read as a spectacularly smooth lake.
+    `belowNoiseFloorPct` is what distinguishes them for a reader who cares.
+    """
+    if n <= 0:
+        return None
+    mean = linear_sum / n
+    return round(10 * float(np.log10(mean)), 3) if mean > 0 else None
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("zones")
     parser.add_argument("mapping")
-    parser.add_argument("bands", nargs="+", help="pol:dn.tif:a.tif")
+    parser.add_argument("bands", nargs="+", help="pol:dn.tif:a.tif[:noise.tif]")
     parser.add_argument(
         "--interior",
         help="distance-to-bank raster from `build_interior`; enables the eroded statistics",
@@ -155,11 +183,23 @@ def main() -> int:
     channels = []
     keep_alive = []
     for spec in args.bands:
-        pol, dn_path, a_path = spec.split(":", 2)
+        parts = spec.split(":")
+        if len(parts) == 3:
+            pol, dn_path, a_path = parts
+            noise_path = None
+        elif len(parts) == 4:
+            pol, dn_path, a_path, noise_path = parts
+        else:
+            print(f"band spec must be pol:dn:a[:noise], got {spec!r}", file=sys.stderr)
+            return 64
         dn = gdal.Open(dn_path)
         a = gdal.Open(a_path)
+        noise = gdal.Open(noise_path) if noise_path else None
         keep_alive.extend((dn, a))
-        for name, ds in ((dn_path, dn), (a_path, a)):
+        if noise is not None:
+            keep_alive.append(noise)
+        grids = [(dn_path, dn), (a_path, a)] + ([(noise_path, noise)] if noise else [])
+        for name, ds in grids:
             if (ds.RasterXSize, ds.RasterYSize) != (width, height):
                 # A per-pixel divide on mismatched grids applies one lake's gain to another and the
                 # result still looks like a plausible brightness. Refuse.
@@ -169,14 +209,17 @@ def main() -> int:
                     file=sys.stderr,
                 )
                 return 1
-        channels.append((pol, dn.GetRasterBand(1), a.GetRasterBand(1)))
+        channels.append((pol, dn.GetRasterBand(1), a.GetRasterBand(1),
+                         noise.GetRasterBand(1) if noise else None))
 
     zone_slots = max_zone + 1
-    linear = {pol: np.zeros(zone_slots) for pol, _, _ in channels}
-    counts = {pol: np.zeros(zone_slots, dtype=np.int64) for pol, _, _ in channels}
-    inner_linear = {pol: np.zeros(zone_slots) for pol, _, _ in channels}
-    inner_counts = {pol: np.zeros(zone_slots, dtype=np.int64) for pol, _, _ in channels}
-    hist = {pol: np.zeros(zone_slots * HIST_BINS, dtype=np.int64) for pol, _, _ in channels}
+    linear = {pol: np.zeros(zone_slots) for pol, *_ in channels}
+    counts = {pol: np.zeros(zone_slots, dtype=np.int64) for pol, *_ in channels}
+    inner_linear = {pol: np.zeros(zone_slots) for pol, *_ in channels}
+    inner_counts = {pol: np.zeros(zone_slots, dtype=np.int64) for pol, *_ in channels}
+    # Pixels whose power went non-positive once the noise was subtracted — "at or under the floor".
+    below_floor = {pol: np.zeros(zone_slots, dtype=np.int64) for pol, *_ in channels}
+    hist = {pol: np.zeros(zone_slots * HIST_BINS, dtype=np.int64) for pol, *_ in channels}
     total = np.zeros(zone_slots, dtype=np.int64)
     inner_total = np.zeros(zone_slots, dtype=np.int64)
     bin_width = (HIST_MAX_DB - HIST_MIN_DB) / HIST_BINS
@@ -196,7 +239,7 @@ def main() -> int:
         else:
             deep = None
 
-        for pol, dn_band, a_band in channels:
+        for pol, dn_band, a_band, noise_band in channels:
             dn = dn_band.ReadAsArray(0, y, width, rows)
             gain = a_band.ReadAsArray(0, y, width, rows)
             # A zero DN is outside the swath; a zero gain is outside the LUT's reach. Either way the
@@ -205,7 +248,15 @@ def main() -> int:
             if not usable.any():
                 continue
             z = zones[usable].astype(np.int64)
-            sigma0 = (dn[usable].astype(np.float64) / gain[usable].astype(np.float64)) ** 2
+            power = dn[usable].astype(np.float64) ** 2
+            if noise_band is not None:
+                # ⚠ **Signed, and it stays signed.** Speckle puts individual pixels below the floor;
+                # clamping each one at zero would bias every dark body upward, which is the same error
+                # this correction exists to remove, wearing a more careful-looking hat. The sum is
+                # unbiased and only the final mean has to be positive.
+                power = power - noise_band.ReadAsArray(0, y, width, rows)[usable].astype(np.float64)
+                below_floor[pol] += np.bincount(z[power <= 0], minlength=zone_slots)
+            sigma0 = power / gain[usable].astype(np.float64) ** 2
             linear[pol] += np.bincount(z, weights=sigma0, minlength=zone_slots)
             counts[pol] += np.bincount(z, minlength=zone_slots)
 
@@ -217,9 +268,12 @@ def main() -> int:
             if not inner_usable.any():
                 continue
             iz = zones[inner_usable].astype(np.int64)
-            inner_sigma0 = (
-                dn[inner_usable].astype(np.float64) / gain[inner_usable].astype(np.float64)
-            ) ** 2
+            inner_power = dn[inner_usable].astype(np.float64) ** 2
+            if noise_band is not None:
+                inner_power = inner_power - noise_band.ReadAsArray(
+                    0, y, width, rows
+                )[inner_usable].astype(np.float64)
+            inner_sigma0 = inner_power / gain[inner_usable].astype(np.float64) ** 2
             inner_linear[pol] += np.bincount(iz, weights=inner_sigma0, minlength=zone_slots)
             inner_counts[pol] += np.bincount(iz, minlength=zone_slots)
 
@@ -228,22 +282,27 @@ def main() -> int:
             # it is classifying each pixel by its own brightness, which is exactly the distribution
             # a specular-fraction question asks about. The mean stays linear; only the bin edges are
             # logarithmic.
-            pixel_db = np.clip(
-                10 * np.log10(inner_sigma0), HIST_MIN_DB, HIST_MAX_DB
-            )
+            # ⚠ A denoised pixel can be non-positive, which has no logarithm. Those go in the
+            # bottom bin — "at or under the noise floor" is where they belong, and the count is also
+            # reported on its own as `belowNoiseFloorPct` so nobody reads the bin as smooth ice.
+            with np.errstate(divide="ignore", invalid="ignore"):
+                pixel_db = np.where(
+                    inner_sigma0 > 0, 10 * np.log10(np.maximum(inner_sigma0, 1e-12)), HIST_MIN_DB
+                )
+            pixel_db = np.clip(pixel_db, HIST_MIN_DB, HIST_MAX_DB)
             bins = np.minimum(
                 ((pixel_db - HIST_MIN_DB) / bin_width).astype(np.int64), HIST_BINS - 1
             )
             hist[pol] += np.bincount(iz * HIST_BINS + bins, minlength=zone_slots * HIST_BINS)
 
-    shaped = {pol: hist[pol].reshape(zone_slots, HIST_BINS) for pol, _, _ in channels}
+    shaped = {pol: hist[pol].reshape(zone_slots, HIST_BINS) for pol, *_ in channels}
 
     out = []
     for zone, water_body_id in sorted(zone_to_id.items()):
         entry: dict[str, object] = {"waterBodyId": water_body_id}
         seen = 0
         inner_seen = 0
-        for pol, _, _ in channels:
+        for pol, *_ in channels:
             n = int(counts[pol][zone])
             seen = max(seen, n)
             # null, never a number, when nothing was visible — "we could not see it" and "it was dark"
@@ -257,11 +316,20 @@ def main() -> int:
         t = int(total[zone])
         entry["coveragePct"] = round(seen / t, 4) if t > 0 else 0.0
         entry["pixels"] = seen
+        if any(nb is not None for *_, nb in channels):
+            # How much of this body returned nothing above the noise floor. A high figure is not a
+            # smooth lake — it is a lake the instrument cannot measure, and N6g Lane 1 has to be able
+            # to tell those apart before it calls anything specular.
+            entry["belowNoiseFloorPct"] = {
+                pol: (round(int(below_floor[pol][zone]) / int(counts[pol][zone]), 4)
+                      if int(counts[pol][zone]) > 0 else None)
+                for pol, *_ in channels
+            }
         if interior_band is not None:
             entry["interiorPixels"] = inner_seen
             entry["interiorTotalPixels"] = int(inner_total[zone])
             entry["sigma0Hist"] = (
-                {pol: [int(v) for v in shaped[pol][zone]] for pol, _, _ in channels}
+                {pol: [int(v) for v in shaped[pol][zone]] for pol, *_ in channels}
                 if inner_seen > 0
                 else None
             )

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Turn calibrated radar backscatter into a picture (N6e PR 2, §C1).
 
-    sar-render.py <dn.tif> <a.tif> <out.tif> [--min-db -30] [--max-db 0]
+    sar-render.py <dn.tif> <a.tif> <out.tif> [--noise <noise.tif>] [--min-db -30] [--max-db 0]
 
 ## ⚠ The stretch is FIXED, and that is the whole design
 
@@ -55,11 +55,13 @@ def main() -> int:
     parser.add_argument("dn")
     parser.add_argument("gain")
     parser.add_argument("out")
+    parser.add_argument("--noise", help="warped noise LUT; subtracted in power before the stretch")
     parser.add_argument("--min-db", type=float, default=-30.0)
     parser.add_argument("--max-db", type=float, default=0.0)
     args = parser.parse_args()
 
     dn_ds = gdal.Open(args.dn)
+    noise_ds = gdal.Open(args.noise) if args.noise else None
     gain_ds = gdal.Open(args.gain)
     width, height = dn_ds.RasterXSize, dn_ds.RasterYSize
     if (gain_ds.RasterXSize, gain_ds.RasterYSize) != (width, height):
@@ -83,6 +85,7 @@ def main() -> int:
         gain_ds.GetRasterBand(1),
         out_ds.GetRasterBand(1),
     )
+    noise_band = noise_ds.GetRasterBand(1) if noise_ds else None
     span = args.max_db - args.min_db
 
     for y in range(0, height, ROWS_PER_WINDOW):
@@ -92,7 +95,17 @@ def main() -> int:
         usable = (dn > 0) & (gain > 0)
         grey = np.zeros(dn.shape, np.uint8)
         if usable.any():
-            sigma0 = (dn[usable] / gain[usable]) ** 2
+            power = dn[usable].astype(np.float64) ** 2
+            if noise_band is not None:
+                # ⚠ **Clamped here, unlike `sar-zonal.py`, and the difference is the point.** This is
+                # a picture: a pixel needs *a* grey, and there is no honest grey for negative power.
+                # The measurement is what must stay unbiased, so it keeps the signed sum; this floors
+                # at the bottom of the stretch, where such a pixel belongs visually.
+                power = np.maximum(
+                    power - noise_band.ReadAsArray(0, y, width, rows)[usable].astype(np.float64),
+                    1e-12,
+                )
+            sigma0 = power / gain[usable].astype(np.float64) ** 2
             db = 10 * np.log10(sigma0)
             scaled = np.clip((db - args.min_db) / span, 0, 1)
             # 1..255, reserving 0 for "no data". Otherwise the darkest genuine water is

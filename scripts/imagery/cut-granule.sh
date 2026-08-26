@@ -1094,8 +1094,40 @@ transform_sar() {
       -tr "$WARP_RES" "$WARP_RES" -r bilinear -srcnodata 0 -dstnodata 0 \
       "a-${p}-coarse.tif" "a-${p}.vrt" || die "calibration resample failed for ${p}"
 
+    # ## Thermal noise, by exactly the same route as the gain
+    #
+    # A GRD's DN is signal **plus the instrument's own noise**, and calibration does not remove it.
+    # Measured NESZ for VH: median −25.2 dB on S1A, −28.0 dB on S1C, against lakes that sit at −20 to
+    # −22 dB — so the floor is three to five decibels under the signal, and at the far edge of an S1A
+    # swath it reaches −21.8 dB. It biases the DARK end hardest, which is where smooth ice lives.
+    #
+    # ⚠ **It is also the prime suspect for the S1A/S1C offset that currently forbids pooling
+    # platforms** (open question 7). S1C's floor is 2.80 dB quieter, which on a −22 dB lake predicts a
+    # −0.73 dB platform bias against the −0.52 dB measured ascending. If denoising collapses that, a
+    # lake gets a 6-day look instead of a 12-day one.
+    #
+    # ⚠ **Fatal if missing, like calibration.** Shipping a frame with the noise left in is shipping a
+    # measurement whose bias depends on which satellite took it and where in the swath the lake sat.
+    noise_href="$(jq -r --arg k "schema-noise-${p}" '.assets[$k].href // empty' granule.json)"
+    [[ -n "$noise_href" ]] || die "no noise annotation for ${p} — refusing to ship un-denoised"
+    noise_href="${noise_href/s3:\/\/sentinel-s1-l1c\//https:\/\/sentinel-s1-l1c.s3.amazonaws.com\/}"
+    curl -fsSL --retry 3 "$noise_href" -o "noise-${p}.xml" || die "noise fetch failed for ${p}"
+    stage "noiselut_${p}" python3 /usr/local/bin/sar-noise-lut.py "noise-${p}.xml" \
+      "/vsicurl/${href}" "noiselut-${p}.tif" --calibration "cal-${p}.xml" \
+      || die "noise LUT build failed for ${p}"
+    # Coarse-then-resample, for the reason the gain is: the noise surface is smooth in range and the
+    # thin-plate-spline is what costs. ⚠ The one place it is NOT smooth is the sub-swath seams, which
+    # `sar-noise-lut.py` bakes into the grid before this ever sees it.
+    stage "noisewarp_${p}" gdalwarp -q -tps -t_srs EPSG:3857 -te "$MINX" "$MINY" "$MAXX" "$MAXY" \
+      -tr "$(( WARP_RES * 8 ))" "$(( WARP_RES * 8 ))" -r bilinear -dstnodata 0 \
+      -co COMPRESS=DEFLATE -overwrite "noiselut-${p}.tif" "n-${p}-coarse.tif" \
+      || die "noise warp failed for ${p}"
+    gdalwarp -q -of VRT -t_srs EPSG:3857 -te "$MINX" "$MINY" "$MAXX" "$MAXY" \
+      -tr "$WARP_RES" "$WARP_RES" -r bilinear -srcnodata 0 -dstnodata 0 \
+      "n-${p}-coarse.tif" "n-${p}.vrt" || die "noise resample failed for ${p}"
+
     pols+=("$p")
-    zonal_args+=("${p}:${p}.tif:a-${p}.vrt")
+    zonal_args+=("${p}:${p}.tif:a-${p}.vrt:n-${p}.vrt")
   done
   [[ ${#pols[@]} -gt 0 ]] || die "no usable polarisation on $GRANULE_ID"
 
