@@ -50,6 +50,16 @@ const SLIDE_MS = 220;
 const FALLBACK_INPUT_HEIGHT = 48;
 
 /**
+ * How much vertical room the bar claims below the safe-area inset, for anything that has to start
+ * *under* it — currently `BackToLakeButton`, which used to overlap it on tall phones.
+ *
+ * The nominal height plus a gap, not a measurement: the bar's real height is known only inside this
+ * component and only after layout, and a control that jumped once the first layout landed would be
+ * worse than one that's a couple of points off at a large font scale.
+ */
+export const SEARCH_BAR_SLOT = FALLBACK_INPUT_HEIGHT + 8;
+
+/**
  * Presentational lake-search box (Tamagui), the mobile mirror of web's `LakeSearchBox`. Convex-free
  * so it's testable. Renders a search input over the map and, when `showResults`, a dropdown of
  * pressable result rows (or a "no lakes" line). Positioned as an absolute overlay below the status

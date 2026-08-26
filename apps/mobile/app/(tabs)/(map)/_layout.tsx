@@ -12,8 +12,6 @@ import { LakeSearch } from '../../../src/components/LakeSearch';
 import { DRAWER_NORMAL, DRAWER_PEEK, MapDrawer } from '../../../src/components/MapDrawer';
 import { MapSelectionProvider, useMapSelection } from '../../../src/components/MapSelectionContext';
 import MapView from '../../../src/components/MapView';
-import { OnIceModeControl } from '../../../src/components/OnIceModeControl';
-import { RecorderControl } from '../../../src/components/RecorderControl';
 import { resolveCachedBody } from '../../../src/lib/bodyCache';
 import { noteDwell } from '../../../src/lib/dwellTracker';
 import { ensureForegroundPermission } from '../../../src/lib/location';
@@ -258,13 +256,14 @@ function MapLayoutInner() {
       >
         <Slot />
       </MapDrawer>
-      {/* All of these sit above the drawer: a warning you can't see because a sheet is over it isn't a
-          warning, and the flag button + on-ice control have to stay reachable while a drawer is open.
-          They hold that position by their own `zIndex` of 30 and up, against the sheet's 25 — see
-          `DRAWER_Z_INDEX`, which threads between them and the map's own overlays below. */}
+      {/* The capture flow and the alert banner sit *above* the drawer: a warning you can't see because
+          a sheet is over it isn't a warning, and the flag button has to stay reachable while a drawer
+          is open. They hold that position by their own `zIndex` of 30, against the sheet's 25 — see
+          `DRAWER_Z_INDEX`, which threads between them and the map's own overlays below.
+          `BackToLakeButton` deliberately does *not*: see its own note. And the on-ice control moved
+          into `MapView` entirely (founder, 2026-08-26) — it belongs to the map's bottom rail now, and
+          it was one half of the button pile this pass cleared off the screen. */}
       <HazardCapture />
-      <OnIceModeControl />
-      <RecorderControl />
       <BackToLakeButton />
       <HazardBanner />
     </View>

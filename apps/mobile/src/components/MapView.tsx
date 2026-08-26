@@ -106,6 +106,7 @@ import { FreezeUpScrubber } from './FreezeUpScrubber';
 import { ImageryDock } from './ImageryDock';
 import { coveredFractionForIndex, DRAWER_PEEK } from './MapDrawer';
 import { useMapSelection } from './MapSelectionContext';
+import { OnIceDock } from './OnIceDock';
 import { ReturnToRegion } from './ReturnToRegion';
 import { useFreezeUpTimeline } from './useFreezeUpTimeline';
 
@@ -127,6 +128,9 @@ const EMPTY_FC: GeoJSON.FeatureCollection = { type: 'FeatureCollection', feature
 
 /** How long a hazard tap suppresses the water-body tap underneath it (one gesture's worth). */
 const HAZARD_PRESS_PRECEDENCE_MS = 300;
+
+/** The breathing room between the two boxes on the map's bottom rail when one has to stack. */
+const RAIL_GAP = 8;
 
 // The initial query covers the whole pilot region at the state zoom, so the map shows the prominent
 // bodies (Champlain, boosted Morey) immediately — before the first `onRegionDidChange` — then each
@@ -455,17 +459,40 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
   // sheet being dragged upward, which resolves the moment it lands.
   const sheetIsClear = drawerCoveredFraction <= coveredFractionForIndex(DRAWER_PEEK);
   const sheetTop = drawerCoveredFraction * mapHeight;
-  // 140 is the floor the scrubber has always used — clear of the peek on ordinary phones and of
-  // `OnIceModeControl` at 132. On a tall screen the peek is itself taller than that, so the sheet's
-  // own height wins; above the peek the dock rides on the sheet's top edge (rule 1 in `ImageryDock`).
+  // 140 is the floor the scrubber has always used — clear of the peek on ordinary phones. On a tall
+  // screen the peek is itself taller than that, so the sheet's own height wins; above the peek the
+  // dock rides on the sheet's top edge (rule 1 in `ImageryDock`).
   //
   // ⚠ **And it stops climbing before it reaches the top of the map.** At the sheet's tallest detent
-  // there is ~6% of screen left, which `BackToLakeButton` (y=112) still owns; riding the edge up there
-  // would park the dock on top of it. Clamped, it slides behind the sheet instead — the honest outcome
-  // when the skater has pulled the map almost entirely off screen. (`LakeSearch` used to be the other
-  // claimant here, but it scoots off the top the moment a body is selected, and the dock only exists
-  // when one is — so the search box can no longer be in this dock's way.)
-  const dockBottom = Math.min(mapHeight - 212, Math.max(140, sheetTop + 16));
+  // there is ~6% of screen left, and a box riding that edge would hang off the top of the map into the
+  // status bar. Clamped, it slides behind the sheet instead — the honest outcome when the skater has
+  // pulled the map almost entirely off screen. (`LakeSearch` used to be the other claimant up there,
+  // but it scoots off the top the moment a body is selected, and the dock only exists when one is; and
+  // `BackToLakeButton` now paints *under* the sheet too.)
+  const railCeiling = mapHeight - 212;
+  const dockBottom = Math.min(railCeiling, Math.max(140, sheetTop + 16));
+
+  // The rail's other end (founder, 2026-08-26). "Show imagery" and "On ice" are the two things you can
+  // do to the map itself, so they share one line above the sheet — imagery left, on-ice right — and
+  // both ride `dockBottom`, which is what stops either from hovering over a sheet the skater has pulled
+  // up. Before this, the on-ice pair was pinned at a fixed `bottom: 132/188` and simply sat on top of
+  // whatever the drawer did.
+  //
+  // ⚠ **Only one box on the line may be wide.** A panel — the timeline, or a running on-ice session —
+  // takes the full width, so when either opens the other steps *above* it rather than under it. The
+  // on-ice session wins the line when both want it: it's live safety state, while the timeline is a
+  // planning tool, and folding the scrubber away is a move `ImageryDock` already makes for the sheet
+  // (rule 1 — the imagery layer itself stays on the map either way).
+  //
+  // The stack is held under the same ceiling as the rail itself, so a stacked box can't hang off the
+  // top of the map either. At the tallest detent that collapses the two back onto one line — which is
+  // fine, because there the whole rail is behind the sheet and there is nothing on screen to overlap.
+  const [onIceExpanded, setOnIceExpanded] = useState(false);
+  const imageryExpanded = imageryOn && sheetIsClear && !onIceExpanded;
+  const onIceBottom =
+    imageryExpanded || onIceExpanded
+      ? Math.min(railCeiling, dockBottom + dockHeight + RAIL_GAP)
+      : dockBottom;
 
   // Warm the season's frames once the timeline appears, so scrubbing does not start a cold load per
   // notch. Header ranges only — see `prefetchFrames`. Aborted when the lake or band changes, so a
@@ -1108,7 +1135,7 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
       <ImageryDock
         visible={Boolean(highlightWaterBodyId) && !hazardDraft}
         imageryOn={imageryOn}
-        expanded={imageryOn && sheetIsClear}
+        expanded={imageryExpanded}
         // No archive ⇒ no scrubber ⇒ nothing for a heading to head, which is the same gate the
         // children below are behind.
         heading={env.imageryArchiveUrl ? 'Freeze-up timeline' : null}
@@ -1144,6 +1171,12 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
           />
         ) : null}
       </ImageryDock>
+
+      {/* The rail's right-hand end: going out on the ice, in one control (founder, 2026-08-26). It
+          lives here rather than in the `(map)` layout precisely so it paints *under* the sheet like
+          the imagery dock does — the pair of buttons it replaces sat above the sheet at a fixed
+          height and covered whatever the skater had opened. */}
+      <OnIceDock bottom={onIceBottom} onExpandedChange={setOnIceExpanded} />
 
       <ReturnToRegion
         visible={regionOffscreen}
