@@ -972,16 +972,21 @@ transform_granule() {
   # raster. Note the "own the pixels" argument does not carry here — Copernicus keeps SCL for these
   # granule ids indefinitely, and the manifest's `bodies` array already saves the re-derivation cost.
   #
-  # ⚠ **MEASURE THIS ON A DENSE GRANULE BEFORE COMMITTING A SEASON TO IT.** On 2026-08-24 tiling SCL
-  # took a 923-body Champlain extent (11,532 x 20,608 px) past **17 minutes without finishing**,
-  # against ~2 minutes for the same granule's true color — while the season-wide average came out at
-  # only +24% job time and +33% storage. Those two numbers describe the same change, and the gap
-  # between them is the risk: ~18% of a season's granules sit on 1,000+ body tiles, so an average that
-  # looks affordable can hide a tail that does not finish.
+  # ✅ **MEASURED ON THE DENSE GRANULE, 2026-08-26 — the gate passes.** On 2026-08-24 tiling SCL took
+  # a 923-body Champlain extent (11,532 x 20,608 px) past **17 minutes without finishing**, against a
+  # season-wide average of only +24% job time. Those two numbers describe the same change, and the gap
+  # between them was the risk: ~18% of a season's granules sit on 1,000+ body tiles, so an average that
+  # looks affordable could hide a tail that does not finish.
   #
-  # That measurement also predates the tiler swap landed the same day (~2.6x on the visual path), so
-  # it may already be stale in the good direction. Either way the rule from that swap applies — it was
-  # prototyped on one granule before it touched a season, and that is what caught the black lakes.
+  # Re-measured on that same granule (`S2C_18TXP_20260215_0_L2A`) after the tiler swap and after the
+  # statistics' intermediates were removed before tiling: warp 3.0s + palette 24.6s + tile 86.4s =
+  # **114s of 592s total, or +24%.** The tail and the mean are the same number. The 17-minute figure
+  # was stale in the good direction exactly as suspected, so `EMIT_SCL_FRAME` staying on costs a
+  # quarter again on the worst granule in the corpus rather than an unbounded one.
+  #
+  # The rule that produced this measurement still stands for the next such change: prototype on one
+  # granule before touching a season. That is what caught the black lakes, and it is what caught SCL
+  # shipping as a black rectangle the day before this.
   BANDS='["visual"]'
   if [[ -s scl.tif && "${EMIT_SCL_FRAME:-1}" == "1" ]]; then
     rm -rf scl-tiles scl.mbtiles scl.pmtiles

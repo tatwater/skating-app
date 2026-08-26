@@ -1102,11 +1102,30 @@ once.
 | ~~**The DEM-corrected radar geocode**~~ *(question 8)* | ✅ **BUILT AND CALIBRATED 2026-08-25.** See [what the calibration found](#the-radar-geocode-calibrated-2026-08-25) — it is no longer a queue item, and two of the things it turned up were not what the queue expected. |
 | **The SCL raster, now that it is on by default** *(founder, 2026-08-25)* | `EMIT_SCL_FRAME` now defaults on, so every *future* cut publishes a `scl` frame — but the **4,381 optical frames already in R2 predate it**, so the band selector has real data for `visual` and `vh` and an empty third option until a re-cut. Additive and blocks nothing: PR 3 should build the selector to render whatever bands the index actually offers rather than a hardcoded three. |
 
-⚠ **Measure the SCL raster on a dense granule before committing a season to it.** The season-wide
-average was +24% job time and +33% storage, but a 923-body Champlain extent went **past 17 minutes
-without finishing** — and ~18% of a season sits on 1,000+ body tiles. Those are the same change
-measured two ways, and the gap between them is the risk. The measurement also predates the tiler swap,
-so it may be stale in the good direction; either way, one granule first.
+~~⚠ **Measure the SCL raster on a dense granule before committing a season to it.**~~ ✅ **MEASURED
+2026-08-26, and the gate passes.** The worry was that a season-wide average of +24% job time hid a
+tail: a 923-body Champlain extent had gone **past 17 minutes without finishing**, and ~18% of a season
+sits on 1,000+ body tiles. Re-measured on that same granule — `S2C_18TXP_20260215_0_L2A`, 923 bodies,
+237.7 Mpixels, on a real `shared-cpu-4x/2048`:
+
+| stage | ms |
+| --- | --- |
+| `warp_scl` | 2,975 |
+| `color_scl` | 24,643 |
+| `tile_scl` | 86,385 |
+| **SCL total** | **113,997** |
+| **job total** | **591,618** |
+
+**+24% on the worst granule in the corpus** — the tail and the mean are the same number, which is the
+opposite of what the gap implied. The 17-minute figure was stale in the good direction, as suspected:
+it predates both the tiler swap and the removal of the statistics' intermediates before tiling.
+
+⚠ **The gate was worth running for a second reason.** The first attempt ran against an image built
+from an earlier commit, which is invisible in any artifact — so the run *timed* the pipeline without
+proving which pipeline it timed. Rebuilding from `HEAD` and re-running is what made `color_scl`'s
+presence in the manifest the evidence that the four-colour palette shipped. **A season run should pin
+`FLY_IMAGE` to a freshly built image and record the commit**, or the manifests record cost for code
+nobody can identify afterwards.
 
 ### The radar geocode, calibrated *(2026-08-25)*
 
