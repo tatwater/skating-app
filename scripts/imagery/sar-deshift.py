@@ -263,9 +263,15 @@ def main() -> int:
                 "geocodeReferenceHeightM": round(reference, 1),
                 # What was actually applied, in whole pixels — so a frame can be audited or undone
                 # rather than trusted. Ground metres, not the projected ones the shift was made in.
+                #
+                # ⚠ **Both components in the same frame.** `gt[5]` is already negative on a north-up
+                # raster, so `d_row * gt[5]` IS the northing — negating it as well made `north` point
+                # the opposite way from `east`, which is the one thing a recorded offset must never
+                # do: an auditor undoing this row would have moved the lake twice as far north as it
+                # ever went.
                 "geocodeShiftM": {
                     "east": round(d_col * gt[1] / inflation, 1),
-                    "north": round(-d_row * gt[5] / inflation, 1),
+                    "north": round(d_row * gt[5] / inflation, 1),
                 },
             }
 

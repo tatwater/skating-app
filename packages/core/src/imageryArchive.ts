@@ -273,6 +273,29 @@ export interface FrameBodyStats {
    * max 0.297.
    */
   belowNoiseFloorPct?: Record<string, number | null> | null;
+  /**
+   * The same fraction over the *interior* pixels — the population {@link sigma0Hist} covers.
+   *
+   * ⚠ **Read this one beside the histogram, not the full-zone figure.** The interior is several
+   * decibels darker because the bright bank is gone, so far more of it sits near the floor: measured
+   * on a real pass, the full-zone median was 0.000 while the interior histogram put **15.6% of its
+   * pixels in the bottom bin**.
+   */
+  interiorBelowNoiseFloorPct?: Record<string, number | null> | null;
+  /**
+   * This body's own noise-equivalent sigma0, per polarisation — **where its histogram stops meaning
+   * anything.**
+   *
+   * ⚠ **Subtracting noise makes the dark end unbiased, not trustworthy.** A pixel whose true return
+   * is a few percent of the noise comes out positive, tiny, and hugely negative in decibels — landing
+   * in the bottom bins looking like exceptionally smooth ice. NESZ varies by several dB across a
+   * swath and by nearly three between platforms, so no constant substitutes for it.
+   *
+   * **This is what makes an N6g Lane 1 claim checkable**: *"40% of this lake sat below −22 dB"* means
+   * nothing until you know the lake's floor is −25.2 dB. Measured on a real pass, **14% of bodies sit
+   * within 3 dB of their own floor** — for those, smoothness is not a claim the data can support.
+   */
+  neszDb?: Record<string, number | null> | null;
 
   /**
    * The viewing geometry this body was measured at — radar only.

@@ -163,8 +163,7 @@ export function localGeocodeReference(
   if (points.length === 0) return null;
 
   const scale = Math.cos((lat * Math.PI) / 180);
-  const squared = (p: GeolocationGridPoint) =>
-    (p.lat - lat) ** 2 + ((p.lng - lng) * scale) ** 2;
+  const squared = (p: GeolocationGridPoint) => (p.lat - lat) ** 2 + ((p.lng - lng) * scale) ** 2;
 
   const nearest = [...points].sort((a, b) => squared(a) - squared(b)).slice(0, neighbours);
 
@@ -206,9 +205,10 @@ export function localGeocodeReference(
  * call site. Use this one to move a zone polygon, a mask, or anything else being pushed *onto* the
  * pixels; use {@link geocodeOffsetMeters} to move the pixels themselves.
  */
-export function maskOffsetMeters(
-  params: Parameters<typeof geocodeOffsetMeters>[0],
-): { eastM: number; northM: number } {
+export function maskOffsetMeters(params: Parameters<typeof geocodeOffsetMeters>[0]): {
+  eastM: number;
+  northM: number;
+} {
   const { eastM, northM } = geocodeOffsetMeters(params);
   return { eastM: -eastM, northM: -northM };
 }

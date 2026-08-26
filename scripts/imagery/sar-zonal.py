@@ -218,7 +218,28 @@ def main() -> int:
     inner_linear = {pol: np.zeros(zone_slots) for pol, *_ in channels}
     inner_counts = {pol: np.zeros(zone_slots, dtype=np.int64) for pol, *_ in channels}
     # Pixels whose power went non-positive once the noise was subtracted — "at or under the floor".
+    #
+    # ⚠ **Counted over BOTH populations, because the two statistics that need it differ.** `vhDb` is a
+    # full-zone figure; `sigma0Hist` and `interiorVhDb` are interior-only, and the interior is several
+    # decibels darker because the bright bank is gone — so a far larger share of it sits at the floor.
+    # Measured on a real pass: full-zone median 0.000 while the interior histogram put **21.7% of its
+    # pixels in the bottom bin**. Reporting only the full-zone number would leave a reader of the
+    # histogram with no warning at all about the very bin most likely to be mistaken for smooth ice.
     below_floor = {pol: np.zeros(zone_slots, dtype=np.int64) for pol, *_ in channels}
+    inner_below_floor = {pol: np.zeros(zone_slots, dtype=np.int64) for pol, *_ in channels}
+    # ## The body's own noise floor, which is where its histogram stops meaning anything
+    #
+    # ⚠ **Subtraction does not make the dark end trustworthy, it makes it unbiased.** A pixel whose
+    # true return is a few percent of the noise comes out positive, tiny, and enormously negative in
+    # decibels — so it lands in the bottom bins looking like exceptionally smooth ice. Measured on a
+    # real pass: **15.6% of interior pixels in the bottom bin, while only ~0% were actually below
+    # zero.** The two are not the same thing and neither is smoothness.
+    #
+    # NESZ varies across the swath by several decibels and between platforms by nearly three, so
+    # there is no constant a reader could apply instead. Recording it per body is what lets "40% of
+    # this lake sat below −22 dB" be checked against "and this lake's floor is −25.2 dB".
+    noise_linear = {pol: np.zeros(zone_slots) for pol, *_ in channels}
+    noise_counts = {pol: np.zeros(zone_slots, dtype=np.int64) for pol, *_ in channels}
     hist = {pol: np.zeros(zone_slots * HIST_BINS, dtype=np.int64) for pol, *_ in channels}
     total = np.zeros(zone_slots, dtype=np.int64)
     inner_total = np.zeros(zone_slots, dtype=np.int64)
@@ -242,6 +263,10 @@ def main() -> int:
         for pol, dn_band, a_band, noise_band in channels:
             dn = dn_band.ReadAsArray(0, y, width, rows)
             gain = a_band.ReadAsArray(0, y, width, rows)
+            # Read once per window, not once per subset. The full-zone and interior passes below both
+            # want it, and this loop is bounded by I/O rather than by arithmetic — a second read of
+            # the same window doubled the noise raster's share of it for nothing.
+            noise = noise_band.ReadAsArray(0, y, width, rows) if noise_band is not None else None
             # A zero DN is outside the swath; a zero gain is outside the LUT's reach. Either way the
             # pixel abstains rather than contributing a fabricated value.
             usable = inside & (dn > 0) & (gain > 0)
@@ -254,7 +279,7 @@ def main() -> int:
                 # clamping each one at zero would bias every dark body upward, which is the same error
                 # this correction exists to remove, wearing a more careful-looking hat. The sum is
                 # unbiased and only the final mean has to be positive.
-                power = power - noise_band.ReadAsArray(0, y, width, rows)[usable].astype(np.float64)
+                power = power - noise[usable].astype(np.float64)
                 below_floor[pol] += np.bincount(z[power <= 0], minlength=zone_slots)
             sigma0 = power / gain[usable].astype(np.float64) ** 2
             linear[pol] += np.bincount(z, weights=sigma0, minlength=zone_slots)
@@ -269,13 +294,24 @@ def main() -> int:
                 continue
             iz = zones[inner_usable].astype(np.int64)
             inner_power = dn[inner_usable].astype(np.float64) ** 2
-            if noise_band is not None:
-                inner_power = inner_power - noise_band.ReadAsArray(
-                    0, y, width, rows
-                )[inner_usable].astype(np.float64)
+            if noise is not None:
+                inner_power = inner_power - noise[inner_usable].astype(np.float64)
             inner_sigma0 = inner_power / gain[inner_usable].astype(np.float64) ** 2
             inner_linear[pol] += np.bincount(iz, weights=inner_sigma0, minlength=zone_slots)
             inner_counts[pol] += np.bincount(iz, minlength=zone_slots)
+            if noise is not None:
+                inner_below_floor[pol] += np.bincount(
+                    iz[inner_power <= 0], minlength=zone_slots
+                )
+                # The floor expressed in the same units as the measurement: noise power over gain.
+                # Off the window read once above — this is the third consumer of it in one iteration,
+                # and re-reading the raster per consumer is what the single `noise` local is for.
+                nesz = (
+                    noise[inner_usable].astype(np.float64)
+                    / gain[inner_usable].astype(np.float64) ** 2
+                )
+                noise_linear[pol] += np.bincount(iz, weights=nesz, minlength=zone_slots)
+                noise_counts[pol] += np.bincount(iz, minlength=zone_slots)
 
             # ⚠ **Per-pixel dB here, unlike every mean in this file.** Averaging decibels is the
             # error the module docstring exists to warn about — but *binning* them is not averaging,
@@ -333,6 +369,19 @@ def main() -> int:
                 if inner_seen > 0
                 else None
             )
+            if any(nb is not None for *_, nb in channels):
+                # ⚠ **The figure that belongs beside `sigma0Hist`, because it covers the same pixels.**
+                # The bottom bin holds everything at or under the floor, so without this a reader sees
+                # a dark mode and no reason to distrust it.
+                entry["neszDb"] = {
+                    pol: db(noise_linear[pol][zone], int(noise_counts[pol][zone]))
+                    for pol, *_ in channels
+                }
+                entry["interiorBelowNoiseFloorPct"] = {
+                    pol: (round(int(inner_below_floor[pol][zone]) / int(inner_counts[pol][zone]), 4)
+                          if int(inner_counts[pol][zone]) > 0 else None)
+                    for pol, *_ in channels
+                }
         out.append(entry)
 
     json.dump(out, sys.stdout)

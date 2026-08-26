@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { crossedNotch, notchAtOffset, notchFraction, notchPositions } from './scrubberTrack';
+import {
+  crossedNotch,
+  type NotchPosition,
+  notchAtOffset,
+  notchFraction,
+  notchPositions,
+} from './scrubberTrack';
 
 describe('notchPositions', () => {
   it('spreads notches evenly across the track', () => {
@@ -22,12 +28,12 @@ describe('notchPositions', () => {
   it('packs a dense season tighter rather than growing the track', () => {
     // A winter with more passes should look denser — that is honest about the sampling, and it is
     // what lets both ends stay visible, which is what makes a drag meaningful.
+    const step = (notches: NotchPosition[]) =>
+      (notches[1]?.fraction ?? 0) - (notches[0]?.fraction ?? 0);
     const sparse = notchPositions(5);
     const dense = notchPositions(60);
     expect(dense).toHaveLength(60);
-    expect(dense[1]!.fraction - dense[0]!.fraction).toBeLessThan(
-      sparse[1]!.fraction - sparse[0]!.fraction,
-    );
+    expect(step(dense)).toBeLessThan(step(sparse));
   });
 
   it('is empty for an empty season', () => {

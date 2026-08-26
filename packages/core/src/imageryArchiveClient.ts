@@ -153,10 +153,15 @@ export async function prefetchFrames(
   for (const key of keys) {
     if (signal?.aborted) return;
     try {
-      await fetch(archiveUrl(baseUrl, key), {
+      const response = await fetch(archiveUrl(baseUrl, key), {
         headers: { Range: 'bytes=0-16383' },
         ...(signal ? { signal } : {}),
       });
+      // ⚠ **Drained, not just awaited.** A `Response` whose body is never read holds its stream —
+      // and its connection — open until it is collected, and a browser will not necessarily commit
+      // a half-read response to the HTTP cache, which is the entire point of this loop. It is 16 KB
+      // per frame, already sequential, so reading it costs nothing the fetch had not already paid.
+      await response.arrayBuffer();
     } catch {
       // A warm that did not warm. The frame still loads on demand.
     }

@@ -147,13 +147,15 @@ describe('prefetchFrames — warming, not downloading', () => {
       'fetch',
       vi.fn(async (url: string, init?: RequestInit) => {
         calls.push([url, init]);
-        return { ok: true, status: 206 } as Response;
+        return { ok: true, status: 206, arrayBuffer: async () => new ArrayBuffer(0) } as Response;
       }),
     );
 
     return prefetchFrames(BASE, ['frames/w/a.pmtiles']).then(() => {
       expect(calls[0]?.[0]).toBe(`${BASE}/frames/w/a.pmtiles`);
-      expect((calls[0]?.[1]?.headers as Record<string, string>).Range).toBe('bytes=0-16383');
+      expect((calls[0]?.[1]?.headers as Record<string, string> | undefined)?.Range).toBe(
+        'bytes=0-16383',
+      );
     });
   });
 
@@ -161,7 +163,7 @@ describe('prefetchFrames — warming, not downloading', () => {
     const controller = new AbortController();
     const fetchMock = vi.fn(async () => {
       controller.abort();
-      return { ok: true, status: 206 } as Response;
+      return { ok: true, status: 206, arrayBuffer: async () => new ArrayBuffer(0) } as Response;
     });
     vi.stubGlobal('fetch', fetchMock);
 

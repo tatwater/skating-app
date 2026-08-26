@@ -335,11 +335,19 @@ function resolveOrbit(
   frames: readonly IndexedFrame[],
   stats: FrameStatsLookup | undefined,
   requested: string | undefined,
+  waterBodyId: string | undefined,
 ): { showing: string; available: string[] } | null {
   if (!stats) return null;
   const counts = new Map<string, number>();
   for (const frame of frames) {
-    const direction = stats(frame.granuleId)?.orbitDirection;
+    const frameStats = stats(frame.granuleId);
+    if (!frameStats) continue;
+    // ⚠ **Only the passes that actually reached this lake vote.** A manifest is loaded per *granule*,
+    // and plenty of them cover the region without cutting this body — counting those would let
+    // `available` advertise a direction with no stops behind it (a switch that lands on an empty
+    // scrubber) and could make `showing` default to the direction this lake was passed from least.
+    if (waterBodyId !== undefined && !bodyStatsIn(frameStats, waterBodyId)) continue;
+    const direction = frameStats.orbitDirection;
     if (direction) counts.set(direction, (counts.get(direction) ?? 0) + 1);
   }
   if (counts.size === 0) return null;
@@ -438,7 +446,7 @@ export function buildBodyTimeline(
   const minCoverage = options.minCoverage ?? MIN_BODY_COVERAGE;
 
   const banded = index.frames.filter((frame) => frame.band === band);
-  const orbit = resolveOrbit(banded, options.stats, options.orbitDirection);
+  const orbit = resolveOrbit(banded, options.stats, options.orbitDirection, body._id);
 
   const stops: TimelineStop[] = [];
   let notCovered = 0;

@@ -129,8 +129,12 @@ describe('maskOffsetMeters — the direction that was actually measured', () => 
     // opposite in ground terms. That is the signature of a height-driven displacement rather than a
     // polygon error, and it means the sign is unambiguous even where the magnitude is not.
     for (const scene of [ASC, DESC]) {
-      expect(alongRange(maskOffsetMeters({ ...scene, heightM: MASCOMA_M }), scene)).toBeGreaterThan(0);
-      expect(alongRange(geocodeOffsetMeters({ ...scene, heightM: MASCOMA_M }), scene)).toBeLessThan(0);
+      expect(alongRange(maskOffsetMeters({ ...scene, heightM: MASCOMA_M }), scene)).toBeGreaterThan(
+        0,
+      );
+      expect(alongRange(geocodeOffsetMeters({ ...scene, heightM: MASCOMA_M }), scene)).toBeLessThan(
+        0,
+      );
     }
   });
 
