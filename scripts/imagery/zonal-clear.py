@@ -123,6 +123,12 @@ def main() -> int:
     parser.add_argument("scl")
     parser.add_argument("mapping")
     parser.add_argument(
+        "--id-key",
+        default="waterBodyId",
+        help="what to call the id in the output. `subAreaId` for the sub-area sweep, so a bay's id "
+             "never travels under a body's field name",
+    )
+    parser.add_argument(
         "--interior",
         help="distance-to-bank raster from `build_interior`; enables the eroded statistics",
     )
@@ -247,7 +253,7 @@ def main() -> int:
         )
 
         entry = {
-            "waterBodyId": water_body_id,
+            args.id_key: water_body_id,
             "clearPct": ratio(clear, valid),
             # How much of this body the granule reached. 1.0 = the whole lake is in this frame;
             # 0.31 = a third of it, and this frame's clearPct describes only that third.

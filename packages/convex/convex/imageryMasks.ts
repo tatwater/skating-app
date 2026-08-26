@@ -156,3 +156,68 @@ export const listForImageryMask = internalQuery({
     };
   },
 });
+
+/**
+ * Every sub-area's geometry, for the second zone grid the cutter burns (N6e, deferred question 7).
+ *
+ * ## Why sub-areas need their own artifact and their own raster
+ *
+ * A zone raster is single-valued: one pixel, one zone. A sub-area sits **inside** its parent, so
+ * every pixel of Malletts Bay is also a pixel of Champlain — and there is no way to express that in
+ * one grid. Burning sub-areas into the body grid would silently replace the parent's pixels with the
+ * bay's and destroy the whole-lake number that the rest of the archive is built on.
+ *
+ * So they are a separate file, a separate raster and a separate sweep. That also keeps the cost
+ * where it belongs: **126 sub-areas exist against 24,831 bodies**, so the overwhelming majority of
+ * granules contain none and skip the second pass entirely.
+ *
+ * ## ⚠ The parent's listing decides, not just the sub-area's
+ *
+ * Decision 11's rule, restated for the imagery path: a sub-area that outlived its parent's takedown
+ * would put a bay's statistics into an archive that no longer contains the lake. `removedAt` on the
+ * sub-area and `isListed` on the parent are both checked, and neither is sufficient alone.
+ */
+export const listSubAreasForImageryMask = internalQuery({
+  args: {
+    cursor: v.optional(v.string()),
+    batchSize: v.optional(v.number()),
+  },
+  handler: async (ctx, { cursor, batchSize }) => {
+    // Same small page as the body scan and for the same reason: the payload is polygons, and a bay
+    // on a big lake carries thousands of vertices.
+    const numItems = Math.min(100, Math.max(1, batchSize ?? 25));
+    const page = await ctx.db
+      .query('waterBodySubAreas')
+      .paginate({ cursor: cursor ?? null, numItems });
+
+    let delisted = 0;
+    let parentUnavailable = 0;
+    const subAreas = [];
+    for (const subArea of page.page) {
+      if (subArea.removedAt !== undefined) {
+        delisted++;
+        continue;
+      }
+      const parent = await ctx.db.get(subArea.waterBodyId);
+      if (!parent || !isListed(parent)) {
+        parentUnavailable++;
+        continue;
+      }
+      subAreas.push({
+        subAreaId: subArea._id,
+        waterBodyId: subArea.waterBodyId,
+        name: subArea.name,
+        polygon: subArea.polygon,
+      });
+    }
+
+    return {
+      subAreas,
+      scanned: page.page.length,
+      delisted,
+      parentUnavailable,
+      cursor: page.continueCursor,
+      isDone: page.isDone,
+    };
+  },
+});

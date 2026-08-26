@@ -13,7 +13,7 @@ Emits the radar counterpart of `zonal-clear.py`:
 ## What the number means, and what it does not
 
 `sigma0` is how much of the radar pulse came back, and it is a measure of **surface texture** rather
-than colour or temperature. Smooth surfaces behave like mirrors and reflect away from the satellite,
+than color or temperature. Smooth surfaces behave like mirrors and reflect away from the satellite,
 so they read *dark*; rough surfaces scatter in all directions, so some returns and they read *bright*.
 
     calm open water    dark        smooth new ice     dark
@@ -137,6 +137,12 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("zones")
     parser.add_argument("mapping")
+    parser.add_argument(
+        "--id-key",
+        default="waterBodyId",
+        help="what to call the id in the output. `subAreaId` for the sub-area sweep, so a bay's id "
+             "never travels under a body's field name",
+    )
     parser.add_argument("bands", nargs="+", help="pol:dn.tif:a.tif[:noise.tif]")
     parser.add_argument(
         "--interior",
@@ -335,7 +341,7 @@ def main() -> int:
 
     out = []
     for zone, water_body_id in sorted(zone_to_id.items()):
-        entry: dict[str, object] = {"waterBodyId": water_body_id}
+        entry: dict[str, object] = {args.id_key: water_body_id}
         seen = 0
         inner_seen = 0
         for pol, *_ in channels:

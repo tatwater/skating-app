@@ -73,7 +73,7 @@ export interface IndexedFrame {
    * Which band this frame renders — **and, by implication, which mission it came from.**
    *
    * ⚠ **One index holds both missions**, so `band` is the discriminator and a consumer must never
-   * assume. Today: `visual` is Sentinel-2's true-colour composite; `vh` is Sentinel-1's calibrated
+   * assume. Today: `visual` is Sentinel-2's true-color composite; `vh` is Sentinel-1's calibrated
    * radar brightness. A timeline built without filtering on this interleaves photographs and radar
    * greyscale on one scrubber, which is not a rendering glitch but two different measurements
    * presented as one series.
@@ -447,6 +447,30 @@ export function manifestKeyFor(season: string, granuleId: string): string {
  */
 export function snowIceFractionOf(stats: FrameBodyStats): number | null {
   return stats.snowIcePct ?? stats.icePct ?? null;
+}
+
+/**
+ * One **sub-area's** row — the same measurement, taken over a bay or an arm instead of a whole lake.
+ *
+ * ## Why this is a separate array rather than more entries in `bodies`
+ *
+ * A sub-area sits *inside* its parent, so its pixels are counted twice by construction — once for the
+ * bay and once for the lake. Mixing them into one array would make `bodies` no longer a partition of
+ * the frame, and anything summing it would double-count silently.
+ *
+ * ⚠ **This exists because one number cannot describe a lake that is not one surface.** Mascoma read
+ * `27% ice / 65% water` on 11 January 2026, which cannot distinguish *"patchy everywhere"* from
+ * *"the north half is ready"* — and the skate log says it was the second, with the bridge at the
+ * narrows as the divide for a fortnight. See `docs/reading-ice-from-orbit.md` ch. 9.
+ *
+ * **Only measured sub-areas appear.** Unlike `bodies`, this is not exact membership: a frame carries
+ * a row for each sub-area it actually reached, and nothing for the rest.
+ */
+export interface FrameSubAreaStats extends Omit<FrameBodyStats, 'waterBodyId'> {
+  subAreaId: string;
+  /** The parent body, carried so a consumer never needs a round trip to place the bay. */
+  waterBodyId: string;
+  subAreaName?: string;
 }
 
 /** One lake's row in a frame's statistics, or `undefined` if the pass did not reach it. */

@@ -41,7 +41,7 @@ import process from 'node:process';
 
 import { archiveSeasonLabel, currentSeason, SENTINEL_MASK_METERS } from '@skating/core';
 import { flag, has, SCRATCH } from './cli';
-import { scanCorpusMasks } from './corpus';
+import { scanCorpusMasks, scanCorpusSubAreas } from './corpus';
 import { emptyTally, maskFeatureFor, recordOutcome } from './revealMasks';
 
 /**
@@ -79,6 +79,10 @@ async function main(): Promise<void> {
   // single-layer by construction. Named by suffixing the reveal's path so `--out` still works.
   const waterSeqPath = join(SCRATCH, `masks-${label}-water.geojsonl`);
   const waterFgbPath = suffixed(fgbPath, '-water.fgb');
+  // The third artifact: sub-areas, for the second zone grid. See `listSubAreasForImageryMask` for
+  // why a bay cannot share a raster with the lake it sits inside.
+  const subAreaSeqPath = join(SCRATCH, `masks-${label}-subareas.geojsonl`);
+  const subAreaFgbPath = suffixed(fgbPath, '-subareas.fgb');
 
   console.error(`[bake-masks] season ${label}, batch ${batchSize}`);
 
@@ -128,6 +132,36 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
+  // ## Sub-areas, read after the bodies and written the same way
+  //
+  // ⚠ **Skipped entirely under `--limit`.** A partial body bake with a COMPLETE sub-area file would
+  // pair bays against parents that are not in the artifact, which is a shape of inconsistency no
+  // count would reveal — and `--limit` runs are smoke tests that must never be uploaded anyway.
+  let subAreaCount = 0;
+  if (!Number.isFinite(limit)) {
+    const subFd = openSync(subAreaSeqPath, 'w');
+    try {
+      for await (const row of scanCorpusSubAreas(batchSize)) {
+        writeSync(
+          subFd,
+          `${JSON.stringify({
+            type: 'Feature',
+            geometry: row.polygon,
+            properties: {
+              subAreaId: row.subAreaId,
+              waterBodyId: row.waterBodyId,
+              name: row.name,
+            },
+          })}\n`,
+        );
+        subAreaCount++;
+      }
+    } finally {
+      closeSync(subFd);
+    }
+    console.error(`[bake-masks] sub-areas ${subAreaCount}`);
+  }
+
   // GeoJSONSeq → FlatGeobuf. The index is built on write, which is the whole reason for the format.
   //
   // ⚠ **Unlink first; `-overwrite` does not work here.** The FlatGeobuf driver has no `DeleteLayer`,
@@ -142,6 +176,14 @@ async function main(): Promise<void> {
   execFileSync('ogr2ogr', ['-f', 'FlatGeobuf', waterFgbPath, waterSeqPath, '-nln', 'water_masks'], {
     stdio: 'inherit',
   });
+  if (subAreaCount > 0) {
+    rmSync(subAreaFgbPath, { force: true });
+    execFileSync(
+      'ogr2ogr',
+      ['-f', 'FlatGeobuf', subAreaFgbPath, subAreaSeqPath, '-nln', 'sub_area_masks'],
+      { stdio: 'inherit' },
+    );
+  }
 
   // The sidecar the container reads, and the reason it exists.
   //
@@ -162,6 +204,9 @@ async function main(): Promise<void> {
     // Recorded beside the geometry it describes, so a frame cut months later can say whether the
     // radar correction had the input it needed. See `BakeTally.withElevation`.
     withElevation: tally.withElevation,
+    // How many sub-areas ride with this bake. The cutter reads it to decide whether to look for the
+    // third file at all, so a corpus with no sub-areas costs nothing rather than 404ing per granule.
+    subAreas: subAreaCount,
     // ⚠ **The flag the cutter refuses to run without.** Bakes before 2026-08-25 shipped one file, and
     // `cut-granule.sh` rasterised the reveal shape as its zone grid — which measured a 60 m ring of
     // shore as lake. A cutter that silently fell back to that behaviour against an old bake would
@@ -193,6 +238,9 @@ async function main(): Promise<void> {
   }
   console.error(`[bake-masks] wrote ${fgbPath} (reveal — the picture)`);
   console.error(`[bake-masks] wrote ${waterFgbPath} (water — the measurement)`);
+  if (subAreaCount > 0) {
+    console.error(`[bake-masks] wrote ${subAreaFgbPath} (${subAreaCount} sub-areas)`);
+  }
   console.error(
     `[bake-masks] wrote ${sidecarPath} (solid ${sidecar.solidMeters} m, feather ${sidecar.featherMeters} m)`,
   );
@@ -235,6 +283,9 @@ async function main(): Promise<void> {
     for (const [from, to] of [
       [fgbPath, key],
       [waterFgbPath, suffixed(key, '-water.fgb')],
+      ...(subAreaCount > 0
+        ? ([[subAreaFgbPath, suffixed(key, '-subareas.fgb')]] as [string, string][])
+        : []),
       [sidecarPath, suffixed(key, '.json')],
     ]) {
       execFileSync(
