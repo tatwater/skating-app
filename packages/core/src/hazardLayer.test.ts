@@ -245,7 +245,7 @@ describe('hazardColorExpression', () => {
   const palette = { danger: '#d00', healing: '#fa0', passage: '#0a0', feature: '#00f' };
 
   // The D3-critical ordering: `passage` is checked before everything else, so a `ridge_crossing`
-  // (which is also never a danger) can never fall through to the danger colour. A `case` expression
+  // (which is also never a danger) can never fall through to the danger color. A `case` expression
   // is first-match-wins, so this asserts the arm order, not just presence.
   it('checks passage first so a crossing never reads as danger', () => {
     const expr = hazardColorExpression(palette);
@@ -299,7 +299,7 @@ describe('hazardDraftToFeatureCollection', () => {
   });
 
   // Watching yourself draw a warning while marking a way *across* a ridge would be actively wrong,
-  // so the draft carries `passage` into the same colour expression saved hazards use (research §4).
+  // so the draft carries `passage` into the same color expression saved hazards use (research §4).
   it('flags a ridge_crossing draft as a passage marker, not a danger', () => {
     const draft = applyDraftMapClick(draftForType('ridge_crossing'), A);
     for (const f of hazardDraftToFeatureCollection(draft, 'ridge_crossing').features) {

@@ -53,7 +53,7 @@ export interface DuplicateGroup {
 }
 
 /**
- * A colour per member, reused by the outline, the table column and the merge button — so "the pink
+ * A color per member, reused by the outline, the table column and the merge button — so "the pink
  * one" is a thing an operator can say to themselves while their eyes move between the three.
  * Fixed hex rather than theme tokens for the same reason the editor's draft layer is: these have to
  * stay distinguishable from each other, not harmonious with the page.

@@ -25,8 +25,8 @@ const DUOTONE_SECONDARY_OPACITY = 0.3;
  * hex off the Tamagui theme, so narrow rather than cast — a non-string would silently fall back to
  * FontAwesome's default instead of crashing the tab bar.
  *
- * Both duotone layers take the *same* navigator-resolved colour, separated only by opacity. Giving
- * the secondary a fixed accent instead would make the inactive tabs carry a colour the focused one
+ * Both duotone layers take the *same* navigator-resolved color, separated only by opacity. Giving
+ * the secondary a fixed accent instead would make the inactive tabs carry a color the focused one
  * doesn't, which reads as five half-selected tabs.
  */
 function TabIcon({ icon, color, size }: { icon: IconDefinition; color: ColorValue; size: number }) {
@@ -48,7 +48,7 @@ function TabIcon({ icon, color, size }: { icon: IconDefinition; color: ColorValu
  *
  * Icons are FontAwesome **Sharp Duotone**, rendered through `react-native-svg` — no icon font, so
  * nothing here needs a native rebuild beyond the SVG dep the app already carries. Duotone is the
- * tab bar's alone: two layers give focus a second signal besides colour, which the rest of the app
+ * tab bar's alone: two layers give focus a second signal besides color, which the rest of the app
  * (Sharp Light) has no use for. Bounties gets binoculars rather than a trophy or a coin: a bounty
  * is a request to *go look* at a lake, and neither prize money nor competition exists in the
  * model (D10/D17).

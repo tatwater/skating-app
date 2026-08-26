@@ -19,10 +19,10 @@ import {
  * disagree — Willoughby's commonest wind is northwesterly and its hardest is a rare easterly — and
  * that disagreement is the reason a plain rose was not enough.
  *
- * **Nothing here is coloured by value, deliberately.** Ramping the arrows warm would read as a
+ * **Nothing here is colored by value, deliberately.** Ramping the arrows warm would read as a
  * danger scale, and D145 settled that wind on a lake page is context rather than counsel. Intensity
  * rides on size, which is a magnitude channel; the single hue also means the chart survives every
- * kind of colour blindness, because no meaning is carried by hue at all.
+ * kind of color blindness, because no meaning is carried by hue at all.
  *
  * All the geometry comes from `@skating/core` so the native app draws the identical picture from
  * the same arithmetic — see `windRoseChart.ts`.

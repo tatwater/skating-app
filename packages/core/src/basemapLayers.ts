@@ -158,7 +158,7 @@ export function composeBasemapLayers<L extends ZoomableLayer>(input: {
   world: readonly L[];
   /** `layers()` against the regional source. */
   region: readonly L[];
-  /** The mask fills, already built by the caller (they need the flavour's colours). */
+  /** The mask fills, already built by the caller (they need the flavour's colors). */
   mask: readonly L[];
   /**
    * The region outline the regional archive's labels are filtered against, plus the style-spec's

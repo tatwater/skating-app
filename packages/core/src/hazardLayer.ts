@@ -9,7 +9,7 @@
  * what a skater sees and what the app measures against their GPS are provably the same shape. Two
  * parallel implementations of that could drift, and the drift would be invisible until it mattered.
  *
- * Colours stay per-app (they come from the design tokens), but *what gets drawn* and *how confidence
+ * Colors stay per-app (they come from the design tokens), but *what gets drawn* and *how confidence
  * maps to opacity* are decided exactly once, here.
  *
  * A footprint is also deliberately soft-edged. A hazard is "reported *around here*", never a surveyed
@@ -66,7 +66,7 @@ export interface MappableBodyFeature {
   bufferMeters?: number;
 }
 
-/** The four colours a hazard layer needs. Supplied per app from its own design tokens. */
+/** The four colors a hazard layer needs. Supplied per app from its own design tokens. */
 export interface HazardPalette {
   danger: string;
   healing: string;
@@ -335,10 +335,10 @@ export function hazardFillOpacityExpression(): unknown[] {
 }
 
 /**
- * The MapLibre colour expression: passage markers and healing pins read distinctly from danger.
+ * The MapLibre color expression: passage markers and healing pins read distinctly from danger.
  *
  * Order matters — `passage` is checked first, so a `ridge_crossing` can never fall through to the
- * danger colour. Painting a warning over the safest way across a ridge would be actively wrong.
+ * danger color. Painting a warning over the safest way across a ridge would be actively wrong.
  */
 export function hazardColorExpression(palette: HazardPalette): unknown[] {
   return [

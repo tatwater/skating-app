@@ -24,7 +24,7 @@ describe('CONTOUR_PALETTE', () => {
   it('varies only in lightness — one hue, never a multi-hue severity ramp', () => {
     // D82's one styling rule with real weight. A green→yellow→red depth scale would be far more
     // legible, and that is exactly the problem: the most readable version of this layer is the one
-    // that most looks like a severity scale, which reintroduces through colour the claim we declined
+    // that most looks like a severity scale, which reintroduces through color the claim we declined
     // to make in words.
     for (const theme of themes) {
       const { shallow, deep } = CONTOUR_PALETTE[theme];
@@ -32,7 +32,7 @@ describe('CONTOUR_PALETTE', () => {
     }
   });
 
-  it('cannot be mistaken for any hazard colour', () => {
+  it('cannot be mistaken for any hazard color', () => {
     // The hazard palette is danger/warning/success — red, amber, green. A contour must not land on
     // that scale at either end of its ramp, in either theme.
     for (const theme of themes) {

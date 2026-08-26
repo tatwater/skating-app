@@ -21,11 +21,11 @@
  *
  * ## Why one hue, and no warm ramp
  *
- * The obvious design colours stronger wind red or amber. That would be a **safety signal**, and D145
+ * The obvious design colors stronger wind red or amber. That would be a **safety signal**, and D145
  * settled that wind data on a lake page is context rather than counsel — the same call D82 made for
  * bathymetry. A reader must be able to see that one shore gets hit harder without the page implying
  * they will fall through the ice there. So intensity rides on *size*, which is a magnitude channel,
- * and colour stays a single family. That also keeps the chart legible under every CVD type, because
+ * and color stays a single family. That also keeps the chart legible under every CVD type, because
  * nothing here is encoded by hue at all.
  */
 

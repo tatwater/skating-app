@@ -248,7 +248,7 @@ describe('copernicusUrl', () => {
     );
   });
 
-  it('asks for Sentinel-2 L2A true colour', () => {
+  it('asks for Sentinel-2 L2A true color', () => {
     const url = new URL(copernicusUrl(coord, NOW));
     expect(url.searchParams.get('datasetId')).toBe('S2_L2A_CDAS');
     expect(url.searchParams.get('layerId')).toBe('1_TRUE_COLOR');

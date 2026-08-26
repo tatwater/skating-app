@@ -69,7 +69,7 @@ export function useFreezeUpSeam({
         source: FREEZE_UP_SEAM_SOURCE_ID,
         layout: { 'line-join': 'round', 'line-cap': 'round' },
         paint: {
-          // White at partial opacity rather than a theme colour: every palette in this app means
+          // White at partial opacity rather than a theme color: every palette in this app means
           // something — favourite gold, hazard red, the icy water ramp — and a divider that borrowed
           // one would be read as that thing. White over a photograph is legible on ice and on open
           // water alike, and says only "here".

@@ -101,7 +101,7 @@ export interface FrameManifest {
 export function buildSeasonIndex(season: string, manifests: readonly FrameManifest[]): SeasonIndex {
   const frames = manifests
     .filter((m) => m.season === season && m.bodyCount > 0)
-    // One published frame per band. A granule now yields true colour AND ESA's scene classification,
+    // One published frame per band. A granule now yields true color AND ESA's scene classification,
     // and `<granuleId>.pmtiles` could only ever name one of them.
     .flatMap((m): IndexedFrame[] =>
       (m.bands ?? [m.band ?? 'visual']).map((band) => ({

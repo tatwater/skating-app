@@ -114,7 +114,7 @@ export const COPERNICUS_ZOOM = 13;
 export const COPERNICUS_WINDOW_DAYS = 14;
 
 /**
- * The Copernicus Browser deep link: this lake, true-colour Sentinel-2 L2A, over a recent window.
+ * The Copernicus Browser deep link: this lake, true-color Sentinel-2 L2A, over a recent window.
  *
  * **A window and not a date** (D75). Cloud cover is the limiter in a Northeast winter, not revisit —
  * roughly two to four usable optical frames a month — so opening on a single date lands on cloud more

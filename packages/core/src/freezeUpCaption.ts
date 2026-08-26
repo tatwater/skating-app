@@ -30,7 +30,7 @@ import type { TimelineStop } from './imageryTimeline';
 
 /** Bands the archive publishes, and what to call each in front of a skater. */
 const SOURCE_LABELS: Record<string, string> = {
-  visual: 'Sentinel-2 true colour',
+  visual: 'Sentinel-2 true color',
   scl: 'Sentinel-2 scene classification',
   vh: 'Sentinel-1 radar (VH)',
 };
@@ -55,7 +55,7 @@ const SOURCE_LABELS: Record<string, string> = {
  * than as filler.
  */
 const SOURCE_HINTS: Record<string, string> = {
-  visual: 'White may be snow, ice or cloud — true colour cannot tell them apart.',
+  visual: 'White may be snow, ice or cloud — true color cannot tell them apart.',
   vh: 'Sees through cloud and darkness. Bright is rough or snow-covered ice; dark is smooth ice — or open water.',
   scl: "ESA's own guess at what each pixel is, made from bands the eye cannot see.",
 };

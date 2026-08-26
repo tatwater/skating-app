@@ -3,7 +3,7 @@
  *
  * ## Three architectures, and what each render falsified
  *
- * **v1 clipped by covering**: a tiled raster drawn edge-to-edge, then the basemap's colour painted
+ * **v1 clipped by covering**: a tiled raster drawn edge-to-edge, then the basemap's color painted
  * over everything outside the lake. It worked and it cost the map — a mask hides whatever is beneath
  * it, so the roads, the landuse and the labels went too. Founder: *"All of the roads disappeared, I'd
  * like to see the dark-mode flat map everywhere outside of the satellite image."*

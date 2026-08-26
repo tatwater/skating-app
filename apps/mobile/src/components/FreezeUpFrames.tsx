@@ -195,7 +195,7 @@ export function FreezeUpFrames({
             beforeId={CONTOUR_BEFORE_LAYER_ID}
             layout={{ 'line-join': 'round', 'line-cap': 'round' }}
             paint={{
-              // White rather than a theme colour: every palette in this app already means something,
+              // White rather than a theme color: every palette in this app already means something,
               // and a divider borrowing one would be read as that thing.
               'line-color': '#ffffff',
               'line-opacity': 0.85,

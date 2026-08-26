@@ -69,7 +69,7 @@ describe('seamLineFor — the join, and only the part in the water', () => {
 
   it('⚠ puts every vertex inside the lake, never on the bank', () => {
     // The whole reason this is not "the outline of the intersection": that outline is part granule
-    // edge and part shoreline, and tracing the shore a second time in another colour says something
+    // edge and part shoreline, and tracing the shore a second time in another color says something
     // the seam does not mean.
     const seam = seamLineFor(BISECTING, LAKE);
     for (const line of seam?.coordinates ?? []) {

@@ -195,7 +195,7 @@ describe('archiveUrl — composing an address from a key', () => {
 });
 
 describe('bandsIn — what a band selector should be built from', () => {
-  it('lists each band once, with true colour first', () => {
+  it('lists each band once, with true color first', () => {
     expect(
       bandsIn(
         season('winter-2025-26', [
@@ -215,7 +215,7 @@ describe('bandsIn — what a band selector should be built from', () => {
     expect(bandsIn(season('winter-2025-26', [frame({ band: 'visual' })]))).toEqual(['visual']);
   });
 
-  it('does not invent true colour for a season that has none', () => {
+  it('does not invent true color for a season that has none', () => {
     expect(bandsIn(season('winter-2025-26', [frame({ band: 'vh' })]))).toEqual(['vh']);
   });
 

@@ -86,7 +86,7 @@ describe('approachLinePaint', () => {
     expect(approachLinePaint('#333')['line-dasharray']).toEqual([2, 2]);
   });
 
-  test('takes its colour from the app rather than hard-coding one', () => {
+  test('takes its color from the app rather than hard-coding one', () => {
     expect(approachLinePaint('#ff0000')['line-color']).toBe('#ff0000');
   });
 });

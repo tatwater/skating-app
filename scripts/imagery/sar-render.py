@@ -5,7 +5,7 @@
 
 ## ⚠ The stretch is FIXED, and that is the whole design
 
-`sigma0` is a physical quantity with no natural colour, so any image of it is a choice of mapping from
+`sigma0` is a physical quantity with no natural color, so any image of it is a choice of mapping from
 decibels to grey. The tempting choice is a per-scene stretch — take each pass's own minimum and
 maximum and spread them across the full range — because it makes every individual frame look its best.
 

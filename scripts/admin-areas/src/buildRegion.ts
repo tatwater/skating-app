@@ -480,7 +480,7 @@ function main(): void {
   // every drop of water that is not within `SEAWARD_ALLOWANCE_KM` of ground we actually cover.
   //
   // It is drawn *beneath* the land layer, so the two together tile the whole neighbourhood: water
-  // colour everywhere, land colour on top of it wherever there is land.
+  // color everywhere, land color on top of it wherever there is land.
   const regionCoarse = simplify(region, {
     tolerance: TOLERANCE.seaHole,
     highQuality: false,

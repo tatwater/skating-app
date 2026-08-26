@@ -101,7 +101,7 @@ describe('buildSeasonIndex', () => {
 
 describe('bands', () => {
   it('publishes one frame per band, keyed so they cannot collide', () => {
-    // A granule now yields true colour AND ESA's scene classification. `<granuleId>.pmtiles` could
+    // A granule now yields true color AND ESA's scene classification. `<granuleId>.pmtiles` could
     // only ever name one of them.
     const index = buildSeasonIndex('winter-2025-26', [manifest({ bands: ['visual', 'scl'] })]);
     expect(index.frames.map((f) => f.band)).toEqual(['visual', 'scl']);

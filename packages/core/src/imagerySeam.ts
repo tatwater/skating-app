@@ -12,7 +12,7 @@
  *
  * **Not the whole intersection outline.** Intersecting the footprint with the lake gives a polygon
  * whose boundary is part granule edge and part *shoreline*, and drawing all of it would trace the
- * shore a second time in a colour that means something else. The shoreline is already drawn, and
+ * shore a second time in a color that means something else. The shoreline is already drawn, and
  * §A3 makes it matter more once imagery is on. So the seam is specifically the piece that is **not**
  * shoreline.
  *

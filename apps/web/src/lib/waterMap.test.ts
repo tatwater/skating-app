@@ -77,7 +77,7 @@ describe('buildMapStyle', () => {
     expect(at('region-mask-land')).toBeLessThan(at('world_boundaries'));
   });
 
-  it("paints the mask in the flavour's own land and water colours, not a grey of its own", () => {
+  it("paints the mask in the flavour's own land and water colors, not a grey of its own", () => {
     const light = buildMapStyle({ regionUrl: REGION, worldUrl: WORLD, flavor: 'white' });
     const fill = (style: ReturnType<typeof buildMapStyle>) =>
       (

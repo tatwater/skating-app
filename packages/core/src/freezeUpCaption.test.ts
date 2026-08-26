@@ -45,7 +45,7 @@ describe('frameDateLabel', () => {
 
 describe('frameSourceLabel', () => {
   it('names each published band', () => {
-    expect(frameSourceLabel('visual')).toBe('Sentinel-2 true colour');
+    expect(frameSourceLabel('visual')).toBe('Sentinel-2 true color');
     expect(frameSourceLabel('vh')).toBe('Sentinel-1 radar (VH)');
     expect(frameSourceLabel('scl')).toBe('Sentinel-2 scene classification');
   });
@@ -118,7 +118,7 @@ describe('stopCaption', () => {
       ),
     ).toEqual({
       date: 'Dec 22, 2025',
-      source: 'Sentinel-2 true colour',
+      source: 'Sentinel-2 true color',
       caveat: '50% of the lake under cloud',
     });
   });

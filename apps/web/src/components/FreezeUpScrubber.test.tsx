@@ -163,7 +163,7 @@ describe('FreezeUpScrubber — the date is content', () => {
     );
 
     expect(screen.getByText(/Dec 22, 2025/)).toBeTruthy();
-    expect(screen.getByText(/Sentinel-2 true colour/)).toBeTruthy();
+    expect(screen.getByText(/Sentinel-2 true color/)).toBeTruthy();
     expect(screen.getByText(/38% of the lake under cloud/)).toBeTruthy();
   });
 
@@ -184,16 +184,16 @@ describe('FreezeUpScrubber — the band selector', () => {
     // scrubber for any season cut under an older policy.
     render(<Harness timeline={timelineOf([stop()])} index={indexOf(['visual', 'vh'])} />);
 
-    expect(screen.getByRole('button', { name: 'Sentinel-2 true colour' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Sentinel-2 true color' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Sentinel-1 radar (VH)' })).toBeTruthy();
   });
 
   it('hides itself when there is only one band, since a control that governs nothing is noise', () => {
     render(<Harness timeline={timelineOf([stop()])} index={indexOf(['visual'])} />);
     // Exact name, not a regex: a stop mark's own label *contains* the source ("Dec 22, 2025 —
-    // Sentinel-2 true colour"), so a loose match finds the track and reports a toggle that is not
+    // Sentinel-2 true color"), so a loose match finds the track and reports a toggle that is not
     // there.
-    expect(screen.queryByRole('button', { name: 'Sentinel-2 true colour' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Sentinel-2 true color' })).toBeNull();
   });
 });
 
@@ -553,8 +553,8 @@ describe('FreezeUpScrubber — the thumb', () => {
     expect(thumbOf(container)?.className).not.toContain('transition-[left]');
   });
 
-  it('draws every stop as a mark, blocked ones shorter, and colours none of them by selection', () => {
-    // The thumb is standing on the selected mark, so colouring it too would draw the same fact twice
+  it('draws every stop as a mark, blocked ones shorter, and colors none of them by selection', () => {
+    // The thumb is standing on the selected mark, so coloring it too would draw the same fact twice
     // — and the half the handle covers would read as the handle having a shadow.
     const { container } = at(1);
     const ticks = container.querySelectorAll('[role="group"] button > span');
@@ -571,7 +571,7 @@ describe('FreezeUpScrubber — a stale selection after a band switch', () => {
   it('⚠ opens on a date instead of nothing when the index outruns the new band', () => {
     // The founder's report, 2026-08-26: switching to radar showed imagery with no thumb and no date
     // until you dragged. A winter has ~30 optical passes and ~9 radar ones, so the index chosen on
-    // true colour is past the end of radar — and `selected !== null` is exactly what made the
+    // true color is past the end of radar — and `selected !== null` is exactly what made the
     // auto-select effect decline to choose. Read as unselected, it recovers in the same render.
     const onSelect = vi.fn();
     render(
@@ -688,6 +688,6 @@ describe('FreezeUpScrubber — telling a skater how to read the band', () => {
   it('shows the hint even where there is only one band, since the toggle is then hidden', () => {
     render(<Harness timeline={timelineOf([stop()])} index={indexOf(['visual'])} />);
     expect(screen.getByText(/snow, ice or cloud/i)).toBeTruthy();
-    expect(screen.queryByRole('button', { name: 'Sentinel-2 true colour' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Sentinel-2 true color' })).toBeNull();
   });
 });

@@ -61,7 +61,7 @@ interface MapSelectionValue {
   hazardDraft: HazardDraft | null;
   setHazardDraft: (draft: HazardDraft | null) => void;
   /**
-   * What's being drawn. The map needs it to colour the preview honestly — a `ridge_crossing` draft
+   * What's being drawn. The map needs it to color the preview honestly — a `ridge_crossing` draft
    * must not render as a danger halo while you're marking a way *across*.
    */
   hazardDraftType: HazardType | null;

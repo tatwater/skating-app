@@ -189,7 +189,7 @@ describe('buildBodyTimeline — footprints, bands and counting', () => {
     ).toBe('ndsi');
   });
 
-  it('defaults to the true-colour band, which is all the archive holds today', () => {
+  it('defaults to the true-color band, which is all the archive holds today', () => {
     expect(buildBodyTimeline(season([frame()]), CHAMPLAIN).stops).toHaveLength(1);
   });
 
