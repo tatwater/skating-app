@@ -13,8 +13,16 @@ than in a workstream.*
 > ask — *"let's park black ice from SAR into a new N6g research doc! Let's also put the never-freezing
 > body elimination idea into N6g as well."*
 >
-> **Hard prerequisite:** N6e **PR 2** — the granule pipeline, the nine-season archive (2017-18 →
-> 2025-26), and the phenology series derived dark. Neither lane has an input before that lands.
+> **Hard prerequisite: partly met as of 2026-08-26.** N6e **PR 2** merged 2026-08-25 (#46) and **PR 3**
+> — the consumer, so there is now a scrubber to look at frames in — was built 2026-08-26. So the
+> **granule pipeline exists** and one season is in R2.
+>
+> ⚠ **The other two halves do not.** The **nine-season archive** (2017-18 → 2025-26) and the
+> **phenology series derived dark** are N6e's **PR 4**, which is not started — the backfill is a
+> deliberate separate spend. Today's archive is **winter 2025-26 only**. Lane 2 (never-freezing bodies)
+> needs many seasons by definition and cannot start; the third lane (reasoning across frames) needs a
+> *series*, and one season is the thin end of one. **A single-season pilot is possible now; neither
+> lane's real question is.**
 >
 > ⚠ **Updated 2026-08-25 by the first correctly-measured radar cut.** Lane 1 gains a **gate zero**
 > before its validation gate — on `VH`, the median lake now sits **1.24 dB** above the instrument's

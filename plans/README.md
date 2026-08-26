@@ -169,7 +169,10 @@ the first time, then used as a reference (decisions are numbered `D#`, open ques
   — which moves them onto the *canonical water re-import*, a different pass from the depth run) and
   **D86** (the card's quality consensus ships as a graded mark, never a word). Also in: a short forward
   forecast, free because we already fetch and discard those hours.
-  **📋 Scoped 2026-07-30, unbuilt.** ⛔ It now *gates* the unrun N6a depth ETL rather than merely wanting it.
+  **✅ Built — split at kickoff (2026-08-02) into N6c-1** (derived numbers, wind roses, the caption;
+  built 2026-08-02) **and N6c-2** (reference links, NWS alerts, the short forecast, per-body map cards;
+  merged 2026-08-10 as **#42**). Satellite was postponed out of N6c-2 into N6e. Its completion **lifts
+  the ⛔ gate it held on the N6a depth ETL** — see N6a for where that run actually stands.
 - [N6d — Lake access points](./phase-N6d-lake-access-points.md) — parking modelled apart from put-ins so
   directions stop routing cars to hike-in shorelines (**D72**), named access points derived from a second
   OSM pass, and access blockers as **decaying community alerts rather than notes** (**D73**).
@@ -177,14 +180,23 @@ the first time, then used as a reference (decisions are numbered `D#`, open ques
   `foot-hiking` — Phase 4's existing account, and it returns elevation gain — plus the Hike-In chip),
   **D88** (photos ride the existing posting permission), and a **D72 amendment** making `parkingAreas`
   many-to-many, because the association radius caps *inference*, never a human's assertion.
-  **📋 Scoped 2026-07-30, unbuilt.** Split from N6c at scoping; independent of it.
-- [N6e — Satellite imagery in the app](./phase-N6e-satellite-imagery.md) — the map's one layer toggle,
-  swapping the base map for a photograph while hazards, skate paths and access points stay drawn
-  (**D81**, second half). **D84** splits it into two tiers with different jobs: **public-domain USGS/NAIP
-  aerial** (0.6 m, no key, no quota — ships v1, and it's what makes the access points checkable) and
-  **Sentinel-2 recent-ice** (10 m, quota-bound, gated on evidence that reads concentrate).
-  **📋 Scoped 2026-07-31, unbuilt.** Split from N6c's B3 at the founder's ask; the deep link (D75) ships
-  in N6c either way.
+  **✅ Complete on dev 2026-08-13** (merged as **#43**; prod deferred) — all five workstreams and the
+  ETL run end to end: **3,588 put-ins, 11,375 parking areas, 4,209 bodies with access**, routing 99.4%.
+  Split from N6c at scoping; independent of it. Its route *geometry* was never stored, which is what
+  N6e's Workstream 0 had to go back and recover.
+- [N6e — Imagery, scoped to a lake](./phase-N6e-satellite-imagery.md) — **not** a base map you switch
+  to. A photograph of *this lake*, clipped to its own shape and the way in, with a date on it; and
+  behind it a season of passes you can scrub through and watch the ice arrive. **D146** re-scoped this
+  on 2026-08-21 and **replaces D81's second half** — a founder review falsified the map-wide toggle the
+  2026-07-31 scoping specced, so the doc was rewritten rather than patched. Also **D147** (free sources
+  only; the resolution/cadence trade is physical), **D148** (the timeline is our own archive — one
+  masked raster PMTiles per pass, and the first infrastructure we operate ourselves), **D149** (ingest
+  is weather-gated; the archive turns over on a frame, never a date), **D151** (a phenology date is a
+  bracket between two passes). **D150**'s derived classification is deferred to
+  [N6g](./phase-N6g-imagery-research.md).
+  **✅ Built through PR 3 (2026-08-26)** — PR 0 the way in, **#45** the web reveal, **#46** the
+  producer, and PR 3's consumer built on `phase-n6e-satellite-imagery-3` (no PR opened, undeployed).
+  **PR 4** (phenology, dark) and **PR 5** (the charts and the freeze-up notification) are not started.
 
 
 ## How these fit together

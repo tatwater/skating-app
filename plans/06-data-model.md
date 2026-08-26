@@ -226,7 +226,9 @@ shortAxisM?: number          // perpendicular hull width — gives the "5 × 1 m
 longAxisBearingDeg?: number  // 0–180, undirected: an axis has no head
 shorelineM?: number          // perimeter at ~5 m simplification fidelity — NOT survey-comparable
 fetchProfileM?: number[]     // 16 bearings @ 22.5°: contiguous over-water run through the centroid
-satelliteImagery?: enum(auto, on, off)  // NOT BUILT — moved to N6e with the imagery layer (D138)
+satelliteImagery?: enum(auto, on, off)  // ✅ BUILT in N6e (Workstream D, D138). Absent ⇒ auto: only an
+                                        // operator DISAGREEING with satelliteImageryAvailable() is stored,
+                                        // and `auto` clears rather than writes. Survives re-import.
 referenceLinks?: { label, url }[]       // the ONE non-derivable link class: lake associations (D71)
 // ── The map summary card (N6c/E, D141). Absent ⇒ no card at all, which is E3's whole rule.
 //    Recomputed from a bounded window on every write that could change it, never incremented:

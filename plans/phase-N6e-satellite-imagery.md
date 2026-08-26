@@ -3,12 +3,29 @@
 *Not a base map you switch to. A photograph of **this lake**, clipped to its own shape and the way in,
 with a date on it — and behind it, a season of passes you can scrub through and watch the ice arrive.*
 
-> **Status:** 📋 Re-scoped 2026-08-21 after a founder review of the original scoping. **Imagery not
-> built; [Workstream 0](#workstream-0--getting-the-way-in-into-the-app--built-2026-08-21) is** — the
-> access prerequisite grew into a build of its own on 2026-08-21 (route geometry, the trail
-> connectivity pass, and the approach drawn on both clients) and landed on this phase's branch rather
-> than as an N6d follow-up (founder call). Gated behind
-> [N6d](./phase-N6d-lake-access-points.md), which is complete on dev.
+> **Status:** ✅ **Built through PR 3 — 2026-08-26.** The feature is on both clients: a lake can be
+> revealed as a photograph and its freeze-up scrubbed, on web and on mobile. Re-scoped 2026-08-21 after
+> a founder review of the original scoping; see [Sequencing](#sequencing--six-prs-settled-2026-08-21-resplit-2026-08-23)
+> for what each PR carried.
+>
+> | | | |
+> |---|---|---|
+> | **PR 0** — the way in | ✅ Built 2026-08-21 | [Workstream 0](#workstream-0--getting-the-way-in-into-the-app--built-2026-08-21) — the access prerequisite that grew into a build of its own, landed on this phase's branch rather than as an N6d follow-up (founder call) |
+> | **PR 1** — the reveal, web only | ✅ Merged 2026-08-23 | PR **#45** |
+> | **PR 2** — the producer | ✅ Merged 2026-08-25 | PR **#46** — the Fly box, the granule transform, the masked archive, the S1 pipeline, and the single-season backfill |
+> | **PR 3** — the consumer | ✅ **Built 2026-08-26**, branch `phase-n6e-satellite-imagery-3` — **no PR opened yet, undeployed** | The Convex read path, both scrubbers, the band selector, **mobile's reveal**, attribution, and the per-frame date and cloud caveat |
+> | **PR 4** — phenology, derived dark | ⏳ Not started | Needs the nine-season backfill, which is a deliberate separate spend |
+> | **PR 5** — what the archive knows | ⏳ Not started | N6g's content; D150's real home |
+>
+> ⚠ **PR 3's branch is not only client work.** Scrubbing a real season put a skater in front of the
+> producer's output for the first time, and that falsified four producer assumptions the artifact
+> review had passed: the radar was never denoised, every per-body statistic was measuring a 60 m ring
+> of shoreline, the geocode reference was an average of the pass rather than local to the lake, and the
+> SCL band would have shipped as a black rectangle. Those fixes live here rather than in PR 2 because
+> nothing before a scrubber could have found them — see [the batched re-run queue](#the-batched-re-run-queue-established-2026-08-25),
+> which is what they feed.
+>
+> Gated behind [N6d](./phase-N6d-lake-access-points.md), which is complete on dev.
 >
 > **What changed, and why the rewrite rather than a patch.** The 2026-07-31 scoping specced a
 > **base-map toggle**: satellite replaces the vector basemap across the whole map, everywhere, and the
@@ -443,7 +460,7 @@ gate that misses freeze-up, not an early one that wastes compute.
 timeline invites inference far harder than a static image does, so every frame carries its own date and
 its own cloud caveat — they travel with the frame, they are not furniture around the control.
 
-#### A split body shows a seam, not one picture *(founder call, 2026-08-24 — PR 3's to build)*
+#### A split body shows a seam, not one picture *(founder call, 2026-08-24 — built in PR 3)*
 
 > **Founder:** *"If a single body is split across two images from different dates, we should provide a
 > hairline border between the two images, with their respective dates on either side."*
@@ -818,7 +835,11 @@ on both clients. See [Workstream 0](#workstream-0--getting-the-way-in-into-the-a
 Ships against a keyless public endpoint with no box, no archive and no cron. **Could land while N6d is
 still settling**, which is the point of putting the seam here.
 
-> ### ⚠ Mobile is deferred to PR 3, and it is a dependency decision rather than a port
+> ### ~~⚠ Mobile is deferred to PR 3~~ — ✅ **resolved by PR 3, and the argument held**
+>
+> *Kept because the reasoning is the record of why no native dependency was added. Mobile's reveal
+> shipped as an `ImageSource` pointed at a URL; the canvas was never needed, and Skia was never
+> revisited. The row marked ✅ below is what happened.*
 >
 > **React Native has no `CanvasRenderingContext2D`.** The web reveal clips by punching the alpha
 > channel of a fetched photograph on a canvas (`imageryCanvas`), and mobile has no equivalent —
@@ -847,12 +868,16 @@ still settling**, which is the point of putting the seam here.
 > **The cost, stated plainly:** mobile skaters get the Copernicus deep link and no reveal until PR 3.
 > **The fallback if PR 3's clipping does not generalise:** Skia, revisited then rather than now.
 
-**PR 2 — the producer.** ⏳ *In progress.* **Everything server-side, so that PR 3 can be everything
-client-side** *(founder, 2026-08-25 — this is the seam, and it is what decides where a question
-belongs)*: the Fly box, the mask pre-bake, the granule transform, the masked PMTiles archive, STAC
-selection, D149's weather gate and season turnover, the provenance manifest, and **the Sentinel-1
-pipeline**. Ends by running the **single-season** backfill, so it is verified by an artifact you can
+**PR 2 — the producer.** ✅ **Merged 2026-08-25** (PR #46). **Everything server-side, so that PR 3 can
+be everything client-side** *(founder, 2026-08-25 — this is the seam, and it is what decides where a
+question belongs)*: the Fly box, the mask pre-bake, the granule transform, the masked PMTiles archive,
+STAC selection, D149's weather gate and season turnover, the provenance manifest, and **the Sentinel-1
+pipeline**. Ended by running the **single-season** backfill, so it was verified by an artifact you can
 open rather than by a screenshot.
+
+> ⚠ **And that verification had a ceiling PR 3 found.** An artifact review confirms a frame is
+> *well-formed*; it cannot confirm the frame is *of the lake*. Four defects survived it and were caught
+> within days of a scrubber existing — see the note under PR 3.
 
 *Two changes from how this was originally written.* **The cloud gate is gone** — the founder's
 "cut and store everything, hit Copernicus once, own the pixels" (2026-08-24) replaced it with an
@@ -862,11 +887,38 @@ Copernicus and all similar processing to what we've just built"* (founder, 2026-
 separate STAC collection, a separate id grammar and a single-band transform, but every one of those is
 producer work, and splitting it out would put server-side code in a client-side PR.
 
-**PR 3 — the consumer.** The Convex read path, the web scrubber, the band selector, **mobile's
-reveal**, attribution, and the per-frame date and cloud caveat. Web and mobile belong together here:
-they consume one archive contract, and splitting them means reviewing that contract twice and risking
-two readings of it. Mobile rides the server-side clipping PR 2 builds anyway — see the deferral note
-under PR 1.
+**PR 3 — the consumer.** ✅ **Built 2026-08-26** on branch `phase-n6e-satellite-imagery-3`; **no PR
+opened, undeployed.** The Convex read path, the web scrubber, the band selector, **mobile's reveal**,
+attribution, and the per-frame date and cloud caveat. Web and mobile belonged together here: they
+consume one archive contract, and splitting them would have meant reviewing that contract twice and
+risking two readings of it.
+
+**The mobile deferral came out exactly as argued.** Mobile's reveal is an `ImageSource` pointed at a
+URL — *"painting a pass is adding a URL, which is what the archive was for"* — because PR 2's baked
+alpha meant there was no clip left to perform on the device. **No Skia, no second copy of the
+projection-and-feather logic, no native dependency.** The fallback was never needed.
+
+**What it grew beyond the plan,** in the order the screen forced it:
+
+- **The scrubber moved onto the map**, because it is a control for the map, and then became a real
+  drag rather than a stepper. It ends as the **imagery dock**: one box that grows from the "Show
+  imagery" button into the timeline card, at the founder's ask (**D146**'s UI corollary, 2026-08-25).
+- **A lake split across a granule edge shows both halves and both dates** — a case the archive's
+  one-frame-per-pass shape did not anticipate, and which is a *seam*, not a picture (founder call,
+  2026-08-24). See [§C4](#a-split-body-shows-a-seam-not-one-picture-founder-call-2026-08-24--built-in-pr-3).
+- **A radar timeline holds one orbit direction**, which stops the lake bouncing between dates. That is
+  a mitigation of open question 8, not a fix.
+- **Four producer defects, found by looking rather than by review.** The radar was never denoised;
+  every per-body statistic was measuring the shoreline rather than the lake; the geocode reference was
+  an average of the pass rather than local to the body; the SCL band would have shipped as a black
+  rectangle. All four feed the re-run queue.
+- **Mobile framing, 2026-08-26.** The search bar scoots off the top when a body is selected, and the
+  camera fit now measures its real occluders — the top of the timeline card or of the collapsed
+  button — rather than assuming a flat margin and the sheet.
+
+⚠ **The 2026-08-26 framing change is the one piece not yet seen on a device.** The rest of mobile has
+been, and a device is what caught the bug declarative bindings were hiding; but the search-bar slide
+and the re-derived camera padding have been through types and tests only.
 
 **PR 4 — phenology, derived dark.** §C5's window metrics over the nine-season archive. This one
 *defers itself*: the metrics want eight more seasons than the first backfill produces, and that spend
@@ -1174,12 +1226,19 @@ that produced the `27% ice / 65% water` reading can now answer the question that
    too minimal — I think we could go to 20 m solid and a much wider feather."* The Sentinel pair also
    travels in the mask sidecar, so the container never holds its own copy of a tuned constant.
 
-**Still open, and it is PR 3's:**
+**Now answerable — PR 3 put it on a screen (2026-08-26):**
 
 3. **Whether the aerial and the scrubber ever want separate affordances** after both are on screen
    together. One control is the intent; if it reads as two features wearing one switch, that is worth
-   revisiting *after* seeing it, not before. **This could not be answered by PR 1** — it needs the
-   scrubber, which is PR 3, so it moves there rather than staying here.
+   revisiting *after* seeing it, not before. **This could not be answered by PR 1** — it needed the
+   scrubber, which PR 3 built.
+
+   **PR 3 doubled down on one control rather than splitting it**, and did so at the founder's ask
+   (2026-08-25): the toggle and the timeline became *the same box*, the button growing into the card,
+   because *"the timeline is what imagery-on means"*. ⚠ That is a stronger commitment to the single
+   affordance than the question assumed, so **the question is now about whether the merged dock reads
+   correctly, not whether two controls are wanted.** Still a founder look rather than a measurement —
+   it just has something to look at now.
 
 **Deferred with a decision attached *(founder, 2026-08-25 — "wait, address later")*:**
 
