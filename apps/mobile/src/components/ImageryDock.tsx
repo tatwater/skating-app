@@ -1,6 +1,7 @@
 import { FontAwesomeIcon } from '@fortawesome/react-native-fontawesome';
 import { faLayerGroup, faXmark } from '@fortawesome/sharp-light-svg-icons';
-import type { ReactNode } from 'react';
+import { type ReactNode, useEffect } from 'react';
+import type { LayoutChangeEvent } from 'react-native';
 import Animated, { FadeIn, LinearTransition } from 'react-native-reanimated';
 import { Button, Text, useTheme, XStack, YStack } from 'tamagui';
 
@@ -40,6 +41,7 @@ export function ImageryDock({
   heading,
   seasonLabel,
   bottom,
+  onHeightChange,
   onPress,
   onClose,
   children,
@@ -62,6 +64,15 @@ export function ImageryDock({
   seasonLabel: string | null;
   /** Distance above the screen's bottom edge: clear of the sheet wherever it settled. */
   bottom: number;
+  /**
+   * The height of the box, measured — reported so the camera can fit the lake *above* this dock
+   * rather than behind it (the founder's rule: the lake ends where the timeline card starts).
+   *
+   * Measured rather than assumed because there is no one number to assume. Collapsed it is a button;
+   * expanded it is a panel whose height is the scrubber's content; and both change with the device's
+   * font scale. A constant here would be right on one phone and wrong on the next.
+   */
+  onHeightChange?: (height: number) => void;
   /** Turn imagery on and/or ask the sheet down — see rule 2. */
   onPress: () => void;
   /** The X: off *and* collapsed, in one press. There is no third state. */
@@ -70,7 +81,20 @@ export function ImageryDock({
   children?: ReactNode;
 }) {
   const theme = useTheme();
+
+  // A hidden dock reports 0. The consumer needs to hear that its occluder is *gone* — and an
+  // unmounted component fires no layout event to say so, so the disappearance has to be announced
+  // here or the camera would keep reserving room for a card that isn't on the screen.
+  useEffect(() => {
+    if (!visible) onHeightChange?.(0);
+  }, [visible, onHeightChange]);
+
   if (!visible) return null;
+
+  // ⚠ Measured on the **inner** box, the one that grows — not the full-width wrapper. The wrapper
+  // spans the map's width to anchor a stretched panel, so its height is only accidentally the box's.
+  const reportHeight = (event: LayoutChangeEvent) =>
+    onHeightChange?.(Math.round(event.nativeEvent.layout.height));
 
   return (
     <Animated.View
@@ -84,6 +108,7 @@ export function ImageryDock({
         // rather than being replaced by it. If a device ever drops the animation the geometry is still
         // correct — it just snaps, which is a worse transition and not a broken control.
         layout={LinearTransition.duration(220)}
+        onLayout={reportHeight}
         style={{ alignSelf: expanded ? 'stretch' : 'flex-start' }}
       >
         {expanded ? (

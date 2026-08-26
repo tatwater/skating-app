@@ -258,8 +258,10 @@ function MapLayoutInner() {
       >
         <Slot />
       </MapDrawer>
-      {/* All three sit above the drawer: a warning you can't see because a sheet is over it isn't a
-          warning, and the flag button + on-ice control have to stay reachable while a drawer is open. */}
+      {/* All of these sit above the drawer: a warning you can't see because a sheet is over it isn't a
+          warning, and the flag button + on-ice control have to stay reachable while a drawer is open.
+          They hold that position by their own `zIndex` of 30 and up, against the sheet's 25 — see
+          `DRAWER_Z_INDEX`, which threads between them and the map's own overlays below. */}
       <HazardCapture />
       <OnIceModeControl />
       <RecorderControl />

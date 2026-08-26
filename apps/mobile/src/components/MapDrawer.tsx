@@ -16,6 +16,22 @@ export function coveredFractionForIndex(index: number): number {
 }
 
 /**
+ * Where the sheet paints among the map's overlays.
+ *
+ * Above everything `MapView` draws — the imagery dock at its own `zIndex: 20`, `ReturnToRegion` at 30
+ * — because those float in the strip the sheet is climbing through, and their `bottom` only moves when
+ * the sheet **settles** (`drawerCoveredFraction` is an `onChange` value). Painting under the sheet is
+ * what makes them vanish *continuously under the finger* during a drag instead of surviving on top of
+ * a sheet that has already covered their space and then blinking out when it lands.
+ *
+ * Below the 30-and-up overlays that are siblings of the sheet in the `(map)` layout — the hazard
+ * banner, the on-ice and recorder controls, the flag button. Those are deliberately *above* the sheet
+ * (a warning you can't see because a sheet is over it isn't a warning), so this has to stay under
+ * them: 25 is the only gap in the ladder, and it is exactly the gap this needs.
+ */
+const DRAWER_Z_INDEX = 25;
+
+/**
  * The bottom-sheet drawer that hosts a water-body / report detail over the persistent map (§F, D47)
  * — the mobile mirror of web's `DetailSheet`. Selection is URL-backed (`/water/[id]`, `/report/[id]`)
  * so it's deep-linkable off-platform; the sheet is **non-modal with no backdrop**, so the map behind
@@ -86,6 +102,7 @@ export function MapDrawer({
         settledIndex.current = index;
         onCoveredFractionChange?.(coveredFractionForIndex(index));
       }}
+      containerStyle={{ zIndex: DRAWER_Z_INDEX }}
       backgroundStyle={{ backgroundColor: theme.surface?.val }}
       handleIndicatorStyle={{ backgroundColor: theme.foregroundMuted?.val }}
     >

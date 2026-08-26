@@ -41,8 +41,9 @@ import {
   useRef,
   useState,
 } from 'react';
-import type { NativeSyntheticEvent } from 'react-native';
+import type { LayoutChangeEvent, NativeSyntheticEvent } from 'react-native';
 import { StyleSheet, Text, useColorScheme, useWindowDimensions, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { cacheBody } from '../lib/bodyCache';
 import {
   CONTOUR_BEFORE_LAYER_ID,
@@ -190,7 +191,26 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
     contourBodyKey,
     setContourCredit,
   } = useMapSelection();
+  const insets = useSafeAreaInsets();
+  // The map's own height, measured — **not** the window's. The sheet's snap points are percentages of
+  // the map's container, and under a tab bar that container is shorter than the window; `windowHeight`
+  // therefore overstates what a 58% sheet covers by a whole tab bar, which is exactly the error this
+  // pass exists to remove. The window is only the seed, for the frames before the first layout.
   const { height: windowHeight } = useWindowDimensions();
+  const [mapHeight, setMapHeight] = useState(windowHeight);
+  const onMapLayout = useCallback((event: LayoutChangeEvent) => {
+    const { height } = event.nativeEvent.layout;
+    if (height > 0) setMapHeight((current) => (Math.abs(current - height) > 1 ? height : current));
+  }, []);
+  /**
+   * The imagery dock's measured height (0 when it isn't shown) — see `ImageryDock.onHeightChange`.
+   * Guarded against no-op writes because the dock re-reports on every layout pass, and a state write
+   * per pass would re-run the camera fit for a number that hadn't changed.
+   */
+  const [dockHeight, setDockHeight] = useState(0);
+  const onDockHeightChange = useCallback((height: number) => {
+    setDockHeight((current) => (current === height ? current : height));
+  }, []);
   const hazardPalette = HAZARD_PALETTE[flavor];
   const trackColor = TRACK_PALETTE[flavor];
   const contourPalette = CONTOUR_PALETTE[flavor];
@@ -434,19 +454,18 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
   // against the sheet's motion, and the two would fight. It does mean the button is briefly under a
   // sheet being dragged upward, which resolves the moment it lands.
   const sheetIsClear = drawerCoveredFraction <= coveredFractionForIndex(DRAWER_PEEK);
+  const sheetTop = drawerCoveredFraction * mapHeight;
   // 140 is the floor the scrubber has always used — clear of the peek on ordinary phones and of
   // `OnIceModeControl` at 132. On a tall screen the peek is itself taller than that, so the sheet's
   // own height wins; above the peek the dock rides on the sheet's top edge (rule 1 in `ImageryDock`).
   //
-  // ⚠ **And it stops climbing before it reaches the search box.** At the sheet's tallest detent there
-  // is ~6% of screen left, which `LakeSearch` and `BackToLakeButton` already own; riding the edge up
-  // there would park the dock on top of them. Clamped, it slides behind the sheet instead — the same
-  // thing that happened to this button when it lived at y=168, and the honest outcome when the skater
-  // has pulled the map almost entirely off screen.
-  const dockBottom = Math.min(
-    windowHeight - 212,
-    Math.max(140, drawerCoveredFraction * windowHeight + 16),
-  );
+  // ⚠ **And it stops climbing before it reaches the top of the map.** At the sheet's tallest detent
+  // there is ~6% of screen left, which `BackToLakeButton` (y=112) still owns; riding the edge up there
+  // would park the dock on top of it. Clamped, it slides behind the sheet instead — the honest outcome
+  // when the skater has pulled the map almost entirely off screen. (`LakeSearch` used to be the other
+  // claimant here, but it scoots off the top the moment a body is selected, and the dock only exists
+  // when one is — so the search box can no longer be in this dock's way.)
+  const dockBottom = Math.min(mapHeight - 212, Math.max(140, sheetTop + 16));
 
   // Warm the season's frames once the timeline appears, so scrubbing does not start a cold load per
   // notch. Header ranges only — see `prefetchFrames`. Aborted when the lake or band changes, so a
@@ -607,20 +626,45 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
     if (deepest !== undefined) setContourMaxDepthFt((seen) => Math.max(seen, deepest));
   }
 
-  // Frame a drawer's focus (a lake / report put-in) into the area the drawer does NOT cover, re-fitting
-  // whenever the drawer settles at a new snap point. A lake with a `bounds` gets zoom-to-fit
-  // (`fitBounds`); a bare point (report put-in) gets a fly at its zoom. The drawer's covered fraction
-  // becomes bottom camera padding, so the target lands in the visible strip above the sheet — not
-  // hidden behind it. Skipped when the sheet is near-full (little map visible) or closed.
+  /**
+   * Frame a drawer's focus (a lake / report put-in) into the part of the map nothing is sitting on —
+   * re-fitting whenever any of those things move. A lake with `bounds` gets zoom-to-fit (`fitBounds`);
+   * a bare point (a report's put-in) gets a fly at its zoom.
+   *
+   * ## What bounds the visible map (founder, 2026-08-26)
+   *
+   * > *"A selected body should be fully visible, horizontally and vertically, within the top, left and
+   * > right of the screen and the top of the Freeze-up Timeline card (when the timeline card is open)
+   * > or the top of the 'Show Imagery' button (when the timeline card is closed)."*
+   *
+   * - **Top** — the top of the *usable* screen, so `insets.top`. The map is full-bleed under the status
+   *   bar, and a lake tucked behind a notch is not visible. Nothing else is reserved up here any more:
+   *   `LakeSearch` scoots off the top edge whenever a body is selected, which is precisely the
+   *   condition under which anything gets framed at all. That reclaimed strip is the point of this pass.
+   * - **Left / right** — the screen edges. Nothing floats in the side margins.
+   * - **Bottom** — the higher of two occluders, because either can be the one in the way:
+   *   - the **sheet's** top edge, and
+   *   - the **dock's** top edge, `dockBottom + dockHeight`, which is a *measured* height and so covers
+   *     the founder's whole distinction for free — the expanded timeline card and the collapsed button
+   *     are the same expression at two heights, and `dockBottom` already moves with the sheet's detent,
+   *     which is why the button's top differs between the peek and the normal position.
+   *
+   *   Not simply the dock, because when the sheet climbs past the dock's clamp the dock slides *behind*
+   *   it and the sheet becomes the taller thing again; not simply the sheet, because the dock floats
+   *   above it by design. `Math.max` is the whole rule.
+   *
+   * `MARGIN` on every side is breathing room and nothing else — every real occluder is measured now,
+   * so the margin no longer has to double as a guess about one.
+   */
   useEffect(() => {
     const cam = cameraRef.current;
     if (!cam || !focus || drawerCoveredFraction <= 0 || drawerCoveredFraction >= 0.9) return;
-    const margin = 48;
+    const MARGIN = 24;
     const padding = {
-      top: margin,
-      right: margin,
-      left: margin,
-      bottom: margin + drawerCoveredFraction * windowHeight,
+      top: insets.top + MARGIN,
+      right: MARGIN,
+      left: MARGIN,
+      bottom: Math.max(sheetTop, dockHeight > 0 ? dockBottom + dockHeight : 0) + MARGIN,
     };
     if (focus.bounds) {
       cam.fitBounds(
@@ -635,7 +679,7 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
         duration: 600,
       });
     }
-  }, [focus, drawerCoveredFraction, windowHeight]);
+  }, [focus, drawerCoveredFraction, sheetTop, dockBottom, dockHeight, insets.top]);
 
   // Home/water framing on open via device geolocation (D12/D20): a fix inside the pilot region
   // recenters there; otherwise the default Vermont framing stands. Skipped on a deep-linked drawer,
@@ -734,8 +778,10 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
 
   return (
     // Wrapped so the return-to-region control can sit over the canvas. The map keeps the absolute
-    // fill it always had, so nothing about the layout changes.
-    <View style={StyleSheet.absoluteFill}>
+    // fill it always had, so nothing about the layout changes. `onLayout` measures this wrapper —
+    // it is the box the sheet's snap percentages and the dock's `bottom` are both relative to, so
+    // it is the only honest denominator for the camera-fit math above.
+    <View style={StyleSheet.absoluteFill} onLayout={onMapLayout}>
       <MapGL
         style={StyleSheet.absoluteFill}
         mapStyle={mapStyle}
@@ -1072,6 +1118,8 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
           freezeUpSelected && freezeUpTimeline ? formatSeasonLabel(freezeUpTimeline.season) : null
         }
         bottom={dockBottom}
+        // Feeds the camera fit above: the lake is framed to end where this box starts.
+        onHeightChange={onDockHeightChange}
         onPress={() => {
           // Both halves of the founder's rule, in the order they have to happen: ask the sheet down,
           // then turn imagery on. Pressing this while imagery is *already* on is the "bring the
