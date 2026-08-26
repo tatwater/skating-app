@@ -74,21 +74,46 @@ def read_range_lut(root: ET.Element) -> tuple[np.ndarray, np.ndarray, np.ndarray
     if not vectors:
         raise SystemExit("no noiseRangeVector elements — is this a noise annotation?")
 
-    lines, rows, pixels = [], [], None
+    # ## ⚠ The noise grid is NOT fixed across lines, unlike the calibration grid
+    #
+    # `sar-cal-lut.py` asserts that every vector shares one pixel axis, and for calibration that
+    # holds. Copying the assertion here cost a granule: measured on
+    # `S1A_…20260201T224321`, all 39 noise vectors carry 641 samples spanning the same 0–25,442
+    # pixels, but the **breakpoints between them move from line to line** — because the sub-swath
+    # boundaries the noise profile steps at are themselves not parallel to the image edge.
+    #
+    # So the vectors are resampled onto one common axis rather than refused. The axis spans the widest
+    # extent any vector reaches, at the finest sampling any of them uses, so nothing is coarsened.
+    #
+    # ⚠ **What this does cost is a slightly smeared sub-swath step**, by at most one sample spacing —
+    # ~40 source pixels, ~400 m. The LUT is subsequently warped to an eighth-resolution grid (224 m at
+    # radar's 28 m output), so the smear is under a pixel where it is actually used.
+    lines, columns_per_line, luts = [], [], []
     for vector in vectors:
         columns = np.fromstring(vector.findtext("pixel", ""), sep=" ")
         lut = np.fromstring(vector.findtext("noiseRangeLut", ""), sep=" ")
         if columns.size == 0 or lut.size != columns.size:
             raise SystemExit("noiseRangeVector missing or ragged pixel/noiseRangeLut")
-        if pixels is None:
-            pixels = columns
-        # Asserted rather than assumed, exactly as `sar-cal-lut.py` does: a ragged grid would shear
-        # the noise floor across the swath, which is smooth, plausible, and invisible in the output.
-        elif not np.array_equal(columns, pixels):
-            raise SystemExit("noiseRangeVectors disagree about their pixel grid — cannot grid them")
         lines.append(float(vector.findtext("line", "0")))
-        rows.append(lut)
-    return np.asarray(lines), np.asarray(pixels), np.vstack(rows)
+        columns_per_line.append(columns)
+        luts.append(lut)
+
+    if all(np.array_equal(columns_per_line[0], c) for c in columns_per_line):
+        return np.asarray(lines), columns_per_line[0], np.vstack(luts)
+
+    widest = max(c[-1] for c in columns_per_line)
+    narrowest = min(c[0] for c in columns_per_line)
+    samples = max(c.size for c in columns_per_line)
+    pixels = np.linspace(narrowest, widest, samples)
+    # `np.interp` clamps beyond each vector's own span, which is what a vector that stops short of
+    # the widest one should do — repeat its edge rather than trend off it.
+    resampled = np.vstack([np.interp(pixels, c, l) for c, l in zip(columns_per_line, luts)])
+    print(
+        f"[sar-noise-lut] noise vectors disagree about their pixel grid; resampled "
+        f"{len(luts)} of them onto a common {samples}-sample axis",
+        file=sys.stderr,
+    )
+    return np.asarray(lines), pixels, resampled
 
 
 def azimuth_scaling(root: ET.Element, lines: np.ndarray, pixels: np.ndarray) -> np.ndarray:
@@ -175,19 +200,26 @@ def main() -> int:
     out = None
 
     report = f"[sar-noise-lut] {rows}x{cols} grid, noise power {noise.min():.1f}–{noise.max():.1f}"
-    if args.calibration:
-        cal = ET.parse(args.calibration).getroot().find(".//calibrationVector")
+    # ⚠ **Reporting only, so it may never fail the granule.** This whole block exists to put a NESZ
+    # figure in the log; the raster above is already written and is what the pipeline consumes. A
+    # calibration annotation with no `calibrationVector` used to raise `AttributeError` here, and
+    # because `cut-granule.sh` runs this stage under `|| die` that killed a granule over a log line.
+    cal = ET.parse(args.calibration).getroot().find(".//calibrationVector") if args.calibration else None
+    if cal is not None:
         cpix = np.fromstring(cal.findtext("pixel", ""), sep=" ")
         csig = np.fromstring(cal.findtext("sigmaNought", ""), sep=" ")
-        gain = np.interp(pixels, cpix, csig)
-        with np.errstate(divide="ignore", invalid="ignore"):
-            nesz = 10 * np.log10(noise / gain**2)
-        nesz = nesz[np.isfinite(nesz)]
-        if nesz.size:
-            report += (
-                f"; NESZ {np.percentile(nesz, 25):.2f}/{np.median(nesz):.2f}/"
-                f"{np.percentile(nesz, 75):.2f} dB (p25/median/p75)"
-            )
+        if cpix.size and cpix.size == csig.size:
+            gain = np.interp(pixels, cpix, csig)
+            with np.errstate(divide="ignore", invalid="ignore"):
+                nesz = 10 * np.log10(noise / gain**2)
+            nesz = nesz[np.isfinite(nesz)]
+            if nesz.size:
+                report += (
+                    f"; NESZ {np.percentile(nesz, 25):.2f}/{np.median(nesz):.2f}/"
+                    f"{np.percentile(nesz, 75):.2f} dB (p25/median/p75)"
+                )
+    elif args.calibration:
+        report += "; NESZ unavailable (no calibrationVector in the annotation)"
     print(f"{report} -> {args.out}", file=sys.stderr)
     return 0
 
