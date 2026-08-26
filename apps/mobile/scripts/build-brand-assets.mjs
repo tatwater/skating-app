@@ -40,7 +40,7 @@ const NAVY = '#0b1620';
 function readMark(file) {
   const svg = readFileSync(join(ASSETS, file), 'utf8');
   const paths = [...svg.matchAll(/<path[^>]*d="([^"]+)"[^>]*fill="([^"]+)"[^>]*\/>/g)].map(
-    ([, d, fill]) => ({ d, fill })
+    ([, d, fill]) => ({ d, fill }),
   );
   if (paths.length !== 6) {
     throw new Error(`${file}: expected 6 paths, found ${paths.length} — did the logo change?`);

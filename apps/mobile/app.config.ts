@@ -89,8 +89,7 @@ const config: ExpoConfig = {
       'expo-image-picker',
       {
         photosPermission: 'Gli accesses your photos so you can attach them to an ice report.',
-        cameraPermission:
-          'Gli uses the camera so you can photograph ice conditions for a report.',
+        cameraPermission: 'Gli uses the camera so you can photograph ice conditions for a report.',
       },
     ],
     // The Gli wordmark. The image is required on Android: expo-splash-screen always references
