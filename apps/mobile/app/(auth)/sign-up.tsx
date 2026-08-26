@@ -3,7 +3,8 @@ import { Link } from 'expo-router';
 import { useState } from 'react';
 import { ScrollView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Button, H1, Input, Paragraph, Text, YStack } from 'tamagui';
+import { Button, H1, Paragraph, Text, YStack } from 'tamagui';
+import { Input } from '../../src/components/ThemedInputs';
 
 /**
  * Clerk account creation (D26): email + password + email-code verification. The profile

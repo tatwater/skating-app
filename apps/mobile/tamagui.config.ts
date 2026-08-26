@@ -39,11 +39,26 @@ function toTamaguiTheme(t: DesignTheme) {
 
 export const config = createTamagui({
   ...defaultConfig,
-  // The v5 base enforces shorthand-only style props; relax that so screens can use
-  // conventional long-form names (padding, alignItems, backgroundColor, …).
   settings: {
     ...defaultConfig.settings,
+    // The v5 base enforces shorthand-only style props; relax that so screens can use
+    // conventional long-form names (padding, alignItems, backgroundColor, …).
     onlyAllowShorthands: false,
+    /**
+     * Off, though the v5 base turns it on (D34 amendment). It's an **iOS** optimization: on a
+     * light↔dark change Tamagui hands styled components a `DynamicColorIOS({light, dark})` value
+     * and then *skips their re-render*, letting the platform pick the shade. That's only correct
+     * while the app's theme is the device's theme — `DynamicColorIOS` resolves against the OS
+     * appearance, which since D34 the user can override. `Appearance.setColorScheme` in
+     * `ThemeProvider` keeps the two in agreement, so this would usually still be right; turning it
+     * off means an iOS build doesn't silently freeze half its colors if that call ever no-ops.
+     *
+     * Costs a re-render on a theme change, which happens when a person taps a button.
+     *
+     * Not the cause of the Android staleness this was found alongside — that path is gated on
+     * `supportsDynamicColorIOS`, which is false off iOS. See `ThemedInputs.tsx` for that one.
+     */
+    fastSchemeChange: false,
   },
   themes: {
     light: toTamaguiTheme(designThemes.light),

@@ -2,7 +2,8 @@ import { api } from '@skating/convex/api';
 import { BIO_MAX_LENGTH, isMinor, TOWN_LABEL_MAX_LENGTH } from '@skating/core';
 import { useMutation, useQuery } from 'convex/react';
 import { useState } from 'react';
-import { Button, Input, Paragraph, Text, TextArea, XStack, YStack } from 'tamagui';
+import { Button, Paragraph, Text, XStack, YStack } from 'tamagui';
+import { Input, TextArea } from './ThemedInputs';
 
 /**
  * Edit the caller's own profile (D13) — bio, town, public↔private. The public toggle is disabled for

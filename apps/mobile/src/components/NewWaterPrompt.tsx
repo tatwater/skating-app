@@ -7,7 +7,8 @@ import {
 } from '@skating/core';
 import { useMutation, useQuery } from 'convex/react';
 import { useState } from 'react';
-import { Button, Input, Paragraph, Text, XStack, YStack } from 'tamagui';
+import { Button, Paragraph, Text, XStack, YStack } from 'tamagui';
+import { Input } from './ThemedInputs';
 
 /**
  * "You skated somewhere we don't have on the map" — the D14/D36 create-or-attach flow, reached only

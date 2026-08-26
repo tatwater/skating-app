@@ -11,7 +11,8 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Input, Text, YStack } from 'tamagui';
+import { Text, YStack } from 'tamagui';
+import { Input } from './ThemedInputs';
 
 /** A search result row from `waterBodies.searchByName` — a lake, or a named bay inside one (D60). */
 export type LakeHit = {

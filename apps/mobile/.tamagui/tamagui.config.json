@@ -26646,7 +26646,7 @@
         "height-lg": false
       },
       "defaultFont": "body",
-      "fastSchemeChange": true,
+      "fastSchemeChange": false,
       "shouldAddPrefersColorThemes": true,
       "allowedStyleValues": "somewhat-strict-web",
       "addThemeClassName": "html",

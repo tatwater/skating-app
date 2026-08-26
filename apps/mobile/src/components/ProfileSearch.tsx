@@ -3,7 +3,8 @@ import { useQuery } from 'convex/react';
 import { useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { Keyboard } from 'react-native';
-import { Input, Text, YStack } from 'tamagui';
+import { Text, YStack } from 'tamagui';
+import { Input } from './ThemedInputs';
 
 /**
  * Inline profile search (D13), the mobile mirror of web's `ProfileSearch` — public profiles only

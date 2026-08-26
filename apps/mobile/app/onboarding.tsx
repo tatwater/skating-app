@@ -13,8 +13,9 @@ import { ConvexError } from 'convex/values';
 import { useState } from 'react';
 import { ScrollView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Button, H1, Input, Paragraph, Text, YStack } from 'tamagui';
+import { Button, H1, Paragraph, Text, YStack } from 'tamagui';
 import { RiskAckConsent } from '../src/components/RiskAckConsent';
+import { Input } from '../src/components/ThemedInputs';
 import { RISK_ACK_VERSION } from '../src/lib/riskAck';
 
 /**

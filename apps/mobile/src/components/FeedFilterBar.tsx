@@ -9,8 +9,9 @@ import {
   type SurfaceTag,
 } from '@skating/core';
 import { useState } from 'react';
-import { Button, Input, Text, XStack, YStack } from 'tamagui';
+import { Button, Text, XStack, YStack } from 'tamagui';
 import { activeFilterCount } from '../lib/feedFilters';
+import { Input } from './ThemedInputs';
 
 /**
  * The persisted newsfeed filter row (Phase 4, decision #3) — the mobile mirror of web's

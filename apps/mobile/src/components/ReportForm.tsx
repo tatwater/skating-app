@@ -39,7 +39,7 @@ import * as Location from 'expo-location';
 import { useRouter } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Platform } from 'react-native';
-import { Button, Input, Spinner, Text, TextArea, XStack, YStack } from 'tamagui';
+import { Button, Spinner, Text, XStack, YStack } from 'tamagui';
 import { deleteDraftPhotoFiles, isPersistedUri, persistDraftPhoto } from '../lib/draftPhotos';
 import { getTrack, saveDraft } from '../lib/draftStore';
 import { getSuggestedSkateWindow } from '../lib/dwellTracker';
@@ -47,6 +47,7 @@ import { isDraftFlushing } from '../lib/flushService';
 import { HazardBundlePrompt } from './HazardBundlePrompt';
 import { useMapSelectionOptional } from './MapSelectionContext';
 import { pickPhotos, processPhoto, uploadToStorage } from './photoPipeline';
+import { Input, TextArea } from './ThemedInputs';
 
 /** A processed photo awaiting upload — file URIs + EXIF coord + the per-photo `placeOnMap` opt-in. */
 interface PhotoDraft {

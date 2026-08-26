@@ -12,8 +12,16 @@
  */
 
 import { resolveThemeName, type ThemeName, type ThemePreference } from '@skating/design';
-import { createContext, type ReactNode, use, useCallback, useMemo, useState } from 'react';
-import { useColorScheme } from 'react-native';
+import {
+  createContext,
+  type ReactNode,
+  use,
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+} from 'react';
+import { Appearance, useColorScheme } from 'react-native';
 import { loadThemePreference, saveThemePreference } from '../lib/themePreferenceStore';
 
 type ThemeContextValue = {
@@ -40,6 +48,21 @@ export function ThemePreferenceProvider({ children }: { children: ReactNode }) {
     setPreferenceState(next);
     saveThemePreference(next);
   }, []);
+
+  /**
+   * Tell React Native itself which scheme we're in, so the parts of the UI we don't draw agree with
+   * the parts we do: the keyboard, `DateTimePicker`, and any native view honoring the app's
+   * `userInterfaceStyle` (which stays `'automatic'` precisely so this can move it). Without it a
+   * user in forced-dark gets a white keyboard under a dark search box.
+   *
+   * Driven by `preference`, **not** `resolved`. Writing `resolved` back would feed
+   * `useColorScheme()` its own output, and `'system'` would latch to whatever was last written
+   * instead of continuing to follow the device. `'unspecified'` is this RN version's "go back to
+   * following the OS" — the same third value that made `SystemColorScheme` wider than `ThemeName`.
+   */
+  useEffect(() => {
+    Appearance.setColorScheme(preference === 'system' ? 'unspecified' : preference);
+  }, [preference]);
 
   const value = useMemo<ThemeContextValue>(() => {
     const resolved = resolveThemeName(preference, systemScheme);

@@ -2,7 +2,8 @@ import { api } from '@skating/convex/api';
 import { isLeaving } from '@skating/core';
 import { useMutation, useQuery } from 'convex/react';
 import { useState } from 'react';
-import { Button, Text, TextArea, XStack, YStack } from 'tamagui';
+import { Button, Text, XStack, YStack } from 'tamagui';
+import { TextArea } from './ThemedInputs';
 
 /** Whether the current user is at least a moderator (D37). Read-only chrome only — see below. */
 export function useIsModerator(): boolean {

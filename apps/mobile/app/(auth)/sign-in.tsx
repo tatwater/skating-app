@@ -4,7 +4,8 @@ import { Link } from 'expo-router';
 import * as WebBrowser from 'expo-web-browser';
 import { useCallback, useEffect, useState } from 'react';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Button, H1, Input, Paragraph, Text, YStack } from 'tamagui';
+import { Button, H1, Paragraph, Text, YStack } from 'tamagui';
+import { Input } from '../../src/components/ThemedInputs';
 
 // Dismisses the auth popup if the app is resumed mid-flow with a pending session.
 WebBrowser.maybeCompleteAuthSession();

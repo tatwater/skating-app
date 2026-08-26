@@ -11,9 +11,10 @@ import {
 } from '@skating/core';
 import { useMutation, useQuery } from 'convex/react';
 import { type ReactNode, useState } from 'react';
-import { Button, Paragraph, Separator, Text, TextArea, XStack, YStack } from 'tamagui';
+import { Button, Paragraph, Separator, Text, XStack, YStack } from 'tamagui';
 import { ModeratorActions, useCanModerate } from './ModeratorActions';
 import { FlagControl } from './SafetyControls';
+import { TextArea } from './ThemedInputs';
 import { TrustAvatar } from './TrustDisplay';
 
 /** Public author attribution on a comment (mirrors the server payload). */

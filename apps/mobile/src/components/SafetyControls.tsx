@@ -2,8 +2,9 @@ import { api } from '@skating/convex/api';
 import type { Id } from '@skating/convex/dataModel';
 import { useMutation } from 'convex/react';
 import { useState } from 'react';
-import { Button, Text, TextArea, XStack, YStack } from 'tamagui';
+import { Button, Text, XStack, YStack } from 'tamagui';
 import { Badge } from './detailUi';
+import { TextArea } from './ThemedInputs';
 
 /** Flag targets + reasons mirror the backend enums (`FLAG_TARGET_TYPES` / `FLAG_REASONS`). */
 export type FlagTargetType = 'report' | 'comment' | 'photo' | 'user' | 'hazard';

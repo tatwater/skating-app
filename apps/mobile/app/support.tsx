@@ -5,7 +5,8 @@ import { useRouter } from 'expo-router';
 import { useState } from 'react';
 import { Platform, ScrollView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Button, Paragraph, Text, TextArea, XStack, YStack } from 'tamagui';
+import { Button, Paragraph, Text, XStack, YStack } from 'tamagui';
+import { TextArea } from '../src/components/ThemedInputs';
 
 /**
  * Contact-support / report-a-bug (D35) — the mobile half of the one operator-adjacent surface that
