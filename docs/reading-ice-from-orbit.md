@@ -22,11 +22,11 @@ the one case skaters care about most, which is the case this document spends the
 | **band** | One slice of the spectrum the camera records — blue, green, red, infrared, and so on. A satellite "photo" is really a stack of separate greyscale images, one per band. |
 | **optical** | A camera. Records sunlight bouncing off the ground. Needs daylight and a clear sky. |
 | **radar / SAR** | Sends its own microwave pulse down and listens for the echo. Brings its own light, so it works at night and straight through cloud. |
-| **backscatter** | How much of the radar pulse came back. **This is a measure of texture, not colour** — the single most important idea in the radar half of this document. |
+| **backscatter** | How much of the radar pulse came back. **This is a measure of texture, not color** — the single most important idea in the radar half of this document. |
 | **polarisation** | Which way the radar pulse is oriented going down (V or H) and coming back. `VH` means sent vertical, received horizontal. |
 | **`sigma0`** | Backscatter as a physical number, in decibels, after correcting for how the instrument saw it. A raw radar file does *not* contain this — see Chapter 5. |
 | **SCL** | *Scene Classification Layer.* A free per-pixel label — "this pixel is water / cloud / snow" — that the European Space Agency computes and ships with every optical scene. |
-| **NDSI** | *Normalised Difference Snow Index.* An arithmetic trick for telling snow from cloud, which colour alone cannot do. |
+| **NDSI** | *Normalised Difference Snow Index.* An arithmetic trick for telling snow from cloud, which color alone cannot do. |
 | **black ice** | Clear, new ice you can see the lake bottom through. The good stuff. Also, as we'll see, nearly invisible from space. |
 
 ---
@@ -70,14 +70,14 @@ you anything about ice. **There is no third option we are leaving on the table.*
 
 A Sentinel-2 scene is thirteen separate images — twelve in the processed product we use, since the
 cirrus band is consumed by atmospheric correction and not republished. They range from deep blue
-through visible colour, into near-infrared, and out to **shortwave infrared (SWIR)** at 1.6 and
+through visible color, into near-infrared, and out to **shortwave infrared (SWIR)** at 1.6 and
 2.2 microns, well past anything an eye can see.
 
 We fetch two of them.
 
 | Asset | What it is | What we do with it |
 | --- | --- | --- |
-| **`visual`** | Red, green and blue combined into an ordinary-looking colour picture | **This is the only thing a skater ever sees.** Everything else is machinery. |
+| **`visual`** | Red, green and blue combined into an ordinary-looking color picture | **This is the only thing a skater ever sees.** Everything else is machinery. |
 | **`scl`** | ESA's per-pixel classification — see Chapter 3 | Two uses. The per-lake statistics are the valuable half and always run. The image itself is also published, so a curious skater can switch to it and see what a claim was derived *from* — the honest reason to offer a band selector at all. It costs roughly a quarter again in processing. |
 
 **Everything else we read past and discard**, including the green and SWIR pair that makes NDSI
@@ -172,7 +172,7 @@ NDSI = (green − SWIR) / (green + SWIR)
 ```
 
 is high for snow and low for cloud. It is genuinely worth having — it is an independent second opinion
-where SCL is weakest, and true colour cannot do this at all. But it is a *snow* index, built on the
+where SCL is weakest, and true color cannot do this at all. But it is a *snow* index, built on the
 same brightness that black ice does not have. It would agree with SCL for the same reason.
 
 **So a freeze-up alert built on optical alone would fire late, and would miss the black-ice window
@@ -182,7 +182,7 @@ entirely** — the best skating of the year, and the reason anyone opens the app
 
 ## Chapter 5: Radar sees texture, and that changes everything
 
-Radar does not measure colour or brightness. It fires a pulse at the ground and measures **how much
+Radar does not measure color or brightness. It fires a pulse at the ground and measures **how much
 comes back**, and that depends almost entirely on how *rough* the surface is at the scale of the
 wavelength — about 5.6 cm.
 
@@ -289,6 +289,80 @@ deep — and its `VH` reading stayed flat all winter (0.2–0.5 dB), while the s
 2 dB. The lake that doesn't freeze doesn't move. That is about as clean a natural experiment as
 observational data offers.
 
+### ⚠ The radar was also in the wrong place
+
+A radar image does not arrive with a map position attached. It arrives with a set of reference points,
+worked out by assuming the ground sits at one particular height. Anything higher or lower than that
+assumption gets drawn **sideways** — about 140 metres out of place for every 100 metres of height
+error.
+
+Sentinel-1 looks out to one side, so a rising pass views a lake from one direction and a falling pass
+from the other, and **the error flips between them**. A skater watching the timeline caught this before
+any measurement did: two islands in Mascoma appeared to jump east, then west, then east again as the
+dates advanced.
+
+The fix is easier for lakes than for land, because a lake is flat and we already know its elevation:
+the whole correction collapses to sliding each lake's pixels back into place. Two things had to be got
+right, and neither was obvious.
+
+**The height has to be the local one.** A pass covers 250 km, and averaging the terrain across all of
+it gives a number describing what the satellite flew over rather than where any lake sits — measured
+across five real passes, that average ranged from **8 metres** (mostly ocean) to **370 metres** (the
+White Mountains). Correcting with the average was *worse than not correcting at all*. Using each
+lake's own local reference instead cut the error from 116 m to 42 m.
+
+**And the direction is easy to get exactly backwards**, which doubles the error rather than removing
+it, while still producing a perfectly plausible-looking number. It was settled by measurement, not
+argument: two passes over Mascoma 24 hours apart, one rising and one falling.
+
+The payoff is not just tidier pictures. Because rising and falling passes now agree about where a lake
+is, they can be read as one series — **which doubles how often we get to look at a lake.**
+
+*The largest correction in our region belongs to Upper Lake of the Clouds, on Mount Washington at 1,531
+metres: its pixels were landing about a kilometre from the lake.*
+
+### ⚠ The radar has a floor, and lakes are sitting on it
+
+Calibration turns detector counts into a physical brightness. It does **not** remove the instrument's
+own electrical noise, which every radar has and which sets a hard limit on how dark a thing it can
+report. That limit has a name — **NESZ**, the brightness the sensor reads back from a target returning
+nothing at all — and Sentinel-1 publishes it, per pass, in a file alongside the calibration one.
+
+Until 2026-08-25 nothing in this pipeline opened that file.
+
+```
+S1A    noise floor, VH    median −25.2 dB
+S1C    noise floor, VH    median −28.0 dB
+```
+
+**Our lakes measure about −24.3 dB.** So the surface of a frozen lake is roughly *one decibel* above
+the level at which the instrument stops being able to tell it from static — and on **38%** of lakes it
+is genuinely below that level.
+
+That sounds like a catastrophe and it is not, for a reason worth understanding. The noise is a known
+quantity, so it can be subtracted, and a target below the floor is recovered correctly *on average*.
+What averaging cannot do is rescue any **single pixel**:
+
+| the question | how well we can answer it |
+| --- | --- |
+| *"how bright was this whole lake?"* | well — about ±0.5 dB, because hundreds of pixels average out |
+| *"how bright was **this one pixel**?"* | badly — about ±3–4 dB near the floor |
+
+**That distinction decides what radar can and cannot be used for here.** Watching a whole lake darken
+as it freezes is a whole-lake measurement, and it works. Pointing at one corner of a lake and calling
+it glassy is a per-pixel measurement, and at these levels it would be reading the instrument rather
+than the ice. It is the reason the black-ice idea is still research and not a feature.
+
+**How we know the floor is right rather than over-corrected.** The obvious worry about "38% below the
+floor" is that we are subtracting too much. Three checks say otherwise: almost no lakes collapse to
+nothing (2 out of 2,578); the spread of results stays wide rather than piling up at the bottom; and
+**large lakes sit closer to the floor than small ones**, which is the opposite of what a measurement
+error would do. Big open water really is that dark to radar.
+
+*Every lake now carries its own floor in the archive, because the floor moves across a swath and
+between satellites. A claim like "40% of this lake was below −22 dB" means nothing until you know
+whether that lake's floor was −25 or −22.*
+
 ### Did radar see what optical missed?
 
 *These are the numbers from the exploratory spike that decided radar was worth building — **raw
@@ -321,7 +395,7 @@ December. It is suggestive and it points the right way. It is not yet proof.
 
 The whole problem, in one table. **Nothing in the right-hand column is easy.**
 
-| | true colour | SCL | NDSI | radar `VH` |
+| | true color | SCL | NDSI | radar `VH` |
 | --- | --- | --- | --- | --- |
 | **Open water** | dark | water | low | dark if calm, bright if windy |
 | **Black ice** | dark — *looks like water* | **water** ⚠ | low ⚠ | dark |
@@ -332,7 +406,7 @@ The whole problem, in one table. **Nothing in the right-hand column is easy.**
 Read the columns and the division of labour falls out:
 
 - **Optical answers "is there snow on it?"** reliably, and is defeated by cloud maybe 75% of the time.
-- **NDSI's one job** is separating snow from cloud, which true colour genuinely cannot do — both are
+- **NDSI's one job** is separating snow from cloud, which true color genuinely cannot do — both are
   white.
 - **Radar's one job** is seeing through weather and detecting smoothness. It is the only column with a
   chance of catching black ice.
@@ -382,7 +456,7 @@ pipelines diverge completely**, because a radar pass is not a picture:
 
 | Kept | Discarded |
 | --- | --- |
-| The masked colour picture, per optical pass | The raw scenes — re-readable free, forever |
+| The masked color picture, per optical pass | The raw scenes — re-readable free, forever |
 | The `VH` grey image, per radar pass | The nine optical bands `visual` doesn't use |
 | Per-lake numbers, per pass — `clearPct`, `snowIcePct`, `waterPct`, `vvDb`, `vhDb`, `coveragePct` | The `VV` image (its number survives) |
 | The SCL classification image, per optical pass | Every working file in between — warps, masks, distance ramps |
@@ -429,7 +503,7 @@ because recomputing them means touching all 4,485 passes again.
 
 ## Chapter 8: Which data answers which question
 
-**For showing a skater a picture: true colour, and nothing else.** Every other product here is an
+**For showing a skater a picture: true color, and nothing else.** Every other product here is an
 input to a calculation, not something to look at.
 
 **For "when did this lake freeze / thaw":**
@@ -448,7 +522,45 @@ thing, and the phrasing is load-bearing rather than modest.
 
 ---
 
-## Chapter 9: ⚠ One number for a whole lake, when a lake isn't one thing
+## Chapter 9: ⚠ Which pixels the number came from
+
+Every figure in this document is an average. Two things decide what it means: **which pixels went
+into it**, and **whether one number can describe the whole lake**. Both turned out to be wrong in ways
+worth explaining.
+
+### For two months, we were measuring the beach
+
+The app draws satellite imagery in a shape — the lake, plus the walk in from the car park, each
+widened by 60 metres so the shoreline and the path are actually visible. That shape exists for a good
+reason: a photograph clipped exactly to the waterline is useless for working out where to park and how
+to get down to the ice.
+
+**The mistake was using that same shape to take the measurements.** So when the pipeline reported "82%
+water", the area it averaged over was the lake *plus a 60-metre ring of its bank, plus its islands,
+plus the trail and the car park*.
+
+The error is not evenly spread, which is what made it hard to notice. A fixed-width ring around a big
+lake is a rounding error; around a small pond it is most of the "lake". Measured across 40 real bodies
+in our own corpus:
+
+| body size | share of the measured area that was **not water** |
+| --- | --- |
+| over 100 acres | 23% |
+| 10–100 acres | 47% |
+| **under 10 acres** | **70%** |
+
+The worst case was a 1.3-acre pond where **86%** of what we were calling the lake was dry land.
+
+**For radar it was worse than a dilution — it was a swamp.** Forest is one of the brightest things a
+radar can look at (the pulse rattles around inside the canopy and comes back strong), while smooth ice
+and calm water are among the darkest. So a ring of trees does not blur the ice signal, it overwhelms
+it. Correcting this moved the typical lake's radar reading by **3.67 dB** — against a freeze-up signal
+of about 2 dB. **The contamination was larger than the thing being measured.**
+
+Every number in this document from before 26 August 2026 was measured that way. The pipeline now keeps
+two shapes: one for the picture, one for the measurement.
+
+### And one number still cannot describe a whole lake
 
 The founder's own account of last winter:
 
@@ -476,21 +588,36 @@ obliged to behave like one surface.** Narrows and bridges are where that assumpt
 are where flow concentrates and where ice forms last, which is exactly what the skate log above
 describes and what the January numbers are too coarse to show.
 
-*What to do about it is a product question rather than a measurement one — see the build notes.*
+**Mascoma, at least, is now cut in two.** On 26 August 2026 the lake was split into *Mascoma North* and
+*Mascoma South* along the line the road takes across the narrows — from the southern corner of the
+peninsula to the far shore, a gap of just **90 metres** at the tightest point. North is 1.20 km²,
+south is 3.43 km², and the two together account for every square metre of the lake.
+
+That does not by itself produce two numbers — the measurement still has to be told to use the halves —
+but it is the piece that had to exist first, and it exists for the one lake where somebody kept a
+record precise enough to check the answer against.
+
+*This is the first sub-area drawn for measurement rather than for naming. Whether the rest of the
+corpus follows is a product question — see the build notes.*
 
 ---
 
 ## What to take away
 
-1. **Optical and radar answer different questions.** One sees colour and is blinded by cloud; the
+1. **Optical and radar answer different questions.** One sees color and is blinded by cloud; the
    other sees texture and works in the dark. Neither is a substitute for the other.
 2. **Our ice measurement is really a snow measurement.** It is honest and useful and it misses black
    ice, which is the ice worth driving to.
-3. **Radar is the only candidate for catching black ice.** The calibration that makes its numbers
-   physical is built and runs on every pass; what is still unproven is whether radar can *date* a
-   freeze-up or only tell you a surface changed.
-4. **A date from space is always a bracket.** Cloud decides how wide.
-5. **Nothing here sees thickness, and nothing here is a safety judgement.** The app reports what an
+3. **Radar is the only candidate for catching black ice, and it is closer to its limits than it
+   looked.** Calibration, noise removal and geometric correction all run on every pass now. What that
+   revealed is that a frozen lake sits about a decibel above the level where the instrument stops
+   being able to see it — fine for *"this whole lake darkened"*, not fine for *"that corner is
+   glassy"*. Whether radar can **date** a freeze-up is still unproven.
+4. **Check which pixels a number came from.** For two months these measurements included a 60-metre
+   ring of shoreline, which was a rounding error on a big lake and 70% of the "lake" on a small one.
+   Averages are only as good as the outline they were taken over.
+5. **A date from space is always a bracket.** Cloud decides how wide.
+6. **Nothing here sees thickness, and nothing here is a safety judgement.** The app reports what an
    instrument recorded on a date. Whether ice will hold you is a question for the ice, and for you,
    standing on the shore.
 
