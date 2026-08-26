@@ -3,6 +3,8 @@ import { api } from '@skating/convex/api';
 import { Link, useRouterState } from '@tanstack/react-router';
 import { useQuery } from 'convex/react';
 import type { ReactNode } from 'react';
+import logoBlack from '../assets/gli-black-duotone.svg';
+import logoWhite from '../assets/gli-white-duotone.svg';
 import { isMapRoute } from '../lib/mapSelection';
 import { LakeSearch } from './LakeSearch';
 import { ThemeToggle } from './theme-toggle';
@@ -42,11 +44,13 @@ export function AppShell({ children }: { children: ReactNode }) {
       className={`flex flex-col bg-background ${mapRoute ? 'h-screen overflow-hidden' : 'min-h-screen'}`}
     >
       <header className="sticky top-0 z-30 flex shrink-0 items-center gap-6 border-border border-b bg-surface px-4 py-3">
-        <Link
-          to="/"
-          className="font-bold font-mono text-foreground text-sm uppercase tracking-widest"
-        >
-          Skating
+        {/* Both marks ship and CSS picks one. Swapping on `resolvedTheme` would mean rendering
+            nothing (or the wrong mark) until hydration — the same first-paint problem `ThemeToggle`
+            works around — whereas the `dark:` variant resolves at paint from the class already on
+            <html>. The inert mark is `display:none`, so screen readers announce the alt text once. */}
+        <Link to="/" className="flex shrink-0 items-center">
+          <img src={logoBlack} alt="Gli" className="h-7 w-auto dark:hidden" />
+          <img src={logoWhite} alt="Gli" className="hidden h-7 w-auto dark:block" />
         </Link>
         <nav className="flex items-center gap-1 text-sm">
           <Link
