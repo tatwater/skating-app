@@ -33,7 +33,7 @@ the scope resolves from npmjs again like any other dependency.
 ```
 
 The token is appended to a **`~/.npmrc`** on every surface — your laptop, the CI runner, the EAS
-builder — as:
+builder, the Vercel builder — as:
 
 ```
 //npm.fontawesome.com/:_authToken=<token>
@@ -122,6 +122,30 @@ since it has been readable up to that point.
 The `development`, `preview`, and `production` profiles in `eas.json` each name an `environment`,
 and EAS injects that environment's variables into the build — including the pre-install hook. Miss
 this and the build fails early, at dependency resolution, before it ever reaches the bundler.
+
+### 4. Vercel — a project environment variable
+
+Vercel deploys the web app, and its build container starts with an empty `~/.npmrc` too. Same line,
+written by an **install command override** in `apps/web/vercel.json` (the project's root directory):
+
+```json
+"installCommand": "printf '//npm.fontawesome.com/:_authToken=%s\\n' \"$FONTAWESOME_NPM_AUTH_TOKEN\" >> ~/.npmrc && pnpm install"
+```
+
+It lives in `vercel.json` rather than in the dashboard's Install Command box so the wiring is
+reviewable and survives the project being re-created — the same reason CI's step is in `ci.yml` and
+EAS's is in `package.json`. The token itself is a project environment variable, set once for all
+three targets:
+
+```bash
+vercel env add FONTAWESOME_NPM_AUTH_TOKEN production preview development
+```
+
+⚠ **This surface is the easy one to forget, because nothing needs it until the *web* app imports an
+icon.** The scope mapping is repo-wide, so the moment `apps/web/package.json` gained `@fortawesome/*`
+every Vercel install began needing the token — and the failure is not a missing icon, it is
+`ERR_PNPM_FETCH_401` at dependency resolution, before a line of the app is built. Both preview and
+production deploys fail, identically, until the variable exists.
 
 ## Verifying the setup
 
