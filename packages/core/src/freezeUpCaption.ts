@@ -158,3 +158,27 @@ export function gapDaysBetween(earlier: string, later: string): number | null {
   if (Number.isNaN(a) || Number.isNaN(b)) return null;
   return Math.max(0, Math.round((b - a) / 86_400_000));
 }
+
+/**
+ * What the four colours of a scene-classification frame mean.
+ *
+ * ⚠ **These hexes are a COPY, and `scripts/imagery/scl-palette.txt` is the original.** The palette
+ * is applied at cut time by `gdaldem color-relief`, months before any client sees a tile, so there
+ * is no runtime path by which the two could be derived from one another. A test in the imagery
+ * package parses that file and asserts this list still matches it — because a legend that disagrees
+ * with the raster is worse than no legend, and the failure is silent and total.
+ *
+ * ESA publishes twelve classes; this is four, and the collapse is the product decision recorded in
+ * the palette file. A skater has four questions, and the twelve-class histogram survives per body in
+ * the manifest for anything that wants the taxonomy.
+ *
+ * ⚠ **Never colour alone.** The palette's own validation left cloud below 3:1 against the map, and
+ * the rule for that is relief through visible labels — which is exactly what this list is for. It
+ * is not decoration on a legible image; it is what makes the image legible.
+ */
+export const SCL_LEGEND: readonly { readonly color: string; readonly label: string }[] = [
+  { color: '#22D3EE', label: 'Snow or bright ice' },
+  { color: '#1D4ED8', label: 'Open water' },
+  { color: '#A8A29E', label: 'Cloud or shadow' },
+  { color: '#3F6212', label: 'Land' },
+];

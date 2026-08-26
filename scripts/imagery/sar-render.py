@@ -71,6 +71,16 @@ def main() -> int:
             file=sys.stderr,
         )
         return 1
+    # The noise raster is a per-pixel subtraction, so it needs the same refusal the gain gets: on a
+    # mismatched grid it takes one part of the swath's floor off another's and still produces a
+    # perfectly ordinary-looking greyscale. `sar-zonal.py` already checks every band it is handed.
+    if noise_ds is not None and (noise_ds.RasterXSize, noise_ds.RasterYSize) != (width, height):
+        print(
+            f"grid mismatch: noise is {noise_ds.RasterXSize}x{noise_ds.RasterYSize}, "
+            f"image is {width}x{height}",
+            file=sys.stderr,
+        )
+        return 1
     if args.max_db <= args.min_db:
         print("--max-db must exceed --min-db", file=sys.stderr)
         return 1

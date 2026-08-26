@@ -52,6 +52,7 @@ import {
   nearestLandableStopToDate,
   notchAtOffset,
   notchFraction,
+  SCL_LEGEND,
   stopCaption,
   type TimelineStop,
 } from '@skating/core';
@@ -258,7 +259,6 @@ export function FreezeUpScrubber({
     <div className="flex flex-col gap-2">
       {/* The track. `group` rather than `slider` — see the module note on why. */}
       {/* biome-ignore lint/a11y/useSemanticElements: a slider's contract is a continuous value, and half these positions cannot be landed on. */}
-      {/* biome-ignore lint/a11y/noStaticElementInteractions: the keyboard path is the buttons inside, which is the accessible model — see the module note on why this is not a slider. */}
       <div
         ref={trackRef}
         role="group"
@@ -429,6 +429,29 @@ export function FreezeUpScrubber({
           entirely for a band we have nothing short and true to say about, rather than padded. */}
       {frameSourceHint(band) ? (
         <p className="text-muted-foreground text-xs">{frameSourceHint(band)}</p>
+      ) : null}
+
+      {/* ⚠ **The legend is not decoration on a legible image; it is what makes the image legible.**
+          A classification raster is four flat colours with no shape a reader can fall back on — and
+          the palette's own validation left cloud under 3:1 against the map, whose remedy is relief
+          through visible labels. Only for the band it explains: a legend for a photograph would be
+          a key to something nobody needs decoding. */}
+      {band === 'scl' ? (
+        <ul className="flex flex-wrap gap-x-3 gap-y-1">
+          {SCL_LEGEND.map((entry) => (
+            <li
+              key={entry.color}
+              className="flex items-center gap-1.5 text-muted-foreground text-xs"
+            >
+              <span
+                aria-hidden
+                className="size-2.5 shrink-0 rounded-[2px] ring-1 ring-border"
+                style={{ backgroundColor: entry.color }}
+              />
+              {entry.label}
+            </li>
+          ))}
+        </ul>
       ) : null}
 
       {/* How much of this is a guess. Only shown when it is some of it — a count of zero is noise, and

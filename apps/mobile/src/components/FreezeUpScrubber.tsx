@@ -37,12 +37,13 @@ import {
   nearestLandableStopToDate,
   notchAtOffset,
   notchFraction,
+  SCL_LEGEND,
   type SeasonIndex,
   stopCaption,
   type TimelineStop,
 } from '@skating/core';
 import * as Haptics from 'expo-haptics';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { Text, XStack, YStack } from 'tamagui';
 
@@ -87,8 +88,13 @@ export function FreezeUpScrubber({
    */
   renderedCompanion?: IndexedFrame | null;
 }) {
-  const stops = timeline?.stops ?? [];
-  const bands = index ? bandsIn(index) : [];
+  // ⚠ **Both memoised, matching web.** `bandsIn` maps, de-duplicates and sorts the *whole season
+  // index* — ~4,900 frames — and this component re-renders on every notch of a drag, so unmemoised it
+  // ran that sweep once per pan sample on the same JS thread the gesture callbacks live on. `stops`
+  // is memoised for a different reason: `timeline?.stops ?? []` hands back a fresh array whenever
+  // there is no timeline, which re-fired the auto-select effect below on every render.
+  const stops = useMemo(() => timeline?.stops ?? [], [timeline]);
+  const bands = useMemo(() => (index ? bandsIn(index) : []), [index]);
   const [trackWidth, setTrackWidth] = useState(0);
   /**
    * ⚠ **An index the current stops do not have is *nothing chosen*, not a choice** — web's note
@@ -357,6 +363,32 @@ export function FreezeUpScrubber({
         <Text color="$foregroundMuted" fontSize="$1">
           {frameSourceHint(band)}
         </Text>
+      ) : null}
+
+      {/* ⚠ **What makes the image legible, not decoration on it** — web's note carries the argument.
+          Only for the band it explains. */}
+      {band === 'scl' ? (
+        <XStack flexWrap="wrap" columnGap="$3" rowGap="$1">
+          {SCL_LEGEND.map((entry) => (
+            <XStack key={entry.color} alignItems="center" gap="$1.5">
+              {/* `style`, not `backgroundColor`: these are literal hexes from the cutter's palette,
+                  and a Tamagui colour prop is typed to theme tokens. Casting one would be claiming
+                  it is a token; it is deliberately not, because it has to equal what `gdaldem`
+                  painted rather than whatever the theme says. */}
+              <XStack
+                width={10}
+                height={10}
+                borderRadius={2}
+                borderWidth={1}
+                borderColor="$border"
+                style={{ backgroundColor: entry.color }}
+              />
+              <Text color="$foregroundMuted" fontSize="$1">
+                {entry.label}
+              </Text>
+            </XStack>
+          ))}
+        </XStack>
       ) : null}
 
       {timeline.coverageInferred + timeline.coverageUnknown > 0 ? (

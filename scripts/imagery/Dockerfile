@@ -85,6 +85,8 @@ WORKDIR /data
 
 COPY cut-granule.sh /usr/local/bin/cut-granule
 COPY zonal-clear.py /usr/local/bin/zonal-clear.py
+# Not a script: the SCL class -> colour mapping, read by `gdaldem color-relief` at cut time.
+COPY scl-palette.txt /usr/local/share/scl-palette.txt
 # NDSI, the independent second opinion where SCL's snow class confuses with cloud. A statistic only —
 # it emits no raster and nothing is tiled from it.
 COPY zonal-ndsi.py /usr/local/bin/zonal-ndsi.py

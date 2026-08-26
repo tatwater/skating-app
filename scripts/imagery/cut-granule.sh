@@ -362,11 +362,15 @@ fetch_masks() {
 
 # The projected extent the masks occupy, which is all of the granule worth warping.
 #
-# ⚠ **Takes every file whose geometry has to fit, not just the reveal.** On the radar path the zones
-# are shifted by the geocode correction — up to ~450 m, sixteen 28 m pixels — while the reveal is only
-# 60 m of buffer wide. An extent computed from the reveal alone would leave a lake near the edge of it
-# with its corrected zone hanging off the raster, and the body would report a coverage shortfall that
-# looks exactly like a granule edge.
+# Takes one or more GeoJSON paths and unions their extents — `jq -s`, so a caller can hand it every
+# file whose geometry has to fit. Today both callers pass `masks.geojson` alone, and that is
+# sufficient rather than lazy: the reveal is `water ∪ walk ∪ parking` buffered outward, so the water
+# and sub-area artifacts are strict subsets of it by construction.
+#
+# ⚠ **What the reveal does NOT bound is the radar de-shift.** That reads each body's pixels from up
+# to ~450 m outside its own footprint, and the pad for it is computed per granule by `geocode_pad`,
+# which widens this extent after the fact. Do not fold that into a wider mask list — the zones are
+# never shifted (see `ZONE_SOURCE`), so no mask file knows about it.
 mask_extent() {
   jq -s -r '
     [.[].features[].geometry | (if .type=="Polygon" then [.coordinates] else .coordinates end)[][][]]
@@ -374,17 +378,6 @@ mask_extent() {
   ' "$@" | paste -sd' ' -
 }
 
-# Build `alpha.tif` — the reveal's soft edge — on a given extent at `$WARP_RES`.
-#
-# Shared by both missions, because the feather is a property of the *lake outline* rather than of the
-# sensor: the same 240 ground metres of ramp, whether the pixels underneath came from a camera or a
-# radar. A second copy would be a second chance for optical and radar frames to disagree about where a
-# lake ends, which would show up as a seam wherever a scrubber crossed between them.
-#
-# ⚠ **Mercator metres are not ground metres**, and this is where that bites. Web Mercator inflates
-# distance by 1/cos(latitude) — ~1.39x at 44°N — so feeding `gdal_proximity` a bare 240 would ramp over
-# 240 *projected* metres, which is ~173 m on the ground: a 28% error that looks like a slightly tight
-# edge rather than like a units bug.
 # Web Mercator metres for a ground distance, at an extent's centre latitude.
 #
 # ⚠ **The single place this conversion lives.** Mercator inflates distance by 1/cos(φ) — ~1.39x at
@@ -406,6 +399,17 @@ centre_lat_of() {
   }'
 }
 
+# Build `alpha.tif` — the reveal's soft edge — on a given extent at `$WARP_RES`.
+#
+# Shared by both missions, because the feather is a property of the *lake outline* rather than of the
+# sensor: the same 240 ground metres of ramp, whether the pixels underneath came from a camera or a
+# radar. A second copy would be a second chance for optical and radar frames to disagree about where a
+# lake ends, which would show up as a seam wherever a scrubber crossed between them.
+#
+# ⚠ **Mercator metres are not ground metres**, and this is where that bites. Web Mercator inflates
+# distance by 1/cos(latitude) — ~1.39x at 44°N — so feeding `gdal_proximity` a bare 240 would ramp over
+# 240 *projected* metres, which is ~173 m on the ground: a 28% error that looks like a slightly tight
+# edge rather than like a units bug. Hence `project_ground_m`.
 build_alpha() {
   local MINX="$1" MINY="$2" MAXX="$3" MAXY="$4"
   local centre_lat feather_projected
@@ -989,10 +993,37 @@ transform_granule() {
     # pyramid exactly as it applies to the warp, which is why `--overview-resampling` is set here
     # rather than left at its default of `average`.
     #
-    # PNG rather than WEBP: lossy compression on a label band is the same category of error as
-    # interpolating one.
+    # PNG rather than WEBP, still — but the reason has moved. It was "lossy compression on a label
+    # band is the same category of error as interpolating one", and once the labels are coloured
+    # that no longer applies. What does: four flat colours are what PNG is best at, while lossy
+    # WEBP would ring at every class boundary and paint a fringe of a colour no pixel was assigned,
+    # which reads as a fifth category along every edge.
+    # ⚠ **Colour the labels, or the frame is black.** SCL is class *labels* 0-11, and a tiler reads
+    # them as brightness: eleven over two hundred and fifty-five. Measured on a real granule, every
+    # class present rendered between **0.8% and 3.9% brightness** — water and vegetation two grey
+    # levels apart. `scl-palette.txt` carries the mapping and the argument for the four colours it
+    # collapses twelve classes into; `-nearest_color_entry` picks an entry rather than interpolating
+    # between two, which is the same rule the warp above follows and for the same reason.
+    stage color_scl gdaldem color-relief -q -nearest_color_entry \
+      scl.tif /usr/local/share/scl-palette.txt scl-rgb.tif \
+      || die "SCL colour-relief failed"
+
+    # ⚠ **And give it the photograph's own alpha.** The visual band composes RGB with `alpha.tif`
+    # into RGBA (step 5) so a frame is clipped to the lakes, their approaches and their parking. SCL
+    # was tiled raw — which would have blanketed the entire granule extent, covering every other
+    # lake's basemap and reading as a completely different kind of layer from the band beside it in
+    # the selector. Same mask, same feather, same contract.
+    local s
+    for s in 1 2 3; do
+      gdal_translate -q -of VRT -b "$s" scl-rgb.tif "sclband${s}.vrt" || die "SCL band $s split failed"
+    done
+    gdalbuildvrt -q -separate scl-rgba.vrt sclband1.vrt sclband2.vrt sclband3.vrt alpha.tif \
+      || die "SCL rgba vrt failed"
+    gdal_translate -q -of VRT -colorinterp red,green,blue,alpha scl-rgba.vrt scl-rgba-ci.vrt \
+      || die "SCL colorinterp assignment failed"
+
     log "tiling SCL (EMIT_SCL_FRAME on)"
-    stage tile_scl gdal raster tile -q --input scl.tif --output scl-tiles \
+    stage tile_scl gdal raster tile -q --input scl-rgba-ci.vrt --output scl-tiles \
       -f PNG --min-zoom 7 --max-zoom 13 \
       --convention tms --skip-blank --webviewer none \
       -r nearest --overview-resampling nearest \
@@ -1316,6 +1347,17 @@ transform_sar() {
   gdalbuildvrt -q -separate rgba.vrt dn.tif dn.tif dn.tif alpha.tif || die "gdalbuildvrt failed"
   gdal_translate -q -of VRT -colorinterp red,green,blue,alpha rgba.vrt rgba_ci.vrt \
     || die "colorinterp assignment failed"
+
+  # ⚠ **The same page-cache eviction the optical path pays for, and this side had no cleanup.**
+  # `transform_granule` drops its statistics' intermediates before tiling because a 237 Mpixel
+  # `zones.tif` (UInt32) plus `interior.tif` (Float32) is ~2 GB on a 2 GB Machine, and the tiler then
+  # re-reads every block from disk — measured at 402.7 s against ~48 s. The radar path builds exactly
+  # the same two rasters, plus a per-polarisation DN and gain, and tiles a *larger* extent because
+  # `geocode_pad` widened it. Everything here has been consumed: `bodies.json` holds what the zones
+  # were read for, and `rgba_ci.vrt` references only `dn.tif` and `alpha.tif`.
+  rm -f zones.tif interior.tif subzones.tif water-zoned.geojson subareas-zoned.geojson \
+    dist.tif mask.tif alpha_rgb.tif
+  for p in "${pols[@]}"; do rm -f "${p}.tif"; done
 
   rm -rf tiles archive.mbtiles archive.pmtiles
   stage tile_sar gdal raster tile -q --input rgba_ci.vrt --output tiles \
