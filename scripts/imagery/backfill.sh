@@ -122,8 +122,14 @@ landed() {
     # nothing converges and the loop re-spawns the season once per round until it hits max-rounds.
     # `TZ=UTC` on the listing and `date -u` on the marker put both in the same sortable form, which
     # also means no daylight-saving jump can reorder them.
+    # ⚠ **`--use-server-modtime` is what makes this finish at all.** rclone's S3 backend stores its
+    # own modification time in object METADATA, so asking for a modtime without this flag issues a
+    # HEAD per object — 9,769 of them on this prefix, which did not complete in ten minutes. The flag
+    # reads `LastModified` straight from the listing instead: **5 seconds**. It is also the more
+    # correct clock here, being when the object was actually written rather than what an uploader
+    # claimed.
     listing="$(TZ=UTC rclone lsf "r2:${BUCKET}/frames/${SEASON}/" --s3-no-check-bucket \
-      --format "tp" --separator ";" 2>/dev/null \
+      --use-server-modtime --format "tp" --separator ";" 2>/dev/null \
       | awk -F';' -v since="$RUN_STARTED_ISO" '$1 > since { print $2 }')" || status=$?
     if (( status != 0 && status != 3 )); then
       echo "[backfill] FATAL: cannot list r2:${BUCKET}/frames/${SEASON}/ (rclone exit $status)" >&2
