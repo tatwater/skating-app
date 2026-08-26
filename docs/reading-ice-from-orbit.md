@@ -528,7 +528,7 @@ Every figure in this document is an average. Two things decide what it means: **
 into it**, and **whether one number can describe the whole lake**. Both turned out to be wrong in ways
 worth explaining.
 
-### For two months, we were measuring the beach
+### The first version of this measured the beach
 
 The app draws satellite imagery in a shape — the lake, plus the walk in from the car park, each
 widened by 60 metres so the shoreline and the path are actually visible. That shape exists for a good
@@ -557,8 +557,13 @@ and calm water are among the darkest. So a ring of trees does not blur the ice s
 it. Correcting this moved the typical lake's radar reading by **3.67 dB** — against a freeze-up signal
 of about 2 dB. **The contamination was larger than the thing being measured.**
 
-Every number in this document from before 26 August 2026 was measured that way. The pipeline now keeps
-two shapes: one for the picture, one for the measurement.
+The per-lake statistics were introduced on 24 August 2026 and corrected on the 25th, so the mistake
+itself was short-lived — but **the archive is not.** The 4,381 optical frames of winter 2025-26 that
+were already cut carry the old denominator, and no amount of re-reading them fixes it: the numbers
+have to be produced again from the granules. That is the real cost of the error, and it is why the
+season is being re-cut rather than patched.
+
+The pipeline now keeps two shapes: one for the picture, one for the measurement.
 
 ### And one number still cannot describe a whole lake
 
@@ -613,8 +618,8 @@ corpus follows is a product question — see the build notes.*
    revealed is that a frozen lake sits about a decibel above the level where the instrument stops
    being able to see it — fine for *"this whole lake darkened"*, not fine for *"that corner is
    glassy"*. Whether radar can **date** a freeze-up is still unproven.
-4. **Check which pixels a number came from.** For two months these measurements included a 60-metre
-   ring of shoreline, which was a rounding error on a big lake and 70% of the "lake" on a small one.
+4. **Check which pixels a number came from.** The first version of these measurements included a
+   60-metre ring of shoreline — a rounding error on a big lake, 70% of the "lake" on a small one.
    Averages are only as good as the outline they were taken over.
 5. **A date from space is always a bracket.** Cloud decides how wide.
 6. **Nothing here sees thickness, and nothing here is a safety judgement.** The app reports what an
