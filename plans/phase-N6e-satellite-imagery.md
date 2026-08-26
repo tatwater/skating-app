@@ -1101,6 +1101,49 @@ function predated it. Every job would have exited 0 and written an ordinary fram
 `bake-masks` now prints elevation coverage every run and **refuses below 50%**; the full bake reports
 24,830 of 24,831.
 
+### What the pre-run review found *(2026-08-25, founder: "I'd rather wait until we're confident")*
+
+The season backfill was started and stopped forty seconds in, because a read-through of this doc and
+[N6g](./phase-N6g-imagery-research.md) against the built pipeline turned up two things that a
+nine-season run would have baked in irreversibly. Both are now fixed.
+
+**1. Thermal noise was never removed.** `sar-cal-lut.py` reads the calibration annotation; the *noise*
+annotation sits beside it in the same bucket directory and nothing had ever opened it. Measured NESZ
+for VH: **S1A median −25.15 dB, S1C median −27.96 dB**, worst-across-swath −21.84 dB on S1A — against
+lakes that measure −20 to −22 dB. The bias is compressive and worst where the signal is darkest, which
+is exactly where N6g Lane 1's smooth ice lives. Applied to 3,276 real bodies:
+
+| | raw | denoised |
+| --- | --- | --- |
+| darkest decile | −19.72 dB | **−21.09** (−1.17) |
+| median decile | −17.20 dB | −18.00 (−0.74) |
+| brightest decile | −15.24 dB | −15.85 (−0.66) |
+
+The differential is the point: ~**0.5 dB of the ~2 dB ice/water separation was being compressed away**.
+
+> ### 🔬 And it is a testable suspect for open question 7
+>
+> S1C's noise floor is **2.80 dB quieter** than S1A's. Left in, that is a *platform-dependent* bias on
+> dark targets: on a −22 dB lake it predicts **−0.73 dB**, against the **−0.52 dB** the archive measures
+> ascending. **After the radar season lands, re-measure the S1A−S1C offset.** If it collapses, platforms
+> pool and a lake gets a 6-day look instead of a 12-day one. If it does not, one suspect is eliminated
+> for the price of a query.
+
+**2. The season list was optical-only** — 4,485 granules, zero S1 — so the run would have produced no
+corrected radar at all and left every bit of the geocode calibration unexercised. The S1 list is now
+built: **753 granules**, S1A 558 / S1C 187 / S1D 8, ascending 657 / descending 96.
+
+**3. Per-body viewing geometry is now recorded** — `incidenceDeg`, `geocodeReferenceHeightM`, and the
+whole-pixel `geocodeShiftM` applied. This is the field open question 7 calls out as missing. Local
+incidence spanned **30.9°–44.8°** across the calibration lakes against a scene mean of 38.6°, and
+`1/tan` moves 60% across that span, so the scene figure was never a stand-in for it.
+
+**4. Deferred question 7's first sub-areas exist.** Mascoma is split at the bridge — **Mascoma North**
+1.20 km² and **Mascoma South** 3.43 km², on a line the founder gave (43.630971, −72.15751 →
+43.633797, −72.155795, bearing 23.7°), landing on the 90 m neck between the peninsula's southern
+corner and the south shore. All three islands fall south; the halves sum to 100% of the lake. The lake
+that produced the `27% ice / 65% water` reading can now answer the question that number could not.
+
 > ### ⚠ Two rules this queue exists to enforce
 >
 > **Write the code before the re-run, not with it.** Verified-but-unapplied is a safe state — the tiler
