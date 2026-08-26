@@ -1209,10 +1209,15 @@ transform_sar() {
   # ⚠ Widening it back is a one-line change; the reason not to reach for a tighter window is in that
   # table. Anything above ~-13 dB is land and bright rough ice, and clipping it costs nothing — but
   # the -28 dB end is the picture, not the margin.
+  # ⚠ **The picture is denoised too, and it has to be the SAME correction as the statistics.** A frame
+  # whose pixels disagree with the numbers beside them is worse than either alone: it invites a reader
+  # to check one against the other and find a discrepancy that is ours, not the lake's. The dark end of
+  # this stretch is where the noise floor sits, so leaving it in would brighten exactly the −29 dB end
+  # the comment above calls "the picture, not the margin".
   local render="${pols[-1]}"
-  log "rendering ${render^^} at a fixed -29..-12 dB stretch"
+  log "rendering ${render^^} at a fixed -29..-12 dB stretch, denoised"
   stage render_db python3 /usr/local/bin/sar-render.py "${render}.tif" "a-${render}.vrt" \
-    dn.tif --min-db -29 --max-db -12 || die "dB render failed"
+    dn.tif --noise "n-${render}.vrt" --min-db -29 --max-db -12 || die "dB render failed"
 
   build_alpha "$MINX" "$MINY" "$MAXX" "$MAXY"
   gdalbuildvrt -q -separate rgba.vrt dn.tif dn.tif dn.tif alpha.tif || die "gdalbuildvrt failed"

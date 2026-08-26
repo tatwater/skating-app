@@ -210,6 +210,85 @@ export interface FrameBodyStats {
   vhDb?: number | null;
   /** How many raster pixels backed these numbers. A floor on this is how you avoid reading noise. */
   pixels: number;
+
+  // ── Added 2026-08-25, before the nine-season backfill ──────────────────────────────────────────
+  //
+  // Everything below is absent on the 4,381 frames cut before that date. All of it exists because
+  // deriving it later would mean re-reading all 40,365 granules of a nine-season run — the cheap
+  // moment is while the raster is open, and it does not come again.
+
+  /**
+   * The same pixels with the shoreline eroded off — one ring on optical, two on radar.
+   *
+   * ⚠ **The count matters more than the cleaner percentage.** N6g Lane 2 eliminates bodies on "never
+   * observed frozen", and a body too small to classify reads exactly like a body that never froze. A
+   * 1-acre pond keeps under ten voting pixels; measured on a synthetic 3×3-pixel pond, exactly one.
+   */
+  interiorPixels?: number;
+  /** The eroded body's size irrespective of this pass — what an area floor is set against. */
+  interiorTotalPixels?: number;
+  interiorSnowIcePct?: number | null;
+  interiorWaterPct?: number | null;
+
+  /**
+   * All twelve SCL classes over the body's pixels, indexed by class — optical only.
+   *
+   * The percentages above are one *reading* of the classification; this is the classification. Every
+   * future reading is derivable from it: `valid = total − hist[0] − hist[1]`, a stricter cloud rule,
+   * whether cast shadow should have counted, how much confusion is cirrus rather than opaque cloud.
+   */
+  classHist?: number[] | null;
+  interiorClassHist?: number[] | null;
+
+  /**
+   * Normalised Difference Snow Index over the eroded body — optical only.
+   *
+   * The independent second opinion where SCL is weakest: snow and cloud are both bright in the
+   * visible and only snow is dark in the shortwave infrared. ⚠ **It will not find black ice** — it is
+   * a snow index built on the same brightness that misleads class 11.
+   */
+  ndsiMean?: number | null;
+  ndsiPixels?: number;
+  /** 40 bins over −1…1. Fixed edges, so two lakes and two seasons are comparable. */
+  ndsiHist?: number[] | null;
+
+  /** Mean `sigma0` over the eroded body, per polarisation — radar only. */
+  interiorVvDb?: number | null;
+  interiorVhDb?: number | null;
+  /**
+   * Per-polarisation `sigma0` distribution over the eroded body — 45 bins of 1 dB from −35 to +10.
+   *
+   * **A mean cannot answer the question the archive was built for.** It cannot distinguish a
+   * uniformly medium-rough lake from one half glassy and half ridged, which is the entire premise of
+   * N6g Lane 1: *"40% of this lake sat below −22 dB"* is a claim about smoothness that *"this lake
+   * averaged −20 dB"* cannot make. Measured on a test fixture, the mean read −15.5 dB — a value that
+   * occurred nowhere on the lake.
+   */
+  sigma0Hist?: Record<string, number[]> | null;
+  /**
+   * Fraction of pixels whose power went non-positive once thermal noise was subtracted, per pol.
+   *
+   * ⚠ **A high figure is not a smooth lake — it is a lake the instrument cannot measure.** Anything
+   * calling a body specular has to read this first. Measured on a real pass: median 0.000, p90 0.035,
+   * max 0.297.
+   */
+  belowNoiseFloorPct?: Record<string, number | null> | null;
+
+  /**
+   * The viewing geometry this body was measured at — radar only.
+   *
+   * ⚠ **`sigma0` genuinely varies with incidence angle**, and ice and water have *different* angular
+   * responses, so without this a consumer cannot separate an instrument difference from an ice
+   * change. Measured across one region, local incidence spanned 30.9°–44.8° while the scene mean sat
+   * at 38.6° — and `1/tan` moves 60% across that span, so the scene figure was never a stand-in.
+   *
+   * This is the field N6e open question 7 names as missing when it asks why S1C disagrees with itself.
+   */
+  incidenceDeg?: number | null;
+  /** The local terrain height the product geocoded this body at — never a scene average. */
+  geocodeReferenceHeightM?: number | null;
+  /** The whole-pixel correction applied, in GROUND metres, so a frame can be audited or undone. */
+  geocodeShiftM?: { east: number; north: number } | null;
 }
 
 /**
