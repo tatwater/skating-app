@@ -149,7 +149,7 @@ MapLibre cannot blur a fill or vary `raster-opacity` spatially, so a soft edge h
 
 | Technique | How | Use for |
 |---|---|---|
-| **Inverse mask** | Draw the raster, then a polygon *with a hole* over it in the basemap colour | **Tier 1 (NAIP)** — hard edge, ships first |
+| **Inverse mask** | Draw the raster, then a polygon *with a hole* over it in the basemap color | **Tier 1 (NAIP)** — hard edge, ships first |
 | **Concentric rings** | 6–8 stepped buffers as fills at stepped opacity | **Tier 1**, once the hard edge works |
 | **Baked alpha** | Clip and feather server-side; the archive carries its own transparency | **Tier 2 (Sentinel)** |
 
@@ -293,19 +293,19 @@ surface deformed" and weak on "black ice or open water," which is the distinctio
 about. S1 and S2 together resolve most of it; either alone does not.
 
 **A band selector ships with the scrubber** *(founder call, 2026-08-21b — "once imagery is turned on by
-the user, they should see an additional toggle to switch between the bands")*. True colour · NDSI ·
+the user, they should see an additional toggle to switch between the bands")*. True color · NDSI ·
 a SWIR composite · SAR VV. **This sits comfortably inside D150** precisely because it is the raw
 observation with no interpretation layered on — the user reads the pixels, exactly as they read the
 photograph. It is also the honest precursor to PR 5's hatch layer: anyone who wants to check what the
 classification was derived *from* can look at it.
 
-**The bands are where the real signal is.** Not needed for v1's true-colour frames, but they are why
+**The bands are where the real signal is.** Not needed for v1's true-color frames, but they are why
 N6g is worth doing and they should be captured while we're already downloading the granule:
 
 - **SCL (Scene Classification Layer)** — shipped *inside* Sentinel-2 L2A, computed by ESA, with
   per-pixel classes for water, **snow/ice**, cloud (high/medium), and cloud shadow. It is simultaneously
   our ice signal and our cloud filter, for free. **This is the most valuable band in the product.**
-- **NDSI** (green vs. SWIR) separates snow/ice from cloud, which true colour cannot — both are white.
+- **NDSI** (green vs. SWIR) separates snow/ice from cloud, which true color cannot — both are white.
 - **SWIR generally** is why any of this works: water absorbs it almost totally, ice and snow reflect it.
 
 ### C2 — The archive: one masked raster PMTiles per pass

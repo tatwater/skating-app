@@ -400,7 +400,7 @@ whether to drive. The line we can hold absolutely is the one with no copy behind
 product. If they ever compete for legibility, the contour loses — reduced opacity, thinner stroke, muted
 against the hazard palette rather than sharing it. **The contour palette must not resemble the hazard
 palette**, which is the one styling rule that carries real weight here: a blue-to-navy depth ramp that a
-skater could mistake for a severity scale would reintroduce, through colour, exactly the claim we just
+skater could mistake for a severity scale would reintroduce, through color, exactly the claim we just
 declined to make in words.
 
 *(The single line of copy that does remain is provenance, not interpretation: which agency surveyed this

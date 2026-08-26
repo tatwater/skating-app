@@ -12,6 +12,13 @@ rather than in a workstream.*
 > **Hard prerequisite:** N6e **PR 2** — the granule pipeline, the nine-season archive (2017-18 →
 > 2025-26), and the phenology series derived dark. Neither lane has an input before that lands.
 >
+> ⚠ **Updated 2026-08-25 by the first correctly-measured radar cut.** Lane 1 gains a **gate zero**
+> before its validation gate — on `VH`, the median lake now sits **1.24 dB** above the instrument's
+> own noise floor and 38% sit below it, which constrains *per-pixel* claims (where the black ice is)
+> while leaving *per-body* ones (whether a lake darkened) intact. Lane 2's area floor becomes
+> measurable rather than assumed. **Both lanes must read frames cut after this date** — earlier ones
+> measured a 60 m ring of shoreline as though it were lake.
+>
 > **Decisions carried in:** **D3** (never a safety verdict), **D150** (classification is an
 > observation, never counsel), **D151** (a phenology date is a bracket, and the subject of the
 > sentence is us), **D49** (display prominence), **D148**/**D149** (the archive and its gate).
@@ -54,16 +61,88 @@ Which means the ingredients all exist in the archive, and none of them requires 
   we implied the good stuff was there, which is the precise mechanism D3 exists to prevent. The
   asymmetry is not "sometimes wrong in both directions"; it is "wrong in the direction people act on."
 
+### ⚠ Gate zero, measured 2026-08-25: is there dynamic range to work in at all?
+
+**Before the validation gate below, there is a prior question nobody had asked, and the first real
+radar cut answers it uncomfortably.** With the shoreline correctly removed and thermal noise
+subtracted, `VH` over actual lake surfaces sits at a median of **−24.28 dB** — and the instrument's
+own noise floor on that pass is **−25.19 dB**.
+
+| margin over each body's own NESZ | bodies |
+| --- | --- |
+| **below the floor** | 991 (**38%**) |
+| within 1 dB | 1,233 (48%) |
+| within 3 dB | 1,607 (**62%**) |
+| within 6 dB | 2,032 (79%) |
+
+Median margin **+1.24 dB**, across 2,576 bodies on one February ascending pass.
+
+**This was invisible until three separate errors were fixed, all leaning the same way.** The old
+figures read ~−20.6 dB against a floor *assumed* to be −27, which looked like six decibels of room.
+The bright shoreline was inflating the whole-body mean by **3.67 dB**, unremoved thermal noise by
+another **~0.8**, and the assumed floor was ~2 dB below the measured one. Remove all three and most
+lakes are sitting on the floor.
+
+#### ✅ The floor itself is right, and being under it is not the problem
+
+Checked, because "38% below the floor" reads like over-subtraction:
+
+- **It is not.** Only **2 nulls in 2,578**; the margin distribution runs to **p90 +8.8 dB** across a
+  45 dB spread. Over-subtraction collapses a distribution; this one is broad.
+- **The size trend is flat to inverted** — 34% below floor for bodies under 50 interior pixels against
+  **51% for bodies over 1,000**. An estimation artefact would punish small lakes hardest; this does the
+  opposite, which is the signature of a real property of large open surfaces.
+- **NESZ is ESA's own annotation**, consistent with the IW specification (≤ −22 dB) and with published
+  calm-water `VH` values of −25 to −30 dB. Lakes are genuinely that dark.
+- **Subtraction recovers sub-floor targets in expectation**, and averaging makes it precise: median
+  1σ per body is **0.50 dB**, 75% of bodies better than 1 dB.
+
+#### ⚠ So the constraint is per-PIXEL, which is exactly what this lane wanted
+
+| the claim | reliability at or below the floor |
+| --- | --- |
+| *"this lake averaged −24.3 dB"* | fine — ~0.5 dB, because thousands of pixels average |
+| *"**this pixel** is specular"* | **~3–4 dB 1σ** — noise |
+
+A per-body mean survives the floor; a per-pixel classification does not, because a single look carries
+~4.4 equivalent looks of speckle and no averaging to lean on. **Lane 1's founding ask is "predict
+*where* black ice is", and *where* is a per-pixel question.** A "fraction of the lake below −22 dB"
+statistic computed against a 3–4 dB per-pixel error, on lakes whose median sits 1 dB above the floor,
+is measuring the instrument.
+
+**What this does not kill.** Change detection over time on a *whole lake* is unaffected — that is a
+per-body mean, and it is precise. So the archive still supports *"this lake darkened by 2 dB between
+these two dates"*; what it does not support is *"this corner of it is glassy"*.
+
+Two things could yet reopen the spatial question, and both are testable from the archive rather than by
+argument: **`VV` sits well above the floor** (whole-body median near −17 dB), so a conjunction leaning
+on `VV` has room `VH` does not; and **S1C's floor is 2.80 dB quieter than S1A's**, so S1C passes have
+margin where S1A passes have none — which makes N6e's open question 7 a *measurability* question and
+not only a cadence one.
+
+#### The archive now carries what this gate needs
+
+None of the above was checkable before 2026-08-25 and all of it is now, per body per pass:
+`neszDb` (that body's own floor, in its own units), `interiorVhDb`/`interiorVvDb` (measured with the
+bank removed), `interiorPixels` (what the precision rests on), `interiorBelowNoiseFloorPct`, and
+`sigma0Hist` for the distribution. ⚠ **`sigma0Hist`'s bottom bins hold everything at or under the
+floor** — read them against `neszDb` or they will read as exceptionally smooth ice.
+
 ### The rules, if it is ever built
 
 > **Validated first, capped forever.**
 
+0. **Clear gate zero first.** The validation below asks *"does the conjunction separate our reports?"*
+   It presumes there is signal to separate them with, and on `VH` at these depths that is now an open
+   question rather than an assumption. Running the validation without checking the margin would
+   produce a null result that looks like "the physics does not hold" when it means "we measured the
+   noise floor 2,576 times".
 1. **Validated against our own condition reports before anything renders.** We have reports carrying
    surface descriptions, dated and located. That is a ground-truth set nobody else has, and it is the
    only honest way to find out whether the conjunction means what we think it means. **No validation,
    no feature** — the N6a lesson: an evidence gate nobody points at is not a gate.
 2. **The strongest claim it may ever make is *"smooth ice observed on \[date]."*** Never *"black ice
-   here."* Never *"black ice now."* Never a colour ramp that reads as a quality score, for the same
+   here."* Never *"black ice now."* Never a color ramp that reads as a quality score, for the same
    reason D82 forbade one for depth.
 3. **It never feeds anything.** Not a notification, not a bounty gate, not the recommended feed, not a
    trust signal. An observation layer that becomes an input is a prediction wearing a different hat.
@@ -104,6 +183,26 @@ erosion a 1-acre body has **under ten** pixels to vote, and a 5-acre body has ar
 pond** — and it is weak in the dangerous direction, because a body too small to classify reads exactly
 like a body that never froze. **The elimination rule needs its own area floor, well above the corpus
 floor**, and that floor should be measured against bodies we *know* freeze rather than assumed.
+
+#### ✅ That floor is now measurable rather than assumed — 2026-08-25
+
+The erosion this section calls for is **built**, and every frame records what it left behind:
+`interiorPixels` (how many pixels actually voted on this pass), `interiorTotalPixels` (how many the
+body has *at all*, independent of the pass), and the full 12-class `classHist` beside them.
+
+The distinction between those two is the one that matters here. `interiorPixels` varying tells you a
+pass caught only part of a lake; **`interiorTotalPixels` is a property of the geometry**, and it is
+what an area floor should actually be set against — *"this body is too small to ever be classified"*
+rather than *"this granule only caught a corner of it"*. Verified on a synthetic 3×3-pixel pond: it
+comes out of the erosion with **exactly one** voting pixel, which is this section's caution rendered
+as a number an operator can be shown.
+
+⚠ **And every frame cut before 2026-08-25 measured the wrong shape.** The zone raster was the *reveal*
+— the lake buffered 60 m outward, unioned with the walk in and the parking, islands filled. Measured
+across 40 real corpus bodies, the median old zone was **44% not-lake**, rising to **70% under ten
+acres** and 86% on a 1.3-acre pond. Since this lane eliminates bodies precisely at the small end, an
+elimination run against those frames would have been reading the surrounding woods. Only frames from
+the re-cut carry water-only statistics.
 
 ### Delete the row, keep the enrichment
 

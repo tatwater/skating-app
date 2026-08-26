@@ -2241,7 +2241,7 @@ it needs an imagery source whose terms permit the use."* **The terms question is
 Sentinel data is under the free, full and open Copernicus licence — reproduce, distribute and adapt, with
 attribution. What remains is cost, not permission.
 
-**Tier 1, now: a Copernicus Browser deep link.** Centroid, zoom, Sentinel-2 L2A true colour, ~14-day window.
+**Tier 1, now: a Copernicus Browser deep link.** Centroid, zoom, Sentinel-2 L2A true color, ~14-day window.
 No account, no quota, no licence question. At 10 m with a ~5-day revisit the difference between open water,
 black ice and snow-covered ice is visually obvious; cloud cover is the real limiter, which is why the link
 opens a *window* rather than a date.
@@ -2544,7 +2544,7 @@ absolutely is the one with no copy behind it.
 - **Hazards render above contours.** Contours are decoration; hazards are the product. On any conflict,
   the contour loses — thinner, muted, lower opacity.
 - **The contour palette must not resemble the hazard palette.** A blue-to-navy depth ramp a skater could
-  read as a severity scale would reintroduce through colour exactly the claim we just declined to make in
+  read as a severity scale would reintroduce through color exactly the claim we just declined to make in
   words. This is the one styling rule here that carries real weight.
 - **The only copy that remains is provenance** — which agency surveyed this, at what interval (D83).
   Attribution, not interpretation.
