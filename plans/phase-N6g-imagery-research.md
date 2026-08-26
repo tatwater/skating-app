@@ -1,9 +1,13 @@
-# Phase N6g — What nine seasons of imagery might know: two research lanes
+# Phase N6g — What nine seasons of imagery might know
 
-*Both lanes read [N6e](./phase-N6e-satellite-imagery.md)'s archive and neither can start before it
-exists. One would be the most-wanted feature in the product. The other would shrink the corpus. Both
-are the kind of thing that is easy to ship and hard to ship **correctly**, which is why they are here
-rather than in a workstream.*
+*These lanes read [N6e](./phase-N6e-satellite-imagery.md)'s archive and none can start before it
+exists. One would be the most-wanted feature in the product. One would shrink the corpus. All are the
+kind of thing that is easy to ship and hard to ship **correctly**, which is why they are here rather
+than in a workstream.*
+
+> **⚠ Start with the third.** Lane 1 asked whether a single frame can identify black ice and the answer,
+> tested against a skater standing on it, is no. **[Reasoning across frames](#-the-lane-nobody-has-tried-stop-asking-one-frame-and-start-reasoning-across-them)**
+> is a different question, it is barely explored, and it is where the remaining value most likely is.
 
 > **Status:** 📋 Scoped 2026-08-21, unbuilt, **no scheduled start.** Split out of N6e at the founder's
 > ask — *"let's park black ice from SAR into a new N6g research doc! Let's also put the never-freezing
@@ -191,6 +195,89 @@ Mascoma moved **+5.0 dB (descending) and +3.7 dB (ascending)** from December to 
 freeze-up and rising as snow accumulated. That is a snow-cover signal, not an ice-formation one, and it
 is solid — the two orbit directions agree independently.
 
+---
+
+## ⚠ The lane nobody has tried: stop asking one frame, and start reasoning across them
+
+*Added at the founder's ask, 2026-08-26. **Read this before concluding Lane 1 is dead** — everything
+above tests whether a SINGLE observation can identify black ice, and the answer is a clear no. This
+section is about a different question, and it is the one worth spending effort on.*
+
+Every measurement so far has been asked to stand alone: *what is this lake, in this frame?* But the
+archive is not a pile of independent snapshots. It is **a time series of one physical object that obeys
+physical law**, sitting next to a weather record that says what was done to it in between. Those
+constraints are free, and none of them have been used.
+
+### Deduction 1 — wind, because ice suppresses waves
+
+`VH` cannot separate smooth ice from calm water; both are specular. **But water is only calm when the
+wind is.** On a windy day open water roughens and brightens while ice stays dark, so the same
+measurement that carries no information at 2 km/h may carry a lot at 25.
+
+That reframes the December result above. Black ice and open water measured −31.9 dB each — **but if
+both days were calm, that is exactly what a working discriminator would also produce.** The pair is
+uninformative rather than damning, and nobody has checked which.
+
+**The test:** join `capturedAt` and the body's location to Open-Meteo's historical hourly wind — free,
+already used by the weather lane — and repeat the comparison stratified by wind speed at the hour of
+the pass. Either low `VH` means "ice" once the wind is above some threshold, in which case the lane has
+a real gate, or ice and water are indistinguishable at every speed, in which case it is finished and
+should be **closed rather than left open as a maybe**.
+
+### Deduction 2 — temperature, because a lake cannot un-freeze without a thaw
+
+> **Founder, 2026-08-26:** *"If ice had snow on it and temps never went above freezing in between, and
+> a new image shows either black ice or water, it's probably black ice."*
+
+**This is the strongest idea in this document, and it inverts the whole approach.** Instead of asking
+the imagery to identify a state, it uses physics to *eliminate* one.
+
+A lake that read snow-covered ice on the 5th and reads "water" on the 15th has two possible histories.
+It melted — which requires energy, and the weather record says whether that energy existed. Or it did
+not melt, the snow went (wind, sublimation, compaction, rain-then-refreeze), and the classifier is
+looking through clear ice at the dark bottom and calling it water, **which is the one failure mode this
+document has established beyond doubt.**
+
+If the temperature record shows no thaw, the second history is the only one available. **The imagery
+did not have to distinguish black ice from water; the thermodynamics did it.**
+
+⚠ **And it inherits its confidence honestly.** The claim is only as good as the bracket around it —
+D151 again — because "no thaw in between" is a statement about the gap between two observations, and a
+fortnight of cloud makes that gap long enough for a melt-refreeze cycle to hide inside. So the
+deduction is strongest exactly where the observations are dense, and it degrades gracefully rather than
+silently: a wide bracket weakens the conclusion instead of invalidating it.
+
+### The general shape, and an invitation to look further
+
+Both of the above are the same move: **a physical constraint linking two observations, used to rule out
+an interpretation that a single observation could not.** The pipeline now records a great deal more
+than it did — per-body class histograms, NDSI, `sigma0` distributions, per-body noise floors, viewing
+geometry, sub-area splits — and the weather lane brings temperature, wind, snowfall and solar.
+
+**Nobody has systematically asked what that combination can prove.** Some starting threads, offered as
+prompts rather than as a plan:
+
+- **Freeze-up must precede snow cover.** A lake reading snow/ice must have frozen at some earlier date,
+  even if every frame in between was clouded — which bounds an ice-in date from the *other* direction.
+- **Snowfall without a brightening** means the snow did not stay, which is the founder's
+  "blown clear" case (§C5) and is *itself* evidence of a hard smooth surface.
+- **Neighbouring lakes are a control.** Bodies within a few kilometres share weather; one behaving
+  unlike its neighbours is either genuinely different (depth, flow, spring-fed) or a measurement
+  artifact — and the corpus already knows depth and elevation.
+- **A lake that never darkens through a whole winter** is Lane 2's candidate arriving from a different
+  direction entirely.
+- **`waterPct` rising while temperature stays below freezing** may be a black-ice *detector* rather
+  than a nuisance — the same signal this document treats as a failure, read with its sign flipped.
+
+⚠ **Two rules that still bind anything found here.** It stays an observation, never counsel (D3, D150),
+and it reports the bracket rather than a point (D151). A deduction that is *more* confident than a
+measurement is exactly where a safety claim would sneak in wearing a proof.
+
+**The point of this section is that the search has barely started.** Every conclusion above was reached
+by asking one frame one question. The archive was built to be asked harder ones.
+
+---
+
 ### The rules, if it is ever built
 
 > **Validated first, capped forever.**
@@ -310,4 +397,8 @@ left unpurged.
   becomes an input to a notification, a ranking or a gate, it is a prediction (D3, D150).
 - **Shipping either without its gate.** Lane 1's gate is validation against our own reports; Lane 2's
   is an operator confirming with the evidence in front of them.
-- **Starting before N6e PR 2.** Neither lane has an input until the archive exists.
+- **Starting before N6e PR 2.** No lane has an input until the archive exists.
+- **Treating a deduction as more certain than a measurement.** The cross-frame reasoning above ends in
+  claims like *"it cannot have melted"*, which are only as good as the gap between the two observations
+  they span. A conclusion drawn across a fortnight of cloud carries a fortnight of doubt, and D151's
+  bracket applies to a deduction exactly as it applies to a date.
