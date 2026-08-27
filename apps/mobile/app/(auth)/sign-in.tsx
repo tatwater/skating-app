@@ -207,12 +207,19 @@ export default function SignInScreen() {
           {busy ? 'Sending…' : 'Email me a code'}
         </Button>
 
+        {/* The route out, as a real control rather than a word inside a sentence. Inline
+            `<Link><Text>` makes the tappable region the glyphs themselves — a target a few px tall
+            that you have to hit precisely, on the screen where a miss means being stuck at the door.
+            `asChild` hands the navigation to the Button, which is the pattern the rest of the app
+            already uses for exactly this. */}
         <Paragraph color="$foregroundMuted" textAlign="center">
-          New here?{' '}
-          <Link href="/sign-up" replace>
-            <Text color="$primary">Create an account</Text>
-          </Link>
+          New here?
         </Paragraph>
+        <Link href="/sign-up" replace asChild>
+          <Button chromeless color="$primary">
+            Create an account
+          </Button>
+        </Link>
       </YStack>
     </SafeAreaView>
   );

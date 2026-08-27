@@ -136,12 +136,15 @@ export default function SignUpScreen() {
             {busy ? 'Creating…' : 'Create account'}
           </Button>
 
+          {/* A control, not a word in a sentence — see the note on sign-in's twin. */}
           <Paragraph color="$foregroundMuted" textAlign="center">
-            Already have an account?{' '}
-            <Link href="/sign-in" replace>
-              <Text color="$primary">Sign in</Text>
-            </Link>
+            Already have an account?
           </Paragraph>
+          <Link href="/sign-in" replace asChild>
+            <Button chromeless color="$primary">
+              Sign in
+            </Button>
+          </Link>
         </YStack>
       </ScrollView>
     </SafeAreaView>

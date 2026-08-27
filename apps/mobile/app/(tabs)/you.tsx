@@ -21,6 +21,7 @@ import { Avatar } from '../../src/components/ProfileView';
 import { StravaConnect } from '../../src/components/StravaConnect';
 import { TrackHistory } from '../../src/components/TrackHistory';
 import { UnreportedSkates } from '../../src/components/UnreportedSkates';
+import { tapTargetSlop } from '../../src/lib/tapTarget';
 import { THEME_PREFERENCE_LABELS } from '../../src/lib/themePreference';
 import { useThemePreference } from '../../src/providers/ThemeProvider';
 
@@ -150,11 +151,21 @@ function HomeLocation() {
         store only the derived travel-time zones, never the coordinate.
       </Paragraph>
       <XStack gap="$2" flexWrap="wrap">
-        <Button size="$3" onPress={useCurrentLocation} disabled={status === 'locating'}>
+        <Button
+          size="$3"
+          hitSlop={tapTargetSlop('$3')}
+          onPress={useCurrentLocation}
+          disabled={status === 'locating'}
+        >
           {hasHome ? 'Update home' : 'Set home from location'}
         </Button>
         {hasHome ? (
-          <Button size="$3" chromeless onPress={() => void setHome({})}>
+          <Button
+            size="$3"
+            hitSlop={tapTargetSlop('$3')}
+            chromeless
+            onPress={() => void setHome({})}
+          >
             Clear
           </Button>
         ) : null}
@@ -249,6 +260,9 @@ function SegmentButton({
   return (
     <Button
       size="$2"
+      // 28dp rendered — below the 48dp floor, and these are `chromeless` when unselected, so
+      // there isn't even a filled shape to aim at. Grows the touch rect, not the layout.
+      hitSlop={tapTargetSlop('$2')}
       flex={flex}
       backgroundColor={selected ? '$primary' : undefined}
       color={selected ? '$primaryForeground' : undefined}
