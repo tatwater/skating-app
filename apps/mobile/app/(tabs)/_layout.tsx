@@ -68,6 +68,17 @@ export default function TabsLayout() {
           backgroundColor: theme.surface?.val,
           borderTopColor: theme.border?.val,
         },
+        /**
+         * The surface every tab screen is drawn on. Without it React Navigation paints its own
+         * default — a light one — and only the parts of a screen that actually have content get
+         * themed: a screen's `YStack backgroundColor="$background"` is as tall as its children, so
+         * anything shorter than the viewport showed a light page under dark text. The map hid it by
+         * being full-bleed, which is why this survived the first pass.
+         *
+         * Set here as well as on the root `Stack` in `app/_layout.tsx`: they're separate navigators
+         * and each paints its own scene.
+         */
+        sceneStyle: { backgroundColor: theme.background?.val },
       }}
     >
       <Tabs.Screen

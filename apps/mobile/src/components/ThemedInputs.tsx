@@ -37,6 +37,16 @@ const THEMED_FIELD = {
   color: '$color',
   backgroundColor: '$background',
   borderColor: '$border',
+  /**
+   * The one this file shipped without, and the one that showed: an empty field is *all* placeholder,
+   * so a stale placeholder is the whole control looking un-themed. Screenshots of dark mode had the
+   * map search and the Bio field rendering near-black prompt text on a near-black fill while their
+   * backgrounds — which *were* declared here — had flipped correctly. That split is the tracking
+   * rule stated above, confirming itself: declared props follow the theme, inherited defaults don't.
+   */
+  placeholderTextColor: '$placeholderColor',
+  /** Same reasoning, before it becomes the next report — a dark caret on a dark fill is invisible. */
+  selectionColor: '$primary',
 } as const;
 
 export function Input(props: InputProps) {

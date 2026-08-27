@@ -14,7 +14,14 @@
 /** WCAG 2.5.8 / Material minimum, in dp. iOS's 44pt is smaller, so this satisfies both. */
 export const MIN_TAP_TARGET = 48;
 
-/** Tamagui's rendered heights for the small button sizes, so the slop math isn't magic numbers. */
+/**
+ * Tamagui's rendered heights for the small button sizes, so the slop math isn't magic numbers.
+ *
+ * These are the *base* v5 size scale, which is only what the app actually renders because
+ * `tamagui.config.ts` now passes that scale through untouched. While it was overriding `size` with
+ * the space scale these read 8 and 12, and the slop computed here was too small by 10dp — worth
+ * knowing if that override ever comes back.
+ */
 const RENDERED_HEIGHT = { $1: 20, $2: 28, $3: 36, $4: 44 } as const;
 
 export type SmallButtonSize = keyof typeof RENDERED_HEIGHT;

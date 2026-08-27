@@ -47,13 +47,25 @@ export default function YouScreen() {
         <YStack flex={1} gap="$4" padding="$4" backgroundColor="$background">
           <H1 color="$foreground">You</H1>
           {profile ? (
+            /* A `Paragraph` under `asChild` rendered dark-on-dark — the plain `Paragraph` on the
+               next line, with no Link around it, themed fine. A Button is what `asChild` is meant
+               to hand navigation to anyway, and it brings a real tap target with it: this was a
+               line of text you had to hit exactly. Styled flat so it still reads as the name line
+               rather than a control. */
             <Link
               href={{ pathname: '/u/[username]', params: { username: profile.username } }}
               asChild
             >
-              <Paragraph color="$foreground">
+              <Button
+                chromeless
+                size="$3"
+                hitSlop={tapTargetSlop('$3')}
+                paddingHorizontal={0}
+                justifyContent="flex-start"
+                color="$foreground"
+              >
                 {profile.displayName} · @{profile.username}
-              </Paragraph>
+              </Button>
             </Link>
           ) : (
             <Paragraph color="$foreground">Loading your profile…</Paragraph>
