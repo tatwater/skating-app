@@ -104,7 +104,21 @@ const config: ExpoConfig = {
       {
         backgroundColor: '#ffffff',
         image: './assets/splash-icon-light.png',
-        imageWidth: 200,
+        /**
+         * Sized to clear Android 12+'s circular splash mask, not to taste.
+         *
+         * The OS draws `windowSplashScreenAnimatedIcon` through a fixed circular mask — there is no
+         * shape option, so the crop can't be turned off or squared; artwork either fits inside it or
+         * loses its corners. At 200 the 1212×472 wordmark rendered 200×78, which spans the whole
+         * diameter at mid-height but overruns the circle lower down, where it has narrowed: the
+         * underline sits below centre and lost ~8px off each end.
+         *
+         * Corner-to-corner the mark needs ~186 to touch the circle exactly and ~124 to sit inside
+         * Android's recommended inner-two-thirds safe zone. 150 buys real clearance without
+         * shrinking the mark to a thumbnail. A wide wordmark in a round mask is a compromise
+         * whatever the number — a squarer lockup is the fix if this still reads small.
+         */
+        imageWidth: 150,
         dark: {
           backgroundColor: '#0b1620',
           image: './assets/splash-icon-dark.png',
