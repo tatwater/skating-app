@@ -7,8 +7,6 @@ import {
   shortDayLabel,
 } from './weatherPanel';
 
-const DAY = 86_400_000;
-
 function dayMsOf(localDate: string): number {
   const [y, m, d] = localDate.split('-').map(Number);
   return Date.UTC(y ?? 1970, (m ?? 1) - 1, d ?? 1);
@@ -192,11 +190,7 @@ describe('buildPastWeatherPanel — headline', () => {
   });
 
   it('states missing days plainly rather than under-reporting a span', () => {
-    const panel = buildPastWeatherPanel([
-      day('2026-01-15'),
-      gap('2026-01-16'),
-      gap('2026-01-17'),
-    ]);
+    const panel = buildPastWeatherPanel([day('2026-01-15'), gap('2026-01-16'), gap('2026-01-17')]);
     // Five of seven days is not less snow, it is less knowledge — and the panel has to say so.
     expect(panel.headline.at(-1)).toBe('2 days of weather unavailable');
   });

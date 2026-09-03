@@ -1,6 +1,12 @@
 # Phase N6h — The weather panel: a season of past days, a planning window, and radar that admits what it can't see
 
-> **Status:** 📋 **SCOPED 2026-09-02, not built.** Founder ask, same day. Grew out of a costing
+> **Status:** 🚧 **PR 1 BUILT 2026-09-03 on `phase-n6h-weather-detail-1`** — Workstreams **A + B + C +
+> G** (the re-key, the durable archive, the past-weather panel on both clients, and the dark
+> thickness instrument). Unpushed, no PR opened, undeployed; founder is running the code-review skill
+> in a fresh thread first. **D + E + F not started.** Suites: core 2,327 · convex 1,377 · web 495 ·
+> mobile 108 · etl 433, `lint` and `check-types` clean across all 13 tasks.
+> See *§What PR 1 shipped, and where it differs from this plan* below.
+> Scoped 2026-09-02. Founder ask, same day. Grew out of a costing
 > question — *"what is most expensive about this plan?"* — and the answer moved the design: the
 > expensive half is not the data, it is **the cache key**, which today shares nothing.
 > **Depends on:** nothing. Every seam it needs is already built.
@@ -98,6 +104,74 @@
 > single digits). That is 151 days, which matches the 150-day season assumed in the storage maths
 > above almost exactly, and it is direct empirical support for idling the cron off-season (D153) and
 > for gating the corpus-wide scanner behind the season checker (D161).
+
+---
+
+## What PR 1 shipped, and where it differs from this plan
+
+**Built 2026-09-03: Workstreams A + B + C + G.** D (forecast panel), E (weather-first discovery) and
+F (radar) are untouched.
+
+### Six things the build decided that the plan did not
+
+1. **A `weatherCells` registry table, which this doc never specified.** The Tier-B cron has to visit
+   ~3,043 cells daily, and deriving that list by paginating 25,000 `waterBodies` rows would cost
+   ~75 MB of read I/O *every day* to rediscover keys that change only when the corpus does. So the
+   cells are materialised once, in batches, and the cron reads a few thousand small rows. This is the
+   N6d 105 GB lesson applied before rather than after.
+2. **The cell travels as an object, not as coordinates.** Hole 6 called for "exactly one definition"
+   of the key with a test that the four consumers agree. That would have held by convention;
+   `resolveWeatherSince` now takes a **`WeatherCell`** that can only come from `bodyWeatherCell`,
+   so the four *cannot* disagree without deleting the helper. Convention became a type.
+3. **`weatherCache.samplePointKey` keeps its now-inaccurate name.** Renaming a required field is a
+   widen→deploy→backfill→narrow migration, for a table that prunes itself every 24 h and whose
+   old-format rows are simply unreachable under the new key. The meaning moved, the name stayed, and
+   the schema comment says why.
+4. **The season gate is a pull, not a push.** D161 describes the 25-site checker "starting" the
+   sweep; the sweep instead *reads* the checker's recorded verdict from `imageryIngestSeasons`. Same
+   dependency inverted, and strictly more robust — a missed cron tick cannot lose a start signal that
+   is re-derived daily. It also leaves `maybeCheckSeasonOpen` untouched, which matters given the
+   circular-type landmine documented in that file.
+5. **The gate runs the first batch inline instead of scheduling it.** The sweep reschedules its own
+   remaining batches either way, so this is exactly the same work — and in exchange the cron tick
+   reports what happened rather than only that it asked for something to happen.
+6. **`wind_direction_10m` joined the fetch**, taking `HOURLY_VARS` to 11 and every call to 1.1×
+   Open-Meteo's billing weight. It earns that alone: multiplied against `fetchProfileM` it is what
+   turns "windy" into "the wind ran the full fetch", which is the difference between black ice and a
+   rippled surface. The cost is now **counted rather than guessed** — see the `externalApiCalls`
+   meter, which shipped with A because D158's trigger could not otherwise fire.
+
+### Two bugs the tests found, both mine
+
+- **The cell registry discriminated "same run" on `updatedAt === Date.now()`.** Body counts
+  accumulate across the pages of one run and must be replaced by a later run — and two runs landing
+  in the same millisecond both read as "same run", double-counting every body. Now a real run id: a
+  clock is not an identifier.
+- **The season gate scheduled its sweep**, which made the wiring untestable for no benefit. See
+  delta 5.
+
+### Holes closed, and the two that are not
+
+| hole | status |
+|---|---|
+| 1 · local-shifted `startMs` | **avoided, not fixed.** The archive never touches it — `timeformat=iso8601` means hours arrive carrying the lake's own date, and the panel reads those. ⚠ **The trap is still live for Workstream D**, whose hourly rows come from `weather.ts`. Saved as a standalone memory. |
+| 2 · multi-cell giants | **partly.** `bounties` now anchors on the sub-area when a bounty names one, so a bay gets its bay's weather. The **panel still uses the body's default anchor**, so Champlain shows one point for 200 km. Needs the sub-area-vs-body decision before D. |
+| 3 · "nights" undefined | ✅ `nightMinTempC` over an explicit `[18:00, 09:00)` window, defined once in `weatherDay.ts`, with `nightsBelowThresholdC` as the only predicate. |
+| 4 · DST 23/25-hour days | ✅ Days are bucketed from local date *strings*, never from a shifted timestamp. `hours` reports what was seen. |
+| 5 · backfill stampede | ✅ Batched and self-rescheduling (`CELL_BATCH_SIZE`), season-gated, and the meter makes the spend visible. |
+| 6 · atomic re-key | ✅ See delta 2, plus a test asserting the strip and the decay cron land on one row. |
+| 7 · idempotency + migration | ✅ Upsert on `(cellKey, dayMs)`; a gap marker refuses to overwrite real data. No migration needed (delta 3). ⚠ `weatherCellKeyB` on `waterBodies` is still owed by **E**. |
+| 8 · mobile has no charts | ✅ Text-first mobile, all copy in `weatherPanel.ts` in core where it is testable. |
+| 9 · offline | ❌ **Not done.** The archive is small and needed exactly where signal dies; belongs with D. |
+
+### Deferred inside B, with reasons rather than silently
+
+- **The ERA5 leg of the recovery ladder (D161 step 3).** Only reachable for gaps older than 92 days,
+  which cannot arise in a first season for a cell whose range starts this winter. The `archive`
+  source literal is already in the enum, so wiring it later needs no migration.
+- **The N5a season rollup.** An optimisation for a season that has not happened: 150 daily rows per
+  cell is ~548 MB against Convex Pro's included 50 GB, and the rows are append-only. Can land any
+  time before the season closes.
 
 ---
 
