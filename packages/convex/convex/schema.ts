@@ -1447,6 +1447,83 @@ export default defineSchema({
     .index('by_tier_day', ['tier', 'dayMs']),
 
   /**
+   * **Hourly weather, for the timeline chart only (N6h Workstream D).**
+   *
+   * ## Why this is not four more columns on `weatherDays`
+   *
+   * It was going to be, and that would have been a mistake with a name in this repo's history.
+   * `weatherDays` is **range-scanned corpus-wide** — by the D159 filter, by `sweepWeatherDayGaps`,
+   * by `tierHasDay` — and Convex bills read I/O by the whole document. Adding ~96 numbers to a row
+   * roughly triples it, so every one of those scans would pay for hourly data it never reads. That
+   * is the shape of the N6d access load that cost 105 GB and disabled the deployment.
+   *
+   * It is also the one table `storageHygiene` deliberately never sweeps, because a past observation
+   * stays true for ever — so the growth would have been permanent as well as corpus-wide.
+   *
+   * A separate table keeps the daily row exactly as lean as the scans need, and puts the hourly
+   * payload behind a lookup that only the drawer performs.
+   *
+   * ## ⚠ `browse` tier only, and that is a cost decision rather than an oversight
+   *
+   * `filter` cells are swept daily for the entire corpus — ~3,043 cells — to answer *questions about
+   * days* ("three nights below 20°F, no snow since"). Nothing corpus-wide asks an hourly question,
+   * and storing hourly for that sweep would write ~3,000 rows a day for ever to serve a chart nobody
+   * opened. `browse` cells are created lazily, when a person actually opens a lake, so this table
+   * grows with attention rather than with the corpus.
+   *
+   * ## What it costs at the provider: nothing
+   *
+   * The hourly series is **already fetched** — `fetchLocalHourly` pulls it, `summarizeWeatherDays`
+   * reduces it to scalars, and the hours were dropped on the floor. This stores what was already in
+   * hand. The only new Open-Meteo cost in this workstream is `weather_code`, which is a variable
+   * count change, not an extra request.
+   *
+   * Keyed on `(cellKey, dayMs)` exactly like `weatherDays`, so the two are joined by the key a caller
+   * already has and a day's hours are one lookup rather than 24.
+   */
+  weatherHours: defineTable({
+    cellKey: v.string(),
+    dayMs: v.number(), // UTC-midnight encoding of the local date — the same key `weatherDays` uses
+    localDate: v.string(),
+
+    /**
+     * The day's observed hours, ascending.
+     *
+     * ⚠ **Not always 24, and `localHour` is stored per hour rather than implied by array position.**
+     * DST days are 23 or 25 hours and both transitions fall inside a skating season, so an array
+     * indexed by position would misattribute every hour after the change. Storing the local hour the
+     * lake actually experienced is what lets the chart place a mark without a timezone database —
+     * the same reasoning that made the archive ask for `timeformat=iso8601` in the first place.
+     */
+    hours: v.array(
+      v.object({
+        localHour: v.number(),
+        temperatureC: v.number(),
+        precipitationMm: v.optional(v.number()),
+        rainMm: v.optional(v.number()),
+        snowfallCm: v.optional(v.number()),
+        snowDepthM: v.optional(v.number()),
+        windSpeedKph: v.optional(v.number()),
+        shortwaveWm2: v.optional(v.number()),
+        /**
+         * WMO code — the only input that can name sleet, ice pellets or freezing drizzle.
+         *
+         * Optional because rows written before `weather_code` joined `HOURLY_VARS` will not have it,
+         * and those rows are still perfectly good: `precipitationKind` falls back to the
+         * rain/snow/temperature derivation, which still catches freezing rain (liquid at or below
+         * 0°C) — the type that most changes a skating surface.
+         */
+        weatherCode: v.optional(v.number()),
+      }),
+    ),
+    fetchedAt: v.number(),
+  })
+    // The only access pattern: one cell, a range of days, for one open drawer. There is deliberately
+    // no `by_tier_day` twin — nothing corpus-wide reads this table, and adding the index would
+    // invite exactly the scan the split exists to prevent.
+    .index('by_cell_day', ['cellKey', 'dayMs']),
+
+  /**
    * **Outbound third-party API call counts, one row per provider per UTC day (N6h / D158).**
    *
    * D158 makes buying Open-Meteo's $319/yr plan conditional on *"sustained use above ~7,000

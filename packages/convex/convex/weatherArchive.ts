@@ -47,6 +47,7 @@ import {
   archiveSeasonAt,
   dayMsToLocalDate,
   type LocalHourlyWeather,
+  localDateToDayMs,
   spansMultipleSampleCells,
   summarizeWeatherDays,
   WEATHER_TIERS,
@@ -221,6 +222,7 @@ async function fetchLocalHourly(
   const cloud = col('cloud_cover');
   const sunshine = col('sunshine_duration');
   const shortwave = col('shortwave_radiation');
+  const weatherCode = col('weather_code');
 
   const out: LocalHourlyWeather[] = [];
   for (let i = 0; i < time.length; i++) {
@@ -254,6 +256,8 @@ async function fetchLocalHourly(
     if (typeof sunv === 'number') h.sunshineSeconds = sunv;
     const swv = shortwave?.[i];
     if (typeof swv === 'number') h.shortwaveWm2 = swv;
+    const wcv = weatherCode?.[i];
+    if (typeof wcv === 'number') h.weatherCode = wcv;
     out.push(h);
   }
   if (out.length === 0) return null;
@@ -750,6 +754,10 @@ export const pageTierCells = internalQuery({
 /**
  * Fetch and store `pastDays` of history for one cell. Returns the number of days written, or `null`
  * when the fetch failed (so a caller can distinguish "nothing to store" from "could not ask").
+ *
+ * When `tier` is `browse` the raw hours are stored too — see {@link upsertWeatherHours}. The `filter`
+ * sweep deliberately discards them: nothing corpus-wide asks an hourly question, and keeping them
+ * would write ~3,000 rows a day for ever to serve a chart nobody opened.
  */
 export async function ingestCellDays(
   ctx: ActionCtx,
@@ -769,8 +777,140 @@ export async function ingestCellDays(
     ...(batch.utcOffsetSeconds === null ? {} : { utcOffsetSeconds: batch.utcOffsetSeconds }),
     days: days.map((d) => ({ dayMs: d.dayMs, localDate: d.localDate, ...storableDay(d) })),
   });
+  if (tier === 'browse') {
+    await ctx.runMutation(internal.weatherArchive.upsertWeatherHours, {
+      cellKey: cell.key,
+      fetchedAt: Date.now(),
+      days: groupHoursByDay(batch.hours),
+    });
+  }
   return days.length;
 }
+
+/** The hourly fields `weatherHours` stores, dropped to exactly what the timeline draws. */
+function storableHour(h: LocalHourlyWeather): Record<string, number> {
+  const out: Record<string, number> = { localHour: h.localHour, temperatureC: h.temperatureC };
+  const put = (k: string, val: number | undefined) => {
+    if (typeof val === 'number' && Number.isFinite(val)) out[k] = val;
+  };
+  put('precipitationMm', h.precipitationMm);
+  put('rainMm', h.rainMm);
+  put('snowfallCm', h.snowfallCm);
+  put('snowDepthM', h.snowDepthM);
+  put('windSpeedKph', h.windSpeedKph);
+  put('shortwaveWm2', h.shortwaveWm2);
+  put('weatherCode', h.weatherCode);
+  return out;
+}
+
+/**
+ * Bucket a run of local-stamped hours into one payload per local calendar day.
+ *
+ * ⚠ **Groups on the hour's own `localDate` string**, never by dividing a timestamp. That is the same
+ * rule the day reducer follows and for the same reason: a response carries one `utc_offset_seconds`
+ * for its whole span, and both DST transitions fall inside a skating season, so arithmetic on a
+ * shifted timestamp misfiles an hour on either side of the change.
+ */
+function groupHoursByDay(
+  hours: readonly LocalHourlyWeather[],
+): { dayMs: number; localDate: string; hours: Record<string, number>[] }[] {
+  const byDate = new Map<
+    string,
+    { dayMs: number; localDate: string; hours: Record<string, number>[] }
+  >();
+  for (const h of hours) {
+    const dayMs = localDateToDayMs(h.localDate);
+    if (dayMs === null) continue; // a misfiled day is worse than a missing one
+    let entry = byDate.get(h.localDate);
+    if (!entry) {
+      entry = { dayMs, localDate: h.localDate, hours: [] };
+      byDate.set(h.localDate, entry);
+    }
+    entry.hours.push(storableHour(h));
+  }
+  return [...byDate.values()].sort((a, b) => a.dayMs - b.dayMs);
+}
+
+/**
+ * Upsert a cell's hourly rows — **idempotent on `(cellKey, dayMs)`**, like its daily twin.
+ *
+ * The idempotence matters for the same reason it does there: today's row is partial when written and
+ * is rewritten tomorrow, and the panel's top-up re-requests days it already holds. A whole day is
+ * *replaced* rather than merged, because a re-fetch of a past day returns the same hours plus any
+ * that were missing, and merging two versions of an hour has no defined winner.
+ */
+export const upsertWeatherHours = internalMutation({
+  args: {
+    cellKey: v.string(),
+    fetchedAt: v.number(),
+    days: v.array(
+      v.object({
+        dayMs: v.number(),
+        localDate: v.string(),
+        hours: v.array(v.record(v.string(), v.number())),
+      }),
+    ),
+  },
+  handler: async (ctx, a) => {
+    for (const day of a.days) {
+      const doc = {
+        cellKey: a.cellKey,
+        dayMs: day.dayMs,
+        localDate: day.localDate,
+        // Cast because the record validator above accepts the loose shape `storableHour` produces;
+        // the table's own validator is what actually pins the field names, and it runs on write.
+        hours: day.hours as unknown as { localHour: number; temperatureC: number }[],
+        fetchedAt: a.fetchedAt,
+      };
+      const existing = await ctx.db
+        .query('weatherHours')
+        .withIndex('by_cell_day', (q) => q.eq('cellKey', a.cellKey).eq('dayMs', day.dayMs))
+        .first();
+      if (existing) await ctx.db.patch(existing._id, doc);
+      else await ctx.db.insert('weatherHours', doc);
+    }
+  },
+});
+
+/**
+ * Which of these days the cell holds hourly rows for.
+ *
+ * ⚠ **The query that stops a silent permanent blank.** `getWeatherDaysForBody` only refetches when
+ * it is short of *daily* rows, so every cell someone had already opened before this workstream —
+ * which is every popular lake — would have satisfied that test for ever and never once written an
+ * hourly row. The chart would have been empty exactly where the app is most used, with no error
+ * anywhere. The panel's top-up now asks this too.
+ */
+export const listCellHourDayKeys = internalQuery({
+  args: { cellKey: v.string(), fromMs: v.number(), toMs: v.number() },
+  handler: async (ctx, { cellKey, fromMs, toMs }) => {
+    const rows = await ctx.db
+      .query('weatherHours')
+      .withIndex('by_cell_day', (q) =>
+        q.eq('cellKey', cellKey).gte('dayMs', fromMs).lte('dayMs', toMs),
+      )
+      .collect();
+    // Only days that actually carry hours: an empty array would satisfy a presence test while
+    // drawing nothing, which is the same failure this query exists to prevent, one level down.
+    return rows.filter((r) => r.hours.length > 0).map((r) => r.dayMs);
+  },
+});
+
+/** A cell's hourly rows over a day range, ascending — the timeline's read. */
+export const readCellHourRange = internalQuery({
+  args: { cellKey: v.string(), fromMs: v.number(), toMs: v.number() },
+  handler: async (ctx, { cellKey, fromMs, toMs }) => {
+    const rows = await ctx.db
+      .query('weatherHours')
+      .withIndex('by_cell_day', (q) =>
+        q.eq('cellKey', cellKey).gte('dayMs', fromMs).lte('dayMs', toMs),
+      )
+      .collect();
+    return rows
+      .sort((a, b) => a.dayMs - b.dayMs)
+      .map((r) => ({ dayMs: r.dayMs, localDate: r.localDate, hours: r.hours }));
+  },
+});
 
 /**
  * The Tier-B sweep: append recent days for every registered `filter` cell, one batch at a time,
@@ -1187,8 +1327,24 @@ export const maybeSweepGaps = internalAction({
 /** Days the past-weather panel shows by default. */
 export const PANEL_DAYS = 7;
 
+/** One day's raw hours, as `weatherHours` stores them and the timeline consumes them. */
+export interface StoredHourDayPayload {
+  dayMs: number;
+  localDate: string;
+  hours: { localHour: number; temperatureC: number; [measure: string]: number }[];
+}
+
 export interface WeatherDaysResult {
   days: StoredDayPayload[];
+  /**
+   * Raw hours for the timeline chart, one entry per day that has them.
+   *
+   * **Empty is a normal state, not an error.** A cell whose daily rows predate Workstream D serves
+   * its hours from the next drawer-open onward; until then the panel falls back to the day summaries
+   * it already has. Clients must therefore render the timeline from `hours` and the sentences from
+   * `days`, never assume the two cover the same window.
+   */
+  hours: StoredHourDayPayload[];
   /** Day keys we asked for and could not get. Rendered as gaps, never as zeroes. */
   missingDayMs: number[];
   /** True when any returned day came from the coarser `filter` tier (D161 step 2). */
@@ -1252,11 +1408,25 @@ export const getWeatherDaysForBody = action({
     const inWindow = (r: { dayMs: number }) => r.dayMs >= fromMs && r.dayMs <= toMs;
 
     const realDays = held.filter((r) => r.missing !== true && inWindow(r));
+
+    // ⚠ **The hourly rows have to be tested for separately, or they are never written at all.**
+    // Before N6h Workstream D this branch keyed only on daily rows, so any cell somebody had already
+    // opened satisfied it for ever — the archive was complete, so nothing refetched, so no hourly row
+    // was ever created. The timeline would have been permanently blank on exactly the popular lakes,
+    // with nothing logged and nothing thrown. It is invisible precisely because the daily half is
+    // healthy.
+    const heldHourDays = await ctx.runQuery(internal.weatherArchive.listCellHourDayKeys, {
+      cellKey: cell.key,
+      fromMs: readFromMs,
+      toMs: utcToday,
+    });
+    const hoursShort = heldHourDays.filter((d) => d >= fromMs && d <= toMs).length < span;
+
     // A cell with nothing at all is a first touch: pull the ceiling. A cell that has *some* of the
     // window is topped up with a short append, which is the cheap common case.
     if (realDays.length === 0) {
       await ingestCellDays(ctx, 'browse', cell, BACKFILL_PAST_DAYS);
-    } else if (realDays.length < span) {
+    } else if (realDays.length < span || hoursShort) {
       await ingestCellDays(ctx, 'browse', cell, Math.min(span + 1, MAX_PAST_DAYS));
     }
 
@@ -1298,8 +1468,17 @@ export const getWeatherDaysForBody = action({
     }
     missingDayMs.sort((a, b) => a - b);
 
+    // Read after the top-up above, so a cell that had daily rows but no hourly ones serves its chart
+    // on the *same* drawer-open that discovered the shortfall rather than on the next one.
+    const hourRows = await ctx.runQuery(internal.weatherArchive.readCellHourRange, {
+      cellKey: cell.key,
+      fromMs,
+      toMs,
+    });
+
     return {
       days: out,
+      hours: hourRows,
       missingDayMs,
       anyBorrowed,
       oneSampleForALargeBody: info.oneSampleForALargeBody,

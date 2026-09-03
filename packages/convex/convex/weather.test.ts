@@ -544,8 +544,12 @@ describe('the weather cell key (D152 / N6h)', () => {
     expect(rows).toHaveLength(1);
     expect(rows[0]?.provider).toBe('open-meteo');
     expect(rows[0]?.calls).toBe(1);
-    // 11 variables over a 1+2 day span: ceil(3/14)=1 × 11/10 = 1.1 billed calls.
-    expect(rows[0]?.weightedCalls).toBeCloseTo(1.1, 6);
+    // 12 variables over a 1+2 day span: ceil(3/14)=1 × 12/10 = 1.2 billed calls.
+    //
+    // Was 1.1 until `weather_code` joined `HOURLY_VARS` (N6h Workstream D). Both fetch builders share
+    // that list on purpose — the strip and the archive must not diverge on what they ask for — so the
+    // 9% lands here as well as on the archive path. See `HOURLY_VARS` for what it buys.
+    expect(rows[0]?.weightedCalls).toBeCloseTo(1.2, 6);
   });
 
   test('counts a FAILED call too — it consumed quota just the same', async () => {

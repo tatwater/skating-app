@@ -61,6 +61,8 @@ function isoResponse(
     snowFor?: (date: string, hour: number) => number;
     windFor?: (date: string, hour: number) => number;
     dirFor?: (date: string, hour: number) => number;
+    /** WMO code by flat hour index — the variable N6h Workstream D added. */
+    codeFor?: (index: number) => number;
     hoursPerDay?: number;
   } = {},
 ) {
@@ -94,6 +96,7 @@ function isoResponse(
       cloud_cover: new Array(n).fill(50),
       sunshine_duration: new Array(n).fill(0),
       shortwave_radiation: new Array(n).fill(0),
+      weather_code: time.map((_, i) => opts.codeFor?.(i) ?? 0),
     },
   };
 }
@@ -160,8 +163,16 @@ describe('weatherArchive: the request builder (D153)', () => {
     const rows = await t.run((ctx) => ctx.db.query('externalApiCalls').collect());
     expect(rows).toHaveLength(1);
     expect(rows[0]?.provider).toBe('open-meteo');
-    // 93 days over 11 vars: ceil(93/14)=7 × 1.1 = 7.7 billed calls in ONE request.
-    expect(rows[0]?.weightedCalls).toBeCloseTo(7.7, 6);
+    // 93 days over 12 vars: ceil(93/14)=7 × 1.2 = 8.4 billed calls in ONE request.
+    //
+    // ⚠ **This number went up by 9% in N6h Workstream D and that was the point of the founder call.**
+    // It was 7.7 at eleven variables; `weather_code` is the twelfth, and it is what lets the scrub
+    // readout name sleet and freezing drizzle instead of guessing. The increase applies to every
+    // Open-Meteo call in the app, including the corpus-wide Tier-B sweep, which is most of the
+    // traffic — so if D158's ~7,000/day trigger ever fires, this variable is part of why. Anyone
+    // removing it should expect this assertion to want 7.7 again, and should read `HOURLY_VARS`
+    // before assuming that is a saving rather than a silent downgrade.
+    expect(rows[0]?.weightedCalls).toBeCloseTo(8.4, 6);
   });
 });
 
@@ -1030,5 +1041,117 @@ describe('weatherArchive: the reconciler is triggered by the import, not the clo
     });
     expect(res.skipped).toBeUndefined();
     expect(res.tiers).toHaveLength(2);
+  });
+});
+
+describe('weatherArchive: hourly rows for the timeline (N6h Workstream D)', () => {
+  test('a browse-tier ingest stores the hours the day reducer would have discarded', async () => {
+    const t = convexTest(schema, modules);
+    const waterBodyId = await seedBody(t);
+    const dates = recentDates(3);
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => okJson(isoResponse(dates))),
+    );
+
+    const result = await asViewer(t).action(api.weatherArchive.getWeatherDaysForBody, {
+      waterBodyId,
+      days: 3,
+    });
+
+    const rows = await t.run((ctx) => ctx.db.query('weatherHours').collect());
+    expect(rows.length).toBeGreaterThan(0);
+    expect(rows[0]?.hours).toHaveLength(24);
+    // Local hour is stored per hour rather than implied by position — the DST requirement.
+    expect(rows[0]?.hours[0]?.localHour).toBe(0);
+    expect(rows[0]?.hours[23]?.localHour).toBe(23);
+    // And the action serves them, so one drawer-open is one round trip.
+    expect(result?.hours.length).toBeGreaterThan(0);
+  });
+
+  test('carries the weather code through to storage', async () => {
+    const t = convexTest(schema, modules);
+    const waterBodyId = await seedBody(t);
+    vi.stubGlobal(
+      'fetch',
+      // 66 = freezing rain. The whole reason the twelfth variable is worth 9%.
+      vi.fn(async () =>
+        okJson(isoResponse(recentDates(2), { codeFor: (i) => (i === 5 ? 66 : 0) })),
+      ),
+    );
+
+    await asViewer(t).action(api.weatherArchive.getWeatherDaysForBody, { waterBodyId, days: 2 });
+
+    const rows = await t.run((ctx) => ctx.db.query('weatherHours').collect());
+    const codes = rows.flatMap((r) => r.hours.map((h) => h.weatherCode));
+    expect(codes).toContain(66);
+  });
+
+  test('the corpus-wide filter sweep stores NO hourly rows', async () => {
+    // ⚠ The cost decision, pinned. `filter` covers ~3,043 cells swept daily; nothing corpus-wide asks
+    // an hourly question, so storing them there would write thousands of rows a day for ever to serve
+    // a chart nobody opened. If this ever starts passing hours through, the archive grows without
+    // bound and nothing else fails.
+    const t = convexTest(schema, modules);
+    await seedBody(t);
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => okJson(isoResponse(recentDates(3)))),
+    );
+
+    await t.action(internal.weatherArchive.backfillWeatherCells, { tier: 'filter' });
+    await t.action(internal.weatherArchive.refreshTierDays, { tier: 'filter' });
+
+    expect(await t.run((ctx) => ctx.db.query('weatherDays').collect())).not.toHaveLength(0);
+    expect(await t.run((ctx) => ctx.db.query('weatherHours').collect())).toHaveLength(0);
+  });
+
+  test('backfills hours for a cell that already had every daily row', async () => {
+    // ⚠ **The silent-blank trap, and the reason this test is worth more than the three above.**
+    // The top-up branch used to key only on daily rows, so a cell somebody had already opened
+    // satisfied it for ever: complete archive ⇒ no refetch ⇒ no hourly row, permanently, on exactly
+    // the popular lakes. Nothing logged, nothing thrown, chart simply empty.
+    const t = convexTest(schema, modules);
+    const waterBodyId = await seedBody(t);
+    const dates = recentDates(3);
+
+    const fetchMock = vi.fn(async () => okJson(isoResponse(dates)));
+    vi.stubGlobal('fetch', fetchMock);
+    await asViewer(t).action(api.weatherArchive.getWeatherDaysForBody, { waterBodyId, days: 3 });
+
+    // Simulate the pre-Workstream-D world: daily rows present, hourly rows absent.
+    await t.run(async (ctx) => {
+      for (const row of await ctx.db.query('weatherHours').collect()) await ctx.db.delete(row._id);
+    });
+    expect(await t.run((ctx) => ctx.db.query('weatherHours').collect())).toHaveLength(0);
+
+    fetchMock.mockClear();
+    const result = await asViewer(t).action(api.weatherArchive.getWeatherDaysForBody, {
+      waterBodyId,
+      days: 3,
+    });
+
+    expect(fetchMock).toHaveBeenCalled(); // it noticed, rather than trusting the healthy daily half
+    expect(await t.run((ctx) => ctx.db.query('weatherHours').collect())).not.toHaveLength(0);
+    // Served on the same open that discovered the shortfall, not the next one.
+    expect(result?.hours.length).toBeGreaterThan(0);
+  });
+
+  test('is idempotent on (cellKey, dayMs) — a re-open does not duplicate a day', async () => {
+    const t = convexTest(schema, modules);
+    const waterBodyId = await seedBody(t);
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => okJson(isoResponse(recentDates(3)))),
+    );
+
+    await asViewer(t).action(api.weatherArchive.getWeatherDaysForBody, { waterBodyId, days: 3 });
+    const first = await t.run((ctx) => ctx.db.query('weatherHours').collect());
+    await asViewer(t).action(api.weatherArchive.getWeatherDaysForBody, { waterBodyId, days: 3 });
+    const second = await t.run((ctx) => ctx.db.query('weatherHours').collect());
+
+    expect(second).toHaveLength(first.length);
+    const keys = second.map((r) => `${r.cellKey}:${r.dayMs}`);
+    expect(new Set(keys).size).toBe(keys.length);
   });
 });

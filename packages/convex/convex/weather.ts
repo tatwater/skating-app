@@ -65,6 +65,23 @@ export const OPEN_METEO_FORECAST_URL = 'https://api.open-meteo.com/v1/forecast';
  * turns "it was windy" into "the wind ran the full 3.2 km fetch", which is the difference between
  * black ice and a rippled surface nobody wants to skate (N6h Workstream C). The cost is counted, not
  * guessed — see `externalApiCalls` and D158.
+ *
+ * ## ⚠ `weather_code` is the twelfth, and it costs ~9% on every weather call in the app
+ *
+ * Including the corpus-wide Tier-B sweep, which is most of the traffic. Founder call, N6h Workstream
+ * D, made with that number stated. What it buys is **precipitation typing that no combination of the
+ * other variables can produce**: sleet, ice pellets, freezing drizzle and freezing rain are all
+ * "some precipitation near 0°C" to `rain` + `snowfall` + `temperature_2m`.
+ *
+ * **What it does not buy is a visible texture.** At the timeline's real density — ~2.2 px per hour
+ * over a week, ~0.5 px at thirty days — a two-hour sleet event is four pixels, and no fill or hatch
+ * separates five classes at that size. The value lands entirely in the **scrub readout**, which has
+ * room to say "3 PM — freezing rain" in words. Anyone later wondering what the 9% bought should look
+ * there and not at the drawing; and anyone tempted to drop the variable should know the drawing will
+ * look identical afterwards while the readout quietly starts guessing.
+ *
+ * The fallback is real, not a stub: `precipitationKind` still derives freezing rain from liquid at or
+ * below 0°C, so archive rows written before this variable existed keep their hatch.
  */
 export const HOURLY_VARS = [
   'temperature_2m',
@@ -78,6 +95,7 @@ export const HOURLY_VARS = [
   'cloud_cover',
   'sunshine_duration',
   'shortwave_radiation',
+  'weather_code',
 ] as const;
 
 function hourBucket(ms: number): number {
