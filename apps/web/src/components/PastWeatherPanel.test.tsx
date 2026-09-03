@@ -1,3 +1,4 @@
+import type { Id } from '@skating/convex/dataModel';
 import { render, screen, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -6,6 +7,9 @@ vi.mock('convex/react', () => ({ useAction: () => getDays }));
 
 // Imported after the mock so its `useAction` is the stub.
 const { PastWeatherPanel } = await import('./PastWeatherPanel');
+
+const BODY = 'b1' as Id<'waterBodies'>;
+const OTHER = 'b2' as Id<'waterBodies'>;
 
 /** One stored day as `getWeatherDaysForBody` returns it. */
 function day(localDate: string, over: Record<string, number> = {}) {
@@ -35,7 +39,7 @@ describe('PastWeatherPanel', () => {
       missingDayMs: [],
       anyBorrowed: false,
     });
-    render(<PastWeatherPanel waterBodyId="b1" />);
+    render(<PastWeatherPanel waterBodyId={BODY} />);
 
     expect(await screen.findByText("What it's been through")).toBeInTheDocument();
     expect(screen.getByText('3 nights below 20°F')).toBeInTheDocument();
@@ -49,7 +53,7 @@ describe('PastWeatherPanel', () => {
       missingDayMs: [],
       anyBorrowed: false,
     });
-    const { container } = render(<PastWeatherPanel waterBodyId="b1" />);
+    const { container } = render(<PastWeatherPanel waterBodyId={BODY} />);
     await screen.findByText("What it's been through");
 
     const text = container.textContent ?? '';
@@ -65,7 +69,7 @@ describe('PastWeatherPanel', () => {
       missingDayMs: [missing],
       anyBorrowed: false,
     });
-    render(<PastWeatherPanel waterBodyId="b1" />);
+    render(<PastWeatherPanel waterBodyId={BODY} />);
 
     await screen.findByText("What it's been through");
     // The whole point of carrying `missing` through the archive: a hole must not read as 0°.
@@ -79,27 +83,27 @@ describe('PastWeatherPanel', () => {
       missingDayMs: [],
       anyBorrowed: true,
     });
-    render(<PastWeatherPanel waterBodyId="b1" />);
+    render(<PastWeatherPanel waterBodyId={BODY} />);
     expect(await screen.findByText(/wider area than usual/)).toBeInTheDocument();
   });
 
   it('renders nothing when the archive has nothing', async () => {
     getDays.mockResolvedValue({ days: [], missingDayMs: [], anyBorrowed: false });
-    const { container } = render(<PastWeatherPanel waterBodyId="b1" />);
+    const { container } = render(<PastWeatherPanel waterBodyId={BODY} />);
     await waitFor(() => expect(getDays).toHaveBeenCalled());
     await waitFor(() => expect(container).toBeEmptyDOMElement());
   });
 
   it('renders nothing when the action returns null (unauthenticated or removed body)', async () => {
     getDays.mockResolvedValue(null);
-    const { container } = render(<PastWeatherPanel waterBodyId="b1" />);
+    const { container } = render(<PastWeatherPanel waterBodyId={BODY} />);
     await waitFor(() => expect(getDays).toHaveBeenCalled());
     await waitFor(() => expect(container).toBeEmptyDOMElement());
   });
 
   it('fails open and quiet when the action rejects', async () => {
     getDays.mockRejectedValue(new Error('offline'));
-    const { container } = render(<PastWeatherPanel waterBodyId="b1" />);
+    const { container } = render(<PastWeatherPanel waterBodyId={BODY} />);
     await waitFor(() => expect(container).toBeEmptyDOMElement());
   });
 
@@ -109,14 +113,14 @@ describe('PastWeatherPanel', () => {
       missingDayMs: [],
       anyBorrowed: false,
     });
-    render(<PastWeatherPanel waterBodyId="b1" />);
+    render(<PastWeatherPanel waterBodyId={BODY} />);
     expect(await screen.findByText('3″')).toBeInTheDocument();
   });
 
   it('passes the requested window to the action', async () => {
     getDays.mockResolvedValue({ days: [], missingDayMs: [], anyBorrowed: false });
-    render(<PastWeatherPanel days={14} waterBodyId="b1" />);
-    await waitFor(() => expect(getDays).toHaveBeenCalledWith({ waterBodyId: 'b1', days: 14 }));
+    render(<PastWeatherPanel days={14} waterBodyId={BODY} />);
+    await waitFor(() => expect(getDays).toHaveBeenCalledWith({ waterBodyId: BODY, days: 14 }));
   });
 
   it('does not leave a stale panel up when the body changes', async () => {
@@ -125,11 +129,11 @@ describe('PastWeatherPanel', () => {
       missingDayMs: [],
       anyBorrowed: false,
     });
-    const { rerender } = render(<PastWeatherPanel waterBodyId="b1" />);
+    const { rerender } = render(<PastWeatherPanel waterBodyId={BODY} />);
     await screen.findByText("What it's been through");
 
     getDays.mockResolvedValue(null);
-    rerender(<PastWeatherPanel waterBodyId="b2" />);
+    rerender(<PastWeatherPanel waterBodyId={OTHER} />);
     await waitFor(() => expect(screen.queryByText('1 night below 20°F')).not.toBeInTheDocument());
   });
 });
