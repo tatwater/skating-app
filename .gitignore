@@ -55,3 +55,9 @@ app_ui_inspiration/
 # Ten of them were committed by accident on 2026-08-25.
 __pycache__/
 *.py[cod]
+
+# Design exports (large generated SVGs for Figma)
+/exports/
+
+# Teagan's questions/reminders for Claude
+CLAUDE_NOTES.md

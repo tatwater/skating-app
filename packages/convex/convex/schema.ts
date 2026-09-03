@@ -32,6 +32,7 @@ import {
   USER_ROLES,
   USER_STATUSES,
   WATER_BODY_CLASSES,
+  WEATHER_TIERS,
   WIND_ROSE_SOURCES,
 } from '@skating/core';
 import { defineSchema, defineTable } from 'convex/server';
@@ -84,6 +85,7 @@ import {
   SUPPORT_CATEGORIES,
   SUPPORT_STATUSES,
   WATER_BODY_SOURCES,
+  WEATHER_DAY_SOURCES,
 } from './lib/enums';
 import {
   bbox,
@@ -1224,7 +1226,17 @@ export default defineSchema({
   // **forecast API with `past_days`** (recent windows), never the ~5-day-lagged archive (§2). Ephemeral;
   // safe to drop/prune (a miss just refetches).
   weatherCache: defineTable({
-    samplePointKey: v.string(), // rounded "lat,lng" — the grid-ish cache key
+    /**
+     * The **weather cell key** (N6h / D152) — `weatherCellFor('browse', …).key`, e.g. `b:895:-1441:3`.
+     *
+     * ⚠ **The field name is a fossil and is kept deliberately.** It held a `lat.toFixed(3)` sample
+     * point until N6h, which produced 24,832 distinct values for 24,948 bodies — one fetch per lake,
+     * no sharing at all. Renaming the *field* would be a schema migration (widen → deploy → backfill
+     * → narrow) for a table that prunes itself every 24 h, so instead the meaning changed and the
+     * name stayed. Old-format rows are simply unreachable under the new key and are swept by
+     * `pruneWeatherCache` within a day.
+     */
+    samplePointKey: v.string(),
     windowStartMs: v.number(), // window start, bucketed to the hour (absolute UTC ms)
     windowEndBucketMs: v.number(), // `now` bucketed to the hour — the append-friendly end
     summary: weatherSinceSummary, // the computed reducer output (both consumers read this)
@@ -1251,7 +1263,7 @@ export default defineSchema({
    * many skaters open the same lake.
    */
   weatherForecastCache: defineTable({
-    samplePointKey: v.string(), // rounded "lat,lng" — the same grid-ish key `weatherCache` uses
+    samplePointKey: v.string(), // the same `browse`-tier cell key `weatherCache` uses (D152; fossil name)
     forecastBucketMs: v.number(), // `now` bucketed to the hour: how fresh this prediction is
     hours: v.array(
       v.object({
@@ -1274,6 +1286,108 @@ export default defineSchema({
     // garbage far sooner than a weather-since row, since nothing can ever read it again once its
     // bucket passes.
     .index('by_forecast_bucket', ['forecastBucketMs']),
+
+  /**
+   * **Daily weather observations — an archive, not a cache (N6h / D153).**
+   *
+   * Everything else in this file's weather block expires. `weatherCache` prunes at 24 h because its
+   * rows are *window summaries* reachable only inside their own hour bucket; `weatherForecastCache`
+   * is garbage the moment its bucket passes. **A row here describes what happened between two past
+   * instants, so it is true for ever** — it is written once and kept for the season, and
+   * `storageHygiene` deliberately does not sweep it.
+   *
+   * Keyed on `(cellKey, dayMs)`. `tier` is redundant with the key's prefix and stored anyway, because
+   * the corpus-wide filter (D159) and the gap detector both want to range-scan *all* cells of one
+   * tier for a day, which a prefix cannot do.
+   *
+   * **`dayMs` is `Date.UTC(y, m, d)` of the lake's LOCAL date** — a sortable key, not an instant.
+   * Hours are assigned to days from the local date strings Open-Meteo returns under
+   * `timeformat=iso8601`, never by shifting a UTC timestamp, because a response carries one
+   * `utc_offset_seconds` for its whole span and both DST transitions fall inside a skating season.
+   */
+  weatherDays: defineTable({
+    cellKey: v.string(), // `weatherCellFor(tier, …).key`
+    tier: literals(WEATHER_TIERS),
+    dayMs: v.number(), // UTC-midnight encoding of the local calendar date
+    localDate: v.string(), // `YYYY-MM-DD`, so a reader never reverses the encoding above
+
+    /**
+     * ⚠ **A missing day is stored as missing, never as a zero.** When `missing` is true every
+     * measure below is absent and the row exists only to say "we looked and could not get this
+     * day" — which is what stops the D159 filter from reading an absent day as *"no snow fell"*, the
+     * most dangerous possible failure for a predicate whose job is finding lakes with no snow on
+     * them. The gap detector (D161) re-requests these; they are not tombstones, they are retries
+     * waiting to happen.
+     */
+    missing: v.optional(v.boolean()),
+    /**
+     * Where this row came from. `forecast` is Open-Meteo's forecast endpoint with `past_days` (the
+     * ≤92-day window); `archive` is the ERA5-backed historical API, which D153 un-banned for exactly
+     * the range where the forecast endpoint has no data; `borrowed` means a `browse` row filled from
+     * its coarser `filter` parent (D161's recovery ladder, step 2) and is therefore honest about
+     * being lower-resolution than its tier implies.
+     */
+    source: literals(WEATHER_DAY_SOURCES),
+
+    hours: v.optional(v.number()), // NOT always 24 — DST days are 23 or 25
+    minTempC: v.optional(v.number()),
+    maxTempC: v.optional(v.number()),
+    meanTempC: v.optional(v.number()),
+    /** Min across [prev 18:00, this 09:00) local. Absent when that window was not fully observed. */
+    nightMinTempC: v.optional(v.number()),
+    hoursBelowFreezing: v.optional(v.number()),
+    hoursAboveFreezing: v.optional(v.number()),
+    freezingDegreeHours: v.optional(v.number()),
+    thawDegreeHours: v.optional(v.number()),
+    precipitationMm: v.optional(v.number()),
+    rainMm: v.optional(v.number()),
+    snowfallCm: v.optional(v.number()),
+    maxSnowDepthM: v.optional(v.number()),
+    hoursOfSun: v.optional(v.number()),
+    insolationWhM2: v.optional(v.number()),
+    maxWindKph: v.optional(v.number()),
+    maxWindGustKph: v.optional(v.number()),
+    windRunKm: v.optional(v.number()),
+    /** Hours per 16-point sector, index 0 = N clockwise. Empty when no hour carried a direction. */
+    windSectorHours: v.optional(v.array(v.number())),
+    /** Mean wind across freezing hours — the calm-freeze/black-ice signal. Absent when nothing froze. */
+    freezingHoursMeanWindKph: v.optional(v.number()),
+    freezingHoursMaxWindKph: v.optional(v.number()),
+
+    fetchedAt: v.number(),
+  })
+    // The upsert key. Every write goes through it, so a retried or overlapping cron cannot
+    // double-insert and the gap detector can re-request a day it already holds.
+    .index('by_cell_day', ['cellKey', 'dayMs'])
+    // The corpus-wide scan: "every filter-tier cell for this day" (D159), and the gap sweep.
+    .index('by_tier_day', ['tier', 'dayMs']),
+
+  /**
+   * **Outbound third-party API call counts, one row per provider per UTC day (N6h / D158).**
+   *
+   * D158 makes buying Open-Meteo's $319/yr plan conditional on *"sustained use above ~7,000
+   * calls/day"* — a trigger that could not fire, because nothing in the weather path counted
+   * anything. No token bucket, no rate limiter, no metric. This is the counter that trigger reads.
+   *
+   * **It is a meter, not a limiter.** Nothing blocks on it. A limiter that silently dropped weather
+   * fetches would degrade the app to protect a budget the founder would rather simply pay, and it
+   * would do so invisibly. Counting makes the decision visible and leaves it to a human.
+   *
+   * Deliberately generic in `provider` so the ORS drive-time path (which has its own per-endpoint
+   * quota, and whose 403-not-429 out-of-quota behaviour is already a known trap) can share it.
+   */
+  externalApiCalls: defineTable({
+    provider: v.string(), // 'open-meteo' | 'ors' | …
+    dayMs: v.number(), // UTC midnight — a billing day, not a local one
+    calls: v.number(), // HTTP requests actually issued
+    /**
+     * Open-Meteo bills fractionally: roughly `ceil(days/14) × (vars/10)`, so a 92-day backfill with
+     * 14 variables is ~9 billed calls in one request. Tracking both means the trigger can read the
+     * number the provider actually counts rather than the one we find easiest to measure.
+     */
+    weightedCalls: v.number(),
+    updatedAt: v.number(),
+  }).index('by_provider_day', ['provider', 'dayMs']),
 
   /**
    * Cached NWS active alerts (N6c B5, D74) — the advisory layer, kept strictly apart from the

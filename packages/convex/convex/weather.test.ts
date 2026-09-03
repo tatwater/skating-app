@@ -1,7 +1,7 @@
 import { convexTest } from 'convex-test';
 import type { Polygon } from 'geojson';
 import { afterEach, describe, expect, test, vi } from 'vitest';
-import { api } from './_generated/api';
+import { api, internal } from './_generated/api';
 import type { Id } from './_generated/dataModel';
 import schema from './schema';
 import { WEATHER_WINDOW_MAX_LOOKBACK_MS } from './weather';
@@ -135,6 +135,11 @@ async function seedHazard(
       createdAt: lastConfirmedAt,
     }),
   ) as Promise<Id<'hazards'>>;
+}
+
+/** A 200 carrying `body` as JSON — the shape every Open-Meteo stub in this file returns. */
+function okJson(body: unknown): Response {
+  return new Response(JSON.stringify(body), { status: 200 });
 }
 
 /** An Open-Meteo forecast response with `hoursAgo` hourly readings ending ~1h before now. */
@@ -415,5 +420,145 @@ describe('weather.getForecastForBody (N6c B5b)', () => {
     expect(summary.hours).toBe(2);
     expect(summary.snowfallCm).toBe(0);
     expect(summary.maxWindGustKph).toBe(13);
+  });
+});
+
+describe('the weather cell key (D152 / N6h)', () => {
+  test("sends the cell centre and the band elevation, not the body's own coordinates", async () => {
+    const t = convexTestWithGeo();
+    // 44.0163 / 0.05 = 880.33 → 880 → 44.0;  -72.0331 / 0.05 = -1440.66 → -1441 → -72.05
+    const waterBodyId = await seedBody(t, { lat: 44.0163, lng: -72.0331 });
+    await t.run((ctx) => ctx.db.patch(waterBodyId, { elevationM: 338 }));
+    const now = Date.now();
+    const reportId = await seedReport(t, waterBodyId, now - 6 * HOUR_MS);
+
+    const fetchMock = vi.fn(async (_url: string) => okJson(openMeteoResponse(now)));
+    vi.stubGlobal('fetch', fetchMock);
+    await asViewer(t).action(api.weather.getWeatherSinceForBody, { reportId });
+
+    const url = String(fetchMock.mock.calls[0]?.[0]);
+    const params = new URL(url).searchParams;
+    expect(params.get('latitude')).toBe('44');
+    expect(params.get('longitude')).toBe('-72.05');
+    // 338 m → band 3 → the band CENTRE, 300, is what the key was built from and so what we send.
+    // Sending 338 while keying on band 3 would mean two lakes sharing an entry that describes one.
+    expect(params.get('elevation')).toBe('300');
+    // The direction variable that crosses the 10-var billing threshold on purpose (N6h Workstream C).
+    expect(params.get('hourly')).toContain('wind_direction_10m');
+  });
+
+  test('omits elevation entirely for a body that has none', async () => {
+    const t = convexTestWithGeo();
+    const waterBodyId = await seedBody(t, { lat: 44.0, lng: -72.0 });
+    const now = Date.now();
+    const reportId = await seedReport(t, waterBodyId, now - 6 * HOUR_MS);
+    const fetchMock = vi.fn(async (_url: string) => okJson(openMeteoResponse(now)));
+    vi.stubGlobal('fetch', fetchMock);
+    await asViewer(t).action(api.weather.getWeatherSinceForBody, { reportId });
+    const params = new URL(String(fetchMock.mock.calls[0]?.[0])).searchParams;
+    expect(params.has('elevation')).toBe(false);
+  });
+
+  test('two bodies in one cell and band share ONE fetch and ONE cache row', async () => {
+    const t = convexTestWithGeo();
+    const now = Date.now();
+    // ~1.5 km apart, same 0.05° cell, elevations 338 and 320 → both band 3.
+    const a = await seedBody(t, { lat: 44.0163, lng: -72.0331 });
+    const b = await seedBody(t, { lat: 44.0051, lng: -72.0409 });
+    await t.run(async (ctx) => {
+      await ctx.db.patch(a, { elevationM: 338 });
+      await ctx.db.patch(b, { elevationM: 320 });
+    });
+    const skateEnd = now - 6 * HOUR_MS;
+    const reportA = await seedReport(t, a, skateEnd);
+    const reportB = await seedReport(t, b, skateEnd);
+
+    const fetchMock = vi.fn(async () => okJson(openMeteoResponse(now)));
+    vi.stubGlobal('fetch', fetchMock);
+    await asViewer(t).action(api.weather.getWeatherSinceForBody, { reportId: reportA });
+    await asViewer(t).action(api.weather.getWeatherSinceForBody, { reportId: reportB });
+
+    // The whole point of D152: the second body is a cache hit, not a second call.
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const rows = await t.run((ctx) => ctx.db.query('weatherCache').collect());
+    expect(rows).toHaveLength(1);
+  });
+
+  test('two bodies in one cell but different elevation bands do NOT share', async () => {
+    const t = convexTestWithGeo();
+    const now = Date.now();
+    const a = await seedBody(t, { lat: 44.0163, lng: -72.0331 });
+    const b = await seedBody(t, { lat: 44.0161, lng: -72.0329 });
+    await t.run(async (ctx) => {
+      await ctx.db.patch(a, { elevationM: 180 }); // band 2
+      await ctx.db.patch(b, { elevationM: 620 }); // band 6
+    });
+    const skateEnd = now - 6 * HOUR_MS;
+    const reportA = await seedReport(t, a, skateEnd);
+    const reportB = await seedReport(t, b, skateEnd);
+    const fetchMock = vi.fn(async () => okJson(openMeteoResponse(now)));
+    vi.stubGlobal('fetch', fetchMock);
+    await asViewer(t).action(api.weather.getWeatherSinceForBody, { reportId: reportA });
+    await asViewer(t).action(api.weather.getWeatherSinceForBody, { reportId: reportB });
+    // A valley lake and a ridge pond in the same grid cell get genuinely different temperatures.
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    const rows = await t.run((ctx) => ctx.db.query('weatherCache').collect());
+    expect(rows).toHaveLength(2);
+  });
+
+  test('the strip and the decay cron key into the SAME row (Phase 10 §5, structurally)', async () => {
+    // The invariant D152 made dangerous and `bodyWeatherCell` made structural: four consumers reach
+    // Open-Meteo, and if any two resolved one body to different cells the strip would describe one
+    // window while the decay applied another — silently, and with nothing to notice it.
+    const t = convexTestWithGeo();
+    const now = Date.now();
+    const waterBodyId = await seedBody(t, { lat: 44.0163, lng: -72.0331 });
+    await t.run((ctx) => ctx.db.patch(waterBodyId, { elevationM: 338 }));
+    // A hazard whose window start (max(lastConfirmedAt, now-7d)) lands on the same hour bucket as
+    // the report's skate time, so only the CELL can differ.
+    const anchorMs = now - 6 * HOUR_MS;
+    const reportId = await seedReport(t, waterBodyId, anchorMs);
+    await seedHazard(t, waterBodyId, anchorMs);
+
+    const fetchMock = vi.fn(async () => okJson(openMeteoResponse(now)));
+    vi.stubGlobal('fetch', fetchMock);
+    await asViewer(t).action(api.weather.getWeatherSinceForBody, { reportId });
+    await t.action(internal.hazardWeather.refreshHazardWeather, {});
+
+    const rows = await t.run((ctx) => ctx.db.query('weatherCache').collect());
+    const keys = new Set(rows.map((r) => r.samplePointKey));
+    expect(keys.size).toBe(1);
+    expect([...keys][0]).toMatch(/^b:\d+:-?\d+:3$/);
+  });
+
+  test('meters every Open-Meteo call, weighted the way Open-Meteo bills them (D158)', async () => {
+    const t = convexTestWithGeo();
+    const now = Date.now();
+    const waterBodyId = await seedBody(t, { lat: 44.0, lng: -72.0 });
+    const reportId = await seedReport(t, waterBodyId, now - 6 * HOUR_MS);
+    const fetchMock = vi.fn(async () => okJson(openMeteoResponse(now)));
+    vi.stubGlobal('fetch', fetchMock);
+    await asViewer(t).action(api.weather.getWeatherSinceForBody, { reportId });
+
+    const rows = await t.run((ctx) => ctx.db.query('externalApiCalls').collect());
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.provider).toBe('open-meteo');
+    expect(rows[0]?.calls).toBe(1);
+    // 11 variables over a 1+2 day span: ceil(3/14)=1 × 11/10 = 1.1 billed calls.
+    expect(rows[0]?.weightedCalls).toBeCloseTo(1.1, 6);
+  });
+
+  test('counts a FAILED call too — it consumed quota just the same', async () => {
+    const t = convexTestWithGeo();
+    const now = Date.now();
+    const waterBodyId = await seedBody(t, { lat: 44.0, lng: -72.0 });
+    const reportId = await seedReport(t, waterBodyId, now - 6 * HOUR_MS);
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response('nope', { status: 503 })),
+    );
+    await asViewer(t).action(api.weather.getWeatherSinceForBody, { reportId });
+    const rows = await t.run((ctx) => ctx.db.query('externalApiCalls').collect());
+    expect(rows[0]?.calls).toBe(1);
   });
 });

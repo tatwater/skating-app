@@ -13,7 +13,9 @@
 import { conditionsFromHour, PRECIP_TYPES, SKY_CONDITIONS } from '@skating/core';
 import { v } from 'convex/values';
 import { internal } from './_generated/api';
+import type { ActionCtx } from './_generated/server';
 import { internalAction, internalMutation, internalQuery } from './_generated/server';
+import { meterOpenMeteo } from './lib/apiMeter';
 import { nearestSamplePoint } from './lib/sampling';
 import { literals } from './lib/validators';
 
@@ -36,8 +38,23 @@ interface OpenMeteoResponse {
   hourly?: { time?: number[]; [key: string]: (number | null)[] | number[] | undefined };
 }
 
-/** Fetch the weather at `atMs` for a point → the observed conditions, or null on failure / no near hour. */
-async function fetchConditionsAt(lat: number, lng: number, atMs: number, nowMs: number) {
+/**
+ * Fetch the weather at `atMs` for a point → the observed conditions, or null on failure / no near hour.
+ *
+ * ⚠ **Deliberately not cache-keyed, and therefore deliberately not cell-snapped (N6h).** Every other
+ * Open-Meteo path shares a `weatherCache` entry via a `WeatherCell` (D152); this one asks a different
+ * question — *what was it doing at this exact instant at this exact put-in* — runs once per report
+ * created, and never reads or writes the cache. Snapping it to a 5 km cell would trade the precision
+ * this answer is actually for against a cache hit it can never take. It **is** metered, because D158's
+ * trigger has to count every call we make and not only the interesting ones.
+ */
+async function fetchConditionsAt(
+  ctx: ActionCtx,
+  lat: number,
+  lng: number,
+  atMs: number,
+  nowMs: number,
+) {
   const pastDays = Math.min(MAX_PAST_DAYS, Math.max(1, Math.ceil((nowMs - atMs) / DAY_MS) + 1));
   const params = new URLSearchParams({
     latitude: String(lat),
@@ -54,6 +71,7 @@ async function fetchConditionsAt(lat: number, lng: number, atMs: number, nowMs: 
 
   let json: OpenMeteoResponse;
   try {
+    await meterOpenMeteo(ctx, CONDITIONS_VARS.length, pastDays + 1);
     const res = await fetch(`${OPEN_METEO_URL}?${params.toString()}`);
     if (!res.ok) {
       console.warn(`Open-Meteo conditions request failed: ${res.status}`);
@@ -145,7 +163,13 @@ export const autofillConditions = internalAction({
   handler: async (ctx, { reportId }) => {
     const info = await ctx.runQuery(internal.conditions.getReportForConditions, { reportId });
     if (!info || info.hasConditions) return;
-    const conditions = await fetchConditionsAt(info.lat, info.lng, info.skateEndTime, Date.now());
+    const conditions = await fetchConditionsAt(
+      ctx,
+      info.lat,
+      info.lng,
+      info.skateEndTime,
+      Date.now(),
+    );
     if (!conditions) return; // fail open — leave conditions blank rather than guess
     await ctx.runMutation(internal.conditions.storeReportConditions, { reportId, conditions });
   },

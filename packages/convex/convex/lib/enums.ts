@@ -108,6 +108,19 @@ export const REMOVAL_REASONS = [
 ] as const;
 
 /** How a report entered the system. */
+/**
+ * Where a `weatherDays` row's numbers came from (N6h / D153).
+ *
+ * `forecast` is Open-Meteo's forecast endpoint with `past_days`, which reaches back 92 days and is
+ * what fills the archive in normal operation. `archive` is the ERA5-backed historical API — banned
+ * outright by Phase 10 because its ~5-day lag made it wrong for recent windows, and un-banned by
+ * D153 for exactly the range past 92 days where the forecast endpoint has no data at all and a
+ * five-day lag is meaningless. `borrowed` is a `browse` row filled from its coarser `filter` parent
+ * (D161's recovery ladder, step 2), recorded so a reader can tell that a row is honestly
+ * lower-resolution than its tier implies.
+ */
+export const WEATHER_DAY_SOURCES = ['forecast', 'archive', 'borrowed'] as const;
+
 export const REPORT_SOURCES = ['native', 'activity', 'imported'] as const;
 
 // THICKNESS_METHODS moved to `@skating/core` (shared report vocab — the report form + the

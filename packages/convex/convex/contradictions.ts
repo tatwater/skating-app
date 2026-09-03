@@ -44,7 +44,7 @@ const CLUSTER_EVENT_CAP = 100;
 
 import { fileOrBumpAutoFlag } from './lib/autoFlag';
 import { bumpMetricCounter } from './lib/metrics';
-import { nearestSamplePoint } from './lib/sampling';
+import { bodyWeatherCell } from './lib/sampling';
 import { takeCapped } from './lib/scan';
 import { resolveWeatherSince } from './weather';
 
@@ -128,8 +128,11 @@ export const contradictionCluster = internalQuery({
 
     const body = await ctx.db.get(anchor.waterBodyId);
     if (!body) return null;
-    const point = nearestSamplePoint(body, anchor.point);
-    return { lat: point.lat, lng: point.lng, anchorSkateEndTime: anchor.skateEndTime, reports };
+    return {
+      cell: bodyWeatherCell(body, 'browse', anchor.point),
+      anchorSkateEndTime: anchor.skateEndTime,
+      reports,
+    };
   },
 });
 
@@ -251,7 +254,7 @@ export const settleContradictions = internalAction({
   handler: async (ctx, { reportId }) => {
     const cluster = await ctx.runQuery(internal.contradictions.contradictionCluster, { reportId });
     if (!cluster || cluster.reports.length < 2) return;
-    const { lat, lng, anchorSkateEndTime, reports } = cluster;
+    const { cell, anchorSkateEndTime, reports } = cluster;
 
     // The reconcile band: reports whose contradiction status the anchor's creation can actually change.
     const bandLo = anchorSkateEndTime - CORROBORATION_WINDOW_MS;
@@ -287,7 +290,7 @@ export const settleContradictions = internalAction({
         // change as weather-unexplained. (A sub-hour window also can't be summarized: `resolveWeatherSince`
         // returns the empty summary for it, which the old `hours === 0` guard silently swallowed.)
         if (hi - lo >= WEATHER_MIN_EXPLAIN_WINDOW_MS) {
-          const summary = await resolveWeatherSince(ctx, lat, lng, lo, hi);
+          const summary = await resolveWeatherSince(ctx, cell, lo, hi);
           if (summary === null) continue; // fetch FAILED ⇒ can't confirm ⇒ fail open, don't record
           if (summary.hours > 0 && weatherExplainsIceChange(summary)) {
             // Counted, not just skipped: this is the stage that decides whether the weather gate is
