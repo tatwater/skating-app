@@ -36,6 +36,7 @@ import { HazardList } from './HazardList';
 import { IceHistory } from './IceHistory';
 import { LeavingNotice } from './LeavingNotice';
 import { useMapSelection } from './MapSelectionContext';
+import { PastWeatherPanel } from './PastWeatherPanel';
 import { PostedAccess } from './PostedAccess';
 import { PublicAccessSection } from './PublicAccessSection';
 import { ReferenceLinks } from './ReferenceLinks';
@@ -232,6 +233,11 @@ export function WaterBodyDetail({
             possible at all, where the weather decides whether it is worth making. Renders nothing on
             the great majority of bodies OSM has never mapped access for. */}
         <AccessSection waterBodyId={result.body._id} />
+        {/* What the ice has been through (N6h / D153) — ABOVE the forecast, because the authority
+            ordering this column encodes is alert > observation > prediction, and a week of recorded
+            weather is an observation. It is also the half a general weather app cannot give you,
+            which is why the phase exists. */}
+        <PastWeatherPanel waterBodyId={result.body._id} />
         {/* The forward forecast (N6c/B5b) — the other half of the weather-since timeline, and the
             half that answers "should I bother driving". Above the season filter so it sits with the
             body's current state rather than inside its history. */}

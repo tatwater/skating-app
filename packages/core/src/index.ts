@@ -107,6 +107,7 @@ export * from './weather';
 export * from './weatherCell';
 export * from './weatherConditions';
 export * from './weatherDay';
+export * from './weatherPanel';
 export * from './weatherStrip';
 export * from './webMercator';
 export * from './windRose';
