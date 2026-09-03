@@ -12,6 +12,7 @@ import {
   temperatureBandOf,
   temperatureGradientStops,
   temperatureWindowF,
+  timelineDaysFromArchive,
   weatherTimelineModel,
 } from './weatherTimeline';
 
@@ -413,5 +414,141 @@ describe('hourAtX', () => {
     });
     if (!empty) throw new Error('expected a model');
     expect(hourAtX(empty, 10)).toBeNull();
+  });
+});
+
+describe('timelineDaysFromArchive', () => {
+  const hourRow = (dayMs: number, localDate: string, count = 24) => ({
+    dayMs,
+    localDate,
+    hours: Array.from({ length: count }, (_, h) => ({ localHour: h, temperatureC: -4 })),
+  });
+
+  it('keeps a day that has a summary but no hours as a column, not a collapse', () => {
+    // The normal state for cells whose daily rows predate the hourly table. Dropping the day would
+    // shrink the axis and silently redate every column after it.
+    const days = timelineDaysFromArchive({
+      days: [
+        { dayMs: D0, localDate: '2026-01-15', hours: 24 },
+        { dayMs: D0 + DAY_MS, localDate: '2026-01-16', hours: 24 },
+      ],
+      hours: [hourRow(D0, '2026-01-15')],
+      missingDayMs: [],
+    });
+    expect(days).toHaveLength(2);
+    expect(days[1]?.hours).toBeUndefined();
+    expect(days[1]?.missing).toBeUndefined(); // a known day with no hours is not a *missing* day
+  });
+
+  it('emits a recorded gap as missing', () => {
+    const days = timelineDaysFromArchive({
+      days: [{ dayMs: D0, localDate: '2026-01-15', hours: 24 }],
+      hours: [hourRow(D0, '2026-01-15')],
+      missingDayMs: [D0 + DAY_MS],
+    });
+    expect(days).toHaveLength(2);
+    expect(days[1]?.missing).toBe(true);
+    expect(days[1]?.localDate).toBe('2026-01-16'); // named even with nothing to name it from
+  });
+
+  it('marks a short day partial but not a 23-hour spring-forward day', () => {
+    const days = timelineDaysFromArchive({
+      days: [
+        { dayMs: D0, localDate: '2026-01-15', hours: 10 },
+        { dayMs: D0 + DAY_MS, localDate: '2026-01-16', hours: 23 },
+      ],
+      hours: [hourRow(D0, '2026-01-15', 10), hourRow(D0 + DAY_MS, '2026-01-16', 23)],
+      missingDayMs: [],
+    });
+    expect(days[0]?.partial).toBe(true);
+    // 23 hours is a complete DST day; calling it partial would grey out a settled day once a year.
+    expect(days[1]?.partial).toBeUndefined();
+  });
+
+  it('sorts and de-duplicates across all three input lists', () => {
+    const days = timelineDaysFromArchive({
+      days: [{ dayMs: D0 + 2 * DAY_MS, localDate: '2026-01-17', hours: 24 }],
+      hours: [hourRow(D0, '2026-01-15')],
+      missingDayMs: [D0 + DAY_MS, D0],
+    });
+    expect(days.map((d) => d.dayMs)).toEqual([D0, D0 + DAY_MS, D0 + 2 * DAY_MS]);
+  });
+
+  it('carries the optional measures through to the model', () => {
+    const days = timelineDaysFromArchive({
+      days: [{ dayMs: D0, localDate: '2026-01-15', hours: 24 }],
+      hours: [
+        {
+          dayMs: D0,
+          localDate: '2026-01-15',
+          hours: [{ localHour: 4, temperatureC: -1, rainMm: 2, weatherCode: 66, windSpeedKph: 12 }],
+        },
+      ],
+      missingDayMs: [],
+    });
+    expect(days[0]?.hours?.[0]).toMatchObject({
+      localHour: 4,
+      rainMm: 2,
+      weatherCode: 66,
+      windSpeedKph: 12,
+    });
+  });
+});
+
+describe('timelineDaysFromArchive tolerates an incomplete payload', () => {
+  // ⚠ The regression this exists for: a payload with no `hours` list threw, the panel's own `.catch`
+  // swallowed it, and the *entire* past-weather panel disappeared — sentences included, none of which
+  // depend on the chart. A client on a cached bundle is enough to reach that state.
+  it('treats a missing hours list as no hours, not as an error', () => {
+    const days = timelineDaysFromArchive({
+      days: [{ dayMs: D0, localDate: '2026-01-15', hours: 24 }],
+      missingDayMs: [],
+    });
+    expect(days).toHaveLength(1);
+    expect(days[0]?.hours).toBeUndefined();
+  });
+
+  it('survives an entirely empty object', () => {
+    expect(timelineDaysFromArchive({})).toEqual([]);
+  });
+});
+
+describe('an emphasis span never spreads across a gap', () => {
+  // ⚠ Found by rendering the chart, not by reading it. A filled span is a positive claim, so
+  // smoothing one over a missing day invents evidence rather than merely hiding its absence — worse
+  // than the equivalent bug on the line, where a break is at least visibly absent.
+  it('splits calm-freezing hours either side of a missing day into two spans', () => {
+    const calmFreezing = (localDate: string, dayMs: number) =>
+      day(
+        localDate,
+        dayMs,
+        Array.from({ length: 24 }, (_, h) => hour(h, { temperatureC: -8, windSpeedKph: 2 })),
+      );
+    const days = [
+      calmFreezing('2026-01-15', D0),
+      day('2026-01-16', D0 + DAY_MS, null, { missing: true }),
+      calmFreezing('2026-01-17', D0 + 2 * DAY_MS),
+    ];
+    const model = weatherTimelineModel({ days, width: WIDTH });
+    expect(model?.wind?.emphasis).toHaveLength(2);
+    // And neither span reaches into the empty column.
+    const dayWidth = WIDTH / 3;
+    expect(model?.wind?.emphasis[0]?.x ?? 0).toBeLessThan(dayWidth);
+    expect(
+      (model?.wind?.emphasis[0]?.x ?? 0) + (model?.wind?.emphasis[0]?.width ?? 0),
+    ).toBeLessThanOrEqual(dayWidth + 1);
+    expect(model?.wind?.emphasis[1]?.x ?? 0).toBeGreaterThanOrEqual(2 * dayWidth - 1);
+  });
+
+  it('still joins across the spring-forward hour, like the line does', () => {
+    const days = [
+      day(
+        '2026-03-08',
+        D0,
+        [0, 1, 3, 4].map((h) => hour(h, { temperatureC: -8, windSpeedKph: 2 })),
+      ),
+    ];
+    const model = weatherTimelineModel({ days, width: WIDTH });
+    expect(model?.wind?.emphasis).toHaveLength(1);
   });
 });

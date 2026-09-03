@@ -5,9 +5,12 @@ import {
   dayMsToLocalDate,
   type PanelDay,
   shortDayLabel,
+  type TimelineDayInput,
+  timelineDaysFromArchive,
 } from '@skating/core';
 import { useAction } from 'convex/react';
 import { useEffect, useMemo, useState } from 'react';
+import { WeatherTimeline } from './WeatherTimeline';
 
 /**
  * What the ice has been through — the past-weather panel (N6h Workstream C / **D153**).
@@ -28,29 +31,42 @@ import { useEffect, useMemo, useState } from 'react';
  * - **Authority ordering (Phase 10 §5).** An NWS alert outranks an observation, which outranks a
  *   forecast. This component never renders above `AlertStrip`.
  */
+/**
+ * Days the timeline can be dragged back through.
+ *
+ * **Wider than the panel's sentence window, deliberately, and it costs one request either way.** The
+ * archive's first touch already pulls the 92-day ceiling, so these thirty days are almost always
+ * already stored; asking for them here changes what is *read*, not what is fetched. The headline
+ * still describes seven days — see `SENTENCE_DAYS` — because "3 nights below 20°F" means something
+ * quite different over a month, and the founder's call was a 7-day default that pans to 30.
+ */
+const TIMELINE_DAYS = 30;
+
 export function PastWeatherPanel({
   waterBodyId,
   days = 7,
 }: {
   waterBodyId: Id<'waterBodies'>;
+  /** The window the *sentences* describe. The timeline always reads {@link TIMELINE_DAYS}. */
   days?: number;
 }) {
   const getDays = useAction(api.weatherArchive.getWeatherDaysForBody);
   const [state, setState] = useState<{
     days: PanelDay[];
+    timeline: TimelineDayInput[];
     coarse: boolean;
     largeBody: boolean;
     loading: boolean;
-  }>({ days: [], coarse: false, largeBody: false, loading: true });
+  }>({ days: [], timeline: [], coarse: false, largeBody: false, loading: true });
 
   useEffect(() => {
     let cancelled = false;
     setState((s) => ({ ...s, loading: true }));
-    getDays({ waterBodyId, days })
+    getDays({ waterBodyId, days: TIMELINE_DAYS })
       .then((result) => {
         if (cancelled) return;
         if (!result) {
-          setState({ days: [], coarse: false, largeBody: false, loading: false });
+          setState({ days: [], timeline: [], coarse: false, largeBody: false, loading: false });
           return;
         }
         // A recorded gap and a day that produced no row at all are both holes to a reader, so they
@@ -62,8 +78,18 @@ export function PastWeatherPanel({
           dayMs,
           localDate: dayMsToLocalDate(dayMs),
         }));
+        // ⚠ **The sentences get the last `days` days; the chart gets all thirty.** Feeding the whole
+        // range to `buildPastWeatherPanel` would silently restate every headline over a month — "no
+        // snow in the last 30 days" is a different and much rarer claim than the seven-day one, and
+        // nothing in the copy would show that the window had changed.
+        // `PanelDay` admits `null` (a hole the builder draws as a gap), so the sort has to survive
+        // one rather than assume the list is dense.
+        const all = [...(result.days as PanelDay[]), ...holes].sort(
+          (a, b) => (a?.dayMs ?? 0) - (b?.dayMs ?? 0),
+        );
         setState({
-          days: [...(result.days as PanelDay[]), ...holes],
+          days: all.slice(-days),
+          timeline: timelineDaysFromArchive(result),
           coarse: result.anyBorrowed,
           largeBody: result.oneSampleForALargeBody,
           loading: false,
@@ -72,7 +98,9 @@ export function PastWeatherPanel({
       .catch(() => {
         // Fail open and quiet, like every other weather surface: nothing cached means the next
         // drawer-open retries, and a missing history is not an error a skater can act on.
-        if (!cancelled) setState({ days: [], coarse: false, largeBody: false, loading: false });
+        if (!cancelled) {
+          setState({ days: [], timeline: [], coarse: false, largeBody: false, loading: false });
+        }
       });
     return () => {
       cancelled = true;
@@ -104,6 +132,10 @@ export function PastWeatherPanel({
     32,
   );
 
+  // At least one day with real hours. A cell can legitimately have thirty daily summaries and no
+  // hourly rows — every lake opened before N6h Workstream D is in that state until its next visit.
+  const hasHourly = state.timeline.some((d) => (d.hours?.length ?? 0) > 0);
+
   return (
     <div className="flex flex-col gap-2">
       <PanelHeading />
@@ -118,35 +150,40 @@ export function PastWeatherPanel({
         </ul>
       )}
 
-      {/* The per-day strip. Deliberately a table of numbers with a freezing-line reference rather
-          than a chart library: the span is seven points, the interesting comparison is against 32°F,
-          and a bar that crosses a labelled line reads faster than an axis. */}
-      <div className="flex gap-1 overflow-x-auto pb-1">
-        {panel.rows.map((row) => (
-          <div className="flex min-w-11 flex-1 flex-col items-center gap-1" key={row.dayMs}>
-            <span className="font-mono text-[10px] text-foreground-muted uppercase">
-              {shortDayLabel(row.localDate)}
-            </span>
-            <TempBar
-              highF={row.highF}
-              lowF={row.lowF}
-              rangeLowF={lowest}
-              rangeHighF={highest}
-              missing={row.missing}
-              partial={row.partial}
-            />
-            <span className="text-[10px] text-foreground tabular-nums">
-              {row.highF === null ? '—' : `${row.highF}°`}
-            </span>
-            <span className="text-[10px] text-foreground-muted tabular-nums">
-              {row.lowF === null ? '—' : `${row.lowF}°`}
-            </span>
-            {row.snowfallIn !== null && row.snowfallIn >= 0.1 && (
-              <span className="text-[10px] text-foreground-muted">{row.snowfallIn}″</span>
-            )}
-          </div>
-        ))}
-      </div>
+      {/* The timeline, when the archive has hours for this cell. **The columns below are the
+          fallback, not dead code** — a cell whose daily rows predate the hourly table serves no hours
+          until its next drawer-open, and on a slow connection that is the state a reader sees first.
+          The strip is also the honest answer when a lake has summaries but no hourly history at all. */}
+      {hasHourly ? (
+        <WeatherTimeline days={state.timeline} windowDays={days} />
+      ) : (
+        <div className="flex gap-1 overflow-x-auto pb-1">
+          {panel.rows.map((row) => (
+            <div className="flex min-w-11 flex-1 flex-col items-center gap-1" key={row.dayMs}>
+              <span className="font-mono text-[10px] text-foreground-muted uppercase">
+                {shortDayLabel(row.localDate)}
+              </span>
+              <TempBar
+                highF={row.highF}
+                lowF={row.lowF}
+                rangeLowF={lowest}
+                rangeHighF={highest}
+                missing={row.missing}
+                partial={row.partial}
+              />
+              <span className="text-[10px] text-foreground tabular-nums">
+                {row.highF === null ? '—' : `${row.highF}°`}
+              </span>
+              <span className="text-[10px] text-foreground-muted tabular-nums">
+                {row.lowF === null ? '—' : `${row.lowF}°`}
+              </span>
+              {row.snowfallIn !== null && row.snowfallIn >= 0.1 && (
+                <span className="text-[10px] text-foreground-muted">{row.snowfallIn}″</span>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
 
       {state.largeBody && (
         // D151's grammar, one sensor over: say what WE measured, not what the lake did. This lake is

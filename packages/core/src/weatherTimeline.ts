@@ -54,7 +54,7 @@ import { cToF } from './units';
 // not mention. Within one package there is no excuse for a second copy; the only duplication this
 // module tolerates is the band edges, which cannot be imported because `@skating/design` is not a
 // dependency of core (see `BAND_EDGE_FREEZING_F`).
-import { SUNLIT_WM2 } from './weatherDay';
+import { isCompleteDay, SUNLIT_WM2 } from './weatherDay';
 import { CALM_FREEZE_MAX_KPH } from './weatherPanel';
 
 /** Lanes, top to bottom. The order is the render order and the reading order. */
@@ -233,6 +233,17 @@ export interface EmphasisSpan {
   width: number;
 }
 
+/**
+ * Height of the emphasis rail, in px — the bar drawn along an auxiliary lane's baseline.
+ *
+ * ⚠ **A rail rather than a full-height shaded region, and rendering it settled the question.** In a
+ * 24px lane a full-height highlight is indistinguishable from a tall value: a week that was calm and
+ * freezing throughout drew a block reaching the top of the wind lane, which reads as *high wind* —
+ * the exact opposite of what the emphasis means. A rail sits below the trace, cannot be mistaken for
+ * magnitude, and still answers "when".
+ */
+export const EMPHASIS_RAIL_HEIGHT = 3;
+
 export interface TemperatureLayer {
   box: LaneBox;
   /** One path per contiguous run of observed hours. **Never one path through a gap.** */
@@ -250,6 +261,15 @@ export interface AuxLayer {
   box: LaneBox;
   /** A filled area from the lane's baseline. Empty when nothing was observed. */
   area: string;
+  /**
+   * The same shape's **top edge only**, for stroking over the fill.
+   *
+   * ⚠ **Not decoration — it is what keeps the series readable inside its own emphasis.** The emphasis
+   * spans are filled blocks behind the trace, and against them a low-opacity area alone disappears:
+   * a week that was calm and freezing throughout renders as one featureless slab, which is precisely
+   * the reading where the wind detail matters most.
+   */
+  line: string;
   /** Spans where this lane's condition held. */
   emphasis: EmphasisSpan[];
   /** The value the lane's top represents, in the lane's own unit. */
@@ -498,7 +518,16 @@ function runsOf<T>(items: readonly T[], breaks: (prev: T, next: T) => boolean): 
   return runs;
 }
 
-/** Consecutive `true`s in `flags` become one span, positioned from `xs`. */
+/**
+ * Runs of consecutive hours where a condition held, as drawable spans.
+ *
+ * ⚠ **A gap ends a span, exactly as it breaks a path — and getting this wrong is worse here than on
+ * the line.** The first version only asked whether each *observed* hour qualified, so a cell that was
+ * calm and freezing on Wednesday and again on Friday drew **one continuous emphasis straight across a
+ * missing Thursday** — a solid block asserting a 72-hour black-ice window over a day nobody has any
+ * data for. A broken line is visibly absent; a filled span is a positive claim, so smoothing one over
+ * a hole invents evidence rather than merely hiding its absence. Caught by rendering it.
+ */
 function emphasisSpans(
   positioned: readonly PositionedHour[],
   hourWidth: number,
@@ -507,7 +536,14 @@ function emphasisSpans(
   const spans: EmphasisSpan[] = [];
   let start: number | null = null;
   let end = 0;
+  let previousX: number | null = null;
   for (const p of positioned) {
+    const broken = previousX !== null && p.x - previousX > hourWidth * MAX_INTERPOLATED_SLOTS;
+    if (broken && start !== null) {
+      spans.push({ x: start, width: end - start });
+      start = null;
+    }
+    previousX = p.x;
     if (holds(p.hour)) {
       // Spans are drawn from the *left edge* of the first qualifying hour to the right edge of the
       // last, not between hour centres. A single calm-freezing hour must still be a visible block
@@ -564,7 +600,12 @@ function auxLayer(
     .filter((d) => d.length > 0)
     .join(' ');
 
-  return { box, area, emphasis: emphasisSpans(positioned, hourWidth, holds), max };
+  const line = runs
+    .map((run) => linePath(run.map((p) => ({ x: p.x, y: y(p.v) }))))
+    .filter((d) => d.length > 0)
+    .join(' ');
+
+  return { box, area, line, emphasis: emphasisSpans(positioned, hourWidth, holds), max };
 }
 
 /**
@@ -746,6 +787,109 @@ export function weatherTimelineModel(input: WeatherTimelineInput): WeatherTimeli
  * Nearest rather than containing, so a drag past either end still reads the closest real hour instead
  * of falling off into `null`. Returns `null` only when the model holds no hours at all.
  */
+/**
+ * The archive payload's shape, as `getWeatherDaysForBody` returns it.
+ *
+ * ⚠ **Every list is optional, and that is not defensive padding.** `hours` was added in N6h
+ * Workstream D, so a client running a cached bundle against a newer backend — or any caller
+ * constructing this by hand — legitimately arrives without it. Treating a missing list as a hard
+ * error meant the *whole panel* vanished: the adapter threw, the fetch's own `.catch` swallowed it,
+ * and the sentences that had nothing to do with the chart disappeared along with it. An absent list
+ * is an empty one.
+ */
+export interface ArchiveTimelineInput {
+  days?: readonly { dayMs: number; localDate: string; hours?: number }[];
+  hours?: readonly {
+    dayMs: number;
+    localDate: string;
+    hours: readonly { localHour: number; temperatureC: number; [measure: string]: number }[];
+  }[];
+  missingDayMs?: readonly number[];
+}
+
+/**
+ * Turn the archive's two parallel lists into the day series the model consumes.
+ *
+ * **Shared rather than written twice**, for the reason the geometry is: two clients reconciling the
+ * same three lists by hand is two chances to decide differently which days count as holes.
+ *
+ * Three rules it enforces:
+ *
+ * 1. **`missingDayMs` wins over silence.** A day the archive explicitly could not get and a day that
+ *    simply produced no row are both holes, but only the first is *known* to be one — both are
+ *    emitted, so neither is quietly dropped from the axis and the window keeps its true width.
+ * 2. **A day with a summary but no hours is still a column.** It draws its label, its divider and its
+ *    gap; it just contributes no line. This is the normal state for cells whose daily rows predate
+ *    the hourly table, and it must not collapse the axis.
+ * 3. **Partial is derived from `hours`, not guessed from the date.** The archive already records how
+ *    many hours it observed, and `isCompleteDay` already knows that a DST day is 23 or 25 — so
+ *    comparing against "today" here would be a second, worse answer to a settled question.
+ */
+export function timelineDaysFromArchive(input: ArchiveTimelineInput): TimelineDayInput[] {
+  const inputDays = input.days ?? [];
+  const inputHours = input.hours ?? [];
+  const inputMissing = input.missingDayMs ?? [];
+  const hoursByDay = new Map(inputHours.map((h) => [h.dayMs, h]));
+  const summaryByDay = new Map(inputDays.map((d) => [d.dayMs, d]));
+  const keys = new Set<number>([
+    ...inputDays.map((d) => d.dayMs),
+    ...inputHours.map((h) => h.dayMs),
+    ...inputMissing,
+  ]);
+  const known = new Set(inputMissing);
+
+  return [...keys]
+    .sort((a, b) => a - b)
+    .map((dayMs) => {
+      const hourRow = hoursByDay.get(dayMs);
+      const summary = summaryByDay.get(dayMs);
+      const localDate = hourRow?.localDate ?? summary?.localDate ?? dayMsToLocalDateKey(dayMs);
+      const observed = summary?.hours;
+      return {
+        dayMs,
+        localDate,
+        ...(hourRow ? { hours: hourRow.hours.map(toTimelineHour) } : {}),
+        ...(known.has(dayMs) || (!hourRow && !summary) ? { missing: true } : {}),
+        // 23 rather than 24 — a spring-forward day is complete at 23 hours, and calling it partial
+        // would grey out a settled day once a year.
+        ...(typeof observed === 'number' && !isCompleteDay(observed) ? { partial: true } : {}),
+      };
+    });
+}
+
+/** Widen a stored hour (an open record of numbers) into the model's input type. */
+function toTimelineHour(h: {
+  localHour: number;
+  temperatureC: number;
+  [measure: string]: number;
+}): TimelineHour {
+  // Spelled out rather than looped over a key list: a loop needs a cast through `Record<string,
+  // unknown>` to satisfy `exactOptionalPropertyTypes`, and a cast here would silently accept a
+  // renamed stored field as `undefined` — which the chart would draw as "no wind" rather than fail on.
+  const num = (v: number | undefined) =>
+    typeof v === 'number' && Number.isFinite(v) ? v : undefined;
+  return {
+    localDate: '', // unused by the model, which buckets by the day that owns the hour
+    localHour: h.localHour,
+    temperatureC: h.temperatureC,
+    ...(num(h.precipitationMm) === undefined ? {} : { precipitationMm: h.precipitationMm }),
+    ...(num(h.rainMm) === undefined ? {} : { rainMm: h.rainMm }),
+    ...(num(h.snowfallCm) === undefined ? {} : { snowfallCm: h.snowfallCm }),
+    ...(num(h.snowDepthM) === undefined ? {} : { snowDepthM: h.snowDepthM }),
+    ...(num(h.windSpeedKph) === undefined ? {} : { windSpeedKph: h.windSpeedKph }),
+    ...(num(h.shortwaveWm2) === undefined ? {} : { shortwaveWm2: h.shortwaveWm2 }),
+    ...(num(h.weatherCode) === undefined ? {} : { weatherCode: h.weatherCode }),
+  };
+}
+
+/** `dayMs` → `YYYY-MM-DD`, for a hole that has neither a summary nor hours to name it. */
+function dayMsToLocalDateKey(dayMs: number): string {
+  const d = new Date(dayMs);
+  const mo = String(d.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(d.getUTCDate()).padStart(2, '0');
+  return `${d.getUTCFullYear()}-${mo}-${day}`;
+}
+
 export function hourAtX(model: WeatherTimelineModel, x: number): PositionedHour | null {
   if (model.hours.length === 0) return null;
   let best: PositionedHour | null = null;

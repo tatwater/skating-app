@@ -201,6 +201,20 @@ export function formatLocalHourLabel(startMs: number): string {
     : `${hour12}:${String(minutes).padStart(2, '0')} ${suffix}`;
 }
 
+/**
+ * A local hour-of-day (0–23) as a 12-hour clock label — `14` → `2 PM`.
+ *
+ * The sibling of {@link formatLocalHourLabel}, for the archive's hourly rows, which carry a plain
+ * `localHour` integer rather than a timestamp. Neither client should hand-roll the `% 12 === 0 ? 12`
+ * dance: both timelines print this under a scrub crosshair, and an off-by-one at noon or midnight is
+ * the kind of thing that reads fine until someone checks it against a clock.
+ */
+export function formatLocalHour(localHour: number): string {
+  if (!Number.isInteger(localHour) || localHour < 0 || localHour > 23) return '';
+  const suffix = localHour < 12 ? 'AM' : 'PM';
+  return `${localHour % 12 === 0 ? 12 : localHour % 12} ${suffix}`;
+}
+
 /** `2026-01-15` → `Jan 15`, for prose lines that name a date. */
 export function monthDayLabel(localDate: string): string {
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(localDate);

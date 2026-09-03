@@ -154,15 +154,37 @@ describe('PastWeatherPanel', () => {
     expect(await screen.findByText('3″')).toBeInTheDocument();
   });
 
-  it('passes the requested window to the action', async () => {
+  it('always reads the timeline range, whatever window the sentences describe', async () => {
+    // ⚠ **Deliberately decoupled in N6h Workstream D, and it used to be one number.** The chart pans
+    // back thirty days; the headline still describes seven, because "no snow in the last 30 days" is
+    // a much rarer and quite different claim from the seven-day one, and nothing in the copy would
+    // show that the window had moved. One request serves both — the archive's first touch already
+    // pulls 92 days, so the wider read costs no extra fetch.
     getDays.mockResolvedValue({
       days: [],
+      hours: [],
       missingDayMs: [],
       anyBorrowed: false,
       oneSampleForALargeBody: false,
     });
     render(<PastWeatherPanel days={14} waterBodyId={BODY} />);
-    await waitFor(() => expect(getDays).toHaveBeenCalledWith({ waterBodyId: BODY, days: 14 }));
+    await waitFor(() => expect(getDays).toHaveBeenCalledWith({ waterBodyId: BODY, days: 30 }));
+  });
+
+  it('scopes the sentences to the requested window, not the whole range', async () => {
+    const many = Array.from({ length: 30 }, (_, i) =>
+      day(`2026-01-${String(i + 1).padStart(2, '0')}`),
+    );
+    getDays.mockResolvedValue({
+      days: many,
+      hours: [],
+      missingDayMs: [],
+      anyBorrowed: false,
+      oneSampleForALargeBody: false,
+    });
+    render(<PastWeatherPanel days={7} waterBodyId={BODY} />);
+    // Seven of the thirty stored days, because that is the window the copy claims to describe.
+    expect(await screen.findByText('7 nights below 20°F')).toBeInTheDocument();
   });
 
   it('does not leave a stale panel up when the body changes', async () => {
