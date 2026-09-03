@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_THAW_RUN_DAYS, ingestWindow, type SiteSeries } from './ingestGate';
+import { DEFAULT_THAW_RUN_DAYS, ingestWindow, type SiteSeries, thawClose } from './ingestGate';
 
 /** `count` days from `start`, each with the given low. */
 function series(siteId: string, start: string, lows: number[], sentinel?: boolean): SiteSeries {
@@ -216,5 +216,66 @@ describe('ingestWindow — closing', () => {
     const window = ingestWindow([{ siteId: 'valley-a', days }]);
     // Only ~6 warm days actually reported across that span, short of the 10-day run.
     expect(window.closesOn).toBeNull();
+  });
+});
+
+describe('thawClose — the live checker cannot re-derive winterFrom', () => {
+  it('closes on a series that does not reach back to the freeze-up', () => {
+    // The real shape: it is April, the checker holds 92 days back to mid-January, and the region
+    // actually froze in December. `ingestWindow` finds no winterFrom in this window and would
+    // return closesOn: null for ever — which is how a season silently never closes.
+    const spring = [
+      series(
+        'valley-a',
+        '2026-04-01',
+        Array.from({ length: 20 }, () => 6),
+      ),
+      series(
+        'valley-b',
+        '2026-04-01',
+        Array.from({ length: 20 }, () => 5),
+      ),
+    ];
+    expect(ingestWindow(spring).closesOn).toBeNull();
+    expect(thawClose(spring, '2025-12-14')).toBe(
+      new Date(Date.UTC(2026, 3, DEFAULT_THAW_RUN_DAYS)).toISOString().slice(0, 10),
+    );
+  });
+
+  it('resets the run on any overnight freeze, and on any site going dark', () => {
+    const lows = Array.from({ length: 20 }, () => 6);
+    lows[5] = -1; // one cold night part-way through
+    const withFreeze = [series('a', '2026-04-01', lows), series('b', '2026-04-01', lows)];
+    // Still closes, but only after a fresh unbroken run following the freeze.
+    expect(thawClose(withFreeze, '2025-12-14')).toBe('2026-04-16');
+
+    // A site that stops reporting must not be counted as thawed — a missing series cannot end a
+    // season, which is the opening rule's OR pointed the other way.
+    const short = [
+      series(
+        'a',
+        '2026-04-01',
+        Array.from({ length: 20 }, () => 6),
+      ),
+      series('b', '2026-04-01', [6, 6]),
+    ];
+    expect(thawClose(short, '2025-12-14')).toBeNull();
+  });
+
+  it('treats a winterFrom inside the series as a lower bound', () => {
+    const days = [
+      series(
+        'a',
+        '2026-04-01',
+        Array.from({ length: 20 }, () => 6),
+      ),
+      series(
+        'b',
+        '2026-04-01',
+        Array.from({ length: 20 }, () => 6),
+      ),
+    ];
+    // Freeze-up recorded mid-window: the run may only start after it, so the close slips by five.
+    expect(thawClose(days, '2026-04-05')).toBe('2026-04-15');
   });
 });

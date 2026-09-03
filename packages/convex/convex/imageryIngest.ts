@@ -39,7 +39,14 @@
  * threshold below leans early on purpose, and so does the site sampling.
  */
 
-import { archiveSeasonAt, ingestWindow, type SiteSeries, seasonOf } from '@skating/core';
+import {
+  archiveSeasonAt,
+  DEFAULT_THAW_RUN_DAYS,
+  ingestWindow,
+  type SiteSeries,
+  seasonOf,
+  thawClose,
+} from '@skating/core';
 import { v } from 'convex/values';
 
 import { internal } from './_generated/api';
@@ -142,6 +149,26 @@ export const seasonRecord = internalQuery({
       .unique(),
 });
 
+/**
+ * Record the date a season closed, once.
+ *
+ * ⚠ **Only ever set on a row that has none.** Ice-out is a one-way door within a season: a late cold
+ * snap after ten thawed days does not un-close it, and letting a later tick move the date would make
+ * the field a description of the last time we looked rather than of the melt.
+ */
+export const recordSeasonClose = internalMutation({
+  args: { season: v.string(), closesOn: v.string() },
+  handler: async (ctx, { season, closesOn }) => {
+    const row = await ctx.db
+      .query('imageryIngestSeasons')
+      .withIndex('by_season', (q) => q.eq('season', season))
+      .unique();
+    if (!row || row.closesOn !== undefined) return null;
+    await ctx.db.patch(row._id, { closesOn, closedAt: Date.now() });
+    return row._id;
+  },
+});
+
 export const recordSeasonOpen = internalMutation({
   args: {
     season: v.string(),
@@ -231,7 +258,8 @@ type SeasonWatchResult =
       opensOn?: string;
     }
   | { open: false; season: string; sitesSampled: number }
-  | { open: true; season: string; opensOn: string; openedBy: string[] };
+  | { open: true; season: string; opensOn: string; openedBy: string[] }
+  | { closed: true; season: string; closesOn: string };
 
 /**
  * The daily tick.
@@ -259,8 +287,21 @@ export const maybeCheckSeasonOpen = internalAction({
     // note on why the founder moved this to October.
     if (month < START_MONTH && month >= 7) return { skipped: 'before October' as const, season };
 
+    // ⚠ **An opened season is not a finished one — the tick keeps running to find the close.**
+    //
+    // This used to return here on any recorded row, which meant `ingestWindow` computed a perfectly
+    // good `closesOn` that nothing ever persisted. Two consumers pay for that: imagery keeps cutting
+    // granules into July, and N6h's corpus-wide weather sweep (D161) keeps spending ~4,300
+    // Open-Meteo calls a day right through the spring, because the only thing it can gate on is the
+    // presence of `opensOn`. So the row is complete when it has *both* dates, not one.
     const already = await ctx.runQuery(internal.imageryIngest.seasonRecord, { season });
-    if (already) return { skipped: 'already recorded' as const, season, opensOn: already.opensOn };
+    if (already?.closesOn !== undefined) {
+      return { skipped: 'already recorded' as const, season, opensOn: already.opensOn };
+    }
+    // A season cannot close before the region froze, and `winterFrom: null` means it never did.
+    if (already && already.winterFrom === null) {
+      return { skipped: 'already recorded' as const, season, opensOn: already.opensOn };
+    }
 
     const sites = await ctx.runQuery(internal.imageryIngest.gateSites, {});
     if (sites.length === 0) return { skipped: 'no sites' as const, season };
@@ -284,6 +325,29 @@ export const maybeCheckSeasonOpen = internalAction({
       .map((s) => ({ ...s, days: s.days.filter((d) => d.date >= floor) }))
       .filter((s) => s.days.length > 0);
     if (series.length === 0) return { skipped: 'no observations' as const, season };
+
+    // The already-open case: look only for the close, and do it against the **recorded**
+    // `winterFrom`. Re-deriving it is impossible here — `past_days` is 92, so by the spring tick
+    // that would actually close a season the date the region froze is months out of the window, and
+    // `ingestWindow` would return `closesOn: null` for ever. See `thawClose`.
+    if (already?.winterFrom) {
+      const closesOn = thawClose(series, already.winterFrom);
+      if (!closesOn) {
+        return {
+          open: true as const,
+          season,
+          opensOn: already.opensOn,
+          openedBy: already.openedBy,
+        };
+      }
+      await ctx.runMutation(internal.imageryIngest.recordSeasonClose, { season, closesOn });
+      console.warn(
+        `[imagery] ${season} ingest window CLOSED on ${closesOn} ` +
+          `(${series.length} sites, ${DEFAULT_THAW_RUN_DAYS} thawed days). ` +
+          `Corpus-wide weather sweep stands down until the next season opens.`,
+      );
+      return { closed: true as const, season, closesOn };
+    }
 
     const window = ingestWindow(series);
     if (!window.opensOn) return { open: false as const, season, sitesSampled: series.length };

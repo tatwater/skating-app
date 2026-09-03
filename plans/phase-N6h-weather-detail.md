@@ -2,9 +2,10 @@
 
 > **Status:** 🚧 **PR 1 BUILT 2026-09-03 on `phase-n6h-weather-detail-1`** — Workstreams **A + B + C +
 > G** (the re-key, the durable archive, the past-weather panel on both clients, and the dark
-> thickness instrument). Unpushed, no PR opened, undeployed; founder is running the code-review skill
-> in a fresh thread first. **D + E + F not started.** Suites: core 2,327 · convex 1,377 · web 495 ·
-> mobile 108 · etl 433, `lint` and `check-types` clean across all 13 tasks.
+> thickness instrument), then a **review pass on the same branch** adding D162 (solar weighting) and
+> D163 (the season close). Unpushed, no PR opened, **undeployed — which is why the panel does not
+> render on the running web app.** **D + E + F + H not started.** Suites: core 2,348 · convex 1,388 ·
+> web 497 · mobile 108 · etl 433, `lint` and `check-types` clean across all 13 tasks.
 > See *§What PR 1 shipped, and where it differs from this plan* below.
 > Scoped 2026-09-02. Founder ask, same day. Grew out of a costing
 > question — *"what is most expensive about this plan?"* — and the answer moved the design: the
@@ -13,7 +14,8 @@
 > **Touches:** `weather.ts` (the sample-point key, the fetch spec), `weatherCache` /
 > `weatherForecastCache`, the N5a season boundary, the N6c wind rose + fetch profile, Phase 4
 > drive-time, the Phase 5 feed filter row, and the N6e imagery scrubber + Fly/R2 cutter pattern.
-> **Decisions:** **D152–D161** (drafted below; written into [`01-decisions.md`](./01-decisions.md) 2026-09-03).
+> **Decisions:** **D152–D163** (drafted below; D152–D161 written into
+> [`01-decisions.md`](./01-decisions.md) 2026-09-03, D162–D163 still owed).
 > **Supersedes one Phase 10 rule:** *"never the archive API"* was right for its use case and is wrong
 > for this one. See D153.
 >
@@ -183,6 +185,139 @@ fixed one.
 - **The N5a season rollup.** An optimisation for a season that has not happened: 150 daily rows per
   cell is ~548 MB against Convex Pro's included 50 GB, and the rows are append-only. Can land any
   time before the season closes.
+
+---
+
+## PR 2 — the review pass, 2026-09-03
+
+A `/code-review xhigh --fix` before opening the PR found 15 issues (13 fixed mechanically; the two
+left are below). The founder's read of the findings then turned three of them into design work.
+Details in the decisions they produced — **D162** (solar weighting) and **D163** (the season close) —
+plus the plan corrections marked ⚠ **PR 2** in D159, F and the workstream list.
+
+**The three bugs worth remembering**, all of the same family: two true numbers making one false
+sentence.
+
+1. `getWeatherDaysForBody` anchored its window on the **UTC** day while rows are keyed by the lake's
+   **local** date, so between UTC midnight and local midnight — all evening, prime browsing — the
+   newest day looked permanently missing. Every drawer-open refetched, and the panel printed *"1 day
+   of weather unavailable"* nightly. The test harness hid it by minting local dates off the UTC clock.
+2. `borrowFromFilter` returned a *count* and the caller did `stillMissing.slice(borrowed)`, assuming
+   the parent covered the first N holes when it returns an arbitrary subset. A parent covering only
+   the newest hole left the oldest silently unrecorded — precisely the "absent day reads as *no snow
+   fell*" failure D161 step 4 exists to prevent.
+3. The snow headline paired a whole-window total with the most recent snow day under the word
+   *since*: *"4.3 in of snow since Feb 6"* when 0.4 in fell since Feb 6. Now *"…of snow, last on
+   Feb 4"*. D3 broken by grammar rather than by inference.
+
+**⚠ The panel was invisible on the running web app, and it was not a bug.** `weatherArchive` is not
+deployed to `agile-bee-397` — the branch is unpushed and undeployed, so the action throws, the
+component's deliberate fail-open-and-quiet `catch` swallows it, and `rows.length === 0` renders
+`null`. `pnpm convex-dev --once` from `packages/convex` fixes it. Worth knowing that **a missing
+deployment and a lake with no weather are indistinguishable on screen** by design.
+
+**One finding left unfixed and unchanged:** `wind_direction_10m` in the shared `HOURLY_VARS` takes
+every weather call to 1.1× billing weight for a variable only the archive parses. Documented as
+deliberate and pinned by two tests; splitting the archive's variable list is a cost decision, not a
+bug fix.
+
+---
+
+## D162 — The sun is weighted by energy and albedo, never by hours
+
+**Founder question, 2026-09-03:** *"An hour of sun at solar noon vs at sunset are going to have very
+different effects on the ice, right?"*
+
+**Right, and `hoursOfSun` could not see the difference.** Irradiance on a horizontal surface scales
+with the sine of the solar elevation angle; at 44°N in January the sun peaks near 25° (sin ≈ 0.42)
+and reaches zero at both ends of the day. A duration counts a noon hour and a dusk hour the same. So
+does a 6-hour December day and a 6-hour March day, which are not remotely the same event.
+
+**The fix is not to reweight the hours — it is to stop using hours.** `shortwave_radiation` is
+already in `HOURLY_VARS` and already summed into `insolationWhM2`; irradiance has the solar geometry
+inside it by construction, so the correct measure was one field away and simply unused.
+
+**⚠ And the larger term was missing entirely: albedo.** Fresh snow reflects 0.8–0.9 of incoming
+shortwave; bare clear ice reflects ~0.1, with observed lake values as low as 0.075. An identical
+3 kWh/m² day therefore deposits roughly **9× more energy into black ice than into the same lake under
+5 cm of snow**. Any sun term that ignores the surface is wrong by more than it is right. Three fields
+land:
+
+- **`absorbedInsolationWhM2`** — Σ shortwave × (1 − albedo), with albedo estimated per *hour* from
+  that hour's snow depth. Per hour, not per day: a shallow cover that melts out by noon leaves the
+  afternoon absorbing like bare ice, and the afternoon is the one that matters.
+- **`sunlitThawHours`** — hours both above freezing and genuinely sunlit (≥ 120 W/m²). The founder's
+  own observation, and the mechanism the literature agrees on: *"a single afternoon with sun above
+  freezing will make the ice's surface sticky and soft in a way that kind of ruins it."* Shortwave
+  penetrates clear ice and melts it internally at the grain boundaries, producing candled, rotten ice
+  with little load-bearing capacity — a process that runs while the **air is still below freezing**,
+  which is exactly why air temperature alone under-describes a spring thaw. A grey 2 °C day and a
+  sunny 2 °C day score identically on `hoursAboveFreezing` and differently here.
+- **`meltIndexMm`** — the standard *enhanced temperature-index* form from glaciology,
+  `M = TF·T + SRF·(1−α)·SW`, which exists precisely because pure degree-day models miss that melt is
+  governed to a large extent by radiation. Our SRF is not a tuned parameter: it is the latent heat of
+  fusion, 92.8 Wh/m² per mm. Only TF is empirical, and it is the obvious thing for D160's instrument
+  to fit.
+
+**Three guardrails, matching D160's.**
+
+- **`meltIndexMm` never reaches a skater surface, in any unit, under any label.** It is a number
+  about a *model*, and an implied millimetre of melt is one step from a load-bearing claim. Its only
+  legitimate readers compare it against reality (the operator instrument) or spend money on it (the
+  season close).
+- **The panel line stays an observation.** *"7 sunny hours above freezing, over 2 days"* names
+  weather. It does not say the ice is soft, even though that is why the line is worth printing.
+- **`hoursOfSun` survives, with a warning on it.** It is the right answer to *"was it sunny?"* and
+  the wrong answer to *"how much did the sun do?"*, and now says so in its docblock.
+
+**⚠ What this does not model, and should not be read as modelling:** snow insulation of the ice
+below, water depth, current, springs, wind-driven turbulent exchange, or ice thickness. Albedo here
+is a property of the *snow*, inferred from depth alone — nothing in the archive knows whether the ice
+underneath is black, white, or gone.
+
+---
+
+## D163 — The season closes on the signal we already had, and nothing was reading it
+
+**Founder question:** *"Wait — the season gate never closes? How do we know when a season is over?
+Does that affect our ability to notice when a new season begins?"*
+
+**Correcting the review's framing, because it changes the work.** The review said the close had to be
+designed. It did not: **`ingestWindow` has computed `closesOn` since N6e** — ten consecutive days on
+which every ordinary site went without an overnight freeze, measured from `winterFrom`, calibrated
+against real 2025-26 weather to land on 5 May 2026 against a typical Vermont ice-out of mid-April to
+early May. What was missing was three lines of wiring:
+
+1. `imageryIngestSeasons` had **no column** for it.
+2. `maybeCheckSeasonOpen` returned `skipped: 'already recorded'` on **any** row, so once a season
+   opened the checker never looked again and the computed close was thrown away every day.
+3. The weather sweep's gate therefore had only one edge — `opensOn` present — and ran from
+   mid-November to the July label rollover: **~228 days against the ~151 D161 was costed on.**
+
+**No, it does not affect noticing a new season.** `maybeCheckSeasonOpen` keys on the season *label*
+(D63's July boundary), so a new season is a new row and the gate re-arms on its own. Closing one
+season and opening the next are independent.
+
+**⚠ The one thing that could not be reused, and would have failed silently.** A live checker cannot
+re-derive `winterFrom`: `past_days` is 92, so by the April tick that would actually close a season
+the December date the region froze is months outside the fetch window. `ingestWindow` would find no
+`winterFrom`, return `closesOn: null`, and the season would never close — with the logs reporting a
+perfectly tidy open window. So the closing half is split out as `thawClose(sites, winterFrom)` and
+fed the **recorded** date.
+
+**Three consumers, one signal, and the reluctance is right for all of them.** Imagery stops cutting
+granules; the Tier-B weather sweep stands down; the archive stops growing. All three would rather be
+two weeks late than one week early — closing early truncates the melt-out record *and* blinds
+discovery during the last skateable weeks of the season, which is when the ice is most marginal and
+a skater most wants to know what the weather has done to it. Against a budget with ~2 M calls spare,
+buying that reluctance costs nothing worth counting.
+
+**⚠ What the close is NOT, and must not become.** It is a coarse region-wide *ice-out* signal for
+gating spend. It is **not** a per-lake claim that skating is over, and D162's melt fields must not be
+promoted into one. A lake is not a region, and the whole argument of D161 — that a gate and a
+discovery predicate should not share a threshold, a code path, or a bug — applies here unchanged.
+The founder's *"several days like that ruins it"* is a real signal and its home is the **panel**, as
+observations about weather, not a switch that turns anything off.
 
 ---
 
@@ -583,10 +718,31 @@ small documents. The pipeline:
 The cost is then *proportional to the answer*, not to the corpus. This is the same lesson as N1's
 two-tier fix, one dataset over.
 
-**⚠ Better still, precompute the predicate inputs.** Store a small daily per-cell digest of the handful
-of quantities filters actually ask about (nights below thresholds, snow since, freeze-run length, thaw
-hours) so the common queries are index range scans rather than scan-and-filter. Adding a filter
-dimension later then means adding a field, not a scan.
+**⚠ PR 2 correction — the per-cell digest is not an optimisation, it is the only shape that fits.**
+This was written as *"better still, precompute the predicate inputs"*, which undersold it into a
+nice-to-have. Do the arithmetic: **3,043 Tier-B cells × a 7-day predicate window = ~21,300 documents
+in one query**, against Convex's **16,384-document read cap** — and that is *before* resolving a
+single body. The founder's own example query (*"three nights below 20°F and no snow since"*) does not
+run. Steps 1–3 above describe a pipeline that hits the cap on its headline use case, which is the
+third time this repo has drawn that shape (`listInViewport` at N1, the N6d access load at 105 GB).
+
+So step 1 becomes: **one rolling digest document per cell**, updated by the daily sweep, holding the
+handful of quantities filters ask about — nights below each threshold, days since snow, freeze-run
+length, thaw hours, and D162's `sunlitThawHours`. 3,043 small documents, one read each, no window
+multiplier. Adding a filter dimension later then means adding a field, not a scan.
+
+**⚠ PR 2 correction — `weatherCellKeyB` as a single field cannot represent a giant.** Hole 2 answers
+*"does `weatherDays` store one row per sample point for multi-point bodies? It should"* — and step 2
+above then stamps exactly **one** cell on `waterBodies`. Champlain spans many, and Convex has no
+array/contains index, so a single field cannot be made to work by widening its type. Two honest
+options, and it is a schema decision that hole 7's migration should settle rather than discover:
+
+- **Anchor cell only.** Cheapest; a giant is findable through the cell holding its interior point and
+  invisible through the others. Then the result card must say so, or the filter promises a claim
+  about a lake it checked in one spot.
+- **A `bodyWeatherCells` join table** (`cellKeyB` → `bodyId`, indexed both ways). One more small
+  table, and it makes *"which part of the lake matched"* answerable — which is what the card needs
+  anyway, and what the sub-area question below is really asking for.
 
 **⚠ A spec gap worth catching now: "no snow *since*" has no anchor without a report.** Every
 since-style predicate we have today borrows its start from a user-visible entity (`resolveStripAnchor`
@@ -705,6 +861,141 @@ The gate wants the coarse, boring, region-wide signal precisely because it is ha
 
 ---
 
+## ⚠ Open question 5 — how a giant gets its weather: sample grid, or sub-areas?
+
+**Founder, 2026-09-03:** *"I think we should be trying to get the best, most localized weather data we
+can for large bodies, probably based on their sub-area bays? Rather than one weather report based on
+the center point of the lake which most skaters might not even reach."*
+
+**These are two different fixes to two different halves of hole 2, and an earlier thread offered only
+the first.** The sample grid answers *"the panel has one reading for a 170 km lake."* Sub-areas answer
+*"the one reading is for a place nobody skates."* They compose; they do not compete.
+
+### Measured on dev, 2026-09-03 — and the numbers settle it
+
+128 sub-areas across 22 bodies, resolved to Tier-A cells (0.05° + 100 m band):
+
+| body | sub-areas | distinct Tier-A cells | sharing the body's anchor cell |
+|---|---|---|---|
+| Lake Winnipesaukee | 48 | 19 | **1** |
+| Moosehead Lake | 13 | 9 | **0** |
+| **Lake Champlain** | **10** | **10** | **0** |
+| Squam Lake | 7 | 4 | 3 |
+| Lake Placid | 5 | 2 | 4 |
+| Pine River Pond | 8 | 2 | 7 |
+| Stillwater Reservoir | 3 | 1 | 3 |
+
+**⚠ Champlain's ten named bays land in ten distinct weather cells, and not one of them is the cell the
+panel currently reads.** Malletts Bay, Burlington Bay, Shelburne Bay, Broad Lake — the places people
+actually skate and actually talk about (Malletts Bay is 26 mentions in the Google Group corpus,
+Button Bay 32, both out-ranking most whole lakes) — are all described today by a reading taken
+somewhere none of them are. That is worse than the "one reading for a big lake" framing suggested:
+it is one reading for a spot on the lake that is not any of the destinations.
+
+**And the shape is self-limiting, which is what makes it affordable.** On Pine River Pond seven of
+eight sub-areas share the anchor cell; on Stillwater Reservoir all three do. Below roughly a cell's
+width the sub-areas collapse onto the same key and fetch nothing extra. Cost scales with a lake's
+actual geographic spread rather than with a spacing constant — **~60 additional Tier-A cells for the
+whole corpus**, against a free tier of 10,000 calls/day.
+
+### The comparison
+
+| | **Sample grid** (`suggestSamplePoints`, 11 km) | **Sub-areas** (`waterBodySubAreas`) |
+|---|---|---|
+| **What it produces** | A regular lattice of unnamed points | Named places: *Malletts Bay*, *Broad Lake* |
+| **Champlain** | ~15–20 points | 10 bays, already drawn |
+| **Which one does the panel show?** | ⚠ **Unanswered** — a grid has no target, so the panel must pick, and "point 7 of 18" is not a claim | Falls out: the sub-area the user selected, else the body anchor, and the label names it |
+| **Operator work** | One action per body, three bodies owed, judgement on spacing | **None — 128 already placed** |
+| **Coverage** | Any body, on demand | Only the 22 bodies that have them |
+| **Cost on small lakes** | A grid is placed regardless | Collapses to the anchor cell; free |
+| **Serves D159's "where matched?"** | No — a grid index is not a place name | Yes, directly |
+| **⚠ Resolution mismatch** | 11 km spacing is **coarser than Tier A's 5.6 × 4.0 km cell**, so adjacent grid points can share a key and buy nothing | Bays are naturally spaced by geography, and the table above shows they separate |
+
+### Recommendation: sub-areas first, grid as the fallback
+
+1. **Sub-areas become the weather unit for any body that has them.** No new data, no operator task,
+   and it fixes the sharper half of the problem — the reading describes somewhere with a name.
+2. **The grid stays available for giants with no sub-areas.** Memphremagog (41 km) and Connecticut
+   River Reservoir (20 km) have none, so they keep today's honest caveat line until either a grid or
+   a bay is drawn on them.
+3. **⚠ Do not run the grid on Champlain now.** It would create the unanswered question in row 3 above
+   — several points, no target, and no decision about which one the panel claims. Sub-areas answer
+   that by construction, so let them.
+4. This also picks the `bodyWeatherCells` option in D159's second PR 2 correction: the join becomes
+   *cell → sub-area → body*, and the result card can say **which bay** matched instead of asserting
+   something about 170 km of lake.
+
+### How the parent body describes itself — the spread, not the envelope
+
+**Founder, 2026-09-03:** *"What do you think about combining weather somehow from all sub-areas when
+describing a parent body? The highest high, lowest low, most precipitation, most wind… And then offer
+an affordance to filter to one of the sub-areas? Or say something like '___ Bay is your best bet for
+a good day tomorrow'."*
+
+**The instinct is right and one of the three mechanisms is a trap.** Taking the union of extremes —
+max high, min low, max precip, max wind — builds a **day that happened nowhere.** On Champlain the
+highest high might be Burlington Bay and the lowest low Missisquoi, 60 km apart; printed as one row
+it describes a lake that was simultaneously the warmest and the coldest place on itself. Every number
+true, the row false. That is the same failure the review just caught three times in one PR (the
+`since`-vs-total snow line, the UTC-vs-local day anchor, the borrowed-days count) and it is worth
+naming as a class rather than re-deriving each time.
+
+**⚠ It is also not even consistently conservative, which is the subtler problem.** A worst-case
+envelope assumes every axis points the same way, and for ice they do not: *lowest low* reads as
+**reassuring** (colder → better ice) while *most wind* and *most snow* read as **discouraging**. So
+the composite is a lake that froze harder than any part of it did *and* got more snow than any part
+of it did. It is not pessimistic or optimistic; it is incoherent.
+
+**What replaces it: report the spread, and name its ends.** The honest aggregate of ten places is a
+range whose extremes are places:
+
+> *Across 10 bays — lows −18 °C to −11 °C. Coldest: Missisquoi Bay. Mildest: Burlington Bay.*
+>
+> *Snow since Tuesday: none at Malletts Bay, 4″ at Broad Lake.*
+
+Every sentence is true of somewhere real, the variation is presented *as* variation instead of
+collapsed, and — the useful part — **the named extremes are the tap targets.** The affordance stops
+needing to be explained, because the data does the pointing.
+
+**And when the bays agree, collapse it.** If the cells fall inside a threshold, one line: *"Similar
+across the lake."* That is the common case in a cold snap, and printing ten rows of the same weather
+is how a panel teaches people to skip it.
+
+**⚠ On *"___ Bay is your best bet"* — no, and this is the clearest D3/D150 line in the phase.** It is
+a recommendation to drive somewhere, derived from air temperature alone, by a system that knows
+nothing about that bay's depth, current, springs, or whether anyone has been on it. It is the most
+counsel-shaped sentence available short of a thickness in inches.
+
+**The honest version is a sort, not a sentence.** Let the user pick the criterion and do the
+arithmetic in public:
+
+> *Bays by coldest nights:* Missisquoi · Broad Lake · St. Albans …
+> *Bays by least snow:* Malletts · Shelburne …
+
+Same information, same decision reached, and the app never claims the conclusion. *"Your best bet"*
+is the app judging; *"sorted by coldest nights"* is the user judging and the app counting. That
+distinction is exactly D150's grammar, and it is what lets this ship at all.
+
+### ⚠ The spread is free, and it comes off the tier that already exists
+
+The obvious cost objection — *opening Winnipesaukee now means 19 Tier-A fetches instead of 1* — does
+not apply, because **the spread should read Tier B.** Those rows are cron-populated corpus-wide
+through the season and cost nothing at read time, and Champlain's ten bays still resolve to seven
+distinct Tier-B cells (measured above), which is ample to rank bays against each other. Then:
+
+- **Tier B answers *"which part of the lake"*** — the spread, the sort, the extremes. Free.
+- **Tier A answers *"what is it like there"*** — one fetch, for the sub-area actually selected.
+
+That is D152's two tiers applied to one lake instead of to the corpus, which is a good sign the
+original split was cut in the right place. It also means the parent-body panel needs **no fetch at
+all** to draw its spread, and the drawer stays fast.
+
+**Still open for the founder:** whether the *default* view of a giant is the body anchor with the
+spread above it, or the highest-`displayScore` sub-area pre-selected. The spread-plus-anchor is more
+honest and the pre-selection is fewer taps; N2 already stores `displayScore`, so either is cheap.
+
+---
+
 ## Workstreams
 
 **A — Re-key (blocks everything).** Measure Tier-A cardinality with real elevations; implement the
@@ -735,8 +1026,52 @@ nobody opened. Ships as: the per-cell predicate digest, the `weatherCellKeyB` in
 the shared discovery-filter store across map and feed, and the body-result card. **⚠ Answer the
 feed-shape question (bodies vs reports) before building the card, not after.**
 
+**H — The three-tab drawer IA (open question 4).** ⚠ **PR 2 addition: this was resolved as an open
+question and then never listed as work, which is how it got skipped.** PR 1 stacked
+`PastWeatherPanel` flat into `WaterBodyDetail` on both clients, adding to exactly the pile the tabs
+exist to relieve — the web sidebar now runs alert → access → forecast → wind exposure → bathymetry →
+imagery → **past weather** → reports → hazards → bounties, and mobile's drawer snaps at 16/58/94%.
+**It blocks D**: there is nowhere coherent to put a 7-day grid plus an hourly strip until it lands.
+
+Ships as:
+
+- **Web: shadcn/ui `Tabs`** (founder call, 2026-09-03) — `Tabs` / `TabsList` / `TabsTrigger` /
+  `TabsContent`, which brings the roving-tabindex and `aria-controls` wiring for free rather than
+  hand-rolled buttons. ⚠ **Not yet vendored** — `apps/web/src/components/ui/` has fifteen components
+  and `tabs.tsx` is not among them, so H starts by adding it. The repo is on **Base UI**
+  (`@base-ui/react` ^1.6.0, `components.json` style `base-nova`), *not* Radix — founder correction,
+  2026-09-03, and the `add` handles it.
+- **Mobile: not shadcn** — the primitives are web-only regardless of which library backs them. A
+  three-segment control over the same three content groups, with the tab list pinned outside the
+  scroll view so it survives the 16% snap point.
+- **One shared tab-selection store, session-scoped and body-independent**, per the founder's
+  *"preserve tab selection and see how it feels"*. Comparing five lakes on *Planning* should not
+  cost four re-selections.
+- **⚠ The NWS alert stays above the tab strip on both clients.** A tabbed alert is an alert you can
+  be one tap away from not seeing, and it is what preserves the authority ordering at
+  `WaterBodyDetail.tsx:215-216` under the new IA.
+- **Nothing is rewritten** — the existing panels are moved into groups, unchanged. Overview =
+  machine-compiled facts about the body; Reporting = user-supplied, this season; Planning = weather,
+  put-ins, directions, derived season trends.
+
 **F — Radar.** RainViewer proxied server-side as v1; MRMS-with-RQI as the honest version. Pay for the
 layer-registry refactor. Extract the lane pool from `useFreezeUpFrame.ts` first.
+
+⚠ **PR 2 founder call: F stays in, and it runs season-gated.** The review recommended deferring it
+past season one as the only workstream carrying a permanent recurring cost and a
+runs-every-ten-minutes-forever obligation. Overruled, with a reason: *"I think it's a real winning
+feature that will excite people about switching to this app."* That is an adoption argument, and the
+adoption argument outranks a ~$5/mo infrastructure argument — the cost was never the real objection,
+the *operational* burden was. So two conditions ride along:
+
+1. **The cutter is gated on `closesOn`/`opensOn`, exactly like the Tier-B sweep** (D163). A radar
+   loop nobody is reading in July is the same waste as a weather sweep nobody is filtering on, and
+   the gate now exists for free.
+2. **The AGPL §13 note becomes an L-item in
+   [`08-legal-feasibility-checklist.md`](./08-legal-feasibility-checklist.md) *before* the first Fly
+   deploy, not alongside it.** Borrowing LibreWXR's source selection and RQI handling is fine;
+   deploying a modified LibreWXR as a network service obliges us to offer that modified source to
+   its users. They sell commercial licences, which implies they expect this to bite.
 
 **G — The admin thickness instrument (D160).** Small: a Stefan estimator over the Tier-A/B degree-hour
 integrals, a role-gated `/admin` view, and a computed-vs-`measured` comparison table that accumulates
@@ -744,8 +1079,10 @@ across the season. Ship it **early in the phase, not late** — its entire value
 observations it collects, and every week it is not running is a week of data that cannot be recovered.
 
 **Suggested split:** A+B+C+G is a shippable phase on its own and is where the value is concentrated
-(G rides along because it is small and time-sensitive). D+E is a second. F is a third and depends on
-neither.
+(G rides along because it is small and time-sensitive) — **shipped as PR 1**. ⚠ **PR 2 revision:
+H comes next and alone**, because it is a cross-cutting UI refactor of both clients that blocks D and
+touches every existing panel — bundling it with new panels means reviewing a move and a build in one
+diff. Then D+E. F is last and depends on neither.
 
 ---
 

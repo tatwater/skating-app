@@ -1050,6 +1050,20 @@ export default defineSchema({
     openedBy: v.array(v.string()),
     /** First date the region itself froze, or `null` if winter had not established yet. */
     winterFrom: v.union(v.string(), v.null()),
+    /**
+     * Observed date the season closed — ten consecutive days on which every ordinary site went
+     * without an overnight freeze (`ingestWindow`'s reluctant ice-out proxy). Absent while the
+     * season is still open, which is the normal state from November to roughly May.
+     *
+     * ⚠ **This is the only "the season is over" signal in the system, and two very different
+     * consumers read it**: imagery ingest stops cutting granules, and N6h's corpus-wide weather
+     * sweep stops spending Open-Meteo calls. Both want the *same* reluctance — being late costs a
+     * few granule reads and a few thousand weather calls, while being early truncates the melt-out
+     * record and blinds discovery during the last skateable weeks of the season.
+     */
+    closesOn: v.optional(v.string()),
+    /** When `closesOn` was recorded, so a re-open (it happens; see the module note) is auditable. */
+    closedAt: v.optional(v.number()),
     /** How many sites actually returned observations — the honest denominator for `openedBy`. */
     sitesSampled: v.number(),
     detectedAt: v.number(),

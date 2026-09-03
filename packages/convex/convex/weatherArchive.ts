@@ -84,6 +84,22 @@ export const BACKFILL_PAST_DAYS = MAX_PAST_DAYS;
  */
 export const APPEND_PAST_DAYS = 3;
 
+/**
+ * How far back the **first** sweep of a season reaches.
+ *
+ * ⚠ **D161 claimed the first Tier-B run "hands D159 a region-wide freeze map on day one." With a
+ * 3-day append it hands over three days.** Every weather predicate worth filtering on is a window —
+ * *"three nights below 20°F and no snow since"* needs a week — so a cold archive makes the discovery
+ * surface useless for its first week, which is precisely the week the season opens and interest
+ * peaks.
+ *
+ * **14 rather than 7, because 14 is free.** Open-Meteo bills `ceil(days / 14) × (vars / 10)`, so
+ * 3 days and 14 days are both exactly one billing unit — the cost boundary sits at 15. The only
+ * thing extra days cost is Convex write I/O, which is why the *daily* append stays at 3 (it needs
+ * an overlap to complete a partial "today", not a fortnight of re-upserts).
+ */
+export const SEASON_OPEN_PAST_DAYS = 14;
+
 /** Cells per cron batch. The action reschedules itself; see `refreshTierDays`. */
 export const CELL_BATCH_SIZE = 40;
 
@@ -862,6 +878,18 @@ export const readCellDayRange = internalQuery({
  * - **⚠ Never re-derive "the season has begun" from cell weather.** A single cold cell in an
  *   Adirondack hollow in early November is weather, not a season. The gate wants the coarse, boring,
  *   region-wide signal precisely because it is hard to fool.
+ *
+ * ## ⚠ The gate has two edges, and for one PR it only had one
+ *
+ * Opening on `opensOn` and never closing meant the sweep ran from mid-November to the July season
+ * rollover — ~228 days against the ~151 D161 was costed on, quietly spending most of the saving the
+ * gate exists to make. The close is `closesOn`, recorded by the same checker (ten consecutive days
+ * with no overnight freeze at any ordinary site).
+ *
+ * **The close is deliberately reluctant, and this consumer wants that.** It lands roughly two weeks
+ * after a typical Vermont ice-out. Closing early would blind discovery during the last skateable
+ * weeks of the season — exactly when the ice is most marginal and a skater most wants to know what
+ * the weather has done to it — to save a few thousand calls against a budget with 2 M spare.
  */
 export const isSweepSeasonOpen = internalQuery({
   args: { nowMs: v.number() },
@@ -871,7 +899,12 @@ export const isSweepSeasonOpen = internalQuery({
       .query('imageryIngestSeasons')
       .withIndex('by_season', (q) => q.eq('season', season))
       .unique();
-    return { season, open: record?.opensOn !== undefined, opensOn: record?.opensOn ?? null };
+    return {
+      season,
+      open: record?.opensOn !== undefined && record.closesOn === undefined,
+      opensOn: record?.opensOn ?? null,
+      closesOn: record?.closesOn ?? null,
+    };
   },
 });
 
@@ -883,19 +916,53 @@ export const isSweepSeasonOpen = internalQuery({
  */
 export const maybeRefreshFilterTier = internalAction({
   args: {},
-  handler: async (ctx): Promise<{ started: boolean; season: string; reason?: string }> => {
-    const gate = await ctx.runQuery(internal.weatherArchive.isSweepSeasonOpen, {
-      nowMs: Date.now(),
-    });
+  handler: async (
+    ctx,
+  ): Promise<{ started: boolean; season: string; pastDays?: number; reason?: string }> => {
+    const now = Date.now();
+    const gate = await ctx.runQuery(internal.weatherArchive.isSweepSeasonOpen, { nowMs: now });
     if (!gate.open) {
-      return { started: false, season: gate.season, reason: 'season not open' };
+      return {
+        started: false,
+        season: gate.season,
+        reason: gate.closesOn === null ? 'season not open' : `season closed ${gate.closesOn}`,
+      };
     }
+
+    // Cold start? Yesterday is the newest day the sweep would ever have completed, so its absence
+    // means this tier holds nothing current — a season that just opened, or a sweep that has been
+    // down long enough for the gap ladder not to help. Reach back a fortnight instead of three days,
+    // which costs the same single Open-Meteo billing unit. See `SEASON_OPEN_PAST_DAYS`.
+    const cold = !(await ctx.runQuery(internal.weatherArchive.tierHasDay, {
+      tier: 'filter',
+      dayMs: todayKey(now) - DAY_MS,
+    }));
+    const pastDays = cold ? SEASON_OPEN_PAST_DAYS : APPEND_PAST_DAYS;
+
     // **Runs the first batch inline rather than scheduling it.** The sweep reschedules its own
     // remaining batches either way, so this costs exactly one batch of the same work the scheduled
     // version would have done — and in exchange the tick reports what actually happened instead of
     // only that it asked for something to happen.
-    await ctx.runAction(internal.weatherArchive.refreshTierDays, { tier: 'filter' });
-    return { started: true, season: gate.season };
+    await ctx.runAction(internal.weatherArchive.refreshTierDays, { tier: 'filter', pastDays });
+    return { started: true, season: gate.season, pastDays };
+  },
+});
+
+/**
+ * Does this tier hold anything at all for a given day? The cold-start test for
+ * {@link SEASON_OPEN_PAST_DAYS}.
+ *
+ * `.first()` rather than a count: the question is existence, and counting a corpus-wide day would
+ * read 3,043 rows to answer a boolean.
+ */
+export const tierHasDay = internalQuery({
+  args: { tier: literals(WEATHER_TIERS), dayMs: v.number() },
+  handler: async (ctx, { tier, dayMs }) => {
+    const row = await ctx.db
+      .query('weatherDays')
+      .withIndex('by_tier_day', (q) => q.eq('tier', tier).eq('dayMs', dayMs))
+      .first();
+    return row !== null;
   },
 });
 

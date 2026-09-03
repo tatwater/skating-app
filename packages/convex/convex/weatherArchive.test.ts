@@ -4,6 +4,7 @@ import { describe, expect, test, vi } from 'vitest';
 import { api, internal } from './_generated/api';
 import type { Id } from './_generated/dataModel';
 import schema from './schema';
+import { APPEND_PAST_DAYS, SEASON_OPEN_PAST_DAYS } from './weatherArchive';
 
 const modules = import.meta.glob('./**/*.*s');
 const DAY_MS = 86_400_000;
@@ -362,6 +363,80 @@ describe('weatherArchive: the season gate (D161)', () => {
     // keeps its own self-rescheduling batch loop. Drain the scheduler to see the effect.
     await t.finishInProgressScheduledFunctions();
     expect(fetchMock).toHaveBeenCalled();
+  });
+
+  test('stands down once the checker records the season closed', async () => {
+    // ⚠ The gate used to open on `opensOn` and never close, so the sweep ran from mid-November to
+    // the July label rollover — ~228 days against the ~151 D161 was costed on. `closesOn` is what
+    // makes the saving real, and this asserts the second edge exists.
+    const t = convexTest(schema, modules);
+    await seedBody(t);
+    await t.action(internal.weatherArchive.backfillWeatherCells, { tier: 'filter' });
+    const gate = await t.run((ctx) =>
+      ctx.runQuery(internal.weatherArchive.isSweepSeasonOpen, { nowMs: Date.now() }),
+    );
+    await t.run((ctx) =>
+      ctx.db.insert('imageryIngestSeasons', {
+        season: gate.season,
+        opensOn: '2025-12-01',
+        openedBy: ['sentinel pond'],
+        winterFrom: '2025-11-01',
+        closesOn: '2026-05-05',
+        closedAt: Date.now(),
+        sitesSampled: 25,
+        detectedAt: Date.now(),
+      }),
+    );
+
+    const fetchMock = vi.fn(async () => okJson(isoResponse(recentDates(3))));
+    vi.stubGlobal('fetch', fetchMock);
+    const result = await t.action(internal.weatherArchive.maybeRefreshFilterTier, {});
+    await t.finishInProgressScheduledFunctions();
+
+    expect(result.started).toBe(false);
+    expect(result.reason).toContain('2026-05-05');
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  test('the first sweep of a season reaches back a fortnight, not three days', async () => {
+    // D161 promised D159 "a region-wide freeze map on day one". A 3-day append delivers three days,
+    // which cannot answer a one-week predicate. 14 costs the same single Open-Meteo billing unit.
+    const t = convexTest(schema, modules);
+    await seedBody(t);
+    await t.action(internal.weatherArchive.backfillWeatherCells, { tier: 'filter' });
+    const gate = await t.run((ctx) =>
+      ctx.runQuery(internal.weatherArchive.isSweepSeasonOpen, { nowMs: Date.now() }),
+    );
+    await t.run((ctx) =>
+      ctx.db.insert('imageryIngestSeasons', {
+        season: gate.season,
+        opensOn: '2025-12-01',
+        openedBy: ['sentinel pond'],
+        winterFrom: '2025-11-01',
+        sitesSampled: 25,
+        detectedAt: Date.now(),
+      }),
+    );
+
+    const urls: string[] = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        urls.push(url);
+        return okJson(isoResponse(recentDates(SEASON_OPEN_PAST_DAYS)));
+      }),
+    );
+
+    // Cold archive: nothing held for yesterday, so the first tick reaches back.
+    const cold = await t.action(internal.weatherArchive.maybeRefreshFilterTier, {});
+    await t.finishInProgressScheduledFunctions();
+    expect(cold.pastDays).toBe(SEASON_OPEN_PAST_DAYS);
+    expect(urls[0]).toContain(`past_days=${SEASON_OPEN_PAST_DAYS}`);
+
+    // Warm now — the second tick is the cheap daily append again.
+    const warm = await t.action(internal.weatherArchive.maybeRefreshFilterTier, {});
+    await t.finishInProgressScheduledFunctions();
+    expect(warm.pastDays).toBe(APPEND_PAST_DAYS);
   });
 });
 

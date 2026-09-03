@@ -171,8 +171,7 @@ export function ingestWindow(sites: readonly SiteSeries[], options: GateOptions 
   const freezeC = options.freezeC ?? DEFAULT_FREEZE_C;
   const corpusFraction = options.corpusFraction ?? DEFAULT_CORPUS_FRACTION;
   const winterFraction = options.winterFraction ?? DEFAULT_WINTER_FRACTION;
-  const thawC = options.thawC ?? DEFAULT_THAW_C;
-  const thawRunDays = options.thawRunDays ?? DEFAULT_THAW_RUN_DAYS;
+  // `thawC` / `thawRunDays` are read by `thawClose`, which owns the closing half — see below.
 
   const sentinels = sites.filter((s) => s.sentinel);
   const others = sites.filter((s) => !s.sentinel);
@@ -231,6 +230,33 @@ export function ingestWindow(sites: readonly SiteSeries[], options: GateOptions 
   }
   if (winterFrom === null) return { opensOn, winterFrom: null, closesOn: null, openedBy };
 
+  return { opensOn, winterFrom, closesOn: thawClose(sites, winterFrom, options), openedBy };
+}
+
+/**
+ * The closing half on its own: the first date ending a run of {@link DEFAULT_THAW_RUN_DAYS}
+ * consecutive days on which **every** ordinary site went without an overnight freeze.
+ *
+ * ⚠ **Split out of {@link ingestWindow} because a live gate cannot re-derive `winterFrom`.** The
+ * daily checker fetches `past_days=92`, so by the April or May tick that would actually close a
+ * season the December date the region froze is months outside the window — `ingestWindow` would
+ * find no `winterFrom`, return `closesOn: null`, and the season would never close. The recorded
+ * `winterFrom` is passed in instead, which is both correct and cheaper: it is already on the row.
+ *
+ * The date filter is a lower bound only, so a `winterFrom` that predates the series is a harmless
+ * no-op rather than an error — which is exactly the live-checker case.
+ */
+export function thawClose(
+  sites: readonly SiteSeries[],
+  winterFrom: string,
+  options: GateOptions = {},
+): string | null {
+  const thawC = options.thawC ?? DEFAULT_THAW_C;
+  const thawRunDays = options.thawRunDays ?? DEFAULT_THAW_RUN_DAYS;
+  const others = sites.filter((s) => !s.sentinel);
+  const dates = allDates(sites);
+  const index = indexLows(sites);
+
   // Ordinary sites only — see the asymmetry note above. Falls back to the full roster when the
   // corpus is all sentinel, so a single-site run still terminates rather than never closing.
   const closingSites = others.length > 0 ? others : sites;
@@ -248,7 +274,6 @@ export function ingestWindow(sites: readonly SiteSeries[], options: GateOptions 
   const closingSiteIds = new Set(closingSites.map((s) => s.siteId));
 
   let run = 0;
-  let closesOn: string | null = null;
   for (const date of dates) {
     if (date <= winterFrom) continue;
     const lows = lowsOn(closingSites, date, index);
@@ -264,11 +289,7 @@ export function ingestWindow(sites: readonly SiteSeries[], options: GateOptions 
     const allThawed =
       reporting.length === closingSiteIds.size && reporting.every((low) => low > thawC);
     run = allThawed ? run + 1 : 0;
-    if (run >= thawRunDays) {
-      closesOn = date;
-      break;
-    }
+    if (run >= thawRunDays) return date;
   }
-
-  return { opensOn, winterFrom, closesOn, openedBy };
+  return null;
 }
