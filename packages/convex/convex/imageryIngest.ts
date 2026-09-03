@@ -180,12 +180,17 @@ export const recordSeasonOpen = internalMutation({
   handler: async (ctx, args) => {
     // Idempotent by season. The cron ticks daily and a season opens once; re-running after a partial
     // failure must not produce a second row claiming a different date.
+    //
+    // ⚠ **`created` is what the staff email is gated on**, and it has to come from here rather than
+    // from the caller's control flow: "did this tick actually open the season" is a property of the
+    // write, and deciding it upstream is how a retried tick mails everyone a second time.
     const existing = await ctx.db
       .query('imageryIngestSeasons')
       .withIndex('by_season', (q) => q.eq('season', args.season))
       .unique();
-    if (existing) return existing._id;
-    return await ctx.db.insert('imageryIngestSeasons', { ...args, detectedAt: Date.now() });
+    if (existing) return { id: existing._id, created: false };
+    const id = await ctx.db.insert('imageryIngestSeasons', { ...args, detectedAt: Date.now() });
+    return { id, created: true };
   },
 });
 
@@ -340,25 +345,58 @@ export const maybeCheckSeasonOpen = internalAction({
           openedBy: already.openedBy,
         };
       }
-      await ctx.runMutation(internal.imageryIngest.recordSeasonClose, { season, closesOn });
+      const wrote = await ctx.runMutation(internal.imageryIngest.recordSeasonClose, {
+        season,
+        closesOn,
+      });
       console.warn(
         `[imagery] ${season} ingest window CLOSED on ${closesOn} ` +
           `(${series.length} sites, ${DEFAULT_THAW_RUN_DAYS} thawed days). ` +
           `Corpus-wide weather sweep stands down until the next season opens.`,
       );
+      // Gated on the mutation having actually written, not on reaching this line — `recordSeasonClose`
+      // refuses to re-close, so a racing second tick tells nobody twice.
+      if (wrote !== null) {
+        await ctx.scheduler.runAfter(0, internal.operatorAlerts.broadcastToStaff, {
+          subject: `Skating season ${season} has closed`,
+          heading: `The ${season} season closed on ${closesOn}`,
+          lines: [
+            `Ten consecutive days with no overnight freeze at any of the ${series.length} sampled sites — the reluctant ice-out proxy, which typically lands a couple of weeks after a real Vermont ice-out.`,
+            'Satellite imagery ingest stands down, and so does the corpus-wide weather sweep, until the next season opens.',
+            'This is a region-wide signal about spend, not a claim that any particular lake is unskateable.',
+          ],
+          deepLinkPath: '/admin',
+        });
+      }
       return { closed: true as const, season, closesOn };
     }
 
     const window = ingestWindow(series);
     if (!window.opensOn) return { open: false as const, season, sitesSampled: series.length };
 
-    await ctx.runMutation(internal.imageryIngest.recordSeasonOpen, {
+    const opened = await ctx.runMutation(internal.imageryIngest.recordSeasonOpen, {
       season,
       opensOn: window.opensOn,
       openedBy: window.openedBy,
       winterFrom: window.winterFrom,
       sitesSampled: series.length,
     });
+
+    if (opened.created) {
+      await ctx.scheduler.runAfter(0, internal.operatorAlerts.broadcastToStaff, {
+        subject: `Skating season ${season} has begun`,
+        heading: `The ${season} season opened on ${window.opensOn}`,
+        lines: [
+          `Opened by: ${window.openedBy.join(' + ')} (${series.length} sites reporting).`,
+          window.winterFrom
+            ? `The region itself first froze on ${window.winterFrom}.`
+            : 'Winter has not established region-wide yet — the sentinel pond opened this on its own, which it is allowed to do.',
+          'Satellite imagery ingest is now in season. Next operator step: pnpm --filter @skating/imagery ingest-window',
+          'The corpus-wide weather sweep starts on its next daily tick.',
+        ],
+        deepLinkPath: '/admin',
+      });
+    }
 
     // The operator-facing signal. Deliberately loud and deliberately not a user notification: this
     // says "go spend money on a fan-out", which is nobody's push notification.

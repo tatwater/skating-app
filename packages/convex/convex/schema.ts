@@ -240,6 +240,10 @@ export default defineSchema({
     .index('by_clerk_user_id', ['clerkUserId'])
     .index('by_username', ['username'])
     .index('by_status', ['status'])
+    // Staff fan-out: who to email when an operator-facing event fires (D38). Indexed rather than
+    // filtered because the callers are crons — a scan that is free at 20 profiles is the shape that
+    // stops being free without anything changing except success.
+    .index('by_role', ['role'])
     /**
      * The departed-photo sweep's work queue (D66/N5a): tombstones that haven't been swept for the
      * current season yet.

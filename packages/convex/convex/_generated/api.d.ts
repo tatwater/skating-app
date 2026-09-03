@@ -47,6 +47,7 @@ import type * as lib_bodies from "../lib/bodies.js";
 import type * as lib_bodySummary from "../lib/bodySummary.js";
 import type * as lib_cellIndex from "../lib/cellIndex.js";
 import type * as lib_cellScan from "../lib/cellScan.js";
+import type * as lib_clerkEmail from "../lib/clerkEmail.js";
 import type * as lib_contentPurge from "../lib/contentPurge.js";
 import type * as lib_contributionCounts from "../lib/contributionCounts.js";
 import type * as lib_depth from "../lib/depth.js";
@@ -128,6 +129,7 @@ declare const fullApi: ApiFromModules<{
   "lib/bodySummary": typeof lib_bodySummary;
   "lib/cellIndex": typeof lib_cellIndex;
   "lib/cellScan": typeof lib_cellScan;
+  "lib/clerkEmail": typeof lib_clerkEmail;
   "lib/contentPurge": typeof lib_contentPurge;
   "lib/contributionCounts": typeof lib_contributionCounts;
   "lib/depth": typeof lib_depth;

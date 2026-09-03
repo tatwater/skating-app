@@ -197,3 +197,214 @@ describe('maybeCheckSeasonOpen — the season lifecycle', () => {
     vi.useRealTimers();
   });
 });
+
+describe('season boundary alerts staff', () => {
+  /** An active moderator and admin, plus two who must NOT be mailed. */
+  async function seedStaff(t: ReturnType<typeof convexTest>) {
+    const base = {
+      driveTimePrefMinutes: 60,
+      profileVisibility: 'public' as const,
+      notificationPrefs: {
+        activityDetected: true,
+        bountyRequest: true,
+        hazardConfirmation: true,
+        bountyFulfilled: true,
+        reportRated: true,
+        reportCommented: true,
+        contentFlagResolved: true,
+        favoriteReport: true,
+        nearbyReportDigest: true,
+        greatReportNearby: true,
+      },
+      dateOfBirth: Date.UTC(1990, 0, 1),
+      reputationPoints: 0,
+      createdAt: Date.now(),
+    };
+    await t.run(async (ctx) => {
+      await ctx.db.insert('profiles', {
+        ...base,
+        clerkUserId: 'mod-1',
+        displayName: 'Mod',
+        username: 'mod1',
+        role: 'moderator' as const,
+        status: 'active' as const,
+      });
+      await ctx.db.insert('profiles', {
+        ...base,
+        clerkUserId: 'admin-1',
+        displayName: 'Admin',
+        username: 'admin1',
+        role: 'admin' as const,
+        status: 'active' as const,
+      });
+      // ⚠ Keeps its role but must not be mailed — suspension and demotion are separate levers (D37).
+      await ctx.db.insert('profiles', {
+        ...base,
+        clerkUserId: 'mod-suspended',
+        displayName: 'Suspended Mod',
+        username: 'modsus',
+        role: 'moderator' as const,
+        status: 'suspended' as const,
+      });
+      await ctx.db.insert('profiles', {
+        ...base,
+        clerkUserId: 'member-1',
+        displayName: 'Member',
+        username: 'member1',
+        role: 'member' as const,
+        status: 'active' as const,
+      });
+    });
+  }
+
+  async function queuedBroadcasts(t: ReturnType<typeof convexTest>) {
+    return t.run(async (ctx) => {
+      const jobs = await ctx.db.system.query('_scheduled_functions').collect();
+      return jobs.filter((j) => j.name.includes('broadcastToStaff'));
+    });
+  }
+
+  test('mails staff exactly once when the season opens', async () => {
+    vi.useFakeTimers();
+    atDate(IN_SEASON);
+    const t = convexTest(schema, modules);
+    await seedSites(t);
+    await seedStaff(t);
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => okJson(dailyLows(3, '2026-12-01', [2, -1, -3, -4, -5]))),
+    );
+
+    await t.action(internal.imageryIngest.maybeCheckSeasonOpen, {});
+    const first = await queuedBroadcasts(t);
+    expect(first).toHaveLength(1);
+    const args = first[0]?.args[0] as { subject: string; lines: string[] };
+    expect(args.subject).toContain('has begun');
+    expect(args.lines.join(' ')).toContain('2026-12-02');
+
+    // The daily cron keeps ticking after an open (it is looking for the close), so a second tick
+    // must not mail everyone again. ⚠ What stops it *here* is the control flow — the second tick
+    // takes the close branch and never reaches the open one. The `created` gate is defence in depth
+    // for the concurrent case this cannot reach; its own guarantee is asserted directly below.
+    await t.action(internal.imageryIngest.maybeCheckSeasonOpen, {});
+    expect(await queuedBroadcasts(t)).toHaveLength(1);
+    vi.useRealTimers();
+  });
+
+  test('mails staff exactly once when the season closes', async () => {
+    vi.useFakeTimers();
+    atDate(IN_SEASON);
+    const t = convexTest(schema, modules);
+    await seedSites(t);
+    await seedStaff(t);
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => okJson(dailyLows(3, '2026-12-01', [2, -1, -3, -4, -5]))),
+    );
+    await t.action(internal.imageryIngest.maybeCheckSeasonOpen, {});
+
+    atDate(IN_SPRING);
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        okJson(
+          dailyLows(
+            3,
+            '2027-04-01',
+            Array.from({ length: 20 }, () => 8),
+          ),
+        ),
+      ),
+    );
+    await t.action(internal.imageryIngest.maybeCheckSeasonOpen, {});
+
+    const jobs = await queuedBroadcasts(t);
+    const closes = jobs.filter((j) =>
+      (j.args[0] as { subject: string }).subject.includes('closed'),
+    );
+    expect(closes).toHaveLength(1);
+
+    // A later tick short-circuits on the recorded close and tells nobody again — again by control
+    // flow, with the mutation's refusal to re-close as the backstop.
+    await t.action(internal.imageryIngest.maybeCheckSeasonOpen, {});
+    const after = await queuedBroadcasts(t);
+    expect(
+      after.filter((j) => (j.args[0] as { subject: string }).subject.includes('closed')),
+    ).toHaveLength(1);
+    vi.useRealTimers();
+  });
+
+  test('the record mutations are what actually make the alerts once-only', async () => {
+    // ⚠ The tests above exercise the sequential path, where control flow already prevents a second
+    // mail. The real guarantee — two ticks racing, which convex-test cannot schedule — lives in the
+    // mutations, so it is asserted at that level rather than assumed.
+    const t = convexTest(schema, modules);
+    const args = {
+      season: 'winter-2026-27',
+      opensOn: '2026-12-02',
+      openedBy: ['corpus'],
+      winterFrom: '2026-12-02',
+      sitesSampled: 3,
+    };
+    const first = await t.run((ctx) =>
+      ctx.runMutation(internal.imageryIngest.recordSeasonOpen, args),
+    );
+    const second = await t.run((ctx) =>
+      ctx.runMutation(internal.imageryIngest.recordSeasonOpen, args),
+    );
+    expect(first.created).toBe(true);
+    expect(second.created).toBe(false);
+    expect(second.id).toBe(first.id);
+
+    const closed = await t.run((ctx) =>
+      ctx.runMutation(internal.imageryIngest.recordSeasonClose, {
+        season: 'winter-2026-27',
+        closesOn: '2027-04-10',
+      }),
+    );
+    const reclosed = await t.run((ctx) =>
+      ctx.runMutation(internal.imageryIngest.recordSeasonClose, {
+        season: 'winter-2026-27',
+        closesOn: '2027-05-01',
+      }),
+    );
+    expect(closed).not.toBeNull();
+    expect(reclosed).toBeNull(); // and the date does not move to whenever we last looked
+    const row = await t.run((ctx) => ctx.db.query('imageryIngestSeasons').first());
+    expect(row?.closesOn).toBe('2027-04-10');
+  });
+
+  test('the recipient list is active moderators and admins, and nobody else', async () => {
+    const t = convexTest(schema, modules);
+    await seedStaff(t);
+    const staff = await t.run((ctx) => ctx.runQuery(internal.operatorAlerts.staffSubjects, {}));
+    expect(staff.map((s) => s.subject).sort()).toEqual(['admin-1', 'mod-1']);
+  });
+
+  test('a broadcast with no configured staff is reported, not thrown', async () => {
+    // Dev has no moderator (a known open founder call), and a cron must not fail because of it.
+    const t = convexTest(schema, modules);
+    const res = await t.action(internal.operatorAlerts.broadcastToStaff, {
+      subject: 's',
+      heading: 'h',
+      lines: [],
+      deepLinkPath: '/admin',
+    });
+    expect(res).toEqual({ recipients: 0, sent: 0 });
+  });
+
+  test('a broadcast reports zero sent when Resend is unconfigured, without throwing', async () => {
+    // ⚠ All Resend env vars ship unset. `sent` is what tells "nobody is configured" from "nobody was
+    // told" — a silent void would let an unsent alert look delivered.
+    const t = convexTest(schema, modules);
+    await seedStaff(t);
+    const res = await t.action(internal.operatorAlerts.broadcastToStaff, {
+      subject: 's',
+      heading: 'h',
+      lines: ['x'],
+      deepLinkPath: '/admin',
+    });
+    expect(res.recipients).toBe(2);
+    expect(res.sent).toBe(0);
+  });
+});
