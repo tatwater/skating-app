@@ -994,6 +994,33 @@ all** to draw its spread, and the drawer stays fast.
 spread above it, or the highest-`displayScore` sub-area pre-selected. The spread-plus-anchor is more
 honest and the pre-selection is fewer taps; N2 already stores `displayScore`, so either is cheap.
 
+### ⚠ Sequencing: the spread ships with H, and it cannot ship with PR 1
+
+**It reads Tier B, and Tier B is empty until mid-November.** `imageryIngestSeasons` holds **zero
+rows** on dev (checked 2026-09-03) — no season has ever been recorded, the checker does not start
+looking until October, and D163's gate only opens on a real regional freeze. So the corpus-wide daily
+rows the spread ranks bays against do not exist yet. Writing the ranking, the copy, the
+collapse-when-they-agree threshold and the extremes labelling against a table nobody can look at,
+inside a metered review, on a PR already at 46 files and 8,377 lines, is the wrong order.
+
+Two structural reasons agree:
+
+- **It wants the picker, and H is rebuilding the drawer.** *"Coldest: Missisquoi Bay"* is only useful
+  if tapping it does something. Building a bay-picker into today's flat sidebar means building it
+  twice.
+- **It would force D159's `bodyWeatherCells` decision early**, from the panel side, before E knows
+  its read patterns.
+
+**So: with H.** H is otherwise a pure move — low-risk, easy to review — which leaves room for exactly
+one real feature, and this is the one that most needs the new IA. Waiting for E would be too late:
+the spread is what makes a giant's panel honest, and Champlain is the most-discussed body in the
+corpus.
+
+**Nothing is owed by PR 1 to keep this open.** `getWeatherDaysForBody` grows a field rather than
+changing shape, and no migration is prejudiced. The interim line — *"this lake is large enough that
+weather differs across it — these readings are from one point near the middle"* — is the right thing
+to say while the spread does not exist, and it is the same sentence that argues for building it.
+
 ---
 
 ## Workstreams
