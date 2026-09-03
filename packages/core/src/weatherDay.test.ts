@@ -1,10 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import {
+  DAYLIGHT_END_HOUR,
+  DAYLIGHT_START_HOUR,
   dayMsToLocalDate,
   dominantWindSector,
+  estimateAlbedo,
   type LocalHourlyWeather,
   lastSnowDay,
   localDateToDayMs,
+  MELT_WH_PER_MM,
   nightsBelowThresholdC,
   rainTotalMm,
   snowfallTotalCm,
@@ -143,8 +147,20 @@ describe('summarizeWeatherDays — aggregates', () => {
     );
     expect(withSun[0]?.hoursOfSun).toBeCloseTo(12, 6); // 24 × 0.5 h
 
+    // ⚠ Not 24. A clear sky at 2 AM is not sunshine, and a field named "hours of sun" reporting a
+    // cloudless January day as a full 24 is a claim a reader would use to reason about melt.
     const cloudOnly = summarizeWeatherDays(flatDay('2026-01-15', -2, { cloudCoverPct: 10 }));
-    expect(cloudOnly[0]?.hoursOfSun).toBe(24);
+    expect(cloudOnly[0]?.hoursOfSun).toBe(DAYLIGHT_END_HOUR - DAYLIGHT_START_HOUR);
+
+    // `shortwave_radiation` beats the clock when it is there: it knows the real sunrise for this
+    // date and latitude, and is zero at night by construction.
+    const withRadiation = summarizeWeatherDays(
+      flatDay('2026-01-15', -2, { cloudCoverPct: 10 }).map((h) => ({
+        ...h,
+        shortwaveWm2: h.localHour >= 9 && h.localHour < 15 ? 120 : 0,
+      })),
+    );
+    expect(withRadiation[0]?.hoursOfSun).toBe(6);
   });
 
   it('leaves optional maxima null when nothing supplied them', () => {
@@ -297,5 +313,80 @@ describe('span helpers', () => {
 
   it('returns null when no direction data exists', () => {
     expect(dominantWindSector(days)).toBeNull();
+  });
+});
+
+describe('solar weighting (the melt side)', () => {
+  /** A day whose sun follows a plausible arc rather than a flat block. */
+  function sunArc(localDate: string, tempC: number, peakWm2: number, snowDepthM?: number) {
+    return Array.from({ length: 24 }, (_, h) => {
+      // Zero outside 08–16, a half-sine in between: the shape that makes noon and dusk differ.
+      const frac = h >= 8 && h <= 16 ? Math.sin(((h - 8) / 8) * Math.PI) : 0;
+      return hr(localDate, h, tempC, {
+        shortwaveWm2: Math.round(peakWm2 * frac),
+        ...(snowDepthM === undefined ? {} : { snowDepthM }),
+      });
+    });
+  }
+
+  it('prices reflection: the same sun does far more to bare ice than to snow', () => {
+    const [bare] = summarizeWeatherDays(sunArc('2026-01-15', -5, 400));
+    const [snowy] = summarizeWeatherDays(sunArc('2026-01-15', -5, 400, 0.1));
+    if (!bare || !snowy) throw new Error('expected one day each');
+
+    // Identical energy arrived...
+    expect(bare.insolationWhM2).toBe(snowy.insolationWhM2);
+    // ...and very different amounts stayed. 0.85 absorbed vs 0.20 — the ~4× that makes albedo the
+    // largest single term in what the sun actually does.
+    expect(bare.absorbedInsolationWhM2 / snowy.absorbedInsolationWhM2).toBeCloseTo(4.25, 1);
+  });
+
+  it('tracks albedo hour by hour, so an afternoon melt-out is not shielded by the morning', () => {
+    // Snow until noon, bare after. The daily *max* depth would call this a snowy day all day.
+    const hours = sunArc('2026-01-15', 1, 400).map((h, i) =>
+      i < 12 ? { ...h, snowDepthM: 0.1 } : h,
+    );
+    const [day] = summarizeWeatherDays(hours);
+    const [allSnow] = summarizeWeatherDays(sunArc('2026-01-15', 1, 400, 0.1));
+    if (!day || !allSnow) throw new Error('expected one day each');
+    expect(day.maxSnowDepthM).toBe(0.1); // the daily max says "snow covered"
+    expect(day.absorbedInsolationWhM2).toBeGreaterThan(allSnow.absorbedInsolationWhM2 * 2);
+  });
+
+  it('separates a sunny thaw from a grey one, which hoursAboveFreezing cannot', () => {
+    const [sunny] = summarizeWeatherDays(sunArc('2026-01-15', 2, 400));
+    const [grey] = summarizeWeatherDays(sunArc('2026-01-15', 2, 60));
+    if (!sunny || !grey) throw new Error('expected one day each');
+
+    // The measure that misses it, and the measure that catches it.
+    expect(sunny.hoursAboveFreezing).toBe(grey.hoursAboveFreezing);
+    expect(sunny.sunlitThawHours).toBeGreaterThan(0);
+    expect(grey.sunlitThawHours).toBe(0);
+    expect(sunny.meltIndexMm).toBeGreaterThan(grey.meltIndexMm);
+  });
+
+  it('counts no sunlit thaw hours while the air stays below freezing', () => {
+    const [cold] = summarizeWeatherDays(sunArc('2026-01-15', -5, 400));
+    if (!cold) throw new Error('expected one day');
+    expect(cold.sunlitThawHours).toBe(0);
+    // But the sun still deposits energy, which is the whole reason the two are separate fields.
+    expect(cold.absorbedInsolationWhM2).toBeGreaterThan(0);
+    expect(cold.meltIndexMm).toBeGreaterThan(0);
+  });
+
+  it('estimateAlbedo steps on snow presence, not on depth in general', () => {
+    expect(estimateAlbedo(null)).toBe(0.15);
+    expect(estimateAlbedo(0)).toBe(0.15);
+    expect(estimateAlbedo(0.01)).toBe(0.5);
+    expect(estimateAlbedo(0.5)).toBe(estimateAlbedo(0.05));
+  });
+
+  it('converts absorbed energy to melt at the latent heat of fusion, not a fudge factor', () => {
+    // One flat cold day, sun only: no thaw-degree-hours, so the whole index is the radiation term.
+    const [day] = summarizeWeatherDays(
+      Array.from({ length: 24 }, (_, h) => hr('2026-01-15', h, -5, { shortwaveWm2: 100 })),
+    );
+    if (!day) throw new Error('expected one day');
+    expect(day.meltIndexMm).toBeCloseTo(day.absorbedInsolationWhM2 / MELT_WH_PER_MM, 6);
   });
 });

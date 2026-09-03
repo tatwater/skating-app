@@ -1382,8 +1382,20 @@ export default defineSchema({
     rainMm: v.optional(v.number()),
     snowfallCm: v.optional(v.number()),
     maxSnowDepthM: v.optional(v.number()),
+    /** ⚠ A duration, never a melt proxy — an hour at noon and an hour at dusk are not the same hour. */
     hoursOfSun: v.optional(v.number()),
     insolationWhM2: v.optional(v.number()),
+    /** Shortwave × (1 − albedo): the energy the surface kept. Albedo swings ~6× on snow cover alone. */
+    absorbedInsolationWhM2: v.optional(v.number()),
+    /** Hours both above freezing and genuinely sunlit — the "soft, sticky surface" mechanism. */
+    sunlitThawHours: v.optional(v.number()),
+    /**
+     * Enhanced temperature-index melt estimate, mm water-equivalent.
+     *
+     * ⚠ **Model-internal (D3 / D150).** Read by the season-close signal and D160's operator
+     * instrument; never served to a skater client in any unit or under any label.
+     */
+    meltIndexMm: v.optional(v.number()),
     maxWindKph: v.optional(v.number()),
     maxWindGustKph: v.optional(v.number()),
     windRunKm: v.optional(v.number()),

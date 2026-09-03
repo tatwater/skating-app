@@ -246,6 +246,9 @@ const daySummaryFields = {
   maxSnowDepthM: v.optional(v.number()),
   hoursOfSun: v.optional(v.number()),
   insolationWhM2: v.optional(v.number()),
+  absorbedInsolationWhM2: v.optional(v.number()),
+  sunlitThawHours: v.optional(v.number()),
+  meltIndexMm: v.optional(v.number()),
   maxWindKph: v.optional(v.number()),
   maxWindGustKph: v.optional(v.number()),
   windRunKm: v.optional(v.number()),
@@ -274,6 +277,9 @@ function storableDay(day: WeatherDaySummary): Record<string, unknown> {
   put('maxSnowDepthM', day.maxSnowDepthM);
   out.hoursOfSun = day.hoursOfSun;
   out.insolationWhM2 = day.insolationWhM2;
+  out.absorbedInsolationWhM2 = day.absorbedInsolationWhM2;
+  out.sunlitThawHours = day.sunlitThawHours;
+  out.meltIndexMm = day.meltIndexMm;
   put('maxWindKph', day.maxWindKph);
   put('maxWindGustKph', day.maxWindGustKph);
   out.windRunKm = day.windRunKm;
@@ -771,6 +777,9 @@ const DAY_MEASURE_KEYS = [
   'maxSnowDepthM',
   'hoursOfSun',
   'insolationWhM2',
+  'absorbedInsolationWhM2',
+  'sunlitThawHours',
+  'meltIndexMm',
   'maxWindKph',
   'maxWindGustKph',
   'windRunKm',

@@ -50,6 +50,69 @@ export const NIGHT_END_HOUR = 9;
 /** Compass sectors for the wind histogram — the same 16 the fetch profile and wind rose are indexed by. */
 export const WIND_SECTOR_COUNT = 16;
 
+/**
+ * The window a clear hour is allowed to count as *sun* in, when Open-Meteo gave us no
+ * `sunshine_duration` and we are falling back to cloud cover.
+ *
+ * ⚠ **A clear sky at 2 AM is not sunshine.** Without this the fallback reports a cloudless January
+ * day as **24 hours of sun**, which is not merely imprecise — it is a claim the reader will use to
+ * reason about melt and glare on a field literally named "hours of sun". Deliberately narrow (a
+ * Northeast December day is ~9 hours between horizons) so the fallback under-claims rather than
+ * over-claims; `shortwave_radiation`, when present, is preferred over the clock because it knows the
+ * actual solar geometry for the day.
+ */
+export const DAYLIGHT_START_HOUR = 8;
+export const DAYLIGHT_END_HOUR = 16;
+
+/**
+ * Above this irradiance an hour counts as *sunlit* for {@link WeatherDaySummary.sunlitThawHours}.
+ *
+ * 120 W/m² is roughly the difference between "the sun is technically up" and "you can feel it on a
+ * dark surface". A midwinter Northeast noon under clear sky runs ~350–450 W/m²; heavy overcast at the
+ * same hour is ~40–80. The threshold sits between them so a grey thaw and a sunny thaw separate.
+ */
+export const SUNLIT_WM2 = 120;
+
+/**
+ * Albedo — the fraction of incoming shortwave a surface **reflects** — estimated from snow depth.
+ *
+ * ⚠ **This is the single largest term in how much the sun actually does to a lake, and it swings by
+ * roughly a factor of six.** Fresh snow reflects 0.8–0.9; bare clear ice reflects only ~0.1, and
+ * observed lake values run as low as 0.075. So an identical 3 kWh/m² day deposits ~9× more energy
+ * into black ice than into the same lake under 5 cm of snow. Any melt term that ignores albedo is
+ * wrong by more than it is right.
+ *
+ * Snow depth is the only surface signal the archive holds, so it is the only one used. The three
+ * steps are coarse on purpose: the transitions (fresh → melting → gone) are where the real physics
+ * lives, and interpolating between them would imply a precision the input does not have.
+ *
+ * ⚠ **It is a property of the snow, not of the ice.** Nothing here knows whether the ice underneath
+ * is black, white, or absent — which is exactly why the output is model-internal (see
+ * {@link WeatherDaySummary.meltIndexMm}) and never a skater-facing number.
+ */
+export function estimateAlbedo(snowDepthM: number | null): number {
+  if (snowDepthM === null || snowDepthM <= 0) return 0.15; // bare ice
+  if (snowDepthM < 0.02) return 0.5; // patchy or melting-out snow
+  return 0.8; // snow cover
+}
+
+/**
+ * Latent heat of fusion as an areal energy density: melting 1 mm of ice takes ~334 kJ/m², which is
+ * **92.8 Wh/m²**. This is a physical constant, not a tuned parameter — it is what converts absorbed
+ * shortwave into a melt depth without inventing a coefficient.
+ */
+export const MELT_WH_PER_MM = 92.8;
+
+/**
+ * Degree-hour factor for the temperature half of the melt index, in mm water-equivalent per °C-hour.
+ *
+ * 0.25 mm/°C·h ≈ **6 mm/°C·day**, mid-range for the degree-day factors reported for lake and glacier
+ * ice. ⚠ Unlike {@link MELT_WH_PER_MM} this one **is** empirical, and it is a stand-in for every flux
+ * that correlates with air temperature but is not radiation — sensible heat, longwave, condensation.
+ * It is the obvious thing for D160's instrument to fit against a season of observations.
+ */
+export const MELT_MM_PER_DEGREE_HOUR = 0.25;
+
 /** An hourly observation that knows what local day and hour it happened on. */
 export interface LocalHourlyWeather extends HourlyWeather {
   /** Local calendar date as Open-Meteo returned it under `timezone=auto`, `YYYY-MM-DD`. */
@@ -95,8 +158,60 @@ export interface WeatherDaySummary {
   snowfallCm: number;
   maxSnowDepthM: number | null;
 
+  /**
+   * How long the sun shone, in hours.
+   *
+   * ⚠ **A duration, and duration is the wrong unit for what the sun does.** An hour near solar noon
+   * and an hour near sunset differ by most of their energy: irradiance on a horizontal surface scales
+   * with the sine of the solar elevation angle, and at 44°N in January the sun peaks around 25°
+   * (sin ≈ 0.42) and reaches 0 at both ends of the day. So a 6-hour December day and a 6-hour March
+   * day are the same number here and are not remotely the same event.
+   *
+   * Keep using it to answer *"was it sunny?"*. **Never use it to reason about melt** — that is
+   * {@link WeatherDaySummary.absorbedInsolationWhM2}, which measures energy and therefore prices the
+   * geometry for free.
+   */
   hoursOfSun: number;
+  /** Σ hourly `shortwave_radiation` × 1 h — the energy that *arrived*, before the surface reflects. */
   insolationWhM2: number;
+  /**
+   * Σ hourly shortwave × (1 − albedo) — the energy the surface actually **kept**.
+   *
+   * The honest version of "how much sun". Solar geometry is already inside the irradiance, and
+   * {@link estimateAlbedo} supplies the reflection the irradiance knows nothing about.
+   */
+  absorbedInsolationWhM2: number;
+  /**
+   * Hours with air above freezing **and** meaningful sun on the surface ({@link SUNLIT_WM2}).
+   *
+   * Founder observation, 2026-09-03, and it is the mechanism the literature agrees on: *"a single
+   * afternoon with sun above freezing will make the ice's surface sticky and soft in a way that kind
+   * of ruins it."* A grey 2 °C afternoon and a sunny 2 °C afternoon have the same
+   * `hoursAboveFreezing` and do very different things to a skating surface, because shortwave
+   * penetrates clear ice and melts it at the grain boundaries from *within* — the process that
+   * produces candled, rotten ice with little load-bearing capacity, and which can run while air
+   * temperature is still below freezing.
+   *
+   * An observation about weather, not a claim about ice (D3): it counts sunlit hours above freezing,
+   * and says nothing about what the ice did with them.
+   */
+  sunlitThawHours: number;
+  /**
+   * A melt-side energy budget in mm water-equivalent — the mirror of {@link freezingDegreeHours}.
+   *
+   * The standard *enhanced temperature-index* form from the glaciology literature,
+   * `M = TF·T + SRF·(1−α)·SW`, which exists precisely because a pure degree-day model misses that
+   * melt rates are governed to a large extent by radiation. Here that is
+   * {@link MELT_MM_PER_DEGREE_HOUR} × thaw-degree-hours + absorbed insolation ÷
+   * {@link MELT_WH_PER_MM}.
+   *
+   * ⚠ **Model-internal. This never reaches a skater surface, in any unit, under any label** — D3 and
+   * D150, the same confinement D160 puts on the Stefan thickness estimate. It is a number *about a
+   * model*, and a millimetre of implied melt is one step from a load-bearing claim. Its legitimate
+   * readers are the operator calibration instrument and the season-close signal, both of which
+   * compare it against reality rather than publish it.
+   */
+  meltIndexMm: number;
 
   maxWindKph: number | null;
   maxWindGustKph: number | null;
@@ -152,6 +267,18 @@ interface DayAccumulator {
   localDate: string;
   dayMs: number;
   hours: LocalHourlyWeather[];
+}
+
+/**
+ * Was the sun up for this hour? Only consulted by the cloud-cover fallback in {@link
+ * summarizeWeatherDays} — see {@link DAYLIGHT_START_HOUR}.
+ *
+ * Prefers `shortwave_radiation`, which is zero at night by construction and therefore knows the real
+ * sunrise for this date and latitude; the fixed clock window is the last resort.
+ */
+function isDaylightHour(h: LocalHourlyWeather): boolean {
+  if (typeof h.shortwaveWm2 === 'number') return h.shortwaveWm2 > 0;
+  return h.localHour >= DAYLIGHT_START_HOUR && h.localHour < DAYLIGHT_END_HOUR;
 }
 
 /**
@@ -211,6 +338,8 @@ function summarizeOneDay(
   let maxSnowDepthM: number | null = null;
   let hoursOfSun = 0;
   let insolationWhM2 = 0;
+  let absorbedInsolationWhM2 = 0;
+  let sunlitThawHours = 0;
   let maxWindKph: number | null = null;
   let maxWindGustKph: number | null = null;
   let windRunKm = 0;
@@ -248,11 +377,24 @@ function summarizeOneDay(
     if (typeof h.snowDepthM === 'number') {
       maxSnowDepthM = maxSnowDepthM === null ? h.snowDepthM : Math.max(maxSnowDepthM, h.snowDepthM);
     }
-    if (typeof h.shortwaveWm2 === 'number') insolationWhM2 += h.shortwaveWm2;
+    if (typeof h.shortwaveWm2 === 'number') {
+      insolationWhM2 += h.shortwaveWm2;
+      // Albedo from *this hour's* snow depth rather than the day's maximum: a shallow cover that
+      // melts out by noon leaves the afternoon absorbing like bare ice, and that afternoon is the
+      // one that matters. Using the daily max would let the morning's snow shield the whole day.
+      absorbedInsolationWhM2 += h.shortwaveWm2 * (1 - estimateAlbedo(h.snowDepthM ?? null));
+      // The founder's "sunny afternoon above freezing". Both conditions, on the same hour — a sunny
+      // morning followed by a mild grey afternoon is not this, and would score zero here correctly.
+      if (t > 0 && h.shortwaveWm2 >= SUNLIT_WM2) sunlitThawHours += 1;
+    }
 
     if (typeof h.sunshineSeconds === 'number') {
       hoursOfSun += h.sunshineSeconds / 3600;
-    } else if (typeof h.cloudCoverPct === 'number' && h.cloudCoverPct <= sunnyMaxCloud) {
+    } else if (
+      typeof h.cloudCoverPct === 'number' &&
+      h.cloudCoverPct <= sunnyMaxCloud &&
+      isDaylightHour(h)
+    ) {
       hoursOfSun += 1;
     }
 
@@ -287,6 +429,10 @@ function summarizeOneDay(
     maxSnowDepthM,
     hoursOfSun,
     insolationWhM2,
+    absorbedInsolationWhM2,
+    sunlitThawHours,
+    meltIndexMm:
+      MELT_MM_PER_DEGREE_HOUR * thawDegreeHours + absorbedInsolationWhM2 / MELT_WH_PER_MM,
     maxWindKph,
     maxWindGustKph,
     windRunKm,

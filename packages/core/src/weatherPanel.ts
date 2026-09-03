@@ -271,6 +271,9 @@ function fillDay(day: Partial<WeatherDaySummary> & { dayMs: number; localDate: s
     maxSnowDepthM: day.maxSnowDepthM ?? null,
     hoursOfSun: day.hoursOfSun ?? 0,
     insolationWhM2: day.insolationWhM2 ?? 0,
+    absorbedInsolationWhM2: day.absorbedInsolationWhM2 ?? 0,
+    sunlitThawHours: day.sunlitThawHours ?? 0,
+    meltIndexMm: day.meltIndexMm ?? 0,
     maxWindKph: day.maxWindKph ?? null,
     maxWindGustKph: day.maxWindGustKph ?? null,
     windRunKm: day.windRunKm ?? 0,
@@ -351,6 +354,24 @@ function buildHeadline(days: readonly WeatherDaySummary[], missingDays: number):
   const churn = days.filter((d) => d.hoursBelowFreezing > 0 && d.hoursAboveFreezing > 0).length;
   if (churn > 0) {
     lines.push(`${churn} day${churn === 1 ? '' : 's'} crossing freezing`);
+  }
+
+  // 5b. Sun *while above freezing*, which is a different event from either one alone.
+  //
+  // Founder, 2026-09-03: *"a single afternoon with sun above freezing will make the ice's surface
+  // sticky and soft in a way that kind of ruins it."* The literature agrees on the mechanism —
+  // shortwave penetrates clear ice and melts it internally at the grain boundaries — and it is the
+  // reason `hoursAboveFreezing` alone under-describes a thaw: a grey 2 °C day and a sunny 2 °C day
+  // score identically there and do very different things to a skating surface.
+  //
+  // ⚠ Stated as *sunny hours above freezing*, never as what they did to the ice. The mechanism is
+  // why the line is worth printing; the claim stays on the weather (D3).
+  const sunnyThaw = days.filter((d) => d.sunlitThawHours >= 1).length;
+  if (sunnyThaw > 0) {
+    const hours = Math.round(days.reduce((sum, d) => sum + d.sunlitThawHours, 0));
+    lines.push(
+      `${hours} sunny hour${hours === 1 ? '' : 's'} above freezing, over ${sunnyThaw} day${sunnyThaw === 1 ? '' : 's'}`,
+    );
   }
 
   // 6. Say what we do not know, last and plainly. A quiet gap is how a five-day span gets read as a
