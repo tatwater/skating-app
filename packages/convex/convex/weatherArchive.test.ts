@@ -4,7 +4,7 @@ import { describe, expect, test, vi } from 'vitest';
 import { api, internal } from './_generated/api';
 import type { Id } from './_generated/dataModel';
 import schema from './schema';
-import { APPEND_PAST_DAYS, SEASON_OPEN_PAST_DAYS } from './weatherArchive';
+import { APPEND_PAST_DAYS, RECONCILE_DEBOUNCE_MS, SEASON_OPEN_PAST_DAYS } from './weatherArchive';
 
 const modules = import.meta.glob('./**/*.*s');
 const DAY_MS = 86_400_000;
@@ -919,5 +919,116 @@ describe('weatherArchive: the cell registry has a producer (and a reconciler)', 
     // asserted by the shape of the return rather than by contriving 500+ bodies.
     expect(partial.done).toBe(true);
     expect(partial.pruned).toBe(0);
+  });
+});
+
+describe('weatherArchive: the reconciler is triggered by the import, not the clock', () => {
+  /** Open and close an import run of a given kind. */
+  async function runImport(
+    t: ReturnType<typeof convexTest>,
+    kind: 'canonical_water' | 'elevation' | 'lake_depth' | 'dedup_resolve',
+    status: 'succeeded' | 'failed' = 'succeeded',
+  ) {
+    const runId = await t.run((ctx) =>
+      ctx.runMutation(internal.importRuns.start, {
+        kind,
+        label: `${kind} test`,
+        deployment: 'test',
+        isProd: false,
+      }),
+    );
+    await t.run((ctx) => ctx.runMutation(internal.importRuns.finish, { runId, status }));
+    return runId;
+  }
+
+  /**
+   * Reconciles the trigger scheduled, if any.
+   *
+   * Reads the scheduler queue rather than draining it on a clock: what `importRuns.finish` is
+   * responsible for is *enqueuing* the reconcile at the right delay, and whether
+   * `maybeSyncWeatherCells` then does its job is covered by its own tests. Asserting the queue keeps
+   * the two failures distinguishable instead of collapsing them into one timing-dependent pass.
+   */
+  async function scheduledReconciles(t: ReturnType<typeof convexTest>) {
+    return t.run(async (ctx) => {
+      const jobs = await ctx.db.system.query('_scheduled_functions').collect();
+      return jobs.filter((j) => j.name.includes('maybeSyncWeatherCells'));
+    });
+  }
+
+  test('a finished corpus import reconciles the registry', async () => {
+    // The root cause of the P1: nothing re-derived the registry when the corpus changed, so the
+    // cadence of a cron was standing in for the event that actually invalidates it.
+    const t = convexTest(schema, modules);
+    await seedBody(t);
+    expect(await t.run((ctx) => ctx.db.query('weatherCells').collect())).toHaveLength(0);
+
+    const before = Date.now();
+    await runImport(t, 'canonical_water');
+    const jobs = await scheduledReconciles(t);
+    expect(jobs).toHaveLength(1);
+    // Debounced, not immediate — a campaign of loaders must collapse into one walk.
+    expect(jobs[0]?.scheduledTime).toBeGreaterThanOrEqual(before + RECONCILE_DEBOUNCE_MS);
+    // And it carries the request time, which is what lets the debounce decide it is already covered.
+    expect((jobs[0]?.args[0] as { requestedAt?: number })?.requestedAt).toBeGreaterThanOrEqual(
+      before,
+    );
+  });
+
+  test('an elevation pass counts, because elevation is IN the browse key', async () => {
+    // `bodyWeatherCell(body, 'browse')` bands elevation at 100 m, so a pass that writes `elevationM`
+    // moves cell keys just as surely as one that moves coordinates.
+    const t = convexTest(schema, modules);
+    await seedBody(t);
+    await runImport(t, 'elevation');
+    expect(await scheduledReconciles(t)).toHaveLength(1);
+  });
+
+  test('a pass that cannot move a cell key does not spend a corpus walk', async () => {
+    // Depth writes fields the key does not read. Triggering here would cost ~170 MB to rediscover
+    // identical keys.
+    const t = convexTest(schema, modules);
+    await seedBody(t);
+    await runImport(t, 'lake_depth');
+    expect(await scheduledReconciles(t)).toHaveLength(0);
+  });
+
+  test('a failed run does not trigger — the retry that succeeds will', async () => {
+    const t = convexTest(schema, modules);
+    await seedBody(t);
+    await runImport(t, 'canonical_water', 'failed');
+    expect(await scheduledReconciles(t)).toHaveLength(0);
+  });
+
+  test('a campaign of several loaders collapses into one walk', async () => {
+    // ⚠ The debounce invariant: a reconcile completing after time R has already seen every body
+    // written before R, so any request older than the last completed run is already satisfied.
+    const t = convexTest(schema, modules);
+    await seedBody(t);
+    await t.action(internal.weatherArchive.maybeSyncWeatherCells, {});
+    const after = await t.run((ctx) => ctx.db.query('weatherCells').collect());
+    const stamps = after.map((c) => c.updatedAt);
+
+    // A request made *before* that run completed is already covered.
+    const res = await t.action(internal.weatherArchive.maybeSyncWeatherCells, {
+      requestedAt: Math.min(...stamps) - 1,
+    });
+    expect(res.skipped).toBe('already reconciled');
+    const unchanged = await t.run((ctx) => ctx.db.query('weatherCells').collect());
+    expect(unchanged.map((c) => c.updatedAt)).toEqual(stamps);
+  });
+
+  test('a request made after the last run is NOT skipped', async () => {
+    // The error that would matter: a genuinely newer import must never be debounced away.
+    const t = convexTest(schema, modules);
+    await seedBody(t);
+    await t.action(internal.weatherArchive.maybeSyncWeatherCells, {});
+    const before = await t.run((ctx) => ctx.db.query('weatherCells').collect());
+
+    const res = await t.action(internal.weatherArchive.maybeSyncWeatherCells, {
+      requestedAt: Math.max(...before.map((c) => c.updatedAt)) + 1,
+    });
+    expect(res.skipped).toBeUndefined();
+    expect(res.tiers).toHaveLength(2);
   });
 });

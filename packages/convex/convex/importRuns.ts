@@ -11,11 +11,13 @@
  */
 
 import { v } from 'convex/values';
+import { internal } from './_generated/api';
 import type { Doc } from './_generated/dataModel';
 import { internalMutation, internalQuery, query } from './_generated/server';
 import { requireRole } from './lib/auth';
-import { IMPORT_RUN_KINDS } from './lib/enums';
+import { IMPORT_RUN_KINDS, WEATHER_CELL_INVALIDATING_KINDS } from './lib/enums';
 import { literals } from './lib/validators';
+import { RECONCILE_DEBOUNCE_MS } from './weatherArchive';
 
 /**
  * How many itemized failures one run stores.
@@ -154,6 +156,28 @@ export const finish = internalMutation({
       error,
       notes: notes ?? run.notes,
     });
+
+    // ⚠ **A finished corpus import is what invalidates the weather cell registry (N6h / D152).**
+    //
+    // `weatherCells` is a projection of `waterBodies`, and the daily Tier-B sweep pages it — so a
+    // body imported into a previously-unoccupied cell is absent from weather discovery until
+    // something re-derives the registry. Before this trigger the only thing that did was a weekly
+    // cron, which made the *cadence* an accuracy decision; it should never have been one. The
+    // corpus changes in operator-run bursts, so the honest signal is this event, and the cron is
+    // demoted to a safety net.
+    //
+    // Debounced rather than immediate: a campaign is several loaders and each `finish` would
+    // otherwise request its own full corpus walk. See `RECONCILE_DEBOUNCE_MS`.
+    //
+    // Success only. A failed run is retried, and the retry's success fires this; firing on failure
+    // would spend a walk per attempt on a loader stuck in a retry loop.
+    if (status === 'succeeded' && WEATHER_CELL_INVALIDATING_KINDS.includes(run.kind)) {
+      await ctx.scheduler.runAfter(
+        RECONCILE_DEBOUNCE_MS,
+        internal.weatherArchive.maybeSyncWeatherCells,
+        { requestedAt: Date.now() },
+      );
+    }
   },
 });
 

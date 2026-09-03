@@ -566,6 +566,31 @@ export const IMPORT_RUN_KINDS = [
 ] as const;
 
 /**
+ * The run kinds that can invalidate the **weather cell registry** (N6h / D152).
+ *
+ * A cell key is `bodyWeatherCell(body, tier)` — a function of the body's interior point, its
+ * elevation band, and whether it exists at all. So only a pass that can change *those* leaves
+ * `weatherCells` stale:
+ *
+ * - `canonical_water` — the load itself, which inserts and moves bodies.
+ * - `dedup_resolve` — removes them.
+ * - `elevation` — writes `elevationM`, which is **in** the `browse` key's 100 m band.
+ *
+ * Everything else writes fields the key does not read: depth, wind roses, contours, access points,
+ * `curatedBoost`, admin areas. `corpus_merge` writes nothing to Convex at all, and `sub_area_seed`
+ * writes `waterBodySubAreas`, which the registry does not cover.
+ *
+ * ⚠ **Err toward including a kind, not excluding one.** A missing trigger costs up to a week of a
+ * body being absent from Tier-B discovery (the weekly reconcile cron is the net); a spurious one
+ * costs a single ~170 MB corpus walk. The errors are not symmetric and the list should reflect it.
+ */
+export const WEATHER_CELL_INVALIDATING_KINDS: readonly (typeof IMPORT_RUN_KINDS)[number][] = [
+  'canonical_water',
+  'dedup_resolve',
+  'elevation',
+];
+
+/**
  * A run's terminal state. **`running` is not merely a transient** — a row left in it is the
  * signature of a loader whose process died without getting to write a summary, which is exactly
  * the failure mode a printed-to-stderr summary could never record.

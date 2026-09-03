@@ -97,16 +97,20 @@ crons.interval(
   {},
 );
 
-// **The weather cell registry reconciler (N6h / D152).** `weatherCells` is a projection of the corpus
-// and everything downstream pages it, so without a producer the daily sweep visits zero cells and
-// reports success — an empty archive, silently. It also has to notice drift: a body imported after the
-// last run occupies a cell nobody registered (invisible to D159 for ever), and a body purged or moved
-// leaves a vacated cell the sweep keeps paying Open-Meteo for.
+// **The weather cell registry safety net (N6h / D152).** `weatherCells` is a projection of the corpus
+// and the Tier-B sweep pages it, so a stale registry means a body is absent from weather discovery
+// and a vacated cell keeps costing Open-Meteo calls.
 //
-// ⚠ **Weekly, not daily, and NOT season-gated.** Daily would re-read 25,000 fat rows to rediscover
-// keys that change only when the corpus does — precisely the ~75 MB/day the registry exists to avoid.
-// Weekly amortises to ~10 MB/day. Ungated because the registry must be populated *before* a season
-// opens, or the first sweep of the year has nothing to sweep; the corpus also drifts in the off-season.
+// ⚠ **This is the NET, not the mechanism.** The thing that actually invalidates the registry is a
+// corpus import completing, and `importRuns.finish` schedules a reconcile for exactly the run kinds
+// that can move a cell key (`WEATHER_CELL_INVALIDATING_KINDS`). That makes staleness ~zero on the few
+// days a year the corpus changes. This cron catches what the event misses: a dashboard hand-edit, a
+// loader that died before `finish`, a restore.
+//
+// **Weekly rather than daily** because a walk is ~85 MB per tier (a body row averages 3,383 bytes),
+// so daily over both tiers is ~5.1 GB/month — ~10% of Convex Pro's included 50 GB spent re-deriving
+// keys that did not change. Weekly is ~1.5%. NOT season-gated: the registry must be populated
+// *before* a season opens, and the corpus drifts in the off-season as readily as in it.
 crons.interval(
   'reconcile weather cell registry',
   { hours: 24 * 7 },

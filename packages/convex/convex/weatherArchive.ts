@@ -553,13 +553,58 @@ export const tierRegistryEmpty = internalQuery({
 });
 
 /**
- * The weekly reconciler: re-derive both tiers' cells from the corpus.
+ * Roughly when the registry was last reconciled — the debounce input.
+ *
+ * ⚠ **An approximation, deliberately, and biased the safe way.** It reads one cell per tier rather
+ * than indexing `updatedAt`, and a completed run stamps every surviving cell with that run's clock,
+ * so the sample is representative *after* a run and can read stale *during* one. Stale means one
+ * extra corpus walk; it can never mean a skipped reconcile, which is the error that would matter.
+ */
+export const registryReconciledAt = internalQuery({
+  args: {},
+  handler: async (ctx) => {
+    let newest = 0;
+    for (const tier of WEATHER_TIERS) {
+      const cell = await ctx.db
+        .query('weatherCells')
+        .withIndex('by_tier_key', (q) => q.eq('tier', tier))
+        .first();
+      if (cell && cell.updatedAt > newest) newest = cell.updatedAt;
+    }
+    return newest;
+  },
+});
+
+/**
+ * How long an import waits before its reconcile fires.
+ *
+ * A campaign is several loaders, not one — N7-3 ran five passes — and each `finish` would otherwise
+ * request its own ~170 MB corpus walk. The delay lets a burst collapse: the first request through
+ * does the work, and the rest find the registry already newer than their own `requestedAt` and stand
+ * down. Ten minutes is comfortably longer than the gap between loaders in a campaign and far shorter
+ * than anyone waits to see a body appear in discovery.
+ */
+export const RECONCILE_DEBOUNCE_MS = 10 * 60 * 1000;
+
+/**
+ * Re-derive both tiers' cells from the corpus.
+ *
+ * ## Triggered by the event that invalidates it, with the cron as the net
+ *
+ * The registry is a projection of `waterBodies`, so the thing that makes it stale is **a corpus
+ * import completing** — not the passage of time. `importRuns.finish` schedules this for the run
+ * kinds that can move a cell key (`WEATHER_CELL_INVALIDATING_KINDS`), which makes staleness ~zero on
+ * the handful of days a year the corpus actually changes and costs nothing on the ~360 it does not.
+ *
+ * The weekly cron remains, demoted to what a periodic full reconcile should be: a safety net for
+ * drift the event trigger missed — a hand-edit in the dashboard, a loader that died before `finish`,
+ * a restore. **Weekly rather than daily** because a walk is ~85 MB per tier against a 3,383-byte
+ * average body row, so daily-over-both-tiers is ~5.1 GB/month of read I/O (~10% of Convex Pro's
+ * included 50 GB) spent re-deriving keys that did not change; weekly is ~1.5%.
  *
  * **Not season-gated, and that is the point.** The registry has to be populated *before* a season
  * opens, or the first sweep of the year pages zero cells and D161's "region-wide freeze map on day
- * one" is a map of nothing. It is also the only thing that notices corpus drift, which happens in
- * the off-season as often as in it — N7 added 25,197 bodies and N6d added 4,209, none of which would
- * have had a weather cell.
+ * one" is a map of nothing. Corpus drift also happens in the off-season as readily as in it.
  *
  * Both tiers, because `browse` cells are registered for the same reason `filter` ones are: the gap
  * sweep pages the registry per tier, and an unregistered browse cell never gets its holes repaired.
@@ -571,8 +616,25 @@ export const tierRegistryEmpty = internalQuery({
  * that lesson.
  */
 export const maybeSyncWeatherCells = internalAction({
-  args: {},
-  handler: async (ctx): Promise<{ tiers: { tier: string; pruned: number }[] }> => {
+  args: {
+    /**
+     * When the reconcile was *asked for*. Present only on the import-triggered path.
+     *
+     * ⚠ **The debounce turns on one invariant: a reconcile that COMPLETES after time R has already
+     * seen every body written before R.** So any request older than the last completed run is
+     * already satisfied, whichever import made it — which is what lets a five-loader campaign
+     * collapse into a single walk without tracking which loader wrote what.
+     */
+    requestedAt: v.optional(v.number()),
+  },
+  handler: async (
+    ctx,
+    { requestedAt },
+  ): Promise<{ skipped?: 'already reconciled'; tiers: { tier: string; pruned: number }[] }> => {
+    if (requestedAt !== undefined) {
+      const lastRun = await ctx.runQuery(internal.weatherArchive.registryReconciledAt, {});
+      if (lastRun >= requestedAt) return { skipped: 'already reconciled', tiers: [] };
+    }
     const tiers: { tier: string; pruned: number }[] = [];
     for (const tier of WEATHER_TIERS) {
       const res = await ctx.runAction(internal.weatherArchive.backfillWeatherCells, { tier });
