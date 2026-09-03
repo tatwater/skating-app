@@ -42,6 +42,7 @@ import {
 } from './units';
 import {
   dominantWindSector,
+  isCompleteDay,
   lastSnowDay,
   nightsBelowThresholdC,
   snowfallTotalCm,
@@ -104,6 +105,15 @@ export interface PastWeatherRow {
   freezeWindMph: number | null;
   /** True when the day is absent from the archive rather than merely quiet. */
   missing: boolean;
+  /**
+   * True when the day has data but **has not finished happening** — today, mid-afternoon.
+   *
+   * ⚠ **A third state, not a shade of the other two.** A missing day is unknown, a complete day is
+   * settled, and a partial day is *true so far*: its high may still rise, and its "no snow" means
+   * none yet. The strip draws it, because what is happening now is exactly what a skater wants; the
+   * headline excludes it, because a headline is a claim about a finished window.
+   */
+  partial: boolean;
 }
 
 export interface PastWeatherPanel {
@@ -115,6 +125,13 @@ export interface PastWeatherPanel {
   rows: PastWeatherRow[];
   /** Days in the window with no data at all. */
   missingDays: number;
+  /**
+   * Days present but still in progress — normally 0 or 1, the 1 being today.
+   *
+   * Excluded from every headline integral, so `headline` describes `rows.length − missingDays −
+   * partialDays` finished days. The strip still draws them.
+   */
+  partialDays: number;
   /** Set when any row came from the coarser `filter` tier (D161 step 2). */
   coarse: boolean;
 }
@@ -222,6 +239,11 @@ export function buildPastWeatherPanel(
   for (const day of days) {
     if (!day) continue;
     const hasData = typeof day.hours === 'number';
+    // ⚠ **`hasData` is not `isComplete`, and conflating them was a bug.** The archive stores today's
+    // elapsed hours on purpose, so a row can be entirely valid and still be three hours long. Feeding
+    // that into the headline reports un-elapsed precipitation as zero ("no snow in the last 7 days"
+    // when it is snowing) and an in-progress high as the day's high.
+    const finished = isCompleteDay(day.hours);
     rows.push({
       dayMs: day.dayMs,
       localDate: day.localDate,
@@ -236,17 +258,20 @@ export function buildPastWeatherPanel(
       maxWindMph: mph(day.maxWindKph),
       freezeWindMph: mph(day.freezingHoursMeanWindKph),
       missing: !hasData,
+      partial: hasData && !finished,
     });
-    if (hasData) complete.push(fillDay(day));
+    if (finished) complete.push(fillDay(day));
   }
 
   rows.sort((a, b) => a.dayMs - b.dayMs);
   const missingDays = rows.filter((r) => r.missing).length;
+  const partialDays = rows.filter((r) => r.partial).length;
 
   return {
-    headline: buildHeadline(complete, missingDays),
+    headline: buildHeadline(complete, missingDays, partialDays),
     rows,
     missingDays,
+    partialDays,
     coarse: options.coarse ?? false,
   };
 }
@@ -290,7 +315,14 @@ function fillDay(day: Partial<WeatherDaySummary> & { dayMs: number; localDate: s
  * measures into an inference — *"cold and calm, so it should be good"* is counsel, while *"four
  * nights below 20°F, calm while freezing"* is two facts a skater draws their own conclusion from.
  */
-function buildHeadline(days: readonly WeatherDaySummary[], missingDays: number): string[] {
+function buildHeadline(
+  days: readonly WeatherDaySummary[],
+  missingDays: number,
+  partialDays = 0,
+): string[] {
+  // ⚠ `days` is finished days only. Every "in the last N days" below counts `days.length`, so if a
+  // partial row ever leaks back in here those sentences silently start describing an unfinished
+  // window while reading exactly as before.
   if (days.length === 0) return [];
   const lines: string[] = [];
 
@@ -378,6 +410,17 @@ function buildHeadline(days: readonly WeatherDaySummary[], missingDays: number):
   //    seven-day one.
   if (missingDays > 0) {
     lines.push(`${missingDays} day${missingDays === 1 ? '' : 's'} of weather unavailable`);
+  }
+
+  // 7. And say what has not finished yet, for the same reason. Without this the reader has no way to
+  //    tell that today was left out of everything above — the lines would simply describe a shorter
+  //    window than the strip draws, which is the quiet kind of wrong.
+  if (partialDays > 0) {
+    lines.push(
+      partialDays === 1
+        ? 'Today is still in progress and is not counted above'
+        : `${partialDays} days are still in progress and are not counted above`,
+    );
   }
 
   return lines;

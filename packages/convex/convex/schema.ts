@@ -1382,7 +1382,22 @@ export default defineSchema({
      */
     source: literals(WEATHER_DAY_SOURCES),
 
-    hours: v.optional(v.number()), // NOT always 24 — DST days are 23 or 25
+    /**
+     * Seconds east of UTC at this cell on this day, DST included, as Open-Meteo resolved it.
+     *
+     * ⚠ **This is what makes `dayMs` reversible.** `dayMs` is UTC midnight of a *local* date, so
+     * going the other way — from a stored UTC instant like `reports.skateEndTime` to the day key it
+     * belongs to — needs the offset, and without it a caller floors to a UTC day and misfiles every
+     * evening by one day. Free in every response and previously thrown away; see `localDayMsAt`.
+     */
+    utcOffsetSeconds: v.optional(v.number()),
+
+    /**
+     * Hours observed. **NOT always 24** — DST days are 23 or 25, and *today's row is partial by
+     * design* (the fetch asks for `forecast_days: 1` so a reader can see what is happening now).
+     * A consumer summing a window must test `isCompleteDay`, not merely that the field is present.
+     */
+    hours: v.optional(v.number()),
     minTempC: v.optional(v.number()),
     maxTempC: v.optional(v.number()),
     meanTempC: v.optional(v.number()),

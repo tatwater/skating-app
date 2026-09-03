@@ -3,6 +3,7 @@ import type { Polygon } from 'geojson';
 import { describe, expect, test } from 'vitest';
 import { api } from './_generated/api';
 import type { Id } from './_generated/dataModel';
+import { CALIBRATION_WINDOW_DAYS } from './iceCalibration';
 import schema from './schema';
 
 const modules = import.meta.glob('./**/*.*s');
@@ -349,5 +350,178 @@ describe('iceCalibration: the fit', () => {
       .query(api.iceCalibration.calibrationFit, {});
     expect(fit.declined).toBe(1);
     expect(fit.fitted).toBeNull();
+  });
+});
+
+describe('iceCalibration: local dates, not UTC ones', () => {
+  /** Archive days carrying an explicit provider offset, keyed by LOCAL date. */
+  async function seedArchiveWithOffset(
+    t: ReturnType<typeof convexTest>,
+    anchorDayMs: number,
+    days: number,
+    fdhPerDay: number,
+    utcOffsetSeconds = -5 * 3600,
+  ) {
+    await t.run(async (ctx) => {
+      for (let i = 0; i < days; i++) {
+        const dayMs = anchorDayMs - i * DAY_MS;
+        await ctx.db.insert('weatherDays', {
+          cellKey: CELL_KEY,
+          tier: 'browse' as const,
+          dayMs,
+          localDate: new Date(dayMs).toISOString().slice(0, 10),
+          source: 'forecast' as const,
+          hours: 24,
+          utcOffsetSeconds,
+          freezingDegreeHours: fdhPerDay,
+          thawDegreeHours: 0,
+          fetchedAt: Date.now(),
+        });
+      }
+    });
+  }
+
+  test('an evening skate reads the window ending on the day it was skated', async () => {
+    // ⚠ The bug Greptile caught. 8 PM EST on the 10th is 01:00 UTC on the 11th, so a UTC floor
+    // anchored the window on the 11th — including a day that had not happened at skate time and
+    // dropping the oldest day it meant to cover. Evening skating is the common case.
+    const t = convexTest(schema, modules);
+    const waterBodyId = await seedBody(t);
+    const mod = await seedProfile(t, 'moderator');
+
+    const localTenth = Date.UTC(2026, 1, 10);
+    const skateEndTime = Date.UTC(2026, 1, 11, 1, 0); // 20:00 EST on the 10th
+
+    // Archive covers the 10th backwards. Nothing exists for the 11th — a UTC anchor would reach for
+    // it, find one fewer day, and integrate a different window.
+    await seedArchiveWithOffset(t, localTenth, CALIBRATION_WINDOW_DAYS, 10);
+    await t.run((ctx) =>
+      ctx.db.insert('reports', {
+        authorId: mod.id,
+        waterBodyId,
+        point: { lat: 44.0163, lng: -72.0331 },
+        skateEndTime,
+        reportTime: skateEndTime,
+        source: 'native' as const,
+        iceTypes: ['black_ice'] as const,
+        surfaceTags: [],
+        photoIds: [],
+        iceThickness: { readings: [{ valueCm: 12, method: 'measured' as const }] },
+        moderationStatus: 'visible' as const,
+        hazardIdsCreated: [],
+        createdAt: skateEndTime,
+        updatedAt: skateEndTime,
+      }),
+    );
+
+    const res = await t
+      .withIdentity({ subject: mod.subject })
+      .query(api.iceCalibration.calibrationPairs, {});
+    const pair = res.pairs[0];
+    expect(pair).toBeDefined();
+    // Every seeded day is in the window — the anchor landed on the 10th, not the 11th.
+    expect(pair?.daysObserved).toBe(CALIBRATION_WINDOW_DAYS);
+    expect(pair?.freezingDegreeHours).toBeCloseTo(10 * CALIBRATION_WINDOW_DAYS, 6);
+  });
+
+  test('falls back to a longitude-derived offset when none is stored', async () => {
+    // Old rows predate the field. The fallback has to be Eastern, not UTC — returning 0 would put
+    // the bug straight back.
+    const t = convexTest(schema, modules);
+    const waterBodyId = await seedBody(t);
+    const mod = await seedProfile(t, 'moderator');
+    const localTenth = Date.UTC(2026, 1, 10);
+    const skateEndTime = Date.UTC(2026, 1, 11, 1, 0);
+
+    await t.run(async (ctx) => {
+      for (let i = 0; i < CALIBRATION_WINDOW_DAYS; i++) {
+        const dayMs = localTenth - i * DAY_MS;
+        await ctx.db.insert('weatherDays', {
+          cellKey: CELL_KEY,
+          tier: 'browse' as const,
+          dayMs,
+          localDate: new Date(dayMs).toISOString().slice(0, 10),
+          source: 'forecast' as const,
+          hours: 24,
+          freezingDegreeHours: 10,
+          thawDegreeHours: 0,
+          fetchedAt: Date.now(),
+        }); // no utcOffsetSeconds
+      }
+    });
+    await t.run((ctx) =>
+      ctx.db.insert('reports', {
+        authorId: mod.id,
+        waterBodyId,
+        point: { lat: 44.0163, lng: -72.0331 },
+        skateEndTime,
+        reportTime: skateEndTime,
+        source: 'native' as const,
+        iceTypes: ['black_ice'] as const,
+        surfaceTags: [],
+        photoIds: [],
+        iceThickness: { readings: [{ valueCm: 12, method: 'measured' as const }] },
+        moderationStatus: 'visible' as const,
+        hazardIdsCreated: [],
+        createdAt: skateEndTime,
+        updatedAt: skateEndTime,
+      }),
+    );
+
+    const res = await t
+      .withIdentity({ subject: mod.subject })
+      .query(api.iceCalibration.calibrationPairs, {});
+    expect(res.pairs[0]?.daysObserved).toBe(CALIBRATION_WINDOW_DAYS);
+  });
+
+  test('a day still in progress does not enter the integral', async () => {
+    // A partial row contributes a fraction of a day's freezing while counting as a whole day, which
+    // biases the fitted alpha with nothing to reveal it.
+    const t = convexTest(schema, modules);
+    const waterBodyId = await seedBody(t);
+    const mod = await seedProfile(t, 'moderator');
+    const localTenth = Date.UTC(2026, 1, 10);
+    const skateEndTime = Date.UTC(2026, 1, 11, 1, 0);
+
+    await seedArchiveWithOffset(t, localTenth - DAY_MS, 10, 10);
+    await t.run((ctx) =>
+      ctx.db.insert('weatherDays', {
+        cellKey: CELL_KEY,
+        tier: 'browse' as const,
+        dayMs: localTenth,
+        localDate: '2026-02-10',
+        source: 'forecast' as const,
+        hours: 4, // still going
+        utcOffsetSeconds: -5 * 3600,
+        freezingDegreeHours: 2,
+        thawDegreeHours: 0,
+        fetchedAt: Date.now(),
+      }),
+    );
+    await t.run((ctx) =>
+      ctx.db.insert('reports', {
+        authorId: mod.id,
+        waterBodyId,
+        point: { lat: 44.0163, lng: -72.0331 },
+        skateEndTime,
+        reportTime: skateEndTime,
+        source: 'native' as const,
+        iceTypes: ['black_ice'] as const,
+        surfaceTags: [],
+        photoIds: [],
+        iceThickness: { readings: [{ valueCm: 12, method: 'measured' as const }] },
+        moderationStatus: 'visible' as const,
+        hazardIdsCreated: [],
+        createdAt: skateEndTime,
+        updatedAt: skateEndTime,
+      }),
+    );
+
+    const res = await t
+      .withIdentity({ subject: mod.subject })
+      .query(api.iceCalibration.calibrationPairs, {});
+    // Ten settled days, not eleven, and the partial day's 2 FDH is not in the sum.
+    expect(res.pairs[0]?.daysObserved).toBe(10);
+    expect(res.pairs[0]?.freezingDegreeHours).toBeCloseTo(100, 6);
   });
 });

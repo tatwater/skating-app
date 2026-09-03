@@ -51,6 +51,61 @@ export const NIGHT_END_HOUR = 9;
 export const WIND_SECTOR_COUNT = 16;
 
 /**
+ * **Which local calendar day did this instant fall on, at a place with this UTC offset?**
+ *
+ * ⚠ **The one conversion from an instant to a `dayMs` key, and it must not be open-coded again.**
+ * `weatherDays.dayMs` is UTC-midnight of a *local* date, so flooring a real UTC timestamp to a UTC
+ * day answers a different question and is wrong by up to the offset. In this region that is 4–5
+ * hours, which means **every evening skate is misfiled onto the next day** — the common case, not an
+ * edge case. Two independent call sites got this wrong before the helper existed (the panel's window
+ * anchor, and the D160 calibration window), which is what a missing abstraction looks like.
+ *
+ * The output is a key, never an instant: do not add it to anything or format it with a local
+ * formatter. {@link dayMsToLocalDate} is its inverse.
+ */
+export function localDayMsAt(instantMs: number, utcOffsetSeconds: number): number {
+  return Math.floor((instantMs + utcOffsetSeconds * 1000) / DAY_MS) * DAY_MS;
+}
+
+/**
+ * A standing-time UTC offset guessed from longitude, in seconds, for when nothing better is stored.
+ *
+ * ⚠ **A fallback, never a preference.** Real offsets come from Open-Meteo (`utc_offset_seconds`,
+ * stored on the day row) and know both the actual zone boundary and whether DST was in force. This
+ * knows neither: it is `round(lng / 15)` hours, so it lands on the right hour for the whole
+ * five-state region — every one of which is US Eastern — and would be wrong for a place whose zone
+ * boundary does not follow its meridian, or by an hour in summer.
+ *
+ * It exists so that a report against a cell with no stored offset is off by at most an hour rather
+ * than by five, and so the failure is a documented approximation instead of a silent UTC assumption.
+ */
+export function approximateUtcOffsetSeconds(lng: number): number {
+  return Math.round(lng / 15) * 3600;
+}
+
+/**
+ * Hours below which a stored day is **still in progress**, not a finished observation.
+ *
+ * ⚠ **Not `=== 24`.** DST days are 23 or 25 hours long and both transitions fall inside a Northeast
+ * skating season, so an equality test would mark the spring-forward day permanently incomplete and
+ * quietly drop a real day out of every window that crosses it.
+ */
+export const COMPLETE_DAY_MIN_HOURS = 23;
+
+/**
+ * Has this day finished happening?
+ *
+ * The archive deliberately stores **today's elapsed hours** (`forecast_days: '1'`) so a reader can
+ * see what is happening now, and rewrites the row tomorrow when the day is whole. That makes
+ * "partial" a normal, expected state of a perfectly good row — and it means *having data* and *being
+ * a complete day* are different questions. Summing a partial day into a window integral reports
+ * un-elapsed precipitation as zero and an in-progress high as final.
+ */
+export function isCompleteDay(hours: number | undefined | null): boolean {
+  return typeof hours === 'number' && hours >= COMPLETE_DAY_MIN_HOURS;
+}
+
+/**
  * The window a clear hour is allowed to count as *sun* in, when Open-Meteo gave us no
  * `sunshine_duration` and we are falling back to cloud cover.
  *

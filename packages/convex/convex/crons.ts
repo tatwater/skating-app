@@ -97,6 +97,22 @@ crons.interval(
   {},
 );
 
+// **The weather cell registry reconciler (N6h / D152).** `weatherCells` is a projection of the corpus
+// and everything downstream pages it, so without a producer the daily sweep visits zero cells and
+// reports success — an empty archive, silently. It also has to notice drift: a body imported after the
+// last run occupies a cell nobody registered (invisible to D159 for ever), and a body purged or moved
+// leaves a vacated cell the sweep keeps paying Open-Meteo for.
+//
+// ⚠ **Weekly, not daily, and NOT season-gated.** Daily would re-read 25,000 fat rows to rediscover
+// keys that change only when the corpus does — precisely the ~75 MB/day the registry exists to avoid.
+// Weekly amortises to ~10 MB/day. Ungated because the registry must be populated *before* a season
+// opens, or the first sweep of the year has nothing to sweep; the corpus also drifts in the off-season.
+crons.interval(
+  'reconcile weather cell registry',
+  { hours: 24 * 7 },
+  internal.weatherArchive.maybeSyncWeatherCells,
+  {},
+);
 // **The Tier-B daily archive append (N6h / D153, D161).** Corpus-wide, ~3,043 `filter` cells, batched
 // and self-rescheduling. Daily rather than hourly because past days do not change — an append only has
 // to close yesterday and refresh today's partial row.

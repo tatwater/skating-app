@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { dayMsToLocalDate } from './weatherDay';
 import {
   buildPastWeatherPanel,
   CALM_FREEZE_MAX_KPH,
@@ -312,5 +313,80 @@ describe('formatLocalHourLabel — the local-shift trap (N6h hole 1)', () => {
   it('returns an empty label rather than "Invalid Date" for a non-finite input', () => {
     expect(formatLocalHourLabel(Number.NaN)).toBe('');
     expect(formatLocalHourLabel(Number.POSITIVE_INFINITY)).toBe('');
+  });
+});
+
+describe('buildPastWeatherPanel — today has not finished happening', () => {
+  /** Six settled days, then a three-hour "today" — the shape the archive actually stores. */
+  function windowWithPartialToday(): PanelDay[] {
+    const days: PanelDay[] = [];
+    for (let i = 6; i >= 1; i--) {
+      const dayMs = Date.UTC(2026, 1, 10 - i);
+      days.push({
+        dayMs,
+        localDate: dayMsToLocalDate(dayMs),
+        hours: 24,
+        minTempC: -12,
+        maxTempC: -6,
+        snowfallCm: 0,
+        rainMm: 0,
+        hoursBelowFreezing: 24,
+        hoursAboveFreezing: 0,
+      });
+    }
+    days.push({
+      dayMs: Date.UTC(2026, 1, 10),
+      localDate: '2026-02-10',
+      hours: 3, // 3 AM. Nothing has happened yet today.
+      minTempC: -3,
+      maxTempC: -2,
+      snowfallCm: 0,
+      rainMm: 0,
+      hoursBelowFreezing: 3,
+      hoursAboveFreezing: 0,
+    });
+    return days;
+  }
+
+  it('does not count an unfinished day as a settled one', () => {
+    const panel = buildPastWeatherPanel(windowWithPartialToday());
+    expect(panel.partialDays).toBe(1);
+    expect(panel.rows).toHaveLength(7); // still drawn — what is happening now is what people want
+    expect(panel.rows.at(-1)?.partial).toBe(true);
+    expect(panel.rows.at(-1)?.missing).toBe(false); // a partial day is not a gap
+    expect(panel.rows[0]?.partial).toBe(false);
+  });
+
+  it('says the last N days about N *finished* days, not N rows', () => {
+    // ⚠ The bug: today's un-elapsed hours read as "it did not snow today", so a seven-day no-snow
+    // claim covered six settled days and three hours. The count now matches what was actually
+    // observed end to end.
+    const panel = buildPastWeatherPanel(windowWithPartialToday());
+    expect(panel.headline.some((l) => l.includes('No snow in the last 6 days'))).toBe(true);
+    expect(panel.headline.some((l) => l.includes('last 7 days'))).toBe(false);
+  });
+
+  it('tells the reader that today was left out, rather than quietly shortening the window', () => {
+    const panel = buildPastWeatherPanel(windowWithPartialToday());
+    expect(panel.headline.some((l) => l.includes('still in progress'))).toBe(true);
+  });
+
+  it("does not let a partial day's snow or thaw enter an integral", () => {
+    const days = windowWithPartialToday();
+    // It is snowing hard right now, three hours in.
+    days[6] = { ...(days[6] as NonNullable<PanelDay>), snowfallCm: 8, hoursAboveFreezing: 0 };
+    const panel = buildPastWeatherPanel(days);
+    // The snow is visible on the strip...
+    expect(panel.rows.at(-1)?.snowfallIn).toBeGreaterThan(0);
+    // ...but the headline does not report a partial total as the window's settled total.
+    expect(panel.headline.some((l) => l.includes('No snow in the last 6 days'))).toBe(true);
+  });
+
+  it('keeps a 23-hour DST day as a complete day', () => {
+    const days = windowWithPartialToday();
+    days[6] = { ...(days[6] as NonNullable<PanelDay>), hours: 23 };
+    const panel = buildPastWeatherPanel(days);
+    expect(panel.partialDays).toBe(0);
+    expect(panel.headline.some((l) => l.includes('No snow in the last 7 days'))).toBe(true);
   });
 });

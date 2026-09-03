@@ -119,6 +119,11 @@ function todayKey(nowMs: number): number {
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
 
 interface IsoHourlyResponse {
+  /**
+   * Seconds east of UTC for the requested coordinate, DST included, as Open-Meteo resolved it under
+   * `timezone=auto`. Free in every response and previously discarded — see `LocalHourlyBatch`.
+   */
+  utc_offset_seconds?: number;
   hourly?: {
     time?: string[]; // local wall-clock, `YYYY-MM-DDTHH:mm`
     [key: string]: (number | null)[] | string[] | undefined;
@@ -147,6 +152,19 @@ function parseLocalStamp(stamp: string): { localDate: string; localHour: number 
 }
 
 /**
+ * Hours plus the offset the place was on, which is the pair the archive actually needs.
+ *
+ * ⚠ **The hours alone cannot answer "which local day was this instant".** They carry local wall-clock
+ * strings, which is exactly right for bucketing and useless for mapping a stored UTC timestamp (a
+ * report's `skateEndTime`) onto a `dayMs` key. The offset is what closes that gap, it is in every
+ * response already, and dropping it is what let the calibration window slip a day.
+ */
+interface LocalHourlyBatch {
+  hours: LocalHourlyWeather[];
+  utcOffsetSeconds: number | null;
+}
+
+/**
  * Fetch `pastDays` of local-stamped hourly weather for a cell, plus today.
  *
  * Returns `null` on any failure so the caller can leave the days it could not get **absent rather
@@ -156,7 +174,7 @@ async function fetchLocalHourly(
   ctx: ActionCtx,
   cell: WeatherCell,
   pastDays: number,
-): Promise<LocalHourlyWeather[] | null> {
+): Promise<LocalHourlyBatch | null> {
   const days = Math.min(MAX_PAST_DAYS, Math.max(1, pastDays));
   const params = new URLSearchParams({
     latitude: String(cell.lat),
@@ -238,7 +256,11 @@ async function fetchLocalHourly(
     if (typeof swv === 'number') h.shortwaveWm2 = swv;
     out.push(h);
   }
-  return out.length > 0 ? out : null;
+  if (out.length === 0) return null;
+  return {
+    hours: out,
+    utcOffsetSeconds: typeof json.utc_offset_seconds === 'number' ? json.utc_offset_seconds : null,
+  };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
@@ -322,6 +344,8 @@ export const upsertWeatherDays = internalMutation({
     tier: literals(WEATHER_TIERS),
     source: literals(WEATHER_DAY_SOURCES),
     fetchedAt: v.number(),
+    /** Seconds east of UTC at this cell, as the provider resolved it. See `LocalHourlyBatch`. */
+    utcOffsetSeconds: v.optional(v.number()),
     days: v.array(
       v.object({
         dayMs: v.number(),
@@ -337,6 +361,7 @@ export const upsertWeatherDays = internalMutation({
         tier: a.tier,
         source: a.source,
         fetchedAt: a.fetchedAt,
+        ...(a.utcOffsetSeconds === undefined ? {} : { utcOffsetSeconds: a.utcOffsetSeconds }),
         ...day,
       });
     }
@@ -431,6 +456,18 @@ export const listCellDayKeys = internalQuery({
  * a small question.
  *
  * Idempotent: re-running refreshes `bodyCount` and `updatedAt` rather than duplicating.
+ *
+ * ## ⚠ The registry is a projection of the corpus, so it needs a producer AND a reconciler
+ *
+ * Shipped with neither, and the failure is silent in both directions. With an empty registry
+ * `refreshTierDays` pages zero cells, returns `done: true`, and the cron reports a healthy tick
+ * having fetched nothing — the archive simply stays empty. As the corpus drifts, a body imported
+ * after the last run occupies a cell nobody registered and is invisible to D159 for ever, while a
+ * body purged or moved leaves a **vacated** cell the sweep keeps paying Open-Meteo for.
+ *
+ * So: `maybeSyncWeatherCells` runs it weekly (not daily — re-reading 25,000 fat rows every day is
+ * the cost the registry exists to avoid, and ~75 MB once a week is ~10 MB/day amortised), the sweep
+ * self-heals when it finds the registry empty, and a completed run prunes what it did not see.
  */
 export const backfillWeatherCells = internalAction({
   args: {
@@ -439,7 +476,10 @@ export const backfillWeatherCells = internalAction({
     /** Minted by the first batch and carried by the rest — see `weatherCells.runId`. */
     runId: v.optional(v.string()),
   },
-  handler: async (ctx, { cursor, tier, runId }): Promise<{ done: boolean; scanned: number }> => {
+  handler: async (
+    ctx,
+    { cursor, tier, runId },
+  ): Promise<{ done: boolean; scanned: number; pruned: number }> => {
     const targetTier = tier ?? 'filter';
     const run = runId ?? `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
     const page = await ctx.runQuery(internal.weatherArchive.pageBodyCells, {
@@ -458,8 +498,87 @@ export const backfillWeatherCells = internalAction({
         tier: targetTier,
         runId: run,
       });
+      return { done: false, scanned: page.scanned, pruned: 0 };
     }
-    return { done: page.isDone, scanned: page.scanned };
+    // ⚠ **Only after a COMPLETE walk.** Pruning mid-run would delete every cell the remaining pages
+    // were about to re-stamp — the whole registry, one page in. `isDone` is the only safe moment,
+    // and the run id is what distinguishes "not seen this run" from "not seen this page".
+    const pruned = await ctx.runMutation(internal.weatherArchive.pruneVacatedCells, {
+      tier: targetTier,
+      runId: run,
+    });
+    return { done: true, scanned: page.scanned, pruned };
+  },
+});
+
+/**
+ * Delete registered cells a completed run did not see — the corpus no longer occupies them.
+ *
+ * A body that was purged, merged or moved across a cell boundary leaves its old cell behind, and
+ * nothing else would ever remove it: the sweep would fetch weather for an empty patch of map daily,
+ * for ever, and `bodyCount` would keep asserting bodies that are not there.
+ *
+ * ⚠ **`weatherDays` rows are deliberately NOT deleted with the cell.** They describe what the
+ * weather did at a place, which stays true whether or not a lake is still listed there — and if the
+ * cell is re-occupied later (a body edited back, a re-import) the history is still good. D153's rule
+ * is that an observation is never swept; this prunes the *schedule*, not the record.
+ */
+export const pruneVacatedCells = internalMutation({
+  args: { tier: literals(WEATHER_TIERS), runId: v.string() },
+  handler: async (ctx, { tier, runId }): Promise<number> => {
+    const stale = await ctx.db
+      .query('weatherCells')
+      .withIndex('by_tier_key', (q) => q.eq('tier', tier))
+      .collect();
+    let pruned = 0;
+    for (const cell of stale) {
+      if (cell.runId === runId) continue;
+      await ctx.db.delete(cell._id);
+      pruned += 1;
+    }
+    return pruned;
+  },
+});
+
+/** True when a tier has no registered cells at all — the fresh-deployment state. */
+export const tierRegistryEmpty = internalQuery({
+  args: { tier: literals(WEATHER_TIERS) },
+  handler: async (ctx, { tier }) => {
+    const first = await ctx.db
+      .query('weatherCells')
+      .withIndex('by_tier_key', (q) => q.eq('tier', tier))
+      .first();
+    return first === null;
+  },
+});
+
+/**
+ * The weekly reconciler: re-derive both tiers' cells from the corpus.
+ *
+ * **Not season-gated, and that is the point.** The registry has to be populated *before* a season
+ * opens, or the first sweep of the year pages zero cells and D161's "region-wide freeze map on day
+ * one" is a map of nothing. It is also the only thing that notices corpus drift, which happens in
+ * the off-season as often as in it — N7 added 25,197 bodies and N6d added 4,209, none of which would
+ * have had a weather cell.
+ *
+ * Both tiers, because `browse` cells are registered for the same reason `filter` ones are: the gap
+ * sweep pages the registry per tier, and an unregistered browse cell never gets its holes repaired.
+ *
+ * ⚠ **Runs each tier inline rather than scheduling it**, matching `maybeRefreshFilterTier`. The
+ * backfill reschedules its own remaining pages either way, so this is exactly the same work — and in
+ * exchange the tick reports what it actually did instead of only that it asked. The scheduled shape
+ * was tried first and made the wiring untestable, which is the second time this phase has learned
+ * that lesson.
+ */
+export const maybeSyncWeatherCells = internalAction({
+  args: {},
+  handler: async (ctx): Promise<{ tiers: { tier: string; pruned: number }[] }> => {
+    const tiers: { tier: string; pruned: number }[] = [];
+    for (const tier of WEATHER_TIERS) {
+      const res = await ctx.runAction(internal.weatherArchive.backfillWeatherCells, { tier });
+      tiers.push({ tier, pruned: res.pruned });
+    }
+    return { tiers };
   },
 });
 
@@ -576,15 +695,16 @@ export async function ingestCellDays(
   cell: WeatherCell,
   pastDays: number,
 ): Promise<number | null> {
-  const hours = await fetchLocalHourly(ctx, cell, pastDays);
-  if (hours === null) return null;
-  const days = summarizeWeatherDays(hours);
+  const batch = await fetchLocalHourly(ctx, cell, pastDays);
+  if (batch === null) return null;
+  const days = summarizeWeatherDays(batch.hours);
   if (days.length === 0) return 0;
   await ctx.runMutation(internal.weatherArchive.upsertWeatherDays, {
     cellKey: cell.key,
     tier,
     source: 'forecast',
     fetchedAt: Date.now(),
+    ...(batch.utcOffsetSeconds === null ? {} : { utcOffsetSeconds: batch.utcOffsetSeconds }),
     days: days.map((d) => ({ dayMs: d.dayMs, localDate: d.localDate, ...storableDay(d) })),
   });
   return days.length;
@@ -927,6 +1047,25 @@ export const maybeRefreshFilterTier = internalAction({
         season: gate.season,
         reason: gate.closesOn === null ? 'season not open' : `season closed ${gate.closesOn}`,
       };
+    }
+
+    // ⚠ **Self-heal an empty registry before sweeping it.** `refreshTierDays` pages `weatherCells`,
+    // so on a fresh deployment — or any deployment where the weekly reconciler has not run yet — it
+    // would page zero cells, return `done: true`, and report a perfectly healthy tick that fetched
+    // nothing at all. Waiting up to a week for `maybeSyncWeatherCells` would mean a week of an empty
+    // archive at the exact moment the season opens.
+    if (await ctx.runQuery(internal.weatherArchive.tierRegistryEmpty, { tier: 'filter' })) {
+      console.warn(
+        '[weatherArchive] filter registry empty at sweep time — backfilling cells inline. ' +
+          'This should normally have been done by the weekly maybeSyncWeatherCells.',
+      );
+      await ctx.runAction(internal.weatherArchive.backfillWeatherCells, { tier: 'filter' });
+      if (await ctx.runQuery(internal.weatherArchive.tierRegistryEmpty, { tier: 'filter' })) {
+        // A corpus with no listed bodies is the only honest way to reach here, and it is worth
+        // saying out loud rather than sweeping zero cells in silence every day for ever.
+        console.error('[weatherArchive] registry still empty after backfill — corpus has no cells');
+        return { started: false, season: gate.season, reason: 'cell registry empty' };
+      }
     }
 
     // Cold start? Yesterday is the newest day the sweep would ever have completed, so its absence

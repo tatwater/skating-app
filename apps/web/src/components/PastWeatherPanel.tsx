@@ -133,6 +133,7 @@ export function PastWeatherPanel({
               rangeLowF={lowest}
               rangeHighF={highest}
               missing={row.missing}
+              partial={row.partial}
             />
             <span className="text-[10px] text-foreground tabular-nums">
               {row.highF === null ? '—' : `${row.highF}°`}
@@ -186,12 +187,15 @@ function TempBar({
   rangeLowF,
   rangeHighF,
   missing,
+  partial,
 }: {
   highF: number | null;
   lowF: number | null;
   rangeLowF: number;
   rangeHighF: number;
   missing: boolean;
+  /** Today, mid-afternoon: real data whose day has not finished. Drawn, but not drawn as settled. */
+  partial: boolean;
 }) {
   const span = Math.max(1, rangeHighF - rangeLowF);
   const pct = (v: number) => ((v - rangeLowF) / span) * 100;
@@ -210,13 +214,18 @@ function TempBar({
   const frozen = highF <= 32;
 
   return (
-    <div className="relative h-16 w-2 rounded-full bg-background-subtle">
+    <div
+      className="relative h-16 w-2 rounded-full bg-background-subtle"
+      {...(partial ? { title: 'Still in progress — today is not finished' } : {})}
+    >
       <div
         className="absolute right-0 left-0 border-border border-t border-dashed"
         style={{ bottom: `${Math.min(100, Math.max(0, freezePct))}%` }}
       />
       <div
-        className={`absolute right-0 left-0 rounded-full ${frozen ? 'bg-accent' : 'bg-foreground-muted'}`}
+        // A partial day is drawn at reduced opacity: the reader can see what is happening now
+        // without the bar claiming to be a settled high and low. The headline excludes it entirely.
+        className={`absolute right-0 left-0 rounded-full ${frozen ? 'bg-accent' : 'bg-foreground-muted'}${partial ? ' opacity-50' : ''}`}
         style={{
           bottom: `${Math.max(0, pct(lowF))}%`,
           height: `${Math.max(4, pct(highF) - pct(lowF))}%`,

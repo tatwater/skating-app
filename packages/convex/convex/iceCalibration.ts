@@ -28,7 +28,14 @@
  * privately is what makes it safe to learn.
  */
 
-import { estimateIceThickness, fitStefanAlpha, STEFAN_ALPHA_DEFAULT } from '@skating/core';
+import {
+  approximateUtcOffsetSeconds,
+  estimateIceThickness,
+  fitStefanAlpha,
+  isCompleteDay,
+  localDayMsAt,
+  STEFAN_ALPHA_DEFAULT,
+} from '@skating/core';
 import { v } from 'convex/values';
 import type { QueryCtx } from './_generated/server';
 import { query } from './_generated/server';
@@ -135,11 +142,51 @@ async function windowIntegrals(
   let days = 0;
   for (const row of rows) {
     if (row.missing === true) continue;
+    // ⚠ **A day still in progress must not enter a degree-hour integral.** The archive stores
+    // today's elapsed hours on purpose, so an unfinished row is valid data and an incomplete
+    // measurement at once — summing it contributes a fraction of a day's freezing while counting as
+    // a whole one, which biases the fitted Stefan coefficient in a direction nothing would reveal.
+    if (!isCompleteDay(row.hours)) continue;
     fdh += row.freezingDegreeHours ?? 0;
     tdh += row.thawDegreeHours ?? 0;
     days += 1;
   }
   return { fdh, tdh, days };
+}
+
+/**
+ * The UTC offset to read this cell's day keys with — stored if we have it, guessed if we do not.
+ *
+ * ⚠ **Needed because `dayMs` is a LOCAL date and `skateEndTime` is a UTC instant.** Flooring the
+ * instant to a UTC day is wrong by the offset, which in this region is 4–5 hours — so every skate
+ * ending after about 7 PM lands on the next day's key, shifting the whole 60-day window by one and
+ * silently biasing the fit. Evening skating is the common case, so this was the common path.
+ *
+ * Prefers what the provider told us (correct, and DST-aware) and falls back to longitude, which is
+ * right to the hour across all five states. Never falls back to zero: a UTC assumption is exactly
+ * the bug being fixed.
+ */
+async function cellUtcOffsetSeconds(
+  ctx: QueryCtx,
+  cellKey: string,
+  lng: number,
+  nearMs: number,
+): Promise<number> {
+  // Look in a small window around the report rather than at the cell's newest row: the offset is a
+  // property of a *date* once DST is involved, and the date that matters is the skate's.
+  const rows = await ctx.db
+    .query('weatherDays')
+    .withIndex('by_cell_day', (q) =>
+      q
+        .eq('cellKey', cellKey)
+        .gte('dayMs', nearMs - 2 * DAY_MS)
+        .lte('dayMs', nearMs + DAY_MS),
+    )
+    .collect();
+  for (const row of rows) {
+    if (typeof row.utcOffsetSeconds === 'number') return row.utcOffsetSeconds;
+  }
+  return approximateUtcOffsetSeconds(lng);
 }
 
 /**
@@ -165,7 +212,7 @@ async function collectCalibrationPairs(
 
   const pairs: CalibrationPair[] = [];
   let excludedEstimates = 0;
-  const bodyCache = new Map<string, { name: string; cellKey: string } | null>();
+  const bodyCache = new Map<string, { name: string; cellKey: string; lng: number } | null>();
   // Reports cluster: one popular lake, many skate days sharing a 60-day window. Without this every
   // one of them re-reads the same archive rows and the query walks into Convex's read cap.
   const windowCache = new Map<string, { fdh: number; tdh: number; days: number }>();
@@ -191,15 +238,22 @@ async function collectCalibrationPairs(
     let body = bodyCache.get(key);
     if (body === undefined) {
       const doc = await ctx.db.get(report.waterBodyId);
-      body =
-        doc && !doc.removedAt
-          ? { name: doc.name, cellKey: bodyWeatherCell(doc, 'browse').key }
-          : null;
+      if (doc && !doc.removedAt) {
+        const cell = bodyWeatherCell(doc, 'browse');
+        body = { name: doc.name, cellKey: cell.key, lng: cell.lng };
+      } else {
+        body = null;
+      }
       bodyCache.set(key, body);
     }
     if (!body) continue;
 
-    const toMs = Math.floor(report.skateEndTime / DAY_MS) * DAY_MS;
+    // The lake's local calendar day, not the UTC one — see `cellUtcOffsetSeconds`. The UTC estimate
+    // is only used to find a nearby row to read the offset off; the anchor itself comes from the
+    // shared helper so this site cannot drift from the panel's.
+    const utcEstimate = Math.floor(report.skateEndTime / DAY_MS) * DAY_MS;
+    const offset = await cellUtcOffsetSeconds(ctx, body.cellKey, body.lng, utcEstimate);
+    const toMs = localDayMsAt(report.skateEndTime, offset);
     const fromMs = toMs - (CALIBRATION_WINDOW_DAYS - 1) * DAY_MS;
     const windowKey = `${body.cellKey}:${toMs}`;
     let integrals = windowCache.get(windowKey);

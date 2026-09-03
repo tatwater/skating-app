@@ -1,13 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import {
+  approximateUtcOffsetSeconds,
   DAYLIGHT_END_HOUR,
   DAYLIGHT_START_HOUR,
   dayMsToLocalDate,
   dominantWindSector,
   estimateAlbedo,
+  isCompleteDay,
   type LocalHourlyWeather,
   lastSnowDay,
   localDateToDayMs,
+  localDayMsAt,
   MELT_WH_PER_MM,
   nightsBelowThresholdC,
   rainTotalMm,
@@ -388,5 +391,63 @@ describe('solar weighting (the melt side)', () => {
     );
     if (!day) throw new Error('expected one day');
     expect(day.meltIndexMm).toBeCloseTo(day.absorbedInsolationWhM2 / MELT_WH_PER_MM, 6);
+  });
+});
+
+describe('instant → local day key (the conversion that had no owner)', () => {
+  const EST = -5 * 3600;
+  const EDT = -4 * 3600;
+
+  it('files an evening skate on the day it was actually skated', () => {
+    // 8 PM EST on 10 Feb is 01:00 UTC on 11 Feb. A UTC floor calls that the 11th; the lake was on
+    // the 10th, and `weatherDays.dayMs` keys the 10th. This is the common case, not an edge case —
+    // most skating ends in the evening.
+    const skate = Date.UTC(2026, 1, 11, 1, 0); // 2026-02-11T01:00Z
+    expect(dayMsToLocalDate(localDayMsAt(skate, EST))).toBe('2026-02-10');
+    // What the old open-coded arithmetic did, preserved so the difference is visible:
+    expect(dayMsToLocalDate(Math.floor(skate / 86_400_000) * 86_400_000)).toBe('2026-02-11');
+  });
+
+  it('leaves a midday skate on its own day under either offset', () => {
+    const noon = Date.UTC(2026, 1, 10, 17, 0); // noon EST
+    expect(dayMsToLocalDate(localDayMsAt(noon, EST))).toBe('2026-02-10');
+    expect(dayMsToLocalDate(localDayMsAt(noon, EDT))).toBe('2026-02-10');
+  });
+
+  it('round-trips against dayMsToLocalDate at the local midnight boundary', () => {
+    // One minute either side of local midnight must land on different days, and the right ones.
+    const justBefore = Date.UTC(2026, 1, 11, 4, 59); // 23:59 EST on the 10th
+    const justAfter = Date.UTC(2026, 1, 11, 5, 1); // 00:01 EST on the 11th
+    expect(dayMsToLocalDate(localDayMsAt(justBefore, EST))).toBe('2026-02-10');
+    expect(dayMsToLocalDate(localDayMsAt(justAfter, EST))).toBe('2026-02-11');
+  });
+
+  it('guesses the region right from longitude when nothing is stored', () => {
+    // Every state the corpus covers is US Eastern. A fallback that returned 0 would reintroduce the
+    // exact bug, so this asserts the sign and magnitude rather than merely "a number".
+    for (const lng of [-73.9, -72.6, -71.1, -68.8]) {
+      expect(approximateUtcOffsetSeconds(lng)).toBe(-5 * 3600);
+    }
+  });
+});
+
+describe('isCompleteDay — a partial day is data, not a finished day', () => {
+  it('rejects a day still in progress', () => {
+    expect(isCompleteDay(3)).toBe(false);
+    expect(isCompleteDay(0)).toBe(false);
+    expect(isCompleteDay(22)).toBe(false);
+  });
+
+  it('accepts both DST lengths, which an equality test would not', () => {
+    // ⚠ 23 and 25 are real day lengths and both transitions fall inside a skating season. `=== 24`
+    // would mark the spring-forward day permanently unfinished and drop it out of every window.
+    expect(isCompleteDay(23)).toBe(true);
+    expect(isCompleteDay(24)).toBe(true);
+    expect(isCompleteDay(25)).toBe(true);
+  });
+
+  it('treats absent hours as not complete rather than as complete', () => {
+    expect(isCompleteDay(undefined)).toBe(false);
+    expect(isCompleteDay(null)).toBe(false);
   });
 });

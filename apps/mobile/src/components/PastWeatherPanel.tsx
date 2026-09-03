@@ -103,7 +103,16 @@ export function PastWeatherPanel({
           of carrying `missing` through from the archive. */}
       <XStack gap="$2" marginTop="$2">
         {panel.rows.map((row) => (
-          <YStack alignItems="center" flex={1} gap="$1" key={row.dayMs}>
+          // A partial day (today, so far) is drawn at reduced opacity rather than hidden: what is
+          // happening right now is exactly what a skater wants to see, but it must not read as a
+          // settled high and low. The headline leaves it out of every integral.
+          <YStack
+            alignItems="center"
+            flex={1}
+            gap="$1"
+            key={row.dayMs}
+            opacity={row.partial ? 0.5 : 1}
+          >
             <Text color="$foregroundMuted" fontSize={10} textTransform="uppercase">
               {shortDayLabel(row.localDate)}
             </Text>

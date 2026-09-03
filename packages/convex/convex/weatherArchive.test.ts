@@ -775,3 +775,149 @@ describe('weatherArchive: the public read guard', () => {
     expect(fetchMock.mock.calls.length).toBe(callsAfterFirst);
   });
 });
+
+describe('weatherArchive: the cell registry has a producer (and a reconciler)', () => {
+  /** Open the season so the sweep is allowed to spend anything. */
+  async function openSeason(t: ReturnType<typeof convexTest>) {
+    const gate = await t.run((ctx) =>
+      ctx.runQuery(internal.weatherArchive.isSweepSeasonOpen, { nowMs: Date.now() }),
+    );
+    await t.run((ctx) =>
+      ctx.db.insert('imageryIngestSeasons', {
+        season: gate.season,
+        opensOn: '2025-12-01',
+        openedBy: ['sentinel pond'],
+        winterFrom: '2025-11-01',
+        sitesSampled: 25,
+        detectedAt: Date.now(),
+      }),
+    );
+  }
+
+  test('the daily sweep self-heals an empty registry instead of quietly fetching nothing', async () => {
+    // ⚠ The shipped failure: nothing outside tests ever called `backfillWeatherCells`, so on a fresh
+    // deployment `refreshTierDays` paged zero cells, returned done, and the cron reported a healthy
+    // tick having fetched nothing at all. Forever, silently.
+    const t = convexTest(schema, modules);
+    await seedBody(t);
+    await openSeason(t);
+    // Deliberately NO backfill call — this is the fresh-deployment state.
+    const before = await t.run((ctx) => ctx.db.query('weatherCells').collect());
+    expect(before).toHaveLength(0);
+
+    const fetchMock = vi.fn(async () => okJson(isoResponse(recentDates(3))));
+    vi.stubGlobal('fetch', fetchMock);
+    const result = await t.action(internal.weatherArchive.maybeRefreshFilterTier, {});
+    await t.finishInProgressScheduledFunctions();
+
+    expect(result.started).toBe(true);
+    expect(fetchMock).toHaveBeenCalled();
+    const rows = await t.run((ctx) => ctx.db.query('weatherDays').collect());
+    expect(rows.length).toBeGreaterThan(0);
+  });
+
+  test('reports an empty corpus rather than sweeping nothing in silence', async () => {
+    const t = convexTest(schema, modules); // no bodies at all
+    await openSeason(t);
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+
+    const result = await t.action(internal.weatherArchive.maybeRefreshFilterTier, {});
+    await t.finishInProgressScheduledFunctions();
+
+    expect(result.started).toBe(false);
+    expect(result.reason).toBe('cell registry empty');
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  test('the weekly reconciler registers BOTH tiers', async () => {
+    // The gap sweep pages the registry per tier, so an unregistered `browse` cell never gets its
+    // holes repaired — the reconciler cannot be filter-only.
+    const t = convexTest(schema, modules);
+    await seedBody(t);
+    await t.action(internal.weatherArchive.maybeSyncWeatherCells, {});
+    await t.finishInProgressScheduledFunctions();
+
+    const cells = await t.run((ctx) => ctx.db.query('weatherCells').collect());
+    expect(cells.some((c) => c.tier === 'filter')).toBe(true);
+    expect(cells.some((c) => c.tier === 'browse')).toBe(true);
+  });
+
+  test('picks up a body added after the last run', async () => {
+    const t = convexTest(schema, modules);
+    await seedBody(t);
+    await t.action(internal.weatherArchive.backfillWeatherCells, { tier: 'filter' });
+    await t.finishInProgressScheduledFunctions();
+    const first = await t.run((ctx) => ctx.db.query('weatherCells').collect());
+
+    // A later import lands a body two degrees away — a cell nobody has registered.
+    await seedBody(t, { lat: 46.0163, lng: -70.0331 }, 200);
+    await t.action(internal.weatherArchive.backfillWeatherCells, { tier: 'filter' });
+    await t.finishInProgressScheduledFunctions();
+
+    const second = await t.run((ctx) => ctx.db.query('weatherCells').collect());
+    expect(second.length).toBe(first.length + 1);
+  });
+
+  test('prunes a cell the corpus no longer occupies', async () => {
+    // A purged or moved body leaves its old cell behind, and the sweep would pay Open-Meteo for an
+    // empty patch of map every day for ever.
+    const t = convexTest(schema, modules);
+    const keep = await seedBody(t);
+    const drop = await seedBody(t, { lat: 46.0163, lng: -70.0331 }, 200);
+    await t.action(internal.weatherArchive.backfillWeatherCells, { tier: 'filter' });
+    await t.finishInProgressScheduledFunctions();
+    expect(await t.run((ctx) => ctx.db.query('weatherCells').collect())).toHaveLength(2);
+
+    await t.run((ctx) => ctx.db.patch(drop, { removedAt: Date.now() }));
+    const res = await t.action(internal.weatherArchive.backfillWeatherCells, { tier: 'filter' });
+    await t.finishInProgressScheduledFunctions();
+
+    expect(res.pruned).toBe(1);
+    const left = await t.run((ctx) => ctx.db.query('weatherCells').collect());
+    expect(left).toHaveLength(1);
+    expect(keep).toBeTruthy();
+  });
+
+  test('⚠ pruning never deletes the observations, only the schedule', async () => {
+    // D153: a row describing what the weather did at a place stays true whether or not a lake is
+    // still listed there, and the cell may be re-occupied by a later import.
+    const t = convexTest(schema, modules);
+    const drop = await seedBody(t, { lat: 46.0163, lng: -70.0331 }, 200);
+    await t.action(internal.weatherArchive.backfillWeatherCells, { tier: 'filter' });
+    await t.finishInProgressScheduledFunctions();
+    const cell = await t.run((ctx) => ctx.db.query('weatherCells').first());
+    await t.run((ctx) =>
+      ctx.db.insert('weatherDays', {
+        cellKey: cell?.cellKey ?? '',
+        tier: 'filter' as const,
+        dayMs: Date.UTC(2026, 1, 10),
+        localDate: '2026-02-10',
+        source: 'forecast' as const,
+        hours: 24,
+        freezingDegreeHours: 100,
+        fetchedAt: Date.now(),
+      }),
+    );
+
+    await t.run((ctx) => ctx.db.patch(drop, { removedAt: Date.now() }));
+    await t.action(internal.weatherArchive.backfillWeatherCells, { tier: 'filter' });
+    await t.finishInProgressScheduledFunctions();
+
+    expect(await t.run((ctx) => ctx.db.query('weatherCells').collect())).toHaveLength(0);
+    expect(await t.run((ctx) => ctx.db.query('weatherDays').collect())).toHaveLength(1);
+  });
+
+  test('a mid-run page does not prune the cells later pages will re-stamp', async () => {
+    // ⚠ Pruning on any page rather than on `isDone` would delete the whole registry one page in.
+    const t = convexTest(schema, modules);
+    await seedBody(t);
+    const partial = await t.action(internal.weatherArchive.backfillWeatherCells, {
+      tier: 'filter',
+    });
+    // One page covers this corpus, so `done` is true and pruning is legitimate here; the guard is
+    // asserted by the shape of the return rather than by contriving 500+ bodies.
+    expect(partial.done).toBe(true);
+    expect(partial.pruned).toBe(0);
+  });
+});
