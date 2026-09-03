@@ -1,0 +1,1000 @@
+/**
+ * The daily weather archive (N6h Workstream B / **D153**, **D161**).
+ *
+ * ## An archive, not a cache
+ *
+ * Everything else in the weather path expires. `weatherCache` prunes at 24 h because its rows are
+ * window summaries reachable only inside their own hour bucket; `weatherForecastCache` is garbage the
+ * moment its bucket passes. **A `weatherDays` row describes what happened between two past instants,
+ * so it is true for ever** — written once, kept for the season, never swept by `storageHygiene`.
+ *
+ * ## Why this has its own request builder
+ *
+ * `weather.ts` asks for `timeformat=unixtime` and shifts each hour by a single
+ * `utc_offset_seconds`, which is right for night-bucketing an integral and wrong for a calendar: one
+ * offset per response means an hour lands in the wrong local day on either side of a DST change, and
+ * **both transitions fall inside a Northeast skating season.**
+ *
+ * This builder asks for **`timeformat=iso8601`**, so Open-Meteo returns local wall-clock strings and
+ * every hour arrives already knowing the date the lake actually experienced. No offset arithmetic
+ * happens anywhere in this file. That is the only way to be DST-correct without shipping a timezone
+ * database.
+ *
+ * ⚠ **This is not a second cache key, and the distinction matters.** N6h's readiness pass flagged
+ * that forking the *fetch* is fine while forking the *key* is not: the strip and the decay must agree
+ * on one `weatherCache` entry or Phase 10 §5 breaks silently. Both builders take the same
+ * `WeatherCell` from `bodyWeatherCell`, so the keys can't diverge; only the request shape does, and
+ * it does so for a stated reason.
+ *
+ * ## The recovery ladder (D161)
+ *
+ * Past data is immutable, so a gap is permanent unless something notices. `sweepWeatherDayGaps`
+ * notices, and then:
+ *
+ *   1. **Refetch from the forecast endpoint** — `past_days` reaches 92, so any gap inside that
+ *      window is fully recoverable.
+ *   2. **Borrow the coarser tier** — a missing `browse` day can take its `filter` parent's, recorded
+ *      as `source: 'borrowed'` so a reader knows the row is honestly lower-resolution than its tier.
+ *   3. *(deferred)* **ERA5 archive** past 92 days. D153 un-banned it for exactly this range; the
+ *      `archive` source literal exists so wiring it later needs no migration. See the phase doc's
+ *      deferred register.
+ *   4. **Record an explicit gap** — `missing: true`, never a row of zeroes. An absent day reads as
+ *      *"no snow fell"* to every D159 predicate, which is the most dangerous possible failure for a
+ *      filter whose whole job is finding lakes with no snow on them.
+ */
+
+import {
+  archiveSeasonAt,
+  dayMsToLocalDate,
+  type LocalHourlyWeather,
+  summarizeWeatherDays,
+  WEATHER_TIERS,
+  type WeatherCell,
+  type WeatherDaySummary,
+  type WeatherTier,
+  weatherCellFor,
+} from '@skating/core';
+import { v } from 'convex/values';
+import { internal } from './_generated/api';
+import type { ActionCtx, MutationCtx, QueryCtx } from './_generated/server';
+import { action, internalAction, internalMutation, internalQuery } from './_generated/server';
+import { meterOpenMeteo } from './lib/apiMeter';
+import { bodyWeatherCell } from './lib/sampling';
+import { literals } from './lib/validators';
+import { HOURLY_VARS, MAX_PAST_DAYS, OPEN_METEO_FORECAST_URL } from './weather';
+
+const DAY_MS = 86_400_000;
+
+/**
+ * Days of history a first touch pulls. The Open-Meteo ceiling, deliberately — D153's finding is that
+ * **lazy backfill is not lossy**: the first person to open a lake in February gets the whole season
+ * to date in one request, not merely the week before their visit.
+ */
+export const BACKFILL_PAST_DAYS = MAX_PAST_DAYS;
+
+/**
+ * Days a routine append re-requests.
+ *
+ * Three rather than one, for two reasons that both bite. A day's night window reaches back into the
+ * *previous* evening (`nightMinTempC`), so writing yesterday complete needs the day before it. And
+ * today's row is necessarily partial when written, so it has to be rewritten tomorrow — which the
+ * idempotent upsert makes free and self-healing.
+ */
+export const APPEND_PAST_DAYS = 3;
+
+/** Cells per cron batch. The action reschedules itself; see `refreshTierDays`. */
+export const CELL_BATCH_SIZE = 40;
+
+/** Bodies per batch while materialising the cell registry. */
+export const CELL_BACKFILL_BATCH = 500;
+
+/** How far back the gap sweep looks. Inside the 92-day window, so step 1 of the ladder can serve it. */
+export const GAP_SWEEP_DAYS = 30;
+
+/** UTC-midnight day key for "today" in the archive's own terms. */
+function todayKey(nowMs: number): number {
+  return Math.floor(nowMs / DAY_MS) * DAY_MS;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+// Fetch
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+
+interface IsoHourlyResponse {
+  hourly?: {
+    time?: string[]; // local wall-clock, `YYYY-MM-DDTHH:mm`
+    [key: string]: (number | null)[] | string[] | undefined;
+  };
+}
+
+function numOr0(x: number | null | undefined): number {
+  return typeof x === 'number' ? x : 0;
+}
+
+/**
+ * Parse `2026-01-15T13:00` into its local date and hour without constructing a `Date`.
+ *
+ * ⚠ **`new Date('2026-01-15T13:00')` would be actively wrong here.** A bare ISO string with no zone
+ * is interpreted in the *runtime's* timezone, so the same response would parse differently on a
+ * developer's laptop and on Convex's UTC servers — and the value we want is neither of those, it is
+ * the lake's own wall clock, which the string already states. Read the characters.
+ */
+function parseLocalStamp(stamp: string): { localDate: string; localHour: number } | null {
+  const m = /^(\d{4}-\d{2}-\d{2})T(\d{2}):/.exec(stamp);
+  if (!m) return null;
+  const localDate = m[1];
+  const localHour = Number(m[2]);
+  if (localDate === undefined || !Number.isFinite(localHour)) return null;
+  return { localDate, localHour };
+}
+
+/**
+ * Fetch `pastDays` of local-stamped hourly weather for a cell, plus today.
+ *
+ * Returns `null` on any failure so the caller can leave the days it could not get **absent rather
+ * than zeroed** — the distinction the whole `missing` flag exists to preserve.
+ */
+async function fetchLocalHourly(
+  ctx: ActionCtx,
+  cell: WeatherCell,
+  pastDays: number,
+): Promise<LocalHourlyWeather[] | null> {
+  const days = Math.min(MAX_PAST_DAYS, Math.max(1, pastDays));
+  const params = new URLSearchParams({
+    latitude: String(cell.lat),
+    longitude: String(cell.lng),
+    hourly: HOURLY_VARS.join(','),
+    past_days: String(days),
+    // One forward day so today's elapsed hours are included; the archive keeps only what has
+    // happened, and today's provisional row is rewritten by tomorrow's append.
+    forecast_days: '1',
+    timezone: 'auto',
+    // The whole reason this builder exists — see the module docblock.
+    timeformat: 'iso8601',
+    temperature_unit: 'celsius',
+    wind_speed_unit: 'kmh',
+    precipitation_unit: 'mm',
+  });
+  if (cell.elevationM !== undefined) params.set('elevation', String(cell.elevationM));
+
+  let json: IsoHourlyResponse;
+  try {
+    await meterOpenMeteo(ctx, HOURLY_VARS.length, days + 1);
+    const res = await fetch(`${OPEN_METEO_FORECAST_URL}?${params.toString()}`);
+    if (!res.ok) {
+      console.warn(`Open-Meteo archive request failed: ${res.status}`);
+      return null;
+    }
+    json = (await res.json()) as IsoHourlyResponse;
+  } catch (err) {
+    console.warn('Open-Meteo archive request threw', err);
+    return null;
+  }
+
+  const time = json.hourly?.time;
+  if (!Array.isArray(time) || time.length === 0) return null;
+  const col = (k: string) => json.hourly?.[k] as (number | null)[] | undefined;
+  const temp = col('temperature_2m');
+  const precip = col('precipitation');
+  const rain = col('rain');
+  const snowfall = col('snowfall');
+  const snowDepth = col('snow_depth');
+  const wind = col('wind_speed_10m');
+  const gust = col('wind_gusts_10m');
+  const dir = col('wind_direction_10m');
+  const cloud = col('cloud_cover');
+  const sunshine = col('sunshine_duration');
+  const shortwave = col('shortwave_radiation');
+
+  const out: LocalHourlyWeather[] = [];
+  for (let i = 0; i < time.length; i++) {
+    const stamp = time[i];
+    if (typeof stamp !== 'string') continue;
+    const parsed = parseLocalStamp(stamp);
+    if (!parsed) continue;
+    const t = temp?.[i];
+    if (typeof t !== 'number') continue; // no temperature ⇒ unusable hour
+
+    const h: LocalHourlyWeather = {
+      localDate: parsed.localDate,
+      localHour: parsed.localHour,
+      temperatureC: t,
+      precipitationMm: numOr0(precip?.[i]),
+      windSpeedKph: numOr0(wind?.[i]),
+    };
+    const rv = rain?.[i];
+    if (typeof rv === 'number') h.rainMm = rv;
+    const sv = snowfall?.[i];
+    if (typeof sv === 'number') h.snowfallCm = sv;
+    const dv = snowDepth?.[i];
+    if (typeof dv === 'number') h.snowDepthM = dv;
+    const gv = gust?.[i];
+    if (typeof gv === 'number') h.windGustKph = gv;
+    const dirv = dir?.[i];
+    if (typeof dirv === 'number') h.windDirectionDeg = dirv;
+    const cv = cloud?.[i];
+    if (typeof cv === 'number') h.cloudCoverPct = cv;
+    const sunv = sunshine?.[i];
+    if (typeof sunv === 'number') h.sunshineSeconds = sunv;
+    const swv = shortwave?.[i];
+    if (typeof swv === 'number') h.shortwaveWm2 = swv;
+    out.push(h);
+  }
+  return out.length > 0 ? out : null;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+// Persistence
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+
+/** The stored shape of one summarised day, minus the key fields the mutation supplies. */
+const daySummaryFields = {
+  hours: v.optional(v.number()),
+  minTempC: v.optional(v.number()),
+  maxTempC: v.optional(v.number()),
+  meanTempC: v.optional(v.number()),
+  nightMinTempC: v.optional(v.number()),
+  hoursBelowFreezing: v.optional(v.number()),
+  hoursAboveFreezing: v.optional(v.number()),
+  freezingDegreeHours: v.optional(v.number()),
+  thawDegreeHours: v.optional(v.number()),
+  precipitationMm: v.optional(v.number()),
+  rainMm: v.optional(v.number()),
+  snowfallCm: v.optional(v.number()),
+  maxSnowDepthM: v.optional(v.number()),
+  hoursOfSun: v.optional(v.number()),
+  insolationWhM2: v.optional(v.number()),
+  maxWindKph: v.optional(v.number()),
+  maxWindGustKph: v.optional(v.number()),
+  windRunKm: v.optional(v.number()),
+  windSectorHours: v.optional(v.array(v.number())),
+  freezingHoursMeanWindKph: v.optional(v.number()),
+  freezingHoursMaxWindKph: v.optional(v.number()),
+} as const;
+
+/** Drop `null`s so an absent measure is *absent*, not stored as a value meaning "unknown". */
+function storableDay(day: WeatherDaySummary): Record<string, unknown> {
+  const out: Record<string, unknown> = { hours: day.hours };
+  const put = (k: string, val: number | null) => {
+    if (val !== null && Number.isFinite(val)) out[k] = val;
+  };
+  put('minTempC', day.minTempC);
+  put('maxTempC', day.maxTempC);
+  put('meanTempC', day.meanTempC);
+  put('nightMinTempC', day.nightMinTempC);
+  out.hoursBelowFreezing = day.hoursBelowFreezing;
+  out.hoursAboveFreezing = day.hoursAboveFreezing;
+  out.freezingDegreeHours = day.freezingDegreeHours;
+  out.thawDegreeHours = day.thawDegreeHours;
+  out.precipitationMm = day.precipitationMm;
+  out.rainMm = day.rainMm;
+  out.snowfallCm = day.snowfallCm;
+  put('maxSnowDepthM', day.maxSnowDepthM);
+  out.hoursOfSun = day.hoursOfSun;
+  out.insolationWhM2 = day.insolationWhM2;
+  put('maxWindKph', day.maxWindKph);
+  put('maxWindGustKph', day.maxWindGustKph);
+  out.windRunKm = day.windRunKm;
+  if (day.windSectorHours.length > 0) out.windSectorHours = day.windSectorHours;
+  put('freezingHoursMeanWindKph', day.freezingHoursMeanWindKph);
+  put('freezingHoursMaxWindKph', day.freezingHoursMaxWindKph);
+  return out;
+}
+
+/**
+ * Upsert summarised days for a cell — **idempotent on `(cellKey, dayMs)`**.
+ *
+ * The idempotence is not decoration. Every write path re-requests days it may already hold: the
+ * append overlaps three days so a partial "today" gets completed, and the gap sweep re-asks for days
+ * it knows are missing. Without an upsert each of those would duplicate rows, and a duplicated day
+ * would be double-counted by any predicate that sums a span.
+ *
+ * ⚠ **A day that arrives complete never regresses to `missing`.** `writeMissingDays` refuses to
+ * overwrite a real row, so a transient outage during a gap sweep cannot erase good data.
+ */
+export const upsertWeatherDays = internalMutation({
+  args: {
+    cellKey: v.string(),
+    tier: literals(WEATHER_TIERS),
+    source: literals(['forecast', 'archive', 'borrowed'] as const),
+    fetchedAt: v.number(),
+    days: v.array(
+      v.object({
+        dayMs: v.number(),
+        localDate: v.string(),
+        ...daySummaryFields,
+      }),
+    ),
+  },
+  handler: async (ctx, a) => {
+    for (const day of a.days) {
+      await writeDay(ctx, {
+        cellKey: a.cellKey,
+        tier: a.tier,
+        source: a.source,
+        fetchedAt: a.fetchedAt,
+        ...day,
+      });
+    }
+  },
+});
+
+async function writeDay(
+  ctx: MutationCtx,
+  row: {
+    cellKey: string;
+    tier: WeatherTier;
+    source: 'forecast' | 'archive' | 'borrowed';
+    fetchedAt: number;
+    dayMs: number;
+    localDate: string;
+  } & Record<string, unknown>,
+): Promise<void> {
+  const existing = await ctx.db
+    .query('weatherDays')
+    .withIndex('by_cell_day', (q) => q.eq('cellKey', row.cellKey).eq('dayMs', row.dayMs))
+    .first();
+  // `missing` is cleared explicitly rather than left off the patch: a row that was a recorded gap and
+  // is now real must stop looking like a gap, and `patch` does not remove absent keys.
+  const doc = { ...row, missing: undefined };
+  if (existing) await ctx.db.patch(existing._id, doc);
+  else await ctx.db.insert('weatherDays', doc as never);
+}
+
+/**
+ * Record days we tried for and could not get (D161 step 4).
+ *
+ * ⚠ **Never overwrites a row that already has data.** A gap marker is a statement about our fetching,
+ * not about the weather, and it must not be able to destroy an observation — a sweep that ran during
+ * an Open-Meteo outage would otherwise blank a week of good history.
+ */
+export const writeMissingDays = internalMutation({
+  args: {
+    cellKey: v.string(),
+    tier: literals(WEATHER_TIERS),
+    dayMs: v.array(v.number()),
+    fetchedAt: v.number(),
+  },
+  handler: async (ctx, a) => {
+    for (const dayMs of a.dayMs) {
+      const existing = await ctx.db
+        .query('weatherDays')
+        .withIndex('by_cell_day', (q) => q.eq('cellKey', a.cellKey).eq('dayMs', dayMs))
+        .first();
+      if (existing && existing.missing !== true) continue; // real data wins, always
+      const doc = {
+        cellKey: a.cellKey,
+        tier: a.tier,
+        dayMs,
+        localDate: dayMsToLocalDate(dayMs),
+        missing: true,
+        source: 'forecast' as const,
+        fetchedAt: a.fetchedAt,
+      };
+      if (existing) await ctx.db.patch(existing._id, doc);
+      else await ctx.db.insert('weatherDays', doc);
+    }
+  },
+});
+
+/** The day keys a cell already holds real (non-`missing`) data for, within `[fromMs, toMs]`. */
+export const listCellDayKeys = internalQuery({
+  args: { cellKey: v.string(), fromMs: v.number(), toMs: v.number() },
+  handler: async (ctx, { cellKey, fromMs, toMs }) => {
+    const rows = await ctx.db
+      .query('weatherDays')
+      .withIndex('by_cell_day', (q) =>
+        q.eq('cellKey', cellKey).gte('dayMs', fromMs).lte('dayMs', toMs),
+      )
+      .collect();
+    return {
+      present: rows.filter((r) => r.missing !== true).map((r) => r.dayMs),
+      missing: rows.filter((r) => r.missing === true).map((r) => r.dayMs),
+    };
+  },
+});
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+// The cell registry
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Materialise the distinct weather cells the corpus occupies, in batches.
+ *
+ * Walks `waterBodies` once and reschedules itself until done. The alternative — deriving the cell list
+ * inside the daily cron — would re-read 25,000 fat rows every day to rediscover keys that only change
+ * when the corpus does. This repo has already paid for treating a corpus scan as a cheap way to answer
+ * a small question.
+ *
+ * Idempotent: re-running refreshes `bodyCount` and `updatedAt` rather than duplicating.
+ */
+export const backfillWeatherCells = internalAction({
+  args: {
+    cursor: v.optional(v.string()),
+    tier: v.optional(literals(WEATHER_TIERS)),
+    /** Minted by the first batch and carried by the rest — see `weatherCells.runId`. */
+    runId: v.optional(v.string()),
+  },
+  handler: async (ctx, { cursor, tier, runId }): Promise<{ done: boolean; scanned: number }> => {
+    const targetTier = tier ?? 'filter';
+    const run = runId ?? `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+    const page = await ctx.runQuery(internal.weatherArchive.pageBodyCells, {
+      cursor: cursor ?? null,
+      tier: targetTier,
+    });
+    await ctx.runMutation(internal.weatherArchive.upsertWeatherCells, {
+      tier: targetTier,
+      cells: page.cells,
+      runId: run,
+      nowMs: Date.now(),
+    });
+    if (!page.isDone) {
+      await ctx.scheduler.runAfter(0, internal.weatherArchive.backfillWeatherCells, {
+        cursor: page.cursor,
+        tier: targetTier,
+        runId: run,
+      });
+    }
+    return { done: page.isDone, scanned: page.scanned };
+  },
+});
+
+/** One page of bodies, reduced to the distinct cells they occupy. */
+export const pageBodyCells = internalQuery({
+  args: { cursor: v.union(v.string(), v.null()), tier: literals(WEATHER_TIERS) },
+  handler: async (ctx, { cursor, tier }) => {
+    const page = await ctx.db
+      .query('waterBodies')
+      .paginate({ numItems: CELL_BACKFILL_BATCH, cursor });
+    const byKey = new Map<
+      string,
+      { cellKey: string; lat: number; lng: number; elevationM?: number; bodyCount: number }
+    >();
+    for (const body of page.page) {
+      if (body.removedAt) continue;
+      const cell = bodyWeatherCell(body, tier);
+      const existing = byKey.get(cell.key);
+      if (existing) {
+        existing.bodyCount += 1;
+        continue;
+      }
+      const entry: {
+        cellKey: string;
+        lat: number;
+        lng: number;
+        elevationM?: number;
+        bodyCount: number;
+      } = { cellKey: cell.key, lat: cell.lat, lng: cell.lng, bodyCount: 1 };
+      if (cell.elevationM !== undefined) entry.elevationM = cell.elevationM;
+      byKey.set(cell.key, entry);
+    }
+    return {
+      cells: [...byKey.values()],
+      cursor: page.continueCursor,
+      isDone: page.isDone,
+      scanned: page.page.length,
+    };
+  },
+});
+
+/** Upsert a batch of cells. `bodyCount` accumulates across pages, since a cell can straddle one. */
+export const upsertWeatherCells = internalMutation({
+  args: {
+    tier: literals(WEATHER_TIERS),
+    runId: v.string(),
+    nowMs: v.number(),
+    cells: v.array(
+      v.object({
+        cellKey: v.string(),
+        lat: v.number(),
+        lng: v.number(),
+        elevationM: v.optional(v.number()),
+        bodyCount: v.number(),
+      }),
+    ),
+  },
+  handler: async (ctx, { tier, runId, nowMs, cells }) => {
+    for (const cell of cells) {
+      const existing = await ctx.db
+        .query('weatherCells')
+        .withIndex('by_key', (q) => q.eq('cellKey', cell.cellKey))
+        .first();
+      if (existing) {
+        // A cell can straddle a page boundary, so counts *accumulate* within a run and are *replaced*
+        // by a later one. The discriminator is the run id, not the clock: two runs in the same
+        // millisecond both read as "same run" under a timestamp comparison and double-count every
+        // body — which is exactly what the registry test caught.
+        const sameRun = existing.runId === runId;
+        await ctx.db.patch(existing._id, {
+          ...cell,
+          tier,
+          runId,
+          bodyCount: sameRun ? existing.bodyCount + cell.bodyCount : cell.bodyCount,
+          updatedAt: nowMs,
+        });
+        continue;
+      }
+      await ctx.db.insert('weatherCells', { ...cell, tier, runId, updatedAt: nowMs });
+    }
+  },
+});
+
+/** A page of registered cells for a tier, ordered by key so a batched sweep resumes cleanly. */
+export const pageTierCells = internalQuery({
+  args: { tier: literals(WEATHER_TIERS), afterKey: v.optional(v.string()), limit: v.number() },
+  handler: async (ctx, { tier, afterKey, limit }) => {
+    const q = ctx.db
+      .query('weatherCells')
+      .withIndex('by_tier_key', (ix) =>
+        afterKey === undefined ? ix.eq('tier', tier) : ix.eq('tier', tier).gt('cellKey', afterKey),
+      );
+    const cells = await q.take(limit);
+    return cells.map((c) => ({
+      cellKey: c.cellKey,
+      lat: c.lat,
+      lng: c.lng,
+      ...(c.elevationM !== undefined ? { elevationM: c.elevationM } : {}),
+    }));
+  },
+});
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+// Writing days for a cell
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Fetch and store `pastDays` of history for one cell. Returns the number of days written, or `null`
+ * when the fetch failed (so a caller can distinguish "nothing to store" from "could not ask").
+ */
+export async function ingestCellDays(
+  ctx: ActionCtx,
+  tier: WeatherTier,
+  cell: WeatherCell,
+  pastDays: number,
+): Promise<number | null> {
+  const hours = await fetchLocalHourly(ctx, cell, pastDays);
+  if (hours === null) return null;
+  const days = summarizeWeatherDays(hours);
+  if (days.length === 0) return 0;
+  await ctx.runMutation(internal.weatherArchive.upsertWeatherDays, {
+    cellKey: cell.key,
+    tier,
+    source: 'forecast',
+    fetchedAt: Date.now(),
+    days: days.map((d) => ({ dayMs: d.dayMs, localDate: d.localDate, ...storableDay(d) })),
+  });
+  return days.length;
+}
+
+/**
+ * The Tier-B sweep: append recent days for every registered `filter` cell, one batch at a time,
+ * rescheduling itself until the tier is done.
+ *
+ * ⚠ **Batched because neither a Convex action's time limit nor Open-Meteo's daily budget survives
+ * 3,043 sequential fetches in one call.** The batch-and-reschedule shape is N6d's `backfillCells`
+ * pattern (24,961 bodies in 84 batches) rather than a new invention.
+ *
+ * ⚠ **Season-gated by its caller, not here (D161).** The cheap 25-site checker decides when a season
+ * is open and starts this; running it year-round would spend ~43% of the annual free-tier budget
+ * mostly in July, asking frozen-lake questions about warm water. This function does what it is told.
+ */
+export const refreshTierDays = internalAction({
+  args: {
+    tier: literals(WEATHER_TIERS),
+    afterKey: v.optional(v.string()),
+    pastDays: v.optional(v.number()),
+  },
+  handler: async (ctx, { tier, afterKey, pastDays }): Promise<{ done: boolean; cells: number }> => {
+    const cells = await ctx.runQuery(internal.weatherArchive.pageTierCells, {
+      tier,
+      ...(afterKey === undefined ? {} : { afterKey }),
+      limit: CELL_BATCH_SIZE,
+    });
+    if (cells.length === 0) return { done: true, cells: 0 };
+
+    let lastKey = afterKey;
+    for (const cell of cells) {
+      lastKey = cell.cellKey;
+      // Per-cell isolation: one cell's transport failure must not abandon the rest of the batch, and
+      // the gap sweep will come back for whatever this missed.
+      try {
+        await ingestCellDays(
+          ctx,
+          tier,
+          { key: cell.cellKey, ...cell },
+          pastDays ?? APPEND_PAST_DAYS,
+        );
+      } catch (err) {
+        console.warn(`weatherArchive: cell ${cell.cellKey} failed`, err);
+      }
+    }
+
+    if (cells.length === CELL_BATCH_SIZE && lastKey !== undefined) {
+      await ctx.scheduler.runAfter(0, internal.weatherArchive.refreshTierDays, {
+        tier,
+        afterKey: lastKey,
+        ...(pastDays === undefined ? {} : { pastDays }),
+      });
+      return { done: false, cells: cells.length };
+    }
+    return { done: true, cells: cells.length };
+  },
+});
+
+/**
+ * Find and repair holes in what we hold (D161's ladder).
+ *
+ * Runs over one tier's cells in batches, looking only inside `GAP_SWEEP_DAYS` so step 1 — refetch
+ * from the forecast endpoint — can always serve. **A cell with no rows at all is skipped, not
+ * backfilled**: an untouched cell has no gap, it has never been asked about, and treating absence as
+ * a hole would turn the sweep into a corpus-wide backfill nobody requested.
+ */
+export const sweepWeatherDayGaps = internalAction({
+  args: { tier: literals(WEATHER_TIERS), afterKey: v.optional(v.string()) },
+  handler: async (ctx, { tier, afterKey }): Promise<{ done: boolean; repaired: number }> => {
+    const now = Date.now();
+    const today = todayKey(now);
+    // Yesterday is the newest day worth judging: today's row is legitimately partial until tomorrow.
+    const toMs = today - DAY_MS;
+    const fromMs = toMs - (GAP_SWEEP_DAYS - 1) * DAY_MS;
+
+    const cells = await ctx.runQuery(internal.weatherArchive.pageTierCells, {
+      tier,
+      ...(afterKey === undefined ? {} : { afterKey }),
+      limit: CELL_BATCH_SIZE,
+    });
+    if (cells.length === 0) return { done: true, repaired: 0 };
+
+    let repaired = 0;
+    let lastKey = afterKey;
+    for (const cell of cells) {
+      lastKey = cell.cellKey;
+      const held = await ctx.runQuery(internal.weatherArchive.listCellDayKeys, {
+        cellKey: cell.cellKey,
+        fromMs,
+        toMs,
+      });
+      if (held.present.length === 0 && held.missing.length === 0) continue; // never touched
+
+      const have = new Set(held.present);
+      const holes: number[] = [];
+      // Only inside the cell's own known range — a cell first touched a week ago is not missing the
+      // three weeks before that.
+      const earliest = Math.min(...held.present, ...held.missing);
+      for (let d = Math.max(fromMs, earliest); d <= toMs; d += DAY_MS) {
+        if (!have.has(d)) holes.push(d);
+      }
+      if (holes.length === 0) continue;
+
+      // Step 1: refetch. One request covers every hole in the window, so ask once and widely rather
+      // than per hole.
+      const spanDays = Math.ceil((toMs - Math.min(...holes)) / DAY_MS) + 2;
+      let written: number | null = null;
+      try {
+        written = await ingestCellDays(ctx, tier, { key: cell.cellKey, ...cell }, spanDays);
+      } catch (err) {
+        console.warn(`weatherArchive: gap refetch for ${cell.cellKey} threw`, err);
+      }
+
+      const after = await ctx.runQuery(internal.weatherArchive.listCellDayKeys, {
+        cellKey: cell.cellKey,
+        fromMs,
+        toMs,
+      });
+      const stillMissing = holes.filter((d) => !new Set(after.present).has(d));
+      repaired += holes.length - stillMissing.length;
+
+      if (stillMissing.length > 0) {
+        // Step 2 (borrow the coarser tier) applies only to `browse`; `filter` has no parent, and step
+        // 3 (ERA5, past 92 days) is deferred — so `filter` goes straight to step 4. Recording the gap
+        // is what keeps a D159 predicate from reading an absent day as "no snow fell".
+        const borrowed = tier === 'browse' ? await borrowFromFilter(ctx, cell, stillMissing) : 0;
+        const unrecovered = stillMissing.slice(borrowed);
+        if (unrecovered.length > 0) {
+          await ctx.runMutation(internal.weatherArchive.writeMissingDays, {
+            cellKey: cell.cellKey,
+            tier,
+            dayMs: unrecovered,
+            fetchedAt: now,
+          });
+        }
+        repaired += borrowed;
+      }
+      void written;
+    }
+
+    if (cells.length === CELL_BATCH_SIZE && lastKey !== undefined) {
+      await ctx.scheduler.runAfter(0, internal.weatherArchive.sweepWeatherDayGaps, {
+        tier,
+        afterKey: lastKey,
+      });
+      return { done: false, repaired };
+    }
+    return { done: true, repaired };
+  },
+});
+
+/**
+ * Step 2 of the ladder: fill a `browse` cell's missing days from its coarser `filter` parent.
+ *
+ * Coarser and honest about it — the copied row is stored with `source: 'borrowed'`, so a reader can
+ * tell the difference between "5 km resolution" and "11 km resolution wearing a 5 km label".
+ */
+async function borrowFromFilter(
+  ctx: ActionCtx,
+  cell: { cellKey: string; lat: number; lng: number },
+  days: number[],
+): Promise<number> {
+  const parent = weatherCellFor('filter', cell.lat, cell.lng);
+  const rows = await ctx.runQuery(internal.weatherArchive.readCellDays, {
+    cellKey: parent.key,
+    dayMs: days,
+  });
+  if (rows.length === 0) return 0;
+  await ctx.runMutation(internal.weatherArchive.upsertWeatherDays, {
+    cellKey: cell.cellKey,
+    tier: 'browse',
+    source: 'borrowed',
+    fetchedAt: Date.now(),
+    days: rows,
+  });
+  return rows.length;
+}
+
+/**
+ * The measure fields a day row carries, as a list — used to copy a row between cell keys without
+ * naming twenty fields twice, and without a spread that would drag `_id`/`tier`/`source` along with
+ * it (which is how a borrowed row would end up claiming to be a `forecast` one).
+ */
+const DAY_MEASURE_KEYS = [
+  'hours',
+  'minTempC',
+  'maxTempC',
+  'meanTempC',
+  'nightMinTempC',
+  'hoursBelowFreezing',
+  'hoursAboveFreezing',
+  'freezingDegreeHours',
+  'thawDegreeHours',
+  'precipitationMm',
+  'rainMm',
+  'snowfallCm',
+  'maxSnowDepthM',
+  'hoursOfSun',
+  'insolationWhM2',
+  'maxWindKph',
+  'maxWindGustKph',
+  'windRunKm',
+  'freezingHoursMeanWindKph',
+  'freezingHoursMaxWindKph',
+] as const;
+
+/** One day, shaped exactly as `upsertWeatherDays` accepts it. */
+export interface StoredDayPayload {
+  dayMs: number;
+  localDate: string;
+  windSectorHours?: number[];
+  [measure: string]: number | number[] | string | undefined;
+}
+
+/** Read specific days for a cell, shaped for re-writing under another key. */
+export const readCellDays = internalQuery({
+  args: { cellKey: v.string(), dayMs: v.array(v.number()) },
+  handler: async (ctx, { cellKey, dayMs }): Promise<StoredDayPayload[]> => {
+    const out: StoredDayPayload[] = [];
+    for (const day of dayMs) {
+      const row = await ctx.db
+        .query('weatherDays')
+        .withIndex('by_cell_day', (q) => q.eq('cellKey', cellKey).eq('dayMs', day))
+        .first();
+      if (!row || row.missing === true) continue;
+      const payload: StoredDayPayload = { dayMs: row.dayMs, localDate: row.localDate };
+      for (const key of DAY_MEASURE_KEYS) {
+        const value = row[key];
+        if (typeof value === 'number') payload[key] = value;
+      }
+      if (row.windSectorHours !== undefined) payload.windSectorHours = row.windSectorHours;
+      out.push(payload);
+    }
+    return out;
+  },
+});
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+// Reads
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+
+/** Days held for a cell in `[fromMs, toMs]`, ascending, gaps included so a caller can see them. */
+export const readCellDayRange = internalQuery({
+  args: { cellKey: v.string(), fromMs: v.number(), toMs: v.number() },
+  handler: async (ctx, { cellKey, fromMs, toMs }) => {
+    const rows = await ctx.db
+      .query('weatherDays')
+      .withIndex('by_cell_day', (q) =>
+        q.eq('cellKey', cellKey).gte('dayMs', fromMs).lte('dayMs', toMs),
+      )
+      .collect();
+    return rows.sort((a, b) => a.dayMs - b.dayMs);
+  },
+});
+
+/** Resolve a body to its `browse` cell without an action round-trip. */
+export async function bodyBrowseCell(
+  ctx: QueryCtx,
+  waterBodyId: string,
+): Promise<WeatherCell | null> {
+  const body = await ctx.db.get(waterBodyId as never);
+  if (!body || (body as { removedAt?: number }).removedAt) return null;
+  return bodyWeatherCell(body as never, 'browse');
+}
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+// The season gate (D161)
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Is the corpus-wide sweep allowed to run right now?
+ *
+ * **D161 in one query.** The Tier-B sweep costs ~4,300 weighted Open-Meteo calls a day; run
+ * year-round that is ~1.57M against a free ceiling of ~3.65M — roughly 43% of the annual budget, most
+ * of it spent in July asking frozen-lake questions about warm water. The Google Group corpus puts 97%
+ * of a season's activity in November–March, so gating gives up nothing real.
+ *
+ * The gate is the **existing 25-site checker's recorded verdict** (`imageryIngestSeasons`), which
+ * costs ~365 calls a year and already runs daily. Two notes on the shape:
+ *
+ * - **Pull, not push.** D161 describes the checker "starting" the sweep; reading its verdict is the
+ *   same dependency inverted, and strictly more robust — a missed cron tick cannot lose a start
+ *   signal that is re-derived every day. It also leaves `maybeCheckSeasonOpen` untouched, which
+ *   matters because that function carries a documented circular-type landmine.
+ * - **⚠ Never re-derive "the season has begun" from cell weather.** A single cold cell in an
+ *   Adirondack hollow in early November is weather, not a season. The gate wants the coarse, boring,
+ *   region-wide signal precisely because it is hard to fool.
+ */
+export const isSweepSeasonOpen = internalQuery({
+  args: { nowMs: v.number() },
+  handler: async (ctx, { nowMs }) => {
+    const season = archiveSeasonAt(nowMs);
+    const record = await ctx.db
+      .query('imageryIngestSeasons')
+      .withIndex('by_season', (q) => q.eq('season', season))
+      .unique();
+    return { season, open: record?.opensOn !== undefined, opensOn: record?.opensOn ?? null };
+  },
+});
+
+/**
+ * The daily Tier-B tick: gate on the season, then start the batched sweep.
+ *
+ * Thin on purpose. The sweep itself (`refreshTierDays`) knows nothing about seasons, so it stays
+ * callable by hand for an operator backfill out of season.
+ */
+export const maybeRefreshFilterTier = internalAction({
+  args: {},
+  handler: async (ctx): Promise<{ started: boolean; season: string; reason?: string }> => {
+    const gate = await ctx.runQuery(internal.weatherArchive.isSweepSeasonOpen, {
+      nowMs: Date.now(),
+    });
+    if (!gate.open) {
+      return { started: false, season: gate.season, reason: 'season not open' };
+    }
+    // **Runs the first batch inline rather than scheduling it.** The sweep reschedules its own
+    // remaining batches either way, so this costs exactly one batch of the same work the scheduled
+    // version would have done — and in exchange the tick reports what actually happened instead of
+    // only that it asked for something to happen.
+    await ctx.runAction(internal.weatherArchive.refreshTierDays, { tier: 'filter' });
+    return { started: true, season: gate.season };
+  },
+});
+
+/** The daily gap sweep, same gate and same reasoning. */
+export const maybeSweepGaps = internalAction({
+  args: {},
+  handler: async (ctx): Promise<{ started: boolean; season: string }> => {
+    const gate = await ctx.runQuery(internal.weatherArchive.isSweepSeasonOpen, {
+      nowMs: Date.now(),
+    });
+    if (!gate.open) return { started: false, season: gate.season };
+    await ctx.runAction(internal.weatherArchive.sweepWeatherDayGaps, { tier: 'filter' });
+    return { started: true, season: gate.season };
+  },
+});
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+// The public read (Workstream C's data path)
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+
+/** Days the past-weather panel shows by default. */
+export const PANEL_DAYS = 7;
+
+export interface WeatherDaysResult {
+  days: StoredDayPayload[];
+  /** Day keys we asked for and could not get. Rendered as gaps, never as zeroes. */
+  missingDayMs: number[];
+  /** True when any returned day came from the coarser `filter` tier (D161 step 2). */
+  anyBorrowed: boolean;
+}
+
+/**
+ * The past-weather panel's data, for one body.
+ *
+ * **An action rather than a query, for the reason the strip is one:** a query cannot fetch, so a
+ * read-only panel would stay permanently blank on the lakes nobody has opened before — which is most
+ * of a 25,000-body corpus and precisely the population D159 exists to make visible.
+ *
+ * **First touch pulls 92 days, not 7.** D153's finding: `past_days` reaches the Open-Meteo ceiling, so
+ * the first person to open a lake in February backfills the whole season to date in one request. Lazy
+ * backfill is not lossy, and the days beyond the panel's window are exactly what a later climatology
+ * or a widened panel will want — refusing them now would mean paying twice.
+ *
+ * The resource guard matches `getForecastForBody`: signed-in callers only, and the only
+ * client-supplied value is a body id, so the reachable fetch set is one backfill per cell, ever, plus
+ * one append per cell per day.
+ */
+export const getWeatherDaysForBody = action({
+  args: { waterBodyId: v.id('waterBodies'), days: v.optional(v.number()) },
+  handler: async (ctx, { waterBodyId, days }): Promise<WeatherDaysResult | null> => {
+    if (!(await ctx.auth.getUserIdentity())) return null;
+    const cell = await ctx.runQuery(internal.weather.resolveBodyWeatherCell, { waterBodyId });
+    if (!cell) return null;
+
+    const now = Date.now();
+    const today = todayKey(now);
+    const span = Math.min(Math.max(1, days ?? PANEL_DAYS), MAX_PAST_DAYS);
+    // Inclusive of today, whose row is legitimately partial — a skater at 3 PM wants this morning's
+    // hours, and hiding them until midnight would make the panel useless on the day it matters most.
+    const fromMs = today - (span - 1) * DAY_MS;
+
+    let held = await ctx.runQuery(internal.weatherArchive.readCellDayRange, {
+      cellKey: cell.key,
+      fromMs,
+      toMs: today,
+    });
+
+    const realDays = held.filter((r) => r.missing !== true);
+    // A cell with nothing at all is a first touch: pull the ceiling. A cell that has *some* of the
+    // window is topped up with a short append, which is the cheap common case.
+    if (realDays.length === 0) {
+      await ingestCellDays(ctx, 'browse', cell, BACKFILL_PAST_DAYS);
+    } else if (realDays.length < span) {
+      await ingestCellDays(ctx, 'browse', cell, Math.min(span + 1, MAX_PAST_DAYS));
+    }
+
+    if (realDays.length < span) {
+      held = await ctx.runQuery(internal.weatherArchive.readCellDayRange, {
+        cellKey: cell.key,
+        fromMs,
+        toMs: today,
+      });
+    }
+
+    const out: StoredDayPayload[] = [];
+    const missingDayMs: number[] = [];
+    let anyBorrowed = false;
+    for (const row of held) {
+      if (row.missing === true) {
+        missingDayMs.push(row.dayMs);
+        continue;
+      }
+      if (row.source === 'borrowed') anyBorrowed = true;
+      const payload: StoredDayPayload = { dayMs: row.dayMs, localDate: row.localDate };
+      for (const key of DAY_MEASURE_KEYS) {
+        const value = row[key];
+        if (typeof value === 'number') payload[key] = value;
+      }
+      if (row.windSectorHours !== undefined) payload.windSectorHours = row.windSectorHours;
+      out.push(payload);
+    }
+
+    // Days the window covers that produced no row at all — distinct from a recorded `missing`, and
+    // reported the same way so the panel can draw both as holes rather than silently short-changing
+    // a span. (`snowfallTotalCm` over 5 of 7 days is not "less snow", it is less knowledge.)
+    const seen = new Set([...out.map((d) => d.dayMs), ...missingDayMs]);
+    for (let d = fromMs; d <= today; d += DAY_MS) {
+      if (!seen.has(d)) missingDayMs.push(d);
+    }
+    missingDayMs.sort((a, b) => a - b);
+
+    return { days: out, missingDayMs, anyBorrowed };
+  },
+});

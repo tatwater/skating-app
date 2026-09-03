@@ -32,6 +32,20 @@ const SWEEP_LIMIT = 500;
 const HOUR_MS = 60 * 60 * 1000;
 
 /**
+ * ⚠ **`weatherDays` and `weatherCells` are deliberately absent from this file (N6h / D153).**
+ *
+ * Every other weather table swept here expires because its rows are only *addressable* for a window —
+ * a `weatherCache` row's key contains its hour bucket, so yesterday's rows are unreachable rather
+ * than merely stale, and pruning reclaims dead weight without invalidating anything. A `weatherDays`
+ * row is the opposite: it describes what happened between two past instants, so it stays true for ever
+ * and reachable for ever. Sweeping it would destroy observations that cannot be re-fetched past the
+ * 92-day Open-Meteo horizon — exactly the history the past-weather panel is built on.
+ *
+ * A season of Tier-B rows is ~548 MB against Convex Pro's included 50 GB, so there is no pressure to
+ * reclaim. If retention is ever wanted it belongs as a **season rollup** (150 daily rows compacted
+ * into one columnar document at the N5a boundary), not as a sweep.
+ */
+/**
  * How long a `weatherCache` row is kept past the hour it belongs to.
  *
  * The retention argument here is much stronger than "old rows are stale", which is what the roadmap

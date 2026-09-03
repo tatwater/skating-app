@@ -38,6 +38,7 @@ import type * as importRuns from "../importRuns.js";
 import type * as isochrones from "../isochrones.js";
 import type * as lib_accessLimits from "../lib/accessLimits.js";
 import type * as lib_activityConnections from "../lib/activityConnections.js";
+import type * as lib_apiMeter from "../lib/apiMeter.js";
 import type * as lib_auth from "../lib/auth.js";
 import type * as lib_authorView from "../lib/authorView.js";
 import type * as lib_autoFlag from "../lib/autoFlag.js";
@@ -85,6 +86,7 @@ import type * as waterBodies from "../waterBodies.js";
 import type * as waterBodyFavorites from "../waterBodyFavorites.js";
 import type * as weather from "../weather.js";
 import type * as weatherAlerts from "../weatherAlerts.js";
+import type * as weatherArchive from "../weatherArchive.js";
 
 declare const fullApi: ApiFromModules<{
   "accessAlerts": typeof accessAlerts;
@@ -116,6 +118,7 @@ declare const fullApi: ApiFromModules<{
   "isochrones": typeof isochrones;
   "lib/accessLimits": typeof lib_accessLimits;
   "lib/activityConnections": typeof lib_activityConnections;
+  "lib/apiMeter": typeof lib_apiMeter;
   "lib/auth": typeof lib_auth;
   "lib/authorView": typeof lib_authorView;
   "lib/autoFlag": typeof lib_autoFlag;
@@ -163,6 +166,7 @@ declare const fullApi: ApiFromModules<{
   "waterBodyFavorites": typeof waterBodyFavorites;
   "weather": typeof weather;
   "weatherAlerts": typeof weatherAlerts;
+  "weatherArchive": typeof weatherArchive;
 }>;
 export declare const api: FilterApi<typeof fullApi, FunctionReference<any, "public">>;
 export declare const internal: FilterApi<typeof fullApi, FunctionReference<any, "internal">>;

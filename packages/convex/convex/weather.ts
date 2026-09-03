@@ -47,11 +47,14 @@ void _assertSummaryReverse;
 
 const HOUR_MS = 3_600_000;
 const DAY_MS = 86_400_000;
-const MAX_PAST_DAYS = 92; // Open-Meteo forecast `past_days` ceiling
+/** Open-Meteo forecast `past_days` ceiling — and therefore D153's lazy-backfill horizon. */
+export const MAX_PAST_DAYS = 92;
 /** Two, not one, so a 12-hour horizon survives a day boundary (N6c B5b). */
 const FORECAST_DAYS = 2;
 /** The provider name `externalApiCalls` meters this path under (D158). */
 export const OPEN_METEO_PROVIDER = 'open-meteo';
+/** Shared with the daily archive so both request builders agree on the endpoint. */
+export const OPEN_METEO_FORECAST_URL = 'https://api.open-meteo.com/v1/forecast';
 
 const OPEN_METEO_URL = 'https://api.open-meteo.com/v1/forecast';
 /**
@@ -64,7 +67,7 @@ const OPEN_METEO_URL = 'https://api.open-meteo.com/v1/forecast';
  * black ice and a rippled surface nobody wants to skate (N6h Workstream C). The cost is counted, not
  * guessed — see `externalApiCalls` and D158.
  */
-const HOURLY_VARS = [
+export const HOURLY_VARS = [
   'temperature_2m',
   'precipitation',
   'rain',

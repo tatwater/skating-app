@@ -1288,6 +1288,45 @@ export default defineSchema({
     .index('by_forecast_bucket', ['forecastBucketMs']),
 
   /**
+   * **The registry of weather cells the corpus actually occupies (N6h / D152, D161).**
+   *
+   * The Tier-B cron has to visit every `filter` cell once a day. Deriving that list by paginating
+   * 25,000 `waterBodies` rows would cost ~75 MB of read I/O *daily* to rediscover 3,043 keys that
+   * change only when the corpus does — and this repo has already paid once for treating a corpus scan
+   * as a cheap way to answer a small question (the N6d access load, 105 GB).
+   *
+   * So the cells are materialised. `backfillWeatherCells` walks the corpus once, in batches, and
+   * writes one row per distinct (tier, cell); after that the cron reads a few thousand small rows.
+   *
+   * `lat`/`lng` are the **snapped cell centre** — the values that go to Open-Meteo — so the cron never
+   * needs a body row at all. `bodyCount` is diagnostic: it is how you notice that a re-import moved
+   * lakes between cells, and how the D152 cardinality claims stay auditable rather than remembered.
+   */
+  weatherCells: defineTable({
+    cellKey: v.string(),
+    tier: literals(WEATHER_TIERS),
+    lat: v.number(), // snapped centre
+    lng: v.number(), // snapped centre
+    /** Band-centre elevation for a banded tier; absent on `filter` and on unbanded cells. */
+    elevationM: v.optional(v.number()),
+    bodyCount: v.number(),
+    /**
+     * The materialisation run that last wrote this row.
+     *
+     * ⚠ **Not a timestamp, and that distinction is a fixed bug.** `bodyCount` accumulates across the
+     * pages of one run (a cell can straddle a page boundary) and must be *replaced* by a later run.
+     * Discriminating those two cases on `updatedAt === now` looked fine and was wrong: two runs
+     * landing in the same millisecond both read as "same run" and double-counted every body. A run id
+     * cannot collide.
+     */
+    runId: v.optional(v.string()),
+    updatedAt: v.number(),
+  })
+    .index('by_key', ['cellKey'])
+    // The cron's sweep: every cell of one tier, in a stable order so a batched run resumes cleanly.
+    .index('by_tier_key', ['tier', 'cellKey']),
+
+  /**
    * **Daily weather observations — an archive, not a cache (N6h / D153).**
    *
    * Everything else in this file's weather block expires. `weatherCache` prunes at 24 h because its

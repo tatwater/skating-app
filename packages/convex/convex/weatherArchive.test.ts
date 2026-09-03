@@ -1,0 +1,535 @@
+import { convexTest } from 'convex-test';
+import type { Polygon } from 'geojson';
+import { describe, expect, test, vi } from 'vitest';
+import { api, internal } from './_generated/api';
+import type { Id } from './_generated/dataModel';
+import schema from './schema';
+
+const modules = import.meta.glob('./**/*.*s');
+const DAY_MS = 86_400_000;
+
+function square(half: number): Polygon {
+  return {
+    type: 'Polygon',
+    coordinates: [
+      [
+        [-half, -half],
+        [half, -half],
+        [half, half],
+        [-half, half],
+        [-half, -half],
+      ],
+    ],
+  };
+}
+
+async function seedBody(
+  t: ReturnType<typeof convexTest>,
+  centroid = { lat: 44.0163, lng: -72.0331 },
+  elevationM: number | undefined = 338,
+): Promise<Id<'waterBodies'>> {
+  return t.run((ctx) =>
+    ctx.db.insert('waterBodies', {
+      name: 'Archive Lake',
+      searchText: 'Archive Lake',
+      type: 'lakePond' as const,
+      source: 'osm' as const,
+      polygon: square(0.01),
+      bbox: { minLat: 43.99, minLng: -72.05, maxLat: 44.05, maxLng: -71.99 },
+      centroid,
+      interiorPoint: centroid,
+      dedupStatus: 'clean' as const,
+      createdAt: Date.now(),
+      ...(elevationM === undefined ? {} : { elevationM }),
+    }),
+  ) as Promise<Id<'waterBodies'>>;
+}
+
+function asViewer(t: ReturnType<typeof convexTest>) {
+  return t.withIdentity({ subject: 'viewer' });
+}
+
+/**
+ * An Open-Meteo `iso8601` response covering `dates`, 24 hours each. `temps` is per-date so a test can
+ * make one day cold and another mild without hand-writing 48 numbers.
+ */
+function isoResponse(
+  dates: string[],
+  opts: {
+    tempFor?: (date: string, hour: number) => number;
+    snowFor?: (date: string, hour: number) => number;
+    windFor?: (date: string, hour: number) => number;
+    dirFor?: (date: string, hour: number) => number;
+    hoursPerDay?: number;
+  } = {},
+) {
+  const hoursPerDay = opts.hoursPerDay ?? 24;
+  const time: string[] = [];
+  const temperature_2m: number[] = [];
+  const snowfall: number[] = [];
+  const wind_speed_10m: number[] = [];
+  const wind_direction_10m: number[] = [];
+  for (const date of dates) {
+    for (let h = 0; h < hoursPerDay; h++) {
+      time.push(`${date}T${String(h).padStart(2, '0')}:00`);
+      temperature_2m.push(opts.tempFor ? opts.tempFor(date, h) : -5);
+      snowfall.push(opts.snowFor ? opts.snowFor(date, h) : 0);
+      wind_speed_10m.push(opts.windFor ? opts.windFor(date, h) : 3);
+      wind_direction_10m.push(opts.dirFor ? opts.dirFor(date, h) : 315);
+    }
+  }
+  const n = time.length;
+  return {
+    hourly: {
+      time,
+      temperature_2m,
+      precipitation: new Array(n).fill(0),
+      rain: new Array(n).fill(0),
+      snowfall,
+      snow_depth: new Array(n).fill(0),
+      wind_speed_10m,
+      wind_gusts_10m: wind_speed_10m.map((w) => w * 1.5),
+      wind_direction_10m,
+      cloud_cover: new Array(n).fill(50),
+      sunshine_duration: new Array(n).fill(0),
+      shortwave_radiation: new Array(n).fill(0),
+    },
+  };
+}
+
+function okJson(body: unknown): Response {
+  return new Response(JSON.stringify(body), { status: 200 });
+}
+
+/** Local dates ending today (UTC), oldest first — matching what `past_days` returns. */
+function recentDates(count: number): string[] {
+  const out: string[] = [];
+  const today = Math.floor(Date.now() / DAY_MS) * DAY_MS;
+  for (let i = count - 1; i >= 0; i--) {
+    out.push(new Date(today - i * DAY_MS).toISOString().slice(0, 10));
+  }
+  return out;
+}
+
+function dayMsOf(localDate: string): number {
+  const [y, m, d] = localDate.split('-').map(Number);
+  return Date.UTC(y ?? 1970, (m ?? 1) - 1, d ?? 1);
+}
+
+describe('weatherArchive: the request builder (D153)', () => {
+  test('asks for iso8601 local stamps, not unixtime — the DST fix', async () => {
+    const t = convexTest(schema, modules);
+    const waterBodyId = await seedBody(t);
+    const fetchMock = vi.fn(async (_url: string) => okJson(isoResponse(recentDates(3))));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await asViewer(t).action(api.weatherArchive.getWeatherDaysForBody, { waterBodyId });
+
+    const params = new URL(String(fetchMock.mock.calls[0]?.[0])).searchParams;
+    // The entire reason this module has its own request builder: one `utc_offset_seconds` per response
+    // misfiles an hour either side of a DST change, and both transitions fall inside a season.
+    expect(params.get('timeformat')).toBe('iso8601');
+    expect(params.get('timezone')).toBe('auto');
+    // Still the cell's snapped centre and band elevation — the key must not fork from `weather.ts`.
+    expect(params.get('latitude')).toBe('44');
+    expect(params.get('elevation')).toBe('300');
+  });
+
+  test('a first touch pulls the 92-day ceiling, not the panel window', async () => {
+    const t = convexTest(schema, modules);
+    const waterBodyId = await seedBody(t);
+    const fetchMock = vi.fn(async (_url: string) => okJson(isoResponse(recentDates(3))));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await asViewer(t).action(api.weatherArchive.getWeatherDaysForBody, { waterBodyId, days: 7 });
+
+    // D153: lazy backfill is not lossy. The first visitor in February gets the whole season.
+    const params = new URL(String(fetchMock.mock.calls[0]?.[0])).searchParams;
+    expect(params.get('past_days')).toBe('92');
+  });
+
+  test('meters the archive fetch under the same provider (D158)', async () => {
+    const t = convexTest(schema, modules);
+    const waterBodyId = await seedBody(t);
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => okJson(isoResponse(recentDates(3)))),
+    );
+    await asViewer(t).action(api.weatherArchive.getWeatherDaysForBody, { waterBodyId });
+    const rows = await t.run((ctx) => ctx.db.query('externalApiCalls').collect());
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.provider).toBe('open-meteo');
+    // 93 days over 11 vars: ceil(93/14)=7 × 1.1 = 7.7 billed calls in ONE request.
+    expect(rows[0]?.weightedCalls).toBeCloseTo(7.7, 6);
+  });
+});
+
+describe('weatherArchive: storage', () => {
+  test('stores one row per local day, with the measures the panel reads', async () => {
+    const t = convexTest(schema, modules);
+    const waterBodyId = await seedBody(t);
+    const dates = recentDates(3);
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        okJson(
+          isoResponse(dates, {
+            tempFor: (_d, h) => (h < 12 ? -8 : -2),
+            snowFor: (d, h) => (d === dates[1] && h === 4 ? 3 : 0),
+            windFor: () => 2,
+          }),
+        ),
+      ),
+    );
+
+    const result = await asViewer(t).action(api.weatherArchive.getWeatherDaysForBody, {
+      waterBodyId,
+      days: 3,
+    });
+
+    expect(result?.days).toHaveLength(3);
+    const middle = result?.days.find((d) => d.localDate === dates[1]);
+    expect(middle?.minTempC).toBe(-8);
+    expect(middle?.maxTempC).toBe(-2);
+    expect(middle?.snowfallCm).toBeCloseTo(3, 6);
+    expect(middle?.hoursBelowFreezing).toBe(24);
+    // The black-ice signal: it froze all day and the wind was calm throughout.
+    expect(middle?.freezingHoursMeanWindKph).toBeCloseTo(2, 6);
+    expect(middle?.windSectorHours).toHaveLength(16);
+    // The night that ended on this date reaches into the previous evening, which we have.
+    expect(middle?.nightMinTempC).toBe(-8);
+  });
+
+  test('the upsert is idempotent — a re-fetch overwrites rather than duplicating', async () => {
+    const t = convexTest(schema, modules);
+    const waterBodyId = await seedBody(t);
+    const dates = recentDates(3);
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => okJson(isoResponse(dates, { tempFor: () => -5 }))),
+    );
+
+    await asViewer(t).action(api.weatherArchive.getWeatherDaysForBody, { waterBodyId, days: 3 });
+    const first = await t.run((ctx) => ctx.db.query('weatherDays').collect());
+
+    // Every append re-requests overlapping days on purpose (a partial "today" has to be completed),
+    // so without an upsert each tick would duplicate — and a duplicated day double-counts in any
+    // predicate that sums a span.
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => okJson(isoResponse(dates, { tempFor: () => -12 }))),
+    );
+    await t.action(internal.weatherArchive.refreshTierDays, { tier: 'browse' });
+
+    const second = await t.run((ctx) => ctx.db.query('weatherDays').collect());
+    expect(second).toHaveLength(first.length);
+  });
+
+  test('a partial day reports the hours it actually saw, never a padded 24', async () => {
+    const t = convexTest(schema, modules);
+    const waterBodyId = await seedBody(t);
+    const dates = recentDates(2);
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => okJson(isoResponse(dates, { hoursPerDay: 10 }))),
+    );
+    const result = await asViewer(t).action(api.weatherArchive.getWeatherDaysForBody, {
+      waterBodyId,
+      days: 2,
+    });
+    expect(result?.days[0]?.hours).toBe(10);
+  });
+
+  test('a failed fetch stores NOTHING rather than a row of zeroes', async () => {
+    const t = convexTest(schema, modules);
+    const waterBodyId = await seedBody(t);
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response('nope', { status: 503 })),
+    );
+    const result = await asViewer(t).action(api.weatherArchive.getWeatherDaysForBody, {
+      waterBodyId,
+      days: 7,
+    });
+    const rows = await t.run((ctx) => ctx.db.query('weatherDays').collect());
+    expect(rows).toHaveLength(0);
+    // ⚠ The distinction the `missing` flag exists for: an absent day must read as "we don't know",
+    // never as "no snow fell", which is what a zeroed row would say to a D159 predicate.
+    expect(result?.days).toHaveLength(0);
+    expect(result?.missingDayMs).toHaveLength(7);
+  });
+
+  test('reports window days that produced no row as missing', async () => {
+    const t = convexTest(schema, modules);
+    const waterBodyId = await seedBody(t);
+    // Only 2 of the 5 requested days come back.
+    const dates = recentDates(5).slice(3);
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => okJson(isoResponse(dates))),
+    );
+    const result = await asViewer(t).action(api.weatherArchive.getWeatherDaysForBody, {
+      waterBodyId,
+      days: 5,
+    });
+    expect(result?.days).toHaveLength(2);
+    expect(result?.missingDayMs).toHaveLength(3);
+  });
+});
+
+describe('weatherArchive: the cell registry', () => {
+  test('materialises one row per distinct cell, counting the bodies in it', async () => {
+    const t = convexTest(schema, modules);
+    // Two bodies in one 0.1° filter cell, one in another.
+    await seedBody(t, { lat: 44.0163, lng: -72.0331 }, 338);
+    await seedBody(t, { lat: 44.0201, lng: -72.0355 }, 351);
+    await seedBody(t, { lat: 45.5, lng: -71.2 }, 200);
+
+    await t.action(internal.weatherArchive.backfillWeatherCells, { tier: 'filter' });
+
+    const cells = await t.run((ctx) => ctx.db.query('weatherCells').collect());
+    expect(cells).toHaveLength(2);
+    const busy = cells.find((c) => c.bodyCount === 2);
+    expect(busy).toBeDefined();
+    // The snapped centre is stored so the cron never needs a body row.
+    expect(busy?.lat).toBe(44);
+    expect(busy?.tier).toBe('filter');
+    // `filter` never bands by elevation, so two bodies 13 m apart vertically still share a cell.
+    expect(busy?.elevationM).toBeUndefined();
+  });
+
+  test('re-running refreshes counts instead of duplicating rows', async () => {
+    const t = convexTest(schema, modules);
+    await seedBody(t);
+    await t.action(internal.weatherArchive.backfillWeatherCells, { tier: 'filter' });
+    await t.action(internal.weatherArchive.backfillWeatherCells, { tier: 'filter' });
+    const cells = await t.run((ctx) => ctx.db.query('weatherCells').collect());
+    expect(cells).toHaveLength(1);
+    expect(cells[0]?.bodyCount).toBe(1);
+  });
+
+  test('skips removed bodies', async () => {
+    const t = convexTest(schema, modules);
+    const id = await seedBody(t);
+    await t.run((ctx) => ctx.db.patch(id, { removedAt: Date.now() }));
+    await t.action(internal.weatherArchive.backfillWeatherCells, { tier: 'filter' });
+    const cells = await t.run((ctx) => ctx.db.query('weatherCells').collect());
+    expect(cells).toHaveLength(0);
+  });
+});
+
+describe('weatherArchive: the season gate (D161)', () => {
+  test('does not spend anything before the season is recorded open', async () => {
+    const t = convexTest(schema, modules);
+    await seedBody(t);
+    await t.action(internal.weatherArchive.backfillWeatherCells, { tier: 'filter' });
+    const fetchMock = vi.fn(async () => okJson(isoResponse(recentDates(3))));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const result = await t.action(internal.weatherArchive.maybeRefreshFilterTier, {});
+    await t.finishInProgressScheduledFunctions();
+
+    expect(result.started).toBe(false);
+    // The whole point: ~43% of the annual free-tier budget would otherwise go on July.
+    expect(fetchMock).not.toHaveBeenCalled();
+    const rows = await t.run((ctx) => ctx.db.query('weatherDays').collect());
+    expect(rows).toHaveLength(0);
+  });
+
+  test('runs once the 25-site checker has recorded the season open', async () => {
+    const t = convexTest(schema, modules);
+    await seedBody(t);
+    await t.action(internal.weatherArchive.backfillWeatherCells, { tier: 'filter' });
+    const gate = await t.run((ctx) =>
+      ctx.runQuery(internal.weatherArchive.isSweepSeasonOpen, { nowMs: Date.now() }),
+    );
+    await t.run((ctx) =>
+      ctx.db.insert('imageryIngestSeasons', {
+        season: gate.season,
+        opensOn: '2025-12-01',
+        openedBy: ['sentinel pond'],
+        winterFrom: '2025-11-01',
+        sitesSampled: 25,
+        detectedAt: Date.now(),
+      }),
+    );
+
+    const fetchMock = vi.fn(async () => okJson(isoResponse(recentDates(3))));
+    vi.stubGlobal('fetch', fetchMock);
+    const result = await t.action(internal.weatherArchive.maybeRefreshFilterTier, {});
+    expect(result.started).toBe(true);
+    // The gate *schedules* the sweep rather than awaiting it, so the tick stays fast and the sweep
+    // keeps its own self-rescheduling batch loop. Drain the scheduler to see the effect.
+    await t.finishInProgressScheduledFunctions();
+    expect(fetchMock).toHaveBeenCalled();
+  });
+});
+
+describe('weatherArchive: the recovery ladder (D161)', () => {
+  test('refetches a hole inside the 92-day window (step 1)', async () => {
+    const t = convexTest(schema, modules);
+    await seedBody(t);
+    await t.action(internal.weatherArchive.backfillWeatherCells, { tier: 'filter' });
+    const cells = await t.run((ctx) => ctx.db.query('weatherCells').collect());
+    const cellKey = cells[0]?.cellKey ?? '';
+
+    // Seed a cell that holds days -5 and -3 but not -4.
+    const dates = recentDates(6);
+    const present = [dates[0], dates[2]].filter((d): d is string => d !== undefined);
+    await t.run(async (ctx) => {
+      for (const d of present) {
+        await ctx.db.insert('weatherDays', {
+          cellKey,
+          tier: 'filter' as const,
+          dayMs: dayMsOf(d),
+          localDate: d,
+          source: 'forecast' as const,
+          hours: 24,
+          fetchedAt: Date.now(),
+        });
+      }
+    });
+
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => okJson(isoResponse(dates))),
+    );
+    const result = await t.action(internal.weatherArchive.sweepWeatherDayGaps, { tier: 'filter' });
+    expect(result.repaired).toBeGreaterThan(0);
+
+    const after = await t.run((ctx) => ctx.db.query('weatherDays').collect());
+    const filled = after.find((r) => r.dayMs === dayMsOf(dates[1] ?? ''));
+    expect(filled).toBeDefined();
+    expect(filled?.missing).not.toBe(true);
+  });
+
+  test('records an unrecoverable hole as missing, never as zeroes (step 4)', async () => {
+    const t = convexTest(schema, modules);
+    await seedBody(t);
+    await t.action(internal.weatherArchive.backfillWeatherCells, { tier: 'filter' });
+    const cells = await t.run((ctx) => ctx.db.query('weatherCells').collect());
+    const cellKey = cells[0]?.cellKey ?? '';
+    const dates = recentDates(4);
+    await t.run(async (ctx) => {
+      for (const d of [dates[0], dates[3]].filter((x): x is string => x !== undefined)) {
+        await ctx.db.insert('weatherDays', {
+          cellKey,
+          tier: 'filter' as const,
+          dayMs: dayMsOf(d),
+          localDate: d,
+          source: 'forecast' as const,
+          hours: 24,
+          fetchedAt: Date.now(),
+        });
+      }
+    });
+
+    // Open-Meteo down: nothing can be recovered.
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response('nope', { status: 503 })),
+    );
+    await t.action(internal.weatherArchive.sweepWeatherDayGaps, { tier: 'filter' });
+
+    const after = await t.run((ctx) => ctx.db.query('weatherDays').collect());
+    const gaps = after.filter((r) => r.missing === true);
+    expect(gaps.length).toBeGreaterThan(0);
+    // A recorded gap carries no measures at all — that is the difference between "unknown" and "zero".
+    expect(gaps[0]?.snowfallCm).toBeUndefined();
+    expect(gaps[0]?.hours).toBeUndefined();
+  });
+
+  test('a gap marker never overwrites real data', async () => {
+    const t = convexTest(schema, modules);
+    await seedBody(t);
+    await t.action(internal.weatherArchive.backfillWeatherCells, { tier: 'filter' });
+    const cells = await t.run((ctx) => ctx.db.query('weatherCells').collect());
+    const cellKey = cells[0]?.cellKey ?? '';
+    const day = dayMsOf(recentDates(2)[0] ?? '');
+
+    await t.run((ctx) =>
+      ctx.db.insert('weatherDays', {
+        cellKey,
+        tier: 'filter' as const,
+        dayMs: day,
+        localDate: recentDates(2)[0] ?? '',
+        source: 'forecast' as const,
+        hours: 24,
+        snowfallCm: 9,
+        fetchedAt: Date.now(),
+      }),
+    );
+
+    await t.mutation(internal.weatherArchive.writeMissingDays, {
+      cellKey,
+      tier: 'filter',
+      dayMs: [day],
+      fetchedAt: Date.now(),
+    });
+
+    const row = await t.run((ctx) => ctx.db.query('weatherDays').collect());
+    // A sweep running during an outage must not be able to erase a week of good history.
+    expect(row[0]?.missing).not.toBe(true);
+    expect(row[0]?.snowfallCm).toBe(9);
+  });
+
+  test('leaves a never-touched cell alone rather than backfilling the whole corpus', async () => {
+    const t = convexTest(schema, modules);
+    await seedBody(t);
+    await t.action(internal.weatherArchive.backfillWeatherCells, { tier: 'filter' });
+    const fetchMock = vi.fn(async () => okJson(isoResponse(recentDates(3))));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const result = await t.action(internal.weatherArchive.sweepWeatherDayGaps, { tier: 'filter' });
+
+    // An untouched cell has no gap — it has never been asked about. Treating absence as a hole would
+    // silently turn the sweep into a corpus-wide backfill nobody requested.
+    expect(result.repaired).toBe(0);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+});
+
+describe('weatherArchive: the public read guard', () => {
+  test('returns null to an unauthenticated caller and spends nothing', async () => {
+    const t = convexTest(schema, modules);
+    const waterBodyId = await seedBody(t);
+    const fetchMock = vi.fn(async () => okJson(isoResponse(recentDates(3))));
+    vi.stubGlobal('fetch', fetchMock);
+    const result = await t.action(api.weatherArchive.getWeatherDaysForBody, { waterBodyId });
+    expect(result).toBeNull();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  test('returns null for a removed body', async () => {
+    const t = convexTest(schema, modules);
+    const waterBodyId = await seedBody(t);
+    await t.run((ctx) => ctx.db.patch(waterBodyId, { removedAt: Date.now() }));
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => okJson(isoResponse(recentDates(3)))),
+    );
+    expect(
+      await asViewer(t).action(api.weatherArchive.getWeatherDaysForBody, { waterBodyId }),
+    ).toBeNull();
+  });
+
+  test('a second viewer of the same cell pays nothing', async () => {
+    const t = convexTest(schema, modules);
+    const a = await seedBody(t, { lat: 44.0163, lng: -72.0331 }, 338);
+    const b = await seedBody(t, { lat: 44.0151, lng: -72.0339 }, 330);
+    const fetchMock = vi.fn(async () => okJson(isoResponse(recentDates(9))));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await asViewer(t).action(api.weatherArchive.getWeatherDaysForBody, {
+      waterBodyId: a,
+      days: 7,
+    });
+    await asViewer(t).action(api.weatherArchive.getWeatherDaysForBody, {
+      waterBodyId: b,
+      days: 7,
+    });
+
+    // Same cell, same band ⇒ the archive is already there. This is D152's whole return on investment.
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+});

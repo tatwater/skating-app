@@ -97,6 +97,32 @@ crons.interval(
   {},
 );
 
+// **The Tier-B daily archive append (N6h / D153, D161).** Corpus-wide, ~3,043 `filter` cells, batched
+// and self-rescheduling. Daily rather than hourly because past days do not change — an append only has
+// to close yesterday and refresh today's partial row.
+//
+// ⚠ **Season-gated inside the action, not here.** Convex crons cannot be retuned at runtime, so the
+// tick is unconditional and `maybeRefreshFilterTier` decides whether to spend anything: running the
+// sweep year-round would burn ~43% of the annual free-tier budget mostly in July. Same
+// interval-with-a-gate shape as `maybeCheckSeasonOpen` and `recurrence.maybeRunRollover`, and for the
+// same reason — a tick that fails today is retried tomorrow, where a `cron` expression would wait a
+// year.
+crons.interval(
+  'append daily weather archive',
+  { hours: 24 },
+  internal.weatherArchive.maybeRefreshFilterTier,
+  {},
+);
+// The gap sweep (D161's recovery ladder). Separate from the append so a retry storm in one cannot
+// starve the other, and offset by running on its own 24h interval: past data is immutable, so a gap
+// is permanent unless something notices — and nothing in the weather path retried before N6h.
+crons.interval(
+  'repair weather archive gaps',
+  { hours: 24 },
+  internal.weatherArchive.maybeSweepGaps,
+  {},
+);
+
 // Photo-orphan GC — the durable backstop behind the client's best-effort reclaim. Daily, because an
 // orphan costs only storage and the grace window before a photo is even a candidate is 30 days.
 crons.interval('sweep orphan photos', { hours: 24 }, internal.storageHygiene.sweepOrphanPhotos, {});
