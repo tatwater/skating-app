@@ -45,6 +45,32 @@ export const MAX_SUGGESTED_SAMPLE_POINTS = 64;
 const M_PER_DEG_LAT = 111_320;
 const DEG = Math.PI / 180;
 
+/**
+ * Would a body this size need more than one weather sample point?
+ *
+ * **Tied to `DEFAULT_SAMPLE_SPACING_KM` on purpose**, so "the panel says this lake is too big for one
+ * reading" and "the suggester would place a grid on it" can never disagree about what *too big*
+ * means. One constant, two consumers.
+ *
+ * Measured on the bbox rather than the polygon because the question is about extent, not shape: a
+ * 40 km river reach and a 40 km lake both span more weather than one point can describe, and the
+ * cheap answer is the same for both. The longitude term uses the latitude furthest from the equator
+ * for the same reason `suggestSamplePoints` does — it is the shortest degree in the box, so this errs
+ * toward *not* claiming a body is oversized.
+ */
+export function spansMultipleSampleCells(
+  box: BBox,
+  spacingKm: number = DEFAULT_SAMPLE_SPACING_KM,
+): boolean {
+  if (!Number.isFinite(spacingKm) || spacingKm <= 0) return false;
+  const spacingM = spacingKm * 1000;
+  const latSpanM = (box.maxLat - box.minLat) * M_PER_DEG_LAT;
+  const worstLat = Math.max(Math.abs(box.minLat), Math.abs(box.maxLat));
+  const cosWorst = Math.cos(Math.min(89.9, worstLat) * DEG);
+  const lngSpanM = (box.maxLng - box.minLng) * M_PER_DEG_LAT * Math.max(cosWorst, 1e-6);
+  return Math.max(latSpanM, lngSpanM) > spacingM;
+}
+
 export interface SampleSuggestion {
   points: LatLng[];
   /** True when {@link MAX_SUGGESTED_SAMPLE_POINTS} cut the grid short — never silent (D5). */

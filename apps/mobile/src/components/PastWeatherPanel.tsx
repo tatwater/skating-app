@@ -31,11 +31,12 @@ export function PastWeatherPanel({
   days?: number;
 }) {
   const getDays = useAction(api.weatherArchive.getWeatherDaysForBody);
-  const [state, setState] = useState<{ days: PanelDay[]; coarse: boolean; loading: boolean }>({
-    days: [],
-    coarse: false,
-    loading: true,
-  });
+  const [state, setState] = useState<{
+    days: PanelDay[];
+    coarse: boolean;
+    largeBody: boolean;
+    loading: boolean;
+  }>({ days: [], coarse: false, largeBody: false, loading: true });
 
   useEffect(() => {
     let cancelled = false;
@@ -44,7 +45,7 @@ export function PastWeatherPanel({
       .then((result) => {
         if (cancelled) return;
         if (!result) {
-          setState({ days: [], coarse: false, loading: false });
+          setState({ days: [], coarse: false, largeBody: false, loading: false });
           return;
         }
         const holes: PanelDay[] = result.missingDayMs.map((dayMs) => ({
@@ -54,11 +55,12 @@ export function PastWeatherPanel({
         setState({
           days: [...(result.days as PanelDay[]), ...holes],
           coarse: result.anyBorrowed,
+          largeBody: result.oneSampleForALargeBody,
           loading: false,
         });
       })
       .catch(() => {
-        if (!cancelled) setState({ days: [], coarse: false, loading: false });
+        if (!cancelled) setState({ days: [], coarse: false, largeBody: false, loading: false });
       });
     return () => {
       cancelled = true;
@@ -113,6 +115,12 @@ export function PastWeatherPanel({
         ))}
       </XStack>
 
+      {state.largeBody ? (
+        <Text color="$foregroundMuted" fontSize={11} fontStyle="italic">
+          This lake is large enough that weather differs across it — these readings are from one
+          point near the middle.
+        </Text>
+      ) : null}
       {panel.coarse ? (
         <Text color="$foregroundMuted" fontSize={11} fontStyle="italic">
           Some days are from a wider area than usual.

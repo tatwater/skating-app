@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   buildPastWeatherPanel,
   CALM_FREEZE_MAX_KPH,
+  formatLocalHourLabel,
   monthDayLabel,
   type PanelDay,
   shortDayLabel,
@@ -252,5 +253,40 @@ describe('buildPastWeatherPanel — a realistic week', () => {
     expect(panel.headline).toContain('Rain on Feb 1');
     expect(panel.headline.some((l) => l.includes('snow since Feb 4'))).toBe(true);
     expect(panel.headline.some((l) => l.startsWith('Calm while freezing'))).toBe(true);
+  });
+});
+
+describe('formatLocalHourLabel — the local-shift trap (N6h hole 1)', () => {
+  it('reads a local-shifted timestamp back with UTC getters', () => {
+    // `HourlyWeather.startMs` is unix + utc_offset_seconds. This value encodes 8 PM local.
+    const eightPmLocal = Date.UTC(2026, 0, 15, 20, 0);
+    expect(formatLocalHourLabel(eightPmLocal)).toBe('8 PM');
+  });
+
+  it('does NOT double-apply the offset the way a local formatter would', () => {
+    // The bug this exists to prevent: in US Eastern, `toLocaleTimeString` on an already-shifted value
+    // slides 5 hours and still reads plausibly ("1 AM" for a storm that starts at 8 PM). The label
+    // must depend only on the encoded wall clock, never on the machine running the test.
+    const eightPmLocal = Date.UTC(2026, 0, 15, 20, 0);
+    const label = formatLocalHourLabel(eightPmLocal);
+    expect(label).toBe('8 PM');
+    expect(label).not.toBe('1 AM');
+    expect(label).not.toBe('3 PM');
+  });
+
+  it('formats midnight and noon without a zero or a 24', () => {
+    expect(formatLocalHourLabel(Date.UTC(2026, 0, 15, 0, 0))).toBe('12 AM');
+    expect(formatLocalHourLabel(Date.UTC(2026, 0, 15, 12, 0))).toBe('12 PM');
+  });
+
+  it('includes minutes only when they are not on the hour', () => {
+    expect(formatLocalHourLabel(Date.UTC(2026, 0, 15, 9, 0))).toBe('9 AM');
+    expect(formatLocalHourLabel(Date.UTC(2026, 0, 15, 9, 30))).toBe('9:30 AM');
+    expect(formatLocalHourLabel(Date.UTC(2026, 0, 15, 13, 5))).toBe('1:05 PM');
+  });
+
+  it('returns an empty label rather than "Invalid Date" for a non-finite input', () => {
+    expect(formatLocalHourLabel(Number.NaN)).toBe('');
+    expect(formatLocalHourLabel(Number.POSITIVE_INFINITY)).toBe('');
   });
 });

@@ -154,15 +154,26 @@ F (radar) are untouched.
 
 | hole | status |
 |---|---|
-| 1 · local-shifted `startMs` | **avoided, not fixed.** The archive never touches it — `timeformat=iso8601` means hours arrive carrying the lake's own date, and the panel reads those. ⚠ **The trap is still live for Workstream D**, whose hourly rows come from `weather.ts`. Saved as a standalone memory. |
-| 2 · multi-cell giants | **partly.** `bounties` now anchors on the sub-area when a bounty names one, so a bay gets its bay's weather. The **panel still uses the body's default anchor**, so Champlain shows one point for 200 km. Needs the sub-area-vs-body decision before D. |
+| 1 · local-shifted `startMs` | ✅ **closed 2026-09-03.** `formatLocalHourLabel` in `weatherPanel.ts` reads the value back with **UTC getters** (correct precisely because it is already local), and `HourlyWeather.startMs`'s docblock points at it. The archive never touches the field at all. Rationale for a helper rather than a rename: renaming the *stored* `weatherForecastCache.hours[].startMs` is a validator migration, and the real risk was that D gets written weeks later by someone who did not read a docblock — so the fix is making the obvious function the right one. Still a standalone memory. |
+| 2 · multi-cell giants | ⚠️ **half closed, and the half that was closable.** The investigation reframed it: **zero bodies in the corpus carry `weatherSamplePoints`** — Champlain (170 km span) has none — so nothing was picking the wrong point among several; there is only ever one. N2 shipped the suggester *and* the moderator writer and nobody has run it (the same reader-with-no-producer shape as N6b's `hasContours`). ✅ The **dishonesty** is fixed: `spansMultipleSampleCells` (tied to `DEFAULT_SAMPLE_SPACING_KM`, so the caveat and the grid tool cannot disagree) drives a panel line saying the readings come from one point near the middle. ❌ The **data** is not: an operator still has to place a grid on the three bodies that need one. |
 | 3 · "nights" undefined | ✅ `nightMinTempC` over an explicit `[18:00, 09:00)` window, defined once in `weatherDay.ts`, with `nightsBelowThresholdC` as the only predicate. |
 | 4 · DST 23/25-hour days | ✅ Days are bucketed from local date *strings*, never from a shifted timestamp. `hours` reports what was seen. |
 | 5 · backfill stampede | ✅ Batched and self-rescheduling (`CELL_BATCH_SIZE`), season-gated, and the meter makes the spend visible. |
 | 6 · atomic re-key | ✅ See delta 2, plus a test asserting the strip and the decay cron land on one row. |
 | 7 · idempotency + migration | ✅ Upsert on `(cellKey, dayMs)`; a gap marker refuses to overwrite real data. No migration needed (delta 3). ⚠ `weatherCellKeyB` on `waterBodies` is still owed by **E**. |
 | 8 · mobile has no charts | ✅ Text-first mobile, all copy in `weatherPanel.ts` in core where it is testable. |
-| 9 · offline | ❌ **Not done.** The archive is small and needed exactly where signal dies; belongs with D. |
+| 9 · offline | ❌ **Not done, deliberately.** Needs D's payload shape to cache against; inventing one now would be guessing at an interface that does not exist. |
+
+### The operator task this uncovered
+
+**Three bodies on dev are large enough to need a weather sample grid and have none:** Lake Champlain
+(170 km span), Lake Memphremagog (41 km) and Connecticut River Reservoir (20 km). Everything needed
+to fix that shipped in N2 — `suggestSamplePoints` proposes a grid at `DEFAULT_SAMPLE_SPACING_KM` and a
+moderator action writes it. Running it is a founder/operator call (it costs one forecast fetch and one
+cache row per point, and the spacing is a judgement), so it is recorded here rather than done.
+
+Until then the panel says which claim it is making, which is the honest interim state rather than the
+fixed one.
 
 ### Deferred inside B, with reasons rather than silently
 

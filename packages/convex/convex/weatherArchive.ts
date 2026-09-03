@@ -47,6 +47,7 @@ import {
   archiveSeasonAt,
   dayMsToLocalDate,
   type LocalHourlyWeather,
+  spansMultipleSampleCells,
   summarizeWeatherDays,
   WEATHER_TIERS,
   type WeatherCell,
@@ -913,6 +914,21 @@ export interface WeatherDaysResult {
   missingDayMs: number[];
   /** True when any returned day came from the coarser `filter` tier (D161 step 2). */
   anyBorrowed: boolean;
+  /**
+   * True when this body is larger than one weather sample can honestly describe, and only one was
+   * taken.
+   *
+   * **Lake Champlain is 170 km end to end and carries zero `weatherSamplePoints` on dev** — so every
+   * reading in its panel comes from one point near the middle, and nothing said so. N2 shipped the
+   * suggester and the moderator writer for exactly this and nobody has run it, which is the same
+   * reader-with-no-producer shape N6b's `hasContours` had.
+   *
+   * Until an operator places a grid, the honest move is to **say which claim we are making** — D151's
+   * grammar, one sensor over: the subject of the sentence is us, not the lake. Threshold is
+   * `spansMultipleSampleCells`, tied to the same `DEFAULT_SAMPLE_SPACING_KM` the suggester uses, so
+   * the caveat and the grid can never disagree about what "too big for one point" means.
+   */
+  oneSampleForALargeBody: boolean;
 }
 
 /**
@@ -937,6 +953,7 @@ export const getWeatherDaysForBody = action({
     if (!(await ctx.auth.getUserIdentity())) return null;
     const cell = await ctx.runQuery(internal.weather.resolveBodyWeatherCell, { waterBodyId });
     if (!cell) return null;
+    const coverage = await ctx.runQuery(internal.weatherArchive.sampleCoverage, { waterBodyId });
 
     const now = Date.now();
     const today = todayKey(now);
@@ -995,6 +1012,30 @@ export const getWeatherDaysForBody = action({
     }
     missingDayMs.sort((a, b) => a - b);
 
-    return { days: out, missingDayMs, anyBorrowed };
+    return {
+      days: out,
+      missingDayMs,
+      anyBorrowed,
+      oneSampleForALargeBody: coverage?.oneSampleForALargeBody ?? false,
+    };
+  },
+});
+
+/**
+ * Is this body big enough that one weather sample understates the question?
+ *
+ * Reads the bbox rather than the polygon: the question is extent, not shape, and a 40 km river reach
+ * and a 40 km lake are equally beyond one reading.
+ */
+export const sampleCoverage = internalQuery({
+  args: { waterBodyId: v.id('waterBodies') },
+  handler: async (ctx, { waterBodyId }) => {
+    const body = await ctx.db.get(waterBodyId);
+    if (!body || body.removedAt) return null;
+    const points = body.weatherSamplePoints?.length ?? 0;
+    return {
+      samplePoints: points,
+      oneSampleForALargeBody: points <= 1 && spansMultipleSampleCells(body.bbox),
+    };
   },
 });

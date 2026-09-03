@@ -38,6 +38,7 @@ describe('PastWeatherPanel', () => {
       days: [day('2026-01-14'), day('2026-01-15'), day('2026-01-16')],
       missingDayMs: [],
       anyBorrowed: false,
+      oneSampleForALargeBody: false,
     });
     render(<PastWeatherPanel waterBodyId={BODY} />);
 
@@ -52,6 +53,7 @@ describe('PastWeatherPanel', () => {
       days: [day('2026-01-14'), day('2026-01-15')],
       missingDayMs: [],
       anyBorrowed: false,
+      oneSampleForALargeBody: false,
     });
     const { container } = render(<PastWeatherPanel waterBodyId={BODY} />);
     await screen.findByText("What it's been through");
@@ -68,6 +70,7 @@ describe('PastWeatherPanel', () => {
       days: [day('2026-01-14'), day('2026-01-15')],
       missingDayMs: [missing],
       anyBorrowed: false,
+      oneSampleForALargeBody: false,
     });
     render(<PastWeatherPanel waterBodyId={BODY} />);
 
@@ -77,18 +80,51 @@ describe('PastWeatherPanel', () => {
     expect(screen.getByText('1 day of weather unavailable')).toBeInTheDocument();
   });
 
+  it('says so when one sample stands in for a lake too big for it', async () => {
+    getDays.mockResolvedValue({
+      days: [day('2026-01-15')],
+      missingDayMs: [],
+      anyBorrowed: false,
+      oneSampleForALargeBody: true,
+    });
+    render(<PastWeatherPanel waterBodyId={BODY} />);
+    // Champlain is 170 km end to end and carries no sample grid — the panel has to say which claim
+    // it is making rather than implying the reading covers the lake (D151's grammar).
+    expect(
+      await screen.findByText(/large enough that weather differs across it/),
+    ).toBeInTheDocument();
+  });
+
+  it('stays quiet about size on an ordinary lake', async () => {
+    getDays.mockResolvedValue({
+      days: [day('2026-01-15')],
+      missingDayMs: [],
+      anyBorrowed: false,
+      oneSampleForALargeBody: false,
+    });
+    render(<PastWeatherPanel waterBodyId={BODY} />);
+    await screen.findByText("What it's been through");
+    expect(screen.queryByText(/large enough that weather differs/)).not.toBeInTheDocument();
+  });
+
   it('says when a day came from a wider area (D161 step 2)', async () => {
     getDays.mockResolvedValue({
       days: [day('2026-01-15')],
       missingDayMs: [],
       anyBorrowed: true,
+      oneSampleForALargeBody: false,
     });
     render(<PastWeatherPanel waterBodyId={BODY} />);
     expect(await screen.findByText(/wider area than usual/)).toBeInTheDocument();
   });
 
   it('renders nothing when the archive has nothing', async () => {
-    getDays.mockResolvedValue({ days: [], missingDayMs: [], anyBorrowed: false });
+    getDays.mockResolvedValue({
+      days: [],
+      missingDayMs: [],
+      anyBorrowed: false,
+      oneSampleForALargeBody: false,
+    });
     const { container } = render(<PastWeatherPanel waterBodyId={BODY} />);
     await waitFor(() => expect(getDays).toHaveBeenCalled());
     await waitFor(() => expect(container).toBeEmptyDOMElement());
@@ -112,13 +148,19 @@ describe('PastWeatherPanel', () => {
       days: [day('2026-01-15', { snowfallCm: 7.62 })],
       missingDayMs: [],
       anyBorrowed: false,
+      oneSampleForALargeBody: false,
     });
     render(<PastWeatherPanel waterBodyId={BODY} />);
     expect(await screen.findByText('3″')).toBeInTheDocument();
   });
 
   it('passes the requested window to the action', async () => {
-    getDays.mockResolvedValue({ days: [], missingDayMs: [], anyBorrowed: false });
+    getDays.mockResolvedValue({
+      days: [],
+      missingDayMs: [],
+      anyBorrowed: false,
+      oneSampleForALargeBody: false,
+    });
     render(<PastWeatherPanel days={14} waterBodyId={BODY} />);
     await waitFor(() => expect(getDays).toHaveBeenCalledWith({ waterBodyId: BODY, days: 14 }));
   });
@@ -128,6 +170,7 @@ describe('PastWeatherPanel', () => {
       days: [day('2026-01-15')],
       missingDayMs: [],
       anyBorrowed: false,
+      oneSampleForALargeBody: false,
     });
     const { rerender } = render(<PastWeatherPanel waterBodyId={BODY} />);
     await screen.findByText("What it's been through");

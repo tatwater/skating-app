@@ -5,6 +5,7 @@ import { haversineMeters, pointInPolygon } from './geometry';
 import {
   DEFAULT_SAMPLE_SPACING_KM,
   MAX_SUGGESTED_SAMPLE_POINTS,
+  spansMultipleSampleCells,
   suggestSamplePoints,
 } from './samplePoints';
 
@@ -160,5 +161,44 @@ describe('suggestSamplePoints', () => {
       ),
       { numRuns: 150 },
     );
+  });
+});
+
+describe('spansMultipleSampleCells (N6h — the "too big for one reading" test)', () => {
+  const at = (minLat: number, minLng: number, maxLat: number, maxLng: number) => ({
+    minLat,
+    minLng,
+    maxLat,
+    maxLng,
+  });
+
+  it('is true for a body longer than the default spacing', () => {
+    // ~0.5° of latitude ≈ 55 km — Champlain's scale.
+    expect(spansMultipleSampleCells(at(44.0, -73.4, 44.5, -73.3))).toBe(true);
+  });
+
+  it('is false for an ordinary lake', () => {
+    // ~2 km across, which is most of the corpus.
+    expect(spansMultipleSampleCells(at(44.0, -72.05, 44.018, -72.03))).toBe(false);
+  });
+
+  it('catches extent on the longitude axis too', () => {
+    expect(spansMultipleSampleCells(at(44.0, -73.0, 44.01, -72.7))).toBe(true);
+  });
+
+  it('shares its threshold with the suggester, so the two cannot disagree', () => {
+    // The contract that makes this safe to show in the UI: if the panel says "too big for one
+    // point", the operator's grid tool must agree there is more than one point to place.
+    const wide = at(44.0, -73.4, 44.5, -73.3);
+    expect(spansMultipleSampleCells(wide, DEFAULT_SAMPLE_SPACING_KM)).toBe(true);
+    // Loosening the spacing past the body's own extent flips it, which is the same knob the
+    // suggester turns.
+    expect(spansMultipleSampleCells(wide, 500)).toBe(false);
+  });
+
+  it('refuses a nonsense spacing rather than claiming every body is oversized', () => {
+    const wide = at(44.0, -73.4, 44.5, -73.3);
+    expect(spansMultipleSampleCells(wide, 0)).toBe(false);
+    expect(spansMultipleSampleCells(wide, Number.NaN)).toBe(false);
   });
 });

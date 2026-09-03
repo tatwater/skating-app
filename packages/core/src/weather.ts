@@ -23,6 +23,10 @@ export interface HourlyWeather {
   /**
    * Epoch ms at the start of this hour, in the **body's local time** (Open-Meteo `timezone=auto`).
    * Local — so `nightsBelowFreezing` buckets onto the right calendar night with no per-call tz math.
+   *
+   * ⚠ **This is NOT a UTC instant, and rendering it as one is a silent bug.** A local formatter
+   * applies the offset a second time — 4–5 hours in this region, on a sentence that still reads
+   * plausibly. Use `formatLocalHourLabel` (`weatherPanel.ts`), which reads it back with UTC getters.
    * Optional: the decay integrals and every other aggregate are order-based and need no timestamp;
    * only `nightsBelowFreezing` uses it (and reads `null` when any hour lacks it).
    */

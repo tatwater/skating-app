@@ -144,6 +144,34 @@ export function shortDayLabel(localDate: string): string {
   return `${weekday} ${d}`;
 }
 
+/**
+ * Format an `HourlyWeather.startMs` as a local clock time — **the only correct way to render one.**
+ *
+ * ⚠ **`new Date(startMs).toLocaleTimeString()` is wrong here and looks right.** `startMs` is
+ * deliberately *local-shifted* (`weather.ts` adds `utc_offset_seconds`, so the reducer can bucket a
+ * night without per-call timezone maths). Passing it to a local formatter applies the offset a
+ * **second** time — a silent 4–5 hour slide in the Northeast that produces a perfectly plausible
+ * sentence: "snow starts at 1 AM" when it starts at 8 PM. No type catches it and no test catches it
+ * unless the test knows to look.
+ *
+ * So the shift is read back out with **UTC getters**, which is correct precisely because the value is
+ * already local. Same rule as `shortDayLabel` and `monthDayLabel` above, for the same reason.
+ *
+ * This exists ahead of the hourly panel that will need it (N6h Workstream D) so the obvious function
+ * is also the right one — a note in a docblock is not protection when the code is written weeks later.
+ */
+export function formatLocalHourLabel(startMs: number): string {
+  if (!Number.isFinite(startMs)) return '';
+  const d = new Date(startMs);
+  const hour24 = d.getUTCHours();
+  const suffix = hour24 < 12 ? 'AM' : 'PM';
+  const hour12 = hour24 % 12 === 0 ? 12 : hour24 % 12;
+  const minutes = d.getUTCMinutes();
+  return minutes === 0
+    ? `${hour12} ${suffix}`
+    : `${hour12}:${String(minutes).padStart(2, '0')} ${suffix}`;
+}
+
 /** `2026-01-15` → `Jan 15`, for prose lines that name a date. */
 export function monthDayLabel(localDate: string): string {
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(localDate);

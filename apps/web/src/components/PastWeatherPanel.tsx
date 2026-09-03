@@ -34,8 +34,9 @@ export function PastWeatherPanel({
   const [state, setState] = useState<{
     days: PanelDay[];
     coarse: boolean;
+    largeBody: boolean;
     loading: boolean;
-  }>({ days: [], coarse: false, loading: true });
+  }>({ days: [], coarse: false, largeBody: false, loading: true });
 
   useEffect(() => {
     let cancelled = false;
@@ -44,7 +45,7 @@ export function PastWeatherPanel({
       .then((result) => {
         if (cancelled) return;
         if (!result) {
-          setState({ days: [], coarse: false, loading: false });
+          setState({ days: [], coarse: false, largeBody: false, loading: false });
           return;
         }
         // A recorded gap and a day that produced no row at all are both holes to a reader, so they
@@ -56,13 +57,14 @@ export function PastWeatherPanel({
         setState({
           days: [...(result.days as PanelDay[]), ...holes],
           coarse: result.anyBorrowed,
+          largeBody: result.oneSampleForALargeBody,
           loading: false,
         });
       })
       .catch(() => {
         // Fail open and quiet, like every other weather surface: nothing cached means the next
         // drawer-open retries, and a missing history is not an error a skater can act on.
-        if (!cancelled) setState({ days: [], coarse: false, loading: false });
+        if (!cancelled) setState({ days: [], coarse: false, largeBody: false, loading: false });
       });
     return () => {
       cancelled = true;
@@ -137,6 +139,14 @@ export function PastWeatherPanel({
         ))}
       </div>
 
+      {state.largeBody && (
+        // D151's grammar, one sensor over: say what WE measured, not what the lake did. This lake is
+        // bigger than one reading can describe and nobody has placed a sample grid on it yet.
+        <p className="text-foreground-muted text-xs italic">
+          This lake is large enough that weather differs across it — these readings are from one
+          point near the middle.
+        </p>
+      )}
       {panel.coarse && (
         <p className="text-foreground-muted text-xs italic">
           Some days are from a wider area than usual.

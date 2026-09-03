@@ -489,6 +489,87 @@ describe('weatherArchive: the recovery ladder (D161)', () => {
   });
 });
 
+describe('weatherArchive: honest coverage on a giant (N6h hole 2)', () => {
+  test('flags a body too large for one sample point', async () => {
+    const t = convexTest(schema, modules);
+    // ~55 km of latitude — Champlain's scale, and Champlain carries zero sample points on dev.
+    const waterBodyId = (await t.run((ctx) =>
+      ctx.db.insert('waterBodies', {
+        name: 'Big Long Lake',
+        searchText: 'Big Long Lake',
+        type: 'lakePond' as const,
+        source: 'osm' as const,
+        polygon: square(0.25),
+        bbox: { minLat: 44.0, minLng: -73.4, maxLat: 44.5, maxLng: -73.3 },
+        centroid: { lat: 44.25, lng: -73.35 },
+        interiorPoint: { lat: 44.25, lng: -73.35 },
+        elevationM: 30,
+        dedupStatus: 'clean' as const,
+        createdAt: Date.now(),
+      }),
+    )) as Id<'waterBodies'>;
+
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => okJson(isoResponse(recentDates(3)))),
+    );
+    const result = await asViewer(t).action(api.weatherArchive.getWeatherDaysForBody, {
+      waterBodyId,
+      days: 3,
+    });
+    expect(result?.oneSampleForALargeBody).toBe(true);
+  });
+
+  test('does not flag an ordinary lake', async () => {
+    const t = convexTest(schema, modules);
+    const waterBodyId = await seedBody(t);
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => okJson(isoResponse(recentDates(3)))),
+    );
+    const result = await asViewer(t).action(api.weatherArchive.getWeatherDaysForBody, {
+      waterBodyId,
+      days: 3,
+    });
+    expect(result?.oneSampleForALargeBody).toBe(false);
+  });
+
+  test('stops flagging once an operator has placed a sample grid', async () => {
+    const t = convexTest(schema, modules);
+    const waterBodyId = (await t.run((ctx) =>
+      ctx.db.insert('waterBodies', {
+        name: 'Gridded Lake',
+        searchText: 'Gridded Lake',
+        type: 'lakePond' as const,
+        source: 'osm' as const,
+        polygon: square(0.25),
+        bbox: { minLat: 44.0, minLng: -73.4, maxLat: 44.5, maxLng: -73.3 },
+        centroid: { lat: 44.25, lng: -73.35 },
+        interiorPoint: { lat: 44.25, lng: -73.35 },
+        // N2's suggester + moderator writer exist and have never been run; this is what it looks
+        // like afterwards.
+        weatherSamplePoints: [
+          { lat: 44.1, lng: -73.35 },
+          { lat: 44.4, lng: -73.35 },
+        ],
+        elevationM: 30,
+        dedupStatus: 'clean' as const,
+        createdAt: Date.now(),
+      }),
+    )) as Id<'waterBodies'>;
+
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => okJson(isoResponse(recentDates(3)))),
+    );
+    const result = await asViewer(t).action(api.weatherArchive.getWeatherDaysForBody, {
+      waterBodyId,
+      days: 3,
+    });
+    expect(result?.oneSampleForALargeBody).toBe(false);
+  });
+});
+
 describe('weatherArchive: the public read guard', () => {
   test('returns null to an unauthenticated caller and spends nothing', async () => {
     const t = convexTest(schema, modules);
