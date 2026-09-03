@@ -57,9 +57,10 @@ import {
 } from '@skating/core';
 import { v } from 'convex/values';
 import { internal } from './_generated/api';
-import type { ActionCtx, MutationCtx, QueryCtx } from './_generated/server';
+import type { ActionCtx, MutationCtx } from './_generated/server';
 import { action, internalAction, internalMutation, internalQuery } from './_generated/server';
 import { meterOpenMeteo } from './lib/apiMeter';
+import { WEATHER_DAY_SOURCES } from './lib/enums';
 import { bodyWeatherCell } from './lib/sampling';
 import { literals } from './lib/validators';
 import { HOURLY_VARS, MAX_PAST_DAYS, OPEN_METEO_FORECAST_URL } from './weather';
@@ -297,7 +298,7 @@ export const upsertWeatherDays = internalMutation({
   args: {
     cellKey: v.string(),
     tier: literals(WEATHER_TIERS),
-    source: literals(['forecast', 'archive', 'borrowed'] as const),
+    source: literals(WEATHER_DAY_SOURCES),
     fetchedAt: v.number(),
     days: v.array(
       v.object({
@@ -325,7 +326,7 @@ async function writeDay(
   row: {
     cellKey: string;
     tier: WeatherTier;
-    source: 'forecast' | 'archive' | 'borrowed';
+    source: (typeof WEATHER_DAY_SOURCES)[number];
     fetchedAt: number;
     dayMs: number;
     localDate: string;
@@ -670,9 +671,8 @@ export const sweepWeatherDayGaps = internalAction({
       // Step 1: refetch. One request covers every hole in the window, so ask once and widely rather
       // than per hole.
       const spanDays = Math.ceil((toMs - Math.min(...holes)) / DAY_MS) + 2;
-      let written: number | null = null;
       try {
-        written = await ingestCellDays(ctx, tier, { key: cell.cellKey, ...cell }, spanDays);
+        await ingestCellDays(ctx, tier, { key: cell.cellKey, ...cell }, spanDays);
       } catch (err) {
         console.warn(`weatherArchive: gap refetch for ${cell.cellKey} threw`, err);
       }
@@ -689,8 +689,14 @@ export const sweepWeatherDayGaps = internalAction({
         // Step 2 (borrow the coarser tier) applies only to `browse`; `filter` has no parent, and step
         // 3 (ERA5, past 92 days) is deferred — so `filter` goes straight to step 4. Recording the gap
         // is what keeps a D159 predicate from reading an absent day as "no snow fell".
-        const borrowed = tier === 'browse' ? await borrowFromFilter(ctx, cell, stillMissing) : 0;
-        const unrecovered = stillMissing.slice(borrowed);
+        //
+        // ⚠ **The borrow reports *which* days it filled, not how many.** The parent holds an
+        // arbitrary subset of the holes, so subtracting a count off the front of `stillMissing`
+        // would mark the wrong days: a parent that covered only the newest hole would leave the
+        // oldest one silently unrecorded — the precise failure step 4 exists to prevent.
+        const borrowed = tier === 'browse' ? await borrowFromFilter(ctx, cell, stillMissing) : [];
+        const borrowedDays = new Set(borrowed);
+        const unrecovered = stillMissing.filter((d) => !borrowedDays.has(d));
         if (unrecovered.length > 0) {
           await ctx.runMutation(internal.weatherArchive.writeMissingDays, {
             cellKey: cell.cellKey,
@@ -699,9 +705,8 @@ export const sweepWeatherDayGaps = internalAction({
             fetchedAt: now,
           });
         }
-        repaired += borrowed;
+        repaired += borrowed.length;
       }
-      void written;
     }
 
     if (cells.length === CELL_BATCH_SIZE && lastKey !== undefined) {
@@ -720,18 +725,21 @@ export const sweepWeatherDayGaps = internalAction({
  *
  * Coarser and honest about it — the copied row is stored with `source: 'borrowed'`, so a reader can
  * tell the difference between "5 km resolution" and "11 km resolution wearing a 5 km label".
+ *
+ * Returns **the day keys it actually filled**, not a count: the parent holds an arbitrary subset of
+ * the asked-for days, so a count tells the caller nothing about *which* holes remain.
  */
 async function borrowFromFilter(
   ctx: ActionCtx,
   cell: { cellKey: string; lat: number; lng: number },
   days: number[],
-): Promise<number> {
+): Promise<number[]> {
   const parent = weatherCellFor('filter', cell.lat, cell.lng);
   const rows = await ctx.runQuery(internal.weatherArchive.readCellDays, {
     cellKey: parent.key,
     dayMs: days,
   });
-  if (rows.length === 0) return 0;
+  if (rows.length === 0) return [];
   await ctx.runMutation(internal.weatherArchive.upsertWeatherDays, {
     cellKey: cell.cellKey,
     tier: 'browse',
@@ -739,7 +747,7 @@ async function borrowFromFilter(
     fetchedAt: Date.now(),
     days: rows,
   });
-  return rows.length;
+  return rows.map((r) => r.dayMs);
 }
 
 /**
@@ -819,15 +827,9 @@ export const readCellDayRange = internalQuery({
   },
 });
 
-/** Resolve a body to its `browse` cell without an action round-trip. */
-export async function bodyBrowseCell(
-  ctx: QueryCtx,
-  waterBodyId: string,
-): Promise<WeatherCell | null> {
-  const body = await ctx.db.get(waterBodyId as never);
-  if (!body || (body as { removedAt?: number }).removedAt) return null;
-  return bodyWeatherCell(body as never, 'browse');
-}
+// A body resolves to its `browse` cell through `sampleCoverage` below, which reads the same document
+// the panel's size caveat needs. There is deliberately no second `bodyBrowseCell` helper: a second
+// way to reach a cell is how the four consumers D152 united would drift apart again.
 
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
 // The season gate (D161)
@@ -951,24 +953,28 @@ export const getWeatherDaysForBody = action({
   args: { waterBodyId: v.id('waterBodies'), days: v.optional(v.number()) },
   handler: async (ctx, { waterBodyId, days }): Promise<WeatherDaysResult | null> => {
     if (!(await ctx.auth.getUserIdentity())) return null;
-    const cell = await ctx.runQuery(internal.weather.resolveBodyWeatherCell, { waterBodyId });
-    if (!cell) return null;
-    const coverage = await ctx.runQuery(internal.weatherArchive.sampleCoverage, { waterBodyId });
+    // One round-trip, not two: the cell and the coverage caveat both come off the same body document,
+    // and loading it twice for one panel is the kind of small waste this repo pays for at corpus scale.
+    const info = await ctx.runQuery(internal.weatherArchive.sampleCoverage, { waterBodyId });
+    if (!info) return null;
+    const cell = info.cell;
 
-    const now = Date.now();
-    const today = todayKey(now);
+    const utcToday = todayKey(Date.now());
     const span = Math.min(Math.max(1, days ?? PANEL_DAYS), MAX_PAST_DAYS);
-    // Inclusive of today, whose row is legitimately partial — a skater at 3 PM wants this morning's
-    // hours, and hiding them until midnight would make the panel useless on the day it matters most.
-    const fromMs = today - (span - 1) * DAY_MS;
+    // Read one day wider than the panel needs so the local anchor below has something to resolve
+    // against even when the lake's clock is a day behind UTC.
+    const readFromMs = utcToday - span * DAY_MS;
 
     let held = await ctx.runQuery(internal.weatherArchive.readCellDayRange, {
       cellKey: cell.key,
-      fromMs,
-      toMs: today,
+      fromMs: readFromMs,
+      toMs: utcToday,
     });
+    let toMs = panelAnchorDay(held, utcToday);
+    let fromMs = toMs - (span - 1) * DAY_MS;
+    const inWindow = (r: { dayMs: number }) => r.dayMs >= fromMs && r.dayMs <= toMs;
 
-    const realDays = held.filter((r) => r.missing !== true);
+    const realDays = held.filter((r) => r.missing !== true && inWindow(r));
     // A cell with nothing at all is a first touch: pull the ceiling. A cell that has *some* of the
     // window is topped up with a short append, which is the cheap common case.
     if (realDays.length === 0) {
@@ -980,15 +986,18 @@ export const getWeatherDaysForBody = action({
     if (realDays.length < span) {
       held = await ctx.runQuery(internal.weatherArchive.readCellDayRange, {
         cellKey: cell.key,
-        fromMs,
-        toMs: today,
+        fromMs: readFromMs,
+        toMs: utcToday,
       });
+      toMs = panelAnchorDay(held, utcToday);
+      fromMs = toMs - (span - 1) * DAY_MS;
     }
 
     const out: StoredDayPayload[] = [];
     const missingDayMs: number[] = [];
     let anyBorrowed = false;
     for (const row of held) {
+      if (!inWindow(row)) continue;
       if (row.missing === true) {
         missingDayMs.push(row.dayMs);
         continue;
@@ -1007,7 +1016,7 @@ export const getWeatherDaysForBody = action({
     // reported the same way so the panel can draw both as holes rather than silently short-changing
     // a span. (`snowfallTotalCm` over 5 of 7 days is not "less snow", it is less knowledge.)
     const seen = new Set([...out.map((d) => d.dayMs), ...missingDayMs]);
-    for (let d = fromMs; d <= today; d += DAY_MS) {
+    for (let d = fromMs; d <= toMs; d += DAY_MS) {
       if (!seen.has(d)) missingDayMs.push(d);
     }
     missingDayMs.sort((a, b) => a - b);
@@ -1016,16 +1025,41 @@ export const getWeatherDaysForBody = action({
       days: out,
       missingDayMs,
       anyBorrowed,
-      oneSampleForALargeBody: coverage?.oneSampleForALargeBody ?? false,
+      oneSampleForALargeBody: info.oneSampleForALargeBody,
     };
   },
 });
 
 /**
- * Is this body big enough that one weather sample understates the question?
+ * The newest day this cell can honestly be asked about.
  *
- * Reads the bbox rather than the polygon: the question is extent, not shape, and a 40 km river reach
- * and a 40 km lake are equally beyond one reading.
+ * ⚠ **`todayKey` is a UTC day; `dayMs` is the lake's LOCAL date.** Between UTC midnight and the
+ * lake's own midnight — 00:00–05:00 UTC, which is 7 PM to midnight in the Northeast and therefore
+ * prime browsing — the newest day the archive *can* hold is UTC-today minus one, because the lake has
+ * not reached tomorrow yet. Anchoring the window on UTC-today there costs twice: the panel reports a
+ * permanent phantom gap ("1 day of weather unavailable", every evening), and `realDays.length < span`
+ * stays true for ever, so **every drawer-open re-fetches Open-Meteo** chasing a day that does not
+ * exist. The archive's own test harness hides it, because it mints local dates from the UTC clock.
+ *
+ * So the anchor is the newest day we actually hold, clamped to at most one day behind UTC — no
+ * timezone is further from a UTC date than that, and a cell holding nothing yet (a first touch) falls
+ * back to UTC-today until the ingest gives it something to anchor on.
+ */
+function panelAnchorDay(held: readonly { dayMs: number; missing?: boolean }[], utcToday: number) {
+  let newest = Number.NEGATIVE_INFINITY;
+  for (const row of held) {
+    if (row.missing !== true && row.dayMs > newest) newest = row.dayMs;
+  }
+  if (!Number.isFinite(newest)) return utcToday;
+  return Math.min(utcToday, Math.max(newest, utcToday - DAY_MS));
+}
+
+/**
+ * Everything the panel needs off the body document, in one read: its `browse` cell, and whether the
+ * body is big enough that one weather sample understates the question.
+ *
+ * The size test reads the bbox rather than the polygon — the question is extent, not shape, and a
+ * 40 km river reach and a 40 km lake are equally beyond one reading.
  */
 export const sampleCoverage = internalQuery({
   args: { waterBodyId: v.id('waterBodies') },
@@ -1034,6 +1068,7 @@ export const sampleCoverage = internalQuery({
     if (!body || body.removedAt) return null;
     const points = body.weatherSamplePoints?.length ?? 0;
     return {
+      cell: bodyWeatherCell(body, 'browse'),
       samplePoints: points,
       oneSampleForALargeBody: points <= 1 && spansMultipleSampleCells(body.bbox),
     };

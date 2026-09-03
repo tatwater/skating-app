@@ -31,9 +31,10 @@
 import { estimateIceThickness, fitStefanAlpha, STEFAN_ALPHA_DEFAULT } from '@skating/core';
 import { v } from 'convex/values';
 import type { QueryCtx } from './_generated/server';
-import { internalQuery, query } from './_generated/server';
+import { query } from './_generated/server';
 import { requireRole } from './lib/auth';
 import { bodyWeatherCell } from './lib/sampling';
+import { OPEN_METEO_PROVIDER } from './weather';
 
 const DAY_MS = 86_400_000;
 
@@ -109,7 +110,14 @@ function readingsToCm(
   return out;
 }
 
-/** Sum the archive's degree-hour integrals for a cell over `[fromMs, toMs]`. */
+/**
+ * Sum the archive's degree-hour integrals for a cell over `[fromMs, toMs]`.
+ *
+ * ⚠ **Memoised per `(cellKey, window)` by the caller**, and it has to be. Each call collects up to
+ * {@link CALIBRATION_WINDOW_DAYS} day rows, and a report table full of a busy lake's regulars is
+ * exactly the shape that reads the same sixty rows two hundred times — which is how a query walks
+ * into Convex's read cap. This repo has already paid twice for treating a range scan as free.
+ */
 async function windowIntegrals(
   ctx: QueryCtx,
   cellKey: string,
@@ -158,6 +166,9 @@ async function collectCalibrationPairs(
   const pairs: CalibrationPair[] = [];
   let excludedEstimates = 0;
   const bodyCache = new Map<string, { name: string; cellKey: string } | null>();
+  // Reports cluster: one popular lake, many skate days sharing a 60-day window. Without this every
+  // one of them re-reads the same archive rows and the query walks into Convex's read cap.
+  const windowCache = new Map<string, { fdh: number; tdh: number; days: number }>();
 
   for (const report of reports) {
     if (pairs.length >= cap) break;
@@ -190,7 +201,13 @@ async function collectCalibrationPairs(
 
     const toMs = Math.floor(report.skateEndTime / DAY_MS) * DAY_MS;
     const fromMs = toMs - (CALIBRATION_WINDOW_DAYS - 1) * DAY_MS;
-    const { fdh, tdh, days } = await windowIntegrals(ctx, body.cellKey, fromMs, toMs);
+    const windowKey = `${body.cellKey}:${toMs}`;
+    let integrals = windowCache.get(windowKey);
+    if (integrals === undefined) {
+      integrals = await windowIntegrals(ctx, body.cellKey, fromMs, toMs);
+      windowCache.set(windowKey, integrals);
+    }
+    const { fdh, tdh, days } = integrals;
     if (days === 0) continue; // no archive covers this report — not a failure, just not a pair yet
 
     const declined = tdh > CALIBRATION_MAX_THAW_DEGREE_HOURS;
@@ -278,18 +295,23 @@ export const calibrationFit = query({
  * The Open-Meteo call meter, for the D158 trigger.
  *
  * Lives here rather than in a metrics module because it answers the same operator question this file
- * exists for — *is the model worth what it costs* — and because D158's trigger is the only thing that
- * reads it.
+ * exists for — *is the model worth what it costs*.
+ *
+ * ⚠ **A `query`, not an `internalQuery`, and that is the whole point.** D158's trigger is *a human
+ * reading a number and deciding whether to buy a plan*, so a meter no surface can read is a meter
+ * that does not exist — the same reader-with-no-producer shape N6b's `hasContours` had. Role-gated
+ * like everything else in this file; the calibration page is its reader.
  */
-export const apiCallBudget = internalQuery({
-  args: { provider: v.string(), days: v.optional(v.number()) },
+export const apiCallBudget = query({
+  args: { provider: v.optional(v.string()), days: v.optional(v.number()) },
   handler: async (ctx, { provider, days }) => {
+    await requireRole(ctx, 'moderator');
     const span = Math.min(Math.max(days ?? 30, 1), 365);
     const today = Math.floor(Date.now() / DAY_MS) * DAY_MS;
     const rows = await ctx.db
       .query('externalApiCalls')
       .withIndex('by_provider_day', (q) =>
-        q.eq('provider', provider).gte('dayMs', today - (span - 1) * DAY_MS),
+        q.eq('provider', provider ?? OPEN_METEO_PROVIDER).gte('dayMs', today - (span - 1) * DAY_MS),
       )
       .collect();
     const sorted = rows.sort((a, b) => a.dayMs - b.dayMs);
@@ -300,6 +322,7 @@ export const apiCallBudget = internalQuery({
         weightedCalls: r.weightedCalls,
       })),
       peakWeighted: sorted.reduce((max, r) => Math.max(max, r.weightedCalls), 0),
+      todayWeighted: sorted.find((r) => r.dayMs === today)?.weightedCalls ?? 0,
     };
   },
 });

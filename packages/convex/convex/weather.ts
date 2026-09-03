@@ -56,7 +56,6 @@ export const OPEN_METEO_PROVIDER = 'open-meteo';
 /** Shared with the daily archive so both request builders agree on the endpoint. */
 export const OPEN_METEO_FORECAST_URL = 'https://api.open-meteo.com/v1/forecast';
 
-const OPEN_METEO_URL = 'https://api.open-meteo.com/v1/forecast';
 /**
  * The hourly variables every weather fetch asks for.
  *
@@ -190,7 +189,7 @@ async function fetchOpenMeteoHourly(
     // trigger needs to know is what we *asked* Open-Meteo for, and a failed call consumed quota just
     // the same. Never a limiter — see the `externalApiCalls` docblock.
     await meterOpenMeteo(ctx, HOURLY_VARS.length, pastDays + FORECAST_DAYS);
-    const res = await fetch(`${OPEN_METEO_URL}?${params.toString()}`);
+    const res = await fetch(`${OPEN_METEO_FORECAST_URL}?${params.toString()}`);
     if (!res.ok) {
       console.warn(`Open-Meteo request failed: ${res.status}`);
       return null;

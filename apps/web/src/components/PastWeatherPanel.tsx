@@ -1,6 +1,11 @@
 import { api } from '@skating/convex/api';
 import type { Id } from '@skating/convex/dataModel';
-import { buildPastWeatherPanel, type PanelDay, shortDayLabel } from '@skating/core';
+import {
+  buildPastWeatherPanel,
+  dayMsToLocalDate,
+  type PanelDay,
+  shortDayLabel,
+} from '@skating/core';
 import { useAction } from 'convex/react';
 import { useEffect, useMemo, useState } from 'react';
 
@@ -50,9 +55,12 @@ export function PastWeatherPanel({
         }
         // A recorded gap and a day that produced no row at all are both holes to a reader, so they
         // arrive as one list. The panel builder is what knows the difference matters upstream.
+        // `dayMsToLocalDate` rather than a hand-rolled `toISOString().slice(0, 10)`: the encoding
+        // (UTC midnight of a *local* date) is core's to own, and both clients drawing holes means
+        // two chances to reverse it slightly differently.
         const holes: PanelDay[] = result.missingDayMs.map((dayMs) => ({
           dayMs,
-          localDate: new Date(dayMs).toISOString().slice(0, 10),
+          localDate: dayMsToLocalDate(dayMs),
         }));
         setState({
           days: [...(result.days as PanelDay[]), ...holes],

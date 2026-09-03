@@ -1,6 +1,11 @@
 import { api } from '@skating/convex/api';
 import type { Id } from '@skating/convex/dataModel';
-import { buildPastWeatherPanel, type PanelDay, shortDayLabel } from '@skating/core';
+import {
+  buildPastWeatherPanel,
+  dayMsToLocalDate,
+  type PanelDay,
+  shortDayLabel,
+} from '@skating/core';
 import { useAction } from 'convex/react';
 import { useEffect, useMemo, useState } from 'react';
 import { Paragraph, Text, XStack, YStack } from 'tamagui';
@@ -48,9 +53,11 @@ export function PastWeatherPanel({
           setState({ days: [], coarse: false, largeBody: false, loading: false });
           return;
         }
+        // Core owns the `dayMs` encoding (UTC midnight of a *local* date); reversing it by hand in
+        // each client is two chances to get it slightly differently wrong.
         const holes: PanelDay[] = result.missingDayMs.map((dayMs) => ({
           dayMs,
-          localDate: new Date(dayMs).toISOString().slice(0, 10),
+          localDate: dayMsToLocalDate(dayMs),
         }));
         setState({
           days: [...(result.days as PanelDay[]), ...holes],

@@ -487,6 +487,65 @@ describe('weatherArchive: the recovery ladder (D161)', () => {
     expect(result.repaired).toBe(0);
     expect(fetchMock).not.toHaveBeenCalled();
   });
+
+  test('borrows the days the parent actually has and records the REST as gaps (step 2 → 4)', async () => {
+    const t = convexTest(schema, modules);
+    await seedBody(t);
+    await t.action(internal.weatherArchive.backfillWeatherCells, { tier: 'browse' });
+    await t.action(internal.weatherArchive.backfillWeatherCells, { tier: 'filter' });
+    const cells = await t.run((ctx) => ctx.db.query('weatherCells').collect());
+    const browseKey = cells.find((c) => c.tier === 'browse')?.cellKey ?? '';
+    const filterKey = cells.find((c) => c.tier === 'filter')?.cellKey ?? '';
+
+    const dates = recentDates(5);
+    const [d0, d1, d2, d3] = dates as [string, string, string, string];
+    await t.run(async (ctx) => {
+      // The browse cell knows about d0 and d3, so d1 and d2 are holes inside its own known range.
+      for (const d of [d0, d3]) {
+        await ctx.db.insert('weatherDays', {
+          cellKey: browseKey,
+          tier: 'browse' as const,
+          dayMs: dayMsOf(d),
+          localDate: d,
+          source: 'forecast' as const,
+          hours: 24,
+          fetchedAt: Date.now(),
+        });
+      }
+      // The coarser parent can only cover ONE of the two holes — and it is the *newer* one.
+      await ctx.db.insert('weatherDays', {
+        cellKey: filterKey,
+        tier: 'filter' as const,
+        dayMs: dayMsOf(d2),
+        localDate: d2,
+        source: 'forecast' as const,
+        hours: 24,
+        snowfallCm: 4,
+        fetchedAt: Date.now(),
+      });
+    });
+
+    // Open-Meteo down, so step 1 recovers nothing and the ladder has to fall through to 2 then 4.
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response('nope', { status: 503 })),
+    );
+    await t.action(internal.weatherArchive.sweepWeatherDayGaps, { tier: 'browse' });
+
+    const rows = await t.run((ctx) =>
+      ctx.db
+        .query('weatherDays')
+        .filter((q) => q.eq(q.field('cellKey'), browseKey))
+        .collect(),
+    );
+    const byDay = new Map(rows.map((r) => [r.dayMs, r]));
+    // d2 came from the parent — real data, honestly labelled as lower-resolution.
+    expect(byDay.get(dayMsOf(d2))?.source).toBe('borrowed');
+    expect(byDay.get(dayMsOf(d2))?.missing).toBeUndefined();
+    // ⚠ d1 is the one the borrow could NOT cover, and it is the day a count-and-slice would have
+    // dropped on the floor: an unrecorded hole reads as "no snow fell" to every D159 predicate.
+    expect(byDay.get(dayMsOf(d1))?.missing).toBe(true);
+  });
 });
 
 describe('weatherArchive: honest coverage on a giant (N6h hole 2)', () => {
@@ -612,5 +671,32 @@ describe('weatherArchive: the public read guard', () => {
 
     // Same cell, same band ⇒ the archive is already there. This is D152's whole return on investment.
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  test('does not invent a gap when the lake is still on yesterday (the UTC/local skew)', async () => {
+    const t = convexTest(schema, modules);
+    const waterBodyId = await seedBody(t);
+    // ⚠ `dayMs` is the lake's LOCAL date and "today" is a UTC day. Between UTC midnight and the
+    // lake's own midnight — 7 PM to midnight in the Northeast, prime browsing — the newest day
+    // Open-Meteo can possibly return is UTC-today minus one. Anchoring on UTC-today there reports a
+    // phantom "1 day of weather unavailable" AND re-fetches on every single drawer-open chasing a
+    // day that does not exist yet. (The rest of this file mints local dates off the UTC clock, which
+    // is exactly why the skew hid.)
+    const dates = recentDates(8).slice(0, 7);
+    const fetchMock = vi.fn(async () => okJson(isoResponse(dates)));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const first = await asViewer(t).action(api.weatherArchive.getWeatherDaysForBody, {
+      waterBodyId,
+      days: 7,
+    });
+    expect(first?.days).toHaveLength(7);
+    expect(first?.missingDayMs).toEqual([]);
+
+    const callsAfterFirst = fetchMock.mock.calls.length;
+    await asViewer(t).action(api.weatherArchive.getWeatherDaysForBody, { waterBodyId, days: 7 });
+    // The second open is a pure read. Without the local anchor this spends an Open-Meteo call every
+    // time, for ever, on a day the archive can never hold.
+    expect(fetchMock.mock.calls.length).toBe(callsAfterFirst);
   });
 });

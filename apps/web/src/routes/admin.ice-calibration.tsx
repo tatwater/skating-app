@@ -33,9 +33,15 @@ export const Route = createFileRoute('/admin/ice-calibration')({ component: Admi
 /** Below this many pairs the fit is a curiosity rather than a calibration, and the page says so. */
 const MEANINGFUL_SAMPLE = 12;
 
+/** D158's threshold: sustained weighted use above this is what makes the paid plan worth buying. */
+const OPEN_METEO_PAID_TRIGGER_PER_DAY = 7000;
+
 function AdminIceCalibration() {
   const data = useQuery(api.iceCalibration.calibrationPairs, {});
   const fit = useQuery(api.iceCalibration.calibrationFit, {});
+  // D158's trigger — "sustained free-tier use above ~7,000 calls/day" — needs a human to read a
+  // number. The meter exists; this is the surface that makes it a trigger rather than a table.
+  const budget = useQuery(api.iceCalibration.apiCallBudget, {});
 
   if (data === undefined) return <AdminPageHeader title="Ice calibration" />;
 
@@ -99,6 +105,26 @@ function AdminIceCalibration() {
           )}
         </CardContent>
       </Card>
+
+      {budget !== undefined && (
+        <Card>
+          <CardContent className="flex flex-col gap-2">
+            <h2 className="font-semibold text-sm">Open-Meteo calls</h2>
+            <dl className="grid grid-cols-2 gap-x-4 gap-y-1 text-sm sm:grid-cols-4">
+              <Stat label="Today (weighted)" value={roundTo(budget.todayWeighted, 1)} />
+              <Stat label="Peak day, 30d" value={roundTo(budget.peakWeighted, 1)} />
+              <Stat label="Days counted" value={budget.days.length} />
+              <Stat label="Plan trigger" value={`${OPEN_METEO_PAID_TRIGGER_PER_DAY}/day`} />
+            </dl>
+            <p className="text-foreground-muted text-xs">
+              Weighted the way Open-Meteo bills — roughly <code>ceil(days/14) × (vars/10)</code>, so
+              one 92-day backfill is ~7.7 calls in a single request. This is a meter, never a
+              limiter: nothing is dropped when it climbs, because a blank weather strip is a worse
+              outcome than a bill (D158).
+            </p>
+          </CardContent>
+        </Card>
+      )}
 
       <Card>
         <CardContent className="flex flex-col gap-2">

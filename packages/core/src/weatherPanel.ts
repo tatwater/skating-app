@@ -30,7 +30,16 @@
  * [D160](../../plans/01-decisions.md) confines to an operator-only instrument for a reason.
  */
 
-import { formatPrecipInches, formatTemperatureF, formatWindMph, roundTo } from './units';
+import {
+  cmToInches,
+  cToF,
+  formatPrecipInches,
+  formatTemperatureF,
+  formatWindMph,
+  kphToMph,
+  mmToInches,
+  roundTo,
+} from './units';
 import {
   dominantWindSector,
   lastSnowDay,
@@ -113,20 +122,23 @@ export interface PastWeatherPanel {
 /** A day summary or a known hole. The panel draws both; only one of them has numbers. */
 export type PanelDay = (Partial<WeatherDaySummary> & { dayMs: number; localDate: string }) | null;
 
+// The conversions themselves live in `units.ts` (D25's one imperial-display layer); these are only
+// the null-passing wrappers the row builder needs, so a second copy of the factors can never drift
+// from the first.
 function f(celsius: number | null | undefined): number | null {
-  return typeof celsius === 'number' ? roundTo((celsius * 9) / 5 + 32, 0) : null;
+  return typeof celsius === 'number' ? roundTo(cToF(celsius), 0) : null;
 }
 
 function inFromCm(cm: number | null | undefined): number | null {
-  return typeof cm === 'number' ? roundTo(cm / 2.54, 1) : null;
+  return typeof cm === 'number' ? roundTo(cmToInches(cm), 1) : null;
 }
 
 function inFromMm(mm: number | null | undefined): number | null {
-  return typeof mm === 'number' ? roundTo(mm / 25.4, 2) : null;
+  return typeof mm === 'number' ? roundTo(mmToInches(mm), 2) : null;
 }
 
 function mph(kph: number | null | undefined): number | null {
-  return typeof kph === 'number' ? roundTo(kph / 1.609344, 0) : null;
+  return typeof kph === 'number' ? roundTo(kphToMph(kph), 0) : null;
 }
 
 /** `2026-01-15` → `Thu 15` — a short label, formatted from the parts so no timezone can shift it. */
@@ -315,12 +327,22 @@ function buildHeadline(days: readonly WeatherDaySummary[], missingDays: number):
       sector !== null && (last.maxWindKph ?? 0) > 20
         ? `, ${COMPASS_LABELS[sector] ?? '?'} wind since`
         : '';
-    lines.push(`${formatPrecipInches(snowCm * 10, 1)} of snow since ${since}${windNote}`);
+    // ⚠ **"last on", not "since".** `snowCm` is the total across the whole window while `since` is
+    // the *most recent* snow day, so "3″ of snow since Feb 4" would assert that all three inches
+    // fell after Feb 4 when most of them may have fallen a week earlier. Two true numbers, one false
+    // sentence — the exact shape D3 forbids, arrived at by grammar rather than by inference.
+    lines.push(`${formatPrecipInches(snowCm * 10, 1)} of snow, last on ${since}${windNote}`);
   }
 
   // 4. Rain, which is the resurfacing input and the opposite sign from snow.
-  const rainDays = days.filter((d) => d.rainMm >= RESURFACE_RAIN_MM);
-  const lastRain = rainDays.at(-1);
+  //    Picked by day key rather than by array position: `buildPastWeatherPanel` sorts its *rows* and
+  //    not this list, so `.at(-1)` would name whichever rainy day happened to arrive last.
+  let lastRain: WeatherDaySummary | null = null;
+  for (const d of days) {
+    if (d.rainMm >= RESURFACE_RAIN_MM && (lastRain === null || d.dayMs > lastRain.dayMs)) {
+      lastRain = d;
+    }
+  }
   if (lastRain) {
     lines.push(`Rain on ${monthDayLabel(lastRain.localDate)}`);
   }

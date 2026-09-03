@@ -226,6 +226,28 @@ describe('buildPastWeatherPanel — headline', () => {
   });
 });
 
+describe('buildPastWeatherPanel — the two order traps', () => {
+  it('does not claim the window total fell since the last snow day', () => {
+    // 10 cm on the 1st and 1 cm on the 6th. "4.3″ of snow since Feb 6" would be a false sentence
+    // built from two true numbers — 0.4″ fell after the 6th.
+    const panel = buildPastWeatherPanel([
+      day('2026-02-01', { snowfallCm: 10 }),
+      day('2026-02-06', { snowfallCm: 1 }),
+    ]);
+    const snowLine = panel.headline.find((l) => l.includes('snow'));
+    expect(snowLine).toContain('last on Feb 6');
+    expect(snowLine).not.toContain('since Feb 6');
+  });
+
+  it('names the latest rainy day even when the input arrives out of order', () => {
+    const panel = buildPastWeatherPanel([
+      day('2026-02-05', { rainMm: 6 }),
+      day('2026-02-02', { rainMm: 6 }),
+    ]);
+    expect(panel.headline).toContain('Rain on Feb 5');
+  });
+});
+
 describe('buildPastWeatherPanel — a realistic week', () => {
   it('reads as a sequence of facts a skater can act on', () => {
     const base = dayMsOf('2026-02-01');
@@ -251,7 +273,9 @@ describe('buildPastWeatherPanel — a realistic week', () => {
     expect(panel.rows[0]?.dayMs).toBe(base);
     expect(panel.headline[0]).toBe('4 nights below 20°F');
     expect(panel.headline).toContain('Rain on Feb 1');
-    expect(panel.headline.some((l) => l.includes('snow since Feb 4'))).toBe(true);
+    // "last on", never "since": the inches are the window total and Feb 4 is only the most recent
+    // snow day, so "since Feb 4" would assert all of it fell after that date.
+    expect(panel.headline.some((l) => l.includes('snow, last on Feb 4'))).toBe(true);
     expect(panel.headline.some((l) => l.startsWith('Calm while freezing'))).toBe(true);
   });
 });

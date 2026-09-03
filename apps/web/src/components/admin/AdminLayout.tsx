@@ -79,6 +79,9 @@ const NAV: NavItem[] = [
   { to: '/admin/water/review', label: 'Intake review' },
   { to: '/admin/features', label: 'Body features' },
   { to: '/admin/recurrence', label: 'Hazard identity' },
+  // D160's dark instrument. It has to be *reachable* to be an instrument at all — a page nobody can
+  // navigate to is a page nobody judges the model from, which is the whole reason it was built.
+  { to: '/admin/ice-calibration', label: 'Ice calibration' },
   { to: '/admin/support', label: 'Support', adminOnly: true },
   { to: '/admin/tuning', label: 'Tuning', adminOnly: true },
   { to: '/admin/imports', label: 'Imports', adminOnly: true },
