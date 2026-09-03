@@ -33,6 +33,14 @@ export interface HourlyWeather {
   windSpeedKph: number;
   /** Open-Meteo `wind_gusts_10m` (kph). */
   windGustKph?: number;
+  /**
+   * Open-Meteo `wind_direction_10m` (degrees, meteorological — the direction wind comes *from*).
+   *
+   * Unused by this reducer, which is deliberate: every aggregate here is scalar, and a mean bearing
+   * is not a mean. It exists on the shared hour type so the daily archive (`weatherDay.ts`) can build
+   * its sector histogram from the same fetch rather than forking a second hour shape (N6h).
+   */
+  windDirectionDeg?: number;
   /** Open-Meteo `rain` (mm) — liquid only. Split from snowfall (opposite decay signs, D56). */
   rainMm?: number;
   /** Open-Meteo `snowfall` (**cm** — its native unit). Snow insulates + hides; never heals (D56). */

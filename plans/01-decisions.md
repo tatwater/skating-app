@@ -4789,3 +4789,328 @@ is the closest thing to a reference implementation. Maine's **human ice-out reco
 truth inside our own region — worth more than any dataset we could have borrowed.
 
 **Related:** [D3](#d3--never-a-safety-verdict), [D140](#d140--a-forecast-and-an-observation-are-separated-by-a-type-not-a-rule-n6c-2--b5b), D149, D150, [`phase-N6e`](./phase-N6e-satellite-imagery.md).
+
+## D152 — The weather cache key is a two-tier grid, not a coordinate (N6h)
+
+**2026-09-02, from a costing question.** `samplePointKeyFor` rounds to `toFixed(3)` — ~110 m
+(`packages/convex/convex/weather.ts:68`). Measured against the merged corpus that produces **24,832
+distinct keys for 24,948 bodies**: the cache shares nothing, one fetch per lake. It is invisible today
+only because both weather actions are drawer-open-only, so the hour bucket collapses concurrent
+viewers of the *same* lake and nothing ever asks for two.
+
+It is also buying nothing. Open-Meteo's US best-match resolves at ~3 km (HRRR) to ~13 km (GFS) — a
+110 m key asks a model with roughly three thousand distinct answers for twenty-five thousand of them.
+
+**Two keys, for two different questions:**
+
+- **Tier A — browse: `0.05° + 100 m elevation band`.** ~5.6 × 4.0 km, on demand, full detail.
+- **Tier B — filter: `0.1°`, no elevation.** ~11 × 8 km, corpus-wide, cron-populated, powers D159 only.
+
+| rounding | distinct keys | bodies/cell |
+|---|---|---|
+| `toFixed(3)` (before) | 24,832 | 1.0 |
+| 0.05° | 8,221 | 3.0 |
+| 0.1° | 3,043 | 8.2 |
+
+**The elevation band is not optional.** Open-Meteo lapse-rate-downscales temperature to whatever
+`elevation` you pass, and the corpus is at ~99.5% coverage after N7-3. In the Greens, the Adirondacks
+and the Whites a valley lake can sit 400 m below its grid cell's mean elevation, and the default
+answer is then wrong by several degrees — *across freezing*, the only threshold that matters here.
+Including a coarse band in the key is what keeps the fix from fragmenting the cache back to
+one-key-per-lake.
+
+**Measured 2026-09-02** (three 3,000-body samples off dev, 100% elevation coverage): banding costs
+**~1.16× at 100 m, ~1.08× at 200 m**. Tier A lands at ~9,500–10,500 keys, sharing ~2.6 bodies/cell.
+200 m bands came within ~1% of 300 m bands, so the elevation axis is coarse-grained by nature in this
+terrain and 100 m buys real fidelity for almost nothing. ⚠ Per-page distinct counts, not an exact
+union — the true ratio is slightly higher.
+
+**Why two tiers rather than one compromise.** A key fine enough for the detail panel cannot be
+afforded corpus-wide; a key cheap enough corpus-wide is too coarse for the panel. The cheap one is
+allowed to be wrong in ways that only change *which lakes you look at*, never what the panel then says
+about them. Paying Open-Meteo (D158) collapses the two into one.
+
+**Related:** D153, D154, D158, D159, [`phase-N6h`](./phase-N6h-weather-detail.md).
+
+## D153 — Past weather is a durable archive, not a cache; 92 days is the lazy-backfill horizon (N6h)
+
+**2026-09-02.** `weatherCache` prunes at 24 hours (`storageHygiene.ts:47`) because its rows are
+*window summaries* reachable only during their own hour bucket. Right for the strip; wrong for a
+season archive, for the same reason `weatherForecastCache` was split out of `weatherCache`
+(`schema.ts:1239-1252`): **a row describing what happened between two past instants is true for ever.**
+
+New table `weatherDays`, keyed `(cellKey, tier, dayMs)`, never pruned on the hygiene schedule.
+
+**Open-Meteo's `past_days` reaches 92 days on the forecast endpoint we already use**, so the first
+person to open a lake in February backfills the whole season to date in one ~9-call request. **Lazy
+backfill is not lossy.** The rule: 92-day backfill on first touch of a cell in a season, then one
+appended day per day.
+
+**⚠ This supersedes the Phase 10 rule "never the archive API."** That ban was correct — ERA5's ~5-day
+lag made it wrong for recent windows — and it does not extend past 92 days, where the forecast
+endpoint has no data at all and a five-day lag is meaningless for a question about last February.
+**The boundary is 92 days: forecast+`past_days` inside it, archive outside it.** This is also the
+deep-gap repair path (D161's ladder, step 3), and it unlocks multi-season climatology, deferred.
+
+**Shape.** One document per cell-day is cheap to append and dearer to store and read; one columnar
+document per cell-season is ~5× smaller and reads a full-season chart in one shot but rewrites ~36 KB
+on every daily patch. **Append daily rows through the live season, roll up to a columnar season
+document when N5a closes the season.**
+
+**Storage is not the constraint and is not close.** A Tier-B season is ~548 MB (≈110 MB rolled up)
+against Convex Pro's included 50 GB; ten seasons of both tiers still fit. **Acquisition** was always
+the cost, and even that is ~30k calls once per season at Tier B — three days of free budget.
+
+**Off-season the cron idles.** 97% of the Google Group corpus's season falls in November–March
+(`training_data/google_group`, 1,197 messages), so suspending Tier B between N5a's close and open
+gives up nothing.
+
+**Related:** D152, D154, D161, [`phase-10-weather`](./phase-10-weather.md), [`phase-N6h`](./phase-N6h-weather-detail.md).
+
+## D154 — Precompute follows evidence of use, never the whole corpus (N6h)
+
+**2026-09-02, founder call.** *"Maybe we should consider pre-computing for any body that has been
+favorited by at least one user, and maybe even every body that has been skated on by any user in the
+past year… most of the 25,000 bodies probably do not get skated on, and we'll learn that with time."*
+
+The precompute set is **the union of: favorited by ≥1 user · has ≥1 report · has ≥1 hazard · has ≥1
+bounty · appears in a recorded track**, over a rolling window. Everything else is Tier A on demand and
+costs nothing until someone cares.
+
+Same instinct as the imagery archive being built by *listing R2* rather than remembering what was
+launched — **let the artifact tell you what exists.** Here the artifact is user behaviour.
+
+**⚠ Size the job off the query, never off an estimate.** Dev holds 14 favorites, 2 reports, 3 hazards,
+1 bounty across 16 bodies, all of it the founder's own; year one has no history to look back on.
+
+**But the steady state is knowable and it is small.** `training_data/google_group` — one complete
+season of an established community — discusses **116 distinct bodies**, 75 with ≥3 mentions, 49 with
+≥5, with the top 25 carrying 61% of all traffic. Favorites will be longer-tailed (a favorite is
+personal and aspirational; that corpus is one state's community), so treat 116 as a floor. **Even at
+1,000 unique favorited bodies the tier costs ~1,200 calls/day** against a 10,000/day ceiling. This tier
+will not break the budget at any plausible adoption level, which is worth knowing up front so it gets
+built for correctness rather than for thrift.
+
+**Related:** D152, D153, D158, [`phase-N6h`](./phase-N6h-weather-detail.md).
+
+## D155 — The forecast is a planning window, not a moment (N6h)
+
+**2026-09-02, founder correction.** The first draft proposed *"show the forecast at now + drive time."*
+The correction became the feature: *"If I'm checking before bedtime for a lake I plan to wake up early
+and skate, or midday at work thinking about where I'll go at 5pm, the start time I care about isn't
+just now + drive. But also, the weather leading up to when I'd get there still matters! If it's going
+to snow for hours overnight, I want to see that instead of skipping it."*
+
+- **The 7-day grid and the 12-hour hourly detail are one interaction, not two panels.** The grid is the
+  *selector*; picking a cell scrolls the hourly detail to that window.
+- **The run-up is drawn, not hidden.** "Six hours of snow ending at 4 AM before a calm clear morning"
+  is a *reason to go*, and a panel showing only the target hour would have concealed it.
+- **Drive time shifts the default selection and nothing more** — a hint about which window opens
+  first, not a constraint on which windows exist.
+- **Future snow matters for the same reasons past snow does.** Phase 10's since-freeze framing was
+  right about the past and incomplete about the future.
+
+**⚠ The authority ordering survives.** `apps/web/src/components/WaterBodyDetail.tsx:215-216` encodes
+**NWS alert > observation > prediction**. These panels are large and they are predictions; the
+temptation is one fused "Weather" card. Do not — the D74 wall (`weather.ts:380-386`) is a type in the
+code and should be a boundary on the screen.
+
+**Related:** [D140](#d140--a-forecast-and-an-observation-are-separated-by-a-type-not-a-rule-n6c-2--b5b), D152, [`phase-N6h`](./phase-N6h-weather-detail.md).
+
+## D156 — Radar publishes its own blindness; resolution is not the fix (N6h)
+
+**2026-09-02, answering *"do we fix that by going with the higher resolution options, or by using
+RainViewer or LibreWXR?"*** **Neither, and the premise needs dismantling.** NEXRAD's failure in the
+Adirondacks and the Greens is beam geometry, not resolution: the beam rises with distance and ridges
+block it, so the lowest usable scan passes *above* shallow winter precipitation. No product tier
+changes that, and RainViewer and LibreWXR both derive from the same national feed.
+
+**What helps is fusion plus an honest quality field, and NOAA's MRMS has both.** It merges every radar
+with surface gauges, satellite and model fields, and publishes a **Radar Quality Index that explicitly
+encodes terrain blockage and beam height**. The fix is **not making the radar see better but drawing
+where it cannot see** — a low-RQI region renders as a hatched "radar can't see here" mask rather than
+as clear sky, and the layer stops lying by omission. This is D150's rule applied to a sensor: the
+honest statement is about the instrument, not the sky. MRMS is on the AWS Registry of Open Data
+(`s3://noaa-mrms-pds`), GRIB2, ~2-minute cadence, free egress.
+
+**⚠ On RainViewer, an earlier reading was wrong.** Their terms cover *"personal, educational, and
+small-scale community use,"* which an open-source project with no paid product and ~1,000 projected
+users plainly is. The real constraint is the posted 1,000 requests/day and their guidance to *"cache
+aggressively."* Server-side proxying with a shared cache — one fetch per frame for all clients — puts a
+whole day near 150–300 requests. **RainViewer is a legitimate v1**; it just does not solve the mountain
+problem, because nothing at that layer does.
+
+**Related:** [D3](#d3--never-a-safety-verdict), D150, D157, [`phase-N6h`](./phase-N6h-weather-detail.md).
+
+## D157 — Radar is cut, not served (N6h)
+
+**2026-09-02.** LibreWXR ([librewxr.net](https://librewxr.net/), AGPL-3.0) validates the approach —
+it ingests NCEP MRMS quality-controlled mosaics with IEM fallback, renders XYZ PNG/WebP at 256/512 px,
+and adds a 60-minute optical-flow nowcast blended with HRRR. **But it is architected as an always-on
+server**, stating 3–10 GB RAM for single-container deployment; on Fly that is `performance-1x` at 8 GB,
+**$63.36/mo (~$760/yr)**, for a service producing a few megabytes every ten minutes.
+
+**The cheap shape is the one `scripts/imagery/` already established:** an ephemeral cutter on a Fly
+Machine publishing `.pmtiles` to R2, with the three-part split intact (*what to cut* / *how* / *where
+it runs*, so the host stays swappable).
+
+| item | quantity | cost |
+|---|---|---|
+| tiles/frame, z4–10, 5-state region | 1,576 tiles ≈ 3–6 MB | — |
+| live set: 12 past (10-min) + 6 nowcast | ~100 MB | $0.0015/mo (R2) |
+| 30-day rolling archive at 10-min | 4,320 frames ≈ 21 GB | $0.32/mo (R2) |
+| R2 egress | any | $0 |
+| MRMS ingest from AWS Open Data | ~1.4 GB/day in | $0 |
+| Fly cutter, ~10% duty cycle | `performance-1x` 4 GB | ~$4–5/mo |
+| **total** | | **~$5/mo** |
+
+**Radar tile storage is effectively free.** The whole cost is compute and — more honestly — the burden
+of something that must run every ten minutes for ever, unlike the imagery cutter which runs per
+satellite pass and can fail quietly for a day.
+
+**So: borrow LibreWXR's approach, not its deployment.** ⚠ Deploying a *modified* LibreWXR as a network
+service triggers **AGPL §13** — we would owe that modified source to its users. A real obligation even
+for an open-source project; belongs in `08-legal-feasibility-checklist.md` before any such deployment.
+
+**Client reuse, honestly assessed.** `useFreezeUpFrame.ts`'s lane pool and `sourcedata` reveal gate is
+nearly generic (parameterise id prefix, URL builder, attribution, anchor); `scrubberTrack.ts` lifts
+unchanged. But `FreezeUpScrubber.tsx` is 558 lines mostly *about* blocked stops, cloud fraction, SCL
+bands and granule seams — none of which a regular 10-minute radar timeline has — and it is **drag-only
+with no play/pause**. Two structural mismatches: the imagery control is **gated on a single lake being
+selected** (D146) while radar is **viewport-scoped**, and **there is no layer registry** — a second
+overlay means a real refactor this phase should pay for rather than discover. Good news: radar is plain
+raster XYZ, so **mobile gets it for free** (MapLibre Native reads raster and `pmtiles://` natively).
+
+**Related:** D146, D156, [`phase-N6e`](./phase-N6e-satellite-imagery.md), [`phase-N6h`](./phase-N6h-weather-detail.md).
+
+## D158 — Paying Open-Meteo is a season-two decision with a written trigger (N6h)
+
+**2026-09-02, founder call.** **API Standard: $29/month or $319/year — 1,000,000 calls/month**, with a
+commercial-use licence, API key, dedicated endpoint, no daily rate limit, 99.9% uptime target. **Not
+this season:** *"It's not out of the question, but it's probably not going to happen for this first
+season until we see what community adoption looks like."*
+
+Recorded so the trigger is written down rather than rediscovered. **1M/month is ~33k/day — 7.7× the
+free daily budget**, which is exactly what corpus-wide Tier A needs (~11,500/day) with room underneath.
+**Paying collapses D152's two tiers into one:** the feed filter stops being a coarser approximation and
+runs at the same resolution as the panel.
+
+**Buy when any of these is true:** (1) sustained free-tier use exceeds ~7,000 calls/day; (2) the
+filter's 11 km coarseness becomes a felt limitation rather than a theoretical one; (3) the project
+stops being plainly non-commercial, at which point the free licence no longer covers us at any volume.
+
+**⚠ There is no request counter anywhere in the weather path today** — no token bucket, no rate
+limiter, no metric. Trigger (1) cannot fire until one exists, so the counter is **in scope for N6h**,
+not deferred.
+
+**Related:** D152, D154, [`00-vision`](./00-vision.md), [`phase-N6h`](./phase-N6h-weather-detail.md).
+
+## D159 — Weather-first discovery filters **cells**, then bodies — and never the report table (N6h)
+
+**2026-09-02, founder call.** *"You should be able to search for bodies that meet some criteria, even
+if reports haven't been written about them in the specified window… I don't want to limit
+discoverability to only filtering on reports that exist."*
+
+This inverts what the corpus is *for*. Today discovery is report-shaped: you find lakes because
+somebody wrote about them, so 25,000 bodies are functionally invisible and the few with reports take
+all the attention — a rich-get-richer loop a new lake can never break into. **Weather is the first
+signal we have about a lake that requires no human to have visited it.**
+
+**⚠ The read-path danger is one this repo has been burned by twice.** *"Three nights below 20°F and no
+snow since"* over 25,000 bodies is a full-corpus scan per query — the shape that made `listInViewport`
+read-cap-fragile at N1 and cost the N6d access load 105 GB of I/O.
+
+**So the filter evaluates over Tier B cells, not bodies.** There are 3,043 and they are small
+documents. (1) Evaluate the predicate over Tier-B cell-days → a matching cell set. (2) Resolve cells →
+bodies through a **denormalised, indexed `weatherCellKeyB` on `waterBodies`**, stamped at import; only
+matched cells are ever read as bodies. (3) Intersect with the user's Phase 4 drive-time band **last**,
+because it is per-user and uncacheable while everything above it is shared across the region. Cost
+becomes proportional to the answer, not the corpus — N1's two-tier lesson, one dataset over.
+
+**⚠ "No snow *since*" has no anchor without a report.** Every since-predicate today derives its start
+from a user-visible entity (`resolveStripAnchor`, `weather.ts:297-336`). Weather-only predicates need
+weather-only anchors — *"no snow in the last N days"*, or *"since the last detected freeze-up
+transition"* — and the copy must say which, because an invisible anchor reads as more specific than it
+is.
+
+**One shared filter state across map and feed**, carried across navigation until cleared — you narrow
+on the feed, switch to the map, and the same dozen lakes are drawn.
+
+**The feed becomes heterogeneous and is renamed "Newsfeed" → "Latest"** (founder call, 2026-09-03).
+The rename does real work: *Newsfeed* names a source, *Latest* names an ordering, and an ordering can
+admit new card types — a body that just froze, a hazard that just cleared — without the name becoming
+a lie each time. **The escape hatch is a user-set "only show reports" boolean** in the filter row, so
+anyone who wants the old feed keeps it in one tap.
+
+**Related:** [D50](#d50--trust-is-boost-only), D152, D154, D161, [`phase-N1`](./phase-N1-read-path-durability.md), [`phase-N6h`](./phase-N6h-weather-detail.md).
+
+## D160 — The ice-thickness estimate is an admin calibration instrument, and it ships dark (N6h)
+
+**2026-09-02, founder call.** *"Can we calculate this number and show it to admins-only just as a
+curiosity? I'm very interested to see how it performs compared to reality through this season."*
+
+**Yes, and the shape has precedent:** N5c's hazard-identity advisory ships dark on purpose; N6e's
+phenology dates are derived dark, operator-visible, no skater surface (D151); Phase 7 provides the
+role-gated `/admin` tree to hold it.
+
+**It is more than a curiosity, which is the argument for building it early.**
+`reports.iceThickness` (`schema.ts:1351-1358`) carries a `method` discriminator where `estimated` is
+explicitly lower-trust than a measurement, so a season of *computed-vs-measured* pairs is a genuine
+calibration dataset — and it can only be collected by a season passing. The classic Stefan form
+`h = α√(FDD)` gives a one-parameter model, and α is exactly what those pairs would fit. **Calibrate
+against `measured` entries only**; fitting to `estimated` ones is fitting to somebody else's guess.
+
+**Three guardrails, none optional:**
+
+- **Structurally admin-only, not visually admin-only.** The number never enters a payload a skater
+  client receives — role-gated at the query, not rendered-and-hidden or fetched-and-filtered.
+- **It never feeds anything.** Not hazard decay, not bounty freshness, not trust, not reports. It is
+  measured *against* the world and nothing reads it back; the moment a derived thickness becomes an
+  input it acquires authority it has not earned.
+- **Graduating it to a skater surface requires its own decision.** This authorises a dark instrument
+  and nothing more. [D3](#d3--never-a-safety-verdict) and D150 both still bind, and a thickness in
+  inches is the most counsel-shaped number this app could ever publish.
+
+**The honest expectation:** it will probably perform poorly, because air-temperature FDD ignores snow
+insulation, wind, depth, current and springs — the same variables that make the never-hide invariant
+necessary. Learning *how* poorly, with numbers, is worth a season; learning it privately is what makes
+it safe to learn at all.
+
+**Related:** [D3](#d3--never-a-safety-verdict), D56, D150, D151, [`phase-N5c`](./phase-N5c-hazard-memory.md), [`phase-N6h`](./phase-N6h-weather-detail.md).
+
+## D161 — The season checker stays the trigger; the cell scanner is what it starts (N6h)
+
+**2026-09-03, founder question.** *"Does the weather-first discovery over cells replace/play along with
+our season-start checker? … Or is that too costly compared to our current season starter, and we
+should only start this ~3,000-cell scanner once we know the season has begun?"*
+
+**Play along — and the dependency runs the opposite way from how it looks.** The cheap checker is not
+made redundant by the scanner; it becomes **the thing that starts it.**
+
+**The cost case is decisive.** `maybeCheckSeasonOpen` (`imageryIngest.ts:179-214`, daily cron) asks for
+`temperature_2m_min` at 25 sites **in a single multi-coordinate call** — ~365 calls a year. Tier B is
+~4,300/day, so running the scanner year-round is **~1.57M calls/year against a free ceiling of ~3.65M**
+— ~43% of the annual budget, most of it spent in July asking frozen-lake questions about warm water.
+97% of the Google Group corpus's season falls November–March, so gating costs nothing real.
+
+**They are also different questions.** *"Has winter started anywhere in the region?"* is coarse and
+region-wide — 25 sites is plenty, and more resolution would not improve the answer. *"Which specific
+lakes look frozen?"* needs per-cell fidelity, because distinguishing a lake from its neighbour is the
+entire point.
+
+**Their failure modes differ, which is the stronger argument.** A season gate firing two days late
+costs a couple of satellite passes. A discovery scanner that is wrong sends somebody driving two hours
+in the dark. These should not share a code path, a threshold, or a bug.
+
+**The arrangement:** (1) the 25-site checker runs year-round, unchanged, as the season trigger;
+(2) it **starts and stops the Tier B cron** at the N5a season boundary, which is what buys back the
+43%; (3) **during the season the checker reads `weatherDays` instead of fetching**, so the duplicate
+fetch disappears and the checker gets *cheaper*; (4) Tier B then supplies a better season-*close*
+signal than the checker ever had, and its first run of a season hands D159 a region-wide freeze map on
+day one.
+
+**⚠ Do not conflate "several nights below 20°F in some cell" with "the season has begun."** A single
+cold cell in an Adirondack hollow in early November is not a season, it is weather. The gate wants the
+coarse, boring, region-wide signal precisely because it is hard to fool.
+
+**Related:** D152, D153, D159, [`phase-N5a`](./phase-N5a-seasons.md), [`phase-N6e`](./phase-N6e-satellite-imagery.md), [`phase-N6h`](./phase-N6h-weather-detail.md).

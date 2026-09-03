@@ -41,8 +41,9 @@ Each item cross-references its decision (`D#`) / open question (`Q#`) elsewhere 
 | L10 | OSM **ODbL share-alike** if we publish the derived DB | D5 | 🟡 | Only bites if we redistribute the extract |
 | L11 | Landowner takedown wording / obligation | D48, Q10 | 🟡 | Lawyer confirms takedown policy |
 | L12 | PostHog session replay (minors + location) | D29 | ⛔ | Masking + minor-exclusion + PRIVACY update |
-| L13 | Weather (Open-Meteo) attribution | 04-integrations | 🟢 | Minor — attribution appreciated |
+| L13 | Weather (Open-Meteo) attribution + **non-commercial free-tier licence** | 04-integrations, D158 | 🟢 | Attribution appreciated; ⚠ free tier is **non-commercial only** — N6h adds surfaces and sources |
 | L14 | Aggregate/heatmap privacy for **our own** tracks | D41, D42, D58 | 🟡 | Model decided (**D58**) **and built** (Phase 8): publish-is-consent (no k-anon) + minors-out + put-in-gated clip + opt-out. Still 🟡 — the *derivations* over the aggregate (L9) need their own pass |
+| L15 | **AGPL §13 network-service obligation** for a self-hosted radar service | D157 | 🟢⏸ | Dormant by design — D157 says *borrow the approach, don't deploy the software*. Bites only if we run a **modified** LibreWXR (or any AGPL service) for users |
 
 ---
 
@@ -203,6 +204,58 @@ only **after auth resolves AND `isMinor === false`**, and **update PRIVACY.md** 
 ## L13 — Weather attribution (Open-Meteo) 🟢
 Open-Meteo is free with no key; attribution is appreciated. Minor, but note it wherever the
 weather-since strip appears (Phase 10).
+
+### N6h widens this in two ways (2026-09-03)
+
+**⚠ The free tier is licensed for non-commercial use.** That is fine today — `00-vision.md:144`
+commits to a passion / open-source project leaning on free tiers — but it is now a *condition* rather
+than a convenience, because N6h leans on it much harder (a corpus-wide daily cron, not just
+drawer-open fetches). **If the project ever stops being plainly non-commercial, the licence stops
+covering us at any volume**, independent of whether we are under the call ceiling. That is written
+into **D158** as one of the three triggers for buying the $319/yr Standard plan, and it is the only
+one of the three that is a legal gate rather than an operational one.
+
+**More sources means more attribution surfaces.** N6h adds panels and a map layer, each needing its
+own credit line, and each source has different terms:
+
+| source | used for | obligation |
+|---|---|---|
+| Open-Meteo | all forecast + past-weather panels | attribution; **non-commercial** free tier |
+| NWS / NOAA (alerts, NDFD, MRMS) | alerts, forecast grids, radar | US public domain — no obligation, credit as courtesy |
+| RainViewer | radar v1 | **mandatory** credit + link to rainviewer.com; free tier is *"personal, educational, and small-scale community use"*, ~1,000 req/day |
+| Iowa Environmental Mesonet | radar fallback | academic courtesy — cache and proxy rather than pointing clients at them directly |
+
+**⚠ The RainViewer terms are a size-dependent licence, not a permanent one.** It covers us now at a
+projected ~1,000 users; it is worth a re-read if adoption materially exceeds that, since "small-scale
+community" is the qualifying phrase and it is not defined numerically.
+
+## L15 — AGPL §13 network-service obligation (D157) 🟢⏸
+**Dormant by design, recorded so it cannot surprise us.** LibreWXR — the self-hosted radar server N6h
+evaluated — is **AGPL-3.0-or-later**. AGPL §13 goes further than GPL: running a **modified** version
+as a *network service* obliges us to offer that modified source to the service's users, even though we
+never distribute a binary. Its authors offer separate commercial licensing, which implies they expect
+this to matter.
+
+**Why this is currently 🟢 and parenthetical:** **D157 decided to borrow the approach, not deploy the
+software** — read it (AGPL means we can), take its source selection and RQI handling, and run the cut
+in our own `scripts/imagery/` Fly→R2 pattern at ~$5/mo rather than ~$760/yr for an always-on server.
+Nothing we would then ship is a derivative of their code.
+
+**It flips to 🟡 the moment any of these becomes true:**
+
+- We deploy LibreWXR (modified or not) as a service our users reach.
+- We vendor AGPL code into the cutter rather than reimplementing from the same public data sources.
+- We adopt any other AGPL component in a server role.
+
+**The mitigation is cheap if it ever bites** — this project's own client is already AGPL (see **L4**,
+which handles the App Store / Play distribution exception), so publishing modified server source is
+consistent with what we already do rather than a new posture. The trap is not the obligation; it is
+**deploying without noticing the obligation attached**, which is exactly what this row exists to
+prevent.
+
+⚠ **L4 and L15 are different obligations and should not be conflated.** L4 is about *distributing* our
+client through app stores whose terms conflict with AGPL §7. L15 is about *running someone else's*
+AGPL code as a service. Clearing one says nothing about the other.
 
 ## L14 — Aggregate/heatmap privacy for our own tracks (D41, D42, **D58**) 🟡
 The **L7 pivot moved the binding constraint from Strava to us.** Once we render crowd layers off our own
