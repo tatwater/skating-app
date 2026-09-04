@@ -25,6 +25,15 @@ import {
 
 const WIDTH = 336; // 7 days × 48px — a realistic sidebar plot width
 
+/**
+ * A fetch profile that clears `MIN_FETCH_CLAUSE_M`, so the wind lane is drawn at all.
+ *
+ * ⚠ Needed by every wind assertion since the 2026-09-04 founder call: the lane is **hidden** on a body
+ * with under a kilometre of reach, which is ~95% of the corpus. Tests about wind therefore have to
+ * describe a lake big enough to have a wind lane, or they are testing the hiding rule by accident.
+ */
+const EXPOSED_FETCH = Array.from({ length: 16 }, (_, i) => (i === 14 ? 2900 : 700));
+
 function hour(localHour: number, over: Partial<TimelineHour> = {}): TimelineHour {
   return { localDate: '2026-01-15', localHour, temperatureC: -5, ...over };
 }
@@ -315,7 +324,12 @@ describe('weatherTimelineModel', () => {
   });
 
   it('lays lanes out top to bottom without overlapping, inside the given height', () => {
-    const model = weatherTimelineModel({ days: week, width: WIDTH, height: 240 });
+    const model = weatherTimelineModel({
+      days: week,
+      width: WIDTH,
+      height: 240,
+      fetchProfileM: EXPOSED_FETCH,
+    });
     const boxes = model?.boxes;
     if (!boxes) throw new Error('expected a model');
     expect(boxes.temperature.top).toBeGreaterThanOrEqual(12);
@@ -340,7 +354,7 @@ describe('weatherTimelineModel', () => {
         temperatureC: h < 4 ? -5 : 5,
       })),
     ];
-    const model = weatherTimelineModel({ days, width: WIDTH });
+    const model = weatherTimelineModel({ days, width: WIDTH, fetchProfileM: EXPOSED_FETCH });
     expect(model?.wind?.emphasis).toHaveLength(1);
     const span = model?.wind?.emphasis[0];
     // Four hours wide, drawn edge to edge rather than centre to centre.
@@ -536,7 +550,7 @@ describe('an emphasis span never spreads across a gap', () => {
       day('2026-01-16', D0 + DAY_MS, null, { missing: true }),
       calmFreezing('2026-01-17', D0 + 2 * DAY_MS),
     ];
-    const model = weatherTimelineModel({ days, width: WIDTH });
+    const model = weatherTimelineModel({ days, width: WIDTH, fetchProfileM: EXPOSED_FETCH });
     expect(model?.wind?.emphasis).toHaveLength(2);
     // And neither span reaches into the empty column.
     const dayWidth = WIDTH / 3;
@@ -555,7 +569,7 @@ describe('an emphasis span never spreads across a gap', () => {
         [0, 1, 3, 4].map((h) => hour(h, { temperatureC: -8, windSpeedKph: 2 })),
       ),
     ];
-    const model = weatherTimelineModel({ days, width: WIDTH });
+    const model = weatherTimelineModel({ days, width: WIDTH, fetchProfileM: EXPOSED_FETCH });
     expect(model?.wind?.emphasis).toHaveLength(1);
   });
 });
@@ -737,7 +751,7 @@ describe('the sun trace splits where the sun is up', () => {
         Array.from({ length: 24 }, (_, h) => hour(h, { windSpeedKph: 5 + h })),
       ),
     ];
-    const model = weatherTimelineModel({ days, width: WIDTH });
+    const model = weatherTimelineModel({ days, width: WIDTH, fetchProfileM: EXPOSED_FETCH });
     expect(model?.wind?.segments).toHaveLength(1);
     expect(model?.wind?.segments[0]?.active).toBe(true);
   });
@@ -836,29 +850,81 @@ describe('fetch as the wind lane second channel', () => {
     expect(model?.snowDepth?.areaSegments ?? []).toHaveLength(0);
   });
 
-  it('leaves the wind fill flat when the lake is too small for fetch to mean anything', () => {
-    const days = [
-      day(
-        '2026-01-15',
-        D0,
-        Array.from({ length: 24 }, (_, h) =>
-          hour(h, { windSpeedKph: 15, windDirectionDeg: h < 12 ? 45 : 315 }),
-        ),
+  // ⚠ There is no longer a "flat fill" case to test. Until 2026-09-04 a lake under the fetch clause
+  // drew its wind lane at one opacity; now the lane is hidden outright, so the only two states are
+  // *banded* and *absent*. `the wind lane is hidden without a fetch story` below covers the second.
+});
+
+describe('the wind lane is hidden without a fetch story', () => {
+  const windy = (localDate: string, dayMs: number) =>
+    day(
+      localDate,
+      dayMs,
+      Array.from({ length: 24 }, (_, h) =>
+        hour(h, {
+          windSpeedKph: 12,
+          windDirectionDeg: 315,
+          shortwaveWm2: h > 8 && h < 16 ? 200 : 0,
+        }),
       ),
-    ];
-    const model = weatherTimelineModel({ days, width: WIDTH, fetchProfileM: pond });
-    expect(model?.wind?.areaSegments).toHaveLength(0);
-    expect(model?.wind?.area.length).toBeGreaterThan(0); // still drawn, just at one opacity
+    );
+  const exposed = Array.from({ length: 16 }, (_, i) => (i === 14 ? 2900 : 700));
+  const pond = Array.from({ length: 16 }, () => 200);
+
+  it('shows the lane on a lake with a kilometre of reach', () => {
+    const model = weatherTimelineModel({
+      days: [windy('2026-01-15', D0)],
+      width: WIDTH,
+      fetchProfileM: exposed,
+    });
+    expect(model?.wind).not.toBeNull();
+    expect(model?.boxes.wind.height).toBeGreaterThan(0);
   });
 
-  it('leaves it flat when no profile is supplied at all', () => {
-    const days = [
-      day(
-        '2026-01-15',
-        D0,
-        Array.from({ length: 24 }, (_, h) => hour(h, { windSpeedKph: 9, windDirectionDeg: 315 })),
-      ),
-    ];
-    expect(weatherTimelineModel({ days, width: WIDTH })?.wind?.areaSegments).toHaveLength(0);
+  it('hides it on a pond, and hands the space to the other lanes', () => {
+    // Founder call, 2026-09-04. ⚠ This also drops the calm-while-freezing rail, which is available on
+    // every lake regardless of fetch — the trade is a real signal on ~95% of the corpus for 24px.
+    const withFetch = weatherTimelineModel({
+      days: [windy('2026-01-15', D0)],
+      width: WIDTH,
+      fetchProfileM: exposed,
+    });
+    const without = weatherTimelineModel({
+      days: [windy('2026-01-15', D0)],
+      width: WIDTH,
+      fetchProfileM: pond,
+    });
+    expect(without?.wind).toBeNull();
+    expect(without?.boxes.wind.height).toBe(0);
+    // The space is redistributed, not left as a hole.
+    expect(without?.boxes.temperature.height).toBeGreaterThan(
+      withFetch?.boxes.temperature.height ?? 0,
+    );
+  });
+
+  it('still fills the stated height exactly when a lane is hidden', () => {
+    const model = weatherTimelineModel({
+      days: [windy('2026-01-15', D0)],
+      width: WIDTH,
+      height: 240,
+      fetchProfileM: pond,
+    });
+    expect(model?.boxes.snowDepth.bottom).toBeCloseTo(240, 1);
+  });
+
+  it('gives a hidden lane a degenerate box rather than leaving it undefined', () => {
+    // A renderer that reads `boxes.wind` without checking must not land on NaN.
+    const model = weatherTimelineModel({
+      days: [windy('2026-01-15', D0)],
+      width: WIDTH,
+      fetchProfileM: pond,
+    });
+    expect(Number.isFinite(model?.boxes.wind.top)).toBe(true);
+    expect(Number.isFinite(model?.boxes.wind.bottom)).toBe(true);
+  });
+
+  it('hides it when no profile is supplied at all', () => {
+    const model = weatherTimelineModel({ days: [windy('2026-01-15', D0)], width: WIDTH });
+    expect(model?.wind).toBeNull();
   });
 });

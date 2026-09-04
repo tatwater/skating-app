@@ -136,12 +136,53 @@ export const WEATHER_PRECIPITATION_SCALE = {
  * under the wind lane in the same blue as a wind mark was already ambiguous.
  */
 export const WEATHER_AUX_SCALE = {
-  light: { trace: neutral[400], fill: neutral[200], control: ice[600], sunLit: '#b07404' },
-  dark: { trace: neutral[500], fill: neutral[700], control: ice[400], sunLit: warning[300] },
+  light: {
+    trace: neutral[400],
+    fill: neutral[200],
+    control: ice[600],
+    sunLit: '#b07404',
+    sunDim: '#c49a4e',
+  },
+  dark: {
+    trace: neutral[500],
+    fill: neutral[700],
+    control: ice[400],
+    sunLit: warning[300],
+    sunDim: '#7c6a2e',
+  },
 } as const satisfies Record<
   'light' | 'dark',
-  { trace: string; fill: string; control: string; sunLit: string }
+  { trace: string; fill: string; control: string; sunLit: string; sunDim: string }
 >;
+
+/**
+ * The two ends of the sun trace's intensity ramp — `sunDim` at first light, `sunLit` at solar noon.
+ *
+ * ⚠ **A single-hue ordinal ramp, and validated as one** (monotone lightness, ΔL ≥ 0.06, hue spread
+ * under 10°, pale end clearing 2:1 against its surface). That is a different check from the
+ * categorical one the rest of this file runs, because this scale encodes *magnitude* rather than
+ * identity — and the pale end is the one that fails easily: `#d9b878` looked right on white and
+ * measured 1.90:1, i.e. invisible.
+ *
+ * The ramp rides on the y axis, exactly like the temperature gradient: irradiance is what the lane
+ * plots, so height already *is* intensity and one vertical gradient paints the whole trace correctly.
+ * Nothing per-point, and `react-native-svg` renders the same element.
+ */
+export const WEATHER_SUN_RAMP = {
+  light: { dim: WEATHER_AUX_SCALE.light.sunDim, lit: WEATHER_AUX_SCALE.light.sunLit },
+  dark: { dim: WEATHER_AUX_SCALE.dark.sunDim, lit: WEATHER_AUX_SCALE.dark.sunLit },
+} as const;
+
+/**
+ * Opacity range for the wind lane's fetch banding — the fill's density channel.
+ *
+ * ⚠ **Widened from 0.25–0.95 after looking at it on a real lake: the steps were not separable.** The
+ * floor came down and the ceiling went to opaque, and — the part that actually fixed it — the banded
+ * fill now paints in `trace` rather than `fill`. `fill` is a hair off the surface by design (it is
+ * the colour of an inert lane), so no opacity ramp on it could ever produce much contrast; the range
+ * was never the whole problem.
+ */
+export const WIND_FETCH_OPACITY = { min: 0.15, max: 1 } as const;
 
 /**
  * The emphasis color for a lane whose condition is a **conjunction with temperature**.
@@ -166,7 +207,9 @@ export function emphasisColor(mode: 'light' | 'dark', side: 'cold' | 'warm'): st
 export interface WeatherChartPalette {
   temperature: Record<TemperatureBand, string>;
   precipitation: { snow: string; rain: string };
-  aux: { trace: string; fill: string; control: string; sunLit: string };
+  aux: { trace: string; fill: string; control: string; sunLit: string; sunDim: string };
+  /** The sun trace's intensity ramp — pale at first light, saturated at solar noon. */
+  sunRamp: { dim: string; lit: string };
   /** Pre-resolved so a renderer never has to remember which pole a lane belongs to. */
   emphasis: { cold: string; warm: string };
 }
@@ -178,5 +221,6 @@ export function weatherChartPalette(mode: 'light' | 'dark'): WeatherChartPalette
     precipitation: WEATHER_PRECIPITATION_SCALE[mode],
     aux: WEATHER_AUX_SCALE[mode],
     emphasis: { cold: emphasisColor(mode, 'cold'), warm: emphasisColor(mode, 'warm') },
+    sunRamp: WEATHER_SUN_RAMP[mode],
   };
 }

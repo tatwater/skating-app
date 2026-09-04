@@ -685,18 +685,28 @@ export function temperatureGradientStops(minF: number, maxF: number): Temperatur
 // The model
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
 
+/**
+ * Lay the visible lanes down the viewport.
+ *
+ * ⚠ **A hidden lane gives its height back rather than leaving a hole**, which is the whole point of
+ * hiding one: the remaining lanes rescale into the space and the chart keeps its stated height. A
+ * hidden lane still gets a box — a degenerate one at the bottom edge — so a renderer that reads
+ * `boxes.wind` without checking never lands on `undefined` and draws a mark at NaN.
+ */
 function laneBoxes(
   height: number,
   overrides: Partial<Record<TimelineLane, number>> | undefined,
+  hidden: ReadonlySet<TimelineLane>,
 ): Record<TimelineLane, LaneBox> {
-  const requested = TIMELINE_LANES.map((lane) => ({
+  const shown = TIMELINE_LANES.filter((lane) => !hidden.has(lane));
+  const requested = shown.map((lane) => ({
     lane,
     h: Math.max(1, overrides?.[lane] ?? DEFAULT_LANE_HEIGHTS[lane]),
   }));
-  const chrome = DAY_LABEL_HEIGHT + LANE_GAP * (TIMELINE_LANES.length - 1);
-  const available = Math.max(TIMELINE_LANES.length, height - chrome);
-  const requestedTotal = requested.reduce((sum, r) => sum + r.h, 0);
-  // Rescaled rather than clipped: a caller asking for 180px gets five proportionally shorter lanes
+  const chrome = DAY_LABEL_HEIGHT + LANE_GAP * Math.max(0, shown.length - 1);
+  const available = Math.max(Math.max(1, shown.length), height - chrome);
+  const requestedTotal = requested.reduce((sum, r) => sum + r.h, 0) || 1;
+  // Rescaled rather than clipped: a caller asking for 180px gets proportionally shorter lanes
   // instead of a snow-depth lane hanging off the bottom of its own viewport.
   const scale = available / requestedTotal;
 
@@ -706,6 +716,9 @@ function laneBoxes(
     const laneHeight = h * scale;
     boxes[lane] = { top, bottom: top + laneHeight, height: laneHeight };
     top += laneHeight + LANE_GAP;
+  }
+  for (const lane of TIMELINE_LANES) {
+    if (!boxes[lane]) boxes[lane] = { top: height, bottom: height, height: 0 };
   }
   return boxes;
 }
@@ -947,7 +960,22 @@ export function weatherTimelineModel(input: WeatherTimelineInput): WeatherTimeli
   const ordered = [...input.days].sort((a, b) => a.dayMs - b.dayMs);
   const dayWidth = width / ordered.length;
   const hourWidth = dayWidth / 24;
-  const boxes = laneBoxes(height, input.laneHeights);
+
+  // ⚠ **The wind lane is hidden entirely on a lake with no fetch story, by founder call (2026-09-04).**
+  // Its height goes back to the other lanes, which is the point — most bodies are ponds, and the
+  // request was to stop spending 24px on them.
+  //
+  // ⚠ **Note what this also removes, because it is not nothing.** The lane's *line* is wind speed and
+  // its rail is the calm-while-freezing span — the black-ice signal `weatherDay.ts` calls "the single
+  // most useful number in this record" — and both are available on every lake regardless of fetch.
+  // Only the fill's density needs a kilometre of open water. So this trades a real signal on ~95% of
+  // the corpus for 24px; reverting is a one-line change to `windHasFetchStory`.
+  const windHasFetchStory =
+    Array.isArray(input.fetchProfileM) &&
+    input.fetchProfileM.length === WIND_SECTOR_COUNT &&
+    Math.max(...input.fetchProfileM) >= MIN_FETCH_CLAUSE_M;
+  const hiddenLanes = new Set<TimelineLane>(windHasFetchStory ? [] : ['wind']);
+  const boxes = laneBoxes(height, input.laneHeights, hiddenLanes);
 
   const days: TimelineDayColumn[] = [];
   const positioned: PositionedHour[] = [];
@@ -1052,21 +1080,23 @@ export function weatherTimelineModel(input: WeatherTimelineInput): WeatherTimeli
   }
 
   // ── Wind, sun, snow depth ──────────────────────────────────────────────────────────────────────
-  const wind = auxLayer(
-    boxes.wind,
-    positioned,
-    hourWidth,
-    (h) => h.windSpeedKph ?? null,
-    // Calm *and* freezing — the conjunction, not either half. A calm July hour is not this.
-    (h) =>
-      (h.windSpeedKph ?? Number.POSITIVE_INFINITY) <= CALM_FREEZE_MAX_KPH && h.temperatureC < 0,
-    // A floor on the axis so a still week does not scale 2 kph to full height and read as a gale.
-    20,
-    // The second channel: the line's height is how hard it blew, the fill's density how much open
-    // water that bearing had behind it. Returns null — and so draws flat — on any lake under a
-    // kilometre of fetch, which is most of them.
-    { intensity: (h) => fetchIntensityAt(input.fetchProfileM, h.windDirectionDeg) },
-  );
+  const wind = hiddenLanes.has('wind')
+    ? null
+    : auxLayer(
+        boxes.wind,
+        positioned,
+        hourWidth,
+        (h) => h.windSpeedKph ?? null,
+        // Calm *and* freezing — the conjunction, not either half. A calm July hour is not this.
+        (h) =>
+          (h.windSpeedKph ?? Number.POSITIVE_INFINITY) <= CALM_FREEZE_MAX_KPH && h.temperatureC < 0,
+        // A floor on the axis so a still week does not scale 2 kph to full height and read as a gale.
+        20,
+        // The second channel: the line's height is how hard it blew, the fill's density how much open
+        // water that bearing had behind it. Returns null — and so draws flat — on any lake under a
+        // kilometre of fetch, which is most of them.
+        { intensity: (h) => fetchIntensityAt(input.fetchProfileM, h.windDirectionDeg) },
+      );
 
   const sun = auxLayer(
     boxes.sun,

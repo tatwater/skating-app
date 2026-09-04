@@ -56,8 +56,18 @@ app_ui_inspiration/
 __pycache__/
 *.py[cod]
 
-# Design exports (large generated SVGs for Figma)
-/exports/
+# Design exports for Figma.
+#
+# The *artifacts* are what this rule is for — single SVGs run to 600 KB and the cached basemap
+# tiles are megabytes, all of it regenerable. The **builders are not artifacts**, and blanket-
+# ignoring the directory quietly meant a fresh clone had no way to rebuild any of it. So the
+# scripts and their READMEs are tracked and everything they emit or download is not.
+/exports/*
+!/exports/*/
+/exports/*/*
+!/exports/*/*.py
+!/exports/*/*.ts
+!/exports/*/README.md
 
 # Teagan's questions/reminders for Claude
 CLAUDE_NOTES.md

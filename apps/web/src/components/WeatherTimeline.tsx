@@ -19,7 +19,7 @@ import {
   weatherTimelineModel,
   windSectorOf,
 } from '@skating/core';
-import { type WeatherChartPalette, weatherChartPalette } from '@skating/design';
+import { type WeatherChartPalette, WIND_FETCH_OPACITY, weatherChartPalette } from '@skating/design';
 import { useTheme } from 'next-themes';
 import { useEffect, useMemo, useRef, useState } from 'react';
 
@@ -66,10 +66,13 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 const AUX_LANES: {
   key: 'wind' | 'sun' | 'snowDepth';
   side: 'cold' | 'warm';
-  litColor?: (p: WeatherChartPalette) => string;
+  /** Given the sun gradient's id, the stroke for an "active" run. Only the sun lane has one. */
+  litColor?: (gradientId: string) => string;
 }[] = [
   { key: 'wind', side: 'cold' },
-  { key: 'sun', side: 'warm', litColor: (p) => p.aux.sunLit },
+  // ⚠ A gradient reference rather than a flat colour: the sun trace ramps pale → saturated with
+  // irradiance, and irradiance is the y axis, so the paint is a function of height.
+  { key: 'sun', side: 'warm', litColor: (id) => `url(#${id})` },
   { key: 'snowDepth', side: 'cold' },
 ];
 
@@ -167,6 +170,7 @@ export function WeatherTimeline({
 
   const gradientId = 'weather-timeline-temp';
   const hatchId = 'weather-timeline-hatch';
+  const sunGradientId = 'weather-timeline-sun';
 
   return (
     <div className="flex flex-col gap-1">
@@ -252,6 +256,21 @@ export function WeatherTimeline({
                   y2="4"
                 />
               </pattern>
+              {model.sun && (
+                // Intensity rides on the y axis: irradiance is what the lane plots, so one vertical
+                // gradient paints the whole trace pale at first light and saturated at solar noon.
+                <linearGradient
+                  gradientUnits="userSpaceOnUse"
+                  id={sunGradientId}
+                  x1={0}
+                  x2={0}
+                  y1={model.sun.box.top}
+                  y2={model.sun.box.bottom}
+                >
+                  <stop offset={0} stopColor={palette.sunRamp.lit} />
+                  <stop offset={1} stopColor={palette.sunRamp.dim} />
+                </linearGradient>
+              )}
             </defs>
 
             {/* Day dividers — full height, hairline, solid. Dashed would read as "threshold". */}
@@ -376,7 +395,10 @@ export function WeatherTimeline({
                         d={seg.d}
                         fill={palette.aux.fill}
                         key={seg.d}
-                        opacity={0.25 + seg.intensity * 0.7}
+                        opacity={
+                          WIND_FETCH_OPACITY.min +
+                          seg.intensity * (WIND_FETCH_OPACITY.max - WIND_FETCH_OPACITY.min)
+                        }
                       />
                     ))
                   )}
@@ -388,7 +410,7 @@ export function WeatherTimeline({
                       d={seg.d}
                       fill="none"
                       key={seg.d}
-                      stroke={seg.active && litColor ? litColor(palette) : palette.aux.trace}
+                      stroke={seg.active && litColor ? litColor(sunGradientId) : palette.aux.trace}
                       strokeLinejoin="round"
                       strokeWidth={seg.active && litColor ? 1.5 : 1}
                     />
@@ -621,12 +643,15 @@ function TimelineReadout({
         ? ` ${COMPASS_LABELS[windSectorOf(h.windDirectionDeg)] ?? ''}`
         : '';
     parts.push(`${Math.round(kphToMph(h.windSpeedKph))} mph${from}`);
-    // ⚠ Only where the lake's own geometry supports the claim. `fetchAlong` returns null below
-    // `MIN_FETCH_CLAUSE_M`, which is ~95% of the corpus — on a pond the honest answer to "how much
-    // open water was behind that wind" is "none, in every direction", and printing 80 m would imply
-    // a distinction the shape cannot support. Same threshold the lake caption's wind clause uses.
-    const openWater = fetchAlong(fetchProfileM, h.windDirectionDeg);
-    if (openWater !== null) parts.push(`${roundTo(openWater / 1000, 1)} km of open water`);
+    // ⚠ **"across the lake", never "of open water".** The app already uses *open water* as a hazard
+    // type — the on-ice alert says "⚠ open water ~45 s ahead", meaning unfrozen water you are about
+    // to skate into. Reusing it for fetch would make the same two words mean "the lake is not frozen"
+    // in one place and "the wind had a long run" in another, on a page about frozen lakes.
+    //
+    // Gated where the lake's geometry supports the claim: `fetchAlong` returns null below
+    // `MIN_FETCH_CLAUSE_M`, which is ~95% of the corpus.
+    const acrossM = fetchAlong(fetchProfileM, h.windDirectionDeg);
+    if (acrossM !== null) parts.push(`${roundTo(acrossM / 1000, 1)} km across the lake`);
   }
   if (typeof h.snowDepthM === 'number' && h.snowDepthM > 0) {
     parts.push(`${roundTo(cmToInches(h.snowDepthM * 100), 1)}″ on the ground`);
