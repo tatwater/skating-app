@@ -10,9 +10,13 @@
  * module is how "observation, never counsel" stays enforceable instead of aspirational — two clients
  * phrasing the same freeze differently is how a verdict sneaks in.
  *
- * **Practical:** as of N6h, `apps/mobile` has **no charting library at all** (checked; Phase 7b's
- * Recharts kit is web-and-admin-only). So mobile renders this panel as text, web renders the same
- * text plus a chart over the same numbers, and neither owns the reasoning.
+ * **Practical:** both clients render these sentences verbatim and neither owns the reasoning.
+ *
+ * ⚠ This paragraph used to justify that split by saying `apps/mobile` had **no charting library**, so
+ * mobile got text where web got a chart. Workstream D retired the claim: the missing piece was never
+ * a library but shared *geometry*, `react-native-svg` was already a dependency, and both clients now
+ * draw the identical timeline from `weatherTimeline.ts`. The sentences still live here — a chart and
+ * a sentence answer different questions, and only one of them is a place a safety verdict can hide.
  *
  * ## What it leads with, and why that is not the temperature
  *

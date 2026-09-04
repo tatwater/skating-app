@@ -5,25 +5,33 @@ import {
   dayMsToLocalDate,
   type PanelDay,
   shortDayLabel,
+  type TimelineDayInput,
+  timelineDaysFromArchive,
 } from '@skating/core';
 import { useAction } from 'convex/react';
 import { useEffect, useMemo, useState } from 'react';
 import { Paragraph, Text, XStack, YStack } from 'tamagui';
 import { Section } from './detailUi';
+import { WeatherTimeline } from './WeatherTimeline';
+
+/** Days the timeline can be dragged back through — the web panel's `TIMELINE_DAYS`, same reasoning. */
+const TIMELINE_DAYS = 30;
 
 /**
  * What the ice has been through — the mobile half of the web `PastWeatherPanel` (N6h / **D153**).
  *
- * ## Text-first on purpose, not as a shortcut
+ * ## It draws the same chart as the web app, and did not need a charting library to
  *
- * As of N6h `apps/mobile` has **no charting library at all** — Phase 7b's dataviz-validated Recharts
- * kit is web-and-admin-only. Rather than add a charting dependency for one panel, this renders the
- * same sentences the web panel leads with plus a compact per-day row, and the *reasoning* lives in
- * `buildPastWeatherPanel` in core where both platforms read it from one tested place.
+ * This panel was text-first through Workstream C, on the reasoning that `apps/mobile` had no charting
+ * library and Phase 7b's Recharts kit is web-and-admin-only. Workstream D showed that framing was
+ * wrong: the missing thing was never a *library*, it was shared **geometry**. `weatherTimelineModel`
+ * in core returns coordinates and semantic band names, `react-native-svg` was already a dependency
+ * (`WindExposure` had been drawing a wind rose with it since N7-3), and the native chart is the same
+ * numbers through different primitives. No new dependency, no EAS rebuild.
  *
- * That split also matters for a second reason: mobile has no RN-under-Vitest harness, so logic that
- * lives in a component here cannot be tested at all. Keeping it in core is what makes this panel
- * covered rather than hoped-for.
+ * The sentences still come from `buildPastWeatherPanel` in core, for the reason they always did:
+ * mobile has no RN-under-Vitest harness, so anything living in a component here cannot be tested at
+ * all. That is also why this file holds no arithmetic.
  *
  * Same three rules as the web half: observation never counsel (D3 / D150), a gap is drawn rather than
  * smoothed, and it never renders above `AlertStrip`.
@@ -33,24 +41,26 @@ export function PastWeatherPanel({
   days = 7,
 }: {
   waterBodyId: Id<'waterBodies'>;
+  /** The window the *sentences* describe. The timeline always reads {@link TIMELINE_DAYS}. */
   days?: number;
 }) {
   const getDays = useAction(api.weatherArchive.getWeatherDaysForBody);
   const [state, setState] = useState<{
     days: PanelDay[];
+    timeline: TimelineDayInput[];
     coarse: boolean;
     largeBody: boolean;
     loading: boolean;
-  }>({ days: [], coarse: false, largeBody: false, loading: true });
+  }>({ days: [], timeline: [], coarse: false, largeBody: false, loading: true });
 
   useEffect(() => {
     let cancelled = false;
     setState((s) => ({ ...s, loading: true }));
-    getDays({ waterBodyId, days })
+    getDays({ waterBodyId, days: TIMELINE_DAYS })
       .then((result) => {
         if (cancelled) return;
         if (!result) {
-          setState({ days: [], coarse: false, largeBody: false, loading: false });
+          setState({ days: [], timeline: [], coarse: false, largeBody: false, loading: false });
           return;
         }
         // Core owns the `dayMs` encoding (UTC midnight of a *local* date); reversing it by hand in
@@ -59,15 +69,24 @@ export function PastWeatherPanel({
           dayMs,
           localDate: dayMsToLocalDate(dayMs),
         }));
+        // The sentences describe `days` days; the chart pans across all thirty. Feeding the whole
+        // range to the panel builder would restate every headline over a month without any copy
+        // showing that the window had moved.
+        const all = [...(result.days as PanelDay[]), ...holes].sort(
+          (a, b) => (a?.dayMs ?? 0) - (b?.dayMs ?? 0),
+        );
         setState({
-          days: [...(result.days as PanelDay[]), ...holes],
+          days: all.slice(-days),
+          timeline: timelineDaysFromArchive(result),
           coarse: result.anyBorrowed,
           largeBody: result.oneSampleForALargeBody,
           loading: false,
         });
       })
       .catch(() => {
-        if (!cancelled) setState({ days: [], coarse: false, largeBody: false, loading: false });
+        if (!cancelled) {
+          setState({ days: [], timeline: [], coarse: false, largeBody: false, loading: false });
+        }
       });
     return () => {
       cancelled = true;
@@ -91,6 +110,10 @@ export function PastWeatherPanel({
 
   if (panel.rows.length === 0) return null;
 
+  // At least one day with real hours. A cell can legitimately hold thirty daily summaries and no
+  // hourly rows — every lake opened before N6h Workstream D is in that state until its next visit.
+  const hasHourly = state.timeline.some((d) => (d.hours?.length ?? 0) > 0);
+
   return (
     <Section label="What it's been through">
       {panel.headline.map((line) => (
@@ -99,37 +122,45 @@ export function PastWeatherPanel({
         </Paragraph>
       ))}
 
-      {/* One column per day. A dash rather than a zero for a day we could not get — the whole point
-          of carrying `missing` through from the archive. */}
-      <XStack gap="$2" marginTop="$2">
-        {panel.rows.map((row) => (
-          // A partial day (today, so far) is drawn at reduced opacity rather than hidden: what is
-          // happening right now is exactly what a skater wants to see, but it must not read as a
-          // settled high and low. The headline leaves it out of every integral.
-          <YStack
-            alignItems="center"
-            flex={1}
-            gap="$1"
-            key={row.dayMs}
-            opacity={row.partial ? 0.5 : 1}
-          >
-            <Text color="$foregroundMuted" fontSize={10} textTransform="uppercase">
-              {shortDayLabel(row.localDate)}
-            </Text>
-            <Text color="$foreground" fontSize={12}>
-              {row.highF === null ? '—' : `${row.highF}°`}
-            </Text>
-            <Text color="$foregroundMuted" fontSize={12}>
-              {row.lowF === null ? '—' : `${row.lowF}°`}
-            </Text>
-            {row.snowfallIn !== null && row.snowfallIn >= 0.1 ? (
-              <Text color="$foregroundMuted" fontSize={10}>
-                {row.snowfallIn}″
+      {/* The timeline when the archive has hours for this cell; the per-day columns otherwise.
+          **The columns are the fallback, not dead code** — a cell whose daily rows predate the hourly
+          table serves no hours until its next drawer-open. A dash rather than a zero for a day we
+          could not get, which is the whole point of carrying `missing` through from the archive. */}
+      {hasHourly ? (
+        <YStack marginTop="$2">
+          <WeatherTimeline days={state.timeline} windowDays={days} />
+        </YStack>
+      ) : (
+        <XStack gap="$2" marginTop="$2">
+          {panel.rows.map((row) => (
+            // A partial day (today, so far) is drawn at reduced opacity rather than hidden: what is
+            // happening right now is exactly what a skater wants to see, but it must not read as a
+            // settled high and low. The headline leaves it out of every integral.
+            <YStack
+              alignItems="center"
+              flex={1}
+              gap="$1"
+              key={row.dayMs}
+              opacity={row.partial ? 0.5 : 1}
+            >
+              <Text color="$foregroundMuted" fontSize={10} textTransform="uppercase">
+                {shortDayLabel(row.localDate)}
               </Text>
-            ) : null}
-          </YStack>
-        ))}
-      </XStack>
+              <Text color="$foreground" fontSize={12}>
+                {row.highF === null ? '—' : `${row.highF}°`}
+              </Text>
+              <Text color="$foregroundMuted" fontSize={12}>
+                {row.lowF === null ? '—' : `${row.lowF}°`}
+              </Text>
+              {row.snowfallIn !== null && row.snowfallIn >= 0.1 ? (
+                <Text color="$foregroundMuted" fontSize={10}>
+                  {row.snowfallIn}″
+                </Text>
+              ) : null}
+            </YStack>
+          ))}
+        </XStack>
+      )}
 
       {state.largeBody ? (
         <Text color="$foregroundMuted" fontSize={11} fontStyle="italic">
