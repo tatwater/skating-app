@@ -855,14 +855,17 @@ describe('fetch as the wind lane second channel', () => {
   // *banded* and *absent*. `the wind lane is hidden without a fetch story` below covers the second.
 });
 
-describe('the wind lane is hidden without a fetch story', () => {
+describe('the wind lane survives a lake with no fetch story', () => {
   const windy = (localDate: string, dayMs: number) =>
     day(
       localDate,
       dayMs,
       Array.from({ length: 24 }, (_, h) =>
+        // ⚠ 4 kph, not 12 — below `CALM_FREEZE_MAX_KPH`, so these hours are *calm and freezing* and
+        // the emphasis rail actually exists. At 12 there is no rail and the assertions below pass
+        // vacuously, which is how the first draft of this fixture hid the thing it was testing.
         hour(h, {
-          windSpeedKph: 12,
+          windSpeedKph: 4,
           windDirectionDeg: 315,
           shortwaveWm2: h > 8 && h < 16 ? 200 : 0,
         }),
@@ -881,50 +884,52 @@ describe('the wind lane is hidden without a fetch story', () => {
     expect(model?.boxes.wind.height).toBeGreaterThan(0);
   });
 
-  it('hides it on a pond, and hands the space to the other lanes', () => {
-    // Founder call, 2026-09-04. ⚠ This also drops the calm-while-freezing rail, which is available on
-    // every lake regardless of fetch — the trade is a real signal on ~95% of the corpus for 24px.
-    const withFetch = weatherTimelineModel({
+  it('keeps speed and the calm-freezing rail on a pond, losing only the fill density', () => {
+    // ⚠ **The regression this pins.** For one day the lane was hidden below `MIN_FETCH_CLAUSE_M`,
+    // which bought 24px and cost wind speed and the black-ice rail on ~95% of the corpus. Only the
+    // *fill* needs a kilometre of reach; the measurements do not.
+    const pondModel = weatherTimelineModel({
+      days: [windy('2026-01-15', D0)],
+      width: WIDTH,
+      fetchProfileM: pond,
+    });
+    expect(pondModel?.wind).not.toBeNull();
+    expect(pondModel?.wind?.line.length).toBeGreaterThan(0);
+    expect(pondModel?.wind?.emphasis.length).toBeGreaterThan(0);
+    // The one thing a small lake does give up.
+    expect(pondModel?.wind?.areaSegments).toHaveLength(0);
+    expect(pondModel?.wind?.area.length).toBeGreaterThan(0);
+  });
+
+  it('lays out identically whether or not the lake has a fetch story', () => {
+    const a = weatherTimelineModel({
       days: [windy('2026-01-15', D0)],
       width: WIDTH,
       fetchProfileM: exposed,
     });
-    const without = weatherTimelineModel({
+    const b = weatherTimelineModel({
       days: [windy('2026-01-15', D0)],
       width: WIDTH,
       fetchProfileM: pond,
     });
-    expect(without?.wind).toBeNull();
-    expect(without?.boxes.wind.height).toBe(0);
-    // The space is redistributed, not left as a hole.
-    expect(without?.boxes.temperature.height).toBeGreaterThan(
-      withFetch?.boxes.temperature.height ?? 0,
-    );
+    expect(b?.boxes.wind.height).toBeCloseTo(a?.boxes.wind.height ?? 0);
+    expect(b?.boxes.temperature.height).toBeCloseTo(a?.boxes.temperature.height ?? 0);
   });
 
-  it('still fills the stated height exactly when a lane is hidden', () => {
-    const model = weatherTimelineModel({
-      days: [windy('2026-01-15', D0)],
-      width: WIDTH,
-      height: 240,
-      fetchProfileM: pond,
-    });
-    expect(model?.boxes.snowDepth.bottom).toBeCloseTo(240, 1);
-  });
-
-  it('gives a hidden lane a degenerate box rather than leaving it undefined', () => {
-    // A renderer that reads `boxes.wind` without checking must not land on NaN.
-    const model = weatherTimelineModel({
-      days: [windy('2026-01-15', D0)],
-      width: WIDTH,
-      fetchProfileM: pond,
-    });
-    expect(Number.isFinite(model?.boxes.wind.top)).toBe(true);
-    expect(Number.isFinite(model?.boxes.wind.bottom)).toBe(true);
-  });
-
-  it('hides it when no profile is supplied at all', () => {
+  it('still draws the lane with no profile supplied at all', () => {
     const model = weatherTimelineModel({ days: [windy('2026-01-15', D0)], width: WIDTH });
-    expect(model?.wind).toBeNull();
+    expect(model?.wind).not.toBeNull();
+    expect(model?.wind?.areaSegments).toHaveLength(0);
+  });
+
+  it('returns null only when there is genuinely no wind data', () => {
+    // The remaining reason a lane can be absent: nothing measured it. Distinct from "measured, but
+    // the lake is too small for one of its channels".
+    const noWind = day(
+      '2026-01-15',
+      D0,
+      Array.from({ length: 24 }, (_, h) => hour(h, { temperatureC: -5 })),
+    );
+    expect(weatherTimelineModel({ days: [noWind], width: WIDTH })?.wind).toBeNull();
   });
 });

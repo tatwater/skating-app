@@ -425,9 +425,15 @@ export function windExposureSummary(input: WindExposureSummaryInput): WindExposu
     );
   }
   if (mostExposed) {
+    // ⚠ **"of lake", not "of open water", and the reason is a collision rather than a preference.**
+    // This app already uses *open water* as a **hazard type**: `hazardProjection.ts` drives the on-ice
+    // alert that says "⚠ open water ~45 s ahead", meaning unfrozen water you are about to skate into.
+    // Reusing the phrase for fetch made the same two words mean "this lake is not frozen" on one
+    // surface and "the wind had a long run" on another, on pages about frozen lakes. The timeline's
+    // scrub readout says "3.2 km across the lake" for the same measurement.
     sentences.push(
       `It is most exposed on ${input.spokenDirection(mostExposed.label)} shore, where ` +
-        `${input.formatMiles(mostExposed.fetchM)} miles of open water line up with the wind.`,
+        `${input.formatMiles(mostExposed.fetchM)} miles of lake line up with the wind.`,
     );
   }
   // Skipped once the rare-but-strong sentence has been said. The blocked sector and the rare-strong

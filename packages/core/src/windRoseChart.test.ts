@@ -297,7 +297,7 @@ describe('windExposureSummary', () => {
       ...base,
     });
     expect(s?.mostExposed).toBeNull();
-    expect((s?.sentences ?? []).join(' ')).not.toContain('open water');
+    expect((s?.sentences ?? []).join(' ')).not.toContain('line up with the wind');
   });
 
   it('makes the fetch claim above it, on the sector it was handed', () => {
@@ -309,7 +309,10 @@ describe('windExposureSummary', () => {
       ...base,
     });
     expect(s?.mostExposed?.label).toBe('SSE');
-    expect((s?.sentences ?? []).join(' ')).toContain('open water');
+    expect((s?.sentences ?? []).join(' ')).toContain('miles of lake line up with the wind');
+    // ⚠ Never "open water" — that phrase is the on-ice hazard type ("⚠ open water ~45 s ahead",
+    // i.e. unfrozen water ahead of you). Using it for fetch made two words mean two opposite things.
+    expect((s?.sentences ?? []).join(' ')).not.toContain('open water');
   });
 
   it('degrades to one sentence with only a rose', () => {

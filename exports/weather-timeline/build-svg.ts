@@ -51,9 +51,12 @@ import {
 } from '../../packages/design/src/index';
 
 // ── Layout ───────────────────────────────────────────────────────────────────────────────────────
-// The real sidebar is `md:w-[26rem]` = 416px; 20px of padding either side leaves this plot width.
-const PLOT_WIDTH = 376;
-const PAD = 20;
+// The real sidebar is `md:w-[26rem]` = 416 px and the panel's own container is `px-4`, so the plot
+// gets 416 − 32 = **384 px**. ⚠ Measured off the app rather than rounded to something tidy: at 384 a
+// day is 54.857 px and an hour is 2.286 px, so a mock built at a neater width would put every divider
+// and every precipitation block a fraction off from where the app actually draws them.
+const PLOT_WIDTH = 384;
+const PAD = 16;
 const CANVAS_WIDTH = PLOT_WIDTH + PAD * 2;
 const SURFACE = { dark: '#151d26', light: '#ffffff' } as const;
 const INK = { dark: '#f4f7fa', light: '#0b1016' } as const;

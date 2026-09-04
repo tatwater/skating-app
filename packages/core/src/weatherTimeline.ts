@@ -961,20 +961,17 @@ export function weatherTimelineModel(input: WeatherTimelineInput): WeatherTimeli
   const dayWidth = width / ordered.length;
   const hourWidth = dayWidth / 24;
 
-  // ⚠ **The wind lane is hidden entirely on a lake with no fetch story, by founder call (2026-09-04).**
-  // Its height goes back to the other lanes, which is the point — most bodies are ponds, and the
-  // request was to stop spending 24px on them.
+  // ⚠ **The wind lane is kept whenever there is wind data, whatever the fetch — reversed 2026-09-04,
+  // the day after it briefly worked the other way.** Hiding it below `MIN_FETCH_CLAUSE_M` bought 24px
+  // and cost the two things the lane is actually for: the *line* is wind speed, and the rail is the
+  // calm-while-freezing span that `weatherDay.ts` calls "the single most useful number in this
+  // record". Both are measured on every lake regardless of its shape. **Only the fill's density needs
+  // a kilometre of reach** — so a small lake now draws a normal wind lane with a flat fill, which is
+  // one missing channel rather than a missing measurement.
   //
-  // ⚠ **Note what this also removes, because it is not nothing.** The lane's *line* is wind speed and
-  // its rail is the calm-while-freezing span — the black-ice signal `weatherDay.ts` calls "the single
-  // most useful number in this record" — and both are available on every lake regardless of fetch.
-  // Only the fill's density needs a kilometre of open water. So this trades a real signal on ~95% of
-  // the corpus for 24px; reverting is a one-line change to `windHasFetchStory`.
-  const windHasFetchStory =
-    Array.isArray(input.fetchProfileM) &&
-    input.fetchProfileM.length === WIND_SECTOR_COUNT &&
-    Math.max(...input.fetchProfileM) >= MIN_FETCH_CLAUSE_M;
-  const hiddenLanes = new Set<TimelineLane>(windHasFetchStory ? [] : ['wind']);
+  // `hiddenLanes` stays because `laneBoxes` needs the concept: a lane with no data at all (an archive
+  // row predating `shortwave_radiation`, say) still returns `null` from `auxLayer` below.
+  const hiddenLanes = new Set<TimelineLane>();
   const boxes = laneBoxes(height, input.laneHeights, hiddenLanes);
 
   const days: TimelineDayColumn[] = [];
@@ -1080,23 +1077,21 @@ export function weatherTimelineModel(input: WeatherTimelineInput): WeatherTimeli
   }
 
   // ── Wind, sun, snow depth ──────────────────────────────────────────────────────────────────────
-  const wind = hiddenLanes.has('wind')
-    ? null
-    : auxLayer(
-        boxes.wind,
-        positioned,
-        hourWidth,
-        (h) => h.windSpeedKph ?? null,
-        // Calm *and* freezing — the conjunction, not either half. A calm July hour is not this.
-        (h) =>
-          (h.windSpeedKph ?? Number.POSITIVE_INFINITY) <= CALM_FREEZE_MAX_KPH && h.temperatureC < 0,
-        // A floor on the axis so a still week does not scale 2 kph to full height and read as a gale.
-        20,
-        // The second channel: the line's height is how hard it blew, the fill's density how much open
-        // water that bearing had behind it. Returns null — and so draws flat — on any lake under a
-        // kilometre of fetch, which is most of them.
-        { intensity: (h) => fetchIntensityAt(input.fetchProfileM, h.windDirectionDeg) },
-      );
+  const wind = auxLayer(
+    boxes.wind,
+    positioned,
+    hourWidth,
+    (h) => h.windSpeedKph ?? null,
+    // Calm *and* freezing — the conjunction, not either half. A calm July hour is not this.
+    (h) =>
+      (h.windSpeedKph ?? Number.POSITIVE_INFINITY) <= CALM_FREEZE_MAX_KPH && h.temperatureC < 0,
+    // A floor on the axis so a still week does not scale 2 kph to full height and read as a gale.
+    20,
+    // The second channel: the line's height is how hard it blew, the fill's density how much open
+    // water that bearing had behind it. Returns null — and so draws flat — on any lake under a
+    // kilometre of fetch, which is most of them.
+    { intensity: (h) => fetchIntensityAt(input.fetchProfileM, h.windDirectionDeg) },
+  );
 
   const sun = auxLayer(
     boxes.sun,
