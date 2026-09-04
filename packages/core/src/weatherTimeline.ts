@@ -134,6 +134,21 @@ export const PRECIP_MIN_MM = 0.05;
  */
 export const MAX_INTERPOLATED_SLOTS = 2.5;
 
+/**
+ * Narrowest column, in px, that can carry its own `Wed 14` label.
+ *
+ * ⚠ **Found by rendering the panned-out view, which nothing else would have caught.** At the seven-day
+ * default a column is ~53px and every day is labelled comfortably. Dragged out to the founder's
+ * thirty, a column is ~12px and thirty labels overprint into a solid unreadable band — the axis stops
+ * being an axis. Labels are thinned to every Nth day instead, which keeps the *scale* legible even
+ * when every date cannot be named.
+ *
+ * 26px fits `Wed 14` at 9px type with a little air. Deliberately about the label, not about the data:
+ * the dividers, the marks and the scrub readout are all unaffected, so panning out costs only the
+ * names of the intermediate days.
+ */
+export const MIN_DAY_LABEL_WIDTH = 26;
+
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
 // Input
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
@@ -198,7 +213,28 @@ export interface TimelineDayColumn {
   width: number;
   missing: boolean;
   partial: boolean;
+  /**
+   * Whether this column's date label should be drawn — see {@link MIN_DAY_LABEL_WIDTH}.
+   *
+   * ⚠ **Decided here rather than in each renderer**, so the two clients thin the axis identically.
+   * A renderer that ignored this would draw thirty overlapping labels; one that invented its own
+   * threshold would disagree with the other about which dates the chart names.
+   */
+  showLabel: boolean;
+  /**
+   * Where to centre this column's label — **the column centre, pulled inside the viewport at the
+   * ends.**
+   *
+   * ⚠ A centred label on the first column overhangs the left edge and gets clipped: at 30 days the
+   * column is ~12px wide and `Mon 12` is ~34px, so two thirds of it hangs off. Clamping is not a
+   * cosmetic nicety here — the leftmost label is the one that says *where the window starts*, which
+   * is exactly what a reader who has just panned needs to read.
+   */
+  labelX: number;
 }
+
+/** Half the width of a rendered `Wed 14` at 9px — how far a label must stay from either edge. */
+const LABEL_HALF_WIDTH = 18;
 
 /** A gradient stop as an offset down the temperature lane, paired with the band it reaches there. */
 export interface TemperatureGradientStop {
@@ -643,6 +679,11 @@ export function weatherTimelineModel(input: WeatherTimelineInput): WeatherTimeli
   const days: TimelineDayColumn[] = [];
   const positioned: PositionedHour[] = [];
 
+  // Every Nth column carries a label once they get too narrow to each hold one. Anchored on index 0
+  // so the labelled set is stable as the window pans — labels that reshuffle under a drag read as the
+  // chart jumping rather than sliding.
+  const labelEvery = Math.max(1, Math.ceil(MIN_DAY_LABEL_WIDTH / dayWidth));
+
   ordered.forEach((day, index) => {
     const x = index * dayWidth;
     const hasHours = (day.hours?.length ?? 0) > 0;
@@ -653,6 +694,11 @@ export function weatherTimelineModel(input: WeatherTimelineInput): WeatherTimeli
       width: dayWidth,
       missing: day.missing === true || !hasHours,
       partial: day.partial === true,
+      showLabel: index % labelEvery === 0,
+      labelX: Math.min(
+        Math.max(x + dayWidth / 2, LABEL_HALF_WIDTH),
+        Math.max(LABEL_HALF_WIDTH, width - LABEL_HALF_WIDTH),
+      ),
     });
 
     const seen = new Set<number>();

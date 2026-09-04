@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest';
+import { dayMsToLocalDate } from './weatherDay';
 import {
   BAND_EDGE_DEEP_COLD_F,
   BAND_EDGE_FREEZING_F,
   BAND_EDGE_THAW_F,
   hourAtX,
+  MIN_DAY_LABEL_WIDTH,
   MIN_TEMPERATURE_SPAN_F,
   precipitationKind,
   TEMPERATURE_BANDS,
@@ -550,5 +552,63 @@ describe('an emphasis span never spreads across a gap', () => {
     ];
     const model = weatherTimelineModel({ days, width: WIDTH });
     expect(model?.wind?.emphasis).toHaveLength(1);
+  });
+});
+
+describe('day labels thin out as columns narrow', () => {
+  // ⚠ Found by rendering the panned-out view. At thirty days a column is ~12px and thirty labels
+  // overprint into a solid unreadable band — the axis stops being an axis.
+  const mkDays = (n: number) =>
+    Array.from({ length: n }, (_, i) =>
+      fullDay(dayMsToLocalDate(D0 + i * DAY_MS), D0 + i * DAY_MS, -5),
+    );
+
+  it('labels every day at the seven-day default', () => {
+    const model = weatherTimelineModel({ days: mkDays(7), width: WIDTH });
+    expect(model?.days.every((d) => d.showLabel)).toBe(true);
+  });
+
+  it('labels only some days once columns are too narrow to hold one', () => {
+    const model = weatherTimelineModel({ days: mkDays(30), width: WIDTH });
+    const labelled = model?.days.filter((d) => d.showLabel) ?? [];
+    expect(labelled.length).toBeGreaterThan(1);
+    expect(labelled.length).toBeLessThan(30);
+    // Whatever survives must have room to be read.
+    const dayWidth = WIDTH / 30;
+    const spacing = (labelled[1]?.x ?? 0) - (labelled[0]?.x ?? 0);
+    expect(spacing).toBeGreaterThanOrEqual(MIN_DAY_LABEL_WIDTH);
+    expect(dayWidth).toBeLessThan(MIN_DAY_LABEL_WIDTH); // i.e. the thinning was actually needed
+  });
+
+  it('anchors the labelled set on the first column so panning slides rather than reshuffles', () => {
+    const model = weatherTimelineModel({ days: mkDays(30), width: WIDTH });
+    expect(model?.days[0]?.showLabel).toBe(true);
+  });
+});
+
+describe('labels stay inside the viewport', () => {
+  it('pulls the first and last label in from the edges', () => {
+    // A centred label on a 12px column overhangs the left edge by two thirds of its width, and the
+    // leftmost label is the one that says where the panned window starts.
+    const days = Array.from({ length: 30 }, (_, i) =>
+      fullDay(dayMsToLocalDate(D0 + i * DAY_MS), D0 + i * DAY_MS, -5),
+    );
+    const model = weatherTimelineModel({ days, width: WIDTH });
+    for (const d of model?.days ?? []) {
+      expect(d.labelX).toBeGreaterThanOrEqual(0);
+      expect(d.labelX).toBeLessThanOrEqual(WIDTH);
+    }
+    expect(model?.days[0]?.labelX).toBeGreaterThan(model?.days[0]?.x ?? 0);
+  });
+
+  it('leaves an ordinary wide column centred', () => {
+    const model = weatherTimelineModel({
+      days: Array.from({ length: 7 }, (_, i) =>
+        fullDay(dayMsToLocalDate(D0 + i * DAY_MS), D0 + i * DAY_MS, -5),
+      ),
+      width: WIDTH,
+    });
+    const mid = model?.days[3];
+    expect(mid?.labelX).toBeCloseTo((mid?.x ?? 0) + (mid?.width ?? 0) / 2);
   });
 });

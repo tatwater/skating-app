@@ -1,3 +1,4 @@
+import { approximateUtcOffsetSeconds, localDayMsAt } from '@skating/core';
 import { convexTest } from 'convex-test';
 import type { Polygon } from 'geojson';
 import { describe, expect, test } from 'vitest';
@@ -120,7 +121,14 @@ async function seedArchive(
   fdhPerDay: number,
   thawPerDay = 0,
 ): Promise<void> {
-  const today = Math.floor(Date.now() / DAY_MS) * DAY_MS;
+  // ⚠ **The lake's LOCAL day, not the UTC one.** `calibrationPairs` anchors its window with
+  // `localDayMsAt(report.skateEndTime, offset)` — UTC midnight of the *local* date — while this
+  // seeder used to floor `Date.now()` to a UTC day. The two agree for most of the day and diverge
+  // between 19:00 Eastern and midnight, when the UTC date has already rolled over: the seeded rows
+  // then sat one day later than the window the code computes, the overlap was 38 days instead of 39,
+  // and the test failed for anyone running it in the evening. Exactly the trap `localDayMsAt`'s own
+  // docblock warns about, reproduced in a fixture.
+  const today = localDayMsAt(Date.now(), approximateUtcOffsetSeconds(-72.0331));
   await t.run(async (ctx) => {
     for (let i = 0; i < days; i++) {
       const dayMs = today - i * DAY_MS;

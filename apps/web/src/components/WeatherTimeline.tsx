@@ -206,18 +206,20 @@ export function WeatherTimeline({
                 />
               ))}
 
-            {model.days.map((d) => (
-              <text
-                fill={palette.aux.trace}
-                fontSize="9"
-                key={d.dayMs}
-                textAnchor="middle"
-                x={d.x + d.width / 2}
-                y={9}
-              >
-                {shortDayLabel(d.localDate)}
-              </text>
-            ))}
+            {model.days
+              .filter((d) => d.showLabel)
+              .map((d) => (
+                <text
+                  fill={palette.aux.trace}
+                  fontSize="9"
+                  key={d.dayMs}
+                  textAnchor="middle"
+                  x={d.labelX}
+                  y={9}
+                >
+                  {shortDayLabel(d.localDate)}
+                </text>
+              ))}
 
             {model.temperature && (
               <>
