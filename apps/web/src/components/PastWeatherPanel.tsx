@@ -157,11 +157,11 @@ export function PastWeatherPanel({
           until its next drawer-open, and on a slow connection that is the state a reader sees first.
           The strip is also the honest answer when a lake has summaries but no hourly history at all. */}
       {hasHourly ? (
-        <WeatherTimeline
-          days={state.timeline}
-          fetchProfileM={state.fetchProfileM}
-          windowDays={days}
-        />
+        // ⚠ No window prop since the 2026-09-04 scale change. *How many days fit* is now decided by
+        // the container rather than by the caller — the chart draws whatever the sidebar can hold at
+        // 2px/hour and scrolls to the rest. `days` still scopes the sentences above, which is a
+        // separate question and deliberately answered differently.
+        <WeatherTimeline days={state.timeline} fetchProfileM={state.fetchProfileM} />
       ) : (
         <div className="flex gap-1 overflow-x-auto pb-1">
           {panel.rows.map((row) => (

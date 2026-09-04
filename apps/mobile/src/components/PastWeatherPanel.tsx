@@ -130,11 +130,9 @@ export function PastWeatherPanel({
           could not get, which is the whole point of carrying `missing` through from the archive. */}
       {hasHourly ? (
         <YStack marginTop="$2">
-          <WeatherTimeline
-            days={state.timeline}
-            fetchProfileM={state.fetchProfileM}
-            windowDays={days}
-          />
+          {/* No window prop since the 2026-09-04 scale change — the container decides how many days
+              fit at 2px/hour, and `days` still scopes only the sentences above. */}
+          <WeatherTimeline days={state.timeline} fetchProfileM={state.fetchProfileM} />
         </YStack>
       ) : (
         <XStack gap="$2" marginTop="$2">

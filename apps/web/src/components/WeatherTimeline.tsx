@@ -9,12 +9,14 @@ import {
   hourAtX,
   kphToMph,
   mmToInches,
-  offsetAtTrackX,
   type PositionedHour,
+  PX_PER_HOUR,
   precipitationKind,
   roundTo,
+  scrollPxAtTrackX,
   shortDayLabel,
   type TimelineDayInput,
+  timelineExtent,
   timelineScrollbar,
   weatherTimelineModel,
   windSectorOf,
@@ -80,14 +82,12 @@ export function WeatherTimeline({
   days,
   fetchProfileM,
   height = DEFAULT_TIMELINE_HEIGHT,
-  windowDays = 7,
 }: {
   /** The full range the archive returned — usually 30 days; the window slides within it. */
   days: TimelineDayInput[];
   /** The body's 16-sector fetch profile — the wind fill's density. Absent draws it flat. */
   fetchProfileM?: number[] | undefined;
   height?: number;
-  windowDays?: number;
 }) {
   const { resolvedTheme } = useTheme();
   // `resolvedTheme` is undefined until next-themes has read localStorage. Light is the D34 default,
@@ -96,10 +96,12 @@ export function WeatherTimeline({
 
   const hostRef = useRef<HTMLDivElement | null>(null);
   const [width, setWidth] = useState(0);
-  // Newest-first offset: 0 is "the most recent `windowDays` days", growing as you drag back in time.
-  const [offset, setOffset] = useState(0);
+  // Newest-first scroll, in **pixels**: 0 shows the most recent days, growing as you travel back.
+  // Pixels rather than days since the scale was fixed — the viewport crops mid-day on purpose, and a
+  // whole-day offset cannot express most of the positions a drag passes through.
+  const [scrollPx, setScrollPx] = useState(0);
   const [scrub, setScrub] = useState<PositionedHour | null>(null);
-  const drag = useRef<{ startX: number; startOffset: number } | null>(null);
+  const drag = useRef<{ startX: number; startScroll: number } | null>(null);
 
   // The sidebar is a fixed 26rem but its padding is not this component's business, so the plot
   // measures itself rather than assuming. Without this the first paint lays out against width 0 and
@@ -114,8 +116,8 @@ export function WeatherTimeline({
     return () => observer.disconnect();
   }, []);
 
-  const maxOffset = Math.max(0, days.length - windowDays);
-  const clampedOffset = Math.min(offset, maxOffset);
+  const { contentWidth, maxScrollPx } = timelineExtent(days.length, width);
+  const clampedScroll = Math.min(Math.max(scrollPx, 0), maxScrollPx);
 
   /**
    * Horizontal wheel / trackpad panning.
@@ -131,39 +133,37 @@ export function WeatherTimeline({
    * chart still scrolls the sidebar, which is what a reader expects and what makes the chart safe to
    * put in a long panel.
    */
-  const wheelBudget = useRef(0);
   useEffect(() => {
     const el = hostRef.current;
-    if (!el || maxOffset === 0 || width === 0) return;
-    const dayWidth = width / windowDays;
+    if (!el || maxScrollPx === 0) return;
     const onWheel = (e: WheelEvent) => {
       if (Math.abs(e.deltaX) <= Math.abs(e.deltaY)) return; // vertical — let the panel scroll
       e.preventDefault();
-      // A trackpad emits a stream of sub-pixel deltas. Converting each one straight to a day step
-      // would either round to zero (nothing moves) or to a whole day (a two-finger nudge jumps a
-      // week), so they accumulate into a pixel budget and are spent a column at a time.
-      wheelBudget.current += e.deltaX;
-      const steps = Math.trunc(wheelBudget.current / dayWidth);
-      if (steps === 0) return;
-      wheelBudget.current -= steps * dayWidth;
-      // Scrolling right moves toward the right-hand edge of the content, which is *now* — so it
-      // decreases the backwards-counting offset. This is the opposite sign from dragging the chart
-      // itself, and correctly so: dragging moves the content, scrolling moves the viewport.
-      setOffset((current) => Math.min(maxOffset, Math.max(0, current - steps)));
+      // ⚠ **1:1 pixels, and the accumulator that used to live here is gone.** With a fixed scale
+      // there is nothing to quantise to: a delta of 7px moves the chart 7px. The old code banked
+      // sub-pixel deltas until they added up to a whole *day*, which was the only way to move a
+      // fluid-width chart and made a gentle two-finger nudge either do nothing or jump 24 hours.
+      setScrollPx((current) => Math.min(maxScrollPx, Math.max(0, current - e.deltaX)));
     };
     el.addEventListener('wheel', onWheel, { passive: false });
     return () => el.removeEventListener('wheel', onWheel);
-  }, [maxOffset, width, windowDays]);
+  }, [maxScrollPx]);
 
-  const visible = useMemo(() => {
-    const end = days.length - clampedOffset;
-    return days.slice(Math.max(0, end - windowDays), end);
-  }, [days, clampedOffset, windowDays]);
-
+  // ⚠ No day-slicing any more. The model lays out **every** day at the fixed scale and translates by
+  // the scroll, so a path runs continuously through the viewport edge instead of being cut at a day
+  // boundary the reader never chose.
   const model = useMemo(
     () =>
-      width > 0 ? weatherTimelineModel({ days: visible, width, height, fetchProfileM }) : null,
-    [visible, width, height, fetchProfileM],
+      width > 0
+        ? weatherTimelineModel({
+            days,
+            width,
+            height,
+            fetchProfileM,
+            scrollPx: clampedScroll,
+          })
+        : null,
+    [days, width, height, fetchProfileM, clampedScroll],
   );
 
   if (days.length === 0) return null;
@@ -175,22 +175,21 @@ export function WeatherTimeline({
   return (
     <div className="flex flex-col gap-1">
       <div
-        className={`relative select-none ${maxOffset > 0 ? 'cursor-ew-resize' : ''}`}
+        className={`relative select-none ${maxScrollPx > 0 ? 'cursor-ew-resize' : ''}`}
         ref={hostRef}
         onPointerDown={(e) => {
-          if (maxOffset === 0) return;
-          drag.current = { startX: e.clientX, startOffset: clampedOffset };
+          if (maxScrollPx === 0) return;
+          drag.current = { startX: e.clientX, startScroll: clampedScroll };
           e.currentTarget.setPointerCapture(e.pointerId);
         }}
         onPointerMove={(e) => {
           const rect = e.currentTarget.getBoundingClientRect();
           const d = drag.current;
-          if (d && model) {
+          if (d) {
             // Drag right = go back in time, which is the direction the content moves under the
-            // finger. One day per column keeps the gesture 1:1 with what the eye is tracking.
-            const dayWidth = model.width / visible.length;
-            const moved = Math.round((e.clientX - d.startX) / dayWidth);
-            setOffset(Math.min(maxOffset, Math.max(0, d.startOffset + moved)));
+            // finger — and now literally 1:1, because the content has a real pixel width.
+            const moved = e.clientX - d.startX;
+            setScrollPx(Math.min(maxScrollPx, Math.max(0, d.startScroll + moved)));
             return;
           }
           if (model) setScrub(hourAtX(model, e.clientX - rect.left));
@@ -459,13 +458,13 @@ export function WeatherTimeline({
       </div>
 
       <TimelineScrubber
-        maxOffset={maxOffset}
-        offset={clampedOffset}
-        onOffset={setOffset}
+        contentWidth={contentWidth}
+        maxScrollPx={maxScrollPx}
+        onScroll={setScrollPx}
         palette={palette}
-        totalDays={days.length}
+        scrollPx={clampedScroll}
         trackWidth={width}
-        windowDays={windowDays}
+        viewportWidth={width}
       />
 
       <TimelineReadout fetchProfileM={fetchProfileM} hour={scrub} />
@@ -492,89 +491,89 @@ export function WeatherTimeline({
  * only by mouse. Arrow keys step a day, Home/End jump to either end.
  *
  * The geometry is `timelineScrollbar` in core rather than arithmetic here, because the direction is
- * invertible without any type noticing: `offset` counts backwards from the newest window while the
+ * invertible without any type noticing: `scrollPx` counts backwards from the newest view while the
  * thumb runs forwards, so a control that is wrong reads as one that simply moves the wrong way.
  */
 function TimelineScrubber({
-  offset,
-  maxOffset,
-  windowDays,
-  totalDays,
+  scrollPx,
+  maxScrollPx,
+  viewportWidth,
+  contentWidth,
   trackWidth,
   palette,
-  onOffset,
+  onScroll,
 }: {
-  offset: number;
-  maxOffset: number;
-  windowDays: number;
-  totalDays: number;
+  scrollPx: number;
+  maxScrollPx: number;
+  viewportWidth: number;
+  contentWidth: number;
   trackWidth: number;
   palette: WeatherChartPalette;
-  onOffset: (next: number) => void;
+  onScroll: (next: number) => void;
 }) {
   const trackRef = useRef<HTMLDivElement | null>(null);
   const dragging = useRef(false);
 
-  // ⚠ **Gated on `maxOffset`, not on having a measured width.** The thumb's *position* needs pixels,
+  // ⚠ **Gated on `maxScrollPx`, not on having a measured width.** The thumb's *position* needs pixels,
   // but the control's *existence* must not: the chart is `aria-hidden`, so this slider is the only
   // keyboard route to the older days, and hiding it until a `ResizeObserver` has fired would make
   // that route appear a frame late — or never, anywhere the observer does not run. A width of 0
   // costs an invisible thumb for one frame, which is the same frame the chart itself is blank.
-  if (maxOffset <= 0) return null;
+  if (maxScrollPx <= 0) return null;
 
-  const bar = timelineScrollbar({ offset, maxOffset, windowDays, totalDays, trackWidth });
+  const geometry = { maxScrollPx, viewportWidth, contentWidth, trackWidth };
+  const bar = timelineScrollbar({ ...geometry, scrollPx });
 
   const seek = (clientX: number) => {
     const rect = trackRef.current?.getBoundingClientRect();
     // Measured at event time rather than taken from the chart's width, so a click lands correctly
     // even on the first interaction after a resize.
     if (!rect || rect.width <= 0) return;
-    onOffset(
-      offsetAtTrackX(clientX - rect.left, {
-        maxOffset,
-        windowDays,
-        totalDays,
-        trackWidth: rect.width,
-      }),
-    );
+    onScroll(scrollPxAtTrackX(clientX - rect.left, { ...geometry, trackWidth: rect.width }));
   };
 
-  // Days back, not a raw offset: "9 days back" is what the reader is actually choosing, and it is
-  // the only number here that means anything said aloud.
-  const label = offset === 0 ? 'Showing the most recent days' : `${offset} days back`;
+  // ⚠ Announced in **days**, not pixels. "3.5 days back" is what the reader is choosing; the pixel
+  // count is an implementation detail and would be meaningless read aloud. One decimal because the
+  // scroll is continuous now and rounding to whole days would make the value stop changing mid-drag.
+  const daysBack = scrollPx / (PX_PER_HOUR * 24);
+  const label =
+    daysBack < 0.05 ? 'Showing the most recent days' : `${daysBack.toFixed(1)} days back`;
+  const dayStep = PX_PER_HOUR * 24;
 
   return (
     <div
       aria-label="Scroll the weather timeline through time"
-      aria-valuemax={maxOffset}
+      aria-valuemax={Math.round(maxScrollPx / dayStep)}
       aria-valuemin={0}
-      aria-valuenow={offset}
+      aria-valuenow={Number(daysBack.toFixed(1))}
       aria-valuetext={label}
       className="relative h-3 w-full cursor-pointer touch-none rounded-full"
       onKeyDown={(e) => {
         // Left goes back in time, which *increases* the backwards-counting offset. Reversing these
         // would make the keyboard disagree with the thumb it is moving.
+        // A day per arrow and a week per page — still whole days, because a keyboard step that
+        // landed mid-afternoon would be impossible to aim with.
         const step =
           e.key === 'ArrowLeft'
-            ? 1
+            ? dayStep
             : e.key === 'ArrowRight'
-              ? -1
+              ? -dayStep
               : e.key === 'PageUp'
-                ? 7
+                ? dayStep * 7
                 : e.key === 'PageDown'
-                  ? -7
+                  ? -dayStep * 7
                   : 0;
         if (step !== 0) {
           e.preventDefault();
-          onOffset(Math.min(maxOffset, Math.max(0, offset + step)));
+          onScroll(Math.min(maxScrollPx, Math.max(0, scrollPx + step)));
           return;
         }
         if (e.key === 'Home') {
           e.preventDefault();
-          onOffset(maxOffset);
+          onScroll(maxScrollPx);
         } else if (e.key === 'End') {
           e.preventDefault();
-          onOffset(0);
+          onScroll(0);
         }
       }}
       onPointerDown={(e) => {

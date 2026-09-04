@@ -89,6 +89,26 @@ export const DAY_LABEL_HEIGHT = 12;
 export const DEFAULT_TIMELINE_HEIGHT = 240;
 
 /**
+ * Pixels per hour — **the chart's scale, and the reason it is a constant rather than a division.**
+ *
+ * Until 2026-09-04 the window was N whole days stretched to whatever width the container had, which
+ * made an hour 2.286 px in the web sidebar, 2.131 px on an iPhone 15 Pro and 1.940 px on an SE. The
+ * same week of weather drew a different shape on every screen and nothing could be designed against
+ * it. Fixing the scale inverts the relationship: an hour is always this wide, and *how many days fit*
+ * becomes the thing that varies.
+ *
+ * 2 px/hour is 48 px a day, so a 376 px plot shows 7 days and five sixths of an eighth — and the
+ * cropped column is deliberate. A partial day at the edge is the cheapest possible signal that the
+ * chart scrolls, and it costs nothing to draw.
+ *
+ * ⚠ **A default, not a fixed value.** `pxPerHour` is an input precisely so the zoom levels the founder
+ * sketched — 1 px = 30 min (this), 15 min (4 px/h), 10 min (6), 5 min (12) — are a prop change rather
+ * than a rewrite of the x axis. Everything downstream derives from `hourWidth`, so nothing else has to
+ * learn about zoom.
+ */
+export const PX_PER_HOUR = 2;
+
+/**
  * Fahrenheit band edges — kept identical to `@skating/design`'s `TEMPERATURE_BAND_EDGES_F`.
  *
  * ⚠ **Duplicated across two packages on purpose, and pinned by a test.** `@skating/core` must not
@@ -239,60 +259,77 @@ export interface TimelineScrollbar {
 }
 
 /**
- * Where the scroll thumb sits for a given pan offset, or `null` when the whole range already fits.
+ * Where the scroll thumb sits, or `null` when the whole range already fits.
  *
- * ⚠ **`offset` counts BACKWARDS — 0 is the most recent window — and the thumb runs forwards.** So the
- * thumb sits at the *right* end at offset 0 and slides left as you go back in time, which is the only
- * arrangement that matches how a reader thinks about a timeline. Getting this inverted produces a
- * control that works perfectly and moves the wrong way, which no type and no test catches unless the
- * test states the direction out loud — so {@link timelineScrollbar}'s tests do.
+ * ⚠ **`scrollPx` counts BACKWARDS — 0 is the most recent — and the thumb runs forwards.** So the thumb
+ * sits at the *right* end at 0 and slides left as you travel back, which is the only arrangement that
+ * matches how a reader thinks about a timeline. Getting this inverted produces a control that works
+ * perfectly and moves the wrong way, which no type and no test catches unless the test says the
+ * direction out loud — so these tests do.
  *
- * `null` rather than a full-width thumb when there is nothing to scroll: a track with a thumb filling
- * it invites a drag that does nothing.
+ * Everything is in **pixels** since the 2026-09-04 scale change. The thumb's width is the honest
+ * viewport-over-content ratio, so it grows when you zoom out and shrinks when you zoom in, for free.
  */
 export function timelineScrollbar(opts: {
-  offset: number;
-  maxOffset: number;
-  windowDays: number;
-  totalDays: number;
+  scrollPx: number;
+  maxScrollPx: number;
+  viewportWidth: number;
+  contentWidth: number;
   trackWidth: number;
 }): TimelineScrollbar | null {
-  const { offset, maxOffset, windowDays, totalDays, trackWidth } = opts;
-  if (maxOffset <= 0 || trackWidth <= 0 || totalDays <= 0) return null;
+  const { scrollPx, maxScrollPx, viewportWidth, contentWidth, trackWidth } = opts;
+  if (maxScrollPx <= 0 || trackWidth <= 0 || contentWidth <= 0) return null;
 
   const width = Math.min(
     trackWidth,
-    Math.max(MIN_SCROLL_THUMB_WIDTH, (windowDays / totalDays) * trackWidth),
+    Math.max(MIN_SCROLL_THUMB_WIDTH, (viewportWidth / contentWidth) * trackWidth),
   );
   const travel = Math.max(0, trackWidth - width);
-  // 1 at offset 0 (newest, hard right), 0 at maxOffset (oldest, hard left).
-  const progress = (maxOffset - clamp(offset, 0, maxOffset)) / maxOffset;
+  // 1 at scrollPx 0 (newest, hard right), 0 at maxScrollPx (oldest, hard left).
+  const progress = (maxScrollPx - clamp(scrollPx, 0, maxScrollPx)) / maxScrollPx;
   return { x: progress * travel, width };
 }
 
 /**
- * The offset a pointer at `trackX` should select — for dragging the thumb and for clicking the track.
+ * The scroll position a pointer at `trackX` selects — for dragging the thumb and clicking the track.
  *
  * `trackX` is read as where the **centre** of the thumb wants to be, which is what makes a click on
- * bare track jump the thumb *to the cursor* rather than to a position half a thumb-width off. The
- * inverse of {@link timelineScrollbar}, and rounded to a whole day because the chart's columns are
- * whole days: a fractional offset would slide the grid out from under the day labels.
+ * bare track jump the thumb *to the cursor* rather than to a position half a thumb-width off.
+ *
+ * ⚠ **No longer rounded to a whole day.** The scale is fixed and the viewport crops mid-day on
+ * purpose, so snapping here would fight the drag it is meant to mirror — the thumb would stutter
+ * between day boundaries while the chart under it moved smoothly.
  */
-export function offsetAtTrackX(
+export function scrollPxAtTrackX(
   trackX: number,
-  opts: { maxOffset: number; windowDays: number; totalDays: number; trackWidth: number },
+  opts: {
+    maxScrollPx: number;
+    viewportWidth: number;
+    contentWidth: number;
+    trackWidth: number;
+  },
 ): number {
-  const { maxOffset, windowDays, totalDays, trackWidth } = opts;
-  if (maxOffset <= 0 || trackWidth <= 0 || totalDays <= 0) return 0;
+  const { maxScrollPx, viewportWidth, contentWidth, trackWidth } = opts;
+  if (maxScrollPx <= 0 || trackWidth <= 0 || contentWidth <= 0) return 0;
   const width = Math.min(
     trackWidth,
-    Math.max(MIN_SCROLL_THUMB_WIDTH, (windowDays / totalDays) * trackWidth),
+    Math.max(MIN_SCROLL_THUMB_WIDTH, (viewportWidth / contentWidth) * trackWidth),
   );
   const travel = trackWidth - width;
-  // A track with no travel (thumb fills it) can only mean the newest window; dividing would be NaN.
+  // A track with no travel (thumb fills it) can only mean the newest view; dividing would be NaN.
   if (travel <= 0) return 0;
   const progress = clamp((trackX - width / 2) / travel, 0, 1);
-  return Math.round(maxOffset * (1 - progress));
+  return maxScrollPx * (1 - progress);
+}
+
+/** Total drawn width of `dayCount` days at a scale, and how far it can scroll in `viewportWidth`. */
+export function timelineExtent(
+  dayCount: number,
+  viewportWidth: number,
+  pxPerHour: number = PX_PER_HOUR,
+): { contentWidth: number; maxScrollPx: number } {
+  const contentWidth = Math.max(0, dayCount) * 24 * pxPerHour;
+  return { contentWidth, maxScrollPx: Math.max(0, contentWidth - viewportWidth) };
 }
 
 function clamp(v: number, lo: number, hi: number): number {
@@ -353,12 +390,22 @@ export interface WeatherTimelineInput {
   height?: number;
   laneHeights?: Partial<Record<TimelineLane, number>>;
   /**
-   * The body's 16-sector fetch profile, in metres — how far open water runs from each bearing.
+   * The body's 16-sector fetch profile, in metres — how far the lake runs from each bearing.
    *
    * Optional, and absent simply leaves the wind fill flat. See {@link fetchIntensityAt} for why it is
-   * also ignored on lakes under a kilometre of fetch, which is most of them.
+   * also ignored on lakes under a kilometre of reach, which is most of them.
    */
   fetchProfileM?: readonly number[] | null;
+  /** Scale. Defaults to {@link PX_PER_HOUR}; raise it to zoom in. */
+  pxPerHour?: number;
+  /**
+   * How far the viewport has scrolled back from *now*, in px. 0 shows the most recent days.
+   *
+   * In pixels rather than days because the scale is fixed and the edges are allowed to crop: a
+   * whole-day offset could not express "half a day back", which is most of the positions a drag
+   * passes through.
+   */
+  scrollPx?: number;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
@@ -958,8 +1005,23 @@ export function weatherTimelineModel(input: WeatherTimelineInput): WeatherTimeli
   if (input.days.length === 0) return null;
 
   const ordered = [...input.days].sort((a, b) => a.dayMs - b.dayMs);
-  const dayWidth = width / ordered.length;
-  const hourWidth = dayWidth / 24;
+
+  // **Fixed scale, scrolled viewport** — the founder's call, 2026-09-04. Until now the window was
+  // exactly N whole days stretched to fill whatever width the container gave, so an hour was 2.29 px
+  // in the sidebar, 2.13 on a phone and 1.94 on an SE: the same weather drew a different shape on
+  // every screen, and nothing could be designed against it.
+  //
+  // Now an hour is always `pxPerHour` and the *viewport* is whatever fits. A day that only half fits
+  // is drawn half — deliberately, because a cropped column at the edge is the cheapest possible hint
+  // that there is more to scroll to.
+  const hourWidth = input.pxPerHour ?? PX_PER_HOUR;
+  const dayWidth = hourWidth * 24;
+  const contentWidth = ordered.length * dayWidth;
+  const maxScrollPx = Math.max(0, contentWidth - width);
+  // `scrollPx` counts backwards from the newest edge, matching the offset convention the scrollbar
+  // and the keyboard already use: 0 is "showing the most recent", growing as you travel back.
+  const scrollPx = Math.min(Math.max(input.scrollPx ?? 0, 0), maxScrollPx);
+  const viewportLeft = maxScrollPx - scrollPx;
 
   // ⚠ **The wind lane is kept whenever there is wind data, whatever the fetch — reversed 2026-09-04,
   // the day after it briefly worked the other way.** Hiding it below `MIN_FETCH_CLAUSE_M` bought 24px
@@ -983,7 +1045,13 @@ export function weatherTimelineModel(input: WeatherTimelineInput): WeatherTimeli
   const labelEvery = Math.max(1, Math.ceil(MIN_DAY_LABEL_WIDTH / dayWidth));
 
   ordered.forEach((day, index) => {
-    const x = index * dayWidth;
+    // ⚠ Off-viewport columns are still emitted, at negative or overflowing `x`. The SVG viewBox clips
+    // them, and keeping them is what lets a path run continuously *through* the edge instead of
+    // stopping dead at it — a line that ended at x=0 would read as a data gap at every scroll offset.
+    const x = index * dayWidth - viewportLeft;
+    const visibleLeft = Math.max(x, 0);
+    const visibleRight = Math.min(x + dayWidth, width);
+    const visibleWidth = Math.max(0, visibleRight - visibleLeft);
     const hasHours = (day.hours?.length ?? 0) > 0;
     days.push({
       dayMs: day.dayMs,
@@ -992,10 +1060,16 @@ export function weatherTimelineModel(input: WeatherTimelineInput): WeatherTimeli
       width: dayWidth,
       missing: day.missing === true || !hasHours,
       partial: day.partial === true,
-      showLabel: index % labelEvery === 0,
-      labelX: Math.min(
-        Math.max(x + dayWidth / 2, LABEL_HALF_WIDTH),
-        Math.max(LABEL_HALF_WIDTH, width - LABEL_HALF_WIDTH),
+      // ⚠ Both of these read the column's **visible** width, not its full one. A day cropped to 9px
+      // at the edge has no room to be named — labelling it would overprint its neighbour — and a
+      // fully off-screen column must not have its label dragged into the viewport, which is what
+      // clamping against the viewport alone used to do: every off-screen day piled its label on the
+      // same pixel.
+      showLabel: visibleWidth >= MIN_DAY_LABEL_WIDTH && index % labelEvery === 0,
+      labelX: clamp(
+        x + dayWidth / 2,
+        visibleLeft + Math.min(LABEL_HALF_WIDTH, visibleWidth / 2),
+        visibleRight - Math.min(LABEL_HALF_WIDTH, visibleWidth / 2),
       ),
     });
 

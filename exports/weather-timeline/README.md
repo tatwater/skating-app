@@ -11,8 +11,24 @@ pnpm exec tsx exports/weather-timeline/build-svg.ts       # writes both themes
 pnpm exec tsx exports/weather-timeline/build-svg.ts --start 12 --days 7
 ```
 
-Two files, `weather-timeline-{dark,light}.svg`, 416 px wide — the real sidebar width (`md:w-[26rem]`)
-with the app's own 20 px padding, so what you open in Figma is the size it ships at.
+Two files, `weather-timeline-{dark,light}.svg`, **408 px wide** — a 376 px plot in the app's own 16 px
+padding, matching the Figma frame.
+
+## The scale is fixed: 2 px = 1 hour
+
+An hour is always 2 px, so a day is 48 px and 376 px of plot holds **7 days and five sixths of an
+eighth**. The cropped column is deliberate — it is the cheapest possible signal that the chart
+scrolls, and it costs nothing to draw.
+
+⚠ **The real web sidebar is 384 px** (416 − `px-4`), which divides by 48 exactly, so *there* the edge
+lands flush and the scrollbar is the only scroll affordance. Design to the crop knowing it appears at
+376 and not at 384.
+
+Before 2026-09-04 the chart stretched N whole days to whatever width it was given, which made an hour
+2.286 px in the sidebar, 2.131 px on an iPhone 15 Pro and 1.940 px on an SE — one design, three
+shapes, and nothing to draw against. `PX_PER_HOUR` in `@skating/core` is the single knob; the zoom
+levels sketched for later (1 px = 30 / 15 / 10 / 5 min → 2 / 4 / 6 / 12 px per hour) are a prop
+change, not a rewrite.
 
 ## The weather is real
 
@@ -42,8 +58,10 @@ would print for that week.
 Two reasons, and the first one is not sentiment:
 
 - **Its max fetch is 2,901 m**, comfortably over `MIN_FETCH_CLAUSE_M`. Below a kilometre the wind
-  lane is hidden entirely and the across-the-lake clause stays silent, which is the correct answer for
-  ~95% of the corpus and a useless one for a design mock. Mascoma is big enough to draw everything.
+  lane still draws — speed and the calm-freezing rail are measured on every lake — but its fill goes
+  flat and the across-the-lake clause stays silent, because a per-lake density ramp on a pond would
+  paint a vivid contrast between a 60 m shore and a 90 m one. That is the right answer for ~95% of
+  the corpus and a useless one for a design mock, so Mascoma draws every channel.
 - **The week spans the whole temperature scale.** It sits mostly in `deepCold`/`cold` with one
   excursion over freezing on Feb 7, so the gradient's hard step at 32 °F is visible in a single frame
   rather than needing two mocks.
@@ -88,6 +106,9 @@ Past weather — Mascoma Lake (dark)
 
 ## Regenerating with different weather
 
-`--start N --days N` slices the cached 30-day window; no re-fetch. To move to a different lake or
+`--start N --days N` slices the cached 30-day window; no re-fetch. The export frames `days + 1` days
+and lets the viewport crop the extra one — the app hands the model all thirty (scrolling has to be
+instant), but off-canvas geometry in an SVG is just clutter in Figma's layer panel, and passing all
+thirty quadrupled the file. To move to a different lake or
 winter, edit `LAKE` and the dates at the top of `fetch-archive.ts` and re-run both scripts. A body's
 real `fetchProfileM` comes off its `waterBodies` document — the dev deployment has one for every body.

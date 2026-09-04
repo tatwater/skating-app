@@ -34,12 +34,14 @@ import {
   localDateToDayMs,
   mmToInches,
   type PanelDay,
+  PX_PER_HOUR,
   precipitationKind,
   roundTo,
   shortDayLabel,
   summarizeWeatherDays,
   type TimelineDayInput,
   type TimelineHour,
+  timelineExtent,
   timelineScrollbar,
   weatherTimelineModel,
   windSectorOf,
@@ -51,11 +53,14 @@ import {
 } from '../../packages/design/src/index';
 
 // ── Layout ───────────────────────────────────────────────────────────────────────────────────────
-// The real sidebar is `md:w-[26rem]` = 416 px and the panel's own container is `px-4`, so the plot
-// gets 416 − 32 = **384 px**. ⚠ Measured off the app rather than rounded to something tidy: at 384 a
-// day is 54.857 px and an hour is 2.286 px, so a mock built at a neater width would put every divider
-// and every precipitation block a fraction off from where the app actually draws them.
-const PLOT_WIDTH = 384;
+// **376 px of plot — the founder's Figma frame**, which at the fixed 2 px/hour scale is 7 days and
+// five sixths of an eighth. The cropped column is the point: it is the cheapest possible signal that
+// the chart scrolls, and it costs nothing to draw.
+//
+// ⚠ The real web sidebar is 384 px (416 − `px-4`), which divides by 48 exactly — so *there* the edge
+// lands flush and the scrollbar is the only scroll affordance. Worth knowing before designing to the
+// crop.
+const PLOT_WIDTH = 376;
 const PAD = 16;
 const CANVAS_WIDTH = PLOT_WIDTH + PAD * 2;
 const SURFACE = { dark: '#151d26', light: '#ffffff' } as const;
@@ -166,16 +171,34 @@ const group = (id: string, body: string[]) =>
 // ── The build ────────────────────────────────────────────────────────────────────────────────────
 function build(mode: 'dark' | 'light', all: TimelineDayInput[], start: number, span: number) {
   const p: WeatherChartPalette = weatherChartPalette(mode);
-  const visible = all.slice(start, start + span);
+  // ⚠ **`span + 1` days, not all thirty.** The app hands the model every day it has, because scrolling
+  // has to be instant; an export has no scrolling and every off-canvas day is dead geometry — passing
+  // all thirty quadrupled the file and filled Figma's layer panel with paths nobody can see. One
+  // extra day is exactly what the viewport crops into, so the cropped column is a *real* part-drawn
+  // day rather than a drawing of one.
+  const frameEnd = Math.min(all.length, start + span);
+  const visible = all.slice(Math.max(0, frameEnd - (span + 1)), frameEnd);
+  const framedExtent = timelineExtent(visible.length, PLOT_WIDTH);
+  // 0 = newest flush against the right edge, leaving the overflow on the left where the crop reads
+  // as "there is more behind this".
+  const scrollPx = 0;
+  // The scrollbar still reports the position within the *whole* archive, as the app shows it.
+  const wholeRange = timelineExtent(all.length, PLOT_WIDTH);
   const model = weatherTimelineModel({
     days: visible,
     width: PLOT_WIDTH,
     height: DEFAULT_TIMELINE_HEIGHT,
     fetchProfileM: archive.lake.fetchProfileM,
+    scrollPx,
   });
   if (!model) throw new Error('no model — check the window');
+  if (visible.length > span && framedExtent.maxScrollPx <= 0) {
+    throw new Error('the frame does not crop a column — check PLOT_WIDTH against the scale');
+  }
 
-  const headline = headlineFor(visible);
+  // The sentences still describe the *framed* week, not all thirty days — the same split the panel
+  // makes between what the chart shows and what the copy claims.
+  const headline = headlineFor(all.slice(start, start + span));
   const ink = INK[mode];
   const muted = p.aux.trace;
 
@@ -219,6 +242,11 @@ function build(mode: 'dark' | 'light', all: TimelineDayInput[], start: number, s
         `<stop offset="0" stop-color="${p.sunRamp.lit}"/><stop offset="1" stop-color="${p.sunRamp.dim}"/></linearGradient>`,
     );
   }
+  // Figma honours a clipPath as a frame clip, so the part-drawn column arrives cropped rather
+  // than hanging outside the artboard as a stray path.
+  defs.push(
+    `<clipPath id="plot-${mode}"><rect x="0" y="0" width="${PLOT_WIDTH}" height="${DEFAULT_TIMELINE_HEIGHT}"/></clipPath>`,
+  );
   defs.push(
     `<pattern id="${hatchId}" width="4" height="4" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">` +
       `<line x1="0" y1="0" x2="0" y2="4" stroke="${p.precipitation.rain}" stroke-width="2"/></pattern>`,
@@ -318,10 +346,10 @@ function build(mode: 'dark' | 'light', all: TimelineDayInput[], start: number, s
 
   // Scroll track, at the position the app would show for this window.
   const bar = timelineScrollbar({
-    offset: all.length - span - start,
-    maxOffset: Math.max(0, all.length - span),
-    windowDays: span,
-    totalDays: all.length,
+    scrollPx: Math.max(0, all.length - frameEnd) * PX_PER_HOUR * 24,
+    maxScrollPx: wholeRange.maxScrollPx,
+    viewportWidth: PLOT_WIDTH,
+    contentWidth: wholeRange.contentWidth,
     trackWidth: PLOT_WIDTH,
   });
   const scrubber = group('Scrubber', [
@@ -401,7 +429,7 @@ ${defs.join('\n')}
 <rect id="Surface" x="0" y="0" width="${CANVAS_WIDTH}" height="${canvasHeight}" fill="${SURFACE[mode]}"/>
 ${group('Heading', head)}
 ${group('Observations', lines)}
-<g id="Plot" transform="translate(${PAD}, ${chartTop})">
+<g id="Plot" transform="translate(${PAD}, ${chartTop})" clip-path="url(#plot-${mode})">
 ${chart}
 ${group('Crosshair', [crosshair])}
 </g>

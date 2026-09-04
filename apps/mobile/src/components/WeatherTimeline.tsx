@@ -9,12 +9,13 @@ import {
   hourAtX,
   kphToMph,
   mmToInches,
-  offsetAtTrackX,
   type PositionedHour,
   precipitationKind,
   roundTo,
+  scrollPxAtTrackX,
   shortDayLabel,
   type TimelineDayInput,
+  timelineExtent,
   timelineScrollbar,
   weatherTimelineModel,
   windSectorOf,
@@ -79,53 +80,54 @@ export function WeatherTimeline({
   days,
   fetchProfileM,
   height = DEFAULT_TIMELINE_HEIGHT,
-  windowDays = 7,
 }: {
   days: TimelineDayInput[];
   /** The body's 16-sector fetch profile — the wind fill's density. Absent draws it flat. */
   fetchProfileM?: number[] | undefined;
   height?: number;
-  windowDays?: number;
 }) {
   const { isDark } = useThemePreference();
   const palette = weatherChartPalette(isDark ? 'dark' : 'light');
 
   const [width, setWidth] = useState(0);
-  const [offset, setOffset] = useState(0);
+  // Newest-first scroll in **pixels** — see the web twin. The scale is fixed, so the viewport crops
+  // mid-day and a whole-day offset could not express most positions a drag passes through.
+  const [scrollPx, setScrollPx] = useState(0);
   const [scrub, setScrub] = useState<PositionedHour | null>(null);
-  const offsetAtDragStart = useRef(0);
+  const scrollAtDragStart = useRef(0);
 
-  const maxOffset = Math.max(0, days.length - windowDays);
-  const clampedOffset = Math.min(offset, maxOffset);
-  const visible = useMemo(() => {
-    const end = days.length - clampedOffset;
-    return days.slice(Math.max(0, end - windowDays), end);
-  }, [days, clampedOffset, windowDays]);
+  const { contentWidth, maxScrollPx } = timelineExtent(days.length, width);
+  const clampedScroll = Math.min(Math.max(scrollPx, 0), maxScrollPx);
 
+  // ⚠ Every day, not a slice: the model translates by the scroll so a path runs continuously through
+  // the viewport edge rather than being cut at a day boundary the reader never chose.
   const model = useMemo(
     () =>
-      width > 0 ? weatherTimelineModel({ days: visible, width, height, fetchProfileM }) : null,
-    [visible, width, height, fetchProfileM],
+      width > 0
+        ? weatherTimelineModel({ days, width, height, fetchProfileM, scrollPx: clampedScroll })
+        : null,
+    [days, width, height, fetchProfileM, clampedScroll],
   );
 
   const pan = useMemo(
     () =>
       Gesture.Pan()
         // ⚠ Both offsets are load-bearing — see the docblock. `activeOffsetX` stops a vertical flick
-        // from panning the chart; `failOffsetY` hands that flick to the sheet instead of swallowing it.
+        // from panning the chart; `failOffsetY` hands it to the sheet instead of swallowing it.
         .activeOffsetX([-10, 10])
         .failOffsetY([-10, 10])
         .onBegin(() => {
-          offsetAtDragStart.current = clampedOffset;
+          scrollAtDragStart.current = clampedScroll;
         })
         .onUpdate((e) => {
-          if (maxOffset === 0 || !model) return;
-          const dayWidth = model.width / Math.max(1, visible.length);
-          const moved = Math.round(e.translationX / dayWidth);
-          setOffset(Math.min(maxOffset, Math.max(0, offsetAtDragStart.current + moved)));
+          if (maxScrollPx === 0) return;
+          // 1:1 with the finger, now that the content has a real pixel width. The old version had to
+          // convert a translation into whole days and round, which made a slow drag stutter.
+          const next = scrollAtDragStart.current + e.translationX;
+          setScrollPx(Math.min(maxScrollPx, Math.max(0, next)));
         })
         .runOnJS(true),
-    [clampedOffset, maxOffset, model, visible.length],
+    [clampedScroll, maxScrollPx],
   );
 
   const tap = useMemo(
@@ -402,13 +404,13 @@ export function WeatherTimeline({
       </GestureDetector>
 
       <TimelineScrubber
-        maxOffset={maxOffset}
-        offset={clampedOffset}
-        onOffset={setOffset}
+        contentWidth={contentWidth}
+        maxScrollPx={maxScrollPx}
+        onScroll={setScrollPx}
         palette={palette}
-        totalDays={days.length}
+        scrollPx={clampedScroll}
         trackWidth={width}
-        windowDays={windowDays}
+        viewportWidth={width}
       />
 
       <TimelineReadout fetchProfileM={fetchProfileM} hour={scrub} />
@@ -437,45 +439,51 @@ export function WeatherTimeline({
  * inverted works perfectly while moving the wrong way.
  */
 function TimelineScrubber({
-  offset,
-  maxOffset,
-  windowDays,
-  totalDays,
+  scrollPx,
+  maxScrollPx,
+  viewportWidth,
+  contentWidth,
   trackWidth,
   palette,
-  onOffset,
+  onScroll,
 }: {
-  offset: number;
-  maxOffset: number;
-  windowDays: number;
-  totalDays: number;
+  scrollPx: number;
+  maxScrollPx: number;
+  viewportWidth: number;
+  contentWidth: number;
   trackWidth: number;
   palette: WeatherChartPalette;
-  onOffset: (next: number) => void;
+  onScroll: (next: number) => void;
 }) {
-  const bar = timelineScrollbar({ maxOffset, windowDays, totalDays, trackWidth, offset });
+  const bar = timelineScrollbar({
+    maxScrollPx,
+    viewportWidth,
+    contentWidth,
+    trackWidth,
+    scrollPx,
+  });
 
   const gesture = useMemo(() => {
     // ⚠ Rebuilt from the primitives *inside* the memo. Closing over a `geometry` object built in
     // the render body would make the dependency a fresh reference every time, so the memo would
     // rebuild the gesture on each render while claiming not to — a dep list that lies is worse
     // than none, because the next reader trusts it.
-    const geometry = { maxOffset, windowDays, totalDays, trackWidth };
+    const geometry = { maxScrollPx, viewportWidth, contentWidth, trackWidth };
     return (
       Gesture.Pan()
         // The track is its own control, so it claims horizontal movement immediately rather than
         // waiting for a threshold — but it still yields a vertical drag to the sheet.
         .failOffsetY([-12, 12])
-        .onBegin((e) => onOffset(offsetAtTrackX(e.x, geometry)))
-        .onUpdate((e) => onOffset(offsetAtTrackX(e.x, geometry)))
+        .onBegin((e) => onScroll(scrollPxAtTrackX(e.x, geometry)))
+        .onUpdate((e) => onScroll(scrollPxAtTrackX(e.x, geometry)))
         .runOnJS(true)
     );
-  }, [maxOffset, windowDays, totalDays, trackWidth, onOffset]);
+  }, [maxScrollPx, viewportWidth, contentWidth, trackWidth, onScroll]);
 
   // Gated on there being something to scroll rather than on a measured width — see the web twin.
   // A width of 0 costs an invisible thumb for the frame before `onLayout` fires, which is the same
   // frame the chart itself is blank.
-  if (maxOffset <= 0) return null;
+  if (maxScrollPx <= 0) return null;
 
   return (
     <GestureDetector gesture={gesture}>

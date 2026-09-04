@@ -10,8 +10,9 @@ import {
   MIN_DAY_LABEL_WIDTH,
   MIN_SCROLL_THUMB_WIDTH,
   MIN_TEMPERATURE_SPAN_F,
-  offsetAtTrackX,
+  PX_PER_HOUR,
   precipitationKind,
+  scrollPxAtTrackX,
   TEMPERATURE_BANDS,
   type TimelineDayInput,
   type TimelineHour,
@@ -19,6 +20,7 @@ import {
   temperatureGradientStops,
   temperatureWindowF,
   timelineDaysFromArchive,
+  timelineExtent,
   timelineScrollbar,
   weatherTimelineModel,
 } from './weatherTimeline';
@@ -357,8 +359,8 @@ describe('weatherTimelineModel', () => {
     const model = weatherTimelineModel({ days, width: WIDTH, fetchProfileM: EXPOSED_FETCH });
     expect(model?.wind?.emphasis).toHaveLength(1);
     const span = model?.wind?.emphasis[0];
-    // Four hours wide, drawn edge to edge rather than centre to centre.
-    expect(span?.width).toBeCloseTo((WIDTH / 24) * 4);
+    // Four hours wide at the fixed scale, drawn edge to edge rather than centre to centre.
+    expect(span?.width).toBeCloseTo(PX_PER_HOUR * 4);
     expect(span?.x).toBeCloseTo(0);
   });
 
@@ -372,7 +374,7 @@ describe('weatherTimelineModel', () => {
     ];
     const model = weatherTimelineModel({ days, width: WIDTH });
     expect(model?.sun?.emphasis).toHaveLength(1);
-    expect(model?.sun?.emphasis[0]?.width).toBeCloseTo((WIDTH / 24) * 2);
+    expect(model?.sun?.emphasis[0]?.width).toBeCloseTo(PX_PER_HOUR * 2);
   });
 
   it('returns null for an auxiliary lane nothing was observed for', () => {
@@ -395,7 +397,7 @@ describe('weatherTimelineModel', () => {
     const block = model?.precipitation.blocks[0];
     expect(block?.fill).toBe('snow');
     expect(block?.label).toBe('Snow');
-    expect(block?.width).toBeCloseTo(WIDTH / 24);
+    expect(block?.width).toBeCloseTo(PX_PER_HOUR);
     expect(block?.snowfallCm).toBe(2);
   });
 
@@ -552,8 +554,9 @@ describe('an emphasis span never spreads across a gap', () => {
     ];
     const model = weatherTimelineModel({ days, width: WIDTH, fetchProfileM: EXPOSED_FETCH });
     expect(model?.wind?.emphasis).toHaveLength(2);
-    // And neither span reaches into the empty column.
-    const dayWidth = WIDTH / 3;
+    // And neither span reaches into the empty column. At the fixed scale a day is always 48 px, and
+    // three days (144 px) fit inside the 336 px viewport with nothing to scroll — so x starts at 0.
+    const dayWidth = PX_PER_HOUR * 24;
     expect(model?.wind?.emphasis[0]?.x ?? 0).toBeLessThan(dayWidth);
     expect(
       (model?.wind?.emphasis[0]?.x ?? 0) + (model?.wind?.emphasis[0]?.width ?? 0),
@@ -574,34 +577,41 @@ describe('an emphasis span never spreads across a gap', () => {
   });
 });
 
-describe('day labels thin out as columns narrow', () => {
-  // ⚠ Found by rendering the panned-out view. At thirty days a column is ~12px and thirty labels
-  // overprint into a solid unreadable band — the axis stops being an axis.
+describe('day labels under a fixed scale', () => {
+  // ⚠ Rewritten for the 2026-09-04 scale change. Columns no longer narrow as the window widens —
+  // a day is always `PX_PER_HOUR × 24` — so "thinning" is now about columns **cropped by the
+  // viewport edge**, not about fitting more days into a fixed width.
   const mkDays = (n: number) =>
     Array.from({ length: n }, (_, i) =>
       fullDay(dayMsToLocalDate(D0 + i * DAY_MS), D0 + i * DAY_MS, -5),
     );
 
-  it('labels every day at the seven-day default', () => {
+  it('labels every fully visible day, because 48px always has room', () => {
     const model = weatherTimelineModel({ days: mkDays(7), width: WIDTH });
     expect(model?.days.every((d) => d.showLabel)).toBe(true);
   });
 
-  it('labels only some days once columns are too narrow to hold one', () => {
-    const model = weatherTimelineModel({ days: mkDays(30), width: WIDTH });
-    const labelled = model?.days.filter((d) => d.showLabel) ?? [];
-    expect(labelled.length).toBeGreaterThan(1);
-    expect(labelled.length).toBeLessThan(30);
-    // Whatever survives must have room to be read.
-    const dayWidth = WIDTH / 30;
-    const spacing = (labelled[1]?.x ?? 0) - (labelled[0]?.x ?? 0);
-    expect(spacing).toBeGreaterThanOrEqual(MIN_DAY_LABEL_WIDTH);
-    expect(dayWidth).toBeLessThan(MIN_DAY_LABEL_WIDTH); // i.e. the thinning was actually needed
+  it('drops the label on a column the edge has cropped too far', () => {
+    // 376px shows 7 days and 5/6 of an eighth; scroll so the leading column is a sliver.
+    const days = mkDays(30);
+    const model = weatherTimelineModel({ days, width: 376, scrollPx: 20 });
+    const cropped = model?.days.filter((d) => d.x < 0 && d.x + d.width > 0) ?? [];
+    expect(cropped.length).toBe(1);
+    // A 28px sliver still has room; a 9px one does not.
+    const visibleWidth = (cropped[0]?.x ?? 0) + (cropped[0]?.width ?? 0);
+    expect(cropped[0]?.showLabel).toBe(visibleWidth >= MIN_DAY_LABEL_WIDTH);
   });
 
-  it('anchors the labelled set on the first column so panning slides rather than reshuffles', () => {
-    const model = weatherTimelineModel({ days: mkDays(30), width: WIDTH });
-    expect(model?.days[0]?.showLabel).toBe(true);
+  it('never drags an off-screen label into the viewport', () => {
+    // The bug this prevents: clamping every column's label against the viewport piled all thirty
+    // off-screen labels onto the same pixel at the edge.
+    const model = weatherTimelineModel({ days: mkDays(30), width: 376 });
+    const offScreen = model?.days.filter((d) => d.x + d.width <= 0) ?? [];
+    expect(offScreen.length).toBeGreaterThan(0);
+    for (const d of offScreen) {
+      expect(d.showLabel).toBe(false);
+      expect(d.labelX).toBeLessThanOrEqual(0);
+    }
   });
 });
 
@@ -633,80 +643,104 @@ describe('labels stay inside the viewport', () => {
 });
 
 describe('timelineScrollbar', () => {
-  const opts = { maxOffset: 23, windowDays: 7, totalDays: 30, trackWidth: 300 };
+  // 30 days at 2 px/hour = 1440 px of content in a 376 px viewport.
+  const geom = { viewportWidth: 376, contentWidth: 1440, trackWidth: 300 };
+  const maxScrollPx = 1440 - 376;
 
   it('hides itself when the whole range already fits', () => {
     // A track whose thumb fills it invites a drag that does nothing.
-    expect(timelineScrollbar({ ...opts, offset: 0, maxOffset: 0 })).toBeNull();
+    expect(
+      timelineScrollbar({ ...geom, scrollPx: 0, maxScrollPx: 0, contentWidth: 300 }),
+    ).toBeNull();
   });
 
-  it('sits at the right end at the newest window and the left end at the oldest', () => {
-    // ⚠ Stated out loud because the direction is the one thing no type catches: `offset` counts
-    // backwards (0 = most recent) while the thumb runs forwards. Inverted, the control still works
-    // and moves exactly the wrong way.
-    const newest = timelineScrollbar({ ...opts, offset: 0 });
-    const oldest = timelineScrollbar({ ...opts, offset: 23 });
+  it('sits at the right end at the newest view and the left end at the oldest', () => {
+    // ⚠ Stated out loud because the direction is the one thing no type catches: `scrollPx` counts
+    // backwards (0 = most recent) while the thumb runs forwards.
+    const newest = timelineScrollbar({ ...geom, maxScrollPx, scrollPx: 0 });
+    const oldest = timelineScrollbar({ ...geom, maxScrollPx, scrollPx: maxScrollPx });
     expect(newest?.x).toBeCloseTo(300 - (newest?.width ?? 0));
     expect(oldest?.x).toBeCloseTo(0);
   });
 
-  it('sizes the thumb to the share of the range on screen', () => {
-    expect(timelineScrollbar({ ...opts, offset: 0 })?.width).toBeCloseTo((7 / 30) * 300);
+  it('sizes the thumb to the viewport-over-content ratio', () => {
+    // Which means it grows on zoom-out and shrinks on zoom-in with no extra code.
+    expect(timelineScrollbar({ ...geom, maxScrollPx, scrollPx: 0 })?.width).toBeCloseTo(
+      (376 / 1440) * 300,
+    );
   });
 
   it('never shrinks the thumb below a grabbable width', () => {
-    const tiny = timelineScrollbar({ ...opts, offset: 0, totalDays: 365, trackWidth: 300 });
+    const tiny = timelineScrollbar({
+      ...geom,
+      contentWidth: 100_000,
+      maxScrollPx: 99_000,
+      scrollPx: 0,
+    });
     expect(tiny?.width).toBe(MIN_SCROLL_THUMB_WIDTH);
   });
 
-  it('stays inside the track at every offset', () => {
-    for (let offset = 0; offset <= 23; offset++) {
-      const bar = timelineScrollbar({ ...opts, offset });
+  it('stays inside the track at every position', () => {
+    for (let scrollPx = 0; scrollPx <= maxScrollPx; scrollPx += 53) {
+      const bar = timelineScrollbar({ ...geom, maxScrollPx, scrollPx });
       expect(bar?.x).toBeGreaterThanOrEqual(0);
       expect((bar?.x ?? 0) + (bar?.width ?? 0)).toBeLessThanOrEqual(300.001);
     }
   });
 
-  it('clamps an out-of-range offset rather than running off the end', () => {
-    expect(timelineScrollbar({ ...opts, offset: 999 })?.x).toBeCloseTo(0);
-    expect(timelineScrollbar({ ...opts, offset: -5 })?.x).toBeCloseTo(
-      300 - (timelineScrollbar({ ...opts, offset: 0 })?.width ?? 0),
-    );
+  it('clamps an out-of-range scroll rather than running off the end', () => {
+    expect(timelineScrollbar({ ...geom, maxScrollPx, scrollPx: 99_999 })?.x).toBeCloseTo(0);
+    const pinned = timelineScrollbar({ ...geom, maxScrollPx, scrollPx: -500 });
+    expect(pinned?.x).toBeCloseTo(300 - (pinned?.width ?? 0));
   });
 });
 
-describe('offsetAtTrackX', () => {
-  const opts = { maxOffset: 23, windowDays: 7, totalDays: 30, trackWidth: 300 };
+describe('scrollPxAtTrackX', () => {
+  const geom = { viewportWidth: 376, contentWidth: 1440, trackWidth: 300 };
+  const maxScrollPx = 1440 - 376;
 
   it('round-trips with timelineScrollbar', () => {
     // The property that matters: putting the thumb where the model says it is must select the same
-    // offset back. An off-by-half-a-thumb here makes every click jump slightly.
-    for (let offset = 0; offset <= 23; offset++) {
-      const bar = timelineScrollbar({ ...opts, offset });
+    // scroll back. An off-by-half-a-thumb here makes every click jump slightly.
+    for (let scrollPx = 0; scrollPx <= maxScrollPx; scrollPx += 71) {
+      const bar = timelineScrollbar({ ...geom, maxScrollPx, scrollPx });
       const centre = (bar?.x ?? 0) + (bar?.width ?? 0) / 2;
-      expect(offsetAtTrackX(centre, opts)).toBe(offset);
+      expect(scrollPxAtTrackX(centre, { ...geom, maxScrollPx })).toBeCloseTo(scrollPx, 4);
     }
   });
 
   it('reads the pointer as the thumb centre, so a click lands under the cursor', () => {
-    expect(offsetAtTrackX(0, opts)).toBe(23); // hard left = oldest
-    expect(offsetAtTrackX(300, opts)).toBe(0); // hard right = newest
+    expect(scrollPxAtTrackX(0, { ...geom, maxScrollPx })).toBeCloseTo(maxScrollPx);
+    expect(scrollPxAtTrackX(300, { ...geom, maxScrollPx })).toBeCloseTo(0);
   });
 
   it('clamps a pointer dragged past either end', () => {
-    expect(offsetAtTrackX(-400, opts)).toBe(23);
-    expect(offsetAtTrackX(9999, opts)).toBe(0);
+    expect(scrollPxAtTrackX(-400, { ...geom, maxScrollPx })).toBeCloseTo(maxScrollPx);
+    expect(scrollPxAtTrackX(9999, { ...geom, maxScrollPx })).toBeCloseTo(0);
   });
 
-  it('returns a whole number of days', () => {
-    for (const x of [17, 55.5, 123.4, 288.9]) {
-      expect(Number.isInteger(offsetAtTrackX(x, opts))).toBe(true);
-    }
+  it('does NOT snap to a day boundary', () => {
+    // ⚠ Deliberate since the scale was fixed: the viewport crops mid-day on purpose, so snapping here
+    // would make the thumb stutter between days while the chart under it moved smoothly.
+    const v = scrollPxAtTrackX(137, { ...geom, maxScrollPx });
+    expect(v % 48).not.toBe(0);
   });
 
   it('answers 0 rather than NaN when there is nothing to scroll', () => {
-    expect(offsetAtTrackX(50, { ...opts, maxOffset: 0 })).toBe(0);
-    expect(offsetAtTrackX(50, { ...opts, trackWidth: 0 })).toBe(0);
+    expect(scrollPxAtTrackX(50, { ...geom, maxScrollPx: 0 })).toBe(0);
+    expect(scrollPxAtTrackX(50, { ...geom, maxScrollPx, trackWidth: 0 })).toBe(0);
+  });
+});
+
+describe('timelineExtent', () => {
+  it('measures the content at the given scale', () => {
+    expect(timelineExtent(30, 376)).toEqual({ contentWidth: 1440, maxScrollPx: 1064 });
+    // Zoomed to 1px = 15min, the same 30 days are twice as wide.
+    expect(timelineExtent(30, 376, 4).contentWidth).toBe(2880);
+  });
+
+  it('reports nothing to scroll when the content already fits', () => {
+    expect(timelineExtent(3, 376).maxScrollPx).toBe(0);
   });
 });
 
@@ -931,5 +965,95 @@ describe('the wind lane survives a lake with no fetch story', () => {
       Array.from({ length: 24 }, (_, h) => hour(h, { temperatureC: -5 })),
     );
     expect(weatherTimelineModel({ days: [noWind], width: WIDTH })?.wind).toBeNull();
+  });
+});
+
+describe('a fixed scale with a scrolled viewport', () => {
+  const mkDays = (n: number) =>
+    Array.from({ length: n }, (_, i) =>
+      fullDay(dayMsToLocalDate(D0 + i * DAY_MS), D0 + i * DAY_MS, -5),
+    );
+
+  it('draws an hour at the same width whatever the container', () => {
+    // ⚠ The whole point of the change. Before this, the same week was 2.286 px/hour in the web
+    // sidebar, 2.131 on a phone and 1.940 on an SE — one design, three shapes.
+    for (const width of [326, 358, 376, 384, 900]) {
+      const model = weatherTimelineModel({ days: mkDays(30), width });
+      expect(model?.days[0]?.width).toBeCloseTo(PX_PER_HOUR * 24);
+    }
+  });
+
+  it('crops the leading column rather than squeezing the days to fit', () => {
+    // 376 / 48 = 7.83 days, so one column is always part-drawn — the cheap scroll affordance.
+    const model = weatherTimelineModel({ days: mkDays(30), width: 376 });
+    const partiallyVisible = model?.days.filter((d) => d.x < 0 && d.x + d.width > 0) ?? [];
+    expect(partiallyVisible).toHaveLength(1);
+  });
+
+  it('lands flush when the viewport is an exact multiple of a day', () => {
+    // 384 / 48 = 8 exactly, which is the real web sidebar. Worth pinning because it means the
+    // cropped-edge affordance is *absent* there and the scrollbar is the only hint.
+    const model = weatherTimelineModel({ days: mkDays(30), width: 384 });
+    expect(model?.days.some((d) => d.x < 0 && d.x + d.width > 0)).toBe(false);
+  });
+
+  it('shows the newest days at scroll 0 and the oldest at the maximum', () => {
+    const days = mkDays(30);
+    const { maxScrollPx } = timelineExtent(30, 376);
+    const newest = weatherTimelineModel({ days, width: 376, scrollPx: 0 });
+    const oldest = weatherTimelineModel({ days, width: 376, scrollPx: maxScrollPx });
+    // At 0 the last day's right edge is the viewport's right edge.
+    const last = newest?.days[29];
+    expect((last?.x ?? 0) + (last?.width ?? 0)).toBeCloseTo(376);
+    // At the maximum the first day starts at 0.
+    expect(oldest?.days[0]?.x).toBeCloseTo(0);
+  });
+
+  it('clamps a scroll past either end', () => {
+    const days = mkDays(30);
+    const { maxScrollPx } = timelineExtent(30, 376);
+    const past = weatherTimelineModel({ days, width: 376, scrollPx: maxScrollPx + 5000 });
+    const before = weatherTimelineModel({ days, width: 376, scrollPx: -5000 });
+    expect(past?.days[0]?.x).toBeCloseTo(0);
+    const last = before?.days[29];
+    expect((last?.x ?? 0) + (last?.width ?? 0)).toBeCloseTo(376);
+  });
+
+  it('does not scroll at all when the content already fits', () => {
+    const model = weatherTimelineModel({ days: mkDays(5), width: 376, scrollPx: 500 });
+    expect(model?.days[0]?.x).toBeCloseTo(0);
+    expect(timelineExtent(5, 376).maxScrollPx).toBe(0);
+  });
+
+  it('zooms by scale alone, leaving every other rule intact', () => {
+    // The founder's sketched levels are 1px = 30/15/10/5 min, i.e. 2/4/6/12 px per hour. Nothing
+    // downstream should need to know: everything derives from `hourWidth`.
+    const days = mkDays(30);
+    const zoomed = weatherTimelineModel({ days, width: 376, pxPerHour: 6 });
+    expect(zoomed?.days[0]?.width).toBeCloseTo(6 * 24);
+    expect(zoomed?.precipitation.box.height).toBeGreaterThan(0);
+    // A precipitation block is still exactly one hour.
+    const snowy = weatherTimelineModel({
+      days: [
+        day(
+          '2026-01-15',
+          D0,
+          Array.from({ length: 24 }, (_, h) =>
+            hour(h, h === 5 ? { snowfallCm: 2, precipitationMm: 20 } : {}),
+          ),
+        ),
+      ],
+      width: 376,
+      pxPerHour: 6,
+    });
+    expect(snowy?.precipitation.blocks[0]?.width).toBeCloseTo(6);
+  });
+
+  it('keeps paths running through the viewport edge rather than stopping at it', () => {
+    // Off-viewport hours are still positioned, so the temperature line enters and leaves the frame
+    // instead of ending in mid-air — a path that stopped at x=0 would read as a data gap.
+    const model = weatherTimelineModel({ days: mkDays(30), width: 376 });
+    expect(model?.hours.some((p) => p.x < 0)).toBe(true);
+    expect(model?.temperature?.segments).toHaveLength(1);
   });
 });
