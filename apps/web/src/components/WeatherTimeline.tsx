@@ -3,6 +3,7 @@ import {
   cmToInches,
   DEFAULT_TIMELINE_HEIGHT,
   EMPHASIS_RAIL_HEIGHT,
+  fetchAlong,
   formatLocalHour,
   formatTemperatureF,
   hourAtX,
@@ -74,11 +75,14 @@ const AUX_LANES: {
 
 export function WeatherTimeline({
   days,
+  fetchProfileM,
   height = DEFAULT_TIMELINE_HEIGHT,
   windowDays = 7,
 }: {
   /** The full range the archive returned — usually 30 days; the window slides within it. */
   days: TimelineDayInput[];
+  /** The body's 16-sector fetch profile — the wind fill's density. Absent draws it flat. */
+  fetchProfileM?: number[] | undefined;
   height?: number;
   windowDays?: number;
 }) {
@@ -154,8 +158,9 @@ export function WeatherTimeline({
   }, [days, clampedOffset, windowDays]);
 
   const model = useMemo(
-    () => (width > 0 ? weatherTimelineModel({ days: visible, width, height }) : null),
-    [visible, width, height],
+    () =>
+      width > 0 ? weatherTimelineModel({ days: visible, width, height, fetchProfileM }) : null,
+    [visible, width, height, fetchProfileM],
   );
 
   if (days.length === 0) return null;
@@ -358,7 +363,23 @@ export function WeatherTimeline({
               if (!lane) return null;
               return (
                 <g key={lane.box.top}>
-                  <path d={lane.area} fill={palette.aux.fill} opacity={0.55} />
+                  {/* Flat when the lane has no second measure — or when the lake is under a kilometre of
+                      fetch, where its own geometry cannot support the distinction. */}
+                  {lane.areaSegments.length === 0 ? (
+                    <path d={lane.area} fill={palette.aux.fill} opacity={0.55} />
+                  ) : (
+                    lane.areaSegments.map((seg) => (
+                      // Density is fetch: how much open water that bearing had behind it. A magnitude
+                      // channel, not a hue — D145 keeps wind out of the warm ramp, and the chart has no
+                      // spare hue left in any case.
+                      <path
+                        d={seg.d}
+                        fill={palette.aux.fill}
+                        key={seg.d}
+                        opacity={0.25 + seg.intensity * 0.7}
+                      />
+                    ))
+                  )}
                   {/* One stroke per run, because a run ends both at a data hole and at every
                         crossing into or out of "the measure is happening". Only the sun lane draws
                         two colors today; the others return a single run and are unaffected. */}
@@ -425,7 +446,7 @@ export function WeatherTimeline({
         windowDays={windowDays}
       />
 
-      <TimelineReadout hour={scrub} />
+      <TimelineReadout fetchProfileM={fetchProfileM} hour={scrub} />
       <TimelineLegend
         hasSnowDepth={model?.snowDepth != null}
         hasSun={model?.sun != null}
@@ -572,9 +593,15 @@ function TimelineScrubber({
  * reads a local-shifted stamp back with UTC getters — the only correct way, since a local formatter
  * would apply the offset twice and slide every label 4–5 hours while still reading plausibly.
  */
-function TimelineReadout({ hour }: { hour: PositionedHour | null }) {
+function TimelineReadout({
+  hour,
+  fetchProfileM,
+}: {
+  hour: PositionedHour | null;
+  fetchProfileM?: number[] | undefined;
+}) {
   if (!hour) {
-    return <p className="h-4 text-[10px] text-foreground-muted italic">Hover for any hour</p>;
+    return <p className="min-h-8 text-[10px] text-foreground-muted italic">Hover for any hour</p>;
   }
   const h = hour.hour;
   const precip = precipitationKind(h);
@@ -594,12 +621,23 @@ function TimelineReadout({ hour }: { hour: PositionedHour | null }) {
         ? ` ${COMPASS_LABELS[windSectorOf(h.windDirectionDeg)] ?? ''}`
         : '';
     parts.push(`${Math.round(kphToMph(h.windSpeedKph))} mph${from}`);
+    // ⚠ Only where the lake's own geometry supports the claim. `fetchAlong` returns null below
+    // `MIN_FETCH_CLAUSE_M`, which is ~95% of the corpus — on a pond the honest answer to "how much
+    // open water was behind that wind" is "none, in every direction", and printing 80 m would imply
+    // a distinction the shape cannot support. Same threshold the lake caption's wind clause uses.
+    const openWater = fetchAlong(fetchProfileM, h.windDirectionDeg);
+    if (openWater !== null) parts.push(`${roundTo(openWater / 1000, 1)} km of open water`);
   }
   if (typeof h.snowDepthM === 'number' && h.snowDepthM > 0) {
     parts.push(`${roundTo(cmToInches(h.snowDepthM * 100), 1)}″ on the ground`);
   }
   return (
-    <p className="h-4 font-mono text-[10px] text-foreground tabular-nums">{parts.join(' · ')}</p>
+    // ⚠ `min-h`, not a fixed height. The readout grew to six fields once the open-water clause
+    // landed, and a fixed 1rem clipped the wrap silently — the fetch was there and simply invisible.
+    // Two lines' worth is reserved so the layout does not jump between a short hour and a long one.
+    <p className="min-h-8 font-mono text-[10px] text-foreground leading-tight tabular-nums">
+      {parts.join(' · ')}
+    </p>
   );
 }
 

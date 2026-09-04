@@ -48,6 +48,7 @@ export function PastWeatherPanel({
   const [state, setState] = useState<{
     days: PanelDay[];
     timeline: TimelineDayInput[];
+    fetchProfileM?: number[] | undefined;
     coarse: boolean;
     largeBody: boolean;
     loading: boolean;
@@ -78,6 +79,7 @@ export function PastWeatherPanel({
         setState({
           days: all.slice(-days),
           timeline: timelineDaysFromArchive(result),
+          fetchProfileM: result.fetchProfileM,
           coarse: result.anyBorrowed,
           largeBody: result.oneSampleForALargeBody,
           loading: false,
@@ -128,7 +130,11 @@ export function PastWeatherPanel({
           could not get, which is the whole point of carrying `missing` through from the archive. */}
       {hasHourly ? (
         <YStack marginTop="$2">
-          <WeatherTimeline days={state.timeline} windowDays={days} />
+          <WeatherTimeline
+            days={state.timeline}
+            fetchProfileM={state.fetchProfileM}
+            windowDays={days}
+          />
         </YStack>
       ) : (
         <XStack gap="$2" marginTop="$2">

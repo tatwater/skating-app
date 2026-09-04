@@ -4,6 +4,8 @@ import {
   BAND_EDGE_DEEP_COLD_F,
   BAND_EDGE_FREEZING_F,
   BAND_EDGE_THAW_F,
+  fetchAlong,
+  fetchIntensityAt,
   hourAtX,
   MIN_DAY_LABEL_WIDTH,
   MIN_SCROLL_THUMB_WIDTH,
@@ -771,5 +773,92 @@ describe('wind direction survives the round trip', () => {
     expect(days[0]?.hours?.[0]?.windDirectionDeg).toBe(315);
     // 315° is NW, and `windSectorOf` centres its sectors on the compass points rather than flooring.
     expect(windSectorOf(315)).toBe(14);
+  });
+});
+
+describe('fetch as the wind lane second channel', () => {
+  // ⚠ NW is sector **14** and NE is sector **2** — `windSectorOf` centres sectors on the compass
+  // points, so 45° rounds to 2 rather than flooring into a quadrant. Getting this wrong in the
+  // fixture is what the first draft of this test did.
+  const exposed = Array.from({ length: 16 }, (_, i) => (i === 14 ? 4000 : i === 2 ? 400 : 1200));
+  const pond = Array.from({ length: 16 }, (_, i) => (i === 14 ? 300 : 80));
+
+  describe('fetchAlong', () => {
+    it('names the metres behind the wind on a lake big enough to have any', () => {
+      expect(fetchAlong(exposed, 315)).toBe(4000); // 315° = NW
+      expect(fetchAlong(exposed, 45)).toBe(400); // 45° = NE
+    });
+
+    it('stays silent on a pond, which is ~95% of the corpus', () => {
+      // ⚠ Not a data gap — a deliberate refusal. `MIN_FETCH_CLAUSE_M` already settled that below a
+      // kilometre "there isn't any" open water in any direction, so naming 300 m would imply a
+      // distinction the geometry cannot support. Median max fetch corpus-wide is 224 m.
+      expect(fetchAlong(pond, 315)).toBeNull();
+    });
+
+    it('is silent without a profile or a bearing', () => {
+      expect(fetchAlong(undefined, 315)).toBeNull();
+      expect(fetchAlong(exposed, undefined)).toBeNull();
+      expect(fetchAlong([1, 2, 3], 315)).toBeNull(); // wrong sector count
+    });
+  });
+
+  describe('fetchIntensityAt', () => {
+    it('normalises against the lake itself, so its own shores can be compared', () => {
+      // Per-lake, unlike the wind rose's fixed reference — the rose compares lakes, this compares
+      // bearings within one. A shared scale would flatten a mid-size lake's contrast to nothing.
+      expect(fetchIntensityAt(exposed, 315)).toBeCloseTo(1);
+      expect(fetchIntensityAt(exposed, 45)).toBeCloseTo(0.1);
+    });
+
+    it('returns null on a pond, so the fill stays flat rather than inventing contrast', () => {
+      expect(fetchIntensityAt(pond, 315)).toBeNull();
+    });
+  });
+
+  it('cuts the wind area into density bands, and leaves the other lanes alone', () => {
+    const days = [
+      day(
+        '2026-01-15',
+        D0,
+        Array.from({ length: 24 }, (_, h) =>
+          // Wind swings from the sheltered bearing to the long one at noon.
+          hour(h, { windSpeedKph: 15, windDirectionDeg: h < 12 ? 45 : 315 }),
+        ),
+      ),
+    ];
+    const model = weatherTimelineModel({ days, width: WIDTH, fetchProfileM: exposed });
+    const segs = model?.wind?.areaSegments ?? [];
+    expect(segs.length).toBeGreaterThanOrEqual(2);
+    // The afternoon band is denser than the morning one — the whole point of the encoding.
+    expect(segs[segs.length - 1]?.intensity).toBeGreaterThan(segs[0]?.intensity ?? 1);
+    // Sun and snow depth have no second measure and must not be banded.
+    expect(model?.snowDepth?.areaSegments ?? []).toHaveLength(0);
+  });
+
+  it('leaves the wind fill flat when the lake is too small for fetch to mean anything', () => {
+    const days = [
+      day(
+        '2026-01-15',
+        D0,
+        Array.from({ length: 24 }, (_, h) =>
+          hour(h, { windSpeedKph: 15, windDirectionDeg: h < 12 ? 45 : 315 }),
+        ),
+      ),
+    ];
+    const model = weatherTimelineModel({ days, width: WIDTH, fetchProfileM: pond });
+    expect(model?.wind?.areaSegments).toHaveLength(0);
+    expect(model?.wind?.area.length).toBeGreaterThan(0); // still drawn, just at one opacity
+  });
+
+  it('leaves it flat when no profile is supplied at all', () => {
+    const days = [
+      day(
+        '2026-01-15',
+        D0,
+        Array.from({ length: 24 }, (_, h) => hour(h, { windSpeedKph: 9, windDirectionDeg: 315 })),
+      ),
+    ];
+    expect(weatherTimelineModel({ days, width: WIDTH })?.wind?.areaSegments).toHaveLength(0);
   });
 });

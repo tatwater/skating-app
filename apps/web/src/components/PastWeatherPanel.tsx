@@ -54,6 +54,7 @@ export function PastWeatherPanel({
   const [state, setState] = useState<{
     days: PanelDay[];
     timeline: TimelineDayInput[];
+    fetchProfileM?: number[] | undefined;
     coarse: boolean;
     largeBody: boolean;
     loading: boolean;
@@ -90,6 +91,7 @@ export function PastWeatherPanel({
         setState({
           days: all.slice(-days),
           timeline: timelineDaysFromArchive(result),
+          fetchProfileM: result.fetchProfileM,
           coarse: result.anyBorrowed,
           largeBody: result.oneSampleForALargeBody,
           loading: false,
@@ -155,7 +157,11 @@ export function PastWeatherPanel({
           until its next drawer-open, and on a slow connection that is the state a reader sees first.
           The strip is also the honest answer when a lake has summaries but no hourly history at all. */}
       {hasHourly ? (
-        <WeatherTimeline days={state.timeline} windowDays={days} />
+        <WeatherTimeline
+          days={state.timeline}
+          fetchProfileM={state.fetchProfileM}
+          windowDays={days}
+        />
       ) : (
         <div className="flex gap-1 overflow-x-auto pb-1">
           {panel.rows.map((row) => (

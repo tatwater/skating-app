@@ -48,13 +48,14 @@
  *   drawn, and flagged so the renderer can draw it as provisional.
  */
 
-import { cToF } from './units';
 // ⚠ **Imported, not restated.** An earlier draft declared its own copy of both thresholds "for
 // readability", which is exactly how a chart ends up highlighting a span the sentence beside it does
 // not mention. Within one package there is no excuse for a second copy; the only duplication this
 // module tolerates is the band edges, which cannot be imported because `@skating/design` is not a
 // dependency of core (see `BAND_EDGE_FREEZING_F`).
-import { isCompleteDay, SUNLIT_WM2 } from './weatherDay';
+import { MIN_FETCH_CLAUSE_M } from './lakeCaption';
+import { cToF } from './units';
+import { isCompleteDay, SUNLIT_WM2, WIND_SECTOR_COUNT, windSectorOf } from './weatherDay';
 import { CALM_FREEZE_MAX_KPH } from './weatherPanel';
 
 /** Lanes, top to bottom. The order is the render order and the reading order. */
@@ -162,6 +163,73 @@ export const MIN_DAY_LABEL_WIDTH = 26;
  * every scrollbar makes.
  */
 export const MIN_SCROLL_THUMB_WIDTH = 24;
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+// Fetch, as the wind lane's second channel
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Density steps in the wind lane's fill. Four, because the eye cannot read more than a few.
+ *
+ * Bucketing also keeps the path count sane: wind direction turns slowly, so a week of hours collapses
+ * into a handful of runs rather than 168 one-hour slivers.
+ */
+export const FETCH_INTENSITY_LEVELS = 4;
+
+/**
+ * How exposed this lake was to the wind at a given bearing, in `[0, 1]` — or `null` when the question
+ * does not apply.
+ *
+ * ## ⚠ It returns `null` for about 95% of the corpus, and that is the correct answer
+ *
+ * `MIN_FETCH_CLAUSE_M` already settled this for the lake caption: below a kilometre of open water
+ * *"the answer is 'there isn't any' in every direction — a clause naming the most exposed bearing
+ * would imply a distinction the geometry cannot support."* Measured against the corpus, that rules
+ * out most of it: max fetch is **224 m at the median**, 692 m at p90, and only **5% of bodies exceed
+ * a kilometre** in any direction.
+ *
+ * So a per-lake opacity ramp on a typical pond would be pure noise dressed as insight — it would
+ * paint a vivid contrast between a 60 m shore and a 90 m one. Gating on the same threshold the prose
+ * uses means the two surfaces agree about which lakes have an exposure story at all, and the wind
+ * lane simply draws flat on the ones that do not.
+ *
+ * **Normalised per lake, not against a fixed reference**, which is the opposite of the wind rose's
+ * choice and right for the opposite reason: the rose compares lakes ("is this one windy?"), while
+ * this compares *bearings within one lake* ("was the wind running the long way today?"). A shared
+ * scale would flatten Willoughby's own contrast to nothing next to Champlain.
+ */
+/**
+ * The metres of open water behind the wind at a bearing — or `null` when the claim is not worth
+ * making.
+ *
+ * The words half of {@link fetchIntensityAt}, gated on the same `MIN_FETCH_CLAUSE_M` so the drawing
+ * and the readout agree about which lakes have an exposure story. Returns the **raw metres** rather
+ * than a normalised share, because a sentence should name the measurement and a fill should show the
+ * proportion.
+ */
+export function fetchAlong(
+  fetchProfileM: readonly number[] | null | undefined,
+  bearingDeg: number | null | undefined,
+): number | null {
+  if (!Array.isArray(fetchProfileM) || fetchProfileM.length !== WIND_SECTOR_COUNT) return null;
+  if (typeof bearingDeg !== 'number' || !Number.isFinite(bearingDeg)) return null;
+  if (Math.max(...fetchProfileM) < MIN_FETCH_CLAUSE_M) return null;
+  const here = fetchProfileM[windSectorOf(bearingDeg)];
+  return typeof here === 'number' && Number.isFinite(here) ? here : null;
+}
+
+export function fetchIntensityAt(
+  fetchProfileM: readonly number[] | null | undefined,
+  bearingDeg: number | null | undefined,
+): number | null {
+  if (!Array.isArray(fetchProfileM) || fetchProfileM.length !== WIND_SECTOR_COUNT) return null;
+  if (typeof bearingDeg !== 'number' || !Number.isFinite(bearingDeg)) return null;
+  const peak = Math.max(...fetchProfileM);
+  if (!Number.isFinite(peak) || peak < MIN_FETCH_CLAUSE_M) return null;
+  const here = fetchProfileM[windSectorOf(bearingDeg)];
+  if (typeof here !== 'number' || !Number.isFinite(here)) return null;
+  return Math.min(1, Math.max(0, here / peak));
+}
 
 export interface TimelineScrollbar {
   /** Thumb left edge, px from the track's left. */
@@ -284,6 +352,13 @@ export interface WeatherTimelineInput {
   width: number;
   height?: number;
   laneHeights?: Partial<Record<TimelineLane, number>>;
+  /**
+   * The body's 16-sector fetch profile, in metres — how far open water runs from each bearing.
+   *
+   * Optional, and absent simply leaves the wind fill flat. See {@link fetchIntensityAt} for why it is
+   * also ignored on lakes under a kilometre of fetch, which is most of them.
+   */
+  fetchProfileM?: readonly number[] | null;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
@@ -387,6 +462,15 @@ export interface AuxLayer {
   box: LaneBox;
   /** A filled area from the lane's baseline. Empty when nothing was observed. */
   area: string;
+  /**
+   * The same area cut into runs of equal **secondary magnitude**, for filling at varying density.
+   *
+   * Only the wind lane populates it, with fetch — the line's height is how hard it blew, the fill's
+   * opacity how much open water that bearing had behind it. Empty means the lane has no second
+   * measure (or the lake is too small for fetch to mean anything), and the renderer draws `area` at
+   * one flat opacity instead.
+   */
+  areaSegments: { d: string; intensity: number }[];
   /**
    * The same shape's **top edge only**, for stroking over the fill.
    *
@@ -712,17 +796,34 @@ function auxLayer(
   measure: (hour: TimelineHour) => number | null,
   holds: (hour: TimelineHour) => boolean,
   fallbackMax: number,
-  /**
-   * Whether the measure was *happening* at this hour, for lanes whose trace changes color when it is.
-   * Absent means always — the lane draws in one color, which is right for wind and snow depth.
-   */
-  active?: (hour: TimelineHour, value: number) => boolean,
+  options: {
+    /**
+     * Whether the measure was *happening* at this hour, for lanes whose trace changes color when it
+     * is. Absent means always — the lane draws in one color, right for wind and snow depth.
+     */
+    active?: (hour: TimelineHour, value: number) => boolean;
+    /**
+     * A **second** magnitude for this hour, in `[0, 1]`, rendered as the fill's density.
+     *
+     * The wind lane's fetch: the line's height is how hard it blew, and the fill's opacity is how
+     * much open water that bearing had behind it. Two measures, two channels, one lane — and the
+     * fill was inert decoration before, so nothing was displaced. Absent leaves `areaSegments` empty
+     * and the renderer draws `area` at one flat opacity.
+     */
+    intensity?: (hour: TimelineHour) => number | null;
+  } = {},
 ): AuxLayer | null {
-  const values: { x: number; v: number; active: boolean }[] = [];
+  const { active, intensity } = options;
+  const values: { x: number; v: number; active: boolean; intensity: number | null }[] = [];
   for (const p of positioned) {
     const v = measure(p.hour);
     if (v !== null && Number.isFinite(v)) {
-      values.push({ x: p.x, v, active: active ? active(p.hour, v) : true });
+      values.push({
+        x: p.x,
+        v,
+        active: active ? active(p.hour, v) : true,
+        intensity: intensity ? intensity(p.hour) : null,
+      });
     }
   }
   if (values.length === 0) return null;
@@ -772,9 +873,43 @@ function auxLayer(
     }
   }
 
+  // The area again, but cut into runs of equal fetch band so each can be filled at its own opacity.
+  // Bucketed rather than per-hour: wind direction turns slowly, so runs are long and a week costs a
+  // handful of paths instead of 168 — and the eye cannot read more than a few density steps anyway.
+  const areaSegments: { d: string; intensity: number }[] = [];
+  if (intensity) {
+    const bucket = (i: number | null) =>
+      i === null
+        ? -1
+        : Math.min(FETCH_INTENSITY_LEVELS - 1, Math.floor(i * FETCH_INTENSITY_LEVELS));
+    for (const run of runs) {
+      for (const stretch of runsOf(run, (a, b) => bucket(a.intensity) !== bucket(b.intensity))) {
+        const first = stretch[0];
+        if (!first || first.intensity === null) continue;
+        const startIndex = run.indexOf(first);
+        // Extended one point into the next run, or every band change leaves a vertical seam of bare
+        // background through the fill.
+        const points = run.slice(startIndex, startIndex + stretch.length + 1);
+        const head = points[0];
+        const tail = points[points.length - 1];
+        if (!head || !tail) continue;
+        const top = points.map((p) => `L ${p.x.toFixed(2)} ${y(p.v).toFixed(2)}`).join(' ');
+        areaSegments.push({
+          d:
+            `M ${head.x.toFixed(2)} ${box.bottom.toFixed(2)} ${top} ` +
+            `L ${tail.x.toFixed(2)} ${box.bottom.toFixed(2)} Z`,
+          // Reported as the band's own centre rather than the raw value, so the renderer's opacity
+          // steps line up with the runs the geometry actually cut.
+          intensity: (bucket(first.intensity) + 0.5) / FETCH_INTENSITY_LEVELS,
+        });
+      }
+    }
+  }
+
   return {
     box,
     area,
+    areaSegments,
     line,
     segments,
     emphasis: emphasisSpans(positioned, hourWidth, holds),
@@ -927,6 +1062,10 @@ export function weatherTimelineModel(input: WeatherTimelineInput): WeatherTimeli
       (h.windSpeedKph ?? Number.POSITIVE_INFINITY) <= CALM_FREEZE_MAX_KPH && h.temperatureC < 0,
     // A floor on the axis so a still week does not scale 2 kph to full height and read as a gale.
     20,
+    // The second channel: the line's height is how hard it blew, the fill's density how much open
+    // water that bearing had behind it. Returns null — and so draws flat — on any lake under a
+    // kilometre of fetch, which is most of them.
+    { intensity: (h) => fetchIntensityAt(input.fetchProfileM, h.windDirectionDeg) },
   );
 
   const sun = auxLayer(
@@ -943,7 +1082,7 @@ export function weatherTimelineModel(input: WeatherTimelineInput): WeatherTimeli
     // is up, which is a fact about the sky rather than about intensity. A dim overcast morning is
     // still daytime, and drawing it as night would make the lane disagree with the reader's own
     // memory of the day. The stronger threshold still governs the emphasis rail above.
-    (_h, value) => value > 0,
+    { active: (_h, value) => value > 0 },
   );
 
   const snowDepth = auxLayer(

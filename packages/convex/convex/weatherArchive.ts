@@ -1388,6 +1388,13 @@ export interface WeatherDaysResult {
    * the caveat and the grid can never disagree about what "too big for one point" means.
    */
   oneSampleForALargeBody: boolean;
+  /**
+   * The body's 16-sector fetch profile in metres, when it has one.
+   *
+   * Feeds the wind lane's fill density and the scrub readout's open-water clause. Absent on a body
+   * that has never been measured; both consumers simply draw and say less.
+   */
+  fetchProfileM?: number[];
 }
 
 /**
@@ -1506,6 +1513,7 @@ export const getWeatherDaysForBody = action({
       missingDayMs,
       anyBorrowed,
       oneSampleForALargeBody: info.oneSampleForALargeBody,
+      ...(info.fetchProfileM ? { fetchProfileM: info.fetchProfileM } : {}),
     };
   },
 });
@@ -1551,6 +1559,10 @@ export const sampleCoverage = internalQuery({
       cell: bodyWeatherCell(body, 'browse'),
       samplePoints: points,
       oneSampleForALargeBody: points <= 1 && spansMultipleSampleCells(body.bbox),
+      // The wind lane's second channel. Read off the body document the panel already loads, so the
+      // chart costs no extra round trip — and served raw, because whether a lake is exposed enough
+      // for it to mean anything is `fetchIntensityAt`'s call, not this query's.
+      ...(Array.isArray(body.fetchProfileM) ? { fetchProfileM: body.fetchProfileM } : {}),
     };
   },
 });
