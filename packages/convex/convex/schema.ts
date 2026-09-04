@@ -1495,6 +1495,14 @@ export default defineSchema({
      * lake actually experienced is what lets the chart place a mark without a timezone database —
      * the same reasoning that made the archive ask for `timeformat=iso8601` in the first place.
      */
+    /**
+     * Which generation of `storableHour` wrote this row — see `HOURLY_ROW_VERSION`.
+     *
+     * ⚠ Absent means version 1, from before the stamp existed. The panel treats an out-of-date row as
+     * a gap so the next drawer-open rewrites it, which is what stops a newly-added hourly field from
+     * being invisible for ever on every cell anyone had already opened.
+     */
+    version: v.optional(v.number()),
     hours: v.array(
       v.object({
         localHour: v.number(),

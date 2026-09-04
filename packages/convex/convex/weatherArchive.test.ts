@@ -4,7 +4,12 @@ import { describe, expect, test, vi } from 'vitest';
 import { api, internal } from './_generated/api';
 import type { Id } from './_generated/dataModel';
 import schema from './schema';
-import { APPEND_PAST_DAYS, RECONCILE_DEBOUNCE_MS, SEASON_OPEN_PAST_DAYS } from './weatherArchive';
+import {
+  APPEND_PAST_DAYS,
+  HOURLY_ROW_VERSION,
+  RECONCILE_DEBOUNCE_MS,
+  SEASON_OPEN_PAST_DAYS,
+} from './weatherArchive';
 
 const modules = import.meta.glob('./**/*.*s');
 const DAY_MS = 86_400_000;
@@ -1153,5 +1158,61 @@ describe('weatherArchive: hourly rows for the timeline (N6h Workstream D)', () =
     expect(second).toHaveLength(first.length);
     const keys = second.map((r) => `${r.cellKey}:${r.dayMs}`);
     expect(new Set(keys).size).toBe(keys.length);
+  });
+});
+
+describe('weatherArchive: the hourly row version (N6h Workstream D)', () => {
+  test('rewrites rows written by an older generation of the writer', async () => {
+    // ⚠ The second appearance of the same shape. The first was hourly rows missing entirely; this is
+    // rows that exist but predate a newly-added field. Both are invisible — nothing errors, the
+    // feature simply never shows up, and only on cells someone had already opened.
+    const t = convexTest(schema, modules);
+    const waterBodyId = await seedBody(t);
+    const dates = recentDates(3);
+    const fetchMock = vi.fn(async () => okJson(isoResponse(dates)));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await asViewer(t).action(api.weatherArchive.getWeatherDaysForBody, { waterBodyId, days: 3 });
+
+    // Age every stored row back to the pre-stamp generation.
+    await t.run(async (ctx) => {
+      for (const row of await ctx.db.query('weatherHours').collect()) {
+        await ctx.db.patch(row._id, { version: undefined });
+      }
+    });
+
+    fetchMock.mockClear();
+    await asViewer(t).action(api.weatherArchive.getWeatherDaysForBody, { waterBodyId, days: 3 });
+
+    expect(fetchMock).toHaveBeenCalled();
+    const rows = await t.run((ctx) => ctx.db.query('weatherHours').collect());
+    expect(rows.every((r) => r.version === HOURLY_ROW_VERSION)).toBe(true);
+  });
+
+  test('leaves current rows alone — the check is staleness, not a refetch on every open', async () => {
+    const t = convexTest(schema, modules);
+    const waterBodyId = await seedBody(t);
+    const fetchMock = vi.fn(async () => okJson(isoResponse(recentDates(3))));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await asViewer(t).action(api.weatherArchive.getWeatherDaysForBody, { waterBodyId, days: 3 });
+    fetchMock.mockClear();
+    await asViewer(t).action(api.weatherArchive.getWeatherDaysForBody, { waterBodyId, days: 3 });
+
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  test('stores the wind bearing the readout names', async () => {
+    const t = convexTest(schema, modules);
+    const waterBodyId = await seedBody(t);
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => okJson(isoResponse(recentDates(2), { dirFor: () => 315 }))),
+    );
+
+    await asViewer(t).action(api.weatherArchive.getWeatherDaysForBody, { waterBodyId, days: 2 });
+
+    const rows = await t.run((ctx) => ctx.db.query('weatherHours').collect());
+    expect(rows[0]?.hours[0]?.windDirectionDeg).toBe(315);
   });
 });

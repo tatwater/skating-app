@@ -787,6 +787,25 @@ export async function ingestCellDays(
   return days.length;
 }
 
+/**
+ * Bumped whenever `storableHour` starts persisting a **new field**.
+ *
+ * ⚠ **Without this, adding an hourly measure is silently a no-op on every cell anyone has already
+ * opened.** The panel's top-up only refetches when it is short of *rows*, so a cell holding thirty
+ * complete hourly rows is considered satisfied for ever — and a row written last week simply lacks
+ * whatever field was added this week. Nothing errors; the feature just never appears, and only on the
+ * popular lakes, which are the last place anyone would look for it.
+ *
+ * This is the second time that shape has come up in this workstream (the first was hourly rows
+ * missing entirely), so it is fixed at the root rather than by hand: a row stamped with an older
+ * version counts as stale, and the next drawer-open rewrites it from a fetch it was going to make
+ * anyway. **Adding a field to `storableHour` without bumping this is the bug.**
+ *
+ * - 1: the original set (temperature, precipitation, rain, snow, depth, wind speed, shortwave, code)
+ * - 2: `windDirectionDeg`, for the scrub readout's compass bearing
+ */
+export const HOURLY_ROW_VERSION = 2;
+
 /** The hourly fields `weatherHours` stores, dropped to exactly what the timeline draws. */
 function storableHour(h: LocalHourlyWeather): Record<string, number> {
   const out: Record<string, number> = { localHour: h.localHour, temperatureC: h.temperatureC };
@@ -858,6 +877,7 @@ export const upsertWeatherHours = internalMutation({
         cellKey: a.cellKey,
         dayMs: day.dayMs,
         localDate: day.localDate,
+        version: HOURLY_ROW_VERSION,
         // Cast because the record validator above accepts the loose shape `storableHour` produces;
         // the table's own validator is what actually pins the field names, and it runs on write.
         hours: day.hours as unknown as { localHour: number; temperatureC: number }[],
@@ -891,9 +911,12 @@ export const listCellHourDayKeys = internalQuery({
         q.eq('cellKey', cellKey).gte('dayMs', fromMs).lte('dayMs', toMs),
       )
       .collect();
-    // Only days that actually carry hours: an empty array would satisfy a presence test while
-    // drawing nothing, which is the same failure this query exists to prevent, one level down.
-    return rows.filter((r) => r.hours.length > 0).map((r) => r.dayMs);
+    // Only days that actually carry hours AND were written by the current writer. An empty array
+    // would satisfy a presence test while drawing nothing; an out-of-date row satisfies it while
+    // missing whatever field was added since. Both are the same failure at different depths.
+    return rows
+      .filter((r) => r.hours.length > 0 && (r.version ?? 1) >= HOURLY_ROW_VERSION)
+      .map((r) => r.dayMs);
   },
 });
 
