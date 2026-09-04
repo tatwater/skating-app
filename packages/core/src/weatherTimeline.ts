@@ -150,6 +150,88 @@ export const MAX_INTERPOLATED_SLOTS = 2.5;
 export const MIN_DAY_LABEL_WIDTH = 26;
 
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
+// The scroll thumb
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Narrowest the thumb is allowed to get, in px.
+ *
+ * Proportional sizing alone would make the thumb 7/30ths of the track — fine — but a future wider
+ * range would shrink it below the ~24px that a finger or a cursor can reliably catch. A floor costs
+ * a little proportional honesty at the extremes and keeps the control usable, which is the trade
+ * every scrollbar makes.
+ */
+export const MIN_SCROLL_THUMB_WIDTH = 24;
+
+export interface TimelineScrollbar {
+  /** Thumb left edge, px from the track's left. */
+  x: number;
+  /** Thumb width, px — how much of the whole range is on screen. */
+  width: number;
+}
+
+/**
+ * Where the scroll thumb sits for a given pan offset, or `null` when the whole range already fits.
+ *
+ * ⚠ **`offset` counts BACKWARDS — 0 is the most recent window — and the thumb runs forwards.** So the
+ * thumb sits at the *right* end at offset 0 and slides left as you go back in time, which is the only
+ * arrangement that matches how a reader thinks about a timeline. Getting this inverted produces a
+ * control that works perfectly and moves the wrong way, which no type and no test catches unless the
+ * test states the direction out loud — so {@link timelineScrollbar}'s tests do.
+ *
+ * `null` rather than a full-width thumb when there is nothing to scroll: a track with a thumb filling
+ * it invites a drag that does nothing.
+ */
+export function timelineScrollbar(opts: {
+  offset: number;
+  maxOffset: number;
+  windowDays: number;
+  totalDays: number;
+  trackWidth: number;
+}): TimelineScrollbar | null {
+  const { offset, maxOffset, windowDays, totalDays, trackWidth } = opts;
+  if (maxOffset <= 0 || trackWidth <= 0 || totalDays <= 0) return null;
+
+  const width = Math.min(
+    trackWidth,
+    Math.max(MIN_SCROLL_THUMB_WIDTH, (windowDays / totalDays) * trackWidth),
+  );
+  const travel = Math.max(0, trackWidth - width);
+  // 1 at offset 0 (newest, hard right), 0 at maxOffset (oldest, hard left).
+  const progress = (maxOffset - clamp(offset, 0, maxOffset)) / maxOffset;
+  return { x: progress * travel, width };
+}
+
+/**
+ * The offset a pointer at `trackX` should select — for dragging the thumb and for clicking the track.
+ *
+ * `trackX` is read as where the **centre** of the thumb wants to be, which is what makes a click on
+ * bare track jump the thumb *to the cursor* rather than to a position half a thumb-width off. The
+ * inverse of {@link timelineScrollbar}, and rounded to a whole day because the chart's columns are
+ * whole days: a fractional offset would slide the grid out from under the day labels.
+ */
+export function offsetAtTrackX(
+  trackX: number,
+  opts: { maxOffset: number; windowDays: number; totalDays: number; trackWidth: number },
+): number {
+  const { maxOffset, windowDays, totalDays, trackWidth } = opts;
+  if (maxOffset <= 0 || trackWidth <= 0 || totalDays <= 0) return 0;
+  const width = Math.min(
+    trackWidth,
+    Math.max(MIN_SCROLL_THUMB_WIDTH, (windowDays / totalDays) * trackWidth),
+  );
+  const travel = trackWidth - width;
+  // A track with no travel (thumb fills it) can only mean the newest window; dividing would be NaN.
+  if (travel <= 0) return 0;
+  const progress = clamp((trackX - width / 2) / travel, 0, 1);
+  return Math.round(maxOffset * (1 - progress));
+}
+
+function clamp(v: number, lo: number, hi: number): number {
+  return v < lo ? lo : v > hi ? hi : v;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
 // Input
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
 

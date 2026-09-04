@@ -6,7 +6,9 @@ import {
   BAND_EDGE_THAW_F,
   hourAtX,
   MIN_DAY_LABEL_WIDTH,
+  MIN_SCROLL_THUMB_WIDTH,
   MIN_TEMPERATURE_SPAN_F,
+  offsetAtTrackX,
   precipitationKind,
   TEMPERATURE_BANDS,
   type TimelineDayInput,
@@ -15,6 +17,7 @@ import {
   temperatureGradientStops,
   temperatureWindowF,
   timelineDaysFromArchive,
+  timelineScrollbar,
   weatherTimelineModel,
 } from './weatherTimeline';
 
@@ -610,5 +613,83 @@ describe('labels stay inside the viewport', () => {
     });
     const mid = model?.days[3];
     expect(mid?.labelX).toBeCloseTo((mid?.x ?? 0) + (mid?.width ?? 0) / 2);
+  });
+});
+
+describe('timelineScrollbar', () => {
+  const opts = { maxOffset: 23, windowDays: 7, totalDays: 30, trackWidth: 300 };
+
+  it('hides itself when the whole range already fits', () => {
+    // A track whose thumb fills it invites a drag that does nothing.
+    expect(timelineScrollbar({ ...opts, offset: 0, maxOffset: 0 })).toBeNull();
+  });
+
+  it('sits at the right end at the newest window and the left end at the oldest', () => {
+    // ⚠ Stated out loud because the direction is the one thing no type catches: `offset` counts
+    // backwards (0 = most recent) while the thumb runs forwards. Inverted, the control still works
+    // and moves exactly the wrong way.
+    const newest = timelineScrollbar({ ...opts, offset: 0 });
+    const oldest = timelineScrollbar({ ...opts, offset: 23 });
+    expect(newest?.x).toBeCloseTo(300 - (newest?.width ?? 0));
+    expect(oldest?.x).toBeCloseTo(0);
+  });
+
+  it('sizes the thumb to the share of the range on screen', () => {
+    expect(timelineScrollbar({ ...opts, offset: 0 })?.width).toBeCloseTo((7 / 30) * 300);
+  });
+
+  it('never shrinks the thumb below a grabbable width', () => {
+    const tiny = timelineScrollbar({ ...opts, offset: 0, totalDays: 365, trackWidth: 300 });
+    expect(tiny?.width).toBe(MIN_SCROLL_THUMB_WIDTH);
+  });
+
+  it('stays inside the track at every offset', () => {
+    for (let offset = 0; offset <= 23; offset++) {
+      const bar = timelineScrollbar({ ...opts, offset });
+      expect(bar?.x).toBeGreaterThanOrEqual(0);
+      expect((bar?.x ?? 0) + (bar?.width ?? 0)).toBeLessThanOrEqual(300.001);
+    }
+  });
+
+  it('clamps an out-of-range offset rather than running off the end', () => {
+    expect(timelineScrollbar({ ...opts, offset: 999 })?.x).toBeCloseTo(0);
+    expect(timelineScrollbar({ ...opts, offset: -5 })?.x).toBeCloseTo(
+      300 - (timelineScrollbar({ ...opts, offset: 0 })?.width ?? 0),
+    );
+  });
+});
+
+describe('offsetAtTrackX', () => {
+  const opts = { maxOffset: 23, windowDays: 7, totalDays: 30, trackWidth: 300 };
+
+  it('round-trips with timelineScrollbar', () => {
+    // The property that matters: putting the thumb where the model says it is must select the same
+    // offset back. An off-by-half-a-thumb here makes every click jump slightly.
+    for (let offset = 0; offset <= 23; offset++) {
+      const bar = timelineScrollbar({ ...opts, offset });
+      const centre = (bar?.x ?? 0) + (bar?.width ?? 0) / 2;
+      expect(offsetAtTrackX(centre, opts)).toBe(offset);
+    }
+  });
+
+  it('reads the pointer as the thumb centre, so a click lands under the cursor', () => {
+    expect(offsetAtTrackX(0, opts)).toBe(23); // hard left = oldest
+    expect(offsetAtTrackX(300, opts)).toBe(0); // hard right = newest
+  });
+
+  it('clamps a pointer dragged past either end', () => {
+    expect(offsetAtTrackX(-400, opts)).toBe(23);
+    expect(offsetAtTrackX(9999, opts)).toBe(0);
+  });
+
+  it('returns a whole number of days', () => {
+    for (const x of [17, 55.5, 123.4, 288.9]) {
+      expect(Number.isInteger(offsetAtTrackX(x, opts))).toBe(true);
+    }
+  });
+
+  it('answers 0 rather than NaN when there is nothing to scroll', () => {
+    expect(offsetAtTrackX(50, { ...opts, maxOffset: 0 })).toBe(0);
+    expect(offsetAtTrackX(50, { ...opts, trackWidth: 0 })).toBe(0);
   });
 });

@@ -7,14 +7,16 @@ import {
   hourAtX,
   kphToMph,
   mmToInches,
+  offsetAtTrackX,
   type PositionedHour,
   precipitationKind,
   roundTo,
   shortDayLabel,
   type TimelineDayInput,
+  timelineScrollbar,
   weatherTimelineModel,
 } from '@skating/core';
-import { weatherChartPalette } from '@skating/design';
+import { type WeatherChartPalette, weatherChartPalette } from '@skating/design';
 import { useTheme } from 'next-themes';
 import { useEffect, useMemo, useRef, useState } from 'react';
 
@@ -77,6 +79,45 @@ export function WeatherTimeline({
 
   const maxOffset = Math.max(0, days.length - windowDays);
   const clampedOffset = Math.min(offset, maxOffset);
+
+  /**
+   * Horizontal wheel / trackpad panning.
+   *
+   * ⚠ **A native listener with `passive: false`, not `onWheel` — and the reason is not performance.**
+   * React registers `wheel` on its root as *passive*, so `preventDefault()` inside an `onWheel` prop
+   * is silently ignored. On macOS an unhandled horizontal wheel is a **browser back-navigation
+   * gesture**: two-finger-swiping through a lake's weather would eventually throw the user out of the
+   * page entirely, losing the panel they were reading. So the default has to be genuinely preventable,
+   * which means attaching it ourselves.
+   *
+   * Only horizontal-dominant events are claimed. A vertical scroll that happens to pass over the
+   * chart still scrolls the sidebar, which is what a reader expects and what makes the chart safe to
+   * put in a long panel.
+   */
+  const wheelBudget = useRef(0);
+  useEffect(() => {
+    const el = hostRef.current;
+    if (!el || maxOffset === 0 || width === 0) return;
+    const dayWidth = width / windowDays;
+    const onWheel = (e: WheelEvent) => {
+      if (Math.abs(e.deltaX) <= Math.abs(e.deltaY)) return; // vertical — let the panel scroll
+      e.preventDefault();
+      // A trackpad emits a stream of sub-pixel deltas. Converting each one straight to a day step
+      // would either round to zero (nothing moves) or to a whole day (a two-finger nudge jumps a
+      // week), so they accumulate into a pixel budget and are spent a column at a time.
+      wheelBudget.current += e.deltaX;
+      const steps = Math.trunc(wheelBudget.current / dayWidth);
+      if (steps === 0) return;
+      wheelBudget.current -= steps * dayWidth;
+      // Scrolling right moves toward the right-hand edge of the content, which is *now* — so it
+      // decreases the backwards-counting offset. This is the opposite sign from dragging the chart
+      // itself, and correctly so: dragging moves the content, scrolling moves the viewport.
+      setOffset((current) => Math.min(maxOffset, Math.max(0, current - steps)));
+    };
+    el.addEventListener('wheel', onWheel, { passive: false });
+    return () => el.removeEventListener('wheel', onWheel);
+  }, [maxOffset, width, windowDays]);
+
   const visible = useMemo(() => {
     const end = days.length - clampedOffset;
     return days.slice(Math.max(0, end - windowDays), end);
@@ -333,17 +374,150 @@ export function WeatherTimeline({
         )}
       </div>
 
+      <TimelineScrubber
+        maxOffset={maxOffset}
+        offset={clampedOffset}
+        onOffset={setOffset}
+        palette={palette}
+        totalDays={days.length}
+        trackWidth={width}
+        windowDays={windowDays}
+      />
+
       <TimelineReadout hour={scrub} />
       <TimelineLegend
         hasSnowDepth={model?.snowDepth != null}
         hasSun={model?.sun != null}
         hasWind={model?.wind != null}
       />
-      {maxOffset > 0 && (
-        <p className="text-[10px] text-foreground-muted italic">
-          Drag to see earlier days
-          {clampedOffset > 0 ? ` — ${clampedOffset} day${clampedOffset === 1 ? '' : 's'} back` : ''}
-        </p>
+    </div>
+  );
+}
+
+/**
+ * The scroll track under the chart — a thumb you can drag, a track you can click, and arrow keys.
+ *
+ * **It exists because dragging the plot itself is a discoverable-only-by-accident gesture.** Nothing
+ * about a chart says "you can grab this", and the one affordance that did say so — a line of italic
+ * hint text — is a worse answer than a control that looks like what it is. The hint is gone; this
+ * replaces it.
+ *
+ * ⚠ **A real `role="slider"`, not a styled `<div>`.** The chart itself is `aria-hidden` (a screen
+ * reader gets the panel's sentences, not a description of 168 line segments), which means without
+ * this there would be **no keyboard route to the older days at all** — the data would be reachable
+ * only by mouse. Arrow keys step a day, Home/End jump to either end.
+ *
+ * The geometry is `timelineScrollbar` in core rather than arithmetic here, because the direction is
+ * invertible without any type noticing: `offset` counts backwards from the newest window while the
+ * thumb runs forwards, so a control that is wrong reads as one that simply moves the wrong way.
+ */
+function TimelineScrubber({
+  offset,
+  maxOffset,
+  windowDays,
+  totalDays,
+  trackWidth,
+  palette,
+  onOffset,
+}: {
+  offset: number;
+  maxOffset: number;
+  windowDays: number;
+  totalDays: number;
+  trackWidth: number;
+  palette: WeatherChartPalette;
+  onOffset: (next: number) => void;
+}) {
+  const trackRef = useRef<HTMLDivElement | null>(null);
+  const dragging = useRef(false);
+
+  // ⚠ **Gated on `maxOffset`, not on having a measured width.** The thumb's *position* needs pixels,
+  // but the control's *existence* must not: the chart is `aria-hidden`, so this slider is the only
+  // keyboard route to the older days, and hiding it until a `ResizeObserver` has fired would make
+  // that route appear a frame late — or never, anywhere the observer does not run. A width of 0
+  // costs an invisible thumb for one frame, which is the same frame the chart itself is blank.
+  if (maxOffset <= 0) return null;
+
+  const bar = timelineScrollbar({ offset, maxOffset, windowDays, totalDays, trackWidth });
+
+  const seek = (clientX: number) => {
+    const rect = trackRef.current?.getBoundingClientRect();
+    // Measured at event time rather than taken from the chart's width, so a click lands correctly
+    // even on the first interaction after a resize.
+    if (!rect || rect.width <= 0) return;
+    onOffset(
+      offsetAtTrackX(clientX - rect.left, {
+        maxOffset,
+        windowDays,
+        totalDays,
+        trackWidth: rect.width,
+      }),
+    );
+  };
+
+  // Days back, not a raw offset: "9 days back" is what the reader is actually choosing, and it is
+  // the only number here that means anything said aloud.
+  const label = offset === 0 ? 'Showing the most recent days' : `${offset} days back`;
+
+  return (
+    <div
+      aria-label="Scroll the weather timeline through time"
+      aria-valuemax={maxOffset}
+      aria-valuemin={0}
+      aria-valuenow={offset}
+      aria-valuetext={label}
+      className="relative h-3 w-full cursor-pointer touch-none rounded-full"
+      onKeyDown={(e) => {
+        // Left goes back in time, which *increases* the backwards-counting offset. Reversing these
+        // would make the keyboard disagree with the thumb it is moving.
+        const step =
+          e.key === 'ArrowLeft'
+            ? 1
+            : e.key === 'ArrowRight'
+              ? -1
+              : e.key === 'PageUp'
+                ? 7
+                : e.key === 'PageDown'
+                  ? -7
+                  : 0;
+        if (step !== 0) {
+          e.preventDefault();
+          onOffset(Math.min(maxOffset, Math.max(0, offset + step)));
+          return;
+        }
+        if (e.key === 'Home') {
+          e.preventDefault();
+          onOffset(maxOffset);
+        } else if (e.key === 'End') {
+          e.preventDefault();
+          onOffset(0);
+        }
+      }}
+      onPointerDown={(e) => {
+        dragging.current = true;
+        e.currentTarget.setPointerCapture(e.pointerId);
+        seek(e.clientX);
+      }}
+      onPointerMove={(e) => {
+        if (dragging.current) seek(e.clientX);
+      }}
+      onPointerUp={(e) => {
+        dragging.current = false;
+        e.currentTarget.releasePointerCapture(e.pointerId);
+      }}
+      ref={trackRef}
+      role="slider"
+      tabIndex={0}
+    >
+      <div
+        className="absolute top-1/2 right-0 left-0 h-1 -translate-y-1/2 rounded-full"
+        style={{ backgroundColor: palette.aux.fill }}
+      />
+      {bar && (
+        <div
+          className="absolute top-1/2 h-2.5 -translate-y-1/2 rounded-full"
+          style={{ backgroundColor: palette.aux.emphasis, left: bar.x, width: bar.width }}
+        />
       )}
     </div>
   );

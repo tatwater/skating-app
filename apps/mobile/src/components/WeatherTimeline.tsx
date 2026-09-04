@@ -7,14 +7,16 @@ import {
   hourAtX,
   kphToMph,
   mmToInches,
+  offsetAtTrackX,
   type PositionedHour,
   precipitationKind,
   roundTo,
   shortDayLabel,
   type TimelineDayInput,
+  timelineScrollbar,
   weatherTimelineModel,
 } from '@skating/core';
-import { weatherChartPalette } from '@skating/design';
+import { type WeatherChartPalette, weatherChartPalette } from '@skating/design';
 import React, { useMemo, useRef, useState } from 'react';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Svg, {
@@ -325,6 +327,16 @@ export function WeatherTimeline({
         </XStack>
       </GestureDetector>
 
+      <TimelineScrubber
+        maxOffset={maxOffset}
+        offset={clampedOffset}
+        onOffset={setOffset}
+        palette={palette}
+        totalDays={days.length}
+        trackWidth={width}
+        windowDays={windowDays}
+      />
+
       <TimelineReadout hour={scrub} />
       <Text color="$foregroundMuted" fontSize={10} lineHeight={13}>
         Top to bottom: Temperature · Precipitation
@@ -332,13 +344,92 @@ export function WeatherTimeline({
         {model?.sun ? ' · Sun, marked when sunlit above freezing' : ''}
         {model?.snowDepth ? ' · Snow on the ground' : ''}
       </Text>
-      {maxOffset > 0 ? (
-        <Text color="$foregroundMuted" fontSize={10} fontStyle="italic">
-          Drag sideways for earlier days
-          {clampedOffset > 0 ? ` — ${clampedOffset} back` : ''}
-        </Text>
-      ) : null}
     </YStack>
+  );
+}
+
+/**
+ * The scroll track under the chart — drag the thumb, or tap anywhere on the track to jump.
+ *
+ * ⚠ **This matters more on native than on the web.** Panning the plot itself has to share the
+ * horizontal axis with the sheet's own gestures, so it is hedged about with `activeOffsetX` /
+ * `failOffsetY` and can still lose a race. The track has no such conflict: it is a small dedicated
+ * control that owns its gestures outright, which makes it the *reliable* way to move through time and
+ * the plot-drag the convenience. It also replaces a line of italic hint text, which was the only
+ * thing previously telling a reader the chart could be moved at all.
+ *
+ * Geometry comes from `timelineScrollbar` in core so the two clients cannot disagree about which way
+ * the thumb travels — `offset` counts backwards from the newest window, and a control that gets that
+ * inverted works perfectly while moving the wrong way.
+ */
+function TimelineScrubber({
+  offset,
+  maxOffset,
+  windowDays,
+  totalDays,
+  trackWidth,
+  palette,
+  onOffset,
+}: {
+  offset: number;
+  maxOffset: number;
+  windowDays: number;
+  totalDays: number;
+  trackWidth: number;
+  palette: WeatherChartPalette;
+  onOffset: (next: number) => void;
+}) {
+  const bar = timelineScrollbar({ maxOffset, windowDays, totalDays, trackWidth, offset });
+
+  const gesture = useMemo(() => {
+    // ⚠ Rebuilt from the primitives *inside* the memo. Closing over a `geometry` object built in
+    // the render body would make the dependency a fresh reference every time, so the memo would
+    // rebuild the gesture on each render while claiming not to — a dep list that lies is worse
+    // than none, because the next reader trusts it.
+    const geometry = { maxOffset, windowDays, totalDays, trackWidth };
+    return (
+      Gesture.Pan()
+        // The track is its own control, so it claims horizontal movement immediately rather than
+        // waiting for a threshold — but it still yields a vertical drag to the sheet.
+        .failOffsetY([-12, 12])
+        .onBegin((e) => onOffset(offsetAtTrackX(e.x, geometry)))
+        .onUpdate((e) => onOffset(offsetAtTrackX(e.x, geometry)))
+        .runOnJS(true)
+    );
+  }, [maxOffset, windowDays, totalDays, trackWidth, onOffset]);
+
+  // Gated on there being something to scroll rather than on a measured width — see the web twin.
+  // A width of 0 costs an invisible thumb for the frame before `onLayout` fires, which is the same
+  // frame the chart itself is blank.
+  if (maxOffset <= 0) return null;
+
+  return (
+    <GestureDetector gesture={gesture}>
+      {/* 24px tall so the touch target clears the ~44pt guideline once the surrounding gap is
+          counted; the visible track is the 4px rule inside it. */}
+      <XStack alignItems="center" height={24} width="100%">
+        {/* ⚠ `style`, not the `backgroundColor` prop. Tamagui's shorthand colour props take *theme
+            tokens*; these are resolved hex values from the validated chart scale, which has no
+            Tamagui token because it is a data palette rather than a UI role. Same reason
+            `WindExposure` reads `theme.x.val` for its SVG fills. */}
+        <XStack
+          borderRadius={9999}
+          height={4}
+          style={{ backgroundColor: palette.aux.fill }}
+          width="100%"
+        />
+        {bar ? (
+          <XStack
+            borderRadius={9999}
+            height={10}
+            left={bar.x}
+            position="absolute"
+            style={{ backgroundColor: palette.aux.emphasis }}
+            width={bar.width}
+          />
+        ) : null}
+      </XStack>
+    </GestureDetector>
   );
 }
 
