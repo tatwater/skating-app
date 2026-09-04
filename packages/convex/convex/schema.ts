@@ -1504,6 +1504,15 @@ export default defineSchema({
         snowfallCm: v.optional(v.number()),
         snowDepthM: v.optional(v.number()),
         windSpeedKph: v.optional(v.number()),
+        /**
+         * Degrees meteorological — the direction wind blew **from**.
+         *
+         * Free in the same response as the speed (`wind_direction_10m` has been in `HOURLY_VARS`
+         * since Workstream C, for the daily sector histogram) and simply not carried through to the
+         * hourly row at first. Multiplied against the body's `fetchProfileM` it is what separates
+         * "it was windy" from "the wind had 3 km of open water behind it".
+         */
+        windDirectionDeg: v.optional(v.number()),
         shortwaveWm2: v.optional(v.number()),
         /**
          * WMO code — the only input that can name sleet, ice pellets or freezing drizzle.

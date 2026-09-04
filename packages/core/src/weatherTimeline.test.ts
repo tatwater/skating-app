@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { dayMsToLocalDate } from './weatherDay';
+import { dayMsToLocalDate, windSectorOf } from './weatherDay';
 import {
   BAND_EDGE_DEEP_COLD_F,
   BAND_EDGE_FREEZING_F,
@@ -691,5 +691,85 @@ describe('offsetAtTrackX', () => {
   it('answers 0 rather than NaN when there is nothing to scroll', () => {
     expect(offsetAtTrackX(50, { ...opts, maxOffset: 0 })).toBe(0);
     expect(offsetAtTrackX(50, { ...opts, trackWidth: 0 })).toBe(0);
+  });
+});
+
+describe('the sun trace splits where the sun is up', () => {
+  const sunnyDay = (localDate: string, dayMs: number) =>
+    day(
+      localDate,
+      dayMs,
+      Array.from({ length: 24 }, (_, h) =>
+        // Dark until 08:00, sun until 16:00, dark after — one sunrise and one sunset.
+        hour(h, { temperatureC: -3, shortwaveWm2: h >= 8 && h < 16 ? 300 : 0 }),
+      ),
+    );
+
+  it('emits lit and unlit runs rather than one path', () => {
+    const model = weatherTimelineModel({ days: [sunnyDay('2026-01-15', D0)], width: WIDTH });
+    const segments = model?.sun?.segments ?? [];
+    expect(segments.filter((s) => s.active).length).toBe(1);
+    expect(segments.filter((s) => !s.active).length).toBe(2); // before dawn and after dusk
+  });
+
+  it('leaves no hole at sunrise or sunset', () => {
+    // Each run is extended one point into its neighbour, or the trace is visibly dashed at exactly
+    // the two moments a reader looks for.
+    const model = weatherTimelineModel({ days: [sunnyDay('2026-01-15', D0)], width: WIDTH });
+    const xs = (d: string) => [...d.matchAll(/[ML] ([\d.]+)/g)].map((m) => Number(m[1]));
+    const segments = model?.sun?.segments ?? [];
+    const lit = segments.find((s) => s.active);
+    const beforeDawn = segments.find((s) => !s.active);
+    if (!lit || !beforeDawn) throw new Error('expected both runs');
+    // The dark run reaches the lit run's first point.
+    expect(Math.max(...xs(beforeDawn.d))).toBeCloseTo(Math.min(...xs(lit.d)));
+  });
+
+  it('gives a lane with no active predicate a single run covering everything', () => {
+    // Wind and snow depth must be unaffected — they draw in one colour, so `segments` has to be
+    // usable everywhere rather than being a sun-only field the other lanes ignore.
+    const days = [
+      day(
+        '2026-01-15',
+        D0,
+        Array.from({ length: 24 }, (_, h) => hour(h, { windSpeedKph: 5 + h })),
+      ),
+    ];
+    const model = weatherTimelineModel({ days, width: WIDTH });
+    expect(model?.wind?.segments).toHaveLength(1);
+    expect(model?.wind?.segments[0]?.active).toBe(true);
+  });
+
+  it('splits on a data gap as well as on the sun, not instead of it', () => {
+    const model = weatherTimelineModel({
+      days: [
+        sunnyDay('2026-01-15', D0),
+        day('2026-01-16', D0 + DAY_MS, null, { missing: true }),
+        sunnyDay('2026-01-17', D0 + 2 * DAY_MS),
+      ],
+      width: WIDTH,
+    });
+    // Two days × (dark, lit, dark) — the gap prevents the two days' trailing/leading dark runs from
+    // merging into one path across the hole.
+    expect(model?.sun?.segments).toHaveLength(6);
+  });
+});
+
+describe('wind direction survives the round trip', () => {
+  it('carries a bearing through the archive adapter to the model', () => {
+    const days = timelineDaysFromArchive({
+      days: [{ dayMs: D0, localDate: '2026-01-15', hours: 24 }],
+      hours: [
+        {
+          dayMs: D0,
+          localDate: '2026-01-15',
+          hours: [{ localHour: 6, temperatureC: -5, windSpeedKph: 18, windDirectionDeg: 315 }],
+        },
+      ],
+      missingDayMs: [],
+    });
+    expect(days[0]?.hours?.[0]?.windDirectionDeg).toBe(315);
+    // 315° is NW, and `windSectorOf` centres its sectors on the compass points rather than flooring.
+    expect(windSectorOf(315)).toBe(14);
   });
 });

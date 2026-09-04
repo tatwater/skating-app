@@ -254,6 +254,14 @@ export interface TimelineHour {
   snowfallCm?: number;
   snowDepthM?: number;
   windSpeedKph?: number;
+  /**
+   * Open-Meteo `wind_direction_10m` — degrees **meteorological**, i.e. the direction wind blows
+   * *from*, which is the convention every compass label in this app already uses.
+   *
+   * ⚠ Read it with `windSectorOf` rather than dividing by 22.5: the sectors are centred on the
+   * compass points, so N spans 348.75°–11.25° and a naive floor puts half of north into NNE.
+   */
+  windDirectionDeg?: number;
   shortwaveWm2?: number;
   /** WMO code from Open-Meteo, when requested. Absent falls back to the rain/snow/temperature rule. */
   weatherCode?: number;
@@ -388,6 +396,19 @@ export interface AuxLayer {
    * the reading where the wind detail matters most.
    */
   line: string;
+  /**
+   * The same edge, cut into runs by whether the lane's measure was **actually happening**.
+   *
+   * Only the sun lane uses the distinction today: its trace is yellow while the sun is up and neutral
+   * when it is not, so a glance reads daylight without reading values. A lane with no `active`
+   * predicate returns one run with `active: true`, which renderers draw in a single color — so
+   * consuming `segments` instead of `line` is always correct and never lane-specific.
+   *
+   * ⚠ **A separate split from the gap split, and both apply.** A run ends at a data hole *or* at the
+   * moment the measure crosses into or out of being active, because a path that spans either one
+   * would be drawn in a single color that is wrong for half its length.
+   */
+  segments: { d: string; active: boolean }[];
   /** Spans where this lane's condition held. */
   emphasis: EmphasisSpan[];
   /** The value the lane's top represents, in the lane's own unit. */
@@ -691,11 +712,18 @@ function auxLayer(
   measure: (hour: TimelineHour) => number | null,
   holds: (hour: TimelineHour) => boolean,
   fallbackMax: number,
+  /**
+   * Whether the measure was *happening* at this hour, for lanes whose trace changes color when it is.
+   * Absent means always — the lane draws in one color, which is right for wind and snow depth.
+   */
+  active?: (hour: TimelineHour, value: number) => boolean,
 ): AuxLayer | null {
-  const values: { x: number; v: number }[] = [];
+  const values: { x: number; v: number; active: boolean }[] = [];
   for (const p of positioned) {
     const v = measure(p.hour);
-    if (v !== null && Number.isFinite(v)) values.push({ x: p.x, v });
+    if (v !== null && Number.isFinite(v)) {
+      values.push({ x: p.x, v, active: active ? active(p.hour, v) : true });
+    }
   }
   if (values.length === 0) return null;
 
@@ -723,7 +751,35 @@ function auxLayer(
     .filter((d) => d.length > 0)
     .join(' ');
 
-  return { box, area, line, emphasis: emphasisSpans(positioned, hourWidth, holds), max };
+  // Split again on the active flag, *within* each gap-run. ⚠ The two splits compose rather than
+  // replace each other: a run must end at a data hole and also at every crossing into or out of
+  // activity, or one path gets stroked in a single color that is wrong for half its length.
+  //
+  // Each active run is extended by one point into its neighbour so consecutive segments meet instead
+  // of leaving a one-hour hole at every sunrise and sunset — without it the sun trace is visibly
+  // dashed at exactly the two moments a reader looks for.
+  const segments: { d: string; active: boolean }[] = [];
+  for (const run of runs) {
+    for (const stretch of runsOf(run, (prev, next) => prev.active !== next.active)) {
+      const first = stretch[0];
+      if (!first) continue;
+      const startIndex = run.indexOf(first);
+      const points = run
+        .slice(startIndex, startIndex + stretch.length + 1)
+        .map((p) => ({ x: p.x, y: y(p.v) }));
+      const d = linePath(points);
+      if (d.length > 0) segments.push({ d, active: first.active });
+    }
+  }
+
+  return {
+    box,
+    area,
+    line,
+    segments,
+    emphasis: emphasisSpans(positioned, hourWidth, holds),
+    max,
+  };
 }
 
 /**
@@ -883,6 +939,11 @@ export function weatherTimelineModel(input: WeatherTimelineInput): WeatherTimeli
     (h) => (h.shortwaveWm2 ?? 0) >= SUNLIT_WM2 && h.temperatureC > 0,
     // Clear-sky midwinter noon at this latitude, so lanes are comparable between lakes and weeks.
     400,
+    // **Any** shortwave at all, not the `SUNLIT_WM2` threshold — the trace turns yellow when the sun
+    // is up, which is a fact about the sky rather than about intensity. A dim overcast morning is
+    // still daytime, and drawing it as night would make the lane disagree with the reader's own
+    // memory of the day. The stronger threshold still governs the emphasis rail above.
+    (_h, value) => value > 0,
   );
 
   const snowDepth = auxLayer(
@@ -1005,6 +1066,7 @@ function toTimelineHour(h: {
     ...(num(h.snowfallCm) === undefined ? {} : { snowfallCm: h.snowfallCm }),
     ...(num(h.snowDepthM) === undefined ? {} : { snowDepthM: h.snowDepthM }),
     ...(num(h.windSpeedKph) === undefined ? {} : { windSpeedKph: h.windSpeedKph }),
+    ...(num(h.windDirectionDeg) === undefined ? {} : { windDirectionDeg: h.windDirectionDeg }),
     ...(num(h.shortwaveWm2) === undefined ? {} : { shortwaveWm2: h.shortwaveWm2 }),
     ...(num(h.weatherCode) === undefined ? {} : { weatherCode: h.weatherCode }),
   };

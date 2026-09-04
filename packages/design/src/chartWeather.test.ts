@@ -6,6 +6,7 @@ import {
 } from '@skating/core';
 import { describe, expect, it } from 'vitest';
 import {
+  emphasisColor,
   TEMPERATURE_BAND_EDGES_F,
   TEMPERATURE_BANDS,
   WEATHER_AUX_SCALE,
@@ -50,9 +51,39 @@ describe('every theme defines every slot', () => {
     }
     expect(palette.precipitation.snow).toMatch(/^#[0-9a-f]{6}$/i);
     expect(palette.precipitation.rain).toMatch(/^#[0-9a-f]{6}$/i);
-    expect(palette.aux.trace).toMatch(/^#[0-9a-f]{6}$/i);
-    expect(palette.aux.emphasis).toMatch(/^#[0-9a-f]{6}$/i);
-    expect(palette.aux.fill).toMatch(/^#[0-9a-f]{6}$/i);
+    for (const slot of ['trace', 'fill', 'control', 'sunLit'] as const) {
+      expect(palette.aux[slot]).toMatch(/^#[0-9a-f]{6}$/i);
+    }
+    expect(palette.emphasis.cold).toMatch(/^#[0-9a-f]{6}$/i);
+    expect(palette.emphasis.warm).toMatch(/^#[0-9a-f]{6}$/i);
+  });
+});
+
+describe('the emphasis rails borrow the temperature poles', () => {
+  // ⚠ The rule this pins: **cyan is the cold side and orange the warm side, in every lane.** Both
+  // auxiliary emphases are conjunctions with temperature — wind is highlighted when calm *and below*
+  // freezing, sun when bright *and above* — so they must wear the same poles the temperature line
+  // does. An earlier version used one shared blue for both, which drew a sunny thaw (the condition
+  // that softens a skating surface) in the same colour as the hard freeze that makes black ice.
+  it.each(['light', 'dark'] as const)('%s', (mode) => {
+    const palette = weatherChartPalette(mode);
+    expect(palette.emphasis.cold).toBe(palette.temperature.deepCold);
+    expect(palette.emphasis.warm).toBe(palette.temperature.warm);
+    expect(emphasisColor(mode, 'cold')).not.toBe(emphasisColor(mode, 'warm'));
+  });
+});
+
+describe('the scrubber colour is not a data colour', () => {
+  it.each(['light', 'dark'] as const)('%s', (mode) => {
+    // The thumb and the scrub crosshair are chrome. Chrome that borrows a scale's hue starts reading
+    // as a measurement — a thumb sitting under the wind lane in a wind colour was already ambiguous.
+    const p = weatherChartPalette(mode);
+    const dataColors = [
+      ...Object.values(p.temperature),
+      ...Object.values(p.precipitation),
+      p.aux.sunLit,
+    ];
+    expect(dataColors).not.toContain(p.aux.control);
   });
 });
 
@@ -64,7 +95,8 @@ describe('the two themes are genuinely different palettes', () => {
       expect(WEATHER_TEMPERATURE_SCALE.light[band]).not.toBe(WEATHER_TEMPERATURE_SCALE.dark[band]);
     }
     expect(WEATHER_PRECIPITATION_SCALE.light.rain).not.toBe(WEATHER_PRECIPITATION_SCALE.dark.rain);
-    expect(WEATHER_AUX_SCALE.light.emphasis).not.toBe(WEATHER_AUX_SCALE.dark.emphasis);
+    expect(WEATHER_AUX_SCALE.light.sunLit).not.toBe(WEATHER_AUX_SCALE.dark.sunLit);
+    expect(WEATHER_AUX_SCALE.light.control).not.toBe(WEATHER_AUX_SCALE.dark.control);
   });
 
   it('keeps the two poles on opposite sides of the hue circle', () => {

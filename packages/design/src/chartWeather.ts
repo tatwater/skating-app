@@ -120,25 +120,55 @@ export const WEATHER_PRECIPITATION_SCALE = {
 } as const satisfies Record<'light' | 'dark', { snow: string; rain: string }>;
 
 /**
- * The auxiliary lanes (wind, sun, snow depth) draw in **neutrals plus one emphasis color**.
+ * The auxiliary lanes (wind, sun, snow depth) draw in **neutrals, plus two borrowed colors**.
  *
  * Not a fifth, sixth and seventh hue. Each of those lanes is a single series in its own labelled
  * strip, so it needs no hue to establish identity — position already does that — and the anti-pattern
- * of "more than ~7 color classes carrying meaning" is real at this size. What they do need is a way
- * to say *"this span is the interesting one"*: calm-while-freezing in the wind lane, sunlit-above-
- * freezing in the sun lane. That is `emphasis`, and it is the same color in both because it means the
- * same thing in both — **the condition this lane exists to reveal was met here.**
+ * of "more than ~7 color classes carrying meaning" is real at this size.
+ *
+ * `sunLit` is the exception, and it is a *reference* rather than a new meaning: the sun trace is
+ * yellow whenever the sun is actually up and neutral when it is not, so the lane reads as daylight at
+ * a glance. Neutral is doing real work there too — it is the one color that can mean both "night" and
+ * "overcast", which is exactly the pair of things a zero reading covers.
+ *
+ * `control` is the scrubber thumb and the scrub crosshair. ⚠ **Deliberately not a data color.** Those
+ * are chrome, and chrome that borrows a scale's hue starts looking like a reading — the thumb sitting
+ * under the wind lane in the same blue as a wind mark was already ambiguous.
  */
 export const WEATHER_AUX_SCALE = {
-  light: { trace: neutral[400], emphasis: ice[600], fill: neutral[200] },
-  dark: { trace: neutral[500], emphasis: ice[400], fill: neutral[700] },
-} as const satisfies Record<'light' | 'dark', { trace: string; emphasis: string; fill: string }>;
+  light: { trace: neutral[400], fill: neutral[200], control: ice[600], sunLit: '#b07404' },
+  dark: { trace: neutral[500], fill: neutral[700], control: ice[400], sunLit: warning[300] },
+} as const satisfies Record<
+  'light' | 'dark',
+  { trace: string; fill: string; control: string; sunLit: string }
+>;
+
+/**
+ * The emphasis color for a lane whose condition is a **conjunction with temperature**.
+ *
+ * ⚠ **Borrowed from the temperature poles rather than picked, and that is the whole point.** Both
+ * auxiliary emphases are defined by which side of freezing they sit on — wind is highlighted when it
+ * was calm *and below* freezing, sun when it was bright *and above* — so painting them in the
+ * temperature scale's own cold and warm poles makes the chart say one consistent thing with color:
+ * **cyan is the cold side, orange is the warm side, everywhere.**
+ *
+ * An earlier version used a single shared blue for both, which quietly asserted the opposite: a sunny
+ * thaw, which is the condition that softens a skating surface, was drawn in the same color as the
+ * hard freeze that makes black ice.
+ */
+export function emphasisColor(mode: 'light' | 'dark', side: 'cold' | 'warm'): string {
+  return side === 'cold'
+    ? WEATHER_TEMPERATURE_SCALE[mode].deepCold
+    : WEATHER_TEMPERATURE_SCALE[mode].warm;
+}
 
 /** Every weather-chart color for one theme, as the renderers consume it. */
 export interface WeatherChartPalette {
   temperature: Record<TemperatureBand, string>;
   precipitation: { snow: string; rain: string };
-  aux: { trace: string; emphasis: string; fill: string };
+  aux: { trace: string; fill: string; control: string; sunLit: string };
+  /** Pre-resolved so a renderer never has to remember which pole a lane belongs to. */
+  emphasis: { cold: string; warm: string };
 }
 
 /** Resolve the whole chart palette for a theme — one call per render, no per-mark lookups. */
@@ -147,5 +177,6 @@ export function weatherChartPalette(mode: 'light' | 'dark'): WeatherChartPalette
     temperature: WEATHER_TEMPERATURE_SCALE[mode],
     precipitation: WEATHER_PRECIPITATION_SCALE[mode],
     aux: WEATHER_AUX_SCALE[mode],
+    emphasis: { cold: emphasisColor(mode, 'cold'), warm: emphasisColor(mode, 'warm') },
   };
 }

@@ -798,6 +798,7 @@ function storableHour(h: LocalHourlyWeather): Record<string, number> {
   put('snowfallCm', h.snowfallCm);
   put('snowDepthM', h.snowDepthM);
   put('windSpeedKph', h.windSpeedKph);
+  put('windDirectionDeg', h.windDirectionDeg);
   put('shortwaveWm2', h.shortwaveWm2);
   put('weatherCode', h.weatherCode);
   return out;

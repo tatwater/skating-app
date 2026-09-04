@@ -1,4 +1,5 @@
 import {
+  COMPASS_LABELS,
   cmToInches,
   DEFAULT_TIMELINE_HEIGHT,
   EMPHASIS_RAIL_HEIGHT,
@@ -15,6 +16,7 @@ import {
   type TimelineDayInput,
   timelineScrollbar,
   weatherTimelineModel,
+  windSectorOf,
 } from '@skating/core';
 import { type WeatherChartPalette, weatherChartPalette } from '@skating/design';
 import React, { useMemo, useRef, useState } from 'react';
@@ -52,6 +54,23 @@ import { useThemePreference } from '../providers/ThemeProvider';
  * Scrubbing is a **tap**, not a drag, which is what keeps the two unambiguous: a tap has no movement,
  * so it can never be confused with a pan.
  */
+/**
+ * The three auxiliary lanes and how each is coloured — the native twin of web's `AUX_LANES`.
+ *
+ * `side` picks which temperature pole the emphasis rail wears (both emphases are conjunctions with
+ * temperature); `litColor` is the trace colour while the measure is actually happening, which only
+ * the sun lane has.
+ */
+const AUX_LANES: {
+  key: 'wind' | 'sun' | 'snowDepth';
+  side: 'cold' | 'warm';
+  litColor?: (p: WeatherChartPalette) => string;
+}[] = [
+  { key: 'wind', side: 'cold' },
+  { key: 'sun', side: 'warm', litColor: (p) => p.aux.sunLit },
+  { key: 'snowDepth', side: 'cold' },
+];
+
 export function WeatherTimeline({
   days,
   height = DEFAULT_TIMELINE_HEIGHT,
@@ -277,17 +296,24 @@ export function WeatherTimeline({
                 />
               ))}
 
-              {[model.wind, model.sun, model.snowDepth].map((lane) =>
-                lane ? (
+              {AUX_LANES.map(({ key, side, litColor }) => {
+                const lane = model[key];
+                if (!lane) return null;
+                return (
                   <React.Fragment key={lane.box.top}>
                     <Path d={lane.area} fill={palette.aux.fill} opacity={0.55} />
-                    <Path
-                      d={lane.line}
-                      fill="none"
-                      stroke={palette.aux.trace}
-                      strokeLinejoin="round"
-                      strokeWidth="1"
-                    />
+                    {/* One stroke per run: a run ends both at a data hole and at every crossing into
+                        or out of "the measure is happening". Only the sun draws two colours today. */}
+                    {lane.segments.map((seg) => (
+                      <Path
+                        d={seg.d}
+                        fill="none"
+                        key={seg.d}
+                        stroke={seg.active && litColor ? litColor(palette) : palette.aux.trace}
+                        strokeLinejoin="round"
+                        strokeWidth={seg.active && litColor ? 1.5 : 1}
+                      />
+                    ))}
                     <Line
                       stroke={palette.aux.fill}
                       strokeWidth="1"
@@ -300,7 +326,10 @@ export function WeatherTimeline({
                         indistinguishable from a tall value, so a calm frozen week read as high wind. */}
                     {lane.emphasis.map((span) => (
                       <Rect
-                        fill={palette.aux.emphasis}
+                        // Cold pole for wind (calm *and* freezing), warm for sun (bright *and* above
+                        // freezing) — both are conjunctions with temperature, so they wear the
+                        // temperature scale's own poles.
+                        fill={palette.emphasis[side]}
                         height={EMPHASIS_RAIL_HEIGHT}
                         key={span.x}
                         width={span.width}
@@ -309,12 +338,12 @@ export function WeatherTimeline({
                       />
                     ))}
                   </React.Fragment>
-                ) : null,
-              )}
+                );
+              })}
 
               {scrub ? (
                 <Line
-                  stroke={palette.aux.emphasis}
+                  stroke={palette.aux.control}
                   strokeWidth="1"
                   x1={scrub.x}
                   x2={scrub.x}
@@ -424,7 +453,7 @@ function TimelineScrubber({
             height={10}
             left={bar.x}
             position="absolute"
-            style={{ backgroundColor: palette.aux.emphasis }}
+            style={{ backgroundColor: palette.aux.control }}
             width={bar.width}
           />
         ) : null}
@@ -458,7 +487,15 @@ function TimelineReadout({ hour }: { hour: PositionedHour | null }) {
         : `${roundTo(mmToInches(h.precipitationMm ?? h.rainMm ?? 0), 2)}″`;
     parts.push(`${precip.label} ${amount}`);
   }
-  if (typeof h.windSpeedKph === 'number') parts.push(`${Math.round(kphToMph(h.windSpeedKph))} mph`);
+  if (typeof h.windSpeedKph === 'number') {
+    // Direction reads as "from the NW", which is the meteorological convention every compass label
+    // in this app already uses — and the half of wind that a speed alone cannot tell you.
+    const from =
+      typeof h.windDirectionDeg === 'number'
+        ? ` ${COMPASS_LABELS[windSectorOf(h.windDirectionDeg)] ?? ''}`
+        : '';
+    parts.push(`${Math.round(kphToMph(h.windSpeedKph))} mph${from}`);
+  }
   if (typeof h.snowDepthM === 'number' && h.snowDepthM > 0) {
     parts.push(`${roundTo(cmToInches(h.snowDepthM * 100), 1)}″ down`);
   }

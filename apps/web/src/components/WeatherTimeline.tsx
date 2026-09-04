@@ -1,4 +1,5 @@
 import {
+  COMPASS_LABELS,
   cmToInches,
   DEFAULT_TIMELINE_HEIGHT,
   EMPHASIS_RAIL_HEIGHT,
@@ -15,6 +16,7 @@ import {
   type TimelineDayInput,
   timelineScrollbar,
   weatherTimelineModel,
+  windSectorOf,
 } from '@skating/core';
 import { type WeatherChartPalette, weatherChartPalette } from '@skating/design';
 import { useTheme } from 'next-themes';
@@ -41,7 +43,35 @@ import { useEffect, useMemo, useRef, useState } from 'react';
  * name a precipitation type in words, which is where `weather_code`'s cost actually pays off. The
  * readout is an enhancement, never the only route to a value — the day labels, the freezing rule and
  * the panel's sentences all stand on their own.
+ *
+ * ## Colour says the same thing in every lane
+ *
+ * Cyan is the cold side and orange the warm side, throughout — see {@link AUX_LANES}. The sun trace is
+ * additionally yellow whenever the sun is up and neutral when it is not, so the lane reads as daylight
+ * before it reads as values.
  */
+
+/**
+ * The three auxiliary lanes, and how each one is coloured.
+ *
+ * `side` picks which temperature pole the emphasis rail wears, because both emphases are conjunctions
+ * with temperature: wind is highlighted when it was calm *and below* freezing, sun when it was bright
+ * *and above*. `litColor` is the trace colour while the measure is actually happening — only the sun
+ * has one, and it is what turns that lane into a legible day/night rhythm rather than a row of bumps.
+ *
+ * A table rather than three near-identical JSX blocks: the lanes differ in exactly these two ways, and
+ * spelling that out is what stops a later edit from giving wind a sun colour by copy-paste.
+ */
+const AUX_LANES: {
+  key: 'wind' | 'sun' | 'snowDepth';
+  side: 'cold' | 'warm';
+  litColor?: (p: WeatherChartPalette) => string;
+}[] = [
+  { key: 'wind', side: 'cold' },
+  { key: 'sun', side: 'warm', litColor: (p) => p.aux.sunLit },
+  { key: 'snowDepth', side: 'cold' },
+];
+
 export function WeatherTimeline({
   days,
   height = DEFAULT_TIMELINE_HEIGHT,
@@ -323,46 +353,57 @@ export function WeatherTimeline({
               />
             ))}
 
-            {[model.wind, model.sun, model.snowDepth].map(
-              (lane) =>
-                lane && (
-                  <g key={lane.box.top}>
-                    <path d={lane.area} fill={palette.aux.fill} opacity={0.55} />
+            {AUX_LANES.map(({ key, side, litColor }) => {
+              const lane = model[key];
+              if (!lane) return null;
+              return (
+                <g key={lane.box.top}>
+                  <path d={lane.area} fill={palette.aux.fill} opacity={0.55} />
+                  {/* One stroke per run, because a run ends both at a data hole and at every
+                        crossing into or out of "the measure is happening". Only the sun lane draws
+                        two colors today; the others return a single run and are unaffected. */}
+                  {lane.segments.map((seg) => (
                     <path
-                      d={lane.line}
+                      d={seg.d}
                       fill="none"
-                      stroke={palette.aux.trace}
+                      key={seg.d}
+                      stroke={seg.active && litColor ? litColor(palette) : palette.aux.trace}
                       strokeLinejoin="round"
-                      strokeWidth="1"
+                      strokeWidth={seg.active && litColor ? 1.5 : 1}
                     />
-                    {/* A hairline floor, so three stacked sparklines read as three lanes. */}
-                    <line
-                      stroke={palette.aux.fill}
-                      strokeWidth="1"
-                      x1={0}
-                      x2={model.width}
-                      y1={lane.box.bottom}
-                      y2={lane.box.bottom}
-                    />
-                    {/* The emphasis rule, as a rail on the baseline — see `EMPHASIS_RAIL_HEIGHT` for
+                  ))}
+                  {/* A hairline floor, so three stacked sparklines read as three lanes. */}
+                  <line
+                    stroke={palette.aux.fill}
+                    strokeWidth="1"
+                    x1={0}
+                    x2={model.width}
+                    y1={lane.box.bottom}
+                    y2={lane.box.bottom}
+                  />
+                  {/* The emphasis rule, as a rail on the baseline — see `EMPHASIS_RAIL_HEIGHT` for
                         why this is not a full-height shaded region. */}
-                    {lane.emphasis.map((span) => (
-                      <rect
-                        fill={palette.aux.emphasis}
-                        height={EMPHASIS_RAIL_HEIGHT}
-                        key={span.x}
-                        width={span.width}
-                        x={span.x}
-                        y={lane.box.bottom - EMPHASIS_RAIL_HEIGHT}
-                      />
-                    ))}
-                  </g>
-                ),
-            )}
+                  {lane.emphasis.map((span) => (
+                    <rect
+                      // Cold pole for wind (calm *and* freezing), warm pole for sun (bright *and*
+                      // above freezing). Both conditions are conjunctions with temperature, so they
+                      // wear the temperature scale's own poles — cyan is the cold side and orange
+                      // the warm side, in every lane of this chart.
+                      fill={palette.emphasis[side]}
+                      height={EMPHASIS_RAIL_HEIGHT}
+                      key={span.x}
+                      width={span.width}
+                      x={span.x}
+                      y={lane.box.bottom - EMPHASIS_RAIL_HEIGHT}
+                    />
+                  ))}
+                </g>
+              );
+            })}
 
             {scrub && (
               <line
-                stroke={palette.aux.emphasis}
+                stroke={palette.aux.control}
                 strokeWidth="1"
                 x1={scrub.x}
                 x2={scrub.x}
@@ -516,7 +557,7 @@ function TimelineScrubber({
       {bar && (
         <div
           className="absolute top-1/2 h-2.5 -translate-y-1/2 rounded-full"
-          style={{ backgroundColor: palette.aux.emphasis, left: bar.x, width: bar.width }}
+          style={{ backgroundColor: palette.aux.control, left: bar.x, width: bar.width }}
         />
       )}
     </div>
@@ -546,7 +587,13 @@ function TimelineReadout({ hour }: { hour: PositionedHour | null }) {
     parts.push(`${precip.label} ${inches}`);
   }
   if (typeof h.windSpeedKph === 'number') {
-    parts.push(`${Math.round(kphToMph(h.windSpeedKph))} mph`);
+    // Direction reads as "from the NW", which is the meteorological convention every compass label
+    // in this app already uses — and the half of wind that a speed alone cannot tell you.
+    const from =
+      typeof h.windDirectionDeg === 'number'
+        ? ` ${COMPASS_LABELS[windSectorOf(h.windDirectionDeg)] ?? ''}`
+        : '';
+    parts.push(`${Math.round(kphToMph(h.windSpeedKph))} mph${from}`);
   }
   if (typeof h.snowDepthM === 'number' && h.snowDepthM > 0) {
     parts.push(`${roundTo(cmToInches(h.snowDepthM * 100), 1)}″ on the ground`);
