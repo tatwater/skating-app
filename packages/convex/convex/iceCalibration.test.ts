@@ -674,3 +674,108 @@ describe('iceCalibration: DST and the unfinished day', () => {
     expect(pair?.freezingDegreeHours).toBeCloseTo(50, 6);
   });
 });
+
+describe('iceCalibration: the two hours a year a day boundary is ambiguous', () => {
+  /**
+   * Ten days of archive ending `anchorDayMs`, each carrying the offset its own date was on.
+   *
+   * 2025's real transitions, because they are in the past — a window of future-dated days would be
+   * excluded by the completeness guard and the test would pass for the wrong reason.
+   */
+  async function seedTransition(
+    t: ReturnType<typeof convexTest>,
+    anchorDayMs: number,
+    offsetFor: (dayMs: number) => number,
+  ) {
+    await t.run(async (ctx) => {
+      for (let i = 0; i < 10; i++) {
+        const dayMs = anchorDayMs - i * DAY_MS;
+        await ctx.db.insert('weatherDays', {
+          cellKey: CELL_KEY,
+          tier: 'browse' as const,
+          dayMs,
+          localDate: new Date(dayMs).toISOString().slice(0, 10),
+          source: 'forecast' as const,
+          hours: 24,
+          utcOffsetSeconds: offsetFor(dayMs),
+          freezingDegreeHours: 10,
+          thawDegreeHours: 0,
+          fetchedAt: Date.now(),
+        });
+      }
+    });
+  }
+
+  async function daysObservedFor(
+    t: ReturnType<typeof convexTest>,
+    skateEndTime: number,
+  ): Promise<number | undefined> {
+    const waterBodyId = await seedBody(t);
+    const mod = await seedProfile(t, 'moderator');
+    await t.run((ctx) =>
+      ctx.db.insert('reports', {
+        authorId: mod.id,
+        waterBodyId,
+        point: { lat: 44.0163, lng: -72.0331 },
+        skateEndTime,
+        reportTime: skateEndTime,
+        source: 'native' as const,
+        iceTypes: ['black_ice'] as const,
+        surfaceTags: [],
+        photoIds: [],
+        iceThickness: { readings: [{ valueCm: 12, method: 'measured' as const }] },
+        moderationStatus: 'visible' as const,
+        hazardIdsCreated: [],
+        createdAt: skateEndTime,
+        updatedAt: skateEndTime,
+      }),
+    );
+    const res = await t
+      .withIdentity({ subject: mod.subject })
+      .query(api.iceCalibration.calibrationPairs, {});
+    return res.pairs[0]?.daysObserved;
+  }
+
+  test('a skate the evening BEFORE spring-forward anchors on that evening', async () => {
+    // ⚠ **The case that broke the previous fix, which looked principled and confirmed its own error.**
+    // Spring-forward 2025 is 09 March at 2 AM EST = 07:00 UTC. A skate at 23:30 EST on the 8th is
+    // 2025-03-09T04:30Z — a UTC stamp on the 9th, two and a half hours before the clocks move. The old
+    // code seeded from the row nearest the *UTC* day (the 9th, already EDT at −4), which put the
+    // instant on the 9th, then re-read the 9th's row and agreed with itself.
+    //
+    // Span containment gets it right: the 8th (−5) covers [03-08T05:00Z, 03-09T05:00Z) and so does the
+    // 9th (−4) from 04:00Z — the doubled hour — and the earlier day wins because the clocks have not
+    // moved yet.
+    const t = convexTest(schema, modules);
+    const transition = Date.UTC(2025, 2, 9);
+    await seedTransition(t, transition, (d) => (d >= transition ? -4 * 3600 : -5 * 3600));
+
+    // Anchored on the 8th, the window holds the nine seeded days up to and including it; anchored on
+    // the 9th it would hold ten.
+    expect(await daysObservedFor(t, Date.UTC(2025, 2, 9, 4, 30))).toBe(9);
+  });
+
+  test('a skate in the hour fall-back removes anchors on the later day', async () => {
+    // The mirror case, and the one span containment cannot answer by containment: fall-back 2025 is
+    // 02 November at 2 AM EDT = 06:00 UTC. A skate at 2025-11-02T04:30Z is 00:30 EDT on the 2nd, but
+    // the 1st's span (−4) ends at 11-02T04:00Z and the 2nd's (−5) does not start until 05:00Z — the
+    // instant falls in the gap between them. The later day is right, for the mirror reason.
+    const t = convexTest(schema, modules);
+    const transition = Date.UTC(2025, 10, 2);
+    await seedTransition(t, transition, (d) => (d >= transition ? -5 * 3600 : -4 * 3600));
+
+    expect(await daysObservedFor(t, Date.UTC(2025, 10, 2, 4, 30))).toBe(10);
+  });
+
+  test('an ordinary evening skate is unaffected by either rule', async () => {
+    // The common path has exactly one containing span and must stay boring.
+    const t = convexTest(schema, modules);
+    const tenth = Date.UTC(2025, 1, 10);
+    await seedTransition(t, tenth, () => -5 * 3600);
+
+    // 8 PM EST on the 10th is 01:00Z on the 11th — the original bug's shape.
+    expect(await daysObservedFor(t, Date.UTC(2025, 1, 11, 1, 0))).toBe(10);
+    // And an afternoon skate on the 9th anchors on the 9th, one day back.
+    expect(await daysObservedFor(t, Date.UTC(2025, 1, 9, 20, 0))).toBe(9);
+  });
+});

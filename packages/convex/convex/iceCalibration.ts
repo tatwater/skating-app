@@ -160,26 +160,57 @@ async function windowIntegrals(
 }
 
 /**
- * The UTC offset to read this cell's day keys with — stored if we have it, guessed if we do not.
+ * The local calendar day a skate ended on, and the offset that day was on.
  *
  * ⚠ **Needed because `dayMs` is a LOCAL date and `skateEndTime` is a UTC instant.** Flooring the
- * instant to a UTC day is wrong by the offset, which in this region is 4–5 hours — so every skate
- * ending after about 7 PM lands on the next day's key, shifting the whole 60-day window by one and
- * silently biasing the fit. Evening skating is the common case, so this was the common path.
+ * instant to a UTC day is wrong by the offset, which here is 4–5 hours — so every skate ending after
+ * about 7 PM lands on the next day's key, shifting the whole 60-day window by one and silently
+ * biasing the fit. Evening skating is the common case, so this was the common path.
  *
- * Prefers what the provider told us (correct, and DST-aware) and falls back to longitude, which is
- * right to the hour across all five states. Never falls back to zero: a UTC assumption is exactly
- * the bug being fixed.
+ * ## It returns the day, not an offset — because deriving one from the other is circular
+ *
+ * The previous two attempts both tried to pick an *offset* and let the caller floor with it, and both
+ * were wrong on a DST boundary. Taking the first row in range took the **oldest** day's offset, three
+ * days early. Seeding from the nearest row and re-resolving looked principled and was worse: for a
+ * skate at 23:30 on the day *before* spring-forward, the nearest row is the transition day itself, its
+ * post-transition offset moves the instant onto that day, and the second pass then finds that day's
+ * row and **confirms its own error**. A fixed point is not the same as a correct answer.
+ *
+ * So this asks the question directly. A stored day `D` whose offset is `o` covers the UTC span
+ * `[D − o, D + 24h − o)`. Exactly one span contains a given instant on all but two days a year, and
+ * on those two:
+ *
+ * - **Spring-forward** doubles an hour: two spans contain the instant. The earlier day is right,
+ *   because the transition happens at 2 AM — an instant that can still belong to the previous
+ *   evening does, since the clocks have not moved yet.
+ * - **Fall-back** removes one: no span contains it, and it falls in the gap between two. The later
+ *   day is right, for the mirror reason.
+ *
+ * Day-granularity offsets cannot do better than this: the provider tells us what offset a *date* was
+ * on, never the instant a transition fired. Both rules above are exact for the real transition times
+ * and the residual error is bounded at one hour, twice a year, for skates ending within that hour.
  */
-async function cellUtcOffsetSeconds(
+interface SkateAnchor {
+  /** The local calendar day the skate ended on — the calibration window's newest day. */
+  localDayMs: number;
+  /**
+   * The offset that day was on.
+   *
+   * Reused for "has today finished at this lake?", which is exact where it matters: the completeness
+   * guard only binds on a window ending at or near today, and for those the skate is recent enough
+   * that its offset *is* the current one. For older skates every day in the window finished long ago
+   * and the guard never fires.
+   */
+  utcOffsetSeconds: number;
+}
+
+async function skateLocalDay(
   ctx: QueryCtx,
   cellKey: string,
   lng: number,
   skateEndTime: number,
-): Promise<number> {
+): Promise<SkateAnchor> {
   const utcEstimate = Math.floor(skateEndTime / DAY_MS) * DAY_MS;
-  // Look in a small window around the report rather than at the cell's newest row: the offset is a
-  // property of a *date* once DST is involved, and the date that matters is the skate's.
   const rows = await ctx.db
     .query('weatherDays')
     .withIndex('by_cell_day', (q) =>
@@ -189,27 +220,37 @@ async function cellUtcOffsetSeconds(
         .lte('dayMs', utcEstimate + DAY_MS),
     )
     .collect();
-  const known = rows.filter(
-    (r): r is typeof r & { utcOffsetSeconds: number } => typeof r.utcOffsetSeconds === 'number',
-  );
-  if (known.length === 0) return approximateUtcOffsetSeconds(lng);
 
-  // ⚠ **The nearest row, then the skate's own row — not simply the first.** `by_cell_day` returns
-  // ascending, so taking the first match took the offset from the *oldest* day in the window, three
-  // days before the skate. Across a DST transition that is the wrong hour, and an hour is enough to
-  // move the anchor day near local midnight — which shifts the whole 60-day window by one, drops the
-  // oldest intended day and adds one that had not happened.
-  //
-  // Two passes because the question is circular: naming the skate's local day needs an offset. The
-  // nearest row gives one good enough to name the day, and the row *for* that day then gives the
-  // offset the day actually had. A transition is one hour, so this converges immediately.
-  const nearestTo = (target: number) =>
-    known.reduce((best, r) =>
-      Math.abs(r.dayMs - target) < Math.abs(best.dayMs - target) ? r : best,
-    );
-  const localDay = localDayMsAt(skateEndTime, nearestTo(utcEstimate).utcOffsetSeconds);
-  const exact = known.find((r) => r.dayMs === localDay);
-  return (exact ?? nearestTo(localDay)).utcOffsetSeconds;
+  const known = rows
+    .filter((r): r is typeof r & { utcOffsetSeconds: number } => {
+      return typeof r.utcOffsetSeconds === 'number';
+    })
+    .sort((a, b) => a.dayMs - b.dayMs);
+
+  // Old rows predate the field. The fallback is longitude, right to the hour across all five states —
+  // never zero, since a UTC assumption is the original bug.
+  const approximate = (): SkateAnchor => {
+    const o = approximateUtcOffsetSeconds(lng);
+    return { localDayMs: localDayMsAt(skateEndTime, o), utcOffsetSeconds: o };
+  };
+  if (known.length === 0) return approximate();
+
+  const startOf = (r: { dayMs: number; utcOffsetSeconds: number }) =>
+    r.dayMs - r.utcOffsetSeconds * 1000;
+  const anchor = (r: { dayMs: number; utcOffsetSeconds: number }): SkateAnchor => ({
+    localDayMs: r.dayMs,
+    utcOffsetSeconds: r.utcOffsetSeconds,
+  });
+
+  // `known` is ascending, so the first match is the earliest — the spring-forward rule.
+  const containing = known.find(
+    (r) => skateEndTime >= startOf(r) && skateEndTime < startOf(r) + DAY_MS,
+  );
+  if (containing) return anchor(containing);
+
+  // Nothing contains it: the hour fall-back removes. The next day along is the right side of the gap.
+  const after = known.find((r) => startOf(r) > skateEndTime);
+  return after ? anchor(after) : approximate();
 }
 
 /**
@@ -274,14 +315,18 @@ async function collectCalibrationPairs(
     }
     if (!body) continue;
 
-    // The lake's local calendar day, not the UTC one — see `cellUtcOffsetSeconds`, which resolves the
-    // offset against the skate's own date so a DST transition inside the window cannot shift it.
-    const offset = await cellUtcOffsetSeconds(ctx, body.cellKey, body.lng, report.skateEndTime);
-    const toMs = localDayMsAt(report.skateEndTime, offset);
+    // The lake's local calendar day, not the UTC one — resolved by span containment rather than by
+    // flooring with a guessed offset, which is what made both earlier attempts wrong on a DST edge.
+    const { localDayMs: toMs, utcOffsetSeconds } = await skateLocalDay(
+      ctx,
+      body.cellKey,
+      body.lng,
+      report.skateEndTime,
+    );
     const fromMs = toMs - (CALIBRATION_WINDOW_DAYS - 1) * DAY_MS;
     // Today at *this* lake. A window ending today would otherwise integrate a row whose un-elapsed
     // hours are forecast.
-    const todayLocalDayMs = localDayMsAt(nowMs, offset);
+    const todayLocalDayMs = localDayMsAt(nowMs, utcOffsetSeconds);
     const windowKey = `${body.cellKey}:${toMs}`;
     let integrals = windowCache.get(windowKey);
     if (integrals === undefined) {
