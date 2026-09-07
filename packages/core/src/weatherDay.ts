@@ -84,6 +84,91 @@ export function approximateUtcOffsetSeconds(lng: number): number {
 }
 
 /**
+ * Formatters are expensive to construct and we ask the same handful of zones over and over.
+ *
+ * `null` marks a zone the runtime rejected, so a bad identifier costs one `try` rather than one per
+ * call. Bounded by the number of distinct IANA zones the corpus touches — one, in practice.
+ */
+const zoneFormatters = new Map<string, Intl.DateTimeFormat | null>();
+
+function dateFormatterFor(timeZone: string): Intl.DateTimeFormat | null {
+  const hit = zoneFormatters.get(timeZone);
+  if (hit !== undefined) return hit;
+  let fmt: Intl.DateTimeFormat | null = null;
+  try {
+    fmt = new Intl.DateTimeFormat('en-CA', {
+      timeZone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    });
+    // `en-CA` yields `YYYY-MM-DD`, but prove it rather than trust it — a runtime without tz data
+    // silently formats in UTC, which is the failure this exists to prevent.
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(fmt.format(0))) fmt = null;
+  } catch {
+    fmt = null;
+  }
+  zoneFormatters.set(timeZone, fmt);
+  return fmt;
+}
+
+/**
+ * The local calendar date at an instant, in an IANA zone — **exact, including both DST edges.**
+ *
+ * ⚠ **This is the answer that offset arithmetic cannot give.** A stored `utcOffsetSeconds` describes
+ * one moment, and the archive stamps a whole 92-day response with a single one (see the field's note
+ * in `schema.ts`), so a winter day backfilled in July carries EDT. Even a per-date offset is
+ * ambiguous at a transition: spring-forward makes an hour belong to two dates and fall-back makes one
+ * belong to neither, and no amount of arithmetic on a day-granularity offset resolves either.
+ *
+ * A zone identifier does, because the runtime carries the transition instants. Verified against the
+ * real Convex runtime rather than assumed: `2025-03-09T04:30Z` is `2025-03-08` (the evening before
+ * the clocks move) and `2025-11-02T04:30Z` is `2025-11-02` (inside the hour fall-back removes).
+ *
+ * Returns `null` for an unknown zone or a runtime without timezone data, so a caller falls back
+ * rather than silently getting UTC.
+ */
+export function localDateInZone(instantMs: number, timeZone: string): string | null {
+  if (!Number.isFinite(instantMs)) return null;
+  const fmt = dateFormatterFor(timeZone);
+  if (!fmt) return null;
+  const formatted = fmt.format(instantMs);
+  return /^\d{4}-\d{2}-\d{2}$/.test(formatted) ? formatted : null;
+}
+
+/** {@link localDateInZone} as a `dayMs` key. `null` when the zone is unusable. */
+export function localDayMsInZone(instantMs: number, timeZone: string): number | null {
+  const date = localDateInZone(instantMs, timeZone);
+  return date === null ? null : localDateToDayMs(date);
+}
+
+/**
+ * The UTC offset a **local date** was on, in seconds — what `utcOffsetSeconds` always claimed to be.
+ *
+ * Probes UTC noon of the date, which lands inside that local date for every offset in ±12h and can
+ * never fall in a transition gap (both US transitions fire between 01:00 and 03:00 local).
+ */
+export function utcOffsetSecondsInZone(dayMs: number, timeZone: string): number | null {
+  if (!Number.isFinite(dayMs)) return null;
+  let parts: Intl.DateTimeFormatPart[];
+  try {
+    parts = new Intl.DateTimeFormat('en-US', {
+      timeZone,
+      timeZoneName: 'longOffset',
+    }).formatToParts(dayMs + DAY_MS / 2);
+  } catch {
+    return null;
+  }
+  const name = parts.find((p) => p.type === 'timeZoneName')?.value;
+  // `GMT-05:00`, or bare `GMT` at exactly zero.
+  const m = /^GMT(?:([+-])(\d{2}):(\d{2}))?$/.exec(name ?? '');
+  if (!m) return null;
+  if (!m[1]) return 0;
+  const magnitude = Number(m[2]) * 3600 + Number(m[3]) * 60;
+  return m[1] === '-' ? -magnitude : magnitude;
+}
+
+/**
  * Hours below which a stored day is **still in progress**, not a finished observation.
  *
  * ⚠ **Not `=== 24`.** DST days are 23 or 25 hours long and both transitions fall inside a Northeast

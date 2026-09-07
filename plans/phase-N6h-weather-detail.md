@@ -1182,7 +1182,8 @@ sub-area-scoped rather than body-scoped.
 
 *"Three nights below 20°F"* is the example query in every discussion of this phase, and a night spans
 two calendar days. If `weatherDays` rows are local-calendar-day, then "nights" is a derived query over
-them and **the boundary must be defined exactly once** (6 PM → 9 AM local, or whatever the ice
+t
+hem and **the boundary must be defined exactly once** (6 PM → 9 AM local, or whatever the ice
 physics argues for) in `@skating/core`, shared by the filter and the panel. Two definitions means the
 feed and the drawer disagree about the same lake, which is the worst kind of bug: both surfaces look
 right in isolation.

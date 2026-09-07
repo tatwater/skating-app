@@ -1431,7 +1431,28 @@ export default defineSchema({
      * belongs to — needs the offset, and without it a caller floors to a UTC day and misfiles every
      * evening by one day. Free in every response and previously thrown away; see `localDayMsAt`.
      */
+    /**
+     * The offset **this date** was on, in seconds east of UTC.
+     *
+     * ⚠ **It did not always mean that, and the difference lost calibration windows.** Open-Meteo
+     * returns one `utc_offset_seconds` for a whole response, and the ingest stamped it on all 92
+     * days — so a backfill run in July gave every January row EDT. Anything reading it as a
+     * date-specific offset (the D160 calibration did) was an hour out for half the archive, which
+     * near local midnight moves the calendar date and shifts a 60-day window by one.
+     *
+     * Rows written since carry the real per-date offset, derived from {@link timeZone}. Older rows
+     * still hold the response-wide value and are corrected on their next refetch — so prefer
+     * `timeZone` and treat this as the fallback it is.
+     */
     utcOffsetSeconds: v.optional(v.number()),
+    /**
+     * The IANA zone for the cell, e.g. `America/New_York`.
+     *
+     * The only field here from which a calendar date is knowable exactly: it carries the transition
+     * instants, so it resolves both the hour spring-forward doubles and the one fall-back removes,
+     * neither of which any offset can.
+     */
+    timeZone: v.optional(v.string()),
 
     /**
      * Hours observed. **NOT always 24** — DST days are 23 or 25, and *today's row is partial by

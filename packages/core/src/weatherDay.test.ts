@@ -9,13 +9,16 @@ import {
   isCompleteDay,
   type LocalHourlyWeather,
   lastSnowDay,
+  localDateInZone,
   localDateToDayMs,
   localDayMsAt,
+  localDayMsInZone,
   MELT_WH_PER_MM,
   nightsBelowThresholdC,
   rainTotalMm,
   snowfallTotalCm,
   summarizeWeatherDays,
+  utcOffsetSecondsInZone,
   windSectorOf,
 } from './weatherDay';
 
@@ -469,5 +472,49 @@ describe('isCompleteDay — a partial day is data, not a finished day', () => {
   it('needs both conditions, not either', () => {
     expect(isCompleteDay(24, JAN15, JAN16)).toBe(true);
     expect(isCompleteDay(6, JAN15, JAN16)).toBe(false); // a damaged observation, not a finished day
+  });
+});
+
+describe('zone-aware local dates — what offset arithmetic cannot do', () => {
+  const NY = 'America/New_York';
+
+  it('puts the evening before spring-forward on the previous date', () => {
+    // ⚠ **The case three successive offset-based fixes got wrong.** Spring-forward 2025 is 09 March
+    // at 2 AM EST = 07:00 UTC, so 23:30 EST on the 8th is a UTC stamp already on the 9th — and every
+    // scheme that floored that instant by an offset it guessed landed on the 9th.
+    expect(localDateInZone(Date.UTC(2025, 2, 9, 4, 30), NY)).toBe('2025-03-08');
+    expect(localDayMsInZone(Date.UTC(2025, 2, 9, 4, 30), NY)).toBe(Date.UTC(2025, 2, 8));
+  });
+
+  it('resolves the hour fall-back removes', () => {
+    // 00:30 EDT on 02 Nov 2025. No per-date offset can place this: the 1st's span ends before it and
+    // the 2nd's starts after it.
+    expect(localDateInZone(Date.UTC(2025, 10, 2, 4, 30), NY)).toBe('2025-11-02');
+  });
+
+  it('handles an ordinary evening skate, the common path', () => {
+    // 8 PM EST on 10 Feb is 01:00Z on the 11th — the original UTC-floor bug's shape.
+    expect(localDateInZone(Date.UTC(2025, 1, 11, 1, 0), NY)).toBe('2025-02-10');
+  });
+
+  it('reports the offset a date was actually on', () => {
+    expect(utcOffsetSecondsInZone(Date.UTC(2025, 0, 15), NY)).toBe(-5 * 3600);
+    expect(utcOffsetSecondsInZone(Date.UTC(2025, 6, 15), NY)).toBe(-4 * 3600);
+    // The transition dates themselves resolve to the offset the day mostly ran at.
+    expect(utcOffsetSecondsInZone(Date.UTC(2025, 2, 9), NY)).toBe(-4 * 3600);
+    expect(utcOffsetSecondsInZone(Date.UTC(2025, 10, 2), NY)).toBe(-5 * 3600);
+  });
+
+  it('returns null for a zone the runtime cannot use, rather than silently answering in UTC', () => {
+    // The failure that matters: a runtime without tz data formats everything in UTC, which would
+    // look like a working answer and be wrong by five hours.
+    expect(localDateInZone(Date.UTC(2025, 1, 11, 1, 0), 'Not/AZone')).toBeNull();
+    expect(localDayMsInZone(Date.UTC(2025, 1, 11, 1, 0), 'Not/AZone')).toBeNull();
+    expect(utcOffsetSecondsInZone(Date.UTC(2025, 0, 15), 'Not/AZone')).toBeNull();
+  });
+
+  it('handles UTC itself, where the offset is zero and the name is bare', () => {
+    expect(utcOffsetSecondsInZone(Date.UTC(2025, 0, 15), 'UTC')).toBe(0);
+    expect(localDateInZone(Date.UTC(2025, 0, 15, 23, 30), 'UTC')).toBe('2025-01-15');
   });
 });

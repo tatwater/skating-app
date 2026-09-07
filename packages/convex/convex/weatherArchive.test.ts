@@ -1380,3 +1380,54 @@ describe('weatherArchive: the hourly row version (N6h Workstream D)', () => {
     expect(rows[0]?.hours[0]?.windDirectionDeg).toBe(315);
   });
 });
+
+describe('weatherArchive: one response, one offset — but many dates', () => {
+  test('stamps each date with the offset THAT DATE was on, not the response-wide one', async () => {
+    // ⚠ **The bug.** Open-Meteo returns a single `utc_offset_seconds` for a whole response, and the
+    // ingest wrote it onto every day row — so a 92-day backfill run in July gave every January row
+    // EDT. The D160 calibration then read those as date-specific offsets and was an hour out for half
+    // the archive, which near local midnight moves the calendar date and shifts a 60-day window.
+    //
+    // Written through `upsertWeatherDays` directly rather than a fetch, because the defect is in how
+    // one response's offset is spread across dates, not in the fetching.
+    const t = convexTest(schema, modules);
+    const days = [
+      { dayMs: Date.UTC(2025, 0, 15), localDate: '2025-01-15' }, // EST
+      { dayMs: Date.UTC(2025, 6, 15), localDate: '2025-07-15' }, // EDT
+    ];
+    await t.mutation(internal.weatherArchive.upsertWeatherDays, {
+      cellKey: 'c1',
+      tier: 'browse' as const,
+      source: 'forecast' as const,
+      fetchedAt: Date.now(),
+      // As if fetched in July: one offset, EDT, for the whole span.
+      utcOffsetSeconds: -4 * 3600,
+      timeZone: 'America/New_York',
+      days,
+    });
+
+    const rows = await t.run((ctx) => ctx.db.query('weatherDays').collect());
+    const jan = rows.find((r) => r.localDate === '2025-01-15');
+    const jul = rows.find((r) => r.localDate === '2025-07-15');
+    expect(jan?.utcOffsetSeconds).toBe(-5 * 3600); // NOT the response's −4
+    expect(jul?.utcOffsetSeconds).toBe(-4 * 3600);
+    expect(jan?.timeZone).toBe('America/New_York');
+  });
+
+  test('falls back to the response-wide offset when no zone came back', async () => {
+    // Older Open-Meteo behaviour, or a response we could not read a zone from. One number for every
+    // date is wrong-ish, and it is still better than nothing — but it must not claim a zone.
+    const t = convexTest(schema, modules);
+    await t.mutation(internal.weatherArchive.upsertWeatherDays, {
+      cellKey: 'c2',
+      tier: 'browse' as const,
+      source: 'forecast' as const,
+      fetchedAt: Date.now(),
+      utcOffsetSeconds: -4 * 3600,
+      days: [{ dayMs: Date.UTC(2025, 0, 15), localDate: '2025-01-15' }],
+    });
+    const row = (await t.run((ctx) => ctx.db.query('weatherDays').collect()))[0];
+    expect(row?.utcOffsetSeconds).toBe(-4 * 3600);
+    expect(row?.timeZone).toBeUndefined();
+  });
+});

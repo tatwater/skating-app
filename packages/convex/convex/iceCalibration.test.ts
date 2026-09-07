@@ -536,31 +536,6 @@ describe('iceCalibration: local dates, not UTC ones', () => {
 
 describe('iceCalibration: DST and the unfinished day', () => {
   /** Days keyed by local date, each carrying the offset that date actually had. */
-  async function seedAcrossTransition(
-    t: ReturnType<typeof convexTest>,
-    anchorDayMs: number,
-    days: number,
-    offsetFor: (dayMs: number) => number,
-  ) {
-    await t.run(async (ctx) => {
-      for (let i = 0; i < days; i++) {
-        const dayMs = anchorDayMs - i * DAY_MS;
-        await ctx.db.insert('weatherDays', {
-          cellKey: CELL_KEY,
-          tier: 'browse' as const,
-          dayMs,
-          localDate: new Date(dayMs).toISOString().slice(0, 10),
-          source: 'forecast' as const,
-          hours: 24,
-          utcOffsetSeconds: offsetFor(dayMs),
-          freezingDegreeHours: 10,
-          thawDegreeHours: 0,
-          fetchedAt: Date.now(),
-        });
-      }
-    });
-  }
-
   async function seedMeasuredReport(
     t: ReturnType<typeof convexTest>,
     waterBodyId: Id<'waterBodies'>,
@@ -587,38 +562,40 @@ describe('iceCalibration: DST and the unfinished day', () => {
     );
   }
 
-  test('a skate after spring-forward uses its own day offset, not the oldest row in range', async () => {
-    // ⚠ **The bug.** `by_cell_day` returns ascending, so taking the first row with an offset took it
-    // from the *oldest* day in the lookup window — three days before the skate, and on the far side
-    // of the transition. EST is −5, EDT is −4; near local midnight that hour moves the anchor day by
-    // one, which drops the oldest intended day and adds one that had not happened.
-    //
-    // 2026-03-08 is the US spring-forward. A skate at 03:30 UTC on the 9th is 23:30 EDT on the 8th —
-    // the same evening — but reading it at EST puts it at 22:30 on the 8th too. The discriminating
-    // case is a skate at 03:30 UTC on the 9th being read against an offset from the 6th (EST, −5):
-    // that lands on the 8th either way, so use 04:30 UTC, which is 00:30 EDT on the 9th but 23:30
-    // EST on the 8th.
+  test('a zoned cell anchors a post-transition skate on its own day', async () => {
+    // ⚠ This used to seed a different offset either side of the transition and assert that the code
+    // picked the right one. That described data the ingest has never produced — one response carries
+    // one offset — so it was testing a fix against a fiction. It now seeds a zone, which is what a
+    // real row holds, and the assertion is unchanged because the *answer* was never the problem.
     const t = convexTest(schema, modules);
     const waterBodyId = await seedBody(t);
     const mod = await seedProfile(t, 'moderator');
 
-    const transition = Date.UTC(2026, 2, 8);
-    const offsetFor = (dayMs: number) => (dayMs >= transition ? -4 * 3600 : -5 * 3600);
-    // Ten days of archive ending the 9th, spanning the change.
-    await seedAcrossTransition(t, Date.UTC(2026, 2, 9), 10, offsetFor);
+    await t.run(async (ctx) => {
+      for (let i = 0; i < 10; i++) {
+        const dayMs = Date.UTC(2026, 2, 9) - i * DAY_MS;
+        await ctx.db.insert('weatherDays', {
+          cellKey: CELL_KEY,
+          tier: 'browse' as const,
+          dayMs,
+          localDate: new Date(dayMs).toISOString().slice(0, 10),
+          source: 'forecast' as const,
+          hours: 24,
+          timeZone: 'America/New_York',
+          freezingDegreeHours: 10,
+          thawDegreeHours: 0,
+          fetchedAt: Date.now(),
+        });
+      }
+    });
 
-    const skateEndTime = Date.UTC(2026, 2, 9, 4, 30); // 00:30 EDT on the 9th
-    await seedMeasuredReport(t, waterBodyId, mod.id, skateEndTime);
-
+    // 2026-03-09T04:30Z is 00:30 EDT on the 9th — after that year's 08 March transition.
+    await seedMeasuredReport(t, waterBodyId, mod.id, Date.UTC(2026, 2, 9, 4, 30));
     const res = await t
       .withIdentity({ subject: mod.subject })
       .query(api.iceCalibration.calibrationPairs, {});
-    const pair = res.pairs[0];
-    expect(pair).toBeDefined();
-    // Anchored on the 9th (EDT), so all ten seeded days are in the window. Reading the offset off the
-    // oldest row (EST, −5) put the anchor on the 8th and dropped the 9th — nine days, 90 degree-hours.
-    expect(pair?.daysObserved).toBe(10);
-    expect(pair?.freezingDegreeHours).toBeCloseTo(100, 6);
+    expect(res.pairs[0]?.daysObserved).toBe(10);
+    expect(res.pairs[0]?.freezingDegreeHours).toBeCloseTo(100, 6);
   });
 
   test('an unfinished day never enters the integral, even holding 24 hours', async () => {
@@ -676,17 +653,21 @@ describe('iceCalibration: DST and the unfinished day', () => {
 });
 
 describe('iceCalibration: the two hours a year a day boundary is ambiguous', () => {
+  const NY = 'America/New_York';
+
   /**
-   * Ten days of archive ending `anchorDayMs`, each carrying the offset its own date was on.
+   * Ten days of archive ending `anchorDayMs`, carrying a **zone** and no hand-written offsets.
    *
-   * 2025's real transitions, because they are in the past — a window of future-dated days would be
-   * excluded by the completeness guard and the test would pass for the wrong reason.
+   * ⚠ That is the point of this block. An earlier version of these tests seeded a different
+   * `utcOffsetSeconds` on either side of the transition, which made the fix under test look right and
+   * described data the ingest has never produced: Open-Meteo returns one offset per *response*, so
+   * every row in a 92-day backfill carries the offset of the day it was fetched on. Seeding a zone is
+   * seeding what a real row now holds.
+   *
+   * 2025's real transitions, because they are in the past — future-dated days would be excluded by
+   * the completeness guard and the tests would pass for the wrong reason.
    */
-  async function seedTransition(
-    t: ReturnType<typeof convexTest>,
-    anchorDayMs: number,
-    offsetFor: (dayMs: number) => number,
-  ) {
+  async function seedZoned(t: ReturnType<typeof convexTest>, anchorDayMs: number) {
     await t.run(async (ctx) => {
       for (let i = 0; i < 10; i++) {
         const dayMs = anchorDayMs - i * DAY_MS;
@@ -697,7 +678,7 @@ describe('iceCalibration: the two hours a year a day boundary is ambiguous', () 
           localDate: new Date(dayMs).toISOString().slice(0, 10),
           source: 'forecast' as const,
           hours: 24,
-          utcOffsetSeconds: offsetFor(dayMs),
+          timeZone: NY,
           freezingDegreeHours: 10,
           thawDegreeHours: 0,
           fetchedAt: Date.now(),
@@ -737,45 +718,52 @@ describe('iceCalibration: the two hours a year a day boundary is ambiguous', () 
   }
 
   test('a skate the evening BEFORE spring-forward anchors on that evening', async () => {
-    // ⚠ **The case that broke the previous fix, which looked principled and confirmed its own error.**
-    // Spring-forward 2025 is 09 March at 2 AM EST = 07:00 UTC. A skate at 23:30 EST on the 8th is
-    // 2025-03-09T04:30Z — a UTC stamp on the 9th, two and a half hours before the clocks move. The old
-    // code seeded from the row nearest the *UTC* day (the 9th, already EDT at −4), which put the
-    // instant on the 9th, then re-read the 9th's row and agreed with itself.
-    //
-    // Span containment gets it right: the 8th (−5) covers [03-08T05:00Z, 03-09T05:00Z) and so does the
-    // 9th (−4) from 04:00Z — the doubled hour — and the earlier day wins because the clocks have not
-    // moved yet.
+    // ⚠ **The case three successive offset-based fixes got wrong.** Spring-forward 2025 is 09 March
+    // at 2 AM EST = 07:00 UTC, so 23:30 EST on the 8th carries a UTC stamp already on the 9th. Every
+    // scheme that floored that instant by an offset it had guessed landed on the 9th; the zone knows
+    // the transition instant and does not have to guess.
     const t = convexTest(schema, modules);
-    const transition = Date.UTC(2025, 2, 9);
-    await seedTransition(t, transition, (d) => (d >= transition ? -4 * 3600 : -5 * 3600));
-
-    // Anchored on the 8th, the window holds the nine seeded days up to and including it; anchored on
-    // the 9th it would hold ten.
+    await seedZoned(t, Date.UTC(2025, 2, 9));
+    // Anchored on the 8th the window holds nine of the ten seeded days; on the 9th it would hold ten.
     expect(await daysObservedFor(t, Date.UTC(2025, 2, 9, 4, 30))).toBe(9);
   });
 
   test('a skate in the hour fall-back removes anchors on the later day', async () => {
-    // The mirror case, and the one span containment cannot answer by containment: fall-back 2025 is
-    // 02 November at 2 AM EDT = 06:00 UTC. A skate at 2025-11-02T04:30Z is 00:30 EDT on the 2nd, but
-    // the 1st's span (−4) ends at 11-02T04:00Z and the 2nd's (−5) does not start until 05:00Z — the
-    // instant falls in the gap between them. The later day is right, for the mirror reason.
+    // 00:30 EDT on 02 Nov 2025 — an instant no per-date offset can place, because the 1st's span ends
+    // before it and the 2nd's begins after it.
     const t = convexTest(schema, modules);
-    const transition = Date.UTC(2025, 10, 2);
-    await seedTransition(t, transition, (d) => (d >= transition ? -5 * 3600 : -4 * 3600));
-
+    await seedZoned(t, Date.UTC(2025, 10, 2));
     expect(await daysObservedFor(t, Date.UTC(2025, 10, 2, 4, 30))).toBe(10);
   });
 
-  test('an ordinary evening skate is unaffected by either rule', async () => {
-    // The common path has exactly one containing span and must stay boring.
+  test('an ordinary evening skate is unaffected, which is the common path', async () => {
     const t = convexTest(schema, modules);
-    const tenth = Date.UTC(2025, 1, 10);
-    await seedTransition(t, tenth, () => -5 * 3600);
-
-    // 8 PM EST on the 10th is 01:00Z on the 11th — the original bug's shape.
+    await seedZoned(t, Date.UTC(2025, 1, 10));
+    // 8 PM EST on the 10th is 01:00Z on the 11th — the original UTC-floor bug's shape.
     expect(await daysObservedFor(t, Date.UTC(2025, 1, 11, 1, 0))).toBe(10);
-    // And an afternoon skate on the 9th anchors on the 9th, one day back.
-    expect(await daysObservedFor(t, Date.UTC(2025, 1, 9, 20, 0))).toBe(9);
+  });
+
+  test('rows predating the zone still anchor off their response-wide offset', async () => {
+    // The fallback has to keep working: the archive is full of rows written before `timeZone` existed,
+    // and they are corrected only on their next refetch.
+    const t = convexTest(schema, modules);
+    await t.run(async (ctx) => {
+      for (let i = 0; i < 10; i++) {
+        const dayMs = Date.UTC(2025, 1, 10) - i * DAY_MS;
+        await ctx.db.insert('weatherDays', {
+          cellKey: CELL_KEY,
+          tier: 'browse' as const,
+          dayMs,
+          localDate: new Date(dayMs).toISOString().slice(0, 10),
+          source: 'forecast' as const,
+          hours: 24,
+          utcOffsetSeconds: -5 * 3600, // one number for the whole batch, as the ingest wrote it
+          freezingDegreeHours: 10,
+          thawDegreeHours: 0,
+          fetchedAt: Date.now(),
+        });
+      }
+    });
+    expect(await daysObservedFor(t, Date.UTC(2025, 1, 11, 1, 0))).toBe(10);
   });
 });

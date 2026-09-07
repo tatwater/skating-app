@@ -50,8 +50,10 @@ import {
   type LocalHourlyWeather,
   localDateToDayMs,
   localDayMsAt,
+  localDayMsInZone,
   spansMultipleSampleCells,
   summarizeWeatherDays,
+  utcOffsetSecondsInZone,
   WEATHER_TIERS,
   type WeatherCell,
   type WeatherDaySummary,
@@ -127,6 +129,15 @@ interface IsoHourlyResponse {
    * `timezone=auto`. Free in every response and previously discarded — see `LocalHourlyBatch`.
    */
   utc_offset_seconds?: number;
+  /**
+   * The IANA zone Open-Meteo resolved for the coordinate under `timezone=auto` — `America/New_York`
+   * for all five states.
+   *
+   * ⚠ **This, not `utc_offset_seconds`, is what makes a calendar date knowable.** The offset is one
+   * number for the whole response and is therefore wrong for any date on the far side of a DST
+   * transition from the fetch; a zone identifier carries the transition instants themselves.
+   */
+  timezone?: string;
   hourly?: {
     time?: string[]; // local wall-clock, `YYYY-MM-DDTHH:mm`
     [key: string]: (number | null)[] | string[] | undefined;
@@ -165,6 +176,8 @@ function parseLocalStamp(stamp: string): { localDate: string; localHour: number 
 interface LocalHourlyBatch {
   hours: LocalHourlyWeather[];
   utcOffsetSeconds: number | null;
+  /** The response's IANA zone, when it gave one — see `IsoHourlyResponse.timezone`. */
+  timeZone: string | null;
 }
 
 /**
@@ -266,6 +279,7 @@ async function fetchLocalHourly(
   return {
     hours: out,
     utcOffsetSeconds: typeof json.utc_offset_seconds === 'number' ? json.utc_offset_seconds : null,
+    timeZone: typeof json.timezone === 'string' && json.timezone.length > 0 ? json.timezone : null,
   };
 }
 
@@ -352,6 +366,7 @@ export const upsertWeatherDays = internalMutation({
     fetchedAt: v.number(),
     /** Seconds east of UTC at this cell, as the provider resolved it. See `LocalHourlyBatch`. */
     utcOffsetSeconds: v.optional(v.number()),
+    timeZone: v.optional(v.string()),
     days: v.array(
       v.object({
         dayMs: v.number(),
@@ -367,7 +382,16 @@ export const upsertWeatherDays = internalMutation({
         tier: a.tier,
         source: a.source,
         fetchedAt: a.fetchedAt,
-        ...(a.utcOffsetSeconds === undefined ? {} : { utcOffsetSeconds: a.utcOffsetSeconds }),
+        // ⚠ **Per date, not per response.** `utc_offset_seconds` describes the moment of the fetch, so
+        // a 92-day backfill run in July used to stamp every January row with EDT — an hour out, which
+        // near local midnight moves a calendar date. With a zone we can say what each date was
+        // actually on; without one we fall back to the response's single number, as before.
+        ...(a.timeZone === undefined
+          ? {}
+          : { timeZone: a.timeZone, ...zoneOffsetFor(day.dayMs, a.timeZone, a.utcOffsetSeconds) }),
+        ...(a.timeZone !== undefined || a.utcOffsetSeconds === undefined
+          ? {}
+          : { utcOffsetSeconds: a.utcOffsetSeconds }),
         ...day,
       });
     }
@@ -910,6 +934,7 @@ export async function ingestCellDays(
     source: 'forecast',
     fetchedAt: Date.now(),
     ...(batch.utcOffsetSeconds === null ? {} : { utcOffsetSeconds: batch.utcOffsetSeconds }),
+    ...(batch.timeZone === null ? {} : { timeZone: batch.timeZone }),
     days: days.map((d) => ({ dayMs: d.dayMs, localDate: d.localDate, ...storableDay(d) })),
   });
   if (tier === 'browse') {
@@ -963,6 +988,22 @@ function storableHour(h: LocalHourlyWeather): Record<string, number> {
   put('shortwaveWm2', h.shortwaveWm2);
   put('weatherCode', h.weatherCode);
   return out;
+}
+
+/**
+ * The offset a specific stored date was on, preferring the zone over the response's single number.
+ *
+ * Returns a spreadable fragment so a caller can stay a one-liner: `{}` would drop the field, which is
+ * wrong — an absent offset is a different thing from a fallback one.
+ */
+function zoneOffsetFor(
+  dayMs: number,
+  timeZone: string,
+  responseOffset: number | undefined,
+): { utcOffsetSeconds: number } | Record<string, never> {
+  const exact = utcOffsetSecondsInZone(dayMs, timeZone);
+  if (exact !== null) return { utcOffsetSeconds: exact };
+  return responseOffset === undefined ? {} : { utcOffsetSeconds: responseOffset };
 }
 
 /**
@@ -1682,17 +1723,24 @@ export const getWeatherDaysForBody = action({
       toMs,
     });
 
-    // The newest stored offset, not the oldest: this asks what the offset is *now*, and a window that
-    // straddles a DST change holds both. Falls back to longitude, never to UTC.
-    const offset =
-      [...held].reverse().find((r) => typeof r.utcOffsetSeconds === 'number')?.utcOffsetSeconds ??
-      approximateUtcOffsetSeconds(cell.lng);
+    // ⚠ The zone first, and an offset only behind it. A stored offset is the one the *fetch* happened
+    // on, so on the far side of a DST change it is an hour out — which near local midnight makes
+    // "today" the wrong date and marks a settled day as still in progress, or worse the reverse.
+    const zone = [...held].reverse().find((r) => typeof r.timeZone === 'string')?.timeZone;
+    const nowMs = Date.now();
+    const todayLocalDayMs =
+      (zone === undefined ? null : localDayMsInZone(nowMs, zone)) ??
+      localDayMsAt(
+        nowMs,
+        [...held].reverse().find((r) => typeof r.utcOffsetSeconds === 'number')?.utcOffsetSeconds ??
+          approximateUtcOffsetSeconds(cell.lng),
+      );
 
     return {
       days: out,
       hours: hourRows,
       missingDayMs,
-      todayLocalDayMs: localDayMsAt(Date.now(), offset),
+      todayLocalDayMs,
       anyBorrowed,
       oneSampleForALargeBody: info.oneSampleForALargeBody,
       ...(info.fetchProfileM ? { fetchProfileM: info.fetchProfileM } : {}),
