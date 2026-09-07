@@ -63,9 +63,24 @@ describe('label formatting', () => {
   });
 });
 
+/**
+ * Every fixture here is January/February 2026, so a "today" in 2030 makes them all settled days.
+ *
+ * ⚠ The helper exists so the *interesting* argument stays visible. `todayLocalDayMs` is required on
+ * the real function precisely because omitting it was the bug — but repeating a far-future constant
+ * in forty call sites would bury the handful of tests where the value is the point.
+ */
+const ALL_SETTLED = Date.UTC(2030, 0, 1);
+function panelOf(
+  days: readonly PanelDay[],
+  options: { todayLocalDayMs?: number; coarse?: boolean } = {},
+) {
+  return buildPastWeatherPanel(days, { todayLocalDayMs: ALL_SETTLED, ...options });
+}
+
 describe('buildPastWeatherPanel — rows', () => {
   it('converts to imperial and orders ascending', () => {
-    const panel = buildPastWeatherPanel([day('2026-01-16'), day('2026-01-15')]);
+    const panel = panelOf([day('2026-01-16'), day('2026-01-15')]);
     expect(panel.rows.map((r) => r.localDate)).toEqual(['2026-01-15', '2026-01-16']);
     expect(panel.rows[0]?.highF).toBe(28); // -2°C
     expect(panel.rows[0]?.lowF).toBe(18); // -8°C
@@ -75,7 +90,7 @@ describe('buildPastWeatherPanel — rows', () => {
   });
 
   it('marks a gap as missing with null measures, never as zero', () => {
-    const panel = buildPastWeatherPanel([day('2026-01-15'), gap('2026-01-16')]);
+    const panel = panelOf([day('2026-01-15'), gap('2026-01-16')]);
     const hole = panel.rows.find((r) => r.localDate === '2026-01-16');
     expect(hole?.missing).toBe(true);
     expect(hole?.highF).toBeNull();
@@ -86,23 +101,23 @@ describe('buildPastWeatherPanel — rows', () => {
   });
 
   it('skips nulls in the input without shifting the rest', () => {
-    const panel = buildPastWeatherPanel([day('2026-01-15'), null, day('2026-01-17')]);
+    const panel = panelOf([day('2026-01-15'), null, day('2026-01-17')]);
     expect(panel.rows).toHaveLength(2);
   });
 
   it('carries the coarse flag through for a borrowed row', () => {
-    expect(buildPastWeatherPanel([day('2026-01-15')], { coarse: true }).coarse).toBe(true);
+    expect(panelOf([day('2026-01-15')], { coarse: true }).coarse).toBe(true);
   });
 });
 
 describe('buildPastWeatherPanel — headline', () => {
   it('says nothing at all when there is no data', () => {
-    expect(buildPastWeatherPanel([]).headline).toEqual([]);
-    expect(buildPastWeatherPanel([gap('2026-01-15')]).headline).toEqual([]);
+    expect(panelOf([]).headline).toEqual([]);
+    expect(panelOf([gap('2026-01-15')]).headline).toEqual([]);
   });
 
   it('leads with the count of hard-freeze nights', () => {
-    const panel = buildPastWeatherPanel([
+    const panel = panelOf([
       day('2026-01-14', { nightMinTempC: -12 }),
       day('2026-01-15', { nightMinTempC: -12 }),
       day('2026-01-16', { nightMinTempC: -1 }),
@@ -111,7 +126,7 @@ describe('buildPastWeatherPanel — headline', () => {
   });
 
   it('states the absence of hard freezes rather than staying silent', () => {
-    const panel = buildPastWeatherPanel([
+    const panel = panelOf([
       day('2026-01-15', { nightMinTempC: -1 }),
       day('2026-01-16', { nightMinTempC: -2 }),
     ]);
@@ -119,7 +134,7 @@ describe('buildPastWeatherPanel — headline', () => {
   });
 
   it('reports calm-while-freezing as an observation, not a conclusion', () => {
-    const panel = buildPastWeatherPanel([
+    const panel = panelOf([
       day('2026-01-15', { freezingHoursMeanWindKph: 3 }),
       day('2026-01-16', { freezingHoursMeanWindKph: 3 }),
     ]);
@@ -135,12 +150,12 @@ describe('buildPastWeatherPanel — headline', () => {
 
   it('reports windy-while-freezing above the calm threshold', () => {
     const windy = CALM_FREEZE_MAX_KPH + 10;
-    const panel = buildPastWeatherPanel([day('2026-01-15', { freezingHoursMeanWindKph: windy })]);
+    const panel = panelOf([day('2026-01-15', { freezingHoursMeanWindKph: windy })]);
     expect(panel.headline.find((l) => l.includes('freezing'))).toContain('Windy while freezing');
   });
 
   it('omits the freeze-wind line entirely when nothing froze', () => {
-    const panel = buildPastWeatherPanel([
+    const panel = panelOf([
       day('2026-01-15', {
         minTempC: 3,
         maxTempC: 8,
@@ -154,7 +169,7 @@ describe('buildPastWeatherPanel — headline', () => {
   });
 
   it('names the day snow last fell and totals it', () => {
-    const panel = buildPastWeatherPanel([
+    const panel = panelOf([
       day('2026-02-02', { snowfallCm: 7.6 }),
       day('2026-02-03'),
       day('2026-02-04'),
@@ -165,17 +180,17 @@ describe('buildPastWeatherPanel — headline', () => {
   });
 
   it('says there has been no snow when there has been none', () => {
-    const panel = buildPastWeatherPanel([day('2026-01-15'), day('2026-01-16')]);
+    const panel = panelOf([day('2026-01-15'), day('2026-01-16')]);
     expect(panel.headline.some((l) => l === 'No snow in the last 2 days')).toBe(true);
   });
 
   it('ignores a dusting below the snow threshold', () => {
-    const panel = buildPastWeatherPanel([day('2026-01-15', { snowfallCm: 0.1 })]);
+    const panel = panelOf([day('2026-01-15', { snowfallCm: 0.1 })]);
     expect(panel.headline.some((l) => l.startsWith('No snow'))).toBe(true);
   });
 
   it('names a rain day — the resurfacing input', () => {
-    const panel = buildPastWeatherPanel([
+    const panel = panelOf([
       day('2026-01-15', { rainMm: 6, maxTempC: 4, hoursAboveFreezing: 8, hoursBelowFreezing: 16 }),
       day('2026-01-16'),
     ]);
@@ -183,7 +198,7 @@ describe('buildPastWeatherPanel — headline', () => {
   });
 
   it('counts days that crossed freezing', () => {
-    const panel = buildPastWeatherPanel([
+    const panel = panelOf([
       day('2026-01-15', { hoursBelowFreezing: 14, hoursAboveFreezing: 10 }),
       day('2026-01-16', { hoursBelowFreezing: 20, hoursAboveFreezing: 4 }),
       day('2026-01-17', { hoursBelowFreezing: 24, hoursAboveFreezing: 0 }),
@@ -192,7 +207,7 @@ describe('buildPastWeatherPanel — headline', () => {
   });
 
   it('states missing days plainly rather than under-reporting a span', () => {
-    const panel = buildPastWeatherPanel([day('2026-01-15'), gap('2026-01-16'), gap('2026-01-17')]);
+    const panel = panelOf([day('2026-01-15'), gap('2026-01-16'), gap('2026-01-17')]);
     // Five of seven days is not less snow, it is less knowledge — and the panel has to say so.
     expect(panel.headline.at(-1)).toBe('2 days of weather unavailable');
   });
@@ -200,7 +215,7 @@ describe('buildPastWeatherPanel — headline', () => {
   it('never publishes a degree-hour integral or a thickness', () => {
     // The integrals are model-internal by founder call, and one division from an ice-thickness
     // estimate that D160 confines to an operator surface.
-    const panel = buildPastWeatherPanel([
+    const panel = panelOf([
       day('2026-01-15', { freezingDegreeHours: 999 }),
       day('2026-01-16', { freezingDegreeHours: 999 }),
     ]);
@@ -213,12 +228,12 @@ describe('buildPastWeatherPanel — headline', () => {
   });
 
   it('handles a single day without pluralising wrongly', () => {
-    const panel = buildPastWeatherPanel([day('2026-01-15', { nightMinTempC: -12 })]);
+    const panel = panelOf([day('2026-01-15', { nightMinTempC: -12 })]);
     expect(panel.headline[0]).toBe('1 night below 20°F');
   });
 
   it('does not count a night it could not observe', () => {
-    const panel = buildPastWeatherPanel([
+    const panel = panelOf([
       day('2026-01-15', { nightMinTempC: null }),
       day('2026-01-16', { nightMinTempC: -12 }),
     ]);
@@ -231,7 +246,7 @@ describe('buildPastWeatherPanel — the two order traps', () => {
   it('does not claim the window total fell since the last snow day', () => {
     // 10 cm on the 1st and 1 cm on the 6th. "4.3″ of snow since Feb 6" would be a false sentence
     // built from two true numbers — 0.4″ fell after the 6th.
-    const panel = buildPastWeatherPanel([
+    const panel = panelOf([
       day('2026-02-01', { snowfallCm: 10 }),
       day('2026-02-06', { snowfallCm: 1 }),
     ]);
@@ -241,10 +256,7 @@ describe('buildPastWeatherPanel — the two order traps', () => {
   });
 
   it('names the latest rainy day even when the input arrives out of order', () => {
-    const panel = buildPastWeatherPanel([
-      day('2026-02-05', { rainMm: 6 }),
-      day('2026-02-02', { rainMm: 6 }),
-    ]);
+    const panel = panelOf([day('2026-02-05', { rainMm: 6 }), day('2026-02-02', { rainMm: 6 })]);
     expect(panel.headline).toContain('Rain on Feb 5');
   });
 });
@@ -268,7 +280,7 @@ describe('buildPastWeatherPanel — a realistic week', () => {
       day('2026-02-04', { nightMinTempC: -9, snowfallCm: 6, freezingHoursMeanWindKph: 4 }),
       day('2026-02-05', { nightMinTempC: -11, freezingHoursMeanWindKph: 3 }),
     ];
-    const panel = buildPastWeatherPanel(week);
+    const panel = panelOf(week);
 
     expect(panel.rows).toHaveLength(5);
     expect(panel.rows[0]?.dayMs).toBe(base);
@@ -348,8 +360,11 @@ describe('buildPastWeatherPanel — today has not finished happening', () => {
     return days;
   }
 
+  /** The fixture's last row is 2026-02-10, so that is the day still happening. */
+  const TODAY = Date.UTC(2026, 1, 10);
+
   it('does not count an unfinished day as a settled one', () => {
-    const panel = buildPastWeatherPanel(windowWithPartialToday());
+    const panel = panelOf(windowWithPartialToday(), { todayLocalDayMs: TODAY });
     expect(panel.partialDays).toBe(1);
     expect(panel.rows).toHaveLength(7); // still drawn — what is happening now is what people want
     expect(panel.rows.at(-1)?.partial).toBe(true);
@@ -361,13 +376,13 @@ describe('buildPastWeatherPanel — today has not finished happening', () => {
     // ⚠ The bug: today's un-elapsed hours read as "it did not snow today", so a seven-day no-snow
     // claim covered six settled days and three hours. The count now matches what was actually
     // observed end to end.
-    const panel = buildPastWeatherPanel(windowWithPartialToday());
+    const panel = panelOf(windowWithPartialToday(), { todayLocalDayMs: TODAY });
     expect(panel.headline.some((l) => l.includes('No snow in the last 6 days'))).toBe(true);
     expect(panel.headline.some((l) => l.includes('last 7 days'))).toBe(false);
   });
 
   it('tells the reader that today was left out, rather than quietly shortening the window', () => {
-    const panel = buildPastWeatherPanel(windowWithPartialToday());
+    const panel = panelOf(windowWithPartialToday(), { todayLocalDayMs: TODAY });
     expect(panel.headline.some((l) => l.includes('still in progress'))).toBe(true);
   });
 
@@ -375,7 +390,7 @@ describe('buildPastWeatherPanel — today has not finished happening', () => {
     const days = windowWithPartialToday();
     // It is snowing hard right now, three hours in.
     days[6] = { ...(days[6] as NonNullable<PanelDay>), snowfallCm: 8, hoursAboveFreezing: 0 };
-    const panel = buildPastWeatherPanel(days);
+    const panel = panelOf(days, { todayLocalDayMs: TODAY });
     // The snow is visible on the strip...
     expect(panel.rows.at(-1)?.snowfallIn).toBeGreaterThan(0);
     // ...but the headline does not report a partial total as the window's settled total.
@@ -383,10 +398,38 @@ describe('buildPastWeatherPanel — today has not finished happening', () => {
   });
 
   it('keeps a 23-hour DST day as a complete day', () => {
+    // Spring-forward, and *yesterday* — so the hour count is the only thing that could call it
+    // partial, and it must not.
     const days = windowWithPartialToday();
     days[6] = { ...(days[6] as NonNullable<PanelDay>), hours: 23 };
-    const panel = buildPastWeatherPanel(days);
+    const panel = panelOf(days, { todayLocalDayMs: Date.UTC(2026, 1, 11) });
     expect(panel.partialDays).toBe(0);
     expect(panel.headline.some((l) => l.includes('No snow in the last 7 days'))).toBe(true);
+  });
+
+  it('treats today as unfinished even holding a full 24 hours', () => {
+    // ⚠ **The bug this whole argument exists for.** Open-Meteo returns whole calendar days and the
+    // ingest trims nothing, so today's row carries 24 hours — the un-elapsed ones *forecast* — from
+    // the morning's first fetch. Under the old hour-count test today was settled all day, and the
+    // headline stated tonight's predicted low as an observed one.
+    const days = windowWithPartialToday();
+    days[6] = { ...(days[6] as NonNullable<PanelDay>), hours: 24, snowfallCm: 9 };
+    const panel = panelOf(days, { todayLocalDayMs: TODAY });
+    expect(panel.partialDays).toBe(1);
+    expect(panel.rows.at(-1)?.partial).toBe(true);
+    // Nine centimetres of *forecast* snow stays out of the settled total.
+    expect(panel.headline.some((l) => l.includes('No snow in the last 6 days'))).toBe(true);
+  });
+
+  it('a future-dated row is never settled either', () => {
+    // Tomorrow's forecast can reach the archive the same way today's does.
+    const days = windowWithPartialToday();
+    days[6] = {
+      ...(days[6] as NonNullable<PanelDay>),
+      dayMs: Date.UTC(2026, 1, 11),
+      localDate: '2026-02-11',
+      hours: 24,
+    };
+    expect(panelOf(days, { todayLocalDayMs: TODAY }).partialDays).toBe(1);
   });
 });

@@ -57,8 +57,16 @@ export function PastWeatherPanel({
     fetchProfileM?: number[] | undefined;
     coarse: boolean;
     largeBody: boolean;
+    todayLocalDayMs: number;
     loading: boolean;
-  }>({ days: [], timeline: [], coarse: false, largeBody: false, loading: true });
+  }>({
+    days: [],
+    timeline: [],
+    coarse: false,
+    largeBody: false,
+    todayLocalDayMs: 0,
+    loading: true,
+  });
 
   useEffect(() => {
     let cancelled = false;
@@ -67,7 +75,14 @@ export function PastWeatherPanel({
       .then((result) => {
         if (cancelled) return;
         if (!result) {
-          setState({ days: [], timeline: [], coarse: false, largeBody: false, loading: false });
+          setState({
+            days: [],
+            timeline: [],
+            coarse: false,
+            largeBody: false,
+            todayLocalDayMs: 0,
+            loading: false,
+          });
           return;
         }
         // A recorded gap and a day that produced no row at all are both holes to a reader, so they
@@ -91,6 +106,7 @@ export function PastWeatherPanel({
         setState({
           days: all.slice(-days),
           timeline: timelineDaysFromArchive(result),
+          todayLocalDayMs: result.todayLocalDayMs,
           fetchProfileM: result.fetchProfileM,
           coarse: result.anyBorrowed,
           largeBody: result.oneSampleForALargeBody,
@@ -101,7 +117,14 @@ export function PastWeatherPanel({
         // Fail open and quiet, like every other weather surface: nothing cached means the next
         // drawer-open retries, and a missing history is not an error a skater can act on.
         if (!cancelled) {
-          setState({ days: [], timeline: [], coarse: false, largeBody: false, loading: false });
+          setState({
+            days: [],
+            timeline: [],
+            coarse: false,
+            largeBody: false,
+            todayLocalDayMs: 0,
+            loading: false,
+          });
         }
       });
     return () => {
@@ -110,8 +133,16 @@ export function PastWeatherPanel({
   }, [getDays, waterBodyId, days]);
 
   const panel = useMemo(
-    () => buildPastWeatherPanel(state.days, { coarse: state.coarse }),
-    [state.days, state.coarse],
+    // ⚠ The lake's today, from the server — never `Date.now()` here. Today's row arrives holding 24
+    // hours with the un-elapsed ones forecast, so without this the headline states tonight's
+    // predicted low as an observed one, and a reader in another timezone gets a different answer
+    // again. See `isCompleteDay` in core.
+    () =>
+      buildPastWeatherPanel(state.days, {
+        coarse: state.coarse,
+        todayLocalDayMs: state.todayLocalDayMs,
+      }),
+    [state.days, state.coarse, state.todayLocalDayMs],
   );
 
   if (state.loading) {

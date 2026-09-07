@@ -73,6 +73,8 @@ interface Archive {
   hourly: Record<string, (number | string | null)[]>;
 }
 
+const DAY_MS = 86_400_000;
+
 const archive = JSON.parse(
   readFileSync(new URL('./src/mascoma-weather-2025.json', import.meta.url), 'utf8'),
 ) as Archive;
@@ -139,7 +141,11 @@ function headlineFor(days: TimelineDayInput[]): string[] {
     })),
   );
   const summaries = summarizeWeatherDays(hours);
-  return buildPastWeatherPanel(summaries as unknown as PanelDay[]).headline;
+  // The archive is February 2025, so every day in it finished happening long ago. Passing a "today"
+  // past the end of the data is the honest way to say that — `isCompleteDay` asks about the date now,
+  // not the hour count, and a mock must not render its last column greyed out as if still in progress.
+  const todayLocalDayMs = Math.max(...summaries.map((d) => d.dayMs)) + DAY_MS;
+  return buildPastWeatherPanel(summaries as unknown as PanelDay[], { todayLocalDayMs }).headline;
 }
 
 // ── SVG helpers ──────────────────────────────────────────────────────────────────────────────────

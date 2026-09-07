@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { dayMsToLocalDate, windSectorOf } from './weatherDay';
+import type { ArchiveTimelineInput } from './weatherTimeline';
 import {
   BAND_EDGE_DEEP_COLD_F,
   BAND_EDGE_FREEZING_F,
@@ -70,6 +71,14 @@ function fullDay(
     Array.from({ length: 24 }, (_, h) => hour(h, { temperatureC: tempC, ...over(h) })),
   );
 }
+
+// Fixtures are January 2026; a 2030 "today" makes every one of them a finished day. The tests that
+// care about the current column pass their own.
+const archiveDays = (
+  input: Omit<ArchiveTimelineInput, 'todayLocalDayMs'> & {
+    todayLocalDayMs?: number;
+  },
+) => timelineDaysFromArchive({ todayLocalDayMs: Date.UTC(2030, 0, 1), ...input });
 
 describe('the band scale', () => {
   // The calm and sunlit thresholds are *imported* from `weatherPanel`/`weatherDay` rather than
@@ -450,7 +459,7 @@ describe('timelineDaysFromArchive', () => {
   it('keeps a day that has a summary but no hours as a column, not a collapse', () => {
     // The normal state for cells whose daily rows predate the hourly table. Dropping the day would
     // shrink the axis and silently redate every column after it.
-    const days = timelineDaysFromArchive({
+    const days = archiveDays({
       days: [
         { dayMs: D0, localDate: '2026-01-15', hours: 24 },
         { dayMs: D0 + DAY_MS, localDate: '2026-01-16', hours: 24 },
@@ -464,7 +473,7 @@ describe('timelineDaysFromArchive', () => {
   });
 
   it('emits a recorded gap as missing', () => {
-    const days = timelineDaysFromArchive({
+    const days = archiveDays({
       days: [{ dayMs: D0, localDate: '2026-01-15', hours: 24 }],
       hours: [hourRow(D0, '2026-01-15')],
       missingDayMs: [D0 + DAY_MS],
@@ -475,7 +484,7 @@ describe('timelineDaysFromArchive', () => {
   });
 
   it('marks a short day partial but not a 23-hour spring-forward day', () => {
-    const days = timelineDaysFromArchive({
+    const days = archiveDays({
       days: [
         { dayMs: D0, localDate: '2026-01-15', hours: 10 },
         { dayMs: D0 + DAY_MS, localDate: '2026-01-16', hours: 23 },
@@ -488,8 +497,24 @@ describe('timelineDaysFromArchive', () => {
     expect(days[1]?.partial).toBeUndefined();
   });
 
+  it('marks today partial even at 24 hours', () => {
+    // ⚠ Today's row holds all 24 hours from the morning's first fetch, the un-elapsed ones forecast,
+    // so the hour count can never reveal it. The current column was never drawn as partial.
+    const days = archiveDays({
+      days: [
+        { dayMs: D0, localDate: '2026-01-15', hours: 24 },
+        { dayMs: D0 + DAY_MS, localDate: '2026-01-16', hours: 24 },
+      ],
+      hours: [hourRow(D0, '2026-01-15', 24), hourRow(D0 + DAY_MS, '2026-01-16', 24)],
+      missingDayMs: [],
+      todayLocalDayMs: D0 + DAY_MS,
+    });
+    expect(days[0]?.partial).toBeUndefined();
+    expect(days[1]?.partial).toBe(true);
+  });
+
   it('sorts and de-duplicates across all three input lists', () => {
-    const days = timelineDaysFromArchive({
+    const days = archiveDays({
       days: [{ dayMs: D0 + 2 * DAY_MS, localDate: '2026-01-17', hours: 24 }],
       hours: [hourRow(D0, '2026-01-15')],
       missingDayMs: [D0 + DAY_MS, D0],
@@ -498,7 +523,7 @@ describe('timelineDaysFromArchive', () => {
   });
 
   it('carries the optional measures through to the model', () => {
-    const days = timelineDaysFromArchive({
+    const days = archiveDays({
       days: [{ dayMs: D0, localDate: '2026-01-15', hours: 24 }],
       hours: [
         {
@@ -523,7 +548,7 @@ describe('timelineDaysFromArchive tolerates an incomplete payload', () => {
   // swallowed it, and the *entire* past-weather panel disappeared — sentences included, none of which
   // depend on the chart. A client on a cached bundle is enough to reach that state.
   it('treats a missing hours list as no hours, not as an error', () => {
-    const days = timelineDaysFromArchive({
+    const days = archiveDays({
       days: [{ dayMs: D0, localDate: '2026-01-15', hours: 24 }],
       missingDayMs: [],
     });
@@ -532,7 +557,7 @@ describe('timelineDaysFromArchive tolerates an incomplete payload', () => {
   });
 
   it('survives an entirely empty object', () => {
-    expect(timelineDaysFromArchive({})).toEqual([]);
+    expect(archiveDays({})).toEqual([]);
   });
 });
 
@@ -807,7 +832,7 @@ describe('the sun trace splits where the sun is up', () => {
 
 describe('wind direction survives the round trip', () => {
   it('carries a bearing through the archive adapter to the model', () => {
-    const days = timelineDaysFromArchive({
+    const days = archiveDays({
       days: [{ dayMs: D0, localDate: '2026-01-15', hours: 24 }],
       hours: [
         {

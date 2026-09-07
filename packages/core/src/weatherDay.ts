@@ -95,14 +95,39 @@ export const COMPLETE_DAY_MIN_HOURS = 23;
 /**
  * Has this day finished happening?
  *
- * The archive deliberately stores **today's elapsed hours** (`forecast_days: '1'`) so a reader can
- * see what is happening now, and rewrites the row tomorrow when the day is whole. That makes
- * "partial" a normal, expected state of a perfectly good row — and it means *having data* and *being
- * a complete day* are different questions. Summing a partial day into a window integral reports
- * un-elapsed precipitation as zero and an in-progress high as final.
+ * The archive deliberately stores **today's hours** (`forecast_days: '1'`) so a reader can see what
+ * is happening now, and rewrites the row tomorrow when the day is whole. That makes "partial" a
+ * normal, expected state of a perfectly good row — and it means *having data* and *being a complete
+ * day* are different questions. Summing an unfinished day into a window integral reports un-elapsed
+ * precipitation as zero and an in-progress high as final.
+ *
+ * ## ⚠ Why the hour count alone cannot answer this
+ *
+ * It used to be `hours >= 23` and nothing else, on the reasoning that a row too short to be a DST day
+ * must still be in progress. **That reasoning had it backwards.** Open-Meteo's forecast endpoint
+ * returns whole calendar days, and nothing trims the response to the elapsed part — so today's row is
+ * stored with all 24 hours from the very first fetch of the morning, the un-elapsed ones carrying
+ * *forecast* values. Today therefore passed a 23-hour test at 6 AM, and the panel's headline and the
+ * D160 calibration integral both consumed tomorrow-ish weather as settled fact.
+ *
+ * So completeness is a question about **the date**, and the hour count only guards the other end: a
+ * historical row with six hours in it is a damaged observation, not a finished day.
+ *
+ * `todayLocalDayMs` is the reader's *lake's* current local day — {@link localDayMsAt} of now at the
+ * cell's stored offset — never the device's. A phone in California looking at a Vermont lake must not
+ * decide what "today" means there.
+ *
+ * ⚠ **All three arguments are required on purpose.** The two-argument version of this question is the
+ * one that was wrong for months, and an optional "today" would let a call site keep asking it by
+ * saying nothing. Every caller has a date and can get an offset.
  */
-export function isCompleteDay(hours: number | undefined | null): boolean {
-  return typeof hours === 'number' && hours >= COMPLETE_DAY_MIN_HOURS;
+export function isCompleteDay(
+  hours: number | undefined | null,
+  dayMs: number,
+  todayLocalDayMs: number,
+): boolean {
+  if (typeof hours !== 'number' || hours < COMPLETE_DAY_MIN_HOURS) return false;
+  return dayMs < todayLocalDayMs;
 }
 
 /**

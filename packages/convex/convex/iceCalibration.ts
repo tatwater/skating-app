@@ -130,6 +130,7 @@ async function windowIntegrals(
   cellKey: string,
   fromMs: number,
   toMs: number,
+  todayLocalDayMs: number,
 ): Promise<{ fdh: number; tdh: number; days: number }> {
   const rows = await ctx.db
     .query('weatherDays')
@@ -142,11 +143,15 @@ async function windowIntegrals(
   let days = 0;
   for (const row of rows) {
     if (row.missing === true) continue;
-    // ⚠ **A day still in progress must not enter a degree-hour integral.** The archive stores
-    // today's elapsed hours on purpose, so an unfinished row is valid data and an incomplete
-    // measurement at once — summing it contributes a fraction of a day's freezing while counting as
-    // a whole one, which biases the fitted Stefan coefficient in a direction nothing would reveal.
-    if (!isCompleteDay(row.hours)) continue;
+    // ⚠ **A day still in progress must not enter a degree-hour integral.** The archive stores today's
+    // row on purpose, so an unfinished row is valid data and an incomplete measurement at once —
+    // summing it contributes a fraction of a day's freezing while counting as a whole one, biasing
+    // the fitted Stefan coefficient in a direction nothing would reveal.
+    //
+    // The date is what settles this, not `hours`: Open-Meteo returns whole calendar days and nothing
+    // trims them, so today's row holds 24 hours from the morning's first fetch with the un-elapsed
+    // ones **forecast**. Fitting a physical constant to a forecast is the failure this prevents.
+    if (!isCompleteDay(row.hours, row.dayMs, todayLocalDayMs)) continue;
     fdh += row.freezingDegreeHours ?? 0;
     tdh += row.thawDegreeHours ?? 0;
     days += 1;
@@ -170,8 +175,9 @@ async function cellUtcOffsetSeconds(
   ctx: QueryCtx,
   cellKey: string,
   lng: number,
-  nearMs: number,
+  skateEndTime: number,
 ): Promise<number> {
+  const utcEstimate = Math.floor(skateEndTime / DAY_MS) * DAY_MS;
   // Look in a small window around the report rather than at the cell's newest row: the offset is a
   // property of a *date* once DST is involved, and the date that matters is the skate's.
   const rows = await ctx.db
@@ -179,14 +185,31 @@ async function cellUtcOffsetSeconds(
     .withIndex('by_cell_day', (q) =>
       q
         .eq('cellKey', cellKey)
-        .gte('dayMs', nearMs - 2 * DAY_MS)
-        .lte('dayMs', nearMs + DAY_MS),
+        .gte('dayMs', utcEstimate - 2 * DAY_MS)
+        .lte('dayMs', utcEstimate + DAY_MS),
     )
     .collect();
-  for (const row of rows) {
-    if (typeof row.utcOffsetSeconds === 'number') return row.utcOffsetSeconds;
-  }
-  return approximateUtcOffsetSeconds(lng);
+  const known = rows.filter(
+    (r): r is typeof r & { utcOffsetSeconds: number } => typeof r.utcOffsetSeconds === 'number',
+  );
+  if (known.length === 0) return approximateUtcOffsetSeconds(lng);
+
+  // ⚠ **The nearest row, then the skate's own row — not simply the first.** `by_cell_day` returns
+  // ascending, so taking the first match took the offset from the *oldest* day in the window, three
+  // days before the skate. Across a DST transition that is the wrong hour, and an hour is enough to
+  // move the anchor day near local midnight — which shifts the whole 60-day window by one, drops the
+  // oldest intended day and adds one that had not happened.
+  //
+  // Two passes because the question is circular: naming the skate's local day needs an offset. The
+  // nearest row gives one good enough to name the day, and the row *for* that day then gives the
+  // offset the day actually had. A transition is one hour, so this converges immediately.
+  const nearestTo = (target: number) =>
+    known.reduce((best, r) =>
+      Math.abs(r.dayMs - target) < Math.abs(best.dayMs - target) ? r : best,
+    );
+  const localDay = localDayMsAt(skateEndTime, nearestTo(utcEstimate).utcOffsetSeconds);
+  const exact = known.find((r) => r.dayMs === localDay);
+  return (exact ?? nearestTo(localDay)).utcOffsetSeconds;
 }
 
 /**
@@ -212,6 +235,9 @@ async function collectCalibrationPairs(
 
   const pairs: CalibrationPair[] = [];
   let excludedEstimates = 0;
+  // Read once: a run that straddled midnight would otherwise classify the same day differently for
+  // two reports, and the cached window key would serve whichever asked first.
+  const nowMs = Date.now();
   const bodyCache = new Map<string, { name: string; cellKey: string; lng: number } | null>();
   // Reports cluster: one popular lake, many skate days sharing a 60-day window. Without this every
   // one of them re-reads the same archive rows and the query walks into Convex's read cap.
@@ -248,17 +274,18 @@ async function collectCalibrationPairs(
     }
     if (!body) continue;
 
-    // The lake's local calendar day, not the UTC one — see `cellUtcOffsetSeconds`. The UTC estimate
-    // is only used to find a nearby row to read the offset off; the anchor itself comes from the
-    // shared helper so this site cannot drift from the panel's.
-    const utcEstimate = Math.floor(report.skateEndTime / DAY_MS) * DAY_MS;
-    const offset = await cellUtcOffsetSeconds(ctx, body.cellKey, body.lng, utcEstimate);
+    // The lake's local calendar day, not the UTC one — see `cellUtcOffsetSeconds`, which resolves the
+    // offset against the skate's own date so a DST transition inside the window cannot shift it.
+    const offset = await cellUtcOffsetSeconds(ctx, body.cellKey, body.lng, report.skateEndTime);
     const toMs = localDayMsAt(report.skateEndTime, offset);
     const fromMs = toMs - (CALIBRATION_WINDOW_DAYS - 1) * DAY_MS;
+    // Today at *this* lake. A window ending today would otherwise integrate a row whose un-elapsed
+    // hours are forecast.
+    const todayLocalDayMs = localDayMsAt(nowMs, offset);
     const windowKey = `${body.cellKey}:${toMs}`;
     let integrals = windowCache.get(windowKey);
     if (integrals === undefined) {
-      integrals = await windowIntegrals(ctx, body.cellKey, fromMs, toMs);
+      integrals = await windowIntegrals(ctx, body.cellKey, fromMs, toMs, todayLocalDayMs);
       windowCache.set(windowKey, integrals);
     }
     const { fdh, tdh, days } = integrals;

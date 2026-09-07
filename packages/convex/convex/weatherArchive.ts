@@ -44,10 +44,12 @@
  */
 
 import {
+  approximateUtcOffsetSeconds,
   archiveSeasonAt,
   dayMsToLocalDate,
   type LocalHourlyWeather,
   localDateToDayMs,
+  localDayMsAt,
   spansMultipleSampleCells,
   summarizeWeatherDays,
   WEATHER_TIERS,
@@ -1496,6 +1498,14 @@ export interface WeatherDaysResult {
   hours: StoredHourDayPayload[];
   /** Day keys we asked for and could not get. Rendered as gaps, never as zeroes. */
   missingDayMs: number[];
+  /**
+   * The **lake's** current local day, so a client can tell a settled day from one still happening.
+   *
+   * ⚠ Served rather than computed on the device: only this side knows the cell's stored
+   * `utcOffsetSeconds`, and a phone in another timezone must not get to decide when the day ends at
+   * the lake. See `isCompleteDay` in core for what goes wrong without it.
+   */
+  todayLocalDayMs: number;
   /** True when any returned day came from the coarser `filter` tier (D161 step 2). */
   anyBorrowed: boolean;
   /**
@@ -1632,10 +1642,17 @@ export const getWeatherDaysForBody = action({
       toMs,
     });
 
+    // The newest stored offset, not the oldest: this asks what the offset is *now*, and a window that
+    // straddles a DST change holds both. Falls back to longitude, never to UTC.
+    const offset =
+      [...held].reverse().find((r) => typeof r.utcOffsetSeconds === 'number')?.utcOffsetSeconds ??
+      approximateUtcOffsetSeconds(cell.lng);
+
     return {
       days: out,
       hours: hourRows,
       missingDayMs,
+      todayLocalDayMs: localDayMsAt(Date.now(), offset),
       anyBorrowed,
       oneSampleForALargeBody: info.oneSampleForALargeBody,
       ...(info.fetchProfileM ? { fetchProfileM: info.fetchProfileM } : {}),

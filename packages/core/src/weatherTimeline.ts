@@ -1232,6 +1232,13 @@ export interface ArchiveTimelineInput {
     hours: readonly { localHour: number; temperatureC: number; [measure: string]: number }[];
   }[];
   missingDayMs?: readonly number[];
+  /**
+   * The **lake's** current local day — `localDayMsAt(Date.now(), cellOffsetSeconds)`.
+   *
+   * Required so the current column can be drawn as partial. Today's row arrives holding all 24 hours
+   * with the un-elapsed ones forecast, so it cannot be recognised by hour count alone.
+   */
+  todayLocalDayMs: number;
 }
 
 /**
@@ -1248,9 +1255,12 @@ export interface ArchiveTimelineInput {
  * 2. **A day with a summary but no hours is still a column.** It draws its label, its divider and its
  *    gap; it just contributes no line. This is the normal state for cells whose daily rows predate
  *    the hourly table, and it must not collapse the axis.
- * 3. **Partial is derived from `hours`, not guessed from the date.** The archive already records how
- *    many hours it observed, and `isCompleteDay` already knows that a DST day is 23 or 25 — so
- *    comparing against "today" here would be a second, worse answer to a settled question.
+ * 3. **Partial is a question about the date, not only about `hours`.** This used to read "derived
+ *    from `hours`, not guessed from the date", on the grounds that the archive records how many hours
+ *    it observed. That was wrong, and confidently so: Open-Meteo returns whole calendar days and
+ *    nothing trims them, so today's row holds 24 hours — the un-elapsed ones forecast — from the
+ *    first fetch of the morning. Today was never drawn as partial, because by hour count it never
+ *    looked it. `todayLocalDayMs` is what makes the current column honest.
  */
 export function timelineDaysFromArchive(input: ArchiveTimelineInput): TimelineDayInput[] {
   const inputDays = input.days ?? [];
@@ -1277,9 +1287,11 @@ export function timelineDaysFromArchive(input: ArchiveTimelineInput): TimelineDa
         localDate,
         ...(hourRow ? { hours: hourRow.hours.map(toTimelineHour) } : {}),
         ...(known.has(dayMs) || (!hourRow && !summary) ? { missing: true } : {}),
-        // 23 rather than 24 — a spring-forward day is complete at 23 hours, and calling it partial
-        // would grey out a settled day once a year.
-        ...(typeof observed === 'number' && !isCompleteDay(observed) ? { partial: true } : {}),
+        // Two ways to be partial: too few hours for even a spring-forward day (23, not 24 — calling
+        // that partial would grey out a settled day once a year), or being today.
+        ...(typeof observed === 'number' && !isCompleteDay(observed, dayMs, input.todayLocalDayMs)
+          ? { partial: true }
+          : {}),
       };
     });
 }

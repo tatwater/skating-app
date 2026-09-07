@@ -11,6 +11,14 @@ const { PastWeatherPanel } = await import('./PastWeatherPanel');
 const BODY = 'b1' as Id<'waterBodies'>;
 const OTHER = 'b2' as Id<'waterBodies'>;
 
+/**
+ * A "today" past every fixture, so the fixtures read as settled days.
+ *
+ * ⚠ The action serves this now: today's archive row holds 24 hours with the un-elapsed ones
+ * forecast, so a client cannot tell a finished day from one still happening without being told.
+ */
+const TODAY = Date.UTC(2030, 0, 1);
+
 /** One stored day as `getWeatherDaysForBody` returns it. */
 function day(localDate: string, over: Record<string, number> = {}) {
   const [y, m, d] = localDate.split('-').map(Number);
@@ -36,6 +44,7 @@ describe('PastWeatherPanel', () => {
   it('renders the observation lines and the attribution', async () => {
     getDays.mockResolvedValue({
       days: [day('2026-01-14'), day('2026-01-15'), day('2026-01-16')],
+      todayLocalDayMs: TODAY,
       missingDayMs: [],
       anyBorrowed: false,
       oneSampleForALargeBody: false,
@@ -51,6 +60,7 @@ describe('PastWeatherPanel', () => {
   it('never renders a safety verdict or a thickness (D3 / D160)', async () => {
     getDays.mockResolvedValue({
       days: [day('2026-01-14'), day('2026-01-15')],
+      todayLocalDayMs: TODAY,
       missingDayMs: [],
       anyBorrowed: false,
       oneSampleForALargeBody: false,
@@ -68,6 +78,7 @@ describe('PastWeatherPanel', () => {
     const missing = Date.UTC(2026, 0, 16);
     getDays.mockResolvedValue({
       days: [day('2026-01-14'), day('2026-01-15')],
+      todayLocalDayMs: TODAY,
       missingDayMs: [missing],
       anyBorrowed: false,
       oneSampleForALargeBody: false,
@@ -83,6 +94,7 @@ describe('PastWeatherPanel', () => {
   it('says so when one sample stands in for a lake too big for it', async () => {
     getDays.mockResolvedValue({
       days: [day('2026-01-15')],
+      todayLocalDayMs: TODAY,
       missingDayMs: [],
       anyBorrowed: false,
       oneSampleForALargeBody: true,
@@ -98,6 +110,7 @@ describe('PastWeatherPanel', () => {
   it('stays quiet about size on an ordinary lake', async () => {
     getDays.mockResolvedValue({
       days: [day('2026-01-15')],
+      todayLocalDayMs: TODAY,
       missingDayMs: [],
       anyBorrowed: false,
       oneSampleForALargeBody: false,
@@ -110,6 +123,7 @@ describe('PastWeatherPanel', () => {
   it('says when a day came from a wider area (D161 step 2)', async () => {
     getDays.mockResolvedValue({
       days: [day('2026-01-15')],
+      todayLocalDayMs: TODAY,
       missingDayMs: [],
       anyBorrowed: true,
       oneSampleForALargeBody: false,
@@ -121,6 +135,7 @@ describe('PastWeatherPanel', () => {
   it('renders nothing when the archive has nothing', async () => {
     getDays.mockResolvedValue({
       days: [],
+      todayLocalDayMs: TODAY,
       missingDayMs: [],
       anyBorrowed: false,
       oneSampleForALargeBody: false,
@@ -146,6 +161,7 @@ describe('PastWeatherPanel', () => {
   it('shows snowfall on a day that got some', async () => {
     getDays.mockResolvedValue({
       days: [day('2026-01-15', { snowfallCm: 7.62 })],
+      todayLocalDayMs: TODAY,
       missingDayMs: [],
       anyBorrowed: false,
       oneSampleForALargeBody: false,
@@ -163,6 +179,7 @@ describe('PastWeatherPanel', () => {
     getDays.mockResolvedValue({
       days: [],
       hours: [],
+      todayLocalDayMs: TODAY,
       missingDayMs: [],
       anyBorrowed: false,
       oneSampleForALargeBody: false,
@@ -178,6 +195,7 @@ describe('PastWeatherPanel', () => {
     getDays.mockResolvedValue({
       days: many,
       hours: [],
+      todayLocalDayMs: TODAY,
       missingDayMs: [],
       anyBorrowed: false,
       oneSampleForALargeBody: false,
@@ -190,6 +208,7 @@ describe('PastWeatherPanel', () => {
   it('does not leave a stale panel up when the body changes', async () => {
     getDays.mockResolvedValue({
       days: [day('2026-01-15')],
+      todayLocalDayMs: TODAY,
       missingDayMs: [],
       anyBorrowed: false,
       oneSampleForALargeBody: false,

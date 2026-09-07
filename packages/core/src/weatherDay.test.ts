@@ -432,22 +432,42 @@ describe('instant → local day key (the conversion that had no owner)', () => {
 });
 
 describe('isCompleteDay — a partial day is data, not a finished day', () => {
-  it('rejects a day still in progress', () => {
-    expect(isCompleteDay(3)).toBe(false);
-    expect(isCompleteDay(0)).toBe(false);
-    expect(isCompleteDay(22)).toBe(false);
+  const JAN15 = Date.UTC(2026, 0, 15);
+  const JAN16 = Date.UTC(2026, 0, 16);
+
+  it('rejects a day too short to have finished', () => {
+    for (const h of [3, 0, 22]) expect(isCompleteDay(h, JAN15, JAN16)).toBe(false);
   });
 
   it('accepts both DST lengths, which an equality test would not', () => {
     // ⚠ 23 and 25 are real day lengths and both transitions fall inside a skating season. `=== 24`
     // would mark the spring-forward day permanently unfinished and drop it out of every window.
-    expect(isCompleteDay(23)).toBe(true);
-    expect(isCompleteDay(24)).toBe(true);
-    expect(isCompleteDay(25)).toBe(true);
+    expect(isCompleteDay(23, JAN15, JAN16)).toBe(true);
+    expect(isCompleteDay(24, JAN15, JAN16)).toBe(true);
+    expect(isCompleteDay(25, JAN15, JAN16)).toBe(true);
   });
 
   it('treats absent hours as not complete rather than as complete', () => {
-    expect(isCompleteDay(undefined)).toBe(false);
-    expect(isCompleteDay(null)).toBe(false);
+    expect(isCompleteDay(undefined, JAN15, JAN16)).toBe(false);
+    expect(isCompleteDay(null, JAN15, JAN16)).toBe(false);
+  });
+
+  it('rejects today however many hours it holds', () => {
+    // ⚠ **The reason this takes a date at all.** Open-Meteo returns whole calendar days and the
+    // ingest trims nothing, so today's row carries all 24 hours from the morning's first fetch —
+    // the un-elapsed ones forecast. The hour-count test called today settled at 6 AM, and forecast
+    // weather entered the panel's headline and the D160 Stefan fit as observed fact.
+    expect(isCompleteDay(24, JAN16, JAN16)).toBe(false);
+    expect(isCompleteDay(23, JAN16, JAN16)).toBe(false);
+  });
+
+  it('rejects a day dated after today', () => {
+    // Tomorrow's forecast reaches the archive by the same route today's does.
+    expect(isCompleteDay(24, JAN16, JAN15)).toBe(false);
+  });
+
+  it('needs both conditions, not either', () => {
+    expect(isCompleteDay(24, JAN15, JAN16)).toBe(true);
+    expect(isCompleteDay(6, JAN15, JAN16)).toBe(false); // a damaged observation, not a finished day
   });
 });

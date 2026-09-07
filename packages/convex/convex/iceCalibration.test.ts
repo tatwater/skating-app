@@ -533,3 +533,144 @@ describe('iceCalibration: local dates, not UTC ones', () => {
     expect(res.pairs[0]?.freezingDegreeHours).toBeCloseTo(100, 6);
   });
 });
+
+describe('iceCalibration: DST and the unfinished day', () => {
+  /** Days keyed by local date, each carrying the offset that date actually had. */
+  async function seedAcrossTransition(
+    t: ReturnType<typeof convexTest>,
+    anchorDayMs: number,
+    days: number,
+    offsetFor: (dayMs: number) => number,
+  ) {
+    await t.run(async (ctx) => {
+      for (let i = 0; i < days; i++) {
+        const dayMs = anchorDayMs - i * DAY_MS;
+        await ctx.db.insert('weatherDays', {
+          cellKey: CELL_KEY,
+          tier: 'browse' as const,
+          dayMs,
+          localDate: new Date(dayMs).toISOString().slice(0, 10),
+          source: 'forecast' as const,
+          hours: 24,
+          utcOffsetSeconds: offsetFor(dayMs),
+          freezingDegreeHours: 10,
+          thawDegreeHours: 0,
+          fetchedAt: Date.now(),
+        });
+      }
+    });
+  }
+
+  async function seedMeasuredReport(
+    t: ReturnType<typeof convexTest>,
+    waterBodyId: Id<'waterBodies'>,
+    authorId: Id<'profiles'>,
+    skateEndTime: number,
+  ) {
+    await t.run((ctx) =>
+      ctx.db.insert('reports', {
+        authorId,
+        waterBodyId,
+        point: { lat: 44.0163, lng: -72.0331 },
+        skateEndTime,
+        reportTime: skateEndTime,
+        source: 'native' as const,
+        iceTypes: ['black_ice'] as const,
+        surfaceTags: [],
+        photoIds: [],
+        iceThickness: { readings: [{ valueCm: 12, method: 'measured' as const }] },
+        moderationStatus: 'visible' as const,
+        hazardIdsCreated: [],
+        createdAt: skateEndTime,
+        updatedAt: skateEndTime,
+      }),
+    );
+  }
+
+  test('a skate after spring-forward uses its own day offset, not the oldest row in range', async () => {
+    // ⚠ **The bug.** `by_cell_day` returns ascending, so taking the first row with an offset took it
+    // from the *oldest* day in the lookup window — three days before the skate, and on the far side
+    // of the transition. EST is −5, EDT is −4; near local midnight that hour moves the anchor day by
+    // one, which drops the oldest intended day and adds one that had not happened.
+    //
+    // 2026-03-08 is the US spring-forward. A skate at 03:30 UTC on the 9th is 23:30 EDT on the 8th —
+    // the same evening — but reading it at EST puts it at 22:30 on the 8th too. The discriminating
+    // case is a skate at 03:30 UTC on the 9th being read against an offset from the 6th (EST, −5):
+    // that lands on the 8th either way, so use 04:30 UTC, which is 00:30 EDT on the 9th but 23:30
+    // EST on the 8th.
+    const t = convexTest(schema, modules);
+    const waterBodyId = await seedBody(t);
+    const mod = await seedProfile(t, 'moderator');
+
+    const transition = Date.UTC(2026, 2, 8);
+    const offsetFor = (dayMs: number) => (dayMs >= transition ? -4 * 3600 : -5 * 3600);
+    // Ten days of archive ending the 9th, spanning the change.
+    await seedAcrossTransition(t, Date.UTC(2026, 2, 9), 10, offsetFor);
+
+    const skateEndTime = Date.UTC(2026, 2, 9, 4, 30); // 00:30 EDT on the 9th
+    await seedMeasuredReport(t, waterBodyId, mod.id, skateEndTime);
+
+    const res = await t
+      .withIdentity({ subject: mod.subject })
+      .query(api.iceCalibration.calibrationPairs, {});
+    const pair = res.pairs[0];
+    expect(pair).toBeDefined();
+    // Anchored on the 9th (EDT), so all ten seeded days are in the window. Reading the offset off the
+    // oldest row (EST, −5) put the anchor on the 8th and dropped the 9th — nine days, 90 degree-hours.
+    expect(pair?.daysObserved).toBe(10);
+    expect(pair?.freezingDegreeHours).toBeCloseTo(100, 6);
+  });
+
+  test('an unfinished day never enters the integral, even holding 24 hours', async () => {
+    // ⚠ Open-Meteo returns whole calendar days and the ingest trims nothing, so today's row carries
+    // 24 hours with the un-elapsed ones forecast. Fitting a physical constant to a forecast is the
+    // failure this prevents — and no hour count could have revealed it.
+    const t = convexTest(schema, modules);
+    const waterBodyId = await seedBody(t);
+    const mod = await seedProfile(t, 'moderator');
+
+    const offset = -5 * 3600;
+    const todayLocal = localDayMsAt(Date.now(), offset);
+    // Five settled days ending yesterday, then today carrying a full 24 hours of mostly forecast.
+    await t.run(async (ctx) => {
+      for (let i = 1; i <= 5; i++) {
+        const dayMs = todayLocal - i * DAY_MS;
+        await ctx.db.insert('weatherDays', {
+          cellKey: CELL_KEY,
+          tier: 'browse' as const,
+          dayMs,
+          localDate: new Date(dayMs).toISOString().slice(0, 10),
+          source: 'forecast' as const,
+          hours: 24,
+          utcOffsetSeconds: offset,
+          freezingDegreeHours: 10,
+          thawDegreeHours: 0,
+          fetchedAt: Date.now(),
+        });
+      }
+      await ctx.db.insert('weatherDays', {
+        cellKey: CELL_KEY,
+        tier: 'browse' as const,
+        dayMs: todayLocal,
+        localDate: new Date(todayLocal).toISOString().slice(0, 10),
+        source: 'forecast' as const,
+        hours: 24,
+        utcOffsetSeconds: offset,
+        freezingDegreeHours: 999, // forecast, and wildly out of family
+        thawDegreeHours: 0,
+        fetchedAt: Date.now(),
+      });
+    });
+
+    await seedMeasuredReport(t, waterBodyId, mod.id, Date.now());
+
+    const res = await t
+      .withIdentity({ subject: mod.subject })
+      .query(api.iceCalibration.calibrationPairs, {});
+    const pair = res.pairs[0];
+    expect(pair).toBeDefined();
+    // Five settled days at 10, and not a degree-hour of the 999.
+    expect(pair?.daysObserved).toBe(5);
+    expect(pair?.freezingDegreeHours).toBeCloseTo(50, 6);
+  });
+});

@@ -249,7 +249,17 @@ export function monthDayLabel(localDate: string): string {
  */
 export function buildPastWeatherPanel(
   days: readonly PanelDay[],
-  options: { coarse?: boolean } = {},
+  options: {
+    /**
+     * The **lake's** current local day, from `localDayMsAt(Date.now(), cellOffsetSeconds)`.
+     *
+     * ⚠ Required, and not defaulted to the device's clock. Today's row arrives holding 24 hours from
+     * the first fetch of the morning — the un-elapsed ones forecast — so without this the headline
+     * states tonight's predicted low as an observed one. See {@link isCompleteDay}.
+     */
+    todayLocalDayMs: number;
+    coarse?: boolean;
+  },
 ): PastWeatherPanel {
   const rows: PastWeatherRow[] = [];
   const complete: WeatherDaySummary[] = [];
@@ -258,10 +268,10 @@ export function buildPastWeatherPanel(
     if (!day) continue;
     const hasData = typeof day.hours === 'number';
     // ⚠ **`hasData` is not `isComplete`, and conflating them was a bug.** The archive stores today's
-    // elapsed hours on purpose, so a row can be entirely valid and still be three hours long. Feeding
-    // that into the headline reports un-elapsed precipitation as zero ("no snow in the last 7 days"
-    // when it is snowing) and an in-progress high as the day's high.
-    const finished = isCompleteDay(day.hours);
+    // row on purpose, so a row can be entirely valid and still describe a day that has not happened
+    // yet. Feeding that into the headline reports un-elapsed precipitation as zero ("no snow in the
+    // last 7 days" while it is snowing) and a forecast high as the day's high.
+    const finished = isCompleteDay(day.hours, day.dayMs, options.todayLocalDayMs);
     rows.push({
       dayMs: day.dayMs,
       localDate: day.localDate,
