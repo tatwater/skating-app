@@ -483,19 +483,37 @@ export const backfillWeatherCells = internalAction({
   handler: async (
     ctx,
     { cursor, tier, runId },
-  ): Promise<{ done: boolean; scanned: number; pruned: number }> => {
+  ): Promise<{ done: boolean; scanned: number; pruned: number; superseded?: true }> => {
     const targetTier = tier ?? 'filter';
     const run = runId ?? `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+
+    // The first page claims the tier; later pages inherit the claim. `startedAt` is recorded here and
+    // nowhere else, because it is the instant the completed run's guarantee is stated against: *this
+    // run saw every write committed before this moment*.
+    if (cursor === undefined) {
+      await ctx.runMutation(internal.weatherArchive.beginCellSync, {
+        tier: targetTier,
+        runId: run,
+        startedAt: Date.now(),
+      });
+    }
+
     const page = await ctx.runQuery(internal.weatherArchive.pageBodyCells, {
       cursor: cursor ?? null,
       tier: targetTier,
     });
-    await ctx.runMutation(internal.weatherArchive.upsertWeatherCells, {
+    const { superseded } = await ctx.runMutation(internal.weatherArchive.upsertWeatherCells, {
       tier: targetTier,
       cells: page.cells,
       runId: run,
       nowMs: Date.now(),
     });
+    // ⚠ **A superseded run stops here — it does not write, reschedule or prune.** Two walks running at
+    // once would each see the other's rows as foreign and take turns deleting them, so the registry
+    // could end up emptier the more often it was reconciled. Ownership is a single `runId` and the
+    // newest claim wins; the loser abandons its remaining pages, whose work the winner is redoing.
+    if (superseded) return { done: true, scanned: page.scanned, pruned: 0, superseded: true };
+
     if (!page.isDone) {
       await ctx.scheduler.runAfter(0, internal.weatherArchive.backfillWeatherCells, {
         cursor: page.cursor,
@@ -511,7 +529,47 @@ export const backfillWeatherCells = internalAction({
       tier: targetTier,
       runId: run,
     });
+    // Last, and only on a genuinely complete walk: this is what the debounce reads.
+    await ctx.runMutation(internal.weatherArchive.finishCellSync, {
+      tier: targetTier,
+      runId: run,
+      completedAt: Date.now(),
+    });
     return { done: true, scanned: page.scanned, pruned };
+  },
+});
+
+/** Claim a tier for a run, displacing any walk already in flight. */
+export const beginCellSync = internalMutation({
+  args: { tier: literals(WEATHER_TIERS), runId: v.string(), startedAt: v.number() },
+  handler: async (ctx, { tier, runId, startedAt }) => {
+    const existing = await ctx.db
+      .query('weatherCellSyncs')
+      .withIndex('by_tier', (q) => q.eq('tier', tier))
+      .unique();
+    if (existing) {
+      await ctx.db.patch(existing._id, { runId, startedAt, completedAt: undefined });
+      return;
+    }
+    await ctx.db.insert('weatherCellSyncs', { tier, runId, startedAt });
+  },
+});
+
+/**
+ * Mark a walk complete — **the only writer of the debounce's input.**
+ *
+ * Silently does nothing if the tier has been claimed by a newer run, so a straggler cannot backdate
+ * the registry's guarantee to its own older `startedAt`.
+ */
+export const finishCellSync = internalMutation({
+  args: { tier: literals(WEATHER_TIERS), runId: v.string(), completedAt: v.number() },
+  handler: async (ctx, { tier, runId, completedAt }) => {
+    const row = await ctx.db
+      .query('weatherCellSyncs')
+      .withIndex('by_tier', (q) => q.eq('tier', tier))
+      .unique();
+    if (!row || row.runId !== runId) return;
+    await ctx.db.patch(row._id, { completedAt });
   },
 });
 
@@ -557,27 +615,77 @@ export const tierRegistryEmpty = internalQuery({
 });
 
 /**
- * Roughly when the registry was last reconciled — the debounce input.
+ * Every tier's materialisation state — the debounce's input.
  *
- * ⚠ **An approximation, deliberately, and biased the safe way.** It reads one cell per tier rather
- * than indexing `updatedAt`, and a completed run stamps every surviving cell with that run's clock,
- * so the sample is representative *after* a run and can read stale *during* one. Stale means one
- * extra corpus walk; it can never mean a skipped reconcile, which is the error that would matter.
+ * ⚠ **This replaced sampling `updatedAt` off an arbitrary `weatherCells` row, which was wrong twice
+ * over.** See `weatherCellSyncs` in the schema for the full account; the short version is that the
+ * sample's clock came from an unpredictable point in a paginated walk, and that even a perfect sample
+ * of a *completion* time cannot answer the question being asked. A walk guarantees it saw the corpus
+ * as of its **start**, so the start is what has to be recorded and compared.
  */
-export const registryReconciledAt = internalQuery({
+export const cellSyncStates = internalQuery({
   args: {},
-  handler: async (ctx) => {
-    let newest = 0;
+  handler: async (ctx): Promise<CellSyncState[]> => {
+    const out: CellSyncState[] = [];
     for (const tier of WEATHER_TIERS) {
-      const cell = await ctx.db
-        .query('weatherCells')
-        .withIndex('by_tier_key', (q) => q.eq('tier', tier))
-        .first();
-      if (cell && cell.updatedAt > newest) newest = cell.updatedAt;
+      const row = await ctx.db
+        .query('weatherCellSyncs')
+        .withIndex('by_tier', (q) => q.eq('tier', tier))
+        .unique();
+      out.push({
+        tier,
+        startedAt: row?.startedAt ?? null,
+        completedAt: row?.completedAt ?? null,
+      });
     }
-    return newest;
+    return out;
   },
 });
+
+export interface CellSyncState {
+  tier: (typeof WEATHER_TIERS)[number];
+  startedAt: number | null;
+  completedAt: number | null;
+}
+
+/**
+ * When an in-flight walk stops being believed.
+ *
+ * A walk is 50-odd near-instant pages over ~25,000 bodies, so minutes at the outside. An hour means a
+ * run killed mid-flight — a deploy, an exception in a page — costs one delayed reconcile rather than
+ * wedging the debounce permanently against a claim that will never complete.
+ */
+export const SYNC_ASSUMED_DEAD_MS = 60 * 60 * 1000;
+
+/**
+ * Whether a reconcile requested at `requestedAt` is already answered — **the whole debounce rule.**
+ *
+ * A tier is satisfied when some run that started at or after the request either finished, or is still
+ * running and has not been abandoned. Both arms turn on `startedAt`, because that is the only instant
+ * a walk can make a claim about: *everything committed before I started, I saw*. A run that merely
+ * **finished** after the request proves nothing — it may have paged past those rows before they were
+ * written.
+ *
+ * ⚠ **The in-flight arm is what makes a campaign collapse.** Without it, five loaders finishing three
+ * minutes apart would each start a walk that supersedes the last, and a long enough campaign would
+ * restart the walk indefinitely without ever completing one. With it, the first walk absorbs the lot,
+ * because it started after every one of their writes.
+ *
+ * Pure, and exported, because every interesting case here is a matter of clock arithmetic that is
+ * miserable to provoke through the scheduler and trivial to state directly.
+ */
+export function reconcileSatisfiedBy(
+  states: readonly CellSyncState[],
+  requestedAt: number,
+  nowMs: number,
+): boolean {
+  if (states.length === 0) return false;
+  return states.every(({ startedAt, completedAt }) => {
+    if (startedAt === null || startedAt < requestedAt) return false;
+    if (completedAt !== null) return true;
+    return nowMs - startedAt < SYNC_ASSUMED_DEAD_MS;
+  });
+}
 
 /**
  * How long an import waits before its reconcile fires.
@@ -624,10 +732,15 @@ export const maybeSyncWeatherCells = internalAction({
     /**
      * When the reconcile was *asked for*. Present only on the import-triggered path.
      *
-     * ⚠ **The debounce turns on one invariant: a reconcile that COMPLETES after time R has already
-     * seen every body written before R.** So any request older than the last completed run is
-     * already satisfied, whichever import made it — which is what lets a five-loader campaign
-     * collapse into a single walk without tracking which loader wrote what.
+     * ⚠ **The debounce turns on one invariant: a walk that STARTED at S has seen every body written
+     * before S.** So a request is satisfied by any run that began at or after it, whichever import
+     * made it — which is what lets a five-loader campaign collapse into a single walk without
+     * tracking who wrote what.
+     *
+     * It previously said *completes* rather than *starts*, and that was a real bug, not a wording
+     * slip: a paginated walk finishing after an import may have paged past those rows long before
+     * they were written, so the import's changes went unregistered until the weekly cron. See
+     * `reconcileSatisfiedBy` and the `weatherCellSyncs` schema comment.
      */
     requestedAt: v.optional(v.number()),
   },
@@ -636,8 +749,10 @@ export const maybeSyncWeatherCells = internalAction({
     { requestedAt },
   ): Promise<{ skipped?: 'already reconciled'; tiers: { tier: string; pruned: number }[] }> => {
     if (requestedAt !== undefined) {
-      const lastRun = await ctx.runQuery(internal.weatherArchive.registryReconciledAt, {});
-      if (lastRun >= requestedAt) return { skipped: 'already reconciled', tiers: [] };
+      const states = await ctx.runQuery(internal.weatherArchive.cellSyncStates, {});
+      if (reconcileSatisfiedBy(states, requestedAt, Date.now())) {
+        return { skipped: 'already reconciled', tiers: [] };
+      }
     }
     const tiers: { tier: string; pruned: number }[] = [];
     for (const tier of WEATHER_TIERS) {
@@ -702,7 +817,16 @@ export const upsertWeatherCells = internalMutation({
       }),
     ),
   },
-  handler: async (ctx, { tier, runId, nowMs, cells }) => {
+  handler: async (ctx, { tier, runId, nowMs, cells }): Promise<{ superseded: boolean }> => {
+    // ⚠ Checked here rather than in the action so the claim and the write share one transaction: a
+    // run that reads "still mine", then gets displaced, then writes would resurrect rows the winner
+    // has already pruned.
+    const claim = await ctx.db
+      .query('weatherCellSyncs')
+      .withIndex('by_tier', (q) => q.eq('tier', tier))
+      .unique();
+    if (claim && claim.runId !== runId) return { superseded: true };
+
     for (const cell of cells) {
       const existing = await ctx.db
         .query('weatherCells')
@@ -725,6 +849,7 @@ export const upsertWeatherCells = internalMutation({
       }
       await ctx.db.insert('weatherCells', { ...cell, tier, runId, updatedAt: nowMs });
     }
+    return { superseded: false };
   },
 });
 

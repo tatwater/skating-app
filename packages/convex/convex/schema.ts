@@ -1345,6 +1345,43 @@ export default defineSchema({
     .index('by_tier_key', ['tier', 'cellKey']),
 
   /**
+   * One row per tier recording the registry's materialisation run — **the debounce's memory.**
+   *
+   * ## ⚠ Why this is a table and not a timestamp read off `weatherCells`
+   *
+   * The debounce originally sampled `updatedAt` from whichever cell sorted first in a tier and treated
+   * it as "when the registry was last reconciled". Two things were wrong with that, and the second one
+   * is the one that actually loses data:
+   *
+   * 1. **The sample is arbitrary in *time*, not just in identity.** Each page of the walk stamps its
+   *    rows with its own `Date.now()`, so the first-by-key cell may carry a clock from anywhere in the
+   *    run — pagination orders by creation time, which has nothing to do with cell key.
+   * 2. **A walk that *completes* after R has not necessarily seen the corpus as of R.** It has seen it
+   *    as of its own *start*, and for rows it had already paged past, not even that. So an import
+   *    landing mid-walk could be answered by a run that provably could not have seen it, and its
+   *    changes would sit unregistered until the weekly cron — a body invisible to the sweep for up to
+   *    seven days, which is exactly the silent staleness the registry's producer exists to prevent.
+   *
+   * Recording `startedAt` for a run that reached `completedAt` fixes both: it is an exact clock rather
+   * than a sample, and it states the guarantee the walk can actually make — *this run saw every write
+   * committed before `startedAt`*.
+   *
+   * `completedAt` absent means in flight. That is load-bearing too: a second walk starting while one
+   * is running would give both runs' `pruneVacatedCells` a foreign `runId` to delete, and they would
+   * take turns deleting each other's registry. Overlap is now resolved by `runId` — the newest run
+   * owns the tier and the older one stands down at its next page.
+   */
+  weatherCellSyncs: defineTable({
+    tier: literals(WEATHER_TIERS),
+    /** The owning run. A page whose id no longer matches has been superseded and must stop. */
+    runId: v.string(),
+    /** When the walk began — the instant the completed run's guarantee is stated against. */
+    startedAt: v.number(),
+    /** Set only by the final page. Absent means in flight. */
+    completedAt: v.optional(v.number()),
+  }).index('by_tier', ['tier']),
+
+  /**
    * **Daily weather observations — an archive, not a cache (N6h / D153).**
    *
    * Everything else in this file's weather block expires. `weatherCache` prunes at 24 h because its

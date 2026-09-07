@@ -8,7 +8,9 @@ import {
   APPEND_PAST_DAYS,
   HOURLY_ROW_VERSION,
   RECONCILE_DEBOUNCE_MS,
+  reconcileSatisfiedBy,
   SEASON_OPEN_PAST_DAYS,
+  SYNC_ASSUMED_DEAD_MS,
 } from './weatherArchive';
 
 const modules = import.meta.glob('./**/*.*s');
@@ -1017,21 +1019,19 @@ describe('weatherArchive: the reconciler is triggered by the import, not the clo
   });
 
   test('a campaign of several loaders collapses into one walk', async () => {
-    // ⚠ The debounce invariant: a reconcile completing after time R has already seen every body
-    // written before R, so any request older than the last completed run is already satisfied.
+    // ⚠ The debounce invariant: a walk that STARTED at S has seen every body written before S, so a
+    // request older than a completed run's start is already satisfied.
     const t = convexTest(schema, modules);
     await seedBody(t);
     await t.action(internal.weatherArchive.maybeSyncWeatherCells, {});
-    const after = await t.run((ctx) => ctx.db.query('weatherCells').collect());
-    const stamps = after.map((c) => c.updatedAt);
+    const syncs = await t.run((ctx) => ctx.db.query('weatherCellSyncs').collect());
+    expect(syncs).toHaveLength(2);
+    expect(syncs.every((r) => r.completedAt !== undefined)).toBe(true);
 
-    // A request made *before* that run completed is already covered.
     const res = await t.action(internal.weatherArchive.maybeSyncWeatherCells, {
-      requestedAt: Math.min(...stamps) - 1,
+      requestedAt: Math.min(...syncs.map((r) => r.startedAt)) - 1,
     });
     expect(res.skipped).toBe('already reconciled');
-    const unchanged = await t.run((ctx) => ctx.db.query('weatherCells').collect());
-    expect(unchanged.map((c) => c.updatedAt)).toEqual(stamps);
   });
 
   test('a request made after the last run is NOT skipped', async () => {
@@ -1039,13 +1039,177 @@ describe('weatherArchive: the reconciler is triggered by the import, not the clo
     const t = convexTest(schema, modules);
     await seedBody(t);
     await t.action(internal.weatherArchive.maybeSyncWeatherCells, {});
-    const before = await t.run((ctx) => ctx.db.query('weatherCells').collect());
+    const syncs = await t.run((ctx) => ctx.db.query('weatherCellSyncs').collect());
 
     const res = await t.action(internal.weatherArchive.maybeSyncWeatherCells, {
-      requestedAt: Math.max(...before.map((c) => c.updatedAt)) + 1,
+      requestedAt: Math.max(...syncs.map((r) => r.startedAt)) + 1,
     });
     expect(res.skipped).toBeUndefined();
     expect(res.tiers).toHaveLength(2);
+  });
+
+  test('a completed walk records when it STARTED, not a cell stamp', async () => {
+    // The bug this fixes: `updatedAt` is written per page with that page's own clock, so sampling a
+    // cell could hand the debounce a timestamp from anywhere inside the run.
+    const t = convexTest(schema, modules);
+    await seedBody(t);
+    const before = Date.now();
+    await t.action(internal.weatherArchive.maybeSyncWeatherCells, {});
+    const after = Date.now();
+
+    for (const row of await t.run((ctx) => ctx.db.query('weatherCellSyncs').collect())) {
+      expect(row.startedAt).toBeGreaterThanOrEqual(before);
+      expect(row.completedAt ?? 0).toBeGreaterThanOrEqual(row.startedAt);
+      expect(row.completedAt ?? 0).toBeLessThanOrEqual(after);
+    }
+  });
+
+  test('an abandoned walk leaves no completion, so the next request is not debounced away', async () => {
+    // A claim without a `completedAt` must never satisfy anything on its own once it is stale — the
+    // failure mode being a deploy that kills a walk mid-flight and wedges the debounce for ever.
+    const t = convexTest(schema, modules);
+    await seedBody(t);
+    await t.run((ctx) =>
+      ctx.db.insert('weatherCellSyncs', {
+        tier: 'filter',
+        runId: 'abandoned',
+        startedAt: Date.now() - SYNC_ASSUMED_DEAD_MS - 1,
+      }),
+    );
+    const res = await t.action(internal.weatherArchive.maybeSyncWeatherCells, {
+      requestedAt: Date.now() - SYNC_ASSUMED_DEAD_MS,
+    });
+    expect(res.skipped).toBeUndefined();
+  });
+
+  test('a superseded run writes nothing — the registry-destroying case', async () => {
+    // ⚠ Two concurrent walks each see the other's rows as foreign, so both `pruneVacatedCells` calls
+    // would fire and take turns deleting the whole registry. Ownership is a single `runId`, checked
+    // in the same transaction as the write so a run cannot be displaced between the two.
+    const t = convexTest(schema, modules);
+    await seedBody(t);
+    await t.action(internal.weatherArchive.backfillWeatherCells, { tier: 'filter' });
+    const registered = await t.run((ctx) => ctx.db.query('weatherCells').collect());
+    expect(registered.length).toBeGreaterThan(0);
+
+    // A newer run claims the tier; a page of the older one now tries to land.
+    await t.mutation(internal.weatherArchive.beginCellSync, {
+      tier: 'filter',
+      runId: 'newer',
+      startedAt: Date.now(),
+    });
+    const res = await t.mutation(internal.weatherArchive.upsertWeatherCells, {
+      tier: 'filter',
+      runId: 'older',
+      nowMs: Date.now(),
+      cells: [{ cellKey: 'intruder', lat: 1, lng: 2, bodyCount: 99 }],
+    });
+    expect(res.superseded).toBe(true);
+
+    // Nothing of the older run's landed, and what was already there is untouched.
+    const after = await t.run((ctx) => ctx.db.query('weatherCells').collect());
+    expect(after.map((c) => c.cellKey)).not.toContain('intruder');
+    expect(after).toHaveLength(registered.length);
+  });
+
+  test('the owning run still writes normally', async () => {
+    // The other half of the guard: it must reject only foreign runs, not every run.
+    const t = convexTest(schema, modules);
+    await t.mutation(internal.weatherArchive.beginCellSync, {
+      tier: 'filter',
+      runId: 'mine',
+      startedAt: Date.now(),
+    });
+    const res = await t.mutation(internal.weatherArchive.upsertWeatherCells, {
+      tier: 'filter',
+      runId: 'mine',
+      nowMs: Date.now(),
+      cells: [{ cellKey: 'ok', lat: 1, lng: 2, bodyCount: 1 }],
+    });
+    expect(res.superseded).toBe(false);
+    const after = await t.run((ctx) => ctx.db.query('weatherCells').collect());
+    expect(after.map((c) => c.cellKey)).toContain('ok');
+  });
+
+  test('a straggler cannot backdate the registry guarantee', async () => {
+    // `finishCellSync` from a displaced run would otherwise stamp `completedAt` against its own older
+    // `startedAt`, telling the debounce the corpus is fresher than any walk has actually proved.
+    const t = convexTest(schema, modules);
+    const now = Date.now();
+    await t.mutation(internal.weatherArchive.beginCellSync, {
+      tier: 'filter',
+      runId: 'newer',
+      startedAt: now,
+    });
+    await t.mutation(internal.weatherArchive.finishCellSync, {
+      tier: 'filter',
+      runId: 'older',
+      completedAt: now + 5,
+    });
+    const [row] = await t.run((ctx) => ctx.db.query('weatherCellSyncs').collect());
+    expect(row?.completedAt).toBeUndefined();
+    expect(row?.runId).toBe('newer');
+  });
+});
+
+describe('reconcileSatisfiedBy — the debounce rule, stated directly', () => {
+  const R = 1_000_000;
+  const state = (tier: 'filter' | 'browse', startedAt: number | null, completedAt: number | null) =>
+    ({ tier, startedAt, completedAt }) as const;
+
+  test('a run that started before the request never satisfies it', () => {
+    // ⚠ **The exact bug Greptile caught.** This run *completed* well after the request and would have
+    // passed the old rule, but it began before those bodies were written — a paginated walk may have
+    // read past them long before they existed.
+    expect(
+      reconcileSatisfiedBy(
+        [state('filter', R - 1, R + 10_000), state('browse', R - 1, R + 10_000)],
+        R,
+        R + 20_000,
+      ),
+    ).toBe(false);
+  });
+
+  test('a completed run that started at or after the request satisfies it', () => {
+    expect(
+      reconcileSatisfiedBy([state('filter', R, R + 5), state('browse', R + 1, R + 6)], R, R + 10),
+    ).toBe(true);
+  });
+
+  test('an in-flight run started after the request satisfies it — this is what collapses a campaign', () => {
+    // Five loaders finishing minutes apart would otherwise each supersede the last, and a long
+    // enough campaign would restart the walk for ever without completing one.
+    expect(
+      reconcileSatisfiedBy([state('filter', R + 1, null), state('browse', R + 1, null)], R, R + 60),
+    ).toBe(true);
+  });
+
+  test('an in-flight run stops counting once it is old enough to be dead', () => {
+    expect(
+      reconcileSatisfiedBy(
+        [state('filter', R + 1, null), state('browse', R + 1, null)],
+        R,
+        R + 1 + SYNC_ASSUMED_DEAD_MS,
+      ),
+    ).toBe(false);
+  });
+
+  test('every tier must be satisfied, not just one', () => {
+    // The tiers are walked independently, so one being fresh says nothing about the other.
+    expect(
+      reconcileSatisfiedBy(
+        [state('filter', R + 1, R + 2), state('browse', R - 1, R + 2)],
+        R,
+        R + 5,
+      ),
+    ).toBe(false);
+  });
+
+  test('a tier that has never been walked satisfies nothing', () => {
+    expect(
+      reconcileSatisfiedBy([state('filter', R + 1, R + 2), state('browse', null, null)], R, R + 5),
+    ).toBe(false);
+    expect(reconcileSatisfiedBy([], R, R + 5)).toBe(false);
   });
 });
 
