@@ -261,11 +261,21 @@ async function skateLocalDay(
  * `measured` counts; `estimated` is excluded and counted separately so an operator can see how much
  * data the exclusion costs.
  */
+/**
+ * Pairs a request returns when it does not ask for a number.
+ *
+ * ⚠ **Named rather than inlined because both readers have to pass the *same* one.** `calibrationFit`
+ * used to hand `undefined` through while the table passed its own `limit`, so the two agreed only by
+ * coincidence of their defaults: a table asked for 500 rows would have been fitted against the newest
+ * 200 while the page reported one `n`. The shared-sample guarantee has to be a value, not a default.
+ */
+export const CALIBRATION_PAIR_LIMIT = 200;
+
 async function collectCalibrationPairs(
   ctx: QueryCtx,
   limit: number | undefined,
 ): Promise<{ pairs: CalibrationPair[]; excludedEstimates: number }> {
-  const cap = Math.min(Math.max(limit ?? 200, 1), 500);
+  const cap = Math.min(Math.max(limit ?? CALIBRATION_PAIR_LIMIT, 1), 500);
 
   // Newest first: a calibration report is read to see how this season is going, and the oldest
   // pairs are the ones whose window is most likely to predate the archive entirely.
@@ -381,7 +391,8 @@ export const calibrationPairs = query({
 });
 
 /**
- * The fitted coefficient and its error, over whatever pairs exist.
+ * The fitted coefficient and its error, over the newest {@link CALIBRATION_PAIR_LIMIT} pairs — the
+ * same sample the table draws, stated rather than defaulted into.
  *
  * ⚠ **Reported, never applied.** Nothing in this file writes `alpha` anywhere, and
  * `estimateIceThickness` keeps its published default until a human decides otherwise. An
@@ -401,8 +412,9 @@ export const calibrationFit = query({
   }> => {
     await requireRole(ctx, 'moderator');
     // Shares `collectCalibrationPairs` with the table above rather than re-deriving, so the fit and
-    // the rows it is drawn from can never disagree about their own sample.
-    const { pairs } = await collectCalibrationPairs(ctx, undefined);
+    // the rows it is drawn from can never disagree about their own sample — which means passing the
+    // limit explicitly rather than letting two call sites land on the same default by luck.
+    const { pairs } = await collectCalibrationPairs(ctx, CALIBRATION_PAIR_LIMIT);
     const usable = pairs.filter((p) => !p.declined);
     return {
       fitted: fitStefanAlpha(

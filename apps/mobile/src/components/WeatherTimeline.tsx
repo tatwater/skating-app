@@ -1,27 +1,19 @@
 import {
-  COMPASS_LABELS,
-  cmToInches,
   DEFAULT_TIMELINE_HEIGHT,
   EMPHASIS_RAIL_HEIGHT,
-  fetchAlong,
-  formatLocalHour,
-  formatTemperatureF,
   hourAtX,
-  kphToMph,
-  mmToInches,
   type PositionedHour,
-  precipitationKind,
-  roundTo,
   scrollPxAtTrackX,
   shortDayLabel,
   type TimelineDayInput,
   timelineExtent,
+  timelineReadoutParts,
   timelineScrollbar,
+  type WeatherTimelineModel,
   weatherTimelineModel,
-  windSectorOf,
 } from '@skating/core';
 import { type WeatherChartPalette, WIND_FETCH_OPACITY, weatherChartPalette } from '@skating/design';
-import React, { useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Svg, {
   Defs,
@@ -109,6 +101,21 @@ export function WeatherTimeline({
     [days, width, height, fetchProfileM, clampedScroll],
   );
 
+  // ⚠ **Mirrors, so the gesture objects do not have to be rebuilt to see a new value.** A `useMemo`
+  // that depends on `clampedScroll` or on `model` re-creates its gesture on *every frame of a drag*,
+  // and react-native-gesture-handler is explicit that reconfiguring a gesture while it is active may
+  // cancel it — a pan that stutters or dies halfway, on the one control that moves this chart. The
+  // handlers read the latest value through a ref instead, so the gestures are built once per
+  // viewport change.
+  const latestScroll = useRef(0);
+  const modelRef = useRef<WeatherTimelineModel | null>(null);
+  useEffect(() => {
+    latestScroll.current = clampedScroll;
+  }, [clampedScroll]);
+  useEffect(() => {
+    modelRef.current = model;
+  }, [model]);
+
   const pan = useMemo(
     () =>
       Gesture.Pan()
@@ -117,7 +124,7 @@ export function WeatherTimeline({
         .activeOffsetX([-10, 10])
         .failOffsetY([-10, 10])
         .onBegin(() => {
-          scrollAtDragStart.current = clampedScroll;
+          scrollAtDragStart.current = latestScroll.current;
         })
         .onUpdate((e) => {
           if (maxScrollPx === 0) return;
@@ -127,17 +134,18 @@ export function WeatherTimeline({
           setScrollPx(Math.min(maxScrollPx, Math.max(0, next)));
         })
         .runOnJS(true),
-    [clampedScroll, maxScrollPx],
+    [maxScrollPx],
   );
 
   const tap = useMemo(
     () =>
       Gesture.Tap()
         .onEnd((e) => {
-          if (model) setScrub(hourAtX(model, e.x));
+          const current = modelRef.current;
+          if (current) setScrub(hourAtX(current, e.x));
         })
         .runOnJS(true),
-    [model],
+    [],
   );
 
   const gesture = useMemo(() => Gesture.Race(pan, tap), [pan, tap]);
@@ -536,37 +544,9 @@ function TimelineReadout({
       </Text>
     );
   }
-  const h = hour.hour;
-  const precip = precipitationKind(h);
-  const parts = [formatLocalHour(h.localHour), formatTemperatureF(h.temperatureC)];
-  if (precip) {
-    const amount =
-      typeof h.snowfallCm === 'number' && h.snowfallCm > 0
-        ? `${roundTo(cmToInches(h.snowfallCm), 1)}″`
-        : `${roundTo(mmToInches(h.precipitationMm ?? h.rainMm ?? 0), 2)}″`;
-    parts.push(`${precip.label} ${amount}`);
-  }
-  if (typeof h.windSpeedKph === 'number') {
-    // Direction reads as "from the NW", which is the meteorological convention every compass label
-    // in this app already uses — and the half of wind that a speed alone cannot tell you.
-    const from =
-      typeof h.windDirectionDeg === 'number'
-        ? ` ${COMPASS_LABELS[windSectorOf(h.windDirectionDeg)] ?? ''}`
-        : '';
-    parts.push(`${Math.round(kphToMph(h.windSpeedKph))} mph${from}`);
-    // ⚠ **"across the lake", never "of open water".** The app already uses *open water* as a hazard
-    // type — the on-ice alert says "⚠ open water ~45 s ahead", meaning unfrozen water you are about
-    // to skate into. Reusing it for fetch would make the same two words mean "the lake is not frozen"
-    // in one place and "the wind had a long run" in another, on a page about frozen lakes.
-    //
-    // Gated where the lake's geometry supports the claim: `fetchAlong` returns null below
-    // `MIN_FETCH_CLAUSE_M`, which is ~95% of the corpus.
-    const acrossM = fetchAlong(fetchProfileM, h.windDirectionDeg);
-    if (acrossM !== null) parts.push(`${roundTo(acrossM / 1000, 1)} km across the lake`);
-  }
-  if (typeof h.snowDepthM === 'number' && h.snowDepthM > 0) {
-    parts.push(`${roundTo(cmToInches(h.snowDepthM * 100), 1)}″ down`);
-  }
+  // ⚠ Assembled in core, not here — see `timelineReadoutParts`. The two clients each hand-rolled
+  // this list and had already drifted apart on the snow-depth phrasing.
+  const parts = timelineReadoutParts(hour.hour, fetchProfileM);
   return (
     // ⚠ `minHeight`, not `height` — the readout grew to six fields with the open-water clause, and a
     // fixed 14 clipped the second line silently.

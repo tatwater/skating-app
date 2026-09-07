@@ -1,25 +1,16 @@
 import {
-  COMPASS_LABELS,
-  cmToInches,
   DEFAULT_TIMELINE_HEIGHT,
   EMPHASIS_RAIL_HEIGHT,
-  fetchAlong,
-  formatLocalHour,
-  formatTemperatureF,
   hourAtX,
-  kphToMph,
-  mmToInches,
   type PositionedHour,
   PX_PER_HOUR,
-  precipitationKind,
-  roundTo,
   scrollPxAtTrackX,
   shortDayLabel,
   type TimelineDayInput,
   timelineExtent,
+  timelineReadoutParts,
   timelineScrollbar,
   weatherTimelineModel,
-  windSectorOf,
 } from '@skating/core';
 import { type WeatherChartPalette, WIND_FETCH_OPACITY, weatherChartPalette } from '@skating/design';
 import { useTheme } from 'next-themes';
@@ -183,7 +174,6 @@ export function WeatherTimeline({
           e.currentTarget.setPointerCapture(e.pointerId);
         }}
         onPointerMove={(e) => {
-          const rect = e.currentTarget.getBoundingClientRect();
           const d = drag.current;
           if (d) {
             // Drag right = go back in time, which is the direction the content moves under the
@@ -192,7 +182,13 @@ export function WeatherTimeline({
             setScrollPx(Math.min(maxScrollPx, Math.max(0, d.startScroll + moved)));
             return;
           }
-          if (model) setScrub(hourAtX(model, e.clientX - rect.left));
+          // ⚠ Measured only on the scrub path. `getBoundingClientRect` forces a synchronous layout,
+          // and reading it before the drag branch meant every frame of a pan paid for a rect it
+          // then discarded.
+          if (model) {
+            const rect = e.currentTarget.getBoundingClientRect();
+            setScrub(hourAtX(model, e.clientX - rect.left));
+          }
         }}
         onPointerUp={(e) => {
           drag.current = null;
@@ -390,9 +386,13 @@ export function WeatherTimeline({
                       // Density is fetch: how much open water that bearing had behind it. A magnitude
                       // channel, not a hue — D145 keeps wind out of the warm ramp, and the chart has no
                       // spare hue left in any case.
+                      // ⚠ `trace`, not `fill` — and it is the same fix the native twin already
+                      // carries. `fill` is a hair off the surface by design (it is the colour of an
+                      // inert lane), so no opacity ramp on it produces visible steps; the density
+                      // channel was simply invisible here. See `WIND_FETCH_OPACITY`.
                       <path
                         d={seg.d}
-                        fill={palette.aux.fill}
+                        fill={palette.aux.trace}
                         key={seg.d}
                         opacity={
                           WIND_FETCH_OPACITY.min +
@@ -624,37 +624,11 @@ function TimelineReadout({
   if (!hour) {
     return <p className="min-h-8 text-[10px] text-foreground-muted italic">Hover for any hour</p>;
   }
-  const h = hour.hour;
-  const precip = precipitationKind(h);
-  const parts = [formatLocalHour(h.localHour), formatTemperatureF(h.temperatureC)];
-  if (precip) {
-    const inches =
-      typeof h.snowfallCm === 'number' && h.snowfallCm > 0
-        ? `${roundTo(cmToInches(h.snowfallCm), 1)}″`
-        : `${roundTo(mmToInches(h.precipitationMm ?? h.rainMm ?? 0), 2)}″`;
-    parts.push(`${precip.label} ${inches}`);
-  }
-  if (typeof h.windSpeedKph === 'number') {
-    // Direction reads as "from the NW", which is the meteorological convention every compass label
-    // in this app already uses — and the half of wind that a speed alone cannot tell you.
-    const from =
-      typeof h.windDirectionDeg === 'number'
-        ? ` ${COMPASS_LABELS[windSectorOf(h.windDirectionDeg)] ?? ''}`
-        : '';
-    parts.push(`${Math.round(kphToMph(h.windSpeedKph))} mph${from}`);
-    // ⚠ **"across the lake", never "of open water".** The app already uses *open water* as a hazard
-    // type — the on-ice alert says "⚠ open water ~45 s ahead", meaning unfrozen water you are about
-    // to skate into. Reusing it for fetch would make the same two words mean "the lake is not frozen"
-    // in one place and "the wind had a long run" in another, on a page about frozen lakes.
-    //
-    // Gated where the lake's geometry supports the claim: `fetchAlong` returns null below
-    // `MIN_FETCH_CLAUSE_M`, which is ~95% of the corpus.
-    const acrossM = fetchAlong(fetchProfileM, h.windDirectionDeg);
-    if (acrossM !== null) parts.push(`${roundTo(acrossM / 1000, 1)} km across the lake`);
-  }
-  if (typeof h.snowDepthM === 'number' && h.snowDepthM > 0) {
-    parts.push(`${roundTo(cmToInches(h.snowDepthM * 100), 1)}″ on the ground`);
-  }
+  // ⚠ Assembled in core, not here. The two clients rendered this list verbatim from two hand-written
+  // copies and had already drifted — "on the ground" here against "down" on native, for the same
+  // measurement. Every phrase both clients say belongs in one tested module (`weatherPanel.ts`
+  // records why), and mobile cannot test a component at all.
+  const parts = timelineReadoutParts(hour.hour, fetchProfileM);
   return (
     // ⚠ `min-h`, not a fixed height. The readout grew to six fields once the open-water clause
     // landed, and a fixed 1rem clipped the wrap silently — the fetch was there and simply invisible.

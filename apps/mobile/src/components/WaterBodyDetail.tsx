@@ -237,8 +237,8 @@ export function WaterBodyDetail({
               office outranks both our observations and anybody's forecast. */}
           <AlertStrip waterBodyId={result.body._id} reveal={reveal} />
           {/* What the ice has been through (N6h / D153) — ABOVE the forecast, matching the web
-              column and the same authority ordering: alert > observation > prediction. Text-first
-              because mobile has no charting library; the reasoning is shared in core. */}
+              column and the same authority ordering: alert > observation > prediction. It draws the
+              same timeline the web app does: the geometry and the sentences both live in core. */}
           <PastWeatherPanel waterBodyId={result.body._id} />
           {/* The forward forecast (N6c/B5b) — the other half of the weather-since timeline. */}
           <ForecastStrip waterBodyId={result.body._id} reveal={reveal} />

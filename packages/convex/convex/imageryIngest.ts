@@ -169,6 +169,34 @@ export const recordSeasonClose = internalMutation({
   },
 });
 
+/**
+ * Fill in `winterFrom` on a season that was opened before the region itself froze.
+ *
+ * ⚠ **Without this the close can never fire in the common case.** The sentinel pond is *allowed* to
+ * open a season on its own — that is the whole point of the OR rule — and it does so weeks before a
+ * majority of ordinary sites see an overnight freeze. So the very first October tick routinely writes
+ * `winterFrom: null`, and `recordSeasonOpen` is insert-only, so nothing would ever revisit it: the
+ * row would sit open for ever, imagery ingest would cut granules into July and the corpus-wide
+ * weather sweep would spend ~4,300 Open-Meteo calls a day right through the summer. Ice-in is a fact
+ * that arrives *after* opening, so it has to be writable after opening.
+ *
+ * **Only ever set on a row that has none**, for the same reason `recordSeasonClose` is: the date the
+ * region froze is a one-way door within a season, and letting a later tick move it would make the
+ * field describe the last time we looked rather than the freeze.
+ */
+export const recordSeasonWinterFrom = internalMutation({
+  args: { season: v.string(), winterFrom: v.string() },
+  handler: async (ctx, { season, winterFrom }) => {
+    const row = await ctx.db
+      .query('imageryIngestSeasons')
+      .withIndex('by_season', (q) => q.eq('season', season))
+      .unique();
+    if (!row || row.winterFrom !== null) return null;
+    await ctx.db.patch(row._id, { winterFrom });
+    return row._id;
+  },
+});
+
 export const recordSeasonOpen = internalMutation({
   args: {
     season: v.string(),
@@ -303,10 +331,6 @@ export const maybeCheckSeasonOpen = internalAction({
     if (already?.closesOn !== undefined) {
       return { skipped: 'already recorded' as const, season, opensOn: already.opensOn };
     }
-    // A season cannot close before the region froze, and `winterFrom: null` means it never did.
-    if (already && already.winterFrom === null) {
-      return { skipped: 'already recorded' as const, season, opensOn: already.opensOn };
-    }
 
     const sites = await ctx.runQuery(internal.imageryIngest.gateSites, {});
     if (sites.length === 0) return { skipped: 'no sites' as const, season };
@@ -331,12 +355,35 @@ export const maybeCheckSeasonOpen = internalAction({
       .filter((s) => s.days.length > 0);
     if (series.length === 0) return { skipped: 'no observations' as const, season };
 
+    // ⚠ **A season opened before the region froze carries `winterFrom: null`, and that is the normal
+    // October state, not an edge case.** The sentinel pond opens a season on its own weeks before a
+    // majority of ordinary sites see an overnight freeze, and `recordSeasonOpen` is insert-only — so
+    // without this the row would keep `winterFrom: null` for ever, the close could never be measured
+    // from anything, and both consumers (imagery ingest, the D161 weather sweep) would run through
+    // the summer. Ice-in arrives after opening, so it is resolved here, on a later tick, from the
+    // window that now contains it.
+    let winterFrom = already?.winterFrom ?? null;
+    if (already && winterFrom === null) {
+      winterFrom = ingestWindow(series).winterFrom;
+      if (winterFrom !== null) {
+        await ctx.runMutation(internal.imageryIngest.recordSeasonWinterFrom, {
+          season,
+          winterFrom,
+        });
+        console.warn(`[imagery] ${season} winter established region-wide on ${winterFrom}`);
+      }
+    }
+
     // The already-open case: look only for the close, and do it against the **recorded**
-    // `winterFrom`. Re-deriving it is impossible here — `past_days` is 92, so by the spring tick
-    // that would actually close a season the date the region froze is months out of the window, and
-    // `ingestWindow` would return `closesOn: null` for ever. See `thawClose`.
-    if (already?.winterFrom) {
-      const closesOn = thawClose(series, already.winterFrom);
+    // `winterFrom`. Re-deriving it at close time is impossible — `past_days` is 92, so by the spring
+    // tick that would actually close a season the date the region froze is months out of the window,
+    // and `ingestWindow` would return `closesOn: null` for ever. See `thawClose`.
+    if (already) {
+      // Still no region-wide freeze: nothing to measure a close from, so wait for the next tick.
+      if (winterFrom === null) {
+        return { skipped: 'already recorded' as const, season, opensOn: already.opensOn };
+      }
+      const closesOn = thawClose(series, winterFrom);
       if (!closesOn) {
         return {
           open: true as const,
@@ -349,14 +396,15 @@ export const maybeCheckSeasonOpen = internalAction({
         season,
         closesOn,
       });
-      console.warn(
-        `[imagery] ${season} ingest window CLOSED on ${closesOn} ` +
-          `(${series.length} sites, ${DEFAULT_THAW_RUN_DAYS} thawed days). ` +
-          `Corpus-wide weather sweep stands down until the next season opens.`,
-      );
-      // Gated on the mutation having actually written, not on reaching this line — `recordSeasonClose`
-      // refuses to re-close, so a racing second tick tells nobody twice.
+      // Both the log and the mail are gated on the mutation having actually written, not on reaching
+      // this line — `recordSeasonClose` refuses to re-close, so a racing second tick neither tells
+      // anybody twice nor prints a second "CLOSED" for a write it did not make.
       if (wrote !== null) {
+        console.warn(
+          `[imagery] ${season} ingest window CLOSED on ${closesOn} ` +
+            `(${series.length} sites, ${DEFAULT_THAW_RUN_DAYS} thawed days). ` +
+            `Corpus-wide weather sweep stands down until the next season opens.`,
+        );
         await ctx.scheduler.runAfter(0, internal.operatorAlerts.broadcastToStaff, {
           subject: `Skating season ${season} has closed`,
           heading: `The ${season} season closed on ${closesOn}`,

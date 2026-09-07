@@ -170,30 +170,67 @@ describe('maybeCheckSeasonOpen — the season lifecycle', () => {
     vi.useRealTimers();
   });
 
-  test('a season that opened but never established winter is not left ticking for ever', async () => {
+  test('a season opened before the region froze fills in winterFrom on a later tick', async () => {
     vi.useFakeTimers();
     atDate(IN_SEASON);
     const t = convexTest(schema, modules);
     await seedSites(t);
-    const gate = await t.run((ctx) =>
+    // ⚠ **The normal October state, not an exotic one.** The sentinel pond is allowed to open a
+    // season on its own — that is the whole point of the OR rule — and it does so weeks before a
+    // majority of ordinary sites see an overnight freeze. `recordSeasonOpen` is insert-only, so if
+    // nothing ever revisits `winterFrom` the row can never be closed: imagery ingest cuts granules
+    // into July and the D161 weather sweep spends ~4,300 Open-Meteo calls a day all summer.
+    await t.run((ctx) =>
       ctx.db.insert('imageryIngestSeasons', {
         season: 'winter-2026-27',
         opensOn: '2026-11-02',
         openedBy: ['sentinel'],
-        // The sentinel opened it and the region never followed — a real recorded state, and one
-        // with no close to find. Ticking daily against it would be a fetch a day for nothing.
         winterFrom: null,
         sitesSampled: 3,
         detectedAt: Date.now(),
       }),
     );
-    expect(gate).toBeTruthy();
 
-    const fetchMock = vi.fn();
-    vi.stubGlobal('fetch', fetchMock);
-    const result = await t.action(internal.imageryIngest.maybeCheckSeasonOpen, {});
-    expect(result).toMatchObject({ skipped: 'already recorded' });
-    expect(fetchMock).not.toHaveBeenCalled();
+    // Still no region-wide freeze: nothing to measure a close from, so the tick stands down —
+    // but it does not foreclose the question.
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        okJson(
+          dailyLows(
+            3,
+            '2026-12-01',
+            Array.from({ length: 5 }, () => 6),
+          ),
+        ),
+      ),
+    );
+    const early = await t.action(internal.imageryIngest.maybeCheckSeasonOpen, {});
+    expect(early).toMatchObject({ skipped: 'already recorded' });
+    const stillNull = await t.run((ctx) => ctx.db.query('imageryIngestSeasons').first());
+    expect(stillNull?.winterFrom).toBeNull();
+
+    // The region freezes. Ice-in arrives *after* opening, so it has to be writable after opening.
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => okJson(dailyLows(3, '2026-12-01', [2, -1, -3, -4, -5]))),
+    );
+    const later = await t.action(internal.imageryIngest.maybeCheckSeasonOpen, {});
+    expect(later).toMatchObject({ open: true, opensOn: '2026-11-02' });
+    const row = await t.run((ctx) => ctx.db.query('imageryIngestSeasons').first());
+    expect(row?.winterFrom).toBe('2026-12-02');
+    // The open date is never moved by the fill-in — only the missing half is written.
+    expect(row?.opensOn).toBe('2026-11-02');
+
+    // And once established it is a one-way door: a warmer later window does not re-date ice-in.
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => okJson(dailyLows(3, '2026-12-01', [2, 2, -4, -5, -6]))),
+    );
+    await t.action(internal.imageryIngest.maybeCheckSeasonOpen, {});
+    const pinned = await t.run((ctx) => ctx.db.query('imageryIngestSeasons').first());
+    expect(pinned?.winterFrom).toBe('2026-12-02');
+
     vi.useRealTimers();
   });
 });

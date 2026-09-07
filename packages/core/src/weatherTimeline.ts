@@ -54,9 +54,15 @@
 // module tolerates is the band edges, which cannot be imported because `@skating/design` is not a
 // dependency of core (see `BAND_EDGE_FREEZING_F`).
 import { MIN_FETCH_CLAUSE_M } from './lakeCaption';
-import { cToF } from './units';
-import { isCompleteDay, SUNLIT_WM2, WIND_SECTOR_COUNT, windSectorOf } from './weatherDay';
-import { CALM_FREEZE_MAX_KPH } from './weatherPanel';
+import { cmToInches, cToF, formatTemperatureF, kphToMph, mmToInches, roundTo } from './units';
+import {
+  dayMsToLocalDate,
+  isCompleteDay,
+  SUNLIT_WM2,
+  WIND_SECTOR_COUNT,
+  windSectorOf,
+} from './weatherDay';
+import { CALM_FREEZE_MAX_KPH, COMPASS_LABELS, formatLocalHour } from './weatherPanel';
 
 /** Lanes, top to bottom. The order is the render order and the reading order. */
 export const TIMELINE_LANES = ['temperature', 'precipitation', 'wind', 'sun', 'snowDepth'] as const;
@@ -197,7 +203,7 @@ export const MIN_SCROLL_THUMB_WIDTH = 24;
 export const FETCH_INTENSITY_LEVELS = 4;
 
 /**
- * How exposed this lake was to the wind at a given bearing, in `[0, 1]` — or `null` when the question
+ * The lake's reach at a bearing and its longest reach in any direction, or `null` when the question
  * does not apply.
  *
  * ## ⚠ It returns `null` for about 95% of the corpus, and that is the correct answer
@@ -213,11 +219,23 @@ export const FETCH_INTENSITY_LEVELS = 4;
  * uses means the two surfaces agree about which lakes have an exposure story at all, and the wind
  * lane simply draws flat on the ones that do not.
  *
- * **Normalised per lake, not against a fixed reference**, which is the opposite of the wind rose's
- * choice and right for the opposite reason: the rose compares lakes ("is this one windy?"), while
- * this compares *bearings within one lake* ("was the wind running the long way today?"). A shared
- * scale would flatten Willoughby's own contrast to nothing next to Champlain.
+ * Shared by both public readers so the gate is stated once: {@link fetchAlong} takes the metres and
+ * {@link fetchIntensityAt} takes the ratio.
  */
+function fetchReachAt(
+  fetchProfileM: readonly number[] | null | undefined,
+  bearingDeg: number | null | undefined,
+): { here: number; peak: number } | null {
+  if (!Array.isArray(fetchProfileM) || fetchProfileM.length !== WIND_SECTOR_COUNT) return null;
+  if (typeof bearingDeg !== 'number' || !Number.isFinite(bearingDeg)) return null;
+  let peak = Number.NEGATIVE_INFINITY;
+  for (const v of fetchProfileM) if (typeof v === 'number' && v > peak) peak = v;
+  if (!Number.isFinite(peak) || peak < MIN_FETCH_CLAUSE_M) return null;
+  const here = fetchProfileM[windSectorOf(bearingDeg)];
+  if (typeof here !== 'number' || !Number.isFinite(here)) return null;
+  return { here, peak };
+}
+
 /**
  * The metres of open water behind the wind at a bearing — or `null` when the claim is not worth
  * making.
@@ -231,24 +249,25 @@ export function fetchAlong(
   fetchProfileM: readonly number[] | null | undefined,
   bearingDeg: number | null | undefined,
 ): number | null {
-  if (!Array.isArray(fetchProfileM) || fetchProfileM.length !== WIND_SECTOR_COUNT) return null;
-  if (typeof bearingDeg !== 'number' || !Number.isFinite(bearingDeg)) return null;
-  if (Math.max(...fetchProfileM) < MIN_FETCH_CLAUSE_M) return null;
-  const here = fetchProfileM[windSectorOf(bearingDeg)];
-  return typeof here === 'number' && Number.isFinite(here) ? here : null;
+  return fetchReachAt(fetchProfileM, bearingDeg)?.here ?? null;
 }
 
+/**
+ * How exposed this lake was to the wind at a given bearing, in `[0, 1]` — or `null` when the
+ * question does not apply (see {@link fetchReachAt}).
+ *
+ * **Normalised per lake, not against a fixed reference**, which is the opposite of the wind rose's
+ * choice and right for the opposite reason: the rose compares lakes ("is this one windy?"), while
+ * this compares *bearings within one lake* ("was the wind running the long way today?"). A shared
+ * scale would flatten Willoughby's own contrast to nothing next to Champlain.
+ */
 export function fetchIntensityAt(
   fetchProfileM: readonly number[] | null | undefined,
   bearingDeg: number | null | undefined,
 ): number | null {
-  if (!Array.isArray(fetchProfileM) || fetchProfileM.length !== WIND_SECTOR_COUNT) return null;
-  if (typeof bearingDeg !== 'number' || !Number.isFinite(bearingDeg)) return null;
-  const peak = Math.max(...fetchProfileM);
-  if (!Number.isFinite(peak) || peak < MIN_FETCH_CLAUSE_M) return null;
-  const here = fetchProfileM[windSectorOf(bearingDeg)];
-  if (typeof here !== 'number' || !Number.isFinite(here)) return null;
-  return Math.min(1, Math.max(0, here / peak));
+  const reach = fetchReachAt(fetchProfileM, bearingDeg);
+  if (!reach) return null;
+  return Math.min(1, Math.max(0, reach.here / reach.peak));
 }
 
 export interface TimelineScrollbar {
@@ -270,6 +289,20 @@ export interface TimelineScrollbar {
  * Everything is in **pixels** since the 2026-09-04 scale change. The thumb's width is the honest
  * viewport-over-content ratio, so it grows when you zoom out and shrinks when you zoom in, for free.
  */
+/**
+ * The thumb's width — the honest viewport-over-content ratio, floored so it stays catchable.
+ *
+ * ⚠ **One definition, because two would be invertible without either noticing.** The thumb's
+ * position and the position a click on the track selects are inverses of each other, and they can
+ * only be inverses if they size the thumb identically; the formula was written out twice.
+ */
+function thumbWidth(viewportWidth: number, contentWidth: number, trackWidth: number): number {
+  return Math.min(
+    trackWidth,
+    Math.max(MIN_SCROLL_THUMB_WIDTH, (viewportWidth / contentWidth) * trackWidth),
+  );
+}
+
 export function timelineScrollbar(opts: {
   scrollPx: number;
   maxScrollPx: number;
@@ -280,10 +313,7 @@ export function timelineScrollbar(opts: {
   const { scrollPx, maxScrollPx, viewportWidth, contentWidth, trackWidth } = opts;
   if (maxScrollPx <= 0 || trackWidth <= 0 || contentWidth <= 0) return null;
 
-  const width = Math.min(
-    trackWidth,
-    Math.max(MIN_SCROLL_THUMB_WIDTH, (viewportWidth / contentWidth) * trackWidth),
-  );
+  const width = thumbWidth(viewportWidth, contentWidth, trackWidth);
   const travel = Math.max(0, trackWidth - width);
   // 1 at scrollPx 0 (newest, hard right), 0 at maxScrollPx (oldest, hard left).
   const progress = (maxScrollPx - clamp(scrollPx, 0, maxScrollPx)) / maxScrollPx;
@@ -311,10 +341,7 @@ export function scrollPxAtTrackX(
 ): number {
   const { maxScrollPx, viewportWidth, contentWidth, trackWidth } = opts;
   if (maxScrollPx <= 0 || trackWidth <= 0 || contentWidth <= 0) return 0;
-  const width = Math.min(
-    trackWidth,
-    Math.max(MIN_SCROLL_THUMB_WIDTH, (viewportWidth / contentWidth) * trackWidth),
-  );
+  const width = thumbWidth(viewportWidth, contentWidth, trackWidth);
   const travel = trackWidth - width;
   // A track with no travel (thumb fills it) can only mean the newest view; dividing would be NaN.
   if (travel <= 0) return 0;
@@ -921,15 +948,20 @@ function auxLayer(
   // dashed at exactly the two moments a reader looks for.
   const segments: { d: string; active: boolean }[] = [];
   for (const run of runs) {
+    // ⚠ The offset is carried rather than recovered with `indexOf`: the stretches partition the run
+    // in order, so the start of each is the sum of the lengths before it. `indexOf` made this a
+    // linear scan per stretch, on a model that is rebuilt on every scrolled pixel.
+    let startIndex = 0;
     for (const stretch of runsOf(run, (prev, next) => prev.active !== next.active)) {
       const first = stretch[0];
-      if (!first) continue;
-      const startIndex = run.indexOf(first);
-      const points = run
-        .slice(startIndex, startIndex + stretch.length + 1)
-        .map((p) => ({ x: p.x, y: y(p.v) }));
-      const d = linePath(points);
-      if (d.length > 0) segments.push({ d, active: first.active });
+      if (first) {
+        const points = run
+          .slice(startIndex, startIndex + stretch.length + 1)
+          .map((p) => ({ x: p.x, y: y(p.v) }));
+        const d = linePath(points);
+        if (d.length > 0) segments.push({ d, active: first.active });
+      }
+      startIndex += stretch.length;
     }
   }
 
@@ -937,30 +969,41 @@ function auxLayer(
   // Bucketed rather than per-hour: wind direction turns slowly, so runs are long and a week costs a
   // handful of paths instead of 168 — and the eye cannot read more than a few density steps anyway.
   const areaSegments: { d: string; intensity: number }[] = [];
-  if (intensity) {
+  // ⚠ Nothing is banded unless *something* has a second measure. A lake under `MIN_FETCH_CLAUSE_M`
+  // returns null for every hour, and it must keep falling through to the flat `area` — emitting
+  // floor-intensity bands for it would repaint the whole lane in the density channel's colour to say
+  // nothing at all.
+  if (intensity && values.some((v) => v.intensity !== null)) {
     const bucket = (i: number | null) =>
       i === null
         ? -1
         : Math.min(FETCH_INTENSITY_LEVELS - 1, Math.floor(i * FETCH_INTENSITY_LEVELS));
     for (const run of runs) {
+      let startIndex = 0;
       for (const stretch of runsOf(run, (a, b) => bucket(a.intensity) !== bucket(b.intensity))) {
         const first = stretch[0];
-        if (!first || first.intensity === null) continue;
-        const startIndex = run.indexOf(first);
         // Extended one point into the next run, or every band change leaves a vertical seam of bare
         // background through the fill.
         const points = run.slice(startIndex, startIndex + stretch.length + 1);
+        startIndex += stretch.length;
         const head = points[0];
         const tail = points[points.length - 1];
-        if (!head || !tail) continue;
+        if (!first || !head || !tail) continue;
         const top = points.map((p) => `L ${p.x.toFixed(2)} ${y(p.v).toFixed(2)}`).join(' ');
         areaSegments.push({
           d:
             `M ${head.x.toFixed(2)} ${box.bottom.toFixed(2)} ${top} ` +
             `L ${tail.x.toFixed(2)} ${box.bottom.toFixed(2)} Z`,
-          // Reported as the band's own centre rather than the raw value, so the renderer's opacity
-          // steps line up with the runs the geometry actually cut.
-          intensity: (bucket(first.intensity) + 0.5) / FETCH_INTENSITY_LEVELS,
+          // ⚠ **A stretch with no second measure is drawn at the floor, never skipped.** Skipping it
+          // punched a hole in the fill: the renderer only falls back to the flat `area` when
+          // `areaSegments` is *entirely* empty, so one hour missing `wind_direction_10m` in the
+          // middle of an otherwise-banded week left bare background where the lane should be. The
+          // floor is the honest reading of "no reach information here", and it keeps the shape whole.
+          //
+          // Otherwise reported as the band's own centre rather than the raw value, so the renderer's
+          // opacity steps line up with the runs the geometry actually cut.
+          intensity:
+            first.intensity === null ? 0 : (bucket(first.intensity) + 0.5) / FETCH_INTENSITY_LEVELS,
         });
       }
     }
@@ -1114,12 +1157,32 @@ export function weatherTimelineModel(input: WeatherTimelineInput): WeatherTimeli
       (prev, next) => next.x - prev.x > hourWidth * MAX_INTERPOLATED_SLOTS,
     );
 
+    // ⚠ **Split on `partial`, never filtered by it.** Dropping the partial points out of a run and
+    // pathing what remained joined the hours on either side of them with a straight line — the exact
+    // "one confident line across weather nobody observed" the gap rule above exists to prevent, now
+    // arriving through the provisional flag instead of through a hole. It also left a one-hour break
+    // between the settled trace and the dashed one at every boundary, because the two never shared a
+    // point. Each stretch is extended one point into its neighbour so they meet, the same way the
+    // auxiliary lanes' active/inactive split does.
+    const settled: string[] = [];
+    const provisional: string[] = [];
+    for (const run of runs) {
+      let startIndex = 0;
+      for (const stretch of runsOf(run, (prev, next) => prev.partial !== next.partial)) {
+        const first = stretch[0];
+        const points = run.slice(startIndex, startIndex + stretch.length + 1);
+        startIndex += stretch.length;
+        if (!first) continue;
+        const d = linePath(points);
+        if (d === '') continue;
+        (first.partial ? provisional : settled).push(d);
+      }
+    }
+
     temperature = {
       box,
-      segments: runs.map((run) => linePath(run.filter((p) => !p.partial))).filter((d) => d !== ''),
-      partialSegments: runs
-        .map((run) => linePath(run.filter((p) => p.partial)))
-        .filter((d) => d !== ''),
+      segments: settled,
+      partialSegments: provisional,
       gradient: {
         x1: 0,
         y1: box.top,
@@ -1280,7 +1343,7 @@ export function timelineDaysFromArchive(input: ArchiveTimelineInput): TimelineDa
     .map((dayMs) => {
       const hourRow = hoursByDay.get(dayMs);
       const summary = summaryByDay.get(dayMs);
-      const localDate = hourRow?.localDate ?? summary?.localDate ?? dayMsToLocalDateKey(dayMs);
+      const localDate = hourRow?.localDate ?? summary?.localDate ?? dayMsToLocalDate(dayMs);
       const observed = summary?.hours;
       return {
         dayMs,
@@ -1322,12 +1385,61 @@ function toTimelineHour(h: {
   };
 }
 
-/** `dayMs` → `YYYY-MM-DD`, for a hole that has neither a summary nor hours to name it. */
-function dayMsToLocalDateKey(dayMs: number): string {
-  const d = new Date(dayMs);
-  const mo = String(d.getUTCMonth() + 1).padStart(2, '0');
-  const day = String(d.getUTCDate()).padStart(2, '0');
-  return `${d.getUTCFullYear()}-${mo}-${day}`;
+// `dayMs` → `YYYY-MM-DD` for a hole with neither a summary nor hours to name it comes from
+// `weatherDay.dayMsToLocalDate`, which owns the encoding. A second local copy lived here and was a
+// character-for-character duplicate of it.
+
+/**
+ * The scrub readout, as a list of fields — **shared, because it is a sentence and sentences live
+ * here.**
+ *
+ * ⚠ **It was written twice and the two copies had already drifted**: web said `2.1″ on the ground`
+ * where native said `2.1″ down`, on the same measurement, from the same model. `weatherPanel.ts`
+ * states the rule this restores — every phrase the two clients render verbatim belongs in one tested
+ * module, because "observation, never counsel" (D3 / D150) is only enforceable where it can be
+ * tested, and mobile has no RN-under-Vitest harness at all.
+ *
+ * Returned as parts rather than a joined string so a renderer can lay them out however its platform
+ * wants; both clients happen to join on ` · `.
+ */
+export function timelineReadoutParts(
+  hour: TimelineHour,
+  fetchProfileM?: readonly number[] | null,
+): string[] {
+  const parts = [formatLocalHour(hour.localHour), formatTemperatureF(hour.temperatureC)];
+
+  const precip = precipitationKind(hour);
+  if (precip) {
+    const amount =
+      typeof hour.snowfallCm === 'number' && hour.snowfallCm > 0
+        ? `${roundTo(cmToInches(hour.snowfallCm), 1)}″`
+        : `${roundTo(mmToInches(hour.precipitationMm ?? hour.rainMm ?? 0), 2)}″`;
+    parts.push(`${precip.label} ${amount}`);
+  }
+
+  if (typeof hour.windSpeedKph === 'number') {
+    // Direction reads as "from the NW", the meteorological convention every compass label in this
+    // app already uses — and the half of wind that a speed alone cannot tell you.
+    const from =
+      typeof hour.windDirectionDeg === 'number'
+        ? ` ${COMPASS_LABELS[windSectorOf(hour.windDirectionDeg)] ?? ''}`
+        : '';
+    parts.push(`${Math.round(kphToMph(hour.windSpeedKph))} mph${from}`);
+    // ⚠ **"across the lake", never "of open water".** The app already uses *open water* as a hazard
+    // type — the on-ice alert says "⚠ open water ~45 s ahead", meaning unfrozen water you are about
+    // to skate into. Reusing it for fetch would make the same two words mean "the lake is not
+    // frozen" in one place and "the wind had a long run" in another, on a page about frozen lakes.
+    //
+    // Gated where the lake's geometry supports the claim: `fetchAlong` returns null below
+    // `MIN_FETCH_CLAUSE_M`, which is ~95% of the corpus.
+    const acrossM = fetchAlong(fetchProfileM, hour.windDirectionDeg);
+    if (acrossM !== null) parts.push(`${roundTo(acrossM / 1000, 1)} km across the lake`);
+  }
+
+  if (typeof hour.snowDepthM === 'number' && hour.snowDepthM > 0) {
+    parts.push(`${roundTo(cmToInches(hour.snowDepthM * 100), 1)}″ on the ground`);
+  }
+  return parts;
 }
 
 export function hourAtX(model: WeatherTimelineModel, x: number): PositionedHour | null {

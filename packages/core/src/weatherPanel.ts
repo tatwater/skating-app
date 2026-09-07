@@ -384,12 +384,18 @@ function buildHeadline(
   if (last === null) {
     lines.push(`No snow in the last ${days.length} day${days.length === 1 ? '' : 's'}`);
   } else {
-    const sector = dominantWindSector(days);
     const since = monthDayLabel(last.localDate);
+    // ⚠ **"since" has to be measured over the days SINCE, and it was not.** The sector came from the
+    // whole window — including the days *before* the snow fell — and the gate was the snow day's own
+    // peak gust, so a calm week following a blustery snowfall could be captioned with the direction
+    // the wind had been blowing beforehand. Two true numbers, one false sentence, which is the exact
+    // shape the "last on, not since" note below rejects; the fix is to ask the same question the
+    // grammar asks.
+    const after = days.filter((d) => d.dayMs > last.dayMs);
+    const sector = dominantWindSector(after);
+    const peakSinceKph = after.reduce((max, d) => Math.max(max, d.maxWindKph ?? 0), 0);
     const windNote =
-      sector !== null && (last.maxWindKph ?? 0) > 20
-        ? `, ${COMPASS_LABELS[sector] ?? '?'} wind since`
-        : '';
+      sector !== null && peakSinceKph > 20 ? `, ${COMPASS_LABELS[sector] ?? '?'} wind since` : '';
     // ⚠ **"last on", not "since".** `snowCm` is the total across the whole window while `since` is
     // the *most recent* snow day, so "3″ of snow since Feb 4" would assert that all three inches
     // fell after Feb 4 when most of them may have fallen a week earlier. Two true numbers, one false

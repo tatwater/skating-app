@@ -885,12 +885,20 @@ export const pageTierCells = internalQuery({
  * When `tier` is `browse` the raw hours are stored too — see {@link upsertWeatherHours}. The `filter`
  * sweep deliberately discards them: nothing corpus-wide asks an hourly question, and keeping them
  * would write ~3,000 rows a day for ever to serve a chart nobody opened.
+ *
+ * ⚠ **`hourlyDays` bounds the hourly write independently of the daily one, and the two really are
+ * different questions.** D153's lazy backfill pulls the 92-day ceiling because a *daily* row is
+ * cheap, permanent and exactly what a later climatology wants. An *hourly* row is ~24 records, is
+ * never swept either, and serves one chart with a bounded window — so a first touch was writing 93
+ * hourly documents (~2,200 hour records in a single mutation) to draw thirty days. Callers that know
+ * how far the chart can pan pass that, and the rest keep everything they fetched.
  */
 export async function ingestCellDays(
   ctx: ActionCtx,
   tier: WeatherTier,
   cell: WeatherCell,
   pastDays: number,
+  options: { hourlyDays?: number } = {},
 ): Promise<number | null> {
   const batch = await fetchLocalHourly(ctx, cell, pastDays);
   if (batch === null) return null;
@@ -905,10 +913,17 @@ export async function ingestCellDays(
     days: days.map((d) => ({ dayMs: d.dayMs, localDate: d.localDate, ...storableDay(d) })),
   });
   if (tier === 'browse') {
+    const grouped = groupHoursByDay(batch.hours);
+    // Newest-first trim, +1 for the forecast day the request always carries: the chart reads
+    // backwards from today, so if anything has to be dropped it is the far end of the window.
+    const hourly =
+      options.hourlyDays === undefined
+        ? grouped
+        : grouped.slice(-Math.max(1, Math.ceil(options.hourlyDays) + 1));
     await ctx.runMutation(internal.weatherArchive.upsertWeatherHours, {
       cellKey: cell.key,
       fetchedAt: Date.now(),
-      days: groupHoursByDay(batch.hours),
+      days: hourly,
     });
   }
   return days.length;
@@ -1177,7 +1192,9 @@ export const sweepWeatherDayGaps = internalAction({
         fromMs,
         toMs,
       });
-      const stillMissing = holes.filter((d) => !new Set(after.present).has(d));
+      // Built once, not once per hole — the Set was being reconstructed inside the predicate.
+      const recovered = new Set(after.present);
+      const stillMissing = holes.filter((d) => !recovered.has(d));
       repaired += holes.length - stillMissing.length;
 
       if (stillMissing.length > 0) {
@@ -1458,16 +1475,35 @@ export const tierHasDay = internalQuery({
   },
 });
 
-/** The daily gap sweep, same gate and same reasoning. */
+/**
+ * The daily gap sweep, same gate and same reasoning.
+ *
+ * ⚠ **Both tiers, and the `browse` half is not optional.** `maybeSyncWeatherCells` registers `browse`
+ * cells expressly so this can page them, and step 2 of D161's recovery ladder
+ * (`borrowFromFilter`) only ever applies to `browse` — sweeping `filter` alone left the ladder's
+ * middle rung unreachable in production and left every hole in a drawer-opened cell permanently
+ * unrepaired and unrecorded, which is exactly the "an absent day reads as *no snow fell*" failure
+ * step 4 exists to prevent.
+ *
+ * It costs little: the sweep skips any cell it has never fetched for
+ * (`present.length === 0 && missing.length === 0`), and a `browse` cell only ever has rows because a
+ * person opened that lake. So the browse half is proportional to attention, not to the corpus.
+ */
 export const maybeSweepGaps = internalAction({
   args: {},
-  handler: async (ctx): Promise<{ started: boolean; season: string }> => {
+  handler: async (
+    ctx,
+  ): Promise<{ started: boolean; season: string; repaired?: Record<string, number> }> => {
     const gate = await ctx.runQuery(internal.weatherArchive.isSweepSeasonOpen, {
       nowMs: Date.now(),
     });
     if (!gate.open) return { started: false, season: gate.season };
-    await ctx.runAction(internal.weatherArchive.sweepWeatherDayGaps, { tier: 'filter' });
-    return { started: true, season: gate.season };
+    const repaired: Record<string, number> = {};
+    for (const tier of WEATHER_TIERS) {
+      const res = await ctx.runAction(internal.weatherArchive.sweepWeatherDayGaps, { tier });
+      repaired[tier] = res.repaired;
+    }
+    return { started: true, season: gate.season, repaired };
   },
 });
 
@@ -1591,9 +1627,13 @@ export const getWeatherDaysForBody = action({
     // A cell with nothing at all is a first touch: pull the ceiling. A cell that has *some* of the
     // window is topped up with a short append, which is the cheap common case.
     if (realDays.length === 0) {
-      await ingestCellDays(ctx, 'browse', cell, BACKFILL_PAST_DAYS);
+      // The daily half takes the 92-day ceiling (D153: lazy backfill is not lossy); the hourly half
+      // is bounded to the window this panel can actually draw. See `ingestCellDays`.
+      await ingestCellDays(ctx, 'browse', cell, BACKFILL_PAST_DAYS, { hourlyDays: span });
     } else if (realDays.length < span || hoursShort) {
-      await ingestCellDays(ctx, 'browse', cell, Math.min(span + 1, MAX_PAST_DAYS));
+      await ingestCellDays(ctx, 'browse', cell, Math.min(span + 1, MAX_PAST_DAYS), {
+        hourlyDays: span,
+      });
     }
 
     if (realDays.length < span) {
