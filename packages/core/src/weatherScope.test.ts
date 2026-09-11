@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { resolveWeatherSubArea, subAreaWeatherPoint, weatherScopeLabel } from './weatherScope';
+import { resolveWeatherSubArea, subAreaWeatherPoint } from './weatherScope';
 
 const bay = (id: string, name: string, displayScore: number, removed = false) => ({
   _id: id,
@@ -50,11 +50,5 @@ describe('subAreaWeatherPoint', () => {
     const c = { lat: 44.5, lng: -73.3 };
     expect(subAreaWeatherPoint({ representativePoint: rp, centroid: c })).toEqual(rp);
     expect(subAreaWeatherPoint({ centroid: c })).toEqual(c);
-  });
-});
-
-describe('weatherScopeLabel', () => {
-  it('names the place', () => {
-    expect(weatherScopeLabel('Malletts Bay')).toBe('Weather at Malletts Bay');
   });
 });

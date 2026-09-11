@@ -110,8 +110,28 @@ export function WaterBodyDetail({
   // Once the (possibly merge-resolved) lake loads, fly the map to it and highlight it. We use the
   // resolved `body._id` — the survivor a merged deep link redirects to — which is what the map's
   // features carry, so a `/water/<merged-id>` link still highlights the right polygon.
+  //
+  // What the camera should frame, as a *stable signature* rather than the objects behind it:
+  // - a live `?sub=` bay → that bay;
+  // - no `?sub=`, or a `?sub=` we now know is not a live bay → the lake. A `?sub=` pointing at a
+  //   delisted or merged-away bay used to leave the map wherever it happened to be, framing nothing;
+  // - a `?sub=` whose lookup is still in flight → `null`, hold off, so the camera doesn't fly to the
+  //   lake and then jump to the bay a moment later.
+  // ⚠ Keyed on ids because `subAreas` is now fetched on every lake (the Planning tab needs it), and
+  // both it and `body` are reactive query results whose identity changes on every re-emit. With the
+  // arrays themselves as effect dependencies, opening any lake flew the camera twice — once when the
+  // body arrived and again ~100 ms later when the bay list did, restarting the fly-to mid-arc — and
+  // any later re-emit of either query yanked a reader who had panned away back to the lake.
+  const focusKey = !body
+    ? null
+    : focusSubArea
+      ? `sub:${focusSubArea._id}`
+      : !focusSubAreaId || subAreas !== undefined
+        ? `body:${body._id}`
+        : null;
+  // biome-ignore lint/correctness/useExhaustiveDependencies: focusKey is the stable signature of (body, focusSubArea, focusSubAreaId, subAreas) — see above.
   useEffect(() => {
-    if (!body) return;
+    if (!body || focusKey === null) return;
     // A bay frames on its **own bounds**, not the lake's — Champlain zoom-to-fit is 200 km of ice,
     // which is exactly the framing that made naming bays worth doing. (Mobile has always done this;
     // web was flying to a centroid at a guessed zoom, which fits a round bay and misses a long one.)
@@ -121,11 +141,7 @@ export function WaterBodyDetail({
         lng: focusSubArea.centroid.lng,
         bounds: focusSubArea.bbox,
       });
-    } else if (!focusSubAreaId || subAreas !== undefined) {
-      // Falls back to the lake once we know the bay isn't there — a `?sub=` pointing at a delisted
-      // or merged-away bay used to leave the map wherever it happened to be, framing nothing. While
-      // the lookup is still in flight (`subAreas === undefined`) we hold off, so the camera doesn't
-      // fly to the lake and then jump to the bay a moment later.
+    } else {
       setFocus({ lat: body.centroid.lat, lng: body.centroid.lng, zoom: 12 });
     }
     // Highlight the parent either way: the bay is a name on this lake, not a selectable thing.
@@ -135,15 +151,7 @@ export function WaterBodyDetail({
     // otherwise silently blank the layer on every lake at once. Only the *lake* drawer does this:
     // D81 makes contours a property of this view, not of every view that happens to select a body.
     setContourBodyKey(contourBodyKey(body.externalId, body._id));
-  }, [
-    body,
-    focusSubArea,
-    focusSubAreaId,
-    subAreas,
-    setFocus,
-    setHighlightWaterBodyId,
-    setContourBodyKey,
-  ]);
+  }, [focusKey, setFocus, setHighlightWaterBodyId, setContourBodyKey]);
 
   if (result === undefined) return <DetailSkeleton />;
 

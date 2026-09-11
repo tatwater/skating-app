@@ -1993,8 +1993,13 @@ export const getSubAreaSpread = query({
 
     const nowMs = Date.now();
     const utcToday = todayKey(nowMs);
-    // One day wider than the window so a lake still on yesterday (UTC/local skew) has a full span.
-    const fromMs = utcToday - SPREAD_DAYS * DAY_MS;
+    // Two days wider than the window, not one: the in-progress today is always dropped below, and
+    // between UTC midnight and the lake's own midnight (7 PM–midnight in the Northeast) the lake's
+    // today is `utcToday - 1`, so the newest *complete* day is `utcToday - 2`. A read that started
+    // `SPREAD_DAYS` back then held only `SPREAD_DAYS - 1` complete days, and the sentence flipped
+    // between "the last 7 days" and "the last 6 days" every evening. The newest-first slice below
+    // trims the surplus in the daytime case.
+    const fromMs = utcToday - (SPREAD_DAYS + 1) * DAY_MS;
     // Bays sharing a Tier-B cell share one read.
     const byCell = new Map<string, SpreadBayDay[]>();
     const inputs: SpreadBayInput[] = [];

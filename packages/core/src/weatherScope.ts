@@ -77,8 +77,3 @@ export function subAreaWeatherPoint(subArea: {
 }): { lat: number; lng: number } {
   return subArea.representativePoint ?? subArea.centroid;
 }
-
-/** The panel's scope line. A named place, never "Lake Champlain", which is not a well-formed claim. */
-export function weatherScopeLabel(subAreaName: string): string {
-  return `Weather at ${subAreaName}`;
-}

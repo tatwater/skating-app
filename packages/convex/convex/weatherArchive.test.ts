@@ -11,6 +11,7 @@ import {
   RECONCILE_DEBOUNCE_MS,
   reconcileSatisfiedBy,
   SEASON_OPEN_PAST_DAYS,
+  SPREAD_DAYS,
   SYNC_ASSUMED_DEAD_MS,
 } from './weatherArchive';
 
@@ -1770,6 +1771,52 @@ describe('weatherArchive: the sub-area spread reads Tier B (N6h open question 5)
     expect(spread?.lines.find((l) => l.kind === 'snow')?.text).toBe(
       'No snow at any bay in the last 6 days',
     );
+  });
+
+  test("still spans a full week in the evening, when the lake's today is UTC-yesterday", async () => {
+    // 03:00 UTC = 11 PM Eastern the night before: `todayKey` is D+1, the lake is still on D, and the
+    // newest complete day is D−1. A read that started only SPREAD_DAYS back held six complete days
+    // here and seven by daylight, so the sentence flipped every evening.
+    const D = Date.UTC(2026, 0, 20);
+    vi.useFakeTimers();
+    vi.setSystemTime(D + DAY_MS + 3 * 3600_000);
+    try {
+      const t = convexTest(schema, modules);
+      const lake = await seedBody(t, ANCHOR, 30);
+      await seedBay(t, lake, 'North Bay', NORTH);
+      await seedBay(t, lake, 'South Bay', SOUTH);
+      for (const [point, low] of [
+        [NORTH, -18],
+        [SOUTH, -8],
+      ] as const) {
+        const cell = weatherCellFor('filter', point.lat, point.lng);
+        // Ten local days ending on D itself, which is still in progress at the lake.
+        for (let i = 0; i <= 9; i++) {
+          const dayMs = D - i * DAY_MS;
+          await t.run((ctx) =>
+            ctx.db.insert('weatherDays', {
+              cellKey: cell.key,
+              tier: 'filter' as const,
+              dayMs,
+              localDate: new Date(dayMs).toISOString().slice(0, 10),
+              source: 'forecast' as const,
+              timeZone: 'America/New_York',
+              fetchedAt: Date.now(),
+              hours: 24,
+              nightMinTempC: low,
+              minTempC: low + 1,
+              snowfallCm: 0,
+            }),
+          );
+        }
+      }
+      const spread = await asViewer(t).query(api.weatherArchive.getSubAreaSpread, {
+        waterBodyId: lake,
+      });
+      expect(spread?.days).toBe(SPREAD_DAYS);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   test('is null with fewer than two bays, when Tier B is empty, and to a signed-out caller', async () => {
