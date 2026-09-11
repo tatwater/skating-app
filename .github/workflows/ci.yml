@@ -42,6 +42,31 @@ jobs:
       - name: Lint & format check
         run: pnpm lint
 
+      # `convex/_generated/` is committed as the real output of `npx convex dev`, and
+      # nothing regenerates it before the checks below (see the note at the top of
+      # `packages/convex/scripts/codegen.mjs`). That leaves one way for it to go
+      # stale: someone adds or changes a Convex function and does not run
+      # `convex dev`. If nothing imports the new function yet, typecheck passes and
+      # the drift lands on main. This step provisions a throwaway local backend,
+      # pushes the functions to it — which also proves the backend actually compiles
+      # and deploys — and fails if what the CLI generates differs from what is
+      # committed.
+      #
+      # CONVEX_AGENT_MODE=anonymous is Convex's documented path for automation: no
+      # account, no login, no deploy key. The issuer domain is a placeholder because
+      # `auth.config.ts` reads the variable at deploy time, and CI never validates a
+      # real Clerk token. Every other `process.env` read in `convex/` is inside a
+      # handler, so nothing else needs to be set for the push to succeed.
+      - name: Verify the Convex backend deploys and its codegen is current
+        env:
+          CONVEX_AGENT_MODE: anonymous
+        working-directory: packages/convex
+        run: |
+          pnpm exec convex init
+          pnpm exec convex env set CLERK_JWT_ISSUER_DOMAIN https://placeholder.clerk.accounts.dev
+          pnpm exec convex dev --once
+          git diff --exit-code -- convex/_generated
+
       - name: Type-check
         run: pnpm check-types
 
