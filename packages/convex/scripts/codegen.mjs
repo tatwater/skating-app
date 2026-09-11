@@ -1,9 +1,27 @@
 /**
- * Hermetic stand-in for `convex codegen`.
+ * Offline stand-in for `convex codegen`. Run it explicitly (`pnpm codegen`); nothing
+ * runs it for you.
  *
- * `convex codegen` requires a configured deployment (a Clerk/Convex login), which
- * CI does not have — and `convex/_generated/` is (correctly) gitignored. This script
- * writes the same generated files offline so `tsc` and `convex-test` work anywhere:
+ * ## What is committed, and why this no longer runs before every check
+ *
+ * `convex/_generated/` is **committed**, on purpose, as the real output of
+ * `npx convex dev`. That is Convex's documented intent — `convex codegen --help` says the
+ * files "should be committed to the repo (your code won't typecheck without it!)" — and
+ * it was re-established deliberately after being gitignored for a while.
+ *
+ * This script was written for the gitignored era, when the files were absent in CI and
+ * something had to produce them. It used to run ahead of `check-types`, `test`, and
+ * `build`, and that became a defect once the files were tracked: its output is *not*
+ * identical to the CLI's (it omits `componentsGeneric()`, carries a different header,
+ * drops doc comments), so every test run overwrote the committed files with a second
+ * version, the tree was dirty after every check, and CI validated the script's output
+ * rather than the files actually in the repo. Those prefixes are gone; every check now
+ * runs against what is committed, which is what deploys.
+ *
+ * ## What it is still for
+ *
+ * A checkout with no Convex login that needs `_generated/` rebuilt from scratch — after
+ * deleting it, or when adding a `convex/*.ts` module without a deployment to hand:
  *
  *   - `dataModel.d.ts` derives the whole data model from `typeof schema`, so it never
  *     needs regenerating when the schema changes.
@@ -11,9 +29,10 @@
  *   - `api.d.ts` is derived from the function modules actually on disk, so adding or
  *     removing a `convex/*.ts` file updates the typed API automatically.
  *
- * Running `npx convex dev` locally overwrites these with the real (identical-modulo-
- * formatting) output — this is only the offline/CI path. Templates mirror
- * `convex/dist/esm/cli/codegen_templates/*`.
+ * Its output typechecks and passes the suite, but it is not what should be committed.
+ * After using it, run `npx convex dev` (or `convex codegen`) against a deployment and
+ * commit that. Templates mirror `convex/dist/esm/cli/codegen_templates/*` loosely; if
+ * the two ever need to agree byte-for-byte, that is the file to bring up to date.
  */
 
 import { existsSync, mkdirSync, readdirSync, writeFileSync } from 'node:fs';
