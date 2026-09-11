@@ -88,12 +88,13 @@ export function WaterBodyDetail({
   const liveBays = (subAreas ?? []).filter((s) => !s.removed);
   // The report feed's bay filter, held here because the feed unmounts with its tab (see
   // `ReportFeed`). Seeded from the route's `?sub=` — the raw param, available on the first render,
-  // where the resolved bay object is not — and re-seeded when the route's bay changes, so the weather
-  // picker and a search hit both land the feed on the bay they named. The dropdown then refines it
-  // locally without touching the route.
+  // where the resolved bay object is not — and re-seeded whenever the route's bay changes, **in both
+  // directions**: a bay named lands the feed on it, and a bay removed (`?sub=` dropped on the same
+  // lake) returns it to the whole lake, because that is what the route just said. The dropdown then
+  // refines it locally without touching the route, and holds until the route speaks again.
   const [feedBayId, setFeedBayId] = useState<string>(focusSubAreaId ?? '');
   useEffect(() => {
-    if (focusSubAreaId) setFeedBayId(focusSubAreaId);
+    setFeedBayId(focusSubAreaId ?? '');
   }, [focusSubAreaId]);
   const weatherBay =
     subAreas === undefined ? undefined : resolveWeatherSubArea(liveBays, focusSubAreaId);
