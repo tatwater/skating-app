@@ -1,3 +1,4 @@
+import { weatherCellFor } from '@skating/core';
 import { convexTest } from 'convex-test';
 import type { Polygon } from 'geojson';
 import { describe, expect, test, vi } from 'vitest';
@@ -1612,5 +1613,200 @@ describe('weatherArchive: a bay is its own place (N6h open question 5)', () => {
     await t.finishInProgressScheduledFunctions();
     const cells = await t.run((ctx) => ctx.db.query('weatherCells').collect());
     expect(cells).toHaveLength(1);
+  });
+});
+
+describe('weatherArchive: the sub-area spread reads Tier B (N6h open question 5)', () => {
+  const ANCHOR = { lat: 44.25, lng: -73.35 };
+  const NORTH = { lat: 44.95, lng: -73.15 };
+  const SOUTH = { lat: 43.65, lng: -73.4 };
+
+  async function seedBay(
+    t: ReturnType<typeof convexTest>,
+    parent: Id<'waterBodies'>,
+    name: string,
+    point: { lat: number; lng: number },
+  ): Promise<Id<'waterBodySubAreas'>> {
+    const author = (await t.run((ctx) =>
+      ctx.db.insert('profiles', {
+        clerkUserId: `mod-${name}`,
+        displayName: name,
+        username: `m-${name}`.toLowerCase().replace(/\s/g, ''),
+        driveTimePrefMinutes: 60,
+        profileVisibility: 'public' as const,
+        notificationPrefs: {
+          activityDetected: true,
+          bountyRequest: true,
+          hazardConfirmation: true,
+          bountyFulfilled: true,
+          reportRated: true,
+          reportCommented: true,
+          contentFlagResolved: true,
+          favoriteReport: true,
+          nearbyReportDigest: false,
+          greatReportNearby: false,
+        },
+        dateOfBirth: Date.UTC(1990, 0, 1),
+        reputationPoints: 0,
+        role: 'moderator' as const,
+        status: 'active' as const,
+        createdAt: Date.now(),
+      }),
+    )) as Id<'profiles'>;
+    return t.run((ctx) =>
+      ctx.db.insert('waterBodySubAreas', {
+        waterBodyId: parent,
+        name,
+        searchText: name,
+        polygon: square(0.01),
+        bbox: {
+          minLat: point.lat - 0.01,
+          minLng: point.lng - 0.01,
+          maxLat: point.lat + 0.01,
+          maxLng: point.lng + 0.01,
+        },
+        centroid: point,
+        surfaceAreaSqM: 1_000_000,
+        displayScore: 1,
+        minVisibleZoom: 10,
+        createdByUserId: author,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      }),
+    ) as Promise<Id<'waterBodySubAreas'>>;
+  }
+
+  /** Seed `n` settled filter-tier days ending yesterday (UTC) for the cell at `point`. */
+  async function seedFilterDays(
+    t: ReturnType<typeof convexTest>,
+    point: { lat: number; lng: number },
+    n: number,
+    over: {
+      nightMinTempC: number;
+      snowfallCm?: number;
+      skipNewest?: boolean;
+      missingNewest?: boolean;
+    },
+  ) {
+    const cell = weatherCellFor('filter', point.lat, point.lng);
+    const today = Math.floor(Date.now() / DAY_MS) * DAY_MS;
+    for (let i = 1; i <= n; i++) {
+      if (over.skipNewest && i === 1) continue;
+      const dayMs = today - i * DAY_MS;
+      const missing = over.missingNewest === true && i === 1;
+      await t.run((ctx) =>
+        ctx.db.insert('weatherDays', {
+          cellKey: cell.key,
+          tier: 'filter' as const,
+          dayMs,
+          localDate: new Date(dayMs).toISOString().slice(0, 10),
+          source: 'forecast' as const,
+          timeZone: 'UTC',
+          fetchedAt: Date.now(),
+          ...(missing
+            ? { missing: true }
+            : {
+                hours: 24,
+                nightMinTempC: over.nightMinTempC,
+                minTempC: over.nightMinTempC + 1,
+                snowfallCm: over.snowfallCm ?? 0,
+              }),
+        }),
+      );
+    }
+  }
+
+  test('ranks the bays over the shared filter-tier days and names the ends', async () => {
+    const t = convexTest(schema, modules);
+    const lake = await seedBody(t, ANCHOR, 30);
+    await seedBay(t, lake, 'North Bay', NORTH);
+    await seedBay(t, lake, 'South Bay', SOUTH);
+    await seedFilterDays(t, NORTH, 7, { nightMinTempC: -18 });
+    await seedFilterDays(t, SOUTH, 7, { nightMinTempC: -8, snowfallCm: 10 });
+
+    const spread = await asViewer(t).query(api.weatherArchive.getSubAreaSpread, {
+      waterBodyId: lake,
+    });
+    expect(spread?.bays).toBe(2);
+    expect(spread?.days).toBe(7);
+    expect(spread?.similar).toBe(false);
+    expect(spread?.lines.map((l) => l.text)).toEqual([
+      'Lows 0°F to 18°F — coldest at North Bay, mildest at South Bay',
+      // 10 cm on each of the seven days: the total over the window, not the last day's.
+      'Snow in the last 7 days: none at North Bay, 27.6 in at South Bay',
+    ]);
+  });
+
+  test('drops the in-progress today and a recorded gap, and compares only the days both bays have', async () => {
+    const t = convexTest(schema, modules);
+    const lake = await seedBody(t, ANCHOR, 30);
+    await seedBay(t, lake, 'North Bay', NORTH);
+    await seedBay(t, lake, 'South Bay', SOUTH);
+    // North's newest day is a gap marker; South is complete. The intersection is six days.
+    await seedFilterDays(t, NORTH, 7, { nightMinTempC: -18, missingNewest: true });
+    await seedFilterDays(t, SOUTH, 7, { nightMinTempC: -8 });
+    // Today, still in progress, must not count even with a full-looking row.
+    const today = Math.floor(Date.now() / DAY_MS) * DAY_MS;
+    await t.run((ctx) =>
+      ctx.db.insert('weatherDays', {
+        cellKey: weatherCellFor('filter', SOUTH.lat, SOUTH.lng).key,
+        tier: 'filter' as const,
+        dayMs: today,
+        localDate: new Date(today).toISOString().slice(0, 10),
+        source: 'forecast' as const,
+        timeZone: 'UTC',
+        fetchedAt: Date.now(),
+        hours: 24,
+        nightMinTempC: -30,
+        snowfallCm: 50,
+      }),
+    );
+
+    const spread = await asViewer(t).query(api.weatherArchive.getSubAreaSpread, {
+      waterBodyId: lake,
+    });
+    expect(spread?.days).toBe(6);
+    // The forecast-valued today did not sneak −30 °C or 50 cm into the ranking.
+    expect(spread?.lines.find((l) => l.kind === 'snow')?.text).toBe(
+      'No snow at any bay in the last 6 days',
+    );
+  });
+
+  test('is null with fewer than two bays, when Tier B is empty, and to a signed-out caller', async () => {
+    const t = convexTest(schema, modules);
+    const lake = await seedBody(t, ANCHOR, 30);
+    await seedBay(t, lake, 'Only Bay', NORTH);
+    await seedFilterDays(t, NORTH, 7, { nightMinTempC: -18 });
+    expect(
+      await asViewer(t).query(api.weatherArchive.getSubAreaSpread, { waterBodyId: lake }),
+    ).toBeNull();
+
+    await seedBay(t, lake, 'South Bay', SOUTH);
+    // South has no Tier-B rows yet (pre-season): no comparison, not a comparison against zeroes.
+    expect(
+      await asViewer(t).query(api.weatherArchive.getSubAreaSpread, { waterBodyId: lake }),
+    ).toBeNull();
+    expect(await t.query(api.weatherArchive.getSubAreaSpread, { waterBodyId: lake })).toBeNull();
+  });
+
+  test("primeSubAreaWeather fills the bays' filter cells out of season, once per cell", async () => {
+    const t = convexTest(schema, modules);
+    const lake = await seedBody(t, ANCHOR, 30);
+    await seedBay(t, lake, 'North Bay', NORTH);
+    await seedBay(t, lake, 'Also North', { lat: NORTH.lat + 0.01, lng: NORTH.lng + 0.01 });
+    await seedBay(t, lake, 'South Bay', SOUTH);
+    const fetchMock = vi.fn(async () => okJson(isoResponse(recentDates(5))));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const res = await t.action(internal.weatherArchive.primeSubAreaWeather, {
+      waterBodyId: lake,
+      pastDays: 5,
+    });
+    // Two bays share a 0.1° cell: three bays, two cells, two fetches.
+    expect(res.cells).toBe(2);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    const rows = await t.run((ctx) => ctx.db.query('weatherDays').collect());
+    expect(rows.every((r) => r.tier === 'filter')).toBe(true);
+    expect(new Set(rows.map((r) => r.cellKey)).size).toBe(2);
   });
 });

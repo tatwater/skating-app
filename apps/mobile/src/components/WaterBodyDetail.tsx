@@ -38,6 +38,7 @@ import { PostedAccess } from './PostedAccess';
 import { ReferenceLinks } from './ReferenceLinks';
 import { ReportForm } from './ReportForm';
 import { SeasonEmptyState, SeasonFilter } from './SeasonFilter';
+import { SubAreaSpread } from './SubAreaSpread';
 import { WeatherPlacePicker } from './WeatherPlacePicker';
 import { WindExposure } from './WindExposure';
 
@@ -296,6 +297,10 @@ export function WaterBodyDetail({
               <AccessSection waterBodyId={result.body._id} />
               {/* Which place on the lake the weather below is about — a scope line and chips on a
                   giant with named bays, nothing on everything else (open question 5). */}
+              {/* The lake's spread across its bays, with the ends named as tap targets (open question 5).
+                  Reads Tier B, so it costs no fetch; renders nothing until the season sweep has rows for two
+                  of this lake's bays. Only asked for on a lake that has two bays to compare. */}
+              {liveBays.length >= 2 ? <SubAreaSpread waterBodyId={result.body._id} /> : null}
               <WeatherPlacePicker
                 waterBodyId={result.body._id}
                 bays={liveBays}

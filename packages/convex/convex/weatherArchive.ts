@@ -46,11 +46,16 @@
 import {
   approximateUtcOffsetSeconds,
   archiveSeasonAt,
+  buildSubAreaSpread,
   dayMsToLocalDate,
+  isCompleteDay,
   type LocalHourlyWeather,
   localDateToDayMs,
   localDayMsAt,
   localDayMsInZone,
+  type SpreadBayDay,
+  type SpreadBayInput,
+  type SubAreaSpread,
   spansMultipleSampleCells,
   summarizeWeatherDays,
   utcOffsetSecondsInZone,
@@ -64,7 +69,13 @@ import { v } from 'convex/values';
 import { internal } from './_generated/api';
 import type { Id } from './_generated/dataModel';
 import type { ActionCtx, MutationCtx } from './_generated/server';
-import { action, internalAction, internalMutation, internalQuery } from './_generated/server';
+import {
+  action,
+  internalAction,
+  internalMutation,
+  internalQuery,
+  query,
+} from './_generated/server';
 import { meterOpenMeteo } from './lib/apiMeter';
 import { WEATHER_DAY_SOURCES } from './lib/enums';
 import { bodyWeatherCell, subAreaWeatherCell } from './lib/sampling';
@@ -1937,5 +1948,141 @@ export const sampleCoverage = internalQuery({
       // for it to mean anything is `fetchIntensityAt`'s call, not this query's.
       ...(Array.isArray(body.fetchProfileM) ? { fetchProfileM: body.fetchProfileM } : {}),
     };
+  },
+});
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+// The sub-area spread (open question 5, second half)
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+
+/** Days the spread compares bays over — the same window the panel's sentences describe. */
+export const SPREAD_DAYS = PANEL_DAYS;
+
+/**
+ * How a giant describes itself: the spread across its named bays, with the ends named
+ * (`buildSubAreaSpread` in core). *"Lows 0°F to 12°F — coldest at Missisquoi Bay, mildest at
+ * Burlington Bay."*
+ *
+ * **A query, not an action, and that is the whole cost argument.** It reads the corpus-wide
+ * `filter` tier's rows, which the season sweep populates daily for every registered cell — bays
+ * included, since the registry's sub-area pass — so ranking ten bays costs no fetch at all on
+ * drawer-open, and the panel stays fast. 0.1° is coarse for a *reading* and ample for a *ranking*;
+ * the bay the reader then picks gets its own browse-tier reading from `getWeatherDaysForBody`.
+ * D152's two tiers, applied to one lake.
+ *
+ * Bays sharing a Tier-B cell share rows and tie. The in-progress today is dropped per cell using
+ * that cell's own zone, and `missing` markers are dropped — the builder then compares every bay over
+ * the days they *all* have, so a hole in one bay's record cannot read as "less snow".
+ *
+ * `null` outside the season and until the first sweep: Tier B is empty, and an empty spread is the
+ * honest state rather than a fallback to the browse tier (which would cost a fetch per bay).
+ */
+export const getSubAreaSpread = query({
+  args: { waterBodyId: v.id('waterBodies') },
+  handler: async (ctx, { waterBodyId }): Promise<SubAreaSpread | null> => {
+    if (!(await ctx.auth.getUserIdentity())) return null;
+    const body = await ctx.db.get(waterBodyId);
+    if (!body || body.removedAt) return null;
+    const bays = (
+      await ctx.db
+        .query('waterBodySubAreas')
+        .withIndex('by_parent', (q) => q.eq('waterBodyId', waterBodyId))
+        .collect()
+    ).filter((s) => s.removedAt === undefined);
+    if (bays.length < 2) return null;
+
+    const nowMs = Date.now();
+    const utcToday = todayKey(nowMs);
+    // One day wider than the window so a lake still on yesterday (UTC/local skew) has a full span.
+    const fromMs = utcToday - SPREAD_DAYS * DAY_MS;
+    // Bays sharing a Tier-B cell share one read.
+    const byCell = new Map<string, SpreadBayDay[]>();
+    const inputs: SpreadBayInput[] = [];
+    for (const bay of bays) {
+      const cell = subAreaWeatherCell(bay, body, 'filter');
+      let days = byCell.get(cell.key);
+      if (days === undefined) {
+        const rows = await ctx.db
+          .query('weatherDays')
+          .withIndex('by_cell_day', (q) =>
+            q.eq('cellKey', cell.key).gte('dayMs', fromMs).lte('dayMs', utcToday),
+          )
+          .collect();
+        // The cell's own today, from its own zone — a phone elsewhere must not decide when the day
+        // ends at the lake, and a stored offset is the one the fetch happened on (see the panel).
+        const zone = [...rows].reverse().find((r) => typeof r.timeZone === 'string')?.timeZone;
+        const todayLocal =
+          (zone === undefined ? null : localDayMsInZone(nowMs, zone)) ??
+          localDayMsAt(
+            nowMs,
+            [...rows].reverse().find((r) => typeof r.utcOffsetSeconds === 'number')
+              ?.utcOffsetSeconds ?? approximateUtcOffsetSeconds(cell.lng),
+          );
+        days = rows
+          .filter((r) => r.missing !== true && isCompleteDay(r.hours, r.dayMs, todayLocal))
+          .sort((a, b) => b.dayMs - a.dayMs)
+          .slice(0, SPREAD_DAYS)
+          .map((r) => ({
+            dayMs: r.dayMs,
+            nightMinTempC: r.nightMinTempC ?? null,
+            minTempC: r.minTempC ?? null,
+            snowfallCm: r.snowfallCm ?? null,
+          }));
+        byCell.set(cell.key, days);
+      }
+      inputs.push({ subAreaId: bay._id, name: bay.name, days });
+    }
+    return buildSubAreaSpread(inputs);
+  },
+});
+
+/**
+ * **Operator tool: fill a lake's bay cells at the filter tier, out of season.**
+ *
+ * The spread reads Tier B, and Tier B is empty until D163's gate opens on a real regional freeze —
+ * mid-November, typically. That makes the spread unverifiable on dev for two months of every year,
+ * which is how a ranking, its copy and its collapse threshold would otherwise ship against a table
+ * nobody can look at. This primes one lake's bays with `pastDays` of real weather so the real panel
+ * can be read (founder call, 2026-09-11: Champlain's ~7 Tier-B bay cells, ~7 weighted calls).
+ *
+ * Metered like every other fetch, and deliberately not reachable from a client: the sweep is the
+ * producer in season, and this is a hand tool for the two months it is not.
+ */
+export const primeSubAreaWeather = internalAction({
+  args: { waterBodyId: v.id('waterBodies'), pastDays: v.optional(v.number()) },
+  // ⚠ Annotated on purpose: an action that reaches `internal.weatherArchive.*` from inside its own
+  // module with an inferred return type is the circular-inference landmine this file already warns
+  // about — TypeScript gives up on the whole `api` type and every test in the package loses its types.
+  handler: async (
+    ctx,
+    { waterBodyId, pastDays },
+  ): Promise<{ cells: number; days: number; written: Record<string, number | null> }> => {
+    const cells: WeatherCell[] = await ctx.runQuery(internal.weatherArchive.subAreaFilterCells, {
+      waterBodyId,
+    });
+    const days = Math.min(MAX_PAST_DAYS, Math.max(1, pastDays ?? SEASON_OPEN_PAST_DAYS));
+    const out: Record<string, number | null> = {};
+    for (const cell of cells) out[cell.key] = await ingestCellDays(ctx, 'filter', cell, days);
+    return { cells: cells.length, days, written: out };
+  },
+});
+
+/** The distinct filter-tier cells a lake's live bays occupy. */
+export const subAreaFilterCells = internalQuery({
+  args: { waterBodyId: v.id('waterBodies') },
+  handler: async (ctx, { waterBodyId }): Promise<WeatherCell[]> => {
+    const body = await ctx.db.get(waterBodyId);
+    if (!body || body.removedAt) return [];
+    const bays = await ctx.db
+      .query('waterBodySubAreas')
+      .withIndex('by_parent', (q) => q.eq('waterBodyId', waterBodyId))
+      .collect();
+    const byKey = new Map<string, WeatherCell>();
+    for (const bay of bays) {
+      if (bay.removedAt !== undefined) continue;
+      const cell = subAreaWeatherCell(bay, body, 'filter');
+      byKey.set(cell.key, cell);
+    }
+    return [...byKey.values()];
   },
 });
