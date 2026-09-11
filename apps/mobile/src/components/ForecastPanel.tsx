@@ -173,10 +173,15 @@ export function ForecastPlanner({ plan }: { plan: ForecastPlan }) {
   const daysRef = useRef<ScrollView>(null);
   const [selectedDate, setSelectedDate] = useState<string>(plan.days[0]?.localDate ?? '');
   const settlingUntil = useRef(0);
+  // The date a tap selected, so the follow effect below can tell a tapped card (already on screen —
+  // leave the row where the finger is) from one the hour row selected (maybe off the end — bring
+  // it in). The hour-row path clears it, so a tap on the already-pressed card cannot leave it stale.
+  const tappedDate = useRef<string | null>(null);
 
   // When the hour row drives the selection, the day row follows so the pressed card is on screen.
   // The day cards are fixed-width, so the offset is arithmetic rather than a measured layout.
   useEffect(() => {
+    if (tappedDate.current === selectedDate) return;
     const i = plan.days.findIndex((d) => d.localDate === selectedDate);
     if (i < 0) return;
     daysRef.current?.scrollTo({
@@ -191,6 +196,7 @@ export function ForecastPlanner({ plan }: { plan: ForecastPlan }) {
   }, [plan]);
 
   const scrollToDay = useCallback((day: ForecastPlanDay) => {
+    tappedDate.current = day.localDate;
     setSelectedDate(day.localDate);
     settlingUntil.current = Date.now() + 700;
     hoursRef.current?.scrollTo({
@@ -208,7 +214,10 @@ export function ForecastPlanner({ plan }: { plan: ForecastPlan }) {
         Math.floor((x + HOUR_CARD_WIDTH / 2) / (HOUR_CARD_WIDTH + HOUR_CARD_GAP)),
       );
       const hour = plan.hours[Math.min(first, plan.hours.length - 1)];
-      if (hour && hour.localDate !== selectedDate) setSelectedDate(hour.localDate);
+      if (hour && hour.localDate !== selectedDate) {
+        tappedDate.current = null;
+        setSelectedDate(hour.localDate);
+      }
     },
     [plan.hours, selectedDate],
   );

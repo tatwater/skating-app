@@ -258,6 +258,53 @@ describe('buildForecastPlan — days', () => {
     expect(snowyHour.days[0]!.condition).toBe('snow');
   });
 
+  it('names a day by a storm that is still falling on it, even though the sentence stays on the day it began', () => {
+    // Thu 2 PM → Fri 8 PM at 0.5 cm/h: Friday has no episode of its own and every daytime hour is
+    // snowing, which used to leave the cloud vote with an empty tally — and an empty tally named
+    // the day by the first entry of the table, "freezing rain".
+    const start = local('2026-01-15T00:00:00');
+    const plan = buildForecastPlan(
+      series(start, 72, (_, ms) => {
+        const t = ms - start;
+        return t >= 14 * HOUR && t < 44 * HOUR ? { weatherCode: 73, snowfallCm: 0.5 } : {};
+      }),
+      NOW,
+    );
+    const [thu, fri, sat] = plan.days as [
+      (typeof plan.days)[number],
+      (typeof plan.days)[number],
+      (typeof plan.days)[number],
+    ];
+    expect(thu.condition).toBe('snow');
+    expect(fri.condition).toBe('snow');
+    expect(fri.lines).toEqual([]); // still Thursday's sentence
+    expect(sat.condition).toBe('clear');
+    // And a thirty-hour run names the day its end falls on, because "2–8 PM" is six hours to a reader.
+    expect(thu.lines).toEqual(['Snow 2 PM–8 PM Fri · 5.9″']);
+  });
+
+  it('names a day of sub-floor drizzle "drizzle", not the first row of the table', () => {
+    const start = local('2026-01-15T00:00:00');
+    const plan = buildForecastPlan(
+      series(start, 24, () => ({ weatherCode: 51, rainMm: 0.01, precipitationMm: 0.01 })),
+      NOW,
+    );
+    expect(plan.days[0]!.condition).toBe('drizzle');
+    expect(plan.days[0]!.lines).toEqual([]);
+  });
+
+  it('lets an hour of thunder name the day even when its rain run earns a sentence', () => {
+    const start = local('2026-01-15T00:00:00');
+    const plan = buildForecastPlan(
+      series(start, 24, (i) =>
+        i >= 13 && i < 16 ? { weatherCode: 95, rainMm: 2, precipitationMm: 2 } : {},
+      ),
+      NOW,
+    );
+    expect(plan.days[0]!.condition).toBe('thunder');
+    expect(plan.days[0]!.lines).toEqual(['Rain 1–4 PM · 0.24″']);
+  });
+
   it('ranks freezing rain above snow above rain when a day has all three', () => {
     const start = local('2026-01-15T00:00:00');
     const plan = buildForecastPlan(

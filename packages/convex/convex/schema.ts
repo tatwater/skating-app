@@ -91,6 +91,7 @@ import {
   bbox,
   boolFlags,
   decileBlock,
+  forecastHour,
   geoJson,
   latLng,
   literals,
@@ -1292,23 +1293,11 @@ export default defineSchema({
     forecastDays: v.optional(v.number()),
     /** The shift baked into every `hours[].startMs`, so a client can put its own clock beside them. */
     utcOffsetMs: v.optional(v.number()),
-    hours: v.array(
-      v.object({
-        startMs: v.number(),
-        temperatureC: v.number(),
-        windSpeedKph: v.number(),
-        precipitationMm: v.number(),
-        snowfallCm: v.number(),
-        // The planner's fields (N6h D) — optional so pre-planner rows still validate; the table
-        // prunes itself hourly, so they are required in practice within a day of the deploy.
-        rainMm: v.optional(v.number()),
-        windGustKph: v.optional(v.number()),
-        windDirectionDeg: v.optional(v.number()),
-        weatherCode: v.optional(v.number()),
-        shortwaveWm2: v.optional(v.number()),
-        cloudCoverPct: v.optional(v.number()),
-      }),
-    ),
+    /**
+     * The hour in progress and every forward hour, ascending. The one shared validator (see
+     * `lib/validators`) is what `writeForecastCache` accepts too.
+     */
+    hours: v.array(forecastHour),
     // ⚠ Written by nothing since the planner (N6h D): the strip line is now derived on the client
     // from `hours`. Kept optional so the last pre-planner hour of rows validates on push; the
     // hourly prune removes them and the fields can be dropped in any later schema pass.

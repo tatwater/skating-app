@@ -68,11 +68,12 @@ export interface ForecastHour {
 /**
  * What the drawer's forecast action returns (N6h Workstream D).
  *
- * `hours` is the full forward series — seven days, ascending, local-shifted like every
- * `HourlyWeather.startMs` — and **both surfaces derive from it on the client**: the one-line strip
- * through `summarizeForecast` at its 12-hour horizon, the planner through `buildForecastPlan`. One
- * fetch, one cache row, two readers; the alternative was two fetches per drawer-open for the same
- * hours (founder call 13, 2026-09-11).
+ * `hours` is the hour in progress plus the full forward series — seven days, ascending,
+ * local-shifted like every `HourlyWeather.startMs` — and **both surfaces derive from it on the
+ * client**: the one-line strip through `summarizeForecast` at its 12-hour horizon (which drops the
+ * hour in progress), the planner through `buildForecastPlan` (which opens on it). One fetch, one
+ * cache row, two readers; the alternative was two fetches per drawer-open for the same hours
+ * (founder call 13, 2026-09-11).
  *
  * `utcOffsetMs` is what lets a client shift its own `Date.now()` onto the hours' clock. It is
  * returned rather than recovered from the first hour because the first hour can be a gap.

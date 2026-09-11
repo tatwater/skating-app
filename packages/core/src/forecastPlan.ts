@@ -32,10 +32,18 @@
 
 import type { ForecastHour } from './lakeForecast';
 import { cmToInches, cToF, kphToMph, mmToInches, roundTo } from './units';
-import { localDateToDayMs, NIGHT_END_HOUR, NIGHT_START_HOUR, SUNLIT_WM2 } from './weatherDay';
-import { formatLocalHourLabel } from './weatherPanel';
+import {
+  dayMsToLocalDate,
+  localDateToDayMs,
+  NIGHT_END_HOUR,
+  NIGHT_START_HOUR,
+  SUNLIT_WM2,
+} from './weatherDay';
+import { formatLocalHourLabel, shortDayLabel } from './weatherPanel';
+import { PRECIP_MIN_MM } from './weatherTimeline';
 
 const HOUR_MS = 3_600_000;
+const DAY_MS = 86_400_000;
 
 /**
  * How many forward days the drawer asks Open-Meteo for.
@@ -165,17 +173,16 @@ const WMO_CONDITION: Record<number, ForecastCondition> = {
   99: 'thunder',
 };
 
-/** Water-equivalent below which an hour is dry for the amount-based fallback (matches the timeline). */
-const PRECIP_MIN_MM = 0.05;
 /** Cloud-cover edges for the fallback when there is no code: under 30 % reads clear, over 70 % cloudy. */
 const PARTLY_CLOUDY_PCT = 30;
 const CLOUDY_PCT = 70;
 /** Below this the sun is down for the symbol's purposes; the ramp in `chartWeather` starts far higher. */
 const NIGHT_SHORTWAVE_WM2 = 5;
-/** Hour-of-day fallback for night when no shortwave is available. */
-const NIGHT_FALLBACK_START_HOUR = 17;
-const NIGHT_FALLBACK_END_HOUR = 7;
-/** A daytime hour, for the modal-cloud vote — dusk-to-dawn cloud is invisible and votes for nothing. */
+/**
+ * The fixed daytime, `[07:00, 17:00)`. Two jobs, one pair of numbers: the night fallback for the
+ * symbol when no shortwave is available, and the hours whose cloud can be seen for the modal-cloud
+ * vote — dusk-to-dawn cloud is invisible and votes for nothing.
+ */
 const DAYTIME_START_HOUR = 7;
 const DAYTIME_END_HOUR = 17;
 
@@ -278,13 +285,13 @@ export interface ForecastPlan {
 // Per-hour
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
 
-/** `YYYY-MM-DD` of a local-shifted instant, via UTC getters (see the module docblock). */
+/**
+ * `YYYY-MM-DD` of a local-shifted instant. The value is already on the lake's clock, so its UTC
+ * calendar date *is* the local date — which is exactly what `dayMsToLocalDate` reads (see the module
+ * docblock, and `weatherDay.ts` on why this conversion is never open-coded).
+ */
 function localDateOf(localMs: number): string {
-  const d = new Date(localMs);
-  const y = d.getUTCFullYear();
-  const mo = String(d.getUTCMonth() + 1).padStart(2, '0');
-  const day = String(d.getUTCDate()).padStart(2, '0');
-  return `${y}-${mo}-${day}`;
+  return dayMsToLocalDate(localMs);
 }
 
 /**
@@ -315,7 +322,7 @@ export function hourCondition(hour: ForecastHour): ForecastCondition {
 
 function isNightHour(hour: ForecastHour, localHour: number): boolean {
   if (hour.shortwaveWm2 !== undefined) return hour.shortwaveWm2 < NIGHT_SHORTWAVE_WM2;
-  return localHour >= NIGHT_FALLBACK_START_HOUR || localHour < NIGHT_FALLBACK_END_HOUR;
+  return localHour >= DAYTIME_END_HOUR || localHour < DAYTIME_START_HOUR;
 }
 
 function toPlanHour(hour: ForecastHour, arrival: boolean): ForecastPlanHour {
@@ -405,25 +412,22 @@ function episodeFrom(
   end: number,
   kind: EpisodeKind,
 ): ForecastEpisode {
+  // `hours` is ascending (`buildForecastPlan` sorted it), so the run's ends are its ends.
   const run = hours.slice(start, end);
   let snowfallCm = 0;
   let rainMm = 0;
   let maxWindKph = 0;
   let maxGustKph: number | null = null;
-  let startMs = Number.POSITIVE_INFINITY;
-  let lastStartMs = Number.NEGATIVE_INFINITY;
   for (const h of run) {
     snowfallCm += h.snowfallCm;
     rainMm += h.rainMm ?? 0;
     maxWindKph = Math.max(maxWindKph, h.windSpeedKph);
     if (h.windGustKph !== undefined) maxGustKph = Math.max(maxGustKph ?? 0, h.windGustKph);
-    startMs = Math.min(startMs, h.startMs);
-    lastStartMs = Math.max(lastStartMs, h.startMs);
   }
   return {
     kind,
-    startMs,
-    endMs: lastStartMs + HOUR_MS,
+    startMs: run[0]?.startMs ?? Number.NaN,
+    endMs: (run[run.length - 1]?.startMs ?? Number.NaN) + HOUR_MS,
     hours: run.length,
     snowfallCm,
     rainMm,
@@ -478,13 +482,23 @@ const EPISODE_NOUN: Record<EpisodeKind, string> = {
 /**
  * `10 PM–4 AM`, or `2–7 PM` when both ends share a meridiem — the collapse every printed forecast
  * uses, and the one that keeps a day card's lines short enough to scan.
+ *
+ * A clock read forward from the start is unambiguous for exactly 24 hours, so a run longer than
+ * that names the day its end falls on — `2 PM–8 PM Fri` — and skips the collapse, because
+ * `2–8 PM` for a thirty-hour storm is six hours to every reader and thirty to none.
  */
 function clockRange(startMs: number, endMs: number): string {
   const a = formatLocalHourLabel(startMs);
   const b = formatLocalHourLabel(endMs);
+  if (endMs - startMs > DAY_MS) return `${a}–${b} ${weekdayOf(endMs)}`;
   const [aHour, aSuffix] = a.split(' ');
   const [, bSuffix] = b.split(' ');
   return aSuffix === bSuffix ? `${aHour}–${b}` : `${a}–${b}`;
+}
+
+/** `Thu`, from a local-shifted instant (UTC getters, as everywhere in this file). */
+function weekdayOf(localMs: number): string {
+  return shortDayLabel(localDateOf(localMs)).split(' ')[0] ?? '';
 }
 
 /**
@@ -527,11 +541,14 @@ export function formatEpisode(e: ForecastEpisode, opts: { allDay?: boolean } = {
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
 
 /**
- * A day's symbol. **Any precipitation episode that starts on the day wins**, worst kind first — a
- * day with two hours of freezing rain and twenty of sun is a freezing-rain day on this lake. A dry
- * day takes the modal daytime cloud state, because nobody can see the clouds at night and a day
- * that is overcast until noon and clear after is "partly cloudy" in every weather app a reader has
- * ever used.
+ * A day's symbol. **Any precipitation episode that touches the day wins**, worst kind first — a
+ * day with two hours of freezing rain and twenty of sun is a freezing-rain day on this lake, and
+ * so is the Friday a Thursday storm is still falling on (the sentence stays on the day the storm
+ * started; the symbol goes wherever the snow does). A dry day takes the modal daytime cloud state,
+ * because nobody can see the clouds at night and a day that is overcast until noon and clear after
+ * is "partly cloudy" in every weather app a reader has ever used.
+ *
+ * `episodes` is every episode overlapping the day, not only those that start on it.
  */
 function dayCondition(
   hours: readonly ForecastPlanHour[],
@@ -540,24 +557,32 @@ function dayCondition(
   const kinds = new Set(episodes.map((e) => e.kind));
   for (const c of FORECAST_CONDITIONS) {
     if (!PRECIP_CONDITIONS.has(c)) break;
-    if (c === 'thunder' || c === 'drizzle') continue; // no episode kind of their own
+    // Thunder folds into `rain` runs for the sentence and has no floor for the symbol: an hour of
+    // it names the day — at its own rank, so freezing rain and sleet still outrank it. Drizzle has
+    // no episode kind and no say here: a trace under the rain floor is a cloudy day, not a wet one.
+    if (c === 'thunder') {
+      if (hours.some((h) => h.condition === 'thunder')) return c;
+      continue;
+    }
+    if (c === 'drizzle') continue;
     if (kinds.has(c as EpisodeKind)) return c;
   }
-  // Thunder folds into `rain` runs for the sentence and has no floor for the symbol: an hour of it
-  // names the day. Drizzle does not — a trace under the rain floor is a cloudy day, not a wet one.
-  if (hours.some((h) => h.condition === 'thunder')) return 'thunder';
   const daytime = hours.filter(
     (h) => h.localHour >= DAYTIME_START_HOUR && h.localHour < DAYTIME_END_HOUR,
   );
   const vote = daytime.length > 0 ? daytime : hours;
+  // The dry hours vote; when there are none — every visible hour precipitated, all of it under
+  // the floors — every hour votes, so a day of sub-floor drizzle is a drizzle day and not the
+  // first entry of the table.
+  const dry = vote.filter((h) => !PRECIP_CONDITIONS.has(h.condition));
   const tally = new Map<ForecastCondition, number>();
-  for (const h of vote) {
-    if (PRECIP_CONDITIONS.has(h.condition)) continue;
+  for (const h of dry.length > 0 ? dry : vote) {
     tally.set(h.condition, (tally.get(h.condition) ?? 0) + 1);
   }
   let best: ForecastCondition = 'clear';
-  let bestCount = -1;
-  // Iterate in the fixed order so a tie resolves toward the cloudier state — the cautious read.
+  let bestCount = 0;
+  // Iterate in the fixed order so a tie resolves toward the cloudier (worse) state — the cautious
+  // read. Strictly greater than zero, so an absent condition can never be the winner.
   for (const c of FORECAST_CONDITIONS) {
     const n = tally.get(c) ?? 0;
     if (n > bestCount) {
@@ -568,15 +593,12 @@ function dayCondition(
   return best;
 }
 
-const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'] as const;
-
 function labelsFor(dayMs: number, todayMs: number): { label: string; dateLabel: string } {
-  const d = new Date(dayMs);
-  const weekday = WEEKDAYS[d.getUTCDay()] ?? '';
-  const dateLabel = `${weekday} ${d.getUTCDate()}`;
+  // `Thu 15` — the past panel's own form, from the past panel's own function.
+  const dateLabel = shortDayLabel(dayMsToLocalDate(dayMs));
   if (dayMs === todayMs) return { label: 'Today', dateLabel };
-  if (dayMs === todayMs + 86_400_000) return { label: 'Tomorrow', dateLabel };
-  return { label: weekday, dateLabel };
+  if (dayMs === todayMs + DAY_MS) return { label: 'Tomorrow', dateLabel };
+  return { label: dateLabel.split(' ')[0] ?? '', dateLabel };
 }
 
 /**
@@ -585,7 +607,7 @@ function labelsFor(dayMs: number, todayMs: number): { label: string; dateLabel: 
  * the first card's night is usually already underway when the forecast begins.
  */
 function nightLow(all: readonly ForecastPlanHour[], dayMs: number): number | null {
-  const start = dayMs - 86_400_000 + NIGHT_START_HOUR * HOUR_MS;
+  const start = dayMs - DAY_MS + NIGHT_START_HOUR * HOUR_MS;
   const end = dayMs + NIGHT_END_HOUR * HOUR_MS;
   const expected = (end - start) / HOUR_MS;
   let seen = 0;
@@ -653,11 +675,13 @@ export function buildForecastPlan(
   const days: ForecastPlanDay[] = [];
   for (const { localDate, firstHourIndex, hours: dayHours } of kept) {
     const dayMs = localDateToDayMs(localDate) ?? 0;
-    const dayEnd = dayMs + 86_400_000;
+    const dayEnd = dayMs + DAY_MS;
+    // The sentences belong to the day an episode starts on; the symbol to every day it falls on.
     const own = episodes.filter((e) => e.startMs >= dayMs && e.startMs < dayEnd);
-    const dayStartMs = dayHours.reduce((m, h) => Math.min(m, h.startMs), Number.POSITIVE_INFINITY);
-    const dayEndMs =
-      dayHours.reduce((m, h) => Math.max(m, h.startMs), Number.NEGATIVE_INFINITY) + HOUR_MS;
+    const touching = episodes.filter((e) => e.startMs < dayEnd && e.endMs > dayMs);
+    // Ascending, so the card's span is its first and last hour.
+    const dayStartMs = dayHours[0]?.startMs ?? Number.NaN;
+    const dayEndMs = (dayHours[dayHours.length - 1]?.startMs ?? Number.NaN) + HOUR_MS;
     let highC = Number.NEGATIVE_INFINITY;
     let lowC = Number.POSITIVE_INFINITY;
     let snowfallCm = 0;
@@ -689,7 +713,7 @@ export function buildForecastPlan(
       firstHourIndex,
       hourCount: dayHours.length,
       partial: dayHours.length < 24,
-      condition: dayCondition(dayHours, own),
+      condition: dayCondition(dayHours, touching),
       highC,
       lowC,
       highF: roundTo(cToF(highC), 0),

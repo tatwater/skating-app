@@ -195,6 +195,8 @@ function scrollRow(el: HTMLElement, left: number, smooth: boolean) {
 export function ForecastPlanner({ plan }: { plan: ForecastPlan }) {
   const hoursRef = useRef<HTMLUListElement>(null);
   const cardRefs = useRef<(HTMLLIElement | null)[]>([]);
+  const daysRef = useRef<HTMLFieldSetElement>(null);
+  const dayRefs = useRef<(HTMLButtonElement | null)[]>([]);
   const [selectedDate, setSelectedDate] = useState<string>(plan.days[0]?.localDate ?? '');
   // Suppresses the scroll listener while a programmatic scroll is in flight, so the day the reader
   // just tapped is not un-selected by the intermediate frames of its own animation.
@@ -205,6 +207,23 @@ export function ForecastPlanner({ plan }: { plan: ForecastPlan }) {
     setSelectedDate(plan.days[0]?.localDate ?? '');
     if (hoursRef.current) scrollRow(hoursRef.current, 0, false);
   }, [plan]);
+
+  // When the *hour row* drives the selection the pressed day card may be off the end of its row;
+  // bring it in — **horizontally, and only horizontally.** `scrollIntoView` would also scroll the
+  // drawer vertically to the card, which on mount (the Today card sits below the past-weather
+  // panel) moved the reader's content out from under them. A tap selects a visible card and is a
+  // no-op here; so is the first render, where the selected card is the first one.
+  useEffect(() => {
+    const container = daysRef.current;
+    const card = dayRefs.current[plan.days.findIndex((d) => d.localDate === selectedDate)];
+    if (!container || !card) return;
+    const left = card.offsetLeft - container.offsetLeft;
+    const right = left + card.offsetWidth;
+    const viewLeft = container.scrollLeft;
+    const viewRight = viewLeft + container.clientWidth;
+    if (left < viewLeft) scrollRow(container, left, true);
+    else if (right > viewRight) scrollRow(container, right - container.clientWidth, true);
+  }, [plan.days, selectedDate]);
 
   const scrollToDay = useCallback((day: ForecastPlanDay) => {
     setSelectedDate(day.localDate);
@@ -260,14 +279,17 @@ export function ForecastPlanner({ plan }: { plan: ForecastPlan }) {
           semantics to "pick a day", and what gives assistive tech the group's name. `min-w-0`
           matters: a fieldset defaults to `min-inline-size: min-content`, so without it the row
           grows to its seven cards and overflows the sidebar instead of scrolling. */}
-      <fieldset className="flex min-w-0 gap-2 overflow-x-auto pb-1">
+      <fieldset ref={daysRef} className="flex min-w-0 gap-2 overflow-x-auto pb-1">
         <legend className="sr-only">Daily forecast</legend>
-        {plan.days.map((day) => (
+        {plan.days.map((day, i) => (
           <DayCard
             key={day.localDate}
             day={day}
             selected={day.localDate === selectedDate}
             onSelect={() => scrollToDay(day)}
+            ref={(el) => {
+              dayRefs.current[i] = el;
+            }}
           />
         ))}
       </fieldset>
@@ -321,10 +343,12 @@ function DayCard({
   day,
   selected,
   onSelect,
+  ref,
 }: {
   day: ForecastPlanDay;
   selected: boolean;
   onSelect: () => void;
+  ref: (el: HTMLButtonElement | null) => void;
 }) {
   const label = CONDITION_LABEL[day.condition];
   const totals: string[] = [];
@@ -336,12 +360,7 @@ function DayCard({
       type="button"
       aria-pressed={selected}
       onClick={onSelect}
-      ref={(el) => {
-        // When the *hour row* drove the selection the card may be off-screen; bring it in. A tap
-        // selects a visible card, so this is a no-op there. Guarded: jsdom has no scrollIntoView.
-        if (selected && el && typeof el.scrollIntoView === 'function')
-          el.scrollIntoView({ inline: 'nearest', block: 'nearest' });
-      }}
+      ref={ref}
       className={`flex w-40 shrink-0 flex-col gap-1 rounded-md border p-2 text-left transition-colors ${
         selected
           ? 'border-border-strong bg-background-subtle'

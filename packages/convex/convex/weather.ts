@@ -25,9 +25,9 @@ import {
   HAZARD_WEATHER_LOOKBACK_DAYS,
   type HourlyWeather,
   type LatLng,
+  subAreaWeatherPoint,
   summarizeWeatherSince,
   toForecastHour,
-  WEATHER_TIERS,
   type WeatherCell,
   type WeatherSinceSummary,
 } from '@skating/core';
@@ -46,7 +46,7 @@ import {
   hazardCenter,
   subAreaWeatherCell,
 } from './lib/sampling';
-import { literals, weatherSinceSummary } from './lib/validators';
+import { forecastHour, weatherSinceSummary } from './lib/validators';
 
 // The validator and the core type must stay structurally identical — assert it at compile time so drift
 // in either is a build error, not a silent DB/runtime mismatch.
@@ -169,8 +169,9 @@ interface OpenMeteoHours {
  * on any failure (the caller then fails open — empty summary, no cache write, retried next drawer-open).
  * `startMs` (local, for night-bucketing) = unix + `utc_offset_seconds`; window filtering uses absolute UTC.
  *
- * Past hours span [windowStartMs, nowMs]; forward hours span (nowMs, +∞), trimmed to the horizon by
- * `summarizeForecast` rather than here, so this stays a transport function with no policy in it.
+ * Past hours span [windowStartMs, nowMs]; forward hours span (nowMs, +∞), trimmed to a horizon by
+ * the client (`summarizeForecast`, `buildForecastPlan`) rather than here, so this stays a transport
+ * function with no policy in it.
  */
 async function fetchOpenMeteoHourly(
   ctx: ActionCtx,
@@ -484,24 +485,8 @@ export async function resolveWeatherSince(
   return summary;
 }
 
-/**
- * The stored hour, the same shape as core's `ForecastHour`. The optional fields joined with the
- * planner (N6h Workstream D); rows written before it lack them and are still readable, because the
- * planner's derivations all have an amount-based fallback.
- */
-const forecastHour = v.object({
-  startMs: v.number(),
-  temperatureC: v.number(),
-  windSpeedKph: v.number(),
-  precipitationMm: v.number(),
-  snowfallCm: v.number(),
-  rainMm: v.optional(v.number()),
-  windGustKph: v.optional(v.number()),
-  windDirectionDeg: v.optional(v.number()),
-  weatherCode: v.optional(v.number()),
-  shortwaveWm2: v.optional(v.number()),
-  cloudCoverPct: v.optional(v.number()),
-});
+// The stored hour (`lib/validators.forecastHour`, shared with the schema) and core's `ForecastHour`
+// must stay structurally identical — asserted at compile time, both directions, like the summary.
 type ForecastHourFromValidator = Infer<typeof forecastHour>;
 const _assertForecastHourForward: ForecastHour = null as unknown as ForecastHourFromValidator;
 const _assertForecastHourReverse: ForecastHourFromValidator = null as unknown as ForecastHour;
@@ -595,11 +580,21 @@ export async function resolveForecast(
   );
   if (hourly === null || hourly.forecast.length === 0) return null;
 
-  // Stored ascending and forward-only; the horizon (12 h for the strip, 7 d for the planner) is a
-  // client decision applied against these same hours, so nothing is trimmed here.
+  // Stored ascending, from the hour in progress forward; the horizon (12 h for the strip, 7 d for
+  // the planner) is a client decision applied against these same hours, so nothing is trimmed here.
+  //
+  // **The hour in progress rides along, and it comes from `past`.** `fetchOpenMeteoHourly` files
+  // an hour by its start, so the one the reader is standing in (started at or before `nowMs`) is
+  // on the observation side of the split — yet it is the card the planner opens on, and it is where
+  // a 30-minute arrival lands for the first half of every hour. Carrying it here is render-only,
+  // like everything in this row; D74 is about a *forward* hour reaching a calculation, and nothing
+  // about an elapsed one reaching a card. The strip still starts at the next full hour
+  // (`summarizeForecast` drops anything that began before now), so its line is unchanged.
   const hours: ForecastHour[] = [];
-  for (const h of hourly.forecast) {
+  for (const h of [...hourly.past, ...hourly.forecast]) {
     if (h.startMs === undefined) continue;
+    // `startMs` is local-shifted; undo the shift to compare against the UTC `nowMs`.
+    if (h.startMs - hourly.utcOffsetMs + HOUR_MS <= nowMs) continue; // fully elapsed
     hours.push(toForecastHour(h, h.startMs));
   }
   hours.sort((a, b) => a.startMs - b.startMs);
@@ -676,7 +671,8 @@ export const resolveForecastPlace = internalQuery({
     const cell = subArea
       ? subAreaWeatherCell(subArea, body, 'browse')
       : bodyWeatherCell(body, 'browse');
-    const point: LatLng = subArea ? subArea.centroid : defaultSampleAnchor(body);
+    // The same point the cell was keyed from, so the band and the forecast are about one place.
+    const point: LatLng = subArea ? subAreaWeatherPoint(subArea) : defaultSampleAnchor(body);
     const viewer = await getCurrentProfile(ctx);
     const bands = {
       band30: viewer?.cachedIsochrones?.band30,

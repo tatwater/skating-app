@@ -434,10 +434,14 @@ sheet by hand, since sign-in is email-code and there is no headless path.
    `summarizeForecast` runs at render — the server no longer computes a horizon-shaped summary
    for a table that now holds a week. `resolveBodyWeatherCell` went with it (its one caller became
    `resolveForecastPlace`, which returns the band in the same read).
-4. **A day's symbol is the worst precipitation that starts on it, else the modal daytime cloud** —
+4. **A day's symbol is the worst precipitation that touches it, else the modal daytime cloud** —
    with a tie resolving cloudier, and a trace of drizzle under the rain floor not counting (the
    first render gave Monday a drizzle icon over nothing worth a sentence). Thunder keeps a no-floor
-   rule; it is the one condition where an hour is enough.
+   rule; it is the one condition where an hour is enough. *Touches*, not *starts on*: the review
+   pass found that a storm still falling on Friday left Friday's cloud vote with no dry hours, and
+   an empty vote named the day by the first row of the table — "freezing rain" over four inches of
+   snow. The sentence still belongs to the day the storm began; the symbol goes wherever the snow
+   does, and a run longer than 24 h names the day its end falls on (*"Snow 2 PM–8 PM Fri"*).
 5. **The night low is printed only when the night was colder than the calendar day.** In September
    it repeated the low on every card; in January it is the line that matters.
 

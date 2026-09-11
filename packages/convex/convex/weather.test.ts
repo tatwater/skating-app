@@ -380,6 +380,43 @@ describe('weather.getForecastForBody (N6c B5b)', () => {
     expect(forecast?.arrivalBandMinutes).toBeNull(); // a viewer with no home has no band
   });
 
+  test('carries the hour in progress, which the past/forecast split files as an observation', async () => {
+    // The planner opens on the hour the reader is standing in, and a 30-minute arrival lands in it
+    // for the first half of every hour — but `fetchOpenMeteoHourly` keys an hour by its start, so
+    // it sits on the `past` side of the D74 wall. The row must carry it anyway; the strip drops it.
+    const t = convexTestWithGeo();
+    const waterBodyId = await seedBody(t);
+    const now = Date.now();
+    const bucket = Math.floor(now / HOUR_MS) * HOUR_MS;
+    const s = (ms: number) => Math.floor(ms / 1000);
+    const body = openMeteoWithForecast(now);
+    // Hour starts on real hour boundaries: the previous hour (elapsed), the hour in progress, then
+    // four forward hours.
+    body.hourly.time = [
+      s(bucket - HOUR_MS),
+      s(bucket),
+      s(bucket + HOUR_MS),
+      s(bucket + 2 * HOUR_MS),
+      s(bucket + 3 * HOUR_MS),
+      s(bucket + 4 * HOUR_MS),
+    ];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response(JSON.stringify(body), { status: 200 })),
+    );
+
+    const forecast = await asViewer(t).action(api.weather.getForecastForBody, { waterBodyId });
+
+    const starts = forecast?.hours.map((h) => h.startMs - forecast.utcOffsetMs) ?? [];
+    expect(starts[0]).toBe(bucket); // in progress: kept
+    expect(starts).not.toContain(bucket - HOUR_MS); // elapsed: not
+    expect(starts).toHaveLength(5);
+    // The strip's own filter still admits nothing that began before now.
+    const strip = summarizeForecast(forecast!.hours, now + forecast!.utcOffsetMs);
+    for (const h of strip.hours)
+      expect(h.startMs - forecast!.utcOffsetMs).toBeGreaterThanOrEqual(now);
+  });
+
   test('asks for seven forward days — one billing unit, the same as two (founder call 13)', async () => {
     const t = convexTestWithGeo();
     const waterBodyId = await seedBody(t);
