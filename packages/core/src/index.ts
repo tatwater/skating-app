@@ -110,6 +110,7 @@ export * from './weatherCell';
 export * from './weatherConditions';
 export * from './weatherDay';
 export * from './weatherPanel';
+export * from './weatherScope';
 export * from './weatherStrip';
 export * from './weatherTimeline';
 export * from './webMercator';

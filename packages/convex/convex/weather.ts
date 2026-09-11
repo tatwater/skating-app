@@ -34,7 +34,7 @@ import type { ActionCtx } from './_generated/server';
 import { action, internalMutation, internalQuery } from './_generated/server';
 import { meterOpenMeteo, recordApiCall } from './lib/apiMeter';
 import { resolveSurvivor } from './lib/bodies';
-import { bodyWeatherCell, hazardCenter } from './lib/sampling';
+import { bodyWeatherCell, hazardCenter, subAreaWeatherCell } from './lib/sampling';
 import { literals, weatherSinceSummary } from './lib/validators';
 
 // The validator and the core type must stay structurally identical — assert it at compile time so drift
@@ -566,21 +566,45 @@ export async function resolveForecast(
  * which is exactly what the cache already collapses.
  */
 export const getForecastForBody = action({
-  args: { waterBodyId: v.id('waterBodies') },
-  handler: async (ctx, { waterBodyId }): Promise<ForecastSummary | null> => {
+  args: {
+    waterBodyId: v.id('waterBodies'),
+    /**
+     * The bay this forecast is about (N6h / open question 5) — the same one the past-weather panel
+     * beside it reads, so the Planning tab describes one place rather than a bay's past and the
+     * lake's future. Validated like the archive's: a stale or foreign id answers for the lake.
+     */
+    subAreaId: v.optional(v.id('waterBodySubAreas')),
+  },
+  handler: async (ctx, { waterBodyId, subAreaId }): Promise<ForecastSummary | null> => {
     if (!(await ctx.auth.getUserIdentity())) return null;
-    const cell = await ctx.runQuery(internal.weather.resolveBodyWeatherCell, { waterBodyId });
+    const cell = await ctx.runQuery(internal.weather.resolveBodyWeatherCell, {
+      waterBodyId,
+      ...(subAreaId ? { subAreaId } : {}),
+    });
     if (!cell) return null;
     return await resolveForecast(ctx, cell, Date.now());
   },
 });
 
-/** The body's `browse`-tier weather cell — its default sample point, snapped and banded (D152). */
+/**
+ * The body's `browse`-tier weather cell — its default sample point, snapped and banded (D152) — or,
+ * given a live bay of this body, the bay's own cell (`subAreaWeatherCell`).
+ */
 export const resolveBodyWeatherCell = internalQuery({
-  args: { waterBodyId: v.id('waterBodies'), tier: v.optional(literals(WEATHER_TIERS)) },
-  handler: async (ctx, { waterBodyId, tier }) => {
+  args: {
+    waterBodyId: v.id('waterBodies'),
+    tier: v.optional(literals(WEATHER_TIERS)),
+    subAreaId: v.optional(v.id('waterBodySubAreas')),
+  },
+  handler: async (ctx, { waterBodyId, tier, subAreaId }) => {
     const body = await ctx.db.get(waterBodyId);
     if (!body || body.removedAt) return null;
+    if (subAreaId) {
+      const subArea = await ctx.db.get(subAreaId);
+      if (subArea && subArea.waterBodyId === body._id && subArea.removedAt === undefined) {
+        return subAreaWeatherCell(subArea, body, tier ?? 'browse');
+      }
+    }
     return bodyWeatherCell(body, tier ?? 'browse');
   },
 });

@@ -370,6 +370,61 @@ describe('weather.getForecastForBody (N6c B5b)', () => {
     expect(forecast?.precipIsSnow).toBe(true);
   });
 
+  test('forecasts the named bay when asked, and the lake when the bay is not one of its own', async () => {
+    // N6h open question 5: the Planning tab reads past and future for ONE place, so the forecast
+    // scopes to the same bay the archive panel does — and refuses a foreign bay the same way.
+    const t = convexTestWithGeo();
+    const lake = await seedBody(t, { lat: 44.25, lng: -73.35 });
+    const other = await seedBody(t, { lat: 45.0, lng: -70.0 });
+    const author = await seedAuthor(t);
+    const bayAt = { lat: 44.75, lng: -73.2 };
+    const seedBay = (parent: Id<'waterBodies'>, point: { lat: number; lng: number }) =>
+      t.run((ctx) =>
+        ctx.db.insert('waterBodySubAreas', {
+          waterBodyId: parent,
+          name: 'A Bay',
+          searchText: 'A Bay',
+          polygon: square(0.01),
+          bbox: {
+            minLat: point.lat - 0.01,
+            minLng: point.lng - 0.01,
+            maxLat: point.lat + 0.01,
+            maxLng: point.lng + 0.01,
+          },
+          centroid: point,
+          surfaceAreaSqM: 1_000_000,
+          displayScore: 1,
+          minVisibleZoom: 10,
+          createdByUserId: author,
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+        }),
+      ) as Promise<Id<'waterBodySubAreas'>>;
+    const bay = await seedBay(lake, bayAt);
+    const foreign = await seedBay(other, { lat: 45.05, lng: -70.05 });
+    const now = Date.now();
+    const fetchMock = vi.fn(
+      async (_url: string) =>
+        new Response(JSON.stringify(openMeteoWithForecast(now)), { status: 200 }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    await asViewer(t).action(api.weather.getForecastForBody, { waterBodyId: lake, subAreaId: bay });
+    const askedForBay = Number(
+      new URL(String(fetchMock.mock.calls[0]?.[0])).searchParams.get('latitude'),
+    );
+    expect(askedForBay).toBeCloseTo(bayAt.lat, 1);
+
+    await asViewer(t).action(api.weather.getForecastForBody, {
+      waterBodyId: lake,
+      subAreaId: foreign,
+    });
+    const askedForLake = Number(
+      new URL(String(fetchMock.mock.calls[1]?.[0])).searchParams.get('latitude'),
+    );
+    expect(askedForLake).toBeCloseTo(44.25, 1);
+  });
+
   test('caches per sample point + hour bucket, so a second open does not refetch', async () => {
     const t = convexTestWithGeo();
     const waterBodyId = await seedBody(t);

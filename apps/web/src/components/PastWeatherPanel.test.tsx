@@ -220,4 +220,32 @@ describe('PastWeatherPanel', () => {
     rerender(<PastWeatherPanel waterBodyId={OTHER} />);
     await waitFor(() => expect(screen.queryByText('1 night below 20°F')).not.toBeInTheDocument());
   });
+
+  it('asks for the bay it was given, and holds while the bay is still unknown', async () => {
+    // Open question 5: on a giant the panel is about a named bay, and the caller resolves which.
+    getDays.mockClear();
+    getDays.mockResolvedValue({
+      days: [day('2026-01-15')],
+      todayLocalDayMs: TODAY,
+      missingDayMs: [],
+      anyBorrowed: false,
+      oneSampleForALargeBody: false,
+      scope: { kind: 'subArea', subAreaId: 'bay1', name: 'Malletts Bay' },
+    });
+    // `pending` = the bays have not loaded: no fetch, or a giant would pay for the lake's cell and
+    // then the bay's on the same drawer-open.
+    const { rerender } = render(<PastWeatherPanel waterBodyId={BODY} pending />);
+    expect(getDays).not.toHaveBeenCalled();
+    expect(screen.getByText(/Reading the last/)).toBeInTheDocument();
+
+    rerender(<PastWeatherPanel waterBodyId={BODY} subAreaId="bay1" />);
+    await screen.findByText(/Past weather: Open-Meteo/);
+    expect(getDays).toHaveBeenCalledTimes(1);
+    expect(getDays.mock.calls[0]?.[0]).toMatchObject({ waterBodyId: BODY, subAreaId: 'bay1' });
+
+    // No bay = the lake itself: fetches, and sends no bay.
+    rerender(<PastWeatherPanel waterBodyId={BODY} />);
+    await waitFor(() => expect(getDays).toHaveBeenCalledTimes(2));
+    expect(getDays.mock.calls[1]?.[0]).not.toHaveProperty('subAreaId');
+  });
 });

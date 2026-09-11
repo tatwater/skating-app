@@ -16,7 +16,12 @@
  * field rather than a correction to the first.
  */
 
-import { type WeatherCell, type WeatherTier, weatherCellFor } from '@skating/core';
+import {
+  subAreaWeatherPoint,
+  type WeatherCell,
+  type WeatherTier,
+  weatherCellFor,
+} from '@skating/core';
 import type { Doc } from '../_generated/dataModel';
 
 /** Squared degree distance — fine for picking the nearest of a handful of sample points at lake scale. */
@@ -94,6 +99,27 @@ export function bodyWeatherCell(
   // principle; in practice a lake surface is level, which is exactly why one elevation per body is
   // the right model and why `elevationM` lives on the body rather than on each sample point.
   return weatherCellFor(tier, point.lat, point.lng, body.elevationM);
+}
+
+/**
+ * **The one place a sub-area becomes a weather cell (N6h / open question 5).**
+ *
+ * A bay is its own sample point. `bodyWeatherCell`'s `target` cannot do this job: it picks among the
+ * parent's `weatherSamplePoints`, and no body in the corpus has any, so a target is inert and every
+ * bay of Champlain would resolve to the same mid-lake cell the panel was already reading. So the
+ * bay's own on-water point keys the cell, and the **parent's** elevation bands it — a lake surface is
+ * level, which is the same argument `bodyWeatherCell` makes for one elevation per body.
+ *
+ * The registry's sub-area pass and the panel's read both come through here, which is what keeps a
+ * bay from being registered under one key and read under another.
+ */
+export function subAreaWeatherCell(
+  subArea: Doc<'waterBodySubAreas'>,
+  parent: Pick<Doc<'waterBodies'>, 'elevationM'>,
+  tier: WeatherTier,
+): WeatherCell {
+  const point = subAreaWeatherPoint(subArea);
+  return weatherCellFor(tier, point.lat, point.lng, parent.elevationM);
 }
 
 /** Center of a hazard's footprint bbox — its representative point for nearest-sample-point selection. */

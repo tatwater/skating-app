@@ -8,6 +8,7 @@ import {
   formatSkateTime,
   humanizeEnum,
   profileRevealEnabled,
+  resolveWeatherSubArea,
   revealEmptySections,
   SKATE_QUALITY_LABELS,
   waterBodyClassLabel,
@@ -37,6 +38,7 @@ import { PostedAccess } from './PostedAccess';
 import { ReferenceLinks } from './ReferenceLinks';
 import { ReportForm } from './ReportForm';
 import { SeasonEmptyState, SeasonFilter } from './SeasonFilter';
+import { WeatherPlacePicker } from './WeatherPlacePicker';
 import { WindExposure } from './WindExposure';
 
 /**
@@ -70,14 +72,19 @@ export function WaterBodyDetail({
     waterBodyId: waterBodyId as Id<'waterBodies'>,
   });
   const body = result?.available ? result.body : null;
-  // Only fetched when a bay was actually asked for — a `by_parent` read on a lake already open.
-  const subAreas = useQuery(
-    api.subAreas.listForBody,
-    focusSubAreaId && body ? { waterBodyId: body._id } : 'skip',
-  );
+  // Always fetched once the lake is known — a `by_parent` read that returns nothing on the ~99% of
+  // bodies with no bays. The Planning tab needs it on every giant to pick the bay its weather is
+  // about (N6h open question 5); the report feed subscribes to the same query, so it is deduped.
+  const subAreas = useQuery(api.subAreas.listForBody, body ? { waterBodyId: body._id } : 'skip');
   const focusSubArea = focusSubAreaId
     ? subAreas?.find((s) => s._id === focusSubAreaId && !s.removed)
     : undefined;
+  // The bay the weather panel is about: the route's bay, else the most prominent, else the lake
+  // itself. `undefined` while the bays are still loading, so the panel holds rather than fetching
+  // the lake's cell and then the bay's. Never written back to the route — see `WeatherPlacePicker`.
+  const liveBays = (subAreas ?? []).filter((s) => !s.removed);
+  const weatherBay =
+    subAreas === undefined ? undefined : resolveWeatherSubArea(liveBays, focusSubAreaId);
   const { setFocus, setHighlightWaterBodyId, setContourBodyKey, contourCredit } = useMapSelection();
   const [formOpen, setFormOpen] = useState(trackDraftId !== undefined || activityId !== undefined);
   const [bountyFormOpen, setBountyFormOpen] = useState(false);
@@ -287,13 +294,29 @@ export function WaterBodyDetail({
                   trip is possible at all, where the weather decides whether it is worth making.
                   Absent on the great majority of bodies OSM has never mapped access for. */}
               <AccessSection waterBodyId={result.body._id} />
+              {/* Which place on the lake the weather below is about — a scope line and chips on a
+                  giant with named bays, nothing on everything else (open question 5). */}
+              <WeatherPlacePicker
+                waterBodyId={result.body._id}
+                bays={liveBays}
+                selectedId={weatherBay?._id ?? null}
+              />
               {/* What the ice has been through (N6h / D153) — ABOVE the forecast, matching the web
                   column and the same authority ordering: alert > observation > prediction. It draws
                   the same timeline the web app does: the geometry and the sentences both live in
                   core. */}
-              <PastWeatherPanel waterBodyId={result.body._id} />
+              <PastWeatherPanel
+                waterBodyId={result.body._id}
+                pending={weatherBay === undefined}
+                {...(weatherBay ? { subAreaId: weatherBay._id } : {})}
+              />
               {/* The forward forecast (N6c/B5b) — the other half of the weather-since timeline. */}
-              <ForecastStrip waterBodyId={result.body._id} reveal={reveal} />
+              <ForecastStrip
+                waterBodyId={result.body._id}
+                pending={weatherBay === undefined}
+                {...(weatherBay ? { subAreaId: weatherBay._id } : {})}
+                reveal={reveal}
+              />
             </>
           )}
         </>

@@ -1431,3 +1431,186 @@ describe('weatherArchive: one response, one offset — but many dates', () => {
     expect(row?.timeZone).toBeUndefined();
   });
 });
+
+describe('weatherArchive: a bay is its own place (N6h open question 5)', () => {
+  /** A named bay of `parent`, with its own on-water point — far enough away to land in another cell. */
+  async function seedBay(
+    t: ReturnType<typeof convexTest>,
+    parent: Id<'waterBodies'>,
+    name: string,
+    point: { lat: number; lng: number },
+    over: { displayScore?: number; removedAt?: number } = {},
+  ): Promise<Id<'waterBodySubAreas'>> {
+    const author = (await t.run((ctx) =>
+      ctx.db.insert('profiles', {
+        clerkUserId: `mod-${name}`,
+        displayName: name,
+        username: `mod-${name}`.toLowerCase().replace(/\s/g, ''),
+        driveTimePrefMinutes: 60,
+        profileVisibility: 'public' as const,
+        notificationPrefs: {
+          activityDetected: true,
+          bountyRequest: true,
+          hazardConfirmation: true,
+          bountyFulfilled: true,
+          reportRated: true,
+          reportCommented: true,
+          contentFlagResolved: true,
+          favoriteReport: true,
+          nearbyReportDigest: false,
+          greatReportNearby: false,
+        },
+        dateOfBirth: Date.UTC(1990, 0, 1),
+        reputationPoints: 0,
+        role: 'moderator' as const,
+        status: 'active' as const,
+        createdAt: Date.now(),
+      }),
+    )) as Id<'profiles'>;
+    return t.run((ctx) =>
+      ctx.db.insert('waterBodySubAreas', {
+        waterBodyId: parent,
+        name,
+        searchText: name,
+        polygon: square(0.01),
+        bbox: {
+          minLat: point.lat - 0.01,
+          minLng: point.lng - 0.01,
+          maxLat: point.lat + 0.01,
+          maxLng: point.lng + 0.01,
+        },
+        centroid: point,
+        surfaceAreaSqM: 1_000_000,
+        displayScore: over.displayScore ?? 1,
+        minVisibleZoom: 10,
+        createdByUserId: author,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+        ...(over.removedAt === undefined ? {} : { removedAt: over.removedAt }),
+      }),
+    ) as Promise<Id<'waterBodySubAreas'>>;
+  }
+
+  // Champlain's shape: an anchor mid-lake, and a bay ~55 km north of it. 0.05° cells, so these are
+  // many cells apart at either tier.
+  const ANCHOR = { lat: 44.25, lng: -73.35 };
+  const BAY = { lat: 44.75, lng: -73.2 };
+
+  test("reads the bay's own cell, names it, and drops the whole-lake caveat", async () => {
+    const t = convexTest(schema, modules);
+    const lake = await seedBody(t, ANCHOR, 30);
+    const bay = await seedBay(t, lake, 'Malletts Bay', BAY);
+    const fetchMock = vi.fn(async (_url: string) => okJson(isoResponse(recentDates(3))));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const result = await asViewer(t).action(api.weatherArchive.getWeatherDaysForBody, {
+      waterBodyId: lake,
+      subAreaId: bay,
+      days: 3,
+    });
+    expect(result?.scope).toEqual({ kind: 'subArea', subAreaId: bay, name: 'Malletts Bay' });
+    expect(result?.oneSampleForALargeBody).toBe(false);
+    // The request went to the bay, not to the lake's anchor: Open-Meteo was asked for the bay's cell.
+    const asked = Number(
+      new URL(String(fetchMock.mock.calls[0]?.[0])).searchParams.get('latitude'),
+    );
+    expect(asked).toBeCloseTo(BAY.lat, 1);
+    expect(asked).not.toBeCloseTo(ANCHOR.lat, 1);
+
+    // And the two are different archive rows: opening the lake afterwards pays for its own cell.
+    await asViewer(t).action(api.weatherArchive.getWeatherDaysForBody, {
+      waterBodyId: lake,
+      days: 3,
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  test("a bay carries no fetch profile — the profile is the lake's, and a sheltered bay is not the lake", async () => {
+    const t = convexTest(schema, modules);
+    const lake = await seedBody(t, ANCHOR, 30);
+    await t.run((ctx) => ctx.db.patch(lake, { fetchProfileM: Array(16).fill(11_000) }));
+    const bay = await seedBay(t, lake, 'Shelburne Bay', BAY);
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => okJson(isoResponse(recentDates(3)))),
+    );
+
+    const forBay = await asViewer(t).action(api.weatherArchive.getWeatherDaysForBody, {
+      waterBodyId: lake,
+      subAreaId: bay,
+      days: 3,
+    });
+    const forLake = await asViewer(t).action(api.weatherArchive.getWeatherDaysForBody, {
+      waterBodyId: lake,
+      days: 3,
+    });
+    expect(forBay?.fetchProfileM).toBeUndefined();
+    expect(forLake?.fetchProfileM).toHaveLength(16);
+  });
+
+  test('a delisted or foreign bay id answers for the lake rather than erroring', async () => {
+    const t = convexTest(schema, modules);
+    const lake = await seedBody(t, ANCHOR, 30);
+    // Champlain-sized, so the whole-lake caveat has something to say.
+    await t.run((ctx) =>
+      ctx.db.patch(lake, { bbox: { minLat: 44.0, minLng: -73.4, maxLat: 44.5, maxLng: -73.3 } }),
+    );
+    const other = await seedBody(t, { lat: 45.0, lng: -70.0 }, 200);
+    const gone = await seedBay(t, lake, 'Old Cove', BAY, { removedAt: Date.now() });
+    const foreign = await seedBay(t, other, 'Elsewhere Bay', { lat: 45.05, lng: -70.05 });
+    const fetchMock = vi.fn(async () => okJson(isoResponse(recentDates(3))));
+    vi.stubGlobal('fetch', fetchMock);
+
+    for (const subAreaId of [gone, foreign]) {
+      const result = await asViewer(t).action(api.weatherArchive.getWeatherDaysForBody, {
+        waterBodyId: lake,
+        subAreaId,
+        days: 3,
+      });
+      expect(result?.scope).toEqual({ kind: 'body' });
+      // Refused ids still describe the lake — and so still flag that the lake is too big for one point.
+      expect(result?.oneSampleForALargeBody).toBe(true);
+    }
+    // Both answered from the lake's one cell: one fetch, not two.
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  test("the registry registers a bay's cell, and a complete walk does not prune it", async () => {
+    // ⚠ A mid-lake bay can sit in a cell no body's anchor occupies. Without this pass the Tier-B sweep
+    // never fills that cell and the gap repair never visits it — the spread has a hole exactly where
+    // the reader looks, and a lost browse-tier day is never even recorded missing.
+    const t = convexTest(schema, modules);
+    const lake = await seedBody(t, ANCHOR, 30);
+    await seedBay(t, lake, 'Broad Lake', BAY);
+    const res = await t.action(internal.weatherArchive.backfillWeatherCells, { tier: 'filter' });
+    await t.finishInProgressScheduledFunctions();
+
+    expect(res.done).toBe(true);
+    expect(res.pruned).toBe(0);
+    // One body and one bay, two cells: the bodies-only walk would have produced one.
+    expect(res.scanned).toBe(2);
+    const cells = await t.run((ctx) => ctx.db.query('weatherCells').collect());
+    expect(cells).toHaveLength(2);
+    expect(cells.every((c) => c.bodyCount === 1)).toBe(true);
+
+    // A second complete walk sees the bay again and keeps its cell — it is "seen this run".
+    const again = await t.action(internal.weatherArchive.backfillWeatherCells, { tier: 'filter' });
+    await t.finishInProgressScheduledFunctions();
+    expect(again.pruned).toBe(0);
+    expect(await t.run((ctx) => ctx.db.query('weatherCells').collect())).toHaveLength(2);
+  });
+
+  test('a delisted bay, or one whose lake is gone, is not registered', async () => {
+    const t = convexTest(schema, modules);
+    const lake = await seedBody(t, ANCHOR, 30);
+    await seedBay(t, lake, 'Old Cove', BAY, { removedAt: Date.now() });
+    const goneLake = await seedBody(t, { lat: 45.0, lng: -70.0 }, 200);
+    await seedBay(t, goneLake, 'Orphan Bay', { lat: 45.4, lng: -70.4 });
+    await t.run((ctx) => ctx.db.patch(goneLake, { removedAt: Date.now() }));
+
+    await t.action(internal.weatherArchive.backfillWeatherCells, { tier: 'browse' });
+    await t.finishInProgressScheduledFunctions();
+    const cells = await t.run((ctx) => ctx.db.query('weatherCells').collect());
+    expect(cells).toHaveLength(1);
+  });
+});

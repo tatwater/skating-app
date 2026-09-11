@@ -21,9 +21,15 @@ import { useEffect, useState } from 'react';
  */
 export function ForecastStrip({
   waterBodyId,
+  subAreaId,
+  pending = false,
   reveal = false,
 }: {
   waterBodyId: Id<'waterBodies'>;
+  /** The bay this strip is about (N6h / open question 5) — the same one `PastWeatherPanel` reads. */
+  subAreaId?: string | undefined;
+  /** True while the caller has not resolved the bay yet; holds rather than fetching twice. */
+  pending?: boolean;
   /** N6c-2's reveal flag — states the absence instead of hiding the strip. */
   reveal?: boolean;
 }) {
@@ -32,7 +38,11 @@ export function ForecastStrip({
 
   useEffect(() => {
     let cancelled = false;
-    getForecast({ waterBodyId })
+    if (pending) return;
+    getForecast({
+      waterBodyId,
+      ...(subAreaId ? { subAreaId: subAreaId as Id<'waterBodySubAreas'> } : {}),
+    })
       .then((s) => {
         if (!cancelled) setSummary(s);
       })
@@ -44,7 +54,7 @@ export function ForecastStrip({
     return () => {
       cancelled = true;
     };
-  }, [getForecast, waterBodyId]);
+  }, [getForecast, waterBodyId, subAreaId, pending]);
 
   const line = formatForecastStrip(summary);
   if (!line && !reveal) return null;

@@ -44,9 +44,22 @@ const TIMELINE_DAYS = 30;
 
 export function PastWeatherPanel({
   waterBodyId,
+  subAreaId,
+  pending = false,
   days = 7,
 }: {
   waterBodyId: Id<'waterBodies'>;
+  /**
+   * The bay this panel is about (N6h / open question 5), resolved by the caller with
+   * `resolveWeatherSubArea`. Absent on the lake itself and on every body with no bays.
+   */
+  subAreaId?: string | undefined;
+  /**
+   * True while the caller does not yet know which bay this is about. **Load-bearing, not
+   * cosmetic:** the panel holds instead of fetching the lake's cell and then the bay's a moment
+   * later — two Open-Meteo calls for one drawer-open on exactly the giants where the cells differ.
+   */
+  pending?: boolean;
   /** The window the *sentences* describe. The timeline always reads {@link TIMELINE_DAYS}. */
   days?: number;
 }) {
@@ -71,7 +84,12 @@ export function PastWeatherPanel({
   useEffect(() => {
     let cancelled = false;
     setState((s) => ({ ...s, loading: true }));
-    getDays({ waterBodyId, days: TIMELINE_DAYS })
+    if (pending) return;
+    getDays({
+      waterBodyId,
+      days: TIMELINE_DAYS,
+      ...(subAreaId ? { subAreaId: subAreaId as Id<'waterBodySubAreas'> } : {}),
+    })
       .then((result) => {
         if (cancelled) return;
         if (!result) {
@@ -130,7 +148,7 @@ export function PastWeatherPanel({
     return () => {
       cancelled = true;
     };
-  }, [getDays, waterBodyId, days]);
+  }, [getDays, waterBodyId, subAreaId, pending, days]);
 
   const panel = useMemo(
     // ⚠ The lake's today, from the server — never `Date.now()` here. Today's row arrives holding 24
