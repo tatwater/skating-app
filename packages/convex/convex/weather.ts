@@ -33,7 +33,7 @@ import type { Id } from './_generated/dataModel';
 import type { ActionCtx } from './_generated/server';
 import { action, internalMutation, internalQuery } from './_generated/server';
 import { meterOpenMeteo, recordApiCall } from './lib/apiMeter';
-import { resolveSurvivor } from './lib/bodies';
+import { liveSubAreaOf, resolveSurvivor } from './lib/bodies';
 import { bodyWeatherCell, hazardCenter, subAreaWeatherCell } from './lib/sampling';
 import { literals, weatherSinceSummary } from './lib/validators';
 
@@ -599,12 +599,10 @@ export const resolveBodyWeatherCell = internalQuery({
   handler: async (ctx, { waterBodyId, tier, subAreaId }) => {
     const body = await ctx.db.get(waterBodyId);
     if (!body || body.removedAt) return null;
-    if (subAreaId) {
-      const subArea = await ctx.db.get(subAreaId);
-      if (subArea && subArea.waterBodyId === body._id && subArea.removedAt === undefined) {
-        return subAreaWeatherCell(subArea, body, tier ?? 'browse');
-      }
-    }
+    // Validated exactly as the archive panel validates it (`liveSubAreaOf`), so the Planning tab's
+    // past and future can never disagree about which bay they are about.
+    const subArea = await liveSubAreaOf(ctx, body, subAreaId);
+    if (subArea) return subAreaWeatherCell(subArea, body, tier ?? 'browse');
     return bodyWeatherCell(body, tier ?? 'browse');
   },
 });

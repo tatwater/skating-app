@@ -23,3 +23,23 @@ export async function resolveSurvivor(
   }
   return body;
 }
+
+/**
+ * The bay a client asked for, **only if it is really a live bay of this lake** — else `null`.
+ *
+ * The one validation every scoped weather read shares (N6h / open question 5): the archive panel,
+ * the forecast strip and anything after them must refuse the same ids for the same reasons — a
+ * delisted bay, or one that belongs to another body — and then answer for the lake rather than
+ * erroring, because a stale deep link is not a fault a skater can act on. Two copies of this test
+ * is how the past and the future of a Planning tab end up describing two different places.
+ */
+export async function liveSubAreaOf(
+  ctx: QueryCtx,
+  body: Pick<Doc<'waterBodies'>, '_id'>,
+  subAreaId: Id<'waterBodySubAreas'> | undefined,
+): Promise<Doc<'waterBodySubAreas'> | null> {
+  if (!subAreaId) return null;
+  const subArea = await ctx.db.get(subAreaId);
+  if (!subArea || subArea.waterBodyId !== body._id || subArea.removedAt !== undefined) return null;
+  return subArea;
+}

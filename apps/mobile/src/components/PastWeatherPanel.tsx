@@ -36,6 +36,31 @@ const TIMELINE_DAYS = 30;
  * Same three rules as the web half: observation never counsel (D3 / D150), a gap is drawn rather than
  * smoothed, and it never renders above `AlertStrip`.
  */
+type PanelState = {
+  days: PanelDay[];
+  timeline: TimelineDayInput[];
+  fetchProfileM?: number[] | undefined;
+  coarse: boolean;
+  largeBody: boolean;
+  todayLocalDayMs: number;
+  loading: boolean;
+  /** The lake the held data belongs to, so a bay switch can keep it and a lake switch cannot. */
+  forBody: string | null;
+};
+
+/** Nothing held: a first mount, a new lake, a refused read, or a failed one. */
+function emptyPanel(forBody: string | null, loading: boolean): PanelState {
+  return {
+    days: [],
+    timeline: [],
+    coarse: false,
+    largeBody: false,
+    todayLocalDayMs: 0,
+    loading,
+    forBody,
+  };
+}
+
 export function PastWeatherPanel({
   waterBodyId,
   subAreaId,
@@ -54,25 +79,7 @@ export function PastWeatherPanel({
   days?: number;
 }) {
   const getDays = useAction(api.weatherArchive.getWeatherDaysForBody);
-  const [state, setState] = useState<{
-    days: PanelDay[];
-    timeline: TimelineDayInput[];
-    fetchProfileM?: number[] | undefined;
-    coarse: boolean;
-    largeBody: boolean;
-    todayLocalDayMs: number;
-    loading: boolean;
-    /** The lake the held data belongs to, so a bay switch can keep it and a lake switch cannot. */
-    forBody: string | null;
-  }>({
-    days: [],
-    timeline: [],
-    coarse: false,
-    largeBody: false,
-    todayLocalDayMs: 0,
-    loading: true,
-    forBody: null,
-  });
+  const [state, setState] = useState<PanelState>(emptyPanel(null, true));
 
   useEffect(() => {
     let cancelled = false;
@@ -83,17 +90,7 @@ export function PastWeatherPanel({
     // page, so the old reading stays up, dimmed, until the new one replaces it — nothing under the
     // finger moves. A different lake is a different page, and a stale panel there would lie.
     setState((s) =>
-      s.forBody === waterBodyId
-        ? { ...s, loading: true }
-        : {
-            days: [],
-            timeline: [],
-            coarse: false,
-            largeBody: false,
-            todayLocalDayMs: 0,
-            loading: true,
-            forBody: waterBodyId,
-          },
+      s.forBody === waterBodyId ? { ...s, loading: true } : emptyPanel(waterBodyId, true),
     );
     if (pending) return;
     getDays({
@@ -104,15 +101,7 @@ export function PastWeatherPanel({
       .then((result) => {
         if (cancelled) return;
         if (!result) {
-          setState({
-            days: [],
-            timeline: [],
-            coarse: false,
-            largeBody: false,
-            todayLocalDayMs: 0,
-            loading: false,
-            forBody: waterBodyId,
-          });
+          setState(emptyPanel(waterBodyId, false));
           return;
         }
         // Core owns the `dayMs` encoding (UTC midnight of a *local* date); reversing it by hand in
@@ -139,17 +128,7 @@ export function PastWeatherPanel({
         });
       })
       .catch(() => {
-        if (!cancelled) {
-          setState({
-            days: [],
-            timeline: [],
-            coarse: false,
-            largeBody: false,
-            todayLocalDayMs: 0,
-            loading: false,
-            forBody: waterBodyId,
-          });
-        }
+        if (!cancelled) setState(emptyPanel(waterBodyId, false));
       });
     return () => {
       cancelled = true;

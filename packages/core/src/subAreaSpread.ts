@@ -42,6 +42,10 @@
  */
 
 import { cmToInches, cToF } from './units';
+import { dayMsToLocalDate } from './weatherDay';
+import { monthDayLabel } from './weatherPanel';
+
+const DAY_MS = 86_400_000;
 
 /** Fewer shared days than this and the spread is withheld rather than computed over a thin sample. */
 export const SPREAD_MIN_DAYS = 3;
@@ -159,6 +163,35 @@ function pickExtreme<T extends { name: string; value: number }>(
 const formatIn = (v: number) => (v === 0 ? 'none' : `${v} in`);
 
 /**
+ * Name the shared window honestly.
+ *
+ * *"The last 6 days"* is only true when the shared days are the six most recent days anyone holds.
+ * When one bay's newest day is a gap, the intersection drops **yesterday** and keeps an older day —
+ * six days, but not the last six — and a count would read as the most recent ones. So the window is
+ * counted only when it is that recent run, and named by its dates otherwise: *"Jan 4–9"* is true of
+ * whatever it contains. A true number in a false sentence is the failure this phase keeps meeting.
+ */
+function describeWindow(sharedDays: ReadonlySet<number>, bays: readonly SpreadBayInput[]): string {
+  const n = sharedDays.size;
+  let newestAny = Number.NEGATIVE_INFINITY;
+  for (const bay of bays) for (const d of bay.days) if (d.dayMs > newestAny) newestAny = d.dayMs;
+  let recentRun = Number.isFinite(newestAny);
+  for (let i = 0; recentRun && i < n; i++) {
+    if (!sharedDays.has(newestAny - i * DAY_MS)) recentRun = false;
+  }
+  if (recentRun) return `the last ${n} day${n === 1 ? '' : 's'}`;
+  const sorted = [...sharedDays].sort((a, b) => a - b);
+  const firstDate = dayMsToLocalDate(sorted[0] as number);
+  const lastDate = dayMsToLocalDate(sorted[sorted.length - 1] as number);
+  const first = monthDayLabel(firstDate);
+  const last = monthDayLabel(lastDate);
+  // Same month: "Jan 10–15"; across a month: "Jan 28–Feb 3".
+  return firstDate.slice(0, 7) === lastDate.slice(0, 7)
+    ? `${first}–${last.replace(/^\S+ /, '')}`
+    : `${first}–${last}`;
+}
+
+/**
  * Build the spread, or `null` when there is nothing honest to say: fewer than two bays with data,
  * or fewer than {@link SPREAD_MIN_DAYS} days they all share.
  */
@@ -183,7 +216,7 @@ export function buildSubAreaSpread(inputs: readonly SpreadBayInput[]): SubAreaSp
 
   const lines: SpreadLine[] = [];
   const dayCount = sharedDays.size;
-  const window = `the last ${dayCount} day${dayCount === 1 ? '' : 's'}`;
+  const window = describeWindow(sharedDays, withData);
 
   const lows = bays
     .map((b) => ({ subAreaId: b.subAreaId, name: b.name, value: bayLowC(b.days) }))

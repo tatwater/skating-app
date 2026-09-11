@@ -6,7 +6,10 @@ function Tabs({ className, orientation = 'horizontal', ...props }: TabsPrimitive
   return (
     <TabsPrimitive.Root
       data-slot="tabs"
-      data-orientation={orientation}
+      // Passed through, as `separator.tsx` does: the primitive emits `data-orientation` itself and
+      // drives arrow-key navigation off it. Setting the attribute by hand instead would leave a
+      // vertical strip styled vertically but navigating horizontally.
+      orientation={orientation}
       className={cn('group/tabs flex gap-2 data-horizontal:flex-col', className)}
       {...props}
     />

@@ -38,7 +38,7 @@ import { PastWeatherPanel } from './PastWeatherPanel';
 import { PostedAccess } from './PostedAccess';
 import { ReferenceLinks } from './ReferenceLinks';
 import { ReportForm } from './ReportForm';
-import { SeasonEmptyState, SeasonFilter } from './SeasonFilter';
+import { SeasonEmptyState, SeasonFilter, useResetBrowseSeason } from './SeasonFilter';
 import { SubAreaSpread } from './SubAreaSpread';
 import { WeatherPlacePicker } from './WeatherPlacePicker';
 import { WindExposure } from './WindExposure';
@@ -92,6 +92,9 @@ export function WaterBodyDetail({
   const [bountyFormOpen, setBountyFormOpen] = useState(false);
   const leaving = useIsLeaving();
   const [tab, setTab] = useDetailTab();
+  // The season selector lives on the Reporting tab, but the season it picks governs the whole lake
+  // view (D63) — so its reset is keyed to this sheet's lifecycle, not the tab's.
+  useResetBrowseSeason(waterBodyId);
   // Same whole-table fetch as web — five rows of aggregate geography, so the caption stays a pure
   // function of (body, basis) rather than needing a second round trip to learn which state to ask.
   const regionStats = useQuery(api.regionStats.list, {});
@@ -108,39 +111,59 @@ export function WaterBodyDetail({
 
   // Once the (possibly merge-resolved) lake loads, fly the map to it and highlight it by the
   // *resolved* `_id` — the survivor a merged deep link redirects to, which is what the map carries.
+  //
+  // What the camera should frame, as a *stable signature* rather than the objects behind it (the
+  // same shape as web): a live `sub=` bay → that bay; no `sub=`, or one we now know is not a live
+  // bay → the lake; a `sub=` whose lookup is still in flight → hold, so the camera does not fly to
+  // the lake and then jump to the bay when the bay list lands ~100 ms later.
+  // ⚠ Keyed on ids because `subAreas` is now fetched on every lake and both it and `body` are
+  // reactive results whose identity changes on every re-emit; as effect dependencies they re-flew a
+  // reader who had panned away.
+  const focusKey = !body
+    ? null
+    : focusSubArea
+      ? `sub:${focusSubArea._id}`
+      : !focusSubAreaId || subAreas !== undefined
+        ? `body:${body._id}`
+        : null;
+  // biome-ignore lint/correctness/useExhaustiveDependencies: focusKey is the stable signature of (body, focusSubArea, focusSubAreaId, subAreas) — see above.
   useEffect(() => {
-    if (body) {
-      // Pass the lake's bbox so the map zoom-to-fits it into the area above the drawer (falls back to
-      // the centroid for anything without bounds).
-      // A bay frames on its own bounds, not the lake's — Champlain zoom-to-fit is 200 km of ice,
-      // which is exactly the framing that made naming bays worth doing.
-      setFocus(
-        focusSubArea
-          ? {
-              lat: focusSubArea.centroid.lat,
-              lng: focusSubArea.centroid.lng,
-              bounds: focusSubArea.bbox,
-            }
-          : { lat: body.centroid.lat, lng: body.centroid.lng, bounds: body.bbox },
-      );
-      setHighlightWaterBodyId(body._id);
-      // And mount the bathymetry layer for this lake (N6b/D81). Keyed by the OSM id the contour
-      // tiles carry, not by the Convex `_id` the highlight uses — a re-import that churned ids would
-      // otherwise silently blank the layer on every lake at once. Only the *lake* sheet does this:
-      // D81 makes contours a property of this view, not of every view that selects a body.
-      setContourBodyKey(contourBodyKey(body.externalId, body._id));
-      // Cache this viewed lake's reference data on-device (F2 Layer 2) so it can be GPS-resolved
-      // offline for a no-signal report. Best-effort; the sqlite write never blocks viewing.
-      cacheBody({
-        waterBodyId: body._id,
-        name: body.name,
-        states: body.states,
-        polygon: body.polygon as unknown as Polygon | MultiPolygon,
-        centroid: body.centroid,
-        surfaceAreaSqM: body.surfaceAreaSqM,
-      });
-    }
-  }, [body, focusSubArea, setFocus, setHighlightWaterBodyId, setContourBodyKey]);
+    if (!body || focusKey === null) return;
+    // Pass the lake's bbox so the map zoom-to-fits it into the area above the drawer (falls back to
+    // the centroid for anything without bounds).
+    // A bay frames on its own bounds, not the lake's — Champlain zoom-to-fit is 200 km of ice,
+    // which is exactly the framing that made naming bays worth doing.
+    setFocus(
+      focusSubArea
+        ? {
+            lat: focusSubArea.centroid.lat,
+            lng: focusSubArea.centroid.lng,
+            bounds: focusSubArea.bbox,
+          }
+        : { lat: body.centroid.lat, lng: body.centroid.lng, bounds: body.bbox },
+    );
+    setHighlightWaterBodyId(body._id);
+    // And mount the bathymetry layer for this lake (N6b/D81). Keyed by the OSM id the contour
+    // tiles carry, not by the Convex `_id` the highlight uses — a re-import that churned ids would
+    // otherwise silently blank the layer on every lake at once. Only the *lake* sheet does this:
+    // D81 makes contours a property of this view, not of every view that selects a body.
+    setContourBodyKey(contourBodyKey(body.externalId, body._id));
+  }, [focusKey, setFocus, setHighlightWaterBodyId, setContourBodyKey]);
+
+  // Cache this viewed lake's reference data on-device (F2 Layer 2) so it can be GPS-resolved
+  // offline for a no-signal report. Best-effort; the sqlite write never blocks viewing. Its own
+  // effect, on the body itself, so an edit to the lake re-caches without re-flying the camera.
+  useEffect(() => {
+    if (!body) return;
+    cacheBody({
+      waterBodyId: body._id,
+      name: body.name,
+      states: body.states,
+      polygon: body.polygon as unknown as Polygon | MultiPolygon,
+      centroid: body.centroid,
+      surfaceAreaSqM: body.surfaceAreaSqM,
+    });
+  }, [body]);
 
   if (result === undefined) return <DetailLoading />;
   if (result === null) {

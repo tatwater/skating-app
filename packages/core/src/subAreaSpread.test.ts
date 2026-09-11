@@ -98,8 +98,9 @@ describe('buildSubAreaSpread', () => {
   });
 
   it('compares every bay over the SAME days — a bay with a hole is not "less snow"', () => {
-    // B Bay is missing the day the snow fell. Over its own days it has zero snow; over the shared
-    // days neither bay has any, because the snow day is dropped from both.
+    // B Bay is missing the day the snow fell (the oldest day). Over its own days it has zero snow;
+    // over the shared days neither bay has any, because the snow day is dropped from both. The six
+    // shared days are the six most recent, so the window is still "the last 6 days".
     const spread = buildSubAreaSpread([
       bay('a', 'A Bay', -10, 8),
       bay('b', 'B Bay', -10, 0, 7, { skipDays: [0] }),
@@ -108,6 +109,21 @@ describe('buildSubAreaSpread', () => {
     expect(spread?.lines.find((l) => l.kind === 'snow')?.text).toBe(
       'No snow at any bay in the last 6 days',
     );
+  });
+
+  it('names the window by its dates when the shared days are not the most recent ones', () => {
+    // B Bay's NEWEST day is the hole. The shared six days exclude yesterday, so "the last 6 days"
+    // would be a true count in a false sentence; the dates cannot be.
+    const spread = buildSubAreaSpread([
+      bay('a', 'A Bay', -10, 0),
+      bay('b', 'B Bay', -18, 0, 7, { skipDays: [6] }),
+    ]);
+    expect(spread?.days).toBe(6);
+    expect(spread?.summary).toBe('Across 2 bays over Jan 10–15');
+    expect(spread?.lines.find((l) => l.kind === 'snow')?.text).toBe(
+      'No snow at any bay in Jan 10–15',
+    );
+    expect(spread?.lines.map((l) => l.text).join(' ')).not.toMatch(/last \d+ days/);
   });
 
   it('withholds the spread on too few shared days or too few bays, rather than ranking a thin sample', () => {

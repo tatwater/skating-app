@@ -45,7 +45,7 @@ import { PostedAccess } from './PostedAccess';
 import { PublicAccessSection } from './PublicAccessSection';
 import { ReferenceLinks } from './ReferenceLinks';
 import { ReportForm } from './ReportForm';
-import { SeasonEmptyState, SeasonFilter } from './SeasonFilter';
+import { SeasonEmptyState, SeasonFilter, useResetBrowseSeason } from './SeasonFilter';
 import { SubAreaSpread } from './SubAreaSpread';
 import { Badge } from './ui/badge';
 import { Button } from './ui/button';
@@ -106,6 +106,9 @@ export function WaterBodyDetail({
   const [hazardFormOpen, setHazardFormOpen] = useState(false);
   const [bountyFormOpen, setBountyFormOpen] = useState(false);
   const [tab, setTab] = useDetailTab();
+  // The season selector lives on the Reporting tab, but the season it picks governs the whole lake
+  // view (D63) — so its reset is keyed to this drawer's lifecycle, not the tab's.
+  useResetBrowseSeason(waterBodyId);
 
   // Once the (possibly merge-resolved) lake loads, fly the map to it and highlight it. We use the
   // resolved `body._id` — the survivor a merged deep link redirects to — which is what the map's

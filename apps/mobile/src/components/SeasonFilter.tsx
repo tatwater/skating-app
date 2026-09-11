@@ -19,19 +19,30 @@ import { useMapSelection } from './MapSelectionContext';
  * sheet. It is **not** the "show older" toggle: that one answers whether anyone has checked lately,
  * within whatever season is on screen.
  */
-export function SeasonFilter({ waterBodyId }: { waterBodyId: Id<'waterBodies'> }) {
-  const { browseSeason, setBrowseSeason } = useMapSelection();
-  const options = useQuery(api.reports.seasonsForBody, { waterBodyId });
-
-  // Back to this season whenever the lake changes or the sheet closes — the map is shared, so a
-  // carried-over season would leave last winter's hazards under a lake you just opened.
-  // `waterBodyId` is the point of this effect rather than an input to its body: the reset has to
-  // re-run when the lake changes, and dropping it carries a past season onto the next lake you open.
+/**
+ * Back to this season whenever the lake changes or the sheet closes — the map is shared, so a
+ * carried-over season would leave last winter's hazards under a lake you just opened.
+ *
+ * ⚠ **Called by the lake sheet, not by `SeasonFilter`.** The control sits inside the Reporting tab
+ * and unmounts on every tab switch (and while a form is open), so a reset tied to its own lifecycle
+ * dropped the chosen season — and snapped the map's hazards back to this winter — the moment the
+ * reader looked at Planning. The selection is scoped to the lake, so the lake sheet resets it.
+ *
+ * `waterBodyId` is the point of this effect rather than an input to its body: the reset has to
+ * re-run when the lake changes, and dropping it carries a past season onto the next lake you open.
+ */
+export function useResetBrowseSeason(waterBodyId: string): void {
+  const { setBrowseSeason } = useMapSelection();
   // biome-ignore lint/correctness/useExhaustiveDependencies: re-run on the lake, not on the body's reads.
   useEffect(() => {
     setBrowseSeason(null);
     return () => setBrowseSeason(null);
   }, [waterBodyId, setBrowseSeason]);
+}
+
+export function SeasonFilter({ waterBodyId }: { waterBodyId: Id<'waterBodies'> }) {
+  const { browseSeason, setBrowseSeason } = useMapSelection();
+  const options = useQuery(api.reports.seasonsForBody, { waterBodyId });
 
   if (!options || options.seasons.length <= 1) return null;
   const chips = [

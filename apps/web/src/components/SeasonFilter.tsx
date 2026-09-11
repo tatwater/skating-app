@@ -21,20 +21,31 @@ import { useMapSelection } from './MapSelectionContext';
  * older" answers *has anyone verified this lately?*; this answers *what did this lake look like last
  * winter?*. Conflating them would make the first silently mean the second come July.
  */
-export function SeasonFilter({ waterBodyId }: { waterBodyId: Id<'waterBodies'> }) {
-  const { browseSeason, setBrowseSeason } = useMapSelection();
-  const options = useQuery(api.reports.seasonsForBody, { waterBodyId });
-
-  // Reset to this season whenever the lake changes or the drawer closes. Carrying a past season
-  // across lakes would silently answer a question nobody asked on the next lake — and worse, the map
-  // is shared, so it would still be showing '24/'25 hazards under a lake you just opened.
-  // `waterBodyId` is the point of this effect rather than an input to its body: the reset has to
-  // re-run when the lake changes, and dropping it carries a past season onto the next lake you open.
+/**
+ * Reset to this season whenever the lake changes or the drawer closes. Carrying a past season
+ * across lakes would silently answer a question nobody asked on the next lake — and worse, the map
+ * is shared, so it would still be showing '24/'25 hazards under a lake you just opened.
+ *
+ * ⚠ **Called by the lake drawer, not by `SeasonFilter`.** The control sits inside the Reporting tab
+ * and unmounts on every tab switch, so a reset tied to its own lifecycle dropped the chosen season
+ * (and snapped the map's hazards back to this winter) the moment the reader looked at Planning. The
+ * selection is scoped to the lake, so the lake drawer's lifecycle is the one that resets it.
+ *
+ * `waterBodyId` is the point of this effect rather than an input to its body: the reset has to
+ * re-run when the lake changes, and dropping it carries a past season onto the next lake you open.
+ */
+export function useResetBrowseSeason(waterBodyId: string): void {
+  const { setBrowseSeason } = useMapSelection();
   // biome-ignore lint/correctness/useExhaustiveDependencies: re-run on the lake, not on the body's reads.
   useEffect(() => {
     setBrowseSeason(null);
     return () => setBrowseSeason(null);
   }, [waterBodyId, setBrowseSeason]);
+}
+
+export function SeasonFilter({ waterBodyId }: { waterBodyId: Id<'waterBodies'> }) {
+  const { browseSeason, setBrowseSeason } = useMapSelection();
+  const options = useQuery(api.reports.seasonsForBody, { waterBodyId });
 
   // One season means one option: this one. A control with nothing to switch to is noise.
   if (!options || options.seasons.length <= 1) return null;

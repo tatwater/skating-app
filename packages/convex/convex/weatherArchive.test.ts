@@ -55,6 +55,64 @@ async function seedBody(
   ) as Promise<Id<'waterBodies'>>;
 }
 
+/** A named bay of `parent` whose weather point is `point` — authored by a throwaway moderator. */
+async function seedBay(
+  t: ReturnType<typeof convexTest>,
+  parent: Id<'waterBodies'>,
+  name: string,
+  point: { lat: number; lng: number },
+  over: { displayScore?: number; removedAt?: number } = {},
+): Promise<Id<'waterBodySubAreas'>> {
+  const author = (await t.run((ctx) =>
+    ctx.db.insert('profiles', {
+      clerkUserId: `mod-${name}`,
+      displayName: name,
+      username: `mod-${name}`.toLowerCase().replace(/\s/g, ''),
+      driveTimePrefMinutes: 60,
+      profileVisibility: 'public' as const,
+      notificationPrefs: {
+        activityDetected: true,
+        bountyRequest: true,
+        hazardConfirmation: true,
+        bountyFulfilled: true,
+        reportRated: true,
+        reportCommented: true,
+        contentFlagResolved: true,
+        favoriteReport: true,
+        nearbyReportDigest: false,
+        greatReportNearby: false,
+      },
+      dateOfBirth: Date.UTC(1990, 0, 1),
+      reputationPoints: 0,
+      role: 'moderator' as const,
+      status: 'active' as const,
+      createdAt: Date.now(),
+    }),
+  )) as Id<'profiles'>;
+  return t.run((ctx) =>
+    ctx.db.insert('waterBodySubAreas', {
+      waterBodyId: parent,
+      name,
+      searchText: name,
+      polygon: square(0.01),
+      bbox: {
+        minLat: point.lat - 0.01,
+        minLng: point.lng - 0.01,
+        maxLat: point.lat + 0.01,
+        maxLng: point.lng + 0.01,
+      },
+      centroid: point,
+      surfaceAreaSqM: 1_000_000,
+      displayScore: over.displayScore ?? 1,
+      minVisibleZoom: 10,
+      createdByUserId: author,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      ...(over.removedAt === undefined ? {} : { removedAt: over.removedAt }),
+    }),
+  ) as Promise<Id<'waterBodySubAreas'>>;
+}
+
 function asViewer(t: ReturnType<typeof convexTest>) {
   return t.withIdentity({ subject: 'viewer' });
 }
@@ -1435,64 +1493,6 @@ describe('weatherArchive: one response, one offset — but many dates', () => {
 });
 
 describe('weatherArchive: a bay is its own place (N6h open question 5)', () => {
-  /** A named bay of `parent`, with its own on-water point — far enough away to land in another cell. */
-  async function seedBay(
-    t: ReturnType<typeof convexTest>,
-    parent: Id<'waterBodies'>,
-    name: string,
-    point: { lat: number; lng: number },
-    over: { displayScore?: number; removedAt?: number } = {},
-  ): Promise<Id<'waterBodySubAreas'>> {
-    const author = (await t.run((ctx) =>
-      ctx.db.insert('profiles', {
-        clerkUserId: `mod-${name}`,
-        displayName: name,
-        username: `mod-${name}`.toLowerCase().replace(/\s/g, ''),
-        driveTimePrefMinutes: 60,
-        profileVisibility: 'public' as const,
-        notificationPrefs: {
-          activityDetected: true,
-          bountyRequest: true,
-          hazardConfirmation: true,
-          bountyFulfilled: true,
-          reportRated: true,
-          reportCommented: true,
-          contentFlagResolved: true,
-          favoriteReport: true,
-          nearbyReportDigest: false,
-          greatReportNearby: false,
-        },
-        dateOfBirth: Date.UTC(1990, 0, 1),
-        reputationPoints: 0,
-        role: 'moderator' as const,
-        status: 'active' as const,
-        createdAt: Date.now(),
-      }),
-    )) as Id<'profiles'>;
-    return t.run((ctx) =>
-      ctx.db.insert('waterBodySubAreas', {
-        waterBodyId: parent,
-        name,
-        searchText: name,
-        polygon: square(0.01),
-        bbox: {
-          minLat: point.lat - 0.01,
-          minLng: point.lng - 0.01,
-          maxLat: point.lat + 0.01,
-          maxLng: point.lng + 0.01,
-        },
-        centroid: point,
-        surfaceAreaSqM: 1_000_000,
-        displayScore: over.displayScore ?? 1,
-        minVisibleZoom: 10,
-        createdByUserId: author,
-        createdAt: Date.now(),
-        updatedAt: Date.now(),
-        ...(over.removedAt === undefined ? {} : { removedAt: over.removedAt }),
-      }),
-    ) as Promise<Id<'waterBodySubAreas'>>;
-  }
-
   // Champlain's shape: an anchor mid-lake, and a bay ~55 km north of it. 0.05° cells, so these are
   // many cells apart at either tier.
   const ANCHOR = { lat: 44.25, lng: -73.35 };
@@ -1622,61 +1622,6 @@ describe('weatherArchive: the sub-area spread reads Tier B (N6h open question 5)
   const NORTH = { lat: 44.95, lng: -73.15 };
   const SOUTH = { lat: 43.65, lng: -73.4 };
 
-  async function seedBay(
-    t: ReturnType<typeof convexTest>,
-    parent: Id<'waterBodies'>,
-    name: string,
-    point: { lat: number; lng: number },
-  ): Promise<Id<'waterBodySubAreas'>> {
-    const author = (await t.run((ctx) =>
-      ctx.db.insert('profiles', {
-        clerkUserId: `mod-${name}`,
-        displayName: name,
-        username: `m-${name}`.toLowerCase().replace(/\s/g, ''),
-        driveTimePrefMinutes: 60,
-        profileVisibility: 'public' as const,
-        notificationPrefs: {
-          activityDetected: true,
-          bountyRequest: true,
-          hazardConfirmation: true,
-          bountyFulfilled: true,
-          reportRated: true,
-          reportCommented: true,
-          contentFlagResolved: true,
-          favoriteReport: true,
-          nearbyReportDigest: false,
-          greatReportNearby: false,
-        },
-        dateOfBirth: Date.UTC(1990, 0, 1),
-        reputationPoints: 0,
-        role: 'moderator' as const,
-        status: 'active' as const,
-        createdAt: Date.now(),
-      }),
-    )) as Id<'profiles'>;
-    return t.run((ctx) =>
-      ctx.db.insert('waterBodySubAreas', {
-        waterBodyId: parent,
-        name,
-        searchText: name,
-        polygon: square(0.01),
-        bbox: {
-          minLat: point.lat - 0.01,
-          minLng: point.lng - 0.01,
-          maxLat: point.lat + 0.01,
-          maxLng: point.lng + 0.01,
-        },
-        centroid: point,
-        surfaceAreaSqM: 1_000_000,
-        displayScore: 1,
-        minVisibleZoom: 10,
-        createdByUserId: author,
-        createdAt: Date.now(),
-        updatedAt: Date.now(),
-      }),
-    ) as Promise<Id<'waterBodySubAreas'>>;
-  }
-
   /** Seed `n` settled filter-tier days ending yesterday (UTC) for the cell at `point`. */
   async function seedFilterDays(
     t: ReturnType<typeof convexTest>,
@@ -1767,10 +1712,14 @@ describe('weatherArchive: the sub-area spread reads Tier B (N6h open question 5)
       waterBodyId: lake,
     });
     expect(spread?.days).toBe(6);
-    // The forecast-valued today did not sneak −30 °C or 50 cm into the ranking.
-    expect(spread?.lines.find((l) => l.kind === 'snow')?.text).toBe(
-      'No snow at any bay in the last 6 days',
+    // The forecast-valued today did not sneak −30 °C or 50 cm into the ranking — and because the
+    // shared days exclude yesterday (North's gap), the window is named by its dates rather than
+    // counted: "the last 6 days" would have been a true number in a false sentence.
+    const snow = spread?.lines.find((l) => l.kind === 'snow')?.text;
+    expect(snow).toMatch(
+      /^No snow at any bay in [A-Z][a-z]{2} \d{1,2}–(?:[A-Z][a-z]{2} )?\d{1,2}$/,
     );
+    expect(snow).not.toMatch(/last \d+ days/);
   });
 
   test("still spans a full week in the evening, when the lake's today is UTC-yesterday", async () => {
@@ -1834,6 +1783,31 @@ describe('weatherArchive: the sub-area spread reads Tier B (N6h open question 5)
       await asViewer(t).query(api.weatherArchive.getSubAreaSpread, { waterBodyId: lake }),
     ).toBeNull();
     expect(await t.query(api.weatherArchive.getSubAreaSpread, { waterBodyId: lake })).toBeNull();
+  });
+
+  test('is null when every bay with data shares one Tier-B cell — one reading is not a spread', async () => {
+    // Two bays 0.01° apart share a 0.1° filter cell and therefore one row set. Comparing that set
+    // with itself would come out "similar across the lake's 2 bays" — a claim about variation from
+    // a sample that measured none. A third bay in its own cell with no rows yet does not rescue it.
+    const t = convexTest(schema, modules);
+    const lake = await seedBody(t, ANCHOR, 30);
+    await seedBay(t, lake, 'North Bay', NORTH);
+    await seedBay(t, lake, 'Also North', { lat: NORTH.lat + 0.01, lng: NORTH.lng + 0.01 });
+    await seedBay(t, lake, 'South Bay', SOUTH);
+    await seedFilterDays(t, NORTH, 7, { nightMinTempC: -18 });
+    expect(
+      await asViewer(t).query(api.weatherArchive.getSubAreaSpread, { waterBodyId: lake }),
+    ).toBeNull();
+
+    // Once the second cell has rows there are two readings, and the shared-cell pair ties.
+    await seedFilterDays(t, SOUTH, 7, { nightMinTempC: -8 });
+    const spread = await asViewer(t).query(api.weatherArchive.getSubAreaSpread, {
+      waterBodyId: lake,
+    });
+    expect(spread?.bays).toBe(3);
+    expect(spread?.lines.find((l) => l.kind === 'lows')?.text).toBe(
+      'Lows 0°F to 18°F — coldest at Also North, mildest at South Bay',
+    );
   });
 
   test("primeSubAreaWeather fills the bays' filter cells out of season, once per cell", async () => {

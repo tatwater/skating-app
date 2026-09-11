@@ -31,15 +31,22 @@ export function WeatherPlacePicker({
       <Text color="$foregroundMuted" fontSize={13}>
         Weather at
       </Text>
-      <XStack gap="$2" flexWrap="wrap" accessibilityRole="tablist">
+      {/* One choice among several, so the group is a radio group and each chip a radio — not a tab
+          list of buttons, which a screen reader announces as two things that do not go together. */}
+      <XStack
+        gap="$2"
+        flexWrap="wrap"
+        accessibilityRole="radiogroup"
+        accessibilityLabel="Which part of the lake the weather is for"
+      >
         {bays.map((bay) => {
           const selected = bay._id === selectedId;
           return (
             <Text
               key={bay._id}
-              accessibilityRole="button"
+              accessibilityRole="radio"
               accessibilityLabel={`Show weather at ${bay.name}`}
-              accessibilityState={{ selected }}
+              accessibilityState={{ checked: selected, selected }}
               onPress={() =>
                 router.navigate({
                   pathname: '/water/[id]',
