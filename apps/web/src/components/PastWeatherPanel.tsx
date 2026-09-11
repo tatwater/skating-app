@@ -72,6 +72,8 @@ export function PastWeatherPanel({
     largeBody: boolean;
     todayLocalDayMs: number;
     loading: boolean;
+    /** The lake the held data belongs to, so a bay switch can keep it and a lake switch cannot. */
+    forBody: string | null;
   }>({
     days: [],
     timeline: [],
@@ -79,11 +81,30 @@ export function PastWeatherPanel({
     largeBody: false,
     todayLocalDayMs: 0,
     loading: true,
+    forBody: null,
   });
 
   useEffect(() => {
     let cancelled = false;
-    setState((s) => ({ ...s, loading: true }));
+    // ⚠ Keep the held data across a *bay* switch; drop it across a *lake* switch. Blanking the
+    // panel to its one-line "Reading…" state while a bay loads removed ~400 px from under the
+    // reader's scroll position, the scroll view clamped upward, and when the timeline came back they
+    // were looking at the buttons at the top of the drawer. A bay switch is a refinement of the same
+    // page, so the old reading stays up, dimmed, until the new one replaces it — nothing under the
+    // finger moves. A different lake is a different page, and a stale panel there would lie.
+    setState((s) =>
+      s.forBody === waterBodyId
+        ? { ...s, loading: true }
+        : {
+            days: [],
+            timeline: [],
+            coarse: false,
+            largeBody: false,
+            todayLocalDayMs: 0,
+            loading: true,
+            forBody: waterBodyId,
+          },
+    );
     if (pending) return;
     getDays({
       waterBodyId,
@@ -100,6 +121,7 @@ export function PastWeatherPanel({
             largeBody: false,
             todayLocalDayMs: 0,
             loading: false,
+            forBody: waterBodyId,
           });
           return;
         }
@@ -129,6 +151,7 @@ export function PastWeatherPanel({
           coarse: result.anyBorrowed,
           largeBody: result.oneSampleForALargeBody,
           loading: false,
+          forBody: waterBodyId,
         });
       })
       .catch(() => {
@@ -142,6 +165,7 @@ export function PastWeatherPanel({
             largeBody: false,
             todayLocalDayMs: 0,
             loading: false,
+            forBody: waterBodyId,
           });
         }
       });
@@ -163,7 +187,8 @@ export function PastWeatherPanel({
     [state.days, state.coarse, state.todayLocalDayMs],
   );
 
-  if (state.loading) {
+  // Nothing held yet — a first open, or a new lake. A bay switch keeps the previous reading up.
+  if (state.loading && state.days.length === 0) {
     return (
       <div className="flex flex-col gap-1">
         <PanelHeading />
@@ -188,7 +213,11 @@ export function PastWeatherPanel({
   const hasHourly = state.timeline.some((d) => (d.hours?.length ?? 0) > 0);
 
   return (
-    <div className="flex flex-col gap-2">
+    // Dimmed while a bay's reading is on its way: the previous bay's stays up so the layout holds.
+    <div
+      className={`flex flex-col gap-2 transition-opacity ${state.loading ? 'opacity-50' : ''}`}
+      aria-busy={state.loading}
+    >
       <PanelHeading />
 
       {panel.headline.length > 0 && (

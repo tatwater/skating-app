@@ -248,4 +248,49 @@ describe('PastWeatherPanel', () => {
     await waitFor(() => expect(getDays).toHaveBeenCalledTimes(2));
     expect(getDays.mock.calls[1]?.[0]).not.toHaveProperty('subAreaId');
   });
+
+  it("keeps the previous bay's reading on screen while the next one loads, and clears on a new lake", async () => {
+    // Blanking to "Reading…" on a bay switch removed the timeline from under the reader's scroll
+    // position; the drawer clamped to the top and they were looking at the buttons.
+    let resolveNext: (v: unknown) => void = () => {};
+    getDays.mockClear();
+    getDays
+      .mockResolvedValueOnce({
+        days: [day('2026-01-15')],
+        todayLocalDayMs: TODAY,
+        missingDayMs: [],
+        anyBorrowed: false,
+        oneSampleForALargeBody: false,
+      })
+      .mockImplementationOnce(() => new Promise((r) => (resolveNext = r)));
+    const { rerender } = render(<PastWeatherPanel waterBodyId={BODY} subAreaId="bay1" />);
+    await screen.findByText(/Past weather: Open-Meteo/);
+
+    rerender(<PastWeatherPanel waterBodyId={BODY} subAreaId="bay2" />);
+    // Still up, dimmed and marked busy — not the one-line loading state.
+    expect(screen.queryByText(/Reading the last/)).not.toBeInTheDocument();
+    expect(screen.getByText(/Past weather: Open-Meteo/).closest('[aria-busy]')).toHaveAttribute(
+      'aria-busy',
+      'true',
+    );
+    resolveNext({
+      days: [day('2026-01-15', { minTempC: -20 })],
+      todayLocalDayMs: TODAY,
+      missingDayMs: [],
+      anyBorrowed: false,
+      oneSampleForALargeBody: false,
+    });
+    await waitFor(() =>
+      expect(screen.getByText(/Past weather/).closest('[aria-busy]')).toHaveAttribute(
+        'aria-busy',
+        'false',
+      ),
+    );
+
+    // A different lake is a different page: the held reading must not survive it.
+    getDays.mockImplementationOnce(() => new Promise(() => {}));
+    rerender(<PastWeatherPanel waterBodyId={OTHER} subAreaId="bay9" />);
+    expect(screen.getByText(/Reading the last/)).toBeInTheDocument();
+    expect(screen.queryByText(/Past weather: Open-Meteo/)).not.toBeInTheDocument();
+  });
 });
