@@ -88,29 +88,44 @@ and a Clerk JWT template named `convex`).
   Convex-side wiring (bbox prefilter → these helpers → name similarity) + threshold
   tuning against the Phase 1 OSM corpus.
 
-## Offline codegen (why `scripts/codegen.mjs` exists)
+## `convex/_generated/` is committed — do not regenerate it before a check
 
-"Offline" here means the **build machine has no Convex deployment configured** — not
-anything about a user's device being offline. `convex/_generated/` is gitignored (Convex
-convention) and the real `convex codegen` hard-refuses without a configured deployment
-(`✖ No CONVEX_DEPLOYMENT set`) — which CI doesn't have. `scripts/codegen.mjs` writes the
-same files offline so `tsc` and `convex-test` work anywhere, and runs automatically
-before `check-types`/`test`. `dataModel.d.ts` derives the model from `typeof schema`
-(never needs regenerating on schema edits); `api.d.ts` is derived from the function
-modules on disk (adding a `convex/*.ts` updates the typed API). Running `npx convex dev`
-locally overwrites these with the identical real output.
+`convex/_generated/` is **committed, on purpose, as the real output of `npx convex dev`.**
+That is Convex's documented intent (`convex codegen --help`: the files "should be committed
+to the repo"), and it was re-established deliberately after a spell of being gitignored.
+Every check — `check-types`, `test`, CI — runs against the committed files, which are the
+files that deploy.
 
-When a `convex.config.ts` exists, the script also emits the component handle: a
-`componentsGeneric()` in `api.js` and the loosely-typed `components: AnyComponents` stub
-in `api.d.ts` — the same stub `convex dev` writes before its first push. The precisely-
-typed component form needs live deployment analysis (the one thing we can't do offline),
-but installed components re-apply their own types at the call site, so the stub is
-sufficient. **Currently dormant** — N1 removed the only component we had.
+**Nothing regenerates them for you, and that is the point.** The one way they go stale is
+adding or changing a Convex function without running `convex dev`; if nothing imports the
+new function yet, typecheck still passes. CI closes that: it provisions a throwaway local
+backend (`CONVEX_AGENT_MODE=anonymous` — no account, login or deploy key), pushes the
+functions, and fails on `git diff --exit-code -- convex/_generated`. So after touching
+`convex/*.ts`, run `pnpm convex-dev --once` from the repo root and commit what it writes.
+
+### `scripts/codegen.mjs` — an offline stand-in, run only by hand
+
+For a checkout with **no Convex login** that needs `_generated/` rebuilt from scratch —
+after deleting it, or when adding a `convex/*.ts` module with no deployment to hand.
+`dataModel.d.ts` derives the model from `typeof schema`; `api.d.ts` is derived from the
+function modules on disk; `server.*` and `api.js` are static templates.
+
+⚠ **Its output is not the CLI's, and must not be committed.** It omits
+`componentsGeneric()`, carries a different header, and drops doc comments. It used to run
+ahead of every check, and once the files were tracked that meant every test run rewrote
+five committed files, the tree was dirty after every check, and CI validated the script's
+output rather than the repo's. Those prefixes are gone. If you ran it, run `convex dev`
+afterwards and commit *that* — or `git checkout -- convex/_generated`.
+
+When a `convex.config.ts` exists the script also emits the loosely-typed component stub
+(`components: AnyComponents`), the same one `convex dev` writes before its first push.
+**Currently dormant** — N1 removed the only component we had.
 
 ## Scripts
 
 ```bash
-pnpm --filter @skating/convex test         # codegen + Vitest (convex-test) + coverage
-pnpm --filter @skating/convex check-types  # codegen + tsc --noEmit
-pnpm --filter @skating/convex codegen      # regenerate convex/_generated/ offline
+pnpm --filter @skating/convex test         # Vitest (convex-test) + coverage, against committed _generated
+pnpm --filter @skating/convex check-types  # tsc --noEmit, against committed _generated
+pnpm --filter @skating/convex codegen      # OFFLINE stand-in only — see above; do not commit its output
+pnpm convex-dev --once                     # (repo root) the real codegen: push + regenerate, then commit
 ```

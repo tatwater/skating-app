@@ -128,8 +128,19 @@ const config: ExpoConfig = {
     [
       '@sentry/react-native/expo',
       {
-        organization: process.env.SENTRY_ORG ?? 'PLACEHOLDER_ORG',
-        project: process.env.SENTRY_PROJECT ?? 'PLACEHOLDER_PROJECT',
+        /**
+         * Both committed rather than read from the environment. Neither is a credential —
+         * only `SENTRY_AUTH_TOKEN` is, and that stays in EAS secrets — and naming them here
+         * is two fewer build variables to forget. The web app's project is `skating-web`;
+         * this is the other one in the same org.
+         *
+         * The placeholder fallbacks these replaced were worse than leaving them unset. A
+         * build with no `SENTRY_ORG` uploaded to an organization literally named
+         * `PLACEHOLDER_ORG`: it failed late, it read as configured, and `README.md` had to
+         * carry a warning about it.
+         */
+        organization: 'teagan-atwater',
+        project: 'skating-app',
       },
     ],
     // Gained a config plugin in 57.0.1, so it has to be registered here by hand — `expo install`

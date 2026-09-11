@@ -1,5 +1,6 @@
 import * as Sentry from '@sentry/tanstackstart-react';
 import { env, isConfigured } from './lib/env';
+import { sharedSentryOptions } from './lib/sentryOptions';
 
 /**
  * Server-side Sentry init (D29), imported as the very first statement of the server entry
@@ -13,11 +14,15 @@ import { env, isConfigured } from './lib/env';
  * (which needs a `--import` preloader) is intentionally skipped; `wrapFetchWithSentry`
  * (see `server.ts`) + the request middleware give request-scoped error + trace capture, which
  * is what we need for the alpha.
+ *
+ * The server is where `dataCollection` earns its keep: this is the runtime that sees the
+ * Clerk session cookie and the `Cookie` header on every request, and the one whose events
+ * would otherwise carry them. See `lib/sentryOptions.ts`.
  */
 if (isConfigured.sentry) {
   Sentry.init({
+    ...sharedSentryOptions,
     dsn: env.sentryDsn,
     tracesSampleRate: 1.0,
-    sendDefaultPii: false,
   });
 }

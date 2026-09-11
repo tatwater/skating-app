@@ -350,10 +350,49 @@ The Phase-7 merge UI should degrade gracefully to an empty queue until then.
 
 ## Resend checklist (founder, at end of build)
 
-- [ ] Create Resend account (D35 free tier); verify the sending **domain**.
-- [ ] Set `RESEND_API_KEY` (+ from-address env) in Convex env — replaces the placeholder.
-- [ ] Confirm the operator-alert address (founder inbox).
-- Until done: the alert action logs-and-skips; no email sends, build unblocked.
+**✅ Dev done 2026-09-11.** Domain verified, env set, `operatorAlerts:broadcastToStaff` smoke-tested
+end to end (`sent: 1`). What was decided, so prod does not re-derive it:
+
+- **Sending domain is `skating.teaganatwater.com`** — a subdomain, per Resend's own guidance, so a
+  bounce spike or complaint can never touch the deliverability of personal mail on the root.
+- **There is no MX record to add, and do not add one.** Resend's current flow is CNAME-based:
+  `send.skating.teaganatwater.com → send.forge.rmta.net`, and Resend serves both the Return-Path
+  **MX** (`10 feedback.forge.rmta.net`) and the **SPF** from their side of that CNAME. A CNAME cannot
+  coexist with other records at the same name, and an MX on the parent hostname would advertise a
+  receiver nobody runs. If Resend changes bounce infrastructure they update their end; DNS here
+  never moves.
+- **DMARC lives at the root** (`_dmarc.teaganatwater.com`, `p=none`), which covers the subdomain by
+  default. Resend mail passes DMARC via **DKIM alignment** (`resend._domainkey.skating…`), not SPF
+  alignment — which is why the Return-Path being a Resend-owned name costs nothing. Leave `p=none`
+  until real sends have passed alignment for a few weeks.
+- **All three vars are Convex-only.** Nothing in `apps/web`, `apps/mobile`, Vercel or EAS reads
+  them.
+
+### ⚠ Prod cutover — env vars do not carry between deployments
+
+`diligent-guanaco-965` has never been deployed and has none of this. After the first `convex deploy`
+(itself blocked on the Clerk PROD vars — see memory), run from the repo root:
+
+```
+pnpm --filter @skating/convex exec convex env set --prod RESEND_API_KEY 're_…'
+pnpm --filter @skating/convex exec convex env set --prod RESEND_FROM_EMAIL 'Great Lakes Ice <gli@skating.teaganatwater.com>'
+pnpm --filter @skating/convex exec convex env set --prod OPERATOR_ALERT_EMAIL 'desk@teaganatwater.com'
+```
+
+- [ ] **Use a separate Resend API key for prod**, scoped to *Sending access* only. One key per
+  deployment means a leaked dev key is revoked without touching prod, and Resend's per-key send
+  logs then tell the two apart.
+- [ ] `CLERK_SECRET_KEY` and `WEB_APP_URL` must be the **prod** values on prod — the staff fan-out
+  looks recipients up in Clerk, and the "Open in /admin →" link is built from `WEB_APP_URL`. A dev
+  Clerk key on prod would resolve nobody.
+- [ ] Smoke-test before the season can open, so the first real send is not the season email:
+  `pnpm --filter @skating/convex exec convex run --prod operatorAlerts:broadcastToStaff '{"subject":"Prod transport check","heading":"Prod transport check","lines":["Resend is wired on prod."],"deepLinkPath":"/admin"}'`
+  — `sent` must equal `recipients`. `recipients: 0` means no active staff on prod; `sent: 0` with
+  recipients means a bad key or from-address (check the Convex logs, which name which).
+- [ ] **Promote at least one moderator on prod** before November. `broadcastToStaff` mails active
+  moderators and admins; with only the founder's admin account the season alerts reach one person,
+  which is the N2 open call arriving with a deadline attached.
+- Until done: every alert action logs-and-skips; no email sends, build unblocked.
 
 ---
 
