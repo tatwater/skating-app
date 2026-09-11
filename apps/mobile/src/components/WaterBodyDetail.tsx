@@ -32,6 +32,7 @@ import { DirectionsButton, FavoriteButton } from './FavoriteButton';
 import { ForecastStrip } from './ForecastStrip';
 import { IceHistory } from './IceHistory';
 import { LeavingNotice, useIsLeaving } from './LeavingNotice';
+import { DrawerHead, DrawerPinned } from './MapDrawer';
 import { useMapSelection } from './MapSelectionContext';
 import { PastWeatherPanel } from './PastWeatherPanel';
 import { PostedAccess } from './PostedAccess';
@@ -166,167 +167,188 @@ export function WaterBodyDetail({
   // every slot while a real skater never can.
   const reveal = revealEmptySections(profileRevealEnabled(env.convexUrl));
 
-  return (
-    <YStack gap="$3">
-      <YStack gap="$1">
-        <XStack justifyContent="space-between" alignItems="center" gap="$2">
-          <H4 color="$foreground" flex={1}>
-            {result.body.name}
-          </H4>
-          <FavoriteButton waterBodyId={result.body._id} />
-        </XStack>
-        <Text color="$foregroundMuted">
-          {waterBodyClassLabel(result.body.type)}
-          {result.body.surfaceAreaSqM !== undefined
-            ? ` · ${formatAreaAcres(result.body.surfaceAreaSqM)}`
-            : ''}
-          {depth ? ` · ${depth.text}` : ''}
-        </Text>
-        {/* Provenance under the numbers, same as web: absent for most bodies, and a caveat inline in
-            the type/area line would read as clutter on the minority that do have a depth. */}
-        {depth ? (
-          <Text color="$foregroundMuted" fontSize="$1">
-            {depth.caption}
-          </Text>
-        ) : null}
-        {/* The derived profile (N6c/C), assembled by the same @skating/core function web calls so
-            the two surfaces cannot drift. Nothing renders when there is nothing to say. */}
-        {caption ? (
-          <Paragraph color="$foregroundMuted" fontSize={14} paddingTop="$1">
-            {caption}
-          </Paragraph>
-        ) : null}
-        <DirectionsButton waterBodyId={result.body._id} />
-      </YStack>
+  const formShowing = formOpen || bountyFormOpen;
 
-      {formOpen ? (
-        <ReportForm
-          waterBodyId={result.body._id}
-          bodyName={result.body.name}
-          {...(trackDraftId !== undefined ? { trackDraftId } : {})}
-          {...(activityId !== undefined ? { activityId } : {})}
-          onClose={() => setFormOpen(false)}
-        />
-      ) : bountyFormOpen ? (
-        <BountyForm
-          waterBodyId={result.body._id}
-          bodyName={result.body.name}
-          onClose={() => setBountyFormOpen(false)}
-        />
-      ) : (
-        <>
-          {/* Report creation + bounty posting surfaced in place (D47). Both close while a
-              deletion is pending (D62 amendment); the feed below stays fully readable. */}
-          {leaving ? (
-            <LeavingNotice />
-          ) : (
+  return (
+    <>
+      {/* The head: what scrolls away above the pinned strip (see `DrawerHead` in MapDrawer). The
+          screen's own name, its actions and the NWS alert — the alert above the strip, always, so
+          a warning is never one tap away from unseen. Padding is carried here because the slot
+          itself has none: an empty slot on another screen must cost no height. */}
+      <DrawerHead>
+        <YStack gap="$3" paddingHorizontal={16} paddingTop={16} paddingBottom={12}>
+          <YStack gap="$1">
+            <XStack justifyContent="space-between" alignItems="center" gap="$2">
+              <H4 color="$foreground" flex={1}>
+                {result.body.name}
+              </H4>
+              <FavoriteButton waterBodyId={result.body._id} />
+            </XStack>
+            <Text color="$foregroundMuted">
+              {waterBodyClassLabel(result.body.type)}
+              {result.body.surfaceAreaSqM !== undefined
+                ? ` · ${formatAreaAcres(result.body.surfaceAreaSqM)}`
+                : ''}
+              {depth ? ` · ${depth.text}` : ''}
+            </Text>
+            {/* Provenance under the numbers, same as web: absent for most bodies, and a caveat inline in
+                the type/area line would read as clutter on the minority that do have a depth. */}
+            {depth ? (
+              <Text color="$foregroundMuted" fontSize="$1">
+                {depth.caption}
+              </Text>
+            ) : null}
+            {/* The derived profile (N6c/C), assembled by the same @skating/core function web calls so
+                the two surfaces cannot drift. Nothing renders when there is nothing to say. */}
+            {caption ? (
+              <Paragraph color="$foregroundMuted" fontSize={14} paddingTop="$1">
+                {caption}
+              </Paragraph>
+            ) : null}
+            <DirectionsButton waterBodyId={result.body._id} />
+          </YStack>
+          {formShowing ? null : (
             <>
-              <Button
-                backgroundColor="$primary"
-                color="$primaryForeground"
-                onPress={() => setFormOpen(true)}
-              >
-                Add a report
-              </Button>
-              <Button variant="outlined" onPress={() => setBountyFormOpen(true)}>
-                Post a bounty
-              </Button>
+              {/* Report creation + bounty posting surfaced in place (D47). Both close while a
+                  deletion is pending (D62 amendment); the feed below stays fully readable. */}
+              {leaving ? (
+                <LeavingNotice />
+              ) : (
+                <>
+                  <Button
+                    backgroundColor="$primary"
+                    color="$primaryForeground"
+                    onPress={() => setFormOpen(true)}
+                  >
+                    Add a report
+                  </Button>
+                  <Button variant="outlined" onPress={() => setBountyFormOpen(true)}>
+                    Post a bounty
+                  </Button>
+                </>
+              )}
+              {/* Official NWS alerts (N6c/B5) ABOVE the tab strip, always visible — a warning from the
+                  local forecast office outranks both our observations and anybody's forecast, and a
+                  tabbed alert is an alert you can be one tap away from not seeing (N6h/H). */}
+              <AlertStrip waterBodyId={result.body._id} reveal={reveal} />
             </>
           )}
-          {/* Official NWS alerts (N6c/B5) ABOVE the tab strip, always visible — a warning from the
-              local forecast office outranks both our observations and anybody's forecast, and a
-              tabbed alert is an alert you can be one tap away from not seeing (N6h/H). */}
-          <AlertStrip waterBodyId={result.body._id} reveal={reveal} />
-          {/* The three sub-tabs (N6h/H), the same groups as web over the same core vocabulary:
-              Overview = machine-compiled facts about the body, Reporting = user-supplied this
-              season, Planning = the trip decision. Nothing below is new — the sections that used to
-              stack flat are grouped, in their old relative order, so every "above X because Y"
-              argument still holds within its tab. Selection persists across bodies for the session
-              (`useDetailTab`). Only the active group is mounted, so the others' queries are not
-              subscribed while nobody is looking. */}
-          <DetailTabStrip value={tab} onChange={setTab} />
-          {tab === 'overview' ? (
-            <>
-              {/* What the sign says (N6e). Its own section rather than a row inside AccessSection,
-                  which renders nothing when a body has no mapped put-ins and would swallow the rule
-                  on exactly the remote reservoir that posts one. ⚠ The put-ins are on Planning: the
-                  taxonomy puts permission with the body and the route with the trip, which
-                  knowingly splits the "permission precedes access" adjacency the flat sheet had. */}
-              <PostedAccess
-                rule={result.body.postedAccess}
-                coord={result.body.interiorPoint ?? result.body.centroid}
-                reveal={reveal}
-              />
-              {/* Winter wind (N7-3 / D90) — a climatology, what the last five winters did, which is
-                  exactly why it is a fact about the body rather than a planning input. Renders
-                  nothing without a rose, and says nothing about safety (D145). */}
-              <WindExposure body={result.body} />
-              {/* Reference links (N6c/B), below our own content and above the credits. Every one
-                  opens in-app via `openBrowserAsync` (D76), never by ejecting the skater into
-                  Safari. */}
-              <ReferenceLinks body={result.body} reveal={reveal} />
-              {/* The bathymetry credit (N6b §5), last and absent on the great majority of lakes no
-                  agency ever surveyed. "How far away can we put it" resolved to *here*, and that is
-                  not a compromise: nothing requires a contour credit on the map surface, and this
-                  is where the depth provenance above and the Open-Meteo credit already live.
-                  Provenance only — D82 means no sentence here about what a depth implies for ice. */}
-              {contourCredit ? (
-                <Text color="$foregroundMuted" fontSize="$1">
-                  {contourCredit}
-                </Text>
-              ) : null}
-            </>
-          ) : tab === 'reporting' ? (
-            <>
-              <SeasonFilter waterBodyId={result.body._id} />
-              <BountyList waterBodyId={result.body._id} />
-              {/* The lake page and nowhere else (§9.1) — not the map, the feed, notifications or
-                  the recommended strip. A mark on the map means somebody reported this; an advisory
-                  has no reporter this season. */}
-              <IceHistory waterBodyId={result.body._id} />
-              <ReportFeed
-                waterBodyId={result.body._id}
-                {...(focusSubArea ? { initialSubAreaId: focusSubArea._id } : {})}
-              />
-            </>
-          ) : (
-            <>
-              {/* How you get onto the ice (N6d) — above the weather, because it decides whether the
-                  trip is possible at all, where the weather decides whether it is worth making.
-                  Absent on the great majority of bodies OSM has never mapped access for. */}
-              <AccessSection waterBodyId={result.body._id} />
-              {/* Which place on the lake the weather below is about — a scope line and chips on a
-                  giant with named bays, nothing on everything else (open question 5). */}
-              {/* The lake's spread across its bays, with the ends named as tap targets (open question 5).
-                  Reads Tier B, so it costs no fetch; renders nothing until the season sweep has rows for two
-                  of this lake's bays. Only asked for on a lake that has two bays to compare. */}
-              {liveBays.length >= 2 ? <SubAreaSpread waterBodyId={result.body._id} /> : null}
-              <WeatherPlacePicker
-                waterBodyId={result.body._id}
-                bays={liveBays}
-                selectedId={weatherBay?._id ?? null}
-              />
-              {/* What the ice has been through (N6h / D153) — ABOVE the forecast, matching the web
-                  column and the same authority ordering: alert > observation > prediction. It draws
-                  the same timeline the web app does: the geometry and the sentences both live in
-                  core. */}
-              <PastWeatherPanel
-                waterBodyId={result.body._id}
-                pending={weatherBay === undefined}
-                {...(weatherBay ? { subAreaId: weatherBay._id } : {})}
-              />
-              {/* The forward forecast (N6c/B5b) — the other half of the weather-since timeline. */}
-              <ForecastStrip
-                waterBodyId={result.body._id}
-                pending={weatherBay === undefined}
-                {...(weatherBay ? { subAreaId: weatherBay._id } : {})}
-                reveal={reveal}
-              />
-            </>
-          )}
-        </>
+        </YStack>
+      </DrawerHead>
+      {/* The strip, pinned: the second scroll-view child sticks once scrolled to, and this is the
+          only way a strip nested inside a routed screen can get there (`DrawerPinned`). Gone while
+          a form is open — the form replaces the tabs, and a pinned strip over a form would switch
+          to a tab the form is standing in for. */}
+      {formShowing ? null : (
+        <DrawerPinned>
+          <YStack paddingHorizontal={16} paddingBottom="$2">
+            {/* The three sub-tabs (N6h/H), the same groups as web over the same core vocabulary:
+                Overview = machine-compiled facts about the body, Reporting = user-supplied this
+                season, Planning = the trip decision. Nothing in the tab content is new — the sections
+                that used to stack flat are grouped, in their old relative order, so every "above X
+                because Y" argument still holds within its tab. Selection persists across bodies for
+                the session (`useDetailTab`). Only the active group is mounted, so the others'
+                queries are not subscribed while nobody is looking. */}
+            <DetailTabStrip value={tab} onChange={setTab} />
+          </YStack>
+        </DrawerPinned>
       )}
-    </YStack>
+      <YStack gap="$3">
+        {formOpen ? (
+          <ReportForm
+            waterBodyId={result.body._id}
+            bodyName={result.body.name}
+            {...(trackDraftId !== undefined ? { trackDraftId } : {})}
+            {...(activityId !== undefined ? { activityId } : {})}
+            onClose={() => setFormOpen(false)}
+          />
+        ) : bountyFormOpen ? (
+          <BountyForm
+            waterBodyId={result.body._id}
+            bodyName={result.body.name}
+            onClose={() => setBountyFormOpen(false)}
+          />
+        ) : tab === 'overview' ? (
+          <>
+            {/* What the sign says (N6e). Its own section rather than a row inside AccessSection,
+                      which renders nothing when a body has no mapped put-ins and would swallow the rule
+                      on exactly the remote reservoir that posts one. ⚠ The put-ins are on Planning: the
+                      taxonomy puts permission with the body and the route with the trip, which
+                      knowingly splits the "permission precedes access" adjacency the flat sheet had. */}
+            <PostedAccess
+              rule={result.body.postedAccess}
+              coord={result.body.interiorPoint ?? result.body.centroid}
+              reveal={reveal}
+            />
+            {/* Winter wind (N7-3 / D90) — a climatology, what the last five winters did, which is
+                      exactly why it is a fact about the body rather than a planning input. Renders
+                      nothing without a rose, and says nothing about safety (D145). */}
+            <WindExposure body={result.body} />
+            {/* Reference links (N6c/B), below our own content and above the credits. Every one
+                      opens in-app via `openBrowserAsync` (D76), never by ejecting the skater into
+                      Safari. */}
+            <ReferenceLinks body={result.body} reveal={reveal} />
+            {/* The bathymetry credit (N6b §5), last and absent on the great majority of lakes no
+                      agency ever surveyed. "How far away can we put it" resolved to *here*, and that is
+                      not a compromise: nothing requires a contour credit on the map surface, and this
+                      is where the depth provenance above and the Open-Meteo credit already live.
+                      Provenance only — D82 means no sentence here about what a depth implies for ice. */}
+            {contourCredit ? (
+              <Text color="$foregroundMuted" fontSize="$1">
+                {contourCredit}
+              </Text>
+            ) : null}
+          </>
+        ) : tab === 'reporting' ? (
+          <>
+            <SeasonFilter waterBodyId={result.body._id} />
+            <BountyList waterBodyId={result.body._id} />
+            {/* The lake page and nowhere else (§9.1) — not the map, the feed, notifications or
+                      the recommended strip. A mark on the map means somebody reported this; an advisory
+                      has no reporter this season. */}
+            <IceHistory waterBodyId={result.body._id} />
+            <ReportFeed
+              waterBodyId={result.body._id}
+              {...(focusSubArea ? { initialSubAreaId: focusSubArea._id } : {})}
+            />
+          </>
+        ) : (
+          <>
+            {/* How you get onto the ice (N6d) — above the weather, because it decides whether the
+                      trip is possible at all, where the weather decides whether it is worth making.
+                      Absent on the great majority of bodies OSM has never mapped access for. */}
+            <AccessSection waterBodyId={result.body._id} />
+            {/* Which place on the lake the weather below is about — a scope line and chips on a
+                      giant with named bays, nothing on everything else (open question 5). */}
+            {/* The lake's spread across its bays, with the ends named as tap targets (open question 5).
+                      Reads Tier B, so it costs no fetch; renders nothing until the season sweep has rows for two
+                      of this lake's bays. Only asked for on a lake that has two bays to compare. */}
+            {liveBays.length >= 2 ? <SubAreaSpread waterBodyId={result.body._id} /> : null}
+            <WeatherPlacePicker
+              waterBodyId={result.body._id}
+              bays={liveBays}
+              selectedId={weatherBay?._id ?? null}
+            />
+            {/* What the ice has been through (N6h / D153) — ABOVE the forecast, matching the web
+                      column and the same authority ordering: alert > observation > prediction. It draws
+                      the same timeline the web app does: the geometry and the sentences both live in
+                      core. */}
+            <PastWeatherPanel
+              waterBodyId={result.body._id}
+              pending={weatherBay === undefined}
+              {...(weatherBay ? { subAreaId: weatherBay._id } : {})}
+            />
+            {/* The forward forecast (N6c/B5b) — the other half of the weather-since timeline. */}
+            <ForecastStrip
+              waterBodyId={result.body._id}
+              pending={weatherBay === undefined}
+              {...(weatherBay ? { subAreaId: weatherBay._id } : {})}
+              reveal={reveal}
+            />
+          </>
+        )}
+      </YStack>
+    </>
   );
 }
 

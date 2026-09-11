@@ -268,12 +268,16 @@ the sheet by hand.
 
 ### Six things the build decided that the plan did not
 
-1. **The mobile strip scrolls; it does not pin.** The plan said *"outside the scroll view so it
-   survives the 16% snap point"*. `MapDrawer`'s `BottomSheetScrollView` wraps a single Expo Router
-   `<Slot />`, so `stickyHeaderIndices` cannot reach a strip nested inside the screen; pinning meant
-   a portal host wedged between scroll-view children or a strip above the lake's own name. Web
-   pins (sticky inside the panel's scroll container); mobile scrolls, and `DetailTabStrip`'s
-   docblock says why.
+1. **The mobile strip pins through two portal slots, not by being "outside the scroll view".**
+   React Native can only stick a *direct* child of a scroll view, and `MapDrawer`'s
+   `BottomSheetScrollView` wraps a single Expo Router `<Slot />` — so the plan's *"outside the scroll
+   view"* would have put the tabs above the lake's own name and the NWS alert. The first cut let the
+   strip scroll; the founder overruled that on the first device pass (*"(b), and in this PR"*), so
+   the scroll view is now exactly three children — a **head** slot, a **pinned** slot
+   (`stickyHeaderIndices={[1]}`), and the routed screen — and `WaterBodyDetail` teleports its
+   header/actions/alert into the head and its strip into the pinned slot via `@gorhom/portal`
+   (`DrawerHead` / `DrawerPinned`). Screens without a strip render exactly as before: an empty slot
+   has no height. Web pins with `position: sticky` inside its own scroll container.
 2. **`app.css` was missing the shadcn orientation variants**, so the vendored `Tabs` laid its list
    out as a column beside the panel. The preset ships `data-horizontal:`/`data-vertical:` in
    `shadcn/tailwind.css`, which the app never imports (that package is the CLI). Defined in

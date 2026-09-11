@@ -7,12 +7,12 @@ import { Button, XStack } from 'tamagui';
  * backs them, so this is three equal-width buttons with the platform's `tab`/`tablist` roles and
  * `selected` state, which is what a screen reader needs and all a segmented control is.
  *
- * ⚠ It scrolls with the sheet rather than pinning. The plan sketched the strip "outside the scroll
- * view so it survives the 16% snap point", but `MapDrawer`'s `BottomSheetScrollView` wraps a single
- * Expo Router `<Slot />`, so `stickyHeaderIndices` cannot reach a strip nested inside this screen;
- * pinning would mean either a portal host wedged between scroll-view children or a strip above the
- * lake's own name, and both are worse than a control that scrolls. At the 58% and 94% snaps the
- * strip is on screen after the alert; at 16% the title is all that was ever meant to peek.
+ * It pins to the top of the sheet once scrolled to — but not by itself. `MapDrawer`'s scroll view
+ * wraps a single Expo Router `<Slot />`, and React Native can only stick a *direct* child of a scroll
+ * view, so `WaterBodyDetail` teleports this strip into the drawer's pinned slot (`DrawerPinned`) and
+ * everything that belongs above it into the head slot. See `MapDrawer` for the three-child layout and
+ * why the alternative — mounting the strip outside the scroll view — would have put tabs above the
+ * lake's own name. Founder call, 2026-09-11: pin it, in this PR.
  */
 export function DetailTabStrip({
   value,
