@@ -91,6 +91,7 @@ export * from './schedule';
 export * from './scrubberTrack';
 export * from './season';
 export * from './seasonWindow';
+export * from './sentryPrivacy';
 export * from './shoreBand';
 export * from './solar';
 export * from './spatialCells';
