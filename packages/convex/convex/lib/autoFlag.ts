@@ -171,6 +171,10 @@ export async function fileOrBumpAutoFlag(
     reason: args.reason,
     ...(args.note !== undefined ? { note: args.note } : {}),
     status: 'open',
+    // `flaggerId` names a real person who did NOT file a report — the rater whose thumb crossed the
+    // line. `origin` is what keeps `content_flag_resolved` from telling them "the report you filed
+    // was actioned" about a report they never filed (N8/B3).
+    origin: 'auto',
     occurrences,
     lastOccurrenceAt: now,
     ...(recent && resolved ? { supersedesFlagId: resolved._id } : {}),

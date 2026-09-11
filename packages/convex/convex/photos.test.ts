@@ -65,7 +65,7 @@ const NOTIF_PREFS = {
   activityDetected: true,
   bountyRequest: true,
   hazardConfirmation: true,
-  bountyFulfilled: true,
+  bountyAnswered: true,
   reportRated: true,
   reportCommented: true,
   contentFlagResolved: true,

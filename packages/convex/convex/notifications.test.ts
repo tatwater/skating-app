@@ -16,7 +16,7 @@ const BASE_PREFS = {
   activityDetected: true,
   bountyRequest: true,
   hazardConfirmation: true,
-  bountyFulfilled: true,
+  bountyAnswered: true,
   reportRated: true,
   reportCommented: true,
   contentFlagResolved: true,
@@ -386,5 +386,169 @@ describe('notifications — the fan-out is scheduled, not inline (N1)', () => {
     );
     expect(result.stopped).toBe('report_gone');
     expect(await t.run((ctx) => ctx.db.query('notificationQueue').collect())).toEqual([]);
+  });
+});
+
+// ── The inbox (N8 / A1 + A2) ─────────────────────────────────────────────────────────────────────
+
+describe('notifications — the inbox read path', () => {
+  async function inbox(as: ReturnType<ReturnType<typeof convexTest>['withIdentity']>) {
+    return as.query(api.notifications.list, { paginationOpts: { numItems: 20, cursor: null } });
+  }
+
+  test('list is owner-scoped, newest first, and unreadCount + markRead agree with it', async () => {
+    const t = convexTestWithGeo();
+    const author = await seedProfile(t, 'author');
+    const rater = await seedProfile(t, 'rater');
+    const stranger = await seedProfile(t, 'stranger');
+    const bodyId = await seedBody(t);
+    const r1 = await createReport(t, author.as, { waterBodyId: bodyId, skateEndTime: SKATE_TIME });
+    const r2 = await createReport(t, author.as, { waterBodyId: bodyId, skateEndTime: SKATE_TIME });
+    await rater.as.mutation(api.ratings.rate, {
+      targetType: 'report',
+      targetId: r1,
+      verdict: 'helpful',
+    });
+    await flushAllDue(t);
+    await rater.as.mutation(api.ratings.rate, {
+      targetType: 'report',
+      targetId: r2,
+      verdict: 'helpful',
+    });
+    await flushAllDue(t);
+
+    expect(await author.as.query(api.notifications.unreadCount, {})).toBe(2);
+    expect(await stranger.as.query(api.notifications.unreadCount, {})).toBe(0);
+    expect((await inbox(stranger.as)).page).toHaveLength(0);
+
+    const page = (await inbox(author.as)).page;
+    expect(page).toHaveLength(2);
+    expect(
+      page.map((n) => (n.type === 'report_rated' && n.kind === 'thumb' ? n.target.id : null)),
+    ).toEqual([r2, r1]);
+    expect(page[0]).toMatchObject({
+      type: 'report_rated',
+      kind: 'thumb',
+      targetType: 'report',
+      target: { id: r2, available: true },
+      body: { id: bodyId, name: 'Lake Morey' },
+      actors: { names: ['rater'], count: 1 },
+    });
+    expect(page[0]?.readAt).toBeUndefined();
+
+    // Mark one, then everything up to the newest shown.
+    await author.as.mutation(api.notifications.markRead, {
+      notificationId: page[1]?.id as Id<'notifications'>,
+    });
+    expect(await author.as.query(api.notifications.unreadCount, {})).toBe(1);
+    await author.as.mutation(api.notifications.markRead, { before: page[0]?.createdAt });
+    expect(await author.as.query(api.notifications.unreadCount, {})).toBe(0);
+    expect((await inbox(author.as)).page.every((n) => n.readAt !== undefined)).toBe(true);
+
+    // Someone else's id is a no-op, not an error.
+    await stranger.as.mutation(api.notifications.markRead, {
+      notificationId: page[0]?.id as Id<'notifications'>,
+    });
+  });
+
+  test('a hidden target renders degraded and stays in the list; a blocked actor drops the row', async () => {
+    const t = convexTestWithGeo();
+    const author = await seedProfile(t, 'author');
+    const rater = await seedProfile(t, 'rater');
+    const other = await seedProfile(t, 'other');
+    const bodyId = await seedBody(t);
+    const reportId = await createReport(t, author.as, {
+      waterBodyId: bodyId,
+      skateEndTime: SKATE_TIME,
+    });
+    await rater.as.mutation(api.ratings.rate, {
+      targetType: 'report',
+      targetId: reportId,
+      verdict: 'helpful',
+    });
+    await flushAllDue(t);
+    // A second, separate notification from `other`, so there's something left after the block.
+    await other.as.mutation(api.comments.create, { reportId, body: 'nice one' });
+    await flushAllDue(t);
+
+    await t.run((ctx) => ctx.db.patch(reportId, { moderationStatus: 'hidden' }));
+    let page = (await inbox(author.as)).page;
+    expect(page).toHaveLength(2);
+    for (const n of page) {
+      expect(n.type === 'report_rated' || n.type === 'report_commented').toBe(true);
+      if (n.type === 'report_rated' || n.type === 'report_commented') {
+        expect(n.target).toEqual({ id: reportId, available: false });
+      }
+    }
+
+    await author.as.mutation(api.blocks.block, { targetUserId: rater.id });
+    page = (await inbox(author.as)).page;
+    expect(page).toHaveLength(1);
+    expect(page[0]?.type).toBe('report_commented');
+  });
+
+  test('a departed actor is named as their tombstone; an unparseable payload is the unknown row', async () => {
+    const t = convexTestWithGeo();
+    const author = await seedProfile(t, 'author');
+    const rater = await seedProfile(t, 'rater');
+    const bodyId = await seedBody(t);
+    const reportId = await createReport(t, author.as, {
+      waterBodyId: bodyId,
+      skateEndTime: SKATE_TIME,
+    });
+    await rater.as.mutation(api.ratings.rate, {
+      targetType: 'report',
+      targetId: reportId,
+      verdict: 'helpful',
+    });
+    await flushAllDue(t);
+    // The D62 tombstone shape: scrubbed name, status deleted.
+    await t.run((ctx) =>
+      ctx.db.patch(rater.id, { displayName: 'Deleted skater', status: 'deleted' as const }),
+    );
+    // …and a pre-N8 row whose payload nothing writes any more.
+    await t.run((ctx) =>
+      ctx.db.insert('notifications', {
+        userId: author.id,
+        type: 'report_rated',
+        payload: { targetType: 'report', targetId: reportId, raterId: rater.id },
+        createdAt: Date.now() + 1,
+      }),
+    );
+
+    const page = (await inbox(author.as)).page;
+    expect(page).toHaveLength(2);
+    expect(page[0]?.type).toBe('unknown');
+    expect(page[1]).toMatchObject({
+      type: 'report_rated',
+      actors: { names: ['Deleted skater'], count: 1 },
+    });
+  });
+
+  test('a corroboration re-checks the corroborating report at flush', async () => {
+    const t = convexTestWithGeo();
+    const author = await seedProfile(t, 'author');
+    const second = await seedProfile(t, 'second');
+    const bodyId = await seedBody(t);
+    const priorId = await createReport(t, author.as, {
+      waterBodyId: bodyId,
+      skateEndTime: SKATE_TIME,
+      skateQuality: 'good',
+    });
+    const byId = await createReport(t, second.as, {
+      waterBodyId: bodyId,
+      skateEndTime: SKATE_TIME,
+      skateQuality: 'good',
+    });
+    const queued = await t.run((ctx) => ctx.db.query('notificationQueue').collect());
+    expect(queued.some((q) => q.trigger?.kind === 'corroboration')).toBe(true);
+
+    await t.run((ctx) => ctx.db.patch(byId, { moderationStatus: 'removed' }));
+    const notes = await flushAllDue(t);
+    expect(notes.filter((n) => n.userId === author.id && n.type === 'report_rated')).toHaveLength(
+      0,
+    );
+    // The prior report is untouched; only the notification about the vanished corroboration is gone.
+    expect((await t.run((ctx) => ctx.db.get(priorId)))?.moderationStatus).toBe('visible');
   });
 });

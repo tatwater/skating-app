@@ -14,6 +14,9 @@ import {
   ACCESS_ALERT_VERDICTS as CORE_ACCESS_ALERT_VERDICTS,
   APPROACH_KINDS as CORE_APPROACH_KINDS,
   BODY_FEATURE_TYPES as CORE_BODY_FEATURE_TYPES,
+  NOTIFICATION_PREF_DEFAULTS as CORE_NOTIFICATION_PREF_DEFAULTS,
+  NOTIFICATION_PREF_KEYS as CORE_NOTIFICATION_PREF_KEYS,
+  NOTIFICATION_TYPES as CORE_NOTIFICATION_TYPES,
   PUBLIC_ACCESS_VERDICTS as CORE_PUBLIC_ACCESS_VERDICTS,
   SATELLITE_IMAGERY_MODES as CORE_SATELLITE_IMAGERY_MODES,
   HAZARD_VERDICTS,
@@ -236,6 +239,16 @@ export const FLAG_REASONS = [
   'other',
 ] as const;
 export const FLAG_STATUSES = ['open', 'reviewing', 'actioned', 'dismissed'] as const;
+/**
+ * Who filed a flag (N8/B3): a person who pressed "report", or the system crossing a threshold.
+ *
+ * Needed because a system flag still names a **real person** in `flaggerId` — the rater whose thumb
+ * crossed the line, the corroborated opponent, the Nth "never existed" voter — and until this field
+ * existed the only way to tell the two apart was the `reason`/`note` convention. The one reader that
+ * cares is `content_flag_resolved`: it notifies the flagger of a verdict, and that person must be one
+ * who actually filed something. Absent (rows from before the field) reads as `auto`, i.e. silence.
+ */
+export const FLAG_ORIGINS = ['user', 'auto'] as const;
 
 /** Moderator/admin audit-log actions and their targets (D37). */
 export const MODERATION_ACTIONS = [
@@ -387,57 +400,15 @@ export const BOUNTY_GATE_DECISIONS = ['allowed', 'suppressed', 'capped'] as cons
 export const RATING_VERDICTS = ['helpful', 'unhelpful'] as const;
 
 /**
- * Notification types (snake_case) and the matching `notificationPrefs` keys
- * (camelCase). D16 invariant: these two lists mirror each other 1:1.
- *
- * The last three are Phase 4's drive-time/favorites set (decision #4): a favorited-body report
- * (default on, any distance), an opt-in "all reports within X₁" daily digest, and an opt-in
- * "great reports within X₂" alert. See `NOTIFICATION_PREF_DEFAULTS` for the per-key defaults.
+ * Notification types, their `notificationPrefs` keys, and the per-key defaults — **re-exported from
+ * `@skating/core`, not defined here** (N8). Both settings pages iterate the list, so it has to live
+ * where a client can import it; the D16 1:1 mirror between types and keys is enforced in core, and
+ * `upsertFromClerk`'s defaults and `backfillNotificationPrefs`'s missing-key fill both read the
+ * same `NOTIFICATION_PREF_DEFAULTS`.
  */
-export const NOTIFICATION_TYPES = [
-  'activity_detected',
-  'bounty_request',
-  'hazard_confirmation',
-  'bounty_fulfilled',
-  'report_rated',
-  'report_commented', // someone commented on your report (D21; Phase 3) — delivery deferred
-  'content_flag_resolved',
-  'favorite_report', // a report on a body you favorited (Phase 4, decision #4)
-  'nearby_report_digest', // daily 8pm-ET digest of all reports within X₁ (Phase 4)
-  'great_report_nearby', // a `great` report within X₂ (Phase 4)
-] as const;
-export const NOTIFICATION_PREF_KEYS = [
-  'activityDetected',
-  'bountyRequest',
-  'hazardConfirmation',
-  'bountyFulfilled',
-  'reportRated',
-  'reportCommented', // mirrors `report_commented` (D21; Phase 3) — toggle exists, delivery deferred
-  'contentFlagResolved',
-  'favoriteReport', // mirrors `favorite_report` (Phase 4)
-  'nearbyReportDigest', // mirrors `nearby_report_digest` (Phase 4)
-  'greatReportNearby', // mirrors `great_report_nearby` (Phase 4)
-] as const;
-
-/**
- * Per-key default for a fresh profile (D16). Everything defaults ON *except* the two opt-in Phase-4
- * drive-time buckets (decision #4): favorites notify by default, but "all reports nearby" and "great
- * reports nearby" are conservative (push) surfaces the user must opt into. Single-sourced so
- * `upsertFromClerk`'s defaults and `backfillNotificationPrefs`'s missing-key fill agree.
- */
-export const NOTIFICATION_PREF_DEFAULTS: Record<(typeof NOTIFICATION_PREF_KEYS)[number], boolean> =
-  {
-    activityDetected: true,
-    bountyRequest: true,
-    hazardConfirmation: true,
-    bountyFulfilled: true,
-    reportRated: true,
-    reportCommented: true,
-    contentFlagResolved: true,
-    favoriteReport: true,
-    nearbyReportDigest: false,
-    greatReportNearby: false,
-  };
+export const NOTIFICATION_TYPES = CORE_NOTIFICATION_TYPES;
+export const NOTIFICATION_PREF_KEYS = CORE_NOTIFICATION_PREF_KEYS;
+export const NOTIFICATION_PREF_DEFAULTS = CORE_NOTIFICATION_PREF_DEFAULTS;
 
 /**
  * Put-in marker provenance (Phase 4, decision #7; `osm` added N6d / D143).
@@ -501,11 +472,28 @@ export const ACCESS_ALERT_VERDICTS = CORE_ACCESS_ALERT_VERDICTS;
 export const ACCESS_ALERT_TARGETS = CORE_ACCESS_ALERT_TARGETS;
 
 /**
- * Coalescing-queue bucket (Phase 4, decision #4). `digest` = the once-daily 8pm-ET "all within X₁"
- * roll-up; `favorite` / `great` fire after a short per-`(user, body)` debounce. The bucket picks the
- * `flushAfter` when a row is enqueued; one cron drains everything whose `flushAfter` has passed.
+ * Coalescing-queue bucket (Phase 4, decision #4; widened in N8 / D166). The first three are the
+ * report-audience buckets: `digest` = the once-daily 8pm "all within X₁" roll-up; `favorite` /
+ * `great` fire after a short per-`(user, body)` debounce. The rest are the **actor-triggered** kinds
+ * that used to insert `notifications` directly and now settle in the queue first, so a misclick can
+ * be undone before it rings anyone's phone — each carries a `trigger` the flush re-reads. The bucket
+ * picks the `flushAfter` when a row is enqueued; one cron drains everything whose `flushAfter` has
+ * passed.
  */
-export const NOTIFICATION_QUEUE_KINDS = ['digest', 'favorite', 'great'] as const;
+export const NOTIFICATION_QUEUE_KINDS = [
+  'digest',
+  'favorite',
+  'great',
+  'thumb', // `report_rated` — helpful thumbs on your report or hazard
+  'corroboration', // `report_rated` — later reports agreeing with yours
+  'comment', // `report_commented` — comments on your report
+  'reply', // `report_commented` — replies to your comment
+  'hazard_lifecycle', // `hazard_confirmation` — your hazard's phase changed
+  'flag_resolved', // `content_flag_resolved`
+  'bounty_request', // `bounty_request` — a bounty opened where you reported
+  'bounty_answered', // `bounty_answered` — a report landed on your bounty
+  'activity', // `activity_detected` — an unreported skate (N8/B4)
+] as const;
 
 /** Reputation/trust ledger reasons (D17/D50). Boost-only in practice; no public penalties. */
 export const POINT_EVENT_REASONS = [

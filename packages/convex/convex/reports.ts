@@ -68,7 +68,6 @@ import {
 import {
   assertCanPostHazards,
   assertCanPostReports,
-  canReceiveNotifications,
   getCurrentProfile,
   requireContributor,
 } from './lib/auth';
@@ -78,6 +77,7 @@ import { recomputeBodySummary } from './lib/bodySummary';
 import { bumpContributionCount } from './lib/contributionCounts';
 import { tryAutoMerge } from './lib/hazardMerge';
 import { isListed } from './lib/listing';
+import { enqueueActorNotification } from './lib/notificationQueue';
 import { assertOwnedPhotos } from './lib/photoAccess';
 import { getViewableReport, loadBlockedAuthorIds } from './lib/reportVisibility';
 import { awardPointEvent, checkAndAwardBadges, trustClassFor } from './lib/reputation';
@@ -462,22 +462,21 @@ async function runCorroboration(
 
 /**
  * Tell a prior report's author their report was independently corroborated by a fresh one — reuses the
- * `report_rated` channel (a "report_rated-style" notice, decision 3), gated on `reportRated` prefs +
- * active status. In-app row; push stays deferred repo-wide.
+ * `report_rated` channel (a "report_rated-style" notice, decision 3), via the settle queue (N8 / D166):
+ * the flush re-checks that the corroborating report is still visible, and several inside one window
+ * become one "N other skaters backed up your report".
  */
 async function notifyCorroboration(
   ctx: MutationCtx,
   priorReport: Doc<'reports'>,
   byReport: Doc<'reports'>,
 ): Promise<void> {
-  const author = await ctx.db.get(priorReport.authorId);
-  if (!author) return;
-  if (!canReceiveNotifications(author) || !author.notificationPrefs.reportRated) return;
-  await ctx.db.insert('notifications', {
-    userId: priorReport.authorId,
+  await enqueueActorNotification(ctx, {
+    recipientId: priorReport.authorId,
+    actorId: byReport.authorId,
     type: 'report_rated',
-    payload: { kind: 'corroboration', reportId: priorReport._id, byReportId: byReport._id },
-    createdAt: Date.now(),
+    targetId: priorReport._id,
+    trigger: { kind: 'corroboration', reportId: priorReport._id, byReportIds: [byReport._id] },
   });
 }
 

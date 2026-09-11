@@ -1,6 +1,6 @@
 import { convexTest } from 'convex-test';
 import { describe, expect, test } from 'vitest';
-import { api } from './_generated/api';
+import { api, internal } from './_generated/api';
 import type { Id } from './_generated/dataModel';
 import schema from './schema';
 
@@ -15,7 +15,7 @@ const NOTIF_PREFS = {
   activityDetected: true,
   bountyRequest: true,
   hazardConfirmation: true,
-  bountyFulfilled: true,
+  bountyAnswered: true,
   reportRated: true,
   reportCommented: true,
   contentFlagResolved: true,
@@ -85,6 +85,17 @@ async function points(t: ReturnType<typeof convexTest>, id: Id<'profiles'>) {
   return (await t.run((ctx) => ctx.db.get(id)))?.reputationPoints ?? 0;
 }
 
+/** Make every queued notification due and flush it — the settle window, fast-forwarded. */
+async function flushAllDue(t: ReturnType<typeof harness>) {
+  await t.run(async (ctx) => {
+    for (const row of await ctx.db.query('notificationQueue').collect()) {
+      await ctx.db.patch(row._id, { flushAfter: Date.now() - 1 });
+    }
+  });
+  await t.mutation(internal.notifications.flushNotificationQueue, {});
+  return t.run((ctx) => ctx.db.query('notifications').collect());
+}
+
 describe('ratings.rate — helpful', () => {
   test('awards helpful_thumb (+5) to the report author + a report_rated notice', async () => {
     const t = harness();
@@ -101,13 +112,61 @@ describe('ratings.rate — helpful', () => {
     });
 
     expect(await points(t, author.id)).toBe(before + 5);
-    const notes = await t.run((ctx) =>
-      ctx.db
-        .query('notifications')
-        .filter((q) => q.eq(q.field('userId'), author.id))
-        .collect(),
-    );
-    expect(notes.some((n) => n.type === 'report_rated')).toBe(true);
+    // The notice settles in the queue first (N8 / D166) — nothing lands in the inbox until the flush
+    // re-reads the thumb and finds it still helpful.
+    expect(await t.run((ctx) => ctx.db.query('notifications').collect())).toHaveLength(0);
+    const notes = (await flushAllDue(t)).filter((n) => n.userId === author.id);
+    expect(notes).toHaveLength(1);
+    expect(notes[0]?.type).toBe('report_rated');
+    expect(notes[0]?.payload).toMatchObject({
+      kind: 'thumb',
+      targetType: 'report',
+      targetId: reportId,
+      actorIds: [rater.id],
+      count: 1,
+    });
+  });
+
+  test('a thumb retracted inside the settle window never sends (D166)', async () => {
+    const t = harness();
+    const author = await seedUser(t, 'author');
+    const rater = await seedUser(t, 'rater');
+    const waterBodyId = await seedBody(t);
+    const reportId = await seedReport(author, waterBodyId);
+    const args = { targetType: 'report' as const, targetId: reportId };
+
+    await rater.as.mutation(api.ratings.rate, { ...args, verdict: 'helpful' });
+    await rater.as.mutation(api.ratings.rate, { ...args, verdict: 'unhelpful' });
+    expect(await flushAllDue(t)).toHaveLength(0);
+
+    // …and the flip-flop — helpful → unhelpful → helpful — is one row and one notification.
+    await rater.as.mutation(api.ratings.rate, { ...args, verdict: 'helpful' });
+    await rater.as.mutation(api.ratings.rate, { ...args, verdict: 'unhelpful' });
+    await rater.as.mutation(api.ratings.rate, { ...args, verdict: 'helpful' });
+    expect(await t.run((ctx) => ctx.db.query('notificationQueue').collect())).toHaveLength(1);
+    const notes = await flushAllDue(t);
+    expect(notes).toHaveLength(1);
+    expect(notes[0]?.payload).toMatchObject({ actorIds: [rater.id], count: 1 });
+  });
+
+  test('several thumbs inside one window coalesce, and a retracted one drops out of the count', async () => {
+    const t = harness();
+    const author = await seedUser(t, 'author');
+    const a = await seedUser(t, 'rater-a');
+    const b = await seedUser(t, 'rater-b');
+    const c = await seedUser(t, 'rater-c');
+    const waterBodyId = await seedBody(t);
+    const reportId = await seedReport(author, waterBodyId);
+    const args = { targetType: 'report' as const, targetId: reportId };
+
+    for (const rater of [a, b, c]) {
+      await rater.as.mutation(api.ratings.rate, { ...args, verdict: 'helpful' });
+    }
+    await b.as.mutation(api.ratings.rate, { ...args, verdict: 'unhelpful' });
+
+    const notes = await flushAllDue(t);
+    expect(notes).toHaveLength(1);
+    expect(notes[0]?.payload).toMatchObject({ actorIds: [a.id, c.id], count: 2 });
   });
 
   test('is one-vote-per-rater — a repeat helpful is a no-op', async () => {

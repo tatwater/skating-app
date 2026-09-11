@@ -44,15 +44,11 @@ import {
   type QueryCtx,
   query,
 } from './_generated/server';
-import {
-  canReceiveNotifications,
-  getCurrentProfile,
-  requireContributor,
-  requireProfile,
-} from './lib/auth';
+import { getCurrentProfile, requireContributor, requireProfile } from './lib/auth';
 import { publicAuthor } from './lib/authorView';
 import { resolveSurvivor } from './lib/bodies';
 import { isListed } from './lib/listing';
+import { enqueueActorNotification } from './lib/notificationQueue';
 import { awardPointEvent, checkAndAwardBadges, tallyThumbs, trustClassFor } from './lib/reputation';
 import { bodyWeatherCell } from './lib/sampling';
 import { takeCapped, takeCappedResult } from './lib/scan';
@@ -630,10 +626,10 @@ export const createChecked = internalMutation({
 });
 
 /**
- * Notify the eligible: authors who reported on this body within `windowHours` (decision 9). Per-actor
- * `bounty_request` rows inserted **directly** (the body-keyed coalescing queue doesn't fit a one-off
- * request), respecting `notificationPrefs.bountyRequest` + `status === 'active'`, never the requester.
- * The GPS-skate half of eligibility (D44) lands in Phase 8.
+ * Notify the eligible: authors who reported on this body within `windowHours` (decision 9). One
+ * `bounty_request` per recent author, through the settle queue (N8 / D166) so a bounty cancelled a
+ * moment after it was posted never rings anyone; the flush re-checks that it's still open. Never the
+ * requester. The GPS-skate half of eligibility (D44) lands in Phase 8.
  */
 async function fanOutEligibility(
   ctx: MutationCtx,
@@ -657,18 +653,18 @@ async function fanOutEligibility(
   for (const report of recent) {
     if (notified.has(report.authorId)) continue;
     notified.add(report.authorId);
-    const author = await ctx.db.get(report.authorId);
-    if (!author) continue;
-    if (!canReceiveNotifications(author) || !author.notificationPrefs.bountyRequest) continue;
-    await ctx.db.insert('notifications', {
-      userId: report.authorId,
+    await enqueueActorNotification(ctx, {
+      recipientId: report.authorId,
+      actorId: args.requesterId,
       type: 'bounty_request',
-      payload: {
+      targetId: args.bountyId,
+      trigger: {
+        kind: 'bounty_request',
         bountyId: args.bountyId,
         waterBodyId: args.waterBodyId,
         requesterId: args.requesterId,
       },
-      createdAt: args.now,
+      now: args.now,
     });
   }
 }
@@ -690,17 +686,28 @@ export const cancel = mutation({
  * Auto-attach (decision 10) — invoked from `reports.create` for each new **visible** report. Appends the
  * report to every open bounty on its body's `fulfillingReportIds` (the minimum bar is deliberately simple:
  * any new visible report on the body). Fulfillment itself waits for the requester's helpful thumb.
+ *
+ * **This is also where the requester finds out** (N8 / D167). Fulfillment can't happen until the
+ * requester thumbs an attached report, and until N8 nothing told them one had arrived — the loop only
+ * closed if they happened to have favorited the lake. Each attach enqueues a `bounty_answered` to the
+ * requester; several reports inside the settle window coalesce into one "N reports came in", and the
+ * flush re-checks that the bounty is still open (if they've already ruled, there's nothing to ask).
+ *
+ * Returns how many open bounties the report answered, so the post-submit screen can say "at least N
+ * people were looking forward to this" — the author is told on the spot rather than pinged (their
+ * phone dinging because a stranger had asked would be a notification about somebody else's action).
  */
 export async function attachReportToOpenBounties(
   ctx: MutationCtx,
   report: Doc<'reports'>,
-): Promise<void> {
+): Promise<number> {
   const open = await ctx.db
     .query('bounties')
     .withIndex('by_water_body_status', (q) =>
       q.eq('waterBodyId', report.waterBodyId).eq('status', 'open'),
     )
     .collect();
+  let attached = 0;
   for (const bounty of open) {
     // **This is where sub-area targeting is either real or cosmetic** (N2 / D60). Fulfillment starts
     // here, not at the create gate: the requester's helpful thumb on an *attached* report is what
@@ -712,7 +719,21 @@ export async function attachReportToOpenBounties(
     await ctx.db.patch(bounty._id, {
       fulfillingReportIds: [...bounty.fulfillingReportIds, report._id],
     });
+    attached++;
+    await enqueueActorNotification(ctx, {
+      recipientId: bounty.requesterId,
+      actorId: report.authorId,
+      type: 'bounty_answered',
+      targetId: bounty._id,
+      trigger: {
+        kind: 'bounty_answered',
+        bountyId: bounty._id,
+        waterBodyId: bounty.waterBodyId,
+        reportIds: [report._id],
+      },
+    });
   }
+  return attached;
 }
 
 /**
@@ -754,16 +775,9 @@ export async function fulfillBountyOnHelpful(
     delta: bounty.rewardPoints,
   });
   await checkAndAwardBadges(ctx, report.authorId);
-
-  const author = await ctx.db.get(report.authorId);
-  if (!author) return;
-  if (!canReceiveNotifications(author) || !author.notificationPrefs.bountyFulfilled) return;
-  await ctx.db.insert('notifications', {
-    userId: report.authorId,
-    type: 'bounty_fulfilled',
-    payload: { bountyId: args.bountyId, reportId: args.reportId, requesterId: bounty.requesterId },
-    createdAt: Date.now(),
-  });
+  // No notification to the author (N8 / D167): the requester's thumb is the thing that *made* this
+  // report helpful, and they already see that thumb on the report. The one person who needed telling
+  // — the requester, when the report first arrived — is told at attach time (`bounty_answered`).
 }
 
 /**
@@ -840,6 +854,29 @@ export const getDetail = query({
       isRequester: !!viewer && viewer._id === bounty.requesterId,
       fulfillingReports,
     };
+  },
+});
+
+/**
+ * How many open bounties a report is attached to — the "at least N people were looking forward to
+ * this" line after submit (N8 / D167). Only the report's own author gets a number: the count is a
+ * fact about who asked, and a stranger reading "3 people wanted this" off someone else's report is a
+ * signal nobody asked for. Reads the body's open bounties (bounded — a lake has a handful at most)
+ * rather than an index on `fulfillingReportIds`, which Convex can't index anyway.
+ */
+export const answeredByMyReport = query({
+  args: { reportId: v.id('reports') },
+  handler: async (ctx, { reportId }): Promise<number> => {
+    const viewer = await getCurrentProfile(ctx);
+    const report = await ctx.db.get(reportId);
+    if (!viewer || !report || report.authorId !== viewer._id) return 0;
+    const open = await ctx.db
+      .query('bounties')
+      .withIndex('by_water_body_status', (q) =>
+        q.eq('waterBodyId', report.waterBodyId).eq('status', 'open'),
+      )
+      .collect();
+    return open.filter((b) => b.fulfillingReportIds.includes(reportId)).length;
   },
 });
 

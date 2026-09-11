@@ -22,6 +22,7 @@ import {
   deriveHazardLifecycle,
   HAZARD_CORROBORATION_MIN_CONFIRMS,
   type HazardVoteRecord,
+  hazardLifecyclePhase,
   isMinor,
   isPassageMarker,
 } from '@skating/core';
@@ -33,6 +34,7 @@ import { requireContributor } from './lib/auth';
 import { fileOrBumpAutoFlag } from './lib/autoFlag';
 import { recomputeBodySummary } from './lib/bodySummary';
 import { HAZARD_CONFIRM_VERDICTS, HAZARD_CONFIRM_VIA } from './lib/enums';
+import { enqueueActorNotification } from './lib/notificationQueue';
 import { awardPointEvent, checkAndAwardBadges } from './lib/reputation';
 import { latLng, literals } from './lib/validators';
 
@@ -117,7 +119,7 @@ export const confirm = mutation({
       firstContribution = true;
     }
 
-    const votes = await recomputeLifecycle(ctx, hazard);
+    const votes = await recomputeLifecycle(ctx, hazard, profile._id);
     await maybeFlagNeverExisted(ctx, hazard, votes, profile._id);
 
     // Boost-only reputation (D50). Awarded once per user per hazard — on their first vote, not on every
@@ -239,10 +241,20 @@ async function findUserVote(
   return rows.reduce((latest, row) => (row.createdAt >= latest.createdAt ? row : latest));
 }
 
-/** Re-derive the hazard's lifecycle from every vote and patch the stored counts/status. */
+/**
+ * Re-derive the hazard's lifecycle from every vote and patch the stored counts/status.
+ *
+ * `voterId` is the skater whose vote triggered this recompute — the actor for the author's
+ * `hazard_confirmation` notification (N8/B2), which fires **on a phase transition, never per vote**
+ * (founder call). Per-vote notifications would turn a confirmation loop into a scoreboard, and D65's
+ * "never existed" verdict makes it worse: that verdict also files a moderation flag, so a per-vote
+ * notice would forward what is effectively an accusation, one voter at a time. The lifecycle change
+ * — confirmed, healing, disputed, archived — is both quieter and the only thing the author can act on.
+ */
 async function recomputeLifecycle(
   ctx: MutationCtx,
   hazard: Doc<'hazards'>,
+  voterId: Id<'profiles'>,
 ): Promise<HazardVoteRecord[]> {
   const votes = await ctx.db
     .query('hazardConfirmations')
@@ -285,6 +297,31 @@ async function recomputeLifecycle(
   // do that, so this is cheap in the common case: the recompute short-circuits on an unchanged
   // summary rather than writing the body again.
   await recomputeBodySummary(ctx, hazard.waterBodyId);
+
+  // The author's notification hangs off the *phase* changing — the same event the map re-renders on.
+  // Through the settle queue (D166): the flush re-reads the phase, so a vote flipped back inside the
+  // window sends nothing, and two transitions inside it report only where the pin ended up. A slide
+  // back to `provisional` (a confirmer changing their mind) isn't news anyone can act on, so it's the
+  // one destination that stays quiet.
+  const isPassage = isPassageMarker(hazard.type);
+  const before = hazardLifecyclePhase(
+    {
+      status: hazard.status,
+      healingState: hazard.healingState ?? 'none',
+      confirmCount: hazard.confirmCount,
+    },
+    isPassage,
+  );
+  const after = hazardLifecyclePhase(next, isPassage);
+  if (after !== before && after !== 'provisional') {
+    await enqueueActorNotification(ctx, {
+      recipientId: hazard.createdByUserId,
+      actorId: voterId,
+      type: 'hazard_confirmation',
+      targetId: hazard._id,
+      trigger: { kind: 'hazard_lifecycle', hazardId: hazard._id, phase: after },
+    });
+  }
   return records;
 }
 

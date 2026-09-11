@@ -64,7 +64,7 @@ async function seedAuthor(t: ReturnType<typeof convexTest>): Promise<Id<'profile
         activityDetected: true,
         bountyRequest: true,
         hazardConfirmation: true,
-        bountyFulfilled: true,
+        bountyAnswered: true,
         reportRated: true,
         reportCommented: true,
         contentFlagResolved: true,

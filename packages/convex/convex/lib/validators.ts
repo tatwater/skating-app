@@ -150,3 +150,65 @@ export const weatherSinceSummary = v.object({
   longestFreezeRunHours: v.number(),
   freezeThawCycles: v.number(),
 });
+
+/**
+ * What an actor-triggered queue row re-reads at flush (N8 / D166). One variant per queue kind that
+ * settles before sending; the report-audience buckets (`favorite` / `digest` / `great`) carry none —
+ * their re-check is the recipient's eligibility, which every row gets. The id lists are what
+ * coalescing accumulates inside one settle window ("5 people found this helpful"), and each id is
+ * re-verified individually, so a retracted thumb drops out of the count rather than dropping the row.
+ *
+ * `kind` is repeated from the row on purpose: it is what lets TypeScript narrow the variant, and a
+ * Convex validator cannot express "the shape of `trigger` depends on a sibling field".
+ */
+export const notificationTrigger = v.union(
+  v.object({
+    kind: v.literal('thumb'),
+    targetType: v.union(v.literal('report'), v.literal('hazard')),
+    targetId: v.string(),
+    actorIds: v.array(v.id('profiles')),
+  }),
+  v.object({
+    kind: v.literal('corroboration'),
+    reportId: v.id('reports'),
+    byReportIds: v.array(v.id('reports')),
+  }),
+  v.object({
+    kind: v.union(v.literal('comment'), v.literal('reply')),
+    reportId: v.id('reports'),
+    commentIds: v.array(v.id('comments')),
+    actorIds: v.array(v.id('profiles')),
+  }),
+  v.object({
+    kind: v.literal('hazard_lifecycle'),
+    hazardId: v.id('hazards'),
+    phase: v.union(
+      v.literal('provisional'),
+      v.literal('confirmed'),
+      v.literal('healing_unsafe'),
+      v.literal('disputed'),
+      v.literal('archived'),
+    ),
+  }),
+  v.object({
+    kind: v.literal('flag_resolved'),
+    flagId: v.id('contentFlags'),
+    resolution: v.union(v.literal('actioned'), v.literal('dismissed')),
+  }),
+  v.object({
+    kind: v.literal('bounty_request'),
+    bountyId: v.id('bounties'),
+    waterBodyId: v.id('waterBodies'),
+    requesterId: v.id('profiles'),
+  }),
+  v.object({
+    kind: v.literal('bounty_answered'),
+    bountyId: v.id('bounties'),
+    waterBodyId: v.id('waterBodies'),
+    reportIds: v.array(v.id('reports')),
+  }),
+  v.object({
+    kind: v.literal('activity'),
+    activityId: v.id('gpsActivities'),
+  }),
+);

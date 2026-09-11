@@ -1,21 +1,36 @@
 /**
- * Notification coalescing queue + flush (Phase 4, decision #4). `reports.create` enqueues one queue
- * row per candidate recipient×bucket; the `flushNotificationQueue` cron drains rows whose `flushAfter`
- * has passed into `notifications` rows. Three buckets:
- *   - **favorite** (`favorite_report`) — any report on a favorited body, any distance, default on.
- *   - **digest** (`nearby_report_digest`) — opt-in; all reports within X₁, rolled up to the next 8pm ET.
- *   - **great** (`great_report_nearby`) — opt-in; a `great` report within X₂.
+ * The notification pipeline: the coalescing queue, its flush, and — since N8 — the inbox that reads
+ * the result.
  *
- * Coalescing: a row keys on `(user, body, kind)` and *bumps* `count`/`latestReportId` instead of
- * stacking, keeping the earliest `flushAfter` — so two reports on one lake in quick succession become
- * one push ("2 new reports on Lake Morey"). `coalesceKey` seeds the eventual APNs collapse-id / Android
- * tag (push delivery itself is deferred, like Phase 3 — flush lands an in-app `notifications` row).
+ * ## The queue (Phase 4, decision #4; widened in N8 / D166)
+ *
+ * Every notification the app sends is first a `notificationQueue` row, and `flushNotificationQueue`
+ * is the **only** thing that writes `notifications`. Two families of rows:
+ *
+ * - **Report-audience buckets**, enqueued by `reports.create` for each candidate recipient — one row
+ *   per (user, body, kind): **favorite** (`favorite_report`, any distance, default on), **digest**
+ *   (`nearby_report_digest`, opt-in, rolled up to the next 8pm), **great** (`great_report_nearby`,
+ *   opt-in, a `great` report within X₂). A row *bumps* `count`/`latestReportId` instead of stacking,
+ *   keeping the earliest `flushAfter`, so two reports on one lake become one "2 new reports".
+ * - **Actor-triggered rows** — thumbs, corroborations, comments, hazard lifecycle changes, flag
+ *   verdicts, bounties — enqueued through `lib/notificationQueue.ts` with a short settle window and
+ *   a `trigger` the flush re-reads. A misclick undone inside the window never sends; see that module.
+ *
+ * `coalesceKey` seeds the eventual push collapse-id / tag.
+ *
+ * ## The inbox (N8 / D162)
+ *
+ * `list`, `unreadCount` and `markRead` are the read path both clients share. Before N8 nothing in the
+ * app could read a notification: six types were being generated and had never been seen — "push
+ * delivery deferred, lands an in-app row" was true and the row was landfill. The rule from here on
+ * is that a type may not exist without a producer *and* a place it renders (D163).
  *
  * **Scaling seam (decision #2):** digest/great eligibility is a per-user polygon test against that
  * viewer's cached drive-time bands, so there's no index to look recipients up by — it means walking
  * profiles. N1 moved that walk out of `reports.create` and into a **scheduled, self-continuing paged
  * job** (`fanOutNearbyNotifications`), so the write path no longer scales with user count. Making the
- * walk itself unnecessary — a reverse spatial index — is still the future optimization (roadmap N8).
+ * walk itself unnecessary — a reverse reach index — is designed in the N8 plan (Workstream D) and
+ * deliberately unbuilt until ~1,000 profiles make it worth a second writer to keep in sync.
  */
 
 import {
@@ -25,14 +40,18 @@ import {
   isDriveTimeBand,
   nextZonedHourMs,
 } from '@skating/core';
-import { v } from 'convex/values';
+import { paginationOptsValidator } from 'convex/server';
+import { ConvexError, v } from 'convex/values';
 import { internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
-import { internalMutation, type MutationCtx } from './_generated/server';
-import { canReceiveNotifications } from './lib/auth';
+import { internalMutation, type MutationCtx, mutation, query } from './_generated/server';
+import { canReceiveNotifications, requireProfile } from './lib/auth';
+import { recipientWants, settleTrigger } from './lib/notificationQueue';
+import { resolveNotifications } from './lib/notificationResolve';
+import { loadBlockedAuthorIds } from './lib/reportVisibility';
 import { takeCapped } from './lib/scan';
 
-/** The digest rolls up to 8pm in this zone (single-timezone pilot; per-user timing deferred). */
+/** The digest rolls up to 8pm in this zone (single-timezone pilot; per-user zone lands in N8/C). */
 const DIGEST_HOUR = 20;
 const DIGEST_TIMEZONE = 'America/New_York';
 /** Favorite/great pushes fire after this quiet window so a burst on one lake coalesces into one. */
@@ -268,18 +287,31 @@ export const flushNotificationQueue = internalMutation({
     // this costs a handful of reads rather than one per row. An ineligible row is deleted rather than
     // left: it will never become deliverable again by sitting here, and a ghost's rows are erased by
     // finalization regardless.
-    const eligibility = new Map<Id<'profiles'>, boolean>();
-    async function deliverable(userId: Id<'profiles'>): Promise<boolean> {
+    const eligibility = new Map<Id<'profiles'>, Doc<'profiles'> | null>();
+    async function deliverable(userId: Id<'profiles'>): Promise<Doc<'profiles'> | null> {
       const memo = eligibility.get(userId);
       if (memo !== undefined) return memo;
       const profile = await ctx.db.get(userId);
-      const ok = profile !== null && canReceiveNotifications(profile);
+      const ok = profile !== null && canReceiveNotifications(profile) ? profile : null;
       eligibility.set(userId, ok);
       return ok;
     }
+    // The recipient's block set, for the actor rows' re-check — loaded once per recipient per tick
+    // for the same reason eligibility is memoized.
+    const blockSets = new Map<Id<'profiles'>, ReadonlySet<string>>();
+    async function blockedFor(userId: Id<'profiles'>): Promise<ReadonlySet<string>> {
+      const memo = blockSets.get(userId);
+      if (memo) return memo;
+      const set = await loadBlockedAuthorIds(ctx, userId);
+      blockSets.set(userId, set);
+      return set;
+    }
 
     for (const row of due) {
-      if (!(await deliverable(row.userId))) {
+      const profile = await deliverable(row.userId);
+      // The type's own toggle is re-read too: a person who switched "comments on my reports" off
+      // during the settle window meant it to apply to the comment that was already queued.
+      if (!profile || !recipientWants(profile, row.type)) {
         await ctx.db.delete(row._id);
         dropped++;
         continue;
@@ -288,6 +320,25 @@ export const flushNotificationQueue = internalMutation({
         const rows = digestByUser.get(row.userId);
         if (rows) rows.push(row);
         else digestByUser.set(row.userId, [row]);
+        continue;
+      }
+      if (row.trigger !== undefined) {
+        // An actor row (D166): re-read the trigger and deliver only what's still true. A dropped row
+        // is deleted, not retried — the thing that would make it true again is a *new* action, which
+        // enqueues its own row.
+        const payload = await settleTrigger(ctx, row.trigger, await blockedFor(row.userId));
+        await ctx.db.delete(row._id);
+        if (!payload) {
+          dropped++;
+          continue;
+        }
+        await ctx.db.insert('notifications', {
+          userId: row.userId,
+          type: row.type,
+          payload: { ...payload, coalesceKey: row.coalesceKey },
+          createdAt: now,
+        });
+        delivered++;
         continue;
       }
       await ctx.db.insert('notifications', {
@@ -308,11 +359,11 @@ export const flushNotificationQueue = internalMutation({
     // One consolidated digest per user: enumerate the bodies (each with its own coalesced count),
     // carry the grand `totalCount`, and key the collapse-id per user so a later push replaces cleanly.
     for (const [userId, rows] of digestByUser) {
-      const bodies = rows.map((r) => ({
-        waterBodyId: r.waterBodyId,
-        reportId: r.latestReportId,
-        count: r.count,
-      }));
+      const bodies = rows.flatMap((r) =>
+        r.waterBodyId !== undefined && r.latestReportId !== undefined
+          ? [{ waterBodyId: r.waterBodyId, reportId: r.latestReportId, count: r.count }]
+          : [],
+      );
       const totalCount = bodies.reduce((sum, b) => sum + b.count, 0);
       await ctx.db.insert('notifications', {
         userId,
@@ -324,5 +375,88 @@ export const flushNotificationQueue = internalMutation({
       delivered++;
     }
     return { delivered, dropped };
+  },
+});
+
+// ── The inbox read path (N8 / A1) ────────────────────────────────────────────────────────────────
+
+/**
+ * The signed-in user's notifications, newest first, **paginated** — a season of notification history
+ * is unbounded, and `.collect()` on a per-user table is the pattern N1 spent a phase removing. Each
+ * page is resolved into renderable views (`lib/notificationResolve.ts`); rows whose actors are all
+ * blocked are omitted, so a page can come back slightly short.
+ */
+export const list = query({
+  args: { paginationOpts: paginationOptsValidator },
+  handler: async (ctx, { paginationOpts }) => {
+    const profile = await requireProfile(ctx);
+    const now = Date.now();
+    const page = await ctx.db
+      .query('notifications')
+      .withIndex('by_user', (q) => q.eq('userId', profile._id))
+      .order('desc')
+      .paginate(paginationOpts);
+    const blocked = await loadBlockedAuthorIds(ctx, profile._id);
+    return {
+      ...page,
+      page: await resolveNotifications(ctx, page.page, blocked, now),
+    };
+  },
+});
+
+/**
+ * The badge stops counting here. The mobile You tab shows its dot on every screen, so `unreadCount`
+ * is effectively an app-wide subscription and has to stay one bounded indexed read: a badge that says
+ * "99+" is right, and a query that scans ten thousand rows to say "10,000" is not.
+ */
+export const UNREAD_COUNT_CAP = 99;
+
+/** Unread notifications for the badge — an indexed equality on `(userId, readAt = undefined)`. */
+export const unreadCount = query({
+  args: {},
+  handler: async (ctx): Promise<number> => {
+    const profile = await requireProfile(ctx);
+    const unread = await ctx.db
+      .query('notifications')
+      .withIndex('by_user_read', (q) => q.eq('userId', profile._id).eq('readAt', undefined))
+      .take(UNREAD_COUNT_CAP + 1);
+    return unread.length;
+  },
+});
+
+/** Unread rows stamped per `markRead` call — the same posture as the flush cap. */
+const MARK_READ_BATCH_CAP = 500;
+
+/**
+ * Stamp `readAt` on one notification, or on every unread one created at or before `before` — the
+ * "mark all read" the list calls when it opens, bounded by the newest row it showed so a notification
+ * arriving mid-tap isn't marked read unseen. Owner-only; a foreign or vanished id is a no-op rather
+ * than an error, because the client sends ids it was shown and a row can be purged in between.
+ */
+export const markRead = mutation({
+  args: { notificationId: v.optional(v.id('notifications')), before: v.optional(v.number()) },
+  handler: async (ctx, { notificationId, before }) => {
+    const profile = await requireProfile(ctx);
+    const now = Date.now();
+    if (notificationId !== undefined) {
+      const row = await ctx.db.get(notificationId);
+      if (row && row.userId === profile._id && row.readAt === undefined) {
+        await ctx.db.patch(notificationId, { readAt: now });
+      }
+      return;
+    }
+    if (before === undefined) throw new ConvexError('Pass a notification id or a timestamp');
+    // Bounded like the flush: the unread set is at most the badge cap in the common case, and a
+    // pathological backlog is marked over two calls rather than one that can't complete.
+    const unread = await takeCapped(
+      ctx.db
+        .query('notifications')
+        .withIndex('by_user_read', (q) => q.eq('userId', profile._id).eq('readAt', undefined)),
+      MARK_READ_BATCH_CAP,
+      'notifications.markRead',
+    );
+    for (const row of unread) {
+      if (row.createdAt <= before) await ctx.db.patch(row._id, { readAt: now });
+    }
   },
 });

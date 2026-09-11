@@ -22,8 +22,9 @@ import { ConvexError, v } from 'convex/values';
 import type { Doc, Id } from './_generated/dataModel';
 import { type MutationCtx, mutation, type QueryCtx, query } from './_generated/server';
 import { fulfillBountyOnHelpful } from './bounties';
-import { canReceiveNotifications, getCurrentProfile, requireContributor } from './lib/auth';
+import { getCurrentProfile, requireContributor } from './lib/auth';
 import { fileOrBumpAutoFlag } from './lib/autoFlag';
+import { enqueueActorNotification } from './lib/notificationQueue';
 import { awardPointEvent, checkAndAwardBadges, tallyThumbs } from './lib/reputation';
 import { literals } from './lib/validators';
 
@@ -126,7 +127,11 @@ async function maybeAutoFlag(
   });
 }
 
-/** Notify a target's author that their content was thumbed helpful (in-app row; push deferred repo-wide). */
+/**
+ * Tell a target's author their content was thumbed helpful — via the settle queue (N8 / D166), so a
+ * thumb retracted inside the window never sends, and five thumbs inside it become one row. The flush
+ * re-reads each rater's verdict before delivering.
+ */
 async function notifyHelpful(
   ctx: MutationCtx,
   authorId: Id<'profiles'>,
@@ -134,14 +139,12 @@ async function notifyHelpful(
   targetId: string,
   raterId: Id<'profiles'>,
 ): Promise<void> {
-  const author = await ctx.db.get(authorId);
-  if (!author) return;
-  if (!canReceiveNotifications(author) || !author.notificationPrefs.reportRated) return;
-  await ctx.db.insert('notifications', {
-    userId: authorId,
+  await enqueueActorNotification(ctx, {
+    recipientId: authorId,
+    actorId: raterId,
     type: 'report_rated',
-    payload: { targetType, targetId, raterId },
-    createdAt: Date.now(),
+    targetId,
+    trigger: { kind: 'thumb', targetType, targetId, actorIds: [raterId] },
   });
 }
 

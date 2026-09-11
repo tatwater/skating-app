@@ -1,6 +1,6 @@
 import { convexTest } from 'convex-test';
 import { describe, expect, test } from 'vitest';
-import { api } from './_generated/api';
+import { api, internal } from './_generated/api';
 import type { Id } from './_generated/dataModel';
 import schema from './schema';
 
@@ -10,7 +10,7 @@ const NOTIF_PREFS = {
   activityDetected: true,
   bountyRequest: true,
   hazardConfirmation: true,
-  bountyFulfilled: true,
+  bountyAnswered: true,
   reportRated: true,
   reportCommented: true,
   contentFlagResolved: true,
@@ -211,6 +211,87 @@ describe('moderation.setModerationStatus (comment target)', () => {
         reason: 'x',
       }),
     ).rejects.toThrow(/target not found/i);
+  });
+});
+
+/** Make every queued notification due and flush it — the settle window (N8 / D166), fast-forwarded. */
+async function flushAllDue(t: ReturnType<typeof convexTest>) {
+  await t.run(async (ctx) => {
+    for (const row of await ctx.db.query('notificationQueue').collect()) {
+      await ctx.db.patch(row._id, { flushAfter: Date.now() - 1 });
+    }
+  });
+  await t.mutation(internal.notifications.flushNotificationQueue, {});
+  return t.run((ctx) => ctx.db.query('notifications').collect());
+}
+
+describe('moderation.resolveFlag — content_flag_resolved (N8/B3)', () => {
+  test('tells a person who filed a flag the verdict, and nothing else', async () => {
+    const t = convexTest(schema, modules);
+    const author = await seedUser(t, 'a');
+    const flagger = await seedUser(t, 'f');
+    const mod = await seedUser(t, 'mod', 'moderator');
+    const reportId = await seedReport(t, author.id);
+    const flagId = await flagger.as.mutation(api.contentFlags.flag, {
+      targetType: 'report',
+      targetId: reportId,
+      reason: 'spam',
+    });
+    expect((await t.run((ctx) => ctx.db.get(flagId)))?.origin).toBe('user');
+
+    await mod.as.mutation(api.moderation.resolveFlag, {
+      flagId,
+      resolution: 'actioned',
+      reason: 'hid the report',
+    });
+    const notes = await flushAllDue(t);
+    expect(notes).toHaveLength(1);
+    expect(notes[0]?.userId).toBe(flagger.id);
+    expect(notes[0]?.type).toBe('content_flag_resolved');
+    // Verdict only: no target, no moderator, no reason.
+    expect(Object.keys(notes[0]?.payload as object).sort()).toEqual(
+      ['coalesceKey', 'flagId', 'kind', 'resolution'].sort(),
+    );
+    expect(notes[0]?.payload).toMatchObject({ resolution: 'actioned' });
+  });
+
+  test('an auto-filed flag notifies nobody — its flaggerId never filed a report', async () => {
+    const t = convexTest(schema, modules);
+    const author = await seedUser(t, 'a');
+    const rater = await seedUser(t, 'r');
+    const mod = await seedUser(t, 'mod', 'moderator');
+    const reportId = await seedReport(t, author.id);
+    // The shape `ratings.maybeAutoFlag` writes: a system reason, a real person as `flaggerId`.
+    const flagId = await t.run((ctx) =>
+      ctx.db.insert('contentFlags', {
+        flaggerId: rater.id,
+        targetType: 'report',
+        targetId: reportId,
+        reason: 'auto_low_quality',
+        status: 'open',
+        origin: 'auto',
+        createdAt: Date.now(),
+      }),
+    );
+    // …and a row from before `origin` existed, which must read as auto.
+    const legacyId = await t.run((ctx) =>
+      ctx.db.insert('contentFlags', {
+        flaggerId: rater.id,
+        targetType: 'report',
+        targetId: reportId,
+        reason: 'spam',
+        status: 'open',
+        createdAt: Date.now(),
+      }),
+    );
+    for (const id of [flagId, legacyId]) {
+      await mod.as.mutation(api.moderation.resolveFlag, {
+        flagId: id,
+        resolution: 'dismissed',
+        reason: 'fine',
+      });
+    }
+    expect(await flushAllDue(t)).toHaveLength(0);
   });
 });
 
