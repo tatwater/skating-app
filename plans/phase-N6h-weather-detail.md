@@ -316,6 +316,12 @@ the sheet by hand.
   TypeScript give up on the whole `api` type, and the first symptom was an unrelated test file
   failing to compile. Annotate the return type; the comment on `primeSubAreaWeather` says so.
 
+**Known and deferred (founder, 2026-09-11):** switching tabs from a scrolled position jolts on
+mobile when the new tab is shorter — the scroll view clamps to its new maximum. Not the slot layout;
+just short tabs. Two easy fixes if it survives D and E filling the tabs: a `minHeight` floor on the
+content child (never clamps; short tabs scroll into blank space), or animating to the strip's offset
+on a tab change (predictable; loses position both ways). Decide once the tabs have their real content.
+
 **Sequencing note for D.** `PastWeatherPanel` and `ForecastStrip` now take `subAreaId` + a
 load-bearing `pending` flag (hold while the bays load, or a giant pays for the lake's cell and then
 the bay's). D's forecast panel inherits both; the Planning tab already has the picker it wanted.
