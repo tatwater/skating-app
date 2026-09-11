@@ -17,11 +17,16 @@
  */
 
 import {
-  type ForecastSummary,
+  bandForCoord,
+  type DriveTimeBands,
+  FORECAST_PLAN_DAYS,
+  type ForecastHour,
+  type ForecastPayload,
   HAZARD_WEATHER_LOOKBACK_DAYS,
   type HourlyWeather,
-  summarizeForecast,
+  type LatLng,
   summarizeWeatherSince,
+  toForecastHour,
   WEATHER_TIERS,
   type WeatherCell,
   type WeatherSinceSummary,
@@ -33,8 +38,14 @@ import type { Id } from './_generated/dataModel';
 import type { ActionCtx } from './_generated/server';
 import { action, internalMutation, internalQuery } from './_generated/server';
 import { meterOpenMeteo, recordApiCall } from './lib/apiMeter';
+import { getCurrentProfile } from './lib/auth';
 import { liveSubAreaOf, resolveSurvivor } from './lib/bodies';
-import { bodyWeatherCell, hazardCenter, subAreaWeatherCell } from './lib/sampling';
+import {
+  bodyWeatherCell,
+  defaultSampleAnchor,
+  hazardCenter,
+  subAreaWeatherCell,
+} from './lib/sampling';
 import { literals, weatherSinceSummary } from './lib/validators';
 
 // The validator and the core type must stay structurally identical — assert it at compile time so drift
@@ -49,7 +60,13 @@ const HOUR_MS = 3_600_000;
 const DAY_MS = 86_400_000;
 /** Open-Meteo forecast `past_days` ceiling — and therefore D153's lazy-backfill horizon. */
 export const MAX_PAST_DAYS = 92;
-/** Two, not one, so a 12-hour horizon survives a day boundary (N6c B5b). */
+/**
+ * Forward days the *default* fetch asks for — two, not one, so a 12-hour horizon survives a day
+ * boundary (N6c B5b). The drawer's forecast passes `FORECAST_PLAN_DAYS` (7) instead; this default
+ * serves the archive backfill, the decay cron and the contradiction checker, none of which read a
+ * forward hour, and bumping it here would move the 92-day backfill from 7 to 8 billing units for
+ * nothing (N6h Workstream D, founder call 13).
+ */
 const FORECAST_DAYS = 2;
 /** The provider name `externalApiCalls` meters this path under (D158). */
 export const OPEN_METEO_PROVIDER = 'open-meteo';
@@ -160,6 +177,7 @@ async function fetchOpenMeteoHourly(
   cell: WeatherCell,
   windowStartMs: number,
   nowMs: number,
+  forecastDays: number = FORECAST_DAYS,
 ): Promise<OpenMeteoHours | null> {
   // Open-Meteo anchors `past_days` to the REAL current date, so size it from `Date.now()`, never from the
   // window end `nowMs` (which a caller may set in the past — e.g. the contradiction settle passes the older
@@ -186,7 +204,7 @@ async function fetchOpenMeteoHourly(
     // survives a day boundary, so an evening skater still sees tomorrow morning. Same endpoint, same
     // variables, same attribution, no new provider and no new quota — D74 holds untouched, because
     // this is still Open-Meteo and there is no second opinion being blended.
-    forecast_days: String(FORECAST_DAYS),
+    forecast_days: String(forecastDays),
     timezone: 'auto',
     timeformat: 'unixtime',
     temperature_unit: 'celsius',
@@ -206,7 +224,7 @@ async function fetchOpenMeteoHourly(
     // Metered before the await, so a request that then fails still counts against the day: what D158's
     // trigger needs to know is what we *asked* Open-Meteo for, and a failed call consumed quota just
     // the same. Never a limiter — see the `externalApiCalls` docblock.
-    await meterOpenMeteo(ctx, HOURLY_VARS.length, pastDays + FORECAST_DAYS);
+    await meterOpenMeteo(ctx, HOURLY_VARS.length, pastDays + forecastDays);
     const res = await fetch(`${OPEN_METEO_FORECAST_URL}?${params.toString()}`);
     if (!res.ok) {
       console.warn(`Open-Meteo request failed: ${res.status}`);
@@ -233,6 +251,10 @@ async function fetchOpenMeteoHourly(
   const cloud = col('cloud_cover');
   const sunshine = col('sunshine_duration');
   const shortwave = col('shortwave_radiation');
+  // Both already paid for on every call (see `HOURLY_VARS`) and, until the planner, parsed only by
+  // the archive's `fetchLocalHourly`. The forecast cards need the code for their symbol.
+  const dir = col('wind_direction_10m');
+  const weatherCode = col('weather_code');
 
   const out: HourlyWeather[] = [];
   const forecast: HourlyWeather[] = [];
@@ -266,6 +288,10 @@ async function fetchOpenMeteoHourly(
     if (typeof sunshineV === 'number') h.sunshineSeconds = sunshineV;
     const shortwaveV = shortwave?.[i];
     if (typeof shortwaveV === 'number') h.shortwaveWm2 = shortwaveV;
+    const dirV = dir?.[i];
+    if (typeof dirV === 'number') h.windDirectionDeg = dirV;
+    const wcV = weatherCode?.[i];
+    if (typeof wcV === 'number') h.weatherCode = wcV;
     if (isForecast) forecast.push(h);
     else out.push(h);
   }
@@ -458,10 +484,41 @@ export async function resolveWeatherSince(
   return summary;
 }
 
-/** Read a cached forecast for a sample point + hour bucket, or null on miss. */
+/**
+ * The stored hour, the same shape as core's `ForecastHour`. The optional fields joined with the
+ * planner (N6h Workstream D); rows written before it lack them and are still readable, because the
+ * planner's derivations all have an amount-based fallback.
+ */
+const forecastHour = v.object({
+  startMs: v.number(),
+  temperatureC: v.number(),
+  windSpeedKph: v.number(),
+  precipitationMm: v.number(),
+  snowfallCm: v.number(),
+  rainMm: v.optional(v.number()),
+  windGustKph: v.optional(v.number()),
+  windDirectionDeg: v.optional(v.number()),
+  weatherCode: v.optional(v.number()),
+  shortwaveWm2: v.optional(v.number()),
+  cloudCoverPct: v.optional(v.number()),
+});
+type ForecastHourFromValidator = Infer<typeof forecastHour>;
+const _assertForecastHourForward: ForecastHour = null as unknown as ForecastHourFromValidator;
+const _assertForecastHourReverse: ForecastHourFromValidator = null as unknown as ForecastHour;
+void _assertForecastHourForward;
+void _assertForecastHourReverse;
+
+/**
+ * Read a cached forecast for a sample point + hour bucket, or null on miss.
+ *
+ * **A row holding fewer forward days than asked for is a miss.** The cache key is the hour bucket,
+ * so in the hour after the planner ships every popular lake would otherwise answer a 7-day request
+ * with the 2-day row the strip wrote — silently, as five empty day cards. Rows from before the
+ * planner carry no `forecastDays` at all and read as the 2 they were.
+ */
 export const readForecastCache = internalQuery({
-  args: { samplePointKey: v.string(), forecastBucketMs: v.number() },
-  handler: async (ctx, a) => {
+  args: { samplePointKey: v.string(), forecastBucketMs: v.number(), forecastDays: v.number() },
+  handler: async (ctx, a): Promise<{ hours: ForecastHour[]; utcOffsetMs: number } | null> => {
     const row = await ctx.db
       .query('weatherForecastCache')
       .withIndex('by_key', (q) =>
@@ -469,12 +526,9 @@ export const readForecastCache = internalQuery({
       )
       .first();
     if (!row) return null;
-    const summary: ForecastSummary = { hours: row.hours };
-    if (row.precipStartsMs !== undefined) summary.precipStartsMs = row.precipStartsMs;
-    if (row.precipIsSnow !== undefined) summary.precipIsSnow = row.precipIsSnow;
-    if (row.minTemperatureC !== undefined) summary.minTemperatureC = row.minTemperatureC;
-    if (row.maxTemperatureC !== undefined) summary.maxTemperatureC = row.maxTemperatureC;
-    return summary;
+    if ((row.forecastDays ?? FORECAST_DAYS) < a.forecastDays) return null;
+    if (row.utcOffsetMs === undefined) return null; // pre-planner row: nothing can shift `now` onto it
+    return { hours: row.hours, utcOffsetMs: row.utcOffsetMs };
   },
 });
 
@@ -483,19 +537,9 @@ export const writeForecastCache = internalMutation({
   args: {
     samplePointKey: v.string(),
     forecastBucketMs: v.number(),
-    hours: v.array(
-      v.object({
-        startMs: v.number(),
-        temperatureC: v.number(),
-        windSpeedKph: v.number(),
-        precipitationMm: v.number(),
-        snowfallCm: v.number(),
-      }),
-    ),
-    precipStartsMs: v.optional(v.number()),
-    precipIsSnow: v.optional(v.boolean()),
-    minTemperatureC: v.optional(v.number()),
-    maxTemperatureC: v.optional(v.number()),
+    forecastDays: v.number(),
+    utcOffsetMs: v.number(),
+    hours: v.array(forecastHour),
     fetchedAt: v.number(),
   },
   handler: async (ctx, a) => {
@@ -505,18 +549,24 @@ export const writeForecastCache = internalMutation({
         q.eq('samplePointKey', a.samplePointKey).eq('forecastBucketMs', a.forecastBucketMs),
       )
       .first();
-    if (existing) await ctx.db.patch(existing._id, a);
+    // `replace`, not `patch`: a pre-planner row carries the strip's derived fields
+    // (`precipStartsMs` …) that nothing writes any more, and a patch would leave them describing
+    // a shorter series than the one now stored.
+    if (existing) await ctx.db.replace(existing._id, a);
     else await ctx.db.insert('weatherForecastCache', a);
   },
 });
 
 /**
- * Resolve the forward forecast for a point, cache-first (N6c B5b).
+ * Resolve the forward forecast for a point, cache-first (N6c B5b; seven days since N6h D).
  *
  * **The window it asks for is one hour of past, and that is not waste.** Open-Meteo's `past_days`
  * has a floor of 1, so the smallest honest request already spans today; asking for a one-hour window
  * costs exactly what asking for none would, and it keeps this on the identical code path as the
  * weather-since fetch rather than adding a second, subtly-different request builder.
+ *
+ * **Seven forward days cost what two did.** `past_days: 1` + 7 = 8 days is one billing unit, the
+ * same as 1 + 2 was; the difference is ~150 more hours in the row, and the row is pruned hourly.
  *
  * Returns `null` when the fetch failed, so the caller fails open and the next drawer-open retries —
  * the same contract as `resolveWeatherSince`, and for the same reason: caching a blank strip for an
@@ -526,35 +576,49 @@ export async function resolveForecast(
   ctx: ActionCtx,
   cell: WeatherCell,
   nowMs: number,
-): Promise<ForecastSummary | null> {
+): Promise<{ hours: ForecastHour[]; utcOffsetMs: number } | null> {
   const samplePointKey = cell.key;
   const forecastBucketMs = hourBucket(nowMs);
   const cached = await ctx.runQuery(internal.weather.readForecastCache, {
     samplePointKey,
     forecastBucketMs,
+    forecastDays: FORECAST_PLAN_DAYS,
   });
   if (cached) return cached;
 
-  const hourly = await fetchOpenMeteoHourly(ctx, cell, hourBucket(nowMs - HOUR_MS), nowMs);
+  const hourly = await fetchOpenMeteoHourly(
+    ctx,
+    cell,
+    hourBucket(nowMs - HOUR_MS),
+    nowMs,
+    FORECAST_PLAN_DAYS,
+  );
   if (hourly === null || hourly.forecast.length === 0) return null;
 
-  // **`nowMs` is shifted into the body's local clock before the horizon is applied**, because the
-  // hours carry local-shifted timestamps and comparing them against a UTC `now` would slide the
-  // whole strip by the offset — 4–5 hours in this region, i.e. most of a 12-hour horizon.
-  const summary = summarizeForecast(hourly.forecast, nowMs + hourly.utcOffsetMs);
-  if (summary.hours.length === 0) return null;
+  // Stored ascending and forward-only; the horizon (12 h for the strip, 7 d for the planner) is a
+  // client decision applied against these same hours, so nothing is trimmed here.
+  const hours: ForecastHour[] = [];
+  for (const h of hourly.forecast) {
+    if (h.startMs === undefined) continue;
+    hours.push(toForecastHour(h, h.startMs));
+  }
+  hours.sort((a, b) => a.startMs - b.startMs);
+  if (hours.length === 0) return null;
 
   await ctx.runMutation(internal.weather.writeForecastCache, {
     samplePointKey,
     forecastBucketMs,
-    ...summary,
+    forecastDays: FORECAST_PLAN_DAYS,
+    utcOffsetMs: hourly.utcOffsetMs,
+    hours,
     fetchedAt: nowMs,
   });
-  return summary;
+  return { hours, utcOffsetMs: hourly.utcOffsetMs };
 }
 
 /**
- * Public: the short forward forecast for a **water body**'s drawer (N6c B5b).
+ * Public: the forward forecast for a **water body**'s drawer (N6c B5b; the planner's source since
+ * N6h Workstream D).
  *
  * Keyed on the body rather than on a report or hazard, because unlike the weather-since strip this
  * has nothing to anchor to — the question "will it be snowing when I get there" is about the lake,
@@ -564,6 +628,10 @@ export async function resolveForecast(
  * since there is no entity to derive a window from: the only client-supplied value is a body id, and
  * the window is `now` on the server. So the reachable fetch set is one per body per hour bucket,
  * which is exactly what the cache already collapses.
+ *
+ * The viewer's drive-time band to the place rides along (D155's "drive time as a hint"): it is
+ * computed here from the profile's cached isochrones because no query today tells a client a single
+ * body's band, and it is a band — 30/60/90 — because that is all Phase 4 ever knows.
  */
 export const getForecastForBody = action({
   args: {
@@ -575,35 +643,47 @@ export const getForecastForBody = action({
      */
     subAreaId: v.optional(v.id('waterBodySubAreas')),
   },
-  handler: async (ctx, { waterBodyId, subAreaId }): Promise<ForecastSummary | null> => {
+  handler: async (ctx, { waterBodyId, subAreaId }): Promise<ForecastPayload | null> => {
     if (!(await ctx.auth.getUserIdentity())) return null;
-    const cell = await ctx.runQuery(internal.weather.resolveBodyWeatherCell, {
+    const place = await ctx.runQuery(internal.weather.resolveForecastPlace, {
       waterBodyId,
       ...(subAreaId ? { subAreaId } : {}),
     });
-    if (!cell) return null;
-    return await resolveForecast(ctx, cell, Date.now());
+    if (!place) return null;
+    const resolved = await resolveForecast(ctx, place.cell, Date.now());
+    if (!resolved) return null;
+    return { ...resolved, arrivalBandMinutes: place.arrivalBandMinutes };
   },
 });
 
 /**
- * The body's `browse`-tier weather cell — its default sample point, snapped and banded (D152) — or,
- * given a live bay of this body, the bay's own cell (`subAreaWeatherCell`).
+ * The forecast's place — its weather cell — plus the viewer's band to it, in one read so the action
+ * makes one round trip. The band is judged on the body's (or bay's) own point, not the snapped cell
+ * centre: a cell is 5 km across and the isochrone edge can run through it.
  */
-export const resolveBodyWeatherCell = internalQuery({
+export const resolveForecastPlace = internalQuery({
   args: {
     waterBodyId: v.id('waterBodies'),
-    tier: v.optional(literals(WEATHER_TIERS)),
     subAreaId: v.optional(v.id('waterBodySubAreas')),
   },
-  handler: async (ctx, { waterBodyId, tier, subAreaId }) => {
+  handler: async (
+    ctx,
+    { waterBodyId, subAreaId },
+  ): Promise<{ cell: WeatherCell; arrivalBandMinutes: 30 | 60 | 90 | null } | null> => {
     const body = await ctx.db.get(waterBodyId);
     if (!body || body.removedAt) return null;
-    // Validated exactly as the archive panel validates it (`liveSubAreaOf`), so the Planning tab's
-    // past and future can never disagree about which bay they are about.
     const subArea = await liveSubAreaOf(ctx, body, subAreaId);
-    if (subArea) return subAreaWeatherCell(subArea, body, tier ?? 'browse');
-    return bodyWeatherCell(body, tier ?? 'browse');
+    const cell = subArea
+      ? subAreaWeatherCell(subArea, body, 'browse')
+      : bodyWeatherCell(body, 'browse');
+    const point: LatLng = subArea ? subArea.centroid : defaultSampleAnchor(body);
+    const viewer = await getCurrentProfile(ctx);
+    const bands = {
+      band30: viewer?.cachedIsochrones?.band30,
+      band60: viewer?.cachedIsochrones?.band60,
+      outerRadiusMeters: viewer?.outerRadiusMeters,
+    } as DriveTimeBands;
+    return { cell, arrivalBandMinutes: bandForCoord(point, bands, viewer?.homeCoord) };
   },
 });
 

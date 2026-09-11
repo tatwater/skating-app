@@ -4,9 +4,10 @@
 > deployed to dev** — Workstreams **A + B + C + G**, D162 + D163, **and a continuous hourly weather
 > timeline on both clients that this plan never specified** (see *§What PR 1 actually shipped*). Four
 > Greptile passes on the PR; suites at merge: core 2,460 · convex 1,437 · web 508 · mobile 108.
-> **PR 3 = Workstream H** (the three-tab drawer IA + sub-areas as the weather unit + the spread)
-> **built 2026-09-11 on `phase-n6h-weather-detail-3`**, five commits, pending review/PR — see *§What
-> PR 3 shipped*. **D + E + F not started.** Two PRs remain: D+E → F (founder call, 2026-09-11).
+> **PR 3 = Workstream H = [#50](https://github.com/tatwater/skating/pull/50), merged 2026-09-11**
+> (the three-tab drawer IA + sub-areas as the weather unit + the spread) — see *§What PR 3 shipped*.
+> **PR 4 = Workstream D alone, in progress on `phase-n6h-weather-detail-4`** (founder call 12,
+> 2026-09-11, revising call 11's D+E bundle). **Three PRs remain: D → E → F.**
 > Scoped 2026-09-02. Founder ask, same day. Grew out of a costing
 > question — *"what is most expensive about this plan?"* — and the answer moved the design: the
 > expensive half is not the data, it is **the cache key**, which today shares nothing.
@@ -63,7 +64,44 @@
 >     "permission precedes access" adjacency is knowingly split across Overview/Planning because the
 >     taxonomy puts put-ins with the trip and permission with the body.
 > 11. **D stays as D155 wrote it** — a separate 7-day grid selector plus an hourly strip, *not* an
->     extension of the timeline PR 1 built. **Three PRs remain: H → D+E → F.**
+>     extension of the timeline PR 1 built. **Three PRs remain: H → D+E → F.** ⚠ *Both halves
+>     revised the same evening by calls 12 and 14 below.*
+>
+> ### Founder calls, 2026-09-11 — fifth pass, kicking off PR 4
+>
+> 12. **D ships alone; then E; then F.** Call 11's D+E bundle was reconsidered once E's real size was
+>     laid out (a join table + corpus backfill, a digest table, a cron change, a shared filter store on
+>     both clients, the *Latest* rename, and a new card type) and once D grew its own design work (call
+>     14). D+F was asked about and rejected: F is the most infrastructure-heavy workstream left and
+>     shares nothing with D but the word. **Three PRs remain, not two.**
+> 13. **One 7-day fetch serves both the strip and the planner.** `forecast_days` is parametrised per
+>     caller (default stays 2 for the archive, decay cron and contradiction checker); the drawer's
+>     forecast fetch asks for 7 and the existing 12-hour strip line becomes a prefix of the same
+>     hours. `past_days: 1` + 7 = 8 days = still one billing unit, so an open costs 1.2 weighted calls
+>     as before. `precipitation_probability` stays out (+8 % on every call, the archive's included).
+> 14. **D's shape is a weather app's, not D155's grid.** *"Small cards in a horizontal scroll area
+>     with vertically stacked temp, weather symbol, precipitation, time … then underneath, larger
+>     full-day summary cards in their own horizontal scroll area, with a summary of each whole day's
+>     forecast, including things like 'snow from 10 PM to 4 AM'."* The morning/afternoon/overnight
+>     grid is gone; **a day card is the selector**. The hourly row holds **all seven days** with day
+>     dividers, opens scrolled to *now* (so it reads as "the next twelve hours"), and tapping a day
+>     card scrolls it to that day's morning — which is how D155's *"the run-up is drawn, not hidden"*
+>     survives the redesign: drag back from Thursday and Wednesday night's snow is there. Drive time
+>     stays a hint (see the readiness note below on what it can honestly be).
+> 15. **Prime the whole filter tier on dev out of season, once, for E.** `past_days: 8` over the
+>     registry's ~3,043 cells ≈ 3,650 weighted calls — a third of one free day. Rides with E, not D.
+> 16. **E's predicate gets weather-only anchors, and the founder defined them.** *"'No snow since' is
+>     since the last <20°F; the nights-below are intended to be a chain of nights in a row (seeing
+>     temps below 20°F within 48 h of each other counts as consecutive). This stat is relevant when
+>     ice is first freezing for the season (when the ice is best), because nights-below-20 is
+>     predictive of ice formation, and no-snow-since is indicative of that fresh ice being
+>     uncovered."* This closes D159's *"no snow since has no anchor without a report"* gap without a
+>     report: the anchor is **the first night of the current cold chain**, where a chain is a run of
+>     nights with `nightMinTempC` below the threshold and *one* milder night between two cold ones
+>     does not break it (48 h). The per-cell digest therefore carries, per threshold, the chain
+>     length in nights, the chain's start day, and snowfall since that day — and the copy reads
+>     *"4 nights below 20°F, no snow since the first"*, which names its own anchor. ⚠ The 48-hour
+>     tolerance is a founder rule, not a physics constant; pin it as one named number in core.
 >
 > ### Measurements taken 2026-09-02 (open questions 1 and 2)
 >
@@ -325,6 +363,28 @@ on a tab change (predictable; loses position both ways). Decide once the tabs ha
 **Sequencing note for D.** `PastWeatherPanel` and `ForecastStrip` now take `subAreaId` + a
 load-bearing `pending` flag (hold while the bays load, or a giant pays for the lake's cell and then
 the bay's). D's forecast panel inherits both; the Planning tab already has the picker it wanted.
+
+### ⚠ Readiness pass for PR 4, 2026-09-11 — four things the plan had wrong or stale
+
+1. **`weatherCellKeyB` is dead; the join won, and it is free.** The holes table (row 7) and
+   Workstream E still owe a single `weatherCellKeyB` field on `waterBodies`; open question 5 §4 had
+   already *"picked the `bodyWeatherCells` option"* because a giant spans many cells and Convex has
+   no array index. The join is what E builds — same shape as N1's `waterBodyCells` (`by_cell` +
+   `by_body`) — and it costs no widen→deploy→backfill→narrow dance, because a new table has no
+   existing rows to validate. Better: **the registry walk already visits every body and bay**
+   (`pageBodyCells` / `pageSubAreaCells`) to compute their filter cells, so the join is written by
+   that walk for nothing and inherits its import-triggered reconcile and its vacated-cell prune.
+2. **Hole 8 is stale.** *"Mobile has no charting substrate"* stopped being true in PR 1:
+   `WeatherTimeline` draws on mobile through `react-native-svg`. Nothing about D is forced text-first.
+3. **Drive time is band-granular, so D's hint can only be band-granular.** Phase 4 gives a body a
+   band — 30 / 60 / 90 minutes or `null` — never minutes, and the client is never told a single
+   body's band today (`bandForCoord` runs inside `listFeed`, `profiles`, `notifications`). So the
+   hint D155 asked for is *"≈ arrival"* marked on the hour card at *now + band*, computed server-side
+   in the forecast action from the viewer's cached isochrones, and nothing more precise.
+4. **The drawer's fetch drops two of the twelve variables it pays for.** `fetchOpenMeteoHourly` in
+   `weather.ts` never carries `weather_code` or `wind_direction_10m` into `HourlyWeather` — only the
+   archive's `fetchLocalHourly` does. The weather symbol on every card needs the code, so D wires
+   both through (they are already in the response; this is parsing, not spend).
 
 ---
 

@@ -39,7 +39,13 @@ export const FORECAST_NOTABLE_SNOW_CM = 0.5;
 /** Liquid precipitation in an hour worth calling out, in mm. Rain on ice is its own kind of bad news. */
 export const FORECAST_NOTABLE_RAIN_MM = 0.5;
 
-/** One hour of the forward strip. The variables that change whether you go — not the decay model's set. */
+/**
+ * One hour of the forward forecast. The five required fields are what the strip line has always
+ * read; the optional ones arrived with the planner (N6h Workstream D) and are carried rather than
+ * re-fetched, because they were already in the response and it is the same 1.2 weighted calls
+ * either way. A row cached before they existed simply lacks them, and the planner degrades to the
+ * amount-based derivations rather than refusing to draw.
+ */
 export interface ForecastHour {
   /** Epoch ms at the start of the hour, in the body's local time (Open-Meteo `timezone=auto`). */
   startMs: number;
@@ -47,6 +53,40 @@ export interface ForecastHour {
   windSpeedKph: number;
   precipitationMm: number;
   snowfallCm: number;
+  /** Liquid only — split from `snowfallCm` so a mixed hour can be named as one. */
+  rainMm?: number;
+  windGustKph?: number;
+  /** Degrees meteorological — where the wind blows *from*. */
+  windDirectionDeg?: number;
+  /** WMO code: the only input that can say "freezing rain" rather than "rain near 0 °C". */
+  weatherCode?: number;
+  /** Hourly-mean shortwave, W/m² — zero is what tells the planner an hour is night. */
+  shortwaveWm2?: number;
+  cloudCoverPct?: number;
+}
+
+/**
+ * What the drawer's forecast action returns (N6h Workstream D).
+ *
+ * `hours` is the full forward series — seven days, ascending, local-shifted like every
+ * `HourlyWeather.startMs` — and **both surfaces derive from it on the client**: the one-line strip
+ * through `summarizeForecast` at its 12-hour horizon, the planner through `buildForecastPlan`. One
+ * fetch, one cache row, two readers; the alternative was two fetches per drawer-open for the same
+ * hours (founder call 13, 2026-09-11).
+ *
+ * `utcOffsetMs` is what lets a client shift its own `Date.now()` onto the hours' clock. It is
+ * returned rather than recovered from the first hour because the first hour can be a gap.
+ */
+export interface ForecastPayload {
+  hours: ForecastHour[];
+  utcOffsetMs: number;
+  /**
+   * The viewer's Phase 4 drive-time band to this place — 30 / 60 / 90 — or `null` when they have no
+   * home, no cached bands, or the place is past the outer radius. **A band, never minutes**: it is
+   * the only drive-time fact the app holds about a body, and the planner marks it as "≈ arrival"
+   * rather than as a time.
+   */
+  arrivalBandMinutes: 30 | 60 | 90 | null;
 }
 
 /** The rendered forward forecast, or an empty `hours` when there is nothing to show. */
@@ -63,6 +103,28 @@ export interface ForecastSummary {
   /** Coldest and warmest hours in the horizon, for the one-line summary. */
   minTemperatureC?: number;
   maxTemperatureC?: number;
+}
+
+/**
+ * Project a raw hour onto the forecast shape, dropping the archive-only fields (`sunshineSeconds`,
+ * `snowDepthM`) and defaulting the one required amount. One place, so the strip's summary and the
+ * planner's cache row cannot carry different subsets of the same hour.
+ */
+export function toForecastHour(hour: HourlyWeather, startMs: number): ForecastHour {
+  const out: ForecastHour = {
+    startMs,
+    temperatureC: hour.temperatureC,
+    windSpeedKph: hour.windSpeedKph,
+    precipitationMm: hour.precipitationMm,
+    snowfallCm: hour.snowfallCm ?? 0,
+  };
+  if (hour.rainMm !== undefined) out.rainMm = hour.rainMm;
+  if (hour.windGustKph !== undefined) out.windGustKph = hour.windGustKph;
+  if (hour.windDirectionDeg !== undefined) out.windDirectionDeg = hour.windDirectionDeg;
+  if (hour.weatherCode !== undefined) out.weatherCode = hour.weatherCode;
+  if (hour.shortwaveWm2 !== undefined) out.shortwaveWm2 = hour.shortwaveWm2;
+  if (hour.cloudCoverPct !== undefined) out.cloudCoverPct = hour.cloudCoverPct;
+  return out;
 }
 
 /** An hour counts as precipitating when either channel clears its own floor. */
@@ -94,13 +156,7 @@ export function summarizeForecast(
   for (const hour of hours) {
     if (hour.startMs === undefined) continue; // no clock ⇒ nothing a strip can place
     if (hour.startMs < nowLocalMs || hour.startMs > endMs) continue;
-    forward.push({
-      startMs: hour.startMs,
-      temperatureC: hour.temperatureC,
-      windSpeedKph: hour.windSpeedKph,
-      precipitationMm: hour.precipitationMm,
-      snowfallCm: hour.snowfallCm ?? 0,
-    });
+    forward.push(toForecastHour(hour, hour.startMs));
   }
   forward.sort((a, b) => a.startMs - b.startMs);
 
