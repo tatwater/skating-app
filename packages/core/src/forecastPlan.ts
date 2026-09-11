@@ -246,7 +246,9 @@ export interface ForecastPlanDay {
   /**
    * The coldest hour in the night that *ends* this morning — `[prev 18:00, this 09:00)`, the same
    * window `weatherDay.ts` defines for the archive, so "nights below 20 °F" means one thing on both
-   * halves of the Planning tab. `null` when fewer than half those hours are in the series.
+   * halves of the Planning tab. `null` when fewer than half those hours are in the series, **or
+   * when it would only repeat `lowC`** — in a season where the low is always at night the line is
+   * noise, and the card says it only when the night was colder than the calendar day.
    */
   nightLowC: number | null;
   nightLowF: number | null;
@@ -538,13 +540,12 @@ function dayCondition(
   const kinds = new Set(episodes.map((e) => e.kind));
   for (const c of FORECAST_CONDITIONS) {
     if (!PRECIP_CONDITIONS.has(c)) break;
-    if (c === 'thunder' || c === 'drizzle') continue; // named by hours below, never by episode
+    if (c === 'thunder' || c === 'drizzle') continue; // no episode kind of their own
     if (kinds.has(c as EpisodeKind)) return c;
   }
-  // Thunder and drizzle have no episode kind of their own (they fold into `rain` runs); still let an
-  // hour of either name the day if nothing worse did.
+  // Thunder folds into `rain` runs for the sentence and has no floor for the symbol: an hour of it
+  // names the day. Drizzle does not — a trace under the rain floor is a cloudy day, not a wet one.
   if (hours.some((h) => h.condition === 'thunder')) return 'thunder';
-  if (hours.some((h) => h.condition === 'drizzle')) return 'drizzle';
   const daytime = hours.filter(
     (h) => h.localHour >= DAYTIME_START_HOUR && h.localHour < DAYTIME_END_HOUR,
   );
@@ -677,7 +678,8 @@ export function buildForecastPlan(
         if (h.shortwaveWm2 >= SUNLIT_WM2) sunlit++;
       }
     }
-    const night = nightLow(keptHours, dayMs);
+    const nightRaw = nightLow(keptHours, dayMs);
+    const night = nightRaw !== null && nightRaw < lowC ? nightRaw : null;
     const { label, dateLabel } = labelsFor(dayMs, todayMs);
     days.push({
       localDate,

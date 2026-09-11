@@ -158,6 +158,7 @@ const GLYPH_ICON: Record<ForecastGlyph, IconDefinition> = {
 const HOUR_CARD_WIDTH = 52;
 const HOUR_CARD_GAP = 4;
 const DAY_CARD_WIDTH = 168;
+const DAY_CARD_GAP = 8;
 
 /**
  * The two rows. One piece of state — the day the hour row is showing — kept true both ways: a tap
@@ -169,8 +170,20 @@ export function ForecastPlanner({ plan }: { plan: ForecastPlan }) {
   const ink = theme.foreground?.val ?? undefined;
   const inkMuted = theme.foregroundMuted?.val ?? undefined;
   const hoursRef = useRef<ScrollView>(null);
+  const daysRef = useRef<ScrollView>(null);
   const [selectedDate, setSelectedDate] = useState<string>(plan.days[0]?.localDate ?? '');
   const settlingUntil = useRef(0);
+
+  // When the hour row drives the selection, the day row follows so the pressed card is on screen.
+  // The day cards are fixed-width, so the offset is arithmetic rather than a measured layout.
+  useEffect(() => {
+    const i = plan.days.findIndex((d) => d.localDate === selectedDate);
+    if (i < 0) return;
+    daysRef.current?.scrollTo({
+      x: Math.max(0, i * (DAY_CARD_WIDTH + DAY_CARD_GAP) - 16),
+      animated: true,
+    });
+  }, [plan.days, selectedDate]);
 
   useEffect(() => {
     setSelectedDate(plan.days[0]?.localDate ?? '');

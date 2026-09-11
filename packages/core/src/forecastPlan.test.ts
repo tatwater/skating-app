@@ -204,10 +204,39 @@ describe('buildForecastPlan — days', () => {
     const thu = plan.days[1]!;
     expect(thu.highC).toBe(2);
     expect(thu.lowC).toBe(-20);
-    expect(thu.nightLowC).toBe(-20); // [Wed 18:00, Thu 09:00)
-    expect(thu.nightLowF).toBe(-4);
     // Today's night (Tue 18:00 → Wed 09:00) is entirely behind us: no claim.
     expect(plan.days[0]!.nightLowC).toBeNull();
+    // Thursday's night low IS its day low, so the line would only repeat it: no claim either.
+    expect(thu.nightLowC).toBeNull();
+  });
+
+  it('names the night low only when the night was colder than the calendar day', () => {
+    const start = local('2026-01-14T15:00:00');
+    const plan = buildForecastPlan(
+      series(start, 48, (_, ms) => {
+        const h = new Date(ms).getUTCHours();
+        const d = new Date(ms).getUTCDate();
+        // Wednesday 8 PM is the cold hour (−20); Thursday itself never drops below −5.
+        if (d === 14 && h === 20) return { temperatureC: -20 };
+        return { temperatureC: -5 };
+      }),
+      NOW,
+    );
+    const thu = plan.days[1]!;
+    expect(thu.lowC).toBe(-5);
+    expect(thu.nightLowC).toBe(-20); // [Wed 18:00, Thu 09:00) reaches back into Wednesday evening
+    expect(thu.nightLowF).toBe(-4);
+  });
+
+  it('does not let a trace of drizzle name the day', () => {
+    const start = local('2026-01-15T00:00:00');
+    const plan = buildForecastPlan(
+      series(start, 24, (i) =>
+        i === 10 ? { weatherCode: 51, rainMm: 0.1, precipitationMm: 0.1 } : { weatherCode: 3 },
+      ),
+      NOW,
+    );
+    expect(plan.days[0]!.condition).toBe('cloudy');
   });
 
   it('names a dry day by its daytime cloud, and any snow day by the snow', () => {

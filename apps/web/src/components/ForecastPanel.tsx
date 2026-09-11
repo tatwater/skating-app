@@ -257,8 +257,10 @@ export function ForecastPlanner({ plan }: { plan: ForecastPlan }) {
         </p>
       ) : null}
       {/* A fieldset because it is a group of buttons of which one is pressed — the closest native
-          semantics to "pick a day", and what gives assistive tech the group's name. */}
-      <fieldset className="flex gap-2 overflow-x-auto pb-1">
+          semantics to "pick a day", and what gives assistive tech the group's name. `min-w-0`
+          matters: a fieldset defaults to `min-inline-size: min-content`, so without it the row
+          grows to its seven cards and overflows the sidebar instead of scrolling. */}
+      <fieldset className="flex min-w-0 gap-2 overflow-x-auto pb-1">
         <legend className="sr-only">Daily forecast</legend>
         {plan.days.map((day) => (
           <DayCard
@@ -334,6 +336,12 @@ function DayCard({
       type="button"
       aria-pressed={selected}
       onClick={onSelect}
+      ref={(el) => {
+        // When the *hour row* drove the selection the card may be off-screen; bring it in. A tap
+        // selects a visible card, so this is a no-op there. Guarded: jsdom has no scrollIntoView.
+        if (selected && el && typeof el.scrollIntoView === 'function')
+          el.scrollIntoView({ inline: 'nearest', block: 'nearest' });
+      }}
       className={`flex w-40 shrink-0 flex-col gap-1 rounded-md border p-2 text-left transition-colors ${
         selected
           ? 'border-border-strong bg-background-subtle'
