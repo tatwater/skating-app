@@ -86,6 +86,15 @@ export function WaterBodyDetail({
   // itself. `undefined` while the bays are still loading, so the panel does not fetch the lake's
   // cell and then the bay's a moment later. Never written back to the URL — see `WeatherPlacePicker`.
   const liveBays = (subAreas ?? []).filter((s) => !s.removed);
+  // The report feed's bay filter, held here because the feed unmounts with its tab (see
+  // `ReportFeed`). Seeded from the route's `?sub=` — the raw param, available on the first render,
+  // where the resolved bay object is not — and re-seeded when the route's bay changes, so the weather
+  // picker and a search hit both land the feed on the bay they named. The dropdown then refines it
+  // locally without touching the route.
+  const [feedBayId, setFeedBayId] = useState<string>(focusSubAreaId ?? '');
+  useEffect(() => {
+    if (focusSubAreaId) setFeedBayId(focusSubAreaId);
+  }, [focusSubAreaId]);
   const weatherBay =
     subAreas === undefined ? undefined : resolveWeatherSubArea(liveBays, focusSubAreaId);
   const {
@@ -325,7 +334,8 @@ export function WaterBodyDetail({
             <HazardList waterBodyId={result.body._id} />
             <ReportFeed
               waterBodyId={result.body._id}
-              {...(focusSubArea ? { initialSubAreaId: focusSubArea._id } : {})}
+              subAreaId={feedBayId}
+              onSubAreaIdChange={setFeedBayId}
             />
           </TabsContent>
           <TabsContent value="planning" className="flex flex-col gap-4">
@@ -392,17 +402,25 @@ const REPORTS_PAGE_SIZE = 20;
 
 function ReportFeed({
   waterBodyId,
-  /** The bay a search hit arrived on, pre-selecting the filter — you asked about Malletts, not the lake. */
-  initialSubAreaId,
+  subAreaId,
+  onSubAreaIdChange,
 }: {
   waterBodyId: Id<'waterBodies'>;
-  initialSubAreaId?: string;
+  /**
+   * The bay filter, **owned by the lake drawer** rather than by this feed. The feed lives on the
+   * Reporting tab and unmounts on every tab switch; a filter kept here as local state was reset to
+   * the route's bay (or "Anywhere") each time the reader glanced at Planning and came back. Seeded
+   * from the route's `?sub=` and following it, so a search hit or the weather picker lands the feed
+   * on the same bay. `''` is the whole lake.
+   */
+  subAreaId: string;
+  onSubAreaIdChange: (subAreaId: string) => void;
 }) {
   // The named bays on this lake (N2/D60). Most lakes have none, and then this whole control is
   // absent rather than an empty dropdown asking "which part?" of a pond.
   const subAreas = useQuery(api.subAreas.listForBody, { waterBodyId });
   const bays = (subAreas ?? []).filter((s) => !s.removed);
-  const [subAreaId, setSubAreaId] = useState<string>(initialSubAreaId ?? '');
+  const setSubAreaId = onSubAreaIdChange;
   // A bay that was delisted since the link was made falls back to the whole lake rather than
   // filtering on an id nothing matches, which would read as "no reports here".
   const activeBay = bays.some((b) => b._id === subAreaId) ? subAreaId : '';

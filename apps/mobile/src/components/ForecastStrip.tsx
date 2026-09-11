@@ -3,7 +3,7 @@ import type { Id } from '@skating/convex/dataModel';
 import { type ForecastSummary, formatForecastStrip, revealPlaceholder } from '@skating/core';
 import { useAction } from 'convex/react';
 import { useEffect, useState } from 'react';
-import { Paragraph, Text } from 'tamagui';
+import { Paragraph, Text, YStack } from 'tamagui';
 import { Section } from './detailUi';
 
 /**
@@ -30,43 +30,60 @@ export function ForecastStrip({
   reveal?: boolean;
 }) {
   const getForecast = useAction(api.weather.getForecastForBody);
-  const [summary, setSummary] = useState<ForecastSummary | null>(null);
+  // `forBody` and `loading` exist for one reason: a forecast is a claim about a *place*, and this
+  // strip's place can change under it. The same rule as `PastWeatherPanel`: across a *bay* switch the
+  // previous bay's forecast stays up — dimmed and marked busy, so it is visibly held rather than
+  // silently attributed to the newly named bay — because blanking it moved the drawer's content out
+  // from under the reader's scroll position. Across a *lake* switch it is dropped, since a stale
+  // forecast there would describe another lake under this one's name.
+  const [state, setState] = useState<{
+    summary: ForecastSummary | null;
+    forBody: string | null;
+    loading: boolean;
+  }>({ summary: null, forBody: null, loading: true });
 
   useEffect(() => {
     let cancelled = false;
+    setState((s) =>
+      s.forBody === waterBodyId
+        ? { ...s, loading: true }
+        : { summary: null, forBody: waterBodyId, loading: true },
+    );
     if (pending) return;
     getForecast({
       waterBodyId,
       ...(subAreaId ? { subAreaId: subAreaId as Id<'waterBodySubAreas'> } : {}),
     })
       .then((s) => {
-        if (!cancelled) setSummary(s);
+        if (!cancelled) setState({ summary: s, forBody: waterBodyId, loading: false });
       })
       .catch(() => {
-        if (!cancelled) setSummary(null);
+        if (!cancelled) setState({ summary: null, forBody: waterBodyId, loading: false });
       });
     return () => {
       cancelled = true;
     };
   }, [getForecast, waterBodyId, subAreaId, pending]);
 
-  const line = formatForecastStrip(summary);
+  const line = formatForecastStrip(state.summary);
   if (!line && !reveal) return null;
 
   return (
-    <Section label="What's coming">
-      {line ? (
-        <Paragraph color="$foreground" fontSize={14}>
-          {line}
-        </Paragraph>
-      ) : (
-        <Paragraph color="$foregroundMuted" fontSize={14} fontStyle="italic">
-          {revealPlaceholder('forecast')}
-        </Paragraph>
-      )}
-      <Text color="$foregroundMuted" fontSize={11}>
-        Forecast: Open-Meteo
-      </Text>
-    </Section>
+    <YStack opacity={state.loading ? 0.5 : 1} accessibilityState={{ busy: state.loading }}>
+      <Section label="What's coming">
+        {line ? (
+          <Paragraph color="$foreground" fontSize={14}>
+            {line}
+          </Paragraph>
+        ) : (
+          <Paragraph color="$foregroundMuted" fontSize={14} fontStyle="italic">
+            {revealPlaceholder('forecast')}
+          </Paragraph>
+        )}
+        <Text color="$foregroundMuted" fontSize={11}>
+          Forecast: Open-Meteo
+        </Text>
+      </Section>
+    </YStack>
   );
 }

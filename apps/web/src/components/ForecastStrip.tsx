@@ -34,33 +34,51 @@ export function ForecastStrip({
   reveal?: boolean;
 }) {
   const getForecast = useAction(api.weather.getForecastForBody);
-  const [summary, setSummary] = useState<ForecastSummary | null>(null);
+  // `forBody` and `loading` exist for one reason: a forecast is a claim about a *place*, and this
+  // strip's place can change under it. The same rule as `PastWeatherPanel`: across a *bay* switch the
+  // previous bay's forecast stays up — dimmed and marked busy, so it is visibly held rather than
+  // silently attributed to the newly named bay — because blanking it moved the drawer's content out
+  // from under the reader's scroll position. Across a *lake* switch it is dropped, since a stale
+  // forecast there would describe another lake under this one's name.
+  const [state, setState] = useState<{
+    summary: ForecastSummary | null;
+    forBody: string | null;
+    loading: boolean;
+  }>({ summary: null, forBody: null, loading: true });
 
   useEffect(() => {
     let cancelled = false;
+    setState((s) =>
+      s.forBody === waterBodyId
+        ? { ...s, loading: true }
+        : { summary: null, forBody: waterBodyId, loading: true },
+    );
     if (pending) return;
     getForecast({
       waterBodyId,
       ...(subAreaId ? { subAreaId: subAreaId as Id<'waterBodySubAreas'> } : {}),
     })
       .then((s) => {
-        if (!cancelled) setSummary(s);
+        if (!cancelled) setState({ summary: s, forBody: waterBodyId, loading: false });
       })
       .catch(() => {
         // Fail open and silently: a missing forecast is not an error a skater can act on, and the
         // next drawer-open retries because nothing was cached.
-        if (!cancelled) setSummary(null);
+        if (!cancelled) setState({ summary: null, forBody: waterBodyId, loading: false });
       });
     return () => {
       cancelled = true;
     };
   }, [getForecast, waterBodyId, subAreaId, pending]);
 
-  const line = formatForecastStrip(summary);
+  const line = formatForecastStrip(state.summary);
   if (!line && !reveal) return null;
 
   return (
-    <div className="flex flex-col gap-1">
+    <div
+      className={`flex flex-col gap-1 transition-opacity ${state.loading ? 'opacity-50' : ''}`}
+      aria-busy={state.loading}
+    >
       <h3 className="font-mono text-foreground-muted text-xs uppercase tracking-widest">
         What's coming
       </h3>
