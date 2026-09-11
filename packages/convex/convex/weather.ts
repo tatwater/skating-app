@@ -22,6 +22,8 @@ import {
   type HourlyWeather,
   summarizeForecast,
   summarizeWeatherSince,
+  WEATHER_TIERS,
+  type WeatherCell,
   type WeatherSinceSummary,
 } from '@skating/core';
 import type { Infer } from 'convex/values';
@@ -30,9 +32,10 @@ import { internal } from './_generated/api';
 import type { Id } from './_generated/dataModel';
 import type { ActionCtx } from './_generated/server';
 import { action, internalMutation, internalQuery } from './_generated/server';
+import { meterOpenMeteo, recordApiCall } from './lib/apiMeter';
 import { resolveSurvivor } from './lib/bodies';
-import { defaultSampleAnchor, hazardCenter, nearestSamplePoint } from './lib/sampling';
-import { weatherSinceSummary } from './lib/validators';
+import { bodyWeatherCell, hazardCenter } from './lib/sampling';
+import { literals, weatherSinceSummary } from './lib/validators';
 
 // The validator and the core type must stay structurally identical — assert it at compile time so drift
 // in either is a build error, not a silent DB/runtime mismatch.
@@ -44,10 +47,43 @@ void _assertSummaryReverse;
 
 const HOUR_MS = 3_600_000;
 const DAY_MS = 86_400_000;
-const MAX_PAST_DAYS = 92; // Open-Meteo forecast `past_days` ceiling
+/** Open-Meteo forecast `past_days` ceiling — and therefore D153's lazy-backfill horizon. */
+export const MAX_PAST_DAYS = 92;
+/** Two, not one, so a 12-hour horizon survives a day boundary (N6c B5b). */
+const FORECAST_DAYS = 2;
+/** The provider name `externalApiCalls` meters this path under (D158). */
+export const OPEN_METEO_PROVIDER = 'open-meteo';
+/** Shared with the daily archive so both request builders agree on the endpoint. */
+export const OPEN_METEO_FORECAST_URL = 'https://api.open-meteo.com/v1/forecast';
 
-const OPEN_METEO_URL = 'https://api.open-meteo.com/v1/forecast';
-const HOURLY_VARS = [
+/**
+ * The hourly variables every weather fetch asks for.
+ *
+ * ⚠ **This list crosses Open-Meteo's 10-variable billing threshold, deliberately.** Their weighting
+ * is roughly `ceil(days / 14) × (variables / 10)`, so the eleventh variable makes every call cost
+ * 1.1×. `wind_direction_10m` earns it alone: multiplied against a body's `fetchProfileM` it is what
+ * turns "it was windy" into "the wind ran the full 3.2 km fetch", which is the difference between
+ * black ice and a rippled surface nobody wants to skate (N6h Workstream C). The cost is counted, not
+ * guessed — see `externalApiCalls` and D158.
+ *
+ * ## ⚠ `weather_code` is the twelfth, and it costs ~9% on every weather call in the app
+ *
+ * Including the corpus-wide Tier-B sweep, which is most of the traffic. Founder call, N6h Workstream
+ * D, made with that number stated. What it buys is **precipitation typing that no combination of the
+ * other variables can produce**: sleet, ice pellets, freezing drizzle and freezing rain are all
+ * "some precipitation near 0°C" to `rain` + `snowfall` + `temperature_2m`.
+ *
+ * **What it does not buy is a visible texture.** At the timeline's real density — ~2.2 px per hour
+ * over a week, ~0.5 px at thirty days — a two-hour sleet event is four pixels, and no fill or hatch
+ * separates five classes at that size. The value lands entirely in the **scrub readout**, which has
+ * room to say "3 PM — freezing rain" in words. Anyone later wondering what the 9% bought should look
+ * there and not at the drawing; and anyone tempted to drop the variable should know the drawing will
+ * look identical afterwards while the readout quietly starts guessing.
+ *
+ * The fallback is real, not a stub: `precipitationKind` still derives freezing rain from liquid at or
+ * below 0°C, so archive rows written before this variable existed keep their hatch.
+ */
+export const HOURLY_VARS = [
   'temperature_2m',
   'precipitation',
   'rain',
@@ -55,19 +91,20 @@ const HOURLY_VARS = [
   'snow_depth',
   'wind_speed_10m',
   'wind_gusts_10m',
+  'wind_direction_10m',
   'cloud_cover',
   'sunshine_duration',
   'shortwave_radiation',
+  'weather_code',
 ] as const;
 
 function hourBucket(ms: number): number {
   return Math.floor(ms / HOUR_MS) * HOUR_MS;
 }
 
-/** Cache key for a sample point — rounded to ~110 m so a body's repeated queries share one entry. */
-export function samplePointKeyFor(lat: number, lng: number): string {
-  return `${lat.toFixed(3)},${lng.toFixed(3)}`;
-}
+// The cache key now comes from `weatherCellFor` in core (D152), reached through `bodyWeatherCell` so
+// all four consumers resolve one body to one entry. The old `samplePointKeyFor` — `toFixed(3)`, ~110 m
+// — produced 24,832 distinct keys for 24,948 bodies and is gone.
 
 const EMPTY_SUMMARY = summarizeWeatherSince([]);
 
@@ -119,8 +156,8 @@ interface OpenMeteoHours {
  * `summarizeForecast` rather than here, so this stays a transport function with no policy in it.
  */
 async function fetchOpenMeteoHourly(
-  lat: number,
-  lng: number,
+  ctx: ActionCtx,
+  cell: WeatherCell,
   windowStartMs: number,
   nowMs: number,
 ): Promise<OpenMeteoHours | null> {
@@ -136,8 +173,11 @@ async function fetchOpenMeteoHourly(
     Math.max(1, Math.ceil((Date.now() - windowStartMs) / DAY_MS)),
   );
   const params = new URLSearchParams({
-    latitude: String(lat),
-    longitude: String(lng),
+    // **The cell's snapped centre, never the body's own coordinates (D152).** Two bodies that share
+    // a cache key must produce the identical request, or the shared entry describes whichever of
+    // them fetched first.
+    latitude: String(cell.lat),
+    longitude: String(cell.lng),
     hourly: HOURLY_VARS.join(','),
     past_days: String(pastDays),
     // **Two days, not one, and this is the entire cost of B5b.** One day was already here so the
@@ -146,17 +186,28 @@ async function fetchOpenMeteoHourly(
     // survives a day boundary, so an evening skater still sees tomorrow morning. Same endpoint, same
     // variables, same attribution, no new provider and no new quota — D74 holds untouched, because
     // this is still Open-Meteo and there is no second opinion being blended.
-    forecast_days: '2',
+    forecast_days: String(FORECAST_DAYS),
     timezone: 'auto',
     timeformat: 'unixtime',
     temperature_unit: 'celsius',
     wind_speed_unit: 'kmh',
     precipitation_unit: 'mm',
   });
+  // **Elevation is the other half of D152's key.** Open-Meteo lapse-rate-downscales temperature to
+  // whatever elevation it is given, and a Green Mountain valley lake can sit 400 m below its grid
+  // cell's mean — several degrees, across freezing, which is the only threshold this app cares
+  // about. We send the *band centre* the key was built from, not the body's exact elevation, so the
+  // request and the key describe the same thing. Absent ⇒ send nothing and let Open-Meteo use its own
+  // model elevation, which the key records as an unbanded cell.
+  if (cell.elevationM !== undefined) params.set('elevation', String(cell.elevationM));
 
   let json: OpenMeteoResponse;
   try {
-    const res = await fetch(`${OPEN_METEO_URL}?${params.toString()}`);
+    // Metered before the await, so a request that then fails still counts against the day: what D158's
+    // trigger needs to know is what we *asked* Open-Meteo for, and a failed call consumed quota just
+    // the same. Never a limiter — see the `externalApiCalls` docblock.
+    await meterOpenMeteo(ctx, HOURLY_VARS.length, pastDays + FORECAST_DAYS);
+    const res = await fetch(`${OPEN_METEO_FORECAST_URL}?${params.toString()}`);
     if (!res.ok) {
       console.warn(`Open-Meteo request failed: ${res.status}`);
       return null;
@@ -232,6 +283,17 @@ async function fetchOpenMeteoHourly(
     ? { past: out, forecast, utcOffsetMs: offsetMs }
     : null;
 }
+
+/**
+ * Meter one Open-Meteo request (D158). Separate from the cache writes because a *failed* fetch still
+ * consumed quota and still needs counting, and the cache write only happens on success.
+ */
+export const recordOpenMeteoCallMutation = internalMutation({
+  args: { weightedCalls: v.number(), nowMs: v.number() },
+  handler: async (ctx, { weightedCalls, nowMs }) => {
+    await recordApiCall(ctx, OPEN_METEO_PROVIDER, weightedCalls, nowMs);
+  },
+});
 
 /** Read a cached summary for an exact (key, window) triple, or null on miss. */
 export const readWeatherCache = internalQuery({
@@ -330,8 +392,9 @@ export const resolveStripAnchor = internalQuery({
     // is a forecast for whichever duplicate happened to lose.
     const body = await resolveSurvivor(ctx, waterBodyId);
     if (!body || body.removedAt) return null;
-    const point = nearestSamplePoint(body, near);
-    return { lat: point.lat, lng: point.lng, startMs };
+    // The cell, not the point — see `bodyWeatherCell`. Returning coordinates here is what would let
+    // this call site and the decay cron key into different entries for the same body (D152).
+    return { cell: bodyWeatherCell(body, 'browse', near), startMs };
   },
 });
 
@@ -358,8 +421,7 @@ export const WEATHER_WINDOW_MAX_LOOKBACK_MS = 30 * DAY_MS;
  */
 export async function resolveWeatherSince(
   ctx: ActionCtx,
-  lat: number,
-  lng: number,
+  cell: WeatherCell,
   startMs: number,
   nowMs: number,
 ): Promise<WeatherSinceSummary | null> {
@@ -367,7 +429,7 @@ export async function resolveWeatherSince(
   const windowEndBucketMs = hourBucket(nowMs);
   if (windowStartMs >= windowEndBucketMs) return EMPTY_SUMMARY; // no full hour of window yet
 
-  const samplePointKey = samplePointKeyFor(lat, lng);
+  const samplePointKey = cell.key;
   const cached = await ctx.runQuery(internal.weather.readWeatherCache, {
     samplePointKey,
     windowStartMs,
@@ -375,7 +437,7 @@ export async function resolveWeatherSince(
   });
   if (cached) return cached;
 
-  const hourly = await fetchOpenMeteoHourly(lat, lng, windowStartMs, nowMs);
+  const hourly = await fetchOpenMeteoHourly(ctx, cell, windowStartMs, nowMs);
   if (hourly === null) return null; // fetch failed — don't cache, let the caller retry next time
   // **`.past` only, and never `.forecast` (D74).** Everything downstream of this line is a
   // calculation whose result must be re-derivable from what actually happened — the decay
@@ -462,11 +524,10 @@ export const writeForecastCache = internalMutation({
  */
 export async function resolveForecast(
   ctx: ActionCtx,
-  lat: number,
-  lng: number,
+  cell: WeatherCell,
   nowMs: number,
 ): Promise<ForecastSummary | null> {
-  const samplePointKey = samplePointKeyFor(lat, lng);
+  const samplePointKey = cell.key;
   const forecastBucketMs = hourBucket(nowMs);
   const cached = await ctx.runQuery(internal.weather.readForecastCache, {
     samplePointKey,
@@ -474,7 +535,7 @@ export async function resolveForecast(
   });
   if (cached) return cached;
 
-  const hourly = await fetchOpenMeteoHourly(lat, lng, hourBucket(nowMs - HOUR_MS), nowMs);
+  const hourly = await fetchOpenMeteoHourly(ctx, cell, hourBucket(nowMs - HOUR_MS), nowMs);
   if (hourly === null || hourly.forecast.length === 0) return null;
 
   // **`nowMs` is shifted into the body's local clock before the horizon is applied**, because the
@@ -508,20 +569,19 @@ export const getForecastForBody = action({
   args: { waterBodyId: v.id('waterBodies') },
   handler: async (ctx, { waterBodyId }): Promise<ForecastSummary | null> => {
     if (!(await ctx.auth.getUserIdentity())) return null;
-    const point = await ctx.runQuery(internal.weather.resolveBodySamplePoint, { waterBodyId });
-    if (!point) return null;
-    return await resolveForecast(ctx, point.lat, point.lng, Date.now());
+    const cell = await ctx.runQuery(internal.weather.resolveBodyWeatherCell, { waterBodyId });
+    if (!cell) return null;
+    return await resolveForecast(ctx, cell, Date.now());
   },
 });
 
-/** The body's default weather sample point — `interiorPoint` where present, per `lib/sampling`. */
-export const resolveBodySamplePoint = internalQuery({
-  args: { waterBodyId: v.id('waterBodies') },
-  handler: async (ctx, { waterBodyId }) => {
+/** The body's `browse`-tier weather cell — its default sample point, snapped and banded (D152). */
+export const resolveBodyWeatherCell = internalQuery({
+  args: { waterBodyId: v.id('waterBodies'), tier: v.optional(literals(WEATHER_TIERS)) },
+  handler: async (ctx, { waterBodyId, tier }) => {
     const body = await ctx.db.get(waterBodyId);
     if (!body || body.removedAt) return null;
-    const point = nearestSamplePoint(body, defaultSampleAnchor(body));
-    return { lat: point.lat, lng: point.lng };
+    return bodyWeatherCell(body, tier ?? 'browse');
   },
 });
 
@@ -549,8 +609,7 @@ export const getWeatherSinceForBody = action({
     const anchor = await ctx.runQuery(internal.weather.resolveStripAnchor, { reportId, hazardId });
     if (!anchor) return EMPTY_SUMMARY;
     return (
-      (await resolveWeatherSince(ctx, anchor.lat, anchor.lng, anchor.startMs, Date.now())) ??
-      EMPTY_SUMMARY
+      (await resolveWeatherSince(ctx, anchor.cell, anchor.startMs, Date.now())) ?? EMPTY_SUMMARY
     );
   },
 });

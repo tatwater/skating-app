@@ -36,6 +36,7 @@ import {
   query,
 } from './_generated/server';
 import { getCurrentProfile, requireProfile } from './lib/auth';
+import { clerkEmailForSubject } from './lib/clerkEmail';
 import { retainOrphanedBundle } from './lib/exportBundles';
 import { escapeHtml, sendEmail } from './lib/resend';
 import { deleteStoredBlob } from './lib/storageBlobs';
@@ -524,35 +525,11 @@ async function emailBundle(
 
 /** Ask Clerk for a user's primary email address. Returns `null` rather than throwing. */
 async function clerkEmailFor(ctx: ActionCtx, userId: Id<'profiles'>): Promise<string | null> {
-  const key = process.env.CLERK_SECRET_KEY;
-  if (!key) {
-    console.warn('CLERK_SECRET_KEY not set — cannot look up an export recipient address');
-    return null;
-  }
   const subject = (await ctx.runQuery(internal.dataExport.clerkSubjectFor, { userId })) as
     | string
     | null;
   if (subject === null) return null;
-
-  try {
-    const res = await fetch(`https://api.clerk.com/v1/users/${subject}`, {
-      headers: { Authorization: `Bearer ${key}` },
-    });
-    if (!res.ok) {
-      console.warn(`Clerk user lookup failed: ${res.status} ${res.statusText}`);
-      return null;
-    }
-    const body = (await res.json()) as {
-      primary_email_address_id?: string;
-      email_addresses?: { id: string; email_address: string }[];
-    };
-    const addresses = body.email_addresses ?? [];
-    const primary = addresses.find((a) => a.id === body.primary_email_address_id) ?? addresses[0];
-    return primary?.email_address ?? null;
-  } catch (err) {
-    console.warn('Clerk user lookup threw', err);
-    return null;
-  }
+  return await clerkEmailForSubject(subject);
 }
 
 /**

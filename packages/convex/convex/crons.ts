@@ -97,6 +97,52 @@ crons.interval(
   {},
 );
 
+// **The weather cell registry safety net (N6h / D152).** `weatherCells` is a projection of the corpus
+// and the Tier-B sweep pages it, so a stale registry means a body is absent from weather discovery
+// and a vacated cell keeps costing Open-Meteo calls.
+//
+// ⚠ **This is the NET, not the mechanism.** The thing that actually invalidates the registry is a
+// corpus import completing, and `importRuns.finish` schedules a reconcile for exactly the run kinds
+// that can move a cell key (`WEATHER_CELL_INVALIDATING_KINDS`). That makes staleness ~zero on the few
+// days a year the corpus changes. This cron catches what the event misses: a dashboard hand-edit, a
+// loader that died before `finish`, a restore.
+//
+// **Weekly rather than daily** because a walk is ~85 MB per tier (a body row averages 3,383 bytes),
+// so daily over both tiers is ~5.1 GB/month — ~10% of Convex Pro's included 50 GB spent re-deriving
+// keys that did not change. Weekly is ~1.5%. NOT season-gated: the registry must be populated
+// *before* a season opens, and the corpus drifts in the off-season as readily as in it.
+crons.interval(
+  'reconcile weather cell registry',
+  { hours: 24 * 7 },
+  internal.weatherArchive.maybeSyncWeatherCells,
+  {},
+);
+// **The Tier-B daily archive append (N6h / D153, D161).** Corpus-wide, ~3,043 `filter` cells, batched
+// and self-rescheduling. Daily rather than hourly because past days do not change — an append only has
+// to close yesterday and refresh today's partial row.
+//
+// ⚠ **Season-gated inside the action, not here.** Convex crons cannot be retuned at runtime, so the
+// tick is unconditional and `maybeRefreshFilterTier` decides whether to spend anything: running the
+// sweep year-round would burn ~43% of the annual free-tier budget mostly in July. Same
+// interval-with-a-gate shape as `maybeCheckSeasonOpen` and `recurrence.maybeRunRollover`, and for the
+// same reason — a tick that fails today is retried tomorrow, where a `cron` expression would wait a
+// year.
+crons.interval(
+  'append daily weather archive',
+  { hours: 24 },
+  internal.weatherArchive.maybeRefreshFilterTier,
+  {},
+);
+// The gap sweep (D161's recovery ladder). Separate from the append so a retry storm in one cannot
+// starve the other, and offset by running on its own 24h interval: past data is immutable, so a gap
+// is permanent unless something notices — and nothing in the weather path retried before N6h.
+crons.interval(
+  'repair weather archive gaps',
+  { hours: 24 },
+  internal.weatherArchive.maybeSweepGaps,
+  {},
+);
+
 // Photo-orphan GC — the durable backstop behind the client's best-effort reclaim. Daily, because an
 // orphan costs only storage and the grace window before a photo is even a candidate is 30 days.
 crons.interval('sweep orphan photos', { hours: 24 }, internal.storageHygiene.sweepOrphanPhotos, {});

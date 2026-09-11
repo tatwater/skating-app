@@ -16,7 +16,9 @@
  */
 
 import { v } from 'convex/values';
-import { internalAction } from './_generated/server';
+import { internal } from './_generated/api';
+import { internalAction, internalQuery } from './_generated/server';
+import { clerkEmailForSubject } from './lib/clerkEmail';
 import { escapeHtml, sendEmail } from './lib/resend';
 
 /**
@@ -51,5 +53,96 @@ export const send = internalAction({
     const text = `${heading}\n\n${lines.join('\n')}\n\nOpen: ${link}`;
 
     await sendEmail({ to, subject, html, text, context: 'operator alert' });
+  },
+});
+
+/**
+ * Everyone who should hear about an operator-facing event: moderators and admins, active only.
+ *
+ * ⚠ **Active only, and that is a real filter rather than tidiness.** A suspended or banned account
+ * keeps its `role` — demotion and suspension are separate levers (D37) — so filtering on role alone
+ * would keep mailing someone whose access was deliberately revoked. `deleting` and `deleted` are
+ * excluded for the same reason plus D62's obvious one.
+ *
+ * Returns Clerk subjects, not addresses: the address lookup is an HTTP call and belongs in the
+ * action, while this stays a cheap indexed read that a mutation could also use.
+ */
+export const staffSubjects = internalQuery({
+  args: {},
+  handler: async (ctx) => {
+    const out: { subject: string; displayName: string; role: string }[] = [];
+    for (const role of ['moderator', 'admin'] as const) {
+      const rows = await ctx.db
+        .query('profiles')
+        .withIndex('by_role', (q) => q.eq('role', role))
+        .collect();
+      for (const p of rows) {
+        if (p.status !== 'active') continue;
+        out.push({ subject: p.clerkUserId, displayName: p.displayName, role });
+      }
+    }
+    return out;
+  },
+});
+
+/**
+ * Send one alert to **every** active moderator and admin, one email each.
+ *
+ * ## Why a fan-out rather than the single `OPERATOR_ALERT_EMAIL`
+ *
+ * `send` above mails one configured address, which is right for a founder-only work trigger (a
+ * support ticket, a safety flag). Some events are *news for whoever is on duty* rather than a task
+ * for one person, and the season boundary is the first of them: it changes what the app is doing —
+ * imagery ingest starts or stops, the corpus-wide weather sweep starts or stops — and anyone who
+ * moderates has a reason to know.
+ *
+ * ## One message each, not one message with many recipients
+ *
+ * Putting the staff list in a single `to` would leak every moderator's address to every other
+ * moderator. At operator scale the extra sends cost nothing, and `lib/resend` already takes one
+ * address.
+ *
+ * ⚠ **Best-effort per recipient, never all-or-nothing.** One person's Clerk lookup failing must not
+ * stop the rest of the list being told; the loop logs and continues, and the return value reports
+ * what actually went out so a caller (or a log reader) can tell "nobody is configured" from "nobody
+ * was told".
+ */
+export const broadcastToStaff = internalAction({
+  args: {
+    subject: v.string(),
+    heading: v.string(),
+    lines: v.array(v.string()),
+    deepLinkPath: v.string(),
+  },
+  handler: async (
+    ctx,
+    { subject, heading, lines, deepLinkPath },
+  ): Promise<{ recipients: number; sent: number }> => {
+    const staff = await ctx.runQuery(internal.operatorAlerts.staffSubjects, {});
+    if (staff.length === 0) {
+      console.warn(`Operator broadcast skipped: no active staff — ${subject}`);
+      return { recipients: 0, sent: 0 };
+    }
+
+    const base = process.env.WEB_APP_URL ?? '';
+    const link = `${base}${deepLinkPath}`;
+    const bodyLines = lines.map((l) => `<p style="margin:0 0 8px">${escapeHtml(l)}</p>`).join('');
+    const html = `<div style="font-family:system-ui,sans-serif;max-width:520px">
+      <h2 style="margin:0 0 12px">${escapeHtml(heading)}</h2>
+      ${bodyLines}
+      <p style="margin:16px 0 0"><a href="${escapeHtml(link)}" style="color:#0b69ff">Open in /admin →</a></p>
+    </div>`;
+    const text = `${heading}\n\n${lines.join('\n')}\n\nOpen: ${link}`;
+
+    let sent = 0;
+    for (const person of staff) {
+      const to = await clerkEmailForSubject(person.subject);
+      if (!to) {
+        console.warn(`Operator broadcast: no address for ${person.role} ${person.displayName}`);
+        continue;
+      }
+      if (await sendEmail({ to, subject, html, text, context: 'operator broadcast' })) sent += 1;
+    }
+    return { recipients: staff.length, sent };
   },
 });

@@ -1,3 +1,4 @@
+export * from './chartWeather';
 export * from './colors';
 export * from './contrast';
 export * from './hue';

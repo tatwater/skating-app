@@ -108,6 +108,19 @@ export const REMOVAL_REASONS = [
 ] as const;
 
 /** How a report entered the system. */
+/**
+ * Where a `weatherDays` row's numbers came from (N6h / D153).
+ *
+ * `forecast` is Open-Meteo's forecast endpoint with `past_days`, which reaches back 92 days and is
+ * what fills the archive in normal operation. `archive` is the ERA5-backed historical API — banned
+ * outright by Phase 10 because its ~5-day lag made it wrong for recent windows, and un-banned by
+ * D153 for exactly the range past 92 days where the forecast endpoint has no data at all and a
+ * five-day lag is meaningless. `borrowed` is a `browse` row filled from its coarser `filter` parent
+ * (D161's recovery ladder, step 2), recorded so a reader can tell that a row is honestly
+ * lower-resolution than its tier implies.
+ */
+export const WEATHER_DAY_SOURCES = ['forecast', 'archive', 'borrowed'] as const;
+
 export const REPORT_SOURCES = ['native', 'activity', 'imported'] as const;
 
 // THICKNESS_METHODS moved to `@skating/core` (shared report vocab — the report form + the
@@ -551,6 +564,31 @@ export const IMPORT_RUN_KINDS = [
   'access_parking',
   'access_put_ins',
 ] as const;
+
+/**
+ * The run kinds that can invalidate the **weather cell registry** (N6h / D152).
+ *
+ * A cell key is `bodyWeatherCell(body, tier)` — a function of the body's interior point, its
+ * elevation band, and whether it exists at all. So only a pass that can change *those* leaves
+ * `weatherCells` stale:
+ *
+ * - `canonical_water` — the load itself, which inserts and moves bodies.
+ * - `dedup_resolve` — removes them.
+ * - `elevation` — writes `elevationM`, which is **in** the `browse` key's 100 m band.
+ *
+ * Everything else writes fields the key does not read: depth, wind roses, contours, access points,
+ * `curatedBoost`, admin areas. `corpus_merge` writes nothing to Convex at all, and `sub_area_seed`
+ * writes `waterBodySubAreas`, which the registry does not cover.
+ *
+ * ⚠ **Err toward including a kind, not excluding one.** A missing trigger costs up to a week of a
+ * body being absent from Tier-B discovery (the weekly reconcile cron is the net); a spurious one
+ * costs a single ~170 MB corpus walk. The errors are not symmetric and the list should reflect it.
+ */
+export const WEATHER_CELL_INVALIDATING_KINDS: readonly (typeof IMPORT_RUN_KINDS)[number][] = [
+  'canonical_water',
+  'dedup_resolve',
+  'elevation',
+];
 
 /**
  * A run's terminal state. **`running` is not merely a transient** — a row left in it is the

@@ -20,13 +20,18 @@
  * → one cache entry → guaranteed consistency.
  */
 
-import { decayMultiplier, HAZARD_WEATHER_LOOKBACK_DAYS, isSnowHidden } from '@skating/core';
+import {
+  decayMultiplier,
+  HAZARD_WEATHER_LOOKBACK_DAYS,
+  isSnowHidden,
+  type WeatherCell,
+} from '@skating/core';
 import { v } from 'convex/values';
 import { internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
 import { internalAction, internalMutation, internalQuery } from './_generated/server';
 import { isShallowBody } from './lib/depth';
-import { hazardCenter, nearestSamplePoint } from './lib/sampling';
+import { bodyWeatherCell, hazardCenter } from './lib/sampling';
 import { takeCapped } from './lib/scan';
 import { resolveWeatherSince } from './weather';
 
@@ -40,7 +45,7 @@ const DAY_MS = 86_400_000;
 /** Effective refresh cadence: skip a hazard refreshed more recently than this (Phase 7 → admin config). */
 export const WEATHER_REFRESH_MIN_INTERVAL_HOURS = 3;
 
-// Sampling helpers (`nearestSamplePoint`/`hazardCenter`) live in `lib/sampling` so `weather.ts` can share
+// Sampling helpers (`bodyWeatherCell`/`hazardCenter`) live in `lib/sampling` so `weather.ts` can share
 // them without an import cycle — the strip must resolve the same point this cron does (§5 consistency).
 
 interface HazardWeatherJob {
@@ -48,8 +53,12 @@ interface HazardWeatherJob {
   type: Doc<'hazards'>['type'];
   lastConfirmedAt: number;
   weatherAdjustedAt?: number;
-  lat: number;
-  lng: number;
+  /**
+   * The body's `browse`-tier weather cell (D152) — carried whole rather than as coordinates so this
+   * cron and the drawer strip cannot key into different cache entries for the same body. Phase 10
+   * §5's strip↔decay consistency invariant is the thing that would break silently otherwise.
+   */
+  cell: WeatherCell;
   /** Whether the hazard's body is shallow — amplifies the thaw response only (N6a / D69). */
   isShallow: boolean;
 }
@@ -118,14 +127,12 @@ export const listActiveHazardsForWeather = internalQuery({
         deferred.push(h._id);
         continue;
       }
-      const point = nearestSamplePoint(entry.body, hazardCenter(h));
       jobs.push({
         hazardId: h._id,
         type: h.type,
         lastConfirmedAt: h.lastConfirmedAt,
         weatherAdjustedAt: h.weatherAdjustedAt,
-        lat: point.lat,
-        lng: point.lng,
+        cell: bodyWeatherCell(entry.body, 'browse', hazardCenter(h)),
         isShallow: entry.isShallow,
       });
     }
@@ -216,7 +223,7 @@ export const refreshHazardWeather = internalAction({
       // Fail-open: a skipped hazard keeps its last-good multiplier (or none ⇒ 1) and retries next tick.
       try {
         const windowStart = Math.max(job.lastConfirmedAt, now - lookbackMs);
-        const summary = await resolveWeatherSince(ctx, job.lat, job.lng, windowStart, now);
+        const summary = await resolveWeatherSince(ctx, job.cell, windowStart, now);
         // A failed fetch (`null`) is NOT an empty summary: keep the last good multiplier and DON'T stamp
         // `weatherAdjustedAt`, so a transient Open-Meteo blip can't erase a real signal or block retry for
         // the cadence window — the next tick tries again (fail-open, matches the cache layer's no-cache-on-

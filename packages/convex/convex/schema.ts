@@ -32,6 +32,7 @@ import {
   USER_ROLES,
   USER_STATUSES,
   WATER_BODY_CLASSES,
+  WEATHER_TIERS,
   WIND_ROSE_SOURCES,
 } from '@skating/core';
 import { defineSchema, defineTable } from 'convex/server';
@@ -84,6 +85,7 @@ import {
   SUPPORT_CATEGORIES,
   SUPPORT_STATUSES,
   WATER_BODY_SOURCES,
+  WEATHER_DAY_SOURCES,
 } from './lib/enums';
 import {
   bbox,
@@ -238,6 +240,10 @@ export default defineSchema({
     .index('by_clerk_user_id', ['clerkUserId'])
     .index('by_username', ['username'])
     .index('by_status', ['status'])
+    // Staff fan-out: who to email when an operator-facing event fires (D38). Indexed rather than
+    // filtered because the callers are crons — a scan that is free at 20 profiles is the shape that
+    // stops being free without anything changing except success.
+    .index('by_role', ['role'])
     /**
      * The departed-photo sweep's work queue (D66/N5a): tombstones that haven't been swept for the
      * current season yet.
@@ -1048,6 +1054,20 @@ export default defineSchema({
     openedBy: v.array(v.string()),
     /** First date the region itself froze, or `null` if winter had not established yet. */
     winterFrom: v.union(v.string(), v.null()),
+    /**
+     * Observed date the season closed — ten consecutive days on which every ordinary site went
+     * without an overnight freeze (`ingestWindow`'s reluctant ice-out proxy). Absent while the
+     * season is still open, which is the normal state from November to roughly May.
+     *
+     * ⚠ **This is the only "the season is over" signal in the system, and two very different
+     * consumers read it**: imagery ingest stops cutting granules, and N6h's corpus-wide weather
+     * sweep stops spending Open-Meteo calls. Both want the *same* reluctance — being late costs a
+     * few granule reads and a few thousand weather calls, while being early truncates the melt-out
+     * record and blinds discovery during the last skateable weeks of the season.
+     */
+    closesOn: v.optional(v.string()),
+    /** When `closesOn` was recorded, so a re-open (it happens; see the module note) is auditable. */
+    closedAt: v.optional(v.number()),
     /** How many sites actually returned observations — the honest denominator for `openedBy`. */
     sitesSampled: v.number(),
     detectedAt: v.number(),
@@ -1224,7 +1244,17 @@ export default defineSchema({
   // **forecast API with `past_days`** (recent windows), never the ~5-day-lagged archive (§2). Ephemeral;
   // safe to drop/prune (a miss just refetches).
   weatherCache: defineTable({
-    samplePointKey: v.string(), // rounded "lat,lng" — the grid-ish cache key
+    /**
+     * The **weather cell key** (N6h / D152) — `weatherCellFor('browse', …).key`, e.g. `b:895:-1441:3`.
+     *
+     * ⚠ **The field name is a fossil and is kept deliberately.** It held a `lat.toFixed(3)` sample
+     * point until N6h, which produced 24,832 distinct values for 24,948 bodies — one fetch per lake,
+     * no sharing at all. Renaming the *field* would be a schema migration (widen → deploy → backfill
+     * → narrow) for a table that prunes itself every 24 h, so instead the meaning changed and the
+     * name stayed. Old-format rows are simply unreachable under the new key and are swept by
+     * `pruneWeatherCache` within a day.
+     */
+    samplePointKey: v.string(),
     windowStartMs: v.number(), // window start, bucketed to the hour (absolute UTC ms)
     windowEndBucketMs: v.number(), // `now` bucketed to the hour — the append-friendly end
     summary: weatherSinceSummary, // the computed reducer output (both consumers read this)
@@ -1251,7 +1281,7 @@ export default defineSchema({
    * many skaters open the same lake.
    */
   weatherForecastCache: defineTable({
-    samplePointKey: v.string(), // rounded "lat,lng" — the same grid-ish key `weatherCache` uses
+    samplePointKey: v.string(), // the same `browse`-tier cell key `weatherCache` uses (D152; fossil name)
     forecastBucketMs: v.number(), // `now` bucketed to the hour: how fresh this prediction is
     hours: v.array(
       v.object({
@@ -1274,6 +1304,326 @@ export default defineSchema({
     // garbage far sooner than a weather-since row, since nothing can ever read it again once its
     // bucket passes.
     .index('by_forecast_bucket', ['forecastBucketMs']),
+
+  /**
+   * **The registry of weather cells the corpus actually occupies (N6h / D152, D161).**
+   *
+   * The Tier-B cron has to visit every `filter` cell once a day. Deriving that list by paginating
+   * 25,000 `waterBodies` rows would cost ~75 MB of read I/O *daily* to rediscover 3,043 keys that
+   * change only when the corpus does — and this repo has already paid once for treating a corpus scan
+   * as a cheap way to answer a small question (the N6d access load, 105 GB).
+   *
+   * So the cells are materialised. `backfillWeatherCells` walks the corpus once, in batches, and
+   * writes one row per distinct (tier, cell); after that the cron reads a few thousand small rows.
+   *
+   * `lat`/`lng` are the **snapped cell centre** — the values that go to Open-Meteo — so the cron never
+   * needs a body row at all. `bodyCount` is diagnostic: it is how you notice that a re-import moved
+   * lakes between cells, and how the D152 cardinality claims stay auditable rather than remembered.
+   */
+  weatherCells: defineTable({
+    cellKey: v.string(),
+    tier: literals(WEATHER_TIERS),
+    lat: v.number(), // snapped centre
+    lng: v.number(), // snapped centre
+    /** Band-centre elevation for a banded tier; absent on `filter` and on unbanded cells. */
+    elevationM: v.optional(v.number()),
+    bodyCount: v.number(),
+    /**
+     * The materialisation run that last wrote this row.
+     *
+     * ⚠ **Not a timestamp, and that distinction is a fixed bug.** `bodyCount` accumulates across the
+     * pages of one run (a cell can straddle a page boundary) and must be *replaced* by a later run.
+     * Discriminating those two cases on `updatedAt === now` looked fine and was wrong: two runs
+     * landing in the same millisecond both read as "same run" and double-counted every body. A run id
+     * cannot collide.
+     */
+    runId: v.optional(v.string()),
+    updatedAt: v.number(),
+  })
+    .index('by_key', ['cellKey'])
+    // The cron's sweep: every cell of one tier, in a stable order so a batched run resumes cleanly.
+    .index('by_tier_key', ['tier', 'cellKey']),
+
+  /**
+   * One row per tier recording the registry's materialisation run — **the debounce's memory.**
+   *
+   * ## ⚠ Why this is a table and not a timestamp read off `weatherCells`
+   *
+   * The debounce originally sampled `updatedAt` from whichever cell sorted first in a tier and treated
+   * it as "when the registry was last reconciled". Two things were wrong with that, and the second one
+   * is the one that actually loses data:
+   *
+   * 1. **The sample is arbitrary in *time*, not just in identity.** Each page of the walk stamps its
+   *    rows with its own `Date.now()`, so the first-by-key cell may carry a clock from anywhere in the
+   *    run — pagination orders by creation time, which has nothing to do with cell key.
+   * 2. **A walk that *completes* after R has not necessarily seen the corpus as of R.** It has seen it
+   *    as of its own *start*, and for rows it had already paged past, not even that. So an import
+   *    landing mid-walk could be answered by a run that provably could not have seen it, and its
+   *    changes would sit unregistered until the weekly cron — a body invisible to the sweep for up to
+   *    seven days, which is exactly the silent staleness the registry's producer exists to prevent.
+   *
+   * Recording `startedAt` for a run that reached `completedAt` fixes both: it is an exact clock rather
+   * than a sample, and it states the guarantee the walk can actually make — *this run saw every write
+   * committed before `startedAt`*.
+   *
+   * `completedAt` absent means in flight. That is load-bearing too: a second walk starting while one
+   * is running would give both runs' `pruneVacatedCells` a foreign `runId` to delete, and they would
+   * take turns deleting each other's registry. Overlap is now resolved by `runId` — the newest run
+   * owns the tier and the older one stands down at its next page.
+   */
+  weatherCellSyncs: defineTable({
+    tier: literals(WEATHER_TIERS),
+    /** The owning run. A page whose id no longer matches has been superseded and must stop. */
+    runId: v.string(),
+    /** When the walk began — the instant the completed run's guarantee is stated against. */
+    startedAt: v.number(),
+    /** Set only by the final page. Absent means in flight. */
+    completedAt: v.optional(v.number()),
+  }).index('by_tier', ['tier']),
+
+  /**
+   * **Daily weather observations — an archive, not a cache (N6h / D153).**
+   *
+   * Everything else in this file's weather block expires. `weatherCache` prunes at 24 h because its
+   * rows are *window summaries* reachable only inside their own hour bucket; `weatherForecastCache`
+   * is garbage the moment its bucket passes. **A row here describes what happened between two past
+   * instants, so it is true for ever** — it is written once and kept for the season, and
+   * `storageHygiene` deliberately does not sweep it.
+   *
+   * Keyed on `(cellKey, dayMs)`. `tier` is redundant with the key's prefix and stored anyway, because
+   * the corpus-wide filter (D159) and the gap detector both want to range-scan *all* cells of one
+   * tier for a day, which a prefix cannot do.
+   *
+   * **`dayMs` is `Date.UTC(y, m, d)` of the lake's LOCAL date** — a sortable key, not an instant.
+   * Hours are assigned to days from the local date strings Open-Meteo returns under
+   * `timeformat=iso8601`, never by shifting a UTC timestamp, because a response carries one
+   * `utc_offset_seconds` for its whole span and both DST transitions fall inside a skating season.
+   */
+  weatherDays: defineTable({
+    cellKey: v.string(), // `weatherCellFor(tier, …).key`
+    tier: literals(WEATHER_TIERS),
+    dayMs: v.number(), // UTC-midnight encoding of the local calendar date
+    localDate: v.string(), // `YYYY-MM-DD`, so a reader never reverses the encoding above
+
+    /**
+     * ⚠ **A missing day is stored as missing, never as a zero.** When `missing` is true every
+     * measure below is absent and the row exists only to say "we looked and could not get this
+     * day" — which is what stops the D159 filter from reading an absent day as *"no snow fell"*, the
+     * most dangerous possible failure for a predicate whose job is finding lakes with no snow on
+     * them. The gap detector (D161) re-requests these; they are not tombstones, they are retries
+     * waiting to happen.
+     */
+    missing: v.optional(v.boolean()),
+    /**
+     * Where this row came from. `forecast` is Open-Meteo's forecast endpoint with `past_days` (the
+     * ≤92-day window); `archive` is the ERA5-backed historical API, which D153 un-banned for exactly
+     * the range where the forecast endpoint has no data; `borrowed` means a `browse` row filled from
+     * its coarser `filter` parent (D161's recovery ladder, step 2) and is therefore honest about
+     * being lower-resolution than its tier implies.
+     */
+    source: literals(WEATHER_DAY_SOURCES),
+
+    /**
+     * Seconds east of UTC at this cell on this day, DST included, as Open-Meteo resolved it.
+     *
+     * ⚠ **This is what makes `dayMs` reversible.** `dayMs` is UTC midnight of a *local* date, so
+     * going the other way — from a stored UTC instant like `reports.skateEndTime` to the day key it
+     * belongs to — needs the offset, and without it a caller floors to a UTC day and misfiles every
+     * evening by one day. Free in every response and previously thrown away; see `localDayMsAt`.
+     */
+    /**
+     * The offset **this date** was on, in seconds east of UTC.
+     *
+     * ⚠ **It did not always mean that, and the difference lost calibration windows.** Open-Meteo
+     * returns one `utc_offset_seconds` for a whole response, and the ingest stamped it on all 92
+     * days — so a backfill run in July gave every January row EDT. Anything reading it as a
+     * date-specific offset (the D160 calibration did) was an hour out for half the archive, which
+     * near local midnight moves the calendar date and shifts a 60-day window by one.
+     *
+     * Rows written since carry the real per-date offset, derived from {@link timeZone}. Older rows
+     * still hold the response-wide value and are corrected on their next refetch — so prefer
+     * `timeZone` and treat this as the fallback it is.
+     */
+    utcOffsetSeconds: v.optional(v.number()),
+    /**
+     * The IANA zone for the cell, e.g. `America/New_York`.
+     *
+     * The only field here from which a calendar date is knowable exactly: it carries the transition
+     * instants, so it resolves both the hour spring-forward doubles and the one fall-back removes,
+     * neither of which any offset can.
+     */
+    timeZone: v.optional(v.string()),
+
+    /**
+     * Hours observed. **NOT always 24** — DST days are 23 or 25, and *today's row is partial by
+     * design* (the fetch asks for `forecast_days: 1` so a reader can see what is happening now).
+     * A consumer summing a window must test `isCompleteDay`, not merely that the field is present.
+     */
+    hours: v.optional(v.number()),
+    minTempC: v.optional(v.number()),
+    maxTempC: v.optional(v.number()),
+    meanTempC: v.optional(v.number()),
+    /** Min across [prev 18:00, this 09:00) local. Absent when that window was not fully observed. */
+    nightMinTempC: v.optional(v.number()),
+    hoursBelowFreezing: v.optional(v.number()),
+    hoursAboveFreezing: v.optional(v.number()),
+    freezingDegreeHours: v.optional(v.number()),
+    thawDegreeHours: v.optional(v.number()),
+    precipitationMm: v.optional(v.number()),
+    rainMm: v.optional(v.number()),
+    snowfallCm: v.optional(v.number()),
+    maxSnowDepthM: v.optional(v.number()),
+    /** ⚠ A duration, never a melt proxy — an hour at noon and an hour at dusk are not the same hour. */
+    hoursOfSun: v.optional(v.number()),
+    insolationWhM2: v.optional(v.number()),
+    /** Shortwave × (1 − albedo): the energy the surface kept. Albedo swings ~6× on snow cover alone. */
+    absorbedInsolationWhM2: v.optional(v.number()),
+    /** Hours both above freezing and genuinely sunlit — the "soft, sticky surface" mechanism. */
+    sunlitThawHours: v.optional(v.number()),
+    /**
+     * Enhanced temperature-index melt estimate, mm water-equivalent.
+     *
+     * ⚠ **Model-internal (D3 / D150).** Read by the season-close signal and D160's operator
+     * instrument; never served to a skater client in any unit or under any label.
+     */
+    meltIndexMm: v.optional(v.number()),
+    maxWindKph: v.optional(v.number()),
+    maxWindGustKph: v.optional(v.number()),
+    windRunKm: v.optional(v.number()),
+    /** Hours per 16-point sector, index 0 = N clockwise. Empty when no hour carried a direction. */
+    windSectorHours: v.optional(v.array(v.number())),
+    /** Mean wind across freezing hours — the calm-freeze/black-ice signal. Absent when nothing froze. */
+    freezingHoursMeanWindKph: v.optional(v.number()),
+    freezingHoursMaxWindKph: v.optional(v.number()),
+
+    fetchedAt: v.number(),
+  })
+    // The upsert key. Every write goes through it, so a retried or overlapping cron cannot
+    // double-insert and the gap detector can re-request a day it already holds.
+    .index('by_cell_day', ['cellKey', 'dayMs'])
+    // The corpus-wide scan: "every filter-tier cell for this day" (D159), and the gap sweep.
+    .index('by_tier_day', ['tier', 'dayMs']),
+
+  /**
+   * **Hourly weather, for the timeline chart only (N6h Workstream D).**
+   *
+   * ## Why this is not four more columns on `weatherDays`
+   *
+   * It was going to be, and that would have been a mistake with a name in this repo's history.
+   * `weatherDays` is **range-scanned corpus-wide** — by the D159 filter, by `sweepWeatherDayGaps`,
+   * by `tierHasDay` — and Convex bills read I/O by the whole document. Adding ~96 numbers to a row
+   * roughly triples it, so every one of those scans would pay for hourly data it never reads. That
+   * is the shape of the N6d access load that cost 105 GB and disabled the deployment.
+   *
+   * It is also the one table `storageHygiene` deliberately never sweeps, because a past observation
+   * stays true for ever — so the growth would have been permanent as well as corpus-wide.
+   *
+   * A separate table keeps the daily row exactly as lean as the scans need, and puts the hourly
+   * payload behind a lookup that only the drawer performs.
+   *
+   * ## ⚠ `browse` tier only, and that is a cost decision rather than an oversight
+   *
+   * `filter` cells are swept daily for the entire corpus — ~3,043 cells — to answer *questions about
+   * days* ("three nights below 20°F, no snow since"). Nothing corpus-wide asks an hourly question,
+   * and storing hourly for that sweep would write ~3,000 rows a day for ever to serve a chart nobody
+   * opened. `browse` cells are created lazily, when a person actually opens a lake, so this table
+   * grows with attention rather than with the corpus.
+   *
+   * ## What it costs at the provider: nothing
+   *
+   * The hourly series is **already fetched** — `fetchLocalHourly` pulls it, `summarizeWeatherDays`
+   * reduces it to scalars, and the hours were dropped on the floor. This stores what was already in
+   * hand. The only new Open-Meteo cost in this workstream is `weather_code`, which is a variable
+   * count change, not an extra request.
+   *
+   * Keyed on `(cellKey, dayMs)` exactly like `weatherDays`, so the two are joined by the key a caller
+   * already has and a day's hours are one lookup rather than 24.
+   */
+  weatherHours: defineTable({
+    cellKey: v.string(),
+    dayMs: v.number(), // UTC-midnight encoding of the local date — the same key `weatherDays` uses
+    localDate: v.string(),
+
+    /**
+     * The day's observed hours, ascending.
+     *
+     * ⚠ **Not always 24, and `localHour` is stored per hour rather than implied by array position.**
+     * DST days are 23 or 25 hours and both transitions fall inside a skating season, so an array
+     * indexed by position would misattribute every hour after the change. Storing the local hour the
+     * lake actually experienced is what lets the chart place a mark without a timezone database —
+     * the same reasoning that made the archive ask for `timeformat=iso8601` in the first place.
+     */
+    /**
+     * Which generation of `storableHour` wrote this row — see `HOURLY_ROW_VERSION`.
+     *
+     * ⚠ Absent means version 1, from before the stamp existed. The panel treats an out-of-date row as
+     * a gap so the next drawer-open rewrites it, which is what stops a newly-added hourly field from
+     * being invisible for ever on every cell anyone had already opened.
+     */
+    version: v.optional(v.number()),
+    hours: v.array(
+      v.object({
+        localHour: v.number(),
+        temperatureC: v.number(),
+        precipitationMm: v.optional(v.number()),
+        rainMm: v.optional(v.number()),
+        snowfallCm: v.optional(v.number()),
+        snowDepthM: v.optional(v.number()),
+        windSpeedKph: v.optional(v.number()),
+        /**
+         * Degrees meteorological — the direction wind blew **from**.
+         *
+         * Free in the same response as the speed (`wind_direction_10m` has been in `HOURLY_VARS`
+         * since Workstream C, for the daily sector histogram) and simply not carried through to the
+         * hourly row at first. Multiplied against the body's `fetchProfileM` it is what separates
+         * "it was windy" from "the wind had 3 km of open water behind it".
+         */
+        windDirectionDeg: v.optional(v.number()),
+        shortwaveWm2: v.optional(v.number()),
+        /**
+         * WMO code — the only input that can name sleet, ice pellets or freezing drizzle.
+         *
+         * Optional because rows written before `weather_code` joined `HOURLY_VARS` will not have it,
+         * and those rows are still perfectly good: `precipitationKind` falls back to the
+         * rain/snow/temperature derivation, which still catches freezing rain (liquid at or below
+         * 0°C) — the type that most changes a skating surface.
+         */
+        weatherCode: v.optional(v.number()),
+      }),
+    ),
+    fetchedAt: v.number(),
+  })
+    // The only access pattern: one cell, a range of days, for one open drawer. There is deliberately
+    // no `by_tier_day` twin — nothing corpus-wide reads this table, and adding the index would
+    // invite exactly the scan the split exists to prevent.
+    .index('by_cell_day', ['cellKey', 'dayMs']),
+
+  /**
+   * **Outbound third-party API call counts, one row per provider per UTC day (N6h / D158).**
+   *
+   * D158 makes buying Open-Meteo's $319/yr plan conditional on *"sustained use above ~7,000
+   * calls/day"* — a trigger that could not fire, because nothing in the weather path counted
+   * anything. No token bucket, no rate limiter, no metric. This is the counter that trigger reads.
+   *
+   * **It is a meter, not a limiter.** Nothing blocks on it. A limiter that silently dropped weather
+   * fetches would degrade the app to protect a budget the founder would rather simply pay, and it
+   * would do so invisibly. Counting makes the decision visible and leaves it to a human.
+   *
+   * Deliberately generic in `provider` so the ORS drive-time path (which has its own per-endpoint
+   * quota, and whose 403-not-429 out-of-quota behaviour is already a known trap) can share it.
+   */
+  externalApiCalls: defineTable({
+    provider: v.string(), // 'open-meteo' | 'ors' | …
+    dayMs: v.number(), // UTC midnight — a billing day, not a local one
+    calls: v.number(), // HTTP requests actually issued
+    /**
+     * Open-Meteo bills fractionally: roughly `ceil(days/14) × (vars/10)`, so a 92-day backfill with
+     * 14 variables is ~9 billed calls in one request. Tracking both means the trigger can read the
+     * number the provider actually counts rather than the one we find easiest to measure.
+     */
+    weightedCalls: v.number(),
+    updatedAt: v.number(),
+  }).index('by_provider_day', ['provider', 'dayMs']),
 
   /**
    * Cached NWS active alerts (N6c B5, D74) — the advisory layer, kept strictly apart from the

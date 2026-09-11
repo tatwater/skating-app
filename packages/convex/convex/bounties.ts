@@ -54,7 +54,7 @@ import { publicAuthor } from './lib/authorView';
 import { resolveSurvivor } from './lib/bodies';
 import { isListed } from './lib/listing';
 import { awardPointEvent, checkAndAwardBadges, tallyThumbs, trustClassFor } from './lib/reputation';
-import { nearestSamplePoint } from './lib/sampling';
+import { bodyWeatherCell } from './lib/sampling';
 import { takeCapped, takeCappedResult } from './lib/scan';
 import { bbox, latLng } from './lib/validators';
 import { resolveWeatherSince } from './weather';
@@ -388,7 +388,9 @@ export const bountyFreshnessInputs = internalQuery({
     ) {
       return { status: 'unavailable' as const };
     }
-    const point = nearestSamplePoint(body, subArea?.centroid ?? body.centroid);
+    // Anchored on the sub-area when the bounty names one — a bay is what people skate, and on a
+    // giant it is a different weather cell from mid-lake (D152 / N6h hole 2).
+    const cell = bodyWeatherCell(body, 'browse', subArea?.centroid ?? body.centroid);
     const { suppressors, truncated } = await evaluateFreshness(ctx, body, now, subAreaId);
     // A truncated scan is going to be blocked by `createChecked` no matter what the weather says, so
     // don't spend Open-Meteo calls establishing it. Same resource-guard reasoning as the cap check
@@ -396,8 +398,7 @@ export const bountyFreshnessInputs = internalQuery({
     if (truncated) return { status: 'suppressed' as const };
     return {
       status: 'ok' as const,
-      lat: point.lat,
-      lng: point.lng,
+      cell,
       reports: suppressors.map((s) => ({ reportId: s.reportId, skateEndTime: s.skateEndTime })),
     };
   },
@@ -440,7 +441,7 @@ export const create = action({
     const weatherReopenedReports: { reportId: Id<'reports'>; skateEndTime: number }[] = [];
     if (inputs.status === 'ok') {
       for (const r of inputs.reports) {
-        const summary = await resolveWeatherSince(ctx, inputs.lat, inputs.lng, r.skateEndTime, now);
+        const summary = await resolveWeatherSince(ctx, inputs.cell, r.skateEndTime, now);
         // Only trust the weather signal when we actually have data; a failed fetch (`null`) or empty
         // window ⇒ no reopen (fail-open — a fetch miss never opens a bounty, it just leaves the report
         // suppressing via recency × thumbs × trust in the mutation).

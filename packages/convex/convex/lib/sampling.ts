@@ -16,6 +16,7 @@
  * field rather than a correction to the first.
  */
 
+import { type WeatherCell, type WeatherTier, weatherCellFor } from '@skating/core';
 import type { Doc } from '../_generated/dataModel';
 
 /** Squared degree distance — fine for picking the nearest of a handful of sample points at lake scale. */
@@ -61,6 +62,38 @@ export function nearestSamplePoint(
  */
 export function defaultSampleAnchor(body: Doc<'waterBodies'>): { lat: number; lng: number } {
   return body.interiorPoint ?? body.representativePoint ?? body.centroid;
+}
+
+/**
+ * **The one place a body becomes a weather cell (N6h / D152).**
+ *
+ * Four independent consumers reach Open-Meteo through `resolveWeatherSince` — the drawer strip, the
+ * hazard decay cron, the bounty reopen gate and the contradiction settle — and Phase 10 §5's
+ * strip↔decay consistency invariant depends on all four resolving the *same* body to the *same*
+ * cache entry. Before N6h that agreement was a convention: each site called `nearestSamplePoint` and
+ * then, separately, the key function. Adding an elevation band to the key made that convention
+ * dangerous, because a site that resolved the point but forgot the elevation would key into a
+ * *different, valid-looking* entry and fork the cache silently — the strip describing one window
+ * while the decay applied another.
+ *
+ * So the cell is the unit that travels, not a loose pair of coordinates. `resolveWeatherSince` and
+ * `resolveForecast` take a `WeatherCell`, which can only come from here, which means the four cannot
+ * disagree without deleting this function.
+ *
+ * `target` is the thing the weather is *about* — a report's put-in, a hazard's centre — used to pick
+ * among a giant's `weatherSamplePoints`. Omit it for a body-level question and it falls back to
+ * `defaultSampleAnchor`.
+ */
+export function bodyWeatherCell(
+  body: Doc<'waterBodies'>,
+  tier: WeatherTier,
+  target?: { lat: number; lng: number },
+): WeatherCell {
+  const point = nearestSamplePoint(body, target ?? defaultSampleAnchor(body));
+  // ⚠ The body's own elevation, not the sample point's. On a multi-point giant those differ in
+  // principle; in practice a lake surface is level, which is exactly why one elevation per body is
+  // the right model and why `elevationM` lives on the body rather than on each sample point.
+  return weatherCellFor(tier, point.lat, point.lng, body.elevationM);
 }
 
 /** Center of a hazard's footprint bbox — its representative point for nearest-sample-point selection. */

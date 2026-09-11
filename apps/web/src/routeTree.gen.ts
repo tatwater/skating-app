@@ -25,6 +25,7 @@ import { Route as AdminTuningRouteImport } from './routes/admin.tuning'
 import { Route as AdminSupportRouteImport } from './routes/admin.support'
 import { Route as AdminRecurrenceRouteImport } from './routes/admin.recurrence'
 import { Route as AdminImportsRouteImport } from './routes/admin.imports'
+import { Route as AdminIceCalibrationRouteImport } from './routes/admin.ice-calibration'
 import { Route as AdminFlagsRouteImport } from './routes/admin.flags'
 import { Route as AdminFeaturesRouteImport } from './routes/admin.features'
 import { Route as AdminWaterIndexRouteImport } from './routes/admin.water.index'
@@ -116,6 +117,11 @@ const AdminImportsRoute = AdminImportsRouteImport.update({
   path: '/imports',
   getParentRoute: () => AdminRoute,
 } as any)
+const AdminIceCalibrationRoute = AdminIceCalibrationRouteImport.update({
+  id: '/ice-calibration',
+  path: '/ice-calibration',
+  getParentRoute: () => AdminRoute,
+} as any)
 const AdminFlagsRoute = AdminFlagsRouteImport.update({
   id: '/flags',
   path: '/flags',
@@ -184,6 +190,7 @@ export interface FileRoutesByFullPath {
   '/sign-up': typeof SignUpRoute
   '/admin/features': typeof AdminFeaturesRoute
   '/admin/flags': typeof AdminFlagsRoute
+  '/admin/ice-calibration': typeof AdminIceCalibrationRoute
   '/admin/imports': typeof AdminImportsRoute
   '/admin/recurrence': typeof AdminRecurrenceRoute
   '/admin/support': typeof AdminSupportRoute
@@ -210,6 +217,7 @@ export interface FileRoutesByTo {
   '/sign-up': typeof SignUpRoute
   '/admin/features': typeof AdminFeaturesRoute
   '/admin/flags': typeof AdminFlagsRoute
+  '/admin/ice-calibration': typeof AdminIceCalibrationRoute
   '/admin/imports': typeof AdminImportsRoute
   '/admin/recurrence': typeof AdminRecurrenceRoute
   '/admin/support': typeof AdminSupportRoute
@@ -240,6 +248,7 @@ export interface FileRoutesById {
   '/sign-up': typeof SignUpRoute
   '/admin/features': typeof AdminFeaturesRoute
   '/admin/flags': typeof AdminFlagsRoute
+  '/admin/ice-calibration': typeof AdminIceCalibrationRoute
   '/admin/imports': typeof AdminImportsRoute
   '/admin/recurrence': typeof AdminRecurrenceRoute
   '/admin/support': typeof AdminSupportRoute
@@ -271,6 +280,7 @@ export interface FileRouteTypes {
     | '/sign-up'
     | '/admin/features'
     | '/admin/flags'
+    | '/admin/ice-calibration'
     | '/admin/imports'
     | '/admin/recurrence'
     | '/admin/support'
@@ -297,6 +307,7 @@ export interface FileRouteTypes {
     | '/sign-up'
     | '/admin/features'
     | '/admin/flags'
+    | '/admin/ice-calibration'
     | '/admin/imports'
     | '/admin/recurrence'
     | '/admin/support'
@@ -326,6 +337,7 @@ export interface FileRouteTypes {
     | '/sign-up'
     | '/admin/features'
     | '/admin/flags'
+    | '/admin/ice-calibration'
     | '/admin/imports'
     | '/admin/recurrence'
     | '/admin/support'
@@ -471,6 +483,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminImportsRouteImport
       parentRoute: typeof AdminRoute
     }
+    '/admin/ice-calibration': {
+      id: '/admin/ice-calibration'
+      path: '/ice-calibration'
+      fullPath: '/admin/ice-calibration'
+      preLoaderRoute: typeof AdminIceCalibrationRouteImport
+      parentRoute: typeof AdminRoute
+    }
     '/admin/flags': {
       id: '/admin/flags'
       path: '/flags'
@@ -572,6 +591,7 @@ const MapRouteWithChildren = MapRoute._addFileChildren(MapRouteChildren)
 interface AdminRouteChildren {
   AdminFeaturesRoute: typeof AdminFeaturesRoute
   AdminFlagsRoute: typeof AdminFlagsRoute
+  AdminIceCalibrationRoute: typeof AdminIceCalibrationRoute
   AdminImportsRoute: typeof AdminImportsRoute
   AdminRecurrenceRoute: typeof AdminRecurrenceRoute
   AdminSupportRoute: typeof AdminSupportRoute
@@ -587,6 +607,7 @@ interface AdminRouteChildren {
 const AdminRouteChildren: AdminRouteChildren = {
   AdminFeaturesRoute: AdminFeaturesRoute,
   AdminFlagsRoute: AdminFlagsRoute,
+  AdminIceCalibrationRoute: AdminIceCalibrationRoute,
   AdminImportsRoute: AdminImportsRoute,
   AdminRecurrenceRoute: AdminRecurrenceRoute,
   AdminSupportRoute: AdminSupportRoute,

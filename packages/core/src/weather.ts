@@ -23,6 +23,10 @@ export interface HourlyWeather {
   /**
    * Epoch ms at the start of this hour, in the **body's local time** (Open-Meteo `timezone=auto`).
    * Local — so `nightsBelowFreezing` buckets onto the right calendar night with no per-call tz math.
+   *
+   * ⚠ **This is NOT a UTC instant, and rendering it as one is a silent bug.** A local formatter
+   * applies the offset a second time — 4–5 hours in this region, on a sentence that still reads
+   * plausibly. Use `formatLocalHourLabel` (`weatherPanel.ts`), which reads it back with UTC getters.
    * Optional: the decay integrals and every other aggregate are order-based and need no timestamp;
    * only `nightsBelowFreezing` uses it (and reads `null` when any hour lacks it).
    */
@@ -33,6 +37,14 @@ export interface HourlyWeather {
   windSpeedKph: number;
   /** Open-Meteo `wind_gusts_10m` (kph). */
   windGustKph?: number;
+  /**
+   * Open-Meteo `wind_direction_10m` (degrees, meteorological — the direction wind comes *from*).
+   *
+   * Unused by this reducer, which is deliberate: every aggregate here is scalar, and a mean bearing
+   * is not a mean. It exists on the shared hour type so the daily archive (`weatherDay.ts`) can build
+   * its sector histogram from the same fetch rather than forking a second hour shape (N6h).
+   */
+  windDirectionDeg?: number;
   /** Open-Meteo `rain` (mm) — liquid only. Split from snowfall (opposite decay signs, D56). */
   rainMm?: number;
   /** Open-Meteo `snowfall` (**cm** — its native unit). Snow insulates + hides; never heals (D56). */
@@ -45,6 +57,15 @@ export interface HourlyWeather {
   sunshineSeconds?: number;
   /** Fallback when `sunshineSeconds` is absent: cloud cover % for the hour. */
   cloudCoverPct?: number;
+  /**
+   * Open-Meteo `weather_code` (WMO). The only input that separates sleet, ice pellets and freezing
+   * drizzle from "some precipitation near freezing" (N6h Workstream D).
+   *
+   * Unused by every reducer here — they aggregate amounts, and a modal weather code is not a mean.
+   * It rides on the shared hour type so the timeline chart can name a precipitation type from the
+   * same fetch rather than forking a second hour shape, exactly as `windDirectionDeg` does above.
+   */
+  weatherCode?: number;
 }
 
 export interface WeatherSinceSummary {

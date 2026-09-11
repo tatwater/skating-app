@@ -28,9 +28,9 @@ import { Badge, DetailLoading, Section, Unavailable } from './detailUi';
 import { DirectionsButton, FavoriteButton } from './FavoriteButton';
 import { ForecastStrip } from './ForecastStrip';
 import { IceHistory } from './IceHistory';
-
 import { LeavingNotice, useIsLeaving } from './LeavingNotice';
 import { useMapSelection } from './MapSelectionContext';
+import { PastWeatherPanel } from './PastWeatherPanel';
 import { PostedAccess } from './PostedAccess';
 import { ReferenceLinks } from './ReferenceLinks';
 import { ReportForm } from './ReportForm';
@@ -236,6 +236,10 @@ export function WaterBodyDetail({
           {/* Official NWS alerts (N6c/B5) above everything — a warning from the local forecast
               office outranks both our observations and anybody's forecast. */}
           <AlertStrip waterBodyId={result.body._id} reveal={reveal} />
+          {/* What the ice has been through (N6h / D153) — ABOVE the forecast, matching the web
+              column and the same authority ordering: alert > observation > prediction. It draws the
+              same timeline the web app does: the geometry and the sentences both live in core. */}
+          <PastWeatherPanel waterBodyId={result.body._id} />
           {/* The forward forecast (N6c/B5b) — the other half of the weather-since timeline. */}
           <ForecastStrip waterBodyId={result.body._id} reveal={reveal} />
           {/* Winter wind (N7-3 / D90) — a climatology, so it sits BELOW the forecast: what the last
