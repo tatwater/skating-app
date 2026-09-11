@@ -1514,10 +1514,12 @@ a shoreline-ish point. See [`phase-N6c`](./phase-N6c-expanded-lake-profiles.md) 
 fields*.
 
 **N6h — The weather panel: a season of past days, a planning window, and radar that admits what it
-can't see.** 📋 **Scoped 2026-09-02/03, not built.** Founder ask, grown out of a costing question —
-*"what is most expensive about this plan?"* — whose answer moved the design: the expensive half is not
-the data, it is **the cache key**, which today shares nothing. See
-[`phase-N6h-weather-detail.md`](./phase-N6h-weather-detail.md); decisions **D152**–**D161**. Depends on
+can't see.** 🚧 **Scoped 2026-09-02/03; PR 1 (#48: re-key · durable archive · past panel + hourly
+timeline · dark thickness instrument · D162/D163) merged and on dev 2026-09-10; PR 3 (the three-tab
+drawer IA + sub-area weather spread) in progress 2026-09-11; D+E and F remain.** Founder ask, grown out
+of a costing question — *"what is most expensive about this plan?"* — whose answer moved the design: the
+expensive half is not the data, it is **the cache key**, which today shares nothing. See
+[`phase-N6h-weather-detail.md`](./phase-N6h-weather-detail.md); decisions **D152**–**D163**. Depends on
 nothing; every seam it needs is already built.
 
 *Today the weather block is two lines: an NWS alert when one is active, and a 12-hour temperature
@@ -1560,9 +1562,9 @@ range. That answers "is a storm coming" and nothing else. The question a skater 
   *Reporting* (user-supplied, this season) · *Planning* (weather, put-ins, directions). The NWS alert
   sits **above** the tab strip, preserving the alert > observation > prediction ordering.
 
-**Suggested split:** A+B+C+G (re-key · `weatherDays` · the past panel · the admin instrument) is a
-shippable phase on its own and is where the value concentrates. D+E (forecast panel · discovery) is a
-second; F (radar) a third, depending on neither.
+**Split as built:** A+B+C+G (re-key · `weatherDays` · the past panel · the admin instrument) shipped
+as PR 1 and is where the value concentrates. **H** (the drawer IA, which D turned out to need first)
+is PR 3; D+E (forecast panel · discovery) a fourth; F (radar) a fifth, depending on neither.
 
 ### N6d's two follow-ups — both sized, neither urgent (2026-08-14)
 

@@ -1,12 +1,12 @@
 # Phase N6h — The weather panel: a season of past days, a planning window, and radar that admits what it can't see
 
-> **Status:** 🚧 **PR 1 BUILT 2026-09-03 on `phase-n6h-weather-detail-1`** — Workstreams **A + B + C +
-> G** (the re-key, the durable archive, the past-weather panel on both clients, and the dark
-> thickness instrument), then a **review pass on the same branch** adding D162 (solar weighting) and
-> D163 (the season close). Unpushed, no PR opened, **undeployed — which is why the panel does not
-> render on the running web app.** **D + E + F + H not started.** Suites: core 2,348 · convex 1,388 ·
-> web 497 · mobile 108 · etl 433, `lint` and `check-types` clean across all 13 tasks.
-> See *§What PR 1 shipped, and where it differs from this plan* below.
+> **Status:** 🚧 **PR 1 = [#48](https://github.com/tatwater/skating/pull/48), merged 2026-09-10 and
+> deployed to dev** — Workstreams **A + B + C + G**, D162 + D163, **and a continuous hourly weather
+> timeline on both clients that this plan never specified** (see *§What PR 1 actually shipped*). Four
+> Greptile passes on the PR; suites at merge: core 2,460 · convex 1,437 · web 508 · mobile 108.
+> **PR 3 = Workstream H** (the three-tab drawer IA + the sub-area weather spread) is **in progress on
+> `phase-n6h-weather-detail-3`** since 2026-09-11. **D + E + F not started.** Three PRs remain:
+> H → D+E → F (founder call, 2026-09-11, keeping the split below).
 > Scoped 2026-09-02. Founder ask, same day. Grew out of a costing
 > question — *"what is most expensive about this plan?"* — and the answer moved the design: the
 > expensive half is not the data, it is **the cache key**, which today shares nothing.
@@ -14,8 +14,8 @@
 > **Touches:** `weather.ts` (the sample-point key, the fetch spec), `weatherCache` /
 > `weatherForecastCache`, the N5a season boundary, the N6c wind rose + fetch profile, Phase 4
 > drive-time, the Phase 5 feed filter row, and the N6e imagery scrubber + Fly/R2 cutter pattern.
-> **Decisions:** **D152–D163** (drafted below; D152–D161 written into
-> [`01-decisions.md`](./01-decisions.md) 2026-09-03, D162–D163 still owed).
+> **Decisions:** **D152–D163**, all written into [`01-decisions.md`](./01-decisions.md) (D152–D161 on
+> 2026-09-03, D162–D163 on 2026-09-11).
 > **Supersedes one Phase 10 rule:** *"never the archive API"* was right for its use case and is wrong
 > for this one. See D153.
 >
@@ -42,6 +42,28 @@
 >    **D159**.
 > 6. **The season checker and the cell scanner play along rather than merge** — the cheap 25-site
 >    checker stays the year-round trigger and *starts* the expensive scanner. See **D161**.
+>
+> ### Founder calls, 2026-09-11 — fourth pass, kicking off PR 3
+>
+> 7. **H carries the sub-area spread**, as sequenced in open question 5 — not a pure move. Verified
+>    against seeded rows plus a **one-off out-of-season sweep of Champlain's bay cells** on dev, since
+>    Tier B is otherwise empty until mid-November.
+> 8. **A giant opens pre-selected on its top-`displayScore` bay, with an easy switcher.** The
+>    effective bay is the route's `?sub=` if present, else the top bay — *implicitly*, never writing
+>    the URL on open. The switcher and the spread's named extremes both set **route-level focus**
+>    (`focusSubAreaId`), so camera, report-feed filter and weather follow one selection concept
+>    rather than a third one.
+> 9. **Spread lines only in H** — named extremes for lows and snow-since over the 7-day headline
+>    window, collapsing to *"Similar across the lake"* inside a pinned threshold. The sorted bay lists
+>    wait for E, where the per-cell digest gives them their inputs for free.
+> 10. **IA mapping.** Action buttons (report / hazard / bounty / directions) and the NWS alert stay
+>     **above the tabs, always visible**. *Overview:* public-access ruling, posted rules, wind
+>     climatology, reference links, credits, moderator controls. *Reporting:* season filter, bounties,
+>     ice history, hazards, reports. *Planning:* the weather timeline, the forecast, put-ins. The
+>     "permission precedes access" adjacency is knowingly split across Overview/Planning because the
+>     taxonomy puts put-ins with the trip and permission with the body.
+> 11. **D stays as D155 wrote it** — a separate 7-day grid selector plus an hourly strip, *not* an
+>     extension of the timeline PR 1 built. **Three PRs remain: H → D+E → F.**
 >
 > ### Measurements taken 2026-09-02 (open questions 1 and 2)
 >
@@ -112,7 +134,55 @@
 ## What PR 1 shipped, and where it differs from this plan
 
 **Built 2026-09-03: Workstreams A + B + C + G.** D (forecast panel), E (weather-first discovery) and
-F (radar) are untouched.
+F (radar) are untouched. ⚠ The subsections below were written on 2026-09-03; **the PR then grew for a
+week before merging as #48** — see *§What PR 1 actually shipped* immediately after them.
+
+### What PR 1 actually shipped — the week between this section and the merge (written 2026-09-11)
+
+The plan's own record stopped at the review pass. Between 2026-09-03 and the 2026-09-10 merge the
+branch gained, in order:
+
+1. **A continuous hourly weather timeline, on both clients.** Not in this document anywhere. The
+   seven-column past panel showed each day's high and low and could not show *order* — snow at 2 PM
+   Tuesday then a hard freeze that night is a different surface from a freeze that was later buried.
+   `core/weatherTimeline.ts` (geometry) + `design/chartWeather.ts` (a measured, CVD-validated scale)
+   draw temperature, precipitation (typed via `weather_code`), wind with **fetch as the fill's density
+   channel**, and sun with an irradiance ramp. **Fixed at 2 px/hour** (founder call) with a scroll
+   track, trackpad panning and a keyboard slider; the export under `exports/weather-timeline` is a port
+   of the real model against real ERA5 data for Mascoma Lake. ⚠ This is why D should not be assumed
+   to be "the timeline extended forward" — founder call 11 above keeps D155's grid+strip shape.
+2. **`weatherHours`** — the hours the archive was already fetching and throwing away, stored for the
+   *browse* tier only (grows with attention, not with the corpus) and never on `weatherDays`, whose
+   rows are range-scanned corpus-wide. Rows carry `HOURLY_ROW_VERSION`; adding a field without
+   bumping it is now the bug, because a cell already holding complete rows is otherwise satisfied for
+   ever and the new field never appears on exactly the popular lakes.
+3. **`weather_code` as the twelfth hourly variable** (~9% on every call; founder call, made with the
+   number stated). `HOURLY_VARS` is 12, not the 14 the cost model below assumes — `dew_point_2m` was
+   never added and `precipitation_probability` is still owed by D.
+4. **`weatherCellSyncs`** and an import-triggered registry reconcile: `importRuns.finish` schedules a
+   debounced walk for the run kinds that can move a cell key; the weekly cron is demoted to a drift
+   net. A tier has one owning `runId`, so two concurrent walks can no longer take turns emptying it.
+5. **`timeZone` stored per `weatherDays` row.** Four Greptile passes to learn that *a calendar date is
+   not derivable from an offset*: Open-Meteo stamps one `utc_offset_seconds` on a whole response, so
+   a July backfill gave every January row EDT and no arithmetic on it could recover the date.
+   `localDateInZone` asks the zone (the Convex runtime has full ICU) and returns null rather than
+   answering in UTC.
+6. **`isCompleteDay` takes the lake's current local day**, because Open-Meteo returns whole calendar
+   days and today's row holds forecast values for its un-elapsed hours — today was "complete" from the
+   first fetch of the morning, on every surface.
+7. **Staff email on season open and close** (`broadcastToStaff`, one message per active moderator or
+   admin, gated on the mutation actually writing).
+8. **D163's set-once `recordSeasonWinterFrom`** — a sentinel-opened season wrote `winterFrom: null`
+   and could never close.
+
+**⚠ Two things D inherits from this, recorded here so they are not rediscovered:**
+
+- **`FORECAST_DAYS = 2` lives in the shared `fetchOpenMeteoHourly`**, used by the strip, the archive
+  backfill, the decay cron and the contradiction checker. D needs seven forecast days; bumping the
+  constant would move the 92-day backfill from 7 to 8 billing units. Parametrize it per caller.
+- **`precipitation_probability` is forecast-only and would ride on every call**, including the
+  archive's, at +8%. D v1 should ship without it — `weather_code` plus amount already carry the
+  story — unless the founder wants it with that number stated.
 
 ### Six things the build decided that the plan did not
 

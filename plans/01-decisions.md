@@ -5114,3 +5114,79 @@ cold cell in an Adirondack hollow in early November is not a season, it is weath
 coarse, boring, region-wide signal precisely because it is hard to fool.
 
 **Related:** D152, D153, D159, [`phase-N5a`](./phase-N5a-seasons.md), [`phase-N6e`](./phase-N6e-satellite-imagery.md), [`phase-N6h`](./phase-N6h-weather-detail.md).
+
+## D162 — The sun is weighted by energy and albedo, never by hours (N6h)
+
+**2026-09-03, founder question.** *"An hour of sun at solar noon vs at sunset are going to have very
+different effects on the ice, right?"*
+
+**Right, and `hoursOfSun` could not see the difference.** Irradiance on a horizontal surface scales with
+the sine of the solar elevation angle; at 44°N in January the sun peaks near 25° (sin ≈ 0.42) and reaches
+zero at both ends of the day. A duration counts a noon hour and a dusk hour the same, and calls a 6-hour
+December day and a 6-hour March day equal.
+
+**The fix is not to reweight the hours — it is to stop using hours.** `shortwave_radiation` was already
+in `HOURLY_VARS` and already summed into `insolationWhM2`; irradiance has the solar geometry inside it by
+construction, so the correct measure was one field away and unused.
+
+**⚠ The larger term was missing entirely: albedo.** Fresh snow reflects 0.8–0.9 of incoming shortwave;
+bare clear ice ~0.1. The same 3 kWh/m² day deposits roughly **9× more energy into black ice than into
+the same lake under 5 cm of snow.** Three fields land in `weatherDay.ts`:
+
+- **`absorbedInsolationWhM2`** — Σ shortwave × (1 − albedo), albedo estimated per *hour* from that
+  hour's snow depth (a cover that melts out by noon leaves the afternoon absorbing like bare ice).
+- **`sunlitThawHours`** — hours both above freezing and genuinely sunlit (≥ 120 W/m²). Shortwave
+  penetrates clear ice and melts it internally at the grain boundaries — candled ice — while the air
+  is still below freezing, which is why air temperature alone under-describes a spring thaw.
+- **`meltIndexMm`** — the enhanced temperature-index form from glaciology, `M = TF·T + SRF·(1−α)·SW`.
+  SRF is the latent heat of fusion (92.8 Wh/m² per mm), not a tuned parameter; only TF is empirical,
+  and it is the obvious thing for D160's instrument to fit.
+
+**Three guardrails, matching D160's.** `meltIndexMm` **never reaches a skater surface in any unit under
+any label** — it is a number about a model, and an implied millimetre of melt is one step from a
+load-bearing claim; its only readers compare it against reality (D160) or spend money on it (D163).
+The panel line stays an observation (*"7 sunny hours above freezing, over 2 days"*) and names weather,
+not ice. `hoursOfSun` survives with a warning in its docblock: right for *"was it sunny?"*, wrong for
+*"how much did the sun do?"*.
+
+**⚠ Not modelled, and not to be read as modelled:** snow insulation of the ice below, water depth,
+current, springs, wind-driven exchange, or thickness. Albedo here is a property of the *snow*, inferred
+from depth alone.
+
+**Related:** D3, D150, D160, D163, [`phase-N6h`](./phase-N6h-weather-detail.md).
+
+## D163 — The season closes on the signal we already had, and nothing was reading it (N6h)
+
+**2026-09-03, founder question.** *"Wait — the season gate never closes? How do we know when a season
+is over? Does that affect our ability to notice when a new season begins?"*
+
+**The close did not need designing.** `ingestWindow` has computed `closesOn` since N6e — ten
+consecutive days on which every ordinary site went without an overnight freeze, measured from
+`winterFrom`, calibrated against real 2025-26 weather to land on 5 May 2026. What was missing was
+wiring: `imageryIngestSeasons` had no column for it; `maybeCheckSeasonOpen` returned
+`skipped: 'already recorded'` on *any* row, so once a season opened the checker never looked again; and
+the Tier-B weather sweep's gate therefore had one edge — `opensOn` present — and would have run
+**~228 days against the ~151 D161 was costed on.**
+
+**No, it does not affect noticing a new season.** The checker keys on the season *label* (D63's July
+boundary), so a new season is a new row and the gate re-arms on its own.
+
+**⚠ The one thing that could not be reused, and would have failed silently.** A live checker cannot
+re-derive `winterFrom`: `past_days` is 92, so by the April tick that closes a season the December date
+the region froze is months outside the fetch window — `ingestWindow` would return `closesOn: null` and
+the season would never close, with tidy logs. So the closing half is `thawClose(sites, winterFrom)`, fed
+the **recorded** date.
+
+**Three consumers, one signal.** Imagery stops cutting granules, the Tier-B sweep stands down, the
+archive stops growing. All three would rather be two weeks late than one week early — closing early
+truncates the melt-out record *and* blinds discovery during the last, most marginal skateable weeks.
+
+**⚠ What the close is NOT.** A coarse region-wide *ice-out* signal for gating spend. Never a per-lake
+claim that skating is over, and D162's melt fields must not be promoted into one. *"Several days like
+that ruins it"* is a real signal whose home is the **panel**, as an observation, not a switch.
+
+**⚠ Follow-up found in review (PR #48):** a season the sentinel pond opened on its own wrote
+`winterFrom: null`, and `recordSeasonOpen` was insert-only — so that season could never close. Fixed with
+a set-once `recordSeasonWinterFrom`; the failure would have been ~4,300 weighted calls a day all summer.
+
+**Related:** D63, D151, D161, D162, [`phase-N5a`](./phase-N5a-seasons.md), [`phase-N6e`](./phase-N6e-satellite-imagery.md), [`phase-N6h`](./phase-N6h-weather-detail.md).
