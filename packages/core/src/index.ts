@@ -18,6 +18,7 @@ export * from './confidence';
 export * from './contourLayer';
 export * from './dedup';
 export * from './depthMatch';
+export * from './detailTabs';
 export * from './display';
 export * from './dob';
 export * from './draftQueue';
