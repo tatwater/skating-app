@@ -15,13 +15,18 @@
  * person's route. The SDK knows about credentials; only this file knows that this is a
  * location app.
  *
- * ## What PRIVACY.md commits us to
+ * ## What PRIVACY.md commits us to — and this file is what makes it true
  *
- * The notice tells users we scrub name, home location, town, bio, and date of birth on
- * deletion, and that diagnostics are "app version, device model, OS, and error details".
- * A home coordinate arriving in an error context is outside what we said we collect. D29's
- * session-replay gating turns on the same fact this does: the population includes minors
- * (D41) and this is a location app.
+ * The notice's "Device & diagnostic data" bullet now makes specific promises: that we do
+ * not send IP address, cookies, request bodies, or form contents; that web addresses lose
+ * their query strings before leaving the device; and that location fields (coordinates,
+ * home location, and everything derived from it), date of birth, bio, and connected-
+ * account credentials are removed before anything is sent. The first two are
+ * `dataCollection` in `apps/web/src/lib/sentryOptions.ts` and `sendDefaultPii` on mobile;
+ * the rest are the deny list and hooks below. **Change what this file redacts and the
+ * notice has to change with it** — it is quoting this module, not describing an
+ * aspiration. D29's session-replay gating turns on the same fact this does: the
+ * population includes minors (D41) and this is a location app.
  *
  * ## Scope, stated plainly
  *

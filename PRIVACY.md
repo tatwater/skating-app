@@ -1,6 +1,6 @@
 # Privacy notice (interim — friends alpha)
 
-**Last updated: 2026-07-15**
+**Last updated: 2026-09-11**
 
 > **Status: interim.** This is a plain-language privacy notice for the small,
 > friends-only alpha of this app. It is written to be honest and cover the alpha
@@ -46,10 +46,18 @@ your reports"). The app is not directed at children under 16.
   Strava, Garmin, COROS, Polar, Apple Health, Google Health Connect), we receive
   detected ice-skate activities and their GPS track so we can prompt you to make a
   report and show your route. You control these connections and can disconnect them.
-- **Device & diagnostic data** — for crash and error reporting (Sentry) we collect
-  technical data like app version, device model, OS, and error details. Product
-  analytics (PostHog) are not enabled in the alpha. If enabled later, this notice will
-  be updated; **session replay will never record users under 18**, and where it is used
+- **Device & diagnostic data** — for crash, error, and performance monitoring (Sentry)
+  we collect technical data like app version, device model, OS, and error details, plus
+  timing information about how the app performs: how long screens and pages take to
+  load, and how long the app's network requests take (to our backend, the weather and
+  map services, and sign-in). Performance data is labelled by screen or route type
+  (e.g. "lake detail"), and any web address in it has its query string removed before
+  it leaves your device. We **do not** send your IP address, cookies, request bodies,
+  or the contents of any form to Sentry, and before anything is sent we remove
+  location fields (coordinates, your home location, and everything derived from it),
+  your date of birth, bio, and connected-account credentials. Product analytics
+  (PostHog) are not enabled in the alpha. If enabled later, this notice will be
+  updated; **session replay will never record users under 18**, and where it is used
   it will mask inputs and location data.
 
 ## How we use it
