@@ -50,6 +50,10 @@ bundle by Metro (`EXPO_PUBLIC_*`) and are therefore public by construction — o
 publishable keys here. **Build** vars are read by `app.config.ts` at native-build time (the
 `@sentry/react-native/expo` plugin) and never reach the bundle.
 
+The Sentry **org and project** are no longer variables: both are committed in
+`app.config.ts` (`teagan-atwater` / `skating-app`). Neither is a credential; only
+`SENTRY_AUTH_TOKEN` is.
+
 | Var | Kind | What | Where from |
 |---|---|---|---|
 | `EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY` | client | Clerk client key (`pk_…`) | Clerk dashboard → API keys |
@@ -58,8 +62,6 @@ publishable keys here. **Build** vars are read by `app.config.ts` at native-buil
 | `EXPO_PUBLIC_BATHYMETRY_PMTILES_URL` | client | Bathymetric-contour `.pmtiles` (N6b) — a *second* archive, added to the style only while a lake drawer is open. **Blank ⇒ the layer never mounts** | Same R2 bucket as the basemap; see [`scripts/bathymetry`](../../scripts/bathymetry/README.md) |
 | `EXPO_PUBLIC_SENTRY_DSN` | client | Sentry client DSN | Sentry project settings |
 | `EXPO_PUBLIC_OFFLINE_BASEMAP` | client | **Optional, off by default.** `1` enables the unverified Layer-3 offline-basemap spike (`src/lib/offlineBasemap.ts`). Leave blank unless you're actively testing it | n/a — a local flag |
-| `SENTRY_ORG` | build | Sentry org slug. **Falls back to `PLACEHOLDER_ORG`**, which silently breaks source-map upload — check with `eas config` | Sentry settings |
-| `SENTRY_PROJECT` | build | Sentry project slug — same silent-fallback caveat | Sentry settings |
 | `SENTRY_AUTH_TOKEN` | build | Uploads source maps so stack traces symbolicate. **Secret — never commit; store in EAS only** | Sentry → auth tokens |
 
 The app boots with placeholders — sign-in, data, and crash reporting simply stay inert
@@ -76,8 +78,8 @@ with no sign-in, no data, and a 404ing basemap.
 
 | EAS environment | Populated? |
 |---|---|
-| `development` | ✅ all 8 (the 5 required client keys + 3 Sentry build vars) |
-| `preview` | ✅ all 8 |
+| `development` | ✅ all 6 (the 5 required client keys + `SENTRY_AUTH_TOKEN`) |
+| `preview` | ✅ all 6 |
 | `production` | ❌ empty — prod deployment is still deferred |
 
 `EXPO_PUBLIC_OFFLINE_BASEMAP` is deliberately **not** in any EAS environment: it's an opt-in
@@ -124,9 +126,9 @@ setup, from `apps/mobile/`:
 4. **Store the build-time secrets** Sentry needs for source-map upload (never commit these):
    ```bash
    eas env:create --name SENTRY_AUTH_TOKEN --scope project --visibility secret
-   eas env:create --name SENTRY_ORG --scope project
-   eas env:create --name SENTRY_PROJECT --scope project
    ```
+   Just the one. The org and project are committed in `app.config.ts`; the auth token is
+   the only value that is actually a secret.
 
 Prerequisites to have ready: an **Expo account**, and (for iOS device builds) **Apple
 Developer** enrollment — both are on the Phase 0 lead-time list.
