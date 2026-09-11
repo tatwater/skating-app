@@ -42,47 +42,76 @@ import { WeatherTimeline } from './WeatherTimeline';
  */
 const TIMELINE_DAYS = 30;
 
-export function PastWeatherPanel({
-  waterBodyId,
-  days = 7,
-}: {
-  waterBodyId: Id<'waterBodies'>;
-  /** The window the *sentences* describe. The timeline always reads {@link TIMELINE_DAYS}. */
-  days?: number;
-}) {
-  const getDays = useAction(api.weatherArchive.getWeatherDaysForBody);
-  const [state, setState] = useState<{
-    days: PanelDay[];
-    timeline: TimelineDayInput[];
-    fetchProfileM?: number[] | undefined;
-    coarse: boolean;
-    largeBody: boolean;
-    todayLocalDayMs: number;
-    loading: boolean;
-  }>({
+type PanelState = {
+  days: PanelDay[];
+  timeline: TimelineDayInput[];
+  fetchProfileM?: number[] | undefined;
+  coarse: boolean;
+  largeBody: boolean;
+  todayLocalDayMs: number;
+  loading: boolean;
+  /** The lake the held data belongs to, so a bay switch can keep it and a lake switch cannot. */
+  forBody: string | null;
+};
+
+/** Nothing held: a first mount, a new lake, a refused read, or a failed one. */
+function emptyPanel(forBody: string | null, loading: boolean): PanelState {
+  return {
     days: [],
     timeline: [],
     coarse: false,
     largeBody: false,
     todayLocalDayMs: 0,
-    loading: true,
-  });
+    loading,
+    forBody,
+  };
+}
+
+export function PastWeatherPanel({
+  waterBodyId,
+  subAreaId,
+  pending = false,
+  days = 7,
+}: {
+  waterBodyId: Id<'waterBodies'>;
+  /**
+   * The bay this panel is about (N6h / open question 5), resolved by the caller with
+   * `resolveWeatherSubArea`. Absent on the lake itself and on every body with no bays.
+   */
+  subAreaId?: string | undefined;
+  /**
+   * True while the caller does not yet know which bay this is about. **Load-bearing, not
+   * cosmetic:** the panel holds instead of fetching the lake's cell and then the bay's a moment
+   * later — two Open-Meteo calls for one drawer-open on exactly the giants where the cells differ.
+   */
+  pending?: boolean;
+  /** The window the *sentences* describe. The timeline always reads {@link TIMELINE_DAYS}. */
+  days?: number;
+}) {
+  const getDays = useAction(api.weatherArchive.getWeatherDaysForBody);
+  const [state, setState] = useState<PanelState>(emptyPanel(null, true));
 
   useEffect(() => {
     let cancelled = false;
-    setState((s) => ({ ...s, loading: true }));
-    getDays({ waterBodyId, days: TIMELINE_DAYS })
+    // ⚠ Keep the held data across a *bay* switch; drop it across a *lake* switch. Blanking the
+    // panel to its one-line "Reading…" state while a bay loads removed ~400 px from under the
+    // reader's scroll position, the scroll view clamped upward, and when the timeline came back they
+    // were looking at the buttons at the top of the drawer. A bay switch is a refinement of the same
+    // page, so the old reading stays up, dimmed, until the new one replaces it — nothing under the
+    // finger moves. A different lake is a different page, and a stale panel there would lie.
+    setState((s) =>
+      s.forBody === waterBodyId ? { ...s, loading: true } : emptyPanel(waterBodyId, true),
+    );
+    if (pending) return;
+    getDays({
+      waterBodyId,
+      days: TIMELINE_DAYS,
+      ...(subAreaId ? { subAreaId: subAreaId as Id<'waterBodySubAreas'> } : {}),
+    })
       .then((result) => {
         if (cancelled) return;
         if (!result) {
-          setState({
-            days: [],
-            timeline: [],
-            coarse: false,
-            largeBody: false,
-            todayLocalDayMs: 0,
-            loading: false,
-          });
+          setState(emptyPanel(waterBodyId, false));
           return;
         }
         // A recorded gap and a day that produced no row at all are both holes to a reader, so they
@@ -111,26 +140,18 @@ export function PastWeatherPanel({
           coarse: result.anyBorrowed,
           largeBody: result.oneSampleForALargeBody,
           loading: false,
+          forBody: waterBodyId,
         });
       })
       .catch(() => {
         // Fail open and quiet, like every other weather surface: nothing cached means the next
         // drawer-open retries, and a missing history is not an error a skater can act on.
-        if (!cancelled) {
-          setState({
-            days: [],
-            timeline: [],
-            coarse: false,
-            largeBody: false,
-            todayLocalDayMs: 0,
-            loading: false,
-          });
-        }
+        if (!cancelled) setState(emptyPanel(waterBodyId, false));
       });
     return () => {
       cancelled = true;
     };
-  }, [getDays, waterBodyId, days]);
+  }, [getDays, waterBodyId, subAreaId, pending, days]);
 
   const panel = useMemo(
     // ⚠ The lake's today, from the server — never `Date.now()` here. Today's row arrives holding 24
@@ -145,7 +166,8 @@ export function PastWeatherPanel({
     [state.days, state.coarse, state.todayLocalDayMs],
   );
 
-  if (state.loading) {
+  // Nothing held yet — a first open, or a new lake. A bay switch keeps the previous reading up.
+  if (state.loading && state.days.length === 0) {
     return (
       <div className="flex flex-col gap-1">
         <PanelHeading />
@@ -170,7 +192,11 @@ export function PastWeatherPanel({
   const hasHourly = state.timeline.some((d) => (d.hours?.length ?? 0) > 0);
 
   return (
-    <div className="flex flex-col gap-2">
+    // Dimmed while a bay's reading is on its way: the previous bay's stays up so the layout holds.
+    <div
+      className={`flex flex-col gap-2 transition-opacity ${state.loading ? 'opacity-50' : ''}`}
+      aria-busy={state.loading}
+    >
       <PanelHeading />
 
       {panel.headline.length > 0 && (

@@ -46,11 +46,16 @@
 import {
   approximateUtcOffsetSeconds,
   archiveSeasonAt,
+  buildSubAreaSpread,
   dayMsToLocalDate,
+  isCompleteDay,
   type LocalHourlyWeather,
   localDateToDayMs,
   localDayMsAt,
   localDayMsInZone,
+  type SpreadBayDay,
+  type SpreadBayInput,
+  type SubAreaSpread,
   spansMultipleSampleCells,
   summarizeWeatherDays,
   utcOffsetSecondsInZone,
@@ -62,11 +67,19 @@ import {
 } from '@skating/core';
 import { v } from 'convex/values';
 import { internal } from './_generated/api';
+import type { Id } from './_generated/dataModel';
 import type { ActionCtx, MutationCtx } from './_generated/server';
-import { action, internalAction, internalMutation, internalQuery } from './_generated/server';
+import {
+  action,
+  internalAction,
+  internalMutation,
+  internalQuery,
+  query,
+} from './_generated/server';
 import { meterOpenMeteo } from './lib/apiMeter';
+import { liveSubAreaOf } from './lib/bodies';
 import { WEATHER_DAY_SOURCES } from './lib/enums';
-import { bodyWeatherCell } from './lib/sampling';
+import { bodyWeatherCell, subAreaWeatherCell } from './lib/sampling';
 import { literals } from './lib/validators';
 import { HOURLY_VARS, MAX_PAST_DAYS, OPEN_METEO_FORECAST_URL } from './weather';
 
@@ -548,7 +561,32 @@ export const backfillWeatherCells = internalAction({
       });
       return { done: false, scanned: page.scanned, pruned: 0 };
     }
-    // ⚠ **Only after a COMPLETE walk.** Pruning mid-run would delete every cell the remaining pages
+
+    // The bodies are done; the bays are not. Walked **inline** on the last body page rather than
+    // scheduled as a phase of its own: the table is ~128 rows against ~25,000 bodies, and a
+    // scheduled continuation would make this invocation report `done: false` for a walk it had
+    // all but finished — the same untestable-wiring shape PR 1 learned from twice. The prune
+    // below has to wait for it, because a bay-only cell is exactly what a bodies-only "not seen
+    // this run" would delete. See `pageSubAreaCells` for why a bay is registered at all.
+    let scanned = page.scanned;
+    let subCursor: string | null = null;
+    for (;;) {
+      const bays: CellPage = await ctx.runQuery(internal.weatherArchive.pageSubAreaCells, {
+        cursor: subCursor,
+        tier: targetTier,
+      });
+      const res = await ctx.runMutation(internal.weatherArchive.upsertWeatherCells, {
+        tier: targetTier,
+        cells: bays.cells,
+        runId: run,
+        nowMs: Date.now(),
+      });
+      if (res.superseded) return { done: true, scanned, pruned: 0, superseded: true };
+      scanned += bays.scanned;
+      if (bays.isDone) break;
+      subCursor = bays.cursor;
+    }
+    // ⚠ **Only after a COMPLETE walk — of both tables.** Pruning mid-run would delete every cell the remaining pages
     // were about to re-stamp — the whole registry, one page in. `isDone` is the only safe moment,
     // and the run id is what distinguishes "not seen this run" from "not seen this page".
     const pruned = await ctx.runMutation(internal.weatherArchive.pruneVacatedCells, {
@@ -561,7 +599,7 @@ export const backfillWeatherCells = internalAction({
       runId: run,
       completedAt: Date.now(),
     });
-    return { done: true, scanned: page.scanned, pruned };
+    return { done: true, scanned, pruned };
   },
 });
 
@@ -789,34 +827,100 @@ export const maybeSyncWeatherCells = internalAction({
   },
 });
 
+/** One registered cell as a registry walk reports it — the row shape `upsertWeatherCells` takes. */
+type CellPageEntry = {
+  cellKey: string;
+  lat: number;
+  lng: number;
+  elevationM?: number;
+  bodyCount: number;
+};
+
+/**
+ * One page of a registry walk, whichever table it came from. Named so the inline loop in
+ * `backfillWeatherCells` can be typed without the circular inference `internal.*` invites inside
+ * its own file.
+ */
+type CellPage = {
+  cells: CellPageEntry[];
+  /** `continueCursor` — a string even on the last page, which `isDone` is what says. */
+  cursor: string;
+  isDone: boolean;
+  scanned: number;
+};
+
+/** Count one occupant of `cell` into a page's distinct-cell map. */
+function countCell(byKey: Map<string, CellPageEntry>, cell: WeatherCell): void {
+  const existing = byKey.get(cell.key);
+  if (existing) {
+    existing.bodyCount += 1;
+    return;
+  }
+  const entry: CellPageEntry = { cellKey: cell.key, lat: cell.lat, lng: cell.lng, bodyCount: 1 };
+  if (cell.elevationM !== undefined) entry.elevationM = cell.elevationM;
+  byKey.set(cell.key, entry);
+}
+
 /** One page of bodies, reduced to the distinct cells they occupy. */
 export const pageBodyCells = internalQuery({
   args: { cursor: v.union(v.string(), v.null()), tier: literals(WEATHER_TIERS) },
-  handler: async (ctx, { cursor, tier }) => {
+  handler: async (ctx, { cursor, tier }): Promise<CellPage> => {
     const page = await ctx.db
       .query('waterBodies')
       .paginate({ numItems: CELL_BACKFILL_BATCH, cursor });
-    const byKey = new Map<
-      string,
-      { cellKey: string; lat: number; lng: number; elevationM?: number; bodyCount: number }
-    >();
+    const byKey = new Map<string, CellPageEntry>();
     for (const body of page.page) {
       if (body.removedAt) continue;
-      const cell = bodyWeatherCell(body, tier);
-      const existing = byKey.get(cell.key);
-      if (existing) {
-        existing.bodyCount += 1;
-        continue;
+      countCell(byKey, bodyWeatherCell(body, tier));
+    }
+    return {
+      cells: [...byKey.values()],
+      cursor: page.continueCursor,
+      isDone: page.isDone,
+      scanned: page.page.length,
+    };
+  },
+});
+
+/**
+ * One page of `waterBodySubAreas` → the distinct cells their weather points occupy.
+ *
+ * ## ⚠ Why a bay has to be registered at all
+ *
+ * The registry drives two things: the corpus-wide `filter` sweep and the gap repair on both tiers.
+ * A bay's cell is keyed off the bay's own point (`subAreaWeatherCell`), and on a giant that is a
+ * different cell from the parent's anchor — Champlain's ten bays land in ten Tier-A cells and seven
+ * Tier-B cells, none of them the anchor's. A mid-lake bay like Broad Lake can sit in a cell that
+ * contains **no body's anchor at all**, so a bodies-only walk never registers it: the Tier-B sweep
+ * never fills it (the spread has a hole exactly where a reader looks), and a browse-tier day the
+ * panel lost is never refetched, never borrowed and never even recorded missing — the same
+ * unreachable-ladder shape `maybeSweepGaps` had for the browse tier before PR #48's review.
+ *
+ * ~128 rows today against ~25,000 bodies, so this pass is a rounding error on the walk's cost.
+ * Parents are read once per page (`ctx.db.get`, memoised), for the elevation band only.
+ *
+ * A bay counts into `bodyCount` like a body would — the field is diagnostic (see the schema), and
+ * "occupants this run" is the count that makes a moved cell noticeable, whichever table moved.
+ */
+export const pageSubAreaCells = internalQuery({
+  args: { cursor: v.union(v.string(), v.null()), tier: literals(WEATHER_TIERS) },
+  handler: async (ctx, { cursor, tier }): Promise<CellPage> => {
+    const page = await ctx.db
+      .query('waterBodySubAreas')
+      .paginate({ numItems: CELL_BACKFILL_BATCH, cursor });
+    const parents = new Map<string, { elevationM?: number } | null>();
+    const byKey = new Map<string, CellPageEntry>();
+    for (const subArea of page.page) {
+      if (subArea.removedAt !== undefined) continue;
+      let parent = parents.get(subArea.waterBodyId);
+      if (parent === undefined) {
+        const row = await ctx.db.get(subArea.waterBodyId);
+        parent = row && !row.removedAt ? { elevationM: row.elevationM } : null;
+        parents.set(subArea.waterBodyId, parent);
       }
-      const entry: {
-        cellKey: string;
-        lat: number;
-        lng: number;
-        elevationM?: number;
-        bodyCount: number;
-      } = { cellKey: cell.key, lat: cell.lat, lng: cell.lng, bodyCount: 1 };
-      if (cell.elevationM !== undefined) entry.elevationM = cell.elevationM;
-      byKey.set(cell.key, entry);
+      // A bay whose lake is gone is not a place anyone can open.
+      if (parent === null) continue;
+      countCell(byKey, subAreaWeatherCell(subArea, parent, tier));
     }
     return {
       cells: [...byKey.values()],
@@ -1601,6 +1705,18 @@ export interface WeatherDaysResult {
    */
   oneSampleForALargeBody: boolean;
   /**
+   * The place these readings are about — the lake's anchor, or a named bay of it (open question 5).
+   * Served back rather than assumed from the request, because the server may have refused a stale
+   * `subAreaId` and answered for the lake.
+   *
+   * ⚠ Neither client reads this yet: the scope line is `WeatherPlacePicker`, which labels the bay
+   * the *client* resolved. The two agree whenever the id came from a live `listForBody` row, which
+   * is the only place the clients take one from; a refusal can only show through in the window
+   * between a bay being delisted and the list re-emitting. The honest label — "showing the lake;
+   * that bay is no longer listed" — waits on a client that reads this field.
+   */
+  scope: { kind: 'body' } | { kind: 'subArea'; subAreaId: Id<'waterBodySubAreas'>; name: string };
+  /**
    * The body's 16-sector fetch profile in metres, when it has one.
    *
    * Feeds the wind lane's fill density and the scrub readout's open-water clause. Absent on a body
@@ -1626,12 +1742,24 @@ export interface WeatherDaysResult {
  * one append per cell per day.
  */
 export const getWeatherDaysForBody = action({
-  args: { waterBodyId: v.id('waterBodies'), days: v.optional(v.number()) },
-  handler: async (ctx, { waterBodyId, days }): Promise<WeatherDaysResult | null> => {
+  args: {
+    waterBodyId: v.id('waterBodies'),
+    days: v.optional(v.number()),
+    /**
+     * The bay this panel is about (N6h / open question 5). Resolved on the client with
+     * `resolveWeatherSubArea`; validated here and silently dropped if it is not a live bay of this
+     * lake. Absent on the ~99% of bodies that have no bays.
+     */
+    subAreaId: v.optional(v.id('waterBodySubAreas')),
+  },
+  handler: async (ctx, { waterBodyId, days, subAreaId }): Promise<WeatherDaysResult | null> => {
     if (!(await ctx.auth.getUserIdentity())) return null;
     // One round-trip, not two: the cell and the coverage caveat both come off the same body document,
     // and loading it twice for one panel is the kind of small waste this repo pays for at corpus scale.
-    const info = await ctx.runQuery(internal.weatherArchive.sampleCoverage, { waterBodyId });
+    const info = await ctx.runQuery(internal.weatherArchive.sampleCoverage, {
+      waterBodyId,
+      ...(subAreaId ? { subAreaId } : {}),
+    });
     if (!info) return null;
     const cell = info.cell;
 
@@ -1723,18 +1851,7 @@ export const getWeatherDaysForBody = action({
       toMs,
     });
 
-    // ⚠ The zone first, and an offset only behind it. A stored offset is the one the *fetch* happened
-    // on, so on the far side of a DST change it is an hour out — which near local midnight makes
-    // "today" the wrong date and marks a settled day as still in progress, or worse the reverse.
-    const zone = [...held].reverse().find((r) => typeof r.timeZone === 'string')?.timeZone;
-    const nowMs = Date.now();
-    const todayLocalDayMs =
-      (zone === undefined ? null : localDayMsInZone(nowMs, zone)) ??
-      localDayMsAt(
-        nowMs,
-        [...held].reverse().find((r) => typeof r.utcOffsetSeconds === 'number')?.utcOffsetSeconds ??
-          approximateUtcOffsetSeconds(cell.lng),
-      );
+    const todayLocalDayMs = cellLocalToday(held, Date.now(), cell.lng);
 
     return {
       days: out,
@@ -1743,10 +1860,41 @@ export const getWeatherDaysForBody = action({
       todayLocalDayMs,
       anyBorrowed,
       oneSampleForALargeBody: info.oneSampleForALargeBody,
-      ...(info.fetchProfileM ? { fetchProfileM: info.fetchProfileM } : {}),
+      scope: info.scope,
+      ...('fetchProfileM' in info && info.fetchProfileM
+        ? { fetchProfileM: info.fetchProfileM }
+        : {}),
     };
   },
 });
+
+/**
+ * The cell's current local day, read off the rows it holds — `rows` in ascending `dayMs` order, as
+ * `by_cell_day` yields them, so the newest row's zone wins.
+ *
+ * ⚠ **The zone first, and an offset only behind it.** A stored offset is the one the *fetch*
+ * happened on, so on the far side of a DST change it is an hour out — which near local midnight
+ * makes "today" the wrong date and marks a settled day as still in progress, or worse the reverse.
+ * A cell holding nothing yet falls back to the longitude's nominal offset.
+ *
+ * Shared by the panel and the spread so the two can never disagree about when the day ends at the
+ * lake — a phone elsewhere must not decide that, and neither must two derivations of it.
+ */
+function cellLocalToday(
+  rows: readonly { timeZone?: string; utcOffsetSeconds?: number }[],
+  nowMs: number,
+  cellLng: number,
+): number {
+  const newestFirst = [...rows].reverse();
+  const zone = newestFirst.find((r) => typeof r.timeZone === 'string')?.timeZone;
+  const inZone = zone === undefined ? null : localDayMsInZone(nowMs, zone);
+  if (inZone !== null) return inZone;
+  return localDayMsAt(
+    nowMs,
+    newestFirst.find((r) => typeof r.utcOffsetSeconds === 'number')?.utcOffsetSeconds ??
+      approximateUtcOffsetSeconds(cellLng),
+  );
+}
 
 /**
  * The newest day this cell can honestly be asked about.
@@ -1780,13 +1928,37 @@ function panelAnchorDay(held: readonly { dayMs: number; missing?: boolean }[], u
  * 40 km river reach and a 40 km lake are equally beyond one reading.
  */
 export const sampleCoverage = internalQuery({
-  args: { waterBodyId: v.id('waterBodies') },
-  handler: async (ctx, { waterBodyId }) => {
+  args: { waterBodyId: v.id('waterBodies'), subAreaId: v.optional(v.id('waterBodySubAreas')) },
+  handler: async (ctx, { waterBodyId, subAreaId }) => {
     const body = await ctx.db.get(waterBodyId);
     if (!body || body.removedAt) return null;
+
+    // **A bay, when the client asked for one and it is really a live bay of this lake.** The client
+    // resolves *which* bay (`resolveWeatherSubArea` in core — the route's `?sub=` or the most
+    // prominent); this side only refuses an id that is delisted or belongs to another body
+    // (`liveSubAreaOf`, shared with the forecast), and then answers for the lake rather than
+    // erroring, because a stale deep link is not a fault a skater can act on. A bay is its own
+    // place, so the "one sample for a large body" caveat does not apply to it — that caveat is
+    // about the lake.
+    const subArea = await liveSubAreaOf(ctx, body, subAreaId);
+    if (subArea) {
+      return {
+        cell: subAreaWeatherCell(subArea, body, 'browse'),
+        scope: { kind: 'subArea' as const, subAreaId: subArea._id, name: subArea.name },
+        samplePoints: 1,
+        oneSampleForALargeBody: false,
+        // ⚠ No fetch profile for a bay. The profile is the *lake's* — cast from its interior point
+        // over its whole extent — and Malletts Bay is sheltered where Champlain's 11 miles of
+        // south-easterly fetch is not. Drawing the lake's exposure under a bay's wind would overstate
+        // exactly the bays people pick for shelter, so the lane draws flat and the readout says
+        // less until a per-bay profile exists.
+      };
+    }
+
     const points = body.weatherSamplePoints?.length ?? 0;
     return {
       cell: bodyWeatherCell(body, 'browse'),
+      scope: { kind: 'body' as const },
       samplePoints: points,
       oneSampleForALargeBody: points <= 1 && spansMultipleSampleCells(body.bbox),
       // The wind lane's second channel. Read off the body document the panel already loads, so the
@@ -1794,5 +1966,146 @@ export const sampleCoverage = internalQuery({
       // for it to mean anything is `fetchIntensityAt`'s call, not this query's.
       ...(Array.isArray(body.fetchProfileM) ? { fetchProfileM: body.fetchProfileM } : {}),
     };
+  },
+});
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+// The sub-area spread (open question 5, second half)
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+
+/** Days the spread compares bays over — the same window the panel's sentences describe. */
+export const SPREAD_DAYS = PANEL_DAYS;
+
+/**
+ * How a giant describes itself: the spread across its named bays, with the ends named
+ * (`buildSubAreaSpread` in core). *"Lows 0°F to 12°F — coldest at Missisquoi Bay, mildest at
+ * Burlington Bay."*
+ *
+ * **A query, not an action, and that is the whole cost argument.** It reads the corpus-wide
+ * `filter` tier's rows, which the season sweep populates daily for every registered cell — bays
+ * included, since the registry's sub-area pass — so ranking ten bays costs no fetch at all on
+ * drawer-open, and the panel stays fast. 0.1° is coarse for a *reading* and ample for a *ranking*;
+ * the bay the reader then picks gets its own browse-tier reading from `getWeatherDaysForBody`.
+ * D152's two tiers, applied to one lake.
+ *
+ * Bays sharing a Tier-B cell share rows and tie. The in-progress today is dropped per cell using
+ * that cell's own zone, and `missing` markers are dropped — the builder then compares every bay over
+ * the days they *all* have, so a hole in one bay's record cannot read as "less snow".
+ *
+ * `null` outside the season and until the first sweep: Tier B is empty, and an empty spread is the
+ * honest state rather than a fallback to the browse tier (which would cost a fetch per bay).
+ */
+export const getSubAreaSpread = query({
+  args: { waterBodyId: v.id('waterBodies') },
+  handler: async (ctx, { waterBodyId }): Promise<SubAreaSpread | null> => {
+    if (!(await ctx.auth.getUserIdentity())) return null;
+    const body = await ctx.db.get(waterBodyId);
+    if (!body || body.removedAt) return null;
+    const bays = (
+      await ctx.db
+        .query('waterBodySubAreas')
+        .withIndex('by_parent', (q) => q.eq('waterBodyId', waterBodyId))
+        .collect()
+    ).filter((s) => s.removedAt === undefined);
+    if (bays.length < 2) return null;
+
+    const nowMs = Date.now();
+    const utcToday = todayKey(nowMs);
+    // Two days wider than the window, not one: the in-progress today is always dropped below, and
+    // between UTC midnight and the lake's own midnight (7 PM–midnight in the Northeast) the lake's
+    // today is `utcToday - 1`, so the newest *complete* day is `utcToday - 2`. A read that started
+    // `SPREAD_DAYS` back then held only `SPREAD_DAYS - 1` complete days, and the sentence flipped
+    // between "the last 7 days" and "the last 6 days" every evening. The newest-first slice below
+    // trims the surplus in the daytime case.
+    const fromMs = utcToday - (SPREAD_DAYS + 1) * DAY_MS;
+    // Bays sharing a Tier-B cell share one read.
+    const byCell = new Map<string, SpreadBayDay[]>();
+    const inputs: SpreadBayInput[] = [];
+    for (const bay of bays) {
+      const cell = subAreaWeatherCell(bay, body, 'filter');
+      let days = byCell.get(cell.key);
+      if (days === undefined) {
+        const rows = await ctx.db
+          .query('weatherDays')
+          .withIndex('by_cell_day', (q) =>
+            q.eq('cellKey', cell.key).gte('dayMs', fromMs).lte('dayMs', utcToday),
+          )
+          .collect();
+        // The cell's own today, from its own zone (`cellLocalToday`, the panel's derivation).
+        const todayLocal = cellLocalToday(rows, nowMs, cell.lng);
+        days = rows
+          .filter((r) => r.missing !== true && isCompleteDay(r.hours, r.dayMs, todayLocal))
+          .sort((a, b) => b.dayMs - a.dayMs)
+          .slice(0, SPREAD_DAYS)
+          .map((r) => ({
+            dayMs: r.dayMs,
+            nightMinTempC: r.nightMinTempC ?? null,
+            minTempC: r.minTempC ?? null,
+            snowfallCm: r.snowfallCm ?? null,
+          }));
+        byCell.set(cell.key, days);
+      }
+      inputs.push({ subAreaId: bay._id, name: bay.name, days });
+    }
+    // ⚠ Two *readings*, not merely two bays. Every bay with data in one Tier-B cell shares one row
+    // set, so a lake whose bays all fall in a single cell (or whose only cell with rows holds them
+    // all) would compare a reading with itself and report "similar across the lake's bays" — a
+    // claim about variation from a sample that measured none. That is not an honest spread; it is
+    // no spread.
+    let cellsWithData = 0;
+    for (const days of byCell.values()) if (days.length > 0) cellsWithData += 1;
+    if (cellsWithData < 2) return null;
+    return buildSubAreaSpread(inputs);
+  },
+});
+
+/**
+ * **Operator tool: fill a lake's bay cells at the filter tier, out of season.**
+ *
+ * The spread reads Tier B, and Tier B is empty until D163's gate opens on a real regional freeze —
+ * mid-November, typically. That makes the spread unverifiable on dev for two months of every year,
+ * which is how a ranking, its copy and its collapse threshold would otherwise ship against a table
+ * nobody can look at. This primes one lake's bays with `pastDays` of real weather so the real panel
+ * can be read (founder call, 2026-09-11: Champlain's ~7 Tier-B bay cells, ~7 weighted calls).
+ *
+ * Metered like every other fetch, and deliberately not reachable from a client: the sweep is the
+ * producer in season, and this is a hand tool for the two months it is not.
+ */
+export const primeSubAreaWeather = internalAction({
+  args: { waterBodyId: v.id('waterBodies'), pastDays: v.optional(v.number()) },
+  // ⚠ Annotated on purpose: an action that reaches `internal.weatherArchive.*` from inside its own
+  // module with an inferred return type is the circular-inference landmine this file already warns
+  // about — TypeScript gives up on the whole `api` type and every test in the package loses its types.
+  handler: async (
+    ctx,
+    { waterBodyId, pastDays },
+  ): Promise<{ cells: number; days: number; written: Record<string, number | null> }> => {
+    const cells: WeatherCell[] = await ctx.runQuery(internal.weatherArchive.subAreaFilterCells, {
+      waterBodyId,
+    });
+    const days = Math.min(MAX_PAST_DAYS, Math.max(1, pastDays ?? SEASON_OPEN_PAST_DAYS));
+    const out: Record<string, number | null> = {};
+    for (const cell of cells) out[cell.key] = await ingestCellDays(ctx, 'filter', cell, days);
+    return { cells: cells.length, days, written: out };
+  },
+});
+
+/** The distinct filter-tier cells a lake's live bays occupy. */
+export const subAreaFilterCells = internalQuery({
+  args: { waterBodyId: v.id('waterBodies') },
+  handler: async (ctx, { waterBodyId }): Promise<WeatherCell[]> => {
+    const body = await ctx.db.get(waterBodyId);
+    if (!body || body.removedAt) return [];
+    const bays = await ctx.db
+      .query('waterBodySubAreas')
+      .withIndex('by_parent', (q) => q.eq('waterBodyId', waterBodyId))
+      .collect();
+    const byKey = new Map<string, WeatherCell>();
+    for (const bay of bays) {
+      if (bay.removedAt !== undefined) continue;
+      const cell = subAreaWeatherCell(bay, body, 'filter');
+      byKey.set(cell.key, cell);
+    }
+    return [...byKey.values()];
   },
 });

@@ -1,8 +1,47 @@
 import BottomSheet, { BottomSheetScrollView } from '@gorhom/bottom-sheet';
+import { Portal, PortalHost, PortalProvider } from '@gorhom/portal';
 import { useRouter } from 'expo-router';
 import { type ReactNode, useCallback, useEffect, useMemo, useRef } from 'react';
+import { View } from 'react-native';
 import { useTheme } from 'tamagui';
 import { DrawerScrollContext } from './DrawerScrollContext';
+
+/**
+ * The drawer's two out-of-flow slots, and why a screen needs them (N6h/H).
+ *
+ * React Native can only pin a **direct child** of a scroll view (`stickyHeaderIndices`), and this
+ * scroll view's one child is Expo Router's `<Slot />` — the whole detail screen. A tab strip nested
+ * inside that screen can never be told to stick. So the scroll view is laid out as exactly three
+ * children — *head* · *pinned* · the screen — and a screen that wants a pinned strip teleports its
+ * strip into the second child and everything that belongs *above* the strip into the first, through
+ * `@gorhom/portal`. What it leaves in place is what scrolls beneath the strip.
+ *
+ * `DrawerHead` and `DrawerPinned` are the only way in. A screen with neither (a hazard, a report, a
+ * bounty) renders exactly as before: two empty slots have no height and the sticky index points at
+ * nothing. The ordering the plan insists on — the lake's own name and the NWS alert *above* the tab
+ * strip, always — is what the head slot exists for; the alternative of mounting the strip outside the
+ * scroll view would have put tabs above the lake's name.
+ *
+ * ⚠ Portalled content renders under the host's providers, not its origin's. Both sit inside this
+ * component, so every provider that wraps the sheet — theme, Convex, the router, map selection — is
+ * shared; `DrawerScrollContext` is provided *around* the scroll view rather than inside it for the
+ * same reason.
+ */
+const DRAWER_HEAD_HOST = 'map-drawer-head';
+const DRAWER_PINNED_HOST = 'map-drawer-pinned';
+
+/** Content that scrolls away above the pinned strip: the screen's own header, actions, alert. */
+export function DrawerHead({ children }: { children: ReactNode }) {
+  return <Portal hostName={DRAWER_HEAD_HOST}>{children}</Portal>;
+}
+
+/**
+ * Content pinned to the top of the sheet once scrolled to. Opaque, because what scrolls beneath it is
+ * the rest of the screen, and full-bleed so the gutters do not show that scrolling either.
+ */
+export function DrawerPinned({ children }: { children: ReactNode }) {
+  return <Portal hostName={DRAWER_PINNED_HOST}>{children}</Portal>;
+}
 
 /** Snap points: a low peek (map tappable above it, for put-in-pin drop), normal, and expanded. */
 export const DRAWER_SNAP_POINTS = ['16%', '58%', '94%'] as const;
@@ -89,26 +128,40 @@ export function MapDrawer({
   const scrollApi = useMemo(() => ({ scrollToY }), [scrollToY]);
 
   return (
-    <BottomSheet
-      ref={ref}
-      index={snapIndex < 0 ? -1 : snapIndex}
-      snapPoints={snapPoints}
-      enablePanDownToClose
-      // The user swiping the sheet fully down pops back to the map. Navigating to `/` is idempotent,
-      // so the programmatic `close()` on unmount/navigation doesn't cause a loop.
-      onClose={() => router.navigate('/')}
-      // Report the settled position so the map can re-fit the lake into the uncovered area.
-      onChange={(index) => {
-        settledIndex.current = index;
-        onCoveredFractionChange?.(coveredFractionForIndex(index));
-      }}
-      containerStyle={{ zIndex: DRAWER_Z_INDEX }}
-      backgroundStyle={{ backgroundColor: theme.surface?.val }}
-      handleIndicatorStyle={{ backgroundColor: theme.foregroundMuted?.val }}
-    >
-      <BottomSheetScrollView ref={scrollRef} contentContainerStyle={{ padding: 16, gap: 12 }}>
-        <DrawerScrollContext.Provider value={scrollApi}>{children}</DrawerScrollContext.Provider>
-      </BottomSheetScrollView>
-    </BottomSheet>
+    <PortalProvider>
+      <BottomSheet
+        ref={ref}
+        index={snapIndex < 0 ? -1 : snapIndex}
+        snapPoints={snapPoints}
+        enablePanDownToClose
+        // The user swiping the sheet fully down pops back to the map. Navigating to `/` is idempotent,
+        // so the programmatic `close()` on unmount/navigation doesn't cause a loop.
+        onClose={() => router.navigate('/')}
+        // Report the settled position so the map can re-fit the lake into the uncovered area.
+        onChange={(index) => {
+          settledIndex.current = index;
+          onCoveredFractionChange?.(coveredFractionForIndex(index));
+        }}
+        containerStyle={{ zIndex: DRAWER_Z_INDEX }}
+        backgroundStyle={{ backgroundColor: theme.surface?.val }}
+        handleIndicatorStyle={{ backgroundColor: theme.foregroundMuted?.val }}
+      >
+        <DrawerScrollContext.Provider value={scrollApi}>
+          {/* Three direct children, by design — see `DrawerHead` / `DrawerPinned`. The padding that
+              used to sit on the content container moved into the third child so the pinned slot can
+              be full-bleed with its own background; the head and pinned slots carry their own padding
+              through what is portalled into them, so an empty slot costs no height. */}
+          <BottomSheetScrollView ref={scrollRef} stickyHeaderIndices={[1]}>
+            <View>
+              <PortalHost name={DRAWER_HEAD_HOST} />
+            </View>
+            <View style={{ backgroundColor: theme.surface?.val }}>
+              <PortalHost name={DRAWER_PINNED_HOST} />
+            </View>
+            <View style={{ padding: 16, gap: 12 }}>{children}</View>
+          </BottomSheetScrollView>
+        </DrawerScrollContext.Provider>
+      </BottomSheet>
+    </PortalProvider>
   );
 }

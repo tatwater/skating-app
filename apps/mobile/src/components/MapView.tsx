@@ -945,6 +945,12 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
             layout={{
               'text-field': ['get', 'name'],
               'text-size': 12,
+              // ⚠ Required, and the same face web uses. Without it MapLibre Native asks the glyph host
+              // for its built-in default stack ("Open Sans Regular, Arial Unicode MS Regular"), which
+              // the Protomaps assets do not serve — a 404 per glyph range, and since the label is
+              // `text-optional` the name simply never drew. It went unnoticed from N2 until the
+              // weather picker started framing bays.
+              'text-font': ['Noto Sans Italic'],
               // A bay name may never displace a hazard or put-in marker; if it doesn't fit, it doesn't draw.
               'text-allow-overlap': false,
               'text-optional': true,

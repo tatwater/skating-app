@@ -1,3 +1,4 @@
+import { weatherCellFor } from '@skating/core';
 import { convexTest } from 'convex-test';
 import type { Polygon } from 'geojson';
 import { describe, expect, test, vi } from 'vitest';
@@ -10,6 +11,7 @@ import {
   RECONCILE_DEBOUNCE_MS,
   reconcileSatisfiedBy,
   SEASON_OPEN_PAST_DAYS,
+  SPREAD_DAYS,
   SYNC_ASSUMED_DEAD_MS,
 } from './weatherArchive';
 
@@ -51,6 +53,64 @@ async function seedBody(
       ...(elevationM === undefined ? {} : { elevationM }),
     }),
   ) as Promise<Id<'waterBodies'>>;
+}
+
+/** A named bay of `parent` whose weather point is `point` — authored by a throwaway moderator. */
+async function seedBay(
+  t: ReturnType<typeof convexTest>,
+  parent: Id<'waterBodies'>,
+  name: string,
+  point: { lat: number; lng: number },
+  over: { displayScore?: number; removedAt?: number } = {},
+): Promise<Id<'waterBodySubAreas'>> {
+  const author = (await t.run((ctx) =>
+    ctx.db.insert('profiles', {
+      clerkUserId: `mod-${name}`,
+      displayName: name,
+      username: `mod-${name}`.toLowerCase().replace(/\s/g, ''),
+      driveTimePrefMinutes: 60,
+      profileVisibility: 'public' as const,
+      notificationPrefs: {
+        activityDetected: true,
+        bountyRequest: true,
+        hazardConfirmation: true,
+        bountyFulfilled: true,
+        reportRated: true,
+        reportCommented: true,
+        contentFlagResolved: true,
+        favoriteReport: true,
+        nearbyReportDigest: false,
+        greatReportNearby: false,
+      },
+      dateOfBirth: Date.UTC(1990, 0, 1),
+      reputationPoints: 0,
+      role: 'moderator' as const,
+      status: 'active' as const,
+      createdAt: Date.now(),
+    }),
+  )) as Id<'profiles'>;
+  return t.run((ctx) =>
+    ctx.db.insert('waterBodySubAreas', {
+      waterBodyId: parent,
+      name,
+      searchText: name,
+      polygon: square(0.01),
+      bbox: {
+        minLat: point.lat - 0.01,
+        minLng: point.lng - 0.01,
+        maxLat: point.lat + 0.01,
+        maxLng: point.lng + 0.01,
+      },
+      centroid: point,
+      surfaceAreaSqM: 1_000_000,
+      displayScore: over.displayScore ?? 1,
+      minVisibleZoom: 10,
+      createdByUserId: author,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      ...(over.removedAt === undefined ? {} : { removedAt: over.removedAt }),
+    }),
+  ) as Promise<Id<'waterBodySubAreas'>>;
 }
 
 function asViewer(t: ReturnType<typeof convexTest>) {
@@ -1429,5 +1489,345 @@ describe('weatherArchive: one response, one offset — but many dates', () => {
     const row = (await t.run((ctx) => ctx.db.query('weatherDays').collect()))[0];
     expect(row?.utcOffsetSeconds).toBe(-4 * 3600);
     expect(row?.timeZone).toBeUndefined();
+  });
+});
+
+describe('weatherArchive: a bay is its own place (N6h open question 5)', () => {
+  // Champlain's shape: an anchor mid-lake, and a bay ~55 km north of it. 0.05° cells, so these are
+  // many cells apart at either tier.
+  const ANCHOR = { lat: 44.25, lng: -73.35 };
+  const BAY = { lat: 44.75, lng: -73.2 };
+
+  test("reads the bay's own cell, names it, and drops the whole-lake caveat", async () => {
+    const t = convexTest(schema, modules);
+    const lake = await seedBody(t, ANCHOR, 30);
+    const bay = await seedBay(t, lake, 'Malletts Bay', BAY);
+    const fetchMock = vi.fn(async (_url: string) => okJson(isoResponse(recentDates(3))));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const result = await asViewer(t).action(api.weatherArchive.getWeatherDaysForBody, {
+      waterBodyId: lake,
+      subAreaId: bay,
+      days: 3,
+    });
+    expect(result?.scope).toEqual({ kind: 'subArea', subAreaId: bay, name: 'Malletts Bay' });
+    expect(result?.oneSampleForALargeBody).toBe(false);
+    // The request went to the bay, not to the lake's anchor: Open-Meteo was asked for the bay's cell.
+    const asked = Number(
+      new URL(String(fetchMock.mock.calls[0]?.[0])).searchParams.get('latitude'),
+    );
+    expect(asked).toBeCloseTo(BAY.lat, 1);
+    expect(asked).not.toBeCloseTo(ANCHOR.lat, 1);
+
+    // And the two are different archive rows: opening the lake afterwards pays for its own cell.
+    await asViewer(t).action(api.weatherArchive.getWeatherDaysForBody, {
+      waterBodyId: lake,
+      days: 3,
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  test("a bay carries no fetch profile — the profile is the lake's, and a sheltered bay is not the lake", async () => {
+    const t = convexTest(schema, modules);
+    const lake = await seedBody(t, ANCHOR, 30);
+    await t.run((ctx) => ctx.db.patch(lake, { fetchProfileM: Array(16).fill(11_000) }));
+    const bay = await seedBay(t, lake, 'Shelburne Bay', BAY);
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => okJson(isoResponse(recentDates(3)))),
+    );
+
+    const forBay = await asViewer(t).action(api.weatherArchive.getWeatherDaysForBody, {
+      waterBodyId: lake,
+      subAreaId: bay,
+      days: 3,
+    });
+    const forLake = await asViewer(t).action(api.weatherArchive.getWeatherDaysForBody, {
+      waterBodyId: lake,
+      days: 3,
+    });
+    expect(forBay?.fetchProfileM).toBeUndefined();
+    expect(forLake?.fetchProfileM).toHaveLength(16);
+  });
+
+  test('a delisted or foreign bay id answers for the lake rather than erroring', async () => {
+    const t = convexTest(schema, modules);
+    const lake = await seedBody(t, ANCHOR, 30);
+    // Champlain-sized, so the whole-lake caveat has something to say.
+    await t.run((ctx) =>
+      ctx.db.patch(lake, { bbox: { minLat: 44.0, minLng: -73.4, maxLat: 44.5, maxLng: -73.3 } }),
+    );
+    const other = await seedBody(t, { lat: 45.0, lng: -70.0 }, 200);
+    const gone = await seedBay(t, lake, 'Old Cove', BAY, { removedAt: Date.now() });
+    const foreign = await seedBay(t, other, 'Elsewhere Bay', { lat: 45.05, lng: -70.05 });
+    const fetchMock = vi.fn(async () => okJson(isoResponse(recentDates(3))));
+    vi.stubGlobal('fetch', fetchMock);
+
+    for (const subAreaId of [gone, foreign]) {
+      const result = await asViewer(t).action(api.weatherArchive.getWeatherDaysForBody, {
+        waterBodyId: lake,
+        subAreaId,
+        days: 3,
+      });
+      expect(result?.scope).toEqual({ kind: 'body' });
+      // Refused ids still describe the lake — and so still flag that the lake is too big for one point.
+      expect(result?.oneSampleForALargeBody).toBe(true);
+    }
+    // Both answered from the lake's one cell: one fetch, not two.
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  test("the registry registers a bay's cell, and a complete walk does not prune it", async () => {
+    // ⚠ A mid-lake bay can sit in a cell no body's anchor occupies. Without this pass the Tier-B sweep
+    // never fills that cell and the gap repair never visits it — the spread has a hole exactly where
+    // the reader looks, and a lost browse-tier day is never even recorded missing.
+    const t = convexTest(schema, modules);
+    const lake = await seedBody(t, ANCHOR, 30);
+    await seedBay(t, lake, 'Broad Lake', BAY);
+    const res = await t.action(internal.weatherArchive.backfillWeatherCells, { tier: 'filter' });
+    await t.finishInProgressScheduledFunctions();
+
+    expect(res.done).toBe(true);
+    expect(res.pruned).toBe(0);
+    // One body and one bay, two cells: the bodies-only walk would have produced one.
+    expect(res.scanned).toBe(2);
+    const cells = await t.run((ctx) => ctx.db.query('weatherCells').collect());
+    expect(cells).toHaveLength(2);
+    expect(cells.every((c) => c.bodyCount === 1)).toBe(true);
+
+    // A second complete walk sees the bay again and keeps its cell — it is "seen this run".
+    const again = await t.action(internal.weatherArchive.backfillWeatherCells, { tier: 'filter' });
+    await t.finishInProgressScheduledFunctions();
+    expect(again.pruned).toBe(0);
+    expect(await t.run((ctx) => ctx.db.query('weatherCells').collect())).toHaveLength(2);
+  });
+
+  test('a delisted bay, or one whose lake is gone, is not registered', async () => {
+    const t = convexTest(schema, modules);
+    const lake = await seedBody(t, ANCHOR, 30);
+    await seedBay(t, lake, 'Old Cove', BAY, { removedAt: Date.now() });
+    const goneLake = await seedBody(t, { lat: 45.0, lng: -70.0 }, 200);
+    await seedBay(t, goneLake, 'Orphan Bay', { lat: 45.4, lng: -70.4 });
+    await t.run((ctx) => ctx.db.patch(goneLake, { removedAt: Date.now() }));
+
+    await t.action(internal.weatherArchive.backfillWeatherCells, { tier: 'browse' });
+    await t.finishInProgressScheduledFunctions();
+    const cells = await t.run((ctx) => ctx.db.query('weatherCells').collect());
+    expect(cells).toHaveLength(1);
+  });
+});
+
+describe('weatherArchive: the sub-area spread reads Tier B (N6h open question 5)', () => {
+  const ANCHOR = { lat: 44.25, lng: -73.35 };
+  const NORTH = { lat: 44.95, lng: -73.15 };
+  const SOUTH = { lat: 43.65, lng: -73.4 };
+
+  /** Seed `n` settled filter-tier days ending yesterday (UTC) for the cell at `point`. */
+  async function seedFilterDays(
+    t: ReturnType<typeof convexTest>,
+    point: { lat: number; lng: number },
+    n: number,
+    over: {
+      nightMinTempC: number;
+      snowfallCm?: number;
+      skipNewest?: boolean;
+      missingNewest?: boolean;
+    },
+  ) {
+    const cell = weatherCellFor('filter', point.lat, point.lng);
+    const today = Math.floor(Date.now() / DAY_MS) * DAY_MS;
+    for (let i = 1; i <= n; i++) {
+      if (over.skipNewest && i === 1) continue;
+      const dayMs = today - i * DAY_MS;
+      const missing = over.missingNewest === true && i === 1;
+      await t.run((ctx) =>
+        ctx.db.insert('weatherDays', {
+          cellKey: cell.key,
+          tier: 'filter' as const,
+          dayMs,
+          localDate: new Date(dayMs).toISOString().slice(0, 10),
+          source: 'forecast' as const,
+          timeZone: 'UTC',
+          fetchedAt: Date.now(),
+          ...(missing
+            ? { missing: true }
+            : {
+                hours: 24,
+                nightMinTempC: over.nightMinTempC,
+                minTempC: over.nightMinTempC + 1,
+                snowfallCm: over.snowfallCm ?? 0,
+              }),
+        }),
+      );
+    }
+  }
+
+  test('ranks the bays over the shared filter-tier days and names the ends', async () => {
+    const t = convexTest(schema, modules);
+    const lake = await seedBody(t, ANCHOR, 30);
+    await seedBay(t, lake, 'North Bay', NORTH);
+    await seedBay(t, lake, 'South Bay', SOUTH);
+    await seedFilterDays(t, NORTH, 7, { nightMinTempC: -18 });
+    await seedFilterDays(t, SOUTH, 7, { nightMinTempC: -8, snowfallCm: 10 });
+
+    const spread = await asViewer(t).query(api.weatherArchive.getSubAreaSpread, {
+      waterBodyId: lake,
+    });
+    expect(spread?.bays).toBe(2);
+    expect(spread?.days).toBe(7);
+    expect(spread?.similar).toBe(false);
+    expect(spread?.lines.map((l) => l.text)).toEqual([
+      'Lows 0°F to 18°F — coldest at North Bay, mildest at South Bay',
+      // 10 cm on each of the seven days: the total over the window, not the last day's.
+      'Snow in the last 7 days: none at North Bay, 27.6 in at South Bay',
+    ]);
+  });
+
+  test('drops the in-progress today and a recorded gap, and compares only the days both bays have', async () => {
+    const t = convexTest(schema, modules);
+    const lake = await seedBody(t, ANCHOR, 30);
+    await seedBay(t, lake, 'North Bay', NORTH);
+    await seedBay(t, lake, 'South Bay', SOUTH);
+    // North's newest day is a gap marker; South is complete. The intersection is six days.
+    await seedFilterDays(t, NORTH, 7, { nightMinTempC: -18, missingNewest: true });
+    await seedFilterDays(t, SOUTH, 7, { nightMinTempC: -8 });
+    // Today, still in progress, must not count even with a full-looking row.
+    const today = Math.floor(Date.now() / DAY_MS) * DAY_MS;
+    await t.run((ctx) =>
+      ctx.db.insert('weatherDays', {
+        cellKey: weatherCellFor('filter', SOUTH.lat, SOUTH.lng).key,
+        tier: 'filter' as const,
+        dayMs: today,
+        localDate: new Date(today).toISOString().slice(0, 10),
+        source: 'forecast' as const,
+        timeZone: 'UTC',
+        fetchedAt: Date.now(),
+        hours: 24,
+        nightMinTempC: -30,
+        snowfallCm: 50,
+      }),
+    );
+
+    const spread = await asViewer(t).query(api.weatherArchive.getSubAreaSpread, {
+      waterBodyId: lake,
+    });
+    expect(spread?.days).toBe(6);
+    // The forecast-valued today did not sneak −30 °C or 50 cm into the ranking — and because the
+    // shared days exclude yesterday (North's gap), the window is named by its dates rather than
+    // counted: "the last 6 days" would have been a true number in a false sentence.
+    const snow = spread?.lines.find((l) => l.kind === 'snow')?.text;
+    expect(snow).toMatch(
+      /^No snow at any bay in [A-Z][a-z]{2} \d{1,2}–(?:[A-Z][a-z]{2} )?\d{1,2}$/,
+    );
+    expect(snow).not.toMatch(/last \d+ days/);
+  });
+
+  test("still spans a full week in the evening, when the lake's today is UTC-yesterday", async () => {
+    // 03:00 UTC = 11 PM Eastern the night before: `todayKey` is D+1, the lake is still on D, and the
+    // newest complete day is D−1. A read that started only SPREAD_DAYS back held six complete days
+    // here and seven by daylight, so the sentence flipped every evening.
+    const D = Date.UTC(2026, 0, 20);
+    vi.useFakeTimers();
+    vi.setSystemTime(D + DAY_MS + 3 * 3600_000);
+    try {
+      const t = convexTest(schema, modules);
+      const lake = await seedBody(t, ANCHOR, 30);
+      await seedBay(t, lake, 'North Bay', NORTH);
+      await seedBay(t, lake, 'South Bay', SOUTH);
+      for (const [point, low] of [
+        [NORTH, -18],
+        [SOUTH, -8],
+      ] as const) {
+        const cell = weatherCellFor('filter', point.lat, point.lng);
+        // Ten local days ending on D itself, which is still in progress at the lake.
+        for (let i = 0; i <= 9; i++) {
+          const dayMs = D - i * DAY_MS;
+          await t.run((ctx) =>
+            ctx.db.insert('weatherDays', {
+              cellKey: cell.key,
+              tier: 'filter' as const,
+              dayMs,
+              localDate: new Date(dayMs).toISOString().slice(0, 10),
+              source: 'forecast' as const,
+              timeZone: 'America/New_York',
+              fetchedAt: Date.now(),
+              hours: 24,
+              nightMinTempC: low,
+              minTempC: low + 1,
+              snowfallCm: 0,
+            }),
+          );
+        }
+      }
+      const spread = await asViewer(t).query(api.weatherArchive.getSubAreaSpread, {
+        waterBodyId: lake,
+      });
+      expect(spread?.days).toBe(SPREAD_DAYS);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test('is null with fewer than two bays, when Tier B is empty, and to a signed-out caller', async () => {
+    const t = convexTest(schema, modules);
+    const lake = await seedBody(t, ANCHOR, 30);
+    await seedBay(t, lake, 'Only Bay', NORTH);
+    await seedFilterDays(t, NORTH, 7, { nightMinTempC: -18 });
+    expect(
+      await asViewer(t).query(api.weatherArchive.getSubAreaSpread, { waterBodyId: lake }),
+    ).toBeNull();
+
+    await seedBay(t, lake, 'South Bay', SOUTH);
+    // South has no Tier-B rows yet (pre-season): no comparison, not a comparison against zeroes.
+    expect(
+      await asViewer(t).query(api.weatherArchive.getSubAreaSpread, { waterBodyId: lake }),
+    ).toBeNull();
+    expect(await t.query(api.weatherArchive.getSubAreaSpread, { waterBodyId: lake })).toBeNull();
+  });
+
+  test('is null when every bay with data shares one Tier-B cell — one reading is not a spread', async () => {
+    // Two bays 0.01° apart share a 0.1° filter cell and therefore one row set. Comparing that set
+    // with itself would come out "similar across the lake's 2 bays" — a claim about variation from
+    // a sample that measured none. A third bay in its own cell with no rows yet does not rescue it.
+    const t = convexTest(schema, modules);
+    const lake = await seedBody(t, ANCHOR, 30);
+    await seedBay(t, lake, 'North Bay', NORTH);
+    await seedBay(t, lake, 'Also North', { lat: NORTH.lat + 0.01, lng: NORTH.lng + 0.01 });
+    await seedBay(t, lake, 'South Bay', SOUTH);
+    await seedFilterDays(t, NORTH, 7, { nightMinTempC: -18 });
+    expect(
+      await asViewer(t).query(api.weatherArchive.getSubAreaSpread, { waterBodyId: lake }),
+    ).toBeNull();
+
+    // Once the second cell has rows there are two readings, and the shared-cell pair ties.
+    await seedFilterDays(t, SOUTH, 7, { nightMinTempC: -8 });
+    const spread = await asViewer(t).query(api.weatherArchive.getSubAreaSpread, {
+      waterBodyId: lake,
+    });
+    expect(spread?.bays).toBe(3);
+    expect(spread?.lines.find((l) => l.kind === 'lows')?.text).toBe(
+      'Lows 0°F to 18°F — coldest at Also North, mildest at South Bay',
+    );
+  });
+
+  test("primeSubAreaWeather fills the bays' filter cells out of season, once per cell", async () => {
+    const t = convexTest(schema, modules);
+    const lake = await seedBody(t, ANCHOR, 30);
+    await seedBay(t, lake, 'North Bay', NORTH);
+    await seedBay(t, lake, 'Also North', { lat: NORTH.lat + 0.01, lng: NORTH.lng + 0.01 });
+    await seedBay(t, lake, 'South Bay', SOUTH);
+    const fetchMock = vi.fn(async () => okJson(isoResponse(recentDates(5))));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const res = await t.action(internal.weatherArchive.primeSubAreaWeather, {
+      waterBodyId: lake,
+      pastDays: 5,
+    });
+    // Two bays share a 0.1° cell: three bays, two cells, two fetches.
+    expect(res.cells).toBe(2);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    const rows = await t.run((ctx) => ctx.db.query('weatherDays').collect());
+    expect(rows.every((r) => r.tier === 'filter')).toBe(true);
+    expect(new Set(rows.map((r) => r.cellKey)).size).toBe(2);
   });
 });

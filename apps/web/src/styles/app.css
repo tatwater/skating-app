@@ -15,6 +15,17 @@
 @custom-variant dark (&:where(.dark, .dark *));
 
 /*
+ * Orientation variants the shadcn `base-nova` components are written against. The preset ships
+ * them in `shadcn/tailwind.css`, which this file never imports (that package is the CLI, not a
+ * runtime dependency), and Tailwind's built-in `data-horizontal:` matches a `[data-horizontal]`
+ * attribute nothing ever sets. Without these, `Tabs` laid its list out as a column beside the
+ * panel, and `separator.tsx` / `toggle-group.tsx` had been carrying dead orientation classes since
+ * they were vendored. Same selectors as upstream, so a re-vendored component keeps working.
+ */
+@custom-variant data-horizontal (&:where([data-orientation="horizontal"]));
+@custom-variant data-vertical (&:where([data-orientation="vertical"]));
+
+/*
  * Semantic theme tokens, single-sourced from @skating/design (themes.ts) — the web analog
  * of the mobile Tamagui bridge (D7). Two first-class themes (D34): `:root` is the
  * high-contrast bright-outdoor default (light); `.dark` is evening mode. The literal hex

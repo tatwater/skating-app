@@ -4,6 +4,8 @@ import {
   AERIAL_ATTRIBUTION,
   buildLakeCaption,
   contourBodyKey,
+  DETAIL_TAB_LABELS,
+  DETAIL_TABS,
   describeLakeDepth,
   formatAerialCaptureDate,
   formatAreaAcres,
@@ -11,6 +13,7 @@ import {
   humanizeEnum,
   isLeaving,
   profileRevealEnabled,
+  resolveWeatherSubArea,
   revealEmptySections,
   revealPlaceholder,
   SKATE_QUALITY_LABELS,
@@ -20,6 +23,7 @@ import {
 import { Link } from '@tanstack/react-router';
 import { usePaginatedQuery, useQuery } from 'convex/react';
 import { useEffect, useState } from 'react';
+import { useDetailTab } from '../lib/detailTabs';
 import { env } from '../lib/env';
 import { AccessSection } from './AccessSection';
 import { AlertStrip } from './AlertStrip';
@@ -41,11 +45,14 @@ import { PostedAccess } from './PostedAccess';
 import { PublicAccessSection } from './PublicAccessSection';
 import { ReferenceLinks } from './ReferenceLinks';
 import { ReportForm } from './ReportForm';
-import { SeasonEmptyState, SeasonFilter } from './SeasonFilter';
+import { SeasonEmptyState, SeasonFilter, useResetBrowseSeason } from './SeasonFilter';
+import { SubAreaSpread } from './SubAreaSpread';
 import { Badge } from './ui/badge';
 import { Button } from './ui/button';
 import { Card, CardContent } from './ui/card';
 import { Skeleton } from './ui/skeleton';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
+import { WeatherPlacePicker } from './WeatherPlacePicker';
 import { WindExposure } from './WindExposure';
 
 /**
@@ -67,14 +74,30 @@ export function WaterBodyDetail({
     waterBodyId: waterBodyId as Id<'waterBodies'>,
   });
   const body = result?.available ? result.body : null;
-  // Only fetched when a bay was actually asked for — a `by_parent` read on a lake already open.
-  const subAreas = useQuery(
-    api.subAreas.listForBody,
-    focusSubAreaId && body ? { waterBodyId: body._id } : 'skip',
-  );
+  // Always fetched once the lake is known — a `by_parent` read that returns nothing on the ~99% of
+  // bodies with no bays. It used to be skipped unless a bay was asked for; now the Planning tab needs
+  // it on every giant to pick the bay its weather is about (N6h open question 5), and the report feed
+  // subscribes to the same query anyway, so the client dedupes it.
+  const subAreas = useQuery(api.subAreas.listForBody, body ? { waterBodyId: body._id } : 'skip');
   const focusSubArea = focusSubAreaId
     ? subAreas?.find((s) => s._id === focusSubAreaId && !s.removed)
     : undefined;
+  // The bay the weather panel is about: the route's bay, else the most prominent, else the lake
+  // itself. `undefined` while the bays are still loading, so the panel does not fetch the lake's
+  // cell and then the bay's a moment later. Never written back to the URL — see `WeatherPlacePicker`.
+  const liveBays = (subAreas ?? []).filter((s) => !s.removed);
+  // The report feed's bay filter, held here because the feed unmounts with its tab (see
+  // `ReportFeed`). Seeded from the route's `?sub=` — the raw param, available on the first render,
+  // where the resolved bay object is not — and re-seeded whenever the route's bay changes, **in both
+  // directions**: a bay named lands the feed on it, and a bay removed (`?sub=` dropped on the same
+  // lake) returns it to the whole lake, because that is what the route just said. The dropdown then
+  // refines it locally without touching the route, and holds until the route speaks again.
+  const [feedBayId, setFeedBayId] = useState<string>(focusSubAreaId ?? '');
+  useEffect(() => {
+    setFeedBayId(focusSubAreaId ?? '');
+  }, [focusSubAreaId]);
+  const weatherBay =
+    subAreas === undefined ? undefined : resolveWeatherSubArea(liveBays, focusSubAreaId);
   const {
     setFocus,
     setHighlightWaterBodyId,
@@ -92,12 +115,36 @@ export function WaterBodyDetail({
   const [formOpen, setFormOpen] = useState(false);
   const [hazardFormOpen, setHazardFormOpen] = useState(false);
   const [bountyFormOpen, setBountyFormOpen] = useState(false);
+  const [tab, setTab] = useDetailTab();
+  // The season selector lives on the Reporting tab, but the season it picks governs the whole lake
+  // view (D63) — so its reset is keyed to this drawer's lifecycle, not the tab's.
+  useResetBrowseSeason(waterBodyId);
 
   // Once the (possibly merge-resolved) lake loads, fly the map to it and highlight it. We use the
   // resolved `body._id` — the survivor a merged deep link redirects to — which is what the map's
   // features carry, so a `/water/<merged-id>` link still highlights the right polygon.
+  //
+  // What the camera should frame, as a *stable signature* rather than the objects behind it:
+  // - a live `?sub=` bay → that bay;
+  // - no `?sub=`, or a `?sub=` we now know is not a live bay → the lake. A `?sub=` pointing at a
+  //   delisted or merged-away bay used to leave the map wherever it happened to be, framing nothing;
+  // - a `?sub=` whose lookup is still in flight → `null`, hold off, so the camera doesn't fly to the
+  //   lake and then jump to the bay a moment later.
+  // ⚠ Keyed on ids because `subAreas` is now fetched on every lake (the Planning tab needs it), and
+  // both it and `body` are reactive query results whose identity changes on every re-emit. With the
+  // arrays themselves as effect dependencies, opening any lake flew the camera twice — once when the
+  // body arrived and again ~100 ms later when the bay list did, restarting the fly-to mid-arc — and
+  // any later re-emit of either query yanked a reader who had panned away back to the lake.
+  const focusKey = !body
+    ? null
+    : focusSubArea
+      ? `sub:${focusSubArea._id}`
+      : !focusSubAreaId || subAreas !== undefined
+        ? `body:${body._id}`
+        : null;
+  // biome-ignore lint/correctness/useExhaustiveDependencies: focusKey is the stable signature of (body, focusSubArea, focusSubAreaId, subAreas) — see above.
   useEffect(() => {
-    if (!body) return;
+    if (!body || focusKey === null) return;
     // A bay frames on its **own bounds**, not the lake's — Champlain zoom-to-fit is 200 km of ice,
     // which is exactly the framing that made naming bays worth doing. (Mobile has always done this;
     // web was flying to a centroid at a guessed zoom, which fits a round bay and misses a long one.)
@@ -107,11 +154,7 @@ export function WaterBodyDetail({
         lng: focusSubArea.centroid.lng,
         bounds: focusSubArea.bbox,
       });
-    } else if (!focusSubAreaId || subAreas !== undefined) {
-      // Falls back to the lake once we know the bay isn't there — a `?sub=` pointing at a delisted
-      // or merged-away bay used to leave the map wherever it happened to be, framing nothing. While
-      // the lookup is still in flight (`subAreas === undefined`) we hold off, so the camera doesn't
-      // fly to the lake and then jump to the bay a moment later.
+    } else {
       setFocus({ lat: body.centroid.lat, lng: body.centroid.lng, zoom: 12 });
     }
     // Highlight the parent either way: the bay is a name on this lake, not a selectable thing.
@@ -121,15 +164,7 @@ export function WaterBodyDetail({
     // otherwise silently blank the layer on every lake at once. Only the *lake* drawer does this:
     // D81 makes contours a property of this view, not of every view that happens to select a body.
     setContourBodyKey(contourBodyKey(body.externalId, body._id));
-  }, [
-    body,
-    focusSubArea,
-    focusSubAreaId,
-    subAreas,
-    setFocus,
-    setHighlightWaterBodyId,
-    setContourBodyKey,
-  ]);
+  }, [focusKey, setFocus, setHighlightWaterBodyId, setContourBodyKey]);
 
   if (result === undefined) return <DetailSkeleton />;
 
@@ -213,80 +248,132 @@ export function WaterBodyDetail({
           <DirectionsButton waterBodyId={result.body._id} />
         </div>
         {leaving ? <LeavingNotice /> : null}
-        {/* Official NWS alerts (N6c/B5) first — a warning from the local forecast office outranks
-            both our observations and anybody's forecast, so it sits above both strips. */}
+        {/* Official NWS alerts (N6c/B5) ABOVE the tab strip, always visible — a warning from the
+            local forecast office outranks both our observations and anybody's forecast, and a tabbed
+            alert is an alert you can be one tap away from not seeing. This is what preserves the
+            authority ordering (alert > observation > prediction) under the three-tab IA (N6h/H). */}
         <AlertStrip waterBodyId={result.body._id} reveal={reveal} />
-        {/* Whether you may be here at all (N6f) — above the posted hours, because "there is no lawful
-            way in" outranks "and it closes at sunset". Annotates only: a ruling dims the lake on the
-            map and demotes it, and disables nothing on this page. */}
-        <PublicAccessSection body={result.body} />
-        {/* What the sign says (N6e) — above the route, because permission precedes access: whether you
-            may be out there at all outranks how you would get on. Its own strip rather than a row
-            inside AccessSection, which renders nothing when a body has no mapped put-ins and would
-            otherwise swallow the rule on exactly the remote reservoir that posts one. */}
-        <PostedAccess
-          rule={result.body.postedAccess}
-          coord={result.body.interiorPoint ?? result.body.centroid}
-          reveal={reveal}
-        />
-        {/* How you get onto the ice (N6d) — above the weather, because it decides whether the trip is
-            possible at all, where the weather decides whether it is worth making. Renders nothing on
-            the great majority of bodies OSM has never mapped access for. */}
-        <AccessSection waterBodyId={result.body._id} />
-        {/* What the ice has been through (N6h / D153) — ABOVE the forecast, because the authority
-            ordering this column encodes is alert > observation > prediction, and a week of recorded
-            weather is an observation. It is also the half a general weather app cannot give you,
-            which is why the phase exists. */}
-        <PastWeatherPanel waterBodyId={result.body._id} />
-        {/* The forward forecast (N6c/B5b) — the other half of the weather-since timeline, and the
-            half that answers "should I bother driving". Above the season filter so it sits with the
-            body's current state rather than inside its history. */}
-        <ForecastStrip waterBodyId={result.body._id} reveal={reveal} />
-        {/* Winter wind (N7-3 / D90). A climatology rather than a condition, so it sits BELOW the
-            forecast: what the last five winters did is background to what this week is doing. Renders
-            nothing on the ~56% of the corpus with no rose, and says nothing about safety (D145). */}
-        <WindExposure body={result.body} />
-        <WaterBodyModeratorControls body={result.body} />
-        <SeasonFilter waterBodyId={result.body._id} />
-        <BountyList waterBodyId={result.body._id} />
-        {/* Above the hazard list, and nowhere else — not the map, the feed, notifications, the
-            recommended strip or search. The map is where a mark means somebody reported this, and an
-            advisory has no reporter this season (§9.1). */}
-        <IceHistory waterBodyId={result.body._id} />
-        <HazardList waterBodyId={result.body._id} />
-        <ReportFeed
-          waterBodyId={result.body._id}
-          {...(focusSubArea ? { initialSubAreaId: focusSubArea._id } : {})}
-        />
-        {/* Reference links (N6c/B), below our own content and above the credits. Everything here
-            leaves the app, so it sits after everything a skater came for — and it renders nothing at
-            all on a body with no coordinate and no regional community. */}
-        <ReferenceLinks body={result.body} reveal={reveal} />
-        {/* The bathymetry credit (N6b §5), last in the drawer and absent on the great majority of
-            lakes no agency ever surveyed. "How far away can we put it" resolved to *here*, and that
-            is not a compromise: nothing requires a contour credit on the map surface, and this is
-            where the depth provenance above and the Open-Meteo credit already live, so someone
-            asking where a number came from looks in one place. Provenance only — D82 means there is
-            no sentence here about what a depth implies for ice. */}
-        {contourCredit ? <p className="text-foreground-muted text-xs">{contourCredit}</p> : null}
-        {/* The aerial credit, alongside the bathymetry one and for the same reason: somebody asking
-            where something came from should find every answer in one place. The map's ⓘ carries the
-            legally-required copy (`mapCanvas`); this is the discoverable copy, and it adds the thing
-            the control cannot — **when the photograph was taken**, which on a source flown every 2–3
-            years in midsummer is the difference between reading the landscape and misreading the
-            season (D147). Rendered only while the reveal is on, because a credit for a layer nobody
-            is looking at is noise. */}
-        {imageryOn ? (
-          <p className="text-foreground-muted text-xs">
-            Aerial imagery: {AERIAL_ATTRIBUTION}
-            {/* The month, where the panel's heading says the season: somebody reading a provenance
-                block came for *when*, and `formatAerialSeason`'s coarser form is for the slot it
-                shares with the archive's own winters. One instant, two grammars. */}
-            {aerialCapturedAt === null
-              ? ''
-              : ` — flown ${formatAerialCaptureDate(aerialCapturedAt)}`}
-          </p>
-        ) : null}
+        {/* The three sub-tabs (N6h/H, open question 4). Nothing below is new: the panels that used to
+            stack flat are grouped by the founder's taxonomy — Overview = machine-compiled facts about
+            the body, Reporting = user-supplied this season, Planning = the trip decision — and keep
+            their relative order inside each group, so every "above X because Y" argument in the
+            comments still holds within its tab. The selection persists across bodies for the session
+            (`useDetailTab`). The strip is sticky inside the panel's scroll container: it survives the
+            header scrolling away without sitting above the lake's own name. */}
+        <Tabs value={tab} onValueChange={setTab}>
+          <TabsList
+            variant="line"
+            className="sticky top-0 z-10 w-full border-b bg-background pb-1"
+            aria-label="Lake detail sections"
+          >
+            {DETAIL_TABS.map((id) => (
+              <TabsTrigger key={id} value={id}>
+                {DETAIL_TAB_LABELS[id]}
+              </TabsTrigger>
+            ))}
+          </TabsList>
+          <TabsContent value="overview" className="flex flex-col gap-4">
+            {/* Whether you may be here at all (N6f) — above the posted hours, because "there is no
+                lawful way in" outranks "and it closes at sunset". Annotates only: a ruling dims the
+                lake on the map and demotes it, and disables nothing on this page. */}
+            <PublicAccessSection body={result.body} />
+            {/* What the sign says (N6e). Its own strip rather than a row inside AccessSection, which
+                renders nothing when a body has no mapped put-ins and would otherwise swallow the rule
+                on exactly the remote reservoir that posts one. ⚠ The put-ins themselves are on
+                Planning: the taxonomy puts permission with the body and the route with the trip, and
+                that knowingly splits the "permission precedes access" adjacency the flat list had. */}
+            <PostedAccess
+              rule={result.body.postedAccess}
+              coord={result.body.interiorPoint ?? result.body.centroid}
+              reveal={reveal}
+            />
+            {/* Winter wind (N7-3 / D90). A climatology rather than a condition — what the last five
+                winters did — which is exactly why it is a fact about the body and not a planning
+                input. Renders nothing on the ~56% of the corpus with no rose, and says nothing about
+                safety (D145). */}
+            <WindExposure body={result.body} />
+            <WaterBodyModeratorControls body={result.body} />
+            {/* Reference links (N6c/B), below our own content and above the credits. Everything here
+                leaves the app, so it sits after everything a skater came for — and it renders nothing
+                at all on a body with no coordinate and no regional community. */}
+            <ReferenceLinks body={result.body} reveal={reveal} />
+            {/* The bathymetry credit (N6b §5), last and absent on the great majority of lakes no
+                agency ever surveyed. "How far away can we put it" resolved to *here*, and that is not
+                a compromise: nothing requires a contour credit on the map surface, and this is where
+                the depth provenance above and the Open-Meteo credit already live, so someone asking
+                where a number came from looks in one place. Provenance only — D82 means there is no
+                sentence here about what a depth implies for ice. */}
+            {contourCredit ? (
+              <p className="text-foreground-muted text-xs">{contourCredit}</p>
+            ) : null}
+            {/* The aerial credit, alongside the bathymetry one and for the same reason: somebody
+                asking where something came from should find every answer in one place. The map's ⓘ
+                carries the legally-required copy (`mapCanvas`); this is the discoverable copy, and it
+                adds the thing the control cannot — **when the photograph was taken**, which on a
+                source flown every 2–3 years in midsummer is the difference between reading the
+                landscape and misreading the season (D147). Rendered only while the reveal is on,
+                because a credit for a layer nobody is looking at is noise. */}
+            {imageryOn ? (
+              <p className="text-foreground-muted text-xs">
+                Aerial imagery: {AERIAL_ATTRIBUTION}
+                {/* The month, where the panel's heading says the season: somebody reading a
+                    provenance block came for *when*, and `formatAerialSeason`'s coarser form is for
+                    the slot it shares with the archive's own winters. One instant, two grammars. */}
+                {aerialCapturedAt === null
+                  ? ''
+                  : ` — flown ${formatAerialCaptureDate(aerialCapturedAt)}`}
+              </p>
+            ) : null}
+          </TabsContent>
+          <TabsContent value="reporting" className="flex flex-col gap-4">
+            <SeasonFilter waterBodyId={result.body._id} />
+            <BountyList waterBodyId={result.body._id} />
+            {/* Above the hazard list, and nowhere else — not the map, the feed, notifications, the
+                recommended strip or search. The map is where a mark means somebody reported this,
+                and an advisory has no reporter this season (§9.1). */}
+            <IceHistory waterBodyId={result.body._id} />
+            <HazardList waterBodyId={result.body._id} />
+            <ReportFeed
+              waterBodyId={result.body._id}
+              subAreaId={feedBayId}
+              onSubAreaIdChange={setFeedBayId}
+            />
+          </TabsContent>
+          <TabsContent value="planning" className="flex flex-col gap-4">
+            {/* How you get onto the ice (N6d) — above the weather, because it decides whether the
+                trip is possible at all, where the weather decides whether it is worth making. Renders
+                nothing on the great majority of bodies OSM has never mapped access for. */}
+            <AccessSection waterBodyId={result.body._id} />
+            {/* Which place on the lake the weather below is about — a scope line and a switcher on a
+                giant with named bays, nothing on everything else (open question 5). */}
+            {/* The lake's spread across its bays, with the ends named as tap targets (open question 5).
+                Reads Tier B, so it costs no fetch; renders nothing until the season sweep has rows for two
+                of this lake's bays. Only asked for on a lake that has two bays to compare. */}
+            {liveBays.length >= 2 ? <SubAreaSpread waterBodyId={result.body._id} /> : null}
+            <WeatherPlacePicker
+              waterBodyId={result.body._id}
+              bays={liveBays}
+              selectedId={weatherBay?._id ?? null}
+            />
+            {/* What the ice has been through (N6h / D153) — ABOVE the forecast, because the
+                authority ordering this column encodes is alert > observation > prediction, and a
+                week of recorded weather is an observation. It is also the half a general weather app
+                cannot give you, which is why the phase exists. */}
+            <PastWeatherPanel
+              waterBodyId={result.body._id}
+              pending={weatherBay === undefined}
+              {...(weatherBay ? { subAreaId: weatherBay._id } : {})}
+            />
+            {/* The forward forecast (N6c/B5b) — the other half of the weather-since timeline, and
+                the half that answers "should I bother driving". */}
+            <ForecastStrip
+              waterBodyId={result.body._id}
+              pending={weatherBay === undefined}
+              {...(weatherBay ? { subAreaId: weatherBay._id } : {})}
+              reveal={reveal}
+            />
+          </TabsContent>
+        </Tabs>
       </div>
       {formOpen ? (
         <ReportForm
@@ -316,17 +403,25 @@ const REPORTS_PAGE_SIZE = 20;
 
 function ReportFeed({
   waterBodyId,
-  /** The bay a search hit arrived on, pre-selecting the filter — you asked about Malletts, not the lake. */
-  initialSubAreaId,
+  subAreaId,
+  onSubAreaIdChange,
 }: {
   waterBodyId: Id<'waterBodies'>;
-  initialSubAreaId?: string;
+  /**
+   * The bay filter, **owned by the lake drawer** rather than by this feed. The feed lives on the
+   * Reporting tab and unmounts on every tab switch; a filter kept here as local state was reset to
+   * the route's bay (or "Anywhere") each time the reader glanced at Planning and came back. Seeded
+   * from the route's `?sub=` and following it, so a search hit or the weather picker lands the feed
+   * on the same bay. `''` is the whole lake.
+   */
+  subAreaId: string;
+  onSubAreaIdChange: (subAreaId: string) => void;
 }) {
   // The named bays on this lake (N2/D60). Most lakes have none, and then this whole control is
   // absent rather than an empty dropdown asking "which part?" of a pond.
   const subAreas = useQuery(api.subAreas.listForBody, { waterBodyId });
   const bays = (subAreas ?? []).filter((s) => !s.removed);
-  const [subAreaId, setSubAreaId] = useState<string>(initialSubAreaId ?? '');
+  const setSubAreaId = onSubAreaIdChange;
   // A bay that was delisted since the link was made falls back to the whole lake rather than
   // filtering on an id nothing matches, which would read as "no reports here".
   const activeBay = bays.some((b) => b._id === subAreaId) ? subAreaId : '';

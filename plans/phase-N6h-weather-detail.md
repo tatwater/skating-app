@@ -1,12 +1,12 @@
 # Phase N6h — The weather panel: a season of past days, a planning window, and radar that admits what it can't see
 
-> **Status:** 🚧 **PR 1 BUILT 2026-09-03 on `phase-n6h-weather-detail-1`** — Workstreams **A + B + C +
-> G** (the re-key, the durable archive, the past-weather panel on both clients, and the dark
-> thickness instrument), then a **review pass on the same branch** adding D162 (solar weighting) and
-> D163 (the season close). Unpushed, no PR opened, **undeployed — which is why the panel does not
-> render on the running web app.** **D + E + F + H not started.** Suites: core 2,348 · convex 1,388 ·
-> web 497 · mobile 108 · etl 433, `lint` and `check-types` clean across all 13 tasks.
-> See *§What PR 1 shipped, and where it differs from this plan* below.
+> **Status:** 🚧 **PR 1 = [#48](https://github.com/tatwater/skating/pull/48), merged 2026-09-10 and
+> deployed to dev** — Workstreams **A + B + C + G**, D162 + D163, **and a continuous hourly weather
+> timeline on both clients that this plan never specified** (see *§What PR 1 actually shipped*). Four
+> Greptile passes on the PR; suites at merge: core 2,460 · convex 1,437 · web 508 · mobile 108.
+> **PR 3 = Workstream H** (the three-tab drawer IA + sub-areas as the weather unit + the spread)
+> **built 2026-09-11 on `phase-n6h-weather-detail-3`**, five commits, pending review/PR — see *§What
+> PR 3 shipped*. **D + E + F not started.** Two PRs remain: D+E → F (founder call, 2026-09-11).
 > Scoped 2026-09-02. Founder ask, same day. Grew out of a costing
 > question — *"what is most expensive about this plan?"* — and the answer moved the design: the
 > expensive half is not the data, it is **the cache key**, which today shares nothing.
@@ -14,8 +14,8 @@
 > **Touches:** `weather.ts` (the sample-point key, the fetch spec), `weatherCache` /
 > `weatherForecastCache`, the N5a season boundary, the N6c wind rose + fetch profile, Phase 4
 > drive-time, the Phase 5 feed filter row, and the N6e imagery scrubber + Fly/R2 cutter pattern.
-> **Decisions:** **D152–D163** (drafted below; D152–D161 written into
-> [`01-decisions.md`](./01-decisions.md) 2026-09-03, D162–D163 still owed).
+> **Decisions:** **D152–D163**, all written into [`01-decisions.md`](./01-decisions.md) (D152–D161 on
+> 2026-09-03, D162–D163 on 2026-09-11).
 > **Supersedes one Phase 10 rule:** *"never the archive API"* was right for its use case and is wrong
 > for this one. See D153.
 >
@@ -42,6 +42,28 @@
 >    **D159**.
 > 6. **The season checker and the cell scanner play along rather than merge** — the cheap 25-site
 >    checker stays the year-round trigger and *starts* the expensive scanner. See **D161**.
+>
+> ### Founder calls, 2026-09-11 — fourth pass, kicking off PR 3
+>
+> 7. **H carries the sub-area spread**, as sequenced in open question 5 — not a pure move. Verified
+>    against seeded rows plus a **one-off out-of-season sweep of Champlain's bay cells** on dev, since
+>    Tier B is otherwise empty until mid-November.
+> 8. **A giant opens pre-selected on its top-`displayScore` bay, with an easy switcher.** The
+>    effective bay is the route's `?sub=` if present, else the top bay — *implicitly*, never writing
+>    the URL on open. The switcher and the spread's named extremes both set **route-level focus**
+>    (`focusSubAreaId`), so camera, report-feed filter and weather follow one selection concept
+>    rather than a third one.
+> 9. **Spread lines only in H** — named extremes for lows and snow-since over the 7-day headline
+>    window, collapsing to *"Similar across the lake"* inside a pinned threshold. The sorted bay lists
+>    wait for E, where the per-cell digest gives them their inputs for free.
+> 10. **IA mapping.** Action buttons (report / hazard / bounty / directions) and the NWS alert stay
+>     **above the tabs, always visible**. *Overview:* public-access ruling, posted rules, wind
+>     climatology, reference links, credits, moderator controls. *Reporting:* season filter, bounties,
+>     ice history, hazards, reports. *Planning:* the weather timeline, the forecast, put-ins. The
+>     "permission precedes access" adjacency is knowingly split across Overview/Planning because the
+>     taxonomy puts put-ins with the trip and permission with the body.
+> 11. **D stays as D155 wrote it** — a separate 7-day grid selector plus an hourly strip, *not* an
+>     extension of the timeline PR 1 built. **Three PRs remain: H → D+E → F.**
 >
 > ### Measurements taken 2026-09-02 (open questions 1 and 2)
 >
@@ -112,7 +134,55 @@
 ## What PR 1 shipped, and where it differs from this plan
 
 **Built 2026-09-03: Workstreams A + B + C + G.** D (forecast panel), E (weather-first discovery) and
-F (radar) are untouched.
+F (radar) are untouched. ⚠ The subsections below were written on 2026-09-03; **the PR then grew for a
+week before merging as #48** — see *§What PR 1 actually shipped* immediately after them.
+
+### What PR 1 actually shipped — the week between this section and the merge (written 2026-09-11)
+
+The plan's own record stopped at the review pass. Between 2026-09-03 and the 2026-09-10 merge the
+branch gained, in order:
+
+1. **A continuous hourly weather timeline, on both clients.** Not in this document anywhere. The
+   seven-column past panel showed each day's high and low and could not show *order* — snow at 2 PM
+   Tuesday then a hard freeze that night is a different surface from a freeze that was later buried.
+   `core/weatherTimeline.ts` (geometry) + `design/chartWeather.ts` (a measured, CVD-validated scale)
+   draw temperature, precipitation (typed via `weather_code`), wind with **fetch as the fill's density
+   channel**, and sun with an irradiance ramp. **Fixed at 2 px/hour** (founder call) with a scroll
+   track, trackpad panning and a keyboard slider; the export under `exports/weather-timeline` is a port
+   of the real model against real ERA5 data for Mascoma Lake. ⚠ This is why D should not be assumed
+   to be "the timeline extended forward" — founder call 11 above keeps D155's grid+strip shape.
+2. **`weatherHours`** — the hours the archive was already fetching and throwing away, stored for the
+   *browse* tier only (grows with attention, not with the corpus) and never on `weatherDays`, whose
+   rows are range-scanned corpus-wide. Rows carry `HOURLY_ROW_VERSION`; adding a field without
+   bumping it is now the bug, because a cell already holding complete rows is otherwise satisfied for
+   ever and the new field never appears on exactly the popular lakes.
+3. **`weather_code` as the twelfth hourly variable** (~9% on every call; founder call, made with the
+   number stated). `HOURLY_VARS` is 12, not the 14 the cost model below assumes — `dew_point_2m` was
+   never added and `precipitation_probability` is still owed by D.
+4. **`weatherCellSyncs`** and an import-triggered registry reconcile: `importRuns.finish` schedules a
+   debounced walk for the run kinds that can move a cell key; the weekly cron is demoted to a drift
+   net. A tier has one owning `runId`, so two concurrent walks can no longer take turns emptying it.
+5. **`timeZone` stored per `weatherDays` row.** Four Greptile passes to learn that *a calendar date is
+   not derivable from an offset*: Open-Meteo stamps one `utc_offset_seconds` on a whole response, so
+   a July backfill gave every January row EDT and no arithmetic on it could recover the date.
+   `localDateInZone` asks the zone (the Convex runtime has full ICU) and returns null rather than
+   answering in UTC.
+6. **`isCompleteDay` takes the lake's current local day**, because Open-Meteo returns whole calendar
+   days and today's row holds forecast values for its un-elapsed hours — today was "complete" from the
+   first fetch of the morning, on every surface.
+7. **Staff email on season open and close** (`broadcastToStaff`, one message per active moderator or
+   admin, gated on the mutation actually writing).
+8. **D163's set-once `recordSeasonWinterFrom`** — a sentinel-opened season wrote `winterFrom: null`
+   and could never close.
+
+**⚠ Two things D inherits from this, recorded here so they are not rediscovered:**
+
+- **`FORECAST_DAYS = 2` lives in the shared `fetchOpenMeteoHourly`**, used by the strip, the archive
+  backfill, the decay cron and the contradiction checker. D needs seven forecast days; bumping the
+  constant would move the 92-day backfill from 7 to 8 billing units. Parametrize it per caller.
+- **`precipitation_probability` is forecast-only and would ride on every call**, including the
+  archive's, at +8%. D v1 should ship without it — `weather_code` plus amount already carry the
+  story — unless the founder wants it with that number stated.
 
 ### Six things the build decided that the plan did not
 
@@ -185,6 +255,76 @@ fixed one.
 - **The N5a season rollup.** An optimisation for a season that has not happened: 150 daily rows per
   cell is ~548 MB against Convex Pro's included 50 GB, and the rows are append-only. Can land any
   time before the season closes.
+
+---
+
+## What PR 3 shipped — Workstream H, 2026-09-11
+
+**Built on `phase-n6h-weather-detail-3`, five commits:** the three-tab IA on both clients, sub-areas
+as the weather unit, and the spread. Suites at build: core 2,546 · convex 1,447 · web 515 · mobile
+108, all 13 tasks clean. Verified in the running web app against dev (Champlain); mobile verified by
+type-check and suite only — the emulator build runs but sign-in is email-code, so the founder checks
+the sheet by hand.
+
+### Six things the build decided that the plan did not
+
+1. **The mobile strip pins through two portal slots, not by being "outside the scroll view".**
+   React Native can only stick a *direct* child of a scroll view, and `MapDrawer`'s
+   `BottomSheetScrollView` wraps a single Expo Router `<Slot />` — so the plan's *"outside the scroll
+   view"* would have put the tabs above the lake's own name and the NWS alert. The first cut let the
+   strip scroll; the founder overruled that on the first device pass (*"(b), and in this PR"*), so
+   the scroll view is now exactly three children — a **head** slot, a **pinned** slot
+   (`stickyHeaderIndices={[1]}`), and the routed screen — and `WaterBodyDetail` teleports its
+   header/actions/alert into the head and its strip into the pinned slot via `@gorhom/portal`
+   (`DrawerHead` / `DrawerPinned`). Screens without a strip render exactly as before: an empty slot
+   has no height. Web pins with `position: sticky` inside its own scroll container.
+2. **`app.css` was missing the shadcn orientation variants**, so the vendored `Tabs` laid its list
+   out as a column beside the panel. The preset ships `data-horizontal:`/`data-vertical:` in
+   `shadcn/tailwind.css`, which the app never imports (that package is the CLI). Defined in
+   `app.css` with the upstream selectors — which also revived dead classes `separator.tsx` and
+   `toggle-group.tsx` had carried since they were vendored. `shadcn add` also mis-resolved `cn` to
+   an npm package of that name; reverted.
+3. **The default tab is *Overview*** (`DEFAULT_DETAIL_TAB`), the first in the strip; one word to
+   change if usage says people go straight to *Planning*.
+4. **Scope resolution is client-side, validation is server-side.** `resolveWeatherSubArea` (core)
+   picks the bay — route `?sub=`, else top `displayScore`, never written back — and the server
+   refuses a delisted or foreign id by answering for the lake and serving `scope` back, so the
+   panel labels what it was *given*. Both `getWeatherDaysForBody` and `getForecastForBody` take
+   the bay, so the Planning tab describes one place.
+5. **A bay carries no fetch profile.** The profile is the lake's; Malletts Bay is sheltered where
+   Champlain's eleven miles of fetch is not. The wind lane draws flat on a bay until a per-bay
+   profile exists.
+6. **The spread's collapse thresholds:** 3 °C on lows (lapse-rate and lake-effect noise between two
+   points 20 km apart), 2 cm on snow (a dusting). Bays are compared over the **intersection** of
+   their days with a floor of three, and the in-progress today is dropped per cell by its own zone
+   — a bay with a hole must not read as *less snow*.
+
+### Holes closed by this PR
+
+| hole | status |
+|---|---|
+| 2 · multi-cell giants | ✅ **closed for any body with sub-areas.** The reading is for a named bay, the caveat line is gone there, and the spread says what the rest of the lake did. Memphremagog and Connecticut River Reservoir have no bays and keep the interim caveat until one is drawn (or a sample grid placed — still an operator call). |
+| Open question 5 | ✅ Sub-areas first, as recommended. Champlain measured **10 live bays in 10 distinct Tier-B cells** on dev (the plan's 7 was an earlier count). The registry walk gains a sub-area pass, inline on the last body page, so bay cells are swept and gap-repaired like any other. |
+
+### Two things worth remembering
+
+- **The Tier-B empty-until-November problem has an operator tool now:** `primeSubAreaWeather`
+  (`internalAction`, `convex run weatherArchive:primeSubAreaWeather '{"waterBodyId":…,"pastDays":8}'`)
+  fills one lake's bay cells at the filter tier. Run on Champlain 2026-09-11, ~12 weighted calls.
+- **The circular-type landmine bit again**, in a new place: an action that reaches
+  `internal.weatherArchive.*` from inside its own module with an *inferred* return type makes
+  TypeScript give up on the whole `api` type, and the first symptom was an unrelated test file
+  failing to compile. Annotate the return type; the comment on `primeSubAreaWeather` says so.
+
+**Known and deferred (founder, 2026-09-11):** switching tabs from a scrolled position jolts on
+mobile when the new tab is shorter — the scroll view clamps to its new maximum. Not the slot layout;
+just short tabs. Two easy fixes if it survives D and E filling the tabs: a `minHeight` floor on the
+content child (never clamps; short tabs scroll into blank space), or animating to the strip's offset
+on a tab change (predictable; loses position both ways). Decide once the tabs have their real content.
+
+**Sequencing note for D.** `PastWeatherPanel` and `ForecastStrip` now take `subAreaId` + a
+load-bearing `pending` flag (hold while the bays load, or a giant pays for the lake's cell and then
+the bay's). D's forecast panel inherits both; the Planning tab already has the picker it wanted.
 
 ---
 

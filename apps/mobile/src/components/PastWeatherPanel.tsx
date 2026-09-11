@@ -36,47 +36,72 @@ const TIMELINE_DAYS = 30;
  * Same three rules as the web half: observation never counsel (D3 / D150), a gap is drawn rather than
  * smoothed, and it never renders above `AlertStrip`.
  */
-export function PastWeatherPanel({
-  waterBodyId,
-  days = 7,
-}: {
-  waterBodyId: Id<'waterBodies'>;
-  /** The window the *sentences* describe. The timeline always reads {@link TIMELINE_DAYS}. */
-  days?: number;
-}) {
-  const getDays = useAction(api.weatherArchive.getWeatherDaysForBody);
-  const [state, setState] = useState<{
-    days: PanelDay[];
-    timeline: TimelineDayInput[];
-    fetchProfileM?: number[] | undefined;
-    coarse: boolean;
-    largeBody: boolean;
-    todayLocalDayMs: number;
-    loading: boolean;
-  }>({
+type PanelState = {
+  days: PanelDay[];
+  timeline: TimelineDayInput[];
+  fetchProfileM?: number[] | undefined;
+  coarse: boolean;
+  largeBody: boolean;
+  todayLocalDayMs: number;
+  loading: boolean;
+  /** The lake the held data belongs to, so a bay switch can keep it and a lake switch cannot. */
+  forBody: string | null;
+};
+
+/** Nothing held: a first mount, a new lake, a refused read, or a failed one. */
+function emptyPanel(forBody: string | null, loading: boolean): PanelState {
+  return {
     days: [],
     timeline: [],
     coarse: false,
     largeBody: false,
     todayLocalDayMs: 0,
-    loading: true,
-  });
+    loading,
+    forBody,
+  };
+}
+
+export function PastWeatherPanel({
+  waterBodyId,
+  subAreaId,
+  pending = false,
+  days = 7,
+}: {
+  waterBodyId: Id<'waterBodies'>;
+  /** The bay this panel is about (N6h / open question 5), resolved by the caller. Absent on the lake itself. */
+  subAreaId?: string | undefined;
+  /**
+   * True while the caller does not yet know which bay this is about. Load-bearing: the panel holds
+   * instead of fetching the lake's cell and then the bay's — two calls for one open on a giant.
+   */
+  pending?: boolean;
+  /** The window the *sentences* describe. The timeline always reads {@link TIMELINE_DAYS}. */
+  days?: number;
+}) {
+  const getDays = useAction(api.weatherArchive.getWeatherDaysForBody);
+  const [state, setState] = useState<PanelState>(emptyPanel(null, true));
 
   useEffect(() => {
     let cancelled = false;
-    setState((s) => ({ ...s, loading: true }));
-    getDays({ waterBodyId, days: TIMELINE_DAYS })
+    // ⚠ Keep the held data across a *bay* switch; drop it across a *lake* switch. Blanking the
+    // panel to its one-line "Reading…" state while a bay loads removed ~400 px from under the
+    // reader's scroll position, the scroll view clamped upward, and when the timeline came back they
+    // were looking at the buttons at the top of the drawer. A bay switch is a refinement of the same
+    // page, so the old reading stays up, dimmed, until the new one replaces it — nothing under the
+    // finger moves. A different lake is a different page, and a stale panel there would lie.
+    setState((s) =>
+      s.forBody === waterBodyId ? { ...s, loading: true } : emptyPanel(waterBodyId, true),
+    );
+    if (pending) return;
+    getDays({
+      waterBodyId,
+      days: TIMELINE_DAYS,
+      ...(subAreaId ? { subAreaId: subAreaId as Id<'waterBodySubAreas'> } : {}),
+    })
       .then((result) => {
         if (cancelled) return;
         if (!result) {
-          setState({
-            days: [],
-            timeline: [],
-            coarse: false,
-            largeBody: false,
-            todayLocalDayMs: 0,
-            loading: false,
-          });
+          setState(emptyPanel(waterBodyId, false));
           return;
         }
         // Core owns the `dayMs` encoding (UTC midnight of a *local* date); reversing it by hand in
@@ -99,24 +124,16 @@ export function PastWeatherPanel({
           coarse: result.anyBorrowed,
           largeBody: result.oneSampleForALargeBody,
           loading: false,
+          forBody: waterBodyId,
         });
       })
       .catch(() => {
-        if (!cancelled) {
-          setState({
-            days: [],
-            timeline: [],
-            coarse: false,
-            largeBody: false,
-            todayLocalDayMs: 0,
-            loading: false,
-          });
-        }
+        if (!cancelled) setState(emptyPanel(waterBodyId, false));
       });
     return () => {
       cancelled = true;
     };
-  }, [getDays, waterBodyId, days]);
+  }, [getDays, waterBodyId, subAreaId, pending, days]);
 
   const panel = useMemo(
     // ⚠ The lake's today, from the server — never `Date.now()` here. Today's row arrives holding 24
@@ -131,7 +148,8 @@ export function PastWeatherPanel({
     [state.days, state.coarse, state.todayLocalDayMs],
   );
 
-  if (state.loading) {
+  // Nothing held yet — a first open, or a new lake. A bay switch keeps the previous reading up.
+  if (state.loading && state.days.length === 0) {
     return (
       <Section label="What it's been through">
         <Paragraph color="$foregroundMuted" fontSize={14} fontStyle="italic">
@@ -148,69 +166,72 @@ export function PastWeatherPanel({
   const hasHourly = state.timeline.some((d) => (d.hours?.length ?? 0) > 0);
 
   return (
-    <Section label="What it's been through">
-      {panel.headline.map((line) => (
-        <Paragraph color="$foreground" fontSize={14} key={line}>
-          {line}
-        </Paragraph>
-      ))}
+    // Dimmed while a bay's reading is on its way: the previous bay's stays up so the layout holds.
+    <YStack opacity={state.loading ? 0.5 : 1} accessibilityState={{ busy: state.loading }}>
+      <Section label="What it's been through">
+        {panel.headline.map((line) => (
+          <Paragraph color="$foreground" fontSize={14} key={line}>
+            {line}
+          </Paragraph>
+        ))}
 
-      {/* The timeline when the archive has hours for this cell; the per-day columns otherwise.
+        {/* The timeline when the archive has hours for this cell; the per-day columns otherwise.
           **The columns are the fallback, not dead code** — a cell whose daily rows predate the hourly
           table serves no hours until its next drawer-open. A dash rather than a zero for a day we
           could not get, which is the whole point of carrying `missing` through from the archive. */}
-      {hasHourly ? (
-        <YStack marginTop="$2">
-          {/* No window prop since the 2026-09-04 scale change — the container decides how many days
+        {hasHourly ? (
+          <YStack marginTop="$2">
+            {/* No window prop since the 2026-09-04 scale change — the container decides how many days
               fit at 2px/hour, and `days` still scopes only the sentences above. */}
-          <WeatherTimeline days={state.timeline} fetchProfileM={state.fetchProfileM} />
-        </YStack>
-      ) : (
-        <XStack gap="$2" marginTop="$2">
-          {panel.rows.map((row) => (
-            // A partial day (today, so far) is drawn at reduced opacity rather than hidden: what is
-            // happening right now is exactly what a skater wants to see, but it must not read as a
-            // settled high and low. The headline leaves it out of every integral.
-            <YStack
-              alignItems="center"
-              flex={1}
-              gap="$1"
-              key={row.dayMs}
-              opacity={row.partial ? 0.5 : 1}
-            >
-              <Text color="$foregroundMuted" fontSize={10} textTransform="uppercase">
-                {shortDayLabel(row.localDate)}
-              </Text>
-              <Text color="$foreground" fontSize={12}>
-                {row.highF === null ? '—' : `${row.highF}°`}
-              </Text>
-              <Text color="$foregroundMuted" fontSize={12}>
-                {row.lowF === null ? '—' : `${row.lowF}°`}
-              </Text>
-              {row.snowfallIn !== null && row.snowfallIn >= 0.1 ? (
-                <Text color="$foregroundMuted" fontSize={10}>
-                  {row.snowfallIn}″
+            <WeatherTimeline days={state.timeline} fetchProfileM={state.fetchProfileM} />
+          </YStack>
+        ) : (
+          <XStack gap="$2" marginTop="$2">
+            {panel.rows.map((row) => (
+              // A partial day (today, so far) is drawn at reduced opacity rather than hidden: what is
+              // happening right now is exactly what a skater wants to see, but it must not read as a
+              // settled high and low. The headline leaves it out of every integral.
+              <YStack
+                alignItems="center"
+                flex={1}
+                gap="$1"
+                key={row.dayMs}
+                opacity={row.partial ? 0.5 : 1}
+              >
+                <Text color="$foregroundMuted" fontSize={10} textTransform="uppercase">
+                  {shortDayLabel(row.localDate)}
                 </Text>
-              ) : null}
-            </YStack>
-          ))}
-        </XStack>
-      )}
+                <Text color="$foreground" fontSize={12}>
+                  {row.highF === null ? '—' : `${row.highF}°`}
+                </Text>
+                <Text color="$foregroundMuted" fontSize={12}>
+                  {row.lowF === null ? '—' : `${row.lowF}°`}
+                </Text>
+                {row.snowfallIn !== null && row.snowfallIn >= 0.1 ? (
+                  <Text color="$foregroundMuted" fontSize={10}>
+                    {row.snowfallIn}″
+                  </Text>
+                ) : null}
+              </YStack>
+            ))}
+          </XStack>
+        )}
 
-      {state.largeBody ? (
-        <Text color="$foregroundMuted" fontSize={11} fontStyle="italic">
-          This lake is large enough that weather differs across it — these readings are from one
-          point near the middle.
+        {state.largeBody ? (
+          <Text color="$foregroundMuted" fontSize={11} fontStyle="italic">
+            This lake is large enough that weather differs across it — these readings are from one
+            point near the middle.
+          </Text>
+        ) : null}
+        {panel.coarse ? (
+          <Text color="$foregroundMuted" fontSize={11} fontStyle="italic">
+            Some days are from a wider area than usual.
+          </Text>
+        ) : null}
+        <Text color="$foregroundMuted" fontSize={11}>
+          Past weather: Open-Meteo
         </Text>
-      ) : null}
-      {panel.coarse ? (
-        <Text color="$foregroundMuted" fontSize={11} fontStyle="italic">
-          Some days are from a wider area than usual.
-        </Text>
-      ) : null}
-      <Text color="$foregroundMuted" fontSize={11}>
-        Past weather: Open-Meteo
-      </Text>
-    </Section>
+      </Section>
+    </YStack>
   );
 }

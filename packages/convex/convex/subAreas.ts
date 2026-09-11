@@ -1187,6 +1187,9 @@ export const listForBody = query({
         bbox: row.bbox,
         centroid: row.centroid,
         surfaceAreaSqM: row.surfaceAreaSqM,
+        // The weather panel's default bay on a giant (N6h open question 5, `resolveWeatherSubArea`):
+        // the most prominent place, which is this D49 curve over area plus curation, not raw area.
+        displayScore: row.displayScore,
         minVisibleZoom: row.minVisibleZoom,
         ...(row.curatedBoost !== undefined ? { curatedBoost: row.curatedBoost } : {}),
         removed: row.removedAt !== undefined,
