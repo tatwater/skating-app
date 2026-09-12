@@ -423,7 +423,6 @@ export const sweepUnpromptedActivities = internalMutation({
         if (!canReport) continue;
         await enqueueActorNotification(ctx, {
           recipientId: userId,
-          type: 'activity_detected',
           targetId: id,
           trigger: { kind: 'activity', activityId: id },
           now,
