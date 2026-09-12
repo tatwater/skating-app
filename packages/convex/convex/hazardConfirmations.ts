@@ -317,7 +317,6 @@ async function recomputeLifecycle(
     await enqueueActorNotification(ctx, {
       recipientId: hazard.createdByUserId,
       actorId: voterId,
-      type: 'hazard_confirmation',
       targetId: hazard._id,
       trigger: {
         kind: 'hazard_lifecycle',

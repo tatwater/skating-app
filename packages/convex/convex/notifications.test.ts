@@ -436,19 +436,28 @@ describe('notifications — the inbox read path', () => {
     });
     expect(page[0]?.readAt).toBeUndefined();
 
-    // Mark one, then everything up to the newest shown.
-    await author.as.mutation(api.notifications.markRead, {
-      notificationId: page[1]?.id as Id<'notifications'>,
-    });
+    // Mark one, then everything up to the newest shown. Each call answers with what it stamped —
+    // the clients keep that set so the "new since last visit" dot survives the reactive re-render.
+    expect(
+      await author.as.mutation(api.notifications.markRead, {
+        notificationId: page[1]?.id as Id<'notifications'>,
+      }),
+    ).toEqual([page[1]?.id]);
     expect(await author.as.query(api.notifications.unreadCount, {})).toBe(1);
-    await author.as.mutation(api.notifications.markRead, { before: page[0]?.createdAt });
+    expect(
+      await author.as.mutation(api.notifications.markRead, { before: page[0]?.createdAt }),
+    ).toEqual([page[0]?.id]);
     expect(await author.as.query(api.notifications.unreadCount, {})).toBe(0);
     expect((await inbox(author.as)).page.every((n) => n.readAt !== undefined)).toBe(true);
+    // Nothing left to stamp: an empty answer, not an error.
+    expect(await author.as.mutation(api.notifications.markRead, {})).toEqual([]);
 
     // Someone else's id is a no-op, not an error.
-    await stranger.as.mutation(api.notifications.markRead, {
-      notificationId: page[0]?.id as Id<'notifications'>,
-    });
+    expect(
+      await stranger.as.mutation(api.notifications.markRead, {
+        notificationId: page[0]?.id as Id<'notifications'>,
+      }),
+    ).toEqual([]);
   });
 
   test('a hidden target renders degraded and stays in the list; a blocked actor drops the row', async () => {

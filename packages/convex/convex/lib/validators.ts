@@ -7,6 +7,7 @@
  * generated `DataModel` keeps exact string-literal field types.
  */
 
+import { HAZARD_LIFECYCLE_PHASES } from '@skating/core';
 import { v } from 'convex/values';
 
 /** Build a `v.union(v.literal(...))` from a readonly tuple, keeping literal types. */
@@ -182,13 +183,7 @@ export const notificationTrigger = v.union(
   v.object({
     kind: v.literal('hazard_lifecycle'),
     hazardId: v.id('hazards'),
-    phase: v.union(
-      v.literal('provisional'),
-      v.literal('confirmed'),
-      v.literal('healing_unsafe'),
-      v.literal('disputed'),
-      v.literal('archived'),
-    ),
+    phase: literals(HAZARD_LIFECYCLE_PHASES),
     // The voters whose confirmations moved the phase inside the window — kept so the flush can
     // apply the recipient's block set the way it does for thumbs, not only the enqueue gate.
     actorIds: v.array(v.id('profiles')),

@@ -2,7 +2,7 @@ import { api } from '@skating/convex/api';
 import { describeNotification, formatRelativeTime, type NotificationView } from '@skating/core';
 import { useConvexAuth, useMutation, usePaginatedQuery } from 'convex/react';
 import { useRouter } from 'expo-router';
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { FlatList } from 'react-native';
 import { Paragraph, Spinner, Text, XStack, YStack } from 'tamagui';
 import { notificationRoute } from '../src/lib/notificationRoutes';
@@ -32,18 +32,32 @@ export default function NotificationsScreen() {
   // whose every row is a blocked actor's lists nothing and still counts on the bell — a rows guard
   // would never clear it. A notification arriving while the modal is up stays unread until the
   // next open.
+  //
+  // The rows the mark stamps are remembered for the visit (same as the web): the list is reactive,
+  // so a dot drawn from `readAt` alone would vanish the moment the stamp landed. Seeded from the
+  // page in hand before the mutation fires, then widened to everything the server stamped.
   const marked = useRef(false);
+  const [newThisVisit, setNewThisVisit] = useState<ReadonlySet<string>>(() => new Set());
   useEffect(() => {
     if (marked.current || !isAuthenticated || status === 'LoadingFirstPage') return;
     marked.current = true;
-    void markRead({}).catch(() => {});
-  }, [markRead, isAuthenticated, status]);
+    setNewThisVisit(new Set(results.filter((v) => v.readAt === undefined).map((v) => v.id)));
+    markRead({})
+      .then((stamped) => setNewThisVisit((prev) => new Set([...prev, ...stamped])))
+      .catch(() => {});
+  }, [markRead, isAuthenticated, status, results]);
 
   return (
     <FlatList<NotificationView>
       data={results}
       keyExtractor={(n) => n.id}
-      renderItem={({ item }) => <NotificationRow view={item} now={now} />}
+      renderItem={({ item }) => (
+        <NotificationRow
+          view={item}
+          now={now}
+          unread={item.readAt === undefined || newThisVisit.has(item.id)}
+        />
+      )}
       onEndReached={() => {
         if (status === 'CanLoadMore') loadMore(PAGE_SIZE);
       }}
@@ -78,11 +92,19 @@ export default function NotificationsScreen() {
   );
 }
 
-function NotificationRow({ view, now }: { view: NotificationView; now: number }) {
+function NotificationRow({
+  view,
+  now,
+  unread,
+}: {
+  view: NotificationView;
+  now: number;
+  /** New since the last visit — still unread, or stamped read by this visit's open. */
+  unread: boolean;
+}) {
   const router = useRouter();
   const { title, detail, target } = describeNotification(view);
   const route = notificationRoute(target, view);
-  const unread = view.readAt === undefined;
   return (
     <XStack
       gap="$3"

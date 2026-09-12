@@ -167,7 +167,6 @@ export const resolveFlag = mutation({
     if (flag.origin === 'user' && flag.flaggerId !== actor._id) {
       await enqueueActorNotification(ctx, {
         recipientId: flag.flaggerId,
-        type: 'content_flag_resolved',
         targetId: flag._id,
         trigger: { kind: 'flag_resolved', flagId: flag._id, resolution: args.resolution },
         now,

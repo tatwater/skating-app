@@ -656,7 +656,6 @@ async function fanOutEligibility(
     await enqueueActorNotification(ctx, {
       recipientId: report.authorId,
       actorId: args.requesterId,
-      type: 'bounty_request',
       targetId: args.bountyId,
       trigger: {
         kind: 'bounty_request',
@@ -693,21 +692,20 @@ export const cancel = mutation({
  * requester; several reports inside the settle window coalesce into one "N reports came in", and the
  * flush re-checks that the bounty is still open (if they've already ruled, there's nothing to ask).
  *
- * Returns how many open bounties the report answered, so the post-submit screen can say "at least N
- * people were looking forward to this" — the author is told on the spot rather than pinged (their
- * phone dinging because a stranger had asked would be a notification about somebody else's action).
+ * The *author* is not pinged — a stranger having asked is not a reason for their phone to ding — but
+ * they are told on the spot: `answeredByMyReport` below backs the "at least N skaters were looking
+ * forward to it" line on their own report.
  */
 export async function attachReportToOpenBounties(
   ctx: MutationCtx,
   report: Doc<'reports'>,
-): Promise<number> {
+): Promise<void> {
   const open = await ctx.db
     .query('bounties')
     .withIndex('by_water_body_status', (q) =>
       q.eq('waterBodyId', report.waterBodyId).eq('status', 'open'),
     )
     .collect();
-  let attached = 0;
   for (const bounty of open) {
     // **This is where sub-area targeting is either real or cosmetic** (N2 / D60). Fulfillment starts
     // here, not at the create gate: the requester's helpful thumb on an *attached* report is what
@@ -719,11 +717,9 @@ export async function attachReportToOpenBounties(
     await ctx.db.patch(bounty._id, {
       fulfillingReportIds: [...bounty.fulfillingReportIds, report._id],
     });
-    attached++;
     await enqueueActorNotification(ctx, {
       recipientId: bounty.requesterId,
       actorId: report.authorId,
-      type: 'bounty_answered',
       targetId: bounty._id,
       trigger: {
         kind: 'bounty_answered',
@@ -733,13 +729,13 @@ export async function attachReportToOpenBounties(
       },
     });
   }
-  return attached;
 }
 
 /**
  * Fulfillment-on-helpful (decisions 10–11) — invoked from `ratings.rate` when the **requester** thumbs a
  * fulfilling report helpful. Flips the bounty to `fulfilled` and awards `rewardPoints` (as
- * `bounty_fulfilled` → `bountyPoints`) to the **report author**, then notifies them. Guarded so a bounty
+ * `bounty_fulfilled` → `bountyPoints`) to the **report author** — no notification to them since N8 /
+ * D167; see the note at the end of the body. Guarded so a bounty
  * fulfills once: no-op unless still `open`, the rater is the requester, and the report is in its
  * fulfilling set. (The rater can't be the report author — self-rating is already blocked upstream — so
  * nobody rewards themselves.)

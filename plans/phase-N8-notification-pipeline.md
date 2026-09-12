@@ -608,11 +608,18 @@ producer enqueues with `SETTLE_MS = 60 s` and a typed `trigger` the flush re-rea
    arriving while the page sits open stays unread until the next visit.
    *Second pass (xhigh):* the bound is the **server's now**, not the newest unread row the list
    showed — `list` omits rows whose actors are all blocked but `unreadCount` counts them, so a
-   list-derived bound left the bell lit forever for a row nobody could see. The once-latch now sets
-   on the first page landing *with rows* rather than after a mark, so an inbox opened all-read no
-   longer stamps the next arrival on sight. Also: `answeredByMyReport` counts fulfilled/expired
-   bounties too (open-only made the line vanish the moment the requester's thumb landed), and only
-   the author subscribes to it.
+   list-derived bound left the bell lit forever for a row nobody could see. The once-latch sets on
+   the first page landing — regardless of whether it had rows, so an inbox opened all-read no
+   longer stamps the next arrival on sight — and is gated on `useConvexAuth`, not on rows being
+   present (Greptile pass): an inbox whose every row is a blocked actor's lists nothing while the
+   bell still counts them, so a rows guard would never clear it. Also: `answeredByMyReport` counts
+   fulfilled/expired bounties too (open-only made the line vanish the moment the requester's thumb
+   landed), and only the author subscribes to it.
+   *Third pass (xhigh, post-merge):* the row dot was dead UI — the list is reactive, so the moment
+   `markRead` landed every row re-rendered as read. `markRead` now returns the ids it stamped and
+   both clients draw the dot from a visit-scoped set (seeded from the page in hand, widened by the
+   server's answer), so "new since last visit" survives the stamp. `enqueueActorNotification`
+   derives `type` from the trigger kind (`TYPE_FOR_KIND`) instead of taking it as a second argument.
 1. **The plan miscounted the toggles.** Both settings pages rendered *three* (the Phase-4 set), not
    ten. They now iterate `NOTIFICATION_PREF_ORDER` from `@skating/core`, where the vocabulary, the
    labels and `describeNotification` (the sentence both clients render) now live.

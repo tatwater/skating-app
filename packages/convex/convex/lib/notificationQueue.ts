@@ -47,6 +47,24 @@ export type NotificationTrigger = Infer<typeof notificationTrigger>;
 export type ActorQueueKind = NotificationTrigger['kind'];
 
 /**
+ * The `notifications.type` each actor kind flushes to — and therefore the pref toggle it gates on.
+ * Derived here rather than passed by each producer: the pair is a fact about the kind, and a producer
+ * that could spell it differently is a producer that could gate on the wrong toggle and hand the
+ * resolver a payload its type doesn't parse.
+ */
+export const TYPE_FOR_KIND: Record<ActorQueueKind, NotificationType> = {
+  thumb: 'report_rated',
+  corroboration: 'report_rated',
+  comment: 'report_commented',
+  reply: 'report_commented',
+  hazard_lifecycle: 'hazard_confirmation',
+  flag_resolved: 'content_flag_resolved',
+  bounty_request: 'bounty_request',
+  bounty_answered: 'bounty_answered',
+  activity: 'activity_detected',
+};
+
+/**
  * How long an actor-triggered notification settles before it can send. The founder's instinct was
  * "a few seconds", and a few seconds is the *real* window — a misclick is corrected almost at once.
  * Sixty is what ships anyway because the flush cron ticks once a minute (`crons.ts`), so anything
@@ -152,7 +170,6 @@ export async function enqueueActorNotification(
     recipientId: Id<'profiles'>;
     /** The person whose action this is, when there is one — for the self/block gates. */
     actorId?: Id<'profiles'>;
-    type: NotificationType;
     /** What the coalesce key is scoped to: the report, hazard, bounty, flag, or activity id. */
     targetId: string;
     trigger: NotificationTrigger;
@@ -162,16 +179,17 @@ export async function enqueueActorNotification(
   },
 ): Promise<boolean> {
   const now = args.now ?? Date.now();
+  const kind = args.trigger.kind;
+  const type = TYPE_FOR_KIND[kind];
   if (args.actorId !== undefined && args.actorId === args.recipientId) return false;
   const recipient = await ctx.db.get(args.recipientId);
   if (!recipient) return false;
-  if (!recipientWants(recipient, args.type)) return false;
+  if (!recipientWants(recipient, type)) return false;
   if (args.actorId !== undefined) {
     const blocked = await loadBlockedAuthorIds(ctx, args.recipientId);
     if (blocked.has(args.actorId)) return false;
   }
 
-  const kind = args.trigger.kind;
   const coalesceKey = actorCoalesceKey(args.recipientId, args.targetId, kind);
   const flushAfter = args.flushAfter ?? now + SETTLE_MS;
   const existing = await ctx.db
@@ -199,7 +217,7 @@ export async function enqueueActorNotification(
   await ctx.db.insert('notificationQueue', {
     userId: args.recipientId,
     kind,
-    type: args.type,
+    type,
     coalesceKey,
     count: triggerCount(args.trigger),
     flushAfter,

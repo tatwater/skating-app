@@ -142,7 +142,6 @@ async function notifyHelpful(
   await enqueueActorNotification(ctx, {
     recipientId: authorId,
     actorId: raterId,
-    type: 'report_rated',
     targetId,
     trigger: { kind: 'thumb', targetType, targetId, actorIds: [raterId] },
   });
