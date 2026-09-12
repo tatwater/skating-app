@@ -3,7 +3,7 @@
  * writes, the digest the sweep rebuilds, and the two reads over them.
  */
 
-import { weatherCellFor } from '@skating/core';
+import { DIGEST_MAX_AGE_DAYS, weatherCellFor } from '@skating/core';
 import { convexTest } from 'convex-test';
 import type { Polygon } from 'geojson';
 import { describe, expect, test, vi } from 'vitest';
@@ -337,6 +337,105 @@ describe('the digest (D165)', () => {
     await t.finishInProgressScheduledFunctions();
     expect(res.done).toBe(true);
     expect(await t.run((ctx) => ctx.db.query('weatherCellDigests').collect())).toHaveLength(2);
+  });
+});
+
+describe('a digest the sweep stopped updating is not an answer (Greptile, PR #54)', () => {
+  /** Move a digest's as-of back `days` — what the season's close does to every row, slowly. */
+  async function age(t: ReturnType<typeof convexTest>, days: number) {
+    await t.run(async (ctx) => {
+      for (const d of await ctx.db.query('weatherCellDigests').collect()) {
+        await ctx.db.patch(d._id, { asOfDayMs: d.asOfDayMs - days * DAY_MS });
+      }
+    });
+  }
+
+  test('a stale digest matches nothing, gates nothing, and narrows nothing', async () => {
+    const t = convexTest(schema, modules);
+    const author = await seedUser(t, 'author');
+    const cold = await seedBody(t, 'Cold', A);
+    await walk(t);
+    await seedNights(t, A, [-14, -14, -14]);
+    await rebuild(t, A);
+    const filters = { weather: { thresholdF: 20, minNights: 3 } };
+    await author.as.mutation(api.reports.create, {
+      waterBodyId: cold,
+      skateEndTime: Date.now() - 60 * 60 * 1000,
+    });
+
+    // Fresh: everything answers.
+    expect((await t.query(api.weatherDiscovery.status, {})).available).toBe(true);
+    expect((await t.query(api.weatherDiscovery.listBodyResults, { filters })).results).toHaveLength(
+      1,
+    );
+    expect((await t.query(api.weatherDiscovery.matchedCells, { filters })).cellKeys).toHaveLength(
+      1,
+    );
+    expect(
+      (
+        await t.query(api.reports.listFeed, {
+          paginationOpts: { numItems: 10, cursor: null },
+          filters,
+        })
+      ).page,
+    ).toHaveLength(1);
+
+    // Aged past the freshness window — the season closed, or the sweep died: nothing answers, and the
+    // knobs go back to "no weather data".
+    await age(t, DIGEST_MAX_AGE_DAYS + 1);
+    expect((await t.query(api.weatherDiscovery.status, {})).available).toBe(false);
+    expect((await t.query(api.weatherDiscovery.listBodyResults, { filters })).results).toHaveLength(
+      0,
+    );
+    expect((await t.query(api.weatherDiscovery.matchedCells, { filters })).cellKeys).toHaveLength(
+      0,
+    );
+    expect(
+      (
+        await t.query(api.reports.listFeed, {
+          paginationOpts: { numItems: 10, cursor: null },
+          filters,
+        })
+      ).page,
+    ).toHaveLength(0);
+  });
+
+  test('a digest inside the window still answers — a missed tick is not a closed season', async () => {
+    const t = convexTest(schema, modules);
+    await seedBody(t, 'Cold', A);
+    await walk(t);
+    await seedNights(t, A, [-14, -14, -14]);
+    await rebuild(t, A);
+    await age(t, DIGEST_MAX_AGE_DAYS - 1);
+    const filters = { weather: { thresholdF: 20, minNights: 3 } };
+    expect((await t.query(api.weatherDiscovery.status, {})).available).toBe(true);
+    expect((await t.query(api.weatherDiscovery.listBodyResults, { filters })).results).toHaveLength(
+      1,
+    );
+  });
+});
+
+describe('the join refuses a superseded walk (Greptile, PR #54)', () => {
+  test('a page from a run that lost the tier writes nothing', async () => {
+    const t = convexTest(schema, modules);
+    const a = await seedBody(t, 'Lake A', A);
+    await walk(t); // run 1 owns the tier and stamped A's row
+    const before = await t.run((ctx) => ctx.db.query('bodyWeatherCells').first());
+    // A newer walk claims the tier; a late page of the old run then tries to land.
+    await t.mutation(internal.weatherArchive.beginCellSync, {
+      tier: 'filter',
+      runId: 'newer-run',
+      startedAt: Date.now(),
+    });
+    const res = await t.mutation(internal.weatherArchive.upsertBodyWeatherCells, {
+      runId: before?.runId ?? 'old',
+      nowMs: Date.now(),
+      members: [{ cellKey: 'f:stale-key', waterBodyId: a }],
+    });
+    expect(res.superseded).toBe(true);
+    const after = await t.run((ctx) => ctx.db.query('bodyWeatherCells').first());
+    expect(after?.cellKey).toBe(before?.cellKey);
+    expect(after?.runId).toBe(before?.runId);
   });
 });
 

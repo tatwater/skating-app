@@ -15,6 +15,7 @@ import {
   CORROBORATION_MAX_PER_REPORT,
   CORROBORATION_WINDOW_MS,
   type DriveTimeBands,
+  digestIsFresh,
   type FeedAuthor,
   type FeedCardData,
   hasMeasuredThickness,
@@ -724,7 +725,11 @@ async function weatherMatchedFor(
     .query('weatherCellDigests')
     .withIndex('by_key', (q) => q.eq('cellKey', cellKey))
     .first();
-  const matched = digest !== null && matchWeatherFilter(digest, filter) !== null;
+  // Fresh or nothing — a digest the sweep stopped updating in April must not narrow a July feed.
+  const matched =
+    digest !== null &&
+    digestIsFresh(digest, Date.now()) &&
+    matchWeatherFilter(digest, filter) !== null;
   caches.digests.set(cellKey, matched);
   return matched;
 }

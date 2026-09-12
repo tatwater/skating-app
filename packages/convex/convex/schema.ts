@@ -1484,6 +1484,8 @@ export default defineSchema({
     updatedAt: v.number(),
   })
     .index('by_key', ['cellKey'])
+    // The availability gate: "is there any digest fresh enough to answer?" — one indexed `first()`.
+    .index('by_as_of', ['asOfDayMs'])
     .index('by_nights_32', ['nightsBelow32F'])
     .index('by_nights_20', ['nightsBelow20F'])
     .index('by_nights_10', ['nightsBelow10F'])

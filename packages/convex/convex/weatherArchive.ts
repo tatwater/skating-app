@@ -575,11 +575,13 @@ export const backfillWeatherCells = internalAction({
     // The discovery join rides the same walk (Workstream E): the page already resolved every body's
     // filter cell, so writing `bodyWeatherCells` here costs nothing it was not already paying.
     if (page.members.length > 0) {
-      await ctx.runMutation(internal.weatherArchive.upsertBodyWeatherCells, {
+      const joined = await ctx.runMutation(internal.weatherArchive.upsertBodyWeatherCells, {
         members: page.members,
         runId: run,
         nowMs: Date.now(),
       });
+      if (joined.superseded)
+        return { done: true, scanned: page.scanned, pruned: 0, superseded: true };
     }
 
     if (!page.isDone) {
@@ -612,11 +614,12 @@ export const backfillWeatherCells = internalAction({
       });
       if (res.superseded) return { done: true, scanned, pruned: 0, superseded: true };
       if (bays.members.length > 0) {
-        await ctx.runMutation(internal.weatherArchive.upsertBodyWeatherCells, {
+        const joined = await ctx.runMutation(internal.weatherArchive.upsertBodyWeatherCells, {
           members: bays.members,
           runId: run,
           nowMs: Date.now(),
         });
+        if (joined.superseded) return { done: true, scanned, pruned: 0, superseded: true };
       }
       scanned += bays.scanned;
       if (bays.isDone) break;
@@ -1080,7 +1083,16 @@ export const upsertBodyWeatherCells = internalMutation({
       }),
     ),
   },
-  handler: async (ctx, { runId, nowMs, members }) => {
+  handler: async (ctx, { runId, nowMs, members }): Promise<{ superseded: boolean }> => {
+    // ⚠ The same in-transaction ownership check `upsertWeatherCells` makes, for the same reason: a
+    // page of a superseded walk that lands after the winner's prune would stamp rows with a dead
+    // run id — unpruned until the next walk — and patch a body's cell back to a stale key. The
+    // action's earlier check was a separate transaction; this one shares the write's.
+    const claim = await ctx.db
+      .query('weatherCellSyncs')
+      .withIndex('by_tier', (q) => q.eq('tier', 'filter'))
+      .unique();
+    if (claim && claim.runId !== runId) return { superseded: true };
     for (const m of members) {
       const existing = await ctx.db
         .query('bodyWeatherCells')
@@ -1099,6 +1111,7 @@ export const upsertBodyWeatherCells = internalMutation({
         updatedAt: nowMs,
       });
     }
+    return { superseded: false };
   },
 });
 

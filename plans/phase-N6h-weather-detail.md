@@ -665,11 +665,23 @@ The `/code-review` skill hit a session limit before running, so the pass was by 
 | Workstream E's `weatherCellKeyB` / holes row 7 | ✅ Superseded by the join; both corrected. |
 | 9 · offline | ⚠ Unchanged — the forecast payload still waits for the on-ice/offline surface. |
 
+### Greptile's pass — two findings, both right, both fixed
+
+- **A digest is never cleared, so an April chain answered a July filter.** The deferred note below
+  had said the digests "hold their last date"; Greptile pointed out that with `status` calling any
+  digest *available*, that was a stale match kept publicly active after the sweep stood down. Now
+  **`DIGEST_MAX_AGE_DAYS` (3) retires a digest by age**, and every reader asks the one question —
+  the list, the map, the feed narrow and the availability gate (through a new `by_as_of` index).
+  Three days survives a missed tick; a closed season goes back to *"no weather data yet"*.
+- **`upsertBodyWeatherCells` lacked the in-transaction ownership check `upsertWeatherCells` has.**
+  The action checked in a separate transaction, so a late page of a superseded walk could land after
+  the winner's prune, stamping rows with a dead run id and patching a body's cell to a stale key.
+  Same check, same transaction; the action stops on `superseded`.
+
 **Deferred, with reasons:** a favorited lake outside the viewer's outer band box under a radius
 filter is unreachable (the cell pre-test drops it before the exemption can apply — the same trade
-`listFeed` makes when it paginates by time); `status.asOfDayMs` is one digest's, a caption not a
-claim; and out of season the digests hold their last date rather than being cleared, because
-"nothing known" and "no chain" are different answers and only the first one changes at the gate.
+`listFeed` makes when it paginates by time); and `status.asOfDayMs` is one fresh digest's, a caption
+not a claim.
 
 **Sequencing note for F.** Nothing in E is in F's way. F's cutter is gated on `closesOn`/`opensOn`
 exactly like the sweep (`isSweepSeasonOpen` is the query to reuse), and the AGPL §13 note is owed to

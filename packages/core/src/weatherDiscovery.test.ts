@@ -6,7 +6,10 @@ import {
   type BodyResultData,
   buildBodyResultView,
   buildWeatherCellDigest,
+  DIGEST_MAX_AGE_DAYS,
   describeWeatherFilter,
+  digestFreshnessCutoffMs,
+  digestIsFresh,
   eventInstantMs,
   interleaveLatest,
   type LatestItem,
@@ -341,5 +344,14 @@ describe('describeWeatherFilter — the map chip (D166)', () => {
       'Showing lakes with 1+ night below 32°F',
     );
     expect(describeWeatherFilter({}, day(4))).toBe('');
+  });
+});
+
+describe('digestIsFresh — a digest is retired by age, never cleared', () => {
+  it('reads a digest as of within the window and refuses one beyond it', () => {
+    const now = day(10) + 5 * 3_600_000;
+    expect(digestIsFresh({ asOfDayMs: day(10 - DIGEST_MAX_AGE_DAYS) }, now)).toBe(true);
+    expect(digestIsFresh({ asOfDayMs: day(10 - DIGEST_MAX_AGE_DAYS - 1) }, now)).toBe(false);
+    expect(digestFreshnessCutoffMs(now)).toBe(day(10 - DIGEST_MAX_AGE_DAYS));
   });
 });

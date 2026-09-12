@@ -33,6 +33,8 @@ import {
   bandWithinRadius,
   type DriveTimeBand,
   type DriveTimeBands,
+  digestFreshnessCutoffMs,
+  digestIsFresh,
   eventInstantMs,
   matchWeatherFilter,
   sanitizeFeedFilters,
@@ -94,14 +96,22 @@ interface MatchedCell {
   match: WeatherMatch;
 }
 
-/** Stage 1 + the in-memory half of the predicate. Newest event first. */
+/**
+ * Stage 1 + the in-memory half of the predicate. Newest event first.
+ *
+ * ⚠ Stale digests are dropped here, for every reader. The sweep stands down at the season's close
+ * and a digest keeps its last date, so without this an April chain would answer a July filter. See
+ * `DIGEST_MAX_AGE_DAYS`.
+ */
 async function matchedCellsFor(
   ctx: QueryCtx,
   filter: WeatherDiscoveryFilter,
+  nowMs: number,
 ): Promise<MatchedCell[]> {
   const rows = await digestsAtLeast(ctx, filter);
   const out: MatchedCell[] = [];
   for (const digest of rows) {
+    if (!digestIsFresh(digest, nowMs)) continue;
     const match = matchWeatherFilter(digest, filter);
     if (match) out.push({ digest, match });
   }
@@ -182,7 +192,7 @@ export const matchedCells = query({
   ): Promise<{ cellKeys: string[]; bayBodyIds: Id<'waterBodies'>[]; asOfDayMs: number | null }> => {
     const filters = sanitizeFeedFilters(raw);
     if (!filters.weather) return { cellKeys: [], bayBodyIds: [], asOfDayMs: null };
-    const cells = await matchedCellsFor(ctx, filters.weather);
+    const cells = await matchedCellsFor(ctx, filters.weather, Date.now());
     const keys = new Set(cells.map((c) => c.digest.cellKey));
     const bayBodyIds = new Set<Id<'waterBodies'>>();
     let asOfDayMs: number | null = null;
@@ -225,7 +235,7 @@ export const listBodyResults = query({
     const { bands, home, box } = viewerBands(viewer);
     const radius: DriveTimeBand | undefined = filters.radiusMinutes;
 
-    let cells = await matchedCellsFor(ctx, weather);
+    let cells = await matchedCellsFor(ctx, weather, Date.now());
     let asOfDayMs: number | null = null;
     for (const c of cells) {
       if (asOfDayMs === null || c.digest.asOfDayMs > asOfDayMs) asOfDayMs = c.digest.asOfDayMs;
@@ -322,15 +332,20 @@ export const listBodyResults = query({
 /**
  * Whether discovery can answer anything right now — for the filter row's disabled state (call 24).
  *
- * Out of season Tier B is empty until D163's gate opens, so the knobs render disabled with *"no
- * weather data yet this season"* rather than silently returning nothing. One `first()`: the
- * question is existence. `asOfDayMs` is that one digest's, which is the sweep's date give or take a
- * cell's timezone — good enough for a caption, not a claim.
+ * Out of season Tier B is empty until D163's gate opens — or holds digests too old to read — so the
+ * knobs render disabled with *"no weather data yet this season"* rather than silently returning
+ * nothing. One indexed `first()`: the question is existence. `asOfDayMs` is that one digest's,
+ * which is the sweep's date give or take a cell's timezone — good enough for a caption, not a claim.
  */
 export const status = query({
   args: {},
   handler: async (ctx): Promise<{ available: boolean; asOfDayMs: number | null }> => {
-    const any = await ctx.db.query('weatherCellDigests').first();
-    return { available: any !== null, asOfDayMs: any?.asOfDayMs ?? null };
+    // A *fresh* digest, not any digest: once the sweep stands down the rows keep their last date,
+    // and "available" must stop being true when they stop being about now.
+    const fresh = await ctx.db
+      .query('weatherCellDigests')
+      .withIndex('by_as_of', (q) => q.gte('asOfDayMs', digestFreshnessCutoffMs(Date.now())))
+      .first();
+    return { available: fresh !== null, asOfDayMs: fresh?.asOfDayMs ?? null };
   },
 });

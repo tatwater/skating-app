@@ -71,6 +71,32 @@ export interface WeatherCellDigest {
   nightsBelow0F: number;
 }
 
+/**
+ * How old a digest may be and still answer a filter, in days.
+ *
+ * ⚠ **A digest is never cleared, so freshness is what retires it.** The sweep stands down at the
+ * season's close (D163) and the rows keep their last date — a chain that was alive *as of April*
+ * would otherwise match *"3 nights below 20°F"* in July, with `status` calling the filter
+ * available, and every reader would say so with a straight face. Three days survives a missed tick
+ * or two; a digest older than that is no longer a claim about now, and every read — the list, the
+ * map, the feed narrow, the availability gate — asks this one question.
+ */
+export const DIGEST_MAX_AGE_DAYS = 3;
+
+/** The oldest `asOfDayMs` a digest may carry and still be read, for `nowMs`. */
+export function digestFreshnessCutoffMs(nowMs: number): number {
+  const DAY = 86_400_000;
+  return Math.floor(nowMs / DAY) * DAY - DIGEST_MAX_AGE_DAYS * DAY;
+}
+
+/** Is this digest recent enough to answer a filter? See {@link DIGEST_MAX_AGE_DAYS}. */
+export function digestIsFresh(
+  digest: Pick<WeatherCellDigest, 'asOfDayMs'>,
+  nowMs: number,
+): boolean {
+  return digest.asOfDayMs >= digestFreshnessCutoffMs(nowMs);
+}
+
 /** The index field a threshold's length lives in. */
 export function nightsFieldFor(
   thresholdF: ColdChainThresholdF,
