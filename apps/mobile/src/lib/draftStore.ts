@@ -6,7 +6,12 @@
  * Untested native glue (like `photoPipeline`); the queue *logic* is tested in `@skating/core`.
  */
 
-import type { HazardQueueItem, QueuedTrack, ReportDraft } from '@skating/core';
+import {
+  CONFIRMATION_VOTE_KIND,
+  type HazardQueueItem,
+  type QueuedTrack,
+  type ReportDraft,
+} from '@skating/core';
 import * as SQLite from 'expo-sqlite';
 
 /**
@@ -17,8 +22,13 @@ import * as SQLite from 'expo-sqlite';
  * anyway, which is trivial in one table and fiddly across three.
  */
 const KIND_REPORT = 'report';
-const HAZARD_KINDS = ['hazard', 'hazard_confirmation'] as const;
+const HAZARD_KINDS = ['hazard', CONFIRMATION_VOTE_KIND] as const;
 const KIND_TRACK = 'track';
+/**
+ * What a queued confirmation was called before N8 renamed it (see `CONFIRMATION_VOTE_KIND` in core
+ * for why). Only `ensureSchema` reads this, to rewrite rows a device queued under the old name.
+ */
+const LEGACY_CONFIRMATION_KIND = 'hazard_confirmation';
 
 /**
  * The subset of `expo-sqlite`'s sync API this store uses. Factored out so `ensureSchema` — the one
@@ -33,12 +43,19 @@ export interface SqliteLike {
 }
 
 /**
- * Create the table if missing and run the `kind` migration.
+ * Create the table if missing and run the two `kind` migrations.
  *
  * Installs from before Phase 9 have the table without `kind`. Adding the column with a default is
  * what makes the migration a no-op for the drafts already sitting on those devices — they're reports,
  * and they keep being reports (the `NOT NULL DEFAULT 'report'` backfills every existing row). Guarded
  * by a column check because `ADD COLUMN` throws on a rerun. Pure w.r.t. the injected db so it's tested.
+ *
+ * The second migration (N8) renames a queued confirmation's kind from `hazard_confirmation` to
+ * `confirmation_vote`. The kind is stored **twice** — as the queryable column and inside the JSON
+ * blob the flush deserialises — so both are rewritten, in one statement each, and only for rows still
+ * carrying the old name (a rerun matches nothing). A confirmation cast on the ice and left in the queue
+ * across the app update is exactly the row this exists for: without it the flush would never select it,
+ * and the vote would sit there forever, unsent and unlisted.
  */
 export function ensureSchema(db: SqliteLike): void {
   db.execSync(
@@ -54,6 +71,14 @@ export function ensureSchema(db: SqliteLike): void {
   if (!columns.some((c) => c.name === 'kind')) {
     db.execSync(`ALTER TABLE report_drafts ADD COLUMN kind TEXT NOT NULL DEFAULT '${KIND_REPORT}'`);
   }
+  // `json_set` keeps the rest of the blob byte-for-byte; the column and the blob move together so a
+  // row can't end up selectable under the new name but deserialised under the old one.
+  db.runSync(
+    `UPDATE report_drafts
+       SET kind = ?, data = json_set(data, '$.kind', ?)
+     WHERE kind = ?`,
+    [CONFIRMATION_VOTE_KIND, CONFIRMATION_VOTE_KIND, LEGACY_CONFIRMATION_KIND],
+  );
 }
 
 /** All **report** drafts, oldest first — the read half of `listDrafts`, factored out to test alongside
@@ -122,15 +147,21 @@ export function saveHazardItem(item: HazardQueueItem): void {
   upsert(item.kind, item, item);
 }
 
-/** Every queued hazard + confirmation, oldest first. */
-export function listHazardItems(): HazardQueueItem[] {
-  return getDb()
+/** Every queued hazard + confirmation, oldest first — the read half of `listHazardItems`, factored
+ *  out so the N8 kind rename is tested against a real engine the same way the column migration is. */
+export function readHazardItems(db: SqliteLike): HazardQueueItem[] {
+  return db
     .getAllSync<{ data: string }>(
       `SELECT data FROM report_drafts WHERE kind IN (${HAZARD_KINDS.map(() => '?').join(',')})
        ORDER BY createdAt ASC`,
       [...HAZARD_KINDS],
     )
     .map((r) => JSON.parse(r.data) as HazardQueueItem);
+}
+
+/** Every queued hazard + confirmation, oldest first. */
+export function listHazardItems(): HazardQueueItem[] {
+  return readHazardItems(getDb());
 }
 
 export function getHazardItem(id: string): HazardQueueItem | null {

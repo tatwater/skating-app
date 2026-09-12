@@ -44,15 +44,11 @@ import {
   type QueryCtx,
   query,
 } from './_generated/server';
-import {
-  canReceiveNotifications,
-  getCurrentProfile,
-  requireContributor,
-  requireProfile,
-} from './lib/auth';
+import { getCurrentProfile, requireContributor, requireProfile } from './lib/auth';
 import { publicAuthor } from './lib/authorView';
 import { resolveSurvivor } from './lib/bodies';
 import { isListed } from './lib/listing';
+import { enqueueActorNotification } from './lib/notificationQueue';
 import { awardPointEvent, checkAndAwardBadges, tallyThumbs, trustClassFor } from './lib/reputation';
 import { bodyWeatherCell } from './lib/sampling';
 import { takeCapped, takeCappedResult } from './lib/scan';
@@ -630,10 +626,10 @@ export const createChecked = internalMutation({
 });
 
 /**
- * Notify the eligible: authors who reported on this body within `windowHours` (decision 9). Per-actor
- * `bounty_request` rows inserted **directly** (the body-keyed coalescing queue doesn't fit a one-off
- * request), respecting `notificationPrefs.bountyRequest` + `status === 'active'`, never the requester.
- * The GPS-skate half of eligibility (D44) lands in Phase 8.
+ * Notify the eligible: authors who reported on this body within `windowHours` (decision 9). One
+ * `bounty_request` per recent author, through the settle queue (N8 / D169) so a bounty cancelled a
+ * moment after it was posted never rings anyone; the flush re-checks that it's still open. Never the
+ * requester. The GPS-skate half of eligibility (D44) lands in Phase 8.
  */
 async function fanOutEligibility(
   ctx: MutationCtx,
@@ -657,18 +653,17 @@ async function fanOutEligibility(
   for (const report of recent) {
     if (notified.has(report.authorId)) continue;
     notified.add(report.authorId);
-    const author = await ctx.db.get(report.authorId);
-    if (!author) continue;
-    if (!canReceiveNotifications(author) || !author.notificationPrefs.bountyRequest) continue;
-    await ctx.db.insert('notifications', {
-      userId: report.authorId,
-      type: 'bounty_request',
-      payload: {
+    await enqueueActorNotification(ctx, {
+      recipientId: report.authorId,
+      actorId: args.requesterId,
+      targetId: args.bountyId,
+      trigger: {
+        kind: 'bounty_request',
         bountyId: args.bountyId,
         waterBodyId: args.waterBodyId,
         requesterId: args.requesterId,
       },
-      createdAt: args.now,
+      now: args.now,
     });
   }
 }
@@ -690,6 +685,16 @@ export const cancel = mutation({
  * Auto-attach (decision 10) — invoked from `reports.create` for each new **visible** report. Appends the
  * report to every open bounty on its body's `fulfillingReportIds` (the minimum bar is deliberately simple:
  * any new visible report on the body). Fulfillment itself waits for the requester's helpful thumb.
+ *
+ * **This is also where the requester finds out** (N8 / D170). Fulfillment can't happen until the
+ * requester thumbs an attached report, and until N8 nothing told them one had arrived — the loop only
+ * closed if they happened to have favorited the lake. Each attach enqueues a `bounty_answered` to the
+ * requester; several reports inside the settle window coalesce into one "N reports came in", and the
+ * flush re-checks that the bounty is still open (if they've already ruled, there's nothing to ask).
+ *
+ * The *author* is not pinged — a stranger having asked is not a reason for their phone to ding — but
+ * they are told on the spot: `answeredByMyReport` below backs the "at least N skaters were looking
+ * forward to it" line on their own report.
  */
 export async function attachReportToOpenBounties(
   ctx: MutationCtx,
@@ -712,13 +717,25 @@ export async function attachReportToOpenBounties(
     await ctx.db.patch(bounty._id, {
       fulfillingReportIds: [...bounty.fulfillingReportIds, report._id],
     });
+    await enqueueActorNotification(ctx, {
+      recipientId: bounty.requesterId,
+      actorId: report.authorId,
+      targetId: bounty._id,
+      trigger: {
+        kind: 'bounty_answered',
+        bountyId: bounty._id,
+        waterBodyId: bounty.waterBodyId,
+        reportIds: [report._id],
+      },
+    });
   }
 }
 
 /**
  * Fulfillment-on-helpful (decisions 10–11) — invoked from `ratings.rate` when the **requester** thumbs a
  * fulfilling report helpful. Flips the bounty to `fulfilled` and awards `rewardPoints` (as
- * `bounty_fulfilled` → `bountyPoints`) to the **report author**, then notifies them. Guarded so a bounty
+ * `bounty_fulfilled` → `bountyPoints`) to the **report author** — no notification to them since N8 /
+ * D170; see the note at the end of the body. Guarded so a bounty
  * fulfills once: no-op unless still `open`, the rater is the requester, and the report is in its
  * fulfilling set. (The rater can't be the report author — self-rating is already blocked upstream — so
  * nobody rewards themselves.)
@@ -754,16 +771,9 @@ export async function fulfillBountyOnHelpful(
     delta: bounty.rewardPoints,
   });
   await checkAndAwardBadges(ctx, report.authorId);
-
-  const author = await ctx.db.get(report.authorId);
-  if (!author) return;
-  if (!canReceiveNotifications(author) || !author.notificationPrefs.bountyFulfilled) return;
-  await ctx.db.insert('notifications', {
-    userId: report.authorId,
-    type: 'bounty_fulfilled',
-    payload: { bountyId: args.bountyId, reportId: args.reportId, requesterId: bounty.requesterId },
-    createdAt: Date.now(),
-  });
+  // No notification to the author (N8 / D170): the requester's thumb is the thing that *made* this
+  // report helpful, and they already see that thumb on the report. The one person who needed telling
+  // — the requester, when the report first arrived — is told at attach time (`bounty_answered`).
 }
 
 /**
@@ -840,6 +850,46 @@ export const getDetail = query({
       isRequester: !!viewer && viewer._id === bounty.requesterId,
       fulfillingReports,
     };
+  },
+});
+
+/** Bounties read per status by `answeredByMyReport` — "at least N" tolerates a truncated tail. */
+const ANSWERED_SCAN_CAP = 100;
+
+/**
+ * How many bounties a report is attached to — the "at least N people were looking forward to this"
+ * line after submit (N8 / D170). Only the report's own author gets a number: the count is a fact
+ * about who asked, and a stranger reading "3 people wanted this" off someone else's report is a
+ * signal nobody asked for.
+ *
+ * Counts **open, fulfilled and expired** bounties, not only open ones: the requester thumbing this
+ * report helpful is the intended end of the D170 loop, and it flips the bounty to `fulfilled` — the
+ * one moment the sentence is most true is the moment an open-only count would have made it vanish.
+ * Cancelled is the exception (the requester withdrew the ask). Reads the body's bounties by status
+ * (bounded per status; the open set is a handful, the terminal sets grow across seasons) rather than
+ * an index on `fulfillingReportIds`, which Convex can't index anyway.
+ */
+export const answeredByMyReport = query({
+  args: { reportId: v.id('reports') },
+  handler: async (ctx, { reportId }): Promise<number> => {
+    const viewer = await getCurrentProfile(ctx);
+    const report = await ctx.db.get(reportId);
+    if (!viewer || !report || report.authorId !== viewer._id) return 0;
+    let answered = 0;
+    for (const status of ['open', 'fulfilled', 'expired'] as const) {
+      const rows = await takeCapped(
+        ctx.db
+          .query('bounties')
+          .withIndex('by_water_body_status', (q) =>
+            q.eq('waterBodyId', report.waterBodyId).eq('status', status),
+          )
+          .order('desc'),
+        ANSWERED_SCAN_CAP,
+        `bounties.answeredByMyReport(${status})`,
+      );
+      answered += rows.filter((b) => b.fulfillingReportIds.includes(reportId)).length;
+    }
+    return answered;
   },
 });
 

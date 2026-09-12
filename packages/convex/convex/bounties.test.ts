@@ -49,7 +49,7 @@ const NOTIF_PREFS = {
   activityDetected: true,
   bountyRequest: true,
   hazardConfirmation: true,
-  bountyFulfilled: true,
+  bountyAnswered: true,
   reportRated: true,
   reportCommented: true,
   contentFlagResolved: true,
@@ -108,6 +108,17 @@ async function seedBody(t: ReturnType<typeof harness>) {
 
 type Actor = Awaited<ReturnType<typeof seedUser>>;
 
+/** Make every queued notification due and flush it — the settle window (N8 / D169), fast-forwarded. */
+async function flushAllDue(t: ReturnType<typeof harness>) {
+  await t.run(async (ctx) => {
+    for (const row of await ctx.db.query('notificationQueue').collect()) {
+      await ctx.db.patch(row._id, { flushAfter: Date.now() - 1 });
+    }
+  });
+  await t.mutation(internal.notifications.flushNotificationQueue, {});
+  return t.run((ctx) => ctx.db.query('notifications').collect());
+}
+
 async function seedReport(
   actor: Actor,
   waterBodyId: Id<'waterBodies'>,
@@ -135,10 +146,42 @@ describe('bounties.create', () => {
     const bounty = await t.run((ctx) => ctx.db.get(bountyId));
     expect(bounty?.status).toBe('open');
 
-    const notes = await t.run((ctx) => ctx.db.query('notifications').collect());
+    const notes = await flushAllDue(t);
     const requests = notes.filter((n) => n.type === 'bounty_request');
     expect(requests).toHaveLength(1);
     expect(requests[0]?.userId).toBe(reporter.id); // eligible reporter notified; requester never
+    expect(requests[0]?.payload).toMatchObject({
+      bountyId,
+      waterBodyId,
+      requesterId: requester.id,
+    });
+  });
+
+  test('a bounty cancelled inside the settle window never asks anyone (D169)', async () => {
+    const t = harness();
+    const requester = await seedUser(t, 'requester');
+    const reporter = await seedUser(t, 'reporter');
+    const waterBodyId = await seedBody(t);
+    await seedReport(reporter, waterBodyId, Date.now() - 60 * HOUR);
+
+    const bountyId = await requester.as.action(api.bounties.create, { waterBodyId });
+    await requester.as.mutation(api.bounties.cancel, { bountyId });
+    expect(await flushAllDue(t)).toHaveLength(0);
+  });
+
+  test('a requester blocked inside the settle window never asks either (PR #52 review)', async () => {
+    const t = harness();
+    const requester = await seedUser(t, 'requester');
+    const reporter = await seedUser(t, 'reporter');
+    const waterBodyId = await seedBody(t);
+    await seedReport(reporter, waterBodyId, Date.now() - 60 * HOUR);
+
+    const bountyId = await requester.as.action(api.bounties.create, { waterBodyId });
+    expect(await t.run((ctx) => ctx.db.query('notificationQueue').collect())).toHaveLength(1);
+    // Enqueued before the block, so the enqueue gate let it through; the flush re-applies it.
+    await reporter.as.mutation(api.blocks.block, { targetUserId: requester.id });
+    expect(await flushAllDue(t)).toHaveLength(0);
+    expect((await t.run((ctx) => ctx.db.get(bountyId)))?.status).toBe('open');
   });
 
   test('blocks a bounty on a body with a fresh report', async () => {
@@ -740,13 +783,50 @@ describe('bounties fulfillment', () => {
     expect(bounty?.status).toBe('fulfilled');
     // Reward is the separate bountyPoints currency, awarded to the report author.
     expect((await t.run((ctx) => ctx.db.get(author.id)))?.bountyPoints).toBe(bounty?.rewardPoints);
-    const notes = await t.run((ctx) =>
-      ctx.db
-        .query('notifications')
-        .filter((q) => q.eq(q.field('userId'), author.id))
-        .collect(),
-    );
-    expect(notes.some((n) => n.type === 'bounty_fulfilled')).toBe(true);
+    // The author is NOT notified of fulfilment (D170): the requester's thumb is visible on the report
+    // already, and the only person who needed telling was the requester when the report arrived —
+    // which, because they thumbed inside the settle window, is a `bounty_answered` that never sends:
+    // the flush finds the bounty no longer open.
+    const notes = await flushAllDue(t);
+    expect(notes.map((n) => n.type)).toEqual(['report_rated']); // the thumb itself, nothing else
+  });
+
+  test('the requester is told when a report lands on their open bounty (D170)', async () => {
+    const t = harness();
+    const requester = await seedUser(t, 'requester');
+    const author = await seedUser(t, 'author');
+    const second = await seedUser(t, 'second');
+    const waterBodyId = await seedBody(t);
+    const bountyId = await requester.as.action(api.bounties.create, { waterBodyId });
+
+    const reportId = await seedReport(author, waterBodyId);
+    // The author's own post-submit line: one open bounty answered.
+    expect(await author.as.query(api.bounties.answeredByMyReport, { reportId })).toBe(1);
+    // …and only the author gets that number.
+    expect(await second.as.query(api.bounties.answeredByMyReport, { reportId })).toBe(0);
+
+    const secondReportId = await seedReport(second, waterBodyId);
+    const notes = await flushAllDue(t);
+    const answered = notes.filter((n) => n.type === 'bounty_answered');
+    expect(answered).toHaveLength(1); // two reports inside one window coalesce
+    expect(answered[0]?.userId).toBe(requester.id);
+    expect(answered[0]?.payload).toMatchObject({
+      bountyId,
+      waterBodyId,
+      reportIds: [reportId, secondReportId],
+      count: 2,
+    });
+
+    // The requester's helpful thumb closes the loop and flips the bounty to `fulfilled` — the line
+    // must survive that, not vanish at the one moment it is most true.
+    await requester.as.mutation(api.ratings.rate, {
+      targetType: 'report',
+      targetId: reportId,
+      verdict: 'helpful',
+      bountyId,
+    });
+    expect((await t.run((ctx) => ctx.db.get(bountyId)))?.status).toBe('fulfilled');
+    expect(await author.as.query(api.bounties.answeredByMyReport, { reportId })).toBe(1);
   });
 
   test('a pre-existing helpful vote from the feed still fulfills when confirmed on the bounty page', async () => {

@@ -65,6 +65,7 @@ export * from './lakeSearch';
 export * from './mapRegion';
 export * from './metrics';
 export * from './nameClaims';
+export * from './notifications';
 export * from './nwsAlerts';
 export * from './oauthRedirect';
 export * from './oauthSession';

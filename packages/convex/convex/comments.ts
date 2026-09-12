@@ -5,8 +5,8 @@
  * **blocks** (D32): a blocked author's comment is hidden from the viewer (unlike their reports, which
  * always stay visible — D3). Threads cap at **2 levels** (D25); the pure rules
  * (`isValidCommentBody`, `buildCommentThread`) live in `@skating/core` and are re-enforced here at
- * the trust boundary (D37). **No notification delivery in this phase** — the `report_commented` type
- * exists (D21) but nothing is sent yet.
+ * the trust boundary (D37). `create` enqueues the `report_commented` notification (D21, delivered
+ * since N8) through the settle queue.
  */
 
 import {
@@ -30,14 +30,15 @@ import {
 } from './lib/auth';
 import { publicAuthor } from './lib/authorView';
 import { bumpContributionCount, visibleDelta } from './lib/contributionCounts';
+import { enqueueActorNotification } from './lib/notificationQueue';
 import { loadBlockedAuthorIds } from './lib/reportVisibility';
 
 /**
  * Add a comment to a report (D21). `requireProfile`; **reject minors** (read-only, D41); the target
  * report must exist + be moderation-`visible`; validate the body; enforce the 2-level cap (D25) — a
  * reply's parent must exist, belong to the same report, and be **top-level** (the client flattens
- * deeper replies via `resolveReplyParentId`, and we re-enforce here). Delivery of the
- * `report_commented` notification is deferred.
+ * deeper replies via `resolveReplyParentId`, and we re-enforce here). Then notify the report's author
+ * and, for a reply, the parent comment's author (N8/B1).
  */
 export const create = mutation({
   args: {
@@ -67,8 +68,9 @@ export const create = mutation({
       throw new ConvexError('Comment must be between 1 and 2000 characters');
     }
 
+    let parent: Doc<'comments'> | null = null;
     if (args.parentCommentId !== undefined) {
-      const parent = await ctx.db.get(args.parentCommentId);
+      parent = await ctx.db.get(args.parentCommentId);
       if (!parent || parent.reportId !== args.reportId) {
         throw new ConvexError('Parent comment not found');
       }
@@ -90,6 +92,40 @@ export const create = mutation({
     });
     // Bump the author's denormalized comment counter (born visible) — see contributionCounts.ts.
     await bumpContributionCount(ctx, profile._id, 'commentCount', 1);
+
+    // `report_commented` (N8/B1, D21 finally delivered): the report's author hears about a comment,
+    // and a reply's parent author hears about the reply. Both ride the settle queue (D169) — a busy
+    // report's burst becomes one "3 new comments", and a comment deleted or hidden inside the window
+    // never sends. Never-self, prefs, deletion state and blocks are all applied in `enqueue`. The
+    // parent author is keyed on their *comment*, so replies to it coalesce separately from comments
+    // on the report; when the parent author *is* the report's author they get the one "commented on
+    // your report" row rather than that plus a reply row about the same comment.
+    await enqueueActorNotification(ctx, {
+      recipientId: report.authorId,
+      actorId: profile._id,
+      targetId: report._id,
+      trigger: {
+        kind: 'comment',
+        reportId: report._id,
+        commentIds: [commentId],
+        actorIds: [profile._id],
+      },
+      now,
+    });
+    if (parent && parent.authorId !== report.authorId) {
+      await enqueueActorNotification(ctx, {
+        recipientId: parent.authorId,
+        actorId: profile._id,
+        targetId: parent._id,
+        trigger: {
+          kind: 'reply',
+          reportId: report._id,
+          commentIds: [commentId],
+          actorIds: [profile._id],
+        },
+        now,
+      });
+    }
     return commentId;
   },
 });

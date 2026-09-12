@@ -57,7 +57,7 @@ async function seedProfile(t: ReturnType<typeof convexTest>, subject: string, ex
         activityDetected: true,
         bountyRequest: true,
         hazardConfirmation: true,
-        bountyFulfilled: true,
+        bountyAnswered: true,
         reportRated: true,
         reportCommented: true,
         contentFlagResolved: true,

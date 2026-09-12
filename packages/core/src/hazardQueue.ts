@@ -105,9 +105,19 @@ export interface QueuedHazard {
   updatedAt: number;
 }
 
+/**
+ * The queue's discriminator for a confirmation. `confirmation_vote`, **not** `hazard_confirmation`:
+ * that string is the *notification type* for mail arriving at a hazard's author ("someone confirmed
+ * your hazard"), and this is the opposite direction — a vote you cast, waiting on your own phone for
+ * signal. The two shared a name until N8, and a reader grepping it found two mechanisms with no
+ * connection. Renamed here and migrated on-device in the mobile `draftStore` (rows already queued
+ * under the old name are rewritten once, at open).
+ */
+export const CONFIRMATION_VOTE_KIND = 'confirmation_vote';
+
 /** A three-tier confirmation cast on the ice, waiting for signal. */
 export interface QueuedHazardConfirmation {
-  kind: 'hazard_confirmation';
+  kind: typeof CONFIRMATION_VOTE_KIND;
   id: string;
   status: DraftStatus;
   errorMessage?: string;
@@ -175,7 +185,7 @@ export function createQueuedConfirmation(args: {
   observedAt?: number;
 }): QueuedHazardConfirmation {
   return {
-    kind: 'hazard_confirmation',
+    kind: CONFIRMATION_VOTE_KIND,
     id: args.id,
     status: 'pending',
     hazardId: args.hazardId,
@@ -248,7 +258,7 @@ export async function flushHazardItem(
   try {
     await save({ status: 'uploading', errorMessage: undefined });
 
-    if (current.kind === 'hazard_confirmation') {
+    if (current.kind === CONFIRMATION_VOTE_KIND) {
       await save({ status: 'creating' });
       const c = current as QueuedHazardConfirmation;
       // `observedAt` is the capture moment, not `now` — a confirmation that sends hours later must

@@ -11,7 +11,7 @@ vi.mock('expo-sqlite', () => ({
   },
 }));
 
-import { ensureSchema, readReportDrafts, type SqliteLike } from './draftStore';
+import { ensureSchema, readHazardItems, readReportDrafts, type SqliteLike } from './draftStore';
 
 /**
  * Covers the one part of `draftStore` that touches *existing on-device user data*: the `kind`
@@ -82,6 +82,72 @@ describe('draftStore kind migration', () => {
     // Every backfilled row got the default kind, so none was lost to the filter.
     const kinds = raw.prepare('SELECT kind FROM report_drafts').all() as { kind: string }[];
     expect(kinds).toEqual([{ kind: 'report' }, { kind: 'report' }]);
+
+    raw.close();
+  });
+
+  it('renames a queued confirmation from the pre-N8 kind, in the column and the blob alike', () => {
+    const raw = new DatabaseSync(':memory:');
+    const db = adapt(raw);
+    ensureSchema(db);
+    // A vote cast on the ice under the old build and left waiting for signal across the update.
+    const legacy = {
+      kind: 'hazard_confirmation',
+      id: 'v1',
+      status: 'pending',
+      hazardId: 'h1',
+      verdict: 'still_there',
+      via: 'proximity_alert',
+      observedAt: 4000,
+      createdAt: 4000,
+      updatedAt: 4000,
+    };
+    raw
+      .prepare(
+        'INSERT INTO report_drafts (id, kind, status, createdAt, updatedAt, data) VALUES (?, ?, ?, ?, ?, ?)',
+      )
+      .run(
+        legacy.id,
+        legacy.kind,
+        legacy.status,
+        legacy.createdAt,
+        legacy.updatedAt,
+        JSON.stringify(legacy),
+      );
+    // A row already on the new name must come through untouched.
+    const current = {
+      ...legacy,
+      kind: 'confirmation_vote',
+      id: 'v2',
+      createdAt: 5000,
+      updatedAt: 5000,
+    };
+    raw
+      .prepare(
+        'INSERT INTO report_drafts (id, kind, status, createdAt, updatedAt, data) VALUES (?, ?, ?, ?, ?, ?)',
+      )
+      .run(
+        current.id,
+        current.kind,
+        current.status,
+        current.createdAt,
+        current.updatedAt,
+        JSON.stringify(current),
+      );
+
+    ensureSchema(db); // the rename runs on every open; this is the one that matters
+
+    const items = readHazardItems(db);
+    expect(items.map((i) => [i.id, i.kind])).toEqual([
+      ['v1', 'confirmation_vote'],
+      ['v2', 'confirmation_vote'],
+    ]);
+    // The blob's other fields survived `json_set` — the vote is still the vote that was cast.
+    expect(items[0]).toMatchObject({ hazardId: 'h1', verdict: 'still_there', observedAt: 4000 });
+    const kinds = raw.prepare('SELECT kind FROM report_drafts ORDER BY createdAt').all() as {
+      kind: string;
+    }[];
+    expect(kinds).toEqual([{ kind: 'confirmation_vote' }, { kind: 'confirmation_vote' }]);
 
     raw.close();
   });

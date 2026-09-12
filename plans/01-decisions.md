@@ -5305,3 +5305,134 @@ question for real use; the founder said so. If it is not, the answer is a *disti
 not the favorites gold.
 
 **Related:** D159, D165, N6f (the properties-bag dim), Phase 4 decision #6 (the filter store), [`phase-N6h`](./phase-N6h-weather-detail.md).
+## D167 — A notification nobody can read is not deferred delivery, it's a dropped feature (N8)
+
+**2026-07-30, scoped; built 2026-09-11.** Every phase since Phase 3 said some version of *"push
+delivery is deferred; this lands an in-app `notifications` row."* Phases 3, 4 and 6 all said it, and it
+was the sentence that made deferring push acceptable — the value was supposed to survive the deferral,
+just quieter. It didn't: **nothing in the app could read a notification.** `notifications.ts` exported
+two `internalMutation`s and no query; six types were being written and had never been seen.
+
+**Push is a transport.** The in-app row was always meant to be the product, so the inbox ships first —
+`notifications.list` / `unreadCount` / `markRead`, a resolver that turns ids into sentences, a bell on
+both shells — and push and email become **second and third transports over the same rows** (N8 PR 3),
+not the moment the feature starts existing.
+
+**Two consequences worth stating.** A notification whose target has since been hidden or removed is
+**shown, degraded, and untappable** — never silently dropped, because a disappearing inbox row reads
+like a bug. And the inbox is **not an archive**: it empties at the season boundary (N8/A5); the record
+of what happened to your contributions is the data export (N3).
+
+**Related:** D16, D167–D172, [`phase-N8`](./phase-N8-notification-pipeline.md).
+
+## D168 — Every declared type has a producer and a place it renders, or it isn't a type (N8)
+
+**2026-07-30, founder call.** `NOTIFICATION_TYPES` and the `notificationPrefs` keys were ten long and
+kept in lockstep (D16), so the settings pages *could* render ten toggles — and four of them could never
+fire: `report_commented` (deliberate, D21), `hazard_confirmation` (the string was also the mobile
+offline queue's `kind` for a vote *you* cast — one name, two mechanisms, no connection),
+`content_flag_resolved` and `activity_detected` (whose D24 premise, "detected on any linked provider",
+Phase 8 retired). Four inert toggles are worse than four missing ones: they tell a user they've
+configured something.
+
+**Generate them rather than strike them.** `report_commented` fires from `comments.create` (report
+author + a reply's parent author); `hazard_confirmation` fires on a hazard's **lifecycle phase
+transition**, never per vote — per-vote would turn a confirmation loop into a scoreboard, and D65's
+"never existed" verdict also files a moderation flag, so it would forward an accusation one voter at a
+time; `content_flag_resolved` fires from `moderation.resolveFlag`, verdict only; `activity_detected` is
+re-derived from the one source that exists (our own recorder's `pending` activities, N8/B4).
+
+**The auto-flag gate needed a field.** There is no system account: `fileOrBumpAutoFlag` names a **real
+person** in `flaggerId` — the rater whose thumb crossed a threshold — who filed nothing. Notifying them
+would say "the report you filed was actioned" about a report they never filed, and disclose that their
+thumb produced a moderation flag. `contentFlags.origin: 'user' | 'auto'` is set at both write paths;
+**absent reads as `auto`** — silence is the fail-quiet direction.
+
+**The name collision resolved by renaming the outbox:** the offline queue's kind is now
+`confirmation_vote`, with a one-shot on-device SQLite migration (the plan's "no stored rows" was wrong —
+`draftStore` persists the kind twice). The notification type kept its name.
+
+**One correction to the scoping record:** both settings pages rendered **three** toggles, not ten —
+each had hand-picked the Phase-4 set. They now iterate the vocabulary from `@skating/core`.
+
+**Related:** D16, D21, D24, D65, D167, [`phase-N8`](./phase-N8-notification-pipeline.md).
+
+## D169 — Notifications settle before they send, and the trigger is re-checked at send (N8)
+
+**2026-07-30, founder ask.** A misclick is a normal thing to do: thumb the wrong hazard, notice, click
+again to undo. Before N8 that sent its notification instantly and the undo could not recall it — the
+author was told someone found their report helpful, by someone who no longer does.
+
+**Every actor-triggered notification goes through the coalescing queue with a 60-second settle window,
+and the flush re-reads the triggering state before delivering.** Delivery asks *"is this still true?"*,
+not *"was this true a minute ago?"* — per type: the rating row still says `helpful`; the corroborating
+report and the comment are still `visible`; the hazard's phase is still the one that triggered it; the
+flag's status is still that verdict; the bounty is still open. A dropped row is deleted, not retried.
+
+**Re-check at send rather than cancel at undo** is the load-bearing half. Cancelling means every undo
+path — retract a thumb, flip a verdict, delete a comment, hide a report — has to know the queue exists
+and find the right row; miss one and a phantom notification ships. Re-check is one place, it covers
+paths nobody thought of, and it covers content that vanished for reasons that were never an "undo".
+The recipient's toggle and block set are re-applied at flush too.
+
+**Coalescing keys on `(recipient, target, kind)`** and the trigger accumulates ids, each re-verified
+individually — so five thumbs inside a minute become one "5 people found this helpful", a retracted one
+drops out of the count rather than dropping the row, and helpful → unhelpful → helpful is exactly one
+notification. Sixty seconds rather than "a few" because the flush cron ticks once a minute, so anything
+shorter buys nothing measurable.
+
+**The consequence:** the queue is the **only** path into `notifications`. That is also what a push or
+email sender needs — one place to add a transport, rather than six insert sites.
+
+**Related:** D167, Phase 4 decision #4, PR #30, [`phase-N8`](./phase-N8-notification-pipeline.md).
+
+## D170 — `bounty_answered` replaces `bounty_fulfilled`: the requester is the one who needs telling (N8)
+
+**2026-09-11, founder call.** The plan's register described `bounty_fulfilled` as "your bounty was
+answered". The code notified the **fulfilling report's author** — "your report fulfilled a bounty" —
+and nobody, anywhere, told the requester a report had landed on their bounty. Fulfilment can't happen
+until the requester thumbs an attached report, so the loop only closed if they happened to have
+favorited the lake.
+
+**The type becomes `bounty_answered`, to the requester, on attach.** `attachReportToOpenBounties`
+enqueues it; several reports inside the settle window coalesce into "N reports came in"; the flush
+re-checks that the bounty is still open (if they've already ruled, there is nothing to ask). The
+fulfiller is **not** pinged: the requester's thumb is what made the report helpful, and they already
+see that thumb. The author is told on the spot instead — `bounties.answeredByMyReport` backs an "at
+least N skaters were looking forward to it" line on their own report — because a stranger having asked
+is a nice thing to know, not a reason for a phone to ding.
+
+**Related:** D10, D17, D168, Phase 6 decisions 9–11.
+
+## D171 — Hazards do not broadcast; on-ice proximity remains the hazard channel (N8)
+
+**2026-07-30, founder call.** Hazards generate no `notifications` rows at all, and that is not an
+omission. Phase 9.5 made the hazard channel a client-side **proximity** alert fired while you're on the
+ice — deliberately local and offline-capable. A push about a hazard on a lake you are not standing on
+would put safety content on the least reliable transport we have (deferred, throttled by iOS at its
+discretion, D54) for a skater who by definition isn't there.
+
+**In scope regardless:** `hazard_confirmation` to the hazard's **author** (D168). Feedback on your own
+contribution is not a broadcast.
+
+**Related:** D12, D54, D168, [`phase-9.5`](./phase-9.5-on-ice-alerting.md).
+
+## D172 — The reverse reach index filters candidates, never replaces the eligibility test — and waits for ~1,000 profiles (N8)
+
+**2026-07-30, scoped; 2026-09-11, deliberately unbuilt.** `fanOutNearbyNotifications` paginates the
+entire `profiles` table per report and runs `bandForCoord` on each — cost `users × reports`, bounded,
+self-continuing, off the write path (N1). It is not a crash risk; it is a bill, and with dozens of
+profiles it is one page.
+
+**When it is built:** a `profileReachCells` index (N1's ladder-grid toolkit pointed at users) returns
+**candidates**, and the exact polygon test still runs per candidate — a bbox is not a band. Because a
+missing cell row is a **silent** non-delivery (D5), it ships with a reconciliation path and a measured
+comparison against the walk before the walk is retired. Every input to the footprint — isochrones,
+home, prefs, deletion, moderation — resyncs through one writer.
+
+**Why not now:** it changes no behaviour when it works, and it adds a second writer to keep in sync
+with a failure mode nobody would report. Building it before the inbox would have been optimizing a
+pipeline whose output nobody could see. Trigger: ~1,000 profiles, or the first fan-out that spans more
+than a handful of pages.
+
+**Related:** D5, D80, N1, [`phase-N8`](./phase-N8-notification-pipeline.md) Workstream D.

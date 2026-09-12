@@ -323,6 +323,36 @@ export function isProvisional(
   return confirmCount < confirmThreshold;
 }
 
+/**
+ * The one-word summary of where a hazard is in its life (N8/B2) — what the author is told about,
+ * and **only** when it changes. Derived from the stored state, never stored itself, for the same
+ * reason `isProvisional` isn't: a threshold change reclassifies without a migration.
+ *
+ * Ordered by what a skater needs to hear first, which is also how `deriveHazardLifecycle` resolves
+ * conflicts: archived beats everything (the pin is off the map), then the annotations (`disputed`
+ * outranks `healing_unsafe` there too), then confirmed-vs-provisional.
+ */
+export const HAZARD_LIFECYCLE_PHASES = [
+  'provisional',
+  'confirmed',
+  'healing_unsafe',
+  'disputed',
+  'archived',
+] as const;
+export type HazardLifecyclePhase = (typeof HAZARD_LIFECYCLE_PHASES)[number];
+
+export function hazardLifecyclePhase(
+  state: Pick<HazardLifecycleState, 'status' | 'healingState' | 'confirmCount'>,
+  isPassage: boolean,
+): HazardLifecyclePhase {
+  if (state.status === 'archived') return 'archived';
+  if (state.healingState === 'disputed') return 'disputed';
+  if (state.healingState === 'healing_unsafe') return 'healing_unsafe';
+  return isProvisional(state.confirmCount, confirmThresholdFor(isPassage))
+    ? 'provisional'
+    : 'confirmed';
+}
+
 /** A fresh hazard's starting lifecycle state, at creation time `at` (epoch ms). */
 export function initialLifecycleState(at: number): HazardLifecycleState {
   return {

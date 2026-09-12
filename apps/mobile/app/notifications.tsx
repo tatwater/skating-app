@@ -1,0 +1,152 @@
+import { api } from '@skating/convex/api';
+import { describeNotification, formatRelativeTime, type NotificationView } from '@skating/core';
+import { useConvexAuth, useMutation, usePaginatedQuery } from 'convex/react';
+import { useRouter } from 'expo-router';
+import { useEffect, useRef, useState } from 'react';
+import { FlatList } from 'react-native';
+import { Paragraph, Spinner, Text, XStack, YStack } from 'tamagui';
+import { notificationRoute } from '../src/lib/notificationRoutes';
+
+const PAGE_SIZE = 30;
+
+/**
+ * The inbox (N8/A3) — reached from the bell on the You tab, never a tab of its own (D28's five
+ * stand). Mirrors the web route: newest first, infinite scroll, everything shown marks itself read
+ * once it has actually been on screen, and a row whose target is gone renders degraded and
+ * untappable rather than vanishing (N8 #5).
+ */
+export default function NotificationsScreen() {
+  const { results, status, loadMore } = usePaginatedQuery(
+    api.notifications.list,
+    {},
+    { initialNumItems: PAGE_SIZE },
+  );
+  const markRead = useMutation(api.notifications.markRead);
+  const { isAuthenticated } = useConvexAuth();
+  const now = Date.now();
+
+  // Mark what the screen opened on as read — once, when the first page has landed and the Convex
+  // client is authenticated (same guard as the web, and the same reasons: latch regardless of
+  // whether anything shown was unread, and no `before` so the server also stamps the rows the list
+  // omits for blocked actors). Gated on auth rather than on rows being present, because an inbox
+  // whose every row is a blocked actor's lists nothing and still counts on the bell — a rows guard
+  // would never clear it. A notification arriving while the modal is up stays unread until the
+  // next open.
+  //
+  // The rows the mark stamps are remembered for the visit (same as the web): the list is reactive,
+  // so a dot drawn from `readAt` alone would vanish the moment the stamp landed. Seeded from the
+  // page in hand before the mutation fires, then widened to everything the server stamped.
+  const marked = useRef(false);
+  const [newThisVisit, setNewThisVisit] = useState<ReadonlySet<string>>(() => new Set());
+  useEffect(() => {
+    if (marked.current || !isAuthenticated || status === 'LoadingFirstPage') return;
+    marked.current = true;
+    setNewThisVisit(new Set(results.filter((v) => v.readAt === undefined).map((v) => v.id)));
+    markRead({})
+      .then((stamped) => setNewThisVisit((prev) => new Set([...prev, ...stamped])))
+      .catch(() => {});
+  }, [markRead, isAuthenticated, status, results]);
+
+  return (
+    <FlatList<NotificationView>
+      data={results}
+      keyExtractor={(n) => n.id}
+      renderItem={({ item }) => (
+        <NotificationRow
+          view={item}
+          now={now}
+          unread={item.readAt === undefined || newThisVisit.has(item.id)}
+        />
+      )}
+      onEndReached={() => {
+        if (status === 'CanLoadMore') loadMore(PAGE_SIZE);
+      }}
+      onEndReachedThreshold={0.5}
+      contentContainerStyle={{ paddingBottom: 24 }}
+      ListEmptyComponent={
+        status === 'LoadingFirstPage' ? (
+          <YStack padding="$6" alignItems="center">
+            <Spinner />
+          </YStack>
+        ) : (
+          <YStack padding="$4" gap="$2">
+            <Text color="$foreground" fontWeight="600">
+              Nothing yet
+            </Text>
+            <Paragraph color="$foregroundMuted">
+              When someone comments on your report, finds it helpful, or a lake you follow gets new
+              ice, it shows up here. Which of those reach you is up to you under Notifications on
+              the You tab.
+            </Paragraph>
+          </YStack>
+        )
+      }
+      ListFooterComponent={
+        status === 'LoadingMore' ? (
+          <YStack padding="$4" alignItems="center">
+            <Spinner />
+          </YStack>
+        ) : null
+      }
+    />
+  );
+}
+
+function NotificationRow({
+  view,
+  now,
+  unread,
+}: {
+  view: NotificationView;
+  now: number;
+  /** New since the last visit — still unread, or stamped read by this visit's open. */
+  unread: boolean;
+}) {
+  const router = useRouter();
+  const { title, detail, target } = describeNotification(view);
+  const route = notificationRoute(target, view);
+  return (
+    <XStack
+      gap="$3"
+      paddingHorizontal="$4"
+      paddingVertical="$3"
+      borderBottomWidth={1}
+      borderColor="$border"
+      alignItems="flex-start"
+      opacity={route ? 1 : 0.8}
+      {...(route
+        ? {
+            pressStyle: { backgroundColor: '$surfaceMuted' },
+            onPress: () => router.navigate(route),
+            accessibilityRole: 'button' as const,
+          }
+        : {})}
+    >
+      {/* Fixed-width gutter so read and unread rows share a left edge. */}
+      <YStack width={8} alignItems="center" paddingTop={7}>
+        {unread ? (
+          <YStack
+            width={8}
+            height={8}
+            borderRadius={4}
+            backgroundColor="$primary"
+            accessibilityLabel="Unread"
+          />
+        ) : null}
+      </YStack>
+      <YStack flex={1} gap="$1">
+        <Text color="$foreground" fontWeight={unread ? '600' : '400'}>
+          {title}
+        </Text>
+        {detail ? (
+          <Text color="$foregroundMuted" fontSize={12}>
+            {detail}
+          </Text>
+        ) : null}
+        <Text color="$foregroundMuted" fontSize={12}>
+          {formatRelativeTime(view.createdAt, now)}
+        </Text>
+      </YStack>
+    </XStack>
+  );
+}

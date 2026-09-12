@@ -1466,16 +1466,26 @@ blocker* by a founder call**, and merged at scoping with the duplicate-corrobora
   `shallow_early_thaw` at a raised bar, checked against N6a's depth (D68/D69) — recurrence proposes the
   flag from observation, depth checks the proposal.
 
-**N8 — Notification pipeline, the non-push half.** *(Grouped because both are pipeline internals that
-**don't** need push credentials — worth doing while push is blocked, so the pipeline is correct and
-scalable by the time delivery lands.)*
-- **Per-user local-time / true-sunset digest timing** (today: a fixed 8pm ET, fine for a
-  single-timezone pilot).
-- **Reverse spatial index for notification fan-out** — replace the per-user polygon scan (a documented
-  seam since Phase 4). **N1 changed its urgency, not its value:** the scan no longer sits inside
-  `reports.create` (it's a scheduled, self-continuing paged job), so this is now a cost optimization
-  rather than a latent write-path crash. Still the right end state — every new report walks every
-  profile, which is work proportional to users × reports.
+**N8 — The notification pipeline.** 🔨 **In build 2026-09-11** (branch `phase-n8-notification-pipeline`,
+[`phase-N8-notification-pipeline.md`](./phase-N8-notification-pipeline.md), D167–D172). The scoping pass
+found the real problem was neither bullet below: **nothing in the app could read a notification** —
+six types were being written and had never been seen. So the phase is the inbox first, then every
+declared type gets a producer, then the transports, and the two original bullets move to the back.
+- **PR 1 ✅ built:** `notifications.list / unreadCount / markRead` + a typed resolver; web
+  `/notifications` + bell, mobile You-tab bell + tab dot; every actor-triggered type now **settles
+  60 s in the queue and is re-checked at flush** (D169 — a retracted thumb never sends); producers for
+  `report_commented`, `hazard_confirmation` (phase transitions only), `content_flag_resolved`
+  (user-origin flags only, new `contentFlags.origin`), and `bounty_answered` to the requester (D170,
+  replacing the misdirected `bounty_fulfilled`). Both settings pages render all ten toggles.
+- **PR 2 (next):** `activity_detected` from the recorder's un-prompted skates + the dedup ladder
+  (design-only until a second provider exists); the **season-boundary inbox purge**; **per-user
+  digest zone** (device timezone on `profiles`; the hour stays 20:00 — true-sunset is dropped, D-log).
+- **PR 3 (next):** the transports — Expo Push (Android via FCM now, iOS once the APNs key lands),
+  **email via Resend** for the digest-class types with two channel switches and an unsubscribe route
+  (primary email mirrored from Clerk onto `profiles`), and a mobile offline inbox cache.
+- **Deferred, by design:** the **reverse reach index** (D172 — filters candidates, never replaces the
+  polygon test; trigger ~1,000 profiles); **true-sunset digest timing** (dropped — sunset runs opposite
+  to the season); **web push** (no service worker yet; web = inbox + email).
 
 **N8 — The unbundled remainder.** *(Genuinely independent, genuinely low-urgency — do these
 opportunistically or when a trigger fires, not as a planned phase.)*

@@ -64,6 +64,11 @@ function RootNavigator() {
           name="about"
           options={{ presentation: 'modal', headerShown: true, title: 'About' }}
         />
+        {/* The inbox (N8/A3) — pushed from the bell on the You tab; not a sixth tab (D28). */}
+        <Stack.Screen
+          name="notifications"
+          options={{ presentation: 'modal', headerShown: true, title: 'Notifications' }}
+        />
         {/* Contact support / report a bug (D35) — a submission path, open even to suspended/banned
             users for appeals (support.create doesn't gate on status). */}
         <Stack.Screen

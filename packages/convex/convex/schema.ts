@@ -55,6 +55,7 @@ import {
   COMMENT_SOURCES,
   DATA_EXPORT_STATUSES,
   DEDUP_STATUSES,
+  FLAG_ORIGINS,
   FLAG_REASONS,
   FLAG_STATUSES,
   FLAG_TARGET_TYPES,
@@ -96,6 +97,7 @@ import {
   geoJson,
   latLng,
   literals,
+  notificationTrigger,
   postedAccess,
   weatherSinceSummary,
 } from './lib/validators';
@@ -2312,6 +2314,10 @@ export default defineSchema({
     occurrences: v.optional(v.number()),
     lastOccurrenceAt: v.optional(v.number()),
     supersedesFlagId: v.optional(v.id('contentFlags')),
+    // Who filed it (N8/B3): a person, or the system crossing a threshold. Absent on rows from before
+    // the field and read as `auto` — the fail-quiet direction for the one reader that cares
+    // (`content_flag_resolved` notifies only `user` flaggers). See `FLAG_ORIGINS`.
+    origin: v.optional(literals(FLAG_ORIGINS)),
     createdAt: v.number(),
     resolvedAt: v.optional(v.number()),
   })
@@ -2529,13 +2535,32 @@ export default defineSchema({
     .index('by_user', ['userId'])
     .index('by_expires_at', ['expiresAt']),
 
+  /**
+   * The inbox (N8 / D167). One row per delivered notification; **only the queue flush inserts here**
+   * (D169), so a push or email transport has one place to hang off rather than six.
+   *
+   * `payload` stays `v.any()` deliberately. Its shape is typed at the boundary instead —
+   * `lib/notificationQueue.ts` builds it and `lib/notificationResolve.ts` parses it, rendering
+   * anything it doesn't recognise as a degraded row rather than failing the page. Rows written before
+   * the payloads were typed carry older shapes, nobody has ever seen them (there was no reader), and
+   * the season purge retires them; a validator here would have forced a migration for the privilege.
+   *
+   * Retention is meant to be the season boundary (N8/A5, PR 2 — **not built yet**): a daily sweep
+   * that deletes rows created before the current season's start, read or not. Until it lands, rows
+   * die only with the account (`accountDeletion.ts`). The inbox is not an archive.
+   */
   notifications: defineTable({
     userId: v.id('profiles'), // recipient
     type: literals(NOTIFICATION_TYPES),
-    payload: v.any(), // e.g. reportId / hazardId / bountyId / actorUserId
+    payload: v.any(), // typed at the boundary — see the table note
     readAt: v.optional(v.number()),
     createdAt: v.number(),
-  }).index('by_user', ['userId']),
+  })
+    .index('by_user', ['userId'])
+    // The unread badge: `eq(userId).eq(readAt, undefined)`. An index on an optional field is not
+    // sparse and `undefined` sorts first — but that trap bites **range** bounds (the N3 finalize
+    // bug), and this is an **equality**, which is the shape that behaves.
+    .index('by_user_read', ['userId', 'readAt']),
 
   pointEvents: defineTable({
     userId: v.id('profiles'),
@@ -2942,16 +2967,24 @@ export default defineSchema({
   // `latestReportId` instead of stacking). The `flushNotificationQueue` cron drains rows whose
   // `flushAfter` has passed — the 8pm-ET digest is just a `flushAfter` set to the next 8pm; favorites/
   // great use a short debounce. `coalesceKey` seeds the eventual APNs collapse-id / Android tag.
+  //
+  // **N8 / D169 widened this into the only path into `notifications`.** The actor-triggered types
+  // (thumbs, corroborations, comments, hazard lifecycle, flag verdicts, bounties) used to insert
+  // directly; now they enqueue with a short settle window and a `trigger` the flush re-reads, so a
+  // retracted thumb or a deleted comment never becomes a notification about something that isn't
+  // there. `waterBodyId` / `latestReportId` are the report-audience buckets' fields and are absent on
+  // actor rows; `trigger` is the reverse.
   notificationQueue: defineTable({
     userId: v.id('profiles'),
-    waterBodyId: v.id('waterBodies'),
+    waterBodyId: v.optional(v.id('waterBodies')),
     kind: literals(NOTIFICATION_QUEUE_KINDS),
     type: literals(NOTIFICATION_TYPES), // the `notifications.type` this flushes to
-    coalesceKey: v.string(), // `${userId}:${waterBodyId}:${kind}` — collapse-id / tag seed
-    latestReportId: v.id('reports'),
-    count: v.number(), // how many reports coalesced into this pending push
-    flushAfter: v.number(), // earliest delivery time (next 8pm for digest; debounce for fav/great)
+    coalesceKey: v.string(), // `${userId}:${target}:${kind}` — collapse-id / tag seed
+    latestReportId: v.optional(v.id('reports')),
+    count: v.number(), // how many events coalesced into this pending notification
+    flushAfter: v.number(), // earliest delivery time (next 8pm for digest; debounce/settle otherwise)
     createdAt: v.number(),
+    trigger: v.optional(notificationTrigger), // what to re-read at flush (actor kinds only)
   })
     .index('by_flush', ['flushAfter'])
     .index('by_coalesce', ['coalesceKey'])

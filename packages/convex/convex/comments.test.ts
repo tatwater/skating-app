@@ -1,6 +1,6 @@
 import { convexTest } from 'convex-test';
 import { describe, expect, test } from 'vitest';
-import { api } from './_generated/api';
+import { api, internal } from './_generated/api';
 import type { Id } from './_generated/dataModel';
 import schema from './schema';
 
@@ -10,7 +10,7 @@ const NOTIF_PREFS = {
   activityDetected: true,
   bountyRequest: true,
   hazardConfirmation: true,
-  bountyFulfilled: true,
+  bountyAnswered: true,
   reportRated: true,
   reportCommented: true,
   contentFlagResolved: true,
@@ -163,6 +163,114 @@ describe('comments.create', () => {
     await expect(
       author.as.mutation(api.comments.create, { reportId, parentCommentId: reply, body: 'deep' }),
     ).rejects.toThrow(/one level deep/i);
+  });
+});
+
+/** Make every queued notification due and flush it — the settle window (N8 / D169), fast-forwarded. */
+async function flushAllDue(t: ReturnType<typeof convexTest>) {
+  await t.run(async (ctx) => {
+    for (const row of await ctx.db.query('notificationQueue').collect()) {
+      await ctx.db.patch(row._id, { flushAfter: Date.now() - 1 });
+    }
+  });
+  await t.mutation(internal.notifications.flushNotificationQueue, {});
+  return t.run((ctx) => ctx.db.query('notifications').collect());
+}
+
+describe('comments — report_commented (N8/B1)', () => {
+  test('notifies the report author, never the commenter, and coalesces a burst into one', async () => {
+    const t = convexTest(schema, modules);
+    const author = await seedUser(t, 'author');
+    const b = await seedUser(t, 'b');
+    const c = await seedUser(t, 'c');
+    const body = await seedBody(t);
+    const reportId = await seedReport(t, author.id, body);
+
+    const c1 = await b.as.mutation(api.comments.create, { reportId, body: 'one' });
+    const c2 = await c.as.mutation(api.comments.create, { reportId, body: 'two' });
+    // The author's own comment on their own report is not news to them.
+    await author.as.mutation(api.comments.create, { reportId, body: 'thanks' });
+
+    const notes = await flushAllDue(t);
+    expect(notes).toHaveLength(1);
+    expect(notes[0]).toMatchObject({
+      userId: author.id,
+      type: 'report_commented',
+      payload: { reply: false, reportId, commentIds: [c1, c2], actorIds: [b.id, c.id], count: 2 },
+    });
+  });
+
+  test('a reply notifies the parent comment’s author as a reply, keyed on their comment', async () => {
+    const t = convexTest(schema, modules);
+    const author = await seedUser(t, 'author');
+    const b = await seedUser(t, 'b');
+    const c = await seedUser(t, 'c');
+    const body = await seedBody(t);
+    const reportId = await seedReport(t, author.id, body);
+    const parent = await b.as.mutation(api.comments.create, { reportId, body: 'question' });
+    const reply = await c.as.mutation(api.comments.create, {
+      reportId,
+      parentCommentId: parent,
+      body: 'answer',
+    });
+
+    const notes = await flushAllDue(t);
+    // Two rows: the author hears about both comments on their report; b hears about the reply.
+    const toAuthor = notes.find((n) => n.userId === author.id);
+    const toB = notes.find((n) => n.userId === b.id);
+    expect(toAuthor?.payload).toMatchObject({
+      reply: false,
+      commentIds: [parent, reply],
+      count: 2,
+    });
+    expect(toB?.payload).toMatchObject({ reply: true, commentIds: [reply], actorIds: [c.id] });
+  });
+
+  test('a comment removed inside the settle window never sends; a blocked commenter is muted (D169)', async () => {
+    const t = convexTest(schema, modules);
+    const author = await seedUser(t, 'author');
+    const b = await seedUser(t, 'b');
+    const c = await seedUser(t, 'c');
+    const body = await seedBody(t);
+    const reportId = await seedReport(t, author.id, body);
+
+    const gone = await b.as.mutation(api.comments.create, { reportId, body: 'oops' });
+    await b.as.mutation(api.comments.remove, { commentId: gone });
+    expect(await flushAllDue(t)).toHaveLength(0);
+
+    // Block == mute: c's comment enqueues nothing once the author has blocked them…
+    await author.as.mutation(api.blocks.block, { targetUserId: c.id });
+    await c.as.mutation(api.comments.create, { reportId, body: 'hello?' });
+    expect(await t.run((ctx) => ctx.db.query('notificationQueue').collect())).toHaveLength(0);
+
+    // …and a block placed *after* enqueue is caught at flush.
+    const d = await seedUser(t, 'd');
+    await d.as.mutation(api.comments.create, { reportId, body: 'late block' });
+    await author.as.mutation(api.blocks.block, { targetUserId: d.id });
+    expect(await flushAllDue(t)).toHaveLength(0);
+  });
+
+  test('respects the reportCommented toggle at enqueue and at flush', async () => {
+    const t = convexTest(schema, modules);
+    const author = await seedUser(t, 'author');
+    const b = await seedUser(t, 'b');
+    const body = await seedBody(t);
+    const reportId = await seedReport(t, author.id, body);
+
+    await author.as.mutation(api.profiles.setNotificationPrefs, {
+      prefs: { reportCommented: false },
+    });
+    await b.as.mutation(api.comments.create, { reportId, body: 'muted' });
+    expect(await t.run((ctx) => ctx.db.query('notificationQueue').collect())).toHaveLength(0);
+
+    await author.as.mutation(api.profiles.setNotificationPrefs, {
+      prefs: { reportCommented: true },
+    });
+    await b.as.mutation(api.comments.create, { reportId, body: 'queued' });
+    await author.as.mutation(api.profiles.setNotificationPrefs, {
+      prefs: { reportCommented: false },
+    });
+    expect(await flushAllDue(t)).toHaveLength(0);
   });
 });
 

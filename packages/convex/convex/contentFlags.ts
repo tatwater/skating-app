@@ -86,6 +86,7 @@ export const flag = mutation({
       reason: args.reason,
       ...(args.note !== undefined ? { note: args.note } : {}),
       status: 'open',
+      origin: 'user', // a person pressed "report" — the one origin `content_flag_resolved` notifies
       createdAt: Date.now(),
     });
 

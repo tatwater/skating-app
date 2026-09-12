@@ -1,7 +1,7 @@
 import type { HazardType } from '@skating/core';
 import { convexTest } from 'convex-test';
 import { describe, expect, test } from 'vitest';
-import { api } from './_generated/api';
+import { api, internal } from './_generated/api';
 import type { Id } from './_generated/dataModel';
 import schema from './schema';
 
@@ -16,7 +16,7 @@ const NOTIF_PREFS = {
   activityDetected: true,
   bountyRequest: true,
   hazardConfirmation: true,
-  bountyFulfilled: true,
+  bountyAnswered: true,
   reportRated: true,
   reportCommented: true,
   contentFlagResolved: true,
@@ -98,6 +98,126 @@ async function setup() {
 }
 
 const VIA = { via: 'app_open_nearby' as const };
+
+/** Make every queued notification due and flush it — the settle window (N8 / D169), fast-forwarded. */
+async function flushAllDue(t: ReturnType<typeof convexTest>) {
+  await t.run(async (ctx) => {
+    for (const row of await ctx.db.query('notificationQueue').collect()) {
+      await ctx.db.patch(row._id, { flushAfter: Date.now() - 1 });
+    }
+  });
+  await t.mutation(internal.notifications.flushNotificationQueue, {});
+  return t.run((ctx) => ctx.db.query('notifications').collect());
+}
+
+describe('hazard_confirmation to the author (N8/B2)', () => {
+  test('fires on the phase transition — provisional → confirmed — not on every vote', async () => {
+    const { t, hazardId, author } = await setup();
+    const first = await seedUser(t, 'first');
+    const second = await seedUser(t, 'second');
+
+    await first.as.mutation(api.hazardConfirmations.confirm, {
+      hazardId,
+      verdict: 'still_there',
+      ...VIA,
+    });
+    // A second confirmation changes the count, not the phase: no second row.
+    await second.as.mutation(api.hazardConfirmations.confirm, {
+      hazardId,
+      verdict: 'still_there',
+      ...VIA,
+    });
+    expect(await t.run((ctx) => ctx.db.query('notificationQueue').collect())).toHaveLength(1);
+
+    const notes = await flushAllDue(t);
+    expect(notes).toHaveLength(1);
+    expect(notes[0]).toMatchObject({
+      userId: author.id,
+      type: 'hazard_confirmation',
+      payload: { kind: 'hazard_lifecycle', hazardId, phase: 'confirmed' },
+    });
+  });
+
+  test('archiving tells the author it healed, once, however the votes arrived', async () => {
+    const { t, hazardId, author } = await setup();
+    const first = await seedUser(t, 'first');
+    const second = await seedUser(t, 'second');
+    const vote = (who: typeof first, verdict: 'fully_healed' | 'still_there') =>
+      who.as.mutation(api.hazardConfirmations.confirm, { hazardId, verdict, ...VIA });
+
+    await vote(first, 'still_there'); // → confirmed
+    await vote(first, 'fully_healed'); // back to provisional — the quiet destination
+    await vote(second, 'fully_healed'); // → archived (sticky: the pin stays off the map)
+    // Two transitions inside one window coalesce to where the pin ended up.
+    const queued = await t.run((ctx) => ctx.db.query('notificationQueue').collect());
+    expect(queued).toHaveLength(1);
+    expect(queued[0]?.trigger).toMatchObject({ kind: 'hazard_lifecycle', phase: 'archived' });
+
+    const notes = await flushAllDue(t);
+    expect(notes).toHaveLength(1);
+    expect(notes[0]?.payload).toMatchObject({ phase: 'archived' });
+    expect(notes[0]?.userId).toBe(author.id);
+  });
+
+  test('the author’s own vote never notifies them, and a stale phase is dropped at flush', async () => {
+    const { t, hazardId, author } = await setup();
+    await author.as.mutation(api.hazardConfirmations.confirm, {
+      hazardId,
+      verdict: 'still_there',
+      ...VIA,
+    });
+    expect(await t.run((ctx) => ctx.db.query('notificationQueue').collect())).toHaveLength(0);
+
+    // A queued `confirmed` whose hazard was archived by the time the flush runs is no longer news.
+    const first = await seedUser(t, 'first');
+    await first.as.mutation(api.hazardConfirmations.confirm, {
+      hazardId,
+      verdict: 'still_there',
+      ...VIA,
+    });
+    await t.run((ctx) => ctx.db.patch(hazardId, { status: 'archived' }));
+    expect(await flushAllDue(t)).toHaveLength(0);
+  });
+
+  test('a voter blocked inside the settle window is muted at flush, like a thumb (PR #52 review)', async () => {
+    const { t, hazardId, author } = await setup();
+    const first = await seedUser(t, 'first');
+    await first.as.mutation(api.hazardConfirmations.confirm, {
+      hazardId,
+      verdict: 'still_there',
+      ...VIA,
+    });
+    const queued = await t.run((ctx) => ctx.db.query('notificationQueue').collect());
+    expect(queued[0]?.trigger).toMatchObject({ kind: 'hazard_lifecycle', actorIds: [first.id] });
+
+    // The enqueue gate saw no block; the flush must apply the one placed since.
+    await author.as.mutation(api.blocks.block, { targetUserId: first.id });
+    expect(await flushAllDue(t)).toHaveLength(0);
+    expect(await t.run((ctx) => ctx.db.query('notificationQueue').collect())).toHaveLength(0);
+  });
+
+  test('a phase moved by several voters inside the window still sends while one is unblocked', async () => {
+    const { t, hazardId, author } = await setup();
+    const first = await seedUser(t, 'first');
+    const second = await seedUser(t, 'second');
+    const vote = (who: typeof first, verdict: 'fully_healed' | 'still_there') =>
+      who.as.mutation(api.hazardConfirmations.confirm, { hazardId, verdict, ...VIA });
+    await vote(first, 'still_there'); // → confirmed, by first
+    await vote(first, 'fully_healed'); // back to provisional
+    await vote(second, 'fully_healed'); // → archived, by second
+    const queued = await t.run((ctx) => ctx.db.query('notificationQueue').collect());
+    expect(queued).toHaveLength(1);
+    expect(queued[0]?.trigger).toMatchObject({
+      phase: 'archived',
+      actorIds: [first.id, second.id],
+    });
+
+    await author.as.mutation(api.blocks.block, { targetUserId: second.id });
+    const notes = await flushAllDue(t);
+    expect(notes).toHaveLength(1);
+    expect(notes[0]?.payload).toMatchObject({ phase: 'archived' });
+  });
+});
 
 describe('still_there', () => {
   test('resets the decay clock and counts toward confirmation', async () => {
