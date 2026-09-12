@@ -29,7 +29,7 @@ import { BountyList } from './BountyList';
 import { DetailTabStrip } from './DetailTabStrip';
 import { Badge, DetailLoading, Section, Unavailable } from './detailUi';
 import { DirectionsButton, FavoriteButton } from './FavoriteButton';
-import { ForecastStrip } from './ForecastStrip';
+import { ForecastPanel } from './ForecastPanel';
 import { IceHistory } from './IceHistory';
 import { LeavingNotice, useIsLeaving } from './LeavingNotice';
 import { DrawerHead, DrawerPinned } from './MapDrawer';
@@ -372,8 +372,9 @@ export function WaterBodyDetail({
               pending={weatherBay === undefined}
               {...(weatherBay ? { subAreaId: weatherBay._id } : {})}
             />
-            {/* The forward forecast (N6c/B5b) — the other half of the weather-since timeline. */}
-            <ForecastStrip
+            {/* The forward forecast (N6c/B5b; the seven-day planner since N6h D) — the other half
+                of the weather-since timeline. */}
+            <ForecastPanel
               waterBodyId={result.body._id}
               pending={weatherBay === undefined}
               {...(weatherBay ? { subAreaId: weatherBay._id } : {})}

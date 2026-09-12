@@ -34,7 +34,7 @@ import { PanelDescription, PanelHeader, PanelTitle } from './DetailPanel';
 import { DirectionsButton } from './DirectionsButton';
 import { DetailSkeleton, UnavailableState } from './DrawerStates';
 import { FavoriteButton } from './FavoriteButton';
-import { ForecastStrip } from './ForecastStrip';
+import { ForecastPanel } from './ForecastPanel';
 import { HazardForm } from './HazardForm';
 import { HazardList } from './HazardList';
 import { IceHistory } from './IceHistory';
@@ -364,9 +364,9 @@ export function WaterBodyDetail({
               pending={weatherBay === undefined}
               {...(weatherBay ? { subAreaId: weatherBay._id } : {})}
             />
-            {/* The forward forecast (N6c/B5b) — the other half of the weather-since timeline, and
-                the half that answers "should I bother driving". */}
-            <ForecastStrip
+            {/* The forward forecast (N6c/B5b; the seven-day planner since N6h D) — the other half of
+                the weather-since timeline, and the half that answers "should I bother driving". */}
+            <ForecastPanel
               waterBodyId={result.body._id}
               pending={weatherBay === undefined}
               {...(weatherBay ? { subAreaId: weatherBay._id } : {})}

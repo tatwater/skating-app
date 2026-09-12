@@ -91,6 +91,7 @@ import {
   bbox,
   boolFlags,
   decileBlock,
+  forecastHour,
   geoJson,
   latLng,
   literals,
@@ -1283,15 +1284,23 @@ export default defineSchema({
   weatherForecastCache: defineTable({
     samplePointKey: v.string(), // the same `browse`-tier cell key `weatherCache` uses (D152; fossil name)
     forecastBucketMs: v.number(), // `now` bucketed to the hour: how fresh this prediction is
-    hours: v.array(
-      v.object({
-        startMs: v.number(),
-        temperatureC: v.number(),
-        windSpeedKph: v.number(),
-        precipitationMm: v.number(),
-        snowfallCm: v.number(),
-      }),
-    ),
+    /**
+     * How many forward days the row holds (N6h Workstream D). A reader asking for more than this
+     * treats the row as a miss — the key is the hour bucket, so without it the strip's 2-day row
+     * would satisfy the planner's 7-day request for the rest of the hour. Absent on rows from
+     * before the planner, which held two.
+     */
+    forecastDays: v.optional(v.number()),
+    /** The shift baked into every `hours[].startMs`, so a client can put its own clock beside them. */
+    utcOffsetMs: v.optional(v.number()),
+    /**
+     * The hour in progress and every forward hour, ascending. The one shared validator (see
+     * `lib/validators`) is what `writeForecastCache` accepts too.
+     */
+    hours: v.array(forecastHour),
+    // ⚠ Written by nothing since the planner (N6h D): the strip line is now derived on the client
+    // from `hours`. Kept optional so the last pre-planner hour of rows validates on push; the
+    // hourly prune removes them and the fields can be dropped in any later schema pass.
     precipStartsMs: v.optional(v.number()),
     precipIsSnow: v.optional(v.boolean()),
     minTemperatureC: v.optional(v.number()),
