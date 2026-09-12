@@ -1,6 +1,6 @@
 import { api } from '@skating/convex/api';
 import { describeNotification, formatRelativeTime, type NotificationView } from '@skating/core';
-import { useMutation, usePaginatedQuery } from 'convex/react';
+import { useConvexAuth, useMutation, usePaginatedQuery } from 'convex/react';
 import { useRouter } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
 import { FlatList } from 'react-native';
@@ -35,6 +35,7 @@ export default function NotificationsScreen() {
     { initialNumItems: PAGE_SIZE },
   );
   const markRead = useMutation(api.notifications.markRead);
+  const { isAuthenticated } = useConvexAuth();
   const now = Date.now();
 
   // The offline copy and the local read overlay (see the module note). `live` flips the moment the
@@ -47,17 +48,27 @@ export default function NotificationsScreen() {
     if (results.length > 0) cacheNotifications(results);
   }, [results]);
 
-  // Mark what the screen opened on as read — once, when the first page lands with rows (same guard
-  // as the web, and the same reasons: latch regardless of whether anything shown was unread, rows
-  // present ⇒ authenticated, and no `before` so the server also stamps the rows the list omits for
-  // blocked actors). A notification arriving while the modal is up stays unread until the next open.
-  const hasRows = results.length > 0;
+  // Mark what the screen opened on as read — once, when the first page has landed and the Convex
+  // client is authenticated (same guard as the web, and the same reasons: latch regardless of
+  // whether anything shown was unread, and no `before` so the server also stamps the rows the list
+  // omits for blocked actors). Gated on auth rather than on rows being present, because an inbox
+  // whose every row is a blocked actor's lists nothing and still counts on the bell — a rows guard
+  // would never clear it. A notification arriving while the modal is up stays unread until the
+  // next open.
+  //
+  // The rows the mark stamps are remembered for the visit (same as the web): the list is reactive,
+  // so a dot drawn from `readAt` alone would vanish the moment the stamp landed. Seeded from the
+  // page in hand before the mutation fires, then widened to everything the server stamped.
   const marked = useRef(false);
+  const [newThisVisit, setNewThisVisit] = useState<ReadonlySet<string>>(() => new Set());
   useEffect(() => {
-    if (marked.current || status === 'LoadingFirstPage' || !hasRows) return;
+    if (marked.current || !isAuthenticated || status === 'LoadingFirstPage') return;
     marked.current = true;
-    void markRead({}).catch(() => {});
-  }, [markRead, hasRows, status]);
+    setNewThisVisit(new Set(results.filter((v) => v.readAt === undefined).map((v) => v.id)));
+    markRead({})
+      .then((stamped) => setNewThisVisit((prev) => new Set([...prev, ...stamped])))
+      .catch(() => {});
+  }, [markRead, isAuthenticated, status, results]);
 
   // Offline: stamp the cached rows in the overlay once per open. Replayed below when live returns.
   const markedOffline = useRef(false);
@@ -106,7 +117,13 @@ export default function NotificationsScreen() {
     <FlatList<NotificationView>
       data={data}
       keyExtractor={(n) => n.id}
-      renderItem={({ item }) => <NotificationRow view={item} now={now} />}
+      renderItem={({ item }) => (
+        <NotificationRow
+          view={item}
+          now={now}
+          unread={item.readAt === undefined || newThisVisit.has(item.id)}
+        />
+      )}
       onEndReached={() => {
         if (status === 'CanLoadMore') loadMore(PAGE_SIZE);
       }}
@@ -148,11 +165,19 @@ export default function NotificationsScreen() {
   );
 }
 
-function NotificationRow({ view, now }: { view: NotificationView; now: number }) {
+function NotificationRow({
+  view,
+  now,
+  unread,
+}: {
+  view: NotificationView;
+  now: number;
+  /** New since the last visit — still unread, or stamped read by this visit's open. */
+  unread: boolean;
+}) {
   const router = useRouter();
   const { title, detail, target } = describeNotification(view);
   const route = notificationRoute(target, view);
-  const unread = view.readAt === undefined;
   return (
     <XStack
       gap="$3"

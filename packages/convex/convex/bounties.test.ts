@@ -169,6 +169,21 @@ describe('bounties.create', () => {
     expect(await flushAllDue(t)).toHaveLength(0);
   });
 
+  test('a requester blocked inside the settle window never asks either (PR #52 review)', async () => {
+    const t = harness();
+    const requester = await seedUser(t, 'requester');
+    const reporter = await seedUser(t, 'reporter');
+    const waterBodyId = await seedBody(t);
+    await seedReport(reporter, waterBodyId, Date.now() - 60 * HOUR);
+
+    const bountyId = await requester.as.action(api.bounties.create, { waterBodyId });
+    expect(await t.run((ctx) => ctx.db.query('notificationQueue').collect())).toHaveLength(1);
+    // Enqueued before the block, so the enqueue gate let it through; the flush re-applies it.
+    await reporter.as.mutation(api.blocks.block, { targetUserId: requester.id });
+    expect(await flushAllDue(t)).toHaveLength(0);
+    expect((await t.run((ctx) => ctx.db.get(bountyId)))?.status).toBe('open');
+  });
+
   test('blocks a bounty on a body with a fresh report', async () => {
     const t = harness();
     const requester = await seedUser(t, 'requester');

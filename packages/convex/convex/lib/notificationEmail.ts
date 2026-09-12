@@ -45,9 +45,12 @@ export interface RenderedEmail {
 
 export function renderNotificationEmail(
   view: NotificationView,
-  opts: { webAppUrl: string; unsubscribeUrl: string },
+  opts: { webAppUrl: string; unsubscribeUrl: string; timeZone?: string },
 ): RenderedEmail {
-  const { title, detail, target } = describeNotification(view);
+  const { title, detail, target } = describeNotification(
+    view,
+    opts.timeZone ? { timeZone: opts.timeZone } : {},
+  );
   const path = webPathForTarget(target, view);
   const link = path ? `${opts.webAppUrl}${path}` : null;
   const why =

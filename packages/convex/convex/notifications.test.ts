@@ -469,19 +469,28 @@ describe('notifications — the inbox read path', () => {
     });
     expect(page[0]?.readAt).toBeUndefined();
 
-    // Mark one, then everything up to the newest shown.
-    await author.as.mutation(api.notifications.markRead, {
-      notificationId: page[1]?.id as Id<'notifications'>,
-    });
+    // Mark one, then everything up to the newest shown. Each call answers with what it stamped —
+    // the clients keep that set so the "new since last visit" dot survives the reactive re-render.
+    expect(
+      await author.as.mutation(api.notifications.markRead, {
+        notificationId: page[1]?.id as Id<'notifications'>,
+      }),
+    ).toEqual([page[1]?.id]);
     expect(await author.as.query(api.notifications.unreadCount, {})).toBe(1);
-    await author.as.mutation(api.notifications.markRead, { before: page[0]?.createdAt });
+    expect(
+      await author.as.mutation(api.notifications.markRead, { before: page[0]?.createdAt }),
+    ).toEqual([page[0]?.id]);
     expect(await author.as.query(api.notifications.unreadCount, {})).toBe(0);
     expect((await inbox(author.as)).page.every((n) => n.readAt !== undefined)).toBe(true);
+    // Nothing left to stamp: an empty answer, not an error.
+    expect(await author.as.mutation(api.notifications.markRead, {})).toEqual([]);
 
     // Someone else's id is a no-op, not an error.
-    await stranger.as.mutation(api.notifications.markRead, {
-      notificationId: page[0]?.id as Id<'notifications'>,
-    });
+    expect(
+      await stranger.as.mutation(api.notifications.markRead, {
+        notificationId: page[0]?.id as Id<'notifications'>,
+      }),
+    ).toEqual([]);
   });
 
   test('a hidden target renders degraded and stays in the list; a blocked actor drops the row', async () => {
@@ -589,5 +598,78 @@ describe('notifications — the inbox read path', () => {
     );
     // The prior report is untouched; only the notification about the vanished corroboration is gone.
     expect((await t.run((ctx) => ctx.db.get(priorId)))?.moderationStatus).toBe('visible');
+  });
+
+  test('a fresh action merging into a due-but-unflushed row gets its own settle window (PR #52 review)', async () => {
+    const t = convexTestWithGeo();
+    const author = await seedProfile(t, 'author');
+    const first = await seedProfile(t, 'first');
+    const second = await seedProfile(t, 'second');
+    const bodyId = await seedBody(t);
+    const reportId = await createReport(t, author.as, {
+      waterBodyId: bodyId,
+      skateEndTime: SKATE_TIME,
+    });
+    await first.as.mutation(api.ratings.rate, {
+      targetType: 'report',
+      targetId: reportId,
+      verdict: 'helpful',
+    });
+    const queued = () =>
+      t.run((ctx) =>
+        ctx.db
+          .query('notificationQueue')
+          .filter((q) => q.eq(q.field('kind'), 'thumb'))
+          .collect(),
+      );
+    const [row] = await queued();
+    expect(row).toBeDefined();
+    if (!row) throw new Error('unreachable');
+    const settling = row.flushAfter;
+    expect(settling).toBeGreaterThan(Date.now());
+
+    // While the row is still settling, a second thumb keeps the earlier deadline (a burst settles
+    // from its first event).
+    await second.as.mutation(api.ratings.rate, {
+      targetType: 'report',
+      targetId: reportId,
+      verdict: 'helpful',
+    });
+    expect((await queued())[0]?.flushAfter).toBe(settling);
+
+    // The window passes without a flush tick. A retraction and re-thumb now must not ride the
+    // expired deadline: the row takes a fresh window, so the next tick leaves it alone.
+    await t.run((ctx) => ctx.db.patch(row._id, { flushAfter: Date.now() - 1 }));
+    await second.as.mutation(api.ratings.rate, {
+      targetType: 'report',
+      targetId: reportId,
+      verdict: 'unhelpful',
+    });
+    await second.as.mutation(api.ratings.rate, {
+      targetType: 'report',
+      targetId: reportId,
+      verdict: 'helpful',
+    });
+    const rows = await queued();
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.flushAfter).toBeGreaterThan(Date.now());
+    await t.mutation(internal.notifications.flushNotificationQueue, {});
+    expect(await t.run((ctx) => ctx.db.query('notifications').collect())).toHaveLength(0);
+  });
+
+  test('unreadCount never exceeds its documented cap', async () => {
+    const t = convexTestWithGeo();
+    const author = await seedProfile(t, 'author');
+    await t.run(async (ctx) => {
+      for (let i = 0; i < 120; i++) {
+        await ctx.db.insert('notifications', {
+          userId: author.id,
+          type: 'report_rated',
+          payload: {},
+          createdAt: i,
+        });
+      }
+    });
+    expect(await author.as.query(api.notifications.unreadCount, {})).toBe(99);
   });
 });

@@ -58,6 +58,7 @@ describe('mergeTriggers / triggerCount (D166 coalescing)', () => {
       kind: 'hazard_lifecycle',
       hazardId: 'h' as Id<'hazards'>,
       phase: 'confirmed',
+      actorIds: [p('v')],
     };
     expect(mergeTriggers(phase, { ...phase, phase: 'archived' })).toEqual({
       ...phase,

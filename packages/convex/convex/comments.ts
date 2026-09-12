@@ -68,8 +68,9 @@ export const create = mutation({
       throw new ConvexError('Comment must be between 1 and 2000 characters');
     }
 
+    let parent: Doc<'comments'> | null = null;
     if (args.parentCommentId !== undefined) {
-      const parent = await ctx.db.get(args.parentCommentId);
+      parent = await ctx.db.get(args.parentCommentId);
       if (!parent || parent.reportId !== args.reportId) {
         throw new ConvexError('Parent comment not found');
       }
@@ -95,13 +96,13 @@ export const create = mutation({
     // `report_commented` (N8/B1, D21 finally delivered): the report's author hears about a comment,
     // and a reply's parent author hears about the reply. Both ride the settle queue (D166) — a busy
     // report's burst becomes one "3 new comments", and a comment deleted or hidden inside the window
-    // never sends. Never-self, prefs, deletion state and blocks are all applied in `enqueue`; the
-    // parent author is keyed on their *comment* so a reply to them and a comment on their report (if
-    // they're also the author) are two rows, which is what they are.
+    // never sends. Never-self, prefs, deletion state and blocks are all applied in `enqueue`. The
+    // parent author is keyed on their *comment*, so replies to it coalesce separately from comments
+    // on the report; when the parent author *is* the report's author they get the one "commented on
+    // your report" row rather than that plus a reply row about the same comment.
     await enqueueActorNotification(ctx, {
       recipientId: report.authorId,
       actorId: profile._id,
-      type: 'report_commented',
       targetId: report._id,
       trigger: {
         kind: 'comment',
@@ -111,23 +112,19 @@ export const create = mutation({
       },
       now,
     });
-    if (args.parentCommentId !== undefined) {
-      const parent = await ctx.db.get(args.parentCommentId);
-      if (parent && parent.authorId !== report.authorId) {
-        await enqueueActorNotification(ctx, {
-          recipientId: parent.authorId,
-          actorId: profile._id,
-          type: 'report_commented',
-          targetId: parent._id,
-          trigger: {
-            kind: 'reply',
-            reportId: report._id,
-            commentIds: [commentId],
-            actorIds: [profile._id],
-          },
-          now,
-        });
-      }
+    if (parent && parent.authorId !== report.authorId) {
+      await enqueueActorNotification(ctx, {
+        recipientId: parent.authorId,
+        actorId: profile._id,
+        targetId: parent._id,
+        trigger: {
+          kind: 'reply',
+          reportId: report._id,
+          commentIds: [commentId],
+          actorIds: [profile._id],
+        },
+        now,
+      });
     }
     return commentId;
   },

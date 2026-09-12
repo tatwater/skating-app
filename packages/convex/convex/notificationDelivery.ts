@@ -47,6 +47,7 @@ import { renderNotificationEmail, webPathForTarget } from './lib/notificationEma
 import { resolveNotifications } from './lib/notificationResolve';
 import { loadBlockedAuthorIds } from './lib/reportVisibility';
 import { sendEmail } from './lib/resend';
+import { DIGEST_TIMEZONE } from './notifications';
 
 /** Rows per delivery action — the flush chunks its inserts to this so one action stays bounded. */
 export const DELIVERY_BATCH = 200;
@@ -61,6 +62,8 @@ interface Deliverable {
   userId: Id<'profiles'>;
   clerkUserId: string;
   view: NotificationView;
+  /** The recipient's zone, so a server-composed sentence with a time in it reads in their clock. */
+  timeZone: string;
   collapseKey: string;
   push: { tokenId: Id<'pushTokens'>; token: string; platform: 'ios' | 'android' }[] | null;
   email: { to: string | null; unsubscribeSecret: string | null } | null;
@@ -120,6 +123,7 @@ export const loadForDelivery = internalQuery({
         userId: row.userId,
         clerkUserId: profile.clerkUserId,
         view,
+        timeZone: profile.timezone ?? DIGEST_TIMEZONE,
         collapseKey: payload?.coalesceKey ?? `${row.userId}:${row.type}`,
         push,
         email,
@@ -228,7 +232,7 @@ export const deliverBatch = internalAction({
     const messageOwners: { notificationId: Id<'notifications'>; tokenId: Id<'pushTokens'> }[] = [];
     for (const row of rows) {
       if (!row.push || row.push.length === 0) continue;
-      const { title, detail, target } = describeNotification(row.view);
+      const { title, detail, target } = describeNotification(row.view, { timeZone: row.timeZone });
       for (const device of row.push) {
         messages.push({
           to: device.token,
@@ -297,6 +301,7 @@ export const deliverBatch = internalAction({
       const mail = renderNotificationEmail(row.view, {
         webAppUrl: base,
         unsubscribeUrl: unsubscribe,
+        timeZone: row.timeZone,
       });
       const sent = await sendEmail({
         to,

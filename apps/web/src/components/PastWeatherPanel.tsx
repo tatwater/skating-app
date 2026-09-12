@@ -17,7 +17,7 @@ import { WeatherTimeline } from './WeatherTimeline';
  *
  * **The differentiated half of the weather block, and the reason the phase exists.** Every general
  * weather app tells you the high and the low; none of them tells you what happened to *this lake*.
- * So this sits above `ForecastStrip` in the Planning group and reads backwards where that one reads
+ * So this sits above `ForecastPanel` in the Planning group and reads backwards where that one reads
  * forwards.
  *
  * ## Three rules it inherits

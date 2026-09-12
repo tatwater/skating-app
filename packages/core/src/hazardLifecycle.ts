@@ -332,12 +332,14 @@ export function isProvisional(
  * conflicts: archived beats everything (the pin is off the map), then the annotations (`disputed`
  * outranks `healing_unsafe` there too), then confirmed-vs-provisional.
  */
-export type HazardLifecyclePhase =
-  | 'provisional'
-  | 'confirmed'
-  | 'healing_unsafe'
-  | 'disputed'
-  | 'archived';
+export const HAZARD_LIFECYCLE_PHASES = [
+  'provisional',
+  'confirmed',
+  'healing_unsafe',
+  'disputed',
+  'archived',
+] as const;
+export type HazardLifecyclePhase = (typeof HAZARD_LIFECYCLE_PHASES)[number];
 
 export function hazardLifecyclePhase(
   state: Pick<HazardLifecycleState, 'status' | 'healingState' | 'confirmCount'>,

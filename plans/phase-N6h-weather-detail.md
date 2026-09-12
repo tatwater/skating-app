@@ -4,9 +4,12 @@
 > deployed to dev** — Workstreams **A + B + C + G**, D162 + D163, **and a continuous hourly weather
 > timeline on both clients that this plan never specified** (see *§What PR 1 actually shipped*). Four
 > Greptile passes on the PR; suites at merge: core 2,460 · convex 1,437 · web 508 · mobile 108.
-> **PR 3 = Workstream H** (the three-tab drawer IA + sub-areas as the weather unit + the spread)
-> **built 2026-09-11 on `phase-n6h-weather-detail-3`**, five commits, pending review/PR — see *§What
-> PR 3 shipped*. **D + E + F not started.** Two PRs remain: D+E → F (founder call, 2026-09-11).
+> **PR 3 = Workstream H = [#50](https://github.com/tatwater/skating/pull/50), merged 2026-09-11**
+> (the three-tab drawer IA + sub-areas as the weather unit + the spread) — see *§What PR 3 shipped*.
+> **PR 4 = Workstream D, built 2026-09-11 on `phase-n6h-weather-detail-4`** (two commits, deployed
+> to dev, verified in the running web app against Champlain; mobile by type-check + suite only —
+> founder checks the sheet) — see *§What PR 4 shipped*. Founder call 12 revised call 11's D+E bundle.
+> **Two PRs remain after this one: E → F.**
 > Scoped 2026-09-02. Founder ask, same day. Grew out of a costing
 > question — *"what is most expensive about this plan?"* — and the answer moved the design: the
 > expensive half is not the data, it is **the cache key**, which today shares nothing.
@@ -63,7 +66,44 @@
 >     "permission precedes access" adjacency is knowingly split across Overview/Planning because the
 >     taxonomy puts put-ins with the trip and permission with the body.
 > 11. **D stays as D155 wrote it** — a separate 7-day grid selector plus an hourly strip, *not* an
->     extension of the timeline PR 1 built. **Three PRs remain: H → D+E → F.**
+>     extension of the timeline PR 1 built. **Three PRs remain: H → D+E → F.** ⚠ *Both halves
+>     revised the same evening by calls 12 and 14 below.*
+>
+> ### Founder calls, 2026-09-11 — fifth pass, kicking off PR 4
+>
+> 12. **D ships alone; then E; then F.** Call 11's D+E bundle was reconsidered once E's real size was
+>     laid out (a join table + corpus backfill, a digest table, a cron change, a shared filter store on
+>     both clients, the *Latest* rename, and a new card type) and once D grew its own design work (call
+>     14). D+F was asked about and rejected: F is the most infrastructure-heavy workstream left and
+>     shares nothing with D but the word. **Three PRs remain, not two.**
+> 13. **One 7-day fetch serves both the strip and the planner.** `forecast_days` is parametrised per
+>     caller (default stays 2 for the archive, decay cron and contradiction checker); the drawer's
+>     forecast fetch asks for 7 and the existing 12-hour strip line becomes a prefix of the same
+>     hours. `past_days: 1` + 7 = 8 days = still one billing unit, so an open costs 1.2 weighted calls
+>     as before. `precipitation_probability` stays out (+8 % on every call, the archive's included).
+> 14. **D's shape is a weather app's, not D155's grid.** *"Small cards in a horizontal scroll area
+>     with vertically stacked temp, weather symbol, precipitation, time … then underneath, larger
+>     full-day summary cards in their own horizontal scroll area, with a summary of each whole day's
+>     forecast, including things like 'snow from 10 PM to 4 AM'."* The morning/afternoon/overnight
+>     grid is gone; **a day card is the selector**. The hourly row holds **all seven days** with day
+>     dividers, opens scrolled to *now* (so it reads as "the next twelve hours"), and tapping a day
+>     card scrolls it to that day's morning — which is how D155's *"the run-up is drawn, not hidden"*
+>     survives the redesign: drag back from Thursday and Wednesday night's snow is there. Drive time
+>     stays a hint (see the readiness note below on what it can honestly be).
+> 15. **Prime the whole filter tier on dev out of season, once, for E.** `past_days: 8` over the
+>     registry's ~3,043 cells ≈ 3,650 weighted calls — a third of one free day. Rides with E, not D.
+> 16. **E's predicate gets weather-only anchors, and the founder defined them.** *"'No snow since' is
+>     since the last <20°F; the nights-below are intended to be a chain of nights in a row (seeing
+>     temps below 20°F within 48 h of each other counts as consecutive). This stat is relevant when
+>     ice is first freezing for the season (when the ice is best), because nights-below-20 is
+>     predictive of ice formation, and no-snow-since is indicative of that fresh ice being
+>     uncovered."* This closes D159's *"no snow since has no anchor without a report"* gap without a
+>     report: the anchor is **the first night of the current cold chain**, where a chain is a run of
+>     nights with `nightMinTempC` below the threshold and *one* milder night between two cold ones
+>     does not break it (48 h). The per-cell digest therefore carries, per threshold, the chain
+>     length in nights, the chain's start day, and snowfall since that day — and the copy reads
+>     *"4 nights below 20°F, no snow since the first"*, which names its own anchor. ⚠ The 48-hour
+>     tolerance is a founder rule, not a physics constant; pin it as one named number in core.
 >
 > ### Measurements taken 2026-09-02 (open questions 1 and 2)
 >
@@ -325,6 +365,153 @@ on a tab change (predictable; loses position both ways). Decide once the tabs ha
 **Sequencing note for D.** `PastWeatherPanel` and `ForecastStrip` now take `subAreaId` + a
 load-bearing `pending` flag (hold while the bays load, or a giant pays for the lake's cell and then
 the bay's). D's forecast panel inherits both; the Planning tab already has the picker it wanted.
+
+### ⚠ Readiness pass for PR 4, 2026-09-11 — four things the plan had wrong or stale
+
+1. **`weatherCellKeyB` is dead; the join won, and it is free.** The holes table (row 7) and
+   Workstream E still owe a single `weatherCellKeyB` field on `waterBodies`; open question 5 §4 had
+   already *"picked the `bodyWeatherCells` option"* because a giant spans many cells and Convex has
+   no array index. The join is what E builds — same shape as N1's `waterBodyCells` (`by_cell` +
+   `by_body`) — and it costs no widen→deploy→backfill→narrow dance, because a new table has no
+   existing rows to validate. Better: **the registry walk already visits every body and bay**
+   (`pageBodyCells` / `pageSubAreaCells`) to compute their filter cells, so the join is written by
+   that walk for nothing and inherits its import-triggered reconcile and its vacated-cell prune.
+2. **Hole 8 is stale.** *"Mobile has no charting substrate"* stopped being true in PR 1:
+   `WeatherTimeline` draws on mobile through `react-native-svg`. Nothing about D is forced text-first.
+3. **Drive time is band-granular, so D's hint can only be band-granular.** Phase 4 gives a body a
+   band — 30 / 60 / 90 minutes or `null` — never minutes, and the client is never told a single
+   body's band today (`bandForCoord` runs inside `listFeed`, `profiles`, `notifications`). So the
+   hint D155 asked for is *"≈ arrival"* marked on the hour card at *now + band*, computed server-side
+   in the forecast action from the viewer's cached isochrones, and nothing more precise.
+4. **The drawer's fetch drops two of the twelve variables it pays for.** `fetchOpenMeteoHourly` in
+   `weather.ts` never carries `weather_code` or `wind_direction_10m` into `HourlyWeather` — only the
+   archive's `fetchLocalHourly` does. The weather symbol on every card needs the code, so D wires
+   both through (they are already in the response; this is parsing, not spend).
+
+---
+
+## What PR 4 shipped — Workstream D, 2026-09-11
+
+**Built on `phase-n6h-weather-detail-4`, two commits.** The seven-day planner on both clients, off
+one fetch. Suites at build: core 2,570 · convex 1,452 · web 524 · mobile 108. Deployed to dev and
+verified in the running web app against Champlain's default bay (148 forward hours, seven day
+cards, real episodes — *"Rain 5–7 AM · 0.11″"*, *"Wind 11 AM–3 PM · gusts 32 mph"*); the selector
+verified in both directions. Mobile verified by type-check and suite only; the founder checks the
+sheet by hand, since sign-in is email-code and there is no headless path.
+
+### What it is
+
+- **`core/forecastPlan.ts`** — everything printable. WMO code → `ForecastCondition` (the code
+  speaks first because only it can say freezing rain; the amount/temperature derivation is the
+  fallback, then cloud cover for a dry sky); `conditionGlyph` for the day/night symbol; per-day
+  high/low; the archive's own night window (`[prev 18:00, this 09:00)`, from `weatherDay.ts`, so
+  "night" means one thing on both halves of the Planning tab); **episodes** — runs of snow / rain /
+  freezing rain / sleet / wind with a single dry hour bridged — printed as *"Snow 10 PM–4 AM ·
+  1.2″"*, *"all day"* when a run covers the card. Floors: 0.3 cm snow, 0.3 mm rain, 32 km/h wind,
+  **no floor on freezing rain**. The founder's example sentence is a test.
+- **`ForecastPanel`** on both clients absorbs `ForecastStrip`: the strip's one-liner is now derived
+  on the client from the same hours at its 12-hour horizon, above an hourly card row (time · symbol
+  · temp · amount · wind) that holds **all seven days** with date dividers and opens at *now*, above
+  a row of day cards (label · symbol · high/low · night low when colder than the day · totals ·
+  episode lines). A day card is the selector: tap → the hour row scrolls to that morning; scroll the
+  hours → the day row follows and re-presses. D155's *"run-up drawn, not hidden"* is the drag back.
+- **Drive time as a band, never a time.** `getForecastForBody` resolves the viewer's Phase 4 band to
+  the place (bay centroid or `defaultSampleAnchor`) from their cached isochrones and the planner
+  marks one card *"≈ arrival, 60 min drive, if you left now"*. That is the whole hint.
+
+### Five things the build decided that the plan did not
+
+1. **The cache row records `forecastDays`, and a shorter row is a miss.** The key is the hour
+   bucket, so in the hour after the deploy every popular lake would otherwise have answered a 7-day
+   request with the strip's 2-day row — five empty day cards, no error anywhere. Pre-planner rows
+   also lack `utcOffsetMs`, which is the second reason they read as a miss. `writeForecastCache`
+   uses `replace`, not `patch`, so the strip's old derived fields cannot survive beside a longer
+   series they do not describe; the schema keeps them optional until the hourly prune clears them.
+2. **`FORECAST_DAYS` stays 2 as the shared default; the drawer passes 7.** The plan said
+   parametrise; the build kept the archive, the decay cron and the contradiction checker on exactly
+   the request they made before, and pinned the drawer's at one billing unit with a meter test.
+3. **The strip's semantics moved to the client.** `ForecastPayload` is hours + offset + band, and
+   `summarizeForecast` runs at render — the server no longer computes a horizon-shaped summary
+   for a table that now holds a week. `resolveBodyWeatherCell` went with it (its one caller became
+   `resolveForecastPlace`, which returns the band in the same read).
+4. **A day's symbol is the worst precipitation that touches it, else the modal daytime cloud** —
+   with a tie resolving cloudier, and a trace of drizzle under the rain floor not counting (the
+   first render gave Monday a drizzle icon over nothing worth a sentence). Thunder keeps a no-floor
+   rule; it is the one condition where an hour is enough. *Touches*, not *starts on*: the review
+   pass found that a storm still falling on Friday left Friday's cloud vote with no dry hours, and
+   an empty vote named the day by the first row of the table — "freezing rain" over four inches of
+   snow. The sentence still belongs to the day the storm began; the symbol goes wherever the snow
+   does, and a run that ends on a later date names that day (*"Snow 10 PM–4 AM Fri"*).
+5. **The night low is printed only when the night was colder than the calendar day.** In September
+   it repeated the low on every card; in January it is the line that matters.
+
+### The review passes — ours, then Greptile's — and the four things they changed
+
+`/code-review xhigh --fix` before opening #51: fifteen findings, thirteen fixed (the symbol-vs-storm
+case above, an empty tally that fell through to *freezing rain*, thunder outranked by its own rain
+run, the hour in progress dropped server-side — carried now, render-only, because D74 is about a
+forward hour reaching a calculation and not an elapsed one reaching a card — and web's
+`scrollIntoView` on mount dragging the drawer to the Today card). Two were left as founder calls,
+and Greptile's first pass added two P1s. All four landed the same evening:
+
+- **A storm that carries into the next day gets a continuation line** — founder: *"'Snow until 6am
+  Wed' on Tuesday's card, then on Wednesday's card 'Snow until 6am' again."* Built as: the start day
+  keeps its full sentence and the end names its day when it crosses midnight (*"Snow 10 PM–4 AM Fri
+  · 1.2″"* — the start time stays, since *"until 6 AM Wed"* alone on Tuesday would read as already
+  snowing); every later day the run reaches prints *"Snow until 4 AM · 0.8″"* with **that day's
+  share**, or *"Snow all day"* when the run outlasts the card. The storm's total belongs to the card
+  it started on; a day's totals row still sums only its own hours. Continuations print first.
+- **Convective showers are recovered by derivation, not by a thirteenth variable.** The founder
+  asked what `showers` would buy; the answer is the large-scale-vs-convective distinction and
+  nothing else, at +8 % on every call including the corpus sweep. Open-Meteo documents
+  `precipitation` as the total (rain + showers + snow water-equivalent) and `snowfall` at a fixed
+  7:1, so **`liquidMm = max(rain, precipitation − snowfall / 0.7)`** is exact to the provider's own
+  rounding and free. The planner's amounts, floors and code-less fallback all read it. ⚠ **The
+  archive's stored `rainMm` has the same gap** — Phase 10's `rain` variable, read by the D56 decay
+  model. Changing what a stored field means is not a render fix; it is in the register.
+- **Each hour is shifted by the offset in force *at that hour*** (Greptile P1). Open-Meteo stamps
+  one `utc_offset_seconds` on a response, and a seven-day window in the week of a DST transition
+  put every hour after it an hour off — labels, day cuts, episode clocks, day/night symbols. The
+  fetch now reads the response's IANA `timezone` and asks `utcOffsetSecondsAt(instant, zone)` per
+  hour (the archive's `weatherDays.timeZone` lesson, applied to the forecast); the payload's
+  `utcOffsetMs` is the offset at *now*, which is what a client shifts its own clock by. Pinned by a
+  fetch test across 2026-03-08 07:00Z: clocks read 1 AM, 3 AM, 4 AM — the hour that does not exist
+  is skipped by the clock, not invented by the shift.
+- **`utcMs` rides beside `startMs`, and contiguity is judged on it** (the other half of the same
+  P1, plus Greptile's second: *missing hours join episodes*). Two local-shifted timestamps cannot
+  say whether their hours were consecutive — spring-forward reads as a two-hour gap, fall-back as a
+  repeated hour — and array adjacency cannot either, because the parser drops an hour Open-Meteo
+  returns without a temperature, which had merged the weather on both sides of a hole into one
+  *"10 PM–2 AM"* over an hour nobody has data for. `runs` now ends at any non-consecutive pair and
+  the lull bridge only crosses an hour that exists; `partial` stopped being `< 24` (a spring-forward
+  day is 23 hours and whole); the hour cards key on the instant, since a fall-back night has two
+  1 AMs. Pinned: a hole, a spring-forward night, a fall-back night, a 23-hour day.
+- **"All day" is reserved for a whole card, and an episode that reaches the end of the forecast is
+  open-ended** (Greptile's second pass, P2, on the 5/5 review). The truncated last day of a series
+  said *"Snow all day"* over the nine hours it had; today's card said it over the rest of today under
+  a caption that already read *"rest of today"*. Now: a continuation that runs to where the forecast
+  stops reads *"Snow through 8 AM"* — the last hour there is — and an episode that starts and whose
+  end the forecast cannot see reads *"Snow from 8 PM"*; a partial card never says *all day*. The
+  forecast's end is not the weather's, and the clock must not print it as one.
+
+### Two things a render found that no test did
+
+- **A `<fieldset>` defaults to `min-inline-size: min-content`.** The day row grew to seven cards
+  and overflowed the sidebar instead of scrolling — `scrollWidth === clientWidth`, and
+  `scrollIntoView` had nothing to do. `min-w-0` fixes it; the comment on the element says why.
+  (Biome insisted on the fieldset over `role="group"`, and it is the right element.)
+- **jsdom has no `Element.scrollTo`** — the row scroller guards and falls back to `scrollLeft`.
+
+### Holes closed by this PR
+
+| hole | status |
+|---|---|
+| 9 · offline | ⚠ **Half.** `ForecastPayload` is the shape hole 9 was waiting on, and it is small (≤ 168 hours × 11 numbers). Caching it in the mobile offline body payload is **not** done here: it belongs with the on-ice/offline surface rather than the Planning tab, and the founder gave no call on it this pass. Recorded in the register, not silently. |
+| D's `precipitation_probability` | ✅ Skipped, as inherited — `weather_code` plus amount carry the story, and the cards read fine without it on real data. |
+
+**Sequencing note for E.** The planner reads Tier A on open and nothing corpus-wide; E owes it
+nothing. The condition vocabulary (`ForecastCondition`, `CONDITION_LABEL`, `conditionGlyph`) is
+reusable on a body-result card if E wants a symbol there — the same code, the same day/night rule.
 
 ---
 
@@ -1183,8 +1370,9 @@ that.** The FDD integrals are right there and the ~1″/15-FDD backbone is writt
 Observations only — *"four nights below 20°F, calm; no snow since Feb 2"* — never derived ice. This is
 D3 and D150, and it is not negotiable in a safety app.
 
-**D — The forecast panel.** Per D155: the 7-day grid as selector, hourly detail as the view, run-up
-always drawn, drive time as a default hint.
+**D — The forecast panel.** ✅ **Shipped as PR 4 (2026-09-11)** — see *§What PR 4 shipped*. Per D155
+in principle, per founder call 14 in shape: day cards as the selector, an hourly card row as the
+view (all seven days, opens at now), run-up always a drag away, drive time as an "≈ arrival" band.
 
 **E — Weather-first discovery (D159).** Reads Tier B. The founder's target query: *"bodies within two
 hours' drive that got at least three nights below 20°F and no snow since."* This is the reason Tier B
@@ -1262,6 +1450,15 @@ diff. Then D+E. F is last and depends on neither.
   question 4), next to N6e's phenology brackets — the two are the same kind of claim about a lake and
   should be read together.
 - **Paying Open-Meteo** (D158) — season two, against a written trigger.
+- **`weatherDays.rainMm` / `HourlyWeather.rainMm` exclude convective showers.** Open-Meteo's `rain`
+  is large-scale liquid only; the planner derives liquid from the total (PR 4) but the archive and
+  the D56 decay model still read `rain`, under-counting liquid in shoulder seasons. The fix is
+  either the same derivation at the fetch (changes the meaning of a stored field, so it needs a
+  version stamp like `HOURLY_ROW_VERSION`) or the `showers` variable (+8 % on every call). A
+  decay-model decision, not a render one.
+- **Caching the forecast payload for offline** (hole 9's second half). `ForecastPayload` exists
+  since PR 4 and is small; writing it into the mobile offline body payload on drawer-open is a
+  one-commit task that belongs with the on-ice/offline surface, not the Planning tab.
 - **MRMS RQI blindness mask** — if radar v1 ships on RainViewer, the mask arrives with the MRMS
   switch, not before.
 - **Radar nowcast beyond ~60 minutes.** NOAA's NDFD grids are free and time-enabled but cadence 3-hourly

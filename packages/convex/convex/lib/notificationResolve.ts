@@ -21,11 +21,12 @@
  * the same lake costs one body read, not thirty — the N+1 shape N1 dug out of the read path stays out.
  */
 
-import type {
-  HazardLifecyclePhase,
-  NotificationActors,
-  NotificationBodyRef,
-  NotificationView,
+import {
+  HAZARD_LIFECYCLE_PHASES,
+  type HazardLifecyclePhase,
+  type NotificationActors,
+  type NotificationBodyRef,
+  type NotificationView,
 } from '@skating/core';
 import type { Doc } from '../_generated/dataModel';
 import type { QueryCtx } from '../_generated/server';
@@ -62,13 +63,7 @@ type ParsedPayload =
     }
   | { kind: 'activity'; activityId: string; waterBodyId?: string; startTime: number };
 
-const HAZARD_PHASES: ReadonlySet<string> = new Set<HazardLifecyclePhase>([
-  'provisional',
-  'confirmed',
-  'healing_unsafe',
-  'disputed',
-  'archived',
-]);
+const HAZARD_PHASES: ReadonlySet<string> = new Set(HAZARD_LIFECYCLE_PHASES);
 
 /** Narrow a stored payload by its row's type, or `null` when the shape isn't one this code writes. */
 export function parsePayload(

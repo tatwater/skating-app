@@ -178,6 +178,45 @@ describe('hazard_confirmation to the author (N8/B2)', () => {
     await t.run((ctx) => ctx.db.patch(hazardId, { status: 'archived' }));
     expect(await flushAllDue(t)).toHaveLength(0);
   });
+
+  test('a voter blocked inside the settle window is muted at flush, like a thumb (PR #52 review)', async () => {
+    const { t, hazardId, author } = await setup();
+    const first = await seedUser(t, 'first');
+    await first.as.mutation(api.hazardConfirmations.confirm, {
+      hazardId,
+      verdict: 'still_there',
+      ...VIA,
+    });
+    const queued = await t.run((ctx) => ctx.db.query('notificationQueue').collect());
+    expect(queued[0]?.trigger).toMatchObject({ kind: 'hazard_lifecycle', actorIds: [first.id] });
+
+    // The enqueue gate saw no block; the flush must apply the one placed since.
+    await author.as.mutation(api.blocks.block, { targetUserId: first.id });
+    expect(await flushAllDue(t)).toHaveLength(0);
+    expect(await t.run((ctx) => ctx.db.query('notificationQueue').collect())).toHaveLength(0);
+  });
+
+  test('a phase moved by several voters inside the window still sends while one is unblocked', async () => {
+    const { t, hazardId, author } = await setup();
+    const first = await seedUser(t, 'first');
+    const second = await seedUser(t, 'second');
+    const vote = (who: typeof first, verdict: 'fully_healed' | 'still_there') =>
+      who.as.mutation(api.hazardConfirmations.confirm, { hazardId, verdict, ...VIA });
+    await vote(first, 'still_there'); // → confirmed, by first
+    await vote(first, 'fully_healed'); // back to provisional
+    await vote(second, 'fully_healed'); // → archived, by second
+    const queued = await t.run((ctx) => ctx.db.query('notificationQueue').collect());
+    expect(queued).toHaveLength(1);
+    expect(queued[0]?.trigger).toMatchObject({
+      phase: 'archived',
+      actorIds: [first.id, second.id],
+    });
+
+    await author.as.mutation(api.blocks.block, { targetUserId: second.id });
+    const notes = await flushAllDue(t);
+    expect(notes).toHaveLength(1);
+    expect(notes[0]?.payload).toMatchObject({ phase: 'archived' });
+  });
 });
 
 describe('still_there', () => {

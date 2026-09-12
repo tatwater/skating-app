@@ -7,6 +7,7 @@
  * generated `DataModel` keeps exact string-literal field types.
  */
 
+import { HAZARD_LIFECYCLE_PHASES } from '@skating/core';
 import { v } from 'convex/values';
 
 /** Build a `v.union(v.literal(...))` from a readonly tuple, keeping literal types. */
@@ -182,13 +183,10 @@ export const notificationTrigger = v.union(
   v.object({
     kind: v.literal('hazard_lifecycle'),
     hazardId: v.id('hazards'),
-    phase: v.union(
-      v.literal('provisional'),
-      v.literal('confirmed'),
-      v.literal('healing_unsafe'),
-      v.literal('disputed'),
-      v.literal('archived'),
-    ),
+    phase: literals(HAZARD_LIFECYCLE_PHASES),
+    // The voters whose confirmations moved the phase inside the window — kept so the flush can
+    // apply the recipient's block set the way it does for thumbs, not only the enqueue gate.
+    actorIds: v.array(v.id('profiles')),
   }),
   v.object({
     kind: v.literal('flag_resolved'),
@@ -212,3 +210,26 @@ export const notificationTrigger = v.union(
     activityId: v.id('gpsActivities'),
   }),
 );
+
+/**
+ * The `ForecastHour` shape from `@skating/core` (N6c B5b; the planner's fields since N6h D), for the
+ * `weatherForecastCache` table and `writeForecastCache`'s args — one validator, so the row a
+ * mutation accepts and the row the table accepts cannot drift. **Keep in sync with the core
+ * interface** — a compile-time `Infer` check in `weather.ts` catches drift. The optional fields are
+ * optional so pre-planner rows still validate; the table prunes itself hourly, so they are required
+ * in practice within a day of the deploy.
+ */
+export const forecastHour = v.object({
+  startMs: v.number(),
+  utcMs: v.optional(v.number()),
+  temperatureC: v.number(),
+  windSpeedKph: v.number(),
+  precipitationMm: v.number(),
+  snowfallCm: v.number(),
+  rainMm: v.optional(v.number()),
+  windGustKph: v.optional(v.number()),
+  windDirectionDeg: v.optional(v.number()),
+  weatherCode: v.optional(v.number()),
+  shortwaveWm2: v.optional(v.number()),
+  cloudCoverPct: v.optional(v.number()),
+});

@@ -150,12 +150,43 @@ export function localDayMsInZone(instantMs: number, timeZone: string): number | 
  */
 export function utcOffsetSecondsInZone(dayMs: number, timeZone: string): number | null {
   if (!Number.isFinite(dayMs)) return null;
+  return utcOffsetSecondsAt(dayMs + DAY_MS / 2, timeZone);
+}
+
+const offsetFormatters = new Map<string, Intl.DateTimeFormat | null>();
+
+function offsetFormatterFor(timeZone: string): Intl.DateTimeFormat | null {
+  const hit = offsetFormatters.get(timeZone);
+  if (hit !== undefined) return hit;
+  let fmt: Intl.DateTimeFormat | null = null;
+  try {
+    fmt = new Intl.DateTimeFormat('en-US', { timeZone, timeZoneName: 'longOffset' });
+  } catch {
+    fmt = null;
+  }
+  offsetFormatters.set(timeZone, fmt);
+  return fmt;
+}
+
+/**
+ * The UTC offset in force at an **instant**, in seconds — the per-hour form of
+ * {@link utcOffsetSecondsInZone}, for a series that crosses a transition.
+ *
+ * ⚠ **A week of forecast hours cannot share one offset.** Open-Meteo stamps a single
+ * `utc_offset_seconds` on a response, and both DST transitions fall inside a skating season; a
+ * seven-day window shifted by one offset puts every hour after the change an hour off — labels,
+ * day cuts, episode clocks, day/night symbols, all plausibly wrong (N6h Workstream D, Greptile on
+ * #51). Shifting each hour by the offset *at that hour* is what a clock on the wall would do.
+ *
+ * Returns `null` for an unknown zone or a runtime without timezone data, like its sibling.
+ */
+export function utcOffsetSecondsAt(instantMs: number, timeZone: string): number | null {
+  if (!Number.isFinite(instantMs)) return null;
+  const fmt = offsetFormatterFor(timeZone);
+  if (!fmt) return null;
   let parts: Intl.DateTimeFormatPart[];
   try {
-    parts = new Intl.DateTimeFormat('en-US', {
-      timeZone,
-      timeZoneName: 'longOffset',
-    }).formatToParts(dayMs + DAY_MS / 2);
+    parts = fmt.formatToParts(instantMs);
   } catch {
     return null;
   }
