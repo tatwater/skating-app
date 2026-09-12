@@ -851,13 +851,130 @@ describe('gpsActivities.sweepUnpromptedActivities', () => {
     expect(await t.run((ctx) => ctx.db.query('notificationQueue').collect())).toHaveLength(0);
   });
 
+  test('an already-prompted copy buried under later syncs is still found — the window is by start time, not insertion (PR #53 review)', async () => {
+    const t = harness();
+    const me = await seedUser(t, 'me');
+    const bodyId = await seedBody(t);
+    // The watch copy was prompted on an earlier tick…
+    await t.run((ctx) =>
+      ctx.db.insert('gpsActivities', {
+        userId: me.id,
+        provider: 'garmin',
+        providerActivityId: 'garmin-old',
+        sportType: 'IceSkate',
+        startTime: T0 + 2 * 60_000,
+        endTime: T0 + 40 * 60_000,
+        waterBodyId: bodyId,
+        promptState: 'prompted',
+        detectedAt: Date.now() - 20 * HOUR,
+      }),
+    );
+    // …then sixty *later* skates synced (a season's backlog), all settled, all inserted after it.
+    await t.run(async (ctx) => {
+      for (let i = 0; i < 60; i++) {
+        await ctx.db.insert('gpsActivities', {
+          userId: me.id,
+          provider: 'garmin',
+          providerActivityId: `garmin-later-${i}`,
+          sportType: 'IceSkate',
+          startTime: T0 + (i + 2) * 24 * HOUR,
+          endTime: T0 + (i + 2) * 24 * HOUR + 30 * 60_000,
+          waterBodyId: bodyId,
+          promptState: 'dismissed',
+          detectedAt: Date.now() - 10 * HOUR,
+        });
+      }
+    });
+    // Now the phone's copy of the *old* skate flushes from the offline queue.
+    const phoneId = await me.as.mutation(api.gpsActivities.ingestTrack, ingestArgs());
+    const res = await t.mutation(internal.gpsActivities.sweepUnpromptedActivities, {
+      now: Date.now() + 4 * HOUR,
+    });
+    // The prompted copy is far outside "the fifty most recently inserted", but inside ±10 minutes
+    // of the due row's start — which is the only set that can contain the same skate.
+    expect(res).toMatchObject({ prompted: 0, superseded: 1 });
+    expect((await t.run((ctx) => ctx.db.get(phoneId)))?.promptState).toBe('prompted');
+    expect(await t.run((ctx) => ctx.db.query('notificationQueue').collect())).toHaveLength(0);
+  });
+
+  test('when two copies were both reported from, the loser keeps its report but the aggregate layer draws the skate once (PR #53 review)', async () => {
+    const t = harness();
+    const me = await seedUser(t, 'me');
+    const bodyId = await seedBody(t);
+    const phoneId = await me.as.mutation(api.gpsActivities.ingestTrack, ingestArgs());
+    const watchId = await t.run((ctx) =>
+      ctx.db.insert('gpsActivities', {
+        userId: me.id,
+        provider: 'garmin',
+        providerActivityId: 'garmin-1',
+        sportType: 'IceSkate',
+        startTime: T0 + 3 * 60_000,
+        endTime: T0 + 44 * 60_000,
+        path: trackPath(),
+        waterBodyId: bodyId,
+        promptState: 'pending',
+        detectedAt: Date.now(),
+      }),
+    );
+    // A report from each copy — the one case the link cannot move. Both are `converted` now, so
+    // neither is due; a third, unreported copy of the same session coming due is what brings the
+    // pair into a dedup.
+    const phoneReport = await me.as.mutation(api.reports.create, {
+      waterBodyId: bodyId,
+      skateEndTime: T0 + 45 * 60_000,
+      iceTypes: ['black_ice'],
+      activityId: phoneId,
+    });
+    const watchReport = await me.as.mutation(api.reports.create, {
+      waterBodyId: bodyId,
+      skateEndTime: T0 + 44 * 60_000,
+      iceTypes: ['black_ice'],
+      activityId: watchId,
+    });
+    const stravaId = await t.run((ctx) =>
+      ctx.db.insert('gpsActivities', {
+        userId: me.id,
+        provider: 'strava',
+        providerActivityId: 'strava-1',
+        sportType: 'IceSkate',
+        startTime: T0 + 1 * 60_000,
+        endTime: T0 + 43 * 60_000,
+        waterBodyId: bodyId,
+        promptState: 'pending',
+        detectedAt: Date.now() - 5 * HOUR,
+      }),
+    );
+    const res = await t.mutation(internal.gpsActivities.sweepUnpromptedActivities, {
+      now: Date.now() + 1 * HOUR,
+    });
+    expect(res).toMatchObject({ prompted: 0, superseded: 2 });
+    const watch = await t.run((ctx) => ctx.db.get(watchId));
+    expect(watch?.supersededByActivityId).toBe(phoneId);
+    expect((await t.run((ctx) => ctx.db.get(stravaId)))?.promptState).toBe('dismissed');
+    // The loser is still a reported skate: link intact, `converted`, its report still shows its path.
+    expect(watch?.linkedReportId).toBe(watchReport);
+    expect(watch?.promptState).toBe('converted');
+    expect((await t.run((ctx) => ctx.db.get(phoneId)))?.linkedReportId).toBe(phoneReport);
+    expect(
+      (await me.as.query(api.gpsActivities.getForReport, { reportId: watchReport }))?.activityId,
+    ).toBe(watchId);
+    // But the lake draws the skate once — the superseded copy is skipped, not merely de-prioritised.
+    const { tracks } = await me.as.query(api.gpsActivities.listTracksForBody, {
+      waterBodyId: bodyId,
+    });
+    expect(tracks.map((tr) => tr.activityId)).toEqual([phoneId]);
+  });
+
   test('an inherited answer reaches a winner that is not yet due — it is not lost with the loser', async () => {
     const t = harness();
     const me = await seedUser(t, 'me');
     const bodyId = await seedBody(t);
-    // The watch copy was asked about on an earlier tick. The phone copy of the same skate has just
-    // flushed (not due for hours). An *unrelated* older skate is due, which is what makes the sweep
-    // look at this user now — and dedup the pair while the phone copy is still not due.
+    // Three copies of one skate. The watch copy was asked about on an earlier tick; a Strava copy
+    // of the same session is `pending` and due; the phone copy has just flushed and is not due
+    // for hours. The Strava copy coming due is what brings the trio into one dedup — and the phone
+    // copy wins it while still not due. (A due row reads only its own start-time window, so an
+    // *unrelated* due skate no longer pulls this pair in early; the pair waits for one of its own
+    // copies to come due, which is the tick this test drives.)
     await t.run((ctx) =>
       ctx.db.insert('gpsActivities', {
         userId: me.id,
@@ -871,15 +988,14 @@ describe('gpsActivities.sweepUnpromptedActivities', () => {
         detectedAt: Date.now() - 20 * HOUR,
       }),
     );
-    const otherId = await t.run((ctx) =>
+    const stravaId = await t.run((ctx) =>
       ctx.db.insert('gpsActivities', {
         userId: me.id,
-        provider: 'native',
-        providerActivityId: 'session-yesterday',
+        provider: 'strava',
+        providerActivityId: 'strava-3',
         sportType: 'IceSkate',
-        startTime: T0 - 26 * HOUR,
-        endTime: T0 - 25 * HOUR,
-        path: trackPath(),
+        startTime: T0 + 1 * 60_000,
+        endTime: T0 + 42 * 60_000,
         waterBodyId: bodyId,
         promptState: 'pending',
         detectedAt: Date.now() - 5 * HOUR,
@@ -887,23 +1003,23 @@ describe('gpsActivities.sweepUnpromptedActivities', () => {
     );
     const phoneId = await me.as.mutation(api.gpsActivities.ingestTrack, ingestArgs());
 
-    // Tick 1: only the older skate is due. The pair is deduped now; the phone copy is not asked.
+    // Tick 1: only the Strava copy is due. The trio is deduped now; the phone copy wins, inherits
+    // the watch copy's answer, and is not asked — even though it is not due yet.
     const first = await t.mutation(internal.gpsActivities.sweepUnpromptedActivities, {
       now: Date.now() + 1 * HOUR,
     });
-    expect(first).toMatchObject({ prompted: 1, superseded: 1 });
-    expect((await t.run((ctx) => ctx.db.get(otherId)))?.promptState).toBe('prompted');
+    expect(first).toMatchObject({ prompted: 0, superseded: 2 });
+    expect((await t.run((ctx) => ctx.db.get(stravaId)))?.supersededByActivityId).toBe(phoneId);
     // The winner carries the loser's answer from this tick, not from a later one — by then the
     // loser is superseded and out of the candidate set, so the answer would be gone.
     expect((await t.run((ctx) => ctx.db.get(phoneId)))?.promptState).toBe('prompted');
 
-    // Tick 2: the phone copy is due. Nothing new is asked about.
+    // Tick 2: the phone copy would be due, but it already left the `pending` range. Nothing is asked.
     const second = await t.mutation(internal.gpsActivities.sweepUnpromptedActivities, {
       now: Date.now() + 4 * HOUR,
     });
-    expect(second).toMatchObject({ prompted: 0, superseded: 0 });
-    const queue = await t.run((ctx) => ctx.db.query('notificationQueue').collect());
-    expect(queue.map((q) => q.trigger)).toEqual([{ kind: 'activity', activityId: otherId }]);
+    expect(second).toMatchObject({ scanned: 0, prompted: 0, superseded: 0 });
+    expect(await t.run((ctx) => ctx.db.query('notificationQueue').collect())).toHaveLength(0);
   });
 
   test('a superseded row put back to pending leaves the range on the next tick rather than wedging it', async () => {

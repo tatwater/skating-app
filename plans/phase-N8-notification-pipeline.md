@@ -694,8 +694,9 @@ p.timezone ?? DIGEST_TIMEZONE)`). Logged as **D173**.
    an intact pair — otherwise the aggregate layer drew the skate twice); a loser already `prompted`
    or `dismissed` hands that answer to the winner so a phone copy flushing a day after the watch copy
    never asks twice; minors and `canPostReports === false` are flipped to `prompted` but never nudged
-   toward a form that refuses them; the sweep reads 50 due rows × 50 history rows per tick (worst
-   case ~2.7k reads) and unions the due rows into the candidate set so none can be stranded; the
+   toward a form that refuses them; the sweep reads 50 due rows × a 50-row window each per tick (worst
+   case ~2.7k reads; see 7 for the window) and unions the due rows into the candidate set so none can be
+   stranded; the
    purge self-continues while truncated; `activity_detected` shows the skate's time as its detail.
 6. **"Not now" on the recorder's stop card is a deferral, not a dismissal — deliberately.** The card
    clears its own state and leaves the row `pending`, so the sweep nudges once, three hours later.
@@ -703,6 +704,15 @@ p.timezone ?? DIGEST_TIMEZONE)`). Logged as **D173**.
    `dismissed` that means never, and the sweep respects it. Recorded because the review read the stop
    card as a bug; changing it would mean carrying a decline through the offline track queue to
    `ingestTrack` for a behaviour nobody wants.
+7. **Greptile pass (latent, multi-provider only):** the dedup candidates are now read as **one
+   start-time window per due row** (new `by_user_start_time` index, ±`ACTIVITY_DEDUP_START_WINDOW_MS`)
+   rather than the user's fifty most recently *inserted* rows — the latter dropped an already-prompted
+   copy behind fifty later syncs and asked about the skate twice. A consequence worth knowing: an
+   *unrelated* due skate no longer pulls a not-yet-due pair into an early dedup; the pair waits for
+   one of its own copies to come due, which is the tick that can see it. And `listTracksForBody`
+   skips superseded rows outright, so the one case the link cannot move (both copies reported from)
+   keeps the loser's report intact and still draws the skate once. `listMine`'s filter-before-take
+   was already in from pass 5.
 
 ## What this phase does not cover
 

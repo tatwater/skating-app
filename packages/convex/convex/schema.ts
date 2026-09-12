@@ -391,6 +391,12 @@ export default defineSchema({
     // fields are required, so no sparse-index trap — and the sweep flips the row to `prompted`, so a
     // row leaves this range the moment it's been asked about.
     .index('by_prompt_state_detected', ['promptState', 'detectedAt'])
+    // The sweep's dedup candidates (N8/B4a, PR #53 review): a same-skate copy starts within
+    // `ACTIVITY_DEDUP_START_WINDOW_MS` of the due row, so the read is a start-time window per due
+    // row. `by_user` orders by *insertion*, and "the 50 most recently inserted" is the wrong set —
+    // an already-prompted copy behind fifty later syncs fell out of it and the skate was asked
+    // about twice.
+    .index('by_user_start_time', ['userId', 'startTime'])
     /**
      * The aggregate-tracks layer, season-scoped (N5a/D63).
      *

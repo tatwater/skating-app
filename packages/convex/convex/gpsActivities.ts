@@ -26,6 +26,7 @@
  */
 
 import {
+  ACTIVITY_DEDUP_START_WINDOW_MS,
   clipPathEnds,
   type DedupActivity,
   dedupActivities,
@@ -264,14 +265,18 @@ export const setPromptState = mutation({
 export const ACTIVITY_PROMPT_DELAY_MS = 3 * 60 * 60 * 1000;
 /**
  * Due activities examined per sweep tick; the rest wait for the next hour. Small on purpose: every
- * distinct user in the batch costs a `CANDIDATE_HISTORY_CAP` read of their history, so the tick's
- * worst case is `PROMPT_SWEEP_CAP × CANDIDATE_HISTORY_CAP` documents, which has to stay inside one
- * transaction's read limit — a tick that blows it throws, delivers nothing, and re-reads the same
- * rows next hour for ever.
+ * due row costs a `CANDIDATE_WINDOW_CAP` read of its start-time window, so the tick's worst case is
+ * `PROMPT_SWEEP_CAP × CANDIDATE_WINDOW_CAP` documents, which has to stay inside one transaction's
+ * read limit — a tick that blows it throws, delivers nothing, and re-reads the same rows next hour
+ * for ever.
  */
 const PROMPT_SWEEP_CAP = 50;
-/** A user's most recent activities the dedup sees alongside their due rows. */
-const CANDIDATE_HISTORY_CAP = 50;
+/**
+ * Rows read per due row's start-time window. A window is ±`ACTIVITY_DEDUP_START_WINDOW_MS` — twenty
+ * minutes of one person's skating — so this is a safety bound, not a working size: a window that
+ * fills it holds fifty copies of the same skate.
+ */
+const CANDIDATE_WINDOW_CAP = 50;
 
 /**
  * The `activity_detected` producer (N8/B4): find skates still `pending` after the delay, dedup each
@@ -356,10 +361,12 @@ export const sweepUnpromptedActivities = internalMutation({
           inherited.set(winnerId, 'prompted');
         }
         // The link moves rather than breaks: a report must never lose its path to a dedup. Moved,
-        // not copied — a loser that kept `linkedReportId` would still draw on the aggregate layer
-        // (`listTracksForBody` reads that field as publish-consent) and survive account deletion as a
-        // "published" track, so the same skate would render twice. Only an intact pair moves: the
-        // report must point back at this loser, and the winner must be free. The winner is re-read
+        // not copied — a loser that kept `linkedReportId` would survive account deletion as a
+        // "published" track, and the winner's report would render the loser's path. Only an intact
+        // pair moves: the report must point back at this loser, and the winner must be free. When it
+        // can't move — both copies were reported from — the loser keeps its link and stays
+        // `converted` (below); `listTracksForBody` skips superseded rows, so the skate still draws
+        // once on the aggregate layer. The winner is re-read
         // rather than taken from the pre-loop snapshot, because two losers of one winner would
         // otherwise both see it unlinked and the second would overwrite the first's link.
         let moved = false;
@@ -435,11 +442,18 @@ export const sweepUnpromptedActivities = internalMutation({
 });
 
 /**
- * Everything of this user's that the dedup should see alongside the due rows: their recent
- * activities from the same window, `pending` or not — a converted watch copy is still the better
- * copy of a skate the phone recorded. Bounded by the user's own recent history, and the due rows are
- * always in the set regardless of that bound: a due row the history read didn't reach would never be
- * a winner or a loser, so it would never leave the `pending` range, and the sweep would re-read it
+ * Everything of this user's that the dedup should see alongside the due rows: every activity of
+ * theirs that *could* be the same skate as a due row, `pending` or not — a converted watch copy is
+ * still the better copy of a skate the phone recorded, and a copy that was prompted a week ago is
+ * the answer the winner inherits.
+ *
+ * Read as one start-time window per due row (`by_user_start_time`, ±`ACTIVITY_DEDUP_START_WINDOW_MS`
+ * — the dedup's own rule for "could be the same skate"), so the set is exact whatever else the
+ * person has recorded since. It used to be their fifty most recently *inserted* rows, which is a
+ * different set: an already-prompted watch copy behind fifty later syncs fell out of it, the sweep
+ * couldn't inherit its answer, and the skate was asked about twice (PR #53 review). The due rows are
+ * always in the set regardless of the window cap: a due row the read didn't reach would never be a
+ * winner or a loser, so it would never leave the `pending` range, and the sweep would re-read it
  * every hour for ever. (The superseded filter below can't strand a due row for the same reason: the
  * sweep settles superseded due rows before it gets here.)
  */
@@ -448,17 +462,21 @@ async function sameSkateCandidates(
   userId: Id<'profiles'>,
   dueRows: Doc<'gpsActivities'>[],
 ): Promise<Doc<'gpsActivities'>[]> {
-  const earliest = Math.min(...dueRows.map((r) => r.startTime)) - ACTIVITY_PROMPT_DELAY_MS;
-  const recent = await ctx.db
-    .query('gpsActivities')
-    .withIndex('by_user', (q) => q.eq('userId', userId))
-    .order('desc')
-    .take(CANDIDATE_HISTORY_CAP);
   const byId = new Map<Id<'gpsActivities'>, Doc<'gpsActivities'>>();
-  for (const row of [...dueRows, ...recent]) byId.set(row._id, row);
-  return [...byId.values()].filter(
-    (r) => r.startTime >= earliest && r.supersededByActivityId === undefined,
-  );
+  for (const row of dueRows) byId.set(row._id, row);
+  for (const due of dueRows) {
+    const nearby = await ctx.db
+      .query('gpsActivities')
+      .withIndex('by_user_start_time', (q) =>
+        q
+          .eq('userId', userId)
+          .gte('startTime', due.startTime - ACTIVITY_DEDUP_START_WINDOW_MS)
+          .lte('startTime', due.startTime + ACTIVITY_DEDUP_START_WINDOW_MS),
+      )
+      .take(CANDIDATE_WINDOW_CAP);
+    for (const row of nearby) byId.set(row._id, row);
+  }
+  return [...byId.values()].filter((r) => r.supersededByActivityId === undefined);
 }
 
 function toDedupActivity(row: Doc<'gpsActivities'>): DedupActivity {
@@ -675,6 +693,13 @@ export const listTracksForBody = query({
           .lt('startTime', seasonEndMs(season)),
       )
       .order('desc')
+      // A superseded copy never draws, whatever it links to. The dedup (`sweepUnpromptedActivities`)
+      // moves a loser's link to the winner when it can; when it can't — the winner has a report of
+      // its own, so both copies of one skate were reported from — the loser keeps its link and stays
+      // `converted`, and publish-is-consent alone would draw the same skate twice. Its report still
+      // shows its own path (`getForReport`); this layer draws each skate once. Filtered before the
+      // take, as `listMine` does, so a superseded row doesn't spend a slot.
+      .filter((q) => q.eq(q.field('supersededByActivityId'), undefined))
       .take(limit + 1);
     const truncated = Math.max(0, activities.length - limit);
 
