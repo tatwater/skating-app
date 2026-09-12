@@ -26,6 +26,7 @@ export * from './driveTime';
 export * from './elevation';
 export * from './feed';
 export * from './feedFilters';
+export * from './forecastPlan';
 export * from './freezeUpCaption';
 export * from './geometry';
 export * from './hazardAdvisory';
