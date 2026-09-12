@@ -543,7 +543,7 @@ describe('weather.getForecastForBody (N6c B5b)', () => {
           activityDetected: true,
           bountyRequest: true,
           hazardConfirmation: true,
-          bountyFulfilled: true,
+          bountyAnswered: true,
           reportRated: true,
           reportCommented: true,
           contentFlagResolved: true,

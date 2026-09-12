@@ -207,7 +207,10 @@ describe('hazard_confirmation to the author (N8/B2)', () => {
     await vote(second, 'fully_healed'); // → archived, by second
     const queued = await t.run((ctx) => ctx.db.query('notificationQueue').collect());
     expect(queued).toHaveLength(1);
-    expect(queued[0]?.trigger).toMatchObject({ phase: 'archived', actorIds: [first.id, second.id] });
+    expect(queued[0]?.trigger).toMatchObject({
+      phase: 'archived',
+      actorIds: [first.id, second.id],
+    });
 
     await author.as.mutation(api.blocks.block, { targetUserId: second.id });
     const notes = await flushAllDue(t);

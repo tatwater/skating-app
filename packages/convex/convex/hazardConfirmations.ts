@@ -319,7 +319,12 @@ async function recomputeLifecycle(
       actorId: voterId,
       type: 'hazard_confirmation',
       targetId: hazard._id,
-      trigger: { kind: 'hazard_lifecycle', hazardId: hazard._id, phase: after, actorIds: [voterId] },
+      trigger: {
+        kind: 'hazard_lifecycle',
+        hazardId: hazard._id,
+        phase: after,
+        actorIds: [voterId],
+      },
     });
   }
   return records;
