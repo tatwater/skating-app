@@ -1,6 +1,6 @@
 import { api } from '@skating/convex/api';
 import { describeNotification, formatRelativeTime, type NotificationView } from '@skating/core';
-import { useMutation, usePaginatedQuery } from 'convex/react';
+import { useConvexAuth, useMutation, usePaginatedQuery } from 'convex/react';
 import { useRouter } from 'expo-router';
 import { useEffect, useRef } from 'react';
 import { FlatList } from 'react-native';
@@ -22,19 +22,22 @@ export default function NotificationsScreen() {
     { initialNumItems: PAGE_SIZE },
   );
   const markRead = useMutation(api.notifications.markRead);
+  const { isAuthenticated } = useConvexAuth();
   const now = Date.now();
 
-  // Mark what the screen opened on as read — once, when the first page lands with rows (same guard
-  // as the web, and the same reasons: latch regardless of whether anything shown was unread, rows
-  // present ⇒ authenticated, and no `before` so the server also stamps the rows the list omits for
-  // blocked actors). A notification arriving while the modal is up stays unread until the next open.
-  const hasRows = results.length > 0;
+  // Mark what the screen opened on as read — once, when the first page has landed and the Convex
+  // client is authenticated (same guard as the web, and the same reasons: latch regardless of
+  // whether anything shown was unread, and no `before` so the server also stamps the rows the list
+  // omits for blocked actors). Gated on auth rather than on rows being present, because an inbox
+  // whose every row is a blocked actor's lists nothing and still counts on the bell — a rows guard
+  // would never clear it. A notification arriving while the modal is up stays unread until the
+  // next open.
   const marked = useRef(false);
   useEffect(() => {
-    if (marked.current || status === 'LoadingFirstPage' || !hasRows) return;
+    if (marked.current || !isAuthenticated || status === 'LoadingFirstPage') return;
     marked.current = true;
     void markRead({}).catch(() => {});
-  }, [markRead, hasRows, status]);
+  }, [markRead, isAuthenticated, status]);
 
   return (
     <FlatList<NotificationView>

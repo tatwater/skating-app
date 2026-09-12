@@ -557,4 +557,77 @@ describe('notifications — the inbox read path', () => {
     // The prior report is untouched; only the notification about the vanished corroboration is gone.
     expect((await t.run((ctx) => ctx.db.get(priorId)))?.moderationStatus).toBe('visible');
   });
+
+  test('a fresh action merging into a due-but-unflushed row gets its own settle window (PR #52 review)', async () => {
+    const t = convexTestWithGeo();
+    const author = await seedProfile(t, 'author');
+    const first = await seedProfile(t, 'first');
+    const second = await seedProfile(t, 'second');
+    const bodyId = await seedBody(t);
+    const reportId = await createReport(t, author.as, {
+      waterBodyId: bodyId,
+      skateEndTime: SKATE_TIME,
+    });
+    await first.as.mutation(api.ratings.rate, {
+      targetType: 'report',
+      targetId: reportId,
+      verdict: 'helpful',
+    });
+    const queued = () =>
+      t.run((ctx) =>
+        ctx.db
+          .query('notificationQueue')
+          .filter((q) => q.eq(q.field('kind'), 'thumb'))
+          .collect(),
+      );
+    const [row] = await queued();
+    expect(row).toBeDefined();
+    if (!row) throw new Error('unreachable');
+    const settling = row.flushAfter;
+    expect(settling).toBeGreaterThan(Date.now());
+
+    // While the row is still settling, a second thumb keeps the earlier deadline (a burst settles
+    // from its first event).
+    await second.as.mutation(api.ratings.rate, {
+      targetType: 'report',
+      targetId: reportId,
+      verdict: 'helpful',
+    });
+    expect((await queued())[0]?.flushAfter).toBe(settling);
+
+    // The window passes without a flush tick. A retraction and re-thumb now must not ride the
+    // expired deadline: the row takes a fresh window, so the next tick leaves it alone.
+    await t.run((ctx) => ctx.db.patch(row._id, { flushAfter: Date.now() - 1 }));
+    await second.as.mutation(api.ratings.rate, {
+      targetType: 'report',
+      targetId: reportId,
+      verdict: 'unhelpful',
+    });
+    await second.as.mutation(api.ratings.rate, {
+      targetType: 'report',
+      targetId: reportId,
+      verdict: 'helpful',
+    });
+    const rows = await queued();
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.flushAfter).toBeGreaterThan(Date.now());
+    await t.mutation(internal.notifications.flushNotificationQueue, {});
+    expect(await t.run((ctx) => ctx.db.query('notifications').collect())).toHaveLength(0);
+  });
+
+  test('unreadCount never exceeds its documented cap', async () => {
+    const t = convexTestWithGeo();
+    const author = await seedProfile(t, 'author');
+    await t.run(async (ctx) => {
+      for (let i = 0; i < 120; i++) {
+        await ctx.db.insert('notifications', {
+          userId: author.id,
+          type: 'report_rated',
+          payload: {},
+          createdAt: i,
+        });
+      }
+    });
+    expect(await author.as.query(api.notifications.unreadCount, {})).toBe(99);
+  });
 });

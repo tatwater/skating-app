@@ -189,6 +189,9 @@ export const notificationTrigger = v.union(
       v.literal('disputed'),
       v.literal('archived'),
     ),
+    // The voters whose confirmations moved the phase inside the window — kept so the flush can
+    // apply the recipient's block set the way it does for thumbs, not only the enqueue gate.
+    actorIds: v.array(v.id('profiles')),
   }),
   v.object({
     kind: v.literal('flag_resolved'),
