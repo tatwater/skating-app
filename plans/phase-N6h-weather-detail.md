@@ -9,7 +9,10 @@
 > **PR 4 = Workstream D, built 2026-09-11 on `phase-n6h-weather-detail-4`** (two commits, deployed
 > to dev, verified in the running web app against Champlain; mobile by type-check + suite only —
 > founder checks the sheet) — see *§What PR 4 shipped*. Founder call 12 revised call 11's D+E bundle.
-> **Two PRs remain after this one: E → F.**
+> ~~**Two PRs remain after this one: E → F.**~~
+> **PR 5 = Workstream E, built 2026-09-11/12 on `phase-n6h-weather-detail-5`** (seven commits,
+> deployed to dev, the corpus-wide prime run, verified headlessly in the running web app — see
+> *§What PR 5 shipped*; mobile by type-check + suite, founder checks the sheet). **One PR remains: F.**
 > Scoped 2026-09-02. Founder ask, same day. Grew out of a costing
 > question — *"what is most expensive about this plan?"* — and the answer moved the design: the
 > expensive half is not the data, it is **the cache key**, which today shares nothing.
@@ -570,6 +573,107 @@ and Greptile's first pass added two P1s. All four landed the same evening:
 **Sequencing note for E.** The planner reads Tier A on open and nothing corpus-wide; E owes it
 nothing. The condition vocabulary (`ForecastCondition`, `CONDITION_LABEL`, `conditionGlyph`) is
 reusable on a body-result card if E wants a symbol there — the same code, the same day/night rule.
+
+---
+
+## What PR 5 shipped — Workstream E, 2026-09-12
+
+**Built on `phase-n6h-weather-detail-5`, seven commits** (docs · core · server · web · mobile ·
+review fixes). Suites at build: core 2,629 · convex 1,470 · web 525 · mobile 108; lint clean.
+Deployed to dev; the registry walk wrote the join (**24,953 body rows + 128 bay rows**); call 15's
+prime ran (`refreshTierDays {tier: filter, pastDays: 8}` → **3,043 digests**, **3,661 weighted
+calls** against the plan's ~3,650). Verified in the running web app **headlessly** — a Clerk
+sign-in token gets a Playwright session past the email-code sign-in, which the earlier PRs believed
+had no headless path — by making one cell cold for the check and restoring its three rows exactly.
+
+### What it is
+
+- **`core/coldChain.ts`** — D164's predicate: a run of nights below a pinned threshold (32 / 20 / 10
+  / 0 °F), one bridged night, unobserved nights consuming the same tolerance, the first night as the
+  anchor, a bit mask of cold nights so *"the day it reached N"* is a lookup. The drawer's headline
+  reads it too (*"22 nights below 20°F, 1.2 in of snow since the first"*), served over thirty days.
+- **`bodyWeatherCells`** — the join, written by the registry walk it already rides; **paged** prune.
+- **`weatherCellDigests`** — one row per filter cell, rebuilt after every ingest and gap repair over
+  `DIGEST_WINDOW_DAYS` (30), as of the cell's newest complete day; four indexed chain-length fields.
+- **`weatherDiscovery.listBodyResults`** — index walk → in-memory predicate → band on cell centres →
+  bodies newest-event-first to a cap. `matchedCells` is the map's read; `status` the knobs' gate.
+- **`FeedFilters.weather` + `onlyReports`**, persisted like the rest; a shared store per client that
+  the map now reads (D166). `listFeed` narrows reports by their lake's (or bay's) digest.
+- **"Latest"**, heterogeneous: `interleaveLatest` slots `BodyResultCard`s among reports by event
+  time, holding back a lake older than the oldest loaded report until the pages catch up.
+- **The map dims non-matches** through the same properties-bag expression N6f built, with a chip
+  naming the filter and clearing it. **Sorted bay lists** on the spread (call 9).
+
+### Seven things the build decided that the plan did not
+
+1. **The event day is the *newest* matched bay's, and the card names that bay.** A giant matched
+   through three bays on three days could have taken the earliest crossing as "the lake reached 3
+   nights", but the walk is newest-first to a cap and a later, older cell could not reorder a card
+   already emitted. So the card's reading is the bay it prints (*"at Malletts Bay"*), the others are
+   listed, and the sentence is true of somewhere real — the spread's grammar, one surface over.
+2. **Unnamed water is left out of the list, as `viewportLakes` leaves it out of the sidebar.** The
+   first render showed three cards reading only *"Lake or pond · NH"*. On the map an unnamed pond is
+   a shape in a place and still draws undimmed; in a list it is not a destination.
+3. **Open-ended is "the walk ran out with the last night cold", not "inside a bridgeable gap".** The
+   night beyond the window is unknown either way, and a "+" on every chain near an edge would mean
+   nothing. `mccc` at a window edge is *3 nights*; `cccm` is *3+*.
+4. **The panel prints a served chain.** Seven days on screen, thirty in the chain — otherwise every
+   deep-winter drawer reads *"7+ nights"* until March. Computed in the action from rows the first
+   touch already pulled; the panel falls back to its own days when none is served.
+5. **The map dims by cell, on the client.** The filter tier does not band by elevation, so a body's
+   key is purely positional and `weatherCellFor('filter', anchor)` runs from the `listInViewport` row;
+   the server sends matched keys plus the lakes matched through a bay, and the radius is tested on
+   the client from the viewer's own cached bands. One small read, independent of how many lakes are
+   on screen. `bodyWeatherAnchor` moved to core so the server's `defaultSampleAnchor` and the map
+   cannot pick two points.
+6. **No cron change.** The plan listed one; the digest rides `refreshTierDays`, the gap sweep and
+   `primeSubAreaWeather` inline, and `rebuildFilterDigests` is the operator rebuild for a reduction
+   change. A digest is rebuilt even when the cell's fetch failed — its newest complete day still
+   moved, and a stale match is worse than an honest gap.
+7. **`literals()` takes numbers.** The validator helper was string-only; the thresholds are numbers
+   and a stringly `"20"` in the prefs blob would have been a second vocabulary.
+
+### The review pass — four things it changed
+
+The `/code-review` skill hit a session limit before running, so the pass was by hand:
+
+- **`pruneVacatedMemberships` collected ~25k rows in one mutation** — the read-cap shape drawn three
+  times before. The real deployment tolerated it once; it is paged through the action now.
+- **`mapFilters()` returned a fresh object per render**, so the dim memo and the `setFeatures` effect
+  re-ran every render on both maps — the setState-in-effect loop React warns about. Keyed on content,
+  with a constant empty set; the headless run confirmed no update-depth warning.
+- **The chip sentence was duplicated verbatim on both clients**; `describeWeatherFilter` in core.
+- **Equal event days sorted in index order**; tie-break by cell key so two reads list one order.
+
+### Two things a render found that no test did
+
+- **The dim is subtle.** Measured on the Lake Morey frame: a matched neighbour fills at
+  `(197,213,224)`, a non-match in the next cell at `(216,233,244)` — half strength, as built, and
+  legible up close but not at a regional zoom. The founder's call was dim-only, to re-assess after
+  testing (D166); the number to change is `NO_PUBLIC_ACCESS_OPACITY_SCALE`, or a second scale for it.
+- **"As of" can differ by a day between the legend and a card.** `status` reads one arbitrary digest;
+  a cell rebuilt after its local midnight is a day ahead of the 3,042 that were not. In season the
+  sweep rebuilds them all each morning, so the split is a rebuild-timing artefact; out of season the
+  digests simply hold their date.
+
+### Holes closed by this PR
+
+| hole | status |
+|---|---|
+| D159's *"no snow since has no anchor"* | ✅ The chain's first night (D164). |
+| 2 · multi-cell giants, third question (*"does D159 match a body if any cell matches?"*) | ✅ Yes, through the join; the card names the bay. |
+| Workstream E's `weatherCellKeyB` / holes row 7 | ✅ Superseded by the join; both corrected. |
+| 9 · offline | ⚠ Unchanged — the forecast payload still waits for the on-ice/offline surface. |
+
+**Deferred, with reasons:** a favorited lake outside the viewer's outer band box under a radius
+filter is unreachable (the cell pre-test drops it before the exemption can apply — the same trade
+`listFeed` makes when it paginates by time); `status.asOfDayMs` is one digest's, a caption not a
+claim; and out of season the digests hold their last date rather than being cleared, because
+"nothing known" and "no chain" are different answers and only the first one changes at the gate.
+
+**Sequencing note for F.** Nothing in E is in F's way. F's cutter is gated on `closesOn`/`opensOn`
+exactly like the sweep (`isSweepSeasonOpen` is the query to reuse), and the AGPL §13 note is owed to
+`08-legal-feasibility-checklist.md` *before* the first Fly deploy, not alongside it.
 
 ---
 
@@ -1432,7 +1536,8 @@ D3 and D150, and it is not negotiable in a safety app.
 in principle, per founder call 14 in shape: day cards as the selector, an hourly card row as the
 view (all seven days, opens at now), run-up always a drag away, drive time as an "≈ arrival" band.
 
-**E — Weather-first discovery (D159).** Reads Tier B. The founder's target query: *"bodies within two
+**E — Weather-first discovery (D159).** ✅ **Shipped as PR 5 (2026-09-12)** — see *§What PR 5
+shipped*. Reads Tier B. The founder's target query: *"bodies within two
 hours' drive that got at least three nights below 20°F and no snow since."* This is the reason Tier B
 exists and the reason a cron exists at all — on-demand fetching cannot answer a question about lakes
 nobody opened. Ships as: the per-cell predicate digest, ~~the `weatherCellKeyB` index on
