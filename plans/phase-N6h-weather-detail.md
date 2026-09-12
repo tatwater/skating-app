@@ -11,7 +11,7 @@
 > founder checks the sheet) — see *§What PR 4 shipped*. Founder call 12 revised call 11's D+E bundle.
 > ~~**Two PRs remain after this one: E → F.**~~
 > **PR 5 = Workstream E, built 2026-09-11/12 on `phase-n6h-weather-detail-5`** (seven commits,
-> deployed to dev, the corpus-wide prime run, verified headlessly in the running web app — see
+> deployed to dev, the corpus-wide prime run, verified headlessly in the running web app, **= PR #54** — see
 > *§What PR 5 shipped*; mobile by type-check + suite, founder checks the sheet). **One PR remains: F.**
 > Scoped 2026-09-02. Founder ask, same day. Grew out of a costing
 > question — *"what is most expensive about this plan?"* — and the answer moved the design: the
