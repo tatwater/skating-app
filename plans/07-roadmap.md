@@ -1515,11 +1515,13 @@ fields*.
 
 **N6h — The weather panel: a season of past days, a planning window, and radar that admits what it
 can't see.** 🚧 **Scoped 2026-09-02/03; PR 1 (#48: re-key · durable archive · past panel + hourly
-timeline · dark thickness instrument · D162/D163) merged and on dev 2026-09-10; PR 3 (the three-tab
-drawer IA + sub-area weather spread) in progress 2026-09-11; D+E and F remain.** Founder ask, grown out
+timeline · dark thickness instrument · D162/D163) merged and on dev 2026-09-10; PR 3 (#50, the
+three-tab drawer IA + sub-area weather spread) and PR 4 (#51, the seven-day planner) merged
+2026-09-11; PR 5 (Workstream E — the cold chain, the per-cell digest, the "Latest" feed and the map
+dim, D164–D166) built 2026-09-12 on dev; F (radar) remains.** Founder ask, grown out
 of a costing question — *"what is most expensive about this plan?"* — whose answer moved the design: the
 expensive half is not the data, it is **the cache key**, which today shares nothing. See
-[`phase-N6h-weather-detail.md`](./phase-N6h-weather-detail.md); decisions **D152**–**D163**. Depends on
+[`phase-N6h-weather-detail.md`](./phase-N6h-weather-detail.md); decisions **D152**–**D166**. Depends on
 nothing; every seam it needs is already built.
 
 *Today the weather block is two lines: an NWS alert when one is active, and a 12-hour temperature

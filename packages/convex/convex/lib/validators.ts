@@ -10,7 +10,9 @@
 import { v } from 'convex/values';
 
 /** Build a `v.union(v.literal(...))` from a readonly tuple, keeping literal types. */
-export function literals<const T extends readonly [string, string, ...string[]]>(values: T) {
+export function literals<
+  const T extends readonly [string | number, string | number, ...(string | number)[]],
+>(values: T) {
   return v.union(
     ...(values.map((value) => v.literal(value)) as {
       [K in keyof T]: ReturnType<typeof v.literal<T[K]>>;

@@ -5190,3 +5190,118 @@ that ruins it"* is a real signal whose home is the **panel**, as an observation,
 a set-once `recordSeasonWinterFrom`; the failure would have been ~4,300 weighted calls a day all summer.
 
 **Related:** D63, D151, D161, D162, [`phase-N5a`](./phase-N5a-seasons.md), [`phase-N6e`](./phase-N6e-satellite-imagery.md), [`phase-N6h`](./phase-N6h-weather-detail.md).
+
+## D164 — The cold chain is the predicate, and it is its own anchor (N6h)
+
+**2026-09-11, founder definition (call 16) and the six calls that pinned it (calls 17–19).** *"'No
+snow since' is since the last <20°F; the nights-below are intended to be a chain of nights in a row
+(seeing temps below 20°F within 48 h of each other counts as consecutive). This stat is relevant when
+ice is first freezing for the season (when the ice is best), because nights-below-20 is predictive of
+ice formation, and no-snow-since is indicative of that fresh ice being uncovered."*
+
+**What a chain is.** A run of nights whose `nightMinTempC` is below a threshold, where **one** milder
+night between two cold ones does not break the run — that is the 48-hour rule, and it is a founder
+rule rather than a physics constant, so it is one named number in core (`COLD_CHAIN_BRIDGE_NIGHTS = 1`).
+A **missing** night (`nightMinTempC` unobserved) neither counts nor breaks: it consumes the same
+single tolerance. Two consecutive non-cold nights of either kind end the chain.
+
+**Why this closes D159's anchor gap without a report.** Every since-style predicate before this
+borrowed its start from a user-visible entity (`resolveStripAnchor`: a report's `skateEndTime`, a
+hazard's `lastConfirmedAt`). A lake nobody has written about had no anchor, so *"no snow since"* was a
+claim with an invisible start date. The chain supplies one: **the first night of the current cold
+chain.** The copy names it — *"4 nights below 20°F, no snow since the first"* — so the sentence
+carries its own anchor.
+
+**One definition, both surfaces.** `nightsBelowThresholdC` counted cold nights in a window;
+PR 1's drawer headline printed that count. Under this decision the drawer prints the chain — same
+`coldChain()` — because *"4 nights below 20°F"* meaning "four in the last seven" on the panel and
+"four in a row" on the card is exactly the two-definitions bug hole 3 was written to prevent, arrived
+at from the other side.
+
+**Thresholds are pinned, not sliding: 32 / 20 / 10 / 0 °F.** The digest carries one chain per
+threshold and the filter's knob is *"at least N nights below T"*. A slider would mean a digest per
+degree.
+
+**"No snow since" is a floor, not a zero.** Under 0.5 cm total since the chain's first night
+(`PANEL_SNOW_THRESHOLD_CM`, the dusting the wind removes — the panel's own number); when the total is
+not zero the card prints it rather than rounding it away.
+
+**⚠ What it is not.** Not an ice claim. *"4 nights below 20°F, no snow since the first"* is two
+weather facts and a date; D3 and D150 bind exactly as they did on the panel, and the *predictive of
+ice formation* clause in the founder's definition is the reason the filter exists, not a sentence the
+app prints.
+
+**Related:** D3, D150, D159, D165, [`phase-N6h`](./phase-N6h-weather-detail.md) (founder calls 16–19).
+
+## D165 — Discovery reads an indexed digest, resolves bodies newest-event-first, and "Latest" interleaves them (N6h)
+
+**2026-09-11, founder calls 20, 23, 24.** The build half of D159, decided once its arithmetic was
+done against a real January.
+
+**⚠ "Cost proportional to the answer" was false in the season it matters.** D159 argued that
+filtering cells then bodies keeps the read proportional to the match set. In a real cold snap the
+match set is *most of the corpus*: every Vermont cell clears *"3 nights below 20°F"*, ~1,500 cells ×
+~8 bodies per cell is ~12,000 bodies, and that is the read-cap shape this repo has drawn three times.
+So:
+
+1. **The digest carries the chain length per threshold as four indexed scalars**
+   (`nightsBelow32F` … `nightsBelow0F`). The query walks *one* index from the asked-for length
+   upward and never reads a digest that cannot match.
+2. **The drive-time band and the viewport are applied to cell centres before any body is read.**
+   The digest stores the cell's snapped centre; a cell is kept if its centre falls inside the band's
+   bounding box widened by a cell half-diagonal, and then bodies are tested exactly. Per-user, but
+   over ≤ 3,043 small documents rather than the corpus.
+3. **Bodies resolve newest-event-first, to a cap.** Cells are sorted by their event day and the
+   `bodyWeatherCells` join is walked in that order until the result limit is met. The read is then
+   proportional to the *page*, which is the only honest form of "proportional to the answer".
+
+**The event time is the day the chain reached the requested length.** Stored per threshold as a bit
+mask of cold nights relative to the chain's start (one number, ≤ 30 bits), so the Nth cold night is a
+lookup for any N. That is what lets *"Latest"* be an ordering rather than a section: a body that
+crossed three nights this morning sits above a report from yesterday, and a body that crossed it a
+fortnight ago sits under both. The feed's recency headers (*Today / Yesterday / Earlier this week*)
+apply to body events unchanged.
+
+**Body cards appear only while a weather filter is active.** With no weather filter the feed is
+today's, renamed *Latest*. *"Only show reports"* under a weather filter narrows reports to matching
+bodies rather than emptying the feed. The interleave runs on the client over the paginated report
+list and a bounded body list, so a body event older than the oldest loaded report waits for the next
+page — never sorting above reports it is older than.
+
+**One card per body, bays named.** A giant matched through three bays gets one card that names them;
+tapping it focuses the first (`focusSubAreaId`, the route-level concept H built). A giant with no bays
+was checked at one point and the card says so.
+
+**Complete days only, dated.** A digest is computed over finished days in the cell's own zone, and
+every card prints *"as of <date>"*. Out of season the knobs render disabled with *"no weather data
+yet this season"* — Tier B is empty until D163's gate opens, and a filter that cannot match must say
+why rather than return nothing.
+
+**Related:** D159, D161, D163, D164, D166, N1's two-tier read path, [`phase-N6h`](./phase-N6h-weather-detail.md).
+
+## D166 — One filter store for map and feed; the map dims non-matches and highlights nothing (N6h)
+
+**2026-09-11, founder calls 21 and 26.** D159 said *"both surfaces, one filter state"*; this is what
+that means on screen.
+
+**The store is the existing one, widened.** `FeedFilters` gains `weather` and `onlyReports`, persisted
+exactly as the Phase 4 row is — local working copy plus `profiles.feedFilterPrefs` — and the map reads
+the same store. The Phase 4 hook that lived inside each feed page moves to a shared store per client
+so the map is not a second subscriber to a second copy.
+
+**The map adopts weather + drive-time radius only.** Quality floors, thickness, ice types and recency
+are attributes of a *report*; applied to a body they would mean nothing, and the include-unknown rule
+would pass every body anyway. So the map's narrow is the two gates that describe a place.
+
+**Non-matches dim; matches are not painted.** Founder: *"I don't think we should confuse things by
+using the favorites colors just for match results. Dimming the non-matches should hopefully be good
+enough."* The dim rides the feature properties bag through the same `withAccessDim` expression N6f
+built — one mechanism for one visual effect on both platforms, where feature-state would have forced
+mobile into a parallel layer. A visible chip on the map names the active filter and clears it, so a
+dimmed map can never be mistaken for a broken one.
+
+**⚠ Re-assess after a season.** Whether dim-only is enough contrast on a busy regional view is a
+question for real use; the founder said so. If it is not, the answer is a *distinct* match treatment,
+not the favorites gold.
+
+**Related:** D159, D165, N6f (the properties-bag dim), Phase 4 decision #6 (the filter store), [`phase-N6h`](./phase-N6h-weather-detail.md).

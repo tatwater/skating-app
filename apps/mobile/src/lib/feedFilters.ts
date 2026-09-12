@@ -42,5 +42,6 @@ export function activeFilterCount(filters: FeedFilters): number {
   if (filters.iceTypes && filters.iceTypes.length > 0) count++;
   if (filters.surfaceTags && filters.surfaceTags.length > 0) count++;
   if (filters.recencyHours !== undefined) count++;
+  if (filters.weather !== undefined) count++;
   return count;
 }

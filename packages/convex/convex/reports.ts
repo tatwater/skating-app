@@ -15,6 +15,7 @@ import {
   CORROBORATION_MAX_PER_REPORT,
   CORROBORATION_WINDOW_MS,
   type DriveTimeBands,
+  digestIsFresh,
   type FeedAuthor,
   type FeedCardData,
   hasMeasuredThickness,
@@ -24,6 +25,7 @@ import {
   isMinor,
   type LatLng,
   matchesFilters,
+  matchWeatherFilter,
   PRECIP_TYPES,
   RECOMMENDED_MIN_PHOTOS,
   RECOMMENDED_RECENCY_HOURS,
@@ -44,6 +46,7 @@ import {
   THICKNESS_METHODS,
   type TrustClass,
   validateReportInput,
+  type WeatherDiscoveryFilter,
 } from '@skating/core';
 import { paginationOptsValidator } from 'convex/server';
 import { ConvexError, v } from 'convex/values';
@@ -81,6 +84,7 @@ import { isListed } from './lib/listing';
 import { assertOwnedPhotos } from './lib/photoAccess';
 import { getViewableReport, loadBlockedAuthorIds } from './lib/reportVisibility';
 import { awardPointEvent, checkAndAwardBadges, trustClassFor } from './lib/reputation';
+import { bodyWeatherCell, subAreaWeatherCell } from './lib/sampling';
 import { latLng, literals } from './lib/validators';
 import { enqueueReportNotifications } from './notifications';
 import { resolveSubAreaForPoint } from './subAreas';
@@ -625,6 +629,14 @@ interface BodyInfo {
   centroid: LatLng;
   /** The body's easiest known approach (N6d/D144) — drives the feed card's Hike-In chip. */
   accessKind?: string;
+  /**
+   * The body's `filter`-tier weather cell (N6h / D165), for the weather narrow. Absent for a
+   * dangling ref. Read off the body doc the cache already loaded, so the narrow costs no extra read
+   * beyond one digest per distinct cell on the page.
+   */
+  filterCellKey?: string;
+  /** The parent's elevation, so a report's bay can be keyed the way the registry keyed it. */
+  elevationM?: number;
 }
 
 /** Resolve a report's surviving water-body name + centroid, following `mergedIntoId` (D36); cached. */
@@ -646,6 +658,8 @@ async function bodyInfoFor(
     // The Hike-In chip (N6d/D87). Free here — the body doc is already loaded and cached per query, so
     // a page of thirty reports over five lakes costs five reads either way.
     ...(body?.accessKind !== undefined ? { accessKind: body.accessKind } : {}),
+    ...(body ? { filterCellKey: bodyWeatherCell(body, 'filter').key } : {}),
+    ...(body?.elevationM !== undefined ? { elevationM: body.elevationM } : {}),
   };
   cache.set(waterBodyId, info);
   return info;
@@ -673,6 +687,51 @@ async function authorFor(
 interface FeedCardCaches {
   bodyInfo: Map<string, BodyInfo>;
   authors: Map<string, FeedAuthor>;
+}
+
+/**
+ * Does this report's lake satisfy the weather filter (N6h / D165, D166)?
+ *
+ * The report's own bay when it has one — a report from Malletts Bay is about Malletts Bay's cell,
+ * which is not Champlain's — else the body's anchor cell, then one digest read per distinct cell on
+ * the page. `undefined` when the cell has no digest: out of season, or a lake nobody has swept, and
+ * `matchesFilters` treats that as not a match rather than as unknown-passes, because a weather
+ * filter is a claim about the lake and a lake nobody checked cannot make it.
+ */
+async function weatherMatchedFor(
+  ctx: QueryCtx,
+  r: Doc<'reports'>,
+  body: BodyInfo,
+  filter: WeatherDiscoveryFilter,
+  caches: { bayCells: Map<string, string | null>; digests: Map<string, boolean> },
+): Promise<boolean | undefined> {
+  let cellKey = body.filterCellKey;
+  if (r.subAreaId !== undefined) {
+    let bayCell = caches.bayCells.get(r.subAreaId);
+    if (bayCell === undefined) {
+      const bay = await ctx.db.get(r.subAreaId);
+      bayCell =
+        bay && bay.removedAt === undefined
+          ? subAreaWeatherCell(bay, { elevationM: body.elevationM }, 'filter').key
+          : null;
+      caches.bayCells.set(r.subAreaId, bayCell);
+    }
+    if (bayCell !== null) cellKey = bayCell;
+  }
+  if (cellKey === undefined) return undefined;
+  const cached = caches.digests.get(cellKey);
+  if (cached !== undefined) return cached;
+  const digest = await ctx.db
+    .query('weatherCellDigests')
+    .withIndex('by_key', (q) => q.eq('cellKey', cellKey))
+    .first();
+  // Fresh or nothing — a digest the sweep stopped updating in April must not narrow a July feed.
+  const matched =
+    digest !== null &&
+    digestIsFresh(digest, Date.now()) &&
+    matchWeatherFilter(digest, filter) !== null;
+  caches.digests.set(cellKey, matched);
+  return matched;
 }
 
 /**
@@ -795,11 +854,20 @@ export const listFeed = query({
       .paginate(paginationOpts);
 
     const caches: FeedCardCaches = { bodyInfo: new Map(), authors: new Map() };
+    const weatherCaches = {
+      bayCells: new Map<string, string | null>(),
+      digests: new Map<string, boolean>(),
+    };
     const page: FeedCardData[] = [];
     for (const r of result.page) {
       const body = await bodyInfoFor(ctx, r.waterBodyId, caches.bodyInfo);
       const isFavorite = favorites.has(r.waterBodyId);
       const band = bandForCoord(body.centroid, bands, home);
+      // The weather narrow (D165): resolved here, applied inside `matchesFilters` with the rest.
+      const weatherMatched =
+        filters.weather === undefined
+          ? undefined
+          : await weatherMatchedFor(ctx, r, body, filters.weather, weatherCaches);
       // The additive narrow — an empty `filters` matches everything (Phase 5 behavior preserved).
       if (
         !matchesFilters(
@@ -811,7 +879,7 @@ export const listFeed = query({
             ...(r.iceThickness !== undefined ? { iceThickness: r.iceThickness } : {}),
           },
           filters,
-          { band, isFavorite, now },
+          { band, isFavorite, now, ...(weatherMatched !== undefined ? { weatherMatched } : {}) },
         )
       ) {
         continue;
