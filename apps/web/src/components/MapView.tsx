@@ -7,11 +7,10 @@ import {
   applyDraftMapClick,
   approachesToFeatureCollection,
   approachLinePaint,
-  asOfLabel,
   type BBox,
   type DriveTimeBands,
+  describeWeatherFilter,
   draftPlacementCount,
-  type FeedFilters,
   formatAerialSeason,
   formatSeasonLabel,
   hasWeatherFilter,
@@ -28,7 +27,6 @@ import {
   representativePoint,
   SUB_AREA_MIN_RENDER_ZOOM,
   shapeSignature,
-  thresholdLabel,
   undoDraftPlacement,
   weatherDimmedBodyIds,
   withAccessDim,
@@ -152,6 +150,9 @@ function polygonOf(geometry: unknown): Polygon | MultiPolygon | null {
  * feature-state; the highlighted body / fly-to focus / report photo pins come from `useMapSelection`
  * (the drawers push them up, since they're siblings of this persistent map).
  */
+/** A stable empty dim set, so an inactive filter never changes the features effect's inputs. */
+const NO_WEATHER_DIM: ReadonlySet<string> = new Set();
+
 const EMPTY_FEATURES: GeoJSON.FeatureCollection = { type: 'FeatureCollection', features: [] };
 /** A stable identity for "nothing is painted", so the initial state cannot itself trigger a re-run. */
 const EMPTY_IDS: readonly string[] = [];
@@ -304,14 +305,19 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
   // matched cells from the server, and the dim set computed per body in view. Only the weather
   // filter engages this — the radius alone never dimmed the map before and does not now.
   const { value: feedFilters, set: setFeedFilters } = useFeedFilters();
-  const discoveryFilters = mapFilters(feedFilters);
+  // Keyed on content, not identity: `mapFilters` returns a fresh object per call, and a fresh object
+  // in the memo below would rebuild the dim set — and re-run the `setFeatures` effect — on every
+  // render, which is the setState-in-effect loop React warns about.
+  const discoveryKey = JSON.stringify(mapFilters(feedFilters));
+  // biome-ignore lint/correctness/useExhaustiveDependencies: discoveryKey is the content signature.
+  const discoveryFilters = useMemo(() => mapFilters(feedFilters), [discoveryKey]);
   const matchedCells = useQuery(
     api.weatherDiscovery.matchedCells,
     hasWeatherFilter(discoveryFilters) ? { filters: discoveryFilters } : 'skip',
   );
   const viewerProfile = useQuery(api.profiles.current, {});
   const weatherDimmed = useMemo(() => {
-    if (!hasWeatherFilter(discoveryFilters) || !bodies) return new Set<string>();
+    if (!hasWeatherFilter(discoveryFilters) || !bodies) return NO_WEATHER_DIM;
     return weatherDimmedBodyIds(bodies, discoveryFilters, matchedCells, {
       bands: {
         band30: viewerProfile?.cachedIsochrones?.band30,
@@ -1746,7 +1752,9 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
           role="status"
           className="absolute top-2 left-2 z-10 flex max-w-[calc(100%-1rem)] items-center gap-2 rounded-full border border-border bg-surface/95 px-3 py-1 text-foreground text-xs shadow"
         >
-          <span className="truncate">{describeWeatherFilterChip(feedFilters, matchedCells)}</span>
+          <span className="truncate">
+            {describeWeatherFilter(feedFilters, matchedCells?.asOfDayMs)}
+          </span>
           <button
             type="button"
             className="shrink-0 rounded-full px-1.5 font-medium text-primary hover:underline"
@@ -1776,18 +1784,4 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
       ) : null}
     </div>
   );
-}
-
-/** The chip's sentence: the knob, then the date the digest is as of. */
-function describeWeatherFilterChip(
-  filters: FeedFilters,
-  matched: { asOfDayMs: number | null } | undefined,
-): string {
-  const w = filters.weather;
-  if (!w) return '';
-  const knob = `${w.minNights}+ night${w.minNights === 1 ? '' : 's'} below ${thresholdLabel(w.thresholdF)}${w.noSnowSince ? ', no snow since' : ''}`;
-  const radius =
-    filters.radiusMinutes !== undefined ? ` · within ${filters.radiusMinutes} min` : '';
-  const asOf = matched?.asOfDayMs ? ` · ${asOfLabel(matched.asOfDayMs)}` : '';
-  return `Showing lakes with ${knob}${radius}${asOf}`;
 }

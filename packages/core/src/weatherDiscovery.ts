@@ -35,6 +35,7 @@ import {
   isColdChainThresholdF,
   noSnowSinceChain,
   nthColdNightDayMs,
+  thresholdLabel,
 } from './coldChain';
 import { bandForCoord, bandWithinRadius, type DriveTimeBands } from './driveTime';
 import { formatRelativeTime } from './feed';
@@ -337,6 +338,24 @@ export function interleaveLatest<R>(
     out.push({ kind: 'body', data: body });
   }
   return out;
+}
+
+/**
+ * The map chip's sentence (D166): the knob, the radius if set, then the date the digest is as of.
+ * *"Showing lakes with 3+ nights below 20°F, no snow since · within 60 min · as of Feb 4"*. One
+ * string for both clients, so a dimmed map is explained in the same words everywhere.
+ */
+export function describeWeatherFilter(
+  filters: Pick<FeedFilters, 'weather' | 'radiusMinutes'>,
+  asOfDayMs: number | null | undefined,
+): string {
+  const w = filters.weather;
+  if (!w) return '';
+  const knob = `${w.minNights}+ night${w.minNights === 1 ? '' : 's'} below ${thresholdLabel(w.thresholdF)}${w.noSnowSince ? ', no snow since' : ''}`;
+  const radius =
+    filters.radiusMinutes !== undefined ? ` · within ${filters.radiusMinutes} min` : '';
+  const asOf = asOfDayMs ? ` · ${asOfLabel(asOfDayMs)}` : '';
+  return `Showing lakes with ${knob}${radius}${asOf}`;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────────────────────────

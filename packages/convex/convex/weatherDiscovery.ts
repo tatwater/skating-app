@@ -105,7 +105,11 @@ async function matchedCellsFor(
     const match = matchWeatherFilter(digest, filter);
     if (match) out.push({ digest, match });
   }
-  out.sort((a, b) => b.match.eventDayMs - a.match.eventDayMs);
+  // Newest event first; equal days by key, so two reads of one state list in one order.
+  out.sort(
+    (a, b) =>
+      b.match.eventDayMs - a.match.eventDayMs || a.digest.cellKey.localeCompare(b.digest.cellKey),
+  );
   return out;
 }
 

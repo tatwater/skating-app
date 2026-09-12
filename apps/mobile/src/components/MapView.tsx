@@ -19,10 +19,9 @@ import {
   applyDraftMapClick,
   approachesToFeatureCollection,
   approachLinePaint,
-  asOfLabel,
   type BBox,
   type DriveTimeBands,
-  type FeedFilters,
+  describeWeatherFilter,
   formatSeasonLabel,
   hasWeatherFilter,
   holdFrames,
@@ -31,7 +30,6 @@ import {
   NO_HELD_FRAMES,
   prefetchFrames,
   SUB_AREA_MIN_RENDER_ZOOM,
-  thresholdLabel,
   weatherDimmedBodyIds,
   withAccessDim,
   withoutWeatherFilter,
@@ -136,6 +134,9 @@ import { useFreezeUpTimeline } from './useFreezeUpTimeline';
  * since they're siblings of this persistent map). RN has no `setFeatureState`, so the selection
  * highlight is a data-driven `filter` on dedicated layers rather than a feature-state flag.
  */
+/** A stable empty dim set, so an inactive filter never changes the features effect's inputs. */
+const NO_WEATHER_DIM: ReadonlySet<string> = new Set();
+
 const EMPTY_FC: GeoJSON.FeatureCollection = { type: 'FeatureCollection', features: [] };
 
 /** How long a hazard tap suppresses the water-body tap underneath it (one gesture's worth). */
@@ -310,7 +311,12 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
   // matched cells from the server, and the dim set computed per body in view — the same
   // `weatherDimmedBodyIds` web uses. Only the weather filter engages this.
   const { value: feedFilters, set: setFeedFilters } = useFeedFilters();
-  const discoveryFilters = mapFilters(feedFilters);
+  // Keyed on content, not identity: `mapFilters` returns a fresh object per call, and a fresh object
+  // in the memo below would rebuild the dim set — and re-run the `setFeatures` effect — on every
+  // render, which is the setState-in-effect loop React warns about.
+  const discoveryKey = JSON.stringify(mapFilters(feedFilters));
+  // biome-ignore lint/correctness/useExhaustiveDependencies: discoveryKey is the content signature.
+  const discoveryFilters = useMemo(() => mapFilters(feedFilters), [discoveryKey]);
   const matchedCells = useQuery(
     api.weatherDiscovery.matchedCells,
     hasWeatherFilter(discoveryFilters) ? { filters: discoveryFilters } : 'skip',
@@ -318,7 +324,7 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
   const viewerProfile = useQuery(api.profiles.current, {});
   const favoriteRows = useQuery(api.waterBodyFavorites.listForUser, {});
   const weatherDimmed = useMemo(() => {
-    if (!hasWeatherFilter(discoveryFilters) || !bodies) return new Set<string>();
+    if (!hasWeatherFilter(discoveryFilters) || !bodies) return NO_WEATHER_DIM;
     return weatherDimmedBodyIds(bodies, discoveryFilters, matchedCells, {
       bands: {
         band30: viewerProfile?.cachedIsochrones?.band30,
@@ -1281,7 +1287,7 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
           accessibilityRole="summary"
         >
           <Text color="$foreground" fontSize={12} flex={1} numberOfLines={2}>
-            {describeWeatherFilterChip(feedFilters, matchedCells)}
+            {describeWeatherFilter(feedFilters, matchedCells?.asOfDayMs)}
           </Text>
           <Text
             color="$primary"
@@ -1307,18 +1313,4 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
       />
     </View>
   );
-}
-
-/** The chip's sentence: the knob, then the date the digest is as of. Same words as web's. */
-function describeWeatherFilterChip(
-  filters: FeedFilters,
-  matched: { asOfDayMs: number | null } | undefined,
-): string {
-  const w = filters.weather;
-  if (!w) return '';
-  const knob = `${w.minNights}+ night${w.minNights === 1 ? '' : 's'} below ${thresholdLabel(w.thresholdF)}${w.noSnowSince ? ', no snow since' : ''}`;
-  const radius =
-    filters.radiusMinutes !== undefined ? ` · within ${filters.radiusMinutes} min` : '';
-  const asOf = matched?.asOfDayMs ? ` · ${asOfLabel(matched.asOfDayMs)}` : '';
-  return `Showing lakes with ${knob}${radius}${asOf}`;
 }

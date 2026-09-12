@@ -6,6 +6,7 @@ import {
   type BodyResultData,
   buildBodyResultView,
   buildWeatherCellDigest,
+  describeWeatherFilter,
   eventInstantMs,
   interleaveLatest,
   type LatestItem,
@@ -325,5 +326,20 @@ describe('weatherDimmedBodyIds — the map dim (D166)', () => {
         }),
       ].sort(),
     ).toEqual(['b', 'giant']);
+  });
+});
+
+describe('describeWeatherFilter — the map chip (D166)', () => {
+  it('names the knob, the radius and the date', () => {
+    expect(
+      describeWeatherFilter(
+        { weather: { thresholdF: 20, minNights: 3, noSnowSince: true }, radiusMinutes: 60 },
+        day(4),
+      ),
+    ).toBe('Showing lakes with 3+ nights below 20°F, no snow since · within 60 min · as of Jan 14');
+    expect(describeWeatherFilter({ weather: { thresholdF: 32, minNights: 1 } }, null)).toBe(
+      'Showing lakes with 1+ night below 32°F',
+    );
+    expect(describeWeatherFilter({}, day(4))).toBe('');
   });
 });

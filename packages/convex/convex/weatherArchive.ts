@@ -632,7 +632,15 @@ export const backfillWeatherCells = internalAction({
     // The join is `filter`-tier only, and it is pruned on the same rule: a body that was purged,
     // merged or moved leaves a membership behind that would keep matching a cell it no longer sits in.
     if (targetTier === 'filter') {
-      await ctx.runMutation(internal.weatherArchive.pruneVacatedMemberships, { runId: run });
+      let pruneCursor: string | null = null;
+      for (;;) {
+        const res: { pruned: number; cursor: string; isDone: boolean } = await ctx.runMutation(
+          internal.weatherArchive.pruneVacatedMemberships,
+          { runId: run, cursor: pruneCursor },
+        );
+        if (res.isDone) break;
+        pruneCursor = res.cursor;
+      }
     }
     // Last, and only on a genuinely complete walk: this is what the debounce reads.
     await ctx.runMutation(internal.weatherArchive.finishCellSync, {
@@ -1094,21 +1102,33 @@ export const upsertBodyWeatherCells = internalMutation({
   },
 });
 
+/** Join rows examined per prune page — a page must stay well under the per-function read cap. */
+export const MEMBERSHIP_PRUNE_BATCH = 4000;
+
 /**
  * Delete memberships a completed walk did not re-stamp — a purged, merged or delisted body, or a
  * bay that was removed. Same rule and same caveat as `pruneVacatedCells`: only after a complete walk.
+ *
+ * ⚠ **Paged, unlike `pruneVacatedCells`.** The registry is ~3,000 rows a tier; the join is one row
+ * per body — ~25,000 — and a single `collect()` over it is the read-cap shape this repo has drawn
+ * three times. The action loops the cursor; each page reads a bounded slice.
  */
 export const pruneVacatedMemberships = internalMutation({
-  args: { runId: v.string() },
-  handler: async (ctx, { runId }): Promise<number> => {
-    const rows = await ctx.db.query('bodyWeatherCells').collect();
+  args: { runId: v.string(), cursor: v.union(v.string(), v.null()) },
+  handler: async (
+    ctx,
+    { runId, cursor },
+  ): Promise<{ pruned: number; cursor: string; isDone: boolean }> => {
+    const page = await ctx.db
+      .query('bodyWeatherCells')
+      .paginate({ numItems: MEMBERSHIP_PRUNE_BATCH, cursor });
     let pruned = 0;
-    for (const row of rows) {
+    for (const row of page.page) {
       if (row.runId === runId) continue;
       await ctx.db.delete(row._id);
       pruned += 1;
     }
-    return pruned;
+    return { pruned, cursor: page.continueCursor, isDone: page.isDone };
   },
 });
 
