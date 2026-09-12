@@ -237,7 +237,8 @@ export function ForecastPlanner({ plan }: { plan: ForecastPlan }) {
         <XStack gap={HOUR_CARD_GAP}>
           {plan.hours.map((hour, i) => (
             <HourCard
-              key={hour.startMs}
+              // The instant, not the local clock: a fall-back night has two 1 AMs with one `startMs`.
+              key={hour.utcMs ?? `${hour.startMs}:${i}`}
               hour={hour}
               firstOfDay={i === 0 || plan.hours[i - 1]?.localDate !== hour.localDate}
               dayLabel={plan.days.find((d) => d.localDate === hour.localDate)?.dateLabel ?? ''}

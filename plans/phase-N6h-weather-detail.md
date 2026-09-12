@@ -441,9 +441,51 @@ sheet by hand, since sign-in is email-code and there is no headless path.
    pass found that a storm still falling on Friday left Friday's cloud vote with no dry hours, and
    an empty vote named the day by the first row of the table — "freezing rain" over four inches of
    snow. The sentence still belongs to the day the storm began; the symbol goes wherever the snow
-   does, and a run longer than 24 h names the day its end falls on (*"Snow 2 PM–8 PM Fri"*).
+   does, and a run that ends on a later date names that day (*"Snow 10 PM–4 AM Fri"*).
 5. **The night low is printed only when the night was colder than the calendar day.** In September
    it repeated the low on every card; in January it is the line that matters.
+
+### The review passes — ours, then Greptile's — and the four things they changed
+
+`/code-review xhigh --fix` before opening #51: fifteen findings, thirteen fixed (the symbol-vs-storm
+case above, an empty tally that fell through to *freezing rain*, thunder outranked by its own rain
+run, the hour in progress dropped server-side — carried now, render-only, because D74 is about a
+forward hour reaching a calculation and not an elapsed one reaching a card — and web's
+`scrollIntoView` on mount dragging the drawer to the Today card). Two were left as founder calls,
+and Greptile's first pass added two P1s. All four landed the same evening:
+
+- **A storm that carries into the next day gets a continuation line** — founder: *"'Snow until 6am
+  Wed' on Tuesday's card, then on Wednesday's card 'Snow until 6am' again."* Built as: the start day
+  keeps its full sentence and the end names its day when it crosses midnight (*"Snow 10 PM–4 AM Fri
+  · 1.2″"* — the start time stays, since *"until 6 AM Wed"* alone on Tuesday would read as already
+  snowing); every later day the run reaches prints *"Snow until 4 AM · 0.8″"* with **that day's
+  share**, or *"Snow all day"* when the run outlasts the card. The storm's total belongs to the card
+  it started on; a day's totals row still sums only its own hours. Continuations print first.
+- **Convective showers are recovered by derivation, not by a thirteenth variable.** The founder
+  asked what `showers` would buy; the answer is the large-scale-vs-convective distinction and
+  nothing else, at +8 % on every call including the corpus sweep. Open-Meteo documents
+  `precipitation` as the total (rain + showers + snow water-equivalent) and `snowfall` at a fixed
+  7:1, so **`liquidMm = max(rain, precipitation − snowfall / 0.7)`** is exact to the provider's own
+  rounding and free. The planner's amounts, floors and code-less fallback all read it. ⚠ **The
+  archive's stored `rainMm` has the same gap** — Phase 10's `rain` variable, read by the D56 decay
+  model. Changing what a stored field means is not a render fix; it is in the register.
+- **Each hour is shifted by the offset in force *at that hour*** (Greptile P1). Open-Meteo stamps
+  one `utc_offset_seconds` on a response, and a seven-day window in the week of a DST transition
+  put every hour after it an hour off — labels, day cuts, episode clocks, day/night symbols. The
+  fetch now reads the response's IANA `timezone` and asks `utcOffsetSecondsAt(instant, zone)` per
+  hour (the archive's `weatherDays.timeZone` lesson, applied to the forecast); the payload's
+  `utcOffsetMs` is the offset at *now*, which is what a client shifts its own clock by. Pinned by a
+  fetch test across 2026-03-08 07:00Z: clocks read 1 AM, 3 AM, 4 AM — the hour that does not exist
+  is skipped by the clock, not invented by the shift.
+- **`utcMs` rides beside `startMs`, and contiguity is judged on it** (the other half of the same
+  P1, plus Greptile's second: *missing hours join episodes*). Two local-shifted timestamps cannot
+  say whether their hours were consecutive — spring-forward reads as a two-hour gap, fall-back as a
+  repeated hour — and array adjacency cannot either, because the parser drops an hour Open-Meteo
+  returns without a temperature, which had merged the weather on both sides of a hole into one
+  *"10 PM–2 AM"* over an hour nobody has data for. `runs` now ends at any non-consecutive pair and
+  the lull bridge only crosses an hour that exists; `partial` stopped being `< 24` (a spring-forward
+  day is 23 hours and whole); the hour cards key on the instant, since a fall-back night has two
+  1 AMs. Pinned: a hole, a spring-forward night, a fall-back night, a 23-hour day.
 
 ### Two things a render found that no test did
 
@@ -1401,6 +1443,12 @@ diff. Then D+E. F is last and depends on neither.
   question 4), next to N6e's phenology brackets — the two are the same kind of claim about a lake and
   should be read together.
 - **Paying Open-Meteo** (D158) — season two, against a written trigger.
+- **`weatherDays.rainMm` / `HourlyWeather.rainMm` exclude convective showers.** Open-Meteo's `rain`
+  is large-scale liquid only; the planner derives liquid from the total (PR 4) but the archive and
+  the D56 decay model still read `rain`, under-counting liquid in shoulder seasons. The fix is
+  either the same derivation at the fetch (changes the meaning of a stored field, so it needs a
+  version stamp like `HOURLY_ROW_VERSION`) or the `showers` variable (+8 % on every call). A
+  decay-model decision, not a render one.
 - **Caching the forecast payload for offline** (hole 9's second half). `ForecastPayload` exists
   since PR 4 and is small; writing it into the mobile offline body payload on drawer-open is a
   one-commit task that belongs with the on-ice/offline surface, not the Planning tab.

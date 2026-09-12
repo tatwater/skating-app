@@ -417,6 +417,63 @@ describe('weather.getForecastForBody (N6c B5b)', () => {
       expect(h.startMs - forecast!.utcOffsetMs).toBeGreaterThanOrEqual(now);
   });
 
+  test('shifts each hour by the offset in force AT that hour, so a week across DST keeps its clocks', async () => {
+    // Greptile on #51: one response-wide `utc_offset_seconds` applied to seven days puts every hour
+    // after a transition an hour off. 2026-03-08 07:00Z is when 2 AM EST becomes 3 AM EDT.
+    const t = convexTestWithGeo();
+    const waterBodyId = await seedBody(t);
+    const transition = Date.UTC(2026, 2, 8, 7, 0);
+    const now = transition - 4 * HOUR_MS; // 10 PM EST the evening before
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(now);
+    try {
+      const times = [-1, 0, 1, 2, 3].map((k) => Math.floor((transition + k * HOUR_MS) / 1000));
+      const n = times.length;
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(
+          async () =>
+            new Response(
+              JSON.stringify({
+                utc_offset_seconds: -18000, // what Open-Meteo stamps for a request made in EST
+                timezone: 'America/New_York',
+                hourly: {
+                  time: times,
+                  temperature_2m: Array(n).fill(-3),
+                  precipitation: Array(n).fill(0),
+                  rain: Array(n).fill(0),
+                  snowfall: Array(n).fill(0),
+                  snow_depth: Array(n).fill(0),
+                  wind_speed_10m: Array(n).fill(5),
+                  wind_gusts_10m: Array(n).fill(8),
+                  cloud_cover: Array(n).fill(10),
+                  sunshine_duration: Array(n).fill(0),
+                  shortwave_radiation: Array(n).fill(0),
+                  wind_direction_10m: Array(n).fill(270),
+                  weather_code: Array(n).fill(0),
+                },
+              }),
+              { status: 200 },
+            ),
+        ),
+      );
+
+      const forecast = await asViewer(t).action(api.weather.getForecastForBody, { waterBodyId });
+
+      // Local clocks read back with UTC getters: 1 AM, then 3 AM — the hour that does not exist is
+      // skipped by the clock, not invented by the shift.
+      const clocks = forecast!.hours.map((h) => new Date(h.startMs).getUTCHours());
+      expect(clocks).toEqual([1, 3, 4, 5, 6]);
+      // The instants are untouched and one hour apart, which is how the planner knows the run is whole.
+      const instants = forecast!.hours.map((h) => h.utcMs);
+      expect(instants).toEqual([-1, 0, 1, 2, 3].map((k) => transition + k * HOUR_MS));
+      // The payload's offset is the one at `now`, before the change, so a client shifts its clock right.
+      expect(forecast!.utcOffsetMs).toBe(-5 * HOUR_MS);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   test('asks for seven forward days — one billing unit, the same as two (founder call 13)', async () => {
     const t = convexTestWithGeo();
     const waterBodyId = await seedBody(t);

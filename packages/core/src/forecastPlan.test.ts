@@ -8,6 +8,7 @@ import {
   forecastPlanIsEmpty,
   formatEpisode,
   hourCondition,
+  liquidMm,
   planHourLabel,
 } from './forecastPlan';
 import type { ForecastHour } from './lakeForecast';
@@ -258,7 +259,7 @@ describe('buildForecastPlan — days', () => {
     expect(snowyHour.days[0]!.condition).toBe('snow');
   });
 
-  it('names a day by a storm that is still falling on it, even though the sentence stays on the day it began', () => {
+  it('names a day by a storm that is still falling on it, and gives it a continuation line with its own share', () => {
     // Thu 2 PM → Fri 8 PM at 0.5 cm/h: Friday has no episode of its own and every daytime hour is
     // snowing, which used to leave the cloud vote with an empty tally — and an empty tally named
     // the day by the first entry of the table, "freezing rain".
@@ -277,10 +278,51 @@ describe('buildForecastPlan — days', () => {
     ];
     expect(thu.condition).toBe('snow');
     expect(fri.condition).toBe('snow');
-    expect(fri.lines).toEqual([]); // still Thursday's sentence
     expect(sat.condition).toBe('clear');
-    // And a thirty-hour run names the day its end falls on, because "2–8 PM" is six hours to a reader.
+    // The storm's total is Thursday's sentence, and the end names its day because "2–8 PM" is six
+    // hours to a reader; Friday says when it stops and how much of it is Friday's (20 h of 30).
     expect(thu.lines).toEqual(['Snow 2 PM–8 PM Fri · 5.9″']);
+    expect(fri.lines).toEqual(['Snow until 8 PM · 3.9″']);
+    expect(sat.lines).toEqual([]);
+  });
+
+  it('prints "all day" on a day a storm runs straight through, and "until" on the day it ends', () => {
+    // Thu 8 PM → Sat 6 AM: Friday is entirely inside it.
+    const start = local('2026-01-15T00:00:00');
+    const plan = buildForecastPlan(
+      series(start, 72, (_, ms) => {
+        const t = ms - start;
+        return t >= 20 * HOUR && t < 54 * HOUR ? { weatherCode: 73, snowfallCm: 0.5 } : {};
+      }),
+      NOW,
+    );
+    expect(plan.days[0]!.lines).toEqual(['Snow 8 PM–6 AM Sat · 6.7″']);
+    expect(plan.days[1]!.lines).toEqual(['Snow all day · 4.7″']);
+    expect(plan.days[2]!.lines).toEqual(['Snow until 6 AM · 1.2″']);
+  });
+
+  it('needs no weekday for a run that ends exactly at midnight', () => {
+    const start = local('2026-01-15T00:00:00');
+    const plan = buildForecastPlan(
+      series(start, 48, (i) => (i >= 18 && i < 24 ? { weatherCode: 73, snowfallCm: 0.5 } : {})),
+      NOW,
+    );
+    expect(plan.days[0]!.lines).toEqual(['Snow 6 PM–12 AM · 1.2″']);
+    expect(plan.days[1]!.lines).toEqual([]);
+  });
+
+  it("continues a wind run with that day's own gusts, not the storm's", () => {
+    const start = local('2026-01-15T00:00:00');
+    const plan = buildForecastPlan(
+      series(start, 48, (i) =>
+        i >= 20 && i < 30
+          ? { windSpeedKph: EPISODE_WIND_KPH + 4, windGustKph: i < 24 ? 70 : 50 }
+          : {},
+      ),
+      NOW,
+    );
+    expect(plan.days[0]!.lines).toEqual(['Wind 8 PM–6 AM Fri · gusts 43 mph']);
+    expect(plan.days[1]!.lines).toEqual(['Wind until 6 AM · gusts 31 mph']);
   });
 
   it('names a day of sub-floor drizzle "drizzle", not the first row of the table', () => {
@@ -348,9 +390,10 @@ describe('episodes', () => {
     );
     const thu = plan.days[0]!;
     expect(thu.episodes).toHaveLength(1);
-    expect(thu.lines).toEqual(['Snow 10 PM–4 AM · 1.2″']);
-    // It started on Thursday, so it is Thursday's sentence and not Friday's.
-    expect(plan.days[1]!.lines).toEqual([]);
+    // The end crosses midnight, so it names its day; Friday then says how it ends there, with
+    // Friday's own share (four hours of the six).
+    expect(thu.lines).toEqual(['Snow 10 PM–4 AM Fri · 1.2″']);
+    expect(plan.days[1]!.lines).toEqual(['Snow until 4 AM · 0.8″']);
   });
 
   it('bridges a single dry hour inside a snow run, but not two', () => {
@@ -408,12 +451,115 @@ describe('episodes', () => {
           weatherCode: 68,
           snowfallCm: 0.5,
           rainMm: 1,
-          precipitationMm: 6,
+          precipitationMm: 1 + 0.5 / 0.7, // self-consistent: liquid + snow water-equivalent
         })),
         NOW,
       ).hours,
     )[0]!;
     expect(formatEpisode(e)).toBe('Sleet 12–3 AM · 0.6″ snow, 0.12″ rain');
+  });
+});
+
+describe('episodes across holes and DST', () => {
+  const start = local('2026-01-15T00:00:00');
+
+  it('never spans an hour the provider did not return, and the lull bridge cannot cross one', () => {
+    // 10 PM, 11 PM, [midnight missing], 1 AM, 2 AM — all snowing. Two episodes, not "10 PM–3 AM".
+    const snowing = { weatherCode: 73, snowfallCm: 0.5 } as const;
+    const withHole = [
+      hour(start + 22 * HOUR, snowing),
+      hour(start + 23 * HOUR, snowing),
+      hour(start + 25 * HOUR, snowing),
+      hour(start + 26 * HOUR, snowing),
+    ];
+    const episodes = detectEpisodes(buildForecastPlan(withHole, NOW).hours);
+    expect(episodes.map((e) => [e.startMs, e.endMs])).toEqual([
+      [start + 22 * HOUR, start + 24 * HOUR],
+      [start + 25 * HOUR, start + 27 * HOUR],
+    ]);
+    // A dry hour bridges a lull; a missing hour is not a dry hour.
+    const bridged = detectEpisodes(
+      buildForecastPlan(
+        [
+          hour(start + 22 * HOUR, snowing),
+          hour(start + 23 * HOUR),
+          hour(start + 24 * HOUR, snowing),
+        ],
+        NOW,
+      ).hours,
+    );
+    expect(bridged).toHaveLength(1);
+  });
+
+  it('reads a spring-forward night as continuous — the clock jumps 1 AM → 3 AM, the hours do not', () => {
+    // UTC instants one hour apart; local clocks shifted by −5 h then −4 h across 2026-03-08 07:00Z.
+    const transition = Date.UTC(2026, 2, 8, 7, 0); // 2 AM EST becomes 3 AM EDT
+    const snowing = { weatherCode: 73, snowfallCm: 0.5 } as const;
+    const hours = Array.from({ length: 22 }, (_, i) => i - 2).map((k) => {
+      const utcMs = transition + k * HOUR;
+      const offset = k < 0 ? -5 * HOUR : -4 * HOUR;
+      return hour(utcMs + offset, { ...(k <= 1 ? snowing : {}), utcMs });
+    });
+    const plan = buildForecastPlan(hours, transition - 3 * HOUR - 5 * HOUR);
+    expect(plan.hours.slice(0, 4).map(planHourLabel)).toEqual(['12 AM', '1 AM', '3 AM', '4 AM']);
+    expect(detectEpisodes(plan.hours)).toHaveLength(1);
+    expect(plan.days[0]!.lines).toEqual(['Snow 12–5 AM · 0.8″']);
+  });
+
+  it('reads a fall-back night as continuous — 1 AM happens twice, and neither is a gap', () => {
+    const transition = Date.UTC(2026, 10, 1, 6, 0); // 2 AM EDT becomes 1 AM EST
+    const snowing = { weatherCode: 73, snowfallCm: 0.5 } as const;
+    const hours = [-2, -1, 0, 1].map((k) => {
+      const utcMs = transition + k * HOUR;
+      const offset = k < 0 ? -4 * HOUR : -5 * HOUR;
+      return hour(utcMs + offset, { ...snowing, utcMs });
+    });
+    const plan = buildForecastPlan(hours, transition - 3 * HOUR - 4 * HOUR);
+    expect(plan.hours.map(planHourLabel)).toEqual(['12 AM', '1 AM', '1 AM', '2 AM']);
+    expect(detectEpisodes(plan.hours)).toHaveLength(1);
+    expect(plan.days[0]!.hourCount).toBe(4);
+  });
+
+  it('calls a 23-hour spring-forward day whole, not partial', () => {
+    const dayStart = Date.UTC(2026, 2, 8, 5, 0); // local midnight, EST
+    const hours: ForecastHour[] = [];
+    for (let k = 0; k < 23; k++) {
+      const utcMs = dayStart + k * HOUR;
+      const offset = utcMs < Date.UTC(2026, 2, 8, 7, 0) ? -5 * HOUR : -4 * HOUR;
+      hours.push(hour(utcMs + offset, { utcMs }));
+    }
+    const plan = buildForecastPlan(hours, dayStart - 5 * HOUR);
+    expect(plan.days[0]).toMatchObject({ localDate: '2026-03-08', hourCount: 23, partial: false });
+  });
+});
+
+describe('liquidMm', () => {
+  it('recovers convective showers from the total, which `rain` alone omits', () => {
+    // Open-Meteo: precipitation = rain + showers + snow water-equivalent; `rain` excludes showers.
+    expect(liquidMm(hour(NOW, { precipitationMm: 2.0, rainMm: 0.5, snowfallCm: 0 }))).toBeCloseTo(
+      2.0,
+    );
+    // Snow at the provider's 7:1 ratio comes off the total before it is called liquid.
+    expect(liquidMm(hour(NOW, { precipitationMm: 1.0, rainMm: 0, snowfallCm: 0.7 }))).toBeCloseTo(
+      0,
+    );
+    // Rounding can leave the derived value a hair under `rain`; `rain` is never exceeded by nothing.
+    expect(liquidMm(hour(NOW, { precipitationMm: 0.9, rainMm: 1.0, snowfallCm: 0 }))).toBe(1.0);
+  });
+
+  it('lets a showers-only hour name itself rain and earn a sentence', () => {
+    const start = local('2026-01-15T00:00:00');
+    const plan = buildForecastPlan(
+      series(start, 24, (i) =>
+        i >= 13 && i < 16
+          ? { weatherCode: undefined, precipitationMm: 1.5, rainMm: 0, temperatureC: 4 }
+          : {},
+      ),
+      NOW,
+    );
+    expect(plan.days[0]!.condition).toBe('rain');
+    expect(plan.days[0]!.lines).toEqual(['Rain 1–4 PM · 0.18″']);
+    expect(plan.days[0]!.rainIn).toBe(0.18);
   });
 });
 

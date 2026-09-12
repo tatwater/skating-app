@@ -161,6 +161,7 @@ export const weatherSinceSummary = v.object({
  */
 export const forecastHour = v.object({
   startMs: v.number(),
+  utcMs: v.optional(v.number()),
   temperatureC: v.number(),
   windSpeedKph: v.number(),
   precipitationMm: v.number(),

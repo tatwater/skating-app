@@ -49,6 +49,8 @@ export const FORECAST_NOTABLE_RAIN_MM = 0.5;
 export interface ForecastHour {
   /** Epoch ms at the start of the hour, in the body's local time (Open-Meteo `timezone=auto`). */
   startMs: number;
+  /** The hour as a UTC instant — for contiguity across DST, never for a clock. See `HourlyWeather`. */
+  utcMs?: number;
   temperatureC: number;
   windSpeedKph: number;
   precipitationMm: number;
@@ -119,6 +121,7 @@ export function toForecastHour(hour: HourlyWeather, startMs: number): ForecastHo
     precipitationMm: hour.precipitationMm,
     snowfallCm: hour.snowfallCm ?? 0,
   };
+  if (hour.utcMs !== undefined) out.utcMs = hour.utcMs;
   if (hour.rainMm !== undefined) out.rainMm = hour.rainMm;
   if (hour.windGustKph !== undefined) out.windGustKph = hour.windGustKph;
   if (hour.windDirectionDeg !== undefined) out.windDirectionDeg = hour.windDirectionDeg;

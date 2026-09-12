@@ -28,6 +28,7 @@ import {
   subAreaWeatherPoint,
   summarizeWeatherSince,
   toForecastHour,
+  utcOffsetSecondsAt,
   type WeatherCell,
   type WeatherSinceSummary,
 } from '@skating/core';
@@ -128,6 +129,8 @@ const EMPTY_SUMMARY = summarizeWeatherSince([]);
 /** Open-Meteo's hourly response shape (only the fields we request; each var array is number-or-null). */
 interface OpenMeteoResponse {
   utc_offset_seconds?: number;
+  /** The IANA zone resolved under `timezone=auto` — `America/New_York`. */
+  timezone?: string;
   hourly?: {
     time?: number[]; // unix seconds (UTC), because we request `timeformat=unixtime`
     [key: string]: (number | null)[] | number[] | undefined;
@@ -240,7 +243,21 @@ async function fetchOpenMeteoHourly(
   const time = json.hourly?.time;
   if (!Array.isArray(time)) return null;
 
-  const offsetMs = (json.utc_offset_seconds ?? 0) * 1000;
+  // ⚠ **One offset per response, and the response spans a week.** Open-Meteo stamps a single
+  // `utc_offset_seconds`; both DST transitions fall inside a skating season, so a 7-day forecast
+  // fetched in the week of one would shift every hour after it by the wrong offset — labels, day
+  // cuts, episode clocks, day/night symbols, all an hour off and all plausible. Each hour is shifted
+  // by the offset *in force at that hour* when the zone is known (the archive learned the same
+  // lesson as `weatherDays.timeZone`); the response-wide value is the fallback, and it is what the
+  // returned `utcOffsetMs` still means — the offset at `nowMs`, which is what a client shifts its
+  // own clock by.
+  const responseOffsetMs = (json.utc_offset_seconds ?? 0) * 1000;
+  const zone = typeof json.timezone === 'string' ? json.timezone : null;
+  const offsetAt = (instantMs: number): number => {
+    const s = zone === null ? null : utcOffsetSecondsAt(instantMs, zone);
+    return s === null ? responseOffsetMs : s * 1000;
+  };
+  const offsetMs = offsetAt(nowMs);
   const col = (k: string) => json.hourly?.[k] as (number | null)[] | undefined;
   const temp = col('temperature_2m');
   const precip = col('precipitation');
@@ -270,7 +287,8 @@ async function fetchOpenMeteoHourly(
     if (typeof t !== 'number') continue; // no temperature ⇒ unusable hour
 
     const h: HourlyWeather = {
-      startMs: tsMs + offsetMs, // local ms → correct night bucketing
+      startMs: tsMs + offsetAt(tsMs), // local ms → correct night bucketing
+      utcMs: tsMs,
       temperatureC: t,
       precipitationMm: num(precip?.[i]),
       windSpeedKph: num(wind?.[i]),

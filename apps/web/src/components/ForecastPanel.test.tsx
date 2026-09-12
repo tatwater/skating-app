@@ -106,7 +106,7 @@ describe('ForecastPanel', () => {
       payload(-10, -5, 30, (i) => (i >= 7 && i <= 12 ? { weatherCode: 73, snowfallCm: 0.5 } : {})),
     );
     render(<ForecastPanel waterBodyId={LAKE} />);
-    await screen.findByText('Snow 10 PM–4 AM · 1.2″');
+    await screen.findByText('Snow 10 PM–4 AM Thu · 1.2″');
   });
 
   it('captions the arrival card as a band, never as a time', async () => {

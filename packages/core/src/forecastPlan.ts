@@ -225,6 +225,8 @@ export interface ForecastPlanHour extends ForecastHour {
   isNight: boolean;
   temperatureF: number;
   snowfallIn: number;
+  /** Liquid, mm — see {@link liquidMm}; `rainMm` on the base hour is the provider's narrower field. */
+  liquidMm: number;
   rainIn: number;
   windMph: number;
   gustMph: number | null;
@@ -295,6 +297,31 @@ function localDateOf(localMs: number): string {
 }
 
 /**
+ * Open-Meteo's own snow-to-water ratio: *"for the water equivalent in millimeter, divide by 7"* —
+ * 7 cm of snow is 10 mm of water, so 0.7 cm per mm.
+ */
+export const SNOW_CM_PER_MM_WATER = 0.7;
+
+/**
+ * Liquid precipitation in the hour, mm — **derived, not fetched.**
+ *
+ * Open-Meteo's `rain` is large-scale liquid only; convective showers are a separate variable that
+ * `HOURLY_VARS` does not request, and in a shoulder-season forecast a run of showers therefore
+ * reads as dry under `rainMm`. But `precipitation` is documented as the total — rain + showers +
+ * snow water-equivalent — so the liquid is the total less the snow at the provider's own ratio.
+ * Asking for `showers` would put a thirteenth variable on every call including the corpus sweep
+ * (+8 %, the cost class `precipitation_probability` was refused at, founder call 13) to learn a
+ * distinction — large-scale versus convective — that matters to a meteorologist and not to ice.
+ *
+ * `max` of the two, because rounding can leave the derived value a hair under `rain` on a plain
+ * rain hour, and `rain` can never exceed the liquid total.
+ */
+export function liquidMm(hour: ForecastHour): number {
+  const fromTotal = hour.precipitationMm - hour.snowfallCm / SNOW_CM_PER_MM_WATER;
+  return Math.max(0, hour.rainMm ?? 0, fromTotal);
+}
+
+/**
  * The hour's condition. **The code wins when present** — it is the forecaster's own word, and it is
  * the only input that can say sleet. Without one, the amounts and temperature reproduce the
  * timeline's fallback (liquid at or below 0 °C is freezing rain), then cloud cover picks a dry sky.
@@ -305,8 +332,8 @@ export function hourCondition(hour: ForecastHour): ForecastCondition {
     if (mapped) return mapped;
   }
   const snow = hour.snowfallCm;
-  const rain = hour.rainMm ?? Math.max(0, hour.precipitationMm - snow * 10);
-  const total = hour.precipitationMm > 0 ? hour.precipitationMm : rain + snow * 10;
+  const rain = liquidMm(hour);
+  const total = Math.max(hour.precipitationMm, rain + snow / SNOW_CM_PER_MM_WATER);
   if (total >= PRECIP_MIN_MM) {
     if (snow > 0 && rain > 0) return 'sleet';
     if (snow > 0) return 'snow';
@@ -335,7 +362,8 @@ function toPlanHour(hour: ForecastHour, arrival: boolean): ForecastPlanHour {
     isNight: isNightHour(hour, localHour),
     temperatureF: roundTo(cToF(hour.temperatureC), 0),
     snowfallIn: roundTo(cmToInches(hour.snowfallCm), 1),
-    rainIn: roundTo(mmToInches(hour.rainMm ?? 0), 2),
+    liquidMm: liquidMm(hour),
+    rainIn: roundTo(mmToInches(liquidMm(hour)), 2),
     windMph: roundTo(kphToMph(hour.windSpeedKph), 0),
     gustMph: hour.windGustKph === undefined ? null : roundTo(kphToMph(hour.windGustKph), 0),
     arrival,
@@ -369,12 +397,40 @@ function precipFamily(hour: ForecastPlanHour): Exclude<EpisodeKind, 'wind'> | nu
  * key is `null` when the same key resumes on the far side. Returns `[startIndex, endIndexExclusive,
  * key]` triples in order.
  */
+/**
+ * Are two hours the same clock-hour apart — the next hour, with nothing missing between them?
+ *
+ * Judged on the UTC instant when both carry one, because the local-shifted `startMs` lies twice a
+ * year: spring-forward makes consecutive hours look two apart, fall-back makes them look zero
+ * apart. Without an instant (a fixture, a pre-planner row) the local clock is what there is.
+ */
+function consecutive(a: ForecastPlanHour, b: ForecastPlanHour): boolean {
+  const from = a.utcMs ?? a.startMs;
+  const to = b.utcMs ?? b.startMs;
+  return to - from === HOUR_MS;
+}
+
+/**
+ * Group consecutive hours into runs by `keyOf`, bridging up to `EPISODE_BRIDGE_HOURS` hours whose
+ * key is `null` when the same key resumes on the far side. Returns `[startIndex, endIndexExclusive,
+ * key]` triples in order.
+ *
+ * ⚠ **A run never spans a missing hour.** The parser drops an hour Open-Meteo returned without a
+ * temperature, so adjacent entries are not always adjacent hours; matching weather on both sides of
+ * a hole was one uninterrupted episode — *"10 PM–2 AM"* over an hour nobody has data for (Greptile
+ * on #51). A hole ends the run, and the lull bridge only ever crosses an hour that exists.
+ */
 function runs<K extends string>(
   hours: readonly ForecastPlanHour[],
   keyOf: (h: ForecastPlanHour) => K | null,
 ): [number, number, K][] {
   // Keys precomputed once, so the lull probe below is an array read rather than a re-derivation.
   const keys = hours.map(keyOf);
+  const joined = (i: number): boolean => {
+    const a = hours[i - 1];
+    const b = hours[i];
+    return a !== undefined && b !== undefined && consecutive(a, b);
+  };
   const out: [number, number, K][] = [];
   let i = 0;
   while (i < keys.length) {
@@ -385,16 +441,21 @@ function runs<K extends string>(
     }
     const start = i;
     let end = i + 1;
-    while (end < keys.length) {
+    while (end < keys.length && joined(end)) {
       if (keys[end] === key) {
         end++;
         continue;
       }
-      // A lull: look past it for the same key within the bridge.
+      // A lull: look past it for the same key within the bridge, hour by present hour.
       let probe = end;
-      while (probe < keys.length && probe - end < EPISODE_BRIDGE_HOURS && keys[probe] === null)
+      while (
+        probe < keys.length &&
+        probe - end < EPISODE_BRIDGE_HOURS &&
+        keys[probe] === null &&
+        joined(probe)
+      )
         probe++;
-      if (probe > end && keys[probe] === key) {
+      if (probe > end && keys[probe] === key && joined(probe)) {
         end = probe + 1;
         continue;
       }
@@ -420,7 +481,7 @@ function episodeFrom(
   let maxGustKph: number | null = null;
   for (const h of run) {
     snowfallCm += h.snowfallCm;
-    rainMm += h.rainMm ?? 0;
+    rainMm += h.liquidMm;
     maxWindKph = Math.max(maxWindKph, h.windSpeedKph);
     if (h.windGustKph !== undefined) maxGustKph = Math.max(maxGustKph ?? 0, h.windGustKph);
   }
@@ -480,17 +541,17 @@ const EPISODE_NOUN: Record<EpisodeKind, string> = {
 };
 
 /**
- * `10 PM–4 AM`, or `2–7 PM` when both ends share a meridiem — the collapse every printed forecast
- * uses, and the one that keeps a day card's lines short enough to scan.
+ * `10 PM–4 AM Fri`, or `2–7 PM` when both ends share a meridiem — the collapse every printed
+ * forecast uses, and the one that keeps a day card's lines short enough to scan.
  *
- * A clock read forward from the start is unambiguous for exactly 24 hours, so a run longer than
- * that names the day its end falls on — `2 PM–8 PM Fri` — and skips the collapse, because
- * `2–8 PM` for a thirty-hour storm is six hours to every reader and thirty to none.
+ * **A run that ends on a later date names that day** (founder call, 2026-09-11: *"Snow until 6am
+ * Wed" on Tuesday's card*). A run ending exactly at midnight belongs to its own day — `6 PM–12 AM`
+ * needs no weekday — so the date is taken from the last hour, not from the exclusive end.
  */
 function clockRange(startMs: number, endMs: number): string {
   const a = formatLocalHourLabel(startMs);
   const b = formatLocalHourLabel(endMs);
-  if (endMs - startMs > DAY_MS) return `${a}–${b} ${weekdayOf(endMs)}`;
+  if (localDateOf(endMs - 1) !== localDateOf(startMs)) return `${a}–${b} ${weekdayOf(endMs - 1)}`;
   const [aHour, aSuffix] = a.split(' ');
   const [, bSuffix] = b.split(' ');
   return aSuffix === bSuffix ? `${aHour}–${b}` : `${a}–${b}`;
@@ -501,39 +562,93 @@ function weekdayOf(localMs: number): string {
   return shortDayLabel(localDateOf(localMs)).split(' ')[0] ?? '';
 }
 
+/** The amounts a sentence prints — an episode's own, or one day's share of it. */
+export interface EpisodeAmounts {
+  snowfallCm: number;
+  rainMm: number;
+  maxWindKph: number;
+  maxGustKph: number | null;
+}
+
+function amountText(kind: EpisodeKind, a: EpisodeAmounts): string {
+  switch (kind) {
+    case 'snow':
+      return `${roundTo(cmToInches(a.snowfallCm), 1)}″`;
+    case 'sleet': {
+      const parts: string[] = [];
+      if (a.snowfallCm >= EPISODE_MIN_SNOW_CM)
+        parts.push(`${roundTo(cmToInches(a.snowfallCm), 1)}″ snow`);
+      if (a.rainMm >= EPISODE_MIN_RAIN_MM) parts.push(`${roundTo(mmToInches(a.rainMm), 2)}″ rain`);
+      return parts.join(', ');
+    }
+    case 'rain':
+    case 'freezing-rain':
+      return a.rainMm >= EPISODE_MIN_RAIN_MM ? `${roundTo(mmToInches(a.rainMm), 2)}″` : '';
+    case 'wind': {
+      const gust = a.maxGustKph === null ? null : roundTo(kphToMph(a.maxGustKph), 0);
+      const speed = roundTo(kphToMph(a.maxWindKph), 0);
+      return gust !== null && gust > speed ? `gusts ${gust} mph` : `${speed} mph`;
+    }
+  }
+}
+
+function sentence(kind: EpisodeKind, when: string, amounts: EpisodeAmounts): string {
+  const amount = amountText(kind, amounts);
+  return amount ? `${EPISODE_NOUN[kind]} ${when} · ${amount}` : `${EPISODE_NOUN[kind]} ${when}`;
+}
+
 /**
- * One sentence for one episode, imperial (D25): `Snow 10 PM–4 AM · 3.2″` · `Rain 1–3 PM · 0.1″` ·
- * `Wind 2–7 PM · gusts 38 mph`. `all day` when the run covers the whole of the day it is printed on.
+ * One sentence for one episode, imperial (D25): `Snow 10 PM–4 AM Fri · 3.2″` · `Rain 1–3 PM · 0.1″`
+ * · `Wind 2–7 PM · gusts 38 mph`. `all day` when the run covers the whole of the day it is printed on.
  *
- * The clock is a plain two-ended range and it may cross midnight — *"10 PM–4 AM"* is exactly the
- * founder's example, and readers parse it without a date because the card they are reading on is
- * the date.
+ * The clock is a plain two-ended range, and when it crosses midnight the end names its day — the
+ * card it is printed on is the start's date, so only the far end needs one.
  */
 export function formatEpisode(e: ForecastEpisode, opts: { allDay?: boolean } = {}): string {
-  const when = opts.allDay ? 'all day' : clockRange(e.startMs, e.endMs);
-  const amount = (() => {
-    switch (e.kind) {
-      case 'snow':
-        return `${roundTo(cmToInches(e.snowfallCm), 1)}″`;
-      case 'sleet': {
-        const parts: string[] = [];
-        if (e.snowfallCm >= EPISODE_MIN_SNOW_CM)
-          parts.push(`${roundTo(cmToInches(e.snowfallCm), 1)}″ snow`);
-        if (e.rainMm >= EPISODE_MIN_RAIN_MM)
-          parts.push(`${roundTo(mmToInches(e.rainMm), 2)}″ rain`);
-        return parts.join(', ');
-      }
-      case 'rain':
-      case 'freezing-rain':
-        return e.rainMm >= EPISODE_MIN_RAIN_MM ? `${roundTo(mmToInches(e.rainMm), 2)}″` : '';
-      case 'wind': {
-        const gust = e.maxGustKph === null ? null : roundTo(kphToMph(e.maxGustKph), 0);
-        const speed = roundTo(kphToMph(e.maxWindKph), 0);
-        return gust !== null && gust > speed ? `gusts ${gust} mph` : `${speed} mph`;
-      }
-    }
-  })();
-  return amount ? `${EPISODE_NOUN[e.kind]} ${when} · ${amount}` : `${EPISODE_NOUN[e.kind]} ${when}`;
+  return sentence(e.kind, opts.allDay ? 'all day' : clockRange(e.startMs, e.endMs), e);
+}
+
+/**
+ * The sentence a later day prints for an episode that began before it (founder call, 2026-09-11:
+ * *"then on Wednesday's card 'Snow until 6am' again"*): `Snow until 6 AM · 1.2″`, with **that day's
+ * share** of the amounts — the storm's total belongs to the card it started on. `all day` when the
+ * run outlasts the card.
+ */
+export function formatContinuation(
+  e: ForecastEpisode,
+  share: EpisodeAmounts,
+  opts: { allDay?: boolean } = {},
+): string {
+  return sentence(
+    e.kind,
+    opts.allDay ? 'all day' : `until ${formatLocalHourLabel(e.endMs)}`,
+    share,
+  );
+}
+
+/** The amounts of `e` that fall inside `[fromMs, toMs)`, summed over the plan's hours. */
+function episodeShare(
+  e: ForecastEpisode,
+  hours: readonly ForecastPlanHour[],
+  fromMs: number,
+  toMs: number,
+): EpisodeAmounts {
+  const share: EpisodeAmounts = { snowfallCm: 0, rainMm: 0, maxWindKph: 0, maxGustKph: null };
+  const lo = Math.max(e.startMs, fromMs);
+  const hi = Math.min(e.endMs, toMs);
+  for (const h of hours) {
+    if (h.startMs < lo || h.startMs >= hi) continue;
+    // Only hours doing the episode's thing count toward its share — a bridged lull adds nothing,
+    // and a wind run's hours are not a snow run's.
+    if (e.kind === 'wind' ? h.windSpeedKph < EPISODE_WIND_KPH : precipFamily(h) !== e.kind)
+      continue;
+    share.snowfallCm += h.snowfallCm;
+    share.rainMm += h.liquidMm;
+    share.maxWindKph = Math.max(share.maxWindKph, h.windSpeedKph);
+    if (h.windGustKph !== undefined)
+      share.maxGustKph = Math.max(share.maxGustKph ?? 0, h.windGustKph);
+  }
+  return share;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
@@ -676,9 +791,11 @@ export function buildForecastPlan(
   for (const { localDate, firstHourIndex, hours: dayHours } of kept) {
     const dayMs = localDateToDayMs(localDate) ?? 0;
     const dayEnd = dayMs + DAY_MS;
-    // The sentences belong to the day an episode starts on; the symbol to every day it falls on.
-    const own = episodes.filter((e) => e.startMs >= dayMs && e.startMs < dayEnd);
+    // An episode's full sentence belongs to the day it starts on; every later day it reaches gets
+    // a continuation line with its own share; the symbol follows every day it touches.
     const touching = episodes.filter((e) => e.startMs < dayEnd && e.endMs > dayMs);
+    const own = touching.filter((e) => e.startMs >= dayMs);
+    const continued = touching.filter((e) => e.startMs < dayMs);
     // Ascending, so the card's span is its first and last hour.
     const dayStartMs = dayHours[0]?.startMs ?? Number.NaN;
     const dayEndMs = (dayHours[dayHours.length - 1]?.startMs ?? Number.NaN) + HOUR_MS;
@@ -694,7 +811,7 @@ export function buildForecastPlan(
       highC = Math.max(highC, h.temperatureC);
       lowC = Math.min(lowC, h.temperatureC);
       snowfallCm += h.snowfallCm;
-      rainMm += h.rainMm ?? 0;
+      rainMm += h.liquidMm;
       maxWindKph = Math.max(maxWindKph, h.windSpeedKph);
       if (h.windGustKph !== undefined) maxGustKph = Math.max(maxGustKph ?? 0, h.windGustKph);
       if (h.shortwaveWm2 !== undefined) {
@@ -712,7 +829,10 @@ export function buildForecastPlan(
       dateLabel,
       firstHourIndex,
       hourCount: dayHours.length,
-      partial: dayHours.length < 24,
+      // Not `< 24`: a spring-forward day has 23 hours and is whole. A card is partial when it does
+      // not begin at its own midnight (today, already under way) or does not reach the next one
+      // (the series' last day, cut short).
+      partial: (dayHours[0]?.localHour ?? 0) !== 0 || dayEndMs < dayEnd,
       condition: dayCondition(dayHours, touching),
       highC,
       lowC,
@@ -729,9 +849,16 @@ export function buildForecastPlan(
       maxGustKph,
       sunlitHours: sawShortwave ? sunlit : null,
       episodes: own,
-      lines: own.map((e) =>
-        formatEpisode(e, { allDay: e.startMs <= dayStartMs && e.endMs >= dayEndMs }),
-      ),
+      lines: [
+        ...continued.map((e) =>
+          formatContinuation(e, episodeShare(e, dayHours, dayMs, dayEnd), {
+            allDay: e.endMs >= dayEndMs,
+          }),
+        ),
+        ...own.map((e) =>
+          formatEpisode(e, { allDay: e.startMs <= dayStartMs && e.endMs >= dayEndMs }),
+        ),
+      ],
     });
   }
 
