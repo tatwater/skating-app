@@ -30,15 +30,14 @@ function NotificationsPage() {
   const markRead = useMutation(api.notifications.markRead);
   const now = Date.now();
 
-  // Mark-all-read once per distinct "newest unread" — not on every reactive re-render, and not
-  // before the first page has actually arrived (an empty `results` during load would mark nothing
-  // and then never fire again for the rows that turned up a moment later).
+  // Mark what the page opened on as read — **once**, when the first page lands. Not on every
+  // reactive re-render: a notification delivered while this tab sits open in the background would
+  // otherwise stamp itself read the moment it arrived, unseen. It stays unread until the next visit.
   const newestUnread = results.find((n) => n.readAt === undefined)?.createdAt;
-  const marked = useRef<number | undefined>(undefined);
+  const marked = useRef(false);
   useEffect(() => {
-    if (status === 'LoadingFirstPage' || newestUnread === undefined) return;
-    if (marked.current === newestUnread) return;
-    marked.current = newestUnread;
+    if (marked.current || status === 'LoadingFirstPage' || newestUnread === undefined) return;
+    marked.current = true;
     void markRead({ before: newestUnread });
   }, [markRead, newestUnread, status]);
 

@@ -389,7 +389,11 @@ export const flushNotificationQueue = internalMutation({
 export const list = query({
   args: { paginationOpts: paginationOptsValidator },
   handler: async (ctx, { paginationOpts }) => {
-    const profile = await requireProfile(ctx);
+    // Fail soft like `unreadCount`: the route is behind the auth gate, but a hard refresh can run
+    // the subscription a frame before the Convex client has its token, and an empty page beats an
+    // error boundary for that frame.
+    const profile = await getCurrentProfile(ctx);
+    if (!profile) return { page: [], isDone: true, continueCursor: '' };
     const now = Date.now();
     const page = await ctx.db
       .query('notifications')
@@ -451,12 +455,14 @@ export const markRead = mutation({
       return;
     }
     if (before === undefined) throw new ConvexError('Pass a notification id or a timestamp');
-    // Bounded like the flush: the unread set is at most the badge cap in the common case, and a
-    // pathological backlog is marked over two calls rather than one that can't complete.
+    // Bounded like the flush, and **newest first**: the caller is a list that just showed its top
+    // rows, so those are the ones that must be stamped. A pathological backlog older than the cap
+    // stays unread — it's the part nobody has scrolled to.
     const unread = await takeCapped(
       ctx.db
         .query('notifications')
-        .withIndex('by_user_read', (q) => q.eq('userId', profile._id).eq('readAt', undefined)),
+        .withIndex('by_user_read', (q) => q.eq('userId', profile._id).eq('readAt', undefined))
+        .order('desc'),
       MARK_READ_BATCH_CAP,
       'notifications.markRead',
     );

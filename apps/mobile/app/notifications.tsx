@@ -24,13 +24,13 @@ export default function NotificationsScreen() {
   const markRead = useMutation(api.notifications.markRead);
   const now = Date.now();
 
-  // Once per distinct "newest unread", after the first page has landed — same guard as the web.
+  // Mark what the screen opened on as read — once, when the first page lands (same guard as the
+  // web): a notification arriving while the modal is up stays unread until the next open.
   const newestUnread = results.find((n) => n.readAt === undefined)?.createdAt;
-  const marked = useRef<number | undefined>(undefined);
+  const marked = useRef(false);
   useEffect(() => {
-    if (status === 'LoadingFirstPage' || newestUnread === undefined) return;
-    if (marked.current === newestUnread) return;
-    marked.current = newestUnread;
+    if (marked.current || status === 'LoadingFirstPage' || newestUnread === undefined) return;
+    marked.current = true;
     void markRead({ before: newestUnread }).catch(() => {});
   }, [markRead, newestUnread, status]);
 

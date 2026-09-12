@@ -602,13 +602,24 @@ producer enqueues with `SETTLE_MS = 60 s` and a typed `trigger` the flush re-rea
 
 **Departures worth knowing:**
 
+0. **Review pass (local, high):** `list` fails soft (empty page, not a throw) for the frame before
+   the client has its token; `markRead({ before })` walks the unread index **newest-first** so the
+   rows a page just showed are the ones stamped; both lists mark read **once, on first load** — a
+   notification arriving while the page sits open stays unread until the next visit.
 1. **The plan miscounted the toggles.** Both settings pages rendered *three* (the Phase-4 set), not
    ten. They now iterate `NOTIFICATION_PREF_ORDER` from `@skating/core`, where the vocabulary, the
    labels and `describeNotification` (the sentence both clients render) now live.
 2. **`bounty_fulfilled` was misdescribed** — it went to the fulfiller, and nobody told the requester a
    report had arrived. It is now `bounty_answered`, to the requester, on attach (D167). The pref key
-   renamed with it (`bountyAnswered`); `backfillNotificationPrefs` migrates the profile objects, and
-   the deploy is widen → run → narrow because `boolFlags` is a strict object.
+   renamed with it (`bountyAnswered`); `backfillNotificationPrefs` migrates the profile objects.
+   **⚠ Dev deploy recipe** (prod has no profiles, so this is dev-only): `boolFlags` is a strict
+   `v.object`, so the narrow schema in this tree rejects every existing profile on push. Widen
+   *locally and uncommitted* — in `schema.ts` replace `boolFlags(NOTIFICATION_PREF_KEYS)` with
+   `v.object({ ...boolFlags(NOTIFICATION_PREF_KEYS).fields, bountyAnswered: v.optional(v.boolean()),
+   bountyFulfilled: v.optional(v.boolean()) })` — push (`convex dev --once`), run
+   `profiles:backfillNotificationPrefs`, revert the local edit, push again. Recorded here rather than
+   committed because the transitional shape is one deploy long and would otherwise look like the
+   schema.
 3. **The queue-kind rename had stored state.** B2 said "no database rows, no wire format" — but
    `draftStore` persists the `kind` in a SQLite column *and* inside the JSON blob. Renamed anyway
    (founder: "now is the time"), with a one-shot `UPDATE … json_set` in `ensureSchema`, tested against
