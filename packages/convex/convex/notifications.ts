@@ -45,7 +45,7 @@ import { ConvexError, v } from 'convex/values';
 import { internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
 import { internalMutation, type MutationCtx, mutation, query } from './_generated/server';
-import { canReceiveNotifications, requireProfile } from './lib/auth';
+import { canReceiveNotifications, getCurrentProfile, requireProfile } from './lib/auth';
 import { recipientWants, settleTrigger } from './lib/notificationQueue';
 import { resolveNotifications } from './lib/notificationResolve';
 import { loadBlockedAuthorIds } from './lib/reportVisibility';
@@ -411,11 +411,16 @@ export const list = query({
  */
 export const UNREAD_COUNT_CAP = 99;
 
-/** Unread notifications for the badge — an indexed equality on `(userId, readAt = undefined)`. */
+/**
+ * Unread notifications for the badge — an indexed equality on `(userId, readAt = undefined)`.
+ * Answers 0 rather than throwing when there's no profile yet: both clients subscribe from their
+ * shell, which can render a frame before the profile row exists after sign-up.
+ */
 export const unreadCount = query({
   args: {},
   handler: async (ctx): Promise<number> => {
-    const profile = await requireProfile(ctx);
+    const profile = await getCurrentProfile(ctx);
+    if (!profile) return 0;
     const unread = await ctx.db
       .query('notifications')
       .withIndex('by_user_read', (q) => q.eq('userId', profile._id).eq('readAt', undefined))

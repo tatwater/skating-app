@@ -270,6 +270,12 @@ export function ReportDetail({ reportId }: { reportId: string }) {
   // (D3). Skipped when signed out (the query requires a profile). A block never hides the report.
   const me = useQuery(api.profiles.current, {});
   const blockedIds = useQuery(api.blocks.blockedUserIds, me ? {} : 'skip');
+  // The author's "people were waiting for this" line (N8 / D167). The query answers 0 for anyone
+  // but the author, so it's safe to ask unconditionally; skipped when signed out to save the call.
+  const bountiesAnswered = useQuery(
+    api.bounties.answeredByMyReport,
+    me ? { reportId: reportId as Id<'reports'> } : 'skip',
+  );
   const { setHighlightWaterBodyId, setFocus, setPhotoPins, setTrackPath } = useMapSelection();
 
   // The recorded GPS path behind this report (Phase 8), when there is one — most reports have none
@@ -368,6 +374,15 @@ export function ReportDetail({ reportId }: { reportId: string }) {
       {track?.clipped ? (
         <p className="px-4 pb-2 text-foreground-muted text-xs">
           Start and end of this track are hidden — the skater didn’t share their put-in.
+        </p>
+      ) : null}
+      {/* The author is told on the spot rather than pinged (D167): a stranger having asked is not a
+          reason for the author's phone to ding, but it is a nice thing to know. */}
+      {isOwn && bountiesAnswered !== undefined && bountiesAnswered > 0 ? (
+        <p className="px-4 pb-2 text-foreground-muted text-sm">
+          Thanks for this report — at least{' '}
+          {bountiesAnswered === 1 ? 'one skater was' : `${bountiesAnswered} skaters were`} looking
+          forward to it.
         </p>
       ) : null}
       {/* Thumbs (D50): counts visible to all; rating enabled for a signed-in non-author. */}

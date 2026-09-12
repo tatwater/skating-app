@@ -1,4 +1,6 @@
 import { useAuth, useUser } from '@clerk/clerk-expo';
+import { FontAwesomeIcon } from '@fortawesome/react-native-fontawesome';
+import { faBell } from '@fortawesome/sharp-light-svg-icons';
 import { api } from '@skating/convex/api';
 import type { Id } from '@skating/convex/dataModel';
 import {
@@ -6,6 +8,9 @@ import {
   AGGREGATE_OPT_OUT_HEADING,
   AGGREGATE_OPT_OUT_LABEL,
   DRIVE_TIME_BANDS,
+  NOTIFICATION_PREF_LABELS,
+  NOTIFICATION_PREF_ORDER,
+  type NotificationPrefKey,
 } from '@skating/core';
 import { THEME_PREFERENCES, type ThemePreference } from '@skating/design';
 import { useMutation, useQuery } from 'convex/react';
@@ -14,7 +19,7 @@ import { Link, useRouter } from 'expo-router';
 import { type ReactNode, useState } from 'react';
 import { ScrollView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Button, H1, Paragraph, Separator, Text, XStack, YStack } from 'tamagui';
+import { Button, H1, Paragraph, Separator, Text, useTheme, XStack, YStack } from 'tamagui';
 import { AccountLifecycle } from '../../src/components/AccountLifecycle';
 import { ProfileEdit } from '../../src/components/ProfileEdit';
 import { Avatar } from '../../src/components/ProfileView';
@@ -35,6 +40,9 @@ export default function YouScreen() {
   const { user } = useUser();
   const profile = useQuery(api.profiles.current, {});
   const router = useRouter();
+  const theme = useTheme();
+  // The bell's dot (N8/A3). The tab bar shows the same signal on the You icon from every screen.
+  const unread = useQuery(api.notifications.unreadCount, profile ? {} : 'skip') ?? 0;
 
   async function onSignOut() {
     await signOut();
@@ -45,7 +53,36 @@ export default function YouScreen() {
     <SafeAreaView style={{ flex: 1 }} edges={['top', 'bottom']}>
       <ScrollView>
         <YStack flex={1} gap="$4" padding="$4" backgroundColor="$background">
-          <H1 color="$foreground">You</H1>
+          <XStack alignItems="center" justifyContent="space-between">
+            <H1 color="$foreground">You</H1>
+            {/* The inbox lives behind this bell rather than in the tab bar (D28: five tabs stand). */}
+            <Button
+              chromeless
+              size="$3"
+              circular
+              hitSlop={tapTargetSlop('$3')}
+              accessibilityLabel={unread > 0 ? `Notifications, ${unread} unread` : 'Notifications'}
+              onPress={() => router.push('/notifications')}
+              icon={
+                <XStack>
+                  <FontAwesomeIcon icon={faBell} size={22} color={theme.foreground?.val} />
+                  {unread > 0 ? (
+                    <YStack
+                      position="absolute"
+                      top={-2}
+                      right={-3}
+                      width={9}
+                      height={9}
+                      borderRadius={5}
+                      backgroundColor="$primary"
+                      borderWidth={1.5}
+                      borderColor="$background"
+                    />
+                  ) : null}
+                </XStack>
+              }
+            />
+          </XStack>
           {profile ? (
             /* A `Paragraph` under `asChild` rendered dark-on-dark — the plain `Paragraph` on the
                next line, with no Link around it, themed fine. A Button is what `asChild` is meant
@@ -369,6 +406,11 @@ function AggregateTracksSetting() {
   );
 }
 
+/**
+ * Notification preferences — **every** type, iterated from the vocabulary in `@skating/core` (D16;
+ * N8), so this list and the web's can't drift. The two radius-bearing Phase-4 buckets sit last with
+ * their "within" rows (X₂ ≥ X₁, clamped here and re-enforced server-side).
+ */
 function NotificationSettings() {
   const profile = useQuery(api.profiles.current, {});
   const setPrefs = useMutation(api.profiles.setNotificationPrefs);
@@ -377,52 +419,61 @@ function NotificationSettings() {
   const allRadius = profile.allRadiusMinutes;
   const greatRadius = profile.greatRadiusMinutes;
 
+  const toggle = (key: NotificationPrefKey) => (
+    <ToggleRow
+      key={key}
+      label={NOTIFICATION_PREF_LABELS[key]}
+      value={prefs[key]}
+      onToggle={(v) => void setPrefs({ prefs: { [key]: v } })}
+    />
+  );
+
   return (
     <YStack gap="$3">
       <Text color="$foregroundMuted" fontSize={11} letterSpacing={1.5} textTransform="uppercase">
         Notifications
       </Text>
-      <ToggleRow
-        label="New reports on lakes I've favorited"
-        value={prefs.favoriteReport}
-        onToggle={(v) => void setPrefs({ prefs: { favoriteReport: v } })}
-      />
-      <ToggleRow
-        label="Daily digest of all reports nearby"
-        value={prefs.nearbyReportDigest}
-        onToggle={(v) => void setPrefs({ prefs: { nearbyReportDigest: v } })}
-      />
-      {prefs.nearbyReportDigest ? (
-        <RadiusRow
-          label="Within"
-          value={allRadius}
-          onChange={(m) => {
-            // Keep X₂ ≥ X₁: bump the great radius up if it would fall below.
-            const nextGreat = greatRadius !== undefined && greatRadius < m ? m : greatRadius;
-            void setPrefs({
-              allRadiusMinutes: m,
-              ...(nextGreat !== greatRadius ? { greatRadiusMinutes: nextGreat } : {}),
-            });
-          }}
-        />
-      ) : null}
-      <ToggleRow
-        label="Great reports nearby (drive farther for perfect ice)"
-        value={prefs.greatReportNearby}
-        onToggle={(v) => void setPrefs({ prefs: { greatReportNearby: v } })}
-      />
-      {prefs.greatReportNearby ? (
-        <RadiusRow
-          label="Within"
-          value={greatRadius}
-          onChange={(m) => {
-            // Clamp X₂ ≥ X₁ (the server rejects otherwise).
-            void setPrefs({
-              greatRadiusMinutes: allRadius !== undefined && m < allRadius ? allRadius : m,
-            });
-          }}
-        />
-      ) : null}
+      {NOTIFICATION_PREF_ORDER.flatMap((key) => {
+        if (key === 'nearbyReportDigest') {
+          return [
+            toggle(key),
+            prefs.nearbyReportDigest ? (
+              <RadiusRow
+                key="all-radius"
+                label="Within"
+                value={allRadius}
+                onChange={(m) => {
+                  // Keep X₂ ≥ X₁: bump the great radius up if it would fall below.
+                  const nextGreat = greatRadius !== undefined && greatRadius < m ? m : greatRadius;
+                  void setPrefs({
+                    allRadiusMinutes: m,
+                    ...(nextGreat !== greatRadius ? { greatRadiusMinutes: nextGreat } : {}),
+                  });
+                }}
+              />
+            ) : null,
+          ];
+        }
+        if (key === 'greatReportNearby') {
+          return [
+            toggle(key),
+            prefs.greatReportNearby ? (
+              <RadiusRow
+                key="great-radius"
+                label="Within"
+                value={greatRadius}
+                onChange={(m) => {
+                  // Clamp X₂ ≥ X₁ (the server rejects otherwise).
+                  void setPrefs({
+                    greatRadiusMinutes: allRadius !== undefined && m < allRadius ? allRadius : m,
+                  });
+                }}
+              />
+            ) : null,
+          ];
+        }
+        return [toggle(key)];
+      })}
       {profile.homeCoord === undefined ? (
         <Text color="$foregroundMuted" fontSize={12}>
           Set a home location above for the nearby options to take effect.

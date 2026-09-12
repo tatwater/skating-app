@@ -1,4 +1,6 @@
 import { useAuth } from '@clerk/tanstack-react-start';
+import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
+import { faBell } from '@fortawesome/sharp-regular-svg-icons';
 import { api } from '@skating/convex/api';
 import { Link, useRouterState } from '@tanstack/react-router';
 import { useQuery } from 'convex/react';
@@ -37,6 +39,9 @@ export function AppShell({ children }: { children: ReactNode }) {
   const { signOut } = useAuth();
   const profile = useQuery(api.profiles.current, {});
   const pathname = useRouterState({ select: (s) => s.location.pathname });
+  // The bell's dot (N8/A3). `unreadCount` is a capped indexed read, so subscribing to it from the
+  // shell — every page — is one small query, not a scan.
+  const unread = useQuery(api.notifications.unreadCount, profile ? {} : 'skip') ?? 0;
   const mapRoute = isMapRoute(pathname);
 
   return (
@@ -75,6 +80,22 @@ export function AppShell({ children }: { children: ReactNode }) {
         <div className="min-w-0 flex-1">{mapRoute ? <LakeSearch /> : null}</div>
         <div className="flex shrink-0 items-center gap-2 text-sm">
           <ThemeToggle />
+          <Link
+            to="/notifications"
+            className="relative rounded-md p-1.5 text-foreground-muted hover:bg-surface-muted hover:text-foreground"
+            activeProps={{
+              className: 'relative rounded-md p-1.5 bg-surface-muted text-foreground',
+            }}
+            aria-label={unread > 0 ? `Notifications, ${unread} unread` : 'Notifications'}
+          >
+            <FontAwesomeIcon icon={faBell} className="size-4" />
+            {unread > 0 ? (
+              <span
+                aria-hidden
+                className="absolute top-1 right-1 size-2 rounded-full bg-primary ring-2 ring-surface"
+              />
+            ) : null}
+          </Link>
           {profile ? (
             <Link
               to="/u/$username"

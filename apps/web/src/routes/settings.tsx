@@ -1,7 +1,12 @@
 import { useAuth, useUser } from '@clerk/tanstack-react-start';
 import { api } from '@skating/convex/api';
 import type { Id } from '@skating/convex/dataModel';
-import { DRIVE_TIME_BANDS } from '@skating/core';
+import {
+  DRIVE_TIME_BANDS,
+  NOTIFICATION_PREF_LABELS,
+  NOTIFICATION_PREF_ORDER,
+  type NotificationPrefKey,
+} from '@skating/core';
 import { createFileRoute, Link } from '@tanstack/react-router';
 import { useMutation, useQuery } from 'convex/react';
 import { useState } from 'react';
@@ -191,9 +196,10 @@ function RadiusSelect({
 }
 
 /**
- * Notification preferences (Phase 4, decision #4) — favorites (default on, any distance), a daily
- * "all reports nearby" digest within X₁, and "great reports nearby" within X₂ (X₂ ≥ X₁, clamped here
- * and re-enforced server-side). The radii need a home set above; without one, nearby buckets never fire.
+ * Notification preferences — **every** type, iterated from the vocabulary in `@skating/core` (D16;
+ * N8). This page used to hand-pick three of ten toggles, and the other seven were switches on the
+ * server nobody could reach. The two radius-bearing Phase-4 buckets sit last, each with its "within"
+ * row (X₂ ≥ X₁, clamped here and re-enforced server-side); the radii need a home set above.
  */
 function NotificationSettings() {
   const profile = useQuery(api.profiles.current, {});
@@ -203,6 +209,19 @@ function NotificationSettings() {
   const allRadius = profile.allRadiusMinutes;
   const greatRadius = profile.greatRadiusMinutes;
 
+  const toggle = (key: NotificationPrefKey) => (
+    <div className="flex items-center gap-2">
+      <Checkbox
+        id={`notif-${key}`}
+        checked={prefs[key]}
+        onCheckedChange={(v) => void setPrefs({ prefs: { [key]: v === true } })}
+      />
+      <Label htmlFor={`notif-${key}`} className="text-foreground text-sm">
+        {NOTIFICATION_PREF_LABELS[key]}
+      </Label>
+    </div>
+  );
+
   return (
     <section className="flex flex-col gap-2">
       <h2 className="font-mono text-foreground-muted text-xs uppercase tracking-widest">
@@ -210,85 +229,70 @@ function NotificationSettings() {
       </h2>
       <Card>
         <CardContent className="flex flex-col gap-4">
-          <div className="flex items-center gap-2">
-            <Checkbox
-              id="notif-favorite"
-              checked={prefs.favoriteReport}
-              onCheckedChange={(v) => void setPrefs({ prefs: { favoriteReport: v === true } })}
-            />
-            <Label htmlFor="notif-favorite" className="text-foreground text-sm">
-              New reports on lakes I've favorited
-            </Label>
-          </div>
-
-          <div className="flex flex-col gap-2">
-            <div className="flex items-center gap-2">
-              <Checkbox
-                id="notif-digest"
-                checked={prefs.nearbyReportDigest}
-                onCheckedChange={(v) =>
-                  void setPrefs({ prefs: { nearbyReportDigest: v === true } })
-                }
-              />
-              <Label htmlFor="notif-digest" className="text-foreground text-sm">
-                Daily digest of all reports nearby
-              </Label>
-            </div>
-            {prefs.nearbyReportDigest ? (
-              <div className="ml-6 flex items-center gap-2">
-                <Label htmlFor="all-radius" className="text-foreground-muted text-xs">
-                  Within
-                </Label>
-                <RadiusSelect
-                  id="all-radius"
-                  value={allRadius}
-                  onChange={(minutes) => {
-                    // Keep X₂ ≥ X₁: bump the great radius up if it would fall below.
-                    const nextGreat =
-                      minutes !== undefined && greatRadius !== undefined && greatRadius < minutes
-                        ? minutes
-                        : greatRadius;
-                    void setPrefs({
-                      allRadiusMinutes: minutes,
-                      ...(nextGreat !== greatRadius ? { greatRadiusMinutes: nextGreat } : {}),
-                    });
-                  }}
-                />
-              </div>
-            ) : null}
-          </div>
-
-          <div className="flex flex-col gap-2">
-            <div className="flex items-center gap-2">
-              <Checkbox
-                id="notif-great"
-                checked={prefs.greatReportNearby}
-                onCheckedChange={(v) => void setPrefs({ prefs: { greatReportNearby: v === true } })}
-              />
-              <Label htmlFor="notif-great" className="text-foreground text-sm">
-                Great reports nearby (I'll drive farther for perfect ice)
-              </Label>
-            </div>
-            {prefs.greatReportNearby ? (
-              <div className="ml-6 flex items-center gap-2">
-                <Label htmlFor="great-radius" className="text-foreground-muted text-xs">
-                  Within
-                </Label>
-                <RadiusSelect
-                  id="great-radius"
-                  value={greatRadius}
-                  onChange={(minutes) => {
-                    // Clamp X₂ ≥ X₁ client-side (the server rejects otherwise).
-                    if (minutes !== undefined && allRadius !== undefined && minutes < allRadius) {
-                      void setPrefs({ greatRadiusMinutes: allRadius });
-                      return;
-                    }
-                    void setPrefs({ greatRadiusMinutes: minutes });
-                  }}
-                />
-              </div>
-            ) : null}
-          </div>
+          {NOTIFICATION_PREF_ORDER.map((key) => {
+            if (key === 'nearbyReportDigest') {
+              return (
+                <div key={key} className="flex flex-col gap-2">
+                  {toggle(key)}
+                  {prefs.nearbyReportDigest ? (
+                    <div className="ml-6 flex items-center gap-2">
+                      <Label htmlFor="all-radius" className="text-foreground-muted text-xs">
+                        Within
+                      </Label>
+                      <RadiusSelect
+                        id="all-radius"
+                        value={allRadius}
+                        onChange={(minutes) => {
+                          // Keep X₂ ≥ X₁: bump the great radius up if it would fall below.
+                          const nextGreat =
+                            minutes !== undefined &&
+                            greatRadius !== undefined &&
+                            greatRadius < minutes
+                              ? minutes
+                              : greatRadius;
+                          void setPrefs({
+                            allRadiusMinutes: minutes,
+                            ...(nextGreat !== greatRadius ? { greatRadiusMinutes: nextGreat } : {}),
+                          });
+                        }}
+                      />
+                    </div>
+                  ) : null}
+                </div>
+              );
+            }
+            if (key === 'greatReportNearby') {
+              return (
+                <div key={key} className="flex flex-col gap-2">
+                  {toggle(key)}
+                  {prefs.greatReportNearby ? (
+                    <div className="ml-6 flex items-center gap-2">
+                      <Label htmlFor="great-radius" className="text-foreground-muted text-xs">
+                        Within
+                      </Label>
+                      <RadiusSelect
+                        id="great-radius"
+                        value={greatRadius}
+                        onChange={(minutes) => {
+                          // Clamp X₂ ≥ X₁ client-side (the server rejects otherwise).
+                          if (
+                            minutes !== undefined &&
+                            allRadius !== undefined &&
+                            minutes < allRadius
+                          ) {
+                            void setPrefs({ greatRadiusMinutes: allRadius });
+                            return;
+                          }
+                          void setPrefs({ greatRadiusMinutes: minutes });
+                        }}
+                      />
+                    </div>
+                  ) : null}
+                </div>
+              );
+            }
+            return <div key={key}>{toggle(key)}</div>;
+          })}
 
           {profile.homeCoord === undefined ? (
             <p className="text-foreground-muted text-xs">

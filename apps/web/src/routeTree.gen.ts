@@ -14,6 +14,7 @@ import { Route as SignInRouteImport } from './routes/sign-in'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as ReackRouteImport } from './routes/reack'
 import { Route as OnboardingRouteImport } from './routes/onboarding'
+import { Route as NotificationsRouteImport } from './routes/notifications'
 import { Route as FeedRouteImport } from './routes/feed'
 import { Route as AdminRouteImport } from './routes/admin'
 import { Route as AboutRouteImport } from './routes/about'
@@ -61,6 +62,11 @@ const ReackRoute = ReackRouteImport.update({
 const OnboardingRoute = OnboardingRouteImport.update({
   id: '/onboarding',
   path: '/onboarding',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const NotificationsRoute = NotificationsRouteImport.update({
+  id: '/notifications',
+  path: '/notifications',
   getParentRoute: () => rootRouteImport,
 } as any)
 const FeedRoute = FeedRouteImport.update({
@@ -183,6 +189,7 @@ export interface FileRoutesByFullPath {
   '/about': typeof AboutRoute
   '/admin': typeof AdminRouteWithChildren
   '/feed': typeof FeedRoute
+  '/notifications': typeof NotificationsRoute
   '/onboarding': typeof OnboardingRoute
   '/reack': typeof ReackRoute
   '/settings': typeof SettingsRoute
@@ -210,6 +217,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/about': typeof AboutRoute
   '/feed': typeof FeedRoute
+  '/notifications': typeof NotificationsRoute
   '/onboarding': typeof OnboardingRoute
   '/reack': typeof ReackRoute
   '/settings': typeof SettingsRoute
@@ -241,6 +249,7 @@ export interface FileRoutesById {
   '/about': typeof AboutRoute
   '/admin': typeof AdminRouteWithChildren
   '/feed': typeof FeedRoute
+  '/notifications': typeof NotificationsRoute
   '/onboarding': typeof OnboardingRoute
   '/reack': typeof ReackRoute
   '/settings': typeof SettingsRoute
@@ -273,6 +282,7 @@ export interface FileRouteTypes {
     | '/about'
     | '/admin'
     | '/feed'
+    | '/notifications'
     | '/onboarding'
     | '/reack'
     | '/settings'
@@ -300,6 +310,7 @@ export interface FileRouteTypes {
   to:
     | '/about'
     | '/feed'
+    | '/notifications'
     | '/onboarding'
     | '/reack'
     | '/settings'
@@ -330,6 +341,7 @@ export interface FileRouteTypes {
     | '/about'
     | '/admin'
     | '/feed'
+    | '/notifications'
     | '/onboarding'
     | '/reack'
     | '/settings'
@@ -361,6 +373,7 @@ export interface RootRouteChildren {
   AboutRoute: typeof AboutRoute
   AdminRoute: typeof AdminRouteWithChildren
   FeedRoute: typeof FeedRoute
+  NotificationsRoute: typeof NotificationsRoute
   OnboardingRoute: typeof OnboardingRoute
   ReackRoute: typeof ReackRoute
   SettingsRoute: typeof SettingsRoute
@@ -404,6 +417,13 @@ declare module '@tanstack/react-router' {
       path: '/onboarding'
       fullPath: '/onboarding'
       preLoaderRoute: typeof OnboardingRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/notifications': {
+      id: '/notifications'
+      path: '/notifications'
+      fullPath: '/notifications'
+      preLoaderRoute: typeof NotificationsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/feed': {
@@ -627,6 +647,7 @@ const rootRouteChildren: RootRouteChildren = {
   AboutRoute: AboutRoute,
   AdminRoute: AdminRouteWithChildren,
   FeedRoute: FeedRoute,
+  NotificationsRoute: NotificationsRoute,
   OnboardingRoute: OnboardingRoute,
   ReackRoute: ReackRoute,
   SettingsRoute: SettingsRoute,

@@ -7,8 +7,10 @@ import {
   faNewspaper,
   faUser,
 } from '@fortawesome/sharp-duotone-solid-svg-icons';
+import { api } from '@skating/convex/api';
+import { useQuery } from 'convex/react';
 import { Tabs } from 'expo-router';
-import type { ColorValue } from 'react-native';
+import { type ColorValue, View } from 'react-native';
 import { useTheme } from 'tamagui';
 
 /**
@@ -58,6 +60,10 @@ function TabIcon({ icon, color, size }: { icon: IconDefinition; color: ColorValu
  */
 export default function TabsLayout() {
   const theme = useTheme();
+  // The unread signal (N8/A3): a dot on the You icon, visible from every screen with the tab bar,
+  // so the badge costs no tab. `unreadCount` is one capped indexed read, so subscribing to it from
+  // the tab layout — effectively app-wide — is cheap by construction.
+  const unread = useQuery(api.notifications.unreadCount, {}) ?? 0;
   return (
     <Tabs
       screenOptions={{
@@ -117,7 +123,27 @@ export default function TabsLayout() {
         name="you"
         options={{
           title: 'You',
-          tabBarIcon: ({ color, size }) => <TabIcon icon={faUser} color={color} size={size} />,
+          tabBarIcon: ({ color, size }) => (
+            <View>
+              <TabIcon icon={faUser} color={color} size={size} />
+              {unread > 0 ? (
+                <View
+                  accessibilityLabel={`${unread} unread notifications`}
+                  style={{
+                    position: 'absolute',
+                    top: -2,
+                    right: -4,
+                    width: 9,
+                    height: 9,
+                    borderRadius: 5,
+                    backgroundColor: theme.primary?.val,
+                    borderWidth: 1.5,
+                    borderColor: theme.surface?.val,
+                  }}
+                />
+              ) : null}
+            </View>
+          ),
         }}
       />
     </Tabs>
