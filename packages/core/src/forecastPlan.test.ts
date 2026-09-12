@@ -301,6 +301,30 @@ describe('buildForecastPlan — days', () => {
     expect(plan.days[2]!.lines).toEqual(['Snow until 6 AM · 1.2″']);
   });
 
+  it('never says "all day" on a truncated card — the forecast ended, the weather did not', () => {
+    // Thu 8 PM → the end of a series that stops Fri 9 AM: Friday's card holds nine hours.
+    const start = local('2026-01-15T00:00:00');
+    const plan = buildForecastPlan(
+      series(start, 33, (i) => (i >= 20 ? { weatherCode: 73, snowfallCm: 0.5 } : {})),
+      NOW,
+    );
+    expect(plan.days[1]).toMatchObject({ partial: true, hourCount: 9 });
+    expect(plan.days[1]!.lines).toEqual(['Snow through 8 AM · 1.8″']);
+    // And Thursday's own sentence has no end to print either.
+    expect(plan.days[0]!.lines).toEqual(['Snow from 8 PM · 2.6″']);
+  });
+
+  it('gives today\'s card a range, not "all day", for a run over the rest of it', () => {
+    // Now is 2:20 PM; snow from the hour in progress through midnight.
+    const start = NOW - 20 * 60_000;
+    const plan = buildForecastPlan(
+      series(start, 30, (i) => (i < 10 ? { weatherCode: 73, snowfallCm: 0.5 } : {})),
+      NOW,
+    );
+    expect(plan.days[0]!.partial).toBe(true);
+    expect(plan.days[0]!.lines).toEqual(['Snow 2 PM–12 AM · 2″']);
+  });
+
   it('needs no weekday for a run that ends exactly at midnight', () => {
     const start = local('2026-01-15T00:00:00');
     const plan = buildForecastPlan(

@@ -486,6 +486,13 @@ and Greptile's first pass added two P1s. All four landed the same evening:
   the lull bridge only crosses an hour that exists; `partial` stopped being `< 24` (a spring-forward
   day is 23 hours and whole); the hour cards key on the instant, since a fall-back night has two
   1 AMs. Pinned: a hole, a spring-forward night, a fall-back night, a 23-hour day.
+- **"All day" is reserved for a whole card, and an episode that reaches the end of the forecast is
+  open-ended** (Greptile's second pass, P2, on the 5/5 review). The truncated last day of a series
+  said *"Snow all day"* over the nine hours it had; today's card said it over the rest of today under
+  a caption that already read *"rest of today"*. Now: a continuation that runs to where the forecast
+  stops reads *"Snow through 8 AM"* — the last hour there is — and an episode that starts and whose
+  end the forecast cannot see reads *"Snow from 8 PM"*; a partial card never says *all day*. The
+  forecast's end is not the weather's, and the clock must not print it as one.
 
 ### Two things a render found that no test did
 

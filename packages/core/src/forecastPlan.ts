@@ -598,32 +598,54 @@ function sentence(kind: EpisodeKind, when: string, amounts: EpisodeAmounts): str
 }
 
 /**
+ * How an episode's clock reads on one card.
+ *
+ * - `allDay` — the run covers a **whole** card, midnight to midnight. Never on a partial card: the
+ *   truncated last day of the forecast reads *"rest of the forecast"*, not *"all day"* (Greptile on
+ *   #51), and today's card is already captioned *"rest of today"*.
+ * - `openEnded` — the run reaches the end of the series, so its end is not a forecast, it is where
+ *   the forecast stops. The clock must not print that instant as an ending.
+ */
+export interface EpisodeClockOptions {
+  allDay?: boolean;
+  openEnded?: boolean;
+}
+
+/**
  * One sentence for one episode, imperial (D25): `Snow 10 PM–4 AM Fri · 3.2″` · `Rain 1–3 PM · 0.1″`
- * · `Wind 2–7 PM · gusts 38 mph`. `all day` when the run covers the whole of the day it is printed on.
+ * · `Wind 2–7 PM · gusts 38 mph` · `Snow all day` · `Snow from 10 PM` when the forecast ends before
+ * the snow does.
  *
  * The clock is a plain two-ended range, and when it crosses midnight the end names its day — the
  * card it is printed on is the start's date, so only the far end needs one.
  */
-export function formatEpisode(e: ForecastEpisode, opts: { allDay?: boolean } = {}): string {
-  return sentence(e.kind, opts.allDay ? 'all day' : clockRange(e.startMs, e.endMs), e);
+export function formatEpisode(e: ForecastEpisode, opts: EpisodeClockOptions = {}): string {
+  const when = opts.allDay
+    ? 'all day'
+    : opts.openEnded
+      ? `from ${formatLocalHourLabel(e.startMs)}`
+      : clockRange(e.startMs, e.endMs);
+  return sentence(e.kind, when, e);
 }
 
 /**
  * The sentence a later day prints for an episode that began before it (founder call, 2026-09-11:
  * *"then on Wednesday's card 'Snow until 6am' again"*): `Snow until 6 AM · 1.2″`, with **that day's
  * share** of the amounts — the storm's total belongs to the card it started on. `all day` when the
- * run outlasts the card.
+ * run outlasts a whole card; `through 8 AM` — the last hour there is — when the forecast runs out
+ * before the weather does.
  */
 export function formatContinuation(
   e: ForecastEpisode,
   share: EpisodeAmounts,
-  opts: { allDay?: boolean } = {},
+  opts: EpisodeClockOptions = {},
 ): string {
-  return sentence(
-    e.kind,
-    opts.allDay ? 'all day' : `until ${formatLocalHourLabel(e.endMs)}`,
-    share,
-  );
+  const when = opts.allDay
+    ? 'all day'
+    : opts.openEnded
+      ? `through ${formatLocalHourLabel(e.endMs - HOUR_MS)}`
+      : `until ${formatLocalHourLabel(e.endMs)}`;
+  return sentence(e.kind, when, share);
 }
 
 /** The amounts of `e` that fall inside `[fromMs, toMs)`, summed over the plan's hours. */
@@ -786,6 +808,8 @@ export function buildForecastPlan(
 
   const episodes = detectEpisodes(keptHours);
   const todayMs = localDateToDayMs(localDateOf(nowLocalMs)) ?? Number.NaN;
+  // Where the forecast stops. An episode ending here has not ended; the data has.
+  const seriesEndMs = (keptHours[keptHours.length - 1]?.startMs ?? Number.NaN) + HOUR_MS;
 
   const days: ForecastPlanDay[] = [];
   for (const { localDate, firstHourIndex, hours: dayHours } of kept) {
@@ -819,6 +843,10 @@ export function buildForecastPlan(
         if (h.shortwaveWm2 >= SUNLIT_WM2) sunlit++;
       }
     }
+    // Not `hours < 24`: a spring-forward day has 23 hours and is whole. A card is partial when it
+    // does not begin at its own midnight (today, already under way) or does not reach the next one
+    // (the series' last day, cut short).
+    const partial = (dayHours[0]?.localHour ?? 0) !== 0 || dayEndMs < dayEnd;
     const nightRaw = nightLow(keptHours, dayMs);
     const night = nightRaw !== null && nightRaw < lowC ? nightRaw : null;
     const { label, dateLabel } = labelsFor(dayMs, todayMs);
@@ -829,10 +857,7 @@ export function buildForecastPlan(
       dateLabel,
       firstHourIndex,
       hourCount: dayHours.length,
-      // Not `< 24`: a spring-forward day has 23 hours and is whole. A card is partial when it does
-      // not begin at its own midnight (today, already under way) or does not reach the next one
-      // (the series' last day, cut short).
-      partial: (dayHours[0]?.localHour ?? 0) !== 0 || dayEndMs < dayEnd,
+      partial,
       condition: dayCondition(dayHours, touching),
       highC,
       lowC,
@@ -852,11 +877,15 @@ export function buildForecastPlan(
       lines: [
         ...continued.map((e) =>
           formatContinuation(e, episodeShare(e, dayHours, dayMs, dayEnd), {
-            allDay: e.endMs >= dayEndMs,
+            allDay: !partial && e.endMs >= dayEndMs,
+            openEnded: e.endMs >= seriesEndMs,
           }),
         ),
         ...own.map((e) =>
-          formatEpisode(e, { allDay: e.startMs <= dayStartMs && e.endMs >= dayEndMs }),
+          formatEpisode(e, {
+            allDay: !partial && e.startMs <= dayStartMs && e.endMs >= dayEndMs,
+            openEnded: e.endMs >= seriesEndMs,
+          }),
         ),
       ],
     });
