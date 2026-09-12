@@ -41,7 +41,11 @@
 /** Starts more than this far apart are two skates, however much they overlap. Tunable; see above. */
 export const ACTIVITY_DEDUP_START_WINDOW_MS = 10 * 60 * 1000;
 
-/** The input shape — the fields of a `gpsActivities` row the rule reads. */
+/**
+ * The input shape — the fields of a `gpsActivities` row the rule reads. Deliberately **not**
+ * `linkedReportId`: which copy a report was filed from doesn't change which copy is the better
+ * recording; the caller moves the link to the winner afterwards (see `sweepUnpromptedActivities`).
+ */
 export interface DedupActivity {
   id: string;
   userId: string;
@@ -49,7 +53,6 @@ export interface DedupActivity {
   startTime: number;
   endTime?: number;
   waterBodyId?: string;
-  linkedReportId?: string;
 }
 
 /** Lower is better. Unknown providers rank with `other`, below everything named. */

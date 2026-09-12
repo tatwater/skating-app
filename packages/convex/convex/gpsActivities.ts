@@ -29,6 +29,7 @@ import {
   clipPathEnds,
   type DedupActivity,
   dedupActivities,
+  isMinor,
   nearestBodyForPoint,
   PUT_IN_CLIP_M,
   pathOpacity,
@@ -262,8 +263,16 @@ export const setPromptState = mutation({
  * window, at a longer timescale.
  */
 export const ACTIVITY_PROMPT_DELAY_MS = 3 * 60 * 60 * 1000;
-/** Activities examined per sweep tick; the rest wait for the next hour. */
-const PROMPT_SWEEP_CAP = 200;
+/**
+ * Due activities examined per sweep tick; the rest wait for the next hour. Small on purpose: every
+ * distinct user in the batch costs a `CANDIDATE_HISTORY_CAP` read of their history, so the tick's
+ * worst case is `PROMPT_SWEEP_CAP × CANDIDATE_HISTORY_CAP` documents, which has to stay inside one
+ * transaction's read limit — a tick that blows it throws, delivers nothing, and re-reads the same
+ * rows next hour for ever.
+ */
+const PROMPT_SWEEP_CAP = 50;
+/** A user's most recent activities the dedup sees alongside their due rows. */
+const CANDIDATE_HISTORY_CAP = 50;
 
 /**
  * The `activity_detected` producer (N8/B4): find skates still `pending` after the delay, dedup each
@@ -313,31 +322,62 @@ export const sweepUnpromptedActivities = internalMutation({
     for (const [userId, dueRows] of byUser) {
       const candidates = await sameSkateCandidates(ctx, userId, dueRows);
       const result = dedupActivities(candidates.map(toDedupActivity));
+      // A loser the user had already been asked about (`prompted`) or had waved off (`dismissed`)
+      // settles the *skate*, not the row: the winner inherits that answer, so a phone copy that
+      // flushes a day after the watch copy was prompted doesn't ask a second time about the same
+      // afternoon — the double prompt B4a exists to prevent.
+      const inherited = new Map<Id<'gpsActivities'>, 'prompted' | 'dismissed'>();
       for (const { loser, winner } of result.superseded) {
         const loserId = loser.id as Id<'gpsActivities'>;
         const winnerId = winner.id as Id<'gpsActivities'>;
         const loserRow = candidates.find((c) => c._id === loserId);
         if (!loserRow || loserRow.supersededByActivityId !== undefined) continue;
-        // The link moves rather than breaks: a report must never lose its path to a dedup.
+        if (loserRow.promptState === 'dismissed') inherited.set(winnerId, 'dismissed');
+        else if (loserRow.promptState === 'prompted' && !inherited.has(winnerId)) {
+          inherited.set(winnerId, 'prompted');
+        }
+        // The link moves rather than breaks: a report must never lose its path to a dedup. Moved,
+        // not copied — a loser that kept `linkedReportId` would still draw on the aggregate layer
+        // (`listTracksForBody` reads that field as publish-consent) and survive account deletion as a
+        // "published" track, so the same skate would render twice. Only an intact pair moves: the
+        // report must point back at this loser, and the winner must be free. The winner is re-read
+        // rather than taken from the pre-loop snapshot, because two losers of one winner would
+        // otherwise both see it unlinked and the second would overwrite the first's link.
+        let moved = false;
         if (loserRow.linkedReportId !== undefined) {
-          const winnerRow = candidates.find((c) => c._id === winnerId);
-          if (winnerRow && winnerRow.linkedReportId === undefined) {
+          const winnerRow = await ctx.db.get(winnerId);
+          const report = await ctx.db.get(loserRow.linkedReportId);
+          if (
+            winnerRow &&
+            winnerRow.linkedReportId === undefined &&
+            report &&
+            report.activityId === loserId
+          ) {
             await ctx.db.patch(winnerId, {
               linkedReportId: loserRow.linkedReportId,
               promptState: 'converted',
             });
-            const report = await ctx.db.get(loserRow.linkedReportId);
-            if (report && report.activityId === loserId) {
-              await ctx.db.patch(report._id, { activityId: winnerId });
-            }
+            await ctx.db.patch(report._id, { activityId: winnerId });
+            moved = true;
           }
         }
         await ctx.db.patch(loserId, {
           supersededByActivityId: winnerId,
           promptState: 'dismissed',
+          ...(moved ? { linkedReportId: undefined } : {}),
         });
         superseded++;
       }
+
+      // Who the nudge would go to — and whether they could act on it. A minor can record for
+      // themselves but can never file a report (D41), and a restricted poster (D57) can't either, so
+      // "Add a report?" would be a call to action the app then refuses. The row is still flipped to
+      // `prompted` below ("considered"), for the same reason a switched-off toggle flips it.
+      const recipient = await ctx.db.get(userId);
+      const canReport =
+        recipient !== null &&
+        !isMinor(recipient.dateOfBirth, now) &&
+        recipient.canPostReports !== false;
 
       const dueIds = new Set(dueRows.map((r) => r._id));
       for (const winner of result.winners) {
@@ -346,8 +386,14 @@ export const sweepUnpromptedActivities = internalMutation({
         const row = await ctx.db.get(id);
         // Re-read: a link or a dismissal may have landed above, or between the scan and here.
         if (row?.promptState !== 'pending' || row.linkedReportId !== undefined) continue;
+        const answered = inherited.get(id);
+        if (answered !== undefined) {
+          await ctx.db.patch(id, { promptState: answered });
+          continue;
+        }
         await ctx.db.patch(id, { promptState: 'prompted' });
         prompted++;
+        if (!canReport) continue;
         await enqueueActorNotification(ctx, {
           recipientId: userId,
           type: 'activity_detected',
@@ -365,7 +411,10 @@ export const sweepUnpromptedActivities = internalMutation({
 /**
  * Everything of this user's that the dedup should see alongside the due rows: their recent
  * activities from the same window, `pending` or not — a converted watch copy is still the better
- * copy of a skate the phone recorded. Bounded by the user's own recent history.
+ * copy of a skate the phone recorded. Bounded by the user's own recent history, and the due rows are
+ * always in the set regardless of that bound: a due row the history read didn't reach would never be
+ * a winner or a loser, so it would never leave the `pending` range, and the sweep would re-read it
+ * every hour for ever.
  */
 async function sameSkateCandidates(
   ctx: MutationCtx,
@@ -377,8 +426,12 @@ async function sameSkateCandidates(
     .query('gpsActivities')
     .withIndex('by_user', (q) => q.eq('userId', userId))
     .order('desc')
-    .take(PROMPT_SWEEP_CAP);
-  return recent.filter((r) => r.startTime >= earliest && r.supersededByActivityId === undefined);
+    .take(CANDIDATE_HISTORY_CAP);
+  const byId = new Map<Id<'gpsActivities'>, Doc<'gpsActivities'>>();
+  for (const row of [...dueRows, ...recent]) byId.set(row._id, row);
+  return [...byId.values()].filter(
+    (r) => r.startTime >= earliest && r.supersededByActivityId === undefined,
+  );
 }
 
 function toDedupActivity(row: Doc<'gpsActivities'>): DedupActivity {
@@ -389,7 +442,6 @@ function toDedupActivity(row: Doc<'gpsActivities'>): DedupActivity {
     startTime: row.startTime,
     ...(row.endTime !== undefined ? { endTime: row.endTime } : {}),
     ...(row.waterBodyId !== undefined ? { waterBodyId: row.waterBodyId } : {}),
-    ...(row.linkedReportId !== undefined ? { linkedReportId: row.linkedReportId } : {}),
   };
 }
 

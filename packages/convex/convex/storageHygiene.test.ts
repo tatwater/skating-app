@@ -216,6 +216,49 @@ describe('purgeLastSeasonNotifications (N8/A5)', () => {
     const left = await t.run((ctx) => ctx.db.query('notifications').collect());
     expect(left.map((n) => n._id).sort()).toEqual([kept, keptToo].sort());
   });
+
+  test('a pass that fills its cap schedules the next one rather than waiting a day', async () => {
+    const t = harness();
+    const userId = await t.run((ctx) =>
+      ctx.db.insert('profiles', {
+        clerkUserId: 'u',
+        displayName: 'u',
+        username: 'u',
+        driveTimePrefMinutes: 60,
+        profileVisibility: 'public' as const,
+        notificationPrefs: NOTIF_PREFS,
+        dateOfBirth: Date.UTC(1990, 0, 1),
+        reputationPoints: 0,
+        role: 'member' as const,
+        status: 'active' as const,
+        createdAt: T0,
+      }),
+    );
+    const seasonStart = seasonStartMs(seasonOf(T0));
+    await t.run(async (ctx) => {
+      for (let i = 0; i < 501; i++) {
+        await ctx.db.insert('notifications', {
+          userId,
+          type: 'report_rated',
+          payload: {},
+          createdAt: seasonStart - 1 - i,
+        });
+      }
+    });
+    // Fake timers for the `runAfter(0)` continuation — the same reason the departed-photo sweep's
+    // test below needs them.
+    vi.useFakeTimers();
+    try {
+      const first = await t.mutation(internal.storageHygiene.purgeLastSeasonNotifications, {
+        now: T0,
+      });
+      expect(first).toMatchObject({ deleted: 500, truncated: true });
+      await t.finishAllScheduledFunctions(vi.runAllTimers);
+    } finally {
+      vi.useRealTimers();
+    }
+    expect(await t.run((ctx) => ctx.db.query('notifications').collect())).toHaveLength(0);
+  });
 });
 
 describe('sweepOrphanPhotos', () => {

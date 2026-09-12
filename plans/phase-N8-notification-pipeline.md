@@ -673,6 +673,19 @@ p.timezone ?? DIGEST_TIMEZONE)`). Logged as **D170**.
    It now reads the schema's own field list.
 4. **The dedup ladder is exercised end-to-end in a test with a hand-inserted `garmin` row**, since no
    adapter produces one; the constants are pinned by tests, not by data, as the plan said they would be.
+5. **Review pass (xhigh):** the link *moves* (the loser's `linkedReportId` is cleared, and only for
+   an intact pair — otherwise the aggregate layer drew the skate twice); a loser already `prompted`
+   or `dismissed` hands that answer to the winner so a phone copy flushing a day after the watch copy
+   never asks twice; minors and `canPostReports === false` are flipped to `prompted` but never nudged
+   toward a form that refuses them; the sweep reads 50 due rows × 50 history rows per tick (worst
+   case ~2.7k reads) and unions the due rows into the candidate set so none can be stranded; the
+   purge self-continues while truncated; `activity_detected` shows the skate's time as its detail.
+6. **"Not now" on the recorder's stop card is a deferral, not a dismissal — deliberately.** The card
+   clears its own state and leaves the row `pending`, so the sweep nudges once, three hours later.
+   That is the reminder "not now" asks for; the You-tab list's "Not reporting this one" is the
+   `dismissed` that means never, and the sweep respects it. Recorded because the review read the stop
+   card as a bug; changing it would mean carrying a decline through the offline track queue to
+   `ingestTrack` for a behaviour nobody wants.
 
 ## What this phase does not cover
 

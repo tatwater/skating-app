@@ -17,6 +17,7 @@
  */
 
 import type { HazardLifecyclePhase } from './hazardLifecycle';
+import { formatSkateTime } from './reportView';
 
 // ── Types and preferences ────────────────────────────────────────────────────────────────────────
 
@@ -417,10 +418,14 @@ export function describeNotification(view: NotificationView): NotificationDescri
       };
     }
     case 'activity_detected':
+      // The skate's own time is the detail line — it's the one thing that tells two nudges apart,
+      // and it's why the payload carries `startTime` at all. Formatted in the device's zone, which
+      // is where the skater is reading it.
       return {
         title: view.body
           ? `You skated on ${view.body.name}. Add a report?`
           : 'You recorded a skate. Add a report?',
+        detail: formatSkateTime(view.startTime),
         target: { kind: 'unreported_skates' },
       };
     case 'unknown':
