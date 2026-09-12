@@ -56,6 +56,8 @@ import type * as lib_hazardMerge from "../lib/hazardMerge.js";
 import type * as lib_hazardValidators from "../lib/hazardValidators.js";
 import type * as lib_listing from "../lib/listing.js";
 import type * as lib_metrics from "../lib/metrics.js";
+import type * as lib_notificationQueue from "../lib/notificationQueue.js";
+import type * as lib_notificationResolve from "../lib/notificationResolve.js";
 import type * as lib_photoAccess from "../lib/photoAccess.js";
 import type * as lib_photoOrphans from "../lib/photoOrphans.js";
 import type * as lib_recurrence from "../lib/recurrence.js";
@@ -144,6 +146,8 @@ declare const fullApi: ApiFromModules<{
   "lib/hazardValidators": typeof lib_hazardValidators;
   "lib/listing": typeof lib_listing;
   "lib/metrics": typeof lib_metrics;
+  "lib/notificationQueue": typeof lib_notificationQueue;
+  "lib/notificationResolve": typeof lib_notificationResolve;
   "lib/photoAccess": typeof lib_photoAccess;
   "lib/photoOrphans": typeof lib_photoOrphans;
   "lib/recurrence": typeof lib_recurrence;
