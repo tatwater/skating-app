@@ -1,15 +1,21 @@
 # N8 — The notification pipeline: the inbox, the missing producers, and the reverse reach index
 
-> **Status:** 📋 Scoped, not built (2026-07-30). Founder call the same day: **no N8 code until every N6
-> phase has shipped** (N6a's ETL run, N6b, N6c, N6d). This document is the design record so the scope
-> stops drifting in the meantime.
-> **Depends on:** nothing. It touches no water-body data and no N6 surface; it can be built the day
-> N6 closes.
+> **Status:** 🔨 **In build (2026-09-11)**, branch `phase-n8-notification-pipeline`, three PRs:
+> **PR 1** (inbox + settled queue + producers B1–B3) ✅ built; **PR 2** (B4/B4a, A5 purge, C timezone)
+> and **PR 3** (transports: push, email, offline inbox cache) to follow. Scoped 2026-07-30 with a
+> founder call of **no N8 code until every N6 phase has shipped**; N6 closed 2026-09-10.
+> **Scope grew at kickoff (founder, 2026-09-11):** push (Android via FCM now; iOS APNs key once
+> enrolled) and **email** (Resend is live on dev) come *in*, as transports over the same rows — see
+> [What this phase does not cover](#what-this-phase-does-not-cover) for what that changed.
+> **Depends on:** nothing. It touches no water-body data and no N6 surface.
 > **Touches:** `notifications` / `notificationQueue`, `profiles.notificationPrefs`, the Phase 3 comment
 > path, the Phase 7 moderation queue, the Phase 9 hazard-confirmation loop, the Phase 8 recorder, and
 > both clients' shells.
-> **Decisions:** **D77–D81**, proposed here and to be logged in [`01-decisions.md`](./01-decisions.md)
-> at build kickoff (D76 is the last one logged).
+> **Decisions:** logged as **D164–D169** in [`01-decisions.md`](./01-decisions.md) — the numbers this
+> document proposed (D77–D81) were taken by N5c and N6b before it was built. The mapping: D77→**D164**
+> (inbox first), D78→**D165** (producer + renderer or no type), D79→**D168** (hazards don't broadcast),
+> D80→**D169** (reverse index filters candidates; deferred), D81→**D166** (settle + re-check).
+> **D167** (`bounty_answered`) was found at kickoff — see the built record below.
 
 ---
 
@@ -582,14 +588,70 @@ output nobody can see.
 
 ---
 
+## Built record — PR 1 (2026-09-11)
+
+What shipped, and where it departed from the sections above. The sections are left as written; this
+is the diff.
+
+**Shipped:** A1 (`list` paginated + resolved, `unreadCount` on a new `by_user_read` index capped at
+99, `markRead` one-or-all-before), A2 (`lib/notificationResolve.ts` — degraded targets, tombstone
+names via `publicAuthor`, read-time block filtering, an `unknown` variant for unparseable payloads,
+one memoized loader per page), A3 (web `/notifications` + bell in `AppShell`; mobile `You → bell →
+modal list` with a dot on the You tab icon), E1/E2 (`lib/notificationQueue.ts` — every actor
+producer enqueues with `SETTLE_MS = 60 s` and a typed `trigger` the flush re-reads), B1, B2, B3.
+
+**Departures worth knowing:**
+
+1. **The plan miscounted the toggles.** Both settings pages rendered *three* (the Phase-4 set), not
+   ten. They now iterate `NOTIFICATION_PREF_ORDER` from `@skating/core`, where the vocabulary, the
+   labels and `describeNotification` (the sentence both clients render) now live.
+2. **`bounty_fulfilled` was misdescribed** — it went to the fulfiller, and nobody told the requester a
+   report had arrived. It is now `bounty_answered`, to the requester, on attach (D167). The pref key
+   renamed with it (`bountyAnswered`); `backfillNotificationPrefs` migrates the profile objects, and
+   the deploy is widen → run → narrow because `boolFlags` is a strict object.
+3. **The queue-kind rename had stored state.** B2 said "no database rows, no wire format" — but
+   `draftStore` persists the `kind` in a SQLite column *and* inside the JSON blob. Renamed anyway
+   (founder: "now is the time"), with a one-shot `UPDATE … json_set` in `ensureSchema`, tested against
+   a real SQLite engine like the existing column migration.
+4. **`hazard_confirmation` fires on a *phase* transition** — `hazardLifecyclePhase()` in core:
+   `archived > disputed > healing_unsafe > confirmed > provisional` — and a slide *back to provisional*
+   stays quiet (a confirmer changing their mind is not news the author can act on). Archive is sticky in
+   `deriveHazardLifecycle`, so the flip-flop case in E2 resolves to `archived`, not back to active.
+5. **The "still true?" table gained a column.** Coalesced triggers accumulate ids (`actorIds`,
+   `commentIds`, `byReportIds`, `reportIds`) and each is re-verified individually at flush, so a
+   retracted thumb drops out of the *count* rather than dropping the row. The recipient's own toggle
+   and block set are re-read at flush as well.
+6. **`payload` stays `v.any()`.** Typing it in the schema would have forced a migration for four
+   never-seen rows; the resolver types it at the boundary and the season purge retires the old shapes.
+7. **`unreadCount` answers 0 without a profile** rather than throwing — both shells subscribe from a
+   layout that can render a frame before the row exists.
+8. **Workstream D is deliberately unbuilt** (D169). Dev has three profiles.
+9. **`bounties.answeredByMyReport`** backs the post-submit "at least N skaters were looking forward to
+   it" line on both report-detail views; it answers 0 to anyone but the author.
+
 ## What this phase does not cover
 
-- **Push delivery.** Still blocked on APNs/FCM credentials, token registration and a server sender. The
-  `coalesceKey` groundwork from Phase 4 stays exactly what it is: a seed for a collapse-id.
-  D77's point is that the inbox is not a waiting room for this.
-- **Nearby-hazard notifications** (D79) — on-ice proximity is the hazard channel, deliberately.
-- **Email notifications.** Resend exists for *operator* alerts (D38) and is credential-blocked anyway.
-  Skater-facing email is a separate product decision, not a transport swap.
+*Revised at kickoff (founder, 2026-09-11): push and email moved **into** scope as PR 3. The original
+exclusions are struck rather than deleted, so the reasoning survives.*
+
+- ~~**Push delivery.** Still blocked on APNs/FCM credentials, token registration and a server sender.~~
+  **→ PR 3.** Android via Expo Push + FCM (a Firebase project + service-account key in EAS — founder
+  task); iOS via an APNs key from the Apple Developer Program the founder has since enrolled in, code
+  shipped for both, only Android testable (no iPhone). The `coalesceKey` seeds the collapse-id as
+  planned. D164's point stands: the inbox was never a waiting room for this.
+- **Nearby-hazard notifications** (D168) — on-ice proximity is the hazard channel, deliberately.
+- ~~**Email notifications.** Resend exists for *operator* alerts (D38) and is credential-blocked anyway.~~
+  **→ PR 3.** Resend is live on dev (`updates@skating.teaganatwater.com`). Not a 10×3 matrix: per-type
+  toggles stay, two channel switches (push, email) are added, and which types are *email-eligible* is
+  fixed in code (the digest, `activity_detected`, `bounty_request`, `bounty_answered`,
+  `content_flag_resolved` — never per-thumb mail). The primary email is mirrored from Clerk onto
+  `profiles` (private, scrubbed on deletion, like `profileImageUrl`) so a send is not a Clerk call per
+  recipient, and so a one-click unsubscribe route can exist.
+- **Web push.** Deferred — no service worker, VAPID keys, or a second token type yet. Web = inbox +
+  email.
+- **Offline.** Mobile only, and for the inbox only *reading*: the last page and the unread count are
+  cached in SQLite (the `reportCache` pattern), mark-as-read applies locally and replays. The hazard
+  channel is already offline by construction (Phase 9.5), which is the offline case that matters.
 - **Notification grouping across types.** One digest already groups bodies within itself
   (`flushNotificationQueue`); grouping *across* types is a UI question that needs a real inbox to answer.
 

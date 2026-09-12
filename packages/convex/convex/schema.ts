@@ -2426,7 +2426,7 @@ export default defineSchema({
     .index('by_expires_at', ['expiresAt']),
 
   /**
-   * The inbox (N8 / D162). One row per delivered notification; **only the queue flush inserts here**
+   * The inbox (N8 / D164). One row per delivered notification; **only the queue flush inserts here**
    * (D166), so a push or email transport has one place to hang off rather than six.
    *
    * `payload` stays `v.any()` deliberately. Its shape is typed at the boundary instead —

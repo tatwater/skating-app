@@ -57,12 +57,14 @@ excludeTracksFromAggregate?: boolean  // Phase 8 / D58: keep my recorded paths o
                              // retroactively drops every track they've contributed, not just future
                              // ones. Recording + Strava push are unaffected; this governs only whether
                              // their line draws on a lake's map for other people.
-notificationPrefs: {         // per-type toggles — EVERY type is toggleable (D16)
-  activityDetected,          // ice-skate detected on ANY linked provider (D24)
+notificationPrefs: {         // per-type toggles — EVERY type is toggleable (D16); vocabulary in @skating/core (N8)
+  activityDetected,          // a skate OUR recorder captured that was never reported (N8/B4) — NOT "any
+                             // linked provider" as D24 said; that premise was retired with Phase 8's push pivot
   bountyRequest,
-  hazardConfirmation, bountyFulfilled,
-  reportRated,               // someone rated your report helpful/unhelpful (D17)
-  reportCommented,           // someone commented on your report (D21; Phase 3)
+  hazardConfirmation,        // your hazard's lifecycle phase moved: confirmed / disputed / healing / healed (N8)
+  bountyAnswered,            // a report landed on your open bounty (N8 / D167; was bountyFulfilled)
+  reportRated,               // someone found your report/hazard helpful, or corroborated your report (D17)
+  reportCommented,           // someone commented on your report, or replied to your comment (D21; N8)
   favoriteReport,            // Phase 4: report on a favorited body (DEFAULT ON), any distance
   nearbyReportDigest,        // Phase 4: "all reports within X₁" — delivered as the 8pm-ET daily digest
   greatReportNearby,         // Phase 4: "great reports within X₂" — fires ~individually (coalesced)
@@ -703,6 +705,8 @@ resolvedByUserId?: ref(profiles)   // a moderator or admin (users.role in {moder
 occurrences?: number               // N2 bundling — how many times this problem has been recorded
 lastOccurrenceAt?: timestamp       // absent ⇒ reads as 1, so pre-bundling rows need no migration
 supersedesFlagId?: ref(contentFlags)  // this row carries a resolved predecessor's count forward
+origin?: enum(user, auto)          // N8/B3 — who filed it; absent reads as `auto`. The one reader is
+                                   // `content_flag_resolved`, which notifies `user` flaggers only
 createdAt, resolvedAt?: timestamp
 ```
 > `unsafe_false_report` is first-class: a dangerously false "ice is great" claim is
@@ -812,23 +816,50 @@ createdAt: timestamp
 > amendment's redact-don't-erase** rule, since erasing a departing user's photo of a gravel lot degrades
 > the map for everyone else to no privacy benefit. There is no person in it.
 
-### `notifications`
+### `notifications`  (the inbox — N8 / D164)
 ```
 _id
 userId: ref(profiles)           // recipient
 type: enum(activity_detected, bounty_request,
-           hazard_confirmation, bounty_fulfilled, report_rated,
-           report_commented,          // someone commented on your report (D21; Phase 3)
+           hazard_confirmation, bounty_answered, report_rated,
+           report_commented,          // someone commented on your report / replied to your comment (D21; N8)
            favorite_report,           // Phase 4: report on a favorited body (fires ~individually)
-           nearby_report_digest,      // Phase 4: the 8pm-ET daily "all within X₁" digest, grouped by body
+           nearby_report_digest,      // Phase 4: the 8pm daily "all within X₁" digest, grouped by body
            great_report_nearby,       // Phase 4: great report within X₂ (fires ~individually)
            content_flag_resolved)
-payload: { ...refs... }      // e.g. reportId / waterBodyId / hazardId / bountyId / actorUserId;
-                             // + a count for coalesced/digest notifications (Phase 4)
+payload: any                 // typed at the BOUNDARY, not the schema (N8): `lib/notificationQueue.ts`
+                             // builds it from a settled trigger, `lib/notificationResolve.ts` parses it
+                             // and renders anything unrecognised as a degraded "unknown" row
 readAt?: timestamp
 createdAt: timestamp
 ```
-> Only sent if the recipient's `notificationPrefs[type]` is on (D16).
+> Indexes: `by_user`, `by_user_read` (`userId, readAt` — the unread badge is an *equality* on
+> `readAt = undefined`, which is the one shape the non-sparse-optional-index trap doesn't bite).
+> **Only `flushNotificationQueue` inserts here** (D166) — every producer enqueues first.
+> Read by `notifications.list` (paginated, resolved), `unreadCount` (capped at 99), `markRead`.
+> **Retention is the season boundary** (N8/A5): a daily sweep deletes rows created before the current
+> season's start, read or not. The inbox is not an archive — the data export is.
+> Only sent if the recipient's `notificationPrefs[type]` is on (D16), re-checked at flush.
+
+### `notificationQueue`  (the coalescing + settle queue — Phase 4 decision #4; widened N8 / D166)
+```
+_id
+userId: ref(profiles)
+kind: enum(digest, favorite, great,             // report-audience buckets (Phase 4)
+           thumb, corroboration, comment, reply, // actor-triggered kinds (N8) — each settles 60 s and
+           hazard_lifecycle, flag_resolved,      // carries a `trigger` the flush re-reads
+           bounty_request, bounty_answered, activity)
+type: notifications.type      // what this flushes to
+coalesceKey: string           // `${userId}:${target}:${kind}` — collapse-id / tag seed
+count: number                 // events coalesced into this pending notification
+flushAfter: timestamp         // next 8pm (digest) / 2-min debounce (favorite, great) / 60-s settle (actor)
+waterBodyId?, latestReportId? // the report buckets' fields (absent on actor rows)
+trigger?: union               // the actor rows' "what to re-read" — id lists accumulate under coalescing
+                              // and each id is re-verified at flush (a retracted thumb drops out of the count)
+createdAt: timestamp
+```
+> Indexes: `by_flush`, `by_coalesce`, `by_user` (deletion drains a departing user's pending rows).
+> The flush re-applies recipient eligibility, the type's toggle, and the block set before delivering.
 > **On-ice hazard alerts are NOT rows here (D54).** The Phase 9 Layer-1 "reported hazard nearby —
 > confirm?" / "⚠ hazard ahead" alerts are **client-local** (each phone evaluates its own GPS against
 > cached hazards, D12), not server pushes — so they need no new `type`. `hazard_confirmation` already
