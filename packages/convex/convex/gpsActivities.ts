@@ -55,7 +55,6 @@ import { resolveSurvivor } from './lib/bodies';
 import { ACTIVITY_PROMPT_STATES } from './lib/enums';
 import { isListed } from './lib/listing';
 import { enqueueActorNotification } from './lib/notificationQueue';
-import { takeCapped } from './lib/scan';
 import { geoJson, literals } from './lib/validators';
 import { listedBodiesNearCoord } from './waterBodies';
 
@@ -297,21 +296,41 @@ export const sweepUnpromptedActivities = internalMutation({
   args: { now: v.optional(v.number()) },
   handler: async (ctx, args) => {
     const now = args.now ?? Date.now();
-    const due = await takeCapped(
-      ctx.db
-        .query('gpsActivities')
-        .withIndex('by_prompt_state_detected', (q) =>
-          q.eq('promptState', 'pending').lte('detectedAt', now - ACTIVITY_PROMPT_DELAY_MS),
-        ),
-      PROMPT_SWEEP_CAP,
-      'gpsActivities.sweepUnpromptedActivities',
-    );
+    // A plain `take`, not `takeCapped`: a full batch is the design here (the rest wait for the next
+    // tick, the same shape as the storage sweeps), not a truncated answer, so the D5 "results are
+    // truncated" warning would fire on every busy tick for a set that is meant to fill.
+    const due = await ctx.db
+      .query('gpsActivities')
+      .withIndex('by_prompt_state_detected', (q) =>
+        q.eq('promptState', 'pending').lte('detectedAt', now - ACTIVITY_PROMPT_DELAY_MS),
+      )
+      .take(PROMPT_SWEEP_CAP);
 
-    // Dedup per user, against everything of theirs that could be the same skate — not only the due
-    // rows. A copy that arrived an hour ago is still `pending` and not yet due, but it is the copy the
-    // ladder may prefer, and picking a winner without it would supersede the better recording later.
+    // Every due row must leave the `pending` range on the tick that reads it, or the sweep re-reads
+    // it every hour for ever — and it holds one of the batch's slots while it does. Two shapes can't
+    // be settled by the dedup below because it never sees them: a row that is already superseded (a
+    // client handed a loser back to `pending` — `setPromptState` accepts any state) and a row that
+    // already carries a link (reported, so there is nothing to ask). Settle those here.
+    //
+    // The rest are deduped per user, against everything of theirs that could be the same skate — not
+    // only the due rows. A copy that arrived an hour ago is still `pending` and not yet due, but it
+    // is the copy the ladder may prefer, and picking a winner without it would supersede the better
+    // recording later.
     const byUser = new Map<Id<'profiles'>, Doc<'gpsActivities'>[]>();
+    let settled = 0;
     for (const row of due) {
+      // Link first: a linked row is `converted` whether or not it was also superseded (the loser
+      // loop below leaves a loser its link when the winner has a report of its own).
+      if (row.linkedReportId !== undefined) {
+        await ctx.db.patch(row._id, { promptState: 'converted' });
+        settled++;
+        continue;
+      }
+      if (row.supersededByActivityId !== undefined) {
+        await ctx.db.patch(row._id, { promptState: 'dismissed' });
+        settled++;
+        continue;
+      }
       const rows = byUser.get(row.userId);
       if (rows) rows.push(row);
       else byUser.set(row.userId, [row]);
@@ -331,7 +350,7 @@ export const sweepUnpromptedActivities = internalMutation({
         const loserId = loser.id as Id<'gpsActivities'>;
         const winnerId = winner.id as Id<'gpsActivities'>;
         const loserRow = candidates.find((c) => c._id === loserId);
-        if (!loserRow || loserRow.supersededByActivityId !== undefined) continue;
+        if (!loserRow) continue;
         if (loserRow.promptState === 'dismissed') inherited.set(winnerId, 'dismissed');
         else if (loserRow.promptState === 'prompted' && !inherited.has(winnerId)) {
           inherited.set(winnerId, 'prompted');
@@ -363,7 +382,11 @@ export const sweepUnpromptedActivities = internalMutation({
         }
         await ctx.db.patch(loserId, {
           supersededByActivityId: winnerId,
-          promptState: 'dismissed',
+          // `dismissed` takes it off every list and out of the sweep's range. A loser whose link
+          // could *not* move (the winner has a report of its own) is still a reported skate and stays
+          // `converted` — a linked row reading `dismissed` would contradict the lifecycle
+          // `linkActivityToReport` writes, and `dismissed` is not what the person said about it.
+          promptState: !moved && loserRow.linkedReportId !== undefined ? 'converted' : 'dismissed',
           ...(moved ? { linkedReportId: undefined } : {}),
         });
         superseded++;
@@ -382,11 +405,15 @@ export const sweepUnpromptedActivities = internalMutation({
       const dueIds = new Set(dueRows.map((r) => r._id));
       for (const winner of result.winners) {
         const id = winner.id as Id<'gpsActivities'>;
-        if (!dueIds.has(id)) continue; // not yet due — it'll be asked about on a later tick
+        const answered = inherited.get(id);
+        // A winner that isn't due yet waits for a later tick — unless a loser handed it an answer,
+        // which has to land *now*: that loser was superseded above and is out of the candidate set
+        // from here on, so an answer not applied on this tick is gone, and the winner would be asked
+        // about a skate the person already answered for (the very double prompt B4a exists to stop).
+        if (answered === undefined && !dueIds.has(id)) continue;
         const row = await ctx.db.get(id);
         // Re-read: a link or a dismissal may have landed above, or between the scan and here.
         if (row?.promptState !== 'pending' || row.linkedReportId !== undefined) continue;
-        const answered = inherited.get(id);
         if (answered !== undefined) {
           await ctx.db.patch(id, { promptState: answered });
           continue;
@@ -404,7 +431,7 @@ export const sweepUnpromptedActivities = internalMutation({
         });
       }
     }
-    return { scanned: due.length, prompted, superseded };
+    return { scanned: due.length, prompted, superseded, settled };
   },
 });
 
@@ -414,7 +441,8 @@ export const sweepUnpromptedActivities = internalMutation({
  * copy of a skate the phone recorded. Bounded by the user's own recent history, and the due rows are
  * always in the set regardless of that bound: a due row the history read didn't reach would never be
  * a winner or a loser, so it would never leave the `pending` range, and the sweep would re-read it
- * every hour for ever.
+ * every hour for ever. (The superseded filter below can't strand a due row for the same reason: the
+ * sweep settles superseded due rows before it gets here.)
  */
 async function sameSkateCandidates(
   ctx: MutationCtx,
@@ -552,13 +580,14 @@ export const listMine = query({
     const profile = await getCurrentProfile(ctx);
     if (!profile) return [];
     const limit = Math.min(Math.max(args.limit ?? 20, 1), 50);
-    const activities = (
-      await ctx.db
-        .query('gpsActivities')
-        .withIndex('by_user', (q) => q.eq('userId', profile._id))
-        .order('desc')
-        .take(limit)
-    ).filter((a) => a.supersededByActivityId === undefined); // the better copy is in the list already
+    const activities = await ctx.db
+      .query('gpsActivities')
+      .withIndex('by_user', (q) => q.eq('userId', profile._id))
+      .order('desc')
+      // A superseded copy is skipped — the better copy is in the list already — and skipped *before*
+      // the take, so it doesn't eat a slot and hand back fewer than `limit` while older skates exist.
+      .filter((q) => q.eq(q.field('supersededByActivityId'), undefined))
+      .take(limit);
     return await Promise.all(
       activities.map(async (a) => {
         const body = a.waterBodyId ? await ctx.db.get(a.waterBodyId) : null;

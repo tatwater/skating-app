@@ -187,6 +187,25 @@ export const fanOutNearbyNotifications = internalMutation({
       .query('profiles')
       .paginate({ cursor: cursor ?? null, numItems: FANOUT_PAGE_SIZE });
 
+    // The digest target, resolved once per distinct zone on the page rather than once per profile:
+    // `nextZonedHourMs` builds three `Intl.DateTimeFormat`s per call, and a page is 200 profiles in
+    // a handful of zones. The fallback is for a stored zone the runtime no longer knows (an ICU change
+    // since `setTimezone` validated it): without it one bad string would throw the whole page, and
+    // every recipient on it would lose the digest.
+    const digestFlushAfterByZone = new Map<string, number>();
+    const digestFlushAfterIn = (zone: string): number => {
+      let at = digestFlushAfterByZone.get(zone);
+      if (at === undefined) {
+        try {
+          at = nextZonedHourMs(now, DIGEST_HOUR, zone);
+        } catch {
+          at = nextZonedHourMs(now, DIGEST_HOUR, DIGEST_TIMEZONE);
+        }
+        digestFlushAfterByZone.set(zone, at);
+      }
+      return at;
+    };
+
     let enqueued = 0;
     for (const p of page.page) {
       if (p._id === report.authorId || !canReceiveNotifications(p)) continue;
@@ -212,7 +231,7 @@ export const fanOutNearbyNotifications = internalMutation({
           reportId: report._id,
           kind: 'digest',
           type: 'nearby_report_digest',
-          flushAfter: nextZonedHourMs(now, DIGEST_HOUR, p.timezone ?? DIGEST_TIMEZONE),
+          flushAfter: digestFlushAfterIn(p.timezone ?? DIGEST_TIMEZONE),
           now,
         });
         enqueued++;
