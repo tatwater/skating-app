@@ -128,7 +128,7 @@ async function maybeAutoFlag(
 }
 
 /**
- * Tell a target's author their content was thumbed helpful — via the settle queue (N8 / D166), so a
+ * Tell a target's author their content was thumbed helpful — via the settle queue (N8 / D169), so a
  * thumb retracted inside the window never sends, and five thumbs inside it become one row. The flush
  * re-reads each rater's verdict before delivering.
  */

@@ -1,5 +1,5 @@
 /**
- * The notification vocabulary and the inbox's rendering model (N8 / D164).
+ * The notification vocabulary and the inbox's rendering model (N8 / D167).
  *
  * Two things live here, and both are here because **web and mobile must agree**:
  *
@@ -22,7 +22,7 @@ import type { HazardLifecyclePhase } from './hazardLifecycle';
 
 /**
  * Notification types (snake_case). Every one has a producer and renders in the inbox — see the N8
- * plan's Correction 2 for the four that didn't, and D165 for why that's now a rule rather than a
+ * plan's Correction 2 for the four that didn't, and D168 for why that's now a rule rather than a
  * hope.
  */
 export const NOTIFICATION_TYPES = [

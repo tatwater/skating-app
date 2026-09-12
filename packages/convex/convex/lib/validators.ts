@@ -11,7 +11,9 @@ import { HAZARD_LIFECYCLE_PHASES } from '@skating/core';
 import { v } from 'convex/values';
 
 /** Build a `v.union(v.literal(...))` from a readonly tuple, keeping literal types. */
-export function literals<const T extends readonly [string, string, ...string[]]>(values: T) {
+export function literals<
+  const T extends readonly [string | number, string | number, ...(string | number)[]],
+>(values: T) {
   return v.union(
     ...(values.map((value) => v.literal(value)) as {
       [K in keyof T]: ReturnType<typeof v.literal<T[K]>>;
@@ -153,7 +155,7 @@ export const weatherSinceSummary = v.object({
 });
 
 /**
- * What an actor-triggered queue row re-reads at flush (N8 / D166). One variant per queue kind that
+ * What an actor-triggered queue row re-reads at flush (N8 / D169). One variant per queue kind that
  * settles before sending; the report-audience buckets (`favorite` / `digest` / `great`) carry none —
  * their re-check is the recipient's eligibility, which every row gets. The id lists are what
  * coalescing accumulates inside one settle window ("5 people found this helpful"), and each id is

@@ -90,6 +90,7 @@ import type * as waterBodyFavorites from "../waterBodyFavorites.js";
 import type * as weather from "../weather.js";
 import type * as weatherAlerts from "../weatherAlerts.js";
 import type * as weatherArchive from "../weatherArchive.js";
+import type * as weatherDiscovery from "../weatherDiscovery.js";
 
 import type {
   ApiFromModules,
@@ -180,6 +181,7 @@ declare const fullApi: ApiFromModules<{
   weather: typeof weather;
   weatherAlerts: typeof weatherAlerts;
   weatherArchive: typeof weatherArchive;
+  weatherDiscovery: typeof weatherDiscovery;
 }>;
 
 /**

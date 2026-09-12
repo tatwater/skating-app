@@ -11,11 +11,11 @@
 > **Touches:** `notifications` / `notificationQueue`, `profiles.notificationPrefs`, the Phase 3 comment
 > path, the Phase 7 moderation queue, the Phase 9 hazard-confirmation loop, the Phase 8 recorder, and
 > both clients' shells.
-> **Decisions:** logged as **D164–D169** in [`01-decisions.md`](./01-decisions.md) — the numbers this
-> document proposed (D77–D81) were taken by N5c and N6b before it was built. The mapping: D77→**D164**
-> (inbox first), D78→**D165** (producer + renderer or no type), D79→**D168** (hazards don't broadcast),
-> D80→**D169** (reverse index filters candidates; deferred), D81→**D166** (settle + re-check).
-> **D167** (`bounty_answered`) was found at kickoff — see the built record below.
+> **Decisions:** logged as **D167–D172** in [`01-decisions.md`](./01-decisions.md) — the numbers this
+> document proposed (D77–D81) were taken by N5c and N6b before it was built. The mapping: D77→**D167**
+> (inbox first), D78→**D168** (producer + renderer or no type), D79→**D171** (hazards don't broadcast),
+> D80→**D172** (reverse index filters candidates; deferred), D81→**D169** (settle + re-check).
+> **D170** (`bounty_answered`) was found at kickoff — see the built record below.
 
 ---
 
@@ -634,7 +634,7 @@ producer enqueues with `SETTLE_MS = 60 s` and a typed `trigger` the flush re-rea
    ten. They now iterate `NOTIFICATION_PREF_ORDER` from `@skating/core`, where the vocabulary, the
    labels and `describeNotification` (the sentence both clients render) now live.
 2. **`bounty_fulfilled` was misdescribed** — it went to the fulfiller, and nobody told the requester a
-   report had arrived. It is now `bounty_answered`, to the requester, on attach (D167). The pref key
+   report had arrived. It is now `bounty_answered`, to the requester, on attach (D170). The pref key
    renamed with it (`bountyAnswered`); `backfillNotificationPrefs` migrates the profile objects.
    **⚠ Dev deploy recipe** (prod has no profiles, so this is dev-only): `boolFlags` is a strict
    `v.object`, so the narrow schema in this tree rejects every existing profile on push. Widen
@@ -660,7 +660,7 @@ producer enqueues with `SETTLE_MS = 60 s` and a typed `trigger` the flush re-rea
    never-seen rows; the resolver types it at the boundary and the season purge retires the old shapes.
 7. **`unreadCount` answers 0 without a profile** rather than throwing — both shells subscribe from a
    layout that can render a frame before the row exists.
-8. **Workstream D is deliberately unbuilt** (D169). Dev has three profiles.
+8. **Workstream D is deliberately unbuilt** (D172). Dev has three profiles.
 9. **`bounties.answeredByMyReport`** backs the post-submit "at least N skaters were looking forward to
    it" line on both report-detail views; it answers 0 to anyone but the author.
 
@@ -673,8 +673,8 @@ exclusions are struck rather than deleted, so the reasoning survives.*
   **→ PR 3.** Android via Expo Push + FCM (a Firebase project + service-account key in EAS — founder
   task); iOS via an APNs key from the Apple Developer Program the founder has since enrolled in, code
   shipped for both, only Android testable (no iPhone). The `coalesceKey` seeds the collapse-id as
-  planned. D164's point stands: the inbox was never a waiting room for this.
-- **Nearby-hazard notifications** (D168) — on-ice proximity is the hazard channel, deliberately.
+  planned. D167's point stands: the inbox was never a waiting room for this.
+- **Nearby-hazard notifications** (D171) — on-ice proximity is the hazard channel, deliberately.
 - ~~**Email notifications.** Resend exists for *operator* alerts (D38) and is credential-blocked anyway.~~
   **→ PR 3.** Resend is live on dev (`updates@skating.teaganatwater.com`). Not a 10×3 matrix: per-type
   toggles stay, two channel switches (push, email) are added, and which types are *email-eligible* is

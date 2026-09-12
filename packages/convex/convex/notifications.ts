@@ -2,7 +2,7 @@
  * The notification pipeline: the coalescing queue, its flush, and — since N8 — the inbox that reads
  * the result.
  *
- * ## The queue (Phase 4, decision #4; widened in N8 / D166)
+ * ## The queue (Phase 4, decision #4; widened in N8 / D169)
  *
  * Every notification the app sends is first a `notificationQueue` row, and `flushNotificationQueue`
  * is the **only** thing that writes `notifications`. Two families of rows:
@@ -18,12 +18,12 @@
  *
  * `coalesceKey` seeds the eventual push collapse-id / tag.
  *
- * ## The inbox (N8 / D164)
+ * ## The inbox (N8 / D167)
  *
  * `list`, `unreadCount` and `markRead` are the read path both clients share. Before N8 nothing in the
  * app could read a notification: six types were being generated and had never been seen — "push
  * delivery deferred, lands an in-app row" was true and the row was landfill. The rule from here on
- * is that a type may not exist without a producer *and* a place it renders (D165).
+ * is that a type may not exist without a producer *and* a place it renders (D168).
  *
  * **Scaling seam (decision #2):** digest/great eligibility is a per-user polygon test against that
  * viewer's cached drive-time bands, so there's no index to look recipients up by — it means walking
@@ -427,7 +427,7 @@ export const flushNotificationQueue = internalMutation({
         continue;
       }
       if (row.trigger !== undefined) {
-        // An actor row (D166): re-read the trigger and deliver only what's still true. A dropped row
+        // An actor row (D169): re-read the trigger and deliver only what's still true. A dropped row
         // is deleted, not retried — the thing that would make it true again is a *new* action, which
         // enqueues its own row.
         const payload = await settleTrigger(ctx, row.trigger, await blockedFor(row.userId));

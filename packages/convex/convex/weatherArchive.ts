@@ -46,13 +46,21 @@
 import {
   approximateUtcOffsetSeconds,
   archiveSeasonAt,
+  buildBayRankings,
   buildSubAreaSpread,
+  buildWeatherCellDigest,
+  COLD_CHAIN_MAX_SPAN_DAYS,
+  type ColdChain,
+  type ColdChainDay,
+  coldChain,
   dayMsToLocalDate,
+  HARD_FREEZE_NIGHT_F,
   isCompleteDay,
   type LocalHourlyWeather,
   localDateToDayMs,
   localDayMsAt,
   localDayMsInZone,
+  nightsFieldFor,
   type SpreadBayDay,
   type SpreadBayInput,
   type SubAreaSpread,
@@ -79,6 +87,7 @@ import {
 import { meterOpenMeteo } from './lib/apiMeter';
 import { liveSubAreaOf } from './lib/bodies';
 import { WEATHER_DAY_SOURCES } from './lib/enums';
+import { isListed } from './lib/listing';
 import { bodyWeatherCell, subAreaWeatherCell } from './lib/sampling';
 import { literals } from './lib/validators';
 import { HOURLY_VARS, MAX_PAST_DAYS, OPEN_METEO_FORECAST_URL } from './weather';
@@ -126,6 +135,17 @@ export const CELL_BACKFILL_BATCH = 500;
 
 /** How far back the gap sweep looks. Inside the 92-day window, so step 1 of the ladder can serve it. */
 export const GAP_SWEEP_DAYS = 30;
+
+/**
+ * The window a cell's discovery digest is rebuilt over (N6h Workstream E / D165).
+ *
+ * The digest is **recomputed from the rows, not kept incrementally**: the gap sweep can rewrite a
+ * past day, and incremental state would then describe a history that no longer exists. Recomputing
+ * over the whole archive would read 92 rows × 3,043 cells every day for nothing, so the walk is
+ * bounded at the chain's own maximum span — a chain that reaches the edge is reported open-ended
+ * (*"30+ nights"*), which is the honest claim and plenty for *"at least three"*.
+ */
+export const DIGEST_WINDOW_DAYS = COLD_CHAIN_MAX_SPAN_DAYS;
 
 /** UTC-midnight day key for "today" in the archive's own terms. */
 function todayKey(nowMs: number): number {
@@ -552,6 +572,17 @@ export const backfillWeatherCells = internalAction({
     // could end up emptier the more often it was reconciled. Ownership is a single `runId` and the
     // newest claim wins; the loser abandons its remaining pages, whose work the winner is redoing.
     if (superseded) return { done: true, scanned: page.scanned, pruned: 0, superseded: true };
+    // The discovery join rides the same walk (Workstream E): the page already resolved every body's
+    // filter cell, so writing `bodyWeatherCells` here costs nothing it was not already paying.
+    if (page.members.length > 0) {
+      const joined = await ctx.runMutation(internal.weatherArchive.upsertBodyWeatherCells, {
+        members: page.members,
+        runId: run,
+        nowMs: Date.now(),
+      });
+      if (joined.superseded)
+        return { done: true, scanned: page.scanned, pruned: 0, superseded: true };
+    }
 
     if (!page.isDone) {
       await ctx.scheduler.runAfter(0, internal.weatherArchive.backfillWeatherCells, {
@@ -582,6 +613,14 @@ export const backfillWeatherCells = internalAction({
         nowMs: Date.now(),
       });
       if (res.superseded) return { done: true, scanned, pruned: 0, superseded: true };
+      if (bays.members.length > 0) {
+        const joined = await ctx.runMutation(internal.weatherArchive.upsertBodyWeatherCells, {
+          members: bays.members,
+          runId: run,
+          nowMs: Date.now(),
+        });
+        if (joined.superseded) return { done: true, scanned, pruned: 0, superseded: true };
+      }
       scanned += bays.scanned;
       if (bays.isDone) break;
       subCursor = bays.cursor;
@@ -593,6 +632,19 @@ export const backfillWeatherCells = internalAction({
       tier: targetTier,
       runId: run,
     });
+    // The join is `filter`-tier only, and it is pruned on the same rule: a body that was purged,
+    // merged or moved leaves a membership behind that would keep matching a cell it no longer sits in.
+    if (targetTier === 'filter') {
+      let pruneCursor: string | null = null;
+      for (;;) {
+        const res: { pruned: number; cursor: string; isDone: boolean } = await ctx.runMutation(
+          internal.weatherArchive.pruneVacatedMemberships,
+          { runId: run, cursor: pruneCursor },
+        );
+        if (res.isDone) break;
+        pruneCursor = res.cursor;
+      }
+    }
     // Last, and only on a genuinely complete walk: this is what the debounce reads.
     await ctx.runMutation(internal.weatherArchive.finishCellSync, {
       tier: targetTier,
@@ -837,12 +889,24 @@ type CellPageEntry = {
 };
 
 /**
+ * One occupant's membership as the discovery join stores it (`bodyWeatherCells`). Produced by the
+ * walk for the `filter` tier only — discovery reads no other tier.
+ */
+type MemberEntry = {
+  cellKey: string;
+  waterBodyId: Id<'waterBodies'>;
+  subAreaId?: Id<'waterBodySubAreas'>;
+};
+
+/**
  * One page of a registry walk, whichever table it came from. Named so the inline loop in
  * `backfillWeatherCells` can be typed without the circular inference `internal.*` invites inside
  * its own file.
  */
 type CellPage = {
   cells: CellPageEntry[];
+  /** The page's occupants, for the join. Empty on the `browse` tier. */
+  members: MemberEntry[];
   /** `continueCursor` — a string even on the last page, which `isDone` is what says. */
   cursor: string;
   isDone: boolean;
@@ -869,12 +933,20 @@ export const pageBodyCells = internalQuery({
       .query('waterBodies')
       .paginate({ numItems: CELL_BACKFILL_BATCH, cursor });
     const byKey = new Map<string, CellPageEntry>();
+    const members: MemberEntry[] = [];
     for (const body of page.page) {
       if (body.removedAt) continue;
-      countCell(byKey, bodyWeatherCell(body, tier));
+      const cell = bodyWeatherCell(body, tier);
+      countCell(byKey, cell);
+      // A merged body still counts into its cell (the registry describes the corpus's points) but
+      // is not joinable: discovery must surface the survivor, which registers itself.
+      if (tier === 'filter' && body.mergedIntoId === undefined && isListed(body)) {
+        members.push({ cellKey: cell.key, waterBodyId: body._id });
+      }
     }
     return {
       cells: [...byKey.values()],
+      members,
       cursor: page.continueCursor,
       isDone: page.isDone,
       scanned: page.page.length,
@@ -910,6 +982,7 @@ export const pageSubAreaCells = internalQuery({
       .paginate({ numItems: CELL_BACKFILL_BATCH, cursor });
     const parents = new Map<string, { elevationM?: number } | null>();
     const byKey = new Map<string, CellPageEntry>();
+    const members: MemberEntry[] = [];
     for (const subArea of page.page) {
       if (subArea.removedAt !== undefined) continue;
       let parent = parents.get(subArea.waterBodyId);
@@ -920,10 +993,19 @@ export const pageSubAreaCells = internalQuery({
       }
       // A bay whose lake is gone is not a place anyone can open.
       if (parent === null) continue;
-      countCell(byKey, subAreaWeatherCell(subArea, parent, tier));
+      const cell = subAreaWeatherCell(subArea, parent, tier);
+      countCell(byKey, cell);
+      if (tier === 'filter') {
+        members.push({
+          cellKey: cell.key,
+          waterBodyId: subArea.waterBodyId,
+          subAreaId: subArea._id,
+        });
+      }
     }
     return {
       cells: [...byKey.values()],
+      members,
       cursor: page.continueCursor,
       isDone: page.isDone,
       scanned: page.page.length,
@@ -980,6 +1062,86 @@ export const upsertWeatherCells = internalMutation({
       await ctx.db.insert('weatherCells', { ...cell, tier, runId, updatedAt: nowMs });
     }
     return { superseded: false };
+  },
+});
+
+/**
+ * Upsert a page of discovery memberships (`bodyWeatherCells`). Keyed on `(waterBodyId, subAreaId)`:
+ * a body's own row has no bay, a bay's row has one, and a body that moved cells simply gets its
+ * `cellKey` rewritten. Stamped with the walk's `runId` for the same reason the registry is — see
+ * `pruneVacatedMemberships`.
+ */
+export const upsertBodyWeatherCells = internalMutation({
+  args: {
+    runId: v.string(),
+    nowMs: v.number(),
+    members: v.array(
+      v.object({
+        cellKey: v.string(),
+        waterBodyId: v.id('waterBodies'),
+        subAreaId: v.optional(v.id('waterBodySubAreas')),
+      }),
+    ),
+  },
+  handler: async (ctx, { runId, nowMs, members }): Promise<{ superseded: boolean }> => {
+    // ⚠ The same in-transaction ownership check `upsertWeatherCells` makes, for the same reason: a
+    // page of a superseded walk that lands after the winner's prune would stamp rows with a dead
+    // run id — unpruned until the next walk — and patch a body's cell back to a stale key. The
+    // action's earlier check was a separate transaction; this one shares the write's.
+    const claim = await ctx.db
+      .query('weatherCellSyncs')
+      .withIndex('by_tier', (q) => q.eq('tier', 'filter'))
+      .unique();
+    if (claim && claim.runId !== runId) return { superseded: true };
+    for (const m of members) {
+      const existing = await ctx.db
+        .query('bodyWeatherCells')
+        .withIndex('by_body', (q) =>
+          q.eq('waterBodyId', m.waterBodyId).eq('subAreaId', m.subAreaId),
+        )
+        .first();
+      if (existing) {
+        await ctx.db.patch(existing._id, { cellKey: m.cellKey, runId, updatedAt: nowMs });
+        continue;
+      }
+      await ctx.db.insert('bodyWeatherCells', {
+        ...m,
+        isBay: m.subAreaId !== undefined,
+        runId,
+        updatedAt: nowMs,
+      });
+    }
+    return { superseded: false };
+  },
+});
+
+/** Join rows examined per prune page — a page must stay well under the per-function read cap. */
+export const MEMBERSHIP_PRUNE_BATCH = 4000;
+
+/**
+ * Delete memberships a completed walk did not re-stamp — a purged, merged or delisted body, or a
+ * bay that was removed. Same rule and same caveat as `pruneVacatedCells`: only after a complete walk.
+ *
+ * ⚠ **Paged, unlike `pruneVacatedCells`.** The registry is ~3,000 rows a tier; the join is one row
+ * per body — ~25,000 — and a single `collect()` over it is the read-cap shape this repo has drawn
+ * three times. The action loops the cursor; each page reads a bounded slice.
+ */
+export const pruneVacatedMemberships = internalMutation({
+  args: { runId: v.string(), cursor: v.union(v.string(), v.null()) },
+  handler: async (
+    ctx,
+    { runId, cursor },
+  ): Promise<{ pruned: number; cursor: string; isDone: boolean }> => {
+    const page = await ctx.db
+      .query('bodyWeatherCells')
+      .paginate({ numItems: MEMBERSHIP_PRUNE_BATCH, cursor });
+    let pruned = 0;
+    for (const row of page.page) {
+      if (row.runId === runId) continue;
+      await ctx.db.delete(row._id);
+      pruned += 1;
+    }
+    return { pruned, cursor: page.continueCursor, isDone: page.isDone };
   },
 });
 
@@ -1264,6 +1426,10 @@ export const refreshTierDays = internalAction({
       } catch (err) {
         console.warn(`weatherArchive: cell ${cell.cellKey} failed`, err);
       }
+      // The discovery digest follows the rows it summarises (Workstream E). Rebuilt even when the
+      // fetch failed: the cell's newest complete day has still moved on, and a digest that keeps
+      // describing a chain as of last week is a stale match rather than an honest gap.
+      if (tier === 'filter') await rebuildDigestFor(ctx, cell);
     }
 
     if (cells.length === CELL_BATCH_SIZE && lastKey !== undefined) {
@@ -1364,6 +1530,8 @@ export const sweepWeatherDayGaps = internalAction({
         }
         repaired += borrowed.length;
       }
+      // A repaired or newly-recorded gap changes what the chain can honestly say.
+      if (tier === 'filter') await rebuildDigestFor(ctx, cell);
     }
 
     if (cells.length === CELL_BATCH_SIZE && lastKey !== undefined) {
@@ -1653,6 +1821,117 @@ export const maybeSweepGaps = internalAction({
 });
 
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
+// The discovery digest (Workstream E / D165)
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+
+/** A stored day row as the chain reads it: unknowns stay unknown, never zero. */
+function chainDayOf(row: {
+  dayMs: number;
+  nightMinTempC?: number;
+  snowfallCm?: number;
+}): ColdChainDay {
+  return {
+    dayMs: row.dayMs,
+    nightMinTempC: typeof row.nightMinTempC === 'number' ? row.nightMinTempC : null,
+    snowfallCm: typeof row.snowfallCm === 'number' ? row.snowfallCm : null,
+  };
+}
+
+/** Rebuild one filter cell's digest from its rows. The action-side wrapper; see the mutation. */
+async function rebuildDigestFor(
+  ctx: ActionCtx,
+  cell: { cellKey: string; lat: number; lng: number },
+): Promise<void> {
+  try {
+    await ctx.runMutation(internal.weatherArchive.rebuildCellDigest, {
+      cellKey: cell.cellKey,
+      lat: cell.lat,
+      lng: cell.lng,
+      nowMs: Date.now(),
+    });
+  } catch (err) {
+    console.warn(`weatherArchive: digest rebuild for ${cell.cellKey} failed`, err);
+  }
+}
+
+/**
+ * Recompute a cell's discovery digest over {@link DIGEST_WINDOW_DAYS} of its complete days.
+ *
+ * **As of the newest complete day in the cell's own zone** — today's row is partial from the first
+ * fetch of the morning, and a digest that read it would match a lake on tonight's *forecast* low.
+ * `missing` markers are dropped rather than zero-filled, so the chain sees them as unobserved.
+ *
+ * A cell with no complete day has no digest: the row is deleted rather than written with zeroes,
+ * because "no chain" and "nothing known" are different answers and only one of them is a fact.
+ */
+export const rebuildCellDigest = internalMutation({
+  args: { cellKey: v.string(), lat: v.number(), lng: v.number(), nowMs: v.number() },
+  handler: async (ctx, { cellKey, lat, lng, nowMs }): Promise<{ asOfDayMs: number | null }> => {
+    const utcToday = todayKey(nowMs);
+    // One day wider than the window on the old side (a chain's first night reaches into the previous
+    // evening) and up to UTC-today on the new side, so the cell's own today can be resolved.
+    const rows = await ctx.db
+      .query('weatherDays')
+      .withIndex('by_cell_day', (q) =>
+        q
+          .eq('cellKey', cellKey)
+          .gte('dayMs', utcToday - (DIGEST_WINDOW_DAYS + 1) * DAY_MS)
+          .lte('dayMs', utcToday),
+      )
+      .collect();
+    const todayLocal = cellLocalToday(rows, nowMs, lng);
+    const complete = rows.filter(
+      (r) => r.missing !== true && isCompleteDay(r.hours, r.dayMs, todayLocal),
+    );
+    const existing = await ctx.db
+      .query('weatherCellDigests')
+      .withIndex('by_key', (q) => q.eq('cellKey', cellKey))
+      .first();
+    if (complete.length === 0) {
+      if (existing) await ctx.db.delete(existing._id);
+      return { asOfDayMs: null };
+    }
+    const asOfDayMs = Math.max(...complete.map((r) => r.dayMs));
+    const digest = buildWeatherCellDigest(complete.map(chainDayOf), asOfDayMs);
+    const row = { cellKey, lat, lng, ...digest, updatedAt: nowMs };
+    if (existing) await ctx.db.replace(existing._id, row);
+    else await ctx.db.insert('weatherCellDigests', row);
+    return { asOfDayMs };
+  },
+});
+
+/**
+ * Operator tool: rebuild every filter cell's digest from the rows already held, in batches.
+ *
+ * For the deploy that introduces the digest (cells primed before it existed have rows and no
+ * digest), and for any later change to what the digest means — a new threshold, a changed bridge
+ * rule — where the rows are right and only the reduction moved. Costs no fetch.
+ */
+export const rebuildFilterDigests = internalAction({
+  args: { afterKey: v.optional(v.string()) },
+  handler: async (ctx, { afterKey }): Promise<{ done: boolean; cells: number }> => {
+    const cells = await ctx.runQuery(internal.weatherArchive.pageTierCells, {
+      tier: 'filter',
+      ...(afterKey === undefined ? {} : { afterKey }),
+      limit: CELL_BATCH_SIZE,
+    });
+    if (cells.length === 0) return { done: true, cells: 0 };
+    let lastKey = afterKey;
+    for (const cell of cells) {
+      lastKey = cell.cellKey;
+      await rebuildDigestFor(ctx, cell);
+    }
+    if (cells.length === CELL_BATCH_SIZE && lastKey !== undefined) {
+      await ctx.scheduler.runAfter(0, internal.weatherArchive.rebuildFilterDigests, {
+        afterKey: lastKey,
+      });
+      return { done: false, cells: cells.length };
+    }
+    return { done: true, cells: cells.length };
+  },
+});
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
 // The public read (Workstream C's data path)
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
 
@@ -1723,6 +2002,13 @@ export interface WeatherDaysResult {
    * that has never been measured; both consumers simply draw and say less.
    */
   fetchProfileM?: number[];
+  /**
+   * The cold chain at the panel's threshold (D164), computed over {@link DIGEST_WINDOW_DAYS} rather
+   * than the seven days the panel draws — so a chain that began three weeks ago reads *"22 nights"*
+   * and not *"7+ nights"* for the rest of the winter. The same `coldChain` the discovery digest
+   * uses; the panel prints it through `describeColdChain`.
+   */
+  chain: ColdChain;
 }
 
 /**
@@ -1853,6 +2139,21 @@ export const getWeatherDaysForBody = action({
 
     const todayLocalDayMs = cellLocalToday(held, Date.now(), cell.lng);
 
+    // The chain over a wider window than the panel draws. `held` covers only the panel's span; the
+    // first touch above pulled the 92-day ceiling, so the rows are there to read.
+    const chainRows = await ctx.runQuery(internal.weatherArchive.readCellDayRange, {
+      cellKey: cell.key,
+      fromMs: toMs - (DIGEST_WINDOW_DAYS - 1) * DAY_MS,
+      toMs,
+    });
+    const chain = coldChain(
+      chainRows
+        .filter((r) => r.missing !== true && isCompleteDay(r.hours, r.dayMs, todayLocalDayMs))
+        .map(chainDayOf),
+      HARD_FREEZE_NIGHT_F,
+      { asOfDayMs: toMs },
+    );
+
     return {
       days: out,
       hours: hourRows,
@@ -1864,6 +2165,7 @@ export const getWeatherDaysForBody = action({
       ...('fetchProfileM' in info && info.fetchProfileM
         ? { fetchProfileM: info.fetchProfileM }
         : {}),
+      chain,
     };
   },
 });
@@ -2055,9 +2357,51 @@ export const getSubAreaSpread = query({
     let cellsWithData = 0;
     for (const days of byCell.values()) if (days.length > 0) cellsWithData += 1;
     if (cellsWithData < 2) return null;
-    return buildSubAreaSpread(inputs);
+    const spread = buildSubAreaSpread(inputs);
+    if (!spread) return null;
+
+    // The sorted bay lists (Workstream E, call 9), off the discovery digest: one small read per
+    // distinct bay cell, and the snow figure comes from the spread's own shared window so the two
+    // halves of the panel describe the same days.
+    const nightsByCell = new Map<string, number | null>();
+    const bayCells = new Map<string, string>();
+    for (const bay of bays) bayCells.set(bay._id, subAreaWeatherCell(bay, body, 'filter').key);
+    for (const key of new Set(bayCells.values())) {
+      const digest = await ctx.db
+        .query('weatherCellDigests')
+        .withIndex('by_key', (q) => q.eq('cellKey', key))
+        .first();
+      nightsByCell.set(key, digest ? digest[nightsFieldFor(HARD_FREEZE_NIGHT_F)] : null);
+    }
+    const shared = spreadSharedDays(inputs);
+    spread.rankings = buildBayRankings(
+      inputs.map((bay) => ({
+        subAreaId: bay.subAreaId,
+        name: bay.name,
+        chainNights: nightsByCell.get(bayCells.get(bay.subAreaId) ?? '') ?? null,
+        snowCm:
+          shared !== null && bay.days.length > 0
+            ? bay.days
+                .filter((d) => shared.has(d.dayMs))
+                .reduce((sum, d) => sum + (typeof d.snowfallCm === 'number' ? d.snowfallCm : 0), 0)
+            : null,
+      })),
+    );
+    return spread;
   },
 });
+
+/** The days every compared bay has — `buildSubAreaSpread`'s window, recomputed for the snow rank. */
+function spreadSharedDays(inputs: readonly SpreadBayInput[]): Set<number> | null {
+  const withData = inputs.filter((b) => b.days.length > 0);
+  if (withData.length < 2) return null;
+  let shared = new Set<number>((withData[0] as SpreadBayInput).days.map((d) => d.dayMs));
+  for (const bay of withData.slice(1)) {
+    const mine = new Set(bay.days.map((d) => d.dayMs));
+    shared = new Set([...shared].filter((d) => mine.has(d)));
+  }
+  return shared;
+}
 
 /**
  * **Operator tool: fill a lake's bay cells at the filter tier, out of season.**
@@ -2085,7 +2429,10 @@ export const primeSubAreaWeather = internalAction({
     });
     const days = Math.min(MAX_PAST_DAYS, Math.max(1, pastDays ?? SEASON_OPEN_PAST_DAYS));
     const out: Record<string, number | null> = {};
-    for (const cell of cells) out[cell.key] = await ingestCellDays(ctx, 'filter', cell, days);
+    for (const cell of cells) {
+      out[cell.key] = await ingestCellDays(ctx, 'filter', cell, days);
+      await rebuildDigestFor(ctx, { cellKey: cell.key, lat: cell.lat, lng: cell.lng });
+    }
     return { cells: cells.length, days, written: out };
   },
 });

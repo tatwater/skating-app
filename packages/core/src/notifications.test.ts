@@ -17,7 +17,7 @@ const lake = { id: 'b1', name: 'Lake Morey' };
 const ok = { id: 'r1', available: true };
 const gone = { id: 'r1', available: false };
 
-describe('the notification vocabulary (D16 / D165)', () => {
+describe('the notification vocabulary (D16 / D168)', () => {
   it('mirrors types and pref keys 1:1, and every key has a default, a label and a place in the order', () => {
     expect(NOTIFICATION_PREF_KEYS).toHaveLength(NOTIFICATION_TYPES.length);
     for (const type of NOTIFICATION_TYPES) {

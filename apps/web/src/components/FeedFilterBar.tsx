@@ -1,12 +1,18 @@
 import {
+  asOfLabel,
+  COLD_CHAIN_THRESHOLDS_F,
+  type ColdChainThresholdF,
   cmToInches,
   DRIVE_TIME_BANDS,
   type FeedFilters,
   type IceType,
   inchesToCm,
+  isColdChainThresholdF,
   roundTo,
   type SkateQuality,
   type SurfaceTag,
+  thresholdLabel,
+  withoutWeatherFilter,
 } from '@skating/core';
 import { activeFilterCount } from '../lib/feedFilters';
 import { Button } from './ui/button';
@@ -43,14 +49,30 @@ const RECENCY_OPTIONS: { value: number; label: string }[] = [
   { value: 168, label: 'Last 7d' },
 ];
 
+/** The night counts the weather knob offers — a short list, since the digest reads "at least". */
+const NIGHT_OPTIONS = [1, 2, 3, 4, 5, 7, 10, 14] as const;
+
+/** What the bar knows about discovery's readiness (`weatherDiscovery.status`), or nothing yet. */
+export interface WeatherAvailability {
+  available: boolean;
+  asOfDayMs: number | null;
+}
+
 export function FeedFilterBar({
   filters,
   onChange,
+  weather,
 }: {
   filters: FeedFilters;
   onChange: (next: FeedFilters) => void;
+  /**
+   * Discovery's readiness. `undefined` while loading. Out of season the weather knobs render
+   * disabled with a sentence rather than silently matching nothing (founder call 24).
+   */
+  weather?: WeatherAvailability | undefined;
 }) {
   const count = activeFilterCount(filters);
+  const weatherOff = weather !== undefined && !weather.available;
 
   /** Immutably set (or, when `value` is undefined, delete) one filter key. */
   function patch<K extends keyof FeedFilters>(key: K, value: FeedFilters[K] | undefined) {
@@ -162,6 +184,95 @@ export function FeedFilterBar({
           />
         </FilterField>
       </div>
+
+      {/* Weather-first discovery (N6h / D164–D166): "at least N nights below T, no snow since".
+          The knobs describe a *lake*, not a report — matching lakes appear as their own cards in
+          the feed and non-matches dim on the map. Disabled, with the reason, out of season. */}
+      <fieldset
+        className="flex flex-wrap items-end gap-3 rounded-md border border-border border-dashed p-2"
+        disabled={weatherOff}
+      >
+        <legend className="px-1 text-foreground-muted text-xs">
+          Weather{' '}
+          {weatherOff
+            ? '— no weather data yet this season'
+            : weather?.asOfDayMs
+              ? `(${asOfLabel(weather.asOfDayMs)})`
+              : ''}
+        </legend>
+        <FilterField label="Nights below" htmlFor="filter-weather-threshold">
+          <Select
+            value={filters.weather ? String(filters.weather.thresholdF) : OFF}
+            onValueChange={(v) => {
+              const thresholdF = Number(v);
+              if (!v || v === OFF || !isColdChainThresholdF(thresholdF)) {
+                onChange(withoutWeatherFilter(filters));
+                return;
+              }
+              patch('weather', { minNights: 3, ...filters.weather, thresholdF });
+            }}
+          >
+            <SelectTrigger id="filter-weather-threshold" size="sm">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={OFF}>Any weather</SelectItem>
+              {COLD_CHAIN_THRESHOLDS_F.map((t: ColdChainThresholdF) => (
+                <SelectItem key={t} value={String(t)}>{`Below ${thresholdLabel(t)}`}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </FilterField>
+        {filters.weather ? (
+          <>
+            <FilterField label="At least" htmlFor="filter-weather-nights">
+              <Select
+                value={String(filters.weather.minNights)}
+                onValueChange={(v) => {
+                  if (!filters.weather || !v) return;
+                  patch('weather', { ...filters.weather, minNights: Number(v) });
+                }}
+              >
+                <SelectTrigger id="filter-weather-nights" size="sm">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {NIGHT_OPTIONS.map((n) => (
+                    <SelectItem
+                      key={n}
+                      value={String(n)}
+                    >{`${n} night${n === 1 ? '' : 's'} in a row`}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </FilterField>
+            <div className="flex items-center gap-2 pb-2">
+              <Checkbox
+                id="filter-weather-nosnow"
+                checked={filters.weather.noSnowSince ?? false}
+                onCheckedChange={(v) => {
+                  if (!filters.weather) return;
+                  const { noSnowSince: _drop, ...rest } = filters.weather;
+                  patch('weather', v === true ? { ...rest, noSnowSince: true } : rest);
+                }}
+              />
+              <Label htmlFor="filter-weather-nosnow" className="text-foreground text-sm">
+                No snow since the first night
+              </Label>
+            </div>
+            <div className="flex items-center gap-2 pb-2">
+              <Checkbox
+                id="filter-only-reports"
+                checked={filters.onlyReports ?? false}
+                onCheckedChange={(v) => patch('onlyReports', v === true ? true : undefined)}
+              />
+              <Label htmlFor="filter-only-reports" className="text-foreground text-sm">
+                Only show reports
+              </Label>
+            </div>
+          </>
+        ) : null}
+      </fieldset>
 
       <div className="flex flex-wrap items-center gap-4">
         <div className="flex items-center gap-2">

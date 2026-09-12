@@ -1,5 +1,5 @@
 /**
- * The actor-triggered half of the notification queue (N8 / D166): enqueue with a settle window,
+ * The actor-triggered half of the notification queue (N8 / D169): enqueue with a settle window,
  * re-read the trigger at flush, and only then build the payload the inbox stores.
  *
  * ## Why every producer goes through here

@@ -94,7 +94,7 @@ export const create = mutation({
     await bumpContributionCount(ctx, profile._id, 'commentCount', 1);
 
     // `report_commented` (N8/B1, D21 finally delivered): the report's author hears about a comment,
-    // and a reply's parent author hears about the reply. Both ride the settle queue (D166) — a busy
+    // and a reply's parent author hears about the reply. Both ride the settle queue (D169) — a busy
     // report's burst becomes one "3 new comments", and a comment deleted or hidden inside the window
     // never sends. Never-self, prefs, deletion state and blocks are all applied in `enqueue`. The
     // parent author is keyed on their *comment*, so replies to it coalesce separately from comments

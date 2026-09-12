@@ -1467,15 +1467,15 @@ blocker* by a founder call**, and merged at scoping with the duplicate-corrobora
   flag from observation, depth checks the proposal.
 
 **N8 — The notification pipeline.** 🔨 **In build 2026-09-11** (branch `phase-n8-notification-pipeline`,
-[`phase-N8-notification-pipeline.md`](./phase-N8-notification-pipeline.md), D164–D169). The scoping pass
+[`phase-N8-notification-pipeline.md`](./phase-N8-notification-pipeline.md), D167–D172). The scoping pass
 found the real problem was neither bullet below: **nothing in the app could read a notification** —
 six types were being written and had never been seen. So the phase is the inbox first, then every
 declared type gets a producer, then the transports, and the two original bullets move to the back.
 - **PR 1 ✅ built:** `notifications.list / unreadCount / markRead` + a typed resolver; web
   `/notifications` + bell, mobile You-tab bell + tab dot; every actor-triggered type now **settles
-  60 s in the queue and is re-checked at flush** (D166 — a retracted thumb never sends); producers for
+  60 s in the queue and is re-checked at flush** (D169 — a retracted thumb never sends); producers for
   `report_commented`, `hazard_confirmation` (phase transitions only), `content_flag_resolved`
-  (user-origin flags only, new `contentFlags.origin`), and `bounty_answered` to the requester (D167,
+  (user-origin flags only, new `contentFlags.origin`), and `bounty_answered` to the requester (D170,
   replacing the misdirected `bounty_fulfilled`). Both settings pages render all ten toggles.
 - **PR 2 (next):** `activity_detected` from the recorder's un-prompted skates + the dedup ladder
   (design-only until a second provider exists); the **season-boundary inbox purge**; **per-user
@@ -1483,7 +1483,7 @@ declared type gets a producer, then the transports, and the two original bullets
 - **PR 3 (next):** the transports — Expo Push (Android via FCM now, iOS once the APNs key lands),
   **email via Resend** for the digest-class types with two channel switches and an unsubscribe route
   (primary email mirrored from Clerk onto `profiles`), and a mobile offline inbox cache.
-- **Deferred, by design:** the **reverse reach index** (D169 — filters candidates, never replaces the
+- **Deferred, by design:** the **reverse reach index** (D172 — filters candidates, never replaces the
   polygon test; trigger ~1,000 profiles); **true-sunset digest timing** (dropped — sunset runs opposite
   to the season); **web push** (no service worker yet; web = inbox + email).
 
@@ -1525,11 +1525,13 @@ fields*.
 
 **N6h — The weather panel: a season of past days, a planning window, and radar that admits what it
 can't see.** 🚧 **Scoped 2026-09-02/03; PR 1 (#48: re-key · durable archive · past panel + hourly
-timeline · dark thickness instrument · D162/D163) merged and on dev 2026-09-10; PR 3 (the three-tab
-drawer IA + sub-area weather spread) in progress 2026-09-11; D+E and F remain.** Founder ask, grown out
+timeline · dark thickness instrument · D162/D163) merged and on dev 2026-09-10; PR 3 (#50, the
+three-tab drawer IA + sub-area weather spread) and PR 4 (#51, the seven-day planner) merged
+2026-09-11; PR 5 (Workstream E — the cold chain, the per-cell digest, the "Latest" feed and the map
+dim, D164–D166) built 2026-09-12 on dev; F (radar) remains.** Founder ask, grown out
 of a costing question — *"what is most expensive about this plan?"* — whose answer moved the design: the
 expensive half is not the data, it is **the cache key**, which today shares nothing. See
-[`phase-N6h-weather-detail.md`](./phase-N6h-weather-detail.md); decisions **D152**–**D163**. Depends on
+[`phase-N6h-weather-detail.md`](./phase-N6h-weather-detail.md); decisions **D152**–**D166**. Depends on
 nothing; every seam it needs is already built.
 
 *Today the weather block is two lines: an NWS alert when one is active, and a 12-hour temperature
