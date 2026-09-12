@@ -229,6 +229,7 @@ describe('waterBodiesToFeatureCollection', () => {
       // property would evaluate to null inside an `any`, which throws rather than reading as false.
       noPublicAccess: false,
       selfFlagged: false,
+      weatherDimmed: false,
     });
   });
 
