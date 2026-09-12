@@ -258,7 +258,7 @@ export const setPromptState = mutation({
  * How long a recorded skate sits `pending` before the sweep asks about it (N8/B4). Long enough that
  * the recorder's own stop-prompt and a same-day flush from the offline queue get first go, and that
  * a second source of the same skate (a watch syncing when it feels like it) has usually arrived —
- * the dedup below needs both copies in the table before it can pick one. Same idea as the D166 settle
+ * the dedup below needs both copies in the table before it can pick one. Same idea as the D169 settle
  * window, at a longer timescale.
  */
 export const ACTIVITY_PROMPT_DELAY_MS = 3 * 60 * 60 * 1000;

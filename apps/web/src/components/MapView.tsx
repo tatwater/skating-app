@@ -8,13 +8,17 @@ import {
   approachesToFeatureCollection,
   approachLinePaint,
   type BBox,
+  type DriveTimeBands,
+  describeWeatherFilter,
   draftPlacementCount,
   formatAerialSeason,
   formatSeasonLabel,
+  hasWeatherFilter,
   holdFrames,
   isDraftSubmittable,
   isRegionOffscreen,
   type LatLng,
+  mapFilters,
   NO_HELD_FRAMES,
   parseAerialScene,
   polygonShape,
@@ -24,12 +28,15 @@ import {
   SUB_AREA_MIN_RENDER_ZOOM,
   shapeSignature,
   undoDraftPlacement,
+  weatherDimmedBodyIds,
   withAccessDim,
+  withoutWeatherFilter,
 } from '@skating/core';
 import { useNavigate } from '@tanstack/react-router';
 import { useQuery } from 'convex/react';
 import type { MultiPolygon, Polygon } from 'geojson';
 import type maplibregl from 'maplibre-gl';
+import { useFeedFilters } from '../lib/feedFiltersStore';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { useTheme } from 'next-themes';
 import {
@@ -143,6 +150,9 @@ function polygonOf(geometry: unknown): Polygon | MultiPolygon | null {
  * feature-state; the highlighted body / fly-to focus / report photo pins come from `useMapSelection`
  * (the drawers push them up, since they're siblings of this persistent map).
  */
+/** A stable empty dim set, so an inactive filter never changes the features effect's inputs. */
+const NO_WEATHER_DIM: ReadonlySet<string> = new Set();
+
 const EMPTY_FEATURES: GeoJSON.FeatureCollection = { type: 'FeatureCollection', features: [] };
 /** A stable identity for "nothing is painted", so the initial state cannot itself trigger a re-run. */
 const EMPTY_IDS: readonly string[] = [];
@@ -281,14 +291,54 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
   // handful of lakes in their life, and an unconfirmed report reaches nobody else's map.
   const selfFlagged = useQuery(api.contentFlags.myAccessFlags, {});
 
+  // The viewer's favorited bodies (Phase 4, decision #1) — painted with a distinct outline. Empty
+  // when signed out. The id set is stable-memoized so the paint effect only re-runs on a real change.
+  const favorites = useQuery(api.waterBodyFavorites.listForUser, {});
+  const favoriteKey = favorites?.map((f) => f.waterBodyId).join(',') ?? '';
+  // biome-ignore lint/correctness/useExhaustiveDependencies: favoriteKey is the stable content signature.
+  const favoriteIds = useMemo(
+    () => new Set((favorites ?? []).map((f) => f.waterBodyId)),
+    [favoriteKey],
+  );
+
+  // Weather-first discovery on the map (N6h / D166): the shared filter row's weather + radius, the
+  // matched cells from the server, and the dim set computed per body in view. Only the weather
+  // filter engages this — the radius alone never dimmed the map before and does not now.
+  const { value: feedFilters, set: setFeedFilters } = useFeedFilters();
+  // Keyed on content, not identity: `mapFilters` returns a fresh object per call, and a fresh object
+  // in the memo below would rebuild the dim set — and re-run the `setFeatures` effect — on every
+  // render, which is the setState-in-effect loop React warns about.
+  const discoveryKey = JSON.stringify(mapFilters(feedFilters));
+  // biome-ignore lint/correctness/useExhaustiveDependencies: discoveryKey is the content signature.
+  const discoveryFilters = useMemo(() => mapFilters(feedFilters), [discoveryKey]);
+  const matchedCells = useQuery(
+    api.weatherDiscovery.matchedCells,
+    hasWeatherFilter(discoveryFilters) ? { filters: discoveryFilters } : 'skip',
+  );
+  const viewerProfile = useQuery(api.profiles.current, {});
+  const weatherDimmed = useMemo(() => {
+    if (!hasWeatherFilter(discoveryFilters) || !bodies) return NO_WEATHER_DIM;
+    return weatherDimmedBodyIds(bodies, discoveryFilters, matchedCells, {
+      bands: {
+        band30: viewerProfile?.cachedIsochrones?.band30,
+        band60: viewerProfile?.cachedIsochrones?.band60,
+        outerRadiusMeters: viewerProfile?.outerRadiusMeters,
+      } as DriveTimeBands,
+      home: viewerProfile?.homeCoord,
+      favorites: favoriteIds,
+    });
+  }, [discoveryFilters, bodies, matchedCells, viewerProfile, favoriteIds]);
+
   // Retain the last loaded features while the next query is in flight (Convex returns `undefined`
   // for a fresh key until it resolves) so bodies never blink off the map between pans.
   const [features, setFeatures] = useState<GeoJSON.FeatureCollection>(EMPTY_FEATURES);
   useEffect(() => {
     if (bodies !== undefined) {
-      setFeatures(waterBodiesToFeatureCollection(bodies, new Set(selfFlagged ?? [])));
+      setFeatures(
+        waterBodiesToFeatureCollection(bodies, new Set(selfFlagged ?? []), weatherDimmed),
+      );
     }
-  }, [bodies, selfFlagged]);
+  }, [bodies, selfFlagged, weatherDimmed]);
 
   // The same rows, handed to the sidebar's "lakes in view" list (see `MapSelectionContext`). No
   // extra query, by the same argument the summary cards make below — and one that matters more
@@ -330,16 +380,6 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
     if (subAreaArgs === 'skip') setSubAreaFeatures(EMPTY_FEATURES);
     else if (subAreas !== undefined) setSubAreaFeatures(subAreasToFeatureCollection(subAreas));
   }, [subAreas, subAreaArgs]);
-
-  // The viewer's favorited bodies (Phase 4, decision #1) — painted with a distinct outline. Empty
-  // when signed out. The id set is stable-memoized so the paint effect only re-runs on a real change.
-  const favorites = useQuery(api.waterBodyFavorites.listForUser, {});
-  const favoriteKey = favorites?.map((f) => f.waterBodyId).join(',') ?? '';
-  // biome-ignore lint/correctness/useExhaustiveDependencies: favoriteKey is the stable content signature.
-  const favoriteIds = useMemo(
-    () => new Set((favorites ?? []).map((f) => f.waterBodyId)),
-    [favoriteKey],
-  );
 
   // Put-in markers for the currently-focused lake (Phase 4, decision #7) — bounded to the open lake
   // rather than every body in view. `skip` when no lake is selected.
@@ -1703,6 +1743,25 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
               </button>
             </>
           )}
+        </div>
+      ) : null}
+      {hasWeatherFilter(feedFilters) ? (
+        // The active discovery filter, named on the map (D166): a dimmed map must never be mistaken
+        // for a broken one, and clearing it here is the same store the feed reads.
+        <div
+          role="status"
+          className="absolute top-2 left-2 z-10 flex max-w-[calc(100%-1rem)] items-center gap-2 rounded-full border border-border bg-surface/95 px-3 py-1 text-foreground text-xs shadow"
+        >
+          <span className="truncate">
+            {describeWeatherFilter(feedFilters, matchedCells?.asOfDayMs)}
+          </span>
+          <button
+            type="button"
+            className="shrink-0 rounded-full px-1.5 font-medium text-primary hover:underline"
+            onClick={() => setFeedFilters(withoutWeatherFilter(feedFilters))}
+          >
+            Clear
+          </button>
         </div>
       ) : null}
       {pinDropMode ? (

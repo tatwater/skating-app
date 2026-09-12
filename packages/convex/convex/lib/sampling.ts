@@ -17,6 +17,7 @@
  */
 
 import {
+  bodyWeatherAnchor,
   subAreaWeatherPoint,
   type WeatherCell,
   type WeatherTier,
@@ -66,7 +67,7 @@ export function nearestSamplePoint(
  * casting rays from the shoreline.
  */
 export function defaultSampleAnchor(body: Doc<'waterBodies'>): { lat: number; lng: number } {
-  return body.interiorPoint ?? body.representativePoint ?? body.centroid;
+  return bodyWeatherAnchor(body);
 }
 
 /**

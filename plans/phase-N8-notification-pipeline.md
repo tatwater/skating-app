@@ -11,11 +11,11 @@
 > **Touches:** `notifications` / `notificationQueue`, `profiles.notificationPrefs`, the Phase 3 comment
 > path, the Phase 7 moderation queue, the Phase 9 hazard-confirmation loop, the Phase 8 recorder, and
 > both clients' shells.
-> **Decisions:** logged as **D164–D170** in [`01-decisions.md`](./01-decisions.md) — the numbers this
-> document proposed (D77–D81) were taken by N5c and N6b before it was built. The mapping: D77→**D164**
-> (inbox first), D78→**D165** (producer + renderer or no type), D79→**D168** (hazards don't broadcast),
-> D80→**D169** (reverse index filters candidates; deferred), D81→**D166** (settle + re-check).
-> **D167** (`bounty_answered`) was found at kickoff; **D170** is Workstream C's call — see the built
+> **Decisions:** logged as **D167–D173** in [`01-decisions.md`](./01-decisions.md) — the numbers this
+> document proposed (D77–D81) were taken by N5c and N6b before it was built. The mapping: D77→**D167**
+> (inbox first), D78→**D168** (producer + renderer or no type), D79→**D171** (hazards don't broadcast),
+> D80→**D172** (reverse index filters candidates; deferred), D81→**D169** (settle + re-check).
+> **D170** (`bounty_answered`) was found at kickoff; **D173** is Workstream C's call — see the built
 > records below.
 
 ---
@@ -621,11 +621,21 @@ producer enqueues with `SETTLE_MS = 60 s` and a typed `trigger` the flush re-rea
    both clients draw the dot from a visit-scoped set (seeded from the page in hand, widened by the
    server's answer), so "new since last visit" survives the stamp. `enqueueActorNotification`
    derives `type` from the trigger kind (`TYPE_FOR_KIND`) instead of taking it as a second argument.
+   *Fourth pass (founder, post-Greptile):* the flush was re-batched. `FLUSH_BATCH_CAP` 1,000 → **250**
+   — it was sized when a row cost two reads, and an actor row now costs ~3 + N, so a full batch sat
+   at the 4,096 read ceiling with zero coalescing and would have wedged on the same rows every
+   minute. A full or budget-stopped batch (`FLUSH_READ_BUDGET` 3,000, a running tally) **schedules
+   its own continuation**, so the cap bounds a transaction, not throughput. And **a digest is
+   assembled from `by_user`, not from the batch slice**: every digest row is due at the same 8pm, so
+   `by_flush` interleaves users by creation order and a user's rows are never contiguous — the old
+   "straddles the cap ⇒ two digests" edge is gone, with nothing re-run. The founder's first
+   framing ("drop the user, reset the pointer to the start of them, re-run in full") assumed a
+   contiguity the scan doesn't have; the per-user index gives the same guarantee without it.
 1. **The plan miscounted the toggles.** Both settings pages rendered *three* (the Phase-4 set), not
    ten. They now iterate `NOTIFICATION_PREF_ORDER` from `@skating/core`, where the vocabulary, the
    labels and `describeNotification` (the sentence both clients render) now live.
 2. **`bounty_fulfilled` was misdescribed** — it went to the fulfiller, and nobody told the requester a
-   report had arrived. It is now `bounty_answered`, to the requester, on attach (D167). The pref key
+   report had arrived. It is now `bounty_answered`, to the requester, on attach (D170). The pref key
    renamed with it (`bountyAnswered`); `backfillNotificationPrefs` migrates the profile objects.
    **⚠ Dev deploy recipe** (prod has no profiles, so this is dev-only): `boolFlags` is a strict
    `v.object`, so the narrow schema in this tree rejects every existing profile on push. Widen
@@ -651,7 +661,7 @@ producer enqueues with `SETTLE_MS = 60 s` and a typed `trigger` the flush re-rea
    never-seen rows; the resolver types it at the boundary and the season purge retires the old shapes.
 7. **`unreadCount` answers 0 without a profile** rather than throwing — both shells subscribe from a
    layout that can render a frame before the row exists.
-8. **Workstream D is deliberately unbuilt** (D169). Dev has three profiles.
+8. **Workstream D is deliberately unbuilt** (D172). Dev has three profiles.
 9. **`bounties.answeredByMyReport`** backs the post-submit "at least N skaters were looking forward to
    it" line on both report-detail views; it answers 0 to anyone but the author.
 
@@ -664,7 +674,7 @@ sweep runs it per user over that user's recent rows, not only the due ones), A5
 (`storageHygiene.purgeLastSeasonNotifications`, daily, `notifications.by_created_at`), C
 (`profiles.timezone`, `profiles.setTimezone` validated through `Intl`, both shells write it on app
 open via core's `deviceTimeZone`/`timezoneNeedsSync`; the fan-out stamps `nextZonedHourMs(now, 20,
-p.timezone ?? DIGEST_TIMEZONE)`). Logged as **D170**.
+p.timezone ?? DIGEST_TIMEZONE)`). Logged as **D173**.
 
 **Departures worth knowing:**
 
@@ -703,8 +713,8 @@ exclusions are struck rather than deleted, so the reasoning survives.*
   **→ PR 3.** Android via Expo Push + FCM (a Firebase project + service-account key in EAS — founder
   task); iOS via an APNs key from the Apple Developer Program the founder has since enrolled in, code
   shipped for both, only Android testable (no iPhone). The `coalesceKey` seeds the collapse-id as
-  planned. D164's point stands: the inbox was never a waiting room for this.
-- **Nearby-hazard notifications** (D168) — on-ice proximity is the hazard channel, deliberately.
+  planned. D167's point stands: the inbox was never a waiting room for this.
+- **Nearby-hazard notifications** (D171) — on-ice proximity is the hazard channel, deliberately.
 - ~~**Email notifications.** Resend exists for *operator* alerts (D38) and is credential-blocked anyway.~~
   **→ PR 3.** Resend is live on dev (`updates@skating.teaganatwater.com`). Not a 10×3 matrix: per-type
   toggles stay, two channel switches (push, email) are added, and which types are *email-eligible* is

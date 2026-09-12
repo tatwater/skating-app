@@ -688,7 +688,7 @@ describe('gpsActivities.listTracksForBody — the D58 privacy chain', () => {
 
 // ── The activity_detected sweep (N8/B4 + B4a) ────────────────────────────────────────────────────
 
-/** Make every queued notification due and flush it — the settle window (N8 / D166), fast-forwarded. */
+/** Make every queued notification due and flush it — the settle window (N8 / D169), fast-forwarded. */
 async function flushAllDue(t: ReturnType<typeof convexTest>) {
   await t.run(async (ctx) => {
     for (const row of await ctx.db.query('notificationQueue').collect()) {

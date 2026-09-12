@@ -48,7 +48,7 @@ function TabIcon({ icon, color, size }: { icon: IconDefinition; color: ColorValu
 
 /**
  * The five co-primary tabs from the app structure (00-vision / D28):
- * Map (default) · Newsfeed · Report · Bounties · You.
+ * Map (default) · Latest · Report · Bounties · You.
  *
  * Icons are FontAwesome **Sharp Duotone**, rendered through `react-native-svg` — no icon font, so
  * nothing here needs a native rebuild beyond the SVG dep the app already carries. Duotone is the
@@ -113,7 +113,7 @@ export default function TabsLayout() {
       <Tabs.Screen
         name="feed"
         options={{
-          title: 'Newsfeed',
+          title: 'Latest',
           tabBarIcon: ({ color, size }) => <TabIcon icon={faNewspaper} color={color} size={size} />,
         }}
       />

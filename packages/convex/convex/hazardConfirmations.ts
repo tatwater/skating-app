@@ -299,7 +299,7 @@ async function recomputeLifecycle(
   await recomputeBodySummary(ctx, hazard.waterBodyId);
 
   // The author's notification hangs off the *phase* changing — the same event the map re-renders on.
-  // Through the settle queue (D166): the flush re-reads the phase, so a vote flipped back inside the
+  // Through the settle queue (D169): the flush re-reads the phase, so a vote flipped back inside the
   // window sends nothing, and two transitions inside it report only where the pin ended up. A slide
   // back to `provisional` (a confirmer changing their mind) isn't news anyone can act on, so it's the
   // one destination that stays quiet.

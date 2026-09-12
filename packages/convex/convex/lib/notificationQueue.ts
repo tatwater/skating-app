@@ -1,5 +1,5 @@
 /**
- * The actor-triggered half of the notification queue (N8 / D166): enqueue with a settle window,
+ * The actor-triggered half of the notification queue (N8 / D169): enqueue with a settle window,
  * re-read the trigger at flush, and only then build the payload the inbox stores.
  *
  * ## Why every producer goes through here
@@ -152,6 +152,17 @@ export function triggerCount(trigger: NotificationTrigger): number {
     case 'activity':
       return 1;
   }
+}
+
+/**
+ * What `settleTrigger` spends in document reads, for the flush's per-transaction tally: the target
+ * (report, hazard, bounty, flag, activity), then one read per coalesced id. Charged whether or not
+ * the settle short-circuits before it gets there — a burst is priced by what it *could* read, so
+ * the tally is a floor on headroom. Lives beside `settleTrigger` rather than at its call site so a
+ * kind whose re-check grows (a second read per id, say) changes both in one place.
+ */
+export function settleReadCost(trigger: NotificationTrigger): number {
+  return 1 + triggerCount(trigger);
 }
 
 /**

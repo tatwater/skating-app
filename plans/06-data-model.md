@@ -57,14 +57,14 @@ excludeTracksFromAggregate?: boolean  // Phase 8 / D58: keep my recorded paths o
                              // retroactively drops every track they've contributed, not just future
                              // ones. Recording + Strava push are unaffected; this governs only whether
                              // their line draws on a lake's map for other people.
-timezone?: string            // N8/C, D170 — the DEVICE's IANA zone, refreshed on app open; the 8pm digest's
+timezone?: string            // N8/C, D173 — the DEVICE's IANA zone, refreshed on app open; the 8pm digest's
                              // only per-user input (the hour is 20:00 for everyone). Never public.
 notificationPrefs: {         // per-type toggles — EVERY type is toggleable (D16); vocabulary in @skating/core (N8)
   activityDetected,          // a skate OUR recorder captured that was never reported (N8/B4) — NOT "any
                              // linked provider" as D24 said; that premise was retired with Phase 8's push pivot
   bountyRequest,
   hazardConfirmation,        // your hazard's lifecycle phase moved: confirmed / disputed / healing / healed (N8)
-  bountyAnswered,            // a report landed on your open bounty (N8 / D167; was bountyFulfilled)
+  bountyAnswered,            // a report landed on your open bounty (N8 / D170; was bountyFulfilled)
   reportRated,               // someone found your report/hazard helpful, or corroborated your report (D17)
   reportCommented,           // someone commented on your report, or replied to your comment (D21; N8)
   favoriteReport,            // Phase 4: report on a favorited body (DEFAULT ON), any distance
@@ -824,7 +824,7 @@ createdAt: timestamp
 > amendment's redact-don't-erase** rule, since erasing a departing user's photo of a gravel lot degrades
 > the map for everyone else to no privacy benefit. There is no person in it.
 
-### `notifications`  (the inbox — N8 / D164)
+### `notifications`  (the inbox — N8 / D167)
 ```
 _id
 userId: ref(profiles)           // recipient
@@ -844,13 +844,13 @@ createdAt: timestamp
 > Indexes: `by_user`, `by_user_read` (`userId, readAt` — the unread badge is an *equality* on
 > `readAt = undefined`, which is the one shape the non-sparse-optional-index trap doesn't bite),
 > `by_created_at` (the season purge).
-> **Only `flushNotificationQueue` inserts here** (D166) — every producer enqueues first.
+> **Only `flushNotificationQueue` inserts here** (D169) — every producer enqueues first.
 > Read by `notifications.list` (paginated, resolved), `unreadCount` (capped at 99), `markRead`.
 > **Retention is the season boundary** (N8/A5): a daily sweep deletes rows created before the current
 > season's start, read or not. The inbox is not an archive — the data export is.
 > Only sent if the recipient's `notificationPrefs[type]` is on (D16), re-checked at flush.
 
-### `notificationQueue`  (the coalescing + settle queue — Phase 4 decision #4; widened N8 / D166)
+### `notificationQueue`  (the coalescing + settle queue — Phase 4 decision #4; widened N8 / D169)
 ```
 _id
 userId: ref(profiles)

@@ -108,7 +108,7 @@ async function seedBody(t: ReturnType<typeof harness>) {
 
 type Actor = Awaited<ReturnType<typeof seedUser>>;
 
-/** Make every queued notification due and flush it — the settle window (N8 / D166), fast-forwarded. */
+/** Make every queued notification due and flush it — the settle window (N8 / D169), fast-forwarded. */
 async function flushAllDue(t: ReturnType<typeof harness>) {
   await t.run(async (ctx) => {
     for (const row of await ctx.db.query('notificationQueue').collect()) {
@@ -157,7 +157,7 @@ describe('bounties.create', () => {
     });
   });
 
-  test('a bounty cancelled inside the settle window never asks anyone (D166)', async () => {
+  test('a bounty cancelled inside the settle window never asks anyone (D169)', async () => {
     const t = harness();
     const requester = await seedUser(t, 'requester');
     const reporter = await seedUser(t, 'reporter');
@@ -783,7 +783,7 @@ describe('bounties fulfillment', () => {
     expect(bounty?.status).toBe('fulfilled');
     // Reward is the separate bountyPoints currency, awarded to the report author.
     expect((await t.run((ctx) => ctx.db.get(author.id)))?.bountyPoints).toBe(bounty?.rewardPoints);
-    // The author is NOT notified of fulfilment (D167): the requester's thumb is visible on the report
+    // The author is NOT notified of fulfilment (D170): the requester's thumb is visible on the report
     // already, and the only person who needed telling was the requester when the report arrived —
     // which, because they thumbed inside the settle window, is a `bounty_answered` that never sends:
     // the flush finds the bounty no longer open.
@@ -791,7 +791,7 @@ describe('bounties fulfillment', () => {
     expect(notes.map((n) => n.type)).toEqual(['report_rated']); // the thumb itself, nothing else
   });
 
-  test('the requester is told when a report lands on their open bounty (D167)', async () => {
+  test('the requester is told when a report lands on their open bounty (D170)', async () => {
     const t = harness();
     const requester = await seedUser(t, 'requester');
     const author = await seedUser(t, 'author');

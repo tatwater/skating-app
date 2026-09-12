@@ -14,7 +14,8 @@ import { ThemeToggle } from './theme-toggle';
 import { Button } from './ui/button';
 
 /**
- * Chrome for the signed-in app: the two co-primary top-level pages (Map · Newsfeed, D28)
+ * Chrome for the signed-in app: the two co-primary top-level pages (Map · Latest, D28; renamed from
+ * Newsfeed by N6h/D159)
  * plus profile / settings / sign-out and the theme toggle. Report + Bounties are folded
  * into the pages themselves (D47), so they're not nav items. Rendered only in the `app`
  * zone (see `AuthGate`).
@@ -81,7 +82,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             Map
           </Link>
           <Link to="/feed" className={navLinkClass} activeProps={{ className: navActiveClass }}>
-            Newsfeed
+            Latest
           </Link>
           {profile?.role === 'moderator' || profile?.role === 'admin' ? (
             <Link to="/admin" className={navLinkClass} activeProps={{ className: navActiveClass }}>
