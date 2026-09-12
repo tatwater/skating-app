@@ -656,7 +656,6 @@ async function fanOutEligibility(
     await enqueueActorNotification(ctx, {
       recipientId: report.authorId,
       actorId: args.requesterId,
-      type: 'bounty_request',
       targetId: args.bountyId,
       trigger: {
         kind: 'bounty_request',
@@ -693,9 +692,9 @@ export const cancel = mutation({
  * requester; several reports inside the settle window coalesce into one "N reports came in", and the
  * flush re-checks that the bounty is still open (if they've already ruled, there's nothing to ask).
  *
- * The author is told on the spot rather than pinged (their phone dinging because a stranger had asked
- * would be a notification about somebody else's action): the report-detail views read the count back
- * through `answeredByMyReport`, so nothing here is returned.
+ * The *author* is not pinged — a stranger having asked is not a reason for their phone to ding — but
+ * they are told on the spot: `answeredByMyReport` below backs the "at least N skaters were looking
+ * forward to it" line on their own report, so nothing here is returned.
  */
 export async function attachReportToOpenBounties(
   ctx: MutationCtx,
@@ -721,7 +720,6 @@ export async function attachReportToOpenBounties(
     await enqueueActorNotification(ctx, {
       recipientId: bounty.requesterId,
       actorId: report.authorId,
-      type: 'bounty_answered',
       targetId: bounty._id,
       trigger: {
         kind: 'bounty_answered',
@@ -736,7 +734,8 @@ export async function attachReportToOpenBounties(
 /**
  * Fulfillment-on-helpful (decisions 10–11) — invoked from `ratings.rate` when the **requester** thumbs a
  * fulfilling report helpful. Flips the bounty to `fulfilled` and awards `rewardPoints` (as
- * `bounty_fulfilled` → `bountyPoints`) to the **report author**, then notifies them. Guarded so a bounty
+ * `bounty_fulfilled` → `bountyPoints`) to the **report author** — no notification to them since N8 /
+ * D167; see the note at the end of the body. Guarded so a bounty
  * fulfills once: no-op unless still `open`, the rater is the requester, and the report is in its
  * fulfilling set. (The rater can't be the report author — self-rating is already blocked upstream — so
  * nobody rewards themselves.)

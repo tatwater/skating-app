@@ -474,7 +474,6 @@ async function notifyCorroboration(
   await enqueueActorNotification(ctx, {
     recipientId: priorReport.authorId,
     actorId: byReport.authorId,
-    type: 'report_rated',
     targetId: priorReport._id,
     trigger: { kind: 'corroboration', reportId: priorReport._id, byReportIds: [byReport._id] },
   });

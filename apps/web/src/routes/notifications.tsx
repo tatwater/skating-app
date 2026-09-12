@@ -1,8 +1,8 @@
 import { api } from '@skating/convex/api';
 import { describeNotification, formatRelativeTime, type NotificationView } from '@skating/core';
 import { createFileRoute, Link } from '@tanstack/react-router';
-import { useMutation, usePaginatedQuery } from 'convex/react';
-import { useEffect, useRef } from 'react';
+import { useConvexAuth, useMutation, usePaginatedQuery } from 'convex/react';
+import { useEffect, useRef, useState } from 'react';
 import { Panel } from '../components/Panel';
 import { Button } from '../components/ui/button';
 import { Skeleton } from '../components/ui/skeleton';
@@ -28,24 +28,38 @@ function NotificationsPage() {
     { initialNumItems: PAGE_SIZE },
   );
   const markRead = useMutation(api.notifications.markRead);
+  const { isAuthenticated } = useConvexAuth();
   const now = Date.now();
 
-  // Mark what the page opened on as read — **once**, when the first page lands with rows. Not on
-  // every reactive re-render: a notification delivered while this tab sits open in the background
-  // would otherwise stamp itself read the moment it arrived, unseen. It stays unread until the next
-  // visit. The latch is set whether or not anything shown was unread — latching only after a mark
-  // would leave a page opened on an all-read inbox free to mark the next arrival on sight. Rows
-  // present ⇒ the client is authenticated; the empty frame before the token can't be told from an
-  // empty inbox, so that case waits for the next open. No `before`: the server stamps everything
-  // that exists now, including rows the list omits for blocked actors, which is what keeps the bell
-  // and the list agreeing.
-  const hasRows = results.length > 0;
+  // Mark what the page opened on as read — **once**, when the first page has landed and the Convex
+  // client holds its token. Not on every reactive re-render: a notification delivered while this
+  // tab sits open in the background would otherwise stamp itself read the moment it arrived,
+  // unseen. It stays unread until the next visit. The latch is set whether or not anything shown
+  // was unread — latching only after a mark would leave a page opened on an all-read inbox free to
+  // mark the next arrival on sight. The auth gate is `useConvexAuth`, not "rows are present": a
+  // hard refresh runs the first page a frame before the token and `list` fails soft to an empty
+  // page, so an empty page can't be trusted to mean an empty inbox — but neither can rows be
+  // required, because an inbox whose every row is a blocked actor's lists nothing while the bell
+  // still counts them, and a rows guard would leave it lit for good. No `before`: the server stamps
+  // everything that exists now, including the rows the list omits for blocked actors, which is
+  // what keeps the bell and the list agreeing.
+  //
+  // The rows it stamps are remembered for the visit: the list is reactive, so once the mark lands
+  // every row re-renders with `readAt` set, and a dot drawn from `readAt` alone would vanish before
+  // anyone saw which rows were new. `newThisVisit` is what the dot reads instead — seeded from the
+  // page in hand before the mutation fires (the subscription reflects the stamp *before* the
+  // mutation's promise resolves, so seeding afterwards would flicker), then widened to everything
+  // the server stamped, which covers rows a later "Load more" brings in.
   const marked = useRef(false);
+  const [newThisVisit, setNewThisVisit] = useState<ReadonlySet<string>>(() => new Set());
   useEffect(() => {
-    if (marked.current || status === 'LoadingFirstPage' || !hasRows) return;
+    if (marked.current || !isAuthenticated || status === 'LoadingFirstPage') return;
     marked.current = true;
-    void markRead({}).catch(() => {});
-  }, [markRead, hasRows, status]);
+    setNewThisVisit(new Set(results.filter((v) => v.readAt === undefined).map((v) => v.id)));
+    markRead({})
+      .then((stamped) => setNewThisVisit((prev) => new Set([...prev, ...stamped])))
+      .catch(() => {});
+  }, [markRead, isAuthenticated, status, results]);
 
   const loadMoreFooter =
     status === 'CanLoadMore' ? (
@@ -79,7 +93,12 @@ function NotificationsPage() {
       ) : (
         <ul className="flex flex-col divide-y divide-border rounded-xl bg-card ring-1 ring-foreground/10">
           {results.map((view) => (
-            <NotificationRow key={view.id} view={view} now={now} />
+            <NotificationRow
+              key={view.id}
+              view={view}
+              now={now}
+              unread={view.readAt === undefined || newThisVisit.has(view.id)}
+            />
           ))}
         </ul>
       )}
@@ -88,10 +107,18 @@ function NotificationsPage() {
   );
 }
 
-function NotificationRow({ view, now }: { view: NotificationView; now: number }) {
+function NotificationRow({
+  view,
+  now,
+  unread,
+}: {
+  view: NotificationView;
+  now: number;
+  /** New since the last visit — still unread, or stamped read by this visit's open. */
+  unread: boolean;
+}) {
   const { title, detail, target } = describeNotification(view);
   const href = notificationHref(target, view);
-  const unread = view.readAt === undefined;
   const body = (
     <div className="flex items-start gap-3 px-4 py-3">
       {/* The unread dot sits in a fixed-width gutter so read and unread rows keep the same left edge. */}

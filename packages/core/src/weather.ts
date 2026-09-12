@@ -31,6 +31,13 @@ export interface HourlyWeather {
    * only `nightsBelowFreezing` uses it (and reads `null` when any hour lacks it).
    */
   startMs?: number;
+  /**
+   * The same hour as an absolute UTC instant. Carried beside `startMs` because two local-shifted
+   * timestamps cannot say whether their hours were consecutive across a DST transition — a
+   * spring-forward night reads as a two-hour gap and a fall-back night as a repeated hour. Anything
+   * judging *contiguity* reads this; anything printing a *clock* reads `startMs` (N6h D).
+   */
+  utcMs?: number;
   temperatureC: number;
   /** Open-Meteo `precipitation` (mm) — total water-equivalent (rain + snow-melt + showers). */
   precipitationMm: number;

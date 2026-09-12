@@ -1,3 +1,4 @@
+import { FORECAST_PLAN_DAYS, summarizeForecast } from '@skating/core';
 import { convexTest } from 'convex-test';
 import type { Polygon } from 'geojson';
 import { afterEach, describe, expect, test, vi } from 'vitest';
@@ -346,12 +347,14 @@ function openMeteoWithForecast(nowMs: number) {
       cloud_cover: [10, 20, 40, 60, 90, 100],
       sunshine_duration: [3600, 3600, 1800, 0, 0, 0],
       shortwave_radiation: [200, 150, 100, 50, 0, 0],
+      wind_direction_10m: [270, 270, 280, 290, 300, 310],
+      weather_code: [1, 1, 2, 3, 73, 75],
     },
   };
 }
 
 describe('weather.getForecastForBody (N6c B5b)', () => {
-  test('returns the forward hours and names when snow starts', async () => {
+  test('returns the forward hours, and the strip line derived from them still names when snow starts', async () => {
     const t = convexTestWithGeo();
     const waterBodyId = await seedBody(t);
     const now = Date.now();
@@ -366,8 +369,204 @@ describe('weather.getForecastForBody (N6c B5b)', () => {
     expect(forecast?.hours.length).toBeGreaterThan(0);
     // Every hour is in the future relative to the request.
     for (const h of forecast?.hours ?? []) expect(h.startMs).toBeGreaterThan(now - 18_000_000);
-    expect(forecast?.precipStartsMs).toBeDefined();
-    expect(forecast?.precipIsSnow).toBe(true);
+    expect(forecast?.utcOffsetMs).toBe(-18_000_000);
+    // The planner's inputs ride through the same row (N6h D) — the code is what draws the symbol.
+    expect(forecast?.hours.at(-1)?.weatherCode).toBe(75);
+    expect(forecast?.hours.at(-1)?.windDirectionDeg).toBe(310);
+    // The strip is now a client-side derivation over the same hours, at its own 12-hour horizon.
+    const strip = summarizeForecast(forecast!.hours, now + forecast!.utcOffsetMs);
+    expect(strip.precipStartsMs).toBeDefined();
+    expect(strip.precipIsSnow).toBe(true);
+    expect(forecast?.arrivalBandMinutes).toBeNull(); // a viewer with no home has no band
+  });
+
+  test('carries the hour in progress, which the past/forecast split files as an observation', async () => {
+    // The planner opens on the hour the reader is standing in, and a 30-minute arrival lands in it
+    // for the first half of every hour — but `fetchOpenMeteoHourly` keys an hour by its start, so
+    // it sits on the `past` side of the D74 wall. The row must carry it anyway; the strip drops it.
+    const t = convexTestWithGeo();
+    const waterBodyId = await seedBody(t);
+    const now = Date.now();
+    const bucket = Math.floor(now / HOUR_MS) * HOUR_MS;
+    const s = (ms: number) => Math.floor(ms / 1000);
+    const body = openMeteoWithForecast(now);
+    // Hour starts on real hour boundaries: the previous hour (elapsed), the hour in progress, then
+    // four forward hours.
+    body.hourly.time = [
+      s(bucket - HOUR_MS),
+      s(bucket),
+      s(bucket + HOUR_MS),
+      s(bucket + 2 * HOUR_MS),
+      s(bucket + 3 * HOUR_MS),
+      s(bucket + 4 * HOUR_MS),
+    ];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response(JSON.stringify(body), { status: 200 })),
+    );
+
+    const forecast = await asViewer(t).action(api.weather.getForecastForBody, { waterBodyId });
+
+    const starts = forecast?.hours.map((h) => h.startMs - forecast.utcOffsetMs) ?? [];
+    expect(starts[0]).toBe(bucket); // in progress: kept
+    expect(starts).not.toContain(bucket - HOUR_MS); // elapsed: not
+    expect(starts).toHaveLength(5);
+    // The strip's own filter still admits nothing that began before now.
+    const strip = summarizeForecast(forecast!.hours, now + forecast!.utcOffsetMs);
+    for (const h of strip.hours)
+      expect(h.startMs - forecast!.utcOffsetMs).toBeGreaterThanOrEqual(now);
+  });
+
+  test('shifts each hour by the offset in force AT that hour, so a week across DST keeps its clocks', async () => {
+    // Greptile on #51: one response-wide `utc_offset_seconds` applied to seven days puts every hour
+    // after a transition an hour off. 2026-03-08 07:00Z is when 2 AM EST becomes 3 AM EDT.
+    const t = convexTestWithGeo();
+    const waterBodyId = await seedBody(t);
+    const transition = Date.UTC(2026, 2, 8, 7, 0);
+    const now = transition - 4 * HOUR_MS; // 10 PM EST the evening before
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(now);
+    try {
+      const times = [-1, 0, 1, 2, 3].map((k) => Math.floor((transition + k * HOUR_MS) / 1000));
+      const n = times.length;
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(
+          async () =>
+            new Response(
+              JSON.stringify({
+                utc_offset_seconds: -18000, // what Open-Meteo stamps for a request made in EST
+                timezone: 'America/New_York',
+                hourly: {
+                  time: times,
+                  temperature_2m: Array(n).fill(-3),
+                  precipitation: Array(n).fill(0),
+                  rain: Array(n).fill(0),
+                  snowfall: Array(n).fill(0),
+                  snow_depth: Array(n).fill(0),
+                  wind_speed_10m: Array(n).fill(5),
+                  wind_gusts_10m: Array(n).fill(8),
+                  cloud_cover: Array(n).fill(10),
+                  sunshine_duration: Array(n).fill(0),
+                  shortwave_radiation: Array(n).fill(0),
+                  wind_direction_10m: Array(n).fill(270),
+                  weather_code: Array(n).fill(0),
+                },
+              }),
+              { status: 200 },
+            ),
+        ),
+      );
+
+      const forecast = await asViewer(t).action(api.weather.getForecastForBody, { waterBodyId });
+
+      // Local clocks read back with UTC getters: 1 AM, then 3 AM — the hour that does not exist is
+      // skipped by the clock, not invented by the shift.
+      const clocks = forecast!.hours.map((h) => new Date(h.startMs).getUTCHours());
+      expect(clocks).toEqual([1, 3, 4, 5, 6]);
+      // The instants are untouched and one hour apart, which is how the planner knows the run is whole.
+      const instants = forecast!.hours.map((h) => h.utcMs);
+      expect(instants).toEqual([-1, 0, 1, 2, 3].map((k) => transition + k * HOUR_MS));
+      // The payload's offset is the one at `now`, before the change, so a client shifts its clock right.
+      expect(forecast!.utcOffsetMs).toBe(-5 * HOUR_MS);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test('asks for seven forward days — one billing unit, the same as two (founder call 13)', async () => {
+    const t = convexTestWithGeo();
+    const waterBodyId = await seedBody(t);
+    const now = Date.now();
+    const fetchMock = vi.fn(
+      async (_url: string) =>
+        new Response(JSON.stringify(openMeteoWithForecast(now)), { status: 200 }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    await asViewer(t).action(api.weather.getForecastForBody, { waterBodyId });
+
+    const url = new URL(String(fetchMock.mock.calls[0]?.[0]));
+    expect(url.searchParams.get('forecast_days')).toBe(String(FORECAST_PLAN_DAYS));
+    expect(url.searchParams.get('past_days')).toBe('1');
+    const meter = await t.run((ctx) => ctx.db.query('externalApiCalls').collect());
+    // 8 days × 12 vars: ceil(8/14) × 1.2 = 1.2 — exactly what the two-day fetch cost.
+    expect(meter[0]?.weightedCalls).toBeCloseTo(1.2, 5);
+  });
+
+  test('a cached row holding fewer days than asked for is a miss, not a short answer', async () => {
+    // The hour after the planner deploys, every popular lake has a 2-day row under the current
+    // bucket. Serving it would render five empty day cards with no error anywhere.
+    const t = convexTestWithGeo();
+    const waterBodyId = await seedBody(t);
+    const now = Date.now();
+    const fetchMock = vi.fn(
+      async () => new Response(JSON.stringify(openMeteoWithForecast(now)), { status: 200 }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    await asViewer(t).action(api.weather.getForecastForBody, { waterBodyId });
+    expect(fetchMock).toHaveBeenCalledOnce();
+    // Age the row back to the pre-planner shape.
+    await t.run(async (ctx) => {
+      const row = (await ctx.db.query('weatherForecastCache').collect())[0]!;
+      await ctx.db.replace(row._id, {
+        samplePointKey: row.samplePointKey,
+        forecastBucketMs: row.forecastBucketMs,
+        hours: row.hours.slice(0, 2),
+        fetchedAt: row.fetchedAt,
+      });
+    });
+
+    const again = await asViewer(t).action(api.weather.getForecastForBody, { waterBodyId });
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(again?.hours.length).toBeGreaterThan(2);
+    const rows = await t.run((ctx) => ctx.db.query('weatherForecastCache').collect());
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.forecastDays).toBe(FORECAST_PLAN_DAYS);
+  });
+
+  test("carries the viewer's drive-time band to the place, as a band and never as minutes", async () => {
+    const t = convexTestWithGeo();
+    const waterBodyId = await seedBody(t, { lat: 44.0, lng: -72.0 });
+    // The viewer lives ~20 km away with only the crow-flies outer band cached: band 90.
+    await t.run((ctx) =>
+      ctx.db.insert('profiles', {
+        clerkUserId: 'viewer',
+        displayName: 'v',
+        username: 'v',
+        driveTimePrefMinutes: 60,
+        profileVisibility: 'public' as const,
+        homeCoord: { lat: 44.18, lng: -72.0 },
+        outerRadiusMeters: 50_000,
+        notificationPrefs: {
+          activityDetected: true,
+          bountyRequest: true,
+          hazardConfirmation: true,
+          bountyAnswered: true,
+          reportRated: true,
+          reportCommented: true,
+          contentFlagResolved: true,
+          favoriteReport: true,
+          nearbyReportDigest: false,
+          greatReportNearby: false,
+        },
+        dateOfBirth: Date.UTC(1990, 0, 1),
+        reputationPoints: 0,
+        role: 'member' as const,
+        status: 'active' as const,
+        createdAt: Date.now(),
+      }),
+    );
+    const now = Date.now();
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response(JSON.stringify(openMeteoWithForecast(now)), { status: 200 })),
+    );
+
+    const forecast = await asViewer(t).action(api.weather.getForecastForBody, { waterBodyId });
+
+    expect(forecast?.arrivalBandMinutes).toBe(90);
   });
 
   test('forecasts the named bay when asked, and the lake when the bay is not one of its own', async () => {

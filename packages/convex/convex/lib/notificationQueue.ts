@@ -47,6 +47,24 @@ export type NotificationTrigger = Infer<typeof notificationTrigger>;
 export type ActorQueueKind = NotificationTrigger['kind'];
 
 /**
+ * The `notifications.type` each actor kind flushes to — and therefore the pref toggle it gates on.
+ * Derived here rather than passed by each producer: the pair is a fact about the kind, and a producer
+ * that could spell it differently is a producer that could gate on the wrong toggle and hand the
+ * resolver a payload its type doesn't parse.
+ */
+export const TYPE_FOR_KIND: Record<ActorQueueKind, NotificationType> = {
+  thumb: 'report_rated',
+  corroboration: 'report_rated',
+  comment: 'report_commented',
+  reply: 'report_commented',
+  hazard_lifecycle: 'hazard_confirmation',
+  flag_resolved: 'content_flag_resolved',
+  bounty_request: 'bounty_request',
+  bounty_answered: 'bounty_answered',
+  activity: 'activity_detected',
+};
+
+/**
  * How long an actor-triggered notification settles before it can send. The founder's instinct was
  * "a few seconds", and a few seconds is the *real* window — a misclick is corrected almost at once.
  * Sixty is what ships anyway because the flush cron ticks once a minute (`crons.ts`), so anything
@@ -98,6 +116,11 @@ export function mergeTriggers(
         ? { ...incoming, reportIds: union(existing.reportIds, incoming.reportIds) }
         : incoming;
     case 'hazard_lifecycle':
+      // The phase is scalar (where the pin ended up); the voters who moved it accumulate, so the
+      // flush's block check has the whole window's actors to apply it to.
+      return existing.kind === 'hazard_lifecycle'
+        ? { ...incoming, actorIds: union(existing.actorIds, incoming.actorIds) }
+        : incoming;
     case 'flag_resolved':
     case 'bounty_request':
     case 'activity':
@@ -147,7 +170,6 @@ export async function enqueueActorNotification(
     recipientId: Id<'profiles'>;
     /** The person whose action this is, when there is one — for the self/block gates. */
     actorId?: Id<'profiles'>;
-    type: NotificationType;
     /** What the coalesce key is scoped to: the report, hazard, bounty, flag, or activity id. */
     targetId: string;
     trigger: NotificationTrigger;
@@ -157,16 +179,17 @@ export async function enqueueActorNotification(
   },
 ): Promise<boolean> {
   const now = args.now ?? Date.now();
+  const kind = args.trigger.kind;
+  const type = TYPE_FOR_KIND[kind];
   if (args.actorId !== undefined && args.actorId === args.recipientId) return false;
   const recipient = await ctx.db.get(args.recipientId);
   if (!recipient) return false;
-  if (!recipientWants(recipient, args.type)) return false;
+  if (!recipientWants(recipient, type)) return false;
   if (args.actorId !== undefined) {
     const blocked = await loadBlockedAuthorIds(ctx, args.recipientId);
     if (blocked.has(args.actorId)) return false;
   }
 
-  const kind = args.trigger.kind;
   const coalesceKey = actorCoalesceKey(args.recipientId, args.targetId, kind);
   const flushAfter = args.flushAfter ?? now + SETTLE_MS;
   const existing = await ctx.db
@@ -178,16 +201,23 @@ export async function enqueueActorNotification(
     await ctx.db.patch(existing._id, {
       trigger,
       count: triggerCount(trigger),
-      // Keep the earliest: a burst settles from its *first* event, so a busy report can't be
-      // starved of its notification by a stream of later ones each pushing the window out.
-      flushAfter: Math.min(existing.flushAfter, flushAfter),
+      // Keep the earliest while the row is still settling: a burst settles from its *first* event,
+      // so a busy report can't be starved of its notification by a stream of later ones each
+      // pushing the window out. But a row that is already *due* — its window has passed and the
+      // cron simply hasn't ticked yet — must not lend its expired deadline to a fresh action: the
+      // new thumb would flush on the next tick with seconds of settle rather than the window it
+      // was promised. So a due row takes the incoming deadline instead. Starvation can't come back
+      // through this: the row only moves when it was already flushable, so each extension costs one
+      // more window and needs a new action to land in the gap between due and the next tick.
+      flushAfter:
+        existing.flushAfter <= now ? flushAfter : Math.min(existing.flushAfter, flushAfter),
     });
     return true;
   }
   await ctx.db.insert('notificationQueue', {
     userId: args.recipientId,
     kind,
-    type: args.type,
+    type,
     coalesceKey,
     count: triggerCount(args.trigger),
     flushAfter,
@@ -259,14 +289,16 @@ export type ActorPayload =
  * | thumb | the target is visible and ≥1 listed actor still has a `helpful` rating on it |
  * | corroboration | your report is visible and ≥1 corroborating report still is |
  * | comment / reply | the report is visible and ≥1 listed comment still exists, visible, unblocked |
- * | hazard_lifecycle | the hazard is visible and its phase is still the one that triggered this |
+ * | hazard_lifecycle | the hazard is visible, its phase is still the one that triggered this, and ≥1 listed voter is unblocked |
  * | flag_resolved | the flag's status is still that resolution |
- * | bounty_request | the bounty is still open |
+ * | bounty_request | the bounty is still open and the requester is unblocked |
  * | bounty_answered | the bounty is still open and ≥1 listed report still visible |
  * | activity | the activity exists and is still un-linked and un-dismissed |
  *
  * `blocked` is the recipient's block set (either direction), loaded once per recipient per tick by
- * the flush; an actor in it drops out of the list exactly as a retracted thumb does.
+ * the flush; an actor in it drops out of the list exactly as a retracted thumb does. Every kind
+ * with an actor applies it here — the enqueue gate only sees the block set as it stood when the
+ * action happened, and block == mute has to hold for a block placed inside the window too.
  */
 export async function settleTrigger(
   ctx: MutationCtx,
@@ -354,6 +386,9 @@ export async function settleTrigger(
         isPassageMarker(hazard.type),
       );
       if (phase !== trigger.phase) return null;
+      // The phase is a consensus, but the notification is still "someone's vote moved your pin":
+      // if everyone who voted inside the window is now blocked, it's muted like their thumbs are.
+      if (!trigger.actorIds.some((actorId) => !blocked.has(actorId))) return null;
       return { kind: 'hazard_lifecycle', hazardId: trigger.hazardId, phase };
     }
     case 'flag_resolved': {
@@ -364,6 +399,7 @@ export async function settleTrigger(
     case 'bounty_request': {
       const bounty = await ctx.db.get(trigger.bountyId);
       if (bounty?.status !== 'open') return null;
+      if (blocked.has(trigger.requesterId)) return null;
       return {
         kind: 'bounty_request',
         bountyId: trigger.bountyId,

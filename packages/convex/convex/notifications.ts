@@ -436,16 +436,18 @@ export const list = query({
 });
 
 /**
- * The badge stops counting here. The mobile You tab shows its dot on every screen, so `unreadCount`
- * is effectively an app-wide subscription and has to stay one bounded indexed read: a badge that says
- * "99+" is right, and a query that scans ten thousand rows to say "10,000" is not.
+ * The badge stops counting here — `unreadCount` never returns more than this. The mobile You tab
+ * shows its dot on every screen, so `unreadCount` is effectively an app-wide subscription and has to
+ * stay one bounded indexed read: a badge that says "99" for an inbox of ten thousand is right, and
+ * a query that scans ten thousand rows to say "10,000" is not.
  */
 export const UNREAD_COUNT_CAP = 99;
 
 /**
- * Unread notifications for the badge — an indexed equality on `(userId, readAt = undefined)`.
- * Answers 0 rather than throwing when there's no profile yet: both clients subscribe from their
- * shell, which can render a frame before the profile row exists after sign-up.
+ * Unread notifications for the badge, capped at `UNREAD_COUNT_CAP` — an indexed equality on
+ * `(userId, readAt = undefined)`. Answers 0 rather than throwing when there's no profile yet: both
+ * clients subscribe from their shell, which can render a frame before the profile row exists after
+ * sign-up.
  */
 export const unreadCount = query({
   args: {},
@@ -455,7 +457,7 @@ export const unreadCount = query({
     const unread = await ctx.db
       .query('notifications')
       .withIndex('by_user_read', (q) => q.eq('userId', profile._id).eq('readAt', undefined))
-      .take(UNREAD_COUNT_CAP + 1);
+      .take(UNREAD_COUNT_CAP);
     return unread.length;
   },
 });
@@ -473,18 +475,24 @@ const MARK_READ_BATCH_CAP = 500;
  * after the open is newer than the bound and stays unread until the next visit. Owner-only; a
  * foreign or vanished id is a no-op rather than an error, because the client sends ids it was shown
  * and a row can be purged in between.
+ *
+ * **Returns the ids it stamped.** The list is reactive, so the moment this lands every row it just
+ * showed re-renders with `readAt` set — and the "new since your last visit" dot would vanish before
+ * anyone saw it. The client keeps this set for the life of the visit and draws the dot from it, which
+ * is the inbox convention (new until you leave, not new until the server hears you arrived).
  */
 export const markRead = mutation({
   args: { notificationId: v.optional(v.id('notifications')), before: v.optional(v.number()) },
-  handler: async (ctx, { notificationId, before }) => {
+  handler: async (ctx, { notificationId, before }): Promise<Id<'notifications'>[]> => {
     const profile = await requireProfile(ctx);
     const now = Date.now();
     if (notificationId !== undefined) {
       const row = await ctx.db.get(notificationId);
       if (row && row.userId === profile._id && row.readAt === undefined) {
         await ctx.db.patch(notificationId, { readAt: now });
+        return [notificationId];
       }
-      return;
+      return [];
     }
     const bound = before ?? now;
     // Bounded like the flush, and **newest first**: the caller is a list that just showed its top
@@ -498,8 +506,12 @@ export const markRead = mutation({
       MARK_READ_BATCH_CAP,
       'notifications.markRead',
     );
+    const stamped: Id<'notifications'>[] = [];
     for (const row of unread) {
-      if (row.createdAt <= bound) await ctx.db.patch(row._id, { readAt: now });
+      if (row.createdAt > bound) continue;
+      await ctx.db.patch(row._id, { readAt: now });
+      stamped.push(row._id);
     }
+    return stamped;
   },
 });
