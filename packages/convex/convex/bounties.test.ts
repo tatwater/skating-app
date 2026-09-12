@@ -801,6 +801,17 @@ describe('bounties fulfillment', () => {
       reportIds: [reportId, secondReportId],
       count: 2,
     });
+
+    // The requester's helpful thumb closes the loop and flips the bounty to `fulfilled` — the line
+    // must survive that, not vanish at the one moment it is most true.
+    await requester.as.mutation(api.ratings.rate, {
+      targetType: 'report',
+      targetId: reportId,
+      verdict: 'helpful',
+      bountyId,
+    });
+    expect((await t.run((ctx) => ctx.db.get(bountyId)))?.status).toBe('fulfilled');
+    expect(await author.as.query(api.bounties.answeredByMyReport, { reportId })).toBe(1);
   });
 
   test('a pre-existing helpful vote from the feed still fulfills when confirmed on the bounty page', async () => {

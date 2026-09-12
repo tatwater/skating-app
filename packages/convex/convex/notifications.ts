@@ -41,7 +41,7 @@ import {
   nextZonedHourMs,
 } from '@skating/core';
 import { paginationOptsValidator } from 'convex/server';
-import { ConvexError, v } from 'convex/values';
+import { v } from 'convex/values';
 import { internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
 import { internalMutation, type MutationCtx, mutation, query } from './_generated/server';
@@ -137,8 +137,7 @@ export async function enqueueReportNotifications(
   for (const fav of favorites) {
     if (fav.userId === report.authorId) continue;
     const user = await ctx.db.get(fav.userId);
-    if (!user) continue;
-    if (!canReceiveNotifications(user) || !user.notificationPrefs.favoriteReport) continue;
+    if (!user || !recipientWants(user, 'favorite_report')) continue;
     await enqueue(ctx, {
       userId: fav.userId,
       waterBodyId: report.waterBodyId,
@@ -438,9 +437,14 @@ const MARK_READ_BATCH_CAP = 500;
 
 /**
  * Stamp `readAt` on one notification, or on every unread one created at or before `before` — the
- * "mark all read" the list calls when it opens, bounded by the newest row it showed so a notification
- * arriving mid-tap isn't marked read unseen. Owner-only; a foreign or vanished id is a no-op rather
- * than an error, because the client sends ids it was shown and a row can be purged in between.
+ * "mark all read" the list calls once, when it opens. `before` defaults to **the server's now**, and
+ * the default is the one the clients use: `list` omits rows whose actors are all blocked but
+ * `unreadCount` counts them, so a bound taken from the newest row the list *showed* would leave a
+ * blocked actor's row unread forever and the badge lit for something nobody can see. Stamping
+ * everything that exists at open keeps the badge and the list agreeing; a notification that lands
+ * after the open is newer than the bound and stays unread until the next visit. Owner-only; a
+ * foreign or vanished id is a no-op rather than an error, because the client sends ids it was shown
+ * and a row can be purged in between.
  */
 export const markRead = mutation({
   args: { notificationId: v.optional(v.id('notifications')), before: v.optional(v.number()) },
@@ -454,7 +458,7 @@ export const markRead = mutation({
       }
       return;
     }
-    if (before === undefined) throw new ConvexError('Pass a notification id or a timestamp');
+    const bound = before ?? now;
     // Bounded like the flush, and **newest first**: the caller is a list that just showed its top
     // rows, so those are the ones that must be stamped. A pathological backlog older than the cap
     // stays unread — it's the part nobody has scrolled to.
@@ -467,7 +471,7 @@ export const markRead = mutation({
       'notifications.markRead',
     );
     for (const row of unread) {
-      if (row.createdAt <= before) await ctx.db.patch(row._id, { readAt: now });
+      if (row.createdAt <= bound) await ctx.db.patch(row._id, { readAt: now });
     }
   },
 });

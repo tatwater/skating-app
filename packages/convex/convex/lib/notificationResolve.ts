@@ -187,12 +187,12 @@ export async function resolveNotifications(
   now: number,
 ): Promise<NotificationView[]> {
   const load = new Loader(ctx);
-  const out: NotificationView[] = [];
-  for (const row of rows) {
-    const view = await resolveOne(load, row, blocked, now);
-    if (view) out.push(view);
-  }
-  return out;
+  // Rows resolve concurrently rather than one `await` chain at a time: a page is thirty rows of a
+  // few reads each, and serialising them is thirty times the round trips for no ordering benefit —
+  // `Promise.all` keeps the page order, and the memo dedups across rows regardless of which one
+  // asked first because it stores the *promise*, set synchronously before any read resolves.
+  const views = await Promise.all(rows.map((row) => resolveOne(load, row, blocked, now)));
+  return views.filter((view): view is NotificationView => view !== null);
 }
 
 async function bodyRef(load: Loader, id: string | undefined): Promise<NotificationBodyRef | null> {

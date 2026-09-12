@@ -2435,8 +2435,9 @@ export default defineSchema({
    * the payloads were typed carry older shapes, nobody has ever seen them (there was no reader), and
    * the season purge retires them; a validator here would have forced a migration for the privilege.
    *
-   * Retention is the season boundary (N8/A5): a daily sweep deletes rows created before the current
-   * season's start, read or not. The inbox is not an archive — the data export is.
+   * Retention is meant to be the season boundary (N8/A5, PR 2 — **not built yet**): a daily sweep
+   * that deletes rows created before the current season's start, read or not. Until it lands, rows
+   * die only with the account (`accountDeletion.ts`). The inbox is not an archive.
    */
   notifications: defineTable({
     userId: v.id('profiles'), // recipient

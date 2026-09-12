@@ -1,5 +1,4 @@
 import { api } from '@skating/convex/api';
-import type { Id } from '@skating/convex/dataModel';
 import { describeNotification, formatRelativeTime, type NotificationView } from '@skating/core';
 import { createFileRoute, Link } from '@tanstack/react-router';
 import { useMutation, usePaginatedQuery } from 'convex/react';
@@ -15,9 +14,10 @@ const PAGE_SIZE = 30;
  * The inbox (N8/A3) — *what happened to you and your contributions*, as opposed to the newsfeed's
  * *what happened on the ice*. A route rather than a popover so it's linkable and testable.
  *
- * Opening the page marks everything it shows as read, bounded by the newest row on screen so a
- * notification that lands mid-visit stays unread until it's actually been seen. Rows are never
- * hidden for being stale: a target that's been removed renders degraded and untappable (N8 #5).
+ * Opening the page marks everything that exists at that moment as read (the server bounds it by its
+ * own clock), so a notification that lands mid-visit stays unread until it's actually been seen.
+ * Rows are never hidden for being stale: a target that's been removed renders degraded and
+ * untappable (N8 #5).
  */
 export const Route = createFileRoute('/notifications')({ component: NotificationsPage });
 
@@ -30,16 +30,22 @@ function NotificationsPage() {
   const markRead = useMutation(api.notifications.markRead);
   const now = Date.now();
 
-  // Mark what the page opened on as read — **once**, when the first page lands. Not on every
-  // reactive re-render: a notification delivered while this tab sits open in the background would
-  // otherwise stamp itself read the moment it arrived, unseen. It stays unread until the next visit.
-  const newestUnread = results.find((n) => n.readAt === undefined)?.createdAt;
+  // Mark what the page opened on as read — **once**, when the first page lands with rows. Not on
+  // every reactive re-render: a notification delivered while this tab sits open in the background
+  // would otherwise stamp itself read the moment it arrived, unseen. It stays unread until the next
+  // visit. The latch is set whether or not anything shown was unread — latching only after a mark
+  // would leave a page opened on an all-read inbox free to mark the next arrival on sight. Rows
+  // present ⇒ the client is authenticated; the empty frame before the token can't be told from an
+  // empty inbox, so that case waits for the next open. No `before`: the server stamps everything
+  // that exists now, including rows the list omits for blocked actors, which is what keeps the bell
+  // and the list agreeing.
+  const hasRows = results.length > 0;
   const marked = useRef(false);
   useEffect(() => {
-    if (marked.current || status === 'LoadingFirstPage' || newestUnread === undefined) return;
+    if (marked.current || status === 'LoadingFirstPage' || !hasRows) return;
     marked.current = true;
-    void markRead({ before: newestUnread });
-  }, [markRead, newestUnread, status]);
+    void markRead({}).catch(() => {});
+  }, [markRead, hasRows, status]);
 
   const loadMoreFooter =
     status === 'CanLoadMore' ? (
@@ -104,7 +110,7 @@ function NotificationRow({ view, now }: { view: NotificationView; now: number })
     </div>
   );
   return (
-    <li data-notification-id={view.id as Id<'notifications'>}>
+    <li data-notification-id={view.id}>
       {href ? (
         <Link to={href.to} params={href.params} className="block hover:bg-surface-muted">
           {body}

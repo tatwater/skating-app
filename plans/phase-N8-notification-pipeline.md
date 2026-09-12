@@ -603,9 +603,16 @@ producer enqueues with `SETTLE_MS = 60 s` and a typed `trigger` the flush re-rea
 **Departures worth knowing:**
 
 0. **Review pass (local, high):** `list` fails soft (empty page, not a throw) for the frame before
-   the client has its token; `markRead({ before })` walks the unread index **newest-first** so the
-   rows a page just showed are the ones stamped; both lists mark read **once, on first load** — a
-   notification arriving while the page sits open stays unread until the next visit.
+   the client has its token; `markRead` walks the unread index **newest-first** so the rows a page
+   just showed are the ones stamped; both lists mark read **once, on first load** — a notification
+   arriving while the page sits open stays unread until the next visit.
+   *Second pass (xhigh):* the bound is the **server's now**, not the newest unread row the list
+   showed — `list` omits rows whose actors are all blocked but `unreadCount` counts them, so a
+   list-derived bound left the bell lit forever for a row nobody could see. The once-latch now sets
+   on the first page landing *with rows* rather than after a mark, so an inbox opened all-read no
+   longer stamps the next arrival on sight. Also: `answeredByMyReport` counts fulfilled/expired
+   bounties too (open-only made the line vanish the moment the requester's thumb landed), and only
+   the author subscribes to it.
 1. **The plan miscounted the toggles.** Both settings pages rendered *three* (the Phase-4 set), not
    ten. They now iterate `NOTIFICATION_PREF_ORDER` from `@skating/core`, where the vocabulary, the
    labels and `describeNotification` (the sentence both clients render) now live.

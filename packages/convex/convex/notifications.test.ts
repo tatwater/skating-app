@@ -485,6 +485,12 @@ describe('notifications — the inbox read path', () => {
     page = (await inbox(author.as)).page;
     expect(page).toHaveLength(1);
     expect(page[0]?.type).toBe('report_commented');
+
+    // The badge still counts the row the list now omits. Opening the inbox — `markRead` with no
+    // bound, the server's now — must clear it too, or the bell stays lit for a row nobody can see.
+    expect(await author.as.query(api.notifications.unreadCount, {})).toBe(2);
+    await author.as.mutation(api.notifications.markRead, {});
+    expect(await author.as.query(api.notifications.unreadCount, {})).toBe(0);
   });
 
   test('a departed actor is named as their tombstone; an unparseable payload is the unknown row', async () => {

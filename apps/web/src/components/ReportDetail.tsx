@@ -271,10 +271,11 @@ export function ReportDetail({ reportId }: { reportId: string }) {
   const me = useQuery(api.profiles.current, {});
   const blockedIds = useQuery(api.blocks.blockedUserIds, me ? {} : 'skip');
   // The author's "people were waiting for this" line (N8 / D167). The query answers 0 for anyone
-  // but the author, so it's safe to ask unconditionally; skipped when signed out to save the call.
+  // but the author (the server re-checks), so it's only *subscribed* when the viewer is the author —
+  // every other reader of every report would otherwise hold a live query that can only ever say 0.
   const bountiesAnswered = useQuery(
     api.bounties.answeredByMyReport,
-    me ? { reportId: reportId as Id<'reports'> } : 'skip',
+    me && report && me._id === report.authorId ? { reportId: report._id } : 'skip',
   );
   const { setHighlightWaterBodyId, setFocus, setPhotoPins, setTrackPath } = useMapSelection();
 

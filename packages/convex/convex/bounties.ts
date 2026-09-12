@@ -857,12 +857,21 @@ export const getDetail = query({
   },
 });
 
+/** Bounties read per status by `answeredByMyReport` — "at least N" tolerates a truncated tail. */
+const ANSWERED_SCAN_CAP = 100;
+
 /**
- * How many open bounties a report is attached to — the "at least N people were looking forward to
- * this" line after submit (N8 / D167). Only the report's own author gets a number: the count is a
- * fact about who asked, and a stranger reading "3 people wanted this" off someone else's report is a
- * signal nobody asked for. Reads the body's open bounties (bounded — a lake has a handful at most)
- * rather than an index on `fulfillingReportIds`, which Convex can't index anyway.
+ * How many bounties a report is attached to — the "at least N people were looking forward to this"
+ * line after submit (N8 / D167). Only the report's own author gets a number: the count is a fact
+ * about who asked, and a stranger reading "3 people wanted this" off someone else's report is a
+ * signal nobody asked for.
+ *
+ * Counts **open, fulfilled and expired** bounties, not only open ones: the requester thumbing this
+ * report helpful is the intended end of the D167 loop, and it flips the bounty to `fulfilled` — the
+ * one moment the sentence is most true is the moment an open-only count would have made it vanish.
+ * Cancelled is the exception (the requester withdrew the ask). Reads the body's bounties by status
+ * (bounded per status; the open set is a handful, the terminal sets grow across seasons) rather than
+ * an index on `fulfillingReportIds`, which Convex can't index anyway.
  */
 export const answeredByMyReport = query({
   args: { reportId: v.id('reports') },
@@ -870,13 +879,21 @@ export const answeredByMyReport = query({
     const viewer = await getCurrentProfile(ctx);
     const report = await ctx.db.get(reportId);
     if (!viewer || !report || report.authorId !== viewer._id) return 0;
-    const open = await ctx.db
-      .query('bounties')
-      .withIndex('by_water_body_status', (q) =>
-        q.eq('waterBodyId', report.waterBodyId).eq('status', 'open'),
-      )
-      .collect();
-    return open.filter((b) => b.fulfillingReportIds.includes(reportId)).length;
+    let answered = 0;
+    for (const status of ['open', 'fulfilled', 'expired'] as const) {
+      const rows = await takeCapped(
+        ctx.db
+          .query('bounties')
+          .withIndex('by_water_body_status', (q) =>
+            q.eq('waterBodyId', report.waterBodyId).eq('status', status),
+          )
+          .order('desc'),
+        ANSWERED_SCAN_CAP,
+        `bounties.answeredByMyReport(${status})`,
+      );
+      answered += rows.filter((b) => b.fulfillingReportIds.includes(reportId)).length;
+    }
+    return answered;
   },
 });
 

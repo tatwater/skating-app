@@ -151,12 +151,6 @@ export interface NotificationActors {
   count: number;
 }
 
-/**
- * The lifecycle transition a `hazard_confirmation` reports (N8/B2) — `hazardLifecyclePhase` in
- * `hazardLifecycle.ts`. A re-check at flush is an equality on this value: if the pin has moved on
- * again, the older transition is no longer news.
- */
-
 /** A resolved, renderable notification. One variant per type (plus the degraded fallback). */
 export type NotificationView = { id: string; createdAt: number; readAt?: number } & (
   | {
@@ -188,6 +182,11 @@ export type NotificationView = { id: string; createdAt: number; readAt?: number 
       type: 'hazard_confirmation';
       target: NotificationContentRef;
       body: NotificationBodyRef | null;
+      /**
+       * The lifecycle transition this reports (N8/B2) — `hazardLifecyclePhase` in `hazardLifecycle.ts`.
+       * The re-check at flush is an equality on this value: if the pin has moved on again, the older
+       * transition is no longer news.
+       */
       phase: HazardLifecyclePhase;
     }
   | {

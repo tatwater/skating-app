@@ -160,8 +160,11 @@ export const resolveFlag = mutation({
     // thumb crossed a threshold), and telling them "the report you filed was actioned" would both
     // confuse them and disclose that their thumb produced a moderation flag. Absent origin (rows from
     // before the field) reads as auto — silence is the fail-quiet direction. Through the settle queue
-    // (D166); there's no undo for a resolution, but one path in is the point.
-    if (flag.origin === 'user') {
+    // (D166); there's no undo for a resolution, but one path in is the point. No `actorId`: the
+    // moderator is deliberately not the actor (a block between flagger and moderator must not
+    // swallow a verdict), so the self gate is spelled out here — a moderator ruling on their own
+    // flag already knows.
+    if (flag.origin === 'user' && flag.flaggerId !== actor._id) {
       await enqueueActorNotification(ctx, {
         recipientId: flag.flaggerId,
         type: 'content_flag_resolved',

@@ -24,15 +24,17 @@ export default function NotificationsScreen() {
   const markRead = useMutation(api.notifications.markRead);
   const now = Date.now();
 
-  // Mark what the screen opened on as read — once, when the first page lands (same guard as the
-  // web): a notification arriving while the modal is up stays unread until the next open.
-  const newestUnread = results.find((n) => n.readAt === undefined)?.createdAt;
+  // Mark what the screen opened on as read — once, when the first page lands with rows (same guard
+  // as the web, and the same reasons: latch regardless of whether anything shown was unread, rows
+  // present ⇒ authenticated, and no `before` so the server also stamps the rows the list omits for
+  // blocked actors). A notification arriving while the modal is up stays unread until the next open.
+  const hasRows = results.length > 0;
   const marked = useRef(false);
   useEffect(() => {
-    if (marked.current || status === 'LoadingFirstPage' || newestUnread === undefined) return;
+    if (marked.current || status === 'LoadingFirstPage' || !hasRows) return;
     marked.current = true;
-    void markRead({ before: newestUnread }).catch(() => {});
-  }, [markRead, newestUnread, status]);
+    void markRead({}).catch(() => {});
+  }, [markRead, hasRows, status]);
 
   return (
     <FlatList<NotificationView>
