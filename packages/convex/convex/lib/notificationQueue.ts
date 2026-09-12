@@ -155,6 +155,17 @@ export function triggerCount(trigger: NotificationTrigger): number {
 }
 
 /**
+ * What `settleTrigger` spends in document reads, for the flush's per-transaction tally: the target
+ * (report, hazard, bounty, flag, activity), then one read per coalesced id. Charged whether or not
+ * the settle short-circuits before it gets there — a burst is priced by what it *could* read, so
+ * the tally is a floor on headroom. Lives beside `settleTrigger` rather than at its call site so a
+ * kind whose re-check grows (a second read per id, say) changes both in one place.
+ */
+export function settleReadCost(trigger: NotificationTrigger): number {
+  return 1 + triggerCount(trigger);
+}
+
+/**
  * Queue an actor-triggered notification for `recipientId`, applying every enqueue-time gate in one
  * place: never self, recipient exists and can receive, the type's toggle is on, and the actor isn't
  * blocked either way (block == mute, Phase 3 — the inbox's read-time filter is a backstop for old

@@ -620,6 +620,16 @@ producer enqueues with `SETTLE_MS = 60 s` and a typed `trigger` the flush re-rea
    both clients draw the dot from a visit-scoped set (seeded from the page in hand, widened by the
    server's answer), so "new since last visit" survives the stamp. `enqueueActorNotification`
    derives `type` from the trigger kind (`TYPE_FOR_KIND`) instead of taking it as a second argument.
+   *Fourth pass (founder, post-Greptile):* the flush was re-batched. `FLUSH_BATCH_CAP` 1,000 → **250**
+   — it was sized when a row cost two reads, and an actor row now costs ~3 + N, so a full batch sat
+   at the 4,096 read ceiling with zero coalescing and would have wedged on the same rows every
+   minute. A full or budget-stopped batch (`FLUSH_READ_BUDGET` 3,000, a running tally) **schedules
+   its own continuation**, so the cap bounds a transaction, not throughput. And **a digest is
+   assembled from `by_user`, not from the batch slice**: every digest row is due at the same 8pm, so
+   `by_flush` interleaves users by creation order and a user's rows are never contiguous — the old
+   "straddles the cap ⇒ two digests" edge is gone, with nothing re-run. The founder's first
+   framing ("drop the user, reset the pointer to the start of them, re-run in full") assumed a
+   contiguity the scan doesn't have; the per-user index gives the same guarantee without it.
 1. **The plan miscounted the toggles.** Both settings pages rendered *three* (the Phase-4 set), not
    ten. They now iterate `NOTIFICATION_PREF_ORDER` from `@skating/core`, where the vocabulary, the
    labels and `describeNotification` (the sentence both clients render) now live.
