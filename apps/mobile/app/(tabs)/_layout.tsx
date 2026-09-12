@@ -8,12 +8,20 @@ import {
   faUser,
 } from '@fortawesome/sharp-duotone-solid-svg-icons';
 import { api } from '@skating/convex/api';
-import { deviceTimeZone, timezoneNeedsSync } from '@skating/core';
+import { deviceTimeZone, type NotificationTarget, timezoneNeedsSync } from '@skating/core';
 import { useMutation, useQuery } from 'convex/react';
-import { Tabs } from 'expo-router';
-import { useEffect } from 'react';
+import * as Notifications from 'expo-notifications';
+import { Tabs, useRouter } from 'expo-router';
+import { useEffect, useState } from 'react';
 import { type ColorValue, View } from 'react-native';
 import { useTheme } from 'tamagui';
+import { loadCachedNotifications, loadPendingReads } from '../../src/lib/notificationCache';
+import { unreadAfterOverlay } from '../../src/lib/notificationCacheModel';
+import { notificationRoute } from '../../src/lib/notificationRoutes';
+import { registerIfPermitted } from '../../src/lib/pushRegistration';
+
+/** Notification taps already opened this session (`getLastNotificationResponseAsync` replays the launch one). */
+const handledTaps = new Set<string>();
 
 /**
  * How much of the icon the duotone secondary layer keeps. FontAwesome's own default is 0.4, which
@@ -65,7 +73,12 @@ export default function TabsLayout() {
   // The unread signal (N8/A3): a dot on the You icon, visible from every screen with the tab bar,
   // so the badge costs no tab. `unreadCount` is one capped indexed read, so subscribing to it from
   // the tab layout — effectively app-wide — is cheap by construction.
-  const unread = useQuery(api.notifications.unreadCount, {}) ?? 0;
+  // Offline, the dot reads the cached page through the local read overlay (N8 PR 3) rather than
+  // going dark — the live count wins the moment it answers.
+  const [offlineUnread] = useState(() =>
+    unreadAfterOverlay(loadCachedNotifications(), loadPendingReads()),
+  );
+  const unread = useQuery(api.notifications.unreadCount, {}) ?? offlineUnread;
 
   // The 8pm digest's zone (N8/C): the device's, refreshed on app open, written only when it differs.
   // The tab layout mounts once per signed-in session, which makes it "app open".
@@ -80,6 +93,47 @@ export default function TabsLayout() {
       void setTimezone({ timezone: device }).catch(() => {});
     }
   }, [hasProfile, storedZone, setTimezone]);
+
+  // Push registration on app open (N8 PR 3) — only when permission is already granted and this
+  // device hasn't been switched off; never a prompt. Refreshes `lastSeenAt` and re-homes the token
+  // to whoever is signed in.
+  const registerToken = useMutation(api.pushTokens.register);
+  const unregisterToken = useMutation(api.pushTokens.unregister);
+  useEffect(() => {
+    if (!hasProfile) return;
+    void registerIfPermitted({ register: registerToken, unregister: unregisterToken });
+  }, [hasProfile, registerToken, unregisterToken]);
+
+  // Tapping a remote notification lands where the inbox row would (N8 PR 3). The payload carries
+  // the platform-neutral target `describeNotification` produced server-side; the same mapper the
+  // inbox uses turns it into a route. The on-ice local alert has its own listener in the map layout
+  // keyed on `hazardId`, so a payload without `target` is left to it.
+  const router = useRouter();
+  useEffect(() => {
+    const open = (response: Notifications.NotificationResponse | null) => {
+      if (!response) return;
+      const data = response.notification.request.content.data as
+        | { target?: NotificationTarget | null; notificationId?: string }
+        | undefined;
+      if (!data || !('target' in data)) return;
+      // The launch response is re-delivered on every mount of this layout; open each tap once.
+      const key = response.notification.request.identifier;
+      if (handledTaps.has(key)) return;
+      handledTaps.add(key);
+      const route = notificationRoute(data.target ?? null, {
+        type: 'unknown',
+        id: '',
+        createdAt: 0,
+      });
+      router.navigate(route ?? '/notifications');
+    };
+    // A tap that launched the app arrives before any listener is attached.
+    void Notifications.getLastNotificationResponseAsync()
+      .then(open)
+      .catch(() => {});
+    const sub = Notifications.addNotificationResponseReceivedListener(open);
+    return () => sub.remove();
+  }, [router]);
   return (
     <Tabs
       screenOptions={{

@@ -1,4 +1,16 @@
+import { existsSync } from 'node:fs';
 import type { ExpoConfig } from 'expo/config';
+
+/**
+ * Firebase's Android config, for FCM behind Expo push (N8 PR 3). The file is a per-project secret
+ * (gitignored): locally it sits at `apps/mobile/google-services.json`; on EAS it arrives as the file
+ * environment variable `GOOGLE_SERVICES_JSON`, whose value is a path. Absent ⇒ the field is left off
+ * and the build still succeeds — push tokens can't be minted on that build, and `pushRegistration`
+ * treats the failed mint as "no push on this device" rather than crashing.
+ */
+const googleServicesFile = [process.env.GOOGLE_SERVICES_JSON, './google-services.json'].find(
+  (path): path is string => !!path && existsSync(path),
+);
 
 /**
  * Dynamic Expo config (D8). Barebones Phase 0 shell — Continuous Native Generation
@@ -49,6 +61,7 @@ const config: ExpoConfig = {
       foregroundImage: './assets/adaptive-icon.png',
       backgroundColor: '#0b1620',
     },
+    ...(googleServicesFile ? { googleServicesFile } : {}),
   },
   plugins: [
     'expo-router',
@@ -79,9 +92,11 @@ const config: ExpoConfig = {
         isIosBackgroundLocationEnabled: true,
       },
     ],
-    // Local (on-device) notifications for the on-ice directional alert (D54 Layer 2). No push token,
-    // no server, no credentials — the notification is computed and scheduled entirely on-device, so
-    // D12 holds. Permission is requested lazily when the skater arms on-ice mode, never on cold launch.
+    // Notifications: the on-ice directional alert (D54 Layer 2) is still **local** — computed and
+    // scheduled on-device, D12 holds. Since N8 PR 3 the same module also mints a remote push token
+    // (`src/lib/pushRegistration.ts`), against the FCM key / APNs key held in EAS credentials — the
+    // server never sees a platform credential. Permission is still requested lazily (on-ice mode or
+    // the "this phone" switch), never on cold launch.
     'expo-notifications',
     // Report photos (D31/D42): the picker returns EXIF (incl. GPS) so the pipeline can offer the
     // opt-in `placeOnMap` geotag; expo-image-manipulator (no plugin) does the resize + EXIF strip.

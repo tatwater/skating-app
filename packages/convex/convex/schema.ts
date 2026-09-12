@@ -160,6 +160,28 @@ export default defineSchema({
      * default (`America/New_York`).
      */
     timezone: v.optional(v.string()),
+    /**
+     * The primary email, mirrored from the Clerk identity's `email` claim at `upsertFromClerk` (N8
+     * PR 3 / D171) — the same posture as `profileImageUrl`: Clerk owns it, we hold a copy so a send is
+     * not a Clerk API call per recipient (`lib/clerkEmail` says why that doesn't scale). PRIVATE:
+     * never on a public profile, scrubbed at the deletion request and again at the tombstone. Absent
+     * when the JWT template carries no email; the sender then falls back to one Clerk lookup and
+     * caches the answer here.
+     */
+    email: v.optional(v.string()),
+    /**
+     * The two transports over the inbox (D171): a phone push, and an email for the types in
+     * `NOTIFICATION_EMAIL_ELIGIBLE`. Not a per-type matrix — the per-type toggles decide *what*, these
+     * decide *how far*. Absent ⇒ both on (`CHANNEL_PREF_DEFAULTS`).
+     */
+    channelPrefs: v.optional(v.object({ push: v.boolean(), email: v.boolean() })),
+    /**
+     * The secret behind the one-click unsubscribe link in every email (D171). Minted the first time
+     * a mail goes out; rotated to nothing at deletion. Knowing it lets the holder turn this person's
+     * email channel **off** — and nothing else — which is the one thing a link in an email must be
+     * able to do without a sign-in.
+     */
+    emailUnsubscribeSecret: v.optional(v.string()),
     dateOfBirth: v.number(), // UTC-midnight epoch ms; age gate (≥16) + minor status (<18) DERIVED (D41)
     riskAckVersion: v.optional(v.string()), // assumption-of-risk accepted (D45)
     riskAckAt: v.optional(v.number()),
@@ -2467,6 +2489,11 @@ export default defineSchema({
     payload: v.any(), // typed at the boundary — see the table note
     readAt: v.optional(v.number()),
     createdAt: v.number(),
+    // Transport stamps (N8 PR 3): when a push / an email actually went out for this row. Written by
+    // the delivery action after the send, read by it before — so a retried batch never sends twice.
+    // Absent on rows that went nowhere (channel off, no token, type not email-eligible).
+    pushedAt: v.optional(v.number()),
+    emailedAt: v.optional(v.number()),
   })
     .index('by_user', ['userId'])
     // The unread badge: `eq(userId).eq(readAt, undefined)`. An index on an optional field is not
@@ -2907,6 +2934,25 @@ export default defineSchema({
     // have to scan the whole queue to find one person's rows — and it would still be wrong to leave
     // them, since flushing a queued digest to a tombstone is a notification nobody can read.
     .index('by_user', ['userId']),
+
+  /**
+   * Expo push tokens — one row per (person, device) that has granted notification permission and
+   * registered (N8 PR 3). The token is the address; `disabledAt` is set when Expo reports
+   * `DeviceNotRegistered` (the app was uninstalled, or the token rotated) so a dead address stops
+   * costing a send. A person can hold several: a phone and a tablet each register their own. Rows
+   * die with the account.
+   */
+  pushTokens: defineTable({
+    userId: v.id('profiles'),
+    token: v.string(), // `ExponentPushToken[…]`
+    platform: literals(['ios', 'android']),
+    deviceName: v.optional(v.string()),
+    createdAt: v.number(),
+    lastSeenAt: v.number(), // refreshed on every app open that re-registers
+    disabledAt: v.optional(v.number()),
+  })
+    .index('by_user', ['userId'])
+    .index('by_token', ['token']),
 
   // ───────────────────────────────────────────────────────────────────────────
   // Analytics (Phase 7b / D37). Two tables, shaped to keep every chart's read cost independent of

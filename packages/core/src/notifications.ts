@@ -118,6 +118,51 @@ export const NOTIFICATION_PREF_ORDER: readonly NotificationPrefKey[] = [
   'greatReportNearby',
 ];
 
+// ── Channels (N8 PR 3 / D171) ────────────────────────────────────────────────────────────────────
+
+/**
+ * The two transports over the inbox. Not a per-type × per-channel matrix (founder call): the
+ * per-type toggles above decide *what* reaches you, these two switches decide *how far* it reaches —
+ * the inbox always, a phone push if `push`, an email if `email` **and** the type is one of
+ * {@link NOTIFICATION_EMAIL_ELIGIBLE}. Both default on; a fresh profile has no row for them.
+ */
+export const NOTIFICATION_CHANNELS = ['push', 'email'] as const;
+export type NotificationChannel = (typeof NOTIFICATION_CHANNELS)[number];
+
+export interface ChannelPrefs {
+  push: boolean;
+  email: boolean;
+}
+
+export const CHANNEL_PREF_DEFAULTS: ChannelPrefs = { push: true, email: true };
+
+export const CHANNEL_PREF_LABELS: Record<NotificationChannel, string> = {
+  push: 'Push notifications on my phone',
+  email: 'Email me the ones worth an email',
+};
+
+/**
+ * The types that go out by email when the switch is on — fixed in code rather than a matrix. The
+ * rule: mail is for things worth opening a laptop over, not for every thumb. The daily digest, an
+ * unreported skate, a bounty asked or answered, and a moderator's ruling qualify; a thumb, a comment,
+ * a favorited lake's new report and a "great ice" alert are push-and-inbox only — they are frequent,
+ * they age in hours, and an email about each would be spam the user configured.
+ */
+export const NOTIFICATION_EMAIL_ELIGIBLE: ReadonlySet<NotificationType> = new Set<NotificationType>(
+  [
+    'nearby_report_digest',
+    'activity_detected',
+    'bounty_request',
+    'bounty_answered',
+    'content_flag_resolved',
+  ],
+);
+
+/** Effective channel prefs for a profile that may predate the field. */
+export function effectiveChannelPrefs(stored: Partial<ChannelPrefs> | undefined): ChannelPrefs {
+  return { ...CHANNEL_PREF_DEFAULTS, ...(stored ?? {}) };
+}
+
 // ── The resolved view ────────────────────────────────────────────────────────────────────────────
 
 /**

@@ -2,7 +2,10 @@ import { useAuth, useUser } from '@clerk/tanstack-react-start';
 import { api } from '@skating/convex/api';
 import type { Id } from '@skating/convex/dataModel';
 import {
+  CHANNEL_PREF_LABELS,
   DRIVE_TIME_BANDS,
+  effectiveChannelPrefs,
+  NOTIFICATION_CHANNELS,
   NOTIFICATION_PREF_LABELS,
   NOTIFICATION_PREF_ORDER,
   type NotificationPrefKey,
@@ -204,8 +207,10 @@ function RadiusSelect({
 function NotificationSettings() {
   const profile = useQuery(api.profiles.current, {});
   const setPrefs = useMutation(api.profiles.setNotificationPrefs);
+  const setChannels = useMutation(api.profiles.setChannelPrefs);
   if (!profile) return null;
   const prefs = profile.notificationPrefs;
+  const channels = effectiveChannelPrefs(profile.channelPrefs);
   const allRadius = profile.allRadiusMinutes;
   const greatRadius = profile.greatRadiusMinutes;
 
@@ -293,6 +298,31 @@ function NotificationSettings() {
             }
             return <div key={key}>{toggle(key)}</div>;
           })}
+
+          {/* The two transports (N8 PR 3 / D171): what the toggles above pick, these carry — push
+              goes to the phones this account is signed in on; email only for the digest-class types. */}
+          <div className="flex flex-col gap-3 border-border border-t pt-4">
+            <h3 className="font-mono text-foreground-muted text-xs uppercase tracking-widest">
+              Where they reach you
+            </h3>
+            {NOTIFICATION_CHANNELS.map((channel) => (
+              <div key={channel} className="flex items-center gap-2">
+                <Checkbox
+                  id={`channel-${channel}`}
+                  checked={channels[channel]}
+                  onCheckedChange={(v) => void setChannels({ [channel]: v === true })}
+                />
+                <Label htmlFor={`channel-${channel}`} className="text-foreground text-sm">
+                  {CHANNEL_PREF_LABELS[channel]}
+                </Label>
+              </div>
+            ))}
+            <p className="text-foreground-muted text-xs">
+              Push goes to the phones you’re signed in on. Email is only for the daily digest,
+              unreported skates, bounties and moderator rulings — never every thumb — and every one
+              has a one-click unsubscribe.
+            </p>
+          </div>
 
           {profile.homeCoord === undefined ? (
             <p className="text-foreground-muted text-xs">

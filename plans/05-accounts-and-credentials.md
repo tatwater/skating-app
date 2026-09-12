@@ -37,7 +37,7 @@ missing" is now the question that gates several deferred items, and the list bel
 | Google Play | ❔ unknown | $25 one-time; needed for Android distribution **and** any Health Connect review |
 | PostHog | ⬜ not set up | Deliberate (D29) — add when there's usage to measure; replay is L12-gated |
 | Garmin / COROS / Polar | ❔ unknown whether applied | **Weeks of review.** These gate the deferred watch adapters — the roadmap has said "apply now" since Phase 0 |
-| Expo Push / APNs / FCM | ⬜ not set up | No push infrastructure exists at all; blocks push delivery + silent-push refresh |
+| Expo Push / APNs / FCM | 🔨 code shipped (N8 PR 3, 2026-09-12); **credentials are the founder's next step** | The server sends through Expo's push service (no key needed there). Per platform: **Android** = a Firebase project → FCM V1 service-account key uploaded to EAS + `google-services.json`; **iOS** = an APNs key from the Apple Developer account (enrolled) via `eas credentials`. Step-by-step in the N8 plan's PR 3 built record |
 
 ---
 
@@ -181,6 +181,18 @@ See `04-integrations.md` for per-provider integration detail.
 ### 11. Push (mobile) — 🆓
 - **Expo Push** handles APNs/FCM. For iOS you still need #1 (Apple). Create a
   **Firebase** project for **FCM** (Android) — free.
+- **Built (N8 PR 3).** The code is credential-blind: `pushRegistration.ts` mints an Expo token on the
+  device and `notificationDelivery.ts` posts to `exp.host`. What the founder does, once:
+  1. **Android:** <https://console.firebase.google.com> → new project → add an Android app with
+     package `com.teaganatwater.gli` → download `google-services.json` into `apps/mobile/`
+     (gitignored) and upload it as an EAS **file** env var `GOOGLE_SERVICES_JSON` for every
+     environment. Then Project settings → Service accounts → *Generate new private key*, and
+     `cd apps/mobile && eas credentials` → Android → *Google Service Account* → *Set up FCM V1* →
+     upload that JSON. New EAS build (native fingerprint changes).
+  2. **iOS:** `eas credentials` → iOS → *Push Notifications: Set up* — EAS creates the APNs key on the
+     Apple Developer account and stores it. Nothing to download. (Untestable without an iPhone.)
+  3. Optional: an **Expo access token** (expo.dev → Access tokens) in Convex env `EXPO_ACCESS_TOKEN`
+     turns on Expo's "enhanced push security"; the sender adds it as a bearer when present.
 
 ### 12. Observability — 🆓 tiers (D29)
 - **Sentry** — sign up at <https://sentry.io>; add `@sentry/react-native` (mobile)

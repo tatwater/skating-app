@@ -32,6 +32,56 @@ import { OAUTH_STATE_TTL_SECONDS, stravaAuthorizeUrl } from './strava';
 
 const http = httpRouter();
 
+/**
+ * One-click email unsubscribe (N8 PR 3 / D171). The link in every skater-facing email — and the
+ * `List-Unsubscribe` header a mail client turns into its own button — lands here with no session.
+ * The secret in `t` is the authorization and it authorizes one thing: the email channel goes off for
+ * user `u`. GET renders a page; POST (what `List-Unsubscribe-Post` clients send) does the same and
+ * answers 200 with no body, which is what RFC 8058 asks for.
+ */
+async function handleUnsubscribe(
+  ctx: Parameters<Parameters<typeof httpAction>[0]>[0],
+  request: Request,
+): Promise<Response> {
+  const url = new URL(request.url);
+  const userId = url.searchParams.get('u') ?? '';
+  const secret = url.searchParams.get('t') ?? '';
+  const ok = await ctx.runMutation(internal.profiles.unsubscribeEmailBySecret, { userId, secret });
+  if (request.method === 'POST') return new Response(null, { status: 200 });
+  const title = ok ? 'You’re unsubscribed' : 'That link didn’t work';
+  const line = ok
+    ? 'Gli won’t email you notifications any more. Your in-app notifications are unchanged, and you can turn email back on from Settings.'
+    : 'The link may be old, or already used. Email notifications can be turned off from Settings in the app.';
+  const body = `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>${escapeHtml(title)}</title>
+<style>
+  body { font: 16px/1.5 system-ui, sans-serif; margin: 0; padding: 2.5rem 1.5rem; color: #0f172a; background: #f8fafc; }
+  main { max-width: 28rem; margin: 0 auto; }
+</style>
+</head>
+<body><main><h1>${escapeHtml(title)}</h1><p>${escapeHtml(line)}</p></main></body>
+</html>`;
+  return new Response(body, {
+    status: 200,
+    headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' },
+  });
+}
+
+http.route({
+  path: '/unsubscribe',
+  method: 'GET',
+  handler: httpAction(handleUnsubscribe),
+});
+http.route({
+  path: '/unsubscribe',
+  method: 'POST',
+  handler: httpAction(handleUnsubscribe),
+});
+
 /** Escape text destined for the fallback page's HTML. */
 function escapeHtml(text: string): string {
   return text

@@ -50,6 +50,7 @@ import { recipientWants, settleTrigger } from './lib/notificationQueue';
 import { resolveNotifications } from './lib/notificationResolve';
 import { loadBlockedAuthorIds } from './lib/reportVisibility';
 import { takeCapped } from './lib/scan';
+import { DELIVERY_BATCH } from './notificationDelivery';
 
 /**
  * The digest rolls up to 8pm **local** — the hour is the same for everyone, the zone is each
@@ -315,6 +316,10 @@ export const flushNotificationQueue = internalMutation({
       return set;
     }
 
+    // Every row this tick inserts, handed to the transports in bounded batches once the writes are
+    // committed (N8 PR 3). The inbox row is the product; the push and the email are what follow it.
+    const inserted: Id<'notifications'>[] = [];
+
     for (const row of due) {
       const profile = await deliverable(row.userId);
       // The type's own toggle is re-read too: a person who switched "comments on my reports" off
@@ -340,26 +345,30 @@ export const flushNotificationQueue = internalMutation({
           dropped++;
           continue;
         }
-        await ctx.db.insert('notifications', {
-          userId: row.userId,
-          type: row.type,
-          payload: { ...payload, coalesceKey: row.coalesceKey },
-          createdAt: now,
-        });
+        inserted.push(
+          await ctx.db.insert('notifications', {
+            userId: row.userId,
+            type: row.type,
+            payload: { ...payload, coalesceKey: row.coalesceKey },
+            createdAt: now,
+          }),
+        );
         delivered++;
         continue;
       }
-      await ctx.db.insert('notifications', {
-        userId: row.userId,
-        type: row.type,
-        payload: {
-          waterBodyId: row.waterBodyId,
-          reportId: row.latestReportId,
-          count: row.count,
-          coalesceKey: row.coalesceKey,
-        },
-        createdAt: now,
-      });
+      inserted.push(
+        await ctx.db.insert('notifications', {
+          userId: row.userId,
+          type: row.type,
+          payload: {
+            waterBodyId: row.waterBodyId,
+            reportId: row.latestReportId,
+            count: row.count,
+            coalesceKey: row.coalesceKey,
+          },
+          createdAt: now,
+        }),
+      );
       await ctx.db.delete(row._id);
       delivered++;
     }
@@ -373,14 +382,22 @@ export const flushNotificationQueue = internalMutation({
           : [],
       );
       const totalCount = bodies.reduce((sum, b) => sum + b.count, 0);
-      await ctx.db.insert('notifications', {
-        userId,
-        type: 'nearby_report_digest',
-        payload: { bodies, totalCount, coalesceKey: `${userId}:digest` },
-        createdAt: now,
-      });
+      inserted.push(
+        await ctx.db.insert('notifications', {
+          userId,
+          type: 'nearby_report_digest',
+          payload: { bodies, totalCount, coalesceKey: `${userId}:digest` },
+          createdAt: now,
+        }),
+      );
       for (const r of rows) await ctx.db.delete(r._id);
       delivered++;
+    }
+
+    for (let i = 0; i < inserted.length; i += DELIVERY_BATCH) {
+      await ctx.scheduler.runAfter(0, internal.notificationDelivery.deliverBatch, {
+        notificationIds: inserted.slice(i, i + DELIVERY_BATCH),
+      });
     }
     return { delivered, dropped };
   },

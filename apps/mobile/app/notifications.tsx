@@ -2,9 +2,17 @@ import { api } from '@skating/convex/api';
 import { describeNotification, formatRelativeTime, type NotificationView } from '@skating/core';
 import { useMutation, usePaginatedQuery } from 'convex/react';
 import { useRouter } from 'expo-router';
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { FlatList } from 'react-native';
 import { Paragraph, Spinner, Text, XStack, YStack } from 'tamagui';
+import {
+  cacheNotifications,
+  clearPendingReads,
+  loadCachedNotifications,
+  loadPendingReads,
+  recordPendingReads,
+} from '../src/lib/notificationCache';
+import { applyReadOverlay, settledOverlayIds } from '../src/lib/notificationCacheModel';
 import { notificationRoute } from '../src/lib/notificationRoutes';
 
 const PAGE_SIZE = 30;
@@ -14,6 +22,11 @@ const PAGE_SIZE = 30;
  * stand). Mirrors the web route: newest first, infinite scroll, everything shown marks itself read
  * once it has actually been on screen, and a row whose target is gone renders degraded and
  * untappable rather than vanishing (N8 #5).
+ *
+ * **Offline (N8 PR 3):** the last page is cached on device, so on the ice with no signal the list
+ * still reads back; opening it there marks the rows read locally and the mark is replayed the next
+ * time the live query answers. A tap on a cached row navigates like normal — the lake screen does
+ * everything it can from its own offline cache.
  */
 export default function NotificationsScreen() {
   const { results, status, loadMore } = usePaginatedQuery(
@@ -23,6 +36,16 @@ export default function NotificationsScreen() {
   );
   const markRead = useMutation(api.notifications.markRead);
   const now = Date.now();
+
+  // The offline copy and the local read overlay (see the module note). `live` flips the moment the
+  // query answers, empty or not; until then, with a connection the spinner shows and without one
+  // the cache does.
+  const [cached] = useState(() => loadCachedNotifications());
+  const [overlay, setOverlay] = useState(() => loadPendingReads());
+  const live = status !== 'LoadingFirstPage' || results.length > 0;
+  useEffect(() => {
+    if (results.length > 0) cacheNotifications(results);
+  }, [results]);
 
   // Mark what the screen opened on as read — once, when the first page lands with rows (same guard
   // as the web, and the same reasons: latch regardless of whether anything shown was unread, rows
@@ -36,9 +59,52 @@ export default function NotificationsScreen() {
     void markRead({}).catch(() => {});
   }, [markRead, hasRows, status]);
 
+  // Offline: stamp the cached rows in the overlay once per open. Replayed below when live returns.
+  const markedOffline = useRef(false);
+  useEffect(() => {
+    if (live || markedOffline.current || cached.length === 0) return;
+    markedOffline.current = true;
+    const unread = cached.filter((n) => n.readAt === undefined).map((n) => n.id);
+    if (unread.length === 0) return;
+    const at = Date.now();
+    recordPendingReads(unread, at);
+    setOverlay((prev) => {
+      const next = new Map(prev);
+      for (const id of unread) if (!next.has(id)) next.set(id, at);
+      return next;
+    });
+  }, [live, cached]);
+
+  // Replay: once the live list answers, whatever the server already shows read (or has purged)
+  // drops out of the overlay; anything still unread server-side is marked now — bounded by the
+  // newest live row, so a notification that arrived after the offline open stays unread.
+  useEffect(() => {
+    if (!live || overlay.size === 0) return;
+    const settled = settledOverlayIds(overlay, results);
+    const pending = [...overlay.keys()].filter((id) => !settled.includes(id));
+    if (pending.length > 0) {
+      const newestPending = Math.max(
+        ...results.filter((r) => pending.includes(r.id)).map((r) => r.createdAt),
+      );
+      if (Number.isFinite(newestPending)) {
+        void markRead({ before: newestPending }).catch(() => {});
+      }
+    }
+    if (settled.length > 0) {
+      clearPendingReads(settled);
+      setOverlay((prev) => {
+        const next = new Map(prev);
+        for (const id of settled) next.delete(id);
+        return next;
+      });
+    }
+  }, [live, results, overlay, markRead]);
+
+  const data = live ? results : applyReadOverlay(cached, overlay);
+
   return (
     <FlatList<NotificationView>
-      data={results}
+      data={data}
       keyExtractor={(n) => n.id}
       renderItem={({ item }) => <NotificationRow view={item} now={now} />}
       onEndReached={() => {
@@ -46,6 +112,13 @@ export default function NotificationsScreen() {
       }}
       onEndReachedThreshold={0.5}
       contentContainerStyle={{ paddingBottom: 24 }}
+      ListHeaderComponent={
+        !live && cached.length > 0 ? (
+          <Paragraph color="$foregroundMuted" fontSize={12} paddingHorizontal="$4" paddingTop="$3">
+            Offline — showing what was here last time.
+          </Paragraph>
+        ) : null
+      }
       ListEmptyComponent={
         status === 'LoadingFirstPage' ? (
           <YStack padding="$6" alignItems="center">

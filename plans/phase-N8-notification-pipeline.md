@@ -1,8 +1,9 @@
 # N8 — The notification pipeline: the inbox, the missing producers, and the reverse reach index
 
-> **Status:** 🔨 **In build (2026-09-11)**, branch `phase-n8-notification-pipeline`, three PRs:
-> **PR 1** (inbox + settled queue + producers B1–B3) ✅ #52; **PR 2** (B4/B4a, A5 purge, C timezone)
-> ✅ built, stacked on PR 1; **PR 3** (transports: push, email, offline inbox cache) to follow. Scoped 2026-07-30 with a
+> **Status:** ✅ **Built (2026-09-12)**, three stacked PRs off `phase-n8-notification-pipeline`:
+> **PR 1** (inbox + settled queue + producers B1–B3) #52; **PR 2** (B4/B4a, A5 purge, C timezone)
+> #53; **PR 3** (transports: push, email, offline inbox cache). Not yet deployed to dev; push
+> credentials are a founder task (see PR 3's built record). Prod deferred. Scoped 2026-07-30 with a
 > founder call of **no N8 code until every N6 phase has shipped**; N6 closed 2026-09-10.
 > **Scope grew at kickoff (founder, 2026-09-11):** push (Android via FCM now; iOS APNs key once
 > enrolled) and **email** (Resend is live on dev) come *in*, as transports over the same rows — see
@@ -11,12 +12,12 @@
 > **Touches:** `notifications` / `notificationQueue`, `profiles.notificationPrefs`, the Phase 3 comment
 > path, the Phase 7 moderation queue, the Phase 9 hazard-confirmation loop, the Phase 8 recorder, and
 > both clients' shells.
-> **Decisions:** logged as **D164–D170** in [`01-decisions.md`](./01-decisions.md) — the numbers this
+> **Decisions:** logged as **D164–D171** in [`01-decisions.md`](./01-decisions.md) — the numbers this
 > document proposed (D77–D81) were taken by N5c and N6b before it was built. The mapping: D77→**D164**
 > (inbox first), D78→**D165** (producer + renderer or no type), D79→**D168** (hazards don't broadcast),
 > D80→**D169** (reverse index filters candidates; deferred), D81→**D166** (settle + re-check).
-> **D167** (`bounty_answered`) was found at kickoff; **D170** is Workstream C's call — see the built
-> records below.
+> **D167** (`bounty_answered`) was found at kickoff; **D170** is Workstream C's call; **D171** is the
+> transports — see the built records below.
 
 ---
 
@@ -686,6 +687,40 @@ p.timezone ?? DIGEST_TIMEZONE)`). Logged as **D170**.
    `dismissed` that means never, and the sweep respects it. Recorded because the review read the stop
    card as a bug; changing it would mean carrying a decline through the offline track queue to
    `ingestTrack` for a behaviour nobody wants.
+
+## Built record — PR 3 (2026-09-12)
+
+**Shipped (D171):** `pushTokens` table + `pushTokens.register/unregister`; `notificationDelivery.ts`
+(`loadForDelivery` → `deliverBatch` → `markDelivered`; `checkPushReceipts` 15 min later;
+`disableTokens` on `DeviceNotRegistered`) scheduled by the flush in batches of 200; `lib/expoPush.ts`
+(chunked send, receipts, never throws); email via `lib/resend.ts` (now with headers + `from`) rendered
+by `lib/notificationEmail.ts`; `profiles.email` mirrored from the identity's `email` claim,
+`profiles.channelPrefs`, `profiles.emailUnsubscribeSecret`, `profiles.setChannelPrefs`; the
+`/unsubscribe` HTTP route (GET page, POST one-click); `notifications.pushedAt/emailedAt` stamps.
+Mobile: `pushRegistration.ts` (register-if-permitted on open, the "this phone" switch, device opt-out
+in the prefs db), tap handling in the tabs layout (`data.target` → `notificationRoute`), the offline
+inbox cache + read overlay + replay (`notificationCache*.ts`), the tab dot reading the cache offline.
+Web: the two channel checkboxes. `app.config.ts` picks up `google-services.json` when present.
+
+**Founder tasks to make it live** (none block the merge; the code is credential-blind):
+1. Firebase project → `google-services.json` → EAS file env `GOOGLE_SERVICES_JSON` + FCM V1 key via
+   `eas credentials`; new Android build. Recipe in
+   [`05-accounts-and-credentials.md`](./05-accounts-and-credentials.md) §11.
+2. `eas credentials` → iOS → push key (Apple Developer account is enrolled). Untestable without an
+   iPhone; the code path is identical.
+3. Confirm the Clerk `convex` JWT template maps `email` (the default does). If not, the sender's
+   Clerk fallback covers it at one call per person, once.
+
+**Departures worth knowing:**
+1. **No `expo-device`.** Whether a token can be minted is learned from the token call itself rather
+   than a native dependency for one boolean.
+2. **Collapse ids are hashed** to iOS's 64-byte cap from the coalesce key (FNV-1a suffix), so a later
+   push on the same key replaces the earlier one on the lock screen.
+3. **The delivery action is idempotent by stamp**, not by scheduler guarantee: `loadForDelivery`
+   returns a channel `null` once the row is stamped for it, so a batch that ran twice sends nothing
+   twice.
+4. **Email defaults on.** The eligible types are low-volume and mostly opt-in already (the digest is
+   off by default); every mail can be silenced in one click.
 
 ## What this phase does not cover
 

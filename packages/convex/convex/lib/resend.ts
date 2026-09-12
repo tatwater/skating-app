@@ -35,9 +35,16 @@ export async function sendEmail(opts: {
   text: string;
   /** Named in the log line when the send is skipped or fails. */
   context: string;
+  /**
+   * Extra message headers. Skater-facing mail sets `List-Unsubscribe` (+ `-Post`) here so a mail
+   * client can offer its own one-click unsubscribe — the same link the footer carries (N8 PR 3).
+   */
+  headers?: Record<string, string>;
+  /** Override the sender; defaults to `RESEND_FROM_EMAIL`. Lets a later split by type keep one transport. */
+  from?: string;
 }): Promise<boolean> {
   const key = process.env.RESEND_API_KEY;
-  const from = process.env.RESEND_FROM_EMAIL;
+  const from = opts.from ?? process.env.RESEND_FROM_EMAIL;
   if (!key || !from || !opts.to) {
     console.warn(
       `${opts.context} email skipped (Resend env not configured): ${opts.subject} — set RESEND_API_KEY / RESEND_FROM_EMAIL to enable.`,
@@ -58,6 +65,7 @@ export async function sendEmail(opts: {
         subject: opts.subject,
         html: opts.html,
         text: opts.text,
+        ...(opts.headers ? { headers: opts.headers } : {}),
       }),
     });
     if (!res.ok) {
