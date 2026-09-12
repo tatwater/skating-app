@@ -83,6 +83,26 @@ crons.interval(
   {},
 );
 
+// The inbox's season purge (N8/A5): every notification created before this season's July 1 goes,
+// read or not. Daily, bounded, and a no-op for eleven months — the day after the boundary is the one
+// that matters, and a bounded pass means it clears over a few ticks rather than one huge transaction.
+crons.interval(
+  'purge last season notifications',
+  { hours: 24 },
+  internal.storageHygiene.purgeLastSeasonNotifications,
+  {},
+);
+
+// The `activity_detected` producer (N8/B4): skates our recorder captured that sat `pending` past the
+// prompt delay get one "add a report?" notification, after a per-user dedup pass. Hourly is plenty —
+// the delay is hours, and the notification then rides the once-a-minute flush like every other.
+crons.interval(
+  'prompt unreported skates',
+  { hours: 1 },
+  internal.gpsActivities.sweepUnpromptedActivities,
+  {},
+);
+
 // `weatherCache` retention. Rows are addressable only during their own hour bucket (the cache key
 // contains it), so yesterday's rows are unreachable rather than merely stale — this is reclaiming
 // dead weight, and N2's per-sample-point weather grid multiplied how fast it accrues.

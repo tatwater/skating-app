@@ -8,8 +8,10 @@ import {
   faUser,
 } from '@fortawesome/sharp-duotone-solid-svg-icons';
 import { api } from '@skating/convex/api';
-import { useQuery } from 'convex/react';
+import { deviceTimeZone, timezoneNeedsSync } from '@skating/core';
+import { useMutation, useQuery } from 'convex/react';
 import { Tabs } from 'expo-router';
+import { useEffect } from 'react';
 import { type ColorValue, View } from 'react-native';
 import { useTheme } from 'tamagui';
 
@@ -64,6 +66,20 @@ export default function TabsLayout() {
   // so the badge costs no tab. `unreadCount` is one capped indexed read, so subscribing to it from
   // the tab layout — effectively app-wide — is cheap by construction.
   const unread = useQuery(api.notifications.unreadCount, {}) ?? 0;
+
+  // The 8pm digest's zone (N8/C): the device's, refreshed on app open, written only when it differs.
+  // The tab layout mounts once per signed-in session, which makes it "app open".
+  const profile = useQuery(api.profiles.current, {});
+  const setTimezone = useMutation(api.profiles.setTimezone);
+  const hasProfile = !!profile;
+  const storedZone = profile?.timezone;
+  useEffect(() => {
+    if (!hasProfile) return;
+    const device = deviceTimeZone();
+    if (timezoneNeedsSync(storedZone, device)) {
+      void setTimezone({ timezone: device }).catch(() => {});
+    }
+  }, [hasProfile, storedZone, setTimezone]);
   return (
     <Tabs
       screenOptions={{

@@ -81,6 +81,39 @@ export const pruneWeatherCache = internalMutation({
 });
 
 /**
+ * The inbox empties at the season boundary (N8/A5) — delete every `notifications` row created before
+ * the current season's start (July 1, D63), **read or not**.
+ *
+ * It's the right clock rather than a convenient one. Every notification is about a *moment* —
+ * someone thumbed your report, a bounty opened on a lake, three lakes near you had new ice — and none
+ * of that survives a summer; a July inbox holding February's ice reports is landfill with a badge on
+ * it. Reusing the season boundary means no new concept: D66 already expires a departed skater's
+ * condition photos on exactly this line.
+ *
+ * **Daily rather than annually** for a clock that turns over once a year, the same posture as
+ * `sweepDepartedPhotos`: the rows are created continuously, the boundary is one day, and a daily
+ * bounded pass means the day after July 1 clears everything without one enormous transaction.
+ *
+ * **Read state doesn't matter.** An *unread* notification about last season's ice is worth less than a
+ * read one, not more — keeping it would be the only mechanism in the app that treats an unopened row
+ * as more durable than an opened one. This makes the inbox non-archival: the record of what happened
+ * to your contributions is the data export (N3), which reads the live tables.
+ */
+export const purgeLastSeasonNotifications = internalMutation({
+  args: { now: v.optional(v.number()) },
+  handler: async (ctx, args) => {
+    const now = args.now ?? Date.now();
+    const seasonStart = seasonStartMs(seasonOf(now));
+    const stale = await ctx.db
+      .query('notifications')
+      .withIndex('by_created_at', (q) => q.lt('createdAt', seasonStart))
+      .take(SWEEP_LIMIT);
+    for (const row of stale) await ctx.db.delete(row._id);
+    return { deleted: stale.length, truncated: stale.length >= SWEEP_LIMIT, seasonStart };
+  },
+});
+
+/**
  * Delete `weatherForecastCache` rows whose hour bucket has passed (N6c/B5b).
  *
  * **The same unaddressable-by-construction argument as `pruneWeatherCache` above**, and it applies

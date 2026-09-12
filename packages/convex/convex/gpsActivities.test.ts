@@ -685,3 +685,128 @@ describe('gpsActivities.listTracksForBody — the D58 privacy chain', () => {
     expect(tracks).toEqual([]);
   });
 });
+
+// ── The activity_detected sweep (N8/B4 + B4a) ────────────────────────────────────────────────────
+
+/** Make every queued notification due and flush it — the settle window (N8 / D166), fast-forwarded. */
+async function flushAllDue(t: ReturnType<typeof convexTest>) {
+  await t.run(async (ctx) => {
+    for (const row of await ctx.db.query('notificationQueue').collect()) {
+      await ctx.db.patch(row._id, { flushAfter: Date.now() - 1 });
+    }
+  });
+  await t.mutation(internal.notifications.flushNotificationQueue, {});
+  return t.run((ctx) => ctx.db.query('notifications').collect());
+}
+
+const HOUR = 60 * 60 * 1000;
+
+describe('gpsActivities.sweepUnpromptedActivities', () => {
+  test('asks once about a skate left pending past the delay, and never again', async () => {
+    const t = harness();
+    const me = await seedUser(t, 'me');
+    const bodyId = await seedBody(t);
+    const activityId = await me.as.mutation(api.gpsActivities.ingestTrack, ingestArgs());
+
+    // Too soon: the recorder's own prompt and the offline flush get first go.
+    const early = await t.mutation(internal.gpsActivities.sweepUnpromptedActivities, {
+      now: Date.now() + 1 * HOUR,
+    });
+    expect(early).toMatchObject({ prompted: 0 });
+
+    const late = await t.mutation(internal.gpsActivities.sweepUnpromptedActivities, {
+      now: Date.now() + 4 * HOUR,
+    });
+    expect(late).toMatchObject({ prompted: 1, superseded: 0 });
+    expect((await t.run((ctx) => ctx.db.get(activityId)))?.promptState).toBe('prompted');
+
+    const notes = await flushAllDue(t);
+    expect(notes).toHaveLength(1);
+    expect(notes[0]).toMatchObject({
+      userId: me.id,
+      type: 'activity_detected',
+      payload: { kind: 'activity', activityId, waterBodyId: bodyId, startTime: T0 },
+    });
+    // The row left the `pending` range, so a second tick has nothing to do.
+    const again = await t.mutation(internal.gpsActivities.sweepUnpromptedActivities, {
+      now: Date.now() + 5 * HOUR,
+    });
+    expect(again).toMatchObject({ prompted: 0 });
+  });
+
+  test('a skate converted or dismissed before the flush is dropped at flush, not delivered', async () => {
+    const t = harness();
+    const me = await seedUser(t, 'me');
+    await seedBody(t);
+    const activityId = await me.as.mutation(api.gpsActivities.ingestTrack, ingestArgs());
+    await t.mutation(internal.gpsActivities.sweepUnpromptedActivities, {
+      now: Date.now() + 4 * HOUR,
+    });
+    await me.as.mutation(api.gpsActivities.setPromptState, {
+      activityId,
+      promptState: 'dismissed',
+    });
+    expect(await flushAllDue(t)).toHaveLength(0);
+  });
+
+  test('respects the activityDetected toggle', async () => {
+    const t = harness();
+    const me = await seedUser(t, 'me');
+    await seedBody(t);
+    await me.as.mutation(api.profiles.setNotificationPrefs, { prefs: { activityDetected: false } });
+    await me.as.mutation(api.gpsActivities.ingestTrack, ingestArgs());
+    const res = await t.mutation(internal.gpsActivities.sweepUnpromptedActivities, {
+      now: Date.now() + 4 * HOUR,
+    });
+    // Still flipped to `prompted` (it has been considered), but nothing queued.
+    expect(res).toMatchObject({ prompted: 1 });
+    expect(await t.run((ctx) => ctx.db.query('notificationQueue').collect())).toHaveLength(0);
+  });
+
+  test('two sources of one skate: the better copy is prompted, the other superseded, the link moves (B4a)', async () => {
+    const t = harness();
+    const me = await seedUser(t, 'me');
+    const bodyId = await seedBody(t);
+    // A watch copy of the same session, ingested an hour later with slightly trimmed times — the
+    // shape a second provider will produce. Inserted directly: no adapter exists yet (that's the
+    // point of settling the rule now).
+    const phoneId = await me.as.mutation(api.gpsActivities.ingestTrack, ingestArgs());
+    const watchId = await t.run((ctx) =>
+      ctx.db.insert('gpsActivities', {
+        userId: me.id,
+        provider: 'garmin',
+        providerActivityId: 'garmin-1',
+        sportType: 'IceSkate',
+        startTime: T0 + 3 * 60_000,
+        endTime: T0 + 44 * 60_000,
+        waterBodyId: bodyId,
+        promptState: 'pending',
+        detectedAt: Date.now() + 1 * HOUR,
+      }),
+    );
+    // The watch copy is the one that got reported from (say, via a third client) — the link must
+    // follow the winner.
+    const reportId = await me.as.mutation(api.reports.create, {
+      waterBodyId: bodyId,
+      skateEndTime: T0 + 44 * 60_000,
+      iceTypes: ['black_ice'],
+      activityId: watchId,
+    });
+
+    const res = await t.mutation(internal.gpsActivities.sweepUnpromptedActivities, {
+      now: Date.now() + 4 * HOUR,
+    });
+    expect(res).toMatchObject({ prompted: 0, superseded: 1 });
+    const phone = await t.run((ctx) => ctx.db.get(phoneId));
+    const watch = await t.run((ctx) => ctx.db.get(watchId));
+    // Native outranks the watch: the phone recording is the skate, the watch copy is superseded.
+    expect(watch?.supersededByActivityId).toBe(phoneId);
+    expect(watch?.promptState).toBe('dismissed');
+    expect(phone?.linkedReportId).toBe(reportId);
+    expect(phone?.promptState).toBe('converted');
+    expect((await t.run((ctx) => ctx.db.get(reportId)))?.activityId).toBe(phoneId);
+    // No prompt: the winner is already reported. And the list shows one skate, not two.
+    expect(await t.run((ctx) => ctx.db.query('notificationQueue').collect())).toHaveLength(0);
+    expect(await me.as.query(api.gpsActivities.listMine, {})).toHaveLength(1);
+  });
+});

@@ -1,8 +1,8 @@
 # N8 — The notification pipeline: the inbox, the missing producers, and the reverse reach index
 
 > **Status:** 🔨 **In build (2026-09-11)**, branch `phase-n8-notification-pipeline`, three PRs:
-> **PR 1** (inbox + settled queue + producers B1–B3) ✅ built; **PR 2** (B4/B4a, A5 purge, C timezone)
-> and **PR 3** (transports: push, email, offline inbox cache) to follow. Scoped 2026-07-30 with a
+> **PR 1** (inbox + settled queue + producers B1–B3) ✅ #52; **PR 2** (B4/B4a, A5 purge, C timezone)
+> ✅ built, stacked on PR 1; **PR 3** (transports: push, email, offline inbox cache) to follow. Scoped 2026-07-30 with a
 > founder call of **no N8 code until every N6 phase has shipped**; N6 closed 2026-09-10.
 > **Scope grew at kickoff (founder, 2026-09-11):** push (Android via FCM now; iOS APNs key once
 > enrolled) and **email** (Resend is live on dev) come *in*, as transports over the same rows — see
@@ -11,11 +11,12 @@
 > **Touches:** `notifications` / `notificationQueue`, `profiles.notificationPrefs`, the Phase 3 comment
 > path, the Phase 7 moderation queue, the Phase 9 hazard-confirmation loop, the Phase 8 recorder, and
 > both clients' shells.
-> **Decisions:** logged as **D164–D169** in [`01-decisions.md`](./01-decisions.md) — the numbers this
+> **Decisions:** logged as **D164–D170** in [`01-decisions.md`](./01-decisions.md) — the numbers this
 > document proposed (D77–D81) were taken by N5c and N6b before it was built. The mapping: D77→**D164**
 > (inbox first), D78→**D165** (producer + renderer or no type), D79→**D168** (hazards don't broadcast),
 > D80→**D169** (reverse index filters candidates; deferred), D81→**D166** (settle + re-check).
-> **D167** (`bounty_answered`) was found at kickoff — see the built record below.
+> **D167** (`bounty_answered`) was found at kickoff; **D170** is Workstream C's call — see the built
+> records below.
 
 ---
 
@@ -646,6 +647,32 @@ producer enqueues with `SETTLE_MS = 60 s` and a typed `trigger` the flush re-rea
 8. **Workstream D is deliberately unbuilt** (D169). Dev has three profiles.
 9. **`bounties.answeredByMyReport`** backs the post-submit "at least N skaters were looking forward to
    it" line on both report-detail views; it answers 0 to anyone but the author.
+
+## Built record — PR 2 (2026-09-11)
+
+**Shipped:** B4 (`gpsActivities.sweepUnpromptedActivities`, hourly; `by_prompt_state_detected` index;
+`ACTIVITY_PROMPT_DELAY_MS = 3 h`), B4a (`core/activityDedup.ts` — overlap + 10-minute start window +
+compatible body, the four-rung ladder, `supersededByActivityId`, the link moves to the winner; the
+sweep runs it per user over that user's recent rows, not only the due ones), A5
+(`storageHygiene.purgeLastSeasonNotifications`, daily, `notifications.by_created_at`), C
+(`profiles.timezone`, `profiles.setTimezone` validated through `Intl`, both shells write it on app
+open via core's `deviceTimeZone`/`timezoneNeedsSync`; the fan-out stamps `nextZonedHourMs(now, 20,
+p.timezone ?? DIGEST_TIMEZONE)`). Logged as **D170**.
+
+**Departures worth knowing:**
+
+1. **The sweep flips a superseded loser to `dismissed`** as well as stamping `supersededByActivityId`,
+   so every existing reader that filters on `dismissed` (the You-tab list) hides it without learning
+   the new field; `listMine` also filters on the field directly.
+2. **The sweep marks `prompted` even when the toggle is off** — "considered" is what the state means,
+   and a row that stayed `pending` would be re-examined every hour for ever.
+3. **Found and fixed on the way:** `profiles.backfillNotificationPrefs`'s hand-written
+   `PROFILE_FIELDS` had drifted six fields behind the schema, so running it (as the PR 1 rename
+   requires) would have stripped `deletionRequestedAt`, `excludeTracksFromAggregate`,
+   `activeBountyPostLimit`, `photosExpiredForSeason` and `photoReconcileStartedAt` from every profile.
+   It now reads the schema's own field list.
+4. **The dedup ladder is exercised end-to-end in a test with a hand-inserted `garmin` row**, since no
+   adapter produces one; the constants are pinned by tests, not by data, as the plan said they would be.
 
 ## What this phase does not cover
 

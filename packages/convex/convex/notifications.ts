@@ -51,7 +51,13 @@ import { resolveNotifications } from './lib/notificationResolve';
 import { loadBlockedAuthorIds } from './lib/reportVisibility';
 import { takeCapped } from './lib/scan';
 
-/** The digest rolls up to 8pm in this zone (single-timezone pilot; per-user zone lands in N8/C). */
+/**
+ * The digest rolls up to 8pm **local** — the hour is the same for everyone, the zone is each
+ * recipient's own (`profiles.timezone`, written by the clients on app open; N8/C). True-sunset timing
+ * was considered and dropped: sunset in Vermont is ~16:20 in early January and ~20:30 in late June,
+ * so a digest that tracked it would arrive mid-workday at exactly the point in the season when
+ * skating happens. A user with no stored zone gets the pilot default.
+ */
 const DIGEST_HOUR = 20;
 const DIGEST_TIMEZONE = 'America/New_York';
 /** Favorite/great pushes fire after this quiet window so a burst on one lake coalesces into one. */
@@ -177,7 +183,6 @@ export const fanOutNearbyNotifications = internalMutation({
     const centroid = body.centroid;
 
     const isGreat = report.skateQuality === 'great';
-    const digestFlushAfter = nextZonedHourMs(now, DIGEST_HOUR, DIGEST_TIMEZONE);
     const page = await ctx.db
       .query('profiles')
       .paginate({ cursor: cursor ?? null, numItems: FANOUT_PAGE_SIZE });
@@ -197,13 +202,17 @@ export const fanOutNearbyNotifications = internalMutation({
         isDriveTimeBand(p.allRadiusMinutes) &&
         bandWithinRadius(band, p.allRadiusMinutes)
       ) {
+        // Stamped at enqueue, so a person who changes zone between now and 8pm gets this one digest
+        // at the old target — coalescing keeps the earliest `flushAfter`, so the failure direction is
+        // "slightly early", never "never". Re-resolving every queued row on a profile write would be
+        // a lot of machinery for one late-by-an-hour digest.
         await enqueue(ctx, {
           userId: p._id,
           waterBodyId: report.waterBodyId,
           reportId: report._id,
           kind: 'digest',
           type: 'nearby_report_digest',
-          flushAfter: digestFlushAfter,
+          flushAfter: nextZonedHourMs(now, DIGEST_HOUR, p.timezone ?? DIGEST_TIMEZONE),
           now,
         });
         enqueued++;

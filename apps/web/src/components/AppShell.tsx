@@ -2,9 +2,10 @@ import { useAuth } from '@clerk/tanstack-react-start';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faBell } from '@fortawesome/sharp-regular-svg-icons';
 import { api } from '@skating/convex/api';
+import { deviceTimeZone, timezoneNeedsSync } from '@skating/core';
 import { Link, useRouterState } from '@tanstack/react-router';
-import { useQuery } from 'convex/react';
-import type { ReactNode } from 'react';
+import { useMutation, useQuery } from 'convex/react';
+import { type ReactNode, useEffect } from 'react';
 import logoBlack from '../assets/gli-black-duotone.svg';
 import logoWhite from '../assets/gli-white-duotone.svg';
 import { isMapRoute } from '../lib/mapSelection';
@@ -42,6 +43,19 @@ export function AppShell({ children }: { children: ReactNode }) {
   // The bell's dot (N8/A3). `unreadCount` is a capped indexed read, so subscribing to it from the
   // shell — every page — is one small query, not a scan.
   const unread = useQuery(api.notifications.unreadCount, profile ? {} : 'skip') ?? 0;
+
+  // The 8pm digest's zone (N8/C): the device's, refreshed on app open, written only when it differs.
+  // The shell is the one component every signed-in page renders, which makes it "app open".
+  const setTimezone = useMutation(api.profiles.setTimezone);
+  const hasProfile = !!profile;
+  const storedZone = profile?.timezone;
+  useEffect(() => {
+    if (!hasProfile) return;
+    const device = deviceTimeZone();
+    if (timezoneNeedsSync(storedZone, device)) {
+      void setTimezone({ timezone: device }).catch(() => {});
+    }
+  }, [hasProfile, storedZone, setTimezone]);
   const mapRoute = isMapRoute(pathname);
 
   return (

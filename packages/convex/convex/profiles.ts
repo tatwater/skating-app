@@ -37,6 +37,7 @@ import { NOTIFICATION_PREF_DEFAULTS, NOTIFICATION_PREF_KEYS } from './lib/enums'
 import { loadBlockedAuthorIds } from './lib/reportVisibility';
 import { trustClassFor } from './lib/reputation';
 import { latLng, literals, partialBoolFlags } from './lib/validators';
+import schema from './schema';
 
 /**
  * Notification defaults for a fresh profile — per-key (D16): most types on, but the two opt-in
@@ -310,6 +311,38 @@ export const updateProfile = mutation({
  * `requireProfile` still rejects `deleting`: once finalization starts the answer is whatever they last
  * chose, and `writeTombstone` deliberately never touches this field.
  */
+/**
+ * Record the device's IANA timezone (N8/C) — the only per-user input the 8pm digest has. Called by
+ * both clients on app open, and only when it differs from what's stored, so an ordinary day writes
+ * nothing. Validated by asking `Intl` to format with it: the runtime's own table is the one authority
+ * on what counts as a zone, and a bad string from a client must not become the argument that makes
+ * `nextZonedHourMs` throw inside the fan-out for every report.
+ *
+ * `requireContributor` rather than `requireProfile`: a departing account has already been silenced
+ * (`canReceiveNotifications`), so there is no digest for its zone to place.
+ */
+export const setTimezone = mutation({
+  args: { timezone: v.string() },
+  handler: async (ctx, { timezone }) => {
+    const profile = await requireContributor(ctx);
+    if (!isValidTimeZone(timezone)) throw new ConvexError('Unknown timezone');
+    if (profile.timezone === timezone) return profile._id;
+    await ctx.db.patch(profile._id, { timezone });
+    return profile._id;
+  },
+});
+
+/** Whether the runtime knows `timeZone` — `Intl` throws a `RangeError` for anything it doesn't. */
+function isValidTimeZone(timeZone: string): boolean {
+  if (timeZone.length === 0 || timeZone.length > 64) return false;
+  try {
+    new Intl.DateTimeFormat('en-US', { timeZone }).format(0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export const setAggregateTracksOptOut = mutation({
   args: { excludeTracksFromAggregate: v.boolean() },
   handler: async (ctx, { excludeTracksFromAggregate }) => {
@@ -661,44 +694,18 @@ export const getAdmin = query({
   },
 });
 
-/** The `profiles` fields the current schema allows — anything else on a stored row is retired drift. */
-const PROFILE_FIELDS = [
-  'clerkUserId',
-  'displayName',
-  'username',
-  'homeCoord',
-  'homeTownLabel',
-  'bio',
-  'profileImageUrl',
-  'driveTimePrefMinutes',
-  'cachedIsochrones',
-  'outerRadiusMeters',
-  'cachedIsochronesAt',
-  'feedFilterPrefs',
-  'allRadiusMinutes',
-  'greatRadiusMinutes',
-  'profileVisibility',
-  'notificationPrefs',
-  'dateOfBirth',
-  'riskAckVersion',
-  'riskAckAt',
-  'reputationPoints',
-  'bountyPoints',
-  'reportCount',
-  'commentCount',
-  'badges',
-  'canPostReports',
-  'canPostHazards',
-  'canPostComments',
-  'contradictionCount',
-  'role',
-  'status',
-  'statusReason',
-  'suspendedUntil',
-  'moderatedByUserId',
-  'deletedAt',
-  'createdAt',
-] as const;
+/**
+ * The `profiles` fields the current schema allows — anything else on a stored row is retired drift.
+ *
+ * **Read off the schema, not hand-listed (N8).** This used to be a literal list, and it had drifted six
+ * fields behind the schema (`excludeTracksFromAggregate`, `activeBountyPostLimit`,
+ * `deletionRequestedAt`, `photosExpiredForSeason`, `photoReconcileStartedAt`, `timezone`) — so the
+ * `replace` in `backfillNotificationPrefs` would have silently stripped a departing user's
+ * deletion-request stamp, and everyone's aggregate opt-out, the next time anyone ran it. Found on the
+ * way to running it for the `bountyAnswered` rename. Reading the schema's own field list makes the
+ * drift impossible rather than merely caught.
+ */
+const PROFILE_FIELDS = Object.keys(schema.tables.profiles.validator.fields);
 
 /**
  * One-time migration (Phase 3): **canonicalize** every `profiles` row to the current schema. A row

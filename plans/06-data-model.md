@@ -57,6 +57,8 @@ excludeTracksFromAggregate?: boolean  // Phase 8 / D58: keep my recorded paths o
                              // retroactively drops every track they've contributed, not just future
                              // ones. Recording + Strava push are unaffected; this governs only whether
                              // their line draws on a lake's map for other people.
+timezone?: string            // N8/C, D170 — the DEVICE's IANA zone, refreshed on app open; the 8pm digest's
+                             // only per-user input (the hour is 20:00 for everyone). Never public.
 notificationPrefs: {         // per-type toggles — EVERY type is toggleable (D16); vocabulary in @skating/core (N8)
   activityDetected,          // a skate OUR recorder captured that was never reported (N8/B4) — NOT "any
                              // linked provider" as D24 said; that premise was retired with Phase 8's push pivot
@@ -182,9 +184,15 @@ path?: geojson               // TRUSTED GPS track = skated extent (+ hazard prox
 waterBodyId?: ref(waterBodies)   // resolved at ingest from path (D44) — the lake this skate was on
 waterBodyIds?: ref(waterBodies)[] // when a skate spans connected bodies; waterBodyId = primary
 photoUrls?: string[]         // provider-dependent + subject to provider ToS
-promptState: enum(pending, prompted, converted, dismissed)
+promptState: enum(pending, prompted, converted, dismissed)  // N8/B4: an hourly sweep flips a skate
+                             // still `pending` 3 h after `detectedAt` to `prompted` and files ONE
+                             // `activity_detected` notification (index `by_prompt_state_detected`)
 linkedReportId?: ref(reports)
 detectedAt: timestamp
+supersededByActivityId?: ref(gpsActivities)  // N8/B4a — the better copy of this same skate (core
+                             // `activityDedup` ladder: native > watch > aggregator > strava). Never
+                             // deleted; a loser's `linkedReportId` moves to the winner. Unreachable
+                             // today (one provider) — the rule exists before the second source does
 ```
 > **Water-body resolution (D44):** at ingest, spatially match `path` against
 > `waterBodies` (bbox prefilter → Turf.js, the D5/D36 machinery) and store the
@@ -834,7 +842,8 @@ readAt?: timestamp
 createdAt: timestamp
 ```
 > Indexes: `by_user`, `by_user_read` (`userId, readAt` — the unread badge is an *equality* on
-> `readAt = undefined`, which is the one shape the non-sparse-optional-index trap doesn't bite).
+> `readAt = undefined`, which is the one shape the non-sparse-optional-index trap doesn't bite),
+> `by_created_at` (the season purge).
 > **Only `flushNotificationQueue` inserts here** (D166) — every producer enqueues first.
 > Read by `notifications.list` (paginated, resolved), `unreadCount` (capped at 99), `markRead`.
 > **Retention is the season boundary** (N8/A5): a daily sweep deletes rows created before the current

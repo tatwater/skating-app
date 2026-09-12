@@ -1,3 +1,4 @@
+import { zonedHour } from '@skating/core';
 import { convexTest } from 'convex-test';
 import type { Polygon } from 'geojson';
 import { describe, expect, test } from 'vitest';
@@ -253,6 +254,38 @@ describe('notifications — nearby digest (X₁)', () => {
     expect(digest?.payload.coalesceKey).toBe(`${nearby.id}:digest`);
     // Queue fully drained.
     expect(await t.run((ctx) => ctx.db.query('notificationQueue').collect())).toEqual([]);
+  });
+
+  test('the digest lands at 8pm in the recipient’s own zone, defaulting to the pilot zone (N8/C)', async () => {
+    const t = convexTestWithGeo();
+    const id = await seedBody(t);
+    const author = await seedProfile(t, 'author');
+    const east = await seedProfile(t, 'east', {
+      prefs: { nearbyReportDigest: true },
+      allRadiusMinutes: 30,
+      inBand: true,
+    });
+    const west = await seedProfile(t, 'west', {
+      prefs: { nearbyReportDigest: true },
+      allRadiusMinutes: 30,
+      inBand: true,
+    });
+    await west.as.mutation(api.profiles.setTimezone, { timezone: 'America/Los_Angeles' });
+    await expect(
+      west.as.mutation(api.profiles.setTimezone, { timezone: 'Mars/Olympus_Mons' }),
+    ).rejects.toThrow(/timezone/i);
+
+    await createReport(t, author.as, { waterBodyId: id, skateEndTime: SKATE_TIME });
+    const queue = await t.run((ctx) => ctx.db.query('notificationQueue').collect());
+    const eastRow = queue.find((q) => q.userId === east.id);
+    const westRow = queue.find((q) => q.userId === west.id);
+    expect(zonedHour(eastRow?.flushAfter ?? 0, 'America/New_York')).toBe(20);
+    expect(zonedHour(westRow?.flushAfter ?? 0, 'America/Los_Angeles')).toBe(20);
+    // Same hour on the clock, three hours apart in absolute time (modulo the day boundary).
+    const gap = (westRow?.flushAfter ?? 0) - (eastRow?.flushAfter ?? 0);
+    expect(((gap % (24 * 60 * 60 * 1000)) + 24 * 60 * 60 * 1000) % (24 * 60 * 60 * 1000)).toBe(
+      3 * 60 * 60 * 1000,
+    );
   });
 
   test("a body out of the viewer's band produces no digest", async () => {

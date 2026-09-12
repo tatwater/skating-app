@@ -427,3 +427,27 @@ export function describeNotification(view: NotificationView): NotificationDescri
       return { title: 'An older notification that can no longer be shown', target: null };
   }
 }
+
+// ── Timezone sync (N8/C) ─────────────────────────────────────────────────────────────────────────
+
+/**
+ * The device's IANA zone, or `null` where the runtime can't say (an old WebView, a test). Both
+ * clients call this on app open and write the answer to `profiles.timezone` when it differs; the
+ * 8pm digest is the one thing that reads it.
+ */
+export function deviceTimeZone(): string | null {
+  try {
+    const zone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    return typeof zone === 'string' && zone.length > 0 ? zone : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Whether the stored zone needs refreshing — the only reason an ordinary app open writes anything. */
+export function timezoneNeedsSync(
+  stored: string | undefined,
+  device: string | null,
+): device is string {
+  return device !== null && device !== stored;
+}

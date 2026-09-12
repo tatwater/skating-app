@@ -177,6 +177,47 @@ describe('pruneWeatherCache', () => {
   });
 });
 
+describe('purgeLastSeasonNotifications (N8/A5)', () => {
+  test('deletes every row from before the current season’s start, read or not, and nothing newer', async () => {
+    const t = harness();
+    const userId = await t.run((ctx) =>
+      ctx.db.insert('profiles', {
+        clerkUserId: 'u',
+        displayName: 'u',
+        username: 'u',
+        driveTimePrefMinutes: 60,
+        profileVisibility: 'public' as const,
+        notificationPrefs: NOTIF_PREFS,
+        dateOfBirth: Date.UTC(1990, 0, 1),
+        reputationPoints: 0,
+        role: 'member' as const,
+        status: 'active' as const,
+        createdAt: T0,
+      }),
+    );
+    const seasonStart = seasonStartMs(seasonOf(T0));
+    const insert = (createdAt: number, readAt?: number) =>
+      t.run((ctx) =>
+        ctx.db.insert('notifications', {
+          userId,
+          type: 'report_rated',
+          payload: {},
+          ...(readAt !== undefined ? { readAt } : {}),
+          createdAt,
+        }),
+      );
+    await insert(seasonStart - 1); // last season, unread
+    await insert(seasonStart - 30 * 24 * HOUR_MS, seasonStart - 29 * 24 * HOUR_MS); // last season, read
+    const kept = await insert(seasonStart); // the boundary itself is this season
+    const keptToo = await insert(T0, T0 + HOUR_MS);
+
+    const res = await t.mutation(internal.storageHygiene.purgeLastSeasonNotifications, { now: T0 });
+    expect(res).toMatchObject({ deleted: 2, truncated: false, seasonStart });
+    const left = await t.run((ctx) => ctx.db.query('notifications').collect());
+    expect(left.map((n) => n._id).sort()).toEqual([kept, keptToo].sort());
+  });
+});
+
 describe('sweepOrphanPhotos', () => {
   test('deletes an abandoned upload past the grace window — row and both blobs', async () => {
     const t = harness();

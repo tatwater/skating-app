@@ -27,6 +27,8 @@
 
 import {
   clipPathEnds,
+  type DedupActivity,
+  dedupActivities,
   nearestBodyForPoint,
   PUT_IN_CLIP_M,
   pathOpacity,
@@ -40,11 +42,19 @@ import {
 import { ConvexError, v } from 'convex/values';
 import type { LineString, MultiPolygon, Polygon } from 'geojson';
 import type { Doc, Id } from './_generated/dataModel';
-import { type MutationCtx, mutation, type QueryCtx, query } from './_generated/server';
+import {
+  internalMutation,
+  type MutationCtx,
+  mutation,
+  type QueryCtx,
+  query,
+} from './_generated/server';
 import { getCurrentProfile, requireContributor, requireProfile } from './lib/auth';
 import { resolveSurvivor } from './lib/bodies';
 import { ACTIVITY_PROMPT_STATES } from './lib/enums';
 import { isListed } from './lib/listing';
+import { enqueueActorNotification } from './lib/notificationQueue';
+import { takeCapped } from './lib/scan';
 import { geoJson, literals } from './lib/validators';
 import { listedBodiesNearCoord } from './waterBodies';
 
@@ -245,6 +255,145 @@ export const setPromptState = mutation({
 });
 
 /**
+ * How long a recorded skate sits `pending` before the sweep asks about it (N8/B4). Long enough that
+ * the recorder's own stop-prompt and a same-day flush from the offline queue get first go, and that
+ * a second source of the same skate (a watch syncing when it feels like it) has usually arrived —
+ * the dedup below needs both copies in the table before it can pick one. Same idea as the D166 settle
+ * window, at a longer timescale.
+ */
+export const ACTIVITY_PROMPT_DELAY_MS = 3 * 60 * 60 * 1000;
+/** Activities examined per sweep tick; the rest wait for the next hour. */
+const PROMPT_SWEEP_CAP = 200;
+
+/**
+ * The `activity_detected` producer (N8/B4): find skates still `pending` after the delay, dedup each
+ * user's batch first (B4a), and file one notification per winner — "You skated on Lake Morey on
+ * Tuesday. Add a report?" — flipping the row to `prompted` so it fires once.
+ *
+ * **Why this exists.** `ingestTrack` inserts every recorded track as `pending`, and the recorder
+ * prompts on stop. When the app dies before prompting, or the track flushes from the offline queue
+ * hours later on a different screen, that prompt never happens — a completed skate sits in the table
+ * that nobody was ever asked about. N6f's `UnreportedSkates` list on the You tab is where the skate
+ * *lives*; this is the nudge that says it's there.
+ *
+ * **Our recorder only.** D24's "detected on any linked provider" premise was retired with Phase 8's
+ * pivot to push, and the watch adapters sit behind approval queues (L8). The dedup ladder runs anyway
+ * — on one provider it has nothing to choose between, and that is the point of settling it now.
+ *
+ * Runs hourly from `crons.ts`. The notification rides the settle queue like every other producer, with
+ * no extra debounce: it has already waited hours, and the flush re-checks the activity is still
+ * un-linked and un-dismissed before delivering.
+ */
+export const sweepUnpromptedActivities = internalMutation({
+  args: { now: v.optional(v.number()) },
+  handler: async (ctx, args) => {
+    const now = args.now ?? Date.now();
+    const due = await takeCapped(
+      ctx.db
+        .query('gpsActivities')
+        .withIndex('by_prompt_state_detected', (q) =>
+          q.eq('promptState', 'pending').lte('detectedAt', now - ACTIVITY_PROMPT_DELAY_MS),
+        ),
+      PROMPT_SWEEP_CAP,
+      'gpsActivities.sweepUnpromptedActivities',
+    );
+
+    // Dedup per user, against everything of theirs that could be the same skate — not only the due
+    // rows. A copy that arrived an hour ago is still `pending` and not yet due, but it is the copy the
+    // ladder may prefer, and picking a winner without it would supersede the better recording later.
+    const byUser = new Map<Id<'profiles'>, Doc<'gpsActivities'>[]>();
+    for (const row of due) {
+      const rows = byUser.get(row.userId);
+      if (rows) rows.push(row);
+      else byUser.set(row.userId, [row]);
+    }
+
+    let prompted = 0;
+    let superseded = 0;
+    for (const [userId, dueRows] of byUser) {
+      const candidates = await sameSkateCandidates(ctx, userId, dueRows);
+      const result = dedupActivities(candidates.map(toDedupActivity));
+      for (const { loser, winner } of result.superseded) {
+        const loserId = loser.id as Id<'gpsActivities'>;
+        const winnerId = winner.id as Id<'gpsActivities'>;
+        const loserRow = candidates.find((c) => c._id === loserId);
+        if (!loserRow || loserRow.supersededByActivityId !== undefined) continue;
+        // The link moves rather than breaks: a report must never lose its path to a dedup.
+        if (loserRow.linkedReportId !== undefined) {
+          const winnerRow = candidates.find((c) => c._id === winnerId);
+          if (winnerRow && winnerRow.linkedReportId === undefined) {
+            await ctx.db.patch(winnerId, {
+              linkedReportId: loserRow.linkedReportId,
+              promptState: 'converted',
+            });
+            const report = await ctx.db.get(loserRow.linkedReportId);
+            if (report && report.activityId === loserId) {
+              await ctx.db.patch(report._id, { activityId: winnerId });
+            }
+          }
+        }
+        await ctx.db.patch(loserId, {
+          supersededByActivityId: winnerId,
+          promptState: 'dismissed',
+        });
+        superseded++;
+      }
+
+      const dueIds = new Set(dueRows.map((r) => r._id));
+      for (const winner of result.winners) {
+        const id = winner.id as Id<'gpsActivities'>;
+        if (!dueIds.has(id)) continue; // not yet due — it'll be asked about on a later tick
+        const row = await ctx.db.get(id);
+        // Re-read: a link or a dismissal may have landed above, or between the scan and here.
+        if (row?.promptState !== 'pending' || row.linkedReportId !== undefined) continue;
+        await ctx.db.patch(id, { promptState: 'prompted' });
+        prompted++;
+        await enqueueActorNotification(ctx, {
+          recipientId: userId,
+          type: 'activity_detected',
+          targetId: id,
+          trigger: { kind: 'activity', activityId: id },
+          now,
+          flushAfter: now, // already waited hours; the next flush tick delivers
+        });
+      }
+    }
+    return { scanned: due.length, prompted, superseded };
+  },
+});
+
+/**
+ * Everything of this user's that the dedup should see alongside the due rows: their recent
+ * activities from the same window, `pending` or not — a converted watch copy is still the better
+ * copy of a skate the phone recorded. Bounded by the user's own recent history.
+ */
+async function sameSkateCandidates(
+  ctx: MutationCtx,
+  userId: Id<'profiles'>,
+  dueRows: Doc<'gpsActivities'>[],
+): Promise<Doc<'gpsActivities'>[]> {
+  const earliest = Math.min(...dueRows.map((r) => r.startTime)) - ACTIVITY_PROMPT_DELAY_MS;
+  const recent = await ctx.db
+    .query('gpsActivities')
+    .withIndex('by_user', (q) => q.eq('userId', userId))
+    .order('desc')
+    .take(PROMPT_SWEEP_CAP);
+  return recent.filter((r) => r.startTime >= earliest && r.supersededByActivityId === undefined);
+}
+
+function toDedupActivity(row: Doc<'gpsActivities'>): DedupActivity {
+  return {
+    id: row._id,
+    userId: row.userId,
+    provider: row.provider,
+    startTime: row.startTime,
+    ...(row.endTime !== undefined ? { endTime: row.endTime } : {}),
+    ...(row.waterBodyId !== undefined ? { waterBodyId: row.waterBodyId } : {}),
+    ...(row.linkedReportId !== undefined ? { linkedReportId: row.linkedReportId } : {}),
+  };
+}
+
+/**
  * Wire an activity to the report it backs — the join `reports.create` calls after inserting a report
  * with an `activityId`. Kept as a helper (not a public mutation) so the two sides can only ever be
  * written together, inside one transaction: a half-linked pair would render a path on a report the
@@ -351,11 +500,13 @@ export const listMine = query({
     const profile = await getCurrentProfile(ctx);
     if (!profile) return [];
     const limit = Math.min(Math.max(args.limit ?? 20, 1), 50);
-    const activities = await ctx.db
-      .query('gpsActivities')
-      .withIndex('by_user', (q) => q.eq('userId', profile._id))
-      .order('desc')
-      .take(limit);
+    const activities = (
+      await ctx.db
+        .query('gpsActivities')
+        .withIndex('by_user', (q) => q.eq('userId', profile._id))
+        .order('desc')
+        .take(limit)
+    ).filter((a) => a.supersededByActivityId === undefined); // the better copy is in the list already
     return await Promise.all(
       activities.map(async (a) => {
         const body = a.waterBodyId ? await ctx.db.get(a.waterBodyId) : null;
