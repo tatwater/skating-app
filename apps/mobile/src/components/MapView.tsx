@@ -19,14 +19,22 @@ import {
   applyDraftMapClick,
   approachesToFeatureCollection,
   approachLinePaint,
+  asOfLabel,
   type BBox,
+  type DriveTimeBands,
+  type FeedFilters,
   formatSeasonLabel,
+  hasWeatherFilter,
   holdFrames,
   isRegionOffscreen,
+  mapFilters,
   NO_HELD_FRAMES,
   prefetchFrames,
   SUB_AREA_MIN_RENDER_ZOOM,
+  thresholdLabel,
+  weatherDimmedBodyIds,
   withAccessDim,
+  withoutWeatherFilter,
 } from '@skating/core';
 import { useQuery } from 'convex/react';
 import * as Location from 'expo-location';
@@ -44,7 +52,7 @@ import {
 import type { LayoutChangeEvent, NativeSyntheticEvent } from 'react-native';
 import { StyleSheet, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Paragraph, YStack } from 'tamagui';
+import { Paragraph, Text, XStack, YStack } from 'tamagui';
 import { cacheBody } from '../lib/bodyCache';
 import {
   CONTOUR_BEFORE_LAYER_ID,
@@ -65,6 +73,7 @@ import {
   maxContourDepthFt,
 } from '../lib/contourMap';
 import { env } from '../lib/env';
+import { useFeedFilters } from '../lib/feedFiltersStore';
 import {
   bodyFeaturesToFeatureCollection,
   CONFIRMED_HAZARD_FILTER,
@@ -297,14 +306,40 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
   // The lakes *this viewer* has reported as having no public access (N6f) — dimmed for them alone.
   const selfFlagged = useQuery(api.contentFlags.myAccessFlags, {});
 
+  // Weather-first discovery on the map (N6h / D166): the shared filter row's weather + radius, the
+  // matched cells from the server, and the dim set computed per body in view — the same
+  // `weatherDimmedBodyIds` web uses. Only the weather filter engages this.
+  const { value: feedFilters, set: setFeedFilters } = useFeedFilters();
+  const discoveryFilters = mapFilters(feedFilters);
+  const matchedCells = useQuery(
+    api.weatherDiscovery.matchedCells,
+    hasWeatherFilter(discoveryFilters) ? { filters: discoveryFilters } : 'skip',
+  );
+  const viewerProfile = useQuery(api.profiles.current, {});
+  const favoriteRows = useQuery(api.waterBodyFavorites.listForUser, {});
+  const weatherDimmed = useMemo(() => {
+    if (!hasWeatherFilter(discoveryFilters) || !bodies) return new Set<string>();
+    return weatherDimmedBodyIds(bodies, discoveryFilters, matchedCells, {
+      bands: {
+        band30: viewerProfile?.cachedIsochrones?.band30,
+        band60: viewerProfile?.cachedIsochrones?.band60,
+        outerRadiusMeters: viewerProfile?.outerRadiusMeters,
+      } as DriveTimeBands,
+      home: viewerProfile?.homeCoord,
+      favorites: new Set((favoriteRows ?? []).map((f) => f.waterBodyId)),
+    });
+  }, [discoveryFilters, bodies, matchedCells, viewerProfile, favoriteRows]);
+
   // Retain the last loaded features while the next query is in flight (Convex returns `undefined`
   // for a fresh key until it resolves) so bodies never blink off the map between pans.
   const [features, setFeatures] = useState<GeoJSON.FeatureCollection>(EMPTY_FC);
   useEffect(() => {
     if (bodies !== undefined) {
-      setFeatures(waterBodiesToFeatureCollection(bodies, new Set(selfFlagged ?? [])));
+      setFeatures(
+        waterBodiesToFeatureCollection(bodies, new Set(selfFlagged ?? []), weatherDimmed),
+      );
     }
-  }, [bodies, selfFlagged]);
+  }, [bodies, selfFlagged, weatherDimmed]);
   const [subAreaFeatures, setSubAreaFeatures] = useState<GeoJSON.FeatureCollection>(EMPTY_FC);
   useEffect(() => {
     // Zooming back out clears the layer rather than leaving the last bays drawn over a regional view.
@@ -1226,6 +1261,40 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
           height and covered whatever the skater had opened. */}
       <OnIceDock bottom={onIceBottom} onExpandedChange={setOnIceExpanded} />
 
+      {hasWeatherFilter(feedFilters) ? (
+        // The active discovery filter, named on the map (D166): a dimmed map must never be mistaken
+        // for a broken one, and clearing it here is the same store the feed reads.
+        <XStack
+          position="absolute"
+          top={insets.top + 8}
+          left={8}
+          right={8}
+          zIndex={30}
+          alignItems="center"
+          gap="$2"
+          paddingVertical="$1"
+          paddingHorizontal="$3"
+          borderRadius={999}
+          borderWidth={1}
+          borderColor="$border"
+          backgroundColor="$surface"
+          accessibilityRole="summary"
+        >
+          <Text color="$foreground" fontSize={12} flex={1} numberOfLines={2}>
+            {describeWeatherFilterChip(feedFilters, matchedCells)}
+          </Text>
+          <Text
+            color="$primary"
+            fontSize={12}
+            fontWeight="600"
+            accessibilityRole="button"
+            onPress={() => setFeedFilters(withoutWeatherFilter(feedFilters))}
+          >
+            Clear
+          </Text>
+        </XStack>
+      ) : null}
+
       <ReturnToRegion
         visible={regionOffscreen}
         onReturn={() =>
@@ -1238,4 +1307,18 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
       />
     </View>
   );
+}
+
+/** The chip's sentence: the knob, then the date the digest is as of. Same words as web's. */
+function describeWeatherFilterChip(
+  filters: FeedFilters,
+  matched: { asOfDayMs: number | null } | undefined,
+): string {
+  const w = filters.weather;
+  if (!w) return '';
+  const knob = `${w.minNights}+ night${w.minNights === 1 ? '' : 's'} below ${thresholdLabel(w.thresholdF)}${w.noSnowSince ? ', no snow since' : ''}`;
+  const radius =
+    filters.radiusMinutes !== undefined ? ` · within ${filters.radiusMinutes} min` : '';
+  const asOf = matched?.asOfDayMs ? ` · ${asOfLabel(matched.asOfDayMs)}` : '';
+  return `Showing lakes with ${knob}${radius}${asOf}`;
 }
