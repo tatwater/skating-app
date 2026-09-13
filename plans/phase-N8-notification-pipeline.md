@@ -12,11 +12,11 @@
 > **Touches:** `notifications` / `notificationQueue`, `profiles.notificationPrefs`, the Phase 3 comment
 > path, the Phase 7 moderation queue, the Phase 9 hazard-confirmation loop, the Phase 8 recorder, and
 > both clients' shells.
-> **Decisions:** logged as **D164–D171** in [`01-decisions.md`](./01-decisions.md) — the numbers this
-> document proposed (D77–D81) were taken by N5c and N6b before it was built. The mapping: D77→**D164**
-> (inbox first), D78→**D165** (producer + renderer or no type), D79→**D168** (hazards don't broadcast),
-> D80→**D169** (reverse index filters candidates; deferred), D81→**D166** (settle + re-check).
-> **D167** (`bounty_answered`) was found at kickoff; **D170** is Workstream C's call; **D171** is the
+> **Decisions:** logged as **D170–D174** in [`01-decisions.md`](./01-decisions.md) — the numbers this
+> document proposed (D77–D81) were taken by N5c and N6b before it was built. The mapping: D77→**D167**
+> (inbox first), D78→**D168** (producer + renderer or no type), D79→**D171** (hazards don't broadcast),
+> D80→**D172** (reverse index filters candidates; deferred), D81→**D169** (settle + re-check).
+> **D173** (`bounty_answered`) was found at kickoff; **D173** is Workstream C's call; **D174** is the
 > transports — see the built records below.
 
 ---
@@ -622,11 +622,21 @@ producer enqueues with `SETTLE_MS = 60 s` and a typed `trigger` the flush re-rea
    both clients draw the dot from a visit-scoped set (seeded from the page in hand, widened by the
    server's answer), so "new since last visit" survives the stamp. `enqueueActorNotification`
    derives `type` from the trigger kind (`TYPE_FOR_KIND`) instead of taking it as a second argument.
+   *Fourth pass (founder, post-Greptile):* the flush was re-batched. `FLUSH_BATCH_CAP` 1,000 → **250**
+   — it was sized when a row cost two reads, and an actor row now costs ~3 + N, so a full batch sat
+   at the 4,096 read ceiling with zero coalescing and would have wedged on the same rows every
+   minute. A full or budget-stopped batch (`FLUSH_READ_BUDGET` 3,000, a running tally) **schedules
+   its own continuation**, so the cap bounds a transaction, not throughput. And **a digest is
+   assembled from `by_user`, not from the batch slice**: every digest row is due at the same 8pm, so
+   `by_flush` interleaves users by creation order and a user's rows are never contiguous — the old
+   "straddles the cap ⇒ two digests" edge is gone, with nothing re-run. The founder's first
+   framing ("drop the user, reset the pointer to the start of them, re-run in full") assumed a
+   contiguity the scan doesn't have; the per-user index gives the same guarantee without it.
 1. **The plan miscounted the toggles.** Both settings pages rendered *three* (the Phase-4 set), not
    ten. They now iterate `NOTIFICATION_PREF_ORDER` from `@skating/core`, where the vocabulary, the
    labels and `describeNotification` (the sentence both clients render) now live.
 2. **`bounty_fulfilled` was misdescribed** — it went to the fulfiller, and nobody told the requester a
-   report had arrived. It is now `bounty_answered`, to the requester, on attach (D167). The pref key
+   report had arrived. It is now `bounty_answered`, to the requester, on attach (D170). The pref key
    renamed with it (`bountyAnswered`); `backfillNotificationPrefs` migrates the profile objects.
    **⚠ Dev deploy recipe** (prod has no profiles, so this is dev-only): `boolFlags` is a strict
    `v.object`, so the narrow schema in this tree rejects every existing profile on push. Widen
@@ -652,7 +662,7 @@ producer enqueues with `SETTLE_MS = 60 s` and a typed `trigger` the flush re-rea
    never-seen rows; the resolver types it at the boundary and the season purge retires the old shapes.
 7. **`unreadCount` answers 0 without a profile** rather than throwing — both shells subscribe from a
    layout that can render a frame before the row exists.
-8. **Workstream D is deliberately unbuilt** (D169). Dev has three profiles.
+8. **Workstream D is deliberately unbuilt** (D172). Dev has three profiles.
 9. **`bounties.answeredByMyReport`** backs the post-submit "at least N skaters were looking forward to
    it" line on both report-detail views; it answers 0 to anyone but the author.
 
@@ -665,7 +675,7 @@ sweep runs it per user over that user's recent rows, not only the due ones), A5
 (`storageHygiene.purgeLastSeasonNotifications`, daily, `notifications.by_created_at`), C
 (`profiles.timezone`, `profiles.setTimezone` validated through `Intl`, both shells write it on app
 open via core's `deviceTimeZone`/`timezoneNeedsSync`; the fan-out stamps `nextZonedHourMs(now, 20,
-p.timezone ?? DIGEST_TIMEZONE)`). Logged as **D170**.
+p.timezone ?? DIGEST_TIMEZONE)`). Logged as **D173**.
 
 **Departures worth knowing:**
 
@@ -685,8 +695,9 @@ p.timezone ?? DIGEST_TIMEZONE)`). Logged as **D170**.
    an intact pair — otherwise the aggregate layer drew the skate twice); a loser already `prompted`
    or `dismissed` hands that answer to the winner so a phone copy flushing a day after the watch copy
    never asks twice; minors and `canPostReports === false` are flipped to `prompted` but never nudged
-   toward a form that refuses them; the sweep reads 50 due rows × 50 history rows per tick (worst
-   case ~2.7k reads) and unions the due rows into the candidate set so none can be stranded; the
+   toward a form that refuses them; the sweep reads 50 due rows × a 50-row window each per tick (worst
+   case ~2.7k reads; see 7 for the window) and unions the due rows into the candidate set so none can be
+   stranded; the
    purge self-continues while truncated; `activity_detected` shows the skate's time as its detail.
 6. **"Not now" on the recorder's stop card is a deferral, not a dismissal — deliberately.** The card
    clears its own state and leaves the row `pending`, so the sweep nudges once, three hours later.
@@ -694,10 +705,32 @@ p.timezone ?? DIGEST_TIMEZONE)`). Logged as **D170**.
    `dismissed` that means never, and the sweep respects it. Recorded because the review read the stop
    card as a bug; changing it would mean carrying a decline through the offline track queue to
    `ingestTrack` for a behaviour nobody wants.
+7. **Greptile pass (latent, multi-provider only):** the dedup candidates are now read as **one
+   start-time window per due row** (new `by_user_start_time` index, ±`ACTIVITY_DEDUP_START_WINDOW_MS`)
+   rather than the user's fifty most recently *inserted* rows — the latter dropped an already-prompted
+   copy behind fifty later syncs and asked about the skate twice. A consequence worth knowing: an
+   *unrelated* due skate no longer pulls a not-yet-due pair into an early dedup; the pair waits for
+   one of its own copies to come due, which is the tick that can see it. And `listTracksForBody`
+   decides a superseded copy that *kept* its link against its winner — skipped if the winner draws
+   on its own terms (track + visible report), drawn if it can't (a path-less stub, or a report hidden
+   since, walking the whole supersession chain so an undrawable intermediate can't let an older copy
+   render beside the terminal winner) — so both copies reported from draws once, and a published skate never vanishes because its
+   better-ranked copy can't draw (the blanket "superseded never draws" of the first cut did exactly
+   that; the second cut checked the path but not the report). The aggregate read now **scans until
+   `limit` drawable tracks are in hand** (`TRACK_SCAN_CAP` = 2×), instead of `take(limit + 1)` and
+   skipping inside the slice — every skip reason, not only this one, used to spend a slot; and
+   `truncated` is now an honest flag (a drawable past the limit, or a scan that hit its cap). `listMine`'s filter-before-take was
+   already in from pass 5. *Second pass (xhigh):* a late `linkActivityToReport` follows the dedup
+   chain to the winner, stopping short of a path-less one or one already reported (it links the copy
+   it was filed from — the sweep's own can't-move state); the sweep's move refuses a path-less winner
+   and carries the loser's lake onto an unresolved one; dedup body-matching considers every body a
+   spanning skate touched. Also: `PastWeatherPanel.test.tsx` (N6h) waited on a heading that renders
+   in the loading state too, then asserted synchronously — a race a slow CI runner lost; it now
+   waits for the loading line to clear.
 
 ## Built record — PR 3 (2026-09-12)
 
-**Shipped (D171):** `pushTokens` table + `pushTokens.register/unregister`; `notificationDelivery.ts`
+**Shipped (D174):** `pushTokens` table + `pushTokens.register/unregister`; `notificationDelivery.ts`
 (`loadForDelivery` → `deliverBatch` → `markDelivered`; `checkPushReceipts` 15 min later;
 `disableTokens` on `DeviceNotRegistered`) scheduled by the flush in batches of 200; `lib/expoPush.ts`
 (chunked send, receipts, never throws); email via `lib/resend.ts` (now with headers, and a 429
@@ -741,8 +774,8 @@ exclusions are struck rather than deleted, so the reasoning survives.*
   **→ PR 3.** Android via Expo Push + FCM (a Firebase project + service-account key in EAS — founder
   task); iOS via an APNs key from the Apple Developer Program the founder has since enrolled in, code
   shipped for both, only Android testable (no iPhone). The `coalesceKey` seeds the collapse-id as
-  planned. D164's point stands: the inbox was never a waiting room for this.
-- **Nearby-hazard notifications** (D168) — on-ice proximity is the hazard channel, deliberately.
+  planned. D167's point stands: the inbox was never a waiting room for this.
+- **Nearby-hazard notifications** (D171) — on-ice proximity is the hazard channel, deliberately.
 - ~~**Email notifications.** Resend exists for *operator* alerts (D38) and is credential-blocked anyway.~~
   **→ PR 3.** Resend is live on dev (`updates@skating.teaganatwater.com`). Not a 10×3 matrix: per-type
   toggles stay, two channel switches (push, email) are added, and which types are *email-eligible* is

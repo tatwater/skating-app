@@ -472,7 +472,7 @@ export const ACCESS_ALERT_VERDICTS = CORE_ACCESS_ALERT_VERDICTS;
 export const ACCESS_ALERT_TARGETS = CORE_ACCESS_ALERT_TARGETS;
 
 /**
- * Coalescing-queue bucket (Phase 4, decision #4; widened in N8 / D166). The first three are the
+ * Coalescing-queue bucket (Phase 4, decision #4; widened in N8 / D169). The first three are the
  * report-audience buckets: `digest` = the once-daily 8pm "all within X₁" roll-up; `favorite` /
  * `great` fire after a short per-`(user, body)` debounce. The rest are the **actor-triggered** kinds
  * that used to insert `notifications` directly and now settle in the queue first, so a misclick can

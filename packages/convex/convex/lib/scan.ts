@@ -53,15 +53,21 @@
  * That matters most where the flag decides something rather than just logging: `bounties`
  * `evaluateFreshness` blocks a bounty when its scan saturates, so reading the boundary case as
  * truncated would reject perfectly valid requests on a body with exactly `cap` reports.
+ *
+ * `paged: true` is for a caller that *continues* on `truncated` — a self-scheduling batch job like
+ * `notifications.flushNotificationQueue` — where a full batch is paging, not an answer that came
+ * back short, so nothing is logged. The cap+1 disambiguation is the same either way; it lives here
+ * once rather than being re-derived at each such caller.
  */
 export async function takeCappedResult<T>(
   query: { take(n: number): Promise<T[]> },
   cap: number,
   what: string,
+  opts: { paged?: boolean } = {},
 ): Promise<{ rows: T[]; truncated: boolean }> {
   const probed = await query.take(cap + 1);
   const truncated = probed.length > cap;
-  if (truncated) {
+  if (truncated && !opts.paged) {
     console.warn(`${what}: hit the ${cap}-row scan cap — results are truncated (D5/N1).`);
   }
   return { rows: truncated ? probed.slice(0, cap) : probed, truncated };

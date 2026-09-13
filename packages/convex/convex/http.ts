@@ -33,7 +33,7 @@ import { OAUTH_STATE_TTL_SECONDS, stravaAuthorizeUrl } from './strava';
 const http = httpRouter();
 
 /**
- * Email unsubscribe (N8 PR 3 / D171). The link in every skater-facing email — and the
+ * Email unsubscribe (N8 PR 3 / D174). The link in every skater-facing email — and the
  * `List-Unsubscribe` header a mail client turns into its own button — lands here with no session.
  * The secret in `t` is the authorization and it authorizes one thing: the email channel goes off for
  * user `u`.

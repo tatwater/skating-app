@@ -1,5 +1,5 @@
 /**
- * The transports (N8 PR 3 / D164, D171): after the flush lands `notifications` rows, this sends each
+ * The transports (N8 PR 3 / D167, D174): after the flush lands `notifications` rows, this sends each
  * one onward — a push to every registered device, and an email for the types worth one — and stamps
  * the row so a retried batch never sends twice.
  *
@@ -15,7 +15,7 @@
  *
  * ## What decides whether a row goes anywhere
  *
- * The inbox row already exists — that is the product (D164). Beyond it: `channelPrefs.push` and at
+ * The inbox row already exists — that is the product (D167). Beyond it: `channelPrefs.push` and at
  * least one enabled token ⇒ push; `channelPrefs.email` and the type in `NOTIFICATION_EMAIL_ELIGIBLE`
  * and an address on file ⇒ email. A row that qualifies for neither is simply done. The per-type
  * toggle was applied before the row existed (at enqueue and again at flush), so it isn't re-read here.

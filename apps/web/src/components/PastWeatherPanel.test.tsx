@@ -40,6 +40,17 @@ function day(localDate: string, over: Record<string, number> = {}) {
   };
 }
 
+/**
+ * Wait for the panel to have *loaded*, not merely mounted. The heading renders in the "Reading…"
+ * state too, so waiting on it resolves before the mocked action does — and a synchronous assertion
+ * after that races the promise, which a slow CI runner lost (PR #53). The loading line going away
+ * is the signal that the data landed.
+ */
+async function awaitLoaded() {
+  await screen.findByText("What it's been through");
+  await waitFor(() => expect(screen.queryByText(/Reading the last/)).not.toBeInTheDocument());
+}
+
 describe('PastWeatherPanel', () => {
   it('renders the observation lines and the attribution', async () => {
     getDays.mockResolvedValue({
@@ -51,10 +62,38 @@ describe('PastWeatherPanel', () => {
     });
     render(<PastWeatherPanel waterBodyId={BODY} />);
 
-    expect(await screen.findByText("What it's been through")).toBeInTheDocument();
-    expect(screen.getByText('3 nights below 20°F')).toBeInTheDocument();
+    await awaitLoaded();
+    // No served chain in this mock, so the panel computes over its own three days — all cold, and
+    // reaching the window's edge, hence the "+" (D164).
+    expect(screen.getByText('3+ nights below 20°F, no snow since the first')).toBeInTheDocument();
     expect(screen.getByText(/Calm while freezing/)).toBeInTheDocument();
     expect(screen.getByText('Past weather: Open-Meteo')).toBeInTheDocument();
+  });
+
+  it('prints the served chain over the panel window when the action supplies one (D164)', async () => {
+    getDays.mockResolvedValue({
+      days: [day('2026-01-14'), day('2026-01-15'), day('2026-01-16')],
+      todayLocalDayMs: TODAY,
+      missingDayMs: [],
+      anyBorrowed: false,
+      oneSampleForALargeBody: false,
+      chain: {
+        thresholdF: 20,
+        nights: 22,
+        startDayMs: Date.UTC(2025, 11, 26),
+        endDayMs: Date.UTC(2026, 0, 16),
+        coldNightMask: 2 ** 22 - 1,
+        alive: true,
+        openEnded: false,
+        snowSinceStartCm: 3,
+        snowUnknownDays: 0,
+        asOfDayMs: Date.UTC(2026, 0, 16),
+      },
+    });
+    render(<PastWeatherPanel waterBodyId={BODY} />);
+    expect(
+      await screen.findByText('22 nights below 20°F, 1.2 in of snow since the first'),
+    ).toBeInTheDocument();
   });
 
   it('never renders a safety verdict or a thickness (D3 / D160)', async () => {
@@ -66,7 +105,7 @@ describe('PastWeatherPanel', () => {
       oneSampleForALargeBody: false,
     });
     const { container } = render(<PastWeatherPanel waterBodyId={BODY} />);
-    await screen.findByText("What it's been through");
+    await awaitLoaded();
 
     const text = container.textContent ?? '';
     for (const forbidden of ['safe', 'unsafe', 'should', 'thick', 'degree-hour']) {
@@ -85,7 +124,7 @@ describe('PastWeatherPanel', () => {
     });
     render(<PastWeatherPanel waterBodyId={BODY} />);
 
-    await screen.findByText("What it's been through");
+    await awaitLoaded();
     // The whole point of carrying `missing` through the archive: a hole must not read as 0°.
     expect(screen.getAllByText('—').length).toBeGreaterThan(0);
     expect(screen.getByText('1 day of weather unavailable')).toBeInTheDocument();
@@ -116,7 +155,7 @@ describe('PastWeatherPanel', () => {
       oneSampleForALargeBody: false,
     });
     render(<PastWeatherPanel waterBodyId={BODY} />);
-    await screen.findByText("What it's been through");
+    await awaitLoaded();
     expect(screen.queryByText(/large enough that weather differs/)).not.toBeInTheDocument();
   });
 
@@ -202,7 +241,9 @@ describe('PastWeatherPanel', () => {
     });
     render(<PastWeatherPanel days={7} waterBodyId={BODY} />);
     // Seven of the thirty stored days, because that is the window the copy claims to describe.
-    expect(await screen.findByText('7 nights below 20°F')).toBeInTheDocument();
+    expect(
+      await screen.findByText('7+ nights below 20°F, no snow since the first'),
+    ).toBeInTheDocument();
   });
 
   it('does not leave a stale panel up when the body changes', async () => {
@@ -214,7 +255,7 @@ describe('PastWeatherPanel', () => {
       oneSampleForALargeBody: false,
     });
     const { rerender } = render(<PastWeatherPanel waterBodyId={BODY} />);
-    await screen.findByText("What it's been through");
+    await awaitLoaded();
 
     getDays.mockResolvedValue(null);
     rerender(<PastWeatherPanel waterBodyId={OTHER} />);

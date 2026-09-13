@@ -34,6 +34,22 @@ export function SubAreaSpread({ waterBodyId }: { waterBodyId: Id<'waterBodies'> 
                 ))}
               </Paragraph>
             ))}
+        {/* The sorted bay lists (Workstream E, founder call 9): the user picks the criterion, the
+            app counts (D150). Each bay is the same `sub=` navigation the extremes are. */}
+        {[spread.rankings?.coldestNights, spread.rankings?.leastSnow]
+          .filter((r): r is NonNullable<typeof r> => !!r)
+          .map((ranking) => (
+            <Paragraph key={ranking.kind} color="$foregroundMuted" fontSize={13}>
+              <Text color="$foreground">{ranking.label}: </Text>
+              {ranking.bays.map((bay, i) => (
+                <Text key={bay.subAreaId}>
+                  {i > 0 ? ' · ' : ''}
+                  <SpreadPartView part={bay} onPress={go} />
+                  {` (${bay.value})`}
+                </Text>
+              ))}
+            </Paragraph>
+          ))}
       </YStack>
     </Section>
   );

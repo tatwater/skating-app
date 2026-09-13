@@ -12,7 +12,7 @@ const p = (s: string) => s as Id<'profiles'>;
 const r = (s: string) => s as Id<'reports'>;
 const c = (s: string) => s as Id<'comments'>;
 
-describe('mergeTriggers / triggerCount (D166 coalescing)', () => {
+describe('mergeTriggers / triggerCount (D169 coalescing)', () => {
   test('id lists union without duplicates; scalar state is overwritten by the newer trigger', () => {
     const thumb: NotificationTrigger = {
       kind: 'thumb',

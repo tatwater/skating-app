@@ -270,7 +270,7 @@ export function ReportDetail({ reportId }: { reportId: string }) {
   // (D3). Skipped when signed out (the query requires a profile). A block never hides the report.
   const me = useQuery(api.profiles.current, {});
   const blockedIds = useQuery(api.blocks.blockedUserIds, me ? {} : 'skip');
-  // The author's "people were waiting for this" line (N8 / D167). The query answers 0 for anyone
+  // The author's "people were waiting for this" line (N8 / D170). The query answers 0 for anyone
   // but the author (the server re-checks), so it's only *subscribed* when the viewer is the author —
   // every other reader of every report would otherwise hold a live query that can only ever say 0.
   const bountiesAnswered = useQuery(
@@ -377,7 +377,7 @@ export function ReportDetail({ reportId }: { reportId: string }) {
           Start and end of this track are hidden — the skater didn’t share their put-in.
         </p>
       ) : null}
-      {/* The author is told on the spot rather than pinged (D167): a stranger having asked is not a
+      {/* The author is told on the spot rather than pinged (D170): a stranger having asked is not a
           reason for the author's phone to ding, but it is a nice thing to know. */}
       {isOwn && bountiesAnswered !== undefined && bountiesAnswered > 0 ? (
         <p className="px-4 pb-2 text-foreground-muted text-sm">

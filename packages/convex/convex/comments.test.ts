@@ -166,7 +166,7 @@ describe('comments.create', () => {
   });
 });
 
-/** Make every queued notification due and flush it — the settle window (N8 / D166), fast-forwarded. */
+/** Make every queued notification due and flush it — the settle window (N8 / D169), fast-forwarded. */
 async function flushAllDue(t: ReturnType<typeof convexTest>) {
   await t.run(async (ctx) => {
     for (const row of await ctx.db.query('notificationQueue').collect()) {
@@ -226,7 +226,7 @@ describe('comments — report_commented (N8/B1)', () => {
     expect(toB?.payload).toMatchObject({ reply: true, commentIds: [reply], actorIds: [c.id] });
   });
 
-  test('a comment removed inside the settle window never sends; a blocked commenter is muted (D166)', async () => {
+  test('a comment removed inside the settle window never sends; a blocked commenter is muted (D169)', async () => {
     const t = convexTest(schema, modules);
     const author = await seedUser(t, 'author');
     const b = await seedUser(t, 'b');

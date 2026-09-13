@@ -23,6 +23,7 @@ import {
   SURFACE_TAGS,
   type SurfaceTag,
 } from './types';
+import { sanitizeWeatherFilter, type WeatherDiscoveryFilter } from './weatherDiscovery';
 
 /** Surface tags that mark a report as snow-covered — the basis for the "no snow" filter (decision #3). */
 export const SNOW_SURFACE_TAGS: readonly SurfaceTag[] = ['snow_covered', 'drifted'];
@@ -59,6 +60,18 @@ export interface FeedFilters {
   surfaceTags?: SurfaceTag[];
   /** Only reports whose skate-end is within the last N hours. Applies to favorites too. */
   recencyHours?: number;
+  /**
+   * Weather-first discovery (N6h / D159, D166): *"at least N nights below T, no snow since"*. Read by
+   * the feed, which then also lists matching **bodies** as their own cards (D165), and by the map,
+   * which dims everything that does not match. Applies to reports as a hard narrow on the report's
+   * body — favorites included, since the question is about the lake and not the person.
+   */
+  weather?: WeatherDiscoveryFilter;
+  /**
+   * The escape hatch (D159): keep the feed to reports even while a weather filter is active. Without
+   * a weather filter it is inert — body cards only ever appear under one.
+   */
+  onlyReports?: boolean;
 }
 
 /** Per-report context the filters need beyond the report itself: its band, favorite flag, and `now`. */
@@ -69,6 +82,13 @@ export interface FilterContext {
   isFavorite: boolean;
   /** Current time (epoch ms), injected so recency is deterministic/testable. */
   now: number;
+  /**
+   * Whether the report's body satisfies `filters.weather`, resolved by the caller from the body's
+   * filter-tier digest. Ignored when no weather filter is set. `undefined` under a weather filter
+   * means the caller could not resolve it, and the report is dropped — a weather filter is a claim
+   * about a lake, and a report from a lake nobody checked is not a match.
+   */
+  weatherMatched?: boolean;
 }
 
 /** Largest numeric thickness a reading asserts (a single value, or the upper end of a range). */
@@ -96,6 +116,10 @@ export function matchesFilters(
   if (filters.radiusMinutes !== undefined && !ctx.isFavorite) {
     if (!bandWithinRadius(ctx.band, filters.radiusMinutes)) return false;
   }
+
+  // Weather — HARD, favorites included (D166): the question is about the lake's cold chain, and a
+  // favorited lake that has not frozen is still a lake that has not frozen.
+  if (filters.weather !== undefined && ctx.weatherMatched !== true) return false;
 
   // Recency — applies to everyone, favorites included.
   if (filters.recencyHours !== undefined) {
@@ -188,5 +212,34 @@ export function sanitizeFeedFilters(raw: unknown): FeedFilters {
     filters.recencyHours = input.recencyHours;
   }
 
+  const weather = sanitizeWeatherFilter(input.weather);
+  if (weather) filters.weather = weather;
+  if (input.onlyReports === true) filters.onlyReports = true;
+
   return filters;
+}
+
+/** Does this filter row engage discovery at all — is there a weather filter to draw or list by? */
+export function hasWeatherFilter(filters: FeedFilters): filters is FeedFilters & {
+  weather: WeatherDiscoveryFilter;
+} {
+  return filters.weather !== undefined;
+}
+
+/** The row with the weather knob and its escape hatch cleared — what the map's "Clear" chip does. */
+export function withoutWeatherFilter(filters: FeedFilters): FeedFilters {
+  const { weather: _weather, onlyReports: _onlyReports, ...rest } = filters;
+  return rest;
+}
+
+/**
+ * The map's view of the row (D166): weather plus the drive-time radius, and nothing that describes a
+ * report rather than a place. Quality floors and ice types would pass every body under the
+ * include-unknown rule anyway; leaving them off is what makes the map's narrow mean something.
+ */
+export function mapFilters(filters: FeedFilters): Pick<FeedFilters, 'weather' | 'radiusMinutes'> {
+  return {
+    ...(filters.weather !== undefined ? { weather: filters.weather } : {}),
+    ...(filters.radiusMinutes !== undefined ? { radiusMinutes: filters.radiusMinutes } : {}),
+  };
 }

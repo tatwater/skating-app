@@ -8,7 +8,7 @@ import {
   faUser,
 } from '@fortawesome/sharp-duotone-solid-svg-icons';
 import { api } from '@skating/convex/api';
-import { deviceTimeZone, type NotificationTarget, timezoneNeedsSync } from '@skating/core';
+import { deviceTimeZone, type NotificationTarget, timezoneToSync } from '@skating/core';
 import { useMutation, useQuery } from 'convex/react';
 import * as Notifications from 'expo-notifications';
 import { Tabs, useRouter } from 'expo-router';
@@ -64,7 +64,7 @@ function TabIcon({ icon, color, size }: { icon: IconDefinition; color: ColorValu
 
 /**
  * The five co-primary tabs from the app structure (00-vision / D28):
- * Map (default) · Newsfeed · Report · Bounties · You.
+ * Map (default) · Latest · Report · Bounties · You.
  *
  * Icons are FontAwesome **Sharp Duotone**, rendered through `react-native-svg` — no icon font, so
  * nothing here needs a native rebuild beyond the SVG dep the app already carries. Duotone is the
@@ -97,10 +97,8 @@ export default function TabsLayout() {
   const storedZone = profile?.timezone;
   useEffect(() => {
     if (!hasProfile) return;
-    const device = deviceTimeZone();
-    if (timezoneNeedsSync(storedZone, device)) {
-      void setTimezone({ timezone: device }).catch(() => {});
-    }
+    const timezone = timezoneToSync(storedZone, deviceTimeZone());
+    if (timezone !== null) void setTimezone({ timezone }).catch(() => {});
   }, [hasProfile, storedZone, setTimezone]);
 
   // The offline inbox is per device; bind it to whoever is signed in, so a previous account's page
@@ -185,7 +183,7 @@ export default function TabsLayout() {
       <Tabs.Screen
         name="feed"
         options={{
-          title: 'Newsfeed',
+          title: 'Latest',
           tabBarIcon: ({ color, size }) => <TabIcon icon={faNewspaper} color={color} size={size} />,
         }}
       />

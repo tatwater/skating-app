@@ -14,6 +14,7 @@
 
 import {
   CLAIM_SOURCES,
+  COLD_CHAIN_THRESHOLDS_F,
   CONDITION_SOURCES,
   CONFIDENCE_LEVELS,
   DEPTH_SOURCES,
@@ -136,6 +137,16 @@ export default defineSchema({
         iceTypes: v.optional(v.array(literals(ICE_TYPES))),
         surfaceTags: v.optional(v.array(literals(SURFACE_TAGS))),
         recencyHours: v.optional(v.number()),
+        // Weather-first discovery (N6h / D166): the same row the map reads. Persisted like the rest
+        // because the founder wanted it to survive a session (call 26).
+        weather: v.optional(
+          v.object({
+            thresholdF: literals(COLD_CHAIN_THRESHOLDS_F),
+            minNights: v.number(),
+            noSnowSince: v.optional(v.boolean()),
+          }),
+        ),
+        onlyReports: v.optional(v.boolean()),
       }),
     ),
     // Two independent notification radii (Phase 4, decision #4): X₁ for the "all nearby" digest, X₂
@@ -163,7 +174,7 @@ export default defineSchema({
     timezone: v.optional(v.string()),
     /**
      * The primary email, mirrored from the Clerk identity's `email` claim at `upsertFromClerk` (N8
-     * PR 3 / D171) — the same posture as `profileImageUrl`: Clerk owns it, we hold a copy so a send is
+     * PR 3 / D174) — the same posture as `profileImageUrl`: Clerk owns it, we hold a copy so a send is
      * not a Clerk API call per recipient (`lib/clerkEmail` says why that doesn't scale). PRIVATE:
      * never on a public profile, scrubbed at the deletion request and again at the tombstone. Absent
      * when the JWT template carries no email; the sender then falls back to one Clerk lookup and
@@ -171,13 +182,13 @@ export default defineSchema({
      */
     email: v.optional(v.string()),
     /**
-     * The two transports over the inbox (D171): a phone push, and an email for the types in
+     * The two transports over the inbox (D174): a phone push, and an email for the types in
      * `NOTIFICATION_EMAIL_ELIGIBLE`. Not a per-type matrix — the per-type toggles decide *what*, these
      * decide *how far*. Absent ⇒ both on (`CHANNEL_PREF_DEFAULTS`).
      */
     channelPrefs: v.optional(v.object({ push: v.boolean(), email: v.boolean() })),
     /**
-     * The secret behind the one-click unsubscribe link in every email (D171). Minted the first time
+     * The secret behind the one-click unsubscribe link in every email (D174). Minted the first time
      * a mail goes out; rotated to nothing at deletion. Knowing it lets the holder turn this person's
      * email channel **off** — and nothing else — which is the one thing a link in an email must be
      * able to do without a sign-in.
@@ -390,8 +401,12 @@ export default defineSchema({
      * both saw one session, and the ladder in core's `activityDedup.ts` picked the other one. Never
      * deleted: the record that two devices saw it is cheap, and a deletion is unrecoverable if the
      * ladder was wrong. A superseded row is skipped by the prompt sweep and the unreported-skates
-     * list; if it carried a `linkedReportId` the link moved to the winner. Unreachable today (one
-     * provider), stored so the rule exists before the second source does.
+     * list; if it carried a `linkedReportId` the link moved to the winner (when the winner was free
+     * and had a track to give the report), and a link that arrives *after* the dedup
+     * (`linkActivityToReport`) is redirected the same way. A superseded row that *kept* a link draws
+     * on the aggregate-tracks layer only when its winner cannot (no path, or a hidden report) — each
+     * skate once, from the copy that can. Unreachable today (one provider), stored so the rule exists
+     * before the second source does.
      */
     supersededByActivityId: v.optional(v.id('gpsActivities')),
   })
@@ -402,6 +417,12 @@ export default defineSchema({
     // fields are required, so no sparse-index trap — and the sweep flips the row to `prompted`, so a
     // row leaves this range the moment it's been asked about.
     .index('by_prompt_state_detected', ['promptState', 'detectedAt'])
+    // The sweep's dedup candidates (N8/B4a, PR #53 review): a same-skate copy starts within
+    // `ACTIVITY_DEDUP_START_WINDOW_MS` of the due row, so the read is a start-time window per due
+    // row. `by_user` orders by *insertion*, and "the 50 most recently inserted" is the wrong set —
+    // an already-prompted copy behind fifty later syncs fell out of it and the skate was asked
+    // about twice.
+    .index('by_user_start_time', ['userId', 'startTime'])
     /**
      * The aggregate-tracks layer, season-scoped (N5a/D63).
      *
@@ -1435,6 +1456,96 @@ export default defineSchema({
     /** Set only by the final page. Absent means in flight. */
     completedAt: v.optional(v.number()),
   }).index('by_tier', ['tier']),
+
+  /**
+   * **Which filter-tier cell each body and bay sits in (N6h Workstream E / D159, D165).**
+   *
+   * The reverse of `bodyWeatherCell(body, 'filter')`: a cell is a pure function of a body's point,
+   * but discovery needs *cell → bodies*, and Convex has no computed index. One row per body, plus one
+   * per live bay of a giant — Champlain's ten bays sit in ten different cells and none of them is the
+   * lake's own, so a bodies-only join would make *"which part of the lake matched"* unanswerable.
+   * That is why this is a table and not a `weatherCellKeyB` field on `waterBodies` (there is no
+   * array index either).
+   *
+   * Written by the registry walk (`backfillWeatherCells`), which already visits every body and bay
+   * to compute their cells — so the join costs nothing extra, inherits the import-triggered
+   * reconcile, and is pruned by the same `runId` rule as `weatherCells`.
+   */
+  bodyWeatherCells: defineTable({
+    cellKey: v.string(), // the body's or bay's `filter` cell
+    waterBodyId: v.id('waterBodies'),
+    /** Present on a bay's row; absent on the body's own. */
+    subAreaId: v.optional(v.id('waterBodySubAreas')),
+    /**
+     * `subAreaId !== undefined`, flattened so the bay rows can be indexed as a set. An optional
+     * field's index is not sparse (rows lacking it sort first under `undefined`), so a range on
+     * `subAreaId` alone cannot select "only bays" — see the optional-index note in the memory.
+     */
+    isBay: v.boolean(),
+    /** The walk that last stamped this row — see `weatherCells.runId`. */
+    runId: v.string(),
+    updatedAt: v.number(),
+  })
+    // Discovery: every occupant of a matched cell.
+    .index('by_cell', ['cellKey'])
+    // The upsert key: a body's own row has no `subAreaId`, a bay's has one.
+    .index('by_body', ['waterBodyId', 'subAreaId'])
+    // The map's bay pass: every bay membership, ~128 rows, so a giant matched through a bay draws
+    // undimmed.
+    .index('by_bay', ['isBay', 'cellKey']),
+
+  /**
+   * **One rolling digest per filter-tier cell — what discovery actually reads (N6h / D159, D165).**
+   *
+   * ## Why not query `weatherDays`
+   *
+   * *"Three nights below 20°F and no snow since"* over 3,043 cells × a window of days is ~21,000
+   * documents in one query, against the 16,384-document read cap — the headline use case would not
+   * run. So the daily sweep reduces each cell's recent complete days to one small row holding
+   * exactly what a filter asks about (`buildWeatherCellDigest` in core), rebuilt from the rows over a
+   * bounded window after every ingest rather than kept incrementally, because the gap sweep can
+   * rewrite a past day.
+   *
+   * ## Why the chain lengths are flat, indexed fields
+   *
+   * In a real January every cell in Vermont matches, so reading every digest and testing it is a
+   * full-table read on the query that matters most. Four indexes — one per D164 threshold — let the
+   * query walk from the requested length upward and read only digests that can match.
+   *
+   * `lat`/`lng` are the cell's snapped centre, copied from the registry so the drive-time band and
+   * the viewport can be applied to cells before a single body is read.
+   */
+  weatherCellDigests: defineTable({
+    cellKey: v.string(),
+    lat: v.number(),
+    lng: v.number(),
+    /** The newest complete day the digest describes, in the cell's own zone. */
+    asOfDayMs: v.number(),
+    daysKnown: v.number(),
+    chains: v.array(
+      v.object({
+        thresholdF: literals(COLD_CHAIN_THRESHOLDS_F),
+        nights: v.number(),
+        startDayMs: v.number(),
+        coldNightMask: v.number(),
+        openEnded: v.boolean(),
+        snowSinceStartCm: v.number(),
+        snowUnknownDays: v.number(),
+      }),
+    ),
+    nightsBelow32F: v.number(),
+    nightsBelow20F: v.number(),
+    nightsBelow10F: v.number(),
+    nightsBelow0F: v.number(),
+    updatedAt: v.number(),
+  })
+    .index('by_key', ['cellKey'])
+    // The availability gate: "is there any digest fresh enough to answer?" — one indexed `first()`.
+    .index('by_as_of', ['asOfDayMs'])
+    .index('by_nights_32', ['nightsBelow32F'])
+    .index('by_nights_20', ['nightsBelow20F'])
+    .index('by_nights_10', ['nightsBelow10F'])
+    .index('by_nights_0', ['nightsBelow0F']),
 
   /**
    * **Daily weather observations — an archive, not a cache (N6h / D153).**
@@ -2479,8 +2590,8 @@ export default defineSchema({
     .index('by_expires_at', ['expiresAt']),
 
   /**
-   * The inbox (N8 / D164). One row per delivered notification; **only the queue flush inserts here**
-   * (D166), so a push or email transport has one place to hang off rather than six.
+   * The inbox (N8 / D167). One row per delivered notification; **only the queue flush inserts here**
+   * (D169), so a push or email transport has one place to hang off rather than six.
    *
    * `payload` stays `v.any()` deliberately. Its shape is typed at the boundary instead —
    * `lib/notificationQueue.ts` builds it and `lib/notificationResolve.ts` parses it, rendering
@@ -2919,7 +3030,7 @@ export default defineSchema({
   // `flushAfter` has passed — the 8pm-ET digest is just a `flushAfter` set to the next 8pm; favorites/
   // great use a short debounce. `coalesceKey` seeds the eventual APNs collapse-id / Android tag.
   //
-  // **N8 / D166 widened this into the only path into `notifications`.** The actor-triggered types
+  // **N8 / D169 widened this into the only path into `notifications`.** The actor-triggered types
   // (thumbs, corroborations, comments, hazard lifecycle, flag verdicts, bounties) used to insert
   // directly; now they enqueue with a short settle window and a `trigger` the flush re-reads, so a
   // retracted thumb or a deleted comment never becomes a notification about something that isn't

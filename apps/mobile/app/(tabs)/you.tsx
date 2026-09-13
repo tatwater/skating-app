@@ -503,7 +503,7 @@ function NotificationSettings() {
 }
 
 /**
- * The two transports (N8 PR 3 / D171) — the per-type toggles above say *what*, these say *how far*:
+ * The two transports (N8 PR 3 / D174) — the per-type toggles above say *what*, these say *how far*:
  * a push to your phones, an email for the types worth one. Plus the one device-level switch, "this
  * phone", which is where notification permission is actually asked for (never on cold launch).
  */

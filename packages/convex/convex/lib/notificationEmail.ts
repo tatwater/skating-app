@@ -1,5 +1,5 @@
 /**
- * The email rendering of a notification (N8 PR 3 / D171): one resolved `NotificationView` → a
+ * The email rendering of a notification (N8 PR 3 / D174): one resolved `NotificationView` → a
  * subject, an HTML body and a text body, with the deep link and the unsubscribe footer.
  *
  * Deliberately plain. The sentence is `describeNotification`'s — the same one the inbox and the push

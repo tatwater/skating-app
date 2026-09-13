@@ -1,25 +1,28 @@
 import BottomSheet, { BottomSheetScrollView } from '@gorhom/bottom-sheet';
 import { api } from '@skating/convex/api';
 import {
+  type BodyResultData,
   type FeedCardData,
-  type FeedFilters,
   formatSeason,
   groupFeedSections,
+  hasWeatherFilter,
+  interleaveLatest,
   seasonOf,
 } from '@skating/core';
-import { useMutation, usePaginatedQuery, useQuery } from 'convex/react';
+import { usePaginatedQuery, useQuery } from 'convex/react';
+import { useRouter } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { FlatList, RefreshControl } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { H1, Paragraph, Spinner, Text, useTheme, YStack } from 'tamagui';
+import { BodyResultCard } from '../../src/components/BodyResultCard';
 import { FeedCard } from '../../src/components/FeedCard';
 import { FeedFilterBar } from '../../src/components/FeedFilterBar';
 import { MapSelectionProvider } from '../../src/components/MapSelectionContext';
 import { ProfileSearch } from '../../src/components/ProfileSearch';
 import { RecommendedCard } from '../../src/components/RecommendedCard';
 import { ReportDetail } from '../../src/components/ReportDetail';
-import { reconcileFilters } from '../../src/lib/feedFilters';
-import { loadStoredFilters, saveStoredFilters } from '../../src/lib/feedFiltersStore';
+import { useFeedFilters } from '../../src/lib/feedFiltersStore';
 import { cacheReports, loadCachedReports } from '../../src/lib/reportCache';
 
 /** Feed page size per `usePaginatedQuery` load. */
@@ -32,18 +35,31 @@ const PAGE_SIZE = 20;
 type FeedListItem =
   | { kind: 'header'; key: string; label: string }
   | { kind: 'card'; data: FeedCardData }
+  | { kind: 'body'; data: BodyResultData }
   | { kind: 'recommended'; key: string; cards: FeedCardData[] };
 
 /**
- * Newsfeed tab (Phase 5) — the mobile mirror of web's `/feed`. Reads `reports.listFeed` (global,
- * newest skate-end time first) via `usePaginatedQuery` into a `FlatList` with pull-to-refresh and
- * infinite scroll, and opens a tapped report in a `@gorhom/bottom-sheet` (the Phase 2 drawer pattern,
- * reusing the shared `ReportDetail`) so the feed scroll position survives. All reports are public
- * (D13); a blocked author's report still shows, de-emphasized (D3).
+ * Latest tab (Phase 5, renamed from Newsfeed by N6h/D159) — the mobile mirror of web's `/feed`.
+ * Reads `reports.listFeed` (global, newest skate-end time first) via `usePaginatedQuery` into a
+ * `FlatList` with pull-to-refresh and infinite scroll, and opens a tapped report in a
+ * `@gorhom/bottom-sheet` (the Phase 2 drawer pattern, reusing the shared `ReportDetail`) so the
+ * feed scroll position survives. All reports are public (D13); a blocked author's report still
+ * shows, de-emphasized (D3).
+ *
+ * Under a weather filter the list is heterogeneous (D165): `weatherDiscovery.listBodyResults`
+ * supplies the lakes whose cold chain matched, and `interleaveLatest` slots them among the reports
+ * by the day each crossed the requested number of nights. A lake card opens the lake on the map.
  */
 export default function NewsfeedScreen() {
   const theme = useTheme();
+  const router = useRouter();
   const filters = useFeedFilters();
+  const weatherActive = hasWeatherFilter(filters.value);
+  const discovery = useQuery(api.weatherDiscovery.status, {});
+  const bodyResults = useQuery(
+    api.weatherDiscovery.listBodyResults,
+    weatherActive && !filters.value.onlyReports ? { filters: filters.value } : 'skip',
+  );
   const { results, status, loadMore } = usePaginatedQuery(
     api.reports.listFeed,
     { filters: filters.value },
@@ -100,12 +116,22 @@ export default function NewsfeedScreen() {
   const listItems: FeedListItem[] = [
     ...recommendedItems,
     ...groupFeedSections(
-      feedData.filter((d) => !recommendedIds.has(d.reportId)),
-      (d) => d.skateEndTime,
+      interleaveLatest(
+        feedData.filter((d) => !recommendedIds.has(d.reportId)),
+        (d) => d.skateEndTime,
+        // Never from the offline cache: a cached report list has no matching body list.
+        isOfflineFallback ? [] : (bodyResults?.results ?? []),
+        status === 'Exhausted',
+      ),
+      (item) => (item.kind === 'report' ? item.data.skateEndTime : item.data.eventMs),
       now,
     ).flatMap((section) => [
       { kind: 'header' as const, key: `header:${section.key}`, label: section.label },
-      ...section.items.map((data) => ({ kind: 'card' as const, data })),
+      ...section.items.map((item) =>
+        item.kind === 'report'
+          ? { kind: 'card' as const, data: item.data }
+          : { kind: 'body' as const, data: item.data },
+      ),
     ]),
   ];
 
@@ -128,7 +154,13 @@ export default function NewsfeedScreen() {
     <SafeAreaView style={{ flex: 1 }} edges={['top', 'bottom']}>
       <FlatList<FeedListItem>
         data={listItems}
-        keyExtractor={(item) => (item.kind === 'card' ? item.data.reportId : item.key)}
+        keyExtractor={(item) =>
+          item.kind === 'card'
+            ? item.data.reportId
+            : item.kind === 'body'
+              ? `body:${item.data.waterBodyId}`
+              : item.key
+        }
         contentContainerStyle={{ padding: 16, gap: 12 }}
         keyboardShouldPersistTaps="handled"
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
@@ -138,7 +170,7 @@ export default function NewsfeedScreen() {
         }}
         ListHeaderComponent={
           <YStack gap="$4" paddingBottom="$2">
-            <H1 color="$foreground">Newsfeed</H1>
+            <H1 color="$foreground">Latest</H1>
             {isOfflineFallback ? (
               <Text color="$foregroundMuted" fontSize={13}>
                 Offline — showing recently saved reports.
@@ -156,7 +188,7 @@ export default function NewsfeedScreen() {
               <ProfileSearch />
             </YStack>
             <PastSeasonNotice results={feedData} now={now} />
-            <FeedFilterBar filters={filters.value} onChange={filters.set} />
+            <FeedFilterBar filters={filters.value} onChange={filters.set} weather={discovery} />
           </YStack>
         }
         renderItem={({ item }) => {
@@ -175,6 +207,22 @@ export default function NewsfeedScreen() {
           if (item.kind === 'recommended') {
             return <RecommendedCard cards={item.cards} now={now} onOpen={setSelectedReportId} />;
           }
+          if (item.kind === 'body') {
+            return (
+              <BodyResultCard
+                data={item.data}
+                now={now}
+                onOpen={(sub) =>
+                  router.navigate({
+                    pathname: '/water/[id]',
+                    params: sub
+                      ? { id: item.data.waterBodyId, sub }
+                      : { id: item.data.waterBodyId },
+                  })
+                }
+              />
+            );
+          }
           return (
             <FeedCard
               data={item.data}
@@ -190,8 +238,11 @@ export default function NewsfeedScreen() {
             </YStack>
           ) : (
             <Paragraph color="$foregroundMuted" paddingHorizontal="$1">
-              No reports yet. When skaters post from the map, the freshest reads across every lake
-              show up here — newest first.
+              {weatherActive && discovery?.available === false
+                ? 'No weather data yet this season, so the weather filter cannot match any lake. It fills in once the region freezes.'
+                : weatherActive
+                  ? 'No lake matches that weather yet, and no matching reports on this page.'
+                  : 'No reports yet. When skaters post from the map, the freshest reads across every lake show up here — newest first.'}
             </Paragraph>
           )
         }
@@ -225,35 +276,6 @@ export default function NewsfeedScreen() {
       </BottomSheet>
     </SafeAreaView>
   );
-}
-
-/**
- * Feed-filter state (Phase 4, decision #6): device sqlite is the working copy (instant, offline-safe),
- * `profiles.feedFilterPrefs` is the durable server-sync copy. Load local on mount; once the profile
- * arrives, reconcile once (LWW — non-empty local wins, else adopt server). Each change writes local
- * immediately and syncs the server copy.
- */
-function useFeedFilters(): { value: FeedFilters; set: (next: FeedFilters) => void } {
-  const [value, setValue] = useState<FeedFilters>(() => loadStoredFilters());
-  const profile = useQuery(api.profiles.current, {});
-  const setServer = useMutation(api.profiles.setFeedFilterPrefs);
-  const reconciled = useRef(false);
-
-  useEffect(() => {
-    if (reconciled.current || profile === undefined) return;
-    reconciled.current = true;
-    const merged = reconcileFilters(loadStoredFilters(), profile?.feedFilterPrefs);
-    setValue(merged);
-    saveStoredFilters(merged);
-  }, [profile]);
-
-  const set = (next: FeedFilters) => {
-    setValue(next);
-    saveStoredFilters(next);
-    if (profile) void setServer({ filters: next });
-  };
-
-  return { value, set };
 }
 
 /**

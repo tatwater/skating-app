@@ -35,10 +35,16 @@
  */
 
 import {
+  type ColdChain,
+  type ColdChainThresholdF,
+  coldChain,
+  describeColdChain,
+  thresholdLabel,
+} from './coldChain';
+import {
   cmToInches,
   cToF,
   formatPrecipInches,
-  formatTemperatureF,
   formatWindMph,
   kphToMph,
   mmToInches,
@@ -48,7 +54,7 @@ import {
   dominantWindSector,
   isCompleteDay,
   lastSnowDay,
-  nightsBelowThresholdC,
+  monthDayLabel,
   snowfallTotalCm,
   type WeatherDaySummary,
 } from './weatherDay';
@@ -89,8 +95,11 @@ export const PANEL_SNOW_THRESHOLD_CM = 0.5;
 /** Rain above this (mm) in a day can resurface ice if a freeze follows — the event skaters chase. */
 export const RESURFACE_RAIN_MM = 2;
 
-/** The "nights below" threshold the panel reports, in °C. −6.7°C ≈ 20°F. */
-export const HARD_FREEZE_NIGHT_C = -6.7;
+/**
+ * The "nights below" threshold the panel reports — 20°F, the founder's. One of D164's pinned
+ * thresholds, so the drawer and the discovery filter cannot describe the same lake with two numbers.
+ */
+export const HARD_FREEZE_NIGHT_F: ColdChainThresholdF = 20;
 
 export interface PastWeatherRow {
   dayMs: number;
@@ -219,27 +228,6 @@ export function formatLocalHour(localHour: number): string {
   return `${localHour % 12 === 0 ? 12 : localHour % 12} ${suffix}`;
 }
 
-/** `2026-01-15` → `Jan 15`, for prose lines that name a date. */
-export function monthDayLabel(localDate: string): string {
-  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(localDate);
-  if (!m) return localDate;
-  const months = [
-    'Jan',
-    'Feb',
-    'Mar',
-    'Apr',
-    'May',
-    'Jun',
-    'Jul',
-    'Aug',
-    'Sep',
-    'Oct',
-    'Nov',
-    'Dec',
-  ];
-  return `${months[Number(m[2]) - 1] ?? '?'} ${Number(m[3])}`;
-}
-
 /**
  * Turn stored day rows into the panel.
  *
@@ -259,6 +247,12 @@ export function buildPastWeatherPanel(
      */
     todayLocalDayMs: number;
     coarse?: boolean;
+    /**
+     * The cold chain computed server-side over a wider window than the panel draws (D164). The
+     * panel shows seven days; a chain that started three weeks ago would otherwise read "7+ nights"
+     * for the rest of the winter. When absent the panel computes the chain over its own days.
+     */
+    chain?: ColdChain;
   },
 ): PastWeatherPanel {
   const rows: PastWeatherRow[] = [];
@@ -296,7 +290,7 @@ export function buildPastWeatherPanel(
   const partialDays = rows.filter((r) => r.partial).length;
 
   return {
-    headline: buildHeadline(complete, missingDays, partialDays),
+    headline: buildHeadline(complete, missingDays, partialDays, options.chain),
     rows,
     missingDays,
     partialDays,
@@ -347,6 +341,7 @@ function buildHeadline(
   days: readonly WeatherDaySummary[],
   missingDays: number,
   partialDays = 0,
+  servedChain?: ColdChain,
 ): string[] {
   // ⚠ `days` is finished days only. Every "in the last N days" below counts `days.length`, so if a
   // partial row ever leaks back in here those sentences silently start describing an unfinished
@@ -354,14 +349,24 @@ function buildHeadline(
   if (days.length === 0) return [];
   const lines: string[] = [];
 
-  // 1. How many hard-freeze nights, the single most-asked question.
-  const nights = nightsBelowThresholdC(days, HARD_FREEZE_NIGHT_C);
+  // 1. How many hard-freeze nights, the single most-asked question — as a **chain** (D164), the same
+  //    `coldChain` the discovery filter reads, so "4 nights below 20°F" means one thing on the card
+  //    and in the drawer. A chain that reaches the window's oldest day prints "7+".
   const knownNights = days.filter((d) => d.nightMinTempC !== null).length;
   if (knownNights > 0) {
+    const chain =
+      servedChain ??
+      coldChain(
+        days.map((d) => ({
+          dayMs: d.dayMs,
+          nightMinTempC: d.nightMinTempC,
+          snowfallCm: d.snowfallCm,
+        })),
+        HARD_FREEZE_NIGHT_F,
+      );
     lines.push(
-      nights === 0
-        ? `No nights below ${formatTemperatureF(HARD_FREEZE_NIGHT_C)} in the last ${knownNights} night${knownNights === 1 ? '' : 's'}`
-        : `${nights} night${nights === 1 ? '' : 's'} below ${formatTemperatureF(HARD_FREEZE_NIGHT_C)}`,
+      describeColdChain(chain) ??
+        `No nights below ${thresholdLabel(HARD_FREEZE_NIGHT_F)} in the last ${knownNights} night${knownNights === 1 ? '' : 's'}`,
     );
   }
 

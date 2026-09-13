@@ -281,6 +281,8 @@ export interface MappableBody {
 export function waterBodiesToFeatureCollection(
   bodies: readonly MappableBody[],
   selfFlaggedIds: ReadonlySet<string> = new Set(),
+  /** Bodies the active weather filter did not match (N6h / D166) — drawn dimmed, never hidden. */
+  weatherDimmedIds: ReadonlySet<string> = new Set(),
 ): GeoJSON.FeatureCollection {
   return {
     type: 'FeatureCollection',
@@ -294,6 +296,7 @@ export function waterBodiesToFeatureCollection(
         type: body.type,
         noPublicAccess: body.publicAccess?.verdict === 'none',
         selfFlagged: selfFlaggedIds.has(body._id),
+        weatherDimmed: weatherDimmedIds.has(body._id),
       },
     })),
   };

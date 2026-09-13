@@ -299,7 +299,7 @@ function NotificationSettings() {
             return <div key={key}>{toggle(key)}</div>;
           })}
 
-          {/* The two transports (N8 PR 3 / D171): what the toggles above pick, these carry — push
+          {/* The two transports (N8 PR 3 / D174): what the toggles above pick, these carry — push
               goes to the phones this account is signed in on; email only for the digest-class types. */}
           <div className="flex flex-col gap-3 border-border border-t pt-4">
             <h3 className="font-mono text-foreground-muted text-xs uppercase tracking-widest">

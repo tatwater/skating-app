@@ -86,13 +86,24 @@ export function dimmedForAccessExpression(): unknown[] {
   return ['any', ['==', ['get', 'noPublicAccess'], true], ['==', ['get', 'selfFlagged'], true]];
 }
 
-/** Wrap a layer's existing opacity expression (or constant) with the access dim. */
+/**
+ * The access dim **or** the discovery dim (N6h / D166): a body that does not match the active
+ * weather filter rides the same properties-bag mechanism (`weatherDimmed`) and the same scale, so
+ * both platforms get one visual effect from one expression. The founder chose dim-only over a
+ * match highlight — *"I don't think we should confuse things by using the favorites colors just
+ * for match results"* — so there is no second branch here.
+ */
+export function dimmedExpression(): unknown[] {
+  return ['any', dimmedForAccessExpression(), ['==', ['get', 'weatherDimmed'], true]];
+}
+
+/**
+ * Wrap a layer's existing opacity expression (or constant) with the dim. Named for the access dim
+ * it was built for; since D166 it carries the discovery dim too, and every water layer on both
+ * clients goes through it.
+ */
 export function withAccessDim(baseOpacity: unknown): unknown[] {
-  return [
-    '*',
-    baseOpacity,
-    ['case', dimmedForAccessExpression(), NO_PUBLIC_ACCESS_OPACITY_SCALE, 1],
-  ];
+  return ['*', baseOpacity, ['case', dimmedExpression(), NO_PUBLIC_ACCESS_OPACITY_SCALE, 1]];
 }
 
 /**

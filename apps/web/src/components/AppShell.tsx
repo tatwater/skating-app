@@ -2,7 +2,7 @@ import { useAuth } from '@clerk/tanstack-react-start';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faBell } from '@fortawesome/sharp-regular-svg-icons';
 import { api } from '@skating/convex/api';
-import { deviceTimeZone, timezoneNeedsSync } from '@skating/core';
+import { deviceTimeZone, timezoneToSync } from '@skating/core';
 import { Link, useRouterState } from '@tanstack/react-router';
 import { useMutation, useQuery } from 'convex/react';
 import { type ReactNode, useEffect } from 'react';
@@ -14,7 +14,8 @@ import { ThemeToggle } from './theme-toggle';
 import { Button } from './ui/button';
 
 /**
- * Chrome for the signed-in app: the two co-primary top-level pages (Map · Newsfeed, D28)
+ * Chrome for the signed-in app: the two co-primary top-level pages (Map · Latest, D28; renamed from
+ * Newsfeed by N6h/D159)
  * plus profile / settings / sign-out and the theme toggle. Report + Bounties are folded
  * into the pages themselves (D47), so they're not nav items. Rendered only in the `app`
  * zone (see `AuthGate`).
@@ -51,10 +52,8 @@ export function AppShell({ children }: { children: ReactNode }) {
   const storedZone = profile?.timezone;
   useEffect(() => {
     if (!hasProfile) return;
-    const device = deviceTimeZone();
-    if (timezoneNeedsSync(storedZone, device)) {
-      void setTimezone({ timezone: device }).catch(() => {});
-    }
+    const timezone = timezoneToSync(storedZone, deviceTimeZone());
+    if (timezone !== null) void setTimezone({ timezone }).catch(() => {});
   }, [hasProfile, storedZone, setTimezone]);
   const mapRoute = isMapRoute(pathname);
 
@@ -81,7 +80,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             Map
           </Link>
           <Link to="/feed" className={navLinkClass} activeProps={{ className: navActiveClass }}>
-            Newsfeed
+            Latest
           </Link>
           {profile?.role === 'moderator' || profile?.role === 'admin' ? (
             <Link to="/admin" className={navLinkClass} activeProps={{ className: navActiveClass }}>

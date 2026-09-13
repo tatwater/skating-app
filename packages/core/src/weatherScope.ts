@@ -63,6 +63,21 @@ export function resolveWeatherSubArea<T extends WeatherSubAreaCandidate>(
 }
 
 /**
+ * The point a body's weather is sampled at when nothing more specific is asked for — the same
+ * fallback chain `nearestSamplePoint` uses on the server, lifted here so the map can compute a
+ * body's *filter* cell from the row `listInViewport` already gave it (D166): the filter tier does
+ * not band by elevation, so the key is purely positional and the client can own the lookup.
+ * The server's `defaultSampleAnchor` delegates here; two chains would be two cells for one lake.
+ */
+export function bodyWeatherAnchor(body: {
+  interiorPoint?: { lat: number; lng: number };
+  representativePoint?: { lat: number; lng: number };
+  centroid: { lat: number; lng: number };
+}): { lat: number; lng: number } {
+  return body.interiorPoint ?? body.representativePoint ?? body.centroid;
+}
+
+/**
  * The point a sub-area's weather is sampled at.
  *
  * `representativePoint` when N2 stored one, else the deprecated `centroid` — both are the same

@@ -1,10 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { dayMsToLocalDate } from './weatherDay';
+import { dayMsToLocalDate, monthDayLabel } from './weatherDay';
 import {
   buildPastWeatherPanel,
   CALM_FREEZE_MAX_KPH,
   formatLocalHourLabel,
-  monthDayLabel,
   type PanelDay,
   shortDayLabel,
 } from './weatherPanel';
@@ -116,13 +115,36 @@ describe('buildPastWeatherPanel — headline', () => {
     expect(panelOf([gap('2026-01-15')]).headline).toEqual([]);
   });
 
-  it('leads with the count of hard-freeze nights', () => {
+  it('leads with the cold chain, and names its anchor (D164)', () => {
     const panel = panelOf([
       day('2026-01-14', { nightMinTempC: -12 }),
       day('2026-01-15', { nightMinTempC: -12 }),
       day('2026-01-16', { nightMinTempC: -1 }),
     ]);
-    expect(panel.headline[0]).toBe('2 nights below 20°F');
+    // The chain's first night is the window's oldest day, so it may extend further back — the "+".
+    // The mild 16th is inside the 48 h tolerance, so the chain is still alive. The action serves a
+    // chain over a wider window than the panel draws; here the panel computes its own.
+    expect(panel.headline[0]).toBe('2+ nights below 20°F, no snow since the first');
+  });
+
+  it('prints a chain that is bounded on both sides without the plus', () => {
+    const panel = panelOf([
+      day('2026-01-13', { nightMinTempC: -1 }),
+      day('2026-01-14', { nightMinTempC: -12 }),
+      day('2026-01-15', { nightMinTempC: -12 }),
+      day('2026-01-16', { nightMinTempC: -12 }),
+    ]);
+    expect(panel.headline[0]).toBe('3 nights below 20°F, no snow since the first');
+  });
+
+  it('dates the end of a chain that has broken', () => {
+    const panel = panelOf([
+      day('2026-01-13', { nightMinTempC: -12 }),
+      day('2026-01-14', { nightMinTempC: -12 }),
+      day('2026-01-15', { nightMinTempC: -1 }),
+      day('2026-01-16', { nightMinTempC: -1 }),
+    ]);
+    expect(panel.headline[0]).toBe('Run of 2+ nights below 20°F ended Jan 14');
   });
 
   it('states the absence of hard freezes rather than staying silent', () => {
@@ -174,7 +196,7 @@ describe('buildPastWeatherPanel — headline', () => {
       day('2026-02-03'),
       day('2026-02-04'),
     ]);
-    const line = panel.headline.find((l) => l.includes('snow'));
+    const line = panel.headline.find((l) => l.includes('last on'));
     expect(line).toContain('Feb 2');
     expect(line).toContain('3'); // 7.6 cm ≈ 3″
   });
@@ -228,17 +250,21 @@ describe('buildPastWeatherPanel — headline', () => {
   });
 
   it('handles a single day without pluralising wrongly', () => {
-    const panel = panelOf([day('2026-01-15', { nightMinTempC: -12 })]);
-    expect(panel.headline[0]).toBe('1 night below 20°F');
+    const panel = panelOf([
+      day('2026-01-14', { nightMinTempC: -1 }),
+      day('2026-01-15', { nightMinTempC: -12 }),
+    ]);
+    expect(panel.headline[0]).toBe('1 night below 20°F, no snow since the first');
   });
 
-  it('does not count a night it could not observe', () => {
+  it('does not count a night it could not observe, and does not let it break the chain', () => {
     const panel = panelOf([
+      day('2026-01-14', { nightMinTempC: -12 }),
       day('2026-01-15', { nightMinTempC: null }),
       day('2026-01-16', { nightMinTempC: -12 }),
     ]);
-    // One known night, one unknown: the count is over what is known, and the denominator says so.
-    expect(panel.headline[0]).toBe('1 night below 20°F');
+    // The unknown night consumes the 48 h tolerance rather than counting either way.
+    expect(panel.headline[0]).toBe('2+ nights below 20°F, no snow since the first');
   });
 });
 
@@ -250,7 +276,7 @@ describe('buildPastWeatherPanel — the two order traps', () => {
       day('2026-02-01', { snowfallCm: 10 }),
       day('2026-02-06', { snowfallCm: 1 }),
     ]);
-    const snowLine = panel.headline.find((l) => l.includes('snow'));
+    const snowLine = panel.headline.find((l) => l.includes('last on'));
     expect(snowLine).toContain('last on Feb 6');
     expect(snowLine).not.toContain('since Feb 6');
   });
@@ -284,7 +310,8 @@ describe('buildPastWeatherPanel — a realistic week', () => {
 
     expect(panel.rows).toHaveLength(5);
     expect(panel.rows[0]?.dayMs).toBe(base);
-    expect(panel.headline[0]).toBe('4 nights below 20°F');
+    // Four in a row from the 2nd; the 4th's snow fell inside the chain, and the line says so.
+    expect(panel.headline[0]).toBe('4 nights below 20°F, 2.4 in of snow since the first');
     expect(panel.headline).toContain('Rain on Feb 1');
     // "last on", never "since": the inches are the window total and Feb 4 is only the most recent
     // snow day, so "since Feb 4" would assert all of it fell after that date.

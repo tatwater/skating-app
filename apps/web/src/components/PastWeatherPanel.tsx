@@ -2,6 +2,7 @@ import { api } from '@skating/convex/api';
 import type { Id } from '@skating/convex/dataModel';
 import {
   buildPastWeatherPanel,
+  type ColdChain,
   dayMsToLocalDate,
   type PanelDay,
   shortDayLabel,
@@ -49,6 +50,8 @@ type PanelState = {
   coarse: boolean;
   largeBody: boolean;
   todayLocalDayMs: number;
+  /** The served cold chain (D164) — over `DIGEST_WINDOW_DAYS`, wider than the sentences. */
+  chain: ColdChain | undefined;
   loading: boolean;
   /** The lake the held data belongs to, so a bay switch can keep it and a lake switch cannot. */
   forBody: string | null;
@@ -62,6 +65,7 @@ function emptyPanel(forBody: string | null, loading: boolean): PanelState {
     coarse: false,
     largeBody: false,
     todayLocalDayMs: 0,
+    chain: undefined,
     loading,
     forBody,
   };
@@ -139,6 +143,9 @@ export function PastWeatherPanel({
           fetchProfileM: result.fetchProfileM,
           coarse: result.anyBorrowed,
           largeBody: result.oneSampleForALargeBody,
+          // The cold chain over a wider window than the sentences describe (D164), so a chain that
+          // began three weeks ago does not read "7+ nights" for the rest of the winter.
+          chain: result.chain,
           loading: false,
           forBody: waterBodyId,
         });
@@ -162,8 +169,9 @@ export function PastWeatherPanel({
       buildPastWeatherPanel(state.days, {
         coarse: state.coarse,
         todayLocalDayMs: state.todayLocalDayMs,
+        ...(state.chain ? { chain: state.chain } : {}),
       }),
-    [state.days, state.coarse, state.todayLocalDayMs],
+    [state.days, state.coarse, state.todayLocalDayMs, state.chain],
   );
 
   // Nothing held yet — a first open, or a new lake. A bay switch keeps the previous reading up.

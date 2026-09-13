@@ -627,7 +627,7 @@ export const createChecked = internalMutation({
 
 /**
  * Notify the eligible: authors who reported on this body within `windowHours` (decision 9). One
- * `bounty_request` per recent author, through the settle queue (N8 / D166) so a bounty cancelled a
+ * `bounty_request` per recent author, through the settle queue (N8 / D169) so a bounty cancelled a
  * moment after it was posted never rings anyone; the flush re-checks that it's still open. Never the
  * requester. The GPS-skate half of eligibility (D44) lands in Phase 8.
  */
@@ -686,7 +686,7 @@ export const cancel = mutation({
  * report to every open bounty on its body's `fulfillingReportIds` (the minimum bar is deliberately simple:
  * any new visible report on the body). Fulfillment itself waits for the requester's helpful thumb.
  *
- * **This is also where the requester finds out** (N8 / D167). Fulfillment can't happen until the
+ * **This is also where the requester finds out** (N8 / D170). Fulfillment can't happen until the
  * requester thumbs an attached report, and until N8 nothing told them one had arrived — the loop only
  * closed if they happened to have favorited the lake. Each attach enqueues a `bounty_answered` to the
  * requester; several reports inside the settle window coalesce into one "N reports came in", and the
@@ -735,7 +735,7 @@ export async function attachReportToOpenBounties(
  * Fulfillment-on-helpful (decisions 10–11) — invoked from `ratings.rate` when the **requester** thumbs a
  * fulfilling report helpful. Flips the bounty to `fulfilled` and awards `rewardPoints` (as
  * `bounty_fulfilled` → `bountyPoints`) to the **report author** — no notification to them since N8 /
- * D167; see the note at the end of the body. Guarded so a bounty
+ * D170; see the note at the end of the body. Guarded so a bounty
  * fulfills once: no-op unless still `open`, the rater is the requester, and the report is in its
  * fulfilling set. (The rater can't be the report author — self-rating is already blocked upstream — so
  * nobody rewards themselves.)
@@ -771,7 +771,7 @@ export async function fulfillBountyOnHelpful(
     delta: bounty.rewardPoints,
   });
   await checkAndAwardBadges(ctx, report.authorId);
-  // No notification to the author (N8 / D167): the requester's thumb is the thing that *made* this
+  // No notification to the author (N8 / D170): the requester's thumb is the thing that *made* this
   // report helpful, and they already see that thumb on the report. The one person who needed telling
   // — the requester, when the report first arrived — is told at attach time (`bounty_answered`).
 }
@@ -858,12 +858,12 @@ const ANSWERED_SCAN_CAP = 100;
 
 /**
  * How many bounties a report is attached to — the "at least N people were looking forward to this"
- * line after submit (N8 / D167). Only the report's own author gets a number: the count is a fact
+ * line after submit (N8 / D170). Only the report's own author gets a number: the count is a fact
  * about who asked, and a stranger reading "3 people wanted this" off someone else's report is a
  * signal nobody asked for.
  *
  * Counts **open, fulfilled and expired** bounties, not only open ones: the requester thumbing this
- * report helpful is the intended end of the D167 loop, and it flips the bounty to `fulfilled` — the
+ * report helpful is the intended end of the D170 loop, and it flips the bounty to `fulfilled` — the
  * one moment the sentence is most true is the moment an open-only count would have made it vanish.
  * Cancelled is the exception (the requester withdrew the ask). Reads the body's bounties by status
  * (bounded per status; the open set is a handful, the terminal sets grow across seasons) rather than

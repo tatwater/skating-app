@@ -42,8 +42,7 @@
  */
 
 import { cmToInches, cToF } from './units';
-import { dayMsToLocalDate } from './weatherDay';
-import { monthDayLabel } from './weatherPanel';
+import { dayMsToLocalDate, monthDayLabel } from './weatherDay';
 
 const DAY_MS = 86_400_000;
 
@@ -125,6 +124,76 @@ export interface SubAreaSpread {
   lines: SpreadLine[];
   /** The one-liner for the collapsed case; also usable as a heading when not collapsed. */
   summary: string;
+  /**
+   * The sorted bay lists (Workstream E, founder call 9) — *"Bays by coldest nights: Missisquoi ·
+   * Broad Lake …"*. The honest version of *"___ Bay is your best bet"*: the user picks the
+   * criterion, the app counts. Absent until the discovery digest exists for the bays' cells.
+   */
+  rankings?: BayRankings;
+}
+
+/** One ranked list: the criterion as the heading, the bays in order, and a short value each. */
+export interface BayRanking {
+  kind: 'coldestNights' | 'leastSnow';
+  label: string;
+  /** In rank order. `value` is the printed figure — *"4 nights"*, *"none"*, *"2.1 in"*. */
+  bays: (SpreadExtreme & { value: string })[];
+}
+
+export interface BayRankings {
+  coldestNights: BayRanking | null;
+  leastSnow: BayRanking | null;
+}
+
+/** What each bay contributes to the rankings — its cell's chain length and its window snow total. */
+export interface BayRankingInput {
+  subAreaId: string;
+  name: string;
+  /** Nights in the bay's cell's alive cold chain at the panel threshold; `null` when no digest. */
+  chainNights: number | null;
+  /** Snow over the spread's shared window, cm; `null` when the bay was not compared. */
+  snowCm: number | null;
+}
+
+/**
+ * Sort the bays two ways. A tie keeps name order so two renders agree; bays sharing a Tier-B cell
+ * therefore tie and list adjacently. A list with fewer than two bays that have the figure is
+ * withheld — one bay is not a ranking.
+ */
+export function buildBayRankings(inputs: readonly BayRankingInput[]): BayRankings {
+  const byName = (a: { name: string }, b: { name: string }) => a.name.localeCompare(b.name);
+  const cold = inputs
+    .filter((b): b is BayRankingInput & { chainNights: number } => b.chainNights !== null)
+    .sort((a, b) => b.chainNights - a.chainNights || byName(a, b));
+  const snow = inputs
+    .filter((b): b is BayRankingInput & { snowCm: number } => b.snowCm !== null)
+    .sort((a, b) => a.snowCm - b.snowCm || byName(a, b));
+  return {
+    coldestNights:
+      cold.length >= 2
+        ? {
+            kind: 'coldestNights',
+            label: 'Bays by coldest nights',
+            bays: cold.map((b) => ({
+              subAreaId: b.subAreaId,
+              name: b.name,
+              value: `${b.chainNights} night${b.chainNights === 1 ? '' : 's'}`,
+            })),
+          }
+        : null,
+    leastSnow:
+      snow.length >= 2
+        ? {
+            kind: 'leastSnow',
+            label: 'Bays by least snow',
+            bays: snow.map((b) => ({
+              subAreaId: b.subAreaId,
+              name: b.name,
+              value: formatIn(roundIn(b.snowCm)),
+            })),
+          }
+        : null,
+  };
 }
 
 const roundF = (c: number) => Math.round(cToF(c));

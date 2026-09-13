@@ -4,6 +4,7 @@ import type { Polygon } from 'geojson';
 import { describe, expect, test } from 'vitest';
 import { api, internal } from './_generated/api';
 import type { Id } from './_generated/dataModel';
+import { FLUSH_BATCH_CAP, FLUSH_READ_BUDGET } from './notifications';
 import schema from './schema';
 
 const modules = import.meta.glob('./**/*.*s');
@@ -128,6 +129,26 @@ async function flushAllDue(t: ReturnType<typeof convexTest>) {
   });
   await t.mutation(internal.notifications.flushNotificationQueue, {});
   return t.run((ctx) => ctx.db.query('notifications').collect());
+}
+
+/**
+ * Take the flush's self-scheduled continuation off the table: count the pending
+ * `flushNotificationQueue` jobs and cancel them, so the test drives the next batch by hand.
+ *
+ * convex-test backs `runAfter(0)` with a *real* `setTimeout(0)`. It stays dormant only while the
+ * test does microtask work — the first yield to the event loop would run the continuation and drain
+ * the queue underneath the assertions that follow (verified: one `setTimeout(0)` await flips the job
+ * to `success`). Cancelling makes the ordering explicit instead of an accident of the event loop.
+ */
+async function cancelScheduledFlushes(t: ReturnType<typeof convexTest>): Promise<number> {
+  return t.run(async (ctx) => {
+    const jobs = await ctx.db.system.query('_scheduled_functions').collect();
+    const pending = jobs.filter(
+      (j) => j.name === 'notifications:flushNotificationQueue' && j.state.kind === 'pending',
+    );
+    for (const job of pending) await ctx.scheduler.cancel(job._id);
+    return pending.length;
+  });
 }
 
 /**
@@ -286,6 +307,136 @@ describe('notifications — nearby digest (X₁)', () => {
     expect(((gap % (24 * 60 * 60 * 1000)) + 24 * 60 * 60 * 1000) % (24 * 60 * 60 * 1000)).toBe(
       3 * 60 * 60 * 1000,
     );
+  });
+
+  test('a digest whose rows straddle the batch cap is still ONE digest, complete, and the batch continues', async () => {
+    const t = convexTestWithGeo();
+    const bodyId = await seedBody(t);
+    const reportId = await createReport(t, (await seedProfile(t, 'author')).as, {
+      waterBodyId: bodyId,
+      skateEndTime: SKATE_TIME,
+    });
+    const nearby = await seedProfile(t, 'nearby', { prefs: { nearbyReportDigest: true } });
+    const fan = await seedProfile(t, 'fan');
+    const due = Date.now() - 1;
+    // Insert straight into the queue, in an order that puts two of `nearby`'s three digest rows
+    // inside the first batch and the third past the cap — `by_flush` ties on `flushAfter` and falls
+    // back to creation order, which is exactly how one day's reports interleave users.
+    const digestRow = (n: number) =>
+      t.run((ctx) =>
+        ctx.db.insert('notificationQueue', {
+          userId: nearby.id,
+          waterBodyId: bodyId,
+          kind: 'digest' as const,
+          type: 'nearby_report_digest' as const,
+          coalesceKey: `${nearby.id}:body${n}:digest`,
+          latestReportId: reportId,
+          count: 1,
+          flushAfter: due,
+          createdAt: due,
+        }),
+      );
+    await digestRow(1);
+    await digestRow(2);
+    await t.run(async (ctx) => {
+      for (let i = 0; i < FLUSH_BATCH_CAP + 10; i++) {
+        await ctx.db.insert('notificationQueue', {
+          userId: fan.id,
+          waterBodyId: bodyId,
+          kind: 'favorite',
+          type: 'favorite_report',
+          coalesceKey: `${fan.id}:body${i}:favorite`,
+          latestReportId: reportId,
+          count: 1,
+          flushAfter: due,
+          createdAt: due,
+        });
+      }
+    });
+    await digestRow(3);
+
+    const first = await t.mutation(internal.notifications.flushNotificationQueue, {});
+    expect(first.continued).toBe(true);
+    expect(await cancelScheduledFlushes(t)).toBe(1); // it really did queue its own next batch
+    // The third row sat past the cap and was delivered anyway — pulled through `by_user`, not the
+    // batch slice — so the digest is whole and there is nothing left of it for the next batch.
+    let digests = await t.run((ctx) =>
+      ctx.db
+        .query('notifications')
+        .withIndex('by_user', (q) => q.eq('userId', nearby.id))
+        .collect(),
+    );
+    expect(digests).toHaveLength(1);
+    expect(digests[0]?.payload.bodies).toHaveLength(3);
+    expect(digests[0]?.payload.totalCount).toBe(3);
+    const left = await t.run((ctx) => ctx.db.query('notificationQueue').collect());
+    expect(left.every((r) => r.kind === 'favorite')).toBe(true);
+    expect(left.length).toBe(FLUSH_BATCH_CAP + 10 - (FLUSH_BATCH_CAP - 2));
+
+    // The continuation drains the rest and stops continuing; still exactly one digest.
+    const second = await t.mutation(internal.notifications.flushNotificationQueue, {});
+    expect(second.continued).toBe(false);
+    expect(await cancelScheduledFlushes(t)).toBe(0);
+    expect(await t.run((ctx) => ctx.db.query('notificationQueue').collect())).toEqual([]);
+    digests = await t.run((ctx) =>
+      ctx.db
+        .query('notifications')
+        .withIndex('by_user', (q) => q.eq('userId', nearby.id))
+        .collect(),
+    );
+    expect(digests).toHaveLength(1);
+  });
+
+  test('the read budget stops a batch between rows and the continuation finishes it (nothing partial)', async () => {
+    const t = convexTestWithGeo();
+    const bodyId = await seedBody(t);
+    const author = await seedProfile(t, 'author');
+    const rater = await seedProfile(t, 'rater');
+    const reportId = await createReport(t, author.as, {
+      waterBodyId: bodyId,
+      skateEndTime: SKATE_TIME,
+    });
+    // A hidden target: the settle short-circuits after one read, but the tally charges the row what
+    // it *could* have cost — one read per coalesced id — which is how a burst is priced.
+    await t.run((ctx) => ctx.db.patch(reportId, { moderationStatus: 'hidden' }));
+    const due = Date.now() - 1;
+    const perRow = 100;
+    const rows = 40; // 40 × (1 + 100) ≫ the budget, but well under the batch cap
+    await t.run(async (ctx) => {
+      for (let i = 0; i < rows; i++) {
+        await ctx.db.insert('notificationQueue', {
+          userId: author.id,
+          kind: 'thumb',
+          type: 'report_rated',
+          coalesceKey: `${author.id}:${reportId}:thumb:${i}`,
+          count: perRow,
+          flushAfter: due,
+          createdAt: due,
+          trigger: {
+            kind: 'thumb',
+            targetType: 'report',
+            targetId: reportId,
+            actorIds: Array.from({ length: perRow }, () => rater.id),
+          },
+        });
+      }
+    });
+
+    const first = await t.mutation(internal.notifications.flushNotificationQueue, {});
+    expect(first.continued).toBe(true);
+    expect(await cancelScheduledFlushes(t)).toBe(1);
+    expect(first.reads).toBeGreaterThanOrEqual(FLUSH_READ_BUDGET);
+    // Stopped short of the cap: the rows after the stop are untouched, not half-processed.
+    expect(first.dropped).toBeGreaterThan(0);
+    expect(first.dropped).toBeLessThan(rows);
+    const left = await t.run((ctx) => ctx.db.query('notificationQueue').collect());
+    expect(left).toHaveLength(rows - first.dropped);
+
+    const second = await t.mutation(internal.notifications.flushNotificationQueue, {});
+    expect(second.continued).toBe(false);
+    expect(await cancelScheduledFlushes(t)).toBe(0);
+    expect(first.dropped + second.dropped).toBe(rows);
+    expect(await t.run((ctx) => ctx.db.query('notificationQueue').collect())).toEqual([]);
   });
 
   test("a body out of the viewer's band produces no digest", async () => {

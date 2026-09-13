@@ -1,4 +1,7 @@
 import {
+  asOfLabel,
+  COLD_CHAIN_THRESHOLDS_F,
+  type ColdChainThresholdF,
   cmToInches,
   DRIVE_TIME_BANDS,
   type FeedFilters,
@@ -7,6 +10,8 @@ import {
   roundTo,
   type SkateQuality,
   type SurfaceTag,
+  thresholdLabel,
+  withoutWeatherFilter,
 } from '@skating/core';
 import { useState } from 'react';
 import { Button, Text, XStack, YStack } from 'tamagui';
@@ -29,15 +34,25 @@ const ICE_LABELS: Record<string, string> = {
   smooth: 'Smooth',
 };
 
+/** The night counts the weather knob offers — a short list, since the digest reads "at least". */
+const NIGHT_OPTIONS = [1, 2, 3, 4, 5, 7, 10, 14] as const;
+
 export function FeedFilterBar({
   filters,
   onChange,
+  weather,
 }: {
   filters: FeedFilters;
   onChange: (next: FeedFilters) => void;
+  /**
+   * Discovery's readiness (`weatherDiscovery.status`); `undefined` while loading. Out of season the
+   * weather knobs render disabled with the reason rather than silently matching nothing (call 24).
+   */
+  weather?: { available: boolean; asOfDayMs: number | null } | undefined;
 }) {
   const [expanded, setExpanded] = useState(false);
   const count = activeFilterCount(filters);
+  const weatherOff = weather !== undefined && !weather.available;
 
   /** Immutably set (or, when `value` is undefined, delete) one filter key. */
   function patch<K extends keyof FeedFilters>(key: K, value: FeedFilters[K] | undefined) {
@@ -134,6 +149,79 @@ export function FeedFilterBar({
               }}
             />
           </XStack>
+
+          {/* Weather-first discovery (N6h / D164–D166): "at least N nights below T, no snow
+              since". Describes a lake, not a report — matching lakes appear as their own cards and
+              non-matches dim on the map. Disabled, with the reason, out of season. */}
+          <YStack
+            gap="$2"
+            padding="$2"
+            borderWidth={1}
+            borderStyle="dashed"
+            borderColor="$border"
+            borderRadius="$3"
+            opacity={weatherOff ? 0.6 : 1}
+          >
+            <Text color="$foregroundMuted" fontSize={13}>
+              {weatherOff
+                ? 'Weather — no weather data yet this season'
+                : weather?.asOfDayMs
+                  ? `Weather (${asOfLabel(weather.asOfDayMs)})`
+                  : 'Weather'}
+            </Text>
+            <Segmented
+              label="Nights below"
+              options={[
+                { value: undefined, label: 'Any' },
+                ...COLD_CHAIN_THRESHOLDS_F.map((t: ColdChainThresholdF) => ({
+                  value: t,
+                  label: thresholdLabel(t),
+                })),
+              ]}
+              selected={filters.weather?.thresholdF}
+              onSelect={(t) => {
+                if (weatherOff) return;
+                if (t === undefined) onChange(withoutWeatherFilter(filters));
+                else patch('weather', { minNights: 3, ...filters.weather, thresholdF: t });
+              }}
+            />
+            {filters.weather ? (
+              <>
+                <Segmented
+                  label="At least (nights in a row)"
+                  options={NIGHT_OPTIONS.map((n) => ({ value: n, label: String(n) }))}
+                  selected={filters.weather.minNights}
+                  onSelect={(n) => {
+                    if (filters.weather) patch('weather', { ...filters.weather, minNights: n });
+                  }}
+                />
+                <XStack gap="$2" alignItems="center" justifyContent="space-between">
+                  <Text color="$foreground" fontSize={14}>
+                    No snow since the first night
+                  </Text>
+                  <Chip
+                    label={filters.weather.noSnowSince ? 'On' : 'Off'}
+                    active={filters.weather.noSnowSince ?? false}
+                    onPress={() => {
+                      if (!filters.weather) return;
+                      const { noSnowSince, ...rest } = filters.weather;
+                      patch('weather', noSnowSince ? rest : { ...rest, noSnowSince: true });
+                    }}
+                  />
+                </XStack>
+                <XStack gap="$2" alignItems="center" justifyContent="space-between">
+                  <Text color="$foreground" fontSize={14}>
+                    Only show reports
+                  </Text>
+                  <Chip
+                    label={filters.onlyReports ? 'On' : 'Off'}
+                    active={filters.onlyReports ?? false}
+                    onPress={() => patch('onlyReports', filters.onlyReports ? undefined : true)}
+                  />
+                </XStack>
+              </>
+            ) : null}
+          </YStack>
 
           <XStack gap="$2" alignItems="center" justifyContent="space-between">
             <Text color="$foreground" fontSize={14}>

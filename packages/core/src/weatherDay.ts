@@ -432,6 +432,31 @@ export interface WeatherDaySummary {
   freezingHoursMaxWindKph: number | null;
 }
 
+/**
+ * `2026-01-15` → `Jan 15`, for prose lines that name a date. Formatted from the parts so no timezone
+ * can shift it. Lives here rather than in `weatherPanel.ts` because the cold chain names dates too
+ * and the panel imports the chain — a date helper in the panel would be an import cycle.
+ */
+export function monthDayLabel(localDate: string): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(localDate);
+  if (!m) return localDate;
+  const months = [
+    'Jan',
+    'Feb',
+    'Mar',
+    'Apr',
+    'May',
+    'Jun',
+    'Jul',
+    'Aug',
+    'Sep',
+    'Oct',
+    'Nov',
+    'Dec',
+  ];
+  return `${months[Number(m[2]) - 1] ?? '?'} ${Number(m[3])}`;
+}
+
 /** Parse `YYYY-MM-DD` into a sortable UTC-midnight key. Returns `null` for anything malformed. */
 export function localDateToDayMs(localDate: string): number | null {
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(localDate);

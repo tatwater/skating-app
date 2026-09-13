@@ -12,6 +12,7 @@ import {
   effectiveChannelPrefs,
   isCurrentRiskAckVersion,
   isDriveTimeBand,
+  isKnownTimeZone,
   isLeaving,
   isMinor,
   isValidBio,
@@ -108,7 +109,7 @@ export const upsertFromClerk = mutation({
     // `profileImageUrl` — no upload pipeline. Absent if the Clerk `convex` JWT template doesn't map
     // `picture`; when absent we leave any existing mirror untouched rather than clearing it.
     const profileImageUrl = identity.pictureUrl;
-    // The email, likewise mirrored from the `email` claim (N8 PR 3 / D171) so a notification email is
+    // The email, likewise mirrored from the `email` claim (N8 PR 3 / D174) so a notification email is
     // not a Clerk API call per recipient. Same absence rule: an unmapped claim leaves the mirror alone.
     const email = identity.email;
 
@@ -320,9 +321,9 @@ export const updateProfile = mutation({
 /**
  * Record the device's IANA timezone (N8/C) — the only per-user input the 8pm digest has. Called by
  * both clients on app open, and only when it differs from what's stored, so an ordinary day writes
- * nothing. Validated by asking `Intl` to format with it: the runtime's own table is the one authority
- * on what counts as a zone, and a bad string from a client must not become the argument that makes
- * `nextZonedHourMs` throw inside the fan-out for every report.
+ * nothing. Validated by the zone primitives' own probe (`isKnownTimeZone`, core `zonedTime.ts`): the
+ * runtime's `Intl` table is the one authority on what counts as a zone, and a bad string from a client
+ * must not become the argument that makes `nextZonedHourMs` throw inside the fan-out for every report.
  *
  * `requireContributor` rather than `requireProfile`: a departing account has already been silenced
  * (`canReceiveNotifications`), so there is no digest for its zone to place.
@@ -331,26 +332,15 @@ export const setTimezone = mutation({
   args: { timezone: v.string() },
   handler: async (ctx, { timezone }) => {
     const profile = await requireContributor(ctx);
-    if (!isValidTimeZone(timezone)) throw new ConvexError('Unknown timezone');
+    if (!isKnownTimeZone(timezone)) throw new ConvexError('Unknown timezone');
     if (profile.timezone === timezone) return profile._id;
     await ctx.db.patch(profile._id, { timezone });
     return profile._id;
   },
 });
 
-/** Whether the runtime knows `timeZone` — `Intl` throws a `RangeError` for anything it doesn't. */
-function isValidTimeZone(timeZone: string): boolean {
-  if (timeZone.length === 0 || timeZone.length > 64) return false;
-  try {
-    new Intl.DateTimeFormat('en-US', { timeZone }).format(0);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
 /**
- * The two channel switches (N8 PR 3 / D171): push on the phone, email for the eligible types. A
+ * The two channel switches (N8 PR 3 / D174): push on the phone, email for the eligible types. A
  * partial patch onto the effective prefs, so flipping one never resets the other. `requireProfile`
  * for the same reason as the aggregate opt-out: turning a channel *off* is exactly what a person on
  * their way out may want, and `canReceiveNotifications` already keeps a ghost from being sent to.

@@ -38,6 +38,22 @@ export function SubAreaSpread({ waterBodyId }: { waterBodyId: Id<'waterBodies'> 
           ))}
         </ul>
       )}
+      {/* The sorted bay lists (Workstream E, founder call 9) — the honest form of "which bay is
+          your best bet": the user picks the criterion and the app counts (D150). Each bay is the
+          same `?sub=` link the extremes are. */}
+      {[spread.rankings?.coldestNights, spread.rankings?.leastSnow]
+        .filter((r): r is NonNullable<typeof r> => !!r)
+        .map((ranking) => (
+          <p className="text-foreground-muted text-xs" key={ranking.kind}>
+            <span className="text-foreground">{ranking.label}:</span>{' '}
+            {ranking.bays.map((bay, i) => (
+              <span key={bay.subAreaId}>
+                {i > 0 ? ' · ' : null}
+                <SpreadPartView part={bay} waterBodyId={waterBodyId} /> ({bay.value})
+              </span>
+            ))}
+          </p>
+        ))}
     </div>
   );
 }
