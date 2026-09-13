@@ -527,6 +527,151 @@ describe('gpsActivities.listTracksForBody — the D58 privacy chain', () => {
     return { activityId, reportId };
   }
 
+  test('a superseded copy draws when its winner cannot — the winner’s report was hidden (PR #53 review)', async () => {
+    const t = harness();
+    const me = await seedUser(t, 'me');
+    const bodyId = await seedBody(t);
+    // Two copies of one skate, both reported from: the sweep supersedes the watch copy and its
+    // link stays (the phone copy has a report of its own). Then the phone copy's report is hidden.
+    const { activityId: phoneId, reportId: phoneReport } = await skateAndReport(me, bodyId);
+    const watchId = await t.run((ctx) =>
+      ctx.db.insert('gpsActivities', {
+        userId: me.id,
+        provider: 'garmin',
+        providerActivityId: 'garmin-hidden',
+        sportType: 'IceSkate',
+        startTime: T0 + 2 * 60_000,
+        endTime: T0 + 44 * 60_000,
+        path: trackPath(),
+        waterBodyId: bodyId,
+        promptState: 'converted',
+        detectedAt: Date.now(),
+        supersededByActivityId: phoneId,
+      }),
+    );
+    const watchReport = await t.run((ctx) => ctx.db.get(phoneReport));
+    if (!watchReport) throw new Error('unreachable');
+    const watchReportId = await t.run((ctx) => {
+      const { _id, _creationTime, ...rest } = watchReport;
+      return ctx.db.insert('reports', { ...rest, activityId: watchId });
+    });
+    await t.run((ctx) => ctx.db.patch(watchId, { linkedReportId: watchReportId }));
+
+    // Winner drawable: the skate draws once, from the winner.
+    let { tracks } = await me.as.query(api.gpsActivities.listTracksForBody, {
+      waterBodyId: bodyId,
+    });
+    expect(tracks.map((tr) => tr.activityId)).toEqual([phoneId]);
+
+    // Winner's report hidden: the winner fails its own gate, so the loser — still a visible,
+    // published track — is the copy that draws. Neither would have been the wrong answer.
+    await t.run((ctx) => ctx.db.patch(phoneReport, { moderationStatus: 'hidden' }));
+    ({ tracks } = await me.as.query(api.gpsActivities.listTracksForBody, { waterBodyId: bodyId }));
+    expect(tracks.map((tr) => tr.activityId)).toEqual([watchId]);
+  });
+
+  test('a supersession chain yields to the terminal winner, not the next hop — one skate, once (PR #53 review)', async () => {
+    const t = harness();
+    const me = await seedUser(t, 'me');
+    const bodyId = await seedBody(t);
+    // Tick 1: a reported apple_health copy (A) lost to a path-less garmin stub (B) — the link
+    // couldn't move, so A kept it. Tick 2: the native recording (C) arrived and out-ranked B.
+    // C is reported from too. The chain is A → B → C; B can't draw, C can.
+    const { activityId: cId } = await skateAndReport(me, bodyId, { key: 'c' });
+    const bId = await t.run((ctx) =>
+      ctx.db.insert('gpsActivities', {
+        userId: me.id,
+        provider: 'garmin',
+        providerActivityId: 'garmin-stub',
+        sportType: 'IceSkate',
+        startTime: T0 + 60_000,
+        endTime: T0 + 44 * 60_000,
+        waterBodyId: bodyId,
+        promptState: 'dismissed',
+        detectedAt: Date.now(),
+        supersededByActivityId: cId,
+      }),
+    );
+    const aId = await t.run((ctx) =>
+      ctx.db.insert('gpsActivities', {
+        userId: me.id,
+        provider: 'apple_health',
+        providerActivityId: 'health-1',
+        sportType: 'IceSkate',
+        startTime: T0 + 2 * 60_000,
+        endTime: T0 + 43 * 60_000,
+        path: trackPath(),
+        waterBodyId: bodyId,
+        promptState: 'converted',
+        detectedAt: Date.now(),
+        supersededByActivityId: bId,
+      }),
+    );
+    const cReport = await t.run(async (ctx) => (await ctx.db.query('reports').first()) ?? null);
+    if (!cReport) throw new Error('unreachable');
+    const aReportId = await t.run((ctx) => {
+      const { _id, _creationTime, ...rest } = cReport;
+      return ctx.db.insert('reports', { ...rest, activityId: aId });
+    });
+    await t.run((ctx) => ctx.db.patch(aId, { linkedReportId: aReportId }));
+
+    // One hop would see only B (undrawable) and let A draw beside C. The chain says: C draws.
+    let { tracks } = await me.as.query(api.gpsActivities.listTracksForBody, {
+      waterBodyId: bodyId,
+    });
+    expect(tracks.map((tr) => tr.activityId)).toEqual([cId]);
+
+    // And when C can't draw either, A — the only drawable copy left — does.
+    await t.run((ctx) => ctx.db.patch(cReport._id, { moderationStatus: 'hidden' }));
+    ({ tracks } = await me.as.query(api.gpsActivities.listTracksForBody, { waterBodyId: bodyId }));
+    expect(tracks.map((tr) => tr.activityId)).toEqual([aId]);
+  });
+
+  test('undrawable rows at the top of the index do not spend the limit — the scan fills past them (PR #53 review)', async () => {
+    const t = harness();
+    const me = await seedUser(t, 'me');
+    const bodyId = await seedBody(t);
+    // Three published tracks, oldest first…
+    const a = await skateAndReport(me, bodyId, { key: 'a' });
+    await t.run((ctx) => ctx.db.patch(a.activityId, { startTime: T0 - 3 * HOUR }));
+    const b = await skateAndReport(me, bodyId, { key: 'b' });
+    await t.run((ctx) => ctx.db.patch(b.activityId, { startTime: T0 - 2 * HOUR }));
+    const c = await skateAndReport(me, bodyId, { key: 'c' });
+    await t.run((ctx) => ctx.db.patch(c.activityId, { startTime: T0 - 1 * HOUR }));
+    // …and four newer rows that cannot draw: unlinked recordings, which the old `take(limit + 1)`
+    // let fill the window before any track was reached.
+    await t.run(async (ctx) => {
+      for (let i = 0; i < 4; i++) {
+        await ctx.db.insert('gpsActivities', {
+          userId: me.id,
+          provider: 'native',
+          providerActivityId: `unreported-${i}`,
+          sportType: 'IceSkate',
+          startTime: T0 + i * 60_000,
+          endTime: T0 + 45 * 60_000,
+          path: trackPath(),
+          waterBodyId: bodyId,
+          promptState: 'pending',
+          detectedAt: Date.now(),
+        });
+      }
+    });
+    // A limit of two yields the two newest *drawable* tracks and says there is more.
+    const two = await me.as.query(api.gpsActivities.listTracksForBody, {
+      waterBodyId: bodyId,
+      limit: 2,
+    });
+    expect(two.tracks.map((tr) => tr.activityId)).toEqual([c.activityId, b.activityId]);
+    expect(two.truncated).toBe(1);
+    // A limit of three yields all three and says so.
+    const three = await me.as.query(api.gpsActivities.listTracksForBody, {
+      waterBodyId: bodyId,
+      limit: 3,
+    });
+    expect(three.tracks).toHaveLength(3);
+    expect(three.truncated).toBe(0);
+  });
+
   test('a single public track renders — there is deliberately NO contributor-count gate (D58)', async () => {
     const t = harness();
     const user = await seedUser(t, 'skater');
@@ -683,5 +828,638 @@ describe('gpsActivities.listTracksForBody — the D58 privacy chain', () => {
 
     const { tracks } = await t.query(api.gpsActivities.listTracksForBody, { waterBodyId: bodyId });
     expect(tracks).toEqual([]);
+  });
+});
+
+// ── The activity_detected sweep (N8/B4 + B4a) ────────────────────────────────────────────────────
+
+/** Make every queued notification due and flush it — the settle window (N8 / D169), fast-forwarded. */
+async function flushAllDue(t: ReturnType<typeof convexTest>) {
+  await t.run(async (ctx) => {
+    for (const row of await ctx.db.query('notificationQueue').collect()) {
+      await ctx.db.patch(row._id, { flushAfter: Date.now() - 1 });
+    }
+  });
+  await t.mutation(internal.notifications.flushNotificationQueue, {});
+  return t.run((ctx) => ctx.db.query('notifications').collect());
+}
+
+const HOUR = 60 * 60 * 1000;
+
+describe('gpsActivities.sweepUnpromptedActivities', () => {
+  test('asks once about a skate left pending past the delay, and never again', async () => {
+    const t = harness();
+    const me = await seedUser(t, 'me');
+    const bodyId = await seedBody(t);
+    const activityId = await me.as.mutation(api.gpsActivities.ingestTrack, ingestArgs());
+
+    // Too soon: the recorder's own prompt and the offline flush get first go.
+    const early = await t.mutation(internal.gpsActivities.sweepUnpromptedActivities, {
+      now: Date.now() + 1 * HOUR,
+    });
+    expect(early).toMatchObject({ prompted: 0 });
+
+    const late = await t.mutation(internal.gpsActivities.sweepUnpromptedActivities, {
+      now: Date.now() + 4 * HOUR,
+    });
+    expect(late).toMatchObject({ prompted: 1, superseded: 0 });
+    expect((await t.run((ctx) => ctx.db.get(activityId)))?.promptState).toBe('prompted');
+
+    const notes = await flushAllDue(t);
+    expect(notes).toHaveLength(1);
+    expect(notes[0]).toMatchObject({
+      userId: me.id,
+      type: 'activity_detected',
+      payload: { kind: 'activity', activityId, waterBodyId: bodyId, startTime: T0 },
+    });
+    // The row left the `pending` range, so a second tick has nothing to do.
+    const again = await t.mutation(internal.gpsActivities.sweepUnpromptedActivities, {
+      now: Date.now() + 5 * HOUR,
+    });
+    expect(again).toMatchObject({ prompted: 0 });
+  });
+
+  test('a skate converted or dismissed before the flush is dropped at flush, not delivered', async () => {
+    const t = harness();
+    const me = await seedUser(t, 'me');
+    await seedBody(t);
+    const activityId = await me.as.mutation(api.gpsActivities.ingestTrack, ingestArgs());
+    await t.mutation(internal.gpsActivities.sweepUnpromptedActivities, {
+      now: Date.now() + 4 * HOUR,
+    });
+    await me.as.mutation(api.gpsActivities.setPromptState, {
+      activityId,
+      promptState: 'dismissed',
+    });
+    expect(await flushAllDue(t)).toHaveLength(0);
+  });
+
+  test('respects the activityDetected toggle', async () => {
+    const t = harness();
+    const me = await seedUser(t, 'me');
+    await seedBody(t);
+    await me.as.mutation(api.profiles.setNotificationPrefs, { prefs: { activityDetected: false } });
+    await me.as.mutation(api.gpsActivities.ingestTrack, ingestArgs());
+    const res = await t.mutation(internal.gpsActivities.sweepUnpromptedActivities, {
+      now: Date.now() + 4 * HOUR,
+    });
+    // Still flipped to `prompted` (it has been considered), but nothing queued.
+    expect(res).toMatchObject({ prompted: 1 });
+    expect(await t.run((ctx) => ctx.db.query('notificationQueue').collect())).toHaveLength(0);
+  });
+
+  test('two sources of one skate: the better copy is prompted, the other superseded, the link moves (B4a)', async () => {
+    const t = harness();
+    const me = await seedUser(t, 'me');
+    const bodyId = await seedBody(t);
+    // A watch copy of the same session, ingested an hour later with slightly trimmed times — the
+    // shape a second provider will produce. Inserted directly: no adapter exists yet (that's the
+    // point of settling the rule now).
+    const phoneId = await me.as.mutation(api.gpsActivities.ingestTrack, ingestArgs());
+    const watchId = await t.run((ctx) =>
+      ctx.db.insert('gpsActivities', {
+        userId: me.id,
+        provider: 'garmin',
+        providerActivityId: 'garmin-1',
+        sportType: 'IceSkate',
+        startTime: T0 + 3 * 60_000,
+        endTime: T0 + 44 * 60_000,
+        path: trackPath(),
+        waterBodyId: bodyId,
+        promptState: 'pending',
+        detectedAt: Date.now() + 1 * HOUR,
+      }),
+    );
+    // The watch copy is the one that got reported from (say, via a third client) — the link must
+    // follow the winner.
+    const reportId = await me.as.mutation(api.reports.create, {
+      waterBodyId: bodyId,
+      skateEndTime: T0 + 44 * 60_000,
+      iceTypes: ['black_ice'],
+      activityId: watchId,
+    });
+
+    const res = await t.mutation(internal.gpsActivities.sweepUnpromptedActivities, {
+      now: Date.now() + 4 * HOUR,
+    });
+    expect(res).toMatchObject({ prompted: 0, superseded: 1 });
+    const phone = await t.run((ctx) => ctx.db.get(phoneId));
+    const watch = await t.run((ctx) => ctx.db.get(watchId));
+    // Native outranks the watch: the phone recording is the skate, the watch copy is superseded.
+    expect(watch?.supersededByActivityId).toBe(phoneId);
+    expect(watch?.promptState).toBe('dismissed');
+    expect(phone?.linkedReportId).toBe(reportId);
+    expect(phone?.promptState).toBe('converted');
+    expect((await t.run((ctx) => ctx.db.get(reportId)))?.activityId).toBe(phoneId);
+    // Moved, not copied: the loser no longer reads as a published track, so the aggregate layer
+    // (`listTracksForBody`, publish-is-consent on `linkedReportId`) draws the skate once.
+    expect(watch?.linkedReportId).toBeUndefined();
+    const { tracks } = await me.as.query(api.gpsActivities.listTracksForBody, {
+      waterBodyId: bodyId,
+    });
+    expect(tracks.map((tr) => tr.activityId)).toEqual([phoneId]);
+    // No prompt: the winner is already reported. And the list shows one skate, not two — and the
+    // superseded copy (the newest row) doesn't spend a slot: a limit of one still yields the winner.
+    expect(await t.run((ctx) => ctx.db.query('notificationQueue').collect())).toHaveLength(0);
+    expect(await me.as.query(api.gpsActivities.listMine, {})).toHaveLength(1);
+    expect(
+      (await me.as.query(api.gpsActivities.listMine, { limit: 1 })).map((a) => a.activityId),
+    ).toEqual([phoneId]);
+  });
+
+  test('a copy that was already asked about settles the skate — the late-arriving winner is not asked again', async () => {
+    const t = harness();
+    const me = await seedUser(t, 'me');
+    const bodyId = await seedBody(t);
+    // The watch synced first and was prompted on an earlier tick; the phone's copy flushes from the
+    // offline queue a day later. Same skate, and the person has already been asked once.
+    await t.run((ctx) =>
+      ctx.db.insert('gpsActivities', {
+        userId: me.id,
+        provider: 'garmin',
+        providerActivityId: 'garmin-2',
+        sportType: 'IceSkate',
+        startTime: T0 + 2 * 60_000,
+        endTime: T0 + 40 * 60_000,
+        waterBodyId: bodyId,
+        promptState: 'prompted',
+        detectedAt: Date.now() - 20 * HOUR,
+      }),
+    );
+    const phoneId = await me.as.mutation(api.gpsActivities.ingestTrack, ingestArgs());
+    const res = await t.mutation(internal.gpsActivities.sweepUnpromptedActivities, {
+      now: Date.now() + 4 * HOUR,
+    });
+    expect(res).toMatchObject({ prompted: 0, superseded: 1 });
+    // The winner inherits the answer and leaves the `pending` range; nothing is queued.
+    expect((await t.run((ctx) => ctx.db.get(phoneId)))?.promptState).toBe('prompted');
+    expect(await t.run((ctx) => ctx.db.query('notificationQueue').collect())).toHaveLength(0);
+  });
+
+  test('an already-prompted copy buried under later syncs is still found — the window is by start time, not insertion (PR #53 review)', async () => {
+    const t = harness();
+    const me = await seedUser(t, 'me');
+    const bodyId = await seedBody(t);
+    // The watch copy was prompted on an earlier tick…
+    await t.run((ctx) =>
+      ctx.db.insert('gpsActivities', {
+        userId: me.id,
+        provider: 'garmin',
+        providerActivityId: 'garmin-old',
+        sportType: 'IceSkate',
+        startTime: T0 + 2 * 60_000,
+        endTime: T0 + 40 * 60_000,
+        waterBodyId: bodyId,
+        promptState: 'prompted',
+        detectedAt: Date.now() - 20 * HOUR,
+      }),
+    );
+    // …then sixty *later* skates synced (a season's backlog), all settled, all inserted after it.
+    await t.run(async (ctx) => {
+      for (let i = 0; i < 60; i++) {
+        await ctx.db.insert('gpsActivities', {
+          userId: me.id,
+          provider: 'garmin',
+          providerActivityId: `garmin-later-${i}`,
+          sportType: 'IceSkate',
+          startTime: T0 + (i + 2) * 24 * HOUR,
+          endTime: T0 + (i + 2) * 24 * HOUR + 30 * 60_000,
+          waterBodyId: bodyId,
+          promptState: 'dismissed',
+          detectedAt: Date.now() - 10 * HOUR,
+        });
+      }
+    });
+    // Now the phone's copy of the *old* skate flushes from the offline queue.
+    const phoneId = await me.as.mutation(api.gpsActivities.ingestTrack, ingestArgs());
+    const res = await t.mutation(internal.gpsActivities.sweepUnpromptedActivities, {
+      now: Date.now() + 4 * HOUR,
+    });
+    // The prompted copy is far outside "the fifty most recently inserted", but inside ±10 minutes
+    // of the due row's start — which is the only set that can contain the same skate.
+    expect(res).toMatchObject({ prompted: 0, superseded: 1 });
+    expect((await t.run((ctx) => ctx.db.get(phoneId)))?.promptState).toBe('prompted');
+    expect(await t.run((ctx) => ctx.db.query('notificationQueue').collect())).toHaveLength(0);
+  });
+
+  test('when two copies were both reported from, the loser keeps its report but the aggregate layer draws the skate once (PR #53 review)', async () => {
+    const t = harness();
+    const me = await seedUser(t, 'me');
+    const bodyId = await seedBody(t);
+    const phoneId = await me.as.mutation(api.gpsActivities.ingestTrack, ingestArgs());
+    const watchId = await t.run((ctx) =>
+      ctx.db.insert('gpsActivities', {
+        userId: me.id,
+        provider: 'garmin',
+        providerActivityId: 'garmin-1',
+        sportType: 'IceSkate',
+        startTime: T0 + 3 * 60_000,
+        endTime: T0 + 44 * 60_000,
+        path: trackPath(),
+        waterBodyId: bodyId,
+        promptState: 'pending',
+        detectedAt: Date.now(),
+      }),
+    );
+    // A report from each copy — the one case the link cannot move. Both are `converted` now, so
+    // neither is due; a third, unreported copy of the same session coming due is what brings the
+    // pair into a dedup.
+    const phoneReport = await me.as.mutation(api.reports.create, {
+      waterBodyId: bodyId,
+      skateEndTime: T0 + 45 * 60_000,
+      iceTypes: ['black_ice'],
+      activityId: phoneId,
+    });
+    const watchReport = await me.as.mutation(api.reports.create, {
+      waterBodyId: bodyId,
+      skateEndTime: T0 + 44 * 60_000,
+      iceTypes: ['black_ice'],
+      activityId: watchId,
+    });
+    const stravaId = await t.run((ctx) =>
+      ctx.db.insert('gpsActivities', {
+        userId: me.id,
+        provider: 'strava',
+        providerActivityId: 'strava-1',
+        sportType: 'IceSkate',
+        startTime: T0 + 1 * 60_000,
+        endTime: T0 + 43 * 60_000,
+        waterBodyId: bodyId,
+        promptState: 'pending',
+        detectedAt: Date.now() - 5 * HOUR,
+      }),
+    );
+    const res = await t.mutation(internal.gpsActivities.sweepUnpromptedActivities, {
+      now: Date.now() + 1 * HOUR,
+    });
+    expect(res).toMatchObject({ prompted: 0, superseded: 2 });
+    const watch = await t.run((ctx) => ctx.db.get(watchId));
+    expect(watch?.supersededByActivityId).toBe(phoneId);
+    expect((await t.run((ctx) => ctx.db.get(stravaId)))?.promptState).toBe('dismissed');
+    // The loser is still a reported skate: link intact, `converted`, its report still shows its path.
+    expect(watch?.linkedReportId).toBe(watchReport);
+    expect(watch?.promptState).toBe('converted');
+    expect((await t.run((ctx) => ctx.db.get(phoneId)))?.linkedReportId).toBe(phoneReport);
+    expect(
+      (await me.as.query(api.gpsActivities.getForReport, { reportId: watchReport }))?.activityId,
+    ).toBe(watchId);
+    // But the lake draws the skate once — the superseded copy is skipped, not merely de-prioritised.
+    const { tracks } = await me.as.query(api.gpsActivities.listTracksForBody, {
+      waterBodyId: bodyId,
+    });
+    expect(tracks.map((tr) => tr.activityId)).toEqual([phoneId]);
+  });
+
+  test('an inherited answer reaches a winner that is not yet due — it is not lost with the loser', async () => {
+    const t = harness();
+    const me = await seedUser(t, 'me');
+    const bodyId = await seedBody(t);
+    // Three copies of one skate. The watch copy was asked about on an earlier tick; a Strava copy
+    // of the same session is `pending` and due; the phone copy has just flushed and is not due
+    // for hours. The Strava copy coming due is what brings the trio into one dedup — and the phone
+    // copy wins it while still not due. (A due row reads only its own start-time window, so an
+    // *unrelated* due skate no longer pulls this pair in early; the pair waits for one of its own
+    // copies to come due, which is the tick this test drives.)
+    await t.run((ctx) =>
+      ctx.db.insert('gpsActivities', {
+        userId: me.id,
+        provider: 'garmin',
+        providerActivityId: 'garmin-3',
+        sportType: 'IceSkate',
+        startTime: T0 + 2 * 60_000,
+        endTime: T0 + 40 * 60_000,
+        waterBodyId: bodyId,
+        promptState: 'prompted',
+        detectedAt: Date.now() - 20 * HOUR,
+      }),
+    );
+    const stravaId = await t.run((ctx) =>
+      ctx.db.insert('gpsActivities', {
+        userId: me.id,
+        provider: 'strava',
+        providerActivityId: 'strava-3',
+        sportType: 'IceSkate',
+        startTime: T0 + 1 * 60_000,
+        endTime: T0 + 42 * 60_000,
+        waterBodyId: bodyId,
+        promptState: 'pending',
+        detectedAt: Date.now() - 5 * HOUR,
+      }),
+    );
+    const phoneId = await me.as.mutation(api.gpsActivities.ingestTrack, ingestArgs());
+
+    // Tick 1: only the Strava copy is due. The trio is deduped now; the phone copy wins, inherits
+    // the watch copy's answer, and is not asked — even though it is not due yet.
+    const first = await t.mutation(internal.gpsActivities.sweepUnpromptedActivities, {
+      now: Date.now() + 1 * HOUR,
+    });
+    expect(first).toMatchObject({ prompted: 0, superseded: 2 });
+    expect((await t.run((ctx) => ctx.db.get(stravaId)))?.supersededByActivityId).toBe(phoneId);
+    // The winner carries the loser's answer from this tick, not from a later one — by then the
+    // loser is superseded and out of the candidate set, so the answer would be gone.
+    expect((await t.run((ctx) => ctx.db.get(phoneId)))?.promptState).toBe('prompted');
+
+    // Tick 2: the phone copy would be due, but it already left the `pending` range. Nothing is asked.
+    const second = await t.mutation(internal.gpsActivities.sweepUnpromptedActivities, {
+      now: Date.now() + 4 * HOUR,
+    });
+    expect(second).toMatchObject({ scanned: 0, prompted: 0, superseded: 0 });
+    expect(await t.run((ctx) => ctx.db.query('notificationQueue').collect())).toHaveLength(0);
+  });
+
+  test('a superseded row put back to pending leaves the range on the next tick rather than wedging it', async () => {
+    const t = harness();
+    const me = await seedUser(t, 'me');
+    const bodyId = await seedBody(t);
+    const phoneId = await me.as.mutation(api.gpsActivities.ingestTrack, ingestArgs());
+    const watchId = await t.run((ctx) =>
+      ctx.db.insert('gpsActivities', {
+        userId: me.id,
+        provider: 'garmin',
+        providerActivityId: 'garmin-4',
+        sportType: 'IceSkate',
+        startTime: T0 + 3 * 60_000,
+        endTime: T0 + 44 * 60_000,
+        waterBodyId: bodyId,
+        promptState: 'pending',
+        detectedAt: Date.now(),
+      }),
+    );
+    await t.mutation(internal.gpsActivities.sweepUnpromptedActivities, {
+      now: Date.now() + 4 * HOUR,
+    });
+    expect((await t.run((ctx) => ctx.db.get(watchId)))?.supersededByActivityId).toBe(phoneId);
+    // `setPromptState` accepts any state; a client can hand a loser back to `pending`.
+    await me.as.mutation(api.gpsActivities.setPromptState, {
+      activityId: watchId,
+      promptState: 'pending',
+    });
+    const res = await t.mutation(internal.gpsActivities.sweepUnpromptedActivities, {
+      now: Date.now() + 8 * HOUR,
+    });
+    expect(res).toMatchObject({ scanned: 1, prompted: 0 });
+    expect((await t.run((ctx) => ctx.db.get(watchId)))?.promptState).toBe('dismissed');
+    // …and the tick after that has nothing left to read.
+    const again = await t.mutation(internal.gpsActivities.sweepUnpromptedActivities, {
+      now: Date.now() + 9 * HOUR,
+    });
+    expect(again).toMatchObject({ scanned: 0 });
+  });
+
+  test('a minor is never nudged to file a report they cannot post (D41)', async () => {
+    const t = harness();
+    const kid = await seedUser(t, 'kid', { dateOfBirth: MINOR_DOB });
+    await seedBody(t);
+    const activityId = await kid.as.mutation(api.gpsActivities.ingestTrack, ingestArgs());
+    const res = await t.mutation(internal.gpsActivities.sweepUnpromptedActivities, {
+      now: Date.now() + 4 * HOUR,
+    });
+    // Considered (so it isn't re-scanned every hour), but no "Add a report?" for an action
+    // `reports.create` would refuse.
+    expect(res).toMatchObject({ prompted: 1 });
+    expect((await t.run((ctx) => ctx.db.get(activityId)))?.promptState).toBe('prompted');
+    expect(await t.run((ctx) => ctx.db.query('notificationQueue').collect())).toHaveLength(0);
+  });
+
+  test('a report filed from a copy the sweep has since superseded links the winner, not the loser', async () => {
+    const t = harness();
+    const me = await seedUser(t, 'me');
+    const bodyId = await seedBody(t);
+    const phoneId = await me.as.mutation(api.gpsActivities.ingestTrack, ingestArgs());
+    const watchId = await t.run((ctx) =>
+      ctx.db.insert('gpsActivities', {
+        userId: me.id,
+        provider: 'garmin',
+        providerActivityId: 'garmin-5',
+        sportType: 'IceSkate',
+        startTime: T0 + 3 * 60_000,
+        endTime: T0 + 44 * 60_000,
+        path: trackPath(),
+        waterBodyId: bodyId,
+        promptState: 'pending',
+        detectedAt: Date.now(),
+      }),
+    );
+    // The report form was opened from the watch copy, then the hourly sweep ran before it was sent.
+    await t.mutation(internal.gpsActivities.sweepUnpromptedActivities, {
+      now: Date.now() + 4 * HOUR,
+    });
+    expect((await t.run((ctx) => ctx.db.get(watchId)))?.supersededByActivityId).toBe(phoneId);
+    const reportId = await me.as.mutation(api.reports.create, {
+      waterBodyId: bodyId,
+      skateEndTime: T0 + 44 * 60_000,
+      iceTypes: ['black_ice'],
+      activityId: watchId,
+    });
+    // Both sides of the join point at the winner; the loser is untouched.
+    expect((await t.run((ctx) => ctx.db.get(reportId)))?.activityId).toBe(phoneId);
+    const phone = await t.run((ctx) => ctx.db.get(phoneId));
+    expect(phone?.linkedReportId).toBe(reportId);
+    expect(phone?.promptState).toBe('converted');
+    expect((await t.run((ctx) => ctx.db.get(watchId)))?.linkedReportId).toBeUndefined();
+    // So the lake draws the skate, and no later tick asks about it.
+    const { tracks } = await me.as.query(api.gpsActivities.listTracksForBody, {
+      waterBodyId: bodyId,
+    });
+    expect(tracks.map((tr) => tr.activityId)).toEqual([phoneId]);
+    expect((await me.as.query(api.gpsActivities.getForReport, { reportId }))?.activityId).toBe(
+      phoneId,
+    );
+  });
+
+  test('the redirect stops short of a winner that is already reported, or has no path — the report links the copy it was filed from', async () => {
+    const t = harness();
+    const me = await seedUser(t, 'me');
+    const bodyId = await seedBody(t);
+    const phoneId = await me.as.mutation(api.gpsActivities.ingestTrack, ingestArgs());
+    const watchId = await t.run((ctx) =>
+      ctx.db.insert('gpsActivities', {
+        userId: me.id,
+        provider: 'garmin',
+        providerActivityId: 'garmin-6',
+        sportType: 'IceSkate',
+        startTime: T0 + 3 * 60_000,
+        endTime: T0 + 44 * 60_000,
+        path: trackPath(),
+        waterBodyId: bodyId,
+        promptState: 'pending',
+        detectedAt: Date.now(),
+      }),
+    );
+    await t.mutation(internal.gpsActivities.sweepUnpromptedActivities, {
+      now: Date.now() + 4 * HOUR,
+    });
+    // The winner gets its own report first…
+    const phoneReport = await me.as.mutation(api.reports.create, {
+      waterBodyId: bodyId,
+      skateEndTime: T0 + 45 * 60_000,
+      iceTypes: ['black_ice'],
+      activityId: phoneId,
+    });
+    // …then a report is filed from the (superseded) watch copy. Not refused: it links the watch copy
+    // itself, the state the sweep leaves when both copies were reported from.
+    const watchReport = await me.as.mutation(api.reports.create, {
+      waterBodyId: bodyId,
+      skateEndTime: T0 + 44 * 60_000,
+      iceTypes: ['black_ice'],
+      activityId: watchId,
+    });
+    expect((await t.run((ctx) => ctx.db.get(watchReport)))?.activityId).toBe(watchId);
+    expect((await t.run((ctx) => ctx.db.get(watchId)))?.linkedReportId).toBe(watchReport);
+    expect((await t.run((ctx) => ctx.db.get(phoneId)))?.linkedReportId).toBe(phoneReport);
+    // The lake still draws the skate once, and each report shows its own path.
+    const { tracks } = await me.as.query(api.gpsActivities.listTracksForBody, {
+      waterBodyId: bodyId,
+    });
+    expect(tracks.map((tr) => tr.activityId)).toEqual([phoneId]);
+    expect(
+      (await me.as.query(api.gpsActivities.getForReport, { reportId: watchReport }))?.activityId,
+    ).toBe(watchId);
+
+    // A path-less winner is not followed either: a stub outranking a real track keeps the link on
+    // the track, so the report has a map to show.
+    const other = await seedUser(t, 'other');
+    const stubId = await t.run((ctx) =>
+      ctx.db.insert('gpsActivities', {
+        userId: other.id,
+        provider: 'native',
+        providerActivityId: 'stub',
+        sportType: 'IceSkate',
+        startTime: T0,
+        endTime: T0 + 45 * 60_000,
+        waterBodyId: bodyId,
+        promptState: 'pending',
+        detectedAt: Date.now(),
+      }),
+    );
+    const trackId = await t.run((ctx) =>
+      ctx.db.insert('gpsActivities', {
+        userId: other.id,
+        provider: 'garmin',
+        providerActivityId: 'garmin-7',
+        sportType: 'IceSkate',
+        startTime: T0 + 60_000,
+        endTime: T0 + 44 * 60_000,
+        path: trackPath(),
+        waterBodyId: bodyId,
+        promptState: 'pending',
+        detectedAt: Date.now(),
+        supersededByActivityId: stubId,
+      }),
+    );
+    const trackReport = await other.as.mutation(api.reports.create, {
+      waterBodyId: bodyId,
+      skateEndTime: T0 + 44 * 60_000,
+      iceTypes: ['black_ice'],
+      activityId: trackId,
+    });
+    expect((await t.run((ctx) => ctx.db.get(trackReport)))?.activityId).toBe(trackId);
+    expect((await t.run((ctx) => ctx.db.get(stubId)))?.linkedReportId).toBeUndefined();
+    expect(
+      (await other.as.query(api.gpsActivities.getForReport, { reportId: trackReport }))?.path,
+    ).toBeDefined();
+  });
+
+  test('the link does not move onto a winner with no path — the report keeps its map', async () => {
+    const t = harness();
+    const me = await seedUser(t, 'me');
+    const bodyId = await seedBody(t);
+    // A watch stub that out-ranks the aggregator copy but carries no path; the aggregator copy has
+    // the path and the report.
+    const stubId = await t.run((ctx) =>
+      ctx.db.insert('gpsActivities', {
+        userId: me.id,
+        provider: 'garmin',
+        providerActivityId: 'garmin-stub',
+        sportType: 'IceSkate',
+        startTime: T0 + 2 * 60_000,
+        endTime: T0 + 44 * 60_000,
+        waterBodyId: bodyId,
+        promptState: 'pending',
+        detectedAt: Date.now() - 5 * HOUR,
+      }),
+    );
+    const healthId = await t.run((ctx) =>
+      ctx.db.insert('gpsActivities', {
+        userId: me.id,
+        provider: 'apple_health',
+        providerActivityId: 'health-1',
+        sportType: 'IceSkate',
+        startTime: T0,
+        endTime: T0 + 45 * 60_000,
+        path: trackPath(),
+        waterBodyId: bodyId,
+        promptState: 'pending',
+        detectedAt: Date.now() - 5 * HOUR,
+      }),
+    );
+    const reportId = await me.as.mutation(api.reports.create, {
+      waterBodyId: bodyId,
+      skateEndTime: T0 + 45 * 60_000,
+      iceTypes: ['black_ice'],
+      activityId: healthId,
+    });
+    const res = await t.mutation(internal.gpsActivities.sweepUnpromptedActivities, {
+      now: Date.now() + 1 * HOUR,
+    });
+    expect(res).toMatchObject({ superseded: 1 });
+    const health = await t.run((ctx) => ctx.db.get(healthId));
+    expect(health?.supersededByActivityId).toBe(stubId);
+    expect(health?.linkedReportId).toBe(reportId);
+    expect(health?.promptState).toBe('converted');
+    expect((await t.run((ctx) => ctx.db.get(stubId)))?.linkedReportId).toBeUndefined();
+    expect((await t.run((ctx) => ctx.db.get(reportId)))?.activityId).toBe(healthId);
+    expect(
+      (await me.as.query(api.gpsActivities.getForReport, { reportId }))?.path.coordinates,
+    ).toHaveLength(20);
+    // And the lake still draws the published skate — from the superseded copy, because it is the
+    // only copy with a track. A blanket "superseded never draws" made it vanish (PR #53 review).
+    const { tracks } = await me.as.query(api.gpsActivities.listTracksForBody, {
+      waterBodyId: bodyId,
+    });
+    expect(tracks.map((tr) => tr.activityId)).toEqual([healthId]);
+  });
+
+  test('a winner the resolver could not place inherits the loser’s lake with the link, so the aggregate layer still finds it', async () => {
+    const t = harness();
+    const me = await seedUser(t, 'me');
+    const bodyId = await seedBody(t);
+    // The phone copy is a track off the seeded lake entirely (unresolved); the watch copy resolved
+    // and was reported from. Same clock, so the match rule (one side unresolved) pairs them.
+    const phoneId = await me.as.mutation(
+      api.gpsActivities.ingestTrack,
+      ingestArgs({ path: trackPath(40) }),
+    );
+    expect((await t.run((ctx) => ctx.db.get(phoneId)))?.waterBodyId).toBeUndefined();
+    const watchId = await t.run((ctx) =>
+      ctx.db.insert('gpsActivities', {
+        userId: me.id,
+        provider: 'garmin',
+        providerActivityId: 'garmin-6',
+        sportType: 'IceSkate',
+        startTime: T0 + 3 * 60_000,
+        endTime: T0 + 44 * 60_000,
+        path: trackPath(),
+        waterBodyId: bodyId,
+        promptState: 'pending',
+        detectedAt: Date.now(),
+      }),
+    );
+    const reportId = await me.as.mutation(api.reports.create, {
+      waterBodyId: bodyId,
+      skateEndTime: T0 + 44 * 60_000,
+      iceTypes: ['black_ice'],
+      activityId: watchId,
+    });
+    await t.mutation(internal.gpsActivities.sweepUnpromptedActivities, {
+      now: Date.now() + 4 * HOUR,
+    });
+    const phone = await t.run((ctx) => ctx.db.get(phoneId));
+    expect(phone?.linkedReportId).toBe(reportId);
+    expect(phone?.waterBodyId).toBe(bodyId);
+    const { tracks } = await me.as.query(api.gpsActivities.listTracksForBody, {
+      waterBodyId: bodyId,
+    });
+    expect(tracks.map((tr) => tr.activityId)).toEqual([phoneId]);
   });
 });

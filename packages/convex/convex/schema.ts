@@ -163,6 +163,15 @@ export default defineSchema({
      */
     excludeTracksFromAggregate: v.optional(v.boolean()),
     notificationPrefs, // every type toggleable (D16)
+    /**
+     * The device's IANA timezone, refreshed on app open (N8/C). Only the 8pm digest reads it: the
+     * hour is 20:00 for everyone, the *zone* is per person. The device's zone rather than one
+     * derived from `homeCoord`, because the digest is a "when will this person look at their phone"
+     * question, and someone travelling is exactly the case where the device is right. Coarse enough
+     * to carry no new exposure next to `homeCoord`; never on a public profile. Absent ⇒ the pilot
+     * default (`America/New_York`).
+     */
+    timezone: v.optional(v.string()),
     dateOfBirth: v.number(), // UTC-midnight epoch ms; age gate (≥16) + minor status (<18) DERIVED (D41)
     riskAckVersion: v.optional(v.string()), // assumption-of-risk accepted (D45)
     riskAckAt: v.optional(v.number()),
@@ -365,10 +374,33 @@ export default defineSchema({
     promptState: literals(ACTIVITY_PROMPT_STATES),
     linkedReportId: v.optional(v.id('reports')),
     detectedAt: v.number(),
+    /**
+     * Another row that is the better copy of this same skate (N8/B4a) — a watch and an aggregator
+     * both saw one session, and the ladder in core's `activityDedup.ts` picked the other one. Never
+     * deleted: the record that two devices saw it is cheap, and a deletion is unrecoverable if the
+     * ladder was wrong. A superseded row is skipped by the prompt sweep and the unreported-skates
+     * list; if it carried a `linkedReportId` the link moved to the winner (when the winner was free
+     * and had a track to give the report), and a link that arrives *after* the dedup
+     * (`linkActivityToReport`) is redirected the same way. A superseded row that *kept* a link draws
+     * on the aggregate-tracks layer only when its winner cannot (no path, or a hidden report) — each
+     * skate once, from the copy that can. Unreachable today (one provider), stored so the rule exists
+     * before the second source does.
+     */
+    supersededByActivityId: v.optional(v.id('gpsActivities')),
   })
     .index('by_user', ['userId'])
     .index('by_provider_activity', ['provider', 'providerActivityId']) // unique dedup (D24)
     .index('by_water_body', ['waterBodyId']) // per-lake skate history + bounty eligibility (D44)
+    // The `activity_detected` sweep (N8/B4): `eq('pending').lte(detectedAt, now − settle)`. Both
+    // fields are required, so no sparse-index trap — and the sweep flips the row to `prompted`, so a
+    // row leaves this range the moment it's been asked about.
+    .index('by_prompt_state_detected', ['promptState', 'detectedAt'])
+    // The sweep's dedup candidates (N8/B4a, PR #53 review): a same-skate copy starts within
+    // `ACTIVITY_DEDUP_START_WINDOW_MS` of the due row, so the read is a start-time window per due
+    // row. `by_user` orders by *insertion*, and "the 50 most recently inserted" is the wrong set —
+    // an already-prompted copy behind fifty later syncs fell out of it and the skate was asked
+    // about twice.
+    .index('by_user_start_time', ['userId', 'startTime'])
     /**
      * The aggregate-tracks layer, season-scoped (N5a/D63).
      *
@@ -2545,9 +2577,9 @@ export default defineSchema({
    * the payloads were typed carry older shapes, nobody has ever seen them (there was no reader), and
    * the season purge retires them; a validator here would have forced a migration for the privilege.
    *
-   * Retention is meant to be the season boundary (N8/A5, PR 2 — **not built yet**): a daily sweep
-   * that deletes rows created before the current season's start, read or not. Until it lands, rows
-   * die only with the account (`accountDeletion.ts`). The inbox is not an archive.
+   * Retention is the season boundary (N8/A5): `storageHygiene.purgeLastSeasonNotifications` deletes
+   * rows created before the current season's start, read or not, daily off `by_created_at`. Rows
+   * otherwise die only with the account (`accountDeletion.ts`). The inbox is not an archive.
    */
   notifications: defineTable({
     userId: v.id('profiles'), // recipient
@@ -2560,7 +2592,10 @@ export default defineSchema({
     // The unread badge: `eq(userId).eq(readAt, undefined)`. An index on an optional field is not
     // sparse and `undefined` sorts first — but that trap bites **range** bounds (the N3 finalize
     // bug), and this is an **equality**, which is the shape that behaves.
-    .index('by_user_read', ['userId', 'readAt']),
+    .index('by_user_read', ['userId', 'readAt'])
+    // The season purge (N8/A5): `lt(createdAt, seasonStart)` across every user. `createdAt` is
+    // required, so the range is honest.
+    .index('by_created_at', ['createdAt']),
 
   pointEvents: defineTable({
     userId: v.id('profiles'),

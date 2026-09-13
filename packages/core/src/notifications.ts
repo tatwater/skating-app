@@ -17,6 +17,7 @@
  */
 
 import type { HazardLifecyclePhase } from './hazardLifecycle';
+import { formatSkateTime } from './reportView';
 
 // ── Types and preferences ────────────────────────────────────────────────────────────────────────
 
@@ -282,11 +283,24 @@ function contentTarget(
   return ref.available ? { kind, id: ref.id } : null;
 }
 
+export interface DescribeNotificationOptions {
+  /**
+   * The IANA zone any wall-clock time in the copy is written in (the `activity_detected` detail
+   * line). Absent ⇒ the runtime's own zone, which is the right answer on a device and the wrong one on
+   * a server: a transport composing this sentence in Convex (UTC) must pass the recipient's
+   * `profiles.timezone` (or the digest default), or a 2pm skate reads as 7pm.
+   */
+  timeZone?: string;
+}
+
 /**
- * The sentence and tap target for a resolved notification. Pure, and the only place notification copy
- * lives — see the module note.
+ * The sentence and tap target for a resolved notification. Pure given `options`, and the only place
+ * notification copy lives — see the module note.
  */
-export function describeNotification(view: NotificationView): NotificationDescription {
+export function describeNotification(
+  view: NotificationView,
+  options: DescribeNotificationOptions = {},
+): NotificationDescription {
   switch (view.type) {
     case 'report_rated': {
       if (view.kind === 'thumb') {
@@ -417,13 +431,44 @@ export function describeNotification(view: NotificationView): NotificationDescri
       };
     }
     case 'activity_detected':
+      // The skate's own time is the detail line — it's the one thing that tells two nudges apart,
+      // and it's why the payload carries `startTime` at all. Formatted in `options.timeZone` when
+      // the caller has one, else the runtime's — the device's zone, which is where the skater is
+      // reading it, when this runs on a device.
       return {
         title: view.body
           ? `You skated on ${view.body.name}. Add a report?`
           : 'You recorded a skate. Add a report?',
+        detail: formatSkateTime(view.startTime, options.timeZone),
         target: { kind: 'unreported_skates' },
       };
     case 'unknown':
       return { title: 'An older notification that can no longer be shown', target: null };
   }
+}
+
+// ── Timezone sync (N8/C) ─────────────────────────────────────────────────────────────────────────
+
+/**
+ * The device's IANA zone, or `null` where the runtime can't say (an old WebView, a test). Both
+ * clients call this on app open and write the answer to `profiles.timezone` when it differs; the
+ * 8pm digest is the one thing that reads it.
+ */
+export function deviceTimeZone(): string | null {
+  try {
+    const zone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    return typeof zone === 'string' && zone.length > 0 ? zone : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The zone to write, or `null` when the stored one is already right (or the device can't say) — the
+ * only reason an ordinary app open writes anything. Returns the zone rather than a `device is string`
+ * predicate: a predicate's `false` branch would narrow `device` to `null`, which is wrong when the
+ * device zone simply equals the stored one.
+ */
+export function timezoneToSync(stored: string | undefined, device: string | null): string | null {
+  return device !== null && device !== stored ? device : null;
 }

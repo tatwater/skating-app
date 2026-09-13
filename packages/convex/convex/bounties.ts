@@ -694,7 +694,7 @@ export const cancel = mutation({
  *
  * The *author* is not pinged — a stranger having asked is not a reason for their phone to ding — but
  * they are told on the spot: `answeredByMyReport` below backs the "at least N skaters were looking
- * forward to it" line on their own report.
+ * forward to it" line on their own report, so nothing here is returned.
  */
 export async function attachReportToOpenBounties(
   ctx: MutationCtx,

@@ -1,8 +1,8 @@
 # N8 — The notification pipeline: the inbox, the missing producers, and the reverse reach index
 
 > **Status:** 🔨 **In build (2026-09-11)**, branch `phase-n8-notification-pipeline`, three PRs:
-> **PR 1** (inbox + settled queue + producers B1–B3) ✅ built; **PR 2** (B4/B4a, A5 purge, C timezone)
-> and **PR 3** (transports: push, email, offline inbox cache) to follow. Scoped 2026-07-30 with a
+> **PR 1** (inbox + settled queue + producers B1–B3) ✅ #52; **PR 2** (B4/B4a, A5 purge, C timezone)
+> ✅ built, stacked on PR 1; **PR 3** (transports: push, email, offline inbox cache) to follow. Scoped 2026-07-30 with a
 > founder call of **no N8 code until every N6 phase has shipped**; N6 closed 2026-09-10.
 > **Scope grew at kickoff (founder, 2026-09-11):** push (Android via FCM now; iOS APNs key once
 > enrolled) and **email** (Resend is live on dev) come *in*, as transports over the same rows — see
@@ -11,11 +11,12 @@
 > **Touches:** `notifications` / `notificationQueue`, `profiles.notificationPrefs`, the Phase 3 comment
 > path, the Phase 7 moderation queue, the Phase 9 hazard-confirmation loop, the Phase 8 recorder, and
 > both clients' shells.
-> **Decisions:** logged as **D167–D172** in [`01-decisions.md`](./01-decisions.md) — the numbers this
+> **Decisions:** logged as **D167–D173** in [`01-decisions.md`](./01-decisions.md) — the numbers this
 > document proposed (D77–D81) were taken by N5c and N6b before it was built. The mapping: D77→**D167**
 > (inbox first), D78→**D168** (producer + renderer or no type), D79→**D171** (hazards don't broadcast),
 > D80→**D172** (reverse index filters candidates; deferred), D81→**D169** (settle + re-check).
-> **D170** (`bounty_answered`) was found at kickoff — see the built record below.
+> **D170** (`bounty_answered`) was found at kickoff; **D173** is Workstream C's call — see the built
+> records below.
 
 ---
 
@@ -663,6 +664,68 @@ producer enqueues with `SETTLE_MS = 60 s` and a typed `trigger` the flush re-rea
 8. **Workstream D is deliberately unbuilt** (D172). Dev has three profiles.
 9. **`bounties.answeredByMyReport`** backs the post-submit "at least N skaters were looking forward to
    it" line on both report-detail views; it answers 0 to anyone but the author.
+
+## Built record — PR 2 (2026-09-11)
+
+**Shipped:** B4 (`gpsActivities.sweepUnpromptedActivities`, hourly; `by_prompt_state_detected` index;
+`ACTIVITY_PROMPT_DELAY_MS = 3 h`), B4a (`core/activityDedup.ts` — overlap + 10-minute start window +
+compatible body, the four-rung ladder, `supersededByActivityId`, the link moves to the winner; the
+sweep runs it per user over that user's recent rows, not only the due ones), A5
+(`storageHygiene.purgeLastSeasonNotifications`, daily, `notifications.by_created_at`), C
+(`profiles.timezone`, `profiles.setTimezone` validated through `Intl`, both shells write it on app
+open via core's `deviceTimeZone`/`timezoneNeedsSync`; the fan-out stamps `nextZonedHourMs(now, 20,
+p.timezone ?? DIGEST_TIMEZONE)`). Logged as **D173**.
+
+**Departures worth knowing:**
+
+1. **The sweep flips a superseded loser to `dismissed`** as well as stamping `supersededByActivityId`,
+   so every existing reader that filters on `dismissed` (the You-tab list) hides it without learning
+   the new field; `listMine` also filters on the field directly.
+2. **The sweep marks `prompted` even when the toggle is off** — "considered" is what the state means,
+   and a row that stayed `pending` would be re-examined every hour for ever.
+3. **Found and fixed on the way:** `profiles.backfillNotificationPrefs`'s hand-written
+   `PROFILE_FIELDS` had drifted six fields behind the schema, so running it (as the PR 1 rename
+   requires) would have stripped `deletionRequestedAt`, `excludeTracksFromAggregate`,
+   `activeBountyPostLimit`, `photosExpiredForSeason` and `photoReconcileStartedAt` from every profile.
+   It now reads the schema's own field list.
+4. **The dedup ladder is exercised end-to-end in a test with a hand-inserted `garmin` row**, since no
+   adapter produces one; the constants are pinned by tests, not by data, as the plan said they would be.
+5. **Review pass (xhigh):** the link *moves* (the loser's `linkedReportId` is cleared, and only for
+   an intact pair — otherwise the aggregate layer drew the skate twice); a loser already `prompted`
+   or `dismissed` hands that answer to the winner so a phone copy flushing a day after the watch copy
+   never asks twice; minors and `canPostReports === false` are flipped to `prompted` but never nudged
+   toward a form that refuses them; the sweep reads 50 due rows × a 50-row window each per tick (worst
+   case ~2.7k reads; see 7 for the window) and unions the due rows into the candidate set so none can be
+   stranded; the
+   purge self-continues while truncated; `activity_detected` shows the skate's time as its detail.
+6. **"Not now" on the recorder's stop card is a deferral, not a dismissal — deliberately.** The card
+   clears its own state and leaves the row `pending`, so the sweep nudges once, three hours later.
+   That is the reminder "not now" asks for; the You-tab list's "Not reporting this one" is the
+   `dismissed` that means never, and the sweep respects it. Recorded because the review read the stop
+   card as a bug; changing it would mean carrying a decline through the offline track queue to
+   `ingestTrack` for a behaviour nobody wants.
+7. **Greptile pass (latent, multi-provider only):** the dedup candidates are now read as **one
+   start-time window per due row** (new `by_user_start_time` index, ±`ACTIVITY_DEDUP_START_WINDOW_MS`)
+   rather than the user's fifty most recently *inserted* rows — the latter dropped an already-prompted
+   copy behind fifty later syncs and asked about the skate twice. A consequence worth knowing: an
+   *unrelated* due skate no longer pulls a not-yet-due pair into an early dedup; the pair waits for
+   one of its own copies to come due, which is the tick that can see it. And `listTracksForBody`
+   decides a superseded copy that *kept* its link against its winner — skipped if the winner draws
+   on its own terms (track + visible report), drawn if it can't (a path-less stub, or a report hidden
+   since, walking the whole supersession chain so an undrawable intermediate can't let an older copy
+   render beside the terminal winner) — so both copies reported from draws once, and a published skate never vanishes because its
+   better-ranked copy can't draw (the blanket "superseded never draws" of the first cut did exactly
+   that; the second cut checked the path but not the report). The aggregate read now **scans until
+   `limit` drawable tracks are in hand** (`TRACK_SCAN_CAP` = 2×), instead of `take(limit + 1)` and
+   skipping inside the slice — every skip reason, not only this one, used to spend a slot; and
+   `truncated` is now an honest flag (a drawable past the limit, or a scan that hit its cap). `listMine`'s filter-before-take was
+   already in from pass 5. *Second pass (xhigh):* a late `linkActivityToReport` follows the dedup
+   chain to the winner, stopping short of a path-less one or one already reported (it links the copy
+   it was filed from — the sweep's own can't-move state); the sweep's move refuses a path-less winner
+   and carries the loser's lake onto an unresolved one; dedup body-matching considers every body a
+   spanning skate touched. Also: `PastWeatherPanel.test.tsx` (N6h) waited on a heading that renders
+   in the loading state too, then asserted synchronously — a race a slow CI runner lost; it now
+   waits for the loading line to clear.
 
 ## What this phase does not cover
 

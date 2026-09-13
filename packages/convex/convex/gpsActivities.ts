@@ -26,7 +26,11 @@
  */
 
 import {
+  ACTIVITY_DEDUP_START_WINDOW_MS,
   clipPathEnds,
+  type DedupActivity,
+  dedupActivities,
+  isMinor,
   nearestBodyForPoint,
   PUT_IN_CLIP_M,
   pathOpacity,
@@ -40,11 +44,18 @@ import {
 import { ConvexError, v } from 'convex/values';
 import type { LineString, MultiPolygon, Polygon } from 'geojson';
 import type { Doc, Id } from './_generated/dataModel';
-import { type MutationCtx, mutation, type QueryCtx, query } from './_generated/server';
+import {
+  internalMutation,
+  type MutationCtx,
+  mutation,
+  type QueryCtx,
+  query,
+} from './_generated/server';
 import { getCurrentProfile, requireContributor, requireProfile } from './lib/auth';
 import { resolveSurvivor } from './lib/bodies';
 import { ACTIVITY_PROMPT_STATES } from './lib/enums';
 import { isListed } from './lib/listing';
+import { enqueueActorNotification } from './lib/notificationQueue';
 import { geoJson, literals } from './lib/validators';
 import { listedBodiesNearCoord } from './waterBodies';
 
@@ -245,11 +256,281 @@ export const setPromptState = mutation({
 });
 
 /**
+ * How long a recorded skate sits `pending` before the sweep asks about it (N8/B4). Long enough that
+ * the recorder's own stop-prompt and a same-day flush from the offline queue get first go, and that
+ * a second source of the same skate (a watch syncing when it feels like it) has usually arrived —
+ * the dedup below needs both copies in the table before it can pick one. Same idea as the D169 settle
+ * window, at a longer timescale.
+ */
+export const ACTIVITY_PROMPT_DELAY_MS = 3 * 60 * 60 * 1000;
+/**
+ * Due activities examined per sweep tick; the rest wait for the next hour. Small on purpose: every
+ * due row costs a `CANDIDATE_WINDOW_CAP` read of its start-time window, so the tick's worst case is
+ * `PROMPT_SWEEP_CAP × CANDIDATE_WINDOW_CAP` documents, which has to stay inside one transaction's
+ * read limit — a tick that blows it throws, delivers nothing, and re-reads the same rows next hour
+ * for ever.
+ */
+const PROMPT_SWEEP_CAP = 50;
+/**
+ * Rows read per due row's start-time window. A window is ±`ACTIVITY_DEDUP_START_WINDOW_MS` — twenty
+ * minutes of one person's skating — so this is a safety bound, not a working size: a window that
+ * fills it holds fifty copies of the same skate.
+ */
+const CANDIDATE_WINDOW_CAP = 50;
+
+/**
+ * The `activity_detected` producer (N8/B4): find skates still `pending` after the delay, dedup each
+ * user's batch first (B4a), and file one notification per winner — "You skated on Lake Morey on
+ * Tuesday. Add a report?" — flipping the row to `prompted` so it fires once.
+ *
+ * **Why this exists.** `ingestTrack` inserts every recorded track as `pending`, and the recorder
+ * prompts on stop. When the app dies before prompting, or the track flushes from the offline queue
+ * hours later on a different screen, that prompt never happens — a completed skate sits in the table
+ * that nobody was ever asked about. N6f's `UnreportedSkates` list on the You tab is where the skate
+ * *lives*; this is the nudge that says it's there.
+ *
+ * **Our recorder only.** D24's "detected on any linked provider" premise was retired with Phase 8's
+ * pivot to push, and the watch adapters sit behind approval queues (L8). The dedup ladder runs anyway
+ * — on one provider it has nothing to choose between, and that is the point of settling it now.
+ *
+ * Runs hourly from `crons.ts`. The notification rides the settle queue like every other producer, with
+ * no extra debounce: it has already waited hours, and the flush re-checks the activity is still
+ * un-linked and un-dismissed before delivering.
+ */
+export const sweepUnpromptedActivities = internalMutation({
+  args: { now: v.optional(v.number()) },
+  handler: async (ctx, args) => {
+    const now = args.now ?? Date.now();
+    // A plain `take`, not `takeCapped`: a full batch is the design here (the rest wait for the next
+    // tick, the same shape as the storage sweeps), not a truncated answer, so the D5 "results are
+    // truncated" warning would fire on every busy tick for a set that is meant to fill.
+    const due = await ctx.db
+      .query('gpsActivities')
+      .withIndex('by_prompt_state_detected', (q) =>
+        q.eq('promptState', 'pending').lte('detectedAt', now - ACTIVITY_PROMPT_DELAY_MS),
+      )
+      .take(PROMPT_SWEEP_CAP);
+
+    // Every due row must leave the `pending` range on the tick that reads it, or the sweep re-reads
+    // it every hour for ever — and it holds one of the batch's slots while it does. Two shapes can't
+    // be settled by the dedup below because it never sees them: a row that is already superseded (a
+    // client handed a loser back to `pending` — `setPromptState` accepts any state) and a row that
+    // already carries a link (reported, so there is nothing to ask). Settle those here.
+    //
+    // The rest are deduped per user, against everything of theirs that could be the same skate — not
+    // only the due rows. A copy that arrived an hour ago is still `pending` and not yet due, but it
+    // is the copy the ladder may prefer, and picking a winner without it would supersede the better
+    // recording later.
+    const byUser = new Map<Id<'profiles'>, Doc<'gpsActivities'>[]>();
+    let settled = 0;
+    for (const row of due) {
+      // Link first: a linked row is `converted` whether or not it was also superseded (the loser
+      // loop below leaves a loser its link when the winner has a report of its own).
+      if (row.linkedReportId !== undefined) {
+        await ctx.db.patch(row._id, { promptState: 'converted' });
+        settled++;
+        continue;
+      }
+      if (row.supersededByActivityId !== undefined) {
+        await ctx.db.patch(row._id, { promptState: 'dismissed' });
+        settled++;
+        continue;
+      }
+      const rows = byUser.get(row.userId);
+      if (rows) rows.push(row);
+      else byUser.set(row.userId, [row]);
+    }
+
+    let prompted = 0;
+    let superseded = 0;
+    for (const [userId, dueRows] of byUser) {
+      const candidates = await sameSkateCandidates(ctx, userId, dueRows);
+      const candidateById = new Map(candidates.map((c) => [c._id, c]));
+      const result = dedupActivities(candidates.map(toDedupActivity));
+      // A loser the user had already been asked about (`prompted`) or had waved off (`dismissed`)
+      // settles the *skate*, not the row: the winner inherits that answer, so a phone copy that
+      // flushes a day after the watch copy was prompted doesn't ask a second time about the same
+      // afternoon — the double prompt B4a exists to prevent.
+      const inherited = new Map<Id<'gpsActivities'>, 'prompted' | 'dismissed'>();
+      for (const { loser, winner } of result.superseded) {
+        const loserId = loser.id as Id<'gpsActivities'>;
+        const winnerId = winner.id as Id<'gpsActivities'>;
+        const loserRow = candidateById.get(loserId);
+        if (!loserRow) continue;
+        if (loserRow.promptState === 'dismissed') inherited.set(winnerId, 'dismissed');
+        else if (loserRow.promptState === 'prompted' && !inherited.has(winnerId)) {
+          inherited.set(winnerId, 'prompted');
+        }
+        // The link moves rather than breaks: a report must never lose its path to a dedup. Moved,
+        // not copied — a loser that kept `linkedReportId` would survive account deletion as a
+        // "published" track, and the winner's report would render the loser's path. Only an intact
+        // pair moves: the report must point back at this loser, the winner must be free, and the
+        // winner must be able to *carry* what the report renders — a stub with no path (a watch
+        // that reported "started 14:02" and nothing else) would leave the report's map empty, which
+        // is the loss this move exists to prevent. When it can't move — both copies were reported
+        // from, or the winner is a stub — the loser keeps its link and stays `converted` (below);
+        // `listTracksForBody` skips superseded rows, so the skate still draws once on the aggregate
+        // layer. The winner is re-read rather than taken from the pre-loop snapshot, because two
+        // losers of one winner would otherwise both see it unlinked and the second would overwrite
+        // the first's link.
+        let moved = false;
+        if (loserRow.linkedReportId !== undefined) {
+          const winnerRow = await ctx.db.get(winnerId);
+          const report = await ctx.db.get(loserRow.linkedReportId);
+          if (
+            winnerRow &&
+            winnerRow.linkedReportId === undefined &&
+            (winnerRow.path !== undefined || loserRow.path === undefined) &&
+            report &&
+            report.activityId === loserId
+          ) {
+            await ctx.db.patch(winnerId, {
+              linkedReportId: loserRow.linkedReportId,
+              promptState: 'converted',
+              // The aggregate layer reaches a track through its body (`by_water_body_start_time`),
+              // so a winner the resolver couldn't place would take the link and vanish from the
+              // lake. It inherits the loser's lake instead — the match rule already vouched for it
+              // (equal, or one side unresolved).
+              ...(winnerRow.waterBodyId === undefined && loserRow.waterBodyId !== undefined
+                ? {
+                    waterBodyId: loserRow.waterBodyId,
+                    ...(loserRow.waterBodyIds !== undefined
+                      ? { waterBodyIds: loserRow.waterBodyIds }
+                      : {}),
+                  }
+                : {}),
+            });
+            await ctx.db.patch(report._id, { activityId: winnerId });
+            moved = true;
+          }
+        }
+        await ctx.db.patch(loserId, {
+          supersededByActivityId: winnerId,
+          // `dismissed` takes it off every list and out of the sweep's range. A loser whose link
+          // could *not* move (the winner has a report of its own) is still a reported skate and stays
+          // `converted` — a linked row reading `dismissed` would contradict the lifecycle
+          // `linkActivityToReport` writes, and `dismissed` is not what the person said about it.
+          promptState: !moved && loserRow.linkedReportId !== undefined ? 'converted' : 'dismissed',
+          ...(moved ? { linkedReportId: undefined } : {}),
+        });
+        superseded++;
+      }
+
+      // Who the nudge would go to — and whether they could act on it. A minor can record for
+      // themselves but can never file a report (D41), and a restricted poster (D57) can't either, so
+      // "Add a report?" would be a call to action the app then refuses. The row is still flipped to
+      // `prompted` below ("considered"), for the same reason a switched-off toggle flips it.
+      const recipient = await ctx.db.get(userId);
+      const canReport =
+        recipient !== null &&
+        !isMinor(recipient.dateOfBirth, now) &&
+        recipient.canPostReports !== false;
+
+      const dueIds = new Set(dueRows.map((r) => r._id));
+      for (const winner of result.winners) {
+        const id = winner.id as Id<'gpsActivities'>;
+        const answered = inherited.get(id);
+        // A winner that isn't due yet waits for a later tick — unless a loser handed it an answer,
+        // which has to land *now*: that loser was superseded above and is out of the candidate set
+        // from here on, so an answer not applied on this tick is gone, and the winner would be asked
+        // about a skate the person already answered for (the very double prompt B4a exists to stop).
+        if (answered === undefined && !dueIds.has(id)) continue;
+        const row = await ctx.db.get(id);
+        // Re-read: a link or a dismissal may have landed above, or between the scan and here.
+        if (row?.promptState !== 'pending' || row.linkedReportId !== undefined) continue;
+        if (answered !== undefined) {
+          await ctx.db.patch(id, { promptState: answered });
+          continue;
+        }
+        await ctx.db.patch(id, { promptState: 'prompted' });
+        prompted++;
+        if (!canReport) continue;
+        await enqueueActorNotification(ctx, {
+          recipientId: userId,
+          targetId: id,
+          trigger: { kind: 'activity', activityId: id },
+          now,
+          flushAfter: now, // already waited hours; the next flush tick delivers
+        });
+      }
+    }
+    return { scanned: due.length, prompted, superseded, settled };
+  },
+});
+
+/**
+ * Everything of this user's that the dedup should see alongside the due rows: every activity of
+ * theirs that *could* be the same skate as a due row, `pending` or not — a converted watch copy is
+ * still the better copy of a skate the phone recorded, and a copy that was prompted a week ago is
+ * the answer the winner inherits.
+ *
+ * Read as one start-time window per due row (`by_user_start_time`, ±`ACTIVITY_DEDUP_START_WINDOW_MS`
+ * — the dedup's own rule for "could be the same skate"), so the set is exact whatever else the
+ * person has recorded since. It used to be their fifty most recently *inserted* rows, which is a
+ * different set: an already-prompted watch copy behind fifty later syncs fell out of it, the sweep
+ * couldn't inherit its answer, and the skate was asked about twice (PR #53 review). The due rows are
+ * always in the set regardless of the window cap: a due row the read didn't reach would never be a
+ * winner or a loser, so it would never leave the `pending` range, and the sweep would re-read it
+ * every hour for ever. (The superseded filter below can't strand a due row for the same reason: the
+ * sweep settles superseded due rows before it gets here.)
+ */
+async function sameSkateCandidates(
+  ctx: MutationCtx,
+  userId: Id<'profiles'>,
+  dueRows: Doc<'gpsActivities'>[],
+): Promise<Doc<'gpsActivities'>[]> {
+  const byId = new Map<Id<'gpsActivities'>, Doc<'gpsActivities'>>();
+  for (const row of dueRows) byId.set(row._id, row);
+  for (const due of dueRows) {
+    const nearby = await ctx.db
+      .query('gpsActivities')
+      .withIndex('by_user_start_time', (q) =>
+        q
+          .eq('userId', userId)
+          .gte('startTime', due.startTime - ACTIVITY_DEDUP_START_WINDOW_MS)
+          .lte('startTime', due.startTime + ACTIVITY_DEDUP_START_WINDOW_MS),
+      )
+      .take(CANDIDATE_WINDOW_CAP);
+    for (const row of nearby) byId.set(row._id, row);
+  }
+  return [...byId.values()].filter((r) => r.supersededByActivityId === undefined);
+}
+
+function toDedupActivity(row: Doc<'gpsActivities'>): DedupActivity {
+  return {
+    id: row._id,
+    userId: row.userId,
+    provider: row.provider,
+    startTime: row.startTime,
+    ...(row.endTime !== undefined ? { endTime: row.endTime } : {}),
+    ...(row.waterBodyId !== undefined ? { waterBodyId: row.waterBodyId } : {}),
+    ...(row.waterBodyIds !== undefined ? { waterBodyIds: row.waterBodyIds } : {}),
+  };
+}
+
+/**
+ * How far `linkActivityToReport` and `listTracksForBody` follow `supersededByActivityId` before
+ * giving up. A chain is a winner that was itself out-ranked on a later tick — two or three rows in
+ * the worst plausible case — and the bound is only so a cycle written by some future bug can't spin
+ * a function.
+ */
+const MAX_SUPERSESSION_HOPS = 8;
+
+/**
  * Wire an activity to the report it backs — the join `reports.create` calls after inserting a report
  * with an `activityId`. Kept as a helper (not a public mutation) so the two sides can only ever be
  * written together, inside one transaction: a half-linked pair would render a path on a report the
  * activity doesn't point back to, and the aggregate layer's privacy predicate reads the *activity*
  * side (`linkedReportId`), so a missing back-link would silently drop a track from the map.
+ *
+ * **A superseded copy hands the link to its winner** (N8/B4a), the same move `sweepUnpromptedActivities`
+ * makes when it finds a linked loser — only here the order is reversed: the sweep ran first and the
+ * link arrives after. The report form can hold an activity id for hours (drive home, fill it in), and
+ * the hourly sweep may have picked a better copy of that skate in between. Linking the loser would
+ * leave the winner un-linked and `pending`, to be prompted later about a skate already reported — the
+ * double prompt B4a exists to stop — and the skate off the aggregate layer, which skips superseded
+ * rows. Redirecting keeps `reports.activityId` and `linkedReportId` pointing at each other, which is
+ * the invariant this helper exists for.
  */
 export async function linkActivityToReport(
   ctx: MutationCtx,
@@ -257,13 +538,40 @@ export async function linkActivityToReport(
   reportId: Id<'reports'>,
   userId: Id<'profiles'>,
 ): Promise<void> {
-  const activity = await ctx.db.get(activityId);
-  if (!activity) throw new ConvexError('Activity not found');
-  if (activity.userId !== userId) throw new ConvexError('Not your activity');
+  const requested = await ctx.db.get(activityId);
+  if (!requested) throw new ConvexError('Activity not found');
+  if (requested.userId !== userId) throw new ConvexError('Not your activity');
+  let activity = requested;
+  for (
+    let hops = 0;
+    activity.supersededByActivityId !== undefined && hops < MAX_SUPERSESSION_HOPS;
+    hops++
+  ) {
+    const winner = await ctx.db.get(activity.supersededByActivityId);
+    // A dangling pointer (the winner went with an account-deletion pass) leaves the link where it
+    // was asked for; the ownership check is belt-and-braces, since the sweep dedups within a user.
+    if (!winner || winner.userId !== userId) break;
+    // The report's path must survive the redirect: a stub winner (start and end, no track) does not
+    // take the link off a copy that has one — the same rule the sweep's move applies.
+    if (winner.path === undefined && activity.path !== undefined) break;
+    activity = winner;
+  }
+  // A winner already carrying another report keeps it, and this report links the copy it was filed
+  // from — the state the sweep leaves when a link cannot move (both copies reported from): the
+  // aggregate layer draws the winner's track, this report still shows its own. Refusing here would
+  // block a report over a dedup the person never saw.
+  if (
+    activity._id !== requested._id &&
+    activity.linkedReportId !== undefined &&
+    activity.linkedReportId !== reportId
+  ) {
+    activity = requested;
+  }
   if (activity.linkedReportId !== undefined && activity.linkedReportId !== reportId) {
     throw new ConvexError('This skate is already attached to another report');
   }
-  await ctx.db.patch(activityId, { linkedReportId: reportId, promptState: 'converted' });
+  await ctx.db.patch(activity._id, { linkedReportId: reportId, promptState: 'converted' });
+  if (activity._id !== activityId) await ctx.db.patch(reportId, { activityId: activity._id });
 }
 
 /** The shape the map layers consume — a path plus the metadata the drawer shows. */
@@ -355,6 +663,9 @@ export const listMine = query({
       .query('gpsActivities')
       .withIndex('by_user', (q) => q.eq('userId', profile._id))
       .order('desc')
+      // A superseded copy is skipped — the better copy is in the list already — and skipped *before*
+      // the take, so it doesn't eat a slot and hand back fewer than `limit` while older skates exist.
+      .filter((q) => q.eq(q.field('supersededByActivityId'), undefined))
       .take(limit);
     return await Promise.all(
       activities.map(async (a) => {
@@ -384,6 +695,14 @@ export const listMine = query({
  * everything", which is exactly the sort of quiet lie the Phase 7 "no silent caps" rule exists to stop.
  */
 const MAX_TRACKS_PER_BODY = 200;
+/**
+ * Rows the aggregate read may scan to fill its `limit`. The scan skips for five reasons — no path,
+ * no link, a hidden report, an opted-out author, a superseded copy whose winner draws — and a skip
+ * used to spend one of the `limit` slots, so a lake with enough undrawable rows at the top of the
+ * index returned fewer tracks than it had (PR #53 review). The scan now runs until `limit` drawable
+ * tracks are in hand, and this bounds it: at ~2 reads per row it is a quarter of the read budget.
+ */
+const TRACK_SCAN_CAP = 2 * MAX_TRACKS_PER_BODY;
 
 /** One aggregated public track, with the opacity it should draw at. */
 export interface AggregateTrackView {
@@ -435,7 +754,7 @@ export const listTracksForBody = query({
     // Sanitized, not trusted: a `NaN` off the wire is an index bound that matches nothing, which would
     // draw an empty lake rather than refusing the question.
     const season = resolveSeason(args.season, seasonOf(Date.now()));
-    const activities = await ctx.db
+    const scanned = await ctx.db
       .query('gpsActivities')
       .withIndex('by_water_body_start_time', (q) =>
         q
@@ -444,20 +763,63 @@ export const listTracksForBody = query({
           .lt('startTime', seasonEndMs(season)),
       )
       .order('desc')
-      .take(limit + 1);
-    const truncated = Math.max(0, activities.length - limit);
+      // A superseded copy that carries no link never draws — publish-is-consent would skip it anyway,
+      // so it is filtered in the index scan rather than costing a row of the scan cap. A superseded
+      // copy that *kept* its link is the rare case and is decided against its winner below.
+      .filter((q) =>
+        q.or(
+          q.eq(q.field('supersededByActivityId'), undefined),
+          q.neq(q.field('linkedReportId'), undefined),
+        ),
+      )
+      .take(TRACK_SCAN_CAP);
 
     const now = Date.now();
     const optOutCache = new Map<Id<'profiles'>, boolean>();
-    const tracks: AggregateTrackView[] = [];
-
-    for (const activity of activities.slice(0, limit)) {
-      if (activity.path?.type !== 'LineString') continue;
+    const reportCache = new Map<Id<'reports'>, Doc<'reports'> | null>();
+    /** The row's linked report if the row can draw on its own terms — a track, a link, a visible report. */
+    async function drawableReport(row: Doc<'gpsActivities'>): Promise<Doc<'reports'> | null> {
+      if (row.path?.type !== 'LineString') return null;
       // (1) Publish-is-consent: no linked report ⇒ never aggregates. This is also what keeps a
       // minor's recording out, since a minor can't have filed the report it would need (D41).
-      if (activity.linkedReportId === undefined) continue;
-      const report = await ctx.db.get(activity.linkedReportId);
-      if (report?.moderationStatus !== 'visible') continue;
+      if (row.linkedReportId === undefined) return null;
+      let report = reportCache.get(row.linkedReportId);
+      if (report === undefined) {
+        report = await ctx.db.get(row.linkedReportId);
+        reportCache.set(row.linkedReportId, report);
+      }
+      return report?.moderationStatus === 'visible' ? report : null;
+    }
+    const tracks: AggregateTrackView[] = [];
+    // Scan until one more than `limit` is drawable: the extra is the `truncated` flag, and finding
+    // it is the only honest way to say "there is more" (the `cap + 1` trick from `lib/scan.ts`).
+    let drawable = 0;
+    for (const activity of scanned) {
+      if (drawable > limit) break;
+      const report = await drawableReport(activity);
+      if (!report) continue;
+      // (1b) A superseded copy that kept its link — the dedup (`sweepUnpromptedActivities`) couldn't
+      // move it, because the winner had a report of its own or had no path to give the report.
+      // Draw each skate once, from the copy that *can* draw it: if the winner draws on its own terms
+      // it is the one on the map and this loser is skipped; if the winner is a path-less stub, or
+      // its report has since been hidden, this loser is the only drawable copy of a published skate
+      // and must not vanish (PR #53 review). Its report always shows its own path (`getForReport`).
+      // The whole chain is walked, not one hop: a winner out-ranked on a later tick is a chain, and
+      // an intermediate that can't draw must not let this copy render *alongside* the terminal
+      // winner that can. The rule is "the highest-ranked copy that can draw", so this copy yields
+      // to any drawable copy above it.
+      let yields = false;
+      let above = activity.supersededByActivityId;
+      for (let hops = 0; above !== undefined && hops < MAX_SUPERSESSION_HOPS; hops++) {
+        const winner = await ctx.db.get(above);
+        if (!winner) break;
+        if (await drawableReport(winner)) {
+          yields = true;
+          break;
+        }
+        above = winner.supersededByActivityId;
+      }
+      if (yields) continue;
 
       // (4) Global opt-out, cached per author across the loop.
       let optedOut = optOutCache.get(activity.userId);
@@ -477,10 +839,13 @@ export const listTracksForBody = query({
       // A path that is entirely endpoints comes back null — dropping it is the point (see clipPathEnds).
       if (!path) continue;
 
+      drawable++;
+      if (drawable > limit) break;
+
       // Opacity is the linked report's freshness (D59) — the *same* number, not a parallel decay, so
       // a path can never read as fresher or staler than the report it belongs to.
-      const netThumbs = await tallyNetThumbs(ctx, activity.linkedReportId);
-      const corroborationCount = await countCorroborations(ctx, activity.linkedReportId);
+      const netThumbs = await tallyNetThumbs(ctx, report._id);
+      const corroborationCount = await countCorroborations(ctx, report._id);
       const freshness = reportFreshness(
         { skateEndTime: report.skateEndTime, netThumbs, corroborationCount },
         now,
@@ -494,6 +859,10 @@ export const listTracksForBody = query({
       });
     }
 
+    // `truncated` is a flag with a count's shape (it has only ever been 0 or 1): a drawable track
+    // past the limit, or a scan that hit its cap before it could tell — reported as truncated rather
+    // than complete, because "this is everything" is the wrong direction to be wrong in (D5).
+    const truncated = drawable > limit || scanned.length === TRACK_SCAN_CAP ? 1 : 0;
     return { tracks, truncated };
   },
 });

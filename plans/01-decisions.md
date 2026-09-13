@@ -5436,3 +5436,31 @@ pipeline whose output nobody could see. Trigger: ~1,000 profiles, or the first f
 than a handful of pages.
 
 **Related:** D5, D80, N1, [`phase-N8`](./phase-N8-notification-pipeline.md) Workstream D.
+
+## D173 — The digest is 8pm local: the zone is per person, the hour is not, and sunset is not a clock (N8)
+
+**2026-07-30, founder call; built 2026-09-11.** The roadmap named "per-user local-time / true-sunset
+digest timing." Scoped down: **the hour stays 20:00 for everybody; only the zone becomes per-user**, and
+that zone is the **device's** (`Intl.DateTimeFormat().resolvedOptions().timeZone`, refreshed on app
+open, written only when it differs), not one derived from `homeCoord`.
+
+**Why the device.** The digest is a *"when will this person look at their phone"* question, and
+travelling to a different zone is exactly the case where the device answer is right. `homeCoord` is
+optional and private (D11) and a tz-boundary lookup is a ~1 MB dependency for a worse answer. A coarse
+zone next to a home coordinate we already hold carries no new exposure; it never goes on a public
+profile.
+
+**Why not sunset.** Sunset in Vermont is ~16:20 in early January and ~20:30 in late June. A digest whose
+job is *"here's where to go tomorrow"* would arrive mid-workday at exactly the point in the season
+when skating is happening, and late in the evening when it isn't — the signal it tracks runs opposite to
+the one we want. A fixed 20:00 needs no astronomical calculation, no per-body sunrise fetch, and no
+explanation to a user about why their digest moved.
+
+**Why no hour setting.** 8pm local is the whole feature; a setting for it would be a preference nobody
+asked for on a settings page that already has ten toggles.
+
+**The edge, stated rather than mechanised:** `flushAfter` is stamped at enqueue, so a person who changes
+zone between a report and 8pm gets that one digest at the old target. Coalescing keeps the earliest
+`flushAfter`, so the failure direction is "slightly early", never "never".
+
+**Related:** D11, D167, Phase 4 decision #4, [`phase-N8`](./phase-N8-notification-pipeline.md) Workstream C.

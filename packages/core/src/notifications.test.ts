@@ -10,6 +10,7 @@ import {
   NOTIFICATION_PREF_ORDER,
   NOTIFICATION_TYPES,
   type NotificationView,
+  timezoneToSync,
 } from './notifications';
 
 const base = { id: 'n1', createdAt: 1_700_000_000_000 };
@@ -150,6 +151,38 @@ describe('describeNotification', () => {
     const d = describeNotification({ ...base, type: 'unknown' });
     expect(d.title.length).toBeGreaterThan(0);
     expect(d.target).toBeNull();
+  });
+
+  it('a recorded skate names the lake, carries its own time in the given zone, and lands on the list (N8/B4)', () => {
+    // 2026-01-10 19:00Z — 2pm in New York, 11am in Los Angeles. The zone decides which one the
+    // detail line says; a server composing this in UTC must pass the recipient's.
+    const view: NotificationView = {
+      ...base,
+      type: 'activity_detected',
+      activityId: 'a1',
+      body: lake,
+      startTime: Date.UTC(2026, 0, 10, 19, 0),
+    };
+    const east = describeNotification(view, { timeZone: 'America/New_York' });
+    expect(east.title).toBe('You skated on Lake Morey. Add a report?');
+    expect(east.detail).toMatch(/2:00 PM/);
+    expect(east.target).toEqual({ kind: 'unreported_skates' });
+    expect(describeNotification(view, { timeZone: 'America/Los_Angeles' }).detail).toMatch(
+      /11:00 AM/,
+    );
+    expect(describeNotification({ ...view, body: null }).title).toBe(
+      'You recorded a skate. Add a report?',
+    );
+  });
+});
+
+describe('timezoneToSync (N8/C)', () => {
+  it('writes only when the device knows its zone and it differs from the stored one', () => {
+    expect(timezoneToSync(undefined, 'America/New_York')).toBe('America/New_York');
+    expect(timezoneToSync('America/New_York', 'America/Los_Angeles')).toBe('America/Los_Angeles');
+    expect(timezoneToSync('America/New_York', 'America/New_York')).toBeNull();
+    expect(timezoneToSync(undefined, null)).toBeNull();
+    expect(timezoneToSync('America/New_York', null)).toBeNull();
   });
 });
 

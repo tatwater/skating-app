@@ -81,6 +81,51 @@ export const pruneWeatherCache = internalMutation({
 });
 
 /**
+ * The inbox empties at the season boundary (N8/A5) — delete every `notifications` row created before
+ * the current season's start (July 1, D63), **read or not**.
+ *
+ * It's the right clock rather than a convenient one. Every notification is about a *moment* —
+ * someone thumbed your report, a bounty opened on a lake, three lakes near you had new ice — and none
+ * of that survives a summer; a July inbox holding February's ice reports is landfill with a badge on
+ * it. Reusing the season boundary means no new concept: D66 already expires a departed skater's
+ * condition photos on exactly this line.
+ *
+ * **Daily rather than annually** for a clock that turns over once a year, the same posture as
+ * `sweepDepartedPhotos`: the rows are created continuously, the boundary is one day, and a bounded
+ * pass means the day after July 1 clears everything without one enormous transaction. A pass that
+ * fills its cap schedules the next one immediately rather than waiting a day — a season's backlog is
+ * many multiples of `SWEEP_LIMIT`, and at one pass a day the "landfill with a badge on it" would sit
+ * in the inbox for weeks past the boundary.
+ *
+ * **Read state doesn't matter.** An *unread* notification about last season's ice is worth less than a
+ * read one, not more — keeping it would be the only mechanism in the app that treats an unopened row
+ * as more durable than an opened one. This makes the inbox non-archival: the record of what happened
+ * to your contributions is the data export (N3), which reads the live tables.
+ */
+export const purgeLastSeasonNotifications = internalMutation({
+  args: { now: v.optional(v.number()) },
+  handler: async (ctx, args) => {
+    const now = args.now ?? Date.now();
+    const seasonStart = seasonStartMs(seasonOf(now));
+    const stale = await ctx.db
+      .query('notifications')
+      .withIndex('by_created_at', (q) => q.lt('createdAt', seasonStart))
+      .take(SWEEP_LIMIT);
+    for (const row of stale) await ctx.db.delete(row._id);
+    const truncated = stale.length >= SWEEP_LIMIT;
+    // Self-continuing while there's more, like `sweepDepartedPhotos`: each pass is one bounded
+    // transaction, and the query shrinks under it, so a repeated first-page read walks the backlog.
+    // A pinned `now` is carried along so a continuation purges against the same boundary.
+    if (truncated) {
+      await ctx.scheduler.runAfter(0, internal.storageHygiene.purgeLastSeasonNotifications, {
+        ...(args.now !== undefined ? { now: args.now } : {}),
+      });
+    }
+    return { deleted: stale.length, truncated, seasonStart };
+  },
+});
+
+/**
  * Delete `weatherForecastCache` rows whose hour bucket has passed (N6c/B5b).
  *
  * **The same unaddressable-by-construction argument as `pruneWeatherCache` above**, and it applies

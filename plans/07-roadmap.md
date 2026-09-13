@@ -1477,9 +1477,10 @@ declared type gets a producer, then the transports, and the two original bullets
   `report_commented`, `hazard_confirmation` (phase transitions only), `content_flag_resolved`
   (user-origin flags only, new `contentFlags.origin`), and `bounty_answered` to the requester (D170,
   replacing the misdirected `bounty_fulfilled`). Both settings pages render all ten toggles.
-- **PR 2 (next):** `activity_detected` from the recorder's un-prompted skates + the dedup ladder
-  (design-only until a second provider exists); the **season-boundary inbox purge**; **per-user
-  digest zone** (device timezone on `profiles`; the hour stays 20:00 — true-sunset is dropped, D-log).
+- **PR 2 ✅ built:** `activity_detected` from the recorder's un-prompted skates (hourly sweep, 3 h
+  delay) + the B4a dedup ladder (`supersededByActivityId`, the link moves to the winner; one provider
+  today, so exercised only in tests); the **season-boundary inbox purge** (daily); **per-user digest
+  zone** (`profiles.timezone` from the device; the hour stays 20:00 — true-sunset dropped, D173).
 - **PR 3 (next):** the transports — Expo Push (Android via FCM now, iOS once the APNs key lands),
   **email via Resend** for the digest-class types with two channel switches and an unsubscribe route
   (primary email mirrored from Clerk onto `profiles`), and a mobile offline inbox cache.

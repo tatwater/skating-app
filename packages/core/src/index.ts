@@ -1,5 +1,6 @@
 export * from './access';
 export * from './accessAlert';
+export * from './activityDedup';
 export * from './aerialImagery';
 export * from './age';
 export * from './approachLayer';

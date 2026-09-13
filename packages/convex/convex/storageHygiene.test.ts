@@ -177,6 +177,62 @@ describe('pruneWeatherCache', () => {
   });
 });
 
+describe('purgeLastSeasonNotifications (N8/A5)', () => {
+  test('deletes every row from before the current season’s start, read or not, and nothing newer', async () => {
+    const t = harness();
+    const userId = await seedUser(t, 'u');
+    const seasonStart = seasonStartMs(seasonOf(T0));
+    const insert = (createdAt: number, readAt?: number) =>
+      t.run((ctx) =>
+        ctx.db.insert('notifications', {
+          userId,
+          type: 'report_rated',
+          payload: {},
+          ...(readAt !== undefined ? { readAt } : {}),
+          createdAt,
+        }),
+      );
+    await insert(seasonStart - 1); // last season, unread
+    await insert(seasonStart - 30 * 24 * HOUR_MS, seasonStart - 29 * 24 * HOUR_MS); // last season, read
+    const kept = await insert(seasonStart); // the boundary itself is this season
+    const keptToo = await insert(T0, T0 + HOUR_MS);
+
+    const res = await t.mutation(internal.storageHygiene.purgeLastSeasonNotifications, { now: T0 });
+    expect(res).toMatchObject({ deleted: 2, truncated: false, seasonStart });
+    const left = await t.run((ctx) => ctx.db.query('notifications').collect());
+    expect(left.map((n) => n._id).sort()).toEqual([kept, keptToo].sort());
+  });
+
+  test('a pass that fills its cap schedules the next one rather than waiting a day', async () => {
+    const t = harness();
+    const userId = await seedUser(t, 'u');
+    const seasonStart = seasonStartMs(seasonOf(T0));
+    await t.run(async (ctx) => {
+      for (let i = 0; i < 501; i++) {
+        await ctx.db.insert('notifications', {
+          userId,
+          type: 'report_rated',
+          payload: {},
+          createdAt: seasonStart - 1 - i,
+        });
+      }
+    });
+    // Fake timers for the `runAfter(0)` continuation — the same reason the departed-photo sweep's
+    // test below needs them.
+    vi.useFakeTimers();
+    try {
+      const first = await t.mutation(internal.storageHygiene.purgeLastSeasonNotifications, {
+        now: T0,
+      });
+      expect(first).toMatchObject({ deleted: 500, truncated: true });
+      await t.finishAllScheduledFunctions(vi.runAllTimers);
+    } finally {
+      vi.useRealTimers();
+    }
+    expect(await t.run((ctx) => ctx.db.query('notifications').collect())).toHaveLength(0);
+  });
+});
+
 describe('sweepOrphanPhotos', () => {
   test('deletes an abandoned upload past the grace window — row and both blobs', async () => {
     const t = harness();
