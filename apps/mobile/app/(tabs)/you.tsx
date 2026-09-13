@@ -522,7 +522,10 @@ function ChannelSettings({
   );
   const channels = effectiveChannelPrefs(channelPrefs);
   // Device state: opted out locally, or registered (a token exists and permission is granted).
-  const [device, setDevice] = useState<'unknown' | 'on' | 'off' | 'denied'>('unknown');
+  // `denied` is the OS setting; `unavailable` is a platform that can't mint a token at all.
+  const [device, setDevice] = useState<'unknown' | 'on' | 'off' | 'denied' | 'unavailable'>(
+    'unknown',
+  );
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -540,11 +543,13 @@ function ChannelSettings({
 
   async function onDeviceToggle(next: boolean) {
     if (next) {
-      const token = await enablePushOnThisDevice(effects);
-      setDevice(token ? 'on' : 'denied');
+      const result = await enablePushOnThisDevice(effects);
+      setDevice(result.status);
     } else {
-      await disablePushOnThisDevice(effects);
+      // The local opt-out is the switch; the server-side unregister behind it is best-effort and,
+      // offline, queued — the row must read "off" now, not when the connection comes back.
       setDevice('off');
+      await disablePushOnThisDevice(effects);
     }
   }
 
@@ -569,6 +574,11 @@ function ChannelSettings({
         <Paragraph color="$foregroundMuted" fontSize={12}>
           Notifications are turned off for Gli in your phone’s settings. Allow them there, then flip
           this on.
+        </Paragraph>
+      ) : null}
+      {device === 'unavailable' ? (
+        <Paragraph color="$foregroundMuted" fontSize={12}>
+          This phone couldn’t be set up for push just now. Check your connection and try again.
         </Paragraph>
       ) : null}
       <ToggleRow

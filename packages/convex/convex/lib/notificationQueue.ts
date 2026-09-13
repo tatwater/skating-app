@@ -82,6 +82,14 @@ export const SETTLE_MS = 60 * 1000;
  */
 export const DIGEST_TIMEZONE = 'America/New_York';
 
+/**
+ * Rows per delivery action (N8 PR 3): the flush chunks the ids it hands to `deliverBatch` to this,
+ * so one action's reads and sends stay bounded. Here for the same reason as `DIGEST_TIMEZONE` — the
+ * flush (a mutation) and the transports (an action) both read it, and neither should import the
+ * other for a number.
+ */
+export const DELIVERY_BATCH = 200;
+
 /** `(recipient, target, kind)` — the collapse-id seed, same shape the report buckets use. */
 export function actorCoalesceKey(
   userId: Id<'profiles'>,

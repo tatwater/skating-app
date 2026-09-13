@@ -82,7 +82,9 @@ export default function NotificationsScreen() {
   }, [markRead, isAuthenticated, status, results]);
 
   // Offline: stamp the cached rows in the overlay once per open, replayed by the mark above the
-  // next time the live list answers.
+  // next time the live list answers. The rows it stamps join `newThisVisit` for the same reason the
+  // online mark's do: the overlay applies at once, and a dot drawn from `readAt` alone would vanish
+  // the instant the screen opened.
   const markedOffline = useRef(false);
   useEffect(() => {
     if (live || !offline || markedOffline.current || cached.length === 0) return;
@@ -91,6 +93,7 @@ export default function NotificationsScreen() {
     if (unread.length === 0) return;
     const at = Date.now();
     recordPendingReads(unread, at);
+    setNewThisVisit((prev) => new Set([...prev, ...unread]));
     setOverlay((prev) => {
       const next = new Map(prev);
       for (const id of unread) if (!next.has(id)) next.set(id, at);
@@ -124,7 +127,18 @@ export default function NotificationsScreen() {
         ) : null
       }
       ListEmptyComponent={
-        status === 'LoadingFirstPage' ? (
+        !live && offline ? (
+          // Nothing cached and no connection: a spinner here would spin until the signal came back.
+          <YStack padding="$4" gap="$2">
+            <Text color="$foreground" fontWeight="600">
+              Offline
+            </Text>
+            <Paragraph color="$foregroundMuted">
+              Nothing was saved from last time. Your notifications will load when you’re back in
+              signal.
+            </Paragraph>
+          </YStack>
+        ) : status === 'LoadingFirstPage' ? (
           <YStack padding="$6" alignItems="center">
             <Spinner />
           </YStack>

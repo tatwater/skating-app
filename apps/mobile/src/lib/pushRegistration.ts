@@ -27,6 +27,8 @@ import { readPref, writePref } from './prefsDb';
 const OPT_OUT_KEY = 'push_device_opt_out';
 /** Android needs a channel before a remote notification can show; the server sends `channelId: 'default'`. */
 const ANDROID_CHANNEL = 'default';
+/** How long an unregister may hold up the thing that asked for it (sign-out, the device switch). */
+const UNREGISTER_TIMEOUT_MS = 4000;
 
 export type PushPlatform = 'ios' | 'android';
 
@@ -108,16 +110,26 @@ export async function registerIfPermitted(effects: RegisterEffects): Promise<str
 }
 
 /**
- * The explicit switch: ask for permission (once, serialized with on-ice mode's ask), then register.
- * Returns the token, or `null` when permission was declined or no token could be minted.
+ * What the explicit switch came back with. `denied` is the one the person can act on (the OS
+ * setting); `unavailable` is a platform that granted permission and still minted nothing — an iOS
+ * simulator, an Android build without its FCM config, no network — which no settings screen fixes.
  */
-export async function enablePushOnThisDevice(effects: RegisterEffects): Promise<string | null> {
+export type EnablePushResult =
+  | { status: 'on'; token: string }
+  | { status: 'denied' }
+  | { status: 'unavailable' };
+
+/**
+ * The explicit switch: ask for permission (once, serialized with on-ice mode's ask), then register.
+ */
+export async function enablePushOnThisDevice(effects: RegisterEffects): Promise<EnablePushResult> {
   const platform = pushPlatform();
-  if (!platform) return null;
+  if (!platform) return { status: 'unavailable' };
   setDeviceOptedOut(false);
   const granted = await ensureNotificationPermission();
-  if (!granted) return null;
-  return registerNow(platform, effects);
+  if (!granted) return { status: 'denied' };
+  const token = await registerNow(platform, effects);
+  return token ? { status: 'on', token } : { status: 'unavailable' };
 }
 
 /** The explicit off: forget this device server-side and remember the choice locally. */
@@ -130,17 +142,26 @@ export async function disablePushOnThisDevice(effects: RegisterEffects): Promise
  * Forget this device server-side without touching the local opt-out — what sign-out does, so a
  * phone nobody is signed in on stops ringing for the account that left. Best-effort: offline, the
  * row lingers until the next sign-in re-homes it or account deletion drains it.
+ *
+ * Bounded, because "best-effort" has to include the wait: a Convex mutation issued offline is not
+ * rejected, it is *queued* until the connection returns, and a sign-out that awaited it would hang
+ * with it. The mint is a network call to Expo too. Past the bound the caller moves on; the queued
+ * unregister still runs (or fails harmlessly once the session is gone) whenever the client reconnects.
  */
 export async function unregisterThisDevice(effects: RegisterEffects): Promise<void> {
-  const token = await fetchExpoPushToken();
-  if (!token) return;
-  try {
+  const attempt = (async () => {
+    const token = await fetchExpoPushToken();
+    if (!token) return;
     await effects.unregister({ token });
-  } catch {
+  })().catch(() => {
     // Offline: the server row lingers until the next successful unregister or account deletion;
     // the local opt-out (when set) still stops re-registration, and the server's push will land on
     // a device that has since revoked permission at worst.
-  }
+  });
+  await Promise.race([
+    attempt,
+    new Promise<void>((resolve) => setTimeout(resolve, UNREGISTER_TIMEOUT_MS)),
+  ]);
 }
 
 async function registerNow(

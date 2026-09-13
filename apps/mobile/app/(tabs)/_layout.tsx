@@ -123,14 +123,15 @@ export default function TabsLayout() {
   // keyed on `hazardId`, so a payload without `target` is left to it.
   const router = useRouter();
   useEffect(() => {
-    const open = (response: Notifications.NotificationResponse | null) => {
-      if (!response) return;
+    /** Route a tap this layout owns; `false` when the payload is somebody else's (or nothing). */
+    const open = (response: Notifications.NotificationResponse | null): boolean => {
+      if (!response) return false;
       const data = response.notification.request.content.data as
         | { target?: NotificationTarget | null; notificationId?: string }
         | undefined;
-      if (!data || !('target' in data)) return;
+      if (!data || !('target' in data)) return false;
       const key = response.notification.request.identifier;
-      if (handledTaps.has(key)) return;
+      if (handledTaps.has(key)) return true;
       handledTaps.add(key);
       const route = notificationRoute(data.target ?? null, {
         type: 'unknown',
@@ -138,16 +139,23 @@ export default function TabsLayout() {
         createdAt: 0,
       });
       router.navigate(route ?? '/notifications');
+      return true;
     };
-    // A tap that launched the app arrives before any listener is attached; read it, then clear it
-    // so a later mount of this layout (sign out, sign in) doesn't open it again.
+    // A tap that launched the app arrives before any listener is attached; read it, and clear it
+    // only once it's been opened here, so a later mount of this layout (sign out, sign in) doesn't
+    // open it again. A launch tap that isn't ours — the on-ice hazard alert — is left where it is:
+    // the native side never replays it, so clearing it would be the map layout's only chance to read
+    // it going away.
     try {
-      open(Notifications.getLastNotificationResponse());
-      Notifications.clearLastNotificationResponse();
+      if (open(Notifications.getLastNotificationResponse())) {
+        Notifications.clearLastNotificationResponse();
+      }
     } catch {
       // No native module (web, a test): nothing launched us.
     }
-    const sub = Notifications.addNotificationResponseReceivedListener(open);
+    const sub = Notifications.addNotificationResponseReceivedListener((response) => {
+      open(response);
+    });
     return () => sub.remove();
   }, [router]);
   return (

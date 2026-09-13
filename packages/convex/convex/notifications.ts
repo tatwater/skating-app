@@ -47,6 +47,7 @@ import type { Doc, Id } from './_generated/dataModel';
 import { internalMutation, type MutationCtx, mutation, query } from './_generated/server';
 import { canReceiveNotifications, getCurrentProfile, requireProfile } from './lib/auth';
 import {
+  DELIVERY_BATCH,
   DIGEST_TIMEZONE,
   recipientWants,
   settleReadCost,
@@ -55,7 +56,6 @@ import {
 import { resolveNotifications } from './lib/notificationResolve';
 import { loadBlockedAuthorIds } from './lib/reportVisibility';
 import { takeCapped, takeCappedResult } from './lib/scan';
-import { DELIVERY_BATCH } from './notificationDelivery';
 
 /**
  * The digest rolls up to 8pm **local** — the hour is the same for everyone, the zone is each

@@ -12,7 +12,7 @@
  * client-side and which never touches this table.
  */
 
-import { NOTIFICATION_TYPES, type NotificationView } from '@skating/core';
+import { describeNotification, NOTIFICATION_TYPES, type NotificationView } from '@skating/core';
 
 /** The cache holds one page — the last one the live list showed. */
 export const MAX_CACHED_NOTIFICATIONS = 50;
@@ -33,7 +33,10 @@ export function toCachedRow(view: NotificationView): CachedNotificationRow {
  * Parse a row back, or `null` for a corrupt blob — a bad row is skipped, never a crash. A row whose
  * type this build no longer knows (cached by an older one, before the type was retired) comes back
  * as the `unknown` variant — the same degradation the server applies to an unparseable payload —
- * because `describeNotification` has no branch for a type outside its union.
+ * because `describeNotification` has no branch for a type outside its union. A row of a *known*
+ * type whose shape has drifted (a field renamed between the build that cached it and this one) is
+ * degraded the same way, caught here where it's one row rather than in the list where it's the
+ * whole screen: the sentence is composed once, and a row that can't be composed can't be shown.
  */
 export function fromCachedRow(row: Pick<CachedNotificationRow, 'data'>): NotificationView | null {
   try {
@@ -42,13 +45,17 @@ export function fromCachedRow(row: Pick<CachedNotificationRow, 'data'>): Notific
     const view = parsed as NotificationView;
     if (typeof view.id !== 'string' || typeof view.type !== 'string') return null;
     if (typeof view.createdAt !== 'number') return null;
-    if (!KNOWN_TYPES.has(view.type)) {
-      return {
-        id: view.id,
-        createdAt: view.createdAt,
-        ...(view.readAt !== undefined ? { readAt: view.readAt } : {}),
-        type: 'unknown',
-      };
+    const degraded: NotificationView = {
+      id: view.id,
+      createdAt: view.createdAt,
+      ...(view.readAt !== undefined ? { readAt: view.readAt } : {}),
+      type: 'unknown',
+    };
+    if (!KNOWN_TYPES.has(view.type)) return degraded;
+    try {
+      describeNotification(view);
+    } catch {
+      return degraded;
     }
     return view;
   } catch {

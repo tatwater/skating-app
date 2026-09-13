@@ -71,6 +71,8 @@ async function seedUser(t: ReturnType<typeof convexTest>, subject: string) {
       homeTownLabel: 'Burlington, VT',
       bio: 'I skate.',
       profileImageUrl: 'https://img.clerk.com/x',
+      email: `${subject}@example.test`,
+      emailUnsubscribeSecret: 'deadbeef',
       outerRadiusMeters: 90_000,
       driveTimePrefMinutes: 60,
       profileVisibility: 'public' as const,
@@ -708,6 +710,8 @@ describe('the tombstone', () => {
     expect(profile?.homeTownLabel).toBeUndefined();
     expect(profile?.bio).toBeUndefined();
     expect(profile?.profileImageUrl).toBeUndefined();
+    expect(profile?.email).toBeUndefined();
+    expect(profile?.emailUnsubscribeSecret).toBeUndefined();
     expect(profile?.outerRadiusMeters).toBeUndefined();
   });
 
@@ -876,6 +880,13 @@ describe('bucket 1 — erase (private artifacts)', () => {
         waterBodyId: bodyId,
         createdAt: T0,
       });
+      await ctx.db.insert('pushTokens', {
+        userId: user.id,
+        token: 'ExponentPushToken[leaver]',
+        platform: 'android' as const,
+        createdAt: T0,
+        lastSeenAt: T0,
+      });
       await ctx.db.insert('blocks', { blockerId: user.id, blockedId: other.id, createdAt: T0 });
       await ctx.db.insert('blocks', { blockerId: other.id, blockedId: user.id, createdAt: T0 });
       await ctx.db.insert('supportTickets', {
@@ -895,6 +906,7 @@ describe('bucket 1 — erase (private artifacts)', () => {
       notifications: (await ctx.db.query('notifications').collect()).length,
       queue: (await ctx.db.query('notificationQueue').collect()).length,
       favorites: (await ctx.db.query('waterBodyFavorites').collect()).length,
+      pushTokens: (await ctx.db.query('pushTokens').collect()).length,
       blocks: (await ctx.db.query('blocks').collect()).length,
       tickets: (await ctx.db.query('supportTickets').collect()).length,
     }));
@@ -903,6 +915,7 @@ describe('bucket 1 — erase (private artifacts)', () => {
       notifications: 0,
       queue: 0,
       favorites: 0,
+      pushTokens: 0, // a capability to ring the phone, and a tombstone must not keep one
       blocks: 0, // both directions — a block against a tombstone would filter forever
       tickets: 0,
     });

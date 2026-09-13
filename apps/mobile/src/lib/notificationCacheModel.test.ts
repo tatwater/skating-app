@@ -28,6 +28,21 @@ describe('notificationCacheModel (N8 PR 3)', () => {
         data: JSON.stringify({ id: 'old', createdAt: 7, readAt: 9, type: 'bounty_fulfilled' }),
       }),
     ).toEqual({ id: 'old', createdAt: 7, readAt: 9, type: 'unknown' });
+    // A known type whose shape has drifted (no `actors` on a thumb) degrades too, rather than
+    // throwing inside the list when the sentence is composed.
+    expect(
+      fromCachedRow({
+        data: JSON.stringify({
+          id: 'drift',
+          createdAt: 8,
+          type: 'report_rated',
+          kind: 'thumb',
+          targetType: 'report',
+          target: { id: 'r', available: true },
+          body: null,
+        }),
+      }),
+    ).toEqual({ id: 'drift', createdAt: 8, type: 'unknown' });
     expect(
       cachedNotificationsFromRows([
         toCachedRow(view('a', 1)),

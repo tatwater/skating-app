@@ -52,8 +52,6 @@ import { resolveNotifications } from './lib/notificationResolve';
 import { loadBlockedAuthorIds } from './lib/reportVisibility';
 import { sendEmail } from './lib/resend';
 
-/** Rows per delivery action — the flush chunks its inserts to this so one action stays bounded. */
-export const DELIVERY_BATCH = 200;
 /** Expo asks for receipts to be checked at least 15 minutes after the send. */
 const RECEIPT_DELAY_MS = 15 * 60 * 1000;
 /** iOS caps a collapse id at 64 bytes; the coalesce key is longer, so it's hashed down. */
@@ -166,14 +164,20 @@ export const markDelivered = internalMutation({
   },
 });
 
-/** A dead address: Expo said `DeviceNotRegistered` in a ticket or a receipt. */
+/**
+ * A dead address: Expo said `DeviceNotRegistered` in a ticket or a receipt. `sentAt` is when the
+ * send that produced the verdict went out: a token the device has re-registered since (`register`
+ * refreshes `lastSeenAt` and clears `disabledAt`) is alive again by the app's own testimony, and a
+ * receipt from fifteen minutes ago must not overrule it.
+ */
 export const disableTokens = internalMutation({
-  args: { tokenIds: v.array(v.id('pushTokens')) },
-  handler: async (ctx, { tokenIds }) => {
+  args: { tokenIds: v.array(v.id('pushTokens')), sentAt: v.number() },
+  handler: async (ctx, { tokenIds, sentAt }) => {
     const now = Date.now();
     for (const id of tokenIds) {
       const token = await ctx.db.get(id);
-      if (token && token.disabledAt === undefined) await ctx.db.patch(id, { disabledAt: now });
+      if (!token || token.disabledAt !== undefined || token.lastSeenAt > sentAt) continue;
+      await ctx.db.patch(id, { disabledAt: now });
     }
   },
 });
@@ -182,12 +186,16 @@ export const disableTokens = internalMutation({
  * Mint the unsubscribe secret the first time a person is emailed; idempotent afterwards. Random from
  * the runtime's CSPRNG — the link it goes into is the one thing that can change a setting without
  * a sign-in, so it must not be guessable from anything public.
+ *
+ * Eligibility is checked again here (and in `cacheEmail`), not only in `loadForDelivery`: this runs
+ * from an action, after a network call, and a deletion requested in that gap has already wiped
+ * these fields — writing them back would un-scrub a ghost.
  */
 export const ensureUnsubscribeSecret = internalMutation({
   args: { userId: v.id('profiles') },
   handler: async (ctx, { userId }): Promise<string | null> => {
     const profile = await ctx.db.get(userId);
-    if (!profile) return null;
+    if (!profile || !canReceiveNotifications(profile)) return null;
     if (profile.emailUnsubscribeSecret) return profile.emailUnsubscribeSecret;
     const bytes = new Uint8Array(24);
     crypto.getRandomValues(bytes);
@@ -202,7 +210,9 @@ export const cacheEmail = internalMutation({
   args: { userId: v.id('profiles'), email: v.string() },
   handler: async (ctx, { userId, email }) => {
     const profile = await ctx.db.get(userId);
-    if (profile && profile.email === undefined) await ctx.db.patch(userId, { email });
+    if (profile && profile.email === undefined && canReceiveNotifications(profile)) {
+      await ctx.db.patch(userId, { email });
+    }
   },
 });
 
@@ -306,6 +316,7 @@ export const deliverBatch = internalAction({
     if (deadTokens.size > 0) {
       await ctx.runMutation(internal.notificationDelivery.disableTokens, {
         tokenIds: [...deadTokens],
+        sentAt: now,
       });
     }
     if (receiptsToCheck.length > 0) {
@@ -314,6 +325,7 @@ export const deliverBatch = internalAction({
         internal.notificationDelivery.checkPushReceipts,
         {
           tickets: receiptsToCheck,
+          sentAt: now,
         },
       );
     }
@@ -340,7 +352,7 @@ export const deliverBatch = internalAction({
         }
         if (!to) continue;
         let secret = row.email.unsubscribeSecret ?? secretCache.get(row.userId) ?? null;
-        if (secret === null) {
+        if (secret === null && !secretCache.has(row.userId)) {
           secret = await ctx.runMutation(internal.notificationDelivery.ensureUnsubscribeSecret, {
             userId: row.userId,
           });
@@ -388,12 +400,17 @@ export const deliverBatch = internalAction({
 
 /**
  * The receipt pass, 15 minutes after a send: the only place APNs/FCM-level failures surface. A
- * `DeviceNotRegistered` receipt disables the token; everything else is logged and forgotten — a
- * transient failure on a one-off notification isn't worth a retry queue.
+ * `DeviceNotRegistered` receipt disables the token — unless the device has registered again since
+ * the send, which is the newer word; everything else is logged and forgotten — a transient failure
+ * on a one-off notification isn't worth a retry queue.
  */
 export const checkPushReceipts = internalAction({
-  args: { tickets: v.array(v.object({ id: v.string(), tokenId: v.id('pushTokens') })) },
-  handler: async (ctx, { tickets }) => {
+  args: {
+    tickets: v.array(v.object({ id: v.string(), tokenId: v.id('pushTokens') })),
+    /** When the send these tickets came from went out. */
+    sentAt: v.number(),
+  },
+  handler: async (ctx, { tickets, sentAt }) => {
     const receipts = await getExpoPushReceipts(tickets.map((t) => t.id));
     const dead = new Set<Id<'pushTokens'>>();
     let errors = 0;
@@ -405,7 +422,10 @@ export const checkPushReceipts = internalAction({
       else console.warn(`Expo push receipt error: ${receipt.message}`);
     }
     if (dead.size > 0) {
-      await ctx.runMutation(internal.notificationDelivery.disableTokens, { tokenIds: [...dead] });
+      await ctx.runMutation(internal.notificationDelivery.disableTokens, {
+        tokenIds: [...dead],
+        sentAt,
+      });
     }
     return { checked: tickets.length, errors, deadTokens: dead.size };
   },

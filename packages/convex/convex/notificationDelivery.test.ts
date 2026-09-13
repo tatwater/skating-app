@@ -364,7 +364,7 @@ describe('notificationDelivery', () => {
     expect((await t.run((ctx) => ctx.db.get(me.id)))?.email).toBe('home@example.test');
   });
 
-  test('the receipt pass disables a token Expo reports dead', async () => {
+  test('the receipt pass disables a token Expo reports dead — unless the device re-registered since', async () => {
     const t = harness();
     const me = await seedUser(t, 'me');
     const tokenId = await me.as.mutation(api.pushTokens.register, {
@@ -381,11 +381,24 @@ describe('notificationDelivery', () => {
         },
       },
     ]);
+    const tickets = [
+      { id: 't1', tokenId: tokenId as Id<'pushTokens'> },
+      { id: 't2', tokenId: tokenId as Id<'pushTokens'> },
+    ];
+    // The send predates the registration above: the app has spoken since, and the receipt is stale.
+    const stale = await t.action(internal.notificationDelivery.checkPushReceipts, {
+      tickets,
+      sentAt: Date.now() - 60_000,
+    });
+    expect(stale).toEqual({ checked: 2, errors: 1, deadTokens: 1 });
+    expect(
+      (await t.run((ctx) => ctx.db.get(tokenId as Id<'pushTokens'>)))?.disabledAt,
+    ).toBeUndefined();
+
+    // A send after the last registration: the receipt is the newer word.
     const result = await t.action(internal.notificationDelivery.checkPushReceipts, {
-      tickets: [
-        { id: 't1', tokenId: tokenId as Id<'pushTokens'> },
-        { id: 't2', tokenId: tokenId as Id<'pushTokens'> },
-      ],
+      tickets,
+      sentAt: Date.now() + 1,
     });
     expect(result).toEqual({ checked: 2, errors: 1, deadTokens: 1 });
     expect((await t.run((ctx) => ctx.db.get(tokenId as Id<'pushTokens'>)))?.disabledAt).toEqual(

@@ -7,6 +7,12 @@ import type { ExpoConfig } from 'expo/config';
  * environment variable `GOOGLE_SERVICES_JSON`, whose value is a path. Absent ⇒ the field is left off
  * and the build still succeeds — push tokens can't be minted on that build, and `pushRegistration`
  * treats the failed mint as "no push on this device" rather than crashing.
+ *
+ * ⚠ Absent on **one side only** is the case that fails. `@expo/fingerprint` hashes this file's
+ * contents into the runtime version, so a local checkout without it and an EAS environment with it
+ * (or the reverse) compute different fingerprints, and EAS hard-fails the build at
+ * `CONFIGURE_EXPO_UPDATES` before compiling anything. Keep the file in both places or neither;
+ * `eas fingerprint:compare` shows the disagreement without spending a build.
  */
 const googleServicesFile = [process.env.GOOGLE_SERVICES_JSON, './google-services.json'].find(
   (path): path is string => !!path && existsSync(path),
