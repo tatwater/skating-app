@@ -1267,6 +1267,12 @@ describe('gpsActivities.sweepUnpromptedActivities', () => {
     expect(
       (await me.as.query(api.gpsActivities.getForReport, { reportId }))?.path.coordinates,
     ).toHaveLength(20);
+    // And the lake still draws the published skate — from the superseded copy, because it is the
+    // only copy with a track. A blanket "superseded never draws" made it vanish (PR #53 review).
+    const { tracks } = await me.as.query(api.gpsActivities.listTracksForBody, {
+      waterBodyId: bodyId,
+    });
+    expect(tracks.map((tr) => tr.activityId)).toEqual([healthId]);
   });
 
   test('a winner the resolver could not place inherits the loser’s lake with the link, so the aggregate layer still finds it', async () => {

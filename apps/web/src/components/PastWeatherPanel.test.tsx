@@ -40,6 +40,17 @@ function day(localDate: string, over: Record<string, number> = {}) {
   };
 }
 
+/**
+ * Wait for the panel to have *loaded*, not merely mounted. The heading renders in the "Reading…"
+ * state too, so waiting on it resolves before the mocked action does — and a synchronous assertion
+ * after that races the promise, which a slow CI runner lost (PR #53). The loading line going away
+ * is the signal that the data landed.
+ */
+async function awaitLoaded() {
+  await screen.findByText("What it's been through");
+  await waitFor(() => expect(screen.queryByText(/Reading the last/)).not.toBeInTheDocument());
+}
+
 describe('PastWeatherPanel', () => {
   it('renders the observation lines and the attribution', async () => {
     getDays.mockResolvedValue({
@@ -51,7 +62,7 @@ describe('PastWeatherPanel', () => {
     });
     render(<PastWeatherPanel waterBodyId={BODY} />);
 
-    expect(await screen.findByText("What it's been through")).toBeInTheDocument();
+    await awaitLoaded();
     // No served chain in this mock, so the panel computes over its own three days — all cold, and
     // reaching the window's edge, hence the "+" (D164).
     expect(screen.getByText('3+ nights below 20°F, no snow since the first')).toBeInTheDocument();
@@ -94,7 +105,7 @@ describe('PastWeatherPanel', () => {
       oneSampleForALargeBody: false,
     });
     const { container } = render(<PastWeatherPanel waterBodyId={BODY} />);
-    await screen.findByText("What it's been through");
+    await awaitLoaded();
 
     const text = container.textContent ?? '';
     for (const forbidden of ['safe', 'unsafe', 'should', 'thick', 'degree-hour']) {
@@ -113,7 +124,7 @@ describe('PastWeatherPanel', () => {
     });
     render(<PastWeatherPanel waterBodyId={BODY} />);
 
-    await screen.findByText("What it's been through");
+    await awaitLoaded();
     // The whole point of carrying `missing` through the archive: a hole must not read as 0°.
     expect(screen.getAllByText('—').length).toBeGreaterThan(0);
     expect(screen.getByText('1 day of weather unavailable')).toBeInTheDocument();
@@ -144,7 +155,7 @@ describe('PastWeatherPanel', () => {
       oneSampleForALargeBody: false,
     });
     render(<PastWeatherPanel waterBodyId={BODY} />);
-    await screen.findByText("What it's been through");
+    await awaitLoaded();
     expect(screen.queryByText(/large enough that weather differs/)).not.toBeInTheDocument();
   });
 
@@ -244,7 +255,7 @@ describe('PastWeatherPanel', () => {
       oneSampleForALargeBody: false,
     });
     const { rerender } = render(<PastWeatherPanel waterBodyId={BODY} />);
-    await screen.findByText("What it's been through");
+    await awaitLoaded();
 
     getDays.mockResolvedValue(null);
     rerender(<PastWeatherPanel waterBodyId={OTHER} />);

@@ -710,9 +710,17 @@ p.timezone ?? DIGEST_TIMEZONE)`). Logged as **D173**.
    copy behind fifty later syncs and asked about the skate twice. A consequence worth knowing: an
    *unrelated* due skate no longer pulls a not-yet-due pair into an early dedup; the pair waits for
    one of its own copies to come due, which is the tick that can see it. And `listTracksForBody`
-   skips superseded rows outright, so the one case the link cannot move (both copies reported from)
-   keeps the loser's report intact and still draws the skate once. `listMine`'s filter-before-take
-   was already in from pass 5.
+   decides a superseded copy that *kept* its link against its winner — skipped if the winner carries
+   a track, drawn if the winner is a path-less stub — so both copies reported from draws once, and a
+   published skate whose better-ranked copy has no path does not vanish from the lake (the blanket
+   "superseded never draws" of the first cut did exactly that). `listMine`'s filter-before-take was
+   already in from pass 5. *Second pass (xhigh):* a late `linkActivityToReport` follows the dedup
+   chain to the winner, stopping short of a path-less one or one already reported (it links the copy
+   it was filed from — the sweep's own can't-move state); the sweep's move refuses a path-less winner
+   and carries the loser's lake onto an unresolved one; dedup body-matching considers every body a
+   spanning skate touched. Also: `PastWeatherPanel.test.tsx` (N6h) waited on a heading that renders
+   in the loading state too, then asserted synchronously — a race a slow CI runner lost; it now
+   waits for the loading line to clear.
 
 ## What this phase does not cover
 

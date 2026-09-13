@@ -754,13 +754,15 @@ export const listTracksForBody = query({
           .lt('startTime', seasonEndMs(season)),
       )
       .order('desc')
-      // A superseded copy never draws, whatever it links to. The dedup (`sweepUnpromptedActivities`)
-      // moves a loser's link to the winner when it can; when it can't — the winner has a report of
-      // its own, so both copies of one skate were reported from — the loser keeps its link and stays
-      // `converted`, and publish-is-consent alone would draw the same skate twice. Its report still
-      // shows its own path (`getForReport`); this layer draws each skate once. Filtered before the
-      // take, as `listMine` does, so a superseded row doesn't spend a slot.
-      .filter((q) => q.eq(q.field('supersededByActivityId'), undefined))
+      // A superseded copy that carries no link never draws — publish-is-consent would skip it anyway,
+      // so it is filtered before the take (as `listMine` does) rather than spending a slot. A
+      // superseded copy that *kept* its link is the rare case and is decided in the loop below.
+      .filter((q) =>
+        q.or(
+          q.eq(q.field('supersededByActivityId'), undefined),
+          q.neq(q.field('linkedReportId'), undefined),
+        ),
+      )
       .take(limit + 1);
     const truncated = Math.max(0, activities.length - limit);
 
@@ -775,6 +777,16 @@ export const listTracksForBody = query({
       if (activity.linkedReportId === undefined) continue;
       const report = await ctx.db.get(activity.linkedReportId);
       if (report?.moderationStatus !== 'visible') continue;
+      // (1b) A superseded copy that kept its link — the dedup (`sweepUnpromptedActivities`) couldn't
+      // move it, because the winner had a report of its own or had no path to give the report.
+      // Draw each skate once, from the copy that *can* draw it: if the winner carries a track, it
+      // is the one on the map and this loser is skipped; if the winner is a path-less stub, this
+      // loser is the only drawable copy of a published skate and must not vanish (PR #53 review).
+      // Its report always shows its own path either way (`getForReport`).
+      if (activity.supersededByActivityId !== undefined) {
+        const winner = await ctx.db.get(activity.supersededByActivityId);
+        if (winner?.path?.type === 'LineString') continue;
+      }
 
       // (4) Global opt-out, cached per author across the loop.
       let optedOut = optOutCache.get(activity.userId);
