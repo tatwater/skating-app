@@ -570,6 +570,63 @@ describe('gpsActivities.listTracksForBody — the D58 privacy chain', () => {
     expect(tracks.map((tr) => tr.activityId)).toEqual([watchId]);
   });
 
+  test('a supersession chain yields to the terminal winner, not the next hop — one skate, once (PR #53 review)', async () => {
+    const t = harness();
+    const me = await seedUser(t, 'me');
+    const bodyId = await seedBody(t);
+    // Tick 1: a reported apple_health copy (A) lost to a path-less garmin stub (B) — the link
+    // couldn't move, so A kept it. Tick 2: the native recording (C) arrived and out-ranked B.
+    // C is reported from too. The chain is A → B → C; B can't draw, C can.
+    const { activityId: cId } = await skateAndReport(me, bodyId, { key: 'c' });
+    const bId = await t.run((ctx) =>
+      ctx.db.insert('gpsActivities', {
+        userId: me.id,
+        provider: 'garmin',
+        providerActivityId: 'garmin-stub',
+        sportType: 'IceSkate',
+        startTime: T0 + 60_000,
+        endTime: T0 + 44 * 60_000,
+        waterBodyId: bodyId,
+        promptState: 'dismissed',
+        detectedAt: Date.now(),
+        supersededByActivityId: cId,
+      }),
+    );
+    const aId = await t.run((ctx) =>
+      ctx.db.insert('gpsActivities', {
+        userId: me.id,
+        provider: 'apple_health',
+        providerActivityId: 'health-1',
+        sportType: 'IceSkate',
+        startTime: T0 + 2 * 60_000,
+        endTime: T0 + 43 * 60_000,
+        path: trackPath(),
+        waterBodyId: bodyId,
+        promptState: 'converted',
+        detectedAt: Date.now(),
+        supersededByActivityId: bId,
+      }),
+    );
+    const cReport = await t.run(async (ctx) => (await ctx.db.query('reports').first()) ?? null);
+    if (!cReport) throw new Error('unreachable');
+    const aReportId = await t.run((ctx) => {
+      const { _id, _creationTime, ...rest } = cReport;
+      return ctx.db.insert('reports', { ...rest, activityId: aId });
+    });
+    await t.run((ctx) => ctx.db.patch(aId, { linkedReportId: aReportId }));
+
+    // One hop would see only B (undrawable) and let A draw beside C. The chain says: C draws.
+    let { tracks } = await me.as.query(api.gpsActivities.listTracksForBody, {
+      waterBodyId: bodyId,
+    });
+    expect(tracks.map((tr) => tr.activityId)).toEqual([cId]);
+
+    // And when C can't draw either, A — the only drawable copy left — does.
+    await t.run((ctx) => ctx.db.patch(cReport._id, { moderationStatus: 'hidden' }));
+    ({ tracks } = await me.as.query(api.gpsActivities.listTracksForBody, { waterBodyId: bodyId }));
+    expect(tracks.map((tr) => tr.activityId)).toEqual([aId]);
+  });
+
   test('undrawable rows at the top of the index do not spend the limit — the scan fills past them (PR #53 review)', async () => {
     const t = harness();
     const me = await seedUser(t, 'me');

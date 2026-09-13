@@ -712,7 +712,8 @@ p.timezone ?? DIGEST_TIMEZONE)`). Logged as **D173**.
    one of its own copies to come due, which is the tick that can see it. And `listTracksForBody`
    decides a superseded copy that *kept* its link against its winner — skipped if the winner draws
    on its own terms (track + visible report), drawn if it can't (a path-less stub, or a report hidden
-   since) — so both copies reported from draws once, and a published skate never vanishes because its
+   since, walking the whole supersession chain so an undrawable intermediate can't let an older copy
+   render beside the terminal winner) — so both copies reported from draws once, and a published skate never vanishes because its
    better-ranked copy can't draw (the blanket "superseded never draws" of the first cut did exactly
    that; the second cut checked the path but not the report). The aggregate read now **scans until
    `limit` drawable tracks are in hand** (`TRACK_SCAN_CAP` = 2×), instead of `take(limit + 1)` and

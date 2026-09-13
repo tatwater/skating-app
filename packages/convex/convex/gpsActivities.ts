@@ -509,9 +509,10 @@ function toDedupActivity(row: Doc<'gpsActivities'>): DedupActivity {
 }
 
 /**
- * How far `linkActivityToReport` follows `supersededByActivityId` before giving up. A chain is a
- * winner that was itself out-ranked on a later tick — two or three rows in the worst plausible case —
- * and the bound is only so a cycle written by some future bug can't spin a mutation.
+ * How far `linkActivityToReport` and `listTracksForBody` follow `supersededByActivityId` before
+ * giving up. A chain is a winner that was itself out-ranked on a later tick — two or three rows in
+ * the worst plausible case — and the bound is only so a cycle written by some future bug can't spin
+ * a function.
  */
 const MAX_SUPERSESSION_HOPS = 8;
 
@@ -803,12 +804,22 @@ export const listTracksForBody = query({
       // it is the one on the map and this loser is skipped; if the winner is a path-less stub, or
       // its report has since been hidden, this loser is the only drawable copy of a published skate
       // and must not vanish (PR #53 review). Its report always shows its own path (`getForReport`).
-      // One hop: a winner that was itself out-ranked later is a chain the sweep only builds across
-      // ticks, and the second copy of a skate reported from twice is already the rare case.
-      if (activity.supersededByActivityId !== undefined) {
-        const winner = await ctx.db.get(activity.supersededByActivityId);
-        if (winner && (await drawableReport(winner))) continue;
+      // The whole chain is walked, not one hop: a winner out-ranked on a later tick is a chain, and
+      // an intermediate that can't draw must not let this copy render *alongside* the terminal
+      // winner that can. The rule is "the highest-ranked copy that can draw", so this copy yields
+      // to any drawable copy above it.
+      let yields = false;
+      let above = activity.supersededByActivityId;
+      for (let hops = 0; above !== undefined && hops < MAX_SUPERSESSION_HOPS; hops++) {
+        const winner = await ctx.db.get(above);
+        if (!winner) break;
+        if (await drawableReport(winner)) {
+          yields = true;
+          break;
+        }
+        above = winner.supersededByActivityId;
       }
+      if (yields) continue;
 
       // (4) Global opt-out, cached per author across the loop.
       let optedOut = optOutCache.get(activity.userId);
