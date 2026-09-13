@@ -308,17 +308,32 @@ describe('notificationDelivery', () => {
     });
   });
 
-  test('the unsubscribe route answers a page on GET and 200 on the one-click POST', async () => {
+  test('the unsubscribe route: GET asks and changes nothing, POST does it', async () => {
     const t = harness();
     const me = await seedUser(t, 'me', { email: 'me@example.test' });
     const secret = await t.mutation(internal.notificationDelivery.ensureUnsubscribeSecret, {
       userId: me.id,
     });
-    const bad = await t.fetch(`/unsubscribe?u=${me.id}&t=wrong`);
+    const link = `/unsubscribe?u=${me.id}&t=${secret}`;
+    // A link scanner following the footer URL must not unsubscribe anyone.
+    const page = await t.fetch(link);
+    expect(page.status).toBe(200);
+    expect(await page.text()).toContain('<form method="post">');
+    expect((await me.as.query(api.profiles.current, {}))?.channelPrefs?.email).not.toBe(false);
+
+    // A wrong secret is a 200 no-op either way, and a browser is told the link didn't work.
+    const bad = await t.fetch(`/unsubscribe?u=${me.id}&t=wrong`, {
+      method: 'POST',
+      headers: { Accept: 'text/html' },
+    });
     expect(bad.status).toBe(200);
     expect(await bad.text()).toContain('didn’t work');
-    const good = await t.fetch(`/unsubscribe?u=${me.id}&t=${secret}`, { method: 'POST' });
+    expect((await me.as.query(api.profiles.current, {}))?.channelPrefs?.email).not.toBe(false);
+
+    // The mail client's RFC 8058 one-click POST: bare 200, channel off.
+    const good = await t.fetch(link, { method: 'POST' });
     expect(good.status).toBe(200);
+    expect(await good.text()).toBe('');
     expect((await me.as.query(api.profiles.current, {}))?.channelPrefs?.email).toBe(false);
   });
 

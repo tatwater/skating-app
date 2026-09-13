@@ -123,15 +123,23 @@ export async function enablePushOnThisDevice(effects: RegisterEffects): Promise<
 /** The explicit off: forget this device server-side and remember the choice locally. */
 export async function disablePushOnThisDevice(effects: RegisterEffects): Promise<void> {
   setDeviceOptedOut(true);
+  await unregisterThisDevice(effects);
+}
+
+/**
+ * Forget this device server-side without touching the local opt-out — what sign-out does, so a
+ * phone nobody is signed in on stops ringing for the account that left. Best-effort: offline, the
+ * row lingers until the next sign-in re-homes it or account deletion drains it.
+ */
+export async function unregisterThisDevice(effects: RegisterEffects): Promise<void> {
   const token = await fetchExpoPushToken();
-  if (token) {
-    try {
-      await effects.unregister({ token });
-    } catch {
-      // Offline: the server row lingers until the next successful unregister or account deletion;
-      // the local opt-out still stops re-registration, and the server's push will land on a device
-      // that has since revoked permission at worst.
-    }
+  if (!token) return;
+  try {
+    await effects.unregister({ token });
+  } catch {
+    // Offline: the server row lingers until the next successful unregister or account deletion;
+    // the local opt-out (when set) still stops re-registration, and the server's push will land on
+    // a device that has since revoked permission at worst.
   }
 }
 

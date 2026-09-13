@@ -46,7 +46,7 @@ import { internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
 import { internalMutation, type MutationCtx, mutation, query } from './_generated/server';
 import { canReceiveNotifications, getCurrentProfile, requireProfile } from './lib/auth';
-import { recipientWants, settleTrigger } from './lib/notificationQueue';
+import { DIGEST_TIMEZONE, recipientWants, settleTrigger } from './lib/notificationQueue';
 import { resolveNotifications } from './lib/notificationResolve';
 import { loadBlockedAuthorIds } from './lib/reportVisibility';
 import { takeCapped } from './lib/scan';
@@ -57,10 +57,9 @@ import { DELIVERY_BATCH } from './notificationDelivery';
  * recipient's own (`profiles.timezone`, written by the clients on app open; N8/C). True-sunset timing
  * was considered and dropped: sunset in Vermont is ~16:20 in early January and ~20:30 in late June,
  * so a digest that tracked it would arrive mid-workday at exactly the point in the season when
- * skating happens. A user with no stored zone gets the pilot default.
+ * skating happens. A user with no stored zone gets the pilot default (`DIGEST_TIMEZONE`).
  */
 const DIGEST_HOUR = 20;
-export const DIGEST_TIMEZONE = 'America/New_York';
 /** Favorite/great pushes fire after this quiet window so a burst on one lake coalesces into one. */
 const DEBOUNCE_MS = 2 * 60 * 1000;
 

@@ -12,10 +12,12 @@
  * client-side and which never touches this table.
  */
 
-import type { NotificationView } from '@skating/core';
+import { NOTIFICATION_TYPES, type NotificationView } from '@skating/core';
 
 /** The cache holds one page — the last one the live list showed. */
 export const MAX_CACHED_NOTIFICATIONS = 50;
+
+const KNOWN_TYPES: ReadonlySet<string> = new Set<string>([...NOTIFICATION_TYPES, 'unknown']);
 
 export interface CachedNotificationRow {
   id: string;
@@ -27,7 +29,12 @@ export function toCachedRow(view: NotificationView): CachedNotificationRow {
   return { id: view.id, createdAt: view.createdAt, data: JSON.stringify(view) };
 }
 
-/** Parse a row back, or `null` for a corrupt blob — a bad row is skipped, never a crash. */
+/**
+ * Parse a row back, or `null` for a corrupt blob — a bad row is skipped, never a crash. A row whose
+ * type this build no longer knows (cached by an older one, before the type was retired) comes back
+ * as the `unknown` variant — the same degradation the server applies to an unparseable payload —
+ * because `describeNotification` has no branch for a type outside its union.
+ */
 export function fromCachedRow(row: Pick<CachedNotificationRow, 'data'>): NotificationView | null {
   try {
     const parsed = JSON.parse(row.data) as unknown;
@@ -35,6 +42,14 @@ export function fromCachedRow(row: Pick<CachedNotificationRow, 'data'>): Notific
     const view = parsed as NotificationView;
     if (typeof view.id !== 'string' || typeof view.type !== 'string') return null;
     if (typeof view.createdAt !== 'number') return null;
+    if (!KNOWN_TYPES.has(view.type)) {
+      return {
+        id: view.id,
+        createdAt: view.createdAt,
+        ...(view.readAt !== undefined ? { readAt: view.readAt } : {}),
+        type: 'unknown',
+      };
+    }
     return view;
   } catch {
     return null;
@@ -72,21 +87,4 @@ export function unreadAfterOverlay(
   overlay: ReadonlyMap<string, number>,
 ): number {
   return applyReadOverlay(views, overlay).filter((v) => v.readAt === undefined).length;
-}
-
-/**
- * Which overlay entries the server has caught up on — the ones whose row now carries a server
- * `readAt`, or whose row is gone (purged). Those can be dropped; the rest still need replaying.
- */
-export function settledOverlayIds(
-  overlay: ReadonlyMap<string, number>,
-  live: readonly NotificationView[],
-): string[] {
-  const byId = new Map(live.map((v) => [v.id, v] as const));
-  const settled: string[] = [];
-  for (const id of overlay.keys()) {
-    const row = byId.get(id);
-    if (row === undefined || row.readAt !== undefined) settled.push(id);
-  }
-  return settled;
 }

@@ -4,7 +4,6 @@ import {
   applyReadOverlay,
   cachedNotificationsFromRows,
   fromCachedRow,
-  settledOverlayIds,
   toCachedRow,
   unreadAfterOverlay,
 } from './notificationCacheModel';
@@ -23,6 +22,12 @@ describe('notificationCacheModel (N8 PR 3)', () => {
     expect(fromCachedRow(toCachedRow(v))).toEqual(v);
     expect(fromCachedRow({ data: 'not json' })).toBeNull();
     expect(fromCachedRow({ data: '{"id":1}' })).toBeNull();
+    // A type this build has retired renders degraded rather than reaching `describeNotification`.
+    expect(
+      fromCachedRow({
+        data: JSON.stringify({ id: 'old', createdAt: 7, readAt: 9, type: 'bounty_fulfilled' }),
+      }),
+    ).toEqual({ id: 'old', createdAt: 7, readAt: 9, type: 'unknown' });
     expect(
       cachedNotificationsFromRows([
         toCachedRow(view('a', 1)),
@@ -40,15 +45,5 @@ describe('notificationCacheModel (N8 PR 3)', () => {
     ]);
     expect(applyReadOverlay(live, overlay).map((v) => v.readAt)).toEqual([10, 50, undefined]);
     expect(unreadAfterOverlay(live, overlay)).toBe(1);
-  });
-
-  it('an overlay entry settles once the server shows the row read, or the row is gone', () => {
-    const overlay = new Map([
-      ['a', 10],
-      ['b', 11],
-      ['gone', 12],
-    ]);
-    const live = [view('a', 1, 20), view('b', 2)];
-    expect(settledOverlayIds(overlay, live).sort()).toEqual(['a', 'gone']);
   });
 });

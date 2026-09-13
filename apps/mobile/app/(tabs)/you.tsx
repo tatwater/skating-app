@@ -28,11 +28,13 @@ import { Avatar } from '../../src/components/ProfileView';
 import { StravaConnect } from '../../src/components/StravaConnect';
 import { TrackHistory } from '../../src/components/TrackHistory';
 import { UnreportedSkates } from '../../src/components/UnreportedSkates';
+import { clearNotificationCache } from '../../src/lib/notificationCache';
 import {
   disablePushOnThisDevice,
   enablePushOnThisDevice,
   isDeviceOptedOut,
   registerIfPermitted,
+  unregisterThisDevice,
 } from '../../src/lib/pushRegistration';
 import { tapTargetSlop } from '../../src/lib/tapTarget';
 import { THEME_PREFERENCE_LABELS } from '../../src/lib/themePreference';
@@ -52,7 +54,15 @@ export default function YouScreen() {
   // The bell's dot (N8/A3). The tab bar shows the same signal on the You icon from every screen.
   const unread = useQuery(api.notifications.unreadCount, profile ? {} : 'skip') ?? 0;
 
+  // Sign-out takes this phone's push address with it and drops the offline inbox (N8 PR 3): a phone
+  // nobody is signed in on must not keep ringing — or reading back — for the account that left.
+  // Both best-effort and *before* the Clerk sign-out, which is what the unregister needs a session
+  // for; the tabs layout re-registers on the next sign-in.
+  const registerToken = useMutation(api.pushTokens.register);
+  const unregisterToken = useMutation(api.pushTokens.unregister);
   async function onSignOut() {
+    await unregisterThisDevice({ register: registerToken, unregister: unregisterToken });
+    clearNotificationCache();
     await signOut();
     router.replace('/sign-in');
   }

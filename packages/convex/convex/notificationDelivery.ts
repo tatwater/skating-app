@@ -8,8 +8,10 @@
  * `flushNotificationQueue` schedules `deliverBatch` with the ids it just inserted. The action loads
  * everything it needs in **one** internal query (`loadForDelivery`: the recipient's channel switches,
  * their live push tokens, their email, and the row resolved to a sentence through the same resolver
- * the inbox uses), does the network calls, then writes the stamps back in one mutation. Actions can't
- * read the database directly, and splitting the reads per row would be the N+1 the inbox avoided.
+ * the inbox uses), does the network calls, and stamps each channel as soon as its sends are done —
+ * the push stamps land before the email pass begins, so nothing that fails later can un-stamp them.
+ * Actions can't read the database directly, and splitting the reads per row would be the N+1 the
+ * inbox avoided.
  *
  * ## What decides whether a row goes anywhere
  *
@@ -34,8 +36,9 @@ import {
 } from '@skating/core';
 import { v } from 'convex/values';
 import { internal } from './_generated/api';
-import type { Id } from './_generated/dataModel';
+import type { Doc, Id } from './_generated/dataModel';
 import { internalAction, internalMutation, internalQuery } from './_generated/server';
+import { canReceiveNotifications } from './lib/auth';
 import { clerkEmailForSubject } from './lib/clerkEmail';
 import {
   type ExpoPushMessage,
@@ -44,10 +47,10 @@ import {
   sendExpoPush,
 } from './lib/expoPush';
 import { renderNotificationEmail, webPathForTarget } from './lib/notificationEmail';
+import { DIGEST_TIMEZONE } from './lib/notificationQueue';
 import { resolveNotifications } from './lib/notificationResolve';
 import { loadBlockedAuthorIds } from './lib/reportVisibility';
 import { sendEmail } from './lib/resend';
-import { DIGEST_TIMEZONE } from './notifications';
 
 /** Rows per delivery action — the flush chunks its inserts to this so one action stays bounded. */
 export const DELIVERY_BATCH = 200;
@@ -72,62 +75,73 @@ interface Deliverable {
 /**
  * Everything `deliverBatch` needs, in one read. A row already stamped for a channel comes back with
  * that channel `null`, which is the idempotency: a batch that ran twice sends nothing twice.
+ *
+ * Grouped by recipient: a batch is many rows over few people (that's what coalescing is for), so the
+ * profile, the block set and the token list are read once per person, and each person's rows go
+ * through the resolver in **one** call — its per-call memo is what keeps thirty rows about one lake
+ * at one body read, and calling it per row would have thrown that away.
+ *
+ * Eligibility is re-read here, as it is at the flush: a row is delivered seconds after it is
+ * inserted, but "seconds" is long enough to request deletion in, and the Clerk fallback below would
+ * otherwise re-cache the address that request just wiped.
  */
 export const loadForDelivery = internalQuery({
   args: { notificationIds: v.array(v.id('notifications')) },
   handler: async (ctx, { notificationIds }): Promise<Deliverable[]> => {
     const now = Date.now();
-    const out: Deliverable[] = [];
-    const blockSets = new Map<Id<'profiles'>, ReadonlySet<string>>();
+    const byUser = new Map<Id<'profiles'>, Doc<'notifications'>[]>();
     for (const id of notificationIds) {
       const row = await ctx.db.get(id);
       if (!row) continue;
-      const profile = await ctx.db.get(row.userId);
-      if (!profile) continue;
-      let blocked = blockSets.get(row.userId);
-      if (!blocked) {
-        blocked = await loadBlockedAuthorIds(ctx, row.userId);
-        blockSets.set(row.userId, blocked);
-      }
-      const [view] = await resolveNotifications(ctx, [row], blocked, now);
-      // The resolver drops a row whose actors are all blocked — nothing to say, nothing to send.
-      if (!view) continue;
-      const channels = effectiveChannelPrefs(profile.channelPrefs);
+      const rows = byUser.get(row.userId);
+      if (rows) rows.push(row);
+      else byUser.set(row.userId, [row]);
+    }
 
-      let push: Deliverable['push'] = null;
-      if (channels.push && row.pushedAt === undefined) {
-        const tokens = await ctx.db
+    const out: Deliverable[] = [];
+    for (const [userId, rows] of byUser) {
+      const profile = await ctx.db.get(userId);
+      if (!profile || !canReceiveNotifications(profile)) continue;
+      const channels = effectiveChannelPrefs(profile.channelPrefs);
+      const blocked = await loadBlockedAuthorIds(ctx, userId);
+      // The resolver drops a row whose actors are all blocked — nothing to say, nothing to send.
+      const views = await resolveNotifications(ctx, rows, blocked, now);
+      const viewById = new Map(views.map((view) => [view.id, view] as const));
+
+      let tokens: NonNullable<Deliverable['push']> | null = null;
+      if (channels.push) {
+        const live = await ctx.db
           .query('pushTokens')
-          .withIndex('by_user', (q) => q.eq('userId', row.userId))
+          .withIndex('by_user', (q) => q.eq('userId', userId))
           .collect();
-        push = tokens
+        tokens = live
           .filter((t) => t.disabledAt === undefined)
           .map((t) => ({ tokenId: t._id, token: t.token, platform: t.platform }));
       }
 
-      let email: Deliverable['email'] = null;
-      if (
-        channels.email &&
-        row.emailedAt === undefined &&
-        NOTIFICATION_EMAIL_ELIGIBLE.has(row.type)
-      ) {
-        email = {
-          to: profile.email ?? null,
-          unsubscribeSecret: profile.emailUnsubscribeSecret ?? null,
-        };
+      for (const row of rows) {
+        const view = viewById.get(row._id);
+        if (!view) continue;
+        const push = tokens && row.pushedAt === undefined ? tokens : null;
+        const email =
+          channels.email && row.emailedAt === undefined && NOTIFICATION_EMAIL_ELIGIBLE.has(row.type)
+            ? {
+                to: profile.email ?? null,
+                unsubscribeSecret: profile.emailUnsubscribeSecret ?? null,
+              }
+            : null;
+        const payload = row.payload as { coalesceKey?: string } | null;
+        out.push({
+          notificationId: row._id,
+          userId,
+          clerkUserId: profile.clerkUserId,
+          view,
+          timeZone: profile.timezone ?? DIGEST_TIMEZONE,
+          collapseKey: payload?.coalesceKey ?? `${userId}:${row.type}`,
+          push,
+          email,
+        });
       }
-
-      const payload = row.payload as { coalesceKey?: string } | null;
-      out.push({
-        notificationId: id,
-        userId: row.userId,
-        clerkUserId: profile.clerkUserId,
-        view,
-        timeZone: profile.timezone ?? DIGEST_TIMEZONE,
-        collapseKey: payload?.coalesceKey ?? `${row.userId}:${row.type}`,
-        push,
-        email,
-      });
     }
     return out;
   },
@@ -232,24 +246,32 @@ export const deliverBatch = internalAction({
     const messageOwners: { notificationId: Id<'notifications'>; tokenId: Id<'pushTokens'> }[] = [];
     for (const row of rows) {
       if (!row.push || row.push.length === 0) continue;
-      const { title, detail, target } = describeNotification(row.view, { timeZone: row.timeZone });
-      for (const device of row.push) {
-        messages.push({
-          to: device.token,
-          title,
-          ...(detail ? { body: detail } : {}),
-          data: {
-            notificationId: row.notificationId,
-            target,
-            ...(base
-              ? { url: `${base}${webPathForTarget(target, row.view) ?? '/notifications'}` }
-              : {}),
-          },
-          collapseId: collapseId(row.collapseKey),
-          channelId: 'default',
-          sound: 'default',
+      try {
+        const { title, detail, target } = describeNotification(row.view, {
+          timeZone: row.timeZone,
         });
-        messageOwners.push({ notificationId: row.notificationId, tokenId: device.tokenId });
+        for (const device of row.push) {
+          messages.push({
+            to: device.token,
+            title,
+            ...(detail ? { body: detail } : {}),
+            data: {
+              notificationId: row.notificationId,
+              target,
+              ...(base
+                ? { url: `${base}${webPathForTarget(target, row.view) ?? '/notifications'}` }
+                : {}),
+            },
+            collapseId: collapseId(row.collapseKey),
+            channelId: 'default',
+            sound: 'default',
+          });
+          messageOwners.push({ notificationId: row.notificationId, tokenId: device.tokenId });
+        }
+      } catch (err) {
+        // One row's sentence failing to compose (an `Intl` zone this runtime rejects, say) costs that
+        // row's push, not the batch's.
+        console.warn(`notificationDelivery: could not compose ${row.notificationId}`, err);
       }
     }
     const pushed = new Set<Id<'notifications'>>();
@@ -265,63 +287,19 @@ export const deliverBatch = internalAction({
           receiptsToCheck.push({ id: ticket.id, tokenId: owner.tokenId });
         } else if (isDeviceNotRegistered(ticket)) {
           deadTokens.add(owner.tokenId);
+        } else {
+          // Anything else here is ours to fix, not the device's — `InvalidCredentials` is what a
+          // missing FCM key looks like, and a batch that silently pushed nothing would hide it.
+          console.warn(`Expo push ticket error: ${ticket.message}`);
         }
       });
     }
-
-    // ── Email ────────────────────────────────────────────────────────────────────────────────────
-    const emailed: Id<'notifications'>[] = [];
-    const addressCache = new Map<Id<'profiles'>, string | null>();
-    const secretCache = new Map<Id<'profiles'>, string | null>();
-    for (const row of rows) {
-      if (!row.email) continue;
-      let to = row.email.to ?? addressCache.get(row.userId) ?? null;
-      if (to === null && !addressCache.has(row.userId)) {
-        // No mirror yet (the JWT template didn't carry an email, or the row predates the field):
-        // one Clerk lookup, cached onto the profile for every send after this one.
-        to = await clerkEmailForSubject(row.clerkUserId);
-        addressCache.set(row.userId, to);
-        if (to) {
-          await ctx.runMutation(internal.notificationDelivery.cacheEmail, {
-            userId: row.userId,
-            email: to,
-          });
-        }
-      }
-      if (!to) continue;
-      let secret = row.email.unsubscribeSecret ?? secretCache.get(row.userId) ?? null;
-      if (secret === null) {
-        secret = await ctx.runMutation(internal.notificationDelivery.ensureUnsubscribeSecret, {
-          userId: row.userId,
-        });
-        secretCache.set(row.userId, secret);
-      }
-      if (!secret) continue;
-      const unsubscribe = unsubscribeUrl(row.userId, secret);
-      const mail = renderNotificationEmail(row.view, {
-        webAppUrl: base,
-        unsubscribeUrl: unsubscribe,
-        timeZone: row.timeZone,
-      });
-      const sent = await sendEmail({
-        to,
-        subject: mail.subject,
-        html: mail.html,
-        text: mail.text,
-        context: `notification ${row.view.type}`,
-        headers: {
-          'List-Unsubscribe': `<${unsubscribe}>`,
-          'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click',
-        },
-      });
-      if (sent) emailed.push(row.notificationId);
-    }
-
-    // ── Stamps + follow-ups ──────────────────────────────────────────────────────────────────────
-    if (pushed.size > 0 || emailed.length > 0) {
+    // The push stamps go down before the email pass starts: the sends above have happened, and a
+    // throw anywhere below must not leave them unstamped for a re-run to send twice.
+    if (pushed.size > 0) {
       await ctx.runMutation(internal.notificationDelivery.markDelivered, {
         pushed: [...pushed],
-        emailed,
+        emailed: [],
         now,
       });
     }
@@ -338,6 +316,65 @@ export const deliverBatch = internalAction({
           tickets: receiptsToCheck,
         },
       );
+    }
+
+    // ── Email ────────────────────────────────────────────────────────────────────────────────────
+    const emailed: Id<'notifications'>[] = [];
+    const addressCache = new Map<Id<'profiles'>, string | null>();
+    const secretCache = new Map<Id<'profiles'>, string | null>();
+    for (const row of rows) {
+      if (!row.email) continue;
+      try {
+        let to = row.email.to ?? addressCache.get(row.userId) ?? null;
+        if (to === null && !addressCache.has(row.userId)) {
+          // No mirror yet (the JWT template didn't carry an email, or the row predates the field):
+          // one Clerk lookup, cached onto the profile for every send after this one.
+          to = await clerkEmailForSubject(row.clerkUserId);
+          addressCache.set(row.userId, to);
+          if (to) {
+            await ctx.runMutation(internal.notificationDelivery.cacheEmail, {
+              userId: row.userId,
+              email: to,
+            });
+          }
+        }
+        if (!to) continue;
+        let secret = row.email.unsubscribeSecret ?? secretCache.get(row.userId) ?? null;
+        if (secret === null) {
+          secret = await ctx.runMutation(internal.notificationDelivery.ensureUnsubscribeSecret, {
+            userId: row.userId,
+          });
+          secretCache.set(row.userId, secret);
+        }
+        if (!secret) continue;
+        const unsubscribe = unsubscribeUrl(row.userId, secret);
+        const mail = renderNotificationEmail(row.view, {
+          webAppUrl: base,
+          unsubscribeUrl: unsubscribe,
+          timeZone: row.timeZone,
+        });
+        const sent = await sendEmail({
+          to,
+          subject: mail.subject,
+          html: mail.html,
+          text: mail.text,
+          context: `notification ${row.view.type}`,
+          headers: {
+            'List-Unsubscribe': `<${unsubscribe}>`,
+            'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click',
+          },
+        });
+        if (sent) emailed.push(row.notificationId);
+      } catch (err) {
+        console.warn(`notificationDelivery: email for ${row.notificationId} failed`, err);
+      }
+    }
+    if (emailed.length > 0) {
+      await ctx.runMutation(internal.notificationDelivery.markDelivered, {
+        pushed: [],
+        emailed,
+        now,
+      });
     }
     return {
       rows: rows.length,

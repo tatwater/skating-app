@@ -700,10 +700,13 @@ p.timezone ?? DIGEST_TIMEZONE)`). Logged as **D170**.
 **Shipped (D171):** `pushTokens` table + `pushTokens.register/unregister`; `notificationDelivery.ts`
 (`loadForDelivery` → `deliverBatch` → `markDelivered`; `checkPushReceipts` 15 min later;
 `disableTokens` on `DeviceNotRegistered`) scheduled by the flush in batches of 200; `lib/expoPush.ts`
-(chunked send, receipts, never throws); email via `lib/resend.ts` (now with headers + `from`) rendered
+(chunked send, receipts, never throws); email via `lib/resend.ts` (now with headers, and a 429
+retry that honours `Retry-After` — Resend's default is 2 req/s, a digest batch is faster) rendered
 by `lib/notificationEmail.ts`; `profiles.email` mirrored from the identity's `email` claim,
 `profiles.channelPrefs`, `profiles.emailUnsubscribeSecret`, `profiles.setChannelPrefs`; the
-`/unsubscribe` HTTP route (GET page, POST one-click); `notifications.pushedAt/emailedAt` stamps.
+`/unsubscribe` HTTP route (GET is a confirm page that changes nothing — link scanners follow every
+URL in a mail — and POST is the one-click, from the page's button or the mail client's);
+`notifications.pushedAt/emailedAt` stamps, the push stamps written before the email pass starts.
 Mobile: `pushRegistration.ts` (register-if-permitted on open, the "this phone" switch, device opt-out
 in the prefs db), tap handling in the tabs layout (`data.target` → `notificationRoute`), the offline
 inbox cache + read overlay + replay (`notificationCache*.ts`), the tab dot reading the cache offline.

@@ -74,6 +74,14 @@ export const TYPE_FOR_KIND: Record<ActorQueueKind, NotificationType> = {
  */
 export const SETTLE_MS = 60 * 1000;
 
+/**
+ * The zone a recipient with no stored `profiles.timezone` is treated as being in — the pilot default.
+ * Read by the digest scheduling (`notifications.ts`) and by the transports when they compose a
+ * sentence with a wall-clock time in it (`notificationDelivery.ts`). Lives here, below both, so the
+ * two don't have to import each other for one string.
+ */
+export const DIGEST_TIMEZONE = 'America/New_York';
+
 /** `(recipient, target, kind)` — the collapse-id seed, same shape the report buckets use. */
 export function actorCoalesceKey(
   userId: Id<'profiles'>,

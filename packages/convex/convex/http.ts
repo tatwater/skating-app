@@ -27,48 +27,47 @@ import {
 } from '@skating/core';
 import { httpRouter } from 'convex/server';
 import { internal } from './_generated/api';
-import { httpAction } from './_generated/server';
+import { type ActionCtx, httpAction } from './_generated/server';
 import { OAUTH_STATE_TTL_SECONDS, stravaAuthorizeUrl } from './strava';
 
 const http = httpRouter();
 
 /**
- * One-click email unsubscribe (N8 PR 3 / D171). The link in every skater-facing email — and the
+ * Email unsubscribe (N8 PR 3 / D171). The link in every skater-facing email — and the
  * `List-Unsubscribe` header a mail client turns into its own button — lands here with no session.
  * The secret in `t` is the authorization and it authorizes one thing: the email channel goes off for
- * user `u`. GET renders a page; POST (what `List-Unsubscribe-Post` clients send) does the same and
- * answers 200 with no body, which is what RFC 8058 asks for.
+ * user `u`.
+ *
+ * **GET changes nothing.** Mail security scanners and link previewers fetch every URL in a message
+ * before the person has seen it, so a GET that unsubscribed would silence people who never clicked.
+ * The GET is a page with one button; the button POSTs. A mail client's own one-click button (RFC
+ * 8058, `List-Unsubscribe-Post`) POSTs straight here and is answered with a bare 200, which is what
+ * the RFC asks for; a browser submitting the form is told what happened.
  */
-async function handleUnsubscribe(
-  ctx: Parameters<Parameters<typeof httpAction>[0]>[0],
-  request: Request,
-): Promise<Response> {
+async function handleUnsubscribe(ctx: ActionCtx, request: Request): Promise<Response> {
   const url = new URL(request.url);
   const userId = url.searchParams.get('u') ?? '';
   const secret = url.searchParams.get('t') ?? '';
+  if (request.method !== 'POST') {
+    // The form has no `action`, so it posts back to this same URL, query string included.
+    return htmlPage(
+      'Unsubscribe from Gli emails?',
+      `<p>Gli will stop emailing you notifications. Your in-app notifications are unchanged, and you can turn email back on from Settings.</p>
+<form method="post"><input type="hidden" name="List-Unsubscribe" value="One-Click"><button type="submit">Unsubscribe</button></form>`,
+    );
+  }
   const ok = await ctx.runMutation(internal.profiles.unsubscribeEmailBySecret, { userId, secret });
-  if (request.method === 'POST') return new Response(null, { status: 200 });
-  const title = ok ? 'You’re unsubscribed' : 'That link didn’t work';
-  const line = ok
-    ? 'Gli won’t email you notifications any more. Your in-app notifications are unchanged, and you can turn email back on from Settings.'
-    : 'The link may be old, or already used. Email notifications can be turned off from Settings in the app.';
-  const body = `<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>${escapeHtml(title)}</title>
-<style>
-  body { font: 16px/1.5 system-ui, sans-serif; margin: 0; padding: 2.5rem 1.5rem; color: #0f172a; background: #f8fafc; }
-  main { max-width: 28rem; margin: 0 auto; }
-</style>
-</head>
-<body><main><h1>${escapeHtml(title)}</h1><p>${escapeHtml(line)}</p></main></body>
-</html>`;
-  return new Response(body, {
-    status: 200,
-    headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' },
-  });
+  const wantsPage = (request.headers.get('accept') ?? '').includes('text/html');
+  if (!wantsPage) return new Response(null, { status: 200 });
+  return ok
+    ? htmlPage(
+        'You’re unsubscribed',
+        '<p>Gli won’t email you notifications any more. Your in-app notifications are unchanged, and you can turn email back on from Settings.</p>',
+      )
+    : htmlPage(
+        'That link didn’t work',
+        '<p>The link may be old, or already used. Email notifications can be turned off from Settings in the app.</p>',
+      );
 }
 
 http.route({
@@ -92,6 +91,37 @@ function escapeHtml(text: string): string {
 }
 
 /**
+ * The one page shell this router serves — a real, phone-sized, dark-mode-aware page. `inner` is
+ * HTML the caller has already escaped where it needs escaping; the title is escaped here.
+ */
+function htmlPage(title: string, inner: string): Response {
+  const body = `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>${escapeHtml(title)}</title>
+<style>
+  body { font: 16px/1.5 system-ui, sans-serif; margin: 0; padding: 2.5rem 1.5rem; color: #0f172a; background: #f8fafc; }
+  main { max-width: 28rem; margin: 0 auto; }
+  h1 { font-size: 1.25rem; margin: 0 0 .5rem; }
+  p { margin: 0 0 1rem; color: #475569; }
+  button { font: inherit; padding: .6rem 1.2rem; border: 0; border-radius: .5rem; color: #fff; background: #0b69ff; }
+  @media (prefers-color-scheme: dark) {
+    body { color: #e2e8f0; background: #0f172a; }
+    p { color: #94a3b8; }
+  }
+</style>
+</head>
+<body><main><h1>${escapeHtml(title)}</h1>${inner}</main></body>
+</html>`;
+  return new Response(body, {
+    status: 200,
+    headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' },
+  });
+}
+
+/**
  * The last-resort page, shown when there is nowhere safe to send the browser (no deep link, no
  * configured web app). Deliberately a real page rather than a relative redirect: a relative
  * `Location` resolves against the Convex `.site` host, so it 404s and strands whoever is standing
@@ -99,29 +129,7 @@ function escapeHtml(text: string): string {
  */
 function resultPage(result: OAuthResult): Response {
   const copy = OAUTH_RESULT_COPY[result];
-  const body = `<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>${escapeHtml(copy.title)}</title>
-<style>
-  body { font: 16px/1.5 system-ui, sans-serif; margin: 0; padding: 2.5rem 1.5rem; color: #0f172a; background: #f8fafc; }
-  main { max-width: 28rem; margin: 0 auto; }
-  h1 { font-size: 1.25rem; margin: 0 0 .5rem; }
-  p { margin: 0; color: #475569; }
-  @media (prefers-color-scheme: dark) {
-    body { color: #e2e8f0; background: #0f172a; }
-    p { color: #94a3b8; }
-  }
-</style>
-</head>
-<body><main><h1>${escapeHtml(copy.title)}</h1><p>${escapeHtml(copy.body)}</p></main></body>
-</html>`;
-  return new Response(body, {
-    status: 200,
-    headers: { 'Content-Type': 'text/html; charset=utf-8' },
-  });
+  return htmlPage(copy.title, `<p>${escapeHtml(copy.body)}</p>`);
 }
 
 /**

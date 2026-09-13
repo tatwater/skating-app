@@ -12,6 +12,7 @@ import {
   MAX_CACHED_NOTIFICATIONS,
   toCachedRow,
 } from './notificationCacheModel';
+import { readPref, writePref } from './prefsDb';
 
 let db: SQLite.SQLiteDatabase | null = null;
 function getDb(): SQLite.SQLiteDatabase {
@@ -93,13 +94,43 @@ export function recordPendingReads(ids: readonly string[], readAt: number): void
   }
 }
 
-export function clearPendingReads(ids: readonly string[]): void {
-  if (ids.length === 0) return;
+/** The overlay has been replayed — the server holds every mark it recorded. */
+export function clearPendingReads(): void {
+  try {
+    getDb().runSync('DELETE FROM pending_reads', []);
+  } catch {
+    // Best-effort.
+  }
+}
+
+/**
+ * Drop everything. The cache is per device, not per account: a notification is private to the
+ * person it was for, so the page one account left behind must not read back to the next one who
+ * signs in on the same phone. Called at sign-out and whenever the signed-in profile changes.
+ */
+export function clearNotificationCache(): void {
   try {
     const d = getDb();
     d.withTransactionSync(() => {
-      for (const id of ids) d.runSync('DELETE FROM pending_reads WHERE id = ?', [id]);
+      d.runSync('DELETE FROM cached_notifications', []);
+      d.runSync('DELETE FROM pending_reads', []);
     });
+  } catch {
+    // Best-effort.
+  }
+}
+
+const OWNER_KEY = 'notification_cache_owner';
+
+/**
+ * Bind the cache to a profile: the first time a different profile is seen, whatever the previous
+ * one left behind is cleared. Cheap enough to call on every session mount; it writes only on change.
+ */
+export function claimNotificationCache(profileId: string): void {
+  try {
+    if (readPref(OWNER_KEY) === profileId) return;
+    clearNotificationCache();
+    writePref(OWNER_KEY, profileId);
   } catch {
     // Best-effort.
   }

@@ -15,12 +15,20 @@ import { Tabs, useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { type ColorValue, View } from 'react-native';
 import { useTheme } from 'tamagui';
-import { loadCachedNotifications, loadPendingReads } from '../../src/lib/notificationCache';
+import {
+  claimNotificationCache,
+  loadCachedNotifications,
+  loadPendingReads,
+} from '../../src/lib/notificationCache';
 import { unreadAfterOverlay } from '../../src/lib/notificationCacheModel';
 import { notificationRoute } from '../../src/lib/notificationRoutes';
 import { registerIfPermitted } from '../../src/lib/pushRegistration';
 
-/** Notification taps already opened this session (`getLastNotificationResponseAsync` replays the launch one). */
+/**
+ * Notification taps already opened this session. The launch tap is cleared natively once handled
+ * (`clearLastNotificationResponse`), but the live listener can still hand us the same response the
+ * launch read did, so each identifier is opened once.
+ */
 const handledTaps = new Set<string>();
 
 /**
@@ -85,6 +93,7 @@ export default function TabsLayout() {
   const profile = useQuery(api.profiles.current, {});
   const setTimezone = useMutation(api.profiles.setTimezone);
   const hasProfile = !!profile;
+  const profileId = profile?._id;
   const storedZone = profile?.timezone;
   useEffect(() => {
     if (!hasProfile) return;
@@ -93,6 +102,12 @@ export default function TabsLayout() {
       void setTimezone({ timezone: device }).catch(() => {});
     }
   }, [hasProfile, storedZone, setTimezone]);
+
+  // The offline inbox is per device; bind it to whoever is signed in, so a previous account's page
+  // never reads back to the next (N8 PR 3). Sign-out clears it too; this catches every other path.
+  useEffect(() => {
+    if (profileId !== undefined) claimNotificationCache(profileId);
+  }, [profileId]);
 
   // Push registration on app open (N8 PR 3) — only when permission is already granted and this
   // device hasn't been switched off; never a prompt. Refreshes `lastSeenAt` and re-homes the token
@@ -116,7 +131,6 @@ export default function TabsLayout() {
         | { target?: NotificationTarget | null; notificationId?: string }
         | undefined;
       if (!data || !('target' in data)) return;
-      // The launch response is re-delivered on every mount of this layout; open each tap once.
       const key = response.notification.request.identifier;
       if (handledTaps.has(key)) return;
       handledTaps.add(key);
@@ -127,10 +141,14 @@ export default function TabsLayout() {
       });
       router.navigate(route ?? '/notifications');
     };
-    // A tap that launched the app arrives before any listener is attached.
-    void Notifications.getLastNotificationResponseAsync()
-      .then(open)
-      .catch(() => {});
+    // A tap that launched the app arrives before any listener is attached; read it, then clear it
+    // so a later mount of this layout (sign out, sign in) doesn't open it again.
+    try {
+      open(Notifications.getLastNotificationResponse());
+      Notifications.clearLastNotificationResponse();
+    } catch {
+      // No native module (web, a test): nothing launched us.
+    }
     const sub = Notifications.addNotificationResponseReceivedListener(open);
     return () => sub.remove();
   }, [router]);

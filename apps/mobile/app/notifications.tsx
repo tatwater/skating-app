@@ -1,3 +1,4 @@
+import { useNetInfo } from '@react-native-community/netinfo';
 import { api } from '@skating/convex/api';
 import { describeNotification, formatRelativeTime, type NotificationView } from '@skating/core';
 import { useConvexAuth, useMutation, usePaginatedQuery } from 'convex/react';
@@ -12,7 +13,7 @@ import {
   loadPendingReads,
   recordPendingReads,
 } from '../src/lib/notificationCache';
-import { applyReadOverlay, settledOverlayIds } from '../src/lib/notificationCacheModel';
+import { applyReadOverlay } from '../src/lib/notificationCacheModel';
 import { notificationRoute } from '../src/lib/notificationRoutes';
 
 const PAGE_SIZE = 30;
@@ -40,10 +41,12 @@ export default function NotificationsScreen() {
 
   // The offline copy and the local read overlay (see the module note). `live` flips the moment the
   // query answers, empty or not; until then, with a connection the spinner shows and without one
-  // the cache does.
+  // the cache does. "Without one" is NetInfo's call, not the query's: a cold start online spends a
+  // frame or two in `LoadingFirstPage` as well, and that frame must not be mistaken for the ice.
   const [cached] = useState(() => loadCachedNotifications());
   const [overlay, setOverlay] = useState(() => loadPendingReads());
   const live = status !== 'LoadingFirstPage' || results.length > 0;
+  const offline = useNetInfo().isConnected === false;
   useEffect(() => {
     if (results.length > 0) cacheNotifications(results);
   }, [results]);
@@ -59,6 +62,10 @@ export default function NotificationsScreen() {
   // The rows the mark stamps are remembered for the visit (same as the web): the list is reactive,
   // so a dot drawn from `readAt` alone would vanish the moment the stamp landed. Seeded from the
   // page in hand before the mutation fires, then widened to everything the server stamped.
+  //
+  // This is also the offline overlay's replay: it stamps everything the server holds at this moment,
+  // which covers every row that was read off the cache, so once it lands the overlay has nothing
+  // left to say and is dropped.
   const marked = useRef(false);
   const [newThisVisit, setNewThisVisit] = useState<ReadonlySet<string>>(() => new Set());
   useEffect(() => {
@@ -66,14 +73,19 @@ export default function NotificationsScreen() {
     marked.current = true;
     setNewThisVisit(new Set(results.filter((v) => v.readAt === undefined).map((v) => v.id)));
     markRead({})
-      .then((stamped) => setNewThisVisit((prev) => new Set([...prev, ...stamped])))
+      .then((stamped) => {
+        setNewThisVisit((prev) => new Set([...prev, ...stamped]));
+        clearPendingReads();
+        setOverlay(new Map());
+      })
       .catch(() => {});
   }, [markRead, isAuthenticated, status, results]);
 
-  // Offline: stamp the cached rows in the overlay once per open. Replayed below when live returns.
+  // Offline: stamp the cached rows in the overlay once per open, replayed by the mark above the
+  // next time the live list answers.
   const markedOffline = useRef(false);
   useEffect(() => {
-    if (live || markedOffline.current || cached.length === 0) return;
+    if (live || !offline || markedOffline.current || cached.length === 0) return;
     markedOffline.current = true;
     const unread = cached.filter((n) => n.readAt === undefined).map((n) => n.id);
     if (unread.length === 0) return;
@@ -84,32 +96,7 @@ export default function NotificationsScreen() {
       for (const id of unread) if (!next.has(id)) next.set(id, at);
       return next;
     });
-  }, [live, cached]);
-
-  // Replay: once the live list answers, whatever the server already shows read (or has purged)
-  // drops out of the overlay; anything still unread server-side is marked now — bounded by the
-  // newest live row, so a notification that arrived after the offline open stays unread.
-  useEffect(() => {
-    if (!live || overlay.size === 0) return;
-    const settled = settledOverlayIds(overlay, results);
-    const pending = [...overlay.keys()].filter((id) => !settled.includes(id));
-    if (pending.length > 0) {
-      const newestPending = Math.max(
-        ...results.filter((r) => pending.includes(r.id)).map((r) => r.createdAt),
-      );
-      if (Number.isFinite(newestPending)) {
-        void markRead({ before: newestPending }).catch(() => {});
-      }
-    }
-    if (settled.length > 0) {
-      clearPendingReads(settled);
-      setOverlay((prev) => {
-        const next = new Map(prev);
-        for (const id of settled) next.delete(id);
-        return next;
-      });
-    }
-  }, [live, results, overlay, markRead]);
+  }, [live, offline, cached]);
 
   const data = live ? results : applyReadOverlay(cached, overlay);
 
