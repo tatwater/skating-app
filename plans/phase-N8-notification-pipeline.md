@@ -710,10 +710,14 @@ p.timezone ?? DIGEST_TIMEZONE)`). Logged as **D173**.
    copy behind fifty later syncs and asked about the skate twice. A consequence worth knowing: an
    *unrelated* due skate no longer pulls a not-yet-due pair into an early dedup; the pair waits for
    one of its own copies to come due, which is the tick that can see it. And `listTracksForBody`
-   decides a superseded copy that *kept* its link against its winner — skipped if the winner carries
-   a track, drawn if the winner is a path-less stub — so both copies reported from draws once, and a
-   published skate whose better-ranked copy has no path does not vanish from the lake (the blanket
-   "superseded never draws" of the first cut did exactly that). `listMine`'s filter-before-take was
+   decides a superseded copy that *kept* its link against its winner — skipped if the winner draws
+   on its own terms (track + visible report), drawn if it can't (a path-less stub, or a report hidden
+   since) — so both copies reported from draws once, and a published skate never vanishes because its
+   better-ranked copy can't draw (the blanket "superseded never draws" of the first cut did exactly
+   that; the second cut checked the path but not the report). The aggregate read now **scans until
+   `limit` drawable tracks are in hand** (`TRACK_SCAN_CAP` = 2×), instead of `take(limit + 1)` and
+   skipping inside the slice — every skip reason, not only this one, used to spend a slot; and
+   `truncated` is now an honest flag (a drawable past the limit, or a scan that hit its cap). `listMine`'s filter-before-take was
    already in from pass 5. *Second pass (xhigh):* a late `linkActivityToReport` follows the dedup
    chain to the winner, stopping short of a path-less one or one already reported (it links the copy
    it was filed from — the sweep's own can't-move state); the sweep's move refuses a path-less winner

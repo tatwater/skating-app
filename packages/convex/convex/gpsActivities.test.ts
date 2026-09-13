@@ -527,6 +527,94 @@ describe('gpsActivities.listTracksForBody — the D58 privacy chain', () => {
     return { activityId, reportId };
   }
 
+  test('a superseded copy draws when its winner cannot — the winner’s report was hidden (PR #53 review)', async () => {
+    const t = harness();
+    const me = await seedUser(t, 'me');
+    const bodyId = await seedBody(t);
+    // Two copies of one skate, both reported from: the sweep supersedes the watch copy and its
+    // link stays (the phone copy has a report of its own). Then the phone copy's report is hidden.
+    const { activityId: phoneId, reportId: phoneReport } = await skateAndReport(me, bodyId);
+    const watchId = await t.run((ctx) =>
+      ctx.db.insert('gpsActivities', {
+        userId: me.id,
+        provider: 'garmin',
+        providerActivityId: 'garmin-hidden',
+        sportType: 'IceSkate',
+        startTime: T0 + 2 * 60_000,
+        endTime: T0 + 44 * 60_000,
+        path: trackPath(),
+        waterBodyId: bodyId,
+        promptState: 'converted',
+        detectedAt: Date.now(),
+        supersededByActivityId: phoneId,
+      }),
+    );
+    const watchReport = await t.run((ctx) => ctx.db.get(phoneReport));
+    if (!watchReport) throw new Error('unreachable');
+    const watchReportId = await t.run((ctx) => {
+      const { _id, _creationTime, ...rest } = watchReport;
+      return ctx.db.insert('reports', { ...rest, activityId: watchId });
+    });
+    await t.run((ctx) => ctx.db.patch(watchId, { linkedReportId: watchReportId }));
+
+    // Winner drawable: the skate draws once, from the winner.
+    let { tracks } = await me.as.query(api.gpsActivities.listTracksForBody, {
+      waterBodyId: bodyId,
+    });
+    expect(tracks.map((tr) => tr.activityId)).toEqual([phoneId]);
+
+    // Winner's report hidden: the winner fails its own gate, so the loser — still a visible,
+    // published track — is the copy that draws. Neither would have been the wrong answer.
+    await t.run((ctx) => ctx.db.patch(phoneReport, { moderationStatus: 'hidden' }));
+    ({ tracks } = await me.as.query(api.gpsActivities.listTracksForBody, { waterBodyId: bodyId }));
+    expect(tracks.map((tr) => tr.activityId)).toEqual([watchId]);
+  });
+
+  test('undrawable rows at the top of the index do not spend the limit — the scan fills past them (PR #53 review)', async () => {
+    const t = harness();
+    const me = await seedUser(t, 'me');
+    const bodyId = await seedBody(t);
+    // Three published tracks, oldest first…
+    const a = await skateAndReport(me, bodyId, { key: 'a' });
+    await t.run((ctx) => ctx.db.patch(a.activityId, { startTime: T0 - 3 * HOUR }));
+    const b = await skateAndReport(me, bodyId, { key: 'b' });
+    await t.run((ctx) => ctx.db.patch(b.activityId, { startTime: T0 - 2 * HOUR }));
+    const c = await skateAndReport(me, bodyId, { key: 'c' });
+    await t.run((ctx) => ctx.db.patch(c.activityId, { startTime: T0 - 1 * HOUR }));
+    // …and four newer rows that cannot draw: unlinked recordings, which the old `take(limit + 1)`
+    // let fill the window before any track was reached.
+    await t.run(async (ctx) => {
+      for (let i = 0; i < 4; i++) {
+        await ctx.db.insert('gpsActivities', {
+          userId: me.id,
+          provider: 'native',
+          providerActivityId: `unreported-${i}`,
+          sportType: 'IceSkate',
+          startTime: T0 + i * 60_000,
+          endTime: T0 + 45 * 60_000,
+          path: trackPath(),
+          waterBodyId: bodyId,
+          promptState: 'pending',
+          detectedAt: Date.now(),
+        });
+      }
+    });
+    // A limit of two yields the two newest *drawable* tracks and says there is more.
+    const two = await me.as.query(api.gpsActivities.listTracksForBody, {
+      waterBodyId: bodyId,
+      limit: 2,
+    });
+    expect(two.tracks.map((tr) => tr.activityId)).toEqual([c.activityId, b.activityId]);
+    expect(two.truncated).toBe(1);
+    // A limit of three yields all three and says so.
+    const three = await me.as.query(api.gpsActivities.listTracksForBody, {
+      waterBodyId: bodyId,
+      limit: 3,
+    });
+    expect(three.tracks).toHaveLength(3);
+    expect(three.truncated).toBe(0);
+  });
+
   test('a single public track renders — there is deliberately NO contributor-count gate (D58)', async () => {
     const t = harness();
     const user = await seedUser(t, 'skater');

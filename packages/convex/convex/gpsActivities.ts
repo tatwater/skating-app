@@ -694,6 +694,14 @@ export const listMine = query({
  * everything", which is exactly the sort of quiet lie the Phase 7 "no silent caps" rule exists to stop.
  */
 const MAX_TRACKS_PER_BODY = 200;
+/**
+ * Rows the aggregate read may scan to fill its `limit`. The scan skips for five reasons — no path,
+ * no link, a hidden report, an opted-out author, a superseded copy whose winner draws — and a skip
+ * used to spend one of the `limit` slots, so a lake with enough undrawable rows at the top of the
+ * index returned fewer tracks than it had (PR #53 review). The scan now runs until `limit` drawable
+ * tracks are in hand, and this bounds it: at ~2 reads per row it is a quarter of the read budget.
+ */
+const TRACK_SCAN_CAP = 2 * MAX_TRACKS_PER_BODY;
 
 /** One aggregated public track, with the opacity it should draw at. */
 export interface AggregateTrackView {
@@ -745,7 +753,7 @@ export const listTracksForBody = query({
     // Sanitized, not trusted: a `NaN` off the wire is an index bound that matches nothing, which would
     // draw an empty lake rather than refusing the question.
     const season = resolveSeason(args.season, seasonOf(Date.now()));
-    const activities = await ctx.db
+    const scanned = await ctx.db
       .query('gpsActivities')
       .withIndex('by_water_body_start_time', (q) =>
         q
@@ -755,37 +763,51 @@ export const listTracksForBody = query({
       )
       .order('desc')
       // A superseded copy that carries no link never draws — publish-is-consent would skip it anyway,
-      // so it is filtered before the take (as `listMine` does) rather than spending a slot. A
-      // superseded copy that *kept* its link is the rare case and is decided in the loop below.
+      // so it is filtered in the index scan rather than costing a row of the scan cap. A superseded
+      // copy that *kept* its link is the rare case and is decided against its winner below.
       .filter((q) =>
         q.or(
           q.eq(q.field('supersededByActivityId'), undefined),
           q.neq(q.field('linkedReportId'), undefined),
         ),
       )
-      .take(limit + 1);
-    const truncated = Math.max(0, activities.length - limit);
+      .take(TRACK_SCAN_CAP);
 
     const now = Date.now();
     const optOutCache = new Map<Id<'profiles'>, boolean>();
-    const tracks: AggregateTrackView[] = [];
-
-    for (const activity of activities.slice(0, limit)) {
-      if (activity.path?.type !== 'LineString') continue;
+    const reportCache = new Map<Id<'reports'>, Doc<'reports'> | null>();
+    /** The row's linked report if the row can draw on its own terms — a track, a link, a visible report. */
+    async function drawableReport(row: Doc<'gpsActivities'>): Promise<Doc<'reports'> | null> {
+      if (row.path?.type !== 'LineString') return null;
       // (1) Publish-is-consent: no linked report ⇒ never aggregates. This is also what keeps a
       // minor's recording out, since a minor can't have filed the report it would need (D41).
-      if (activity.linkedReportId === undefined) continue;
-      const report = await ctx.db.get(activity.linkedReportId);
-      if (report?.moderationStatus !== 'visible') continue;
+      if (row.linkedReportId === undefined) return null;
+      let report = reportCache.get(row.linkedReportId);
+      if (report === undefined) {
+        report = await ctx.db.get(row.linkedReportId);
+        reportCache.set(row.linkedReportId, report);
+      }
+      return report?.moderationStatus === 'visible' ? report : null;
+    }
+    const tracks: AggregateTrackView[] = [];
+    // Scan until one more than `limit` is drawable: the extra is the `truncated` flag, and finding
+    // it is the only honest way to say "there is more" (the `cap + 1` trick from `lib/scan.ts`).
+    let drawable = 0;
+    for (const activity of scanned) {
+      if (drawable > limit) break;
+      const report = await drawableReport(activity);
+      if (!report) continue;
       // (1b) A superseded copy that kept its link — the dedup (`sweepUnpromptedActivities`) couldn't
       // move it, because the winner had a report of its own or had no path to give the report.
-      // Draw each skate once, from the copy that *can* draw it: if the winner carries a track, it
-      // is the one on the map and this loser is skipped; if the winner is a path-less stub, this
-      // loser is the only drawable copy of a published skate and must not vanish (PR #53 review).
-      // Its report always shows its own path either way (`getForReport`).
+      // Draw each skate once, from the copy that *can* draw it: if the winner draws on its own terms
+      // it is the one on the map and this loser is skipped; if the winner is a path-less stub, or
+      // its report has since been hidden, this loser is the only drawable copy of a published skate
+      // and must not vanish (PR #53 review). Its report always shows its own path (`getForReport`).
+      // One hop: a winner that was itself out-ranked later is a chain the sweep only builds across
+      // ticks, and the second copy of a skate reported from twice is already the rare case.
       if (activity.supersededByActivityId !== undefined) {
         const winner = await ctx.db.get(activity.supersededByActivityId);
-        if (winner?.path?.type === 'LineString') continue;
+        if (winner && (await drawableReport(winner))) continue;
       }
 
       // (4) Global opt-out, cached per author across the loop.
@@ -806,10 +828,13 @@ export const listTracksForBody = query({
       // A path that is entirely endpoints comes back null — dropping it is the point (see clipPathEnds).
       if (!path) continue;
 
+      drawable++;
+      if (drawable > limit) break;
+
       // Opacity is the linked report's freshness (D59) — the *same* number, not a parallel decay, so
       // a path can never read as fresher or staler than the report it belongs to.
-      const netThumbs = await tallyNetThumbs(ctx, activity.linkedReportId);
-      const corroborationCount = await countCorroborations(ctx, activity.linkedReportId);
+      const netThumbs = await tallyNetThumbs(ctx, report._id);
+      const corroborationCount = await countCorroborations(ctx, report._id);
       const freshness = reportFreshness(
         { skateEndTime: report.skateEndTime, netThumbs, corroborationCount },
         now,
@@ -823,6 +848,10 @@ export const listTracksForBody = query({
       });
     }
 
+    // `truncated` is a flag with a count's shape (it has only ever been 0 or 1): a drawable track
+    // past the limit, or a scan that hit its cap before it could tell — reported as truncated rather
+    // than complete, because "this is everything" is the wrong direction to be wrong in (D5).
+    const truncated = drawable > limit || scanned.length === TRACK_SCAN_CAP ? 1 : 0;
     return { tracks, truncated };
   },
 });
