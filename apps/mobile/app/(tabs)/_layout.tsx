@@ -8,7 +8,7 @@ import {
   faUser,
 } from '@fortawesome/sharp-duotone-solid-svg-icons';
 import { api } from '@skating/convex/api';
-import { deviceTimeZone, timezoneNeedsSync } from '@skating/core';
+import { deviceTimeZone, timezoneToSync } from '@skating/core';
 import { useMutation, useQuery } from 'convex/react';
 import { Tabs } from 'expo-router';
 import { useEffect } from 'react';
@@ -75,10 +75,8 @@ export default function TabsLayout() {
   const storedZone = profile?.timezone;
   useEffect(() => {
     if (!hasProfile) return;
-    const device = deviceTimeZone();
-    if (timezoneNeedsSync(storedZone, device)) {
-      void setTimezone({ timezone: device }).catch(() => {});
-    }
+    const timezone = timezoneToSync(storedZone, deviceTimeZone());
+    if (timezone !== null) void setTimezone({ timezone }).catch(() => {});
   }, [hasProfile, storedZone, setTimezone]);
   return (
     <Tabs

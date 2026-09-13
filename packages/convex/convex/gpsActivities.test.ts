@@ -1075,4 +1075,240 @@ describe('gpsActivities.sweepUnpromptedActivities', () => {
     expect((await t.run((ctx) => ctx.db.get(activityId)))?.promptState).toBe('prompted');
     expect(await t.run((ctx) => ctx.db.query('notificationQueue').collect())).toHaveLength(0);
   });
+
+  test('a report filed from a copy the sweep has since superseded links the winner, not the loser', async () => {
+    const t = harness();
+    const me = await seedUser(t, 'me');
+    const bodyId = await seedBody(t);
+    const phoneId = await me.as.mutation(api.gpsActivities.ingestTrack, ingestArgs());
+    const watchId = await t.run((ctx) =>
+      ctx.db.insert('gpsActivities', {
+        userId: me.id,
+        provider: 'garmin',
+        providerActivityId: 'garmin-5',
+        sportType: 'IceSkate',
+        startTime: T0 + 3 * 60_000,
+        endTime: T0 + 44 * 60_000,
+        path: trackPath(),
+        waterBodyId: bodyId,
+        promptState: 'pending',
+        detectedAt: Date.now(),
+      }),
+    );
+    // The report form was opened from the watch copy, then the hourly sweep ran before it was sent.
+    await t.mutation(internal.gpsActivities.sweepUnpromptedActivities, {
+      now: Date.now() + 4 * HOUR,
+    });
+    expect((await t.run((ctx) => ctx.db.get(watchId)))?.supersededByActivityId).toBe(phoneId);
+    const reportId = await me.as.mutation(api.reports.create, {
+      waterBodyId: bodyId,
+      skateEndTime: T0 + 44 * 60_000,
+      iceTypes: ['black_ice'],
+      activityId: watchId,
+    });
+    // Both sides of the join point at the winner; the loser is untouched.
+    expect((await t.run((ctx) => ctx.db.get(reportId)))?.activityId).toBe(phoneId);
+    const phone = await t.run((ctx) => ctx.db.get(phoneId));
+    expect(phone?.linkedReportId).toBe(reportId);
+    expect(phone?.promptState).toBe('converted');
+    expect((await t.run((ctx) => ctx.db.get(watchId)))?.linkedReportId).toBeUndefined();
+    // So the lake draws the skate, and no later tick asks about it.
+    const { tracks } = await me.as.query(api.gpsActivities.listTracksForBody, {
+      waterBodyId: bodyId,
+    });
+    expect(tracks.map((tr) => tr.activityId)).toEqual([phoneId]);
+    expect((await me.as.query(api.gpsActivities.getForReport, { reportId }))?.activityId).toBe(
+      phoneId,
+    );
+  });
+
+  test('the redirect stops short of a winner that is already reported, or has no path — the report links the copy it was filed from', async () => {
+    const t = harness();
+    const me = await seedUser(t, 'me');
+    const bodyId = await seedBody(t);
+    const phoneId = await me.as.mutation(api.gpsActivities.ingestTrack, ingestArgs());
+    const watchId = await t.run((ctx) =>
+      ctx.db.insert('gpsActivities', {
+        userId: me.id,
+        provider: 'garmin',
+        providerActivityId: 'garmin-6',
+        sportType: 'IceSkate',
+        startTime: T0 + 3 * 60_000,
+        endTime: T0 + 44 * 60_000,
+        path: trackPath(),
+        waterBodyId: bodyId,
+        promptState: 'pending',
+        detectedAt: Date.now(),
+      }),
+    );
+    await t.mutation(internal.gpsActivities.sweepUnpromptedActivities, {
+      now: Date.now() + 4 * HOUR,
+    });
+    // The winner gets its own report first…
+    const phoneReport = await me.as.mutation(api.reports.create, {
+      waterBodyId: bodyId,
+      skateEndTime: T0 + 45 * 60_000,
+      iceTypes: ['black_ice'],
+      activityId: phoneId,
+    });
+    // …then a report is filed from the (superseded) watch copy. Not refused: it links the watch copy
+    // itself, the state the sweep leaves when both copies were reported from.
+    const watchReport = await me.as.mutation(api.reports.create, {
+      waterBodyId: bodyId,
+      skateEndTime: T0 + 44 * 60_000,
+      iceTypes: ['black_ice'],
+      activityId: watchId,
+    });
+    expect((await t.run((ctx) => ctx.db.get(watchReport)))?.activityId).toBe(watchId);
+    expect((await t.run((ctx) => ctx.db.get(watchId)))?.linkedReportId).toBe(watchReport);
+    expect((await t.run((ctx) => ctx.db.get(phoneId)))?.linkedReportId).toBe(phoneReport);
+    // The lake still draws the skate once, and each report shows its own path.
+    const { tracks } = await me.as.query(api.gpsActivities.listTracksForBody, {
+      waterBodyId: bodyId,
+    });
+    expect(tracks.map((tr) => tr.activityId)).toEqual([phoneId]);
+    expect(
+      (await me.as.query(api.gpsActivities.getForReport, { reportId: watchReport }))?.activityId,
+    ).toBe(watchId);
+
+    // A path-less winner is not followed either: a stub outranking a real track keeps the link on
+    // the track, so the report has a map to show.
+    const other = await seedUser(t, 'other');
+    const stubId = await t.run((ctx) =>
+      ctx.db.insert('gpsActivities', {
+        userId: other.id,
+        provider: 'native',
+        providerActivityId: 'stub',
+        sportType: 'IceSkate',
+        startTime: T0,
+        endTime: T0 + 45 * 60_000,
+        waterBodyId: bodyId,
+        promptState: 'pending',
+        detectedAt: Date.now(),
+      }),
+    );
+    const trackId = await t.run((ctx) =>
+      ctx.db.insert('gpsActivities', {
+        userId: other.id,
+        provider: 'garmin',
+        providerActivityId: 'garmin-7',
+        sportType: 'IceSkate',
+        startTime: T0 + 60_000,
+        endTime: T0 + 44 * 60_000,
+        path: trackPath(),
+        waterBodyId: bodyId,
+        promptState: 'pending',
+        detectedAt: Date.now(),
+        supersededByActivityId: stubId,
+      }),
+    );
+    const trackReport = await other.as.mutation(api.reports.create, {
+      waterBodyId: bodyId,
+      skateEndTime: T0 + 44 * 60_000,
+      iceTypes: ['black_ice'],
+      activityId: trackId,
+    });
+    expect((await t.run((ctx) => ctx.db.get(trackReport)))?.activityId).toBe(trackId);
+    expect((await t.run((ctx) => ctx.db.get(stubId)))?.linkedReportId).toBeUndefined();
+    expect(
+      (await other.as.query(api.gpsActivities.getForReport, { reportId: trackReport }))?.path,
+    ).toBeDefined();
+  });
+
+  test('the link does not move onto a winner with no path — the report keeps its map', async () => {
+    const t = harness();
+    const me = await seedUser(t, 'me');
+    const bodyId = await seedBody(t);
+    // A watch stub that out-ranks the aggregator copy but carries no path; the aggregator copy has
+    // the path and the report.
+    const stubId = await t.run((ctx) =>
+      ctx.db.insert('gpsActivities', {
+        userId: me.id,
+        provider: 'garmin',
+        providerActivityId: 'garmin-stub',
+        sportType: 'IceSkate',
+        startTime: T0 + 2 * 60_000,
+        endTime: T0 + 44 * 60_000,
+        waterBodyId: bodyId,
+        promptState: 'pending',
+        detectedAt: Date.now() - 5 * HOUR,
+      }),
+    );
+    const healthId = await t.run((ctx) =>
+      ctx.db.insert('gpsActivities', {
+        userId: me.id,
+        provider: 'apple_health',
+        providerActivityId: 'health-1',
+        sportType: 'IceSkate',
+        startTime: T0,
+        endTime: T0 + 45 * 60_000,
+        path: trackPath(),
+        waterBodyId: bodyId,
+        promptState: 'pending',
+        detectedAt: Date.now() - 5 * HOUR,
+      }),
+    );
+    const reportId = await me.as.mutation(api.reports.create, {
+      waterBodyId: bodyId,
+      skateEndTime: T0 + 45 * 60_000,
+      iceTypes: ['black_ice'],
+      activityId: healthId,
+    });
+    const res = await t.mutation(internal.gpsActivities.sweepUnpromptedActivities, {
+      now: Date.now() + 1 * HOUR,
+    });
+    expect(res).toMatchObject({ superseded: 1 });
+    const health = await t.run((ctx) => ctx.db.get(healthId));
+    expect(health?.supersededByActivityId).toBe(stubId);
+    expect(health?.linkedReportId).toBe(reportId);
+    expect(health?.promptState).toBe('converted');
+    expect((await t.run((ctx) => ctx.db.get(stubId)))?.linkedReportId).toBeUndefined();
+    expect((await t.run((ctx) => ctx.db.get(reportId)))?.activityId).toBe(healthId);
+    expect(
+      (await me.as.query(api.gpsActivities.getForReport, { reportId }))?.path.coordinates,
+    ).toHaveLength(20);
+  });
+
+  test('a winner the resolver could not place inherits the loser’s lake with the link, so the aggregate layer still finds it', async () => {
+    const t = harness();
+    const me = await seedUser(t, 'me');
+    const bodyId = await seedBody(t);
+    // The phone copy is a track off the seeded lake entirely (unresolved); the watch copy resolved
+    // and was reported from. Same clock, so the match rule (one side unresolved) pairs them.
+    const phoneId = await me.as.mutation(
+      api.gpsActivities.ingestTrack,
+      ingestArgs({ path: trackPath(40) }),
+    );
+    expect((await t.run((ctx) => ctx.db.get(phoneId)))?.waterBodyId).toBeUndefined();
+    const watchId = await t.run((ctx) =>
+      ctx.db.insert('gpsActivities', {
+        userId: me.id,
+        provider: 'garmin',
+        providerActivityId: 'garmin-6',
+        sportType: 'IceSkate',
+        startTime: T0 + 3 * 60_000,
+        endTime: T0 + 44 * 60_000,
+        path: trackPath(),
+        waterBodyId: bodyId,
+        promptState: 'pending',
+        detectedAt: Date.now(),
+      }),
+    );
+    const reportId = await me.as.mutation(api.reports.create, {
+      waterBodyId: bodyId,
+      skateEndTime: T0 + 44 * 60_000,
+      iceTypes: ['black_ice'],
+      activityId: watchId,
+    });
+    await t.mutation(internal.gpsActivities.sweepUnpromptedActivities, {
+      now: Date.now() + 4 * HOUR,
+    });
+    const phone = await t.run((ctx) => ctx.db.get(phoneId));
+    expect(phone?.linkedReportId).toBe(reportId);
+    expect(phone?.waterBodyId).toBe(bodyId);
+    const { tracks } = await me.as.query(api.gpsActivities.listTracksForBody, {
+      waterBodyId: bodyId,
+    });
+    expect(tracks.map((tr) => tr.activityId)).toEqual([phoneId]);
+  });
 });

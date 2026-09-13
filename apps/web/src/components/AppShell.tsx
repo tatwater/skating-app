@@ -2,7 +2,7 @@ import { useAuth } from '@clerk/tanstack-react-start';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faBell } from '@fortawesome/sharp-regular-svg-icons';
 import { api } from '@skating/convex/api';
-import { deviceTimeZone, timezoneNeedsSync } from '@skating/core';
+import { deviceTimeZone, timezoneToSync } from '@skating/core';
 import { Link, useRouterState } from '@tanstack/react-router';
 import { useMutation, useQuery } from 'convex/react';
 import { type ReactNode, useEffect } from 'react';
@@ -52,10 +52,8 @@ export function AppShell({ children }: { children: ReactNode }) {
   const storedZone = profile?.timezone;
   useEffect(() => {
     if (!hasProfile) return;
-    const device = deviceTimeZone();
-    if (timezoneNeedsSync(storedZone, device)) {
-      void setTimezone({ timezone: device }).catch(() => {});
-    }
+    const timezone = timezoneToSync(storedZone, deviceTimeZone());
+    if (timezone !== null) void setTimezone({ timezone }).catch(() => {});
   }, [hasProfile, storedZone, setTimezone]);
   const mapRoute = isMapRoute(pathname);
 

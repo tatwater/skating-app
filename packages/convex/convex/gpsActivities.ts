@@ -345,6 +345,7 @@ export const sweepUnpromptedActivities = internalMutation({
     let superseded = 0;
     for (const [userId, dueRows] of byUser) {
       const candidates = await sameSkateCandidates(ctx, userId, dueRows);
+      const candidateById = new Map(candidates.map((c) => [c._id, c]));
       const result = dedupActivities(candidates.map(toDedupActivity));
       // A loser the user had already been asked about (`prompted`) or had waved off (`dismissed`)
       // settles the *skate*, not the row: the winner inherits that answer, so a phone copy that
@@ -354,7 +355,7 @@ export const sweepUnpromptedActivities = internalMutation({
       for (const { loser, winner } of result.superseded) {
         const loserId = loser.id as Id<'gpsActivities'>;
         const winnerId = winner.id as Id<'gpsActivities'>;
-        const loserRow = candidates.find((c) => c._id === loserId);
+        const loserRow = candidateById.get(loserId);
         if (!loserRow) continue;
         if (loserRow.promptState === 'dismissed') inherited.set(winnerId, 'dismissed');
         else if (loserRow.promptState === 'prompted' && !inherited.has(winnerId)) {
@@ -363,12 +364,15 @@ export const sweepUnpromptedActivities = internalMutation({
         // The link moves rather than breaks: a report must never lose its path to a dedup. Moved,
         // not copied — a loser that kept `linkedReportId` would survive account deletion as a
         // "published" track, and the winner's report would render the loser's path. Only an intact
-        // pair moves: the report must point back at this loser, and the winner must be free. When it
-        // can't move — both copies were reported from — the loser keeps its link and stays
-        // `converted` (below); `listTracksForBody` skips superseded rows, so the skate still draws
-        // once on the aggregate layer. The winner is re-read
-        // rather than taken from the pre-loop snapshot, because two losers of one winner would
-        // otherwise both see it unlinked and the second would overwrite the first's link.
+        // pair moves: the report must point back at this loser, the winner must be free, and the
+        // winner must be able to *carry* what the report renders — a stub with no path (a watch
+        // that reported "started 14:02" and nothing else) would leave the report's map empty, which
+        // is the loss this move exists to prevent. When it can't move — both copies were reported
+        // from, or the winner is a stub — the loser keeps its link and stays `converted` (below);
+        // `listTracksForBody` skips superseded rows, so the skate still draws once on the aggregate
+        // layer. The winner is re-read rather than taken from the pre-loop snapshot, because two
+        // losers of one winner would otherwise both see it unlinked and the second would overwrite
+        // the first's link.
         let moved = false;
         if (loserRow.linkedReportId !== undefined) {
           const winnerRow = await ctx.db.get(winnerId);
@@ -376,12 +380,25 @@ export const sweepUnpromptedActivities = internalMutation({
           if (
             winnerRow &&
             winnerRow.linkedReportId === undefined &&
+            (winnerRow.path !== undefined || loserRow.path === undefined) &&
             report &&
             report.activityId === loserId
           ) {
             await ctx.db.patch(winnerId, {
               linkedReportId: loserRow.linkedReportId,
               promptState: 'converted',
+              // The aggregate layer reaches a track through its body (`by_water_body_start_time`),
+              // so a winner the resolver couldn't place would take the link and vanish from the
+              // lake. It inherits the loser's lake instead — the match rule already vouched for it
+              // (equal, or one side unresolved).
+              ...(winnerRow.waterBodyId === undefined && loserRow.waterBodyId !== undefined
+                ? {
+                    waterBodyId: loserRow.waterBodyId,
+                    ...(loserRow.waterBodyIds !== undefined
+                      ? { waterBodyIds: loserRow.waterBodyIds }
+                      : {}),
+                  }
+                : {}),
             });
             await ctx.db.patch(report._id, { activityId: winnerId });
             moved = true;
@@ -487,8 +504,16 @@ function toDedupActivity(row: Doc<'gpsActivities'>): DedupActivity {
     startTime: row.startTime,
     ...(row.endTime !== undefined ? { endTime: row.endTime } : {}),
     ...(row.waterBodyId !== undefined ? { waterBodyId: row.waterBodyId } : {}),
+    ...(row.waterBodyIds !== undefined ? { waterBodyIds: row.waterBodyIds } : {}),
   };
 }
+
+/**
+ * How far `linkActivityToReport` follows `supersededByActivityId` before giving up. A chain is a
+ * winner that was itself out-ranked on a later tick — two or three rows in the worst plausible case —
+ * and the bound is only so a cycle written by some future bug can't spin a mutation.
+ */
+const MAX_SUPERSESSION_HOPS = 8;
 
 /**
  * Wire an activity to the report it backs — the join `reports.create` calls after inserting a report
@@ -496,6 +521,15 @@ function toDedupActivity(row: Doc<'gpsActivities'>): DedupActivity {
  * written together, inside one transaction: a half-linked pair would render a path on a report the
  * activity doesn't point back to, and the aggregate layer's privacy predicate reads the *activity*
  * side (`linkedReportId`), so a missing back-link would silently drop a track from the map.
+ *
+ * **A superseded copy hands the link to its winner** (N8/B4a), the same move `sweepUnpromptedActivities`
+ * makes when it finds a linked loser — only here the order is reversed: the sweep ran first and the
+ * link arrives after. The report form can hold an activity id for hours (drive home, fill it in), and
+ * the hourly sweep may have picked a better copy of that skate in between. Linking the loser would
+ * leave the winner un-linked and `pending`, to be prompted later about a skate already reported — the
+ * double prompt B4a exists to stop — and the skate off the aggregate layer, which skips superseded
+ * rows. Redirecting keeps `reports.activityId` and `linkedReportId` pointing at each other, which is
+ * the invariant this helper exists for.
  */
 export async function linkActivityToReport(
   ctx: MutationCtx,
@@ -503,13 +537,40 @@ export async function linkActivityToReport(
   reportId: Id<'reports'>,
   userId: Id<'profiles'>,
 ): Promise<void> {
-  const activity = await ctx.db.get(activityId);
-  if (!activity) throw new ConvexError('Activity not found');
-  if (activity.userId !== userId) throw new ConvexError('Not your activity');
+  const requested = await ctx.db.get(activityId);
+  if (!requested) throw new ConvexError('Activity not found');
+  if (requested.userId !== userId) throw new ConvexError('Not your activity');
+  let activity = requested;
+  for (
+    let hops = 0;
+    activity.supersededByActivityId !== undefined && hops < MAX_SUPERSESSION_HOPS;
+    hops++
+  ) {
+    const winner = await ctx.db.get(activity.supersededByActivityId);
+    // A dangling pointer (the winner went with an account-deletion pass) leaves the link where it
+    // was asked for; the ownership check is belt-and-braces, since the sweep dedups within a user.
+    if (!winner || winner.userId !== userId) break;
+    // The report's path must survive the redirect: a stub winner (start and end, no track) does not
+    // take the link off a copy that has one — the same rule the sweep's move applies.
+    if (winner.path === undefined && activity.path !== undefined) break;
+    activity = winner;
+  }
+  // A winner already carrying another report keeps it, and this report links the copy it was filed
+  // from — the state the sweep leaves when a link cannot move (both copies reported from): the
+  // aggregate layer draws the winner's track, this report still shows its own. Refusing here would
+  // block a report over a dedup the person never saw.
+  if (
+    activity._id !== requested._id &&
+    activity.linkedReportId !== undefined &&
+    activity.linkedReportId !== reportId
+  ) {
+    activity = requested;
+  }
   if (activity.linkedReportId !== undefined && activity.linkedReportId !== reportId) {
     throw new ConvexError('This skate is already attached to another report');
   }
-  await ctx.db.patch(activityId, { linkedReportId: reportId, promptState: 'converted' });
+  await ctx.db.patch(activity._id, { linkedReportId: reportId, promptState: 'converted' });
+  if (activity._id !== activityId) await ctx.db.patch(reportId, { activityId: activity._id });
 }
 
 /** The shape the map layers consume — a path plus the metadata the drawer shows. */

@@ -463,10 +463,12 @@ export function deviceTimeZone(): string | null {
   }
 }
 
-/** Whether the stored zone needs refreshing — the only reason an ordinary app open writes anything. */
-export function timezoneNeedsSync(
-  stored: string | undefined,
-  device: string | null,
-): device is string {
-  return device !== null && device !== stored;
+/**
+ * The zone to write, or `null` when the stored one is already right (or the device can't say) — the
+ * only reason an ordinary app open writes anything. Returns the zone rather than a `device is string`
+ * predicate: a predicate's `false` branch would narrow `device` to `null`, which is wrong when the
+ * device zone simply equals the stored one.
+ */
+export function timezoneToSync(stored: string | undefined, device: string | null): string | null {
+  return device !== null && device !== stored ? device : null;
 }

@@ -378,9 +378,11 @@ export default defineSchema({
      * Another row that is the better copy of this same skate (N8/B4a) — a watch and an aggregator
      * both saw one session, and the ladder in core's `activityDedup.ts` picked the other one. Never
      * deleted: the record that two devices saw it is cheap, and a deletion is unrecoverable if the
-     * ladder was wrong. A superseded row is skipped by the prompt sweep and the unreported-skates
-     * list; if it carried a `linkedReportId` the link moved to the winner. Unreachable today (one
-     * provider), stored so the rule exists before the second source does.
+     * ladder was wrong. A superseded row is skipped by the prompt sweep, the unreported-skates list
+     * and the aggregate-tracks layer; if it carried a `linkedReportId` the link moved to the winner,
+     * and a link that arrives *after* the dedup (`linkActivityToReport`) is redirected to the winner
+     * the same way. Unreachable today (one provider), stored so the rule exists before the second
+     * source does.
      */
     supersededByActivityId: v.optional(v.id('gpsActivities')),
   })

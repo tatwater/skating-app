@@ -60,6 +60,27 @@ describe('activitiesMatch (N8/B4a)', () => {
     );
   });
 
+  it('a spanning skate matches on any body in common, not only the primary', () => {
+    // The phone called the lake primary, the watch called the channel primary — one skate.
+    const phone = act({ id: 'p', waterBodyId: 'morey', waterBodyIds: ['morey', 'channel'] });
+    const watch = act({
+      id: 'w',
+      provider: 'garmin',
+      startTime: T0 + 2 * MIN,
+      waterBodyId: 'channel',
+      waterBodyIds: ['channel', 'morey'],
+    });
+    expect(activitiesMatch(phone, watch)).toBe(true);
+    // A single-body copy that resolved to a body the spanning one touched is the same skate too…
+    expect(
+      activitiesMatch(phone, act({ id: 'c', provider: 'garmin', waterBodyId: 'channel' })),
+    ).toBe(true);
+    // …and one on a body neither touched is not.
+    expect(
+      activitiesMatch(phone, act({ id: 'f', provider: 'garmin', waterBodyId: 'fairlee' })),
+    ).toBe(false);
+  });
+
   it('an end-less recording is an instant at its start', () => {
     const watch = act({ id: 'w', provider: 'garmin', startTime: T0 + 3 * MIN, endTime: undefined });
     expect(activitiesMatch(act({ id: 'p' }), watch)).toBe(true);

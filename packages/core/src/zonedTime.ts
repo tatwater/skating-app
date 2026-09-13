@@ -83,6 +83,22 @@ export function zonedInstant(
   return wallClockAsUtc - zoneOffsetMs(guess, timeZone);
 }
 
+/**
+ * Whether this runtime knows `timeZone` — `Intl` throws a `RangeError` for anything it doesn't. The
+ * runtime's own table is the one authority on what counts as a zone, and every helper in this file
+ * would throw on a string it rejects, so a zone that crosses a trust boundary (a client writing
+ * `profiles.timezone`, N8/C) is checked here before it can become the argument that throws later.
+ */
+export function isKnownTimeZone(timeZone: string): boolean {
+  if (timeZone.length === 0 || timeZone.length > 64) return false;
+  try {
+    new Intl.DateTimeFormat('en-US', { timeZone }).format(0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /** The instant `minuteOfDay` reads on the local calendar day containing `atMs`, offset by `dayDelta`. */
 export function zonedInstantOnDayOf(
   atMs: number,

@@ -53,6 +53,13 @@ export interface DedupActivity {
   startTime: number;
   endTime?: number;
   waterBodyId?: string;
+  /**
+   * Every body the skate touched, when it spanned more than one (`gpsActivities.waterBodyIds`). Two
+   * recordings of a lake-and-channel skate can disagree about which body was *primary* — the phone
+   * sampled more points on the lake, the watch more in the channel — and comparing primaries alone
+   * would call them two skates and prompt twice.
+   */
+  waterBodyIds?: readonly string[];
 }
 
 /** Lower is better. Unknown providers rank with `other`, below everything named. */
@@ -86,14 +93,19 @@ export function activitiesMatch(
   const aEnd = a.endTime ?? a.startTime;
   const bEnd = b.endTime ?? b.startTime;
   if (a.startTime > bEnd || b.startTime > aEnd) return false;
-  if (
-    a.waterBodyId !== undefined &&
-    b.waterBodyId !== undefined &&
-    a.waterBodyId !== b.waterBodyId
-  ) {
-    return false;
-  }
-  return true;
+  return bodiesCompatible(a, b);
+}
+
+/**
+ * Equal primaries, one side unresolved, or any body in common across a spanning skate. Two resolved
+ * recordings that share no body at all are two skates whatever their clocks say.
+ */
+function bodiesCompatible(a: DedupActivity, b: DedupActivity): boolean {
+  if (a.waterBodyId === undefined || b.waterBodyId === undefined) return true;
+  if (a.waterBodyId === b.waterBodyId) return true;
+  const aAll = a.waterBodyIds ?? [a.waterBodyId];
+  const bAll = b.waterBodyIds ?? [b.waterBodyId];
+  return aAll.some((id) => bAll.includes(id));
 }
 
 /**

@@ -11,6 +11,7 @@ import {
   canSetProfilePublic,
   isCurrentRiskAckVersion,
   isDriveTimeBand,
+  isKnownTimeZone,
   isLeaving,
   isMinor,
   isValidBio,
@@ -314,9 +315,9 @@ export const updateProfile = mutation({
 /**
  * Record the device's IANA timezone (N8/C) — the only per-user input the 8pm digest has. Called by
  * both clients on app open, and only when it differs from what's stored, so an ordinary day writes
- * nothing. Validated by asking `Intl` to format with it: the runtime's own table is the one authority
- * on what counts as a zone, and a bad string from a client must not become the argument that makes
- * `nextZonedHourMs` throw inside the fan-out for every report.
+ * nothing. Validated by the zone primitives' own probe (`isKnownTimeZone`, core `zonedTime.ts`): the
+ * runtime's `Intl` table is the one authority on what counts as a zone, and a bad string from a client
+ * must not become the argument that makes `nextZonedHourMs` throw inside the fan-out for every report.
  *
  * `requireContributor` rather than `requireProfile`: a departing account has already been silenced
  * (`canReceiveNotifications`), so there is no digest for its zone to place.
@@ -325,23 +326,12 @@ export const setTimezone = mutation({
   args: { timezone: v.string() },
   handler: async (ctx, { timezone }) => {
     const profile = await requireContributor(ctx);
-    if (!isValidTimeZone(timezone)) throw new ConvexError('Unknown timezone');
+    if (!isKnownTimeZone(timezone)) throw new ConvexError('Unknown timezone');
     if (profile.timezone === timezone) return profile._id;
     await ctx.db.patch(profile._id, { timezone });
     return profile._id;
   },
 });
-
-/** Whether the runtime knows `timeZone` — `Intl` throws a `RangeError` for anything it doesn't. */
-function isValidTimeZone(timeZone: string): boolean {
-  if (timeZone.length === 0 || timeZone.length > 64) return false;
-  try {
-    new Intl.DateTimeFormat('en-US', { timeZone }).format(0);
-    return true;
-  } catch {
-    return false;
-  }
-}
 
 export const setAggregateTracksOptOut = mutation({
   args: { excludeTracksFromAggregate: v.boolean() },
