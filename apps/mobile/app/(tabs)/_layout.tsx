@@ -8,12 +8,28 @@ import {
   faUser,
 } from '@fortawesome/sharp-duotone-solid-svg-icons';
 import { api } from '@skating/convex/api';
-import { deviceTimeZone, timezoneToSync } from '@skating/core';
+import { deviceTimeZone, type NotificationTarget, timezoneToSync } from '@skating/core';
 import { useMutation, useQuery } from 'convex/react';
-import { Tabs } from 'expo-router';
-import { useEffect } from 'react';
+import * as Notifications from 'expo-notifications';
+import { Tabs, useRouter } from 'expo-router';
+import { useEffect, useState } from 'react';
 import { type ColorValue, View } from 'react-native';
 import { useTheme } from 'tamagui';
+import {
+  claimNotificationCache,
+  loadCachedNotifications,
+  loadPendingReads,
+} from '../../src/lib/notificationCache';
+import { unreadAfterOverlay } from '../../src/lib/notificationCacheModel';
+import { notificationRoute } from '../../src/lib/notificationRoutes';
+import { registerIfPermitted } from '../../src/lib/pushRegistration';
+
+/**
+ * Notification taps already opened this session. The launch tap is cleared natively once handled
+ * (`clearLastNotificationResponse`), but the live listener can still hand us the same response the
+ * launch read did, so each identifier is opened once.
+ */
+const handledTaps = new Set<string>();
 
 /**
  * How much of the icon the duotone secondary layer keeps. FontAwesome's own default is 0.4, which
@@ -65,19 +81,91 @@ export default function TabsLayout() {
   // The unread signal (N8/A3): a dot on the You icon, visible from every screen with the tab bar,
   // so the badge costs no tab. `unreadCount` is one capped indexed read, so subscribing to it from
   // the tab layout — effectively app-wide — is cheap by construction.
-  const unread = useQuery(api.notifications.unreadCount, {}) ?? 0;
+  // Offline, the dot reads the cached page through the local read overlay (N8 PR 3) rather than
+  // going dark — the live count wins the moment it answers.
+  const [offlineUnread, setOfflineUnread] = useState(() =>
+    unreadAfterOverlay(loadCachedNotifications(), loadPendingReads()),
+  );
+  const unread = useQuery(api.notifications.unreadCount, {}) ?? offlineUnread;
 
   // The 8pm digest's zone (N8/C): the device's, refreshed on app open, written only when it differs.
   // The tab layout mounts once per signed-in session, which makes it "app open".
   const profile = useQuery(api.profiles.current, {});
   const setTimezone = useMutation(api.profiles.setTimezone);
   const hasProfile = !!profile;
+  const profileId = profile?._id;
   const storedZone = profile?.timezone;
   useEffect(() => {
     if (!hasProfile) return;
     const timezone = timezoneToSync(storedZone, deviceTimeZone());
     if (timezone !== null) void setTimezone({ timezone }).catch(() => {});
   }, [hasProfile, storedZone, setTimezone]);
+
+  // The offline inbox is per device; bind it to whoever is signed in, so a previous account's page
+  // never reads back to the next (N8 PR 3). Sign-out clears it too; this catches every other path —
+  // and when it clears, the dot derived from the old page above goes with it, or a session that
+  // arrived here without the You-tab sign-out would wear the last account's count until online.
+  useEffect(() => {
+    if (profileId === undefined) return;
+    if (!claimNotificationCache(profileId)) setOfflineUnread(0);
+  }, [profileId]);
+
+  // Push registration on app open (N8 PR 3) — only when permission is already granted and this
+  // device hasn't been switched off; never a prompt. Refreshes `lastSeenAt` and re-homes the token
+  // to whoever is signed in.
+  const registerToken = useMutation(api.pushTokens.register);
+  const unregisterToken = useMutation(api.pushTokens.unregister);
+  const releaseToken = useMutation(api.pushTokens.release);
+  useEffect(() => {
+    if (!hasProfile) return;
+    void registerIfPermitted({
+      register: registerToken,
+      unregister: unregisterToken,
+      release: releaseToken,
+    });
+  }, [hasProfile, registerToken, unregisterToken, releaseToken]);
+
+  // Tapping a remote notification lands where the inbox row would (N8 PR 3). The payload carries
+  // the platform-neutral target `describeNotification` produced server-side; the same mapper the
+  // inbox uses turns it into a route. The on-ice local alert has its own listener in the map layout
+  // keyed on `hazardId`, so a payload without `target` is left to it.
+  const router = useRouter();
+  useEffect(() => {
+    /** Route a tap this layout owns; `false` when the payload is somebody else's (or nothing). */
+    const open = (response: Notifications.NotificationResponse | null): boolean => {
+      if (!response) return false;
+      const data = response.notification.request.content.data as
+        | { target?: NotificationTarget | null; notificationId?: string }
+        | undefined;
+      if (!data || !('target' in data)) return false;
+      const key = response.notification.request.identifier;
+      if (handledTaps.has(key)) return true;
+      handledTaps.add(key);
+      const route = notificationRoute(data.target ?? null, {
+        type: 'unknown',
+        id: '',
+        createdAt: 0,
+      });
+      router.navigate(route ?? '/notifications');
+      return true;
+    };
+    // A tap that launched the app arrives before any listener is attached; read it, and clear it
+    // only once it's been opened here, so a later mount of this layout (sign out, sign in) doesn't
+    // open it again. A launch tap that isn't ours — the on-ice hazard alert — is left where it is:
+    // the native side never replays it, so clearing it would be the map layout's only chance to read
+    // it going away.
+    try {
+      if (open(Notifications.getLastNotificationResponse())) {
+        Notifications.clearLastNotificationResponse();
+      }
+    } catch {
+      // No native module (web, a test): nothing launched us.
+    }
+    const sub = Notifications.addNotificationResponseReceivedListener((response) => {
+      open(response);
+    });
+    return () => sub.remove();
+  }, [router]);
   return (
     <Tabs
       screenOptions={{

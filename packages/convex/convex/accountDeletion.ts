@@ -165,6 +165,8 @@ export const requestDeletion = mutation({
       // The wipe. Everything here is identity or private location; none of it is community record.
       displayName: DELETED_DISPLAY_NAME,
       profileImageUrl: undefined,
+      email: undefined, // the Clerk mirror (N8 PR 3) — it goes at the request, like the avatar
+      emailUnsubscribeSecret: undefined,
       bio: undefined,
       homeTownLabel: undefined,
       homeCoord: undefined,
@@ -544,6 +546,14 @@ async function erasePrivate(
       .withIndex('by_user', (q) => q.eq('userId', userId))
       .take(size),
   );
+  // The device addresses (N8 PR 3): a token is a capability to ring this person's phone, and a
+  // tombstone must not keep one.
+  await drain(
+    await ctx.db
+      .query('pushTokens')
+      .withIndex('by_user', (q) => q.eq('userId', userId))
+      .take(size),
+  );
   await drain(
     await ctx.db
       .query('waterBodyFavorites')
@@ -763,6 +773,8 @@ async function writeTombstone(ctx: MutationCtx, profile: Doc<'profiles'>): Promi
     homeTownLabel: undefined,
     bio: undefined,
     profileImageUrl: undefined,
+    email: undefined,
+    emailUnsubscribeSecret: undefined,
     cachedIsochrones: undefined,
     outerRadiusMeters: undefined,
     cachedIsochronesAt: undefined,

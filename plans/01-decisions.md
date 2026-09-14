@@ -5464,3 +5464,43 @@ zone between a report and 8pm gets that one digest at the old target. Coalescing
 `flushAfter`, so the failure direction is "slightly early", never "never".
 
 **Related:** D11, D167, Phase 4 decision #4, [`phase-N8`](./phase-N8-notification-pipeline.md) Workstream C.
+
+## D174 — Push and email are two switches over the inbox, not a matrix; mail is for the digest-class types; the address is mirrored from Clerk (N8)
+
+**2026-09-11, founder calls at kickoff; built 2026-09-12 (N8 PR 3).** The plan had excluded push and
+email; the founder brought both in, with three shaping calls.
+
+**Two channel switches, not ten × three.** The per-type toggles (D16) decide *what* reaches you; two
+account-level switches — `channelPrefs.push`, `channelPrefs.email` — decide *how far*: the inbox
+always (D167), a push to every registered phone if `push`, an email if `email` **and** the type is
+email-eligible. A full matrix would be thirty controls on a page that already had ten, for a
+distinction ("thumbs by push but not by mail") nobody had asked to draw.
+
+**Which types email is fixed in code** (`NOTIFICATION_EMAIL_ELIGIBLE`): the daily digest, an
+unreported skate, a bounty asked or answered, a moderator's ruling. Never a thumb, a comment, a
+favorited lake's new report or a "great ice" alert — frequent, hours-old by the time mail is read, and
+an email about each would be spam the user configured. Every mail carries a one-click unsubscribe
+(`/unsubscribe?u=&t=` on the Convex `.site` host + `List-Unsubscribe` headers) authorized by a
+per-user secret that can do exactly one thing: turn the email channel off.
+
+**The address is mirrored from Clerk onto `profiles.email`.** `lib/clerkEmail` had said it plainly: a
+user-scale digest that pays one Clerk API call per recipient "wants a different design, not this
+function in a loop." The mirror is the same posture as `profileImageUrl` — Clerk owns it, we hold a
+private copy refreshed at `upsertFromClerk` (every cold start), scrubbed at the deletion request and
+the tombstone. When the JWT template carries no email, the sender falls back to one Clerk lookup and
+caches it. The sender identity stays `RESEND_FROM_EMAIL` with a per-send `from` override available, so
+splitting types across addresses later is a parameter, not a redesign.
+
+**Push posture keeps Phase 9.5's rule.** Permission is never asked on cold launch: on app open the
+device registers only if permission is *already* granted (by on-ice mode, or by the explicit "this
+phone" switch on the You tab, which is the one place that asks). A device-level off is remembered on
+the device; the account-level switch silences every phone. The server never holds an APNs or FCM
+credential — those live in EAS, and the server posts to Expo's push service, disabling a token the
+moment Expo reports it dead. **Web push is deferred**: no service worker, VAPID or second token type
+yet; web = inbox + email.
+
+**Offline is read-side only.** The mobile inbox caches its last page and a local read overlay that
+replays on reconnect; nothing arrives offline, and the offline case that matters for safety — the on-ice
+hazard alert — was already client-side (Phase 9.5, D171).
+
+**Related:** D16, D38, D54, D167, D169, D171, [`phase-N8`](./phase-N8-notification-pipeline.md).

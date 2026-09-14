@@ -9,6 +9,7 @@
 
 import {
   canSetProfilePublic,
+  effectiveChannelPrefs,
   isCurrentRiskAckVersion,
   isDriveTimeBand,
   isKnownTimeZone,
@@ -108,6 +109,9 @@ export const upsertFromClerk = mutation({
     // `profileImageUrl` — no upload pipeline. Absent if the Clerk `convex` JWT template doesn't map
     // `picture`; when absent we leave any existing mirror untouched rather than clearing it.
     const profileImageUrl = identity.pictureUrl;
+    // The email, likewise mirrored from the `email` claim (N8 PR 3 / D174) so a notification email is
+    // not a Clerk API call per recipient. Same absence rule: an unmapped claim leaves the mirror alone.
+    const email = identity.email;
 
     // Hard 16+ minimum (D41), derived from DOB and enforced server-side. Minor status
     // is likewise derived, so it self-corrects on the user's 18th birthday with no
@@ -191,6 +195,7 @@ export const upsertFromClerk = mutation({
         dateOfBirth: args.dateOfBirth,
         profileVisibility: minor ? 'private' : existing.profileVisibility,
         ...(profileImageUrl !== undefined ? { profileImageUrl } : {}),
+        ...(email !== undefined ? { email } : {}),
         riskAckVersion: args.riskAckVersion,
         // Server-stamped: freshly on a new acceptance (version bump), otherwise the
         // original time is preserved across routine re-syncs (never trust the client clock).
@@ -204,6 +209,7 @@ export const upsertFromClerk = mutation({
       displayName,
       username,
       ...(profileImageUrl !== undefined ? { profileImageUrl } : {}),
+      ...(email !== undefined ? { email } : {}),
       dateOfBirth: args.dateOfBirth,
       riskAckVersion: args.riskAckVersion,
       riskAckAt: now, // server-stamped, not client-supplied
@@ -330,6 +336,46 @@ export const setTimezone = mutation({
     if (profile.timezone === timezone) return profile._id;
     await ctx.db.patch(profile._id, { timezone });
     return profile._id;
+  },
+});
+
+/**
+ * The two channel switches (N8 PR 3 / D174): push on the phone, email for the eligible types. A
+ * partial patch onto the effective prefs, so flipping one never resets the other. `requireProfile`
+ * for the same reason as the aggregate opt-out: turning a channel *off* is exactly what a person on
+ * their way out may want, and `canReceiveNotifications` already keeps a ghost from being sent to.
+ */
+export const setChannelPrefs = mutation({
+  args: { push: v.optional(v.boolean()), email: v.optional(v.boolean()) },
+  handler: async (ctx, args) => {
+    const profile = await requireProfile(ctx);
+    const next = {
+      ...effectiveChannelPrefs(profile.channelPrefs),
+      ...(args.push !== undefined ? { push: args.push } : {}),
+      ...(args.email !== undefined ? { email: args.email } : {}),
+    };
+    await ctx.db.patch(profile._id, { channelPrefs: next });
+    return next;
+  },
+});
+
+/**
+ * The unsubscribe link's landing (N8 PR 3): turn the email channel off for the person whose secret
+ * this is, and nothing else. Called from the HTTP route, which has no identity — the secret *is* the
+ * authorization, and it authorizes exactly one direction: off. A wrong or stale secret is a no-op
+ * that reports `false`, never an error that says whether the user exists.
+ */
+export const unsubscribeEmailBySecret = internalMutation({
+  args: { userId: v.string(), secret: v.string() },
+  handler: async (ctx, { userId, secret }): Promise<boolean> => {
+    const id = ctx.db.normalizeId('profiles', userId);
+    if (!id || secret.length === 0) return false;
+    const profile = await ctx.db.get(id);
+    if (!profile || profile.emailUnsubscribeSecret !== secret) return false;
+    await ctx.db.patch(id, {
+      channelPrefs: { ...effectiveChannelPrefs(profile.channelPrefs), email: false },
+    });
+    return true;
   },
 });
 

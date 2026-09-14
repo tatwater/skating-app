@@ -46,7 +46,13 @@ import { internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
 import { internalMutation, type MutationCtx, mutation, query } from './_generated/server';
 import { canReceiveNotifications, getCurrentProfile, requireProfile } from './lib/auth';
-import { recipientWants, settleReadCost, settleTrigger } from './lib/notificationQueue';
+import {
+  DELIVERY_BATCH,
+  DIGEST_TIMEZONE,
+  recipientWants,
+  settleReadCost,
+  settleTrigger,
+} from './lib/notificationQueue';
 import { resolveNotifications } from './lib/notificationResolve';
 import { loadBlockedAuthorIds } from './lib/reportVisibility';
 import { takeCapped, takeCappedResult } from './lib/scan';
@@ -56,10 +62,9 @@ import { takeCapped, takeCappedResult } from './lib/scan';
  * recipient's own (`profiles.timezone`, written by the clients on app open; N8/C). True-sunset timing
  * was considered and dropped: sunset in Vermont is ~16:20 in early January and ~20:30 in late June,
  * so a digest that tracked it would arrive mid-workday at exactly the point in the season when
- * skating happens. A user with no stored zone gets the pilot default.
+ * skating happens. A user with no stored zone gets the pilot default (`DIGEST_TIMEZONE`).
  */
 const DIGEST_HOUR = 20;
-const DIGEST_TIMEZONE = 'America/New_York';
 /** Favorite/great pushes fire after this quiet window so a burst on one lake coalesces into one. */
 const DEBOUNCE_MS = 2 * 60 * 1000;
 
@@ -398,6 +403,10 @@ export const flushNotificationQueue = internalMutation({
       reads += 1;
     }
 
+    // Every row this tick inserts, handed to the transports in bounded batches once the writes are
+    // committed (N8 PR 3). The inbox row is the product; the push and the email are what follow it.
+    const inserted: Id<'notifications'>[] = [];
+
     /**
      * Every due digest row this user has — the whole of their digest, wherever the rows sit in the
      * `by_flush` order (see the doc above). `by_user` also returns their pending favorite/great/actor
@@ -443,12 +452,14 @@ export const flushNotificationQueue = internalMutation({
             : [],
         );
         const totalCount = bodies.reduce((sum, b) => sum + b.count, 0);
-        await ctx.db.insert('notifications', {
-          userId: row.userId,
-          type: 'nearby_report_digest',
-          payload: { bodies, totalCount, coalesceKey: `${row.userId}:digest` },
-          createdAt: now,
-        });
+        inserted.push(
+          await ctx.db.insert('notifications', {
+            userId: row.userId,
+            type: 'nearby_report_digest',
+            payload: { bodies, totalCount, coalesceKey: `${row.userId}:digest` },
+            createdAt: now,
+          }),
+        );
         for (const r of rows) await remove(r._id);
         digested.add(row.userId);
         delivered++;
@@ -465,28 +476,40 @@ export const flushNotificationQueue = internalMutation({
           dropped++;
           continue;
         }
-        await ctx.db.insert('notifications', {
-          userId: row.userId,
-          type: row.type,
-          payload: { ...payload, coalesceKey: row.coalesceKey },
-          createdAt: now,
-        });
+        inserted.push(
+          await ctx.db.insert('notifications', {
+            userId: row.userId,
+            type: row.type,
+            payload: { ...payload, coalesceKey: row.coalesceKey },
+            createdAt: now,
+          }),
+        );
         delivered++;
         continue;
       }
-      await ctx.db.insert('notifications', {
-        userId: row.userId,
-        type: row.type,
-        payload: {
-          waterBodyId: row.waterBodyId,
-          reportId: row.latestReportId,
-          count: row.count,
-          coalesceKey: row.coalesceKey,
-        },
-        createdAt: now,
-      });
+      inserted.push(
+        await ctx.db.insert('notifications', {
+          userId: row.userId,
+          type: row.type,
+          payload: {
+            waterBodyId: row.waterBodyId,
+            reportId: row.latestReportId,
+            count: row.count,
+            coalesceKey: row.coalesceKey,
+          },
+          createdAt: now,
+        }),
+      );
       await remove(row._id);
       delivered++;
+    }
+
+    // The transports (N8 PR 3): scheduled after every write above, in bounded batches, so a push or
+    // an email only ever follows a row that exists.
+    for (let i = 0; i < inserted.length; i += DELIVERY_BATCH) {
+      await ctx.scheduler.runAfter(0, internal.notificationDelivery.deliverBatch, {
+        notificationIds: inserted.slice(i, i + DELIVERY_BATCH),
+      });
     }
 
     // More behind this batch, or a budget stop: go again now rather than at the next cron minute.

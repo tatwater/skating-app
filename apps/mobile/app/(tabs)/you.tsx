@@ -7,7 +7,9 @@ import {
   AGGREGATE_OPT_OUT_EXPLAINER,
   AGGREGATE_OPT_OUT_HEADING,
   AGGREGATE_OPT_OUT_LABEL,
+  CHANNEL_PREF_LABELS,
   DRIVE_TIME_BANDS,
+  effectiveChannelPrefs,
   NOTIFICATION_PREF_LABELS,
   NOTIFICATION_PREF_ORDER,
   type NotificationPrefKey,
@@ -16,7 +18,7 @@ import { THEME_PREFERENCES, type ThemePreference } from '@skating/design';
 import { useMutation, useQuery } from 'convex/react';
 import * as Location from 'expo-location';
 import { Link, useRouter } from 'expo-router';
-import { type ReactNode, useState } from 'react';
+import { type ReactNode, useEffect, useMemo, useState } from 'react';
 import { ScrollView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Button, H1, Paragraph, Separator, Text, useTheme, XStack, YStack } from 'tamagui';
@@ -26,6 +28,14 @@ import { Avatar } from '../../src/components/ProfileView';
 import { StravaConnect } from '../../src/components/StravaConnect';
 import { TrackHistory } from '../../src/components/TrackHistory';
 import { UnreportedSkates } from '../../src/components/UnreportedSkates';
+import { clearNotificationCache } from '../../src/lib/notificationCache';
+import {
+  disablePushOnThisDevice,
+  enablePushOnThisDevice,
+  isDeviceOptedOut,
+  registerIfPermitted,
+  unregisterThisDevice,
+} from '../../src/lib/pushRegistration';
 import { tapTargetSlop } from '../../src/lib/tapTarget';
 import { THEME_PREFERENCE_LABELS } from '../../src/lib/themePreference';
 import { useThemePreference } from '../../src/providers/ThemeProvider';
@@ -44,7 +54,21 @@ export default function YouScreen() {
   // The bell's dot (N8/A3). The tab bar shows the same signal on the You icon from every screen.
   const unread = useQuery(api.notifications.unreadCount, profile ? {} : 'skip') ?? 0;
 
+  // Sign-out takes this phone's push address with it and drops the offline inbox (N8 PR 3): a phone
+  // nobody is signed in on must not keep ringing — or reading back — for the account that left.
+  // Both best-effort and *before* the Clerk sign-out. The release itself needs no session (it's
+  // keyed by the token), so one that's still queued when the session ends still lands; the tabs
+  // layout re-registers on the next sign-in.
+  const registerToken = useMutation(api.pushTokens.register);
+  const unregisterToken = useMutation(api.pushTokens.unregister);
+  const releaseToken = useMutation(api.pushTokens.release);
   async function onSignOut() {
+    await unregisterThisDevice({
+      register: registerToken,
+      unregister: unregisterToken,
+      release: releaseToken,
+    });
+    clearNotificationCache();
     await signOut();
     router.replace('/sign-in');
   }
@@ -479,6 +503,100 @@ function NotificationSettings() {
           Set a home location above for the nearby options to take effect.
         </Text>
       ) : null}
+      <ChannelSettings channelPrefs={profile.channelPrefs} />
+    </YStack>
+  );
+}
+
+/**
+ * The two transports (N8 PR 3 / D174) — the per-type toggles above say *what*, these say *how far*:
+ * a push to your phones, an email for the types worth one. Plus the one device-level switch, "this
+ * phone", which is where notification permission is actually asked for (never on cold launch).
+ */
+function ChannelSettings({
+  channelPrefs,
+}: {
+  channelPrefs: { push: boolean; email: boolean } | undefined;
+}) {
+  const setChannels = useMutation(api.profiles.setChannelPrefs);
+  const registerToken = useMutation(api.pushTokens.register);
+  const unregisterToken = useMutation(api.pushTokens.unregister);
+  const releaseToken = useMutation(api.pushTokens.release);
+  // Convex mutation refs are stable across renders, so this memo holds for the component's life.
+  const effects = useMemo(
+    () => ({ register: registerToken, unregister: unregisterToken, release: releaseToken }),
+    [registerToken, unregisterToken, releaseToken],
+  );
+  const channels = effectiveChannelPrefs(channelPrefs);
+  // Device state: opted out locally, or registered (a token exists and permission is granted).
+  // `denied` is the OS setting; `unavailable` is a platform that can't mint a token at all.
+  const [device, setDevice] = useState<'unknown' | 'on' | 'off' | 'denied' | 'unavailable'>(
+    'unknown',
+  );
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      if (isDeviceOptedOut()) {
+        if (!cancelled) setDevice('off');
+        return;
+      }
+      const token = await registerIfPermitted(effects);
+      if (!cancelled) setDevice(token ? 'on' : 'off');
+    })().catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [effects]);
+
+  async function onDeviceToggle(next: boolean) {
+    if (next) {
+      const result = await enablePushOnThisDevice(effects);
+      setDevice(result.status);
+    } else {
+      // The local opt-out is the switch; the server-side unregister behind it is best-effort and,
+      // offline, queued — the row must read "off" now, not when the connection comes back.
+      setDevice('off');
+      await disablePushOnThisDevice(effects);
+    }
+  }
+
+  return (
+    <YStack gap="$3" marginTop="$2">
+      <Text color="$foregroundMuted" fontSize={11} letterSpacing={1.5} textTransform="uppercase">
+        Where they reach you
+      </Text>
+      <ToggleRow
+        label={CHANNEL_PREF_LABELS.push}
+        value={channels.push}
+        onToggle={(v) => void setChannels({ push: v })}
+      />
+      {channels.push ? (
+        <ToggleRow
+          label="…including this phone"
+          value={device === 'on'}
+          onToggle={(v) => void onDeviceToggle(v)}
+        />
+      ) : null}
+      {device === 'denied' ? (
+        <Paragraph color="$foregroundMuted" fontSize={12}>
+          Notifications are turned off for Gli in your phone’s settings. Allow them there, then flip
+          this on.
+        </Paragraph>
+      ) : null}
+      {device === 'unavailable' ? (
+        <Paragraph color="$foregroundMuted" fontSize={12}>
+          This phone couldn’t be set up for push just now. Check your connection and try again.
+        </Paragraph>
+      ) : null}
+      <ToggleRow
+        label={CHANNEL_PREF_LABELS.email}
+        value={channels.email}
+        onToggle={(v) => void setChannels({ email: v })}
+      />
+      <Paragraph color="$foregroundMuted" fontSize={12}>
+        Email is only for the daily digest, unreported skates, bounties and moderator rulings —
+        never every thumb. Every email has a one-click unsubscribe.
+      </Paragraph>
     </YStack>
   );
 }

@@ -37,7 +37,7 @@ missing" is now the question that gates several deferred items, and the list bel
 | Google Play | ❔ unknown | $25 one-time; needed for Android distribution **and** any Health Connect review |
 | PostHog | ⬜ not set up | Deliberate (D29) — add when there's usage to measure; replay is L12-gated |
 | Garmin / COROS / Polar | ❔ unknown whether applied | **Weeks of review.** These gate the deferred watch adapters — the roadmap has said "apply now" since Phase 0 |
-| Expo Push / APNs / FCM | ⬜ not set up | No push infrastructure exists at all; blocks push delivery + silent-push refresh |
+| Expo Push / APNs / FCM | ✅ dev, 2026-09-14 | FCM V1 key + APNs key on EAS, `google-services.json` in `development`/`preview`, `EXPO_ACCESS_TOKEN` on dev Convex; first Android push delivered (Expo receipt `ok`). Prod = the `production` EAS environment + the prod Convex env var; release mechanics in `docs/deployment-and-release.md` |
 
 ---
 
@@ -178,9 +178,34 @@ See `04-integrations.md` for per-provider integration detail.
 ### 10. Web hosting — Vercel (D27)
 - **Vercel** — sign up at <https://vercel.com>; first-class TanStack Start deploy.
 
-### 11. Push (mobile) — 🆓
+### 11. Push (mobile) — 🆓 — ✅ done for dev 2026-09-14
 - **Expo Push** handles APNs/FCM. For iOS you still need #1 (Apple). Create a
   **Firebase** project for **FCM** (Android) — free.
+- **Built (N8 PR 3).** The code is credential-blind: `pushRegistration.ts` mints an Expo token on the
+  device and `notificationDelivery.ts` posts to `exp.host`. What the founder does, once (the steps
+  below), plus what the first run through them actually hit — recorded so prod cutover doesn't
+  re-derive it:
+  - The Firebase project must sit **under the Google Cloud organization**, not "No organization",
+    or the console can't override org policies for it (Resource Manager → Migrate).
+  - New orgs enforce `iam.managed.disableServiceAccountKeyCreation`, so step 1's *Generate new
+    private key* fails. Override it **at the project** (needs Organization Policy Administrator on
+    the org), generate the key, then re-enforce — existing keys keep working.
+  - Step 2's Apple login died on `iTunes service key is empty` — an Apple-side error, not a bad
+    password (a stored one lives in the macOS Keychain as an **internet** password, server
+    `deliver.<apple-id>`). The APNs key was created by hand at developer.apple.com and pasted in.
+  - Step 3 was done: expo.dev token labelled `convex-dev-push`, set as `EXPO_ACCESS_TOKEN` on dev.
+  - Verified with a direct POST to `exp.host/--/api/v2/push/send` + `getReceipts` → `status: ok`,
+    then a real token in `pushTokens` from the `preview` build.
+  1. **Android:** <https://console.firebase.google.com> → new project → add an Android app with
+     package `com.teaganatwater.gli` → download `google-services.json` into `apps/mobile/`
+     (gitignored) and upload it as an EAS **file** env var `GOOGLE_SERVICES_JSON` for every
+     environment. Then Project settings → Service accounts → *Generate new private key*, and
+     `cd apps/mobile && eas credentials` → Android → *Google Service Account* → *Set up FCM V1* →
+     upload that JSON. New EAS build (native fingerprint changes).
+  2. **iOS:** `eas credentials` → iOS → *Push Notifications: Set up* — EAS creates the APNs key on the
+     Apple Developer account and stores it. Nothing to download. (Untestable without an iPhone.)
+  3. Optional: an **Expo access token** (expo.dev → Access tokens) in Convex env `EXPO_ACCESS_TOKEN`
+     turns on Expo's "enhanced push security"; the sender adds it as a bearer when present.
 
 ### 12. Observability — 🆓 tiers (D29)
 - **Sentry** — sign up at <https://sentry.io>; add `@sentry/react-native` (mobile)

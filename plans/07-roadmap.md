@@ -1481,9 +1481,11 @@ declared type gets a producer, then the transports, and the two original bullets
   delay) + the B4a dedup ladder (`supersededByActivityId`, the link moves to the winner; one provider
   today, so exercised only in tests); the **season-boundary inbox purge** (daily); **per-user digest
   zone** (`profiles.timezone` from the device; the hour stays 20:00 — true-sunset dropped, D173).
-- **PR 3 (next):** the transports — Expo Push (Android via FCM now, iOS once the APNs key lands),
-  **email via Resend** for the digest-class types with two channel switches and an unsubscribe route
-  (primary email mirrored from Clerk onto `profiles`), and a mobile offline inbox cache.
+- **PR 3 ✅ built (D174):** the transports — Expo Push (server posts to `exp.host`; dead tokens
+  disabled from tickets/receipts; **credentials are the founder's step**: FCM key + `google-services.json`
+  for Android now, APNs key via `eas credentials` for iOS), **email via Resend** for the digest-class
+  types with two channel switches and a one-click unsubscribe route (primary email mirrored from
+  Clerk onto `profiles`), and the mobile offline inbox cache with a replayed read overlay.
 - **Deferred, by design:** the **reverse reach index** (D172 — filters candidates, never replaces the
   polygon test; trigger ~1,000 profiles); **true-sunset digest timing** (dropped — sunset runs opposite
   to the season); **web push** (no service worker yet; web = inbox + email).
@@ -1684,12 +1686,13 @@ Grouped by *what* is blocking, because that's what determines when it moves.
   needing exactly **one** on-device confirmation; real cold-weather battery draw and real
   compass/course-noise behavior (Phase 9.5 QA). No owned iPhone is the standing constraint — budget for
   a QA gap and stay conservative in the iOS background-mode copy.
-- **Push infrastructure + store credentials.** Remote **push delivery** — Phases 3/4/6 all deliberately
-  land in-app `notifications` rows; `expo-notifications` is installed (Phase 9.5) but **local-only**,
-  with no token registration, no APNs/FCM credentials, and no server sender. **Silent
-  background-refresh push to a closed app** (D54) needs that whole layer *plus* a privacy decision
-  (the biggest departure from D12) *plus* accepting that iOS throttles silent pushes at its discretion —
-  a shaky base for safety content, which is why it's deferred twice over.
+- **Push credentials + store credentials.** ~~Remote push delivery — no token registration, no
+  APNs/FCM credentials, no server sender.~~ **Built in N8 PR 3 (D174):** token registration, an Expo
+  push sender with receipt handling, and email. What remains is the founder's: the FCM key +
+  `google-services.json` (Android, now) and the APNs key (iOS, `eas credentials`). **Silent
+  background-refresh push to a closed app** (D54) is still deferred: it needs a privacy decision (the
+  biggest departure from D12) *plus* accepting that iOS throttles silent pushes at its discretion — a
+  shaky base for safety content.
 - **The prod cutover.** Convex **prod has never been initialized**, and `convex deploy` stays blocked
   until the **Clerk prod** env vars exist. Then: the multi-state import into prod, the prod tile URL,
   Vercel/EAS env vars, `SENTRY_AUTH_TOKEN` for build-time source maps, and the Resend key + verified

@@ -59,6 +59,10 @@ excludeTracksFromAggregate?: boolean  // Phase 8 / D58: keep my recorded paths o
                              // their line draws on a lake's map for other people.
 timezone?: string            // N8/C, D173 — the DEVICE's IANA zone, refreshed on app open; the 8pm digest's
                              // only per-user input (the hour is 20:00 for everyone). Never public.
+email?: string               // N8 PR 3 / D174 — PRIVATE mirror of the Clerk `email` claim (like
+                             // profileImageUrl); scrubbed at the deletion request and the tombstone
+channelPrefs?: { push, email } // D174 — the two transports over the inbox; absent ⇒ both on
+emailUnsubscribeSecret?: string // D174 — authorizes the one-click unsubscribe link, and nothing else
 notificationPrefs: {         // per-type toggles — EVERY type is toggleable (D16); vocabulary in @skating/core (N8)
   activityDetected,          // a skate OUR recorder captured that was never reported (N8/B4) — NOT "any
                              // linked provider" as D24 said; that premise was retired with Phase 8's push pivot
@@ -840,6 +844,7 @@ payload: any                 // typed at the BOUNDARY, not the schema (N8): `lib
                              // and renders anything unrecognised as a degraded "unknown" row
 readAt?: timestamp
 createdAt: timestamp
+pushedAt?, emailedAt?: timestamp  // N8 PR 3 — transport stamps; the delivery action reads before / writes after
 ```
 > Indexes: `by_user`, `by_user_read` (`userId, readAt` — the unread badge is an *equality* on
 > `readAt = undefined`, which is the one shape the non-sparse-optional-index trap doesn't bite),
@@ -849,6 +854,18 @@ createdAt: timestamp
 > **Retention is the season boundary** (N8/A5): a daily sweep deletes rows created before the current
 > season's start, read or not. The inbox is not an archive — the data export is.
 > Only sent if the recipient's `notificationPrefs[type]` is on (D16), re-checked at flush.
+
+### `pushTokens`  (device addresses for Expo push — N8 PR 3 / D174)
+```
+_id
+userId: ref(profiles)
+token: string                // `ExponentPushToken[…]`; unique — `register` re-homes it to whoever is signed in
+platform: enum(ios, android)
+deviceName?: string
+createdAt, lastSeenAt: timestamp
+disabledAt?: timestamp       // Expo reported DeviceNotRegistered; a re-register clears it
+```
+> Indexes: `by_user`, `by_token`. Rows die with the account (`accountDeletion` drains them).
 
 ### `notificationQueue`  (the coalescing + settle queue — Phase 4 decision #4; widened N8 / D169)
 ```
