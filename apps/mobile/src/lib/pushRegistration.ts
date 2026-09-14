@@ -12,6 +12,12 @@
  *    token and writes `push_device_opt_out` to the prefs db, so the next app open doesn't quietly
  *    re-register it. The account-level `channelPrefs.push` switch is separate and server-side: that
  *    one silences every phone at once.
+ * 3. **Leaving must not depend on the network or the session it is ending.** The token the server
+ *    holds is written to the prefs db when it's registered, so sign-out can name it without asking
+ *    Expo again, and it is released through `pushTokens.release` — unauthenticated by design, the
+ *    token being the credential — so a mutation queued offline still lands after Clerk's session is
+ *    gone. A release that can't complete in time is remembered (`push_pending_release`) and retried
+ *    at the next launch, signed in or not, until it does.
  *
  * The token itself is Expo's (`ExponentPushToken[…]`), minted against the EAS project id — Expo's
  * push service fronts APNs and FCM, so the server never holds a platform credential. Those live in
@@ -25,6 +31,10 @@ import { ensureNotificationPermission } from './notifications';
 import { readPref, writePref } from './prefsDb';
 
 const OPT_OUT_KEY = 'push_device_opt_out';
+/** The token the server currently holds for this device, as of the last successful `register`. */
+const REGISTERED_TOKEN_KEY = 'push_registered_token';
+/** A token whose release didn't complete — sign-out moved on before the mutation landed. */
+const PENDING_RELEASE_KEY = 'push_pending_release';
 /** Android needs a channel before a remote notification can show; the server sends `channelId: 'default'`. */
 const ANDROID_CHANNEL = 'default';
 /** How long an unregister may hold up the thing that asked for it (sign-out, the device switch). */
@@ -52,6 +62,24 @@ export function setDeviceOptedOut(optedOut: boolean): void {
     writePref(OPT_OUT_KEY, optedOut ? '1' : '0');
   } catch {
     // A prefs write failing costs one remembered choice, not the launch.
+  }
+}
+
+/** A stored token, or `null` when the row is missing, empty, or the store can't answer. */
+function readToken(key: string): string | null {
+  try {
+    return readPref(key) || null;
+  } catch {
+    return null;
+  }
+}
+
+/** Write a token, or forget it (`null`). Best-effort, like every prefs write here. */
+function writeToken(key: string, token: string | null): void {
+  try {
+    writePref(key, token ?? '');
+  } catch {
+    // Costs one remembered token; the next register or release writes it again.
   }
 }
 
@@ -90,7 +118,10 @@ export interface RegisterEffects {
     platform: PushPlatform;
     deviceName?: string;
   }) => Promise<unknown>;
+  /** Owner-scoped; the device switch, where a session is a given. */
   unregister: (args: { token: string }) => Promise<unknown>;
+  /** Token-scoped, no session; sign-out and the launch-time retry. */
+  release: (args: { token: string }) => Promise<unknown>;
 }
 
 /**
@@ -132,34 +163,79 @@ export async function enablePushOnThisDevice(effects: RegisterEffects): Promise<
   return token ? { status: 'on', token } : { status: 'unavailable' };
 }
 
-/** The explicit off: forget this device server-side and remember the choice locally. */
+/**
+ * The explicit off: forget this device server-side and remember the choice locally. The person is
+ * still signed in, so this is the owner-scoped `unregister`; issued offline it queues with the
+ * session intact and lands on reconnect, and the local opt-out stops any re-register meanwhile.
+ */
 export async function disablePushOnThisDevice(effects: RegisterEffects): Promise<void> {
   setDeviceOptedOut(true);
-  await unregisterThisDevice(effects);
+  await withinBound(async () => {
+    const token = await currentToken();
+    if (!token) return;
+    await effects.unregister({ token });
+    writeToken(REGISTERED_TOKEN_KEY, null);
+  });
 }
 
 /**
  * Forget this device server-side without touching the local opt-out — what sign-out does, so a
- * phone nobody is signed in on stops ringing for the account that left. Best-effort: offline, the
- * row lingers until the next sign-in re-homes it or account deletion drains it.
+ * phone nobody is signed in on stops ringing for the account that left.
  *
- * Bounded, because "best-effort" has to include the wait: a Convex mutation issued offline is not
- * rejected, it is *queued* until the connection returns, and a sign-out that awaited it would hang
- * with it. The mint is a network call to Expo too. Past the bound the caller moves on; the queued
- * unregister still runs (or fails harmlessly once the session is gone) whenever the client reconnects.
+ * Three things make this hold when the network doesn't. The token comes from the prefs db, written
+ * at register, so no call to Expo stands between sign-out and naming the row. It goes through
+ * `release`, which needs no session, so a mutation the Convex client queues offline is still valid
+ * when it finally lands — after Clerk's sign-out, an authenticated one would arrive as nobody and
+ * fail. And the token is written to `push_pending_release` **before** the attempt, so a sign-out
+ * that moves on at the bound, or an app killed mid-flight, leaves a note the next launch acts on
+ * (`retryPendingRelease`) rather than a row that rings until someone else signs in.
+ *
+ * Bounded, because "best-effort" has to include the wait: a queued mutation resolves only when the
+ * connection returns, and a sign-out that awaited it would hang with it.
  */
 export async function unregisterThisDevice(effects: RegisterEffects): Promise<void> {
-  const attempt = (async () => {
-    const token = await fetchExpoPushToken();
+  await withinBound(async () => {
+    const token = await currentToken();
     if (!token) return;
-    await effects.unregister({ token });
-  })().catch(() => {
-    // Offline: the server row lingers until the next successful unregister or account deletion;
-    // the local opt-out (when set) still stops re-registration, and the server's push will land on
-    // a device that has since revoked permission at worst.
+    writeToken(PENDING_RELEASE_KEY, token);
+    await effects.release({ token });
+    forgetReleased(token);
   });
+}
+
+/**
+ * Finish a release sign-out couldn't: called at every launch, signed in or not, before the tabs
+ * layout can register. No bound and no await from the caller — it's a fire-and-forget the Convex
+ * client queues until it has a connection.
+ */
+export function retryPendingRelease(effects: Pick<RegisterEffects, 'release'>): void {
+  const token = readToken(PENDING_RELEASE_KEY);
+  if (!token) return;
+  effects
+    .release({ token })
+    .then(() => forgetReleased(token))
+    .catch(() => {
+      // Still pending; the next launch tries again.
+    });
+}
+
+/** The token the server holds for this device — the stored one, minting only when nothing is stored. */
+async function currentToken(): Promise<string | null> {
+  return readToken(REGISTERED_TOKEN_KEY) ?? (await fetchExpoPushToken());
+}
+
+/** A release landed: neither the "registered" nor the "pending" note should name this token any more. */
+function forgetReleased(token: string): void {
+  if (readToken(PENDING_RELEASE_KEY) === token) writeToken(PENDING_RELEASE_KEY, null);
+  if (readToken(REGISTERED_TOKEN_KEY) === token) writeToken(REGISTERED_TOKEN_KEY, null);
+}
+
+/** Run a best-effort step, moving on at `UNREGISTER_TIMEOUT_MS` whether or not it finished. */
+async function withinBound(step: () => Promise<void>): Promise<void> {
   await Promise.race([
-    attempt,
+    step().catch(() => {
+      // Best-effort: what a failure leaves behind is documented at each caller.
+    }),
     new Promise<void>((resolve) => setTimeout(resolve, UNREGISTER_TIMEOUT_MS)),
   ]);
 }
@@ -174,6 +250,11 @@ async function registerNow(
   try {
     const deviceName = Constants.deviceName ?? undefined;
     await effects.register({ token, platform, ...(deviceName ? { deviceName } : {}) });
+    writeToken(REGISTERED_TOKEN_KEY, token);
+    // A registration supersedes any release still owed for the same token: the row is homed to
+    // whoever is signed in now, which is exactly what a late release would undo. (A retry already
+    // in flight was queued before this register, and the Convex client keeps that order.)
+    if (readToken(PENDING_RELEASE_KEY) === token) writeToken(PENDING_RELEASE_KEY, null);
     return token;
   } catch {
     return null;

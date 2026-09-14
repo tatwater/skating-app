@@ -224,6 +224,9 @@ export const collect = internalQuery({
       // Not exported, same rule as the OAuth tokens above: it is a live credential (the one-click
       // unsubscribe link's authorization, N8 PR 3), not a record of anything the person did.
       emailUnsubscribeSecret: _emailUnsubscribeSecret,
+      // Not exported either: a delivery address mirrored from Clerk, which the person already has
+      // and which a leaked bundle would otherwise pin to every row in it (N8 PR 3 / D174).
+      email: _email,
       ...exportableProfile
     } = profile;
 

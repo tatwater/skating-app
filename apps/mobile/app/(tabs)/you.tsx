@@ -56,12 +56,18 @@ export default function YouScreen() {
 
   // Sign-out takes this phone's push address with it and drops the offline inbox (N8 PR 3): a phone
   // nobody is signed in on must not keep ringing — or reading back — for the account that left.
-  // Both best-effort and *before* the Clerk sign-out, which is what the unregister needs a session
-  // for; the tabs layout re-registers on the next sign-in.
+  // Both best-effort and *before* the Clerk sign-out. The release itself needs no session (it's
+  // keyed by the token), so one that's still queued when the session ends still lands; the tabs
+  // layout re-registers on the next sign-in.
   const registerToken = useMutation(api.pushTokens.register);
   const unregisterToken = useMutation(api.pushTokens.unregister);
+  const releaseToken = useMutation(api.pushTokens.release);
   async function onSignOut() {
-    await unregisterThisDevice({ register: registerToken, unregister: unregisterToken });
+    await unregisterThisDevice({
+      register: registerToken,
+      unregister: unregisterToken,
+      release: releaseToken,
+    });
     clearNotificationCache();
     await signOut();
     router.replace('/sign-in');
@@ -515,10 +521,11 @@ function ChannelSettings({
   const setChannels = useMutation(api.profiles.setChannelPrefs);
   const registerToken = useMutation(api.pushTokens.register);
   const unregisterToken = useMutation(api.pushTokens.unregister);
+  const releaseToken = useMutation(api.pushTokens.release);
   // Convex mutation refs are stable across renders, so this memo holds for the component's life.
   const effects = useMemo(
-    () => ({ register: registerToken, unregister: unregisterToken }),
-    [registerToken, unregisterToken],
+    () => ({ register: registerToken, unregister: unregisterToken, release: releaseToken }),
+    [registerToken, unregisterToken, releaseToken],
   );
   const channels = effectiveChannelPrefs(channelPrefs);
   // Device state: opted out locally, or registered (a token exists and permission is granted).

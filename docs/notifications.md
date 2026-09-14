@@ -114,3 +114,12 @@ there marks the rows read locally — the marks are sent when you're back in ran
 row opens the lake like normal, and the lake screen does what it can from its own cache. The offline
 case that matters for safety, the hazard alert while you skate, was already built to work without a
 server, and none of this touches it.
+
+A phone is shared more often than an account is, so signing out has to leave nothing behind — and it
+has to manage that offline too, since "sign out" is not a thing anyone waits for a signal to do. The
+cached page is bound to the account that fetched it and is dropped the moment a different one signs
+in, with the rule that when the phone can't say whose page it is, the page goes. The push address is
+released by naming the token the phone already knows it registered, through a call that needs no
+signed-in session, so it still lands when the phone reconnects after the sign-out has finished; if it
+hasn't landed by the time you're out, the phone remembers and finishes the job the next time the app
+opens, whoever — or nobody — is signed in.

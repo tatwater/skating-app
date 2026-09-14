@@ -67,3 +67,31 @@ export const unregister = mutation({
     if (existing && existing.userId === profile._id) await ctx.db.delete(existing._id);
   },
 });
+
+/**
+ * Sign-out's version of `unregister`, deliberately **unauthenticated**: the token is the credential.
+ *
+ * A signed-out phone must stop ringing for the account that left, and the two things `unregister`
+ * needs are exactly what sign-out takes away. The session: a Convex mutation issued offline is
+ * *queued*, and once Clerk's sign-out has run it would arrive with no identity and fail
+ * `requireProfile`. And a live network — the device has no reason to still be online when it
+ * retries at the next launch, signed in as nobody. So this asks for neither.
+ *
+ * What holding a token lets a stranger do here is make one phone stop receiving pushes — the same
+ * thing the phone's own settings screen does, and nothing that reads or reveals anything. The token
+ * is a 22-character Expo-minted opaque id that only the device, Expo and this table ever see; it is
+ * not derivable from a user, and Expo's own send API needs our access token besides. That is a
+ * far smaller capability than the authenticated `register` hands out (re-homing the row), which is
+ * why `register` stays owner-scoped and this doesn't.
+ */
+export const release = mutation({
+  args: { token: v.string() },
+  handler: async (ctx, { token }) => {
+    if (!isExpoPushToken(token)) return;
+    const existing = await ctx.db
+      .query('pushTokens')
+      .withIndex('by_token', (q) => q.eq('token', token))
+      .unique();
+    if (existing) await ctx.db.delete(existing._id);
+  },
+});

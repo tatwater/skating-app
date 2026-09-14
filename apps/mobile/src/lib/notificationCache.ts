@@ -12,7 +12,6 @@ import {
   MAX_CACHED_NOTIFICATIONS,
   toCachedRow,
 } from './notificationCacheModel';
-import { readPref, writePref } from './prefsDb';
 
 let db: SQLite.SQLiteDatabase | null = null;
 function getDb(): SQLite.SQLiteDatabase {
@@ -30,6 +29,16 @@ function getDb(): SQLite.SQLiteDatabase {
       `CREATE TABLE IF NOT EXISTS pending_reads (
         id TEXT PRIMARY KEY,
         readAt INTEGER NOT NULL
+      )`,
+    );
+    // Whose rows these are — a single-row table in the SAME database as the rows, on purpose: the
+    // owner check, the clear and the new owner are then one transaction on one store, and a store
+    // that can't answer "whose?" is the same store that can't hand the rows back. Kept in the prefs
+    // db instead, a prefs failure once skipped the clear while the rows stayed perfectly readable.
+    db.execSync(
+      `CREATE TABLE IF NOT EXISTS cache_owner (
+        singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
+        profileId TEXT NOT NULL
       )`,
     );
   }
@@ -114,24 +123,49 @@ export function clearNotificationCache(): void {
     d.withTransactionSync(() => {
       d.runSync('DELETE FROM cached_notifications', []);
       d.runSync('DELETE FROM pending_reads', []);
+      d.runSync('DELETE FROM cache_owner', []);
     });
   } catch {
     // Best-effort.
   }
 }
 
-const OWNER_KEY = 'notification_cache_owner';
-
 /**
  * Bind the cache to a profile: the first time a different profile is seen, whatever the previous
  * one left behind is cleared. Cheap enough to call on every session mount; it writes only on change.
+ *
+ * Fails **closed**. Every path that isn't "the owner is provably this profile" clears — a different
+ * owner, no owner, or a store that threw before it could say. The clear then runs outside the
+ * failed transaction as well, so the one thing a broken store cannot do is keep the last account's
+ * private page readable for the next. Returns whether the rows were kept, so the caller can drop
+ * anything it derived from them before the claim.
  */
-export function claimNotificationCache(profileId: string): void {
+export function claimNotificationCache(profileId: string): boolean {
+  let kept = false;
   try {
-    if (readPref(OWNER_KEY) === profileId) return;
-    clearNotificationCache();
-    writePref(OWNER_KEY, profileId);
+    const d = getDb();
+    d.withTransactionSync(() => {
+      const owner = d.getFirstSync<{ profileId: string }>(
+        'SELECT profileId FROM cache_owner WHERE singleton = 1',
+        [],
+      )?.profileId;
+      if (owner === profileId) {
+        kept = true;
+        return;
+      }
+      d.runSync('DELETE FROM cached_notifications', []);
+      d.runSync('DELETE FROM pending_reads', []);
+      d.runSync(
+        `INSERT INTO cache_owner (singleton, profileId) VALUES (1, ?)
+         ON CONFLICT(singleton) DO UPDATE SET profileId = excluded.profileId`,
+        [profileId],
+      );
+    });
   } catch {
-    // Best-effort.
+    // Ownership couldn't be established, so nothing may survive; the owner stays unrecorded and
+    // the next mount tries again.
+    clearNotificationCache();
+    kept = false;
   }
+  return kept;
 }

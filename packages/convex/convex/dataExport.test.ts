@@ -219,6 +219,25 @@ describe('collect — what a bundle carries', () => {
     expect('clerkUserId' in data.profile).toBe(false);
     expect(JSON.stringify(data)).not.toContain('clerk_exporter');
   });
+
+  test('omits the delivery details: the mirrored email and the unsubscribe secret', async () => {
+    const t = harness();
+    const user = await seedUser(t, 'exporter');
+    await t.run((ctx) =>
+      ctx.db.patch(user.id, {
+        email: 'exporter@example.com',
+        emailUnsubscribeSecret: 'unsub-secret-value',
+      }),
+    );
+
+    const data = await t.query(internal.dataExport.collect, { userId: user.id });
+
+    expect('email' in data.profile).toBe(false);
+    expect('emailUnsubscribeSecret' in data.profile).toBe(false);
+    const bundle = JSON.stringify(data);
+    expect(bundle).not.toContain('exporter@example.com');
+    expect(bundle).not.toContain('unsub-secret-value');
+  });
 });
 
 describe('buildExport', () => {

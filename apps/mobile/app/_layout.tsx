@@ -2,10 +2,12 @@ import { useAuth } from '@clerk/clerk-expo';
 import * as Sentry from '@sentry/react-native';
 import { api } from '@skating/convex/api';
 import { resolveAuthRoute } from '@skating/core';
-import { useQuery } from 'convex/react';
+import { useMutation, useQuery } from 'convex/react';
 import { Stack } from 'expo-router';
+import { useEffect } from 'react';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { useTheme } from 'tamagui';
+import { retryPendingRelease } from '../src/lib/pushRegistration';
 import { initSentry } from '../src/lib/sentry';
 import { Providers } from '../src/providers/Providers';
 
@@ -33,6 +35,14 @@ function RootNavigator() {
   // Skip until Clerk confirms a session — unauthenticated the query would just be null.
   const profile = useQuery(api.profiles.current, isSignedIn ? {} : 'skip');
   const theme = useTheme();
+
+  // A push-token release the last sign-out couldn't finish (offline, or past its bound) is retried
+  // here, at the root, so it runs whether or not anyone is signed in — and is queued before the tabs
+  // layout, further down the tree, can register a token for whoever signs in next (N8 PR 3).
+  const releaseToken = useMutation(api.pushTokens.release);
+  useEffect(() => {
+    retryPendingRelease({ release: releaseToken });
+  }, [releaseToken]);
 
   const route = resolveAuthRoute({ isLoaded, isSignedIn, profile });
   if (route === 'loading') return null;

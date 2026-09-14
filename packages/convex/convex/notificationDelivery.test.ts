@@ -133,6 +133,22 @@ describe('pushTokens', () => {
     await b.as.mutation(api.pushTokens.unregister, { token });
     expect(await t.run((ctx) => ctx.db.query('pushTokens').collect())).toHaveLength(0);
   });
+
+  test('release needs no session: the token is the credential, and a stranger holding one can only silence that phone', async () => {
+    const t = harness();
+    const a = await seedUser(t, 'a');
+    const token = 'ExponentPushToken[abc123]';
+    await a.as.mutation(api.pushTokens.register, { token, platform: 'android' });
+
+    // Signed out — the case it exists for: Clerk's session is gone before a queued unregister lands.
+    await t.mutation(api.pushTokens.release, { token });
+    expect(await t.run((ctx) => ctx.db.query('pushTokens').collect())).toHaveLength(0);
+
+    // Not a token, or a token nobody registered: nothing happens and nothing throws, so a retried
+    // release from an old launch can never fail a sign-out.
+    await t.mutation(api.pushTokens.release, { token: 'not-a-token' });
+    await t.mutation(api.pushTokens.release, { token: 'ExponentPushToken[never-registered]' });
+  });
 });
 
 describe('notificationDelivery', () => {

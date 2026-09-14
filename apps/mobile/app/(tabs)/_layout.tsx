@@ -83,7 +83,7 @@ export default function TabsLayout() {
   // the tab layout — effectively app-wide — is cheap by construction.
   // Offline, the dot reads the cached page through the local read overlay (N8 PR 3) rather than
   // going dark — the live count wins the moment it answers.
-  const [offlineUnread] = useState(() =>
+  const [offlineUnread, setOfflineUnread] = useState(() =>
     unreadAfterOverlay(loadCachedNotifications(), loadPendingReads()),
   );
   const unread = useQuery(api.notifications.unreadCount, {}) ?? offlineUnread;
@@ -102,9 +102,12 @@ export default function TabsLayout() {
   }, [hasProfile, storedZone, setTimezone]);
 
   // The offline inbox is per device; bind it to whoever is signed in, so a previous account's page
-  // never reads back to the next (N8 PR 3). Sign-out clears it too; this catches every other path.
+  // never reads back to the next (N8 PR 3). Sign-out clears it too; this catches every other path —
+  // and when it clears, the dot derived from the old page above goes with it, or a session that
+  // arrived here without the You-tab sign-out would wear the last account's count until online.
   useEffect(() => {
-    if (profileId !== undefined) claimNotificationCache(profileId);
+    if (profileId === undefined) return;
+    if (!claimNotificationCache(profileId)) setOfflineUnread(0);
   }, [profileId]);
 
   // Push registration on app open (N8 PR 3) — only when permission is already granted and this
@@ -112,10 +115,15 @@ export default function TabsLayout() {
   // to whoever is signed in.
   const registerToken = useMutation(api.pushTokens.register);
   const unregisterToken = useMutation(api.pushTokens.unregister);
+  const releaseToken = useMutation(api.pushTokens.release);
   useEffect(() => {
     if (!hasProfile) return;
-    void registerIfPermitted({ register: registerToken, unregister: unregisterToken });
-  }, [hasProfile, registerToken, unregisterToken]);
+    void registerIfPermitted({
+      register: registerToken,
+      unregister: unregisterToken,
+      release: releaseToken,
+    });
+  }, [hasProfile, registerToken, unregisterToken, releaseToken]);
 
   // Tapping a remote notification lands where the inbox row would (N8 PR 3). The payload carries
   // the platform-neutral target `describeNotification` produced server-side; the same mapper the
