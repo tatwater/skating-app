@@ -5486,9 +5486,17 @@ per-user secret that can do exactly one thing: turn the email channel off.
 **The address is mirrored from Clerk onto `profiles.email`.** `lib/clerkEmail` had said it plainly: a
 user-scale digest that pays one Clerk API call per recipient "wants a different design, not this
 function in a loop." The mirror is the same posture as `profileImageUrl` — Clerk owns it, we hold a
-private copy refreshed at `upsertFromClerk` (every cold start), scrubbed at the deletion request and
-the tombstone. When the JWT template carries no email, the sender falls back to one Clerk lookup and
-caches it. The sender identity stays `RESEND_FROM_EMAIL` with a per-send `from` override available, so
+private copy written at `upsertFromClerk` and refreshed by `profiles.syncFromClerk` on every app open,
+scrubbed at the deletion request and the tombstone. When the JWT template carries no email, the sender
+falls back to one Clerk lookup and caches it.
+
+*Corrected 2026-09-14 (N8 coverage audit):* as built, PR 3 said the mirror was "refreshed at
+`upsertFromClerk` (every cold start)". It wasn't — both clients call `upsertFromClerk` from the
+**onboarding screen only**, so no profile that predated the field ever got an address, and a changed
+Clerk email or avatar never reached the row (the avatar mirror had the same hole since Phase 3). The
+sender's fallback hid the first symptom on dev (one lookup per person, cached) but a cached address is
+exactly what goes stale on a change. `syncFromClerk` — claims only, no identity args, fail-soft, the
+same never-un-scrub guard — is the launch-time half, fired beside `setTimezone` in both shells. The sender identity stays `RESEND_FROM_EMAIL` with a per-send `from` override available, so
 splitting types across addresses later is a parameter, not a redesign.
 
 **Push posture keeps Phase 9.5's rule.** Permission is never asked on cold launch: on app open the

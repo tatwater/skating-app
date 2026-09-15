@@ -55,6 +55,16 @@ export function AppShell({ children }: { children: ReactNode }) {
     const timezone = timezoneToSync(storedZone, deviceTimeZone());
     if (timezone !== null) void setTimezone({ timezone }).catch(() => {});
   }, [hasProfile, storedZone, setTimezone]);
+
+  // The Clerk mirrors (email for notification mail, the avatar), refreshed from the token's claims
+  // on the same "app open". `upsertFromClerk` runs at onboarding only, so without this a changed
+  // address or picture never reached the profile. Once per signed-in mount; the server writes
+  // nothing when the claims already match.
+  const syncFromClerk = useMutation(api.profiles.syncFromClerk);
+  useEffect(() => {
+    if (!hasProfile) return;
+    void syncFromClerk({}).catch(() => {});
+  }, [hasProfile, syncFromClerk]);
   const mapRoute = isMapRoute(pathname);
 
   return (

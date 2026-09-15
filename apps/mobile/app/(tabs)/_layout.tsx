@@ -101,6 +101,16 @@ export default function TabsLayout() {
     if (timezone !== null) void setTimezone({ timezone }).catch(() => {});
   }, [hasProfile, storedZone, setTimezone]);
 
+  // The Clerk mirrors (email for notification mail, the avatar), refreshed from the token's claims
+  // on the same "app open". `upsertFromClerk` runs at onboarding only, so without this a changed
+  // address or picture never reached the profile. Once per signed-in mount; the server writes
+  // nothing when the claims already match.
+  const syncFromClerk = useMutation(api.profiles.syncFromClerk);
+  useEffect(() => {
+    if (!hasProfile) return;
+    void syncFromClerk({}).catch(() => {});
+  }, [hasProfile, syncFromClerk]);
+
   // The offline inbox is per device; bind it to whoever is signed in, so a previous account's page
   // never reads back to the next (N8 PR 3). Sign-out clears it too; this catches every other path —
   // and when it clears, the dot derived from the old page above goes with it, or a session that

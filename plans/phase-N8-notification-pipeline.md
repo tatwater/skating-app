@@ -1,9 +1,11 @@
 # N8 — The notification pipeline: the inbox, the missing producers, and the reverse reach index
 
-> **Status:** ✅ **Built (2026-09-12)**, three stacked PRs off `phase-n8-notification-pipeline`:
-> **PR 1** (inbox + settled queue + producers B1–B3) #52; **PR 2** (B4/B4a, A5 purge, C timezone)
-> #53; **PR 3** (transports: push, email, offline inbox cache). Not yet deployed to dev; push
-> credentials are a founder task (see PR 3's built record). Prod deferred. Scoped 2026-07-30 with a
+> **Status:** ✅ **Built, merged and live on dev (2026-09-14)**, three stacked PRs off
+> `phase-n8-notification-pipeline`: **PR 1** (inbox + settled queue + producers B1–B3) #52; **PR 2**
+> (B4/B4a, A5 purge, C timezone) #53; **PR 3** (transports: push, email, offline inbox cache) #55.
+> Android push credentials are in (FCM + `google-services.json`, first device push confirmed
+> 2026-09-14); iOS APNs, the Android small icon, and a real end-to-end `deliverBatch` run are still
+> open — see [Post-merge](#post-merge-2026-09-14). Prod deferred. Scoped 2026-07-30 with a
 > founder call of **no N8 code until every N6 phase has shipped**; N6 closed 2026-09-10.
 > **Scope grew at kickoff (founder, 2026-09-11):** push (Android via FCM now; iOS APNs key once
 > enrolled) and **email** (Resend is live on dev) come *in*, as transports over the same rows — see
@@ -764,6 +766,34 @@ Web: the two channel checkboxes. `app.config.ts` picks up `google-services.json`
    twice.
 4. **Email defaults on.** The eligible types are low-volume and mostly opt-in already (the digest is
    off by default); every mail can be silenced in one click.
+
+## Post-merge (2026-09-14)
+
+A coverage audit against every commitment above — ten producers, one writer, both shells, both
+transports, offline, deletion — found the matrix built and deployed. What it changed and what it left:
+
+**Fixed — the Clerk mirror never populated.** PR 3 (and D174) said `profiles.email` was refreshed at
+`upsertFromClerk` "every cold start". Both clients call that mutation from the **onboarding screen
+only**, so every dev profile had `email: undefined` — including the founder's, after an app open that
+same afternoon — and the JWT template was never the problem (it maps `email`; checked). The sender's
+Clerk fallback hid it (one lookup per person, cached onto the row), but a cached address is exactly
+what goes stale when someone changes it. `profiles.syncFromClerk` — claims only, no identity args,
+fail-soft, the same never-un-scrub guard — now fires beside `setTimezone` in both shells, and picks
+up the avatar mirror (`profileImageUrl`), which had had the same hole since Phase 3. Founder task #3
+above is therefore closed in the other direction: the template was right, the caller was missing.
+
+**Not yet exercised.** No `notifications` row on dev carries `pushedAt` or `emailedAt` — the rows
+that exist predate PR 3 — and no profile has an `emailUnsubscribeSecret`, which is minted on the
+first mail. So the 2026-09-14 Android push proved the credentials, not `flush → deliverBatch`; the
+`/unsubscribe` route has never been hit outside tests. One deliberate trigger from a second account
+(a thumb for the push-only path, a bounty on a lake the founder reported for the email path) is the
+outstanding smoke.
+
+**Still open, in order:** the Android **small icon** (a white-on-transparent 96×96 plus
+`['expo-notifications', { icon, color }]` — native, rides the next build; until then the status bar
+shows a solid disc because the full icon has an opaque background); the **iOS APNs key** (`eas
+credentials`, untestable without an iPhone); an OTA or rebuild so the installed preview APK runs the
+post-Greptile JS.
 
 ## What this phase does not cover
 

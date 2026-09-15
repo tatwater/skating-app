@@ -7,11 +7,13 @@
  * `[0]` silently mails the wrong address for anyone with two), the log-and-return-null contract, and
  * the missing-key branch.
  *
- * ⚠ **Emails live in Clerk, not in `profiles`.** The corpus deliberately does not store them — the
- * profile row carries `clerkUserId` and nothing else identifying — so any feature that needs to mail
- * a user pays one HTTP call per recipient. That is fine for operator-scale fan-out (a handful of
- * staff) and would not be for a user-scale one; a digest to every member wants a different design,
- * not this function in a loop.
+ * **Since N8 PR 3 this is the fallback, not the design.** The primary address is mirrored onto
+ * `profiles.email` from the JWT's `email` claim — written at onboarding (`upsertFromClerk`) and
+ * refreshed on every app open (`syncFromClerk`) — so a user-scale send reads the row, not Clerk.
+ * This lookup remains for what the mirror can't cover: a profile whose token never carried the claim
+ * (the notification sender caches the answer onto the row, once), the data-export mail to a person
+ * whose row may already be scrubbed (D62), and the operator alerts (D38), which mail staff by Clerk
+ * subject. A digest to every member must never be this function in a loop.
  */
 
 const CLERK_API_BASE = 'https://api.clerk.com/v1';

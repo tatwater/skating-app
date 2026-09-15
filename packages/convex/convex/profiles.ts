@@ -111,6 +111,8 @@ export const upsertFromClerk = mutation({
     const profileImageUrl = identity.pictureUrl;
     // The email, likewise mirrored from the `email` claim (N8 PR 3 / D174) so a notification email is
     // not a Clerk API call per recipient. Same absence rule: an unmapped claim leaves the mirror alone.
+    // Both mirrors are *refreshed* on every later app open by `syncFromClerk` below — this mutation
+    // runs at onboarding only.
     const email = identity.email;
 
     // Hard 16+ minimum (D41), derived from DOB and enforced server-side. Minor status
@@ -158,10 +160,9 @@ export const upsertFromClerk = mutation({
 
     // **A ghost is the same case wearing a different field** (D62 amendment). A pending deletion
     // scrubs the profile while leaving `status: 'active'` — deliberately, since `status` is the gate
-    // that would also close reads — so without this branch the next app launch would helpfully
-    // re-sync `displayName` and the avatar back out of Clerk and quietly un-delete the person's
-    // identity. This mutation runs on every cold start, so that isn't a corner case; it's the first
-    // thing that would happen.
+    // that would also close reads — so without this branch a re-onboarding would helpfully re-sync
+    // `displayName` and the avatar back out of Clerk and quietly un-delete the person's identity.
+    // (`syncFromClerk`, which *does* run on every launch, carries the same guard for the same reason.)
     //
     // Cancelling clears the stamp, and *then* this sync is exactly the re-onboarding path
     // (`needsProfileSetup` routes them here): same code, no special restore, and the name they type
@@ -335,6 +336,43 @@ export const setTimezone = mutation({
     if (!isKnownTimeZone(timezone)) throw new ConvexError('Unknown timezone');
     if (profile.timezone === timezone) return profile._id;
     await ctx.db.patch(profile._id, { timezone });
+    return profile._id;
+  },
+});
+
+/**
+ * Refresh the two Clerk mirrors — `email` (N8 PR 3 / D174) and `profileImageUrl` (Phase 3) — from
+ * the identity's claims. Called by both clients on app open, beside `setTimezone`.
+ *
+ * **Why this exists apart from `upsertFromClerk`.** That mutation is the onboarding write: it takes
+ * a display name, a username, a date of birth and a risk acknowledgment, and both clients call it
+ * from the onboarding screen only. Nothing re-ran it on an ordinary launch, so a mirror set there was
+ * set once — every profile that onboarded before the email field existed had no address, and a
+ * changed Clerk email or avatar never reached us. The email sender's Clerk fallback papered over the
+ * first (one lookup per person, cached), but a cached address is exactly the thing that goes stale
+ * when the person changes it. This is the launch-time half: claims only, no identity args, writes
+ * nothing when the claims match.
+ *
+ * **Never un-scrub.** The same rule as `upsertFromClerk`: an inactive account or a pending deletion
+ * has had these fields cleared on purpose, and a launch-time sync is the first thing that would put
+ * them back. Fail-soft rather than throw — this runs unattended on every open, and a ghost signing in
+ * to cancel should see nothing from it. An unmapped claim (`undefined`) leaves the mirror alone.
+ */
+export const syncFromClerk = mutation({
+  args: {},
+  handler: async (ctx) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) return null;
+    const profile = await getCurrentProfile(ctx);
+    if (profile?.status !== 'active' || profile.deletionRequestedAt !== undefined) return null;
+    const patch: { email?: string; profileImageUrl?: string } = {};
+    if (identity.email !== undefined && identity.email !== profile.email) {
+      patch.email = identity.email;
+    }
+    if (identity.pictureUrl !== undefined && identity.pictureUrl !== profile.profileImageUrl) {
+      patch.profileImageUrl = identity.pictureUrl;
+    }
+    if (Object.keys(patch).length > 0) await ctx.db.patch(profile._id, patch);
     return profile._id;
   },
 });

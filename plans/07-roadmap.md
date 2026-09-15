@@ -1466,8 +1466,10 @@ blocker* by a founder call**, and merged at scoping with the duplicate-corrobora
   `shallow_early_thaw` at a raised bar, checked against N6a's depth (D68/D69) — recurrence proposes the
   flag from observation, depth checks the proposal.
 
-**N8 — The notification pipeline.** 🔨 **In build 2026-09-11** (branch `phase-n8-notification-pipeline`,
-[`phase-N8-notification-pipeline.md`](./phase-N8-notification-pipeline.md), D167–D172). The scoping pass
+**N8 — The notification pipeline.** ✅ **Merged and live on dev 2026-09-14** (PRs #52/#53/#55,
+[`phase-N8-notification-pipeline.md`](./phase-N8-notification-pipeline.md), D167–D174; Android push
+credentials in, iOS APNs + small icon + an end-to-end smoke still open — see the plan's Post-merge
+section). The scoping pass
 found the real problem was neither bullet below: **nothing in the app could read a notification** —
 six types were being written and had never been seen. So the phase is the inbox first, then every
 declared type gets a producer, then the transports, and the two original bullets move to the back.

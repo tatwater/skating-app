@@ -342,6 +342,97 @@ describe('profiles.upsertFromClerk', () => {
   });
 });
 
+describe('profiles.syncFromClerk', () => {
+  const onboard = (t: ReturnType<typeof convexTest>, subject: string) =>
+    t
+      .withIdentity({ subject })
+      .mutation(
+        api.profiles.upsertFromClerk,
+        withAck({ displayName: 'Ada', username: 'ada', dateOfBirth: ADULT_DOB }),
+      );
+
+  test('is a no-op without an identity or a profile', async () => {
+    const t = convexTest(schema, modules);
+    expect(await t.mutation(api.profiles.syncFromClerk, {})).toBeNull();
+    expect(
+      await t.withIdentity({ subject: 'clerk_nobody' }).mutation(api.profiles.syncFromClerk, {}),
+    ).toBeNull();
+  });
+
+  test('backfills the email and avatar mirrors a profile onboarded without them', async () => {
+    const t = convexTest(schema, modules);
+    // Onboarded from a token that carried neither claim — every pre-N8 profile on dev.
+    const id = await onboard(t, 'clerk_ada');
+    expect((await t.run((ctx) => ctx.db.get(id)))?.email).toBeUndefined();
+
+    await t
+      .withIdentity({ subject: 'clerk_ada', email: 'ada@example.com', pictureUrl: 'https://img/1' })
+      .mutation(api.profiles.syncFromClerk, {});
+    const profile = await t.run((ctx) => ctx.db.get(id));
+    expect(profile?.email).toBe('ada@example.com');
+    expect(profile?.profileImageUrl).toBe('https://img/1');
+  });
+
+  test('follows a changed Clerk email — the case the sender’s cached fallback cannot', async () => {
+    const t = convexTest(schema, modules);
+    const id = await onboard(t, 'clerk_ada');
+    await t.run((ctx) => ctx.db.patch(id, { email: 'old@example.com' }));
+
+    await t
+      .withIdentity({ subject: 'clerk_ada', email: 'new@example.com' })
+      .mutation(api.profiles.syncFromClerk, {});
+    expect((await t.run((ctx) => ctx.db.get(id)))?.email).toBe('new@example.com');
+  });
+
+  test('an unmapped claim leaves the mirror alone rather than clearing it', async () => {
+    const t = convexTest(schema, modules);
+    const id = await onboard(t, 'clerk_ada');
+    await t.run((ctx) =>
+      ctx.db.patch(id, { email: 'ada@example.com', profileImageUrl: 'https://img/1' }),
+    );
+
+    await t.withIdentity({ subject: 'clerk_ada' }).mutation(api.profiles.syncFromClerk, {});
+    const profile = await t.run((ctx) => ctx.db.get(id));
+    expect(profile?.email).toBe('ada@example.com');
+    expect(profile?.profileImageUrl).toBe('https://img/1');
+  });
+
+  test('never un-scrubs a ghost or an inactive account (D62 / D33)', async () => {
+    const t = convexTest(schema, modules);
+    const withClaims = {
+      subject: 'clerk_ada',
+      email: 'ada@example.com',
+      pictureUrl: 'https://img/1',
+    };
+    const id = await onboard(t, 'clerk_ada');
+
+    // A pending deletion: `status` stays active on purpose, the mirrors are cleared at the request.
+    await t.run((ctx) =>
+      ctx.db.patch(id, {
+        deletionRequestedAt: Date.now(),
+        email: undefined,
+        profileImageUrl: undefined,
+      }),
+    );
+    expect(await t.withIdentity(withClaims).mutation(api.profiles.syncFromClerk, {})).toBeNull();
+    let profile = await t.run((ctx) => ctx.db.get(id));
+    expect(profile?.email).toBeUndefined();
+    expect(profile?.profileImageUrl).toBeUndefined();
+
+    // A suspension: no identity edits while inactive, same as `upsertFromClerk`.
+    await t.run((ctx) =>
+      ctx.db.patch(id, {
+        deletionRequestedAt: undefined,
+        status: 'suspended',
+        suspendedUntil: Date.now() + 60_000,
+      }),
+    );
+    expect(await t.withIdentity(withClaims).mutation(api.profiles.syncFromClerk, {})).toBeNull();
+    profile = await t.run((ctx) => ctx.db.get(id));
+    expect(profile?.email).toBeUndefined();
+  });
+});
+
 describe('profiles.acceptCurrentRiskAck', () => {
   test('throws when unauthenticated', async () => {
     const t = convexTest(schema, modules);
