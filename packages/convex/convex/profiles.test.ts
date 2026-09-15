@@ -397,6 +397,51 @@ describe('profiles.syncFromClerk', () => {
     expect(profile?.profileImageUrl).toBe('https://img/1');
   });
 
+  test('a still-cached pre-change token cannot roll the webhook’s newer address back', async () => {
+    // Clerk caches a template token for about a minute; a remount in that window runs this sync
+    // on claims from *before* the change the webhook already applied. The `updated_at` claim is
+    // what tells the two apart.
+    const t = convexTest(schema, modules);
+    const id = await onboard(t, 'clerk_ada');
+    const t1 = 1_700_000_000_000;
+    await t.mutation(internal.profiles.applyClerkMirrors, {
+      clerkUserId: 'clerk_ada',
+      email: 'new@example.com',
+      updatedAt: t1 + 5_000,
+    });
+    // The stale token, three accepted spellings of the claim, all older than the webhook's stamp.
+    for (const updatedAt of [
+      String(t1),
+      new Date(t1).toISOString(),
+      String(Math.floor(t1 / 1000)),
+    ]) {
+      await t
+        .withIdentity({ subject: 'clerk_ada', email: 'old@example.com', updatedAt })
+        .mutation(api.profiles.syncFromClerk, {});
+      expect((await t.run((ctx) => ctx.db.get(id)))?.email).toBe('new@example.com');
+    }
+    // A fresh token, minted after the change, agrees with the webhook and may write.
+    await t
+      .withIdentity({
+        subject: 'clerk_ada',
+        email: 'newer@example.com',
+        updatedAt: String(t1 + 9_000),
+      })
+      .mutation(api.profiles.syncFromClerk, {});
+    expect(await t.run((ctx) => ctx.db.get(id))).toMatchObject({
+      email: 'newer@example.com',
+      clerkUpdatedAt: t1 + 9_000,
+    });
+    // A token with no stamp (an older template) applies as before and leaves the stamp alone.
+    await t
+      .withIdentity({ subject: 'clerk_ada', email: 'unstamped@example.com' })
+      .mutation(api.profiles.syncFromClerk, {});
+    expect(await t.run((ctx) => ctx.db.get(id))).toMatchObject({
+      email: 'unstamped@example.com',
+      clerkUpdatedAt: t1 + 9_000,
+    });
+  });
+
   test('never un-scrubs a ghost or an inactive account (D62 / D33)', async () => {
     const t = convexTest(schema, modules);
     const withClaims = {

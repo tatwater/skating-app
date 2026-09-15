@@ -92,7 +92,10 @@ http.route({
  * Verified before anything is read (`lib/clerkWebhook.ts`): a forged event here would redirect
  * private mail. The write is `profiles.applyClerkMirrors`, the same helper the launch-time sync
  * uses, so the two sources can't drift on the gate. Idempotent by construction (patch-if-different),
- * which is what Svix's retries need — a 2xx is "handled", and only a 5xx asks for a retry.
+ * which is what Svix's retries need — a 2xx is "handled"; any other status is retried, for days.
+ * Deliveries are not ordered either: two `user.updated` events for one person can arrive swapped.
+ * That is what the event's `updated_at` is carried for — the helper refuses a write stamped older
+ * than the row's `clerkUpdatedAt`, from this source or from a still-cached token on the other.
  *
  * `user.deleted` is acknowledged and not acted on. Our own finalization deletes the Clerk user
  * *after* the tombstone (`clerkAdmin.deleteUser`), so the ordinary arrival is for a row already
@@ -122,6 +125,7 @@ http.route({
           clerkUserId: event.clerkUserId,
           email: event.email,
           profileImageUrl: event.profileImageUrl,
+          ...(event.updatedAt !== null ? { updatedAt: event.updatedAt } : {}),
         });
         break;
       case 'user.deleted':

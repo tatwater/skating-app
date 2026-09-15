@@ -18,24 +18,17 @@
  *
  * A forged `user.updated` could point a person's notification mail at an attacker's address — the
  * one write in the app that redirects private information without a sign-in. So a bad or missing
- * signature is a 400, a missing secret is a 500 (misconfiguration must surface, and Svix retries a
- * 5xx so the event is not lost), and the timestamp tolerance the library enforces (5 minutes)
- * closes replay of a captured request.
+ * signature is a 400, a missing *or malformed* secret is a 500 (misconfiguration must surface as
+ * itself in Clerk's delivery log, not as "signature rejected"), and the timestamp tolerance the
+ * library enforces (5 minutes) closes replay of a captured request.
+ *
+ * Svix retries **any** non-2xx for about three days, 400s included — so the status codes are for
+ * the operator reading the endpoint's Messages tab, not for steering retries. What the retries do
+ * buy is that an event posted before the secret is set is not lost once it lands.
  */
 
 import { Webhook } from 'standardwebhooks';
-
-/** The primary-address pick, shared with `clerkEmail.ts`: the primary pointer, else the first. */
-export function primaryEmailOf(body: {
-  primary_email_address_id?: string | null;
-  email_addresses?: { id: string; email_address: string }[];
-}): string | null {
-  const addresses = body.email_addresses ?? [];
-  // ⚠ Not `[0]` outright: a person with a work and a personal address on file would otherwise be
-  // mailed at whichever Clerk happened to list first.
-  const primary = addresses.find((a) => a.id === body.primary_email_address_id) ?? addresses[0];
-  return primary?.email_address ?? null;
-}
+import { type ClerkUserEmails, primaryEmailOf } from './clerkEmail';
 
 /** The events this app acts on, reduced to what the profile mirror needs. */
 export type ClerkWebhookEvent =
@@ -45,6 +38,8 @@ export type ClerkWebhookEvent =
       /** `null` when the account has no address at all; `undefined` never — absent is `null`. */
       email: string | null;
       profileImageUrl: string | null;
+      /** Clerk's `updated_at` (ms) — the recency stamp `applyClerkMirrors` orders writes by. */
+      updatedAt: number | null;
     }
   | { type: 'user.deleted'; clerkUserId: string | null }
   | { type: 'ignored'; raw: string };
@@ -55,6 +50,7 @@ export class ClerkWebhookError extends Error {
     readonly status: 400 | 500,
   ) {
     super(message);
+    this.name = 'ClerkWebhookError';
   }
 }
 
@@ -69,6 +65,18 @@ export async function verifyClerkWebhook(
   if (!secret) {
     throw new ClerkWebhookError('CLERK_WEBHOOK_SIGNING_SECRET is not set', 500);
   }
+  // Constructed before the request is read: the constructor base64-decodes the secret, so a value
+  // pasted with a stray character fails *here*, as the misconfiguration it is — not inside the
+  // signature check below, where it would read as every delivery being forged.
+  let webhook: Webhook;
+  try {
+    webhook = new Webhook(secret);
+  } catch (err) {
+    throw new ClerkWebhookError(
+      `CLERK_WEBHOOK_SIGNING_SECRET is malformed: ${err instanceof Error ? err.message : String(err)}`,
+      500,
+    );
+  }
   const headers = {
     'webhook-id': request.headers.get('svix-id') ?? '',
     'webhook-timestamp': request.headers.get('svix-timestamp') ?? '',
@@ -77,7 +85,7 @@ export async function verifyClerkWebhook(
   const body = await request.text();
   let payload: unknown;
   try {
-    payload = new Webhook(secret).verify(body, headers);
+    payload = webhook.verify(body, headers);
   } catch (err) {
     throw new ClerkWebhookError(
       `signature rejected: ${err instanceof Error ? err.message : String(err)}`,
@@ -94,12 +102,18 @@ export function reduceEvent(payload: unknown): ClerkWebhookEvent {
   const data = (event?.data ?? {}) as Record<string, unknown>;
   const id = typeof data.id === 'string' ? data.id : null;
   if (type === 'user.created' || type === 'user.updated') {
-    if (!id) throw new ClerkWebhookError(`${type} without a user id`, 400);
+    // Authentic but unprocessable: acknowledged, not rejected. A non-2xx would have Svix redeliver
+    // an event that can never become valid for days; the log line is the right terminal answer.
+    if (!id) {
+      console.warn(`clerk-webhook: ${type} without a user id — ignored`);
+      return { type: 'ignored', raw: `${type}:no-id` };
+    }
     return {
       type,
       clerkUserId: id,
-      email: primaryEmailOf(data as Parameters<typeof primaryEmailOf>[0]),
+      email: primaryEmailOf(data as ClerkUserEmails),
       profileImageUrl: typeof data.image_url === 'string' ? data.image_url : null,
+      updatedAt: typeof data.updated_at === 'number' ? data.updated_at : null,
     };
   }
   if (type === 'user.deleted') return { type, clerkUserId: id };

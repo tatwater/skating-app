@@ -382,9 +382,26 @@ export const syncFromClerk = mutation({
     return applyClerkMirrorsFor(ctx, identity.subject, {
       email: identity.email,
       profileImageUrl: identity.pictureUrl,
+      updatedAt: clerkUpdatedAtFromClaim(identity.updatedAt),
     });
   },
 });
+
+/**
+ * The `updated_at` claim as epoch ms, or `undefined` when the template doesn't map it or it can't
+ * be read. Convex types the claim as a string; Clerk's `{{user.updated_at}}` renders a number, and a
+ * hand-edited template could make it an ISO date — so all three are accepted, and seconds-precision
+ * is promoted to ms rather than compared against a ms stamp from the webhook.
+ */
+function clerkUpdatedAtFromClaim(claim: unknown): number | undefined {
+  let ms: number | undefined;
+  if (typeof claim === 'number') ms = claim;
+  else if (typeof claim === 'string' && claim.length > 0) {
+    ms = /^\d+$/.test(claim) ? Number(claim) : Date.parse(claim);
+  }
+  if (ms === undefined || !Number.isFinite(ms)) return undefined;
+  return ms < 1e12 ? ms * 1000 : ms;
+}
 
 /**
  * The webhook's write (N8 post-merge): Clerk said this user changed, here is the address and
@@ -398,17 +415,33 @@ export const applyClerkMirrors = internalMutation({
     clerkUserId: v.string(),
     email: v.optional(v.union(v.string(), v.null())),
     profileImageUrl: v.optional(v.union(v.string(), v.null())),
+    updatedAt: v.optional(v.number()),
   },
-  handler: async (ctx, { clerkUserId, email, profileImageUrl }) =>
-    applyClerkMirrorsFor(ctx, clerkUserId, { email, profileImageUrl }),
+  handler: async (ctx, { clerkUserId, email, profileImageUrl, updatedAt }) =>
+    applyClerkMirrorsFor(ctx, clerkUserId, { email, profileImageUrl, updatedAt }),
 });
 
-/** A claim to mirror: a value, `null` to clear, `undefined` to leave as is. */
-type MirrorClaims = { email?: string | null; profileImageUrl?: string | null };
+/**
+ * A claim to mirror: a value, `null` to clear, `undefined` to leave as is. `updatedAt` is when
+ * Clerk says the account last changed — the recency the write is ordered by.
+ */
+type MirrorClaims = {
+  email?: string | null;
+  profileImageUrl?: string | null;
+  updatedAt?: number;
+};
 
 /**
  * Patch the Clerk mirrors on the profile for `clerkUserId`, if it may hold them — see
  * `syncFromClerk` for the gate. Returns the profile id, or `null` for no profile / not eligible.
+ *
+ * **Older news is refused.** Two sources write here and neither is ordered: Svix retries a
+ * `user.updated` after a later one has landed, and a launch-time sync can run on a session token
+ * minted *before* the change the webhook already applied (Clerk caches a template token for about
+ * a minute). Each carries Clerk's `updated_at`; a write stamped older than the row's
+ * `clerkUpdatedAt` is the earlier state arriving late and changes nothing. An equal stamp still
+ * applies — the same change from the other source is idempotent, not stale. A write with no stamp
+ * (an older template, a fixture) is applied as before and leaves the stamp alone.
  */
 async function applyClerkMirrorsFor(
   ctx: MutationCtx,
@@ -420,7 +453,17 @@ async function applyClerkMirrorsFor(
     .withIndex('by_clerk_user_id', (q) => q.eq('clerkUserId', clerkUserId))
     .unique();
   if (!profile || !canReceiveNotifications(profile)) return null;
-  const patch: { email?: string; profileImageUrl?: string } = {};
+  if (
+    claims.updatedAt !== undefined &&
+    profile.clerkUpdatedAt !== undefined &&
+    claims.updatedAt < profile.clerkUpdatedAt
+  ) {
+    return profile._id;
+  }
+  const patch: { email?: string; profileImageUrl?: string; clerkUpdatedAt?: number } = {};
+  if (claims.updatedAt !== undefined && claims.updatedAt !== profile.clerkUpdatedAt) {
+    patch.clerkUpdatedAt = claims.updatedAt;
+  }
   if (claims.email !== undefined && (claims.email ?? undefined) !== profile.email) {
     patch.email = claims.email ?? undefined;
   }

@@ -3,7 +3,8 @@ import { Webhook } from 'standardwebhooks';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { api } from '../_generated/api';
 import schema from '../schema';
-import { primaryEmailOf, reduceEvent } from './clerkWebhook';
+import { primaryEmailOf } from './clerkEmail';
+import { reduceEvent } from './clerkWebhook';
 
 const modules = import.meta.glob('../**/*.*s');
 
@@ -89,7 +90,11 @@ describe('reduceEvent / primaryEmailOf (the shape, unsigned)', () => {
       clerkUserId: 'clerk_ada',
       email: 'new@example.test',
       profileImageUrl: 'https://img/ada-2',
+      updatedAt: null,
     });
+    expect(
+      reduceEvent(userEvent('user.updated', { ...ADA, updated_at: 1_700_000_000_000 })),
+    ).toMatchObject({ updatedAt: 1_700_000_000_000 });
     expect(reduceEvent(userEvent('user.created', { id: 'u', email_addresses: [] }))).toMatchObject({
       type: 'user.created',
       email: null,
@@ -100,8 +105,42 @@ describe('reduceEvent / primaryEmailOf (the shape, unsigned)', () => {
     ).toBe('old@example.test');
   });
 
-  test('a user event without an id is a 400; a deletion and an unknown type are acknowledged', () => {
-    expect(() => reduceEvent(userEvent('user.updated', {}))).toThrow(/without a user id/);
+  test('the fallback never picks an address nobody has proven they own', () => {
+    // An account with no primary that just started a change: the only address is the unverified
+    // one `beginEmailChange` added. Mailing it would send private notifications to a stranger's
+    // inbox if the person mistyped it.
+    const unverified = {
+      id: 'e9',
+      email_address: 'typo@example.test',
+      verification: { status: 'unverified' },
+    };
+    const verified = {
+      id: 'e8',
+      email_address: 'mine@example.test',
+      verification: { status: 'verified' },
+    };
+    expect(
+      primaryEmailOf({ primary_email_address_id: null, email_addresses: [unverified] }),
+    ).toBeNull();
+    expect(
+      primaryEmailOf({ primary_email_address_id: null, email_addresses: [unverified, verified] }),
+    ).toBe('mine@example.test');
+    // The primary pointer is Clerk's word and wins regardless.
+    expect(
+      primaryEmailOf({ primary_email_address_id: 'e9', email_addresses: [unverified, verified] }),
+    ).toBe('typo@example.test');
+    // No verification field at all (an older fixture): taken at face value, as before.
+    expect(
+      primaryEmailOf({ email_addresses: [{ id: 'e1', email_address: 'plain@example.test' }] }),
+    ).toBe('plain@example.test');
+  });
+
+  test('a user event without an id, a deletion and an unknown type are all acknowledged, never retried', () => {
+    // Authentic but unprocessable: a non-2xx would have Svix redeliver it for days.
+    expect(reduceEvent(userEvent('user.updated', {}))).toEqual({
+      type: 'ignored',
+      raw: 'user.updated:no-id',
+    });
     expect(reduceEvent(userEvent('user.deleted', { id: 'u', deleted: true }))).toEqual({
       type: 'user.deleted',
       clerkUserId: 'u',
@@ -129,6 +168,35 @@ describe('POST /clerk-webhook', () => {
     const again = await t.fetch('/clerk-webhook', { method: 'POST', body, headers });
     expect(again.status).toBe(200);
     expect(await t.run((ctx) => ctx.db.get(id))).toMatchObject({ email: 'new@example.test' });
+  });
+
+  test('deliveries are unordered: an older change arriving after a newer one changes nothing', async () => {
+    const t = convexTest(schema, modules);
+    const id = await seedAda(t);
+    const t1 = 1_700_000_000_000;
+    const toB = signed(userEvent('user.updated', { ...ADA, updated_at: t1 }));
+    const toC = signed(
+      userEvent('user.updated', {
+        ...ADA,
+        updated_at: t1 + 5_000,
+        primary_email_address_id: 'e3',
+        email_addresses: [...ADA.email_addresses, { id: 'e3', email_address: 'c@example.test' }],
+      }),
+    );
+    // C lands first (A→B's delivery is retried later), then B's retry: B must not win.
+    expect((await t.fetch('/clerk-webhook', { method: 'POST', ...toC })).status).toBe(200);
+    expect(await t.run((ctx) => ctx.db.get(id))).toMatchObject({
+      email: 'c@example.test',
+      clerkUpdatedAt: t1 + 5_000,
+    });
+    expect((await t.fetch('/clerk-webhook', { method: 'POST', ...toB })).status).toBe(200);
+    expect(await t.run((ctx) => ctx.db.get(id))).toMatchObject({
+      email: 'c@example.test',
+      clerkUpdatedAt: t1 + 5_000,
+    });
+    // The same change again (equal stamp) is idempotent, not stale.
+    expect((await t.fetch('/clerk-webhook', { method: 'POST', ...toC })).status).toBe(200);
+    expect((await t.run((ctx) => ctx.db.get(id)))?.email).toBe('c@example.test');
   });
 
   test('an address removed in Clerk clears the mirror — the old one must not keep receiving mail', async () => {
@@ -197,6 +265,15 @@ describe('POST /clerk-webhook', () => {
   test('no signing secret configured is a 500, so the misconfiguration surfaces and Svix retries', async () => {
     const t = convexTest(schema, modules);
     vi.stubEnv('CLERK_WEBHOOK_SIGNING_SECRET', '');
+    const { body, headers } = signed(userEvent('user.updated', ADA));
+    expect((await t.fetch('/clerk-webhook', { method: 'POST', body, headers })).status).toBe(500);
+  });
+
+  test('a malformed secret is a 500 too — not every delivery reading as forged', async () => {
+    // A `whsec_` value pasted with a stray character fails to base64-decode. That is our
+    // misconfiguration, and Clerk's delivery log must say so rather than "signature rejected".
+    const t = convexTest(schema, modules);
+    vi.stubEnv('CLERK_WEBHOOK_SIGNING_SECRET', 'whsec_not base64!');
     const { body, headers } = signed(userEvent('user.updated', ADA));
     expect((await t.fetch('/clerk-webhook', { method: 'POST', body, headers })).status).toBe(500);
   });

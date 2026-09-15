@@ -1,5 +1,11 @@
 import { useUser } from '@clerk/clerk-expo';
-import { beginEmailChange, completeEmailChange, type EmailAddressLike } from '@skating/core';
+import {
+  beginEmailChange,
+  completeEmailChange,
+  type EmailAddressLike,
+  isVerifiedEmail,
+  type UserLike,
+} from '@skating/core';
 import { useState } from 'react';
 import { Button, Paragraph, Text, XStack, YStack } from 'tamagui';
 import { Input } from './ThemedInputs';
@@ -31,13 +37,24 @@ export function ChangeEmail() {
     setError(null);
   };
 
+  /** The make-primary half, shared by the code step and the no-code path for a verified address. */
+  async function finish(u: UserLike, address: EmailAddressLike, enteredCode: string) {
+    const result = await completeEmailChange(u, address, enteredCode);
+    setRemovedOld(result.removedOld);
+    setStep('done');
+  }
+
   async function onSendCode() {
     if (!user || busy) return;
     setBusy(true);
     setError(null);
     try {
-      setPending(await beginEmailChange(user, email));
-      setStep('code');
+      const address = await beginEmailChange(user, email);
+      setPending(address);
+      // An address Clerk already holds verified (a Google-linked one that stayed) has no code to
+      // enter; it goes straight to primary.
+      if (isVerifiedEmail(address)) await finish(user, address, '');
+      else setStep('code');
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not send a code');
     } finally {
@@ -50,9 +67,7 @@ export function ChangeEmail() {
     setBusy(true);
     setError(null);
     try {
-      const result = await completeEmailChange(user, pending, code);
-      setRemovedOld(result.removedOld);
-      setStep('done');
+      await finish(user, pending, code);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Verification failed');
     } finally {
@@ -86,6 +101,11 @@ export function ChangeEmail() {
         <Paragraph color="$foregroundMuted" fontSize="$1">
           Notification emails go to the new address from here on.
         </Paragraph>
+        <XStack>
+          <Button size="$2" onPress={reset}>
+            Done
+          </Button>
+        </XStack>
       </YStack>
     );
   }
@@ -102,7 +122,6 @@ export function ChangeEmail() {
           placeholder="Verification code"
           keyboardType="number-pad"
           autoComplete="one-time-code"
-          borderColor="$border"
         />
         {error ? <Text color="$danger">{error}</Text> : null}
         <XStack gap="$2">
@@ -135,7 +154,6 @@ export function ChangeEmail() {
         autoCapitalize="none"
         keyboardType="email-address"
         autoComplete="email"
-        borderColor="$border"
       />
       {error ? <Text color="$danger">{error}</Text> : null}
       <XStack gap="$2">

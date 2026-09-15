@@ -806,6 +806,15 @@ neither is complete without the other:
   finalization deletes the Clerk user itself, so the ordinary arrival is for a tombstone, and a
   dashboard deletion of a live account is a founder action the D62 lifecycle should own, not a
   half-erase from a webhook.
+- **The two writers are ordered by Clerk's clock.** Svix retries are unordered, and a launch-time
+  sync can run on a template token Clerk cached *before* the change the webhook already applied
+  (about a minute's window). Both carry Clerk's `updated_at` — the JWT template already mapped it —
+  so `applyClerkMirrors` stamps `profiles.clerkUpdatedAt` and refuses a write stamped older. Found
+  by the xhigh review pass, along with a real dead end: Clerk refuses to re-verify an address it
+  already holds verified (a Google-linked one that stayed as a secondary, or a retry after
+  make-primary failed), so `changeEmail` skips the code for a verified address and both clients go
+  straight to make-primary. And `primaryEmailOf`'s fallback now takes the first *verified* address
+  or nothing — the first address on an account mid-change is the unverified one it just added.
 
 **Founder task, per Clerk instance:** register the endpoint and set `CLERK_WEBHOOK_SIGNING_SECRET`
 — recipe in [`05-accounts-and-credentials.md`](./05-accounts-and-credentials.md) §11b. Until then

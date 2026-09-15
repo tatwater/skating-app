@@ -63,11 +63,14 @@ describe('ChangeEmailView', () => {
     expect(screen.getByRole('button', { name: /cancel/i })).toBeDisabled();
   });
 
-  it('confirms the new address, and explains a Google-linked old one that had to stay', () => {
-    renderView({ step: 'done', pendingEmail: 'new@example.test', removedOld: false });
+  it('confirms the new address, explains a Google-linked old one that had to stay, and has a way back', () => {
+    const p = renderView({ step: 'done', pendingEmail: 'new@example.test', removedOld: false });
     expect(screen.getByText(/your email is now new@example.test/i)).toBeInTheDocument();
     expect(screen.getByText(/linked to your google sign-in/i)).toBeInTheDocument();
     expect(screen.getByText(/go to the new address from here on/i)).toBeInTheDocument();
+    // The confirmation is not a dead end: the row rests again, now showing the new address.
+    fireEvent.click(screen.getByRole('button', { name: /^done$/i }));
+    expect(p.onCancel).toHaveBeenCalled();
   });
 
   it('says nothing about the old address when it was released', () => {

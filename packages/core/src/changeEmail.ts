@@ -24,6 +24,13 @@
 export interface EmailAddressLike {
   id: string;
   emailAddress: string;
+  /**
+   * Clerk's verification state for the address. `'verified'` once a code has been accepted — or
+   * from the start, for an address that arrived through a Google sign-in. Clerk refuses to prepare
+   * or attempt a verification on an address that already has one ("already verified"), so the
+   * sequence reads this to know whether there is a code step at all.
+   */
+  verification: { status: string | null } | null;
   prepareVerification(params: { strategy: 'email_code' }): Promise<unknown>;
   attemptVerification(params: { code: string }): Promise<{
     verification: { status: string | null } | null;
@@ -57,12 +64,26 @@ export function isCurrentEmail(
 }
 
 /**
+ * Whether the address has already been verified, and so has no code step. The two ways in: a
+ * Google-linked address that `completeEmailChange` could not remove and that the person now wants
+ * back as primary; and a retry after the code was accepted but the make-primary step failed
+ * (network, mostly) — the verification stuck, and Clerk will not run it twice.
+ */
+export function isVerifiedEmail(address: Pick<EmailAddressLike, 'verification'>): boolean {
+  return address.verification?.status === 'verified';
+}
+
+/**
  * Step one: put the new address on the account and send it a code. Returns the address the code
  * was sent to, which `completeEmailChange` needs back.
  *
  * A retry — the person mistyped the code, backed out, and started over with the same address — finds
  * the unverified address already on the account and re-sends to it rather than tripping Clerk's
  * "already exists" error. Clerk's own cap on addresses per user is what bounds the list.
+ *
+ * When the address found is already verified (see `isVerifiedEmail`) no code is sent — Clerk would
+ * refuse — and the caller should go straight to `completeEmailChange`, which then skips the code
+ * check for the same reason.
  */
 export async function beginEmailChange(user: UserLike, input: string): Promise<EmailAddressLike> {
   const email = normalizeEmail(input);
@@ -70,7 +91,7 @@ export async function beginEmailChange(user: UserLike, input: string): Promise<E
   if (isCurrentEmail(user, email)) throw new Error('That is already your email address');
   const existing = user.emailAddresses.find((a) => normalizeEmail(a.emailAddress) === email);
   const address = existing ?? (await user.createEmailAddress({ email }));
-  await address.prepareVerification({ strategy: 'email_code' });
+  if (!isVerifiedEmail(address)) await address.prepareVerification({ strategy: 'email_code' });
   return address;
 }
 
@@ -88,18 +109,24 @@ export interface EmailChangeResult {
 /**
  * Step two: verify the code, make the address primary, release the old one. The old address is
  * captured *before* the swap, so a fake or a slow reload can't make "old" read as "new".
+ *
+ * The code is only consulted for an address that still needs it; one already verified (a retained
+ * Google-linked address, or a retry after the make-primary step failed) goes straight to primary,
+ * and `code` may be empty.
  */
 export async function completeEmailChange(
   user: UserLike,
   pending: EmailAddressLike,
   code: string,
 ): Promise<EmailChangeResult> {
-  const trimmed = code.trim();
-  if (trimmed.length === 0) throw new Error('Enter the code from the email');
   const old = user.primaryEmailAddress;
-  const attempt = await pending.attemptVerification({ code: trimmed });
-  if (attempt.verification?.status !== 'verified') {
-    throw new Error('That code didn’t verify — check it and try again');
+  if (!isVerifiedEmail(pending)) {
+    const trimmed = code.trim();
+    if (trimmed.length === 0) throw new Error('Enter the code from the email');
+    const attempt = await pending.attemptVerification({ code: trimmed });
+    if (attempt.verification?.status !== 'verified') {
+      throw new Error('That code didn’t verify — check it and try again');
+    }
   }
   await user.update({ primaryEmailAddressId: pending.id });
   let removedOld = false;

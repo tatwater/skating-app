@@ -4,23 +4,33 @@ import {
   completeEmailChange,
   type EmailAddressLike,
   isCurrentEmail,
+  isVerifiedEmail,
   normalizeEmail,
   type UserLike,
 } from './changeEmail';
 
+/**
+ * A fake address. Like Clerk's resource, a successful `attemptVerification` flips its own
+ * `verification.status` in place — that is what a retry after a failed make-primary step sees.
+ */
 function address(
   id: string,
   emailAddress: string,
   over: Partial<EmailAddressLike> = {},
 ): EmailAddressLike {
-  return {
+  const a: EmailAddressLike = {
     id,
     emailAddress,
+    verification: { status: 'unverified' },
     prepareVerification: vi.fn(async () => undefined),
-    attemptVerification: vi.fn(async () => ({ verification: { status: 'verified' } })),
+    attemptVerification: vi.fn(async () => {
+      a.verification = { status: 'verified' };
+      return { verification: a.verification };
+    }),
     destroy: vi.fn(async () => undefined),
     ...over,
   };
+  return a;
 }
 
 function user(primary: EmailAddressLike | null, others: EmailAddressLike[] = []): UserLike {
@@ -97,6 +107,43 @@ describe('changeEmail — the Clerk sequence, against a fake', () => {
     const result = await completeEmailChange(u, pending, '123456');
     expect(u.update).toHaveBeenCalledWith({ primaryEmailAddressId: pending.id });
     expect(result).toEqual({ email: 'new@example.com', removedOld: false });
+  });
+
+  test('an address already verified on the account skips the code: no send, no attempt, straight to primary', async () => {
+    // The retained Google-linked address from the case above, wanted back as primary. Clerk
+    // refuses to prepare or attempt a verification on it ("already verified"), so neither is tried.
+    const google = address('e0', 'me@gmail.test', { verification: { status: 'verified' } });
+    const u = user(address('e1', 'me@example.com'), [google]);
+    const pending = await beginEmailChange(u, 'Me@Gmail.test');
+    expect(pending).toBe(google);
+    expect(isVerifiedEmail(pending)).toBe(true);
+    expect(google.prepareVerification).not.toHaveBeenCalled();
+    const result = await completeEmailChange(u, pending, '');
+    expect(google.attemptVerification).not.toHaveBeenCalled();
+    expect(u.update).toHaveBeenCalledWith({ primaryEmailAddressId: 'e0' });
+    expect(result).toEqual({ email: 'me@gmail.test', removedOld: true });
+  });
+
+  test('a retry after the make-primary step failed does not verify twice', async () => {
+    // The code was accepted, then `update` threw (network). The address is verified now; a second
+    // pass must go to primary without re-running a verification Clerk would reject.
+    const old = address('e1', 'me@example.com');
+    const u = user(old);
+    (u.update as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error('offline'));
+    const pending = await beginEmailChange(u, 'new@example.com');
+    await expect(completeEmailChange(u, pending, '123456')).rejects.toThrow(/offline/);
+    expect(isVerifiedEmail(pending)).toBe(true);
+    expect(old.destroy).not.toHaveBeenCalled();
+
+    // Backing out and starting over with the same address sends no second code...
+    const again = await beginEmailChange(user(old, [pending]), 'new@example.com');
+    expect(again).toBe(pending);
+    expect(pending.prepareVerification).toHaveBeenCalledTimes(1);
+
+    // ...and finishing, by either path, verifies nothing a second time.
+    const result = await completeEmailChange(u, pending, '');
+    expect(pending.attemptVerification).toHaveBeenCalledTimes(1);
+    expect(result).toEqual({ email: 'new@example.com', removedOld: true });
   });
 
   test('an account with no primary yet simply gains one', async () => {

@@ -1,5 +1,11 @@
 import { useUser } from '@clerk/tanstack-react-start';
-import { beginEmailChange, completeEmailChange, type EmailAddressLike } from '@skating/core';
+import {
+  beginEmailChange,
+  completeEmailChange,
+  type EmailAddressLike,
+  isVerifiedEmail,
+  type UserLike,
+} from '@skating/core';
 import { useState } from 'react';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
@@ -26,11 +32,17 @@ export interface ChangeEmailViewProps {
   /** `false` when the previous address stayed on the account as a secondary (a Google-linked one). */
   removedOld: boolean | null;
   onStart: () => void;
+  /** Back to the resting row — from a cancelled step or from the confirmation. */
   onCancel: () => void;
   onSendCode: (email: string) => void;
   onVerify: (code: string) => void;
 }
 
+/**
+ * The form. Its two text fields are local state, and they belong to *one run* of the sequence:
+ * the wiring below remounts this component whenever the step returns to `idle`, so a cancelled
+ * attempt's address — or a wrong code from the last try — never greets the next one.
+ */
 export function ChangeEmailView(props: ChangeEmailViewProps) {
   const [email, setEmail] = useState('');
   const [code, setCode] = useState('');
@@ -59,6 +71,11 @@ export function ChangeEmailView(props: ChangeEmailViewProps) {
         <p className="text-foreground-muted text-sm">
           Notification emails go to the new address from here on.
         </p>
+        <div>
+          <Button variant="outline" size="sm" onClick={props.onCancel}>
+            Done
+          </Button>
+        </div>
       </div>
     );
   }
@@ -150,8 +167,17 @@ export function ChangeEmail() {
     setRemovedOld(null);
   };
 
+  /** The make-primary half, shared by the code step and the no-code path for a verified address. */
+  const finish = async (u: UserLike, address: EmailAddressLike, code: string) => {
+    const result = await completeEmailChange(u, address, code);
+    setRemovedOld(result.removedOld);
+    setStep('done');
+  };
+
   return (
     <ChangeEmailView
+      // A fresh form per run — see `ChangeEmailView`.
+      key={step === 'idle' ? 'idle' : 'run'}
       currentEmail={user?.primaryEmailAddress?.emailAddress ?? null}
       step={step}
       pendingEmail={pending?.emailAddress ?? null}
@@ -165,8 +191,12 @@ export function ChangeEmail() {
         setBusy(true);
         setError(null);
         try {
-          setPending(await beginEmailChange(user, email));
-          setStep('code');
+          const address = await beginEmailChange(user, email);
+          setPending(address);
+          // An address Clerk already holds verified (a Google-linked one that stayed) has no code
+          // to enter; it goes straight to primary.
+          if (isVerifiedEmail(address)) await finish(user, address, '');
+          else setStep('code');
         } catch (e) {
           setError(e instanceof Error ? e.message : 'Could not send a code');
         } finally {
@@ -178,9 +208,7 @@ export function ChangeEmail() {
         setBusy(true);
         setError(null);
         try {
-          const result = await completeEmailChange(user, pending, code);
-          setRemovedOld(result.removedOld);
-          setStep('done');
+          await finish(user, pending, code);
         } catch (e) {
           setError(e instanceof Error ? e.message : 'Verification failed');
         } finally {

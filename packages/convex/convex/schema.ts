@@ -183,6 +183,11 @@ export default defineSchema({
      * caches the answer here.
      */
     email: v.optional(v.string()),
+    // When Clerk last changed the account, per the source that wrote the mirrors last (the token's
+    // `updated_at` claim or the webhook's `data.updated_at`, ms). Two writers race — an unordered
+    // webhook retry, a still-cached pre-change token on a remount — and this is what keeps the
+    // later change from being overwritten by the earlier one. Absent ⇒ no ordering, apply.
+    clerkUpdatedAt: v.optional(v.number()),
     /**
      * The two transports over the inbox (D174): a phone push, and an email for the types in
      * `NOTIFICATION_EMAIL_ELIGIBLE`. Not a per-type matrix — the per-type toggles decide *what*, these
