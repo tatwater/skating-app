@@ -207,7 +207,7 @@ resolve_granule() {
 }
 
 # Assets we care about, and why each one (§C1). True color is what PR 2 ships; the rest are the
-# bands N6f is built on and they cost nothing extra to note while we are already holding the granule.
+# bands N6g is built on and they cost nothing extra to note while we are already holding the granule.
 #   visual — the RGB composite, the frame a skater actually looks at
 #   scl    — ESA's per-pixel scene classification: snow/ice AND cloud mask in one band. The single
 #            most valuable asset here, per §C1.
