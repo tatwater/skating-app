@@ -3,9 +3,10 @@
 > **Status:** ✅ **Built, merged and live on dev (2026-09-14)**, three stacked PRs off
 > `phase-n8-notification-pipeline`: **PR 1** (inbox + settled queue + producers B1–B3) #52; **PR 2**
 > (B4/B4a, A5 purge, C timezone) #53; **PR 3** (transports: push, email, offline inbox cache) #55.
-> Android push credentials are in (FCM + `google-services.json`, first device push confirmed
-> 2026-09-14); iOS APNs, the Android small icon, and a real end-to-end `deliverBatch` run are still
-> open — see [Post-merge](#post-merge-2026-09-14). Prod deferred. Scoped 2026-07-30 with a
+> Push credentials are in for both platforms (FCM V1 key + `google-services.json`, APNs key, all on
+> EAS; first Android device push confirmed 2026-09-14). The Android small icon shipped 2026-09-15; a
+> real end-to-end `deliverBatch` run is still open — see [Post-merge](#post-merge-2026-09-14). Prod
+> deferred. Scoped 2026-07-30 with a
 > founder call of **no N8 code until every N6 phase has shipped**; N6 closed 2026-09-10.
 > **Scope grew at kickoff (founder, 2026-09-11):** push (Android via FCM now; iOS APNs key once
 > enrolled) and **email** (Resend is live on dev) come *in*, as transports over the same rows — see
@@ -789,11 +790,17 @@ first mail. So the 2026-09-14 Android push proved the credentials, not `flush �
 (a thumb for the push-only path, a bounty on a lake the founder reported for the email path) is the
 outstanding smoke.
 
-**Still open, in order:** the Android **small icon** (a white-on-transparent 96×96 plus
-`['expo-notifications', { icon, color }]` — native, rides the next build; until then the status bar
-shows a solid disc because the full icon has an opaque background); the **iOS APNs key** (`eas
-credentials`, untestable without an iPhone); an OTA or rebuild so the installed preview APK runs the
-post-Greptile JS.
+**Credentials are complete on both platforms** — FCM V1 key, `google-services.json` and the APNs
+key all landed on EAS on 2026-09-14 (founder tasks 1 and 2 above). iOS stays untested only for
+want of an iPhone; the code path is the Android one.
+
+**Shipped 2026-09-15:** the Android **small icon**. The status bar had shown a solid disc — Android
+treats the small icon as an alpha mask and paints every opaque pixel, and the launcher icon's navy
+background is all opaque. Now `['expo-notifications', { icon, color }]` with a white-on-transparent
+96 px wordmark tinted in the ice accent (`ice[500]`); native config, so it rode a preview rebuild
+that also carried the post-Greptile JS and `syncFromClerk` to the phone.
+
+**Still open:** the end-to-end smoke above.
 
 ## What this phase does not cover
 
