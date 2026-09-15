@@ -783,6 +783,15 @@ fail-soft, the same never-un-scrub guard — now fires beside `setTimezone` in b
 up the avatar mirror (`profileImageUrl`), which had had the same hole since Phase 3. Founder task #3
 above is therefore closed in the other direction: the template was right, the caller was missing.
 
+**Deferred with a trigger — the Clerk `user.updated` webhook.** `syncFromClerk` closes the
+stale-address window at the next app *open*, which leaves open exactly the email channel's own
+user: someone who changed their address and then didn't open the app for a season, still receiving
+the digest at the old one. A signed Clerk webhook (`POST /clerk-webhook`, Svix HMAC verified, a
+`CLERK_WEBHOOK_SECRET` per deployment, the endpoint registered per Clerk instance) would close it at
+the moment of change. Not built because **neither client exposes a way to change your Clerk email**
+— no `<UserProfile>`, no custom flow — so today the window can only be opened from the Clerk
+dashboard. The rule: the webhook lands in the same PR as the first change-email affordance.
+
 **Not yet exercised.** No `notifications` row on dev carries `pushedAt` or `emailedAt` — the rows
 that exist predate PR 3 — and no profile has an `emailUnsubscribeSecret`, which is minted on the
 first mail. So the 2026-09-14 Android push proved the credentials, not `flush → deliverBatch`; the
