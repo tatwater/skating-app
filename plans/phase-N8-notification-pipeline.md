@@ -1,12 +1,13 @@
 # N8 — The notification pipeline: the inbox, the missing producers, and the reverse reach index
 
-> **Status:** ✅ **Built, merged and live on dev (2026-09-14)**, three stacked PRs off
-> `phase-n8-notification-pipeline`: **PR 1** (inbox + settled queue + producers B1–B3) #52; **PR 2**
-> (B4/B4a, A5 purge, C timezone) #53; **PR 3** (transports: push, email, offline inbox cache) #55.
-> Push credentials are in for both platforms (FCM V1 key + `google-services.json`, APNs key, all on
-> EAS; first Android device push confirmed 2026-09-14). The Android small icon shipped 2026-09-14; a
-> real end-to-end `deliverBatch` run is still open — see [Post-merge](#post-merge-2026-09-14). Prod
-> deferred. Scoped 2026-07-30 with a
+> **Status:** ✅ **COMPLETE (2026-09-15)** — four PRs off `phase-n8-notification-pipeline`, all on
+> dev: **PR 1** (inbox + settled queue + producers B1–B3) #52; **PR 2** (B4/B4a, A5 purge, C
+> timezone) #53; **PR 3** (transports: push, email, offline inbox cache) #55; **PR 4** (the coverage
+> audit's findings: the Clerk mirror refresh, change-email on both clients + the Clerk webhook, the
+> Android small icon, the pipeline to 100% lines) — branch `phase-n8-notification-pipeline-4`. Push credentials
+> are in for both platforms; the Clerk webhook endpoint + secret are registered on dev. What is
+> still owed is listed under [Deferred](#deferred), and none of it is code this phase left unwritten.
+> Prod deferred with everything else. Scoped 2026-07-30 with a
 > founder call of **no N8 code until every N6 phase has shipped**; N6 closed 2026-09-10.
 > **Scope grew at kickoff (founder, 2026-09-11):** push (Android via FCM now; iOS APNs key once
 > enrolled) and **email** (Resend is live on dev) come *in*, as transports over the same rows — see
@@ -768,7 +769,7 @@ Web: the two channel checkboxes. `app.config.ts` picks up `google-services.json`
 4. **Email defaults on.** The eligible types are low-volume and mostly opt-in already (the digest is
    off by default); every mail can be silenced in one click.
 
-## Post-merge (2026-09-14)
+## Built record — PR 4 (2026-09-14 → 15)
 
 A coverage audit against every commitment above — ten producers, one writer, both shells, both
 transports, offline, deletion — found the matrix built and deployed. What it changed and what it left:
@@ -837,7 +838,51 @@ background is all opaque. Now `['expo-notifications', { icon, color }]` with a w
 96 px wordmark tinted in the ice accent (`ice[500]`); native config, so it rode a preview rebuild
 that also carried the post-Greptile JS and `syncFromClerk` to the phone.
 
-**Still open:** the end-to-end smoke above.
+**Coverage.** Every N8 file is at 100% lines except two dead-by-construction spots left dark on
+purpose (`notifications.ts:452`, a digest row with no body the enqueue never writes; the five
+TypeScript-narrowing fallbacks in `mergeTriggers`). `lib/clerkEmail.ts` had had no test file at all.
+Branch coverage was deliberately *not* chased past that: the remaining partials are `??` and spread
+fallbacks whose other side can't happen, and pinning them would mean writing rows the code can't
+produce. The one reachable case — a skate the recorder couldn't place on a lake — was added.
+
+**Founder tasks closed this PR:** Android small icon (needed an asset — arrived inverted the first
+time, wordmark transparent and surround white, flipped in place; then re-cut heavier), preview
+build `a09708e6`, the Clerk webhook endpoint + `CLERK_WEBHOOK_SIGNING_SECRET` on dev.
+
+## Deferred
+
+Everything N8 still owes, in the order it should happen. None of it is unwritten code; each is a
+run, an install, a decision, or a scale trigger.
+
+1. **The end-to-end smoke of `flush → deliverBatch` on dev.** No `notifications` row on dev has
+   ever carried `pushedAt` or `emailedAt`, and no profile has an `emailUnsubscribeSecret` (minted
+   on the first mail) — the 2026-09-14 Android push proved the credentials with a direct call, not
+   the pipeline. One deliberate trigger from a second account: a thumb on a founder report (the
+   push-only path) and a bounty on a lake the founder has reported (the email path, and the first
+   real `/unsubscribe` link). Then check the stamps, the secret, and the inbox at `updates@…`.
+2. **Install preview build `a09708e6`** on the Pixel — it carries the small icon, `syncFromClerk`
+   and the post-Greptile JS. The first push after install is what shows the icon.
+3. **Change-email, exercised once for real** (founder chose to wait): change the address from web
+   Settings, watch the endpoint's *Messages* tab in Clerk show a 200, confirm `profiles.email`
+   moved and `clerkUpdatedAt` was stamped. Until then the webhook is verified only by signed
+   fixtures.
+4. **iOS** is untested end to end for want of an iPhone; the code path is the Android one and the
+   APNs key is on EAS. The first iOS build needs `eas device:create` + a distribution cert.
+5. **Prod cutover items that are N8's:** a webhook endpoint in the *prod* Clerk instance pointing
+   at `diligent-guanaco-965.convex.site` and its own `CLERK_WEBHOOK_SIGNING_SECRET`;
+   `EXPO_ACCESS_TOKEN`, `RESEND_API_KEY` / `RESEND_FROM_EMAIL` and `WEB_APP_URL` on prod Convex;
+   the `production` EAS environment populated. Per-instance, nothing carries over from dev
+   (`docs/deployment-and-release.md`, cutover list 6–7b).
+6. **A `user.deleted` policy for a live account.** The webhook acknowledges and logs it; our own
+   finalization deletes the Clerk user *after* the tombstone, so the ordinary arrival is a no-op.
+   A founder deleting a live user from the Clerk dashboard leaves a profile the D62 lifecycle never
+   started on. Founder call whether that should begin the deletion request automatically.
+7. **The reverse reach index** (Workstream D / D172) — build at ~1,000 profiles, or the first
+   report whose fan-out spans more than a handful of pages. Design is complete above.
+8. **Web push** — service worker, VAPID keys, a second token type. Web = inbox + email until then.
+9. **Silent background-refresh push to a closed app** (D54) — a privacy decision (the biggest
+   departure from D12) plus accepting iOS's throttling; not a notification-pipeline change.
+10. **Grouping across types in the inbox** — a UI question that wants a season of real rows.
 
 ## What this phase does not cover
 

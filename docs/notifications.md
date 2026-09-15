@@ -101,6 +101,14 @@ ice" alert — those are frequent and hours-old by the time anyone opens mail, a
 would be spam you had configured yourself. Every email has a one-click unsubscribe, and the link can
 do exactly one thing: turn the email switch off.
 
+The address the email goes to is the one on your account, and you can change it from Settings on
+the web or the You tab on the phone: the app emails a code to the new address, and once you've
+entered it the new address is the one that signs you in and the one that gets mail. The app keeps a
+private copy of the address so that sending a digest doesn't mean asking the sign-in service about
+every person each evening — and that copy follows a change two ways: on your next app open, and
+the moment it happens, because the sign-in service tells the app directly. If an old address is
+tied to your Google sign-in it stays on the account but stops receiving anything.
+
 Push has one more switch, on the phone itself: **this phone**. That is the only place the app ever
 asks for notification permission — never on first launch, where a permission prompt is exactly the
 friction that gets it denied. Turning "this phone" off is remembered on the phone; turning "push to my

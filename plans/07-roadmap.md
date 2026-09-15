@@ -1466,10 +1466,12 @@ blocker* by a founder call**, and merged at scoping with the duplicate-corrobora
   `shallow_early_thaw` at a raised bar, checked against N6a's depth (D68/D69) — recurrence proposes the
   flag from observation, depth checks the proposal.
 
-**N8 — The notification pipeline.** ✅ **Merged and live on dev 2026-09-14** (PRs #52/#53/#55,
-[`phase-N8-notification-pipeline.md`](./phase-N8-notification-pipeline.md), D167–D174; push credentials in on
-both platforms, small icon shipped 2026-09-14, an end-to-end smoke still open — see the plan's
-Post-merge section). The scoping pass
+**N8 — The notification pipeline.** ✅ **COMPLETE 2026-09-15** (PRs #52/#53/#55 + PR 4 on
+`phase-n8-notification-pipeline-4`, [`phase-N8-notification-pipeline.md`](./phase-N8-notification-pipeline.md),
+D167–D174). Push credentials in on both platforms, the Android small icon shipped, the Clerk
+webhook registered on dev; what's still owed — the end-to-end smoke, an install, a change-email
+run, the prod-cutover items, the scale-triggered reverse index — is the plan's **Deferred** list,
+none of it unwritten code. The scoping pass
 found the real problem was neither bullet below: **nothing in the app could read a notification** —
 six types were being written and had never been seen. So the phase is the inbox first, then every
 declared type gets a producer, then the transports, and the two original bullets move to the back.
@@ -1488,9 +1490,15 @@ declared type gets a producer, then the transports, and the two original bullets
   for Android now, APNs key via `eas credentials` for iOS), **email via Resend** for the digest-class
   types with two channel switches and a one-click unsubscribe route (primary email mirrored from
   Clerk onto `profiles`), and the mobile offline inbox cache with a replayed read overlay.
+- **PR 4 ✅ built (2026-09-15):** the coverage audit's findings — `profiles.syncFromClerk` (the
+  email/avatar mirrors had never refreshed after onboarding; docs said "every cold start" and were
+  wrong), **change-email on both clients** (`core/changeEmail.ts`) + the **Clerk `user.updated`
+  webhook** (`standardwebhooks`, writers ordered by `clerkUpdatedAt`), the Android **small icon**,
+  and the pipeline to 100% lines (`lib/clerkEmail.ts` had no tests at all).
 - **Deferred, by design:** the **reverse reach index** (D172 — filters candidates, never replaces the
   polygon test; trigger ~1,000 profiles); **true-sunset digest timing** (dropped — sunset runs opposite
-  to the season); **web push** (no service worker yet; web = inbox + email).
+  to the season); **web push** (no service worker yet; web = inbox + email). The full owed list is
+  the plan's Deferred section.
 
 **N8 — The unbundled remainder.** *(Genuinely independent, genuinely low-urgency — do these
 opportunistically or when a trigger fires, not as a planned phase.)*

@@ -207,7 +207,7 @@ See `04-integrations.md` for per-provider integration detail.
   3. Optional: an **Expo access token** (expo.dev → Access tokens) in Convex env `EXPO_ACCESS_TOKEN`
      turns on Expo's "enhanced push security"; the sender adds it as a bearer when present.
 
-### 11b. Clerk webhook — 🆓 — ⏳ endpoint + secret per Clerk instance (N8 post-merge)
+### 11b. Clerk webhook — 🆓 — ✅ done for dev 2026-09-15; per Clerk instance, so prod needs its own (N8 PR 4)
 - **What it's for.** Clerk posts `user.updated` to the Convex HTTP router so the `profiles.email` /
   `profileImageUrl` mirrors follow a change *the moment it happens* — the launch-time
   `syncFromClerk` only catches up on the next app open, and the person the email channel serves
