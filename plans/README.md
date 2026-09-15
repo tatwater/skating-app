@@ -197,6 +197,14 @@ the first time, then used as a reference (decisions are numbered `D#`, open ques
   **✅ Built through PR 3 (2026-08-26)** — PR 0 the way in, **#45** the web reveal, **#46** the
   producer, and PR 3's consumer built on `phase-n6e-satellite-imagery-3` (no PR opened, undeployed).
   **PR 4** (phenology, dark) and **PR 5** (the charts and the freeze-up notification) are not started.
+- [N6f — No public access](./phase-N6f-no-public-access.md) — the third map state: **on the map, and
+  marked.** A corroborated community claim (`contentFlags`' existing dedup *is* the vote count) that
+  only a moderator's ruling turns into a dim and a two-zoom-level demotion — the D2 ladder's first
+  and only *penalty*, safe because the z14 floor clamps. `open` is a stored verdict whose whole job is
+  to make re-reporting cost one sentence. **✅ Complete on dev 2026-08-16** (merged as **#44**; prod
+  deferred). **No D-number; the doc was written after the fact (2026-09-14)** — the founder calls are
+  recorded there. Also carries the audit that armed eleven unreachable mutations and the first
+  edit-a-report UI.
 
 
 ## How these fit together
