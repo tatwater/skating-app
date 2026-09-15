@@ -4,6 +4,8 @@ import {
   completeEmailChange,
   type EmailAddressLike,
   isVerifiedEmail,
+  type OldEmailOutcome,
+  removeOldEmail,
   type UserLike,
 } from '@skating/core';
 import { useState } from 'react';
@@ -22,7 +24,9 @@ export function ChangeEmail() {
   const [email, setEmail] = useState('');
   const [code, setCode] = useState('');
   const [pending, setPending] = useState<EmailAddressLike | null>(null);
-  const [removedOld, setRemovedOld] = useState<boolean | null>(null);
+  const [old, setOld] = useState<OldEmailOutcome | null>(null);
+  // The previous address, kept for the retry when removing it failed.
+  const [previous, setPrevious] = useState<EmailAddressLike | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -33,15 +37,28 @@ export function ChangeEmail() {
     setEmail('');
     setCode('');
     setPending(null);
-    setRemovedOld(null);
+    setPrevious(null);
+    setOld(null);
     setError(null);
   };
 
   /** The make-primary half, shared by the code step and the no-code path for a verified address. */
   async function finish(u: UserLike, address: EmailAddressLike, enteredCode: string) {
+    const wasPrimary = u.primaryEmailAddress;
     const result = await completeEmailChange(u, address, enteredCode);
-    setRemovedOld(result.removedOld);
+    setPrevious(wasPrimary);
+    setOld(result.old);
     setStep('done');
+  }
+
+  async function onRetryRemove() {
+    if (!previous || busy) return;
+    setBusy(true);
+    try {
+      setOld(await removeOldEmail(previous));
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function onSendCode() {
@@ -92,17 +109,34 @@ export function ChangeEmail() {
     return (
       <YStack gap="$1">
         <Paragraph color="$foreground">Your email is now {pending?.emailAddress}.</Paragraph>
-        {removedOld === false ? (
+        {old?.kind === 'kept_linked' ? (
           <Paragraph color="$foregroundMuted" fontSize="$1">
-            Your old address stays on the account because it’s linked to your Google sign-in; it
-            won’t receive notifications.
+            Your old address stays on the account because it’s linked to your {old.provider}{' '}
+            sign-in; it won’t receive notifications.
           </Paragraph>
+        ) : null}
+        {old?.kind === 'remove_failed' ? (
+          <Text color="$danger" fontSize="$1">
+            We couldn’t remove your old address ({old.message}). It’s still on your account as a
+            secondary and won’t receive notifications — you can try removing it again.
+          </Text>
         ) : null}
         <Paragraph color="$foregroundMuted" fontSize="$1">
           Notification emails go to the new address from here on.
         </Paragraph>
-        <XStack>
-          <Button size="$2" onPress={reset}>
+        <XStack gap="$2">
+          {old?.kind === 'remove_failed' ? (
+            <Button
+              size="$2"
+              backgroundColor="$primary"
+              color="$primaryForeground"
+              disabled={busy}
+              onPress={onRetryRemove}
+            >
+              {busy ? 'Removing…' : 'Remove old address'}
+            </Button>
+          ) : null}
+          <Button size="$2" disabled={busy} onPress={reset}>
             Done
           </Button>
         </XStack>

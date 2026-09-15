@@ -9,11 +9,12 @@ function renderView(over: Partial<ChangeEmailViewProps> = {}) {
     pendingEmail: null,
     busy: false,
     error: null,
-    removedOld: null,
+    old: null,
     onStart: vi.fn(),
     onCancel: vi.fn(),
     onSendCode: vi.fn(),
     onVerify: vi.fn(),
+    onRetryRemove: vi.fn(),
     ...over,
   };
   render(<ChangeEmailView {...props} />);
@@ -64,17 +65,38 @@ describe('ChangeEmailView', () => {
   });
 
   it('confirms the new address, explains a Google-linked old one that had to stay, and has a way back', () => {
-    const p = renderView({ step: 'done', pendingEmail: 'new@example.test', removedOld: false });
+    const p = renderView({
+      step: 'done',
+      pendingEmail: 'new@example.test',
+      old: { kind: 'kept_linked', provider: 'Google' },
+    });
     expect(screen.getByText(/your email is now new@example.test/i)).toBeInTheDocument();
     expect(screen.getByText(/linked to your google sign-in/i)).toBeInTheDocument();
     expect(screen.getByText(/go to the new address from here on/i)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /remove old address/i })).not.toBeInTheDocument();
     // The confirmation is not a dead end: the row rests again, now showing the new address.
     fireEvent.click(screen.getByRole('button', { name: /^done$/i }));
     expect(p.onCancel).toHaveBeenCalled();
   });
 
-  it('says nothing about the old address when it was released', () => {
-    renderView({ step: 'done', pendingEmail: 'new@example.test', removedOld: true });
-    expect(screen.queryByText(/google sign-in/i)).not.toBeInTheDocument();
+  it('says nothing about the old address when it was released, or when there was none', () => {
+    renderView({ step: 'done', pendingEmail: 'new@example.test', old: { kind: 'removed' } });
+    expect(screen.queryByText(/old address/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /remove old address/i })).not.toBeInTheDocument();
+  });
+
+  it('a cleanup failure is told as what it was, with a retry — never as a story about Google', () => {
+    // Greptile, PR #57: the change is complete (primary moved), but the old address stayed for a
+    // reason that was not the linked-account refusal. The person gets the real reason and a button.
+    const p = renderView({
+      step: 'done',
+      pendingEmail: 'new@example.test',
+      old: { kind: 'remove_failed', addressId: 'e1', message: 'Network request failed' },
+    });
+    expect(screen.getByText(/couldn’t remove your old address/i)).toBeInTheDocument();
+    expect(screen.getByText(/network request failed/i)).toBeInTheDocument();
+    expect(screen.queryByText(/google/i)).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /remove old address/i }));
+    expect(p.onRetryRemove).toHaveBeenCalled();
   });
 });

@@ -31,6 +31,12 @@ export interface EmailAddressLike {
    * sequence reads this to know whether there is a code step at all.
    */
   verification: { status: string | null } | null;
+  /**
+   * The external accounts this address is the identifier for (a Google sign-in, say). Clerk
+   * refuses to destroy such an address while the connection stands — so that refusal is read from
+   * here, ahead of time, rather than inferred from whatever `destroy` happened to throw.
+   */
+  linkedTo?: { type: string }[];
   prepareVerification(params: { strategy: 'email_code' }): Promise<unknown>;
   attemptVerification(params: { code: string }): Promise<{
     verification: { status: string | null } | null;
@@ -95,15 +101,41 @@ export async function beginEmailChange(user: UserLike, input: string): Promise<E
   return address;
 }
 
+/** What became of the previous primary address once the new one took over. */
+export type OldEmailOutcome =
+  /** Destroyed; the account holds only the new address. */
+  | { kind: 'removed' }
+  /** There was no previous primary (a first address), or it was the same address. */
+  | { kind: 'none' }
+  /**
+   * Kept on purpose: Clerk will not destroy an address that is the identifier for a connected
+   * external account (`linkedTo` non-empty). It stays as a secondary and receives nothing; primary
+   * is what the mirror follows, so the change is still complete.
+   */
+  | { kind: 'kept_linked'; provider: string }
+  /**
+   * The change is complete — primary moved — but removing the old address failed for a reason that
+   * was *not* the linked-account refusal (a network error, a Clerk hiccup). It stays attached until
+   * {@link removeOldEmail} succeeds; the UI offers that retry rather than a wrong explanation.
+   */
+  | { kind: 'remove_failed'; addressId: string; message: string };
+
 export interface EmailChangeResult {
   /** The address now primary. */
   email: string;
-  /**
-   * Whether the previous primary was removed from the account. `false` when Clerk refused — an
-   * address tied to a Google sign-in can't be destroyed while the connection stands — in which case
-   * it stays as a secondary and the change is still complete: primary is what the mirror follows.
-   */
-  removedOld: boolean;
+  old: OldEmailOutcome;
+}
+
+/** `oauth_google` → `Google`; anything unrecognised keeps its own name rather than guessing. */
+export function providerLabel(type: string): string {
+  const known: Record<string, string> = {
+    oauth_google: 'Google',
+    oauth_apple: 'Apple',
+    oauth_facebook: 'Facebook',
+    oauth_microsoft: 'Microsoft',
+    oauth_github: 'GitHub',
+  };
+  return known[type] ?? type.replace(/^oauth_/, '');
 }
 
 /**
@@ -129,14 +161,27 @@ export async function completeEmailChange(
     }
   }
   await user.update({ primaryEmailAddressId: pending.id });
-  let removedOld = false;
-  if (old && old.id !== pending.id) {
-    try {
-      await old.destroy();
-      removedOld = true;
-    } catch {
-      // Left as a secondary address; see `EmailChangeResult.removedOld`.
-    }
+  if (!old || old.id === pending.id) return { email: pending.emailAddress, old: { kind: 'none' } };
+  return { email: pending.emailAddress, old: await removeOldEmail(old) };
+}
+
+/**
+ * Release a previous address once it is no longer primary — the last step of a change, and the
+ * retry for it when that step failed. The linked-account refusal is decided from `linkedTo` before
+ * anything is attempted; only a failure that is *not* that refusal reports `remove_failed`, and it
+ * carries the message so the person is told what actually happened, not a story about Google.
+ */
+export async function removeOldEmail(old: EmailAddressLike): Promise<OldEmailOutcome> {
+  const link = old.linkedTo?.[0];
+  if (link) return { kind: 'kept_linked', provider: providerLabel(link.type) };
+  try {
+    await old.destroy();
+    return { kind: 'removed' };
+  } catch (err) {
+    return {
+      kind: 'remove_failed',
+      addressId: old.id,
+      message: err instanceof Error ? err.message : String(err),
+    };
   }
-  return { email: pending.emailAddress, removedOld };
 }

@@ -4,6 +4,8 @@ import {
   completeEmailChange,
   type EmailAddressLike,
   isVerifiedEmail,
+  type OldEmailOutcome,
+  removeOldEmail,
   type UserLike,
 } from '@skating/core';
 import { useState } from 'react';
@@ -29,13 +31,15 @@ export interface ChangeEmailViewProps {
   pendingEmail: string | null;
   busy: boolean;
   error: string | null;
-  /** `false` when the previous address stayed on the account as a secondary (a Google-linked one). */
-  removedOld: boolean | null;
+  /** What became of the previous address, once `step === 'done'`. */
+  old: OldEmailOutcome | null;
   onStart: () => void;
   /** Back to the resting row — from a cancelled step or from the confirmation. */
   onCancel: () => void;
   onSendCode: (email: string) => void;
   onVerify: (code: string) => void;
+  /** Try again to remove the old address, after a `remove_failed`. */
+  onRetryRemove: () => void;
 }
 
 /**
@@ -62,17 +66,28 @@ export function ChangeEmailView(props: ChangeEmailViewProps) {
     return (
       <div className="flex flex-col gap-1">
         <p className="text-foreground">Your email is now {props.pendingEmail}.</p>
-        {props.removedOld === false ? (
+        {props.old?.kind === 'kept_linked' ? (
           <p className="text-foreground-muted text-sm">
-            Your old address stays on the account because it’s linked to your Google sign-in; it
-            won’t receive notifications.
+            Your old address stays on the account because it’s linked to your {props.old.provider}{' '}
+            sign-in; it won’t receive notifications.
+          </p>
+        ) : null}
+        {props.old?.kind === 'remove_failed' ? (
+          <p className="text-destructive text-sm">
+            We couldn’t remove your old address ({props.old.message}). It’s still on your account as
+            a secondary and won’t receive notifications — you can try removing it again.
           </p>
         ) : null}
         <p className="text-foreground-muted text-sm">
           Notification emails go to the new address from here on.
         </p>
-        <div>
-          <Button variant="outline" size="sm" onClick={props.onCancel}>
+        <div className="flex gap-2">
+          {props.old?.kind === 'remove_failed' ? (
+            <Button size="sm" onClick={props.onRetryRemove} disabled={props.busy}>
+              {props.busy ? 'Removing…' : 'Remove old address'}
+            </Button>
+          ) : null}
+          <Button variant="outline" size="sm" onClick={props.onCancel} disabled={props.busy}>
             Done
           </Button>
         </div>
@@ -158,19 +173,24 @@ export function ChangeEmail() {
   const [pending, setPending] = useState<EmailAddressLike | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [removedOld, setRemovedOld] = useState<boolean | null>(null);
+  const [old, setOld] = useState<OldEmailOutcome | null>(null);
+  // The previous address, kept for the retry when removing it failed.
+  const [previous, setPrevious] = useState<EmailAddressLike | null>(null);
 
   const reset = () => {
     setStep('idle');
     setPending(null);
+    setPrevious(null);
     setError(null);
-    setRemovedOld(null);
+    setOld(null);
   };
 
   /** The make-primary half, shared by the code step and the no-code path for a verified address. */
   const finish = async (u: UserLike, address: EmailAddressLike, code: string) => {
+    const wasPrimary = u.primaryEmailAddress;
     const result = await completeEmailChange(u, address, code);
-    setRemovedOld(result.removedOld);
+    setPrevious(wasPrimary);
+    setOld(result.old);
     setStep('done');
   };
 
@@ -183,7 +203,7 @@ export function ChangeEmail() {
       pendingEmail={pending?.emailAddress ?? null}
       busy={busy}
       error={error}
-      removedOld={removedOld}
+      old={old}
       onStart={() => setStep('enter')}
       onCancel={reset}
       onSendCode={async (email) => {
@@ -211,6 +231,15 @@ export function ChangeEmail() {
           await finish(user, pending, code);
         } catch (e) {
           setError(e instanceof Error ? e.message : 'Verification failed');
+        } finally {
+          setBusy(false);
+        }
+      }}
+      onRetryRemove={async () => {
+        if (!previous || busy) return;
+        setBusy(true);
+        try {
+          setOld(await removeOldEmail(previous));
         } finally {
           setBusy(false);
         }

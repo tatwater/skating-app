@@ -6,6 +6,8 @@ import {
   isCurrentEmail,
   isVerifiedEmail,
   normalizeEmail,
+  providerLabel,
+  removeOldEmail,
   type UserLike,
 } from './changeEmail';
 
@@ -80,7 +82,7 @@ describe('changeEmail — the Clerk sequence, against a fake', () => {
     expect(pending.attemptVerification).toHaveBeenCalledWith({ code: '123456' });
     expect(u.update).toHaveBeenCalledWith({ primaryEmailAddressId: pending.id });
     expect(old.destroy).toHaveBeenCalled();
-    expect(result).toEqual({ email: 'new@example.com', removedOld: true });
+    expect(result).toEqual({ email: 'new@example.com', old: { kind: 'removed' } });
   });
 
   test('a wrong code stops before anything changes', async () => {
@@ -96,17 +98,41 @@ describe('changeEmail — the Clerk sequence, against a fake', () => {
     expect(old.destroy).not.toHaveBeenCalled();
   });
 
-  test('an old address Clerk refuses to remove (a Google-linked one) stays as a secondary, and the change still completes', async () => {
+  test('a Google-linked old address is kept, by reading the link — destroy is never even tried', async () => {
+    const old = address('e1', 'me@example.com', { linkedTo: [{ type: 'oauth_google' }] });
+    const u = user(old);
+    const pending = await beginEmailChange(u, 'new@example.com');
+    const result = await completeEmailChange(u, pending, '123456');
+    expect(u.update).toHaveBeenCalledWith({ primaryEmailAddressId: pending.id });
+    expect(old.destroy).not.toHaveBeenCalled();
+    expect(result).toEqual({
+      email: 'new@example.com',
+      old: { kind: 'kept_linked', provider: 'Google' },
+    });
+    expect(providerLabel('oauth_apple')).toBe('Apple');
+    expect(providerLabel('oauth_somethingnew')).toBe('somethingnew');
+  });
+
+  test('a failure that is NOT the linked refusal is reported as such, with a retry that can succeed', async () => {
+    // The change itself is complete — primary moved. What failed is the cleanup, and the person
+    // must be told that, not a story about Google (Greptile, PR #57).
     const old = address('e1', 'me@example.com', {
-      destroy: vi.fn(async () => {
-        throw new Error('linked to oauth_google');
-      }),
+      destroy: vi
+        .fn()
+        .mockRejectedValueOnce(new Error('Network request failed'))
+        .mockResolvedValueOnce(undefined),
     });
     const u = user(old);
     const pending = await beginEmailChange(u, 'new@example.com');
     const result = await completeEmailChange(u, pending, '123456');
     expect(u.update).toHaveBeenCalledWith({ primaryEmailAddressId: pending.id });
-    expect(result).toEqual({ email: 'new@example.com', removedOld: false });
+    expect(result).toEqual({
+      email: 'new@example.com',
+      old: { kind: 'remove_failed', addressId: 'e1', message: 'Network request failed' },
+    });
+    // The retry is the same step on its own.
+    expect(await removeOldEmail(old)).toEqual({ kind: 'removed' });
+    expect(old.destroy).toHaveBeenCalledTimes(2);
   });
 
   test('an address already verified on the account skips the code: no send, no attempt, straight to primary', async () => {
@@ -121,7 +147,7 @@ describe('changeEmail — the Clerk sequence, against a fake', () => {
     const result = await completeEmailChange(u, pending, '');
     expect(google.attemptVerification).not.toHaveBeenCalled();
     expect(u.update).toHaveBeenCalledWith({ primaryEmailAddressId: 'e0' });
-    expect(result).toEqual({ email: 'me@gmail.test', removedOld: true });
+    expect(result).toEqual({ email: 'me@gmail.test', old: { kind: 'removed' } });
   });
 
   test('a retry after the make-primary step failed does not verify twice', async () => {
@@ -143,13 +169,13 @@ describe('changeEmail — the Clerk sequence, against a fake', () => {
     // ...and finishing, by either path, verifies nothing a second time.
     const result = await completeEmailChange(u, pending, '');
     expect(pending.attemptVerification).toHaveBeenCalledTimes(1);
-    expect(result).toEqual({ email: 'new@example.com', removedOld: true });
+    expect(result).toEqual({ email: 'new@example.com', old: { kind: 'removed' } });
   });
 
   test('an account with no primary yet simply gains one', async () => {
     const u = user(null);
     const pending = await beginEmailChange(u, 'first@example.com');
     const result = await completeEmailChange(u, pending, '123456');
-    expect(result).toEqual({ email: 'first@example.com', removedOld: false });
+    expect(result).toEqual({ email: 'first@example.com', old: { kind: 'none' } });
   });
 });

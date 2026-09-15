@@ -794,9 +794,14 @@ neither is complete without the other:
   so the window could only be opened from the Clerk dashboard. Now: `@skating/core`'s
   `changeEmail.ts` (add → code → verify → make primary → release the old one; written against a
   structural slice of Clerk's `UserResource`, so core carries no Clerk dependency and the fake-driven
-  tests are the contract), rendered as `ChangeEmail` in web Settings and in the mobile You tab. A
-  Google-linked old address that Clerk refuses to remove stays as a secondary; primary is what the
-  mirror follows, and the copy says so.
+  tests are the contract), rendered as `ChangeEmail` in web Settings and in the mobile You tab.
+  Once primary has moved, the old address has three fates and the copy names each: *removed*;
+  *kept* because it is the identifier for a connected sign-in (read from `linkedTo` ahead of time,
+  never inferred from a thrown error — Clerk refuses to destroy such an address, and primary is
+  what the mirror follows, so the change is still complete); or *remove failed* for some other
+  reason (a network error), which is told as exactly that with a "Remove old address" retry. The
+  first cut had collapsed the last two into one story about Google — Greptile's one finding on
+  PR #57.
 - **`POST /clerk-webhook`** (`http.ts`), verified by `standardwebhooks` — the library under Clerk's
   own `verifyWebhook`, taken directly because `@clerk/backend` would have pulled `@clerk/shared`
   into the Convex bundle, and that package is the one this repo carries in two majors. A signed
