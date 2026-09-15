@@ -16,6 +16,8 @@
  * subject. A digest to every member must never be this function in a loop.
  */
 
+import { primaryEmailOf } from './clerkWebhook';
+
 const CLERK_API_BASE = 'https://api.clerk.com/v1';
 
 /**
@@ -40,15 +42,9 @@ export async function clerkEmailForSubject(subject: string): Promise<string | nu
       console.warn(`Clerk user lookup failed: ${res.status} ${res.statusText}`);
       return null;
     }
-    const body = (await res.json()) as {
-      primary_email_address_id?: string;
-      email_addresses?: { id: string; email_address: string }[];
-    };
-    const addresses = body.email_addresses ?? [];
-    // ⚠ The primary pointer, falling back to the first — not `[0]` outright. A user with a work and
-    // a personal address on file would otherwise be mailed at whichever Clerk happened to list first.
-    const primary = addresses.find((a) => a.id === body.primary_email_address_id) ?? addresses[0];
-    return primary?.email_address ?? null;
+    const body = (await res.json()) as Parameters<typeof primaryEmailOf>[0];
+    // The primary pointer, falling back to the first — the same pick the webhook makes.
+    return primaryEmailOf(body);
   } catch (err) {
     console.warn('Clerk user lookup threw', err);
     return null;

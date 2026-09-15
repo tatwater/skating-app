@@ -1,4 +1,4 @@
-import { useAuth, useUser } from '@clerk/clerk-expo';
+import { useAuth } from '@clerk/clerk-expo';
 import { FontAwesomeIcon } from '@fortawesome/react-native-fontawesome';
 import { faBell } from '@fortawesome/sharp-light-svg-icons';
 import { api } from '@skating/convex/api';
@@ -23,6 +23,7 @@ import { ScrollView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Button, H1, Paragraph, Separator, Text, useTheme, XStack, YStack } from 'tamagui';
 import { AccountLifecycle } from '../../src/components/AccountLifecycle';
+import { ChangeEmail } from '../../src/components/ChangeEmail';
 import { ProfileEdit } from '../../src/components/ProfileEdit';
 import { Avatar } from '../../src/components/ProfileView';
 import { StravaConnect } from '../../src/components/StravaConnect';
@@ -47,7 +48,6 @@ import { useThemePreference } from '../../src/providers/ThemeProvider';
  */
 export default function YouScreen() {
   const { signOut } = useAuth();
-  const { user } = useUser();
   const profile = useQuery(api.profiles.current, {});
   const router = useRouter();
   const theme = useTheme();
@@ -131,9 +131,7 @@ export default function YouScreen() {
           ) : (
             <Paragraph color="$foreground">Loading your profile…</Paragraph>
           )}
-          {user?.primaryEmailAddress?.emailAddress ? (
-            <Paragraph color="$foregroundMuted">{user.primaryEmailAddress.emailAddress}</Paragraph>
-          ) : null}
+          <ChangeEmail />
 
           <Separator borderColor="$border" />
           <Text

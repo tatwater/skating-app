@@ -21,7 +21,8 @@
   },
   "dependencies": {
     "@skating/core": "workspace:*",
-    "convex": "^1.42.1"
+    "convex": "^1.42.1",
+    "standardwebhooks": "^1.0.0"
   },
   "devDependencies": {
     "@edge-runtime/vm": "^5.0.0",

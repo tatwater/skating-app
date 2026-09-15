@@ -28,6 +28,7 @@ import {
 import { httpRouter } from 'convex/server';
 import { internal } from './_generated/api';
 import { type ActionCtx, httpAction } from './_generated/server';
+import { ClerkWebhookError, type ClerkWebhookEvent, verifyClerkWebhook } from './lib/clerkWebhook';
 import { OAUTH_STATE_TTL_SECONDS, stravaAuthorizeUrl } from './strava';
 
 const http = httpRouter();
@@ -79,6 +80,60 @@ http.route({
   path: '/unsubscribe',
   method: 'POST',
   handler: httpAction(handleUnsubscribe),
+});
+
+/**
+ * Clerk's webhook (N8 post-merge / D174 amendment): `user.updated` keeps the email and avatar
+ * mirrors on `profiles` current the moment they change, instead of at the person's next app open
+ * (`profiles.syncFromClerk`). The case it exists for is the email channel's own user — someone who
+ * changed their address and then didn't open the app for a season, still receiving the digest at
+ * the old one.
+ *
+ * Verified before anything is read (`lib/clerkWebhook.ts`): a forged event here would redirect
+ * private mail. The write is `profiles.applyClerkMirrors`, the same helper the launch-time sync
+ * uses, so the two sources can't drift on the gate. Idempotent by construction (patch-if-different),
+ * which is what Svix's retries need — a 2xx is "handled", and only a 5xx asks for a retry.
+ *
+ * `user.deleted` is acknowledged and not acted on. Our own finalization deletes the Clerk user
+ * *after* the tombstone (`clerkAdmin.deleteUser`), so the ordinary arrival is for a row already
+ * scrubbed. A deletion made in the Clerk dashboard for a live account is a founder action outside
+ * the D62 lifecycle; it's logged so it can be noticed, and the profile is left for the lifecycle
+ * to handle rather than half-erased from here.
+ *
+ * Registering the endpoint and its secret is per Clerk instance — see
+ * `plans/05-accounts-and-credentials.md` §11b.
+ */
+http.route({
+  path: '/clerk-webhook',
+  method: 'POST',
+  handler: httpAction(async (ctx, request) => {
+    let event: ClerkWebhookEvent;
+    try {
+      event = await verifyClerkWebhook(request);
+    } catch (err) {
+      const status = err instanceof ClerkWebhookError ? err.status : 400;
+      console.warn(`clerk-webhook rejected (${status}):`, err instanceof Error ? err.message : err);
+      return new Response(null, { status });
+    }
+    switch (event.type) {
+      case 'user.created':
+      case 'user.updated':
+        await ctx.runMutation(internal.profiles.applyClerkMirrors, {
+          clerkUserId: event.clerkUserId,
+          email: event.email,
+          profileImageUrl: event.profileImageUrl,
+        });
+        break;
+      case 'user.deleted':
+        console.log(
+          `clerk-webhook: user.deleted for ${event.clerkUserId ?? '(no id)'} — not acted on`,
+        );
+        break;
+      case 'ignored':
+        break;
+    }
+    return new Response(null, { status: 200 });
+  }),
 });
 
 /** Escape text destined for the fallback page's HTML. */

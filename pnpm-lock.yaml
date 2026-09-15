@@ -341,6 +341,9 @@ importers:
       convex:
         specifier: ^1.42.1
         version: 1.42.1(@clerk/clerk-react@5.61.3(react-dom@19.2.3(react@19.2.3))(react@19.2.3))(@clerk/react@6.12.2(react-dom@19.2.3(react@19.2.3))(react@19.2.3))(bufferutil@4.1.0)(react@19.2.3)(utf-8-validate@6.0.6)
+      standardwebhooks:
+        specifier: ^1.0.0
+        version: 1.0.0
     devDependencies:
       '@edge-runtime/vm':
         specifier: ^5.0.0

@@ -783,14 +783,33 @@ fail-soft, the same never-un-scrub guard — now fires beside `setTimezone` in b
 up the avatar mirror (`profileImageUrl`), which had had the same hole since Phase 3. Founder task #3
 above is therefore closed in the other direction: the template was right, the caller was missing.
 
-**Deferred with a trigger — the Clerk `user.updated` webhook.** `syncFromClerk` closes the
-stale-address window at the next app *open*, which leaves open exactly the email channel's own
-user: someone who changed their address and then didn't open the app for a season, still receiving
-the digest at the old one. A signed Clerk webhook (`POST /clerk-webhook`, Svix HMAC verified, a
-`CLERK_WEBHOOK_SECRET` per deployment, the endpoint registered per Clerk instance) would close it at
-the moment of change. Not built because **neither client exposes a way to change your Clerk email**
-— no `<UserProfile>`, no custom flow — so today the window can only be opened from the Clerk
-dashboard. The rule: the webhook lands in the same PR as the first change-email affordance.
+**Built — change-email on both clients, and the Clerk `user.updated` webhook that goes with it.**
+`syncFromClerk` closes the stale-address window at the next app *open*, which leaves open exactly
+the email channel's own user: someone who changed their address and then didn't open the app for a
+season, still receiving the digest at the old one. Two things closed it in the same pass, because
+neither is complete without the other:
+
+- **Neither client had a way to change your Clerk email** — no `<UserProfile>`, no custom flow —
+  so the window could only be opened from the Clerk dashboard. Now: `@skating/core`'s
+  `changeEmail.ts` (add → code → verify → make primary → release the old one; written against a
+  structural slice of Clerk's `UserResource`, so core carries no Clerk dependency and the fake-driven
+  tests are the contract), rendered as `ChangeEmail` in web Settings and in the mobile You tab. A
+  Google-linked old address that Clerk refuses to remove stays as a secondary; primary is what the
+  mirror follows, and the copy says so.
+- **`POST /clerk-webhook`** (`http.ts`), verified by `standardwebhooks` — the library under Clerk's
+  own `verifyWebhook`, taken directly because `@clerk/backend` would have pulled `@clerk/shared`
+  into the Convex bundle, and that package is the one this repo carries in two majors. A signed
+  `user.updated` runs `profiles.applyClerkMirrors`, the *same* helper `syncFromClerk` uses (an
+  address removed in Clerk clears the mirror; a ghost is never un-scrubbed). Bad signature,
+  tampered body, stale timestamp, missing headers ⇒ 400; no secret configured ⇒ 500, so the
+  misconfiguration is loud and Svix retries. `user.deleted` is acknowledged and not acted on:
+  finalization deletes the Clerk user itself, so the ordinary arrival is for a tombstone, and a
+  dashboard deletion of a live account is a founder action the D62 lifecycle should own, not a
+  half-erase from a webhook.
+
+**Founder task, per Clerk instance:** register the endpoint and set `CLERK_WEBHOOK_SIGNING_SECRET`
+— recipe in [`05-accounts-and-credentials.md`](./05-accounts-and-credentials.md) §11b. Until then
+the route answers 500 and the launch-time sync is the only refresh.
 
 **Not yet exercised.** No `notifications` row on dev carries `pushedAt` or `emailedAt` — the rows
 that exist predate PR 3 — and no profile has an `emailUnsubscribeSecret`, which is minted on the

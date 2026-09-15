@@ -442,5 +442,20 @@ describe('settleTrigger — every "deliver only if" clause has a drop', () => {
     expect(await settle(trigger)).toBeNull();
     await t.run((ctx) => ctx.db.delete(activityId));
     expect(await settle(trigger)).toBeNull();
+
+    // A skate the recorder couldn't place on any lake still nudges — with no lake to name.
+    const unplaced = await author.as.mutation(api.gpsActivities.ingestTrack, {
+      idempotencyKey: 'session-2',
+      path: {
+        type: 'LineString',
+        coordinates: Array.from({ length: 20 }, (_, i) => [40.2 + i * 0.03, 40.5]),
+      },
+      startTime: Date.UTC(2026, 0, 16, 14, 0),
+      endTime: Date.UTC(2026, 0, 16, 14, 45),
+      elapsedSeconds: 2400,
+    });
+    const payload = await settle({ kind: 'activity', activityId: unplaced });
+    expect(payload).toMatchObject({ kind: 'activity', activityId: unplaced });
+    expect(payload).not.toHaveProperty('waterBodyId');
   });
 });

@@ -33,8 +33,8 @@ import {
 } from '@skating/core';
 import { ConvexError, v } from 'convex/values';
 import { internal } from './_generated/api';
-import type { Doc } from './_generated/dataModel';
-import { internalMutation, mutation, query } from './_generated/server';
+import type { Doc, Id } from './_generated/dataModel';
+import { internalMutation, type MutationCtx, mutation, query } from './_generated/server';
 import {
   canReceiveNotifications,
   getCurrentProfile,
@@ -370,28 +370,69 @@ export const setTimezone = mutation({
  * other writer of `profiles.email`, sits behind — so the two writers of the mirror can't drift on
  * who may hold one. (Like `upsertFromClerk`, and unlike `requireProfile`, this reads `status` alone:
  * a suspension that has lapsed without an explicit `unbanUser` still counts as inactive here.)
+ *
+ * The webhook (`applyClerkMirrors`) is the other caller of the same helper: this one fires on the
+ * device's clock, that one on Clerk's, and the row can't tell which wrote it.
  */
 export const syncFromClerk = mutation({
   args: {},
   handler: async (ctx) => {
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) return null;
-    const profile = await ctx.db
-      .query('profiles')
-      .withIndex('by_clerk_user_id', (q) => q.eq('clerkUserId', identity.subject))
-      .unique();
-    if (!profile || !canReceiveNotifications(profile)) return null;
-    const patch: { email?: string; profileImageUrl?: string } = {};
-    if (identity.email !== undefined && identity.email !== profile.email) {
-      patch.email = identity.email;
-    }
-    if (identity.pictureUrl !== undefined && identity.pictureUrl !== profile.profileImageUrl) {
-      patch.profileImageUrl = identity.pictureUrl;
-    }
-    if (Object.keys(patch).length > 0) await ctx.db.patch(profile._id, patch);
-    return profile._id;
+    return applyClerkMirrorsFor(ctx, identity.subject, {
+      email: identity.email,
+      profileImageUrl: identity.pictureUrl,
+    });
   },
 });
+
+/**
+ * The webhook's write (N8 post-merge): Clerk said this user changed, here is the address and
+ * avatar now on the account. Same helper, same gate as `syncFromClerk`; the difference is only
+ * where the claims came from — a signed webhook (`lib/clerkWebhook.ts`) rather than a signed token.
+ * A `null` claim means the account has no such value and clears the mirror (an address removed in
+ * Clerk must not keep receiving mail); an `undefined` one leaves it alone.
+ */
+export const applyClerkMirrors = internalMutation({
+  args: {
+    clerkUserId: v.string(),
+    email: v.optional(v.union(v.string(), v.null())),
+    profileImageUrl: v.optional(v.union(v.string(), v.null())),
+  },
+  handler: async (ctx, { clerkUserId, email, profileImageUrl }) =>
+    applyClerkMirrorsFor(ctx, clerkUserId, { email, profileImageUrl }),
+});
+
+/** A claim to mirror: a value, `null` to clear, `undefined` to leave as is. */
+type MirrorClaims = { email?: string | null; profileImageUrl?: string | null };
+
+/**
+ * Patch the Clerk mirrors on the profile for `clerkUserId`, if it may hold them — see
+ * `syncFromClerk` for the gate. Returns the profile id, or `null` for no profile / not eligible.
+ */
+async function applyClerkMirrorsFor(
+  ctx: MutationCtx,
+  clerkUserId: string,
+  claims: MirrorClaims,
+): Promise<Id<'profiles'> | null> {
+  const profile = await ctx.db
+    .query('profiles')
+    .withIndex('by_clerk_user_id', (q) => q.eq('clerkUserId', clerkUserId))
+    .unique();
+  if (!profile || !canReceiveNotifications(profile)) return null;
+  const patch: { email?: string; profileImageUrl?: string } = {};
+  if (claims.email !== undefined && (claims.email ?? undefined) !== profile.email) {
+    patch.email = claims.email ?? undefined;
+  }
+  if (
+    claims.profileImageUrl !== undefined &&
+    (claims.profileImageUrl ?? undefined) !== profile.profileImageUrl
+  ) {
+    patch.profileImageUrl = claims.profileImageUrl ?? undefined;
+  }
+  if (Object.keys(patch).length > 0) await ctx.db.patch(profile._id, patch);
+  return profile._id;
+}
 
 /**
  * The two channel switches (N8 PR 3 / D174): push on the phone, email for the eligible types. A

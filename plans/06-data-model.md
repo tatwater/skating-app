@@ -61,8 +61,9 @@ timezone?: string            // N8/C, D173 — the DEVICE's IANA zone, refreshed
                              // only per-user input (the hour is 20:00 for everyone). Never public.
 email?: string               // N8 PR 3 / D174 — PRIVATE mirror of the Clerk `email` claim (like
                              // profileImageUrl); both refreshed on every app open by `syncFromClerk`
-                             // (`upsertFromClerk` is onboarding-only); scrubbed at the deletion
-                             // request and the tombstone
+                             // (`upsertFromClerk` is onboarding-only) AND the moment Clerk says so
+                             // (`user.updated` webhook → `applyClerkMirrors`); scrubbed at the
+                             // deletion request and the tombstone
 channelPrefs?: { push, email } // D174 — the two transports over the inbox; absent ⇒ both on
 emailUnsubscribeSecret?: string // D174 — authorizes the one-click unsubscribe link, and nothing else
 notificationPrefs: {         // per-type toggles — EVERY type is toggleable (D16); vocabulary in @skating/core (N8)

@@ -5500,6 +5500,16 @@ sender's fallback hid the first symptom on dev (one lookup per person, cached) b
 exactly what goes stale on a change. `syncFromClerk` — claims only, no identity args, fail-soft, the
 same never-un-scrub guard — is the launch-time half, fired beside `setTimezone` in both shells.
 
+*Amended the same day:* the launch-time half alone leaves the email channel's own user exposed — the
+one who changed their address and then didn't open the app for a season. So two more pieces landed
+together: a **change-email affordance** on both clients (core `changeEmail.ts` over a structural
+slice of Clerk's `UserResource`; until then no client could change the address at all, which is the
+only reason the gap had been theoretical) and Clerk's **`user.updated` webhook** into
+`POST /clerk-webhook`, verified with `standardwebhooks` and writing through the same
+`applyClerkMirrors` helper as the launch-time sync. The address is still never a string a client
+claims: it arrives by signed token or signed webhook, nothing else. `CLERK_WEBHOOK_SIGNING_SECRET`
+and the endpoint are per Clerk instance (credentials doc §11b).
+
 **Push posture keeps Phase 9.5's rule.** Permission is never asked on cold launch: on app open the
 device registers only if permission is *already* granted (by on-ice mode, or by the explicit "this
 phone" switch on the You tab, which is the one place that asks). A device-level off is remembered on

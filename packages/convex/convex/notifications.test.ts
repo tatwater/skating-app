@@ -1,4 +1,4 @@
-import { zonedHour } from '@skating/core';
+import { describeNotification, type NotificationView, zonedHour } from '@skating/core';
 import { convexTest } from 'convex-test';
 import type { Polygon } from 'geojson';
 import { describe, expect, test } from 'vitest';
@@ -903,6 +903,12 @@ describe('notifications — the inbox read path', () => {
       waterBodyId: bodyId,
       startTime: skateStart,
     });
+    // The recorder couldn't place this one: no lake, so the sentence has none to name.
+    await seed('activity_detected', {
+      kind: 'activity',
+      activityId: 'unplaced',
+      startTime: skateStart,
+    });
     await seed('content_flag_resolved', {
       kind: 'flag_resolved',
       flagId: 'f',
@@ -929,8 +935,15 @@ describe('notifications — the inbox read path', () => {
     });
 
     const page = (await inbox(author.as)).page;
+    // Newest first, so the unplaced skate is the first `activity_detected`; the map keeps the other.
+    const unplaced = page.find((n) => n.type === 'activity_detected');
+    expect(unplaced).toMatchObject({ activityId: 'unplaced', body: null });
+    expect(describeNotification(unplaced as NotificationView)).toMatchObject({
+      title: 'You recorded a skate. Add a report?',
+      target: { kind: 'unreported_skates' },
+    });
     const byType = new Map(page.map((n) => [n.type, n] as const));
-    expect(page).toHaveLength(9);
+    expect(page).toHaveLength(10);
     expect(byType.get('report_rated')).toMatchObject({
       kind: 'thumb',
       targetType: 'hazard',
