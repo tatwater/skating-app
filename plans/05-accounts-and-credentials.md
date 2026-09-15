@@ -207,6 +207,28 @@ See `04-integrations.md` for per-provider integration detail.
   3. Optional: an **Expo access token** (expo.dev → Access tokens) in Convex env `EXPO_ACCESS_TOKEN`
      turns on Expo's "enhanced push security"; the sender adds it as a bearer when present.
 
+### 11b. Clerk webhook — 🆓 — ✅ done for dev 2026-09-15; per Clerk instance, so prod needs its own (N8 PR 4)
+- **What it's for.** Clerk posts `user.updated` to the Convex HTTP router so the `profiles.email` /
+  `profileImageUrl` mirrors follow a change *the moment it happens* — the launch-time
+  `syncFromClerk` only catches up on the next app open, and the person the email channel serves
+  is exactly the one who isn't opening the app. Built with the change-email affordance on both
+  clients; verified with `standardwebhooks` (`lib/clerkWebhook.ts`).
+- **Per Clerk instance, once** (dev now; prod at cutover):
+  1. Clerk Dashboard → *Configure* → *Webhooks* → **Add endpoint**. URL is the deployment's
+     `.convex.site` host + `/clerk-webhook` — dev: `https://agile-bee-397.convex.site/clerk-webhook`.
+     Subscribe to **`user.updated`** (and `user.created`, harmless; `user.deleted` is acknowledged
+     and ignored — our finalization deletes the Clerk user itself).
+  2. Copy the endpoint's **Signing Secret** (`whsec_…`) → Convex env
+     `CLERK_WEBHOOK_SIGNING_SECRET` on the matching deployment:
+     `cd packages/convex && pnpm exec convex env set CLERK_WEBHOOK_SIGNING_SECRET whsec_…`
+     (prod: `--prod`). Until it's set the route answers **500** — deliberately loud, and Svix
+     retries, so nothing is lost when the secret lands.
+  3. Verify: change your email from Settings (web) or the You tab (mobile), then check the
+     endpoint's *Messages* tab in Clerk shows a 200 and `profiles.email` on the row moved.
+- **Prod cutover note:** the endpoint URL and the secret are both per-instance — the prod Clerk
+  instance needs its own endpoint pointing at `diligent-guanaco-965.convex.site`, and its own
+  secret on prod Convex. Neither carries over.
+
 ### 12. Observability — 🆓 tiers (D29)
 - **Sentry** — sign up at <https://sentry.io>; add `@sentry/react-native` (mobile)
   + browser SDK (web). Free developer tier. Set up **from day one** for crash/error.

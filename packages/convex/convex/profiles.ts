@@ -2,9 +2,11 @@
  * Profile functions.
  *
  * Identity split (D26): Clerk authenticates the user; this module owns the mirroring
- * `profiles` row. `upsertFromClerk` is the provisioning bridge the client calls after
- * Clerk sign-in — create-or-update the profile keyed by the Clerk subject. Kept
- * idempotent so it's safe to call on every app launch.
+ * `profiles` row. `upsertFromClerk` is the provisioning bridge the client calls from the
+ * onboarding screen — create-or-update the profile keyed by the Clerk subject. Kept
+ * idempotent, but it is *not* the launch-time path: both clients call it at onboarding only.
+ * What runs on every app open is the pair beside it, `setTimezone` and `syncFromClerk`
+ * (the Clerk mirrors — email and avatar).
  */
 
 import {
@@ -31,9 +33,15 @@ import {
 } from '@skating/core';
 import { ConvexError, v } from 'convex/values';
 import { internal } from './_generated/api';
-import type { Doc } from './_generated/dataModel';
-import { internalMutation, mutation, query } from './_generated/server';
-import { getCurrentProfile, requireContributor, requireProfile, requireRole } from './lib/auth';
+import type { Doc, Id } from './_generated/dataModel';
+import { internalMutation, type MutationCtx, mutation, query } from './_generated/server';
+import {
+  canReceiveNotifications,
+  getCurrentProfile,
+  requireContributor,
+  requireProfile,
+  requireRole,
+} from './lib/auth';
 import { publicAuthor } from './lib/authorView';
 import { NOTIFICATION_PREF_DEFAULTS, NOTIFICATION_PREF_KEYS } from './lib/enums';
 import { loadBlockedAuthorIds } from './lib/reportVisibility';
@@ -111,6 +119,8 @@ export const upsertFromClerk = mutation({
     const profileImageUrl = identity.pictureUrl;
     // The email, likewise mirrored from the `email` claim (N8 PR 3 / D174) so a notification email is
     // not a Clerk API call per recipient. Same absence rule: an unmapped claim leaves the mirror alone.
+    // Both mirrors are *refreshed* on every later app open by `syncFromClerk` below — this mutation
+    // runs at onboarding only.
     const email = identity.email;
 
     // Hard 16+ minimum (D41), derived from DOB and enforced server-side. Minor status
@@ -146,7 +156,7 @@ export const upsertFromClerk = mutation({
       .withIndex('by_clerk_user_id', (q) => q.eq('clerkUserId', identity.subject))
       .unique();
 
-    // An inactive account must not mutate its identity via this app-launch sync:
+    // An inactive account must not mutate its identity via this onboarding sync:
     //  - a banned/suspended user could squat a new username or rename to evade
     //    moderation (D37);
     //  - a *deleted* user would un-scrub the PII that deletion cleared (displayName →
@@ -158,10 +168,9 @@ export const upsertFromClerk = mutation({
 
     // **A ghost is the same case wearing a different field** (D62 amendment). A pending deletion
     // scrubs the profile while leaving `status: 'active'` — deliberately, since `status` is the gate
-    // that would also close reads — so without this branch the next app launch would helpfully
-    // re-sync `displayName` and the avatar back out of Clerk and quietly un-delete the person's
-    // identity. This mutation runs on every cold start, so that isn't a corner case; it's the first
-    // thing that would happen.
+    // that would also close reads — so without this branch a re-onboarding would helpfully re-sync
+    // `displayName` and the avatar back out of Clerk and quietly un-delete the person's identity.
+    // (`syncFromClerk`, which *does* run on every launch, carries the same guard for the same reason.)
     //
     // Cancelling clears the stamp, and *then* this sync is exactly the re-onboarding path
     // (`needsProfileSetup` routes them here): same code, no special restore, and the name they type
@@ -186,8 +195,8 @@ export const upsertFromClerk = mutation({
       // the 18th birthday (minor → false) an already-private profile stays private until the user
       // opts to make it public — nothing is auto-widened (D13/D41). Posting also unlocks at 18
       // separately (reports.create gates on age), since all reports are public (D13).
-      // Keep the *original* acceptance time when the version is unchanged (a routine
-      // app-launch re-sync); only stamp a new time when the user accepts a bumped version.
+      // Keep the *original* acceptance time when the version is unchanged (a re-onboarding,
+      // e.g. after a cancelled deletion); only stamp a new time when the user accepts a bumped version.
       const reAccepted = existing.riskAckVersion !== args.riskAckVersion;
       await ctx.db.patch(existing._id, {
         displayName,
@@ -338,6 +347,135 @@ export const setTimezone = mutation({
     return profile._id;
   },
 });
+
+/**
+ * Refresh the two Clerk mirrors — `email` (N8 PR 3 / D174) and `profileImageUrl` (Phase 3) — from
+ * the identity's claims. Called by both clients on app open, beside `setTimezone`.
+ *
+ * **Why this exists apart from `upsertFromClerk`.** That mutation is the onboarding write: it takes
+ * a display name, a username, a date of birth and a risk acknowledgment, and both clients call it
+ * from the onboarding screen only. Nothing re-ran it on an ordinary launch, so a mirror set there was
+ * set once — every profile that onboarded before the email field existed had no address, and a
+ * changed Clerk email or avatar never reached us. The email sender's Clerk fallback papered over the
+ * first (one lookup per person, cached), but a cached address is exactly the thing that goes stale
+ * when the person changes it. This is the launch-time half: claims only, no identity args, writes
+ * nothing when the claims match.
+ *
+ * **Never un-scrub.** The same rule as `upsertFromClerk`: an inactive account or a pending deletion
+ * has had these fields cleared on purpose, and a launch-time sync is the first thing that would put
+ * them back. Fail-soft rather than throw — this runs unattended on every open, and a ghost signing in
+ * to cancel should see nothing from it. An unmapped claim (`undefined`) leaves the mirror alone.
+ *
+ * The gate is `canReceiveNotifications` — the same predicate `notificationDelivery.cacheEmail`, the
+ * other writer of `profiles.email`, sits behind — so the two writers of the mirror can't drift on
+ * who may hold one. (Like `upsertFromClerk`, and unlike `requireProfile`, this reads `status` alone:
+ * a suspension that has lapsed without an explicit `unbanUser` still counts as inactive here.)
+ *
+ * The webhook (`applyClerkMirrors`) is the other caller of the same helper: this one fires on the
+ * device's clock, that one on Clerk's, and the row can't tell which wrote it.
+ */
+export const syncFromClerk = mutation({
+  args: {},
+  handler: async (ctx) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) return null;
+    return applyClerkMirrorsFor(ctx, identity.subject, {
+      email: identity.email,
+      profileImageUrl: identity.pictureUrl,
+      updatedAt: clerkUpdatedAtFromClaim(identity.updatedAt),
+    });
+  },
+});
+
+/**
+ * The `updated_at` claim as epoch ms, or `undefined` when the template doesn't map it or it can't
+ * be read. Convex types the claim as a string; Clerk's `{{user.updated_at}}` renders a number, and a
+ * hand-edited template could make it an ISO date — so all three are accepted, and seconds-precision
+ * is promoted to ms rather than compared against a ms stamp from the webhook.
+ */
+function clerkUpdatedAtFromClaim(claim: unknown): number | undefined {
+  let ms: number | undefined;
+  if (typeof claim === 'number') ms = claim;
+  else if (typeof claim === 'string' && claim.length > 0) {
+    ms = /^\d+$/.test(claim) ? Number(claim) : Date.parse(claim);
+  }
+  if (ms === undefined || !Number.isFinite(ms)) return undefined;
+  return ms < 1e12 ? ms * 1000 : ms;
+}
+
+/**
+ * The webhook's write (N8 post-merge): Clerk said this user changed, here is the address and
+ * avatar now on the account. Same helper, same gate as `syncFromClerk`; the difference is only
+ * where the claims came from — a signed webhook (`lib/clerkWebhook.ts`) rather than a signed token.
+ * A `null` claim means the account has no such value and clears the mirror (an address removed in
+ * Clerk must not keep receiving mail); an `undefined` one leaves it alone.
+ */
+export const applyClerkMirrors = internalMutation({
+  args: {
+    clerkUserId: v.string(),
+    email: v.optional(v.union(v.string(), v.null())),
+    profileImageUrl: v.optional(v.union(v.string(), v.null())),
+    updatedAt: v.optional(v.number()),
+  },
+  handler: async (ctx, { clerkUserId, email, profileImageUrl, updatedAt }) =>
+    applyClerkMirrorsFor(ctx, clerkUserId, { email, profileImageUrl, updatedAt }),
+});
+
+/**
+ * A claim to mirror: a value, `null` to clear, `undefined` to leave as is. `updatedAt` is when
+ * Clerk says the account last changed — the recency the write is ordered by.
+ */
+type MirrorClaims = {
+  email?: string | null;
+  profileImageUrl?: string | null;
+  updatedAt?: number;
+};
+
+/**
+ * Patch the Clerk mirrors on the profile for `clerkUserId`, if it may hold them — see
+ * `syncFromClerk` for the gate. Returns the profile id, or `null` for no profile / not eligible.
+ *
+ * **Older news is refused.** Two sources write here and neither is ordered: Svix retries a
+ * `user.updated` after a later one has landed, and a launch-time sync can run on a session token
+ * minted *before* the change the webhook already applied (Clerk caches a template token for about
+ * a minute). Each carries Clerk's `updated_at`; a write stamped older than the row's
+ * `clerkUpdatedAt` is the earlier state arriving late and changes nothing. An equal stamp still
+ * applies — the same change from the other source is idempotent, not stale. A write with no stamp
+ * (an older template, a fixture) is applied as before and leaves the stamp alone.
+ */
+async function applyClerkMirrorsFor(
+  ctx: MutationCtx,
+  clerkUserId: string,
+  claims: MirrorClaims,
+): Promise<Id<'profiles'> | null> {
+  const profile = await ctx.db
+    .query('profiles')
+    .withIndex('by_clerk_user_id', (q) => q.eq('clerkUserId', clerkUserId))
+    .unique();
+  if (!profile || !canReceiveNotifications(profile)) return null;
+  if (
+    claims.updatedAt !== undefined &&
+    profile.clerkUpdatedAt !== undefined &&
+    claims.updatedAt < profile.clerkUpdatedAt
+  ) {
+    return profile._id;
+  }
+  const patch: { email?: string; profileImageUrl?: string; clerkUpdatedAt?: number } = {};
+  if (claims.updatedAt !== undefined && claims.updatedAt !== profile.clerkUpdatedAt) {
+    patch.clerkUpdatedAt = claims.updatedAt;
+  }
+  if (claims.email !== undefined && (claims.email ?? undefined) !== profile.email) {
+    patch.email = claims.email ?? undefined;
+  }
+  if (
+    claims.profileImageUrl !== undefined &&
+    (claims.profileImageUrl ?? undefined) !== profile.profileImageUrl
+  ) {
+    patch.profileImageUrl = claims.profileImageUrl ?? undefined;
+  }
+  if (Object.keys(patch).length > 0) await ctx.db.patch(profile._id, patch);
+  return profile._id;
+}
 
 /**
  * The two channel switches (N8 PR 3 / D174): push on the phone, email for the eligible types. A

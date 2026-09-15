@@ -60,7 +60,13 @@ excludeTracksFromAggregate?: boolean  // Phase 8 / D58: keep my recorded paths o
 timezone?: string            // N8/C, D173 — the DEVICE's IANA zone, refreshed on app open; the 8pm digest's
                              // only per-user input (the hour is 20:00 for everyone). Never public.
 email?: string               // N8 PR 3 / D174 — PRIVATE mirror of the Clerk `email` claim (like
-                             // profileImageUrl); scrubbed at the deletion request and the tombstone
+                             // profileImageUrl); both refreshed on every app open by `syncFromClerk`
+                             // (`upsertFromClerk` is onboarding-only) AND the moment Clerk says so
+                             // (`user.updated` webhook → `applyClerkMirrors`); scrubbed at the
+                             // deletion request and the tombstone
+clerkUpdatedAt?: number      // Clerk's `updated_at` (ms) as of the last mirror write — from the token claim
+                             // or the webhook; a write stamped older is refused (unordered Svix retries,
+                             // a cached pre-change token). Absent ⇒ no ordering, apply as before
 channelPrefs?: { push, email } // D174 — the two transports over the inbox; absent ⇒ both on
 emailUnsubscribeSecret?: string // D174 — authorizes the one-click unsubscribe link, and nothing else
 notificationPrefs: {         // per-type toggles — EVERY type is toggleable (D16); vocabulary in @skating/core (N8)

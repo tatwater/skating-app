@@ -103,7 +103,14 @@ const config: ExpoConfig = {
     // (`src/lib/pushRegistration.ts`), against the FCM key / APNs key held in EAS credentials — the
     // server never sees a platform credential. Permission is still requested lazily (on-ice mode or
     // the "this phone" switch), never on cold launch.
-    'expo-notifications',
+    //
+    // The small icon (status bar / collapsed shade) is an **alpha mask**: Android ignores its color
+    // and paints every opaque pixel in `color`. The launcher icon has an opaque navy background, so
+    // used here it rendered as a solid disc; this is the wordmark alone, white on transparent, 96 px
+    // (xxhdpi for a 24 dp icon). `color` is the brand ice accent (`@skating/design` `ice[500]`) —
+    // the blade's own blue, legible on a light or a dark shade. The expanded view's large icon is a
+    // normal bitmap and needs nothing here.
+    ['expo-notifications', { icon: './assets/notification-icon.png', color: '#06a6cb' }],
     // Report photos (D31/D42): the picker returns EXIF (incl. GPS) so the pipeline can offer the
     // opt-in `placeOnMap` geotag; expo-image-manipulator (no plugin) does the resize + EXIF strip.
     [

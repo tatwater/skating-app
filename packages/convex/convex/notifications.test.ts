@@ -1,4 +1,4 @@
-import { zonedHour } from '@skating/core';
+import { describeNotification, type NotificationView, zonedHour } from '@skating/core';
 import { convexTest } from 'convex-test';
 import type { Polygon } from 'geojson';
 import { describe, expect, test } from 'vitest';
@@ -307,6 +307,35 @@ describe('notifications — nearby digest (X₁)', () => {
     expect(((gap % (24 * 60 * 60 * 1000)) + 24 * 60 * 60 * 1000) % (24 * 60 * 60 * 1000)).toBe(
       3 * 60 * 60 * 1000,
     );
+  });
+
+  test('a stored zone the runtime no longer knows falls back to the pilot zone, and the page survives', async () => {
+    // `setTimezone` validated it once; an ICU change since can retire a zone. Without the
+    // fallback one bad string would throw the whole fan-out page and every recipient on it
+    // would lose the digest — the silent non-delivery D5 exists to prevent.
+    const t = convexTestWithGeo();
+    const id = await seedBody(t);
+    const author = await seedProfile(t, 'author');
+    const stale = await seedProfile(t, 'stale', {
+      prefs: { nearbyReportDigest: true },
+      allRadiusMinutes: 30,
+      inBand: true,
+    });
+    const fine = await seedProfile(t, 'fine', {
+      prefs: { nearbyReportDigest: true },
+      allRadiusMinutes: 30,
+      inBand: true,
+    });
+    await t.run((ctx) => ctx.db.patch(stale.id, { timezone: 'Mars/Olympus_Mons' }));
+
+    await createReport(t, author.as, { waterBodyId: id, skateEndTime: SKATE_TIME });
+    const queue = await t.run((ctx) => ctx.db.query('notificationQueue').collect());
+    const staleRow = queue.find((q) => q.userId === stale.id);
+    const fineRow = queue.find((q) => q.userId === fine.id);
+    expect(staleRow).toBeDefined();
+    expect(fineRow).toBeDefined();
+    expect(zonedHour(staleRow?.flushAfter ?? 0, 'America/New_York')).toBe(20);
+    expect(staleRow?.flushAfter).toBe(fineRow?.flushAfter);
   });
 
   test('a digest whose rows straddle the batch cap is still ONE digest, complete, and the batch continues', async () => {
@@ -822,5 +851,140 @@ describe('notifications — the inbox read path', () => {
       }
     });
     expect(await author.as.query(api.notifications.unreadCount, {})).toBe(99);
+  });
+
+  test('every type resolves to its own view — including the three no producer test renders', async () => {
+    // The producer tests flush each type into the table; this is the other half of D168, the
+    // *renderer*, for the views nothing else reads back: a thumb on a hazard, a hazard lifecycle
+    // change, an unreported skate, and the report-bucket shapes. Rows are seeded in the payload
+    // shapes the flush writes, so the resolver is exercised against exactly what it will meet.
+    const t = convexTestWithGeo();
+    const author = await seedProfile(t, 'author');
+    const rater = await seedProfile(t, 'rater');
+    const bodyId = await seedBody(t);
+    const reportId = await createReport(t, author.as, {
+      waterBodyId: bodyId,
+      skateEndTime: SKATE_TIME,
+    });
+    const hazardId = await author.as.mutation(api.hazards.create, {
+      waterBodyId: bodyId,
+      type: 'open_water',
+      geometryKind: 'point_radius',
+      geometry: { type: 'Point', coordinates: [0.5, 0.5] },
+      radiusMeters: 40,
+    });
+    const bountyId = await rater.as.action(api.bounties.create, { waterBodyId: bodyId });
+    const skateStart = Date.UTC(2026, 0, 10, 19, 0);
+
+    const seed = (type: string, payload: Record<string, unknown>) =>
+      t.run((ctx) =>
+        ctx.db.insert('notifications', {
+          userId: author.id,
+          type: type as never,
+          payload,
+          createdAt: Date.now(),
+        }),
+      );
+    await seed('report_rated', {
+      kind: 'thumb',
+      targetType: 'hazard',
+      targetId: hazardId,
+      actorIds: [rater.id],
+      count: 1,
+    });
+    await seed('hazard_confirmation', {
+      kind: 'hazard_lifecycle',
+      hazardId,
+      phase: 'confirmed',
+    });
+    await seed('activity_detected', {
+      kind: 'activity',
+      activityId: 'not-loaded-by-the-resolver',
+      waterBodyId: bodyId,
+      startTime: skateStart,
+    });
+    // The recorder couldn't place this one: no lake, so the sentence has none to name.
+    await seed('activity_detected', {
+      kind: 'activity',
+      activityId: 'unplaced',
+      startTime: skateStart,
+    });
+    await seed('content_flag_resolved', {
+      kind: 'flag_resolved',
+      flagId: 'f',
+      resolution: 'dismissed',
+    });
+    await seed('bounty_request', {
+      kind: 'bounty_request',
+      bountyId,
+      waterBodyId: bodyId,
+      requesterId: rater.id,
+    });
+    await seed('bounty_answered', {
+      kind: 'bounty_answered',
+      bountyId,
+      waterBodyId: bodyId,
+      reportIds: [reportId],
+      count: 1,
+    });
+    await seed('favorite_report', { waterBodyId: bodyId, reportId, count: 2 });
+    await seed('great_report_nearby', { waterBodyId: bodyId, reportId, count: 1 });
+    await seed('nearby_report_digest', {
+      bodies: [{ waterBodyId: bodyId, reportId, count: 3 }],
+      totalCount: 3,
+    });
+
+    const page = (await inbox(author.as)).page;
+    // Newest first, so the unplaced skate is the first `activity_detected`; the map keeps the other.
+    const unplaced = page.find((n) => n.type === 'activity_detected');
+    expect(unplaced).toMatchObject({ activityId: 'unplaced', body: null });
+    expect(describeNotification(unplaced as NotificationView)).toMatchObject({
+      title: 'You recorded a skate. Add a report?',
+      target: { kind: 'unreported_skates' },
+    });
+    const byType = new Map(page.map((n) => [n.type, n] as const));
+    expect(page).toHaveLength(10);
+    expect(byType.get('report_rated')).toMatchObject({
+      kind: 'thumb',
+      targetType: 'hazard',
+      target: { id: hazardId, available: true },
+      body: { id: bodyId, name: 'Lake Morey' },
+      actors: { names: ['rater'], count: 1 },
+    });
+    expect(byType.get('hazard_confirmation')).toMatchObject({
+      target: { id: hazardId, available: true },
+      body: { id: bodyId, name: 'Lake Morey' },
+      phase: 'confirmed',
+    });
+    expect(byType.get('activity_detected')).toMatchObject({
+      activityId: 'not-loaded-by-the-resolver',
+      body: { id: bodyId, name: 'Lake Morey' },
+      startTime: skateStart,
+    });
+    expect(byType.get('content_flag_resolved')).toMatchObject({ resolution: 'dismissed' });
+    expect(byType.get('bounty_request')).toMatchObject({
+      target: { id: bountyId, available: true },
+      body: { id: bodyId },
+    });
+    expect(byType.get('bounty_answered')).toMatchObject({
+      target: { id: bountyId, available: true },
+      count: 1,
+    });
+    expect(byType.get('favorite_report')).toMatchObject({
+      target: { id: reportId, available: true },
+      body: { id: bodyId },
+      count: 2,
+    });
+    expect(byType.get('great_report_nearby')).toMatchObject({ count: 1 });
+    expect(byType.get('nearby_report_digest')).toMatchObject({
+      bodies: [{ body: { id: bodyId }, target: { id: reportId, available: true }, count: 3 }],
+      totalCount: 3,
+    });
+
+    // A hazard hidden since renders degraded on both hazard-keyed views — no dead taps.
+    await t.run((ctx) => ctx.db.patch(hazardId, { moderationStatus: 'hidden' }));
+    const after = new Map((await inbox(author.as)).page.map((n) => [n.type, n] as const));
+    expect(after.get('report_rated')).toMatchObject({ target: { available: false } });
+    expect(after.get('hazard_confirmation')).toMatchObject({ target: { available: false } });
   });
 });

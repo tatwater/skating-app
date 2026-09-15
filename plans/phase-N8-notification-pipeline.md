@@ -1,9 +1,13 @@
 # N8 — The notification pipeline: the inbox, the missing producers, and the reverse reach index
 
-> **Status:** ✅ **Built (2026-09-12)**, three stacked PRs off `phase-n8-notification-pipeline`:
-> **PR 1** (inbox + settled queue + producers B1–B3) #52; **PR 2** (B4/B4a, A5 purge, C timezone)
-> #53; **PR 3** (transports: push, email, offline inbox cache). Not yet deployed to dev; push
-> credentials are a founder task (see PR 3's built record). Prod deferred. Scoped 2026-07-30 with a
+> **Status:** ✅ **COMPLETE (2026-09-15)** — four PRs off `phase-n8-notification-pipeline`, all on
+> dev: **PR 1** (inbox + settled queue + producers B1–B3) #52; **PR 2** (B4/B4a, A5 purge, C
+> timezone) #53; **PR 3** (transports: push, email, offline inbox cache) #55; **PR 4** (the coverage
+> audit's findings: the Clerk mirror refresh, change-email on both clients + the Clerk webhook, the
+> Android small icon, the pipeline to 100% lines) — branch `phase-n8-notification-pipeline-4`. Push credentials
+> are in for both platforms; the Clerk webhook endpoint + secret are registered on dev. What is
+> still owed is listed under [Deferred](#deferred), and none of it is code this phase left unwritten.
+> Prod deferred with everything else. Scoped 2026-07-30 with a
 > founder call of **no N8 code until every N6 phase has shipped**; N6 closed 2026-09-10.
 > **Scope grew at kickoff (founder, 2026-09-11):** push (Android via FCM now; iOS APNs key once
 > enrolled) and **email** (Resend is live on dev) come *in*, as transports over the same rows — see
@@ -764,6 +768,126 @@ Web: the two channel checkboxes. `app.config.ts` picks up `google-services.json`
    twice.
 4. **Email defaults on.** The eligible types are low-volume and mostly opt-in already (the digest is
    off by default); every mail can be silenced in one click.
+
+## Built record — PR 4 (2026-09-14 → 15)
+
+A coverage audit against every commitment above — ten producers, one writer, both shells, both
+transports, offline, deletion — found the matrix built and deployed. What it changed and what it left:
+
+**Fixed — the Clerk mirror never populated.** PR 3 (and D174) said `profiles.email` was refreshed at
+`upsertFromClerk` "every cold start". Both clients call that mutation from the **onboarding screen
+only**, so every dev profile had `email: undefined` — including the founder's, after an app open that
+same afternoon — and the JWT template was never the problem (it maps `email`; checked). The sender's
+Clerk fallback hid it (one lookup per person, cached onto the row), but a cached address is exactly
+what goes stale when someone changes it. `profiles.syncFromClerk` — claims only, no identity args,
+fail-soft, the same never-un-scrub guard — now fires beside `setTimezone` in both shells, and picks
+up the avatar mirror (`profileImageUrl`), which had had the same hole since Phase 3. Founder task #3
+above is therefore closed in the other direction: the template was right, the caller was missing.
+
+**Built — change-email on both clients, and the Clerk `user.updated` webhook that goes with it.**
+`syncFromClerk` closes the stale-address window at the next app *open*, which leaves open exactly
+the email channel's own user: someone who changed their address and then didn't open the app for a
+season, still receiving the digest at the old one. Two things closed it in the same pass, because
+neither is complete without the other:
+
+- **Neither client had a way to change your Clerk email** — no `<UserProfile>`, no custom flow —
+  so the window could only be opened from the Clerk dashboard. Now: `@skating/core`'s
+  `changeEmail.ts` (add → code → verify → make primary → release the old one; written against a
+  structural slice of Clerk's `UserResource`, so core carries no Clerk dependency and the fake-driven
+  tests are the contract), rendered as `ChangeEmail` in web Settings and in the mobile You tab.
+  Once primary has moved, the old address has three fates and the copy names each: *removed*;
+  *kept* because it is the identifier for a connected sign-in (read from `linkedTo` ahead of time,
+  never inferred from a thrown error — Clerk refuses to destroy such an address, and primary is
+  what the mirror follows, so the change is still complete); or *remove failed* for some other
+  reason (a network error), which is told as exactly that with a "Remove old address" retry. The
+  first cut had collapsed the last two into one story about Google — Greptile's one finding on
+  PR #57.
+- **`POST /clerk-webhook`** (`http.ts`), verified by `standardwebhooks` — the library under Clerk's
+  own `verifyWebhook`, taken directly because `@clerk/backend` would have pulled `@clerk/shared`
+  into the Convex bundle, and that package is the one this repo carries in two majors. A signed
+  `user.updated` runs `profiles.applyClerkMirrors`, the *same* helper `syncFromClerk` uses (an
+  address removed in Clerk clears the mirror; a ghost is never un-scrubbed). Bad signature,
+  tampered body, stale timestamp, missing headers ⇒ 400; no secret configured ⇒ 500, so the
+  misconfiguration is loud and Svix retries. `user.deleted` is acknowledged and not acted on:
+  finalization deletes the Clerk user itself, so the ordinary arrival is for a tombstone, and a
+  dashboard deletion of a live account is a founder action the D62 lifecycle should own, not a
+  half-erase from a webhook.
+- **The two writers are ordered by Clerk's clock.** Svix retries are unordered, and a launch-time
+  sync can run on a template token Clerk cached *before* the change the webhook already applied
+  (about a minute's window). Both carry Clerk's `updated_at` — the JWT template already mapped it —
+  so `applyClerkMirrors` stamps `profiles.clerkUpdatedAt` and refuses a write stamped older. Found
+  by the xhigh review pass, along with a real dead end: Clerk refuses to re-verify an address it
+  already holds verified (a Google-linked one that stayed as a secondary, or a retry after
+  make-primary failed), so `changeEmail` skips the code for a verified address and both clients go
+  straight to make-primary. And `primaryEmailOf`'s fallback now takes the first *verified* address
+  or nothing — the first address on an account mid-change is the unverified one it just added.
+
+**Founder task, per Clerk instance:** register the endpoint and set `CLERK_WEBHOOK_SIGNING_SECRET`
+— recipe in [`05-accounts-and-credentials.md`](./05-accounts-and-credentials.md) §11b. Until then
+the route answers 500 and the launch-time sync is the only refresh.
+
+**Not yet exercised.** No `notifications` row on dev carries `pushedAt` or `emailedAt` — the rows
+that exist predate PR 3 — and no profile has an `emailUnsubscribeSecret`, which is minted on the
+first mail. So the 2026-09-14 Android push proved the credentials, not `flush → deliverBatch`; the
+`/unsubscribe` route has never been hit outside tests. One deliberate trigger from a second account
+(a thumb for the push-only path, a bounty on a lake the founder reported for the email path) is the
+outstanding smoke.
+
+**Credentials are complete on both platforms** — FCM V1 key, `google-services.json` and the APNs
+key all landed on EAS on 2026-09-14 (founder tasks 1 and 2 above). iOS stays untested only for
+want of an iPhone; the code path is the Android one.
+
+**Shipped 2026-09-14:** the Android **small icon**. The status bar had shown a solid disc — Android
+treats the small icon as an alpha mask and paints every opaque pixel, and the launcher icon's navy
+background is all opaque. Now `['expo-notifications', { icon, color }]` with a white-on-transparent
+96 px wordmark tinted in the ice accent (`ice[500]`); native config, so it rode a preview rebuild
+that also carried the post-Greptile JS and `syncFromClerk` to the phone.
+
+**Coverage.** Every N8 file is at 100% lines except two dead-by-construction spots left dark on
+purpose (`notifications.ts:452`, a digest row with no body the enqueue never writes; the five
+TypeScript-narrowing fallbacks in `mergeTriggers`). `lib/clerkEmail.ts` had had no test file at all.
+Branch coverage was deliberately *not* chased past that: the remaining partials are `??` and spread
+fallbacks whose other side can't happen, and pinning them would mean writing rows the code can't
+produce. The one reachable case — a skate the recorder couldn't place on a lake — was added.
+
+**Founder tasks closed this PR:** Android small icon (needed an asset — arrived inverted the first
+time, wordmark transparent and surround white, flipped in place; then re-cut heavier), preview
+build `a09708e6`, the Clerk webhook endpoint + `CLERK_WEBHOOK_SIGNING_SECRET` on dev.
+
+## Deferred
+
+Everything N8 still owes, in the order it should happen. None of it is unwritten code; each is a
+run, an install, a decision, or a scale trigger.
+
+1. **The end-to-end smoke of `flush → deliverBatch` on dev.** No `notifications` row on dev has
+   ever carried `pushedAt` or `emailedAt`, and no profile has an `emailUnsubscribeSecret` (minted
+   on the first mail) — the 2026-09-14 Android push proved the credentials with a direct call, not
+   the pipeline. One deliberate trigger from a second account: a thumb on a founder report (the
+   push-only path) and a bounty on a lake the founder has reported (the email path, and the first
+   real `/unsubscribe` link). Then check the stamps, the secret, and the inbox at `updates@…`.
+2. **Install preview build `a09708e6`** on the Pixel — it carries the small icon, `syncFromClerk`
+   and the post-Greptile JS. The first push after install is what shows the icon.
+3. **Change-email, exercised once for real** (founder chose to wait): change the address from web
+   Settings, watch the endpoint's *Messages* tab in Clerk show a 200, confirm `profiles.email`
+   moved and `clerkUpdatedAt` was stamped. Until then the webhook is verified only by signed
+   fixtures.
+4. **iOS** is untested end to end for want of an iPhone; the code path is the Android one and the
+   APNs key is on EAS. The first iOS build needs `eas device:create` + a distribution cert.
+5. **Prod cutover items that are N8's:** a webhook endpoint in the *prod* Clerk instance pointing
+   at `diligent-guanaco-965.convex.site` and its own `CLERK_WEBHOOK_SIGNING_SECRET`;
+   `EXPO_ACCESS_TOKEN`, `RESEND_API_KEY` / `RESEND_FROM_EMAIL` and `WEB_APP_URL` on prod Convex;
+   the `production` EAS environment populated. Per-instance, nothing carries over from dev
+   (`docs/deployment-and-release.md`, cutover list 6–7b).
+6. **A `user.deleted` policy for a live account.** The webhook acknowledges and logs it; our own
+   finalization deletes the Clerk user *after* the tombstone, so the ordinary arrival is a no-op.
+   A founder deleting a live user from the Clerk dashboard leaves a profile the D62 lifecycle never
+   started on. Founder call whether that should begin the deletion request automatically.
+7. **The reverse reach index** (Workstream D / D172) — build at ~1,000 profiles, or the first
+   report whose fan-out spans more than a handful of pages. Design is complete above.
+8. **Web push** — service worker, VAPID keys, a second token type. Web = inbox + email until then.
+9. **Silent background-refresh push to a closed app** (D54) — a privacy decision (the biggest
+   departure from D12) plus accepting iOS's throttling; not a notification-pipeline change.
+10. **Grouping across types in the inbox** — a UI question that wants a season of real rows.
 
 ## What this phase does not cover
 

@@ -49,7 +49,7 @@ async function seedUser(
 async function seedNotification(
   t: ReturnType<typeof harness>,
   userId: Id<'profiles'>,
-  type: 'content_flag_resolved' | 'report_rated' | 'nearby_report_digest',
+  type: 'content_flag_resolved' | 'report_rated' | 'nearby_report_digest' | 'activity_detected',
   payload: Record<string, unknown>,
 ) {
   return t.run((ctx) =>
@@ -121,11 +121,19 @@ describe('pushTokens', () => {
       a.as.mutation(api.pushTokens.register, { token: 'not-a-token', platform: 'android' }),
     ).rejects.toThrow(/Expo push token/);
 
-    // Same phone, different account: the row moves.
-    await b.as.mutation(api.pushTokens.register, { token, platform: 'android' });
-    const rows = await t.run((ctx) => ctx.db.query('pushTokens').collect());
+    // Same phone, different account: the row moves — and a device name given on this register
+    // lands, while a later register without one leaves it in place rather than blanking it.
+    await b.as.mutation(api.pushTokens.register, {
+      token,
+      platform: 'android',
+      deviceName: 'Pixel',
+    });
+    let rows = await t.run((ctx) => ctx.db.query('pushTokens').collect());
     expect(rows).toHaveLength(1);
-    expect(rows[0]?.userId).toBe(b.id);
+    expect(rows[0]).toMatchObject({ userId: b.id, deviceName: 'Pixel' });
+    await b.as.mutation(api.pushTokens.register, { token, platform: 'android' });
+    rows = await t.run((ctx) => ctx.db.query('pushTokens').collect());
+    expect(rows[0]?.deviceName).toBe('Pixel');
 
     // Unregister is owner-only: a's attempt on b's row is a no-op.
     await a.as.mutation(api.pushTokens.unregister, { token });
@@ -351,6 +359,166 @@ describe('notificationDelivery', () => {
     expect(good.status).toBe(200);
     expect(await good.text()).toBe('');
     expect((await me.as.query(api.profiles.current, {}))?.channelPrefs?.email).toBe(false);
+
+    // The confirm page's own button: a browser POST with the right secret is told it worked.
+    await me.as.mutation(api.profiles.setChannelPrefs, { email: true });
+    const browser = await t.fetch(link, { method: 'POST', headers: { Accept: 'text/html' } });
+    expect(browser.status).toBe(200);
+    expect(await browser.text()).toContain('You’re unsubscribed');
+    expect((await me.as.query(api.profiles.current, {}))?.channelPrefs?.email).toBe(false);
+  });
+
+  test('a ticket error that is ours, not the device’s, stamps nothing and disables nothing', async () => {
+    // `InvalidCredentials` is what a missing FCM key looks like. The row must stay unstamped so a
+    // later batch can try again once the key exists, and the token must survive — the phone is fine.
+    const t = harness();
+    const me = await seedUser(t, 'me');
+    await me.as.mutation(api.pushTokens.register, {
+      token: 'ExponentPushToken[p]',
+      platform: 'android',
+    });
+    const flag = await seedNotification(t, me.id, 'content_flag_resolved', FLAG_PAYLOAD);
+    stubFetch([
+      {
+        match: /push\/send/,
+        body: {
+          data: [
+            {
+              status: 'error',
+              message: 'no FCM key',
+              details: { error: 'InvalidCredentials' },
+            },
+          ],
+        },
+      },
+    ]);
+    const result = await t.action(internal.notificationDelivery.deliverBatch, {
+      notificationIds: [flag],
+    });
+    expect(result).toMatchObject({ pushMessages: 1, pushed: 0, deadTokens: 0 });
+    expect((await t.run((ctx) => ctx.db.get(flag)))?.pushedAt).toBeUndefined();
+    const tokens = await t.run((ctx) => ctx.db.query('pushTokens').collect());
+    expect(tokens[0]?.disabledAt).toBeUndefined();
+    // No ok ticket ⇒ nothing to check receipts for.
+    const scheduled = await t.run((ctx) => ctx.db.system.query('_scheduled_functions').collect());
+    expect(scheduled.some((f) => f.name.includes('checkPushReceipts'))).toBe(false);
+  });
+
+  test('one row whose sentence cannot compose costs that row, not the batch', async () => {
+    // A stored zone the runtime no longer knows (`setTimezone` validated it against an older ICU)
+    // makes `Intl` throw while formatting the skate time. The activity row loses its push *and* its
+    // email; the flag row beside it goes out untouched, and the batch reports honestly.
+    const t = harness();
+    const me = await seedUser(t, 'me', { email: 'me@example.test' });
+    await t.run((ctx) => ctx.db.patch(me.id, { timezone: 'Not/AZone' }));
+    await me.as.mutation(api.pushTokens.register, {
+      token: 'ExponentPushToken[p]',
+      platform: 'android',
+    });
+    const flag = await seedNotification(t, me.id, 'content_flag_resolved', FLAG_PAYLOAD);
+    const skate = await seedNotification(t, me.id, 'activity_detected', {
+      kind: 'activity',
+      activityId: 'a',
+      startTime: Date.UTC(2026, 0, 10, 19, 0),
+      coalesceKey: 'k3',
+    });
+    const calls = stubFetch([
+      { match: /push\/send/, body: { data: [{ status: 'ok', id: 't1' }] } },
+      { match: /api\.resend\.com/, body: { id: 'email-1' } },
+    ]);
+    const result = await t.action(internal.notificationDelivery.deliverBatch, {
+      notificationIds: [flag, skate],
+    });
+    expect(result).toMatchObject({ rows: 2, pushMessages: 1, pushed: 1, emailed: 1 });
+    const messages = calls.find((c) => /push\/send/.test(c.url))?.body as
+      | { title: string }[]
+      | undefined;
+    expect(messages?.[0]?.title).toMatch(/moderator reviewed/);
+    const rows = await t.run((ctx) => ctx.db.query('notifications').collect());
+    expect(rows.find((r) => r._id === flag)).toMatchObject({
+      pushedAt: expect.any(Number),
+      emailedAt: expect.any(Number),
+    });
+    const skateRow = rows.find((r) => r._id === skate);
+    expect(skateRow?.pushedAt).toBeUndefined();
+    expect(skateRow?.emailedAt).toBeUndefined();
+  });
+
+  test('without WEB_APP_URL a push carries its target but no link', async () => {
+    const t = harness();
+    vi.stubEnv('WEB_APP_URL', '');
+    const me = await seedUser(t, 'me');
+    await me.as.mutation(api.pushTokens.register, {
+      token: 'ExponentPushToken[p]',
+      platform: 'android',
+    });
+    const flag = await seedNotification(t, me.id, 'content_flag_resolved', FLAG_PAYLOAD);
+    const calls = stubFetch([
+      { match: /push\/send/, body: { data: [{ status: 'ok', id: 't1' }] } },
+    ]);
+    await t.action(internal.notificationDelivery.deliverBatch, { notificationIds: [flag] });
+    const messages = calls.find((c) => /push\/send/.test(c.url))?.body as
+      | { data: { url?: string; target: unknown } }[]
+      | undefined;
+    expect(messages?.[0]?.data.url).toBeUndefined();
+    expect(messages?.[0]?.data).toHaveProperty('target');
+  });
+
+  test('a receipt error other than a dead device is logged and forgotten', async () => {
+    const t = harness();
+    const me = await seedUser(t, 'me');
+    const tokenId = await me.as.mutation(api.pushTokens.register, {
+      token: 'ExponentPushToken[p]',
+      platform: 'ios',
+    });
+    stubFetch([
+      {
+        match: /getReceipts/,
+        body: {
+          data: {
+            t1: {
+              status: 'error',
+              message: 'APNs hiccup',
+              details: { error: 'MessageRateExceeded' },
+            },
+          },
+        },
+      },
+    ]);
+    const result = await t.action(internal.notificationDelivery.checkPushReceipts, {
+      tickets: [{ id: 't1', tokenId: tokenId as Id<'pushTokens'> }],
+      sentAt: Date.now() + 1,
+    });
+    expect(result).toEqual({ checked: 1, errors: 1, deadTokens: 0 });
+    expect(
+      (await t.run((ctx) => ctx.db.get(tokenId as Id<'pushTokens'>)))?.disabledAt,
+    ).toBeUndefined();
+  });
+
+  test('a recipient who departed between the flush and the send gets nothing, and a ghost is never re-cached', async () => {
+    const t = harness();
+    const me = await seedUser(t, 'me');
+    await me.as.mutation(api.pushTokens.register, {
+      token: 'ExponentPushToken[p]',
+      platform: 'android',
+    });
+    const flag = await seedNotification(t, me.id, 'content_flag_resolved', FLAG_PAYLOAD);
+    await t.run((ctx) => ctx.db.patch(me.id, { deletionRequestedAt: Date.now() }));
+    const calls = stubFetch([]);
+    const result = await t.action(internal.notificationDelivery.deliverBatch, {
+      notificationIds: [flag],
+    });
+    expect(result).toMatchObject({ rows: 0, pushMessages: 0, emailed: 0 });
+    expect(calls).toHaveLength(0);
+    // The two writers of the mirror refuse a ghost outright.
+    expect(
+      await t.mutation(internal.notificationDelivery.ensureUnsubscribeSecret, { userId: me.id }),
+    ).toBeNull();
+    await t.mutation(internal.notificationDelivery.cacheEmail, {
+      userId: me.id,
+      email: 'ghost@example.test',
+    });
+    expect((await t.run((ctx) => ctx.db.get(me.id)))?.email).toBeUndefined();
   });
 
   test('a missing email mirror falls back to one Clerk lookup and caches it', async () => {

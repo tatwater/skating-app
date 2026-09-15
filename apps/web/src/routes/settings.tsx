@@ -1,4 +1,4 @@
-import { useAuth, useUser } from '@clerk/tanstack-react-start';
+import { useAuth } from '@clerk/tanstack-react-start';
 import { api } from '@skating/convex/api';
 import type { Id } from '@skating/convex/dataModel';
 import {
@@ -15,6 +15,7 @@ import { useMutation, useQuery } from 'convex/react';
 import { useState } from 'react';
 import { AccountLifecycle } from '../components/AccountLifecycle';
 import { AggregateTracksSetting } from '../components/AggregateTracksSetting';
+import { ChangeEmail } from '../components/ChangeEmail';
 import { ContactSupport } from '../components/ContactSupport';
 import { ProfileEdit } from '../components/ProfileEdit';
 import { Avatar } from '../components/ProfileView';
@@ -42,7 +43,6 @@ export const Route = createFileRoute('/settings')({ component: SettingsPage });
 
 function SettingsPage() {
   const { signOut } = useAuth();
-  const { user } = useUser();
   const profile = useQuery(api.profiles.current, {});
 
   return (
@@ -63,9 +63,7 @@ function SettingsPage() {
               'Loading your profile…'
             )}
           </p>
-          {user?.primaryEmailAddress?.emailAddress ? (
-            <p className="text-foreground-muted">{user.primaryEmailAddress.emailAddress}</p>
-          ) : null}
+          <ChangeEmail />
         </CardContent>
       </Card>
 

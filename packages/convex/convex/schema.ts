@@ -113,8 +113,9 @@ export default defineSchema({
     homeCoord: v.optional(latLng), // PRIVATE — filter input only (D11); set at onboarding
     homeTownLabel: v.optional(v.string()), // optional PUBLIC label (D11)
     bio: v.optional(v.string()), // optional PUBLIC blurb, shown only on a public profile (D13)
-    // Avatar mirrored from Clerk's `imageUrl` at `upsertFromClerk` (Phase 3 decision #2) — no upload
-    // pipeline; users manage it via Clerk's own UI. Optional ⇒ migration-free; scrubbed on deletion.
+    // Avatar mirrored from Clerk's `imageUrl` — written at `upsertFromClerk` (Phase 3 decision #2) and
+    // refreshed on every app open by `syncFromClerk` — no upload pipeline; users manage it via Clerk's
+    // own UI. Optional ⇒ migration-free; scrubbed on deletion.
     profileImageUrl: v.optional(v.string()),
     driveTimePrefMinutes: v.number(), // legacy single pref (D18); superseded by the bands + notif radii below
     // Drive-time bands derived from the PRIVATE `homeCoord` (Phase 4, decision #2). 30/60 are hosted-ORS
@@ -173,14 +174,20 @@ export default defineSchema({
      */
     timezone: v.optional(v.string()),
     /**
-     * The primary email, mirrored from the Clerk identity's `email` claim at `upsertFromClerk` (N8
-     * PR 3 / D174) — the same posture as `profileImageUrl`: Clerk owns it, we hold a copy so a send is
-     * not a Clerk API call per recipient (`lib/clerkEmail` says why that doesn't scale). PRIVATE:
+     * The primary email, mirrored from the Clerk identity's `email` claim — written at
+     * `upsertFromClerk` (N8 PR 3 / D174) and refreshed on every app open by `syncFromClerk` — the same
+     * posture as `profileImageUrl`: Clerk owns it, we hold a copy so a send is not a Clerk API call per
+     * recipient (`lib/clerkEmail` says why that doesn't scale). PRIVATE:
      * never on a public profile, scrubbed at the deletion request and again at the tombstone. Absent
      * when the JWT template carries no email; the sender then falls back to one Clerk lookup and
      * caches the answer here.
      */
     email: v.optional(v.string()),
+    // When Clerk last changed the account, per the source that wrote the mirrors last (the token's
+    // `updated_at` claim or the webhook's `data.updated_at`, ms). Two writers race — an unordered
+    // webhook retry, a still-cached pre-change token on a remount — and this is what keeps the
+    // later change from being overwritten by the earlier one. Absent ⇒ no ordering, apply.
+    clerkUpdatedAt: v.optional(v.number()),
     /**
      * The two transports over the inbox (D174): a phone push, and an email for the types in
      * `NOTIFICATION_EMAIL_ELIGIBLE`. Not a per-type matrix — the per-type toggles decide *what*, these

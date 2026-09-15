@@ -13,6 +13,7 @@ export * from './bodyIdentity';
 export * from './bodyProbe';
 export * from './bodySummary';
 export * from './bounties';
+export * from './changeEmail';
 export * from './coalesce';
 export * from './coldChain';
 export * from './comment';
