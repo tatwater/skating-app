@@ -52,4 +52,53 @@ describe('sendEmail (rate limit)', () => {
     expect(await sendEmail(mail)).toBe(false);
     expect(fetchImpl).toHaveBeenCalledTimes(1);
   });
+
+  test('a Retry-After that is missing or silly is bounded, not obeyed', async () => {
+    // No header ⇒ the 1 s default; "3600" ⇒ the 5 s cap. Either way the send lands on the retry.
+    for (const header of [undefined, '3600']) {
+      const fetchImpl = vi
+        .fn()
+        .mockResolvedValueOnce(reply(429, header))
+        .mockResolvedValueOnce(reply(200));
+      vi.stubGlobal('fetch', fetchImpl);
+      const pending = sendEmail(mail);
+      await vi.advanceTimersByTimeAsync(5000);
+      expect(await pending).toBe(true);
+      expect(fetchImpl).toHaveBeenCalledTimes(2);
+    }
+  });
+});
+
+describe('sendEmail (never throws, never sends without a provider)', () => {
+  test('an unconfigured provider skips with a warning and reports false — a dev without keys still deploys', async () => {
+    vi.stubEnv('RESEND_API_KEY', '');
+    const fetchImpl = vi.fn();
+    vi.stubGlobal('fetch', fetchImpl);
+    expect(await sendEmail(mail)).toBe(false);
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  test('an empty recipient is a skip, not a request', async () => {
+    const fetchImpl = vi.fn();
+    vi.stubGlobal('fetch', fetchImpl);
+    expect(await sendEmail({ ...mail, to: '' })).toBe(false);
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  test('a thrown fetch is caught and reported false', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('ECONNRESET')));
+    expect(await sendEmail(mail)).toBe(false);
+  });
+
+  test('headers ride along only when given', async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(reply(200));
+    vi.stubGlobal('fetch', fetchImpl);
+    await sendEmail(mail);
+    await sendEmail({ ...mail, headers: { 'List-Unsubscribe': '<https://x>' } });
+    const bodies = fetchImpl.mock.calls.map(
+      (call) => JSON.parse((call[1] as RequestInit).body as string) as Record<string, unknown>,
+    );
+    expect(bodies[0]).not.toHaveProperty('headers');
+    expect(bodies[1]?.headers).toEqual({ 'List-Unsubscribe': '<https://x>' });
+  });
 });

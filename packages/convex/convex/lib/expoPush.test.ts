@@ -83,6 +83,23 @@ describe('expoPush', () => {
     expect((seen?.headers as Record<string, string> | undefined)?.Authorization).toBe(
       'Bearer secret',
     );
+    // The receipts call carries it too — both endpoints enforce the token once enhanced security
+    // is on for the project, and a send that authenticates while the receipt check doesn't would
+    // leave every dead token undetected.
+    let seenReceipts: RequestInit | undefined;
+    const receiptsImpl = vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
+      seenReceipts = init;
+      return {
+        ok: true,
+        status: 200,
+        statusText: 'OK',
+        json: async () => ({ data: {} }),
+      } as Response;
+    });
+    await getExpoPushReceipts(['x'], receiptsImpl as unknown as typeof fetch);
+    expect((seenReceipts?.headers as Record<string, string> | undefined)?.Authorization).toBe(
+      'Bearer secret',
+    );
   });
 
   test('receipts merge across chunks and tolerate a failed or thrown request', async () => {
