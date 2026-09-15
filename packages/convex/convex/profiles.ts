@@ -2,9 +2,11 @@
  * Profile functions.
  *
  * Identity split (D26): Clerk authenticates the user; this module owns the mirroring
- * `profiles` row. `upsertFromClerk` is the provisioning bridge the client calls after
- * Clerk sign-in — create-or-update the profile keyed by the Clerk subject. Kept
- * idempotent so it's safe to call on every app launch.
+ * `profiles` row. `upsertFromClerk` is the provisioning bridge the client calls from the
+ * onboarding screen — create-or-update the profile keyed by the Clerk subject. Kept
+ * idempotent, but it is *not* the launch-time path: both clients call it at onboarding only.
+ * What runs on every app open is the pair beside it, `setTimezone` and `syncFromClerk`
+ * (the Clerk mirrors — email and avatar).
  */
 
 import {
@@ -33,7 +35,13 @@ import { ConvexError, v } from 'convex/values';
 import { internal } from './_generated/api';
 import type { Doc } from './_generated/dataModel';
 import { internalMutation, mutation, query } from './_generated/server';
-import { getCurrentProfile, requireContributor, requireProfile, requireRole } from './lib/auth';
+import {
+  canReceiveNotifications,
+  getCurrentProfile,
+  requireContributor,
+  requireProfile,
+  requireRole,
+} from './lib/auth';
 import { publicAuthor } from './lib/authorView';
 import { NOTIFICATION_PREF_DEFAULTS, NOTIFICATION_PREF_KEYS } from './lib/enums';
 import { loadBlockedAuthorIds } from './lib/reportVisibility';
@@ -148,7 +156,7 @@ export const upsertFromClerk = mutation({
       .withIndex('by_clerk_user_id', (q) => q.eq('clerkUserId', identity.subject))
       .unique();
 
-    // An inactive account must not mutate its identity via this app-launch sync:
+    // An inactive account must not mutate its identity via this onboarding sync:
     //  - a banned/suspended user could squat a new username or rename to evade
     //    moderation (D37);
     //  - a *deleted* user would un-scrub the PII that deletion cleared (displayName →
@@ -187,8 +195,8 @@ export const upsertFromClerk = mutation({
       // the 18th birthday (minor → false) an already-private profile stays private until the user
       // opts to make it public — nothing is auto-widened (D13/D41). Posting also unlocks at 18
       // separately (reports.create gates on age), since all reports are public (D13).
-      // Keep the *original* acceptance time when the version is unchanged (a routine
-      // app-launch re-sync); only stamp a new time when the user accepts a bumped version.
+      // Keep the *original* acceptance time when the version is unchanged (a re-onboarding,
+      // e.g. after a cancelled deletion); only stamp a new time when the user accepts a bumped version.
       const reAccepted = existing.riskAckVersion !== args.riskAckVersion;
       await ctx.db.patch(existing._id, {
         displayName,
@@ -357,14 +365,22 @@ export const setTimezone = mutation({
  * has had these fields cleared on purpose, and a launch-time sync is the first thing that would put
  * them back. Fail-soft rather than throw — this runs unattended on every open, and a ghost signing in
  * to cancel should see nothing from it. An unmapped claim (`undefined`) leaves the mirror alone.
+ *
+ * The gate is `canReceiveNotifications` — the same predicate `notificationDelivery.cacheEmail`, the
+ * other writer of `profiles.email`, sits behind — so the two writers of the mirror can't drift on
+ * who may hold one. (Like `upsertFromClerk`, and unlike `requireProfile`, this reads `status` alone:
+ * a suspension that has lapsed without an explicit `unbanUser` still counts as inactive here.)
  */
 export const syncFromClerk = mutation({
   args: {},
   handler: async (ctx) => {
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) return null;
-    const profile = await getCurrentProfile(ctx);
-    if (profile?.status !== 'active' || profile.deletionRequestedAt !== undefined) return null;
+    const profile = await ctx.db
+      .query('profiles')
+      .withIndex('by_clerk_user_id', (q) => q.eq('clerkUserId', identity.subject))
+      .unique();
+    if (!profile || !canReceiveNotifications(profile)) return null;
     const patch: { email?: string; profileImageUrl?: string } = {};
     if (identity.email !== undefined && identity.email !== profile.email) {
       patch.email = identity.email;

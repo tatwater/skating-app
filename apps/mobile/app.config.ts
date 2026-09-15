@@ -110,10 +110,7 @@ const config: ExpoConfig = {
     // (xxhdpi for a 24 dp icon). `color` is the brand ice accent (`@skating/design` `ice[500]`) —
     // the blade's own blue, legible on a light or a dark shade. The expanded view's large icon is a
     // normal bitmap and needs nothing here.
-    [
-      'expo-notifications',
-      { icon: './assets/notification-icon.png', color: '#06a6cb' },
-    ],
+    ['expo-notifications', { icon: './assets/notification-icon.png', color: '#06a6cb' }],
     // Report photos (D31/D42): the picker returns EXIF (incl. GPS) so the pipeline can offer the
     // opt-in `placeOnMap` geotag; expo-image-manipulator (no plugin) does the resize + EXIF strip.
     [

@@ -4,7 +4,7 @@
 > `phase-n8-notification-pipeline`: **PR 1** (inbox + settled queue + producers B1–B3) #52; **PR 2**
 > (B4/B4a, A5 purge, C timezone) #53; **PR 3** (transports: push, email, offline inbox cache) #55.
 > Push credentials are in for both platforms (FCM V1 key + `google-services.json`, APNs key, all on
-> EAS; first Android device push confirmed 2026-09-14). The Android small icon shipped 2026-09-15; a
+> EAS; first Android device push confirmed 2026-09-14). The Android small icon shipped 2026-09-14; a
 > real end-to-end `deliverBatch` run is still open — see [Post-merge](#post-merge-2026-09-14). Prod
 > deferred. Scoped 2026-07-30 with a
 > founder call of **no N8 code until every N6 phase has shipped**; N6 closed 2026-09-10.
@@ -794,7 +794,7 @@ outstanding smoke.
 key all landed on EAS on 2026-09-14 (founder tasks 1 and 2 above). iOS stays untested only for
 want of an iPhone; the code path is the Android one.
 
-**Shipped 2026-09-15:** the Android **small icon**. The status bar had shown a solid disc — Android
+**Shipped 2026-09-14:** the Android **small icon**. The status bar had shown a solid disc — Android
 treats the small icon as an alpha mask and paints every opaque pixel, and the launcher icon's navy
 background is all opaque. Now `['expo-notifications', { icon, color }]` with a white-on-transparent
 96 px wordmark tinted in the ice accent (`ice[500]`); native config, so it rode a preview rebuild
