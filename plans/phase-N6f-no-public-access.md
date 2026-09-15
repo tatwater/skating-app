@@ -400,7 +400,8 @@ red run teaches anyone is to re-run it.
   situation eventually (way down the line) would be managing 5,000 lakes that actually get skated
   on, not 20,000 nobody ever touches."* That is a decision across this phase's third state, N7's
   purge lane and the weather registry's prune, and it wants its own scoping.
-- **No D-number, no roadmap entry.** This doc is the record.
+- **No D-number.** This doc is the record; the roadmap and README entries (added with it) point
+  here rather than at `01-decisions.md`.
 
 ---
 

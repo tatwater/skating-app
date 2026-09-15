@@ -1,8 +1,18 @@
+import type { Doc } from '@skating/convex/dataModel';
 import type { PublicAccess } from '@skating/core';
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import { ConvexError } from 'convex/values';
 import { describe, expect, it, vi } from 'vitest';
-import { PublicAccessSectionView } from './PublicAccessSection';
+
+// The data half is exercised once, for the body key. Stubbed at the Convex and role boundaries so
+// the section renders exactly the tree it renders in the app — the `AccessSection.test` pattern.
+vi.mock('convex/react', () => ({
+  useQuery: () => [],
+  useMutation: () => async () => undefined,
+}));
+vi.mock('../lib/useRole', () => ({ useRole: () => ({ canModerate: false }) }));
+
+const { PublicAccessSection, PublicAccessSectionView } = await import('./PublicAccessSection');
 
 /**
  * A ruling made 2026-02-01 — the date the drawer prints, and the date the gate names. Noon UTC, so
@@ -183,5 +193,25 @@ describe('PublicAccessSectionView — the moderator', () => {
       fireEvent.click(screen.getByRole('button', { name: 'Mark no public access' }));
     });
     expect(screen.getByText('Water body not found')).toBeInTheDocument();
+  });
+});
+
+describe('PublicAccessSection — the body key', () => {
+  /** Only the fields the section reads; the rest of a `waterBodies` row is irrelevant to a render. */
+  const bodyWith = (id: string) => ({ _id: id, publicAccess: undefined }) as Doc<'waterBodies'>;
+
+  it('a note half-written for one lake does not survive the drawer swapping to another', () => {
+    const { rerender } = render(<PublicAccessSection body={bodyWith('lakeA')} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Report no public access' }));
+    fireEvent.change(screen.getByRole('textbox'), {
+      target: { value: 'Gate across the only road in.' },
+    });
+
+    // The drawer swaps `body` in place when the map selection changes — no unmount.
+    rerender(<PublicAccessSection body={bodyWith('lakeB')} />);
+
+    // Lake B starts from the closed state: no textbox, no carried-over sentence, just the button.
+    expect(screen.queryByRole('textbox')).toBeNull();
+    expect(screen.getByRole('button', { name: 'Report no public access' })).toBeInTheDocument();
   });
 });

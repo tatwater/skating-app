@@ -33,6 +33,14 @@ import { TextArea } from './ThemedInputs';
  * the person whose report is worth most.
  */
 export function PublicAccessSection({ body }: { body: Doc<'waterBodies'> }) {
+  // Keyed by the body, so the form's note and error die with the lake they were typed about. The
+  // `/water/[id]` route re-renders in place when its param changes, and an explanation half-written
+  // for lake A must not be the one submitted against lake B. Keyed here rather than at the mount
+  // site, so no caller has to remember it.
+  return <PublicAccessForm key={body._id} body={body} />;
+}
+
+function PublicAccessForm({ body }: { body: Doc<'waterBodies'> }) {
   const pending = useQuery(api.waterBodies.pendingAccessReportCount, { waterBodyId: body._id });
   const mine = useQuery(api.contentFlags.myAccessFlags, {});
   const report = useMutation(api.contentFlags.flag);
@@ -69,8 +77,10 @@ export function PublicAccessSection({ body }: { body: Doc<'waterBodies'> }) {
     }
   }
 
-  // Nothing ruled, nobody reported, the form closed, and the viewer's own reports not yet known —
-  // say nothing at all rather than flash a heading.
+  // Nothing ruled, nobody reported, the form closed, and the viewer's own reports still loading —
+  // say nothing at all rather than flash a heading. `mine` is only ever `undefined` while loading:
+  // the app is sign-in gated at the root (`Stack.Protected`, D26), so this sheet never renders for
+  // a signed-out visitor and the query's `[]`-when-anonymous branch is unreachable from here.
   if (!settled && count === 0 && !open && mine === undefined) return null;
 
   return (

@@ -42,10 +42,15 @@ export function PublicAccessSection({ body }: { body: Doc<'waterBodies'> }) {
 
   return (
     <PublicAccessSectionView
+      // Keyed by the body, so a half-written note dies with the lake it was typed about. The drawer
+      // swaps `body` in place when the map selection changes, and an explanation started for lake A
+      // must not be the one submitted against lake B.
+      key={body._id}
       access={body.publicAccess}
       pendingCount={pending ?? 0}
       alreadyReported={(mine ?? []).includes(body._id)}
-      // Undefined until the viewer's own reports have loaded — the view stays silent rather than
+      // Undefined only while the viewer's own reports load — the app is sign-in gated at the root
+      // (`AuthGate`, D26), so this is never a signed-out visitor. The view stays silent rather than
       // flashing a heading it may take back a frame later.
       ready={mine !== undefined}
       canModerate={canModerate}
@@ -125,7 +130,7 @@ export function PublicAccessSectionView({
     }
   }
 
-  // Nothing ruled, nobody reported, and no way to report (signed out) — say nothing at all.
+  // Nothing ruled, nobody reported, and the viewer not yet known — say nothing at all.
   if (!settled && pendingCount === 0 && !open && !canModerate && !ready) return null;
 
   return (
