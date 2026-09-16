@@ -36,6 +36,7 @@ import { DrawerHead, DrawerPinned } from './MapDrawer';
 import { useMapSelection } from './MapSelectionContext';
 import { PastWeatherPanel } from './PastWeatherPanel';
 import { PostedAccess } from './PostedAccess';
+import { PublicAccessSection } from './PublicAccessSection';
 import { ReferenceLinks } from './ReferenceLinks';
 import { ReportForm } from './ReportForm';
 import { SeasonEmptyState, SeasonFilter, useResetBrowseSeason } from './SeasonFilter';
@@ -313,6 +314,10 @@ export function WaterBodyDetail({
               coord={result.body.interiorPoint ?? result.body.centroid}
               reveal={reveal}
             />
+            {/* Whether you may be here at all (N6f) — next to what the sign says, because both are
+                      facts about permission rather than about the trip. Renders nothing on the unruled,
+                      unreported majority; the web drawer has the same placement. */}
+            <PublicAccessSection body={result.body} />
             {/* Winter wind (N7-3 / D90) — a climatology, what the last five winters did, which is
                       exactly why it is a fact about the body rather than a planning input. Renders
                       nothing without a rose, and says nothing about safety (D145). */}

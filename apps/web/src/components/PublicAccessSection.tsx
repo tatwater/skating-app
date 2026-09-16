@@ -1,6 +1,11 @@
 import { api } from '@skating/convex/api';
 import type { Doc, Id } from '@skating/convex/dataModel';
-import { describePendingAccessReports, describePublicAccess } from '@skating/core';
+import {
+  describePendingAccessReports,
+  describePublicAccess,
+  type PublicAccess,
+  type PublicAccessVerdict,
+} from '@skating/core';
 import { useMutation, useQuery } from 'convex/react';
 import { ConvexError } from 'convex/values';
 import { useState } from 'react';
@@ -35,15 +40,66 @@ export function PublicAccessSection({ body }: { body: Doc<'waterBodies'> }) {
   const report = useMutation(api.contentFlags.flag);
   const rule = useMutation(api.waterBodies.setPublicAccess);
 
+  return (
+    <PublicAccessSectionView
+      // Keyed by the body, so a half-written note dies with the lake it was typed about. The drawer
+      // swaps `body` in place when the map selection changes, and an explanation started for lake A
+      // must not be the one submitted against lake B.
+      key={body._id}
+      access={body.publicAccess}
+      pendingCount={pending ?? 0}
+      alreadyReported={(mine ?? []).includes(body._id)}
+      // Undefined only while the viewer's own reports load — the app is sign-in gated at the root
+      // (`AuthGate`, D26), so this is never a signed-out visitor. The view stays silent rather than
+      // flashing a heading it may take back a frame later.
+      ready={mine !== undefined}
+      canModerate={canModerate}
+      onReport={(note) =>
+        report({
+          targetType: 'waterbody',
+          targetId: body._id,
+          reason: 'no_public_access',
+          ...(note ? { note } : {}),
+        })
+      }
+      onRule={(verdict) => rule({ waterBodyId: body._id as Id<'waterBodies'>, verdict })}
+    />
+  );
+}
+
+/**
+ * The rendering half, split out so it can be tested without a Convex client — the
+ * `AccessSectionView` pattern, and for the same reason: everything worth asserting here is a rule
+ * about what appears on screen (which verdict line, which button, when the note is compulsory), and
+ * none of it is a rule about how the data arrived.
+ */
+export function PublicAccessSectionView({
+  access,
+  pendingCount,
+  alreadyReported,
+  ready,
+  canModerate,
+  onReport,
+  onRule,
+}: {
+  access: PublicAccess | undefined;
+  /** Distinct open reports on this body — `contentFlags`' dedup makes the row count the people. */
+  pendingCount: number;
+  /** The viewer already has an open report here; a second tap would be a no-op. */
+  alreadyReported: boolean;
+  /** The viewer's own reports are known. Until then an empty section says nothing. */
+  ready: boolean;
+  canModerate: boolean;
+  onReport: (note: string | undefined) => Promise<unknown>;
+  onRule: (verdict: PublicAccessVerdict | null) => Promise<unknown>;
+}) {
   const [open, setOpen] = useState(false);
   const [note, setNote] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const verdict = body.publicAccess?.verdict;
-  const settled = describePublicAccess(body.publicAccess);
-  const count = pending ?? 0;
-  const alreadyReported = (mine ?? []).includes(body._id);
+  const verdict = access?.verdict;
+  const settled = describePublicAccess(access);
   // A note is required only when a moderator has already ruled the body open — the gate is enforced
   // server-side; this is the courtesy that keeps an operator from discovering it via a round trip.
   const noteRequired = verdict === 'open';
@@ -52,12 +108,7 @@ export function PublicAccessSection({ body }: { body: Doc<'waterBodies'> }) {
     setBusy(true);
     setError(null);
     try {
-      await report({
-        targetType: 'waterbody',
-        targetId: body._id,
-        reason: 'no_public_access',
-        ...(note.trim() ? { note: note.trim() } : {}),
-      });
+      await onReport(note.trim() || undefined);
       setOpen(false);
       setNote('');
     } catch (err) {
@@ -67,8 +118,20 @@ export function PublicAccessSection({ body }: { body: Doc<'waterBodies'> }) {
     }
   }
 
-  // Nothing ruled, nobody reported, and no way to report (signed out) — say nothing at all.
-  if (!settled && count === 0 && !open && !canModerate && mine === undefined) return null;
+  async function ruleAs(next: PublicAccessVerdict | null) {
+    setBusy(true);
+    setError(null);
+    try {
+      await onRule(next);
+    } catch (err) {
+      setError(errorText(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // Nothing ruled, nobody reported, and the viewer not yet known — say nothing at all.
+  if (!settled && pendingCount === 0 && !open && !canModerate && !ready) return null;
 
   return (
     <div className="flex flex-col gap-1">
@@ -78,14 +141,14 @@ export function PublicAccessSection({ body }: { body: Doc<'waterBodies'> }) {
         <p className="font-medium text-amber-700 text-sm dark:text-amber-400">{settled}</p>
       ) : null}
       {verdict === 'open' ? <p className="text-foreground-muted text-sm">{settled}</p> : null}
-      {body.publicAccess?.note ? (
-        <p className="text-foreground-muted text-xs">{body.publicAccess.note}</p>
-      ) : null}
+      {access?.note ? <p className="text-foreground-muted text-xs">{access.note}</p> : null}
 
       {/* Pending reports show only while unruled — once a moderator has answered, the count is
           history and the verdict is the answer. */}
-      {!verdict && count > 0 ? (
-        <p className="text-foreground-muted text-sm">{describePendingAccessReports(count)}</p>
+      {!verdict && pendingCount > 0 ? (
+        <p className="text-foreground-muted text-sm">
+          {describePendingAccessReports(pendingCount)}
+        </p>
       ) : null}
 
       {open ? (
@@ -144,6 +207,7 @@ export function PublicAccessSection({ body }: { body: Doc<'waterBodies'> }) {
                   Clear
                 </Button>
               ) : null}
+              {error ? <p className="w-full text-danger text-xs">{error}</p> : null}
             </>
           ) : alreadyReported ? (
             // Their own claim, acknowledged. The dedup means a second tap would be a no-op anyway,
@@ -153,25 +217,13 @@ export function PublicAccessSection({ body }: { body: Doc<'waterBodies'> }) {
             </p>
           ) : verdict === 'none' ? null : (
             <Button size="sm" variant="outline" onClick={() => setOpen(true)}>
-              {count > 0 ? "Confirm — I've been turned away" : 'Report no public access'}
+              {pendingCount > 0 ? "Confirm — I've been turned away" : 'Report no public access'}
             </Button>
           )}
         </div>
       )}
     </div>
   );
-
-  async function ruleAs(next: 'none' | 'open' | null) {
-    setBusy(true);
-    setError(null);
-    try {
-      await rule({ waterBodyId: body._id as Id<'waterBodies'>, verdict: next });
-    } catch (err) {
-      setError(errorText(err));
-    } finally {
-      setBusy(false);
-    }
-  }
 }
 
 /** Turn a thrown ConvexError into the line the server wrote — the gate message is written to be read. */

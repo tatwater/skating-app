@@ -1393,6 +1393,26 @@ three ways, so the doc was rewritten rather than patched.*
   `27% ice / 65% water` on a day the skate log says the north half was ready exposed that one number
   cannot describe two surfaces (deferred question 7). Both came from *use*, not inspection.
 
+**N6f — No public access: a corroborated claim that dims a body.** ✅ **COMPLETE on dev 2026-08-16**
+(merged as **#44** with N6e's posted rules; prod deferred) — see
+[`phase-N6f-no-public-access.md`](./phase-N6f-no-public-access.md), **written after the fact on
+2026-09-14**: the phase was a founder ask taken straight into the N6e branch and shipped with no plan
+doc and no D-number. The state that did not exist: `isListed` was binary, so a body was either fully on
+the map or gone, and `waterBodies.publicAccess` is the **third state — on the map, and marked**. Three
+verdicts with absence as one (`none` dims 50% and demotes ~2 zoom levels; `open` renders nothing and
+exists only to gate re-reports). A member's report changes nothing on anyone else's map; others
+**corroborate** rather than re-report, the reporter sees their own lake faded, and the queue lane
+ranks by how many agree. Corroboration needed no votes table — `contentFlags` already dedups to one
+open flag per (flagger, target), so N open rows *is* N people. **This is the D2 ladder's first
+penalty**, scoped by two arguments (the only attribute that *should* discourage a trip; the only one
+contingent on a human ruling) and safe only because `minVisibleZoom` clamps — a demoted body draws
+later, never not at all. ⚠ The demotion is *derived*, so six scoring sites must read the verdict or
+`importCanonical` silently restores the undemoted zoom while preserving the ruling. Under the same
+prefix: the 164-function audit that armed eleven unreachable mutations (put-in placement on the
+editor canvas, `remove`/`restore`, shoreline snap), `reports.update`'s first UI with `editedAt` and
+provenance-preserving edits, and the You tab's unreported-skates list. **Not built:** a mobile report
+control (map dim only) — closed 2026-09-14 alongside this entry.
+
 **N7 — The unified corpus: one record per lake, two catalogues behind it, and a full data campaign.**
 ✅ **Corpus + campaign complete on dev, 2026-08-09** (the 250 m wind fetch runs on; prod deferred) — the phase this roadmap had no entry for at all until now. See [`phase-N7-unified-corpus.md`](./phase-N7-unified-corpus.md) — the one N7 document, with the
 operator's half (commands, the governing rule, and everything expensive to re-learn) at the bottom —
