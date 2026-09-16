@@ -22,6 +22,7 @@ import { recomputeBodySummary } from './lib/bodySummary';
 import { bumpContributionCount, visibleDelta } from './lib/contributionCounts';
 import { MODERATION_ACTIONS, MODERATION_STATUSES, MODERATION_TARGET_TYPES } from './lib/enums';
 import { closeFlag } from './lib/flagResolution';
+import { mirrorReportSubAreas } from './lib/reportSubAreas';
 import { literals } from './lib/validators';
 
 /** The audit action implied by a target moderation status (D37). */
@@ -81,6 +82,14 @@ export const setModerationStatus = mutation({
     if (args.targetType === 'report' || args.targetType === 'hazard') {
       const onBody = target as Doc<'reports'> | Doc<'hazards'>;
       await recomputeBodySummary(ctx, onBody.waterBodyId);
+    }
+    // The bay join mirrors the verdict (N9): the bay feed and the bay bounty gate read the status
+    // off the join row, in-index, so a hidden report has to leave the bay's list here too.
+    if (args.targetType === 'report') {
+      await mirrorReportSubAreas(ctx, {
+        ...(target as Doc<'reports'>),
+        moderationStatus: args.status,
+      });
     }
 
     await ctx.db.insert('moderationActions', {

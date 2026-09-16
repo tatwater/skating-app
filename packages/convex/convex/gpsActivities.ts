@@ -37,6 +37,7 @@ import {
   pointInPolygon,
   reportFreshness,
   resolveSeason,
+  samplePath,
   seasonEndMs,
   seasonOf,
   seasonStartMs,
@@ -69,22 +70,10 @@ const TRACK_RESOLVE_BUFFER_M = 120;
 /**
  * How many points along a track we test when looking for the bodies it spans. A skate can cross from
  * a lake into its channel and back; sampling a bounded number of points catches that without walking
- * a 3,000-point path against every candidate polygon (which is the read/CPU trap).
+ * a 3,000-point path against every candidate polygon (which is the read/CPU trap). The sampler
+ * itself is `@skating/core`'s `samplePath`, shared with the bay stamp (N9).
  */
 const SPAN_SAMPLE_POINTS = 24;
-
-/** Evenly-spaced sample of a path's positions, always including both endpoints. */
-function samplePath(path: LineString, count: number): { lat: number; lng: number }[] {
-  const coords = path.coordinates;
-  if (coords.length <= count) {
-    return coords.map(([lng, lat]) => ({ lat: lat as number, lng: lng as number }));
-  }
-  const step = (coords.length - 1) / (count - 1);
-  return Array.from({ length: count }, (_, i) => {
-    const [lng, lat] = coords[Math.round(i * step)] as number[];
-    return { lat: lat as number, lng: lng as number };
-  });
-}
 
 /**
  * Resolve a track to the water body (or bodies) it was skated on — **D44**.

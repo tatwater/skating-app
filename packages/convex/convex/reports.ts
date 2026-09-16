@@ -26,6 +26,7 @@ import {
   type LatLng,
   matchesFilters,
   matchWeatherFilter,
+  memberSubAreaIds,
   PRECIP_TYPES,
   RECOMMENDED_MIN_PHOTOS,
   RECOMMENDED_RECENCY_HOURS,
@@ -50,6 +51,7 @@ import {
 } from '@skating/core';
 import { paginationOptsValidator } from 'convex/server';
 import { ConvexError, v } from 'convex/values';
+import type { MultiPolygon, Polygon } from 'geojson';
 import { internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
 import {
@@ -82,12 +84,13 @@ import { tryAutoMerge } from './lib/hazardMerge';
 import { isListed } from './lib/listing';
 import { enqueueActorNotification } from './lib/notificationQueue';
 import { assertOwnedPhotos } from './lib/photoAccess';
+import { syncReportSubAreas } from './lib/reportSubAreas';
 import { getViewableReport, loadBlockedAuthorIds } from './lib/reportVisibility';
 import { awardPointEvent, checkAndAwardBadges, trustClassFor } from './lib/reputation';
 import { bodyWeatherCell, subAreaWeatherCell } from './lib/sampling';
 import { latLng, literals } from './lib/validators';
 import { enqueueReportNotifications } from './notifications';
-import { resolveSubAreaForPoint } from './subAreas';
+import { resolveReportSubAreas, stampCandidates } from './subAreas';
 import { loadFavoriteBodyIds } from './waterBodyFavorites';
 
 /** Editable report content, shared by `create` and `update` args (the schema mirrors these). */
@@ -247,10 +250,23 @@ export const create = mutation({
     // directly with no per-read geocode. Absent when the point is outside the imported region.
     const point = n.point ?? body.centroid;
     const place = await resolvePlaceForCoord(ctx, point);
-    // And the named sub-area, if this lake has any (N2/D60) — the same maintain-on-write shape as
-    // `place`, resolved by Decision 9's smallest-containing rule. Costs one `by_parent` read on a
-    // body already in hand, and returns immediately for the ~116k bodies with no sub-areas.
-    const subArea = await resolveSubAreaForPoint(ctx, body._id, point);
+    // And the named bays, if this lake has any (N2/D60, widened in N9/D175) — the same
+    // maintain-on-write shape as `place`. A pin-only report takes the smallest bay containing its
+    // point; an activity-sourced one takes **every bay its track crossed**, majority first, because
+    // its `point` is the GPS start (the put-in) and stamping it with the bay you launched from,
+    // whatever you skated, was the bug this fixes. Costs one `by_parent` read on a body already in
+    // hand, and returns immediately for the ~25k bodies with no sub-areas.
+    const candidates = await stampCandidates(ctx, body._id);
+    const subAreas = await resolveReportSubAreas(
+      ctx,
+      {
+        waterBodyId: body._id,
+        point,
+        ...(args.activityId !== undefined ? { activityId: args.activityId } : {}),
+      },
+      candidates,
+      body.polygon as unknown as Polygon | MultiPolygon,
+    );
 
     const reportId = await ctx.db.insert('reports', {
       authorId: profile._id,
@@ -259,7 +275,10 @@ export const create = mutation({
       skateEndTime: n.skateEndTime,
       ...(n.skateStartTime !== undefined ? { skateStartTime: n.skateStartTime } : {}),
       ...(place !== undefined ? { place } : {}),
-      ...(subArea !== null ? subArea : {}),
+      ...(subAreas.subAreaId !== undefined ? { subAreaId: subAreas.subAreaId } : {}),
+      ...(subAreas.subAreaName !== undefined ? { subAreaName: subAreas.subAreaName } : {}),
+      ...(subAreas.subAreaIds !== undefined ? { subAreaIds: subAreas.subAreaIds } : {}),
+      ...(subAreas.subAreaNames !== undefined ? { subAreaNames: subAreas.subAreaNames } : {}),
       reportTime: now,
       source: args.activityId !== undefined ? 'activity' : 'native',
       ...(args.activityId !== undefined ? { activityId: args.activityId } : {}),
@@ -313,6 +332,19 @@ export const create = mutation({
     );
     const hazardIdsCreated = [...createdHazardIds, ...bundledHazardIds];
     if (hazardIdsCreated.length > 0) await ctx.db.patch(reportId, { hazardIdsCreated });
+
+    // The membership's indexable copy (N9) — one join row per bay, so the bay feed and the bay
+    // bounty gate can find a spanning report under its second bay too.
+    await syncReportSubAreas(
+      ctx,
+      {
+        _id: reportId,
+        waterBodyId: body._id,
+        moderationStatus: 'visible',
+        skateEndTime: n.skateEndTime,
+      },
+      memberSubAreaIds(subAreas),
+    );
 
     // Back-link the recorded skate (Phase 8). Both sides are written in this one transaction so a
     // half-linked pair can't exist: the report side drives the detail-view render, and the *activity*
@@ -548,9 +580,13 @@ export const listByWaterBody = query({
       if (!survivor || !subArea || subArea.waterBodyId !== survivor._id) {
         throw new ConvexError('That sub-area is not on this water body');
       }
-      return ctx.db
-        .query('reports')
-        .withIndex('by_sub_area_moderation_and_skate_end_time', (q) =>
+      // Off the `reportSubAreas` join since N9: a report can be a member of two bays (the two-bay
+      // skate), and a per-report index could only ever find it under one. The join carries the
+      // moderation gate and the skate time as mirrors precisely so this read stays *in* the index;
+      // the page is then hydrated one `get` per row, bounded by the page size.
+      const joined = await ctx.db
+        .query('reportSubAreas')
+        .withIndex('by_sub_area_moderation_skate_end', (q) =>
           q
             .eq('subAreaId', subAreaId)
             .eq('moderationStatus', 'visible')
@@ -559,6 +595,14 @@ export const listByWaterBody = query({
         )
         .order('desc')
         .paginate(paginationOpts);
+      const page: Doc<'reports'>[] = [];
+      for (const row of joined.page) {
+        const report = await ctx.db.get(row.reportId);
+        // A mirror that has fallen behind the row it mirrors is the only way to reach here; the
+        // report's own status is the authority, so it is re-checked rather than trusted.
+        if (report && report.moderationStatus === 'visible') page.push(report);
+      }
+      return { ...joined, page };
     }
     return ctx.db
       .query('reports')
@@ -1114,17 +1158,31 @@ export const update = mutation({
     // the location label with it. `place` is cleared to undefined when the new point resolves nowhere.
     const point = n.point ?? existing.point;
     const place = await resolvePlaceForCoord(ctx, point);
-    // Moving the put-in pin can move the report into (or out of) a bay, so the sub-area stamp is
-    // re-resolved alongside `place`. Cleared to undefined when the new point sits in none.
-    const subArea = await resolveSubAreaForPoint(ctx, existing.waterBodyId, point);
+    // Moving the put-in pin can move the report into (or out of) a bay, so the membership is
+    // re-resolved alongside `place` — through the same rule as create, so an activity-sourced
+    // report keeps its track's list rather than collapsing to the pin's bay on its first edit.
+    // Cleared to undefined when the new point sits in none.
+    const body = await ctx.db.get(existing.waterBodyId);
+    const subAreas = await resolveReportSubAreas(
+      ctx,
+      {
+        waterBodyId: existing.waterBodyId,
+        point,
+        ...(existing.activityId !== undefined ? { activityId: existing.activityId } : {}),
+      },
+      await stampCandidates(ctx, existing.waterBodyId),
+      body?.polygon as unknown as Polygon | MultiPolygon,
+    );
 
     await ctx.db.patch(args.reportId, {
       point,
       skateEndTime: n.skateEndTime,
       skateStartTime: n.skateStartTime,
       place,
-      subAreaId: subArea?.subAreaId,
-      subAreaName: subArea?.subAreaName,
+      subAreaId: subAreas.subAreaId,
+      subAreaName: subAreas.subAreaName,
+      subAreaIds: subAreas.subAreaIds,
+      subAreaNames: subAreas.subAreaNames,
       iceTypes: n.iceTypes,
       surfaceTags: n.surfaceTags,
       skateQuality: n.skateQuality,
@@ -1140,6 +1198,17 @@ export const update = mutation({
       editedAt: now,
       updatedAt: now,
     });
+    // The join mirrors both things this edit can move — the membership and the skate time (N9).
+    await syncReportSubAreas(
+      ctx,
+      {
+        _id: args.reportId,
+        waterBodyId: existing.waterBodyId,
+        moderationStatus: existing.moderationStatus,
+        skateEndTime: n.skateEndTime,
+      },
+      memberSubAreaIds(subAreas),
+    );
 
     // **An edit changes the card's inputs, so the card is recomputed (N6c/E).** `skateEndTime` and
     // `skateQuality` are both patched above and both feed the summary directly: re-dating a report

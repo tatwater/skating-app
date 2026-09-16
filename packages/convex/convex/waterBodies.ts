@@ -98,6 +98,7 @@ import {
 } from './lib/enums';
 import { closeFlag } from './lib/flagResolution';
 import { isListed } from './lib/listing';
+import { mirrorReportSubAreas } from './lib/reportSubAreas';
 import { takeCapped, takeCappedResult } from './lib/scan';
 import { bbox, geoJson, latLng, literals } from './lib/validators';
 import {
@@ -3085,10 +3086,17 @@ export async function mergeBodyInto(
     for (const child of [...reports, ...hazards, ...bounties, ...features, ...putIns]) {
       await ctx.db.patch(child._id, { waterBodyId: survivorId });
     }
+    // The bay join mirrors the report's body (N9); the bays themselves move to the survivor below,
+    // so the `subAreaId` on each row stays valid and only the body needs following.
+    for (const report of reports) {
+      await mirrorReportSubAreas(ctx, { ...report, waterBodyId: survivorId });
+    }
 
-    // Favorites are one-row-per-user×body (`by_user_water_body` is the uniqueness key), so a user who
-    // favorited BOTH bodies would end up with a duplicate pair. Re-point when they only had the loser;
-    // drop the loser row when the survivor is already favorited.
+    // Favorites are one row per user × body × bay (`by_user_water_body_sub_area` is the uniqueness
+    // key), so a user who favorited BOTH bodies would end up with a duplicate pair. Re-point when
+    // they only had the loser; drop the loser row when the survivor is already favorited. A bay
+    // favorite follows its bay, which `repointSubAreasOnMerge` moves to the survivor below — the
+    // triple stays unique because the bay's id does not change.
     const favorites = await ctx.db
       .query('waterBodyFavorites')
       .withIndex('by_water_body', (q) => q.eq('waterBodyId', loserId))
@@ -3098,8 +3106,8 @@ export async function mergeBodyInto(
     for (const fav of favorites) {
       const existing = await ctx.db
         .query('waterBodyFavorites')
-        .withIndex('by_user_water_body', (q) =>
-          q.eq('userId', fav.userId).eq('waterBodyId', survivorId),
+        .withIndex('by_user_water_body_sub_area', (q) =>
+          q.eq('userId', fav.userId).eq('waterBodyId', survivorId).eq('subAreaId', fav.subAreaId),
         )
         .unique();
       if (existing) {

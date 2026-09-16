@@ -65,6 +65,7 @@ import type * as lib_notificationResolve from "../lib/notificationResolve.js";
 import type * as lib_photoAccess from "../lib/photoAccess.js";
 import type * as lib_photoOrphans from "../lib/photoOrphans.js";
 import type * as lib_recurrence from "../lib/recurrence.js";
+import type * as lib_reportSubAreas from "../lib/reportSubAreas.js";
 import type * as lib_reportVisibility from "../lib/reportVisibility.js";
 import type * as lib_reputation from "../lib/reputation.js";
 import type * as lib_resend from "../lib/resend.js";
@@ -162,6 +163,7 @@ declare const fullApi: ApiFromModules<{
   "lib/photoAccess": typeof lib_photoAccess;
   "lib/photoOrphans": typeof lib_photoOrphans;
   "lib/recurrence": typeof lib_recurrence;
+  "lib/reportSubAreas": typeof lib_reportSubAreas;
   "lib/reportVisibility": typeof lib_reportVisibility;
   "lib/reputation": typeof lib_reputation;
   "lib/resend": typeof lib_resend;

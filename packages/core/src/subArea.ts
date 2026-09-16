@@ -17,7 +17,7 @@ import { feature, featureCollection } from '@turf/helpers';
 import intersect from '@turf/intersect';
 import truncate from '@turf/truncate';
 import type { MultiPolygon, Polygon } from 'geojson';
-import { type LatLng, pointInPolygon } from './geometry';
+import { type LatLng, nearestBodyForPoint, pointInPolygon } from './geometry';
 
 /**
  * How much of a drawn shape must survive the clip for the write to be accepted (Decision 10).
@@ -194,4 +194,118 @@ export function smallestContainingSubArea<T>(
       best = { ref: c.ref, area: c.surfaceAreaSqM };
   }
   return best?.ref ?? null;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+// N9 (D175): a bay is a place — the rules that tag what sits in one
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+
+/**
+ * How far off a bay's outline a put-in may sit and still be *its* launch (N9 kickoff call 3).
+ *
+ * Put-ins are snapped **to the shoreline**, and a bay's clipped outline *is* that shoreline — so
+ * point-in-polygon on a launch is a coin flip decided by which side of a shared edge the float
+ * noise landed on. Distance is the honest test: within this of the outline, the launch is on the
+ * bay's shore. 30 m is a snap tolerance, not a walking radius — wide enough to absorb the
+ * re-noding a clip introduces, narrow enough that a launch on the far side of a headland stays
+ * with the open lake.
+ */
+export const SUB_AREA_PUT_IN_TOLERANCE_M = 30;
+
+/**
+ * The bay a put-in belongs to (N9): the nearest bay within {@link SUB_AREA_PUT_IN_TOLERANCE_M},
+ * **smallest wins** on a tie — `nearestBodyForPoint`'s exact shape, because a launch inside both
+ * "Inner" and "Outer" Malletts belongs to the inner one for the same reason a report does
+ * (Decision 9). `null` when no bay's shore is within tolerance: open-lake access.
+ */
+export function subAreaForPutIn<T>(
+  coord: LatLng,
+  candidates: readonly SubAreaCandidate<T>[],
+): T | null {
+  return nearestBodyForPoint(coord, candidates, SUB_AREA_PUT_IN_TOLERANCE_M);
+}
+
+/** What a recorded track says about the bays it crossed — see {@link resolveTrackSubAreas}. */
+export interface TrackSubAreas<T> {
+  /** The bay holding the **majority** of sampled points, or `null` when no sample fell in any bay. */
+  primary: T | null;
+  /** Every bay a sample fell in, most-visited first. `[]` when none did. */
+  all: T[];
+  /**
+   * Some sample fell on the **parent, outside every bay** — the mouth-line evidence (N9 kickoff Q4).
+   * Judged only against samples that are actually on the parent when its polygon is supplied, so
+   * shoreline GPS jitter on the way to the car does not read as a skater leaving the bay.
+   */
+  leftSubArea: boolean;
+}
+
+/**
+ * Resolve a track's sampled points to the bays it was skated in (N9 kickoff Q4, "the two-bay
+ * skate").
+ *
+ * **Majority of samples, not the start point.** A report derived from an activity carries the GPS
+ * *start* as its `point` (D44), which is the put-in — so before N9 an activity report was stamped
+ * with the bay you launched from, whatever you skated. The primary is instead the bay with the most
+ * sampled points, the same rule `resolveTrackToBodies` applies one level up for the body; and the
+ * list is *every* bay touched, because a skater who spent an hour in each of two bays was in both,
+ * and the rule that governs everything downstream (D175) says a report appears under every place
+ * that contains it — once.
+ *
+ * A sample in two overlapping bays counts for the **smallest** (Decision 9), so nested "Inner" /
+ * "Outer" pairs do not double-count one point. `leftSubArea` is the one output nothing acts on: it
+ * is stored so the admin card can count skates that ran past a bay's drawn mouth, which is the
+ * evidence a moderator adjusts the line on.
+ */
+export function resolveTrackSubAreas<T>(
+  samples: readonly LatLng[],
+  candidates: readonly SubAreaCandidate<T>[],
+  parentPolygon?: Polygon | MultiPolygon,
+): TrackSubAreas<T> {
+  const hits = new Map<T, number>();
+  let leftSubArea = false;
+  for (const sample of samples) {
+    const bay = smallestContainingSubArea(sample, candidates);
+    if (bay !== null) {
+      hits.set(bay, (hits.get(bay) ?? 0) + 1);
+      continue;
+    }
+    if (parentPolygon === undefined || pointInPolygon(sample, parentPolygon)) leftSubArea = true;
+  }
+  // Only meaningful when there is a bay to have left: open water on a lake with no bays, or a track
+  // that never entered one, is not evidence about any mouth line.
+  if (hits.size === 0) return { primary: null, all: [], leftSubArea: false };
+  const ranked = [...hits.entries()].sort((a, b) => b[1] - a[1]);
+  return {
+    primary: ranked[0]?.[0] ?? null,
+    all: ranked.map(([bay]) => bay),
+    leftSubArea,
+  };
+}
+
+/**
+ * The bays a stamped row is a member of, primary first — the one way to read the pair of fields
+ * that carry membership (N9). `subAreaIds` is stored only when there is more than one (the
+ * `waterBodyIds` convention), so most rows answer through `subAreaId` alone; a row with neither is
+ * in no bay.
+ */
+export function memberSubAreaIds<T>(row: { subAreaId?: T; subAreaIds?: readonly T[] }): T[] {
+  if (row.subAreaIds !== undefined && row.subAreaIds.length > 0) return [...row.subAreaIds];
+  return row.subAreaId === undefined ? [] : [row.subAreaId];
+}
+
+/**
+ * The membership fields to store for a resolved list, in the stored convention: the primary in
+ * `subAreaId`, the whole list in `subAreaIds` **only when it has more than one entry**. A
+ * single-element array on every ordinary row would be noise, and a reader that forgot the array
+ * would silently see one bay less on the rows that have two — so the convention is written down
+ * once, here, and both writers use it.
+ */
+export function subAreaMembershipFields<T>(all: readonly T[]): {
+  subAreaId: T | undefined;
+  subAreaIds: T[] | undefined;
+} {
+  return {
+    subAreaId: all[0],
+    subAreaIds: all.length > 1 ? [...all] : undefined,
+  };
 }

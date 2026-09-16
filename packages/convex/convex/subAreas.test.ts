@@ -1600,3 +1600,421 @@ describe('subAreas.importBaySubAreas (the N7 bay lane)', () => {
     // instead of raising the global one, which would hide a genuine hang everywhere else.
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+// N9 (D175): a bay is a place — the re-derivation, the join, and the wider re-stamp
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+
+/** A recorded track for `author` on `body`, straight along the given points (lng/lat pairs). */
+async function seedTrack(
+  t: ReturnType<typeof convexTest>,
+  userId: Id<'profiles'>,
+  waterBodyId: Id<'waterBodies'>,
+  points: [number, number][],
+) {
+  const now = Date.now();
+  return t.run((ctx) =>
+    ctx.db.insert('gpsActivities', {
+      userId,
+      provider: 'native' as const,
+      providerActivityId: `track-${Math.random()}`,
+      sportType: 'IceSkate',
+      startTime: now - 60 * 60 * 1000,
+      endTime: now,
+      path: { type: 'LineString' as const, coordinates: points },
+      waterBodyId,
+      promptState: 'pending' as const,
+      detectedAt: now,
+    }),
+  );
+}
+
+/**
+ * The `reportSubAreas` rows for a report, as `[subAreaId, moderationStatus, skateEndTime]`, sorted
+ * by bay id — the join has no order of its own, so neither does this.
+ */
+async function joinRows(t: ReturnType<typeof convexTest>, reportId: Id<'reports'>) {
+  const rows = await t.run((ctx) =>
+    ctx.db
+      .query('reportSubAreas')
+      .withIndex('by_report', (q) => q.eq('reportId', reportId))
+      .collect(),
+  );
+  return byBay(rows.map((r) => [r.subAreaId, r.moderationStatus, r.skateEndTime] as const));
+}
+
+function byBay<T extends readonly [string, ...unknown[]]>(rows: T[]): T[] {
+  return [...rows].sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0));
+}
+
+describe('the re-derivation (N9)', () => {
+  test('create mints a subAreaKey and a fetch profile; redraw keeps the key and recomputes the fetch', async () => {
+    const t = harness();
+    const body = await seedBody(t);
+    const mod = await seedUser(t, 'mod', 'moderator');
+    const id = await mod.as.mutation(api.subAreas.create, {
+      waterBodyId: body,
+      name: 'Malletts Bay',
+      polygon: rect(-73.2, 44.2, -73.0, 44.4),
+    });
+    const before = await t.run((ctx) => ctx.db.get(id));
+    expect(before?.subAreaKey).toMatch(/^sa_[0-9a-f-]{36}$/);
+    expect(before?.fetchProfileM).toHaveLength(16);
+    // A 0.2° × 0.2° box: every sector's fetch is hundreds of metres at least, none is zero.
+    expect(Math.min(...(before?.fetchProfileM ?? [0]))).toBeGreaterThan(500);
+
+    await mod.as.mutation(api.subAreas.redraw, {
+      subAreaId: id,
+      polygon: rect(-73.2, 44.2, -72.9, 44.4),
+    });
+    const after = await t.run((ctx) => ctx.db.get(id));
+    expect(after?.subAreaKey).toBe(before?.subAreaKey);
+    expect(after?.fetchProfileM).not.toEqual(before?.fetchProfileM);
+  });
+
+  test('a redraw that moves the outline clears the derived depth and dates the change; a rename does not', async () => {
+    const t = harness();
+    const body = await seedBody(t);
+    const mod = await seedUser(t, 'mod', 'moderator');
+    const id = await mod.as.mutation(api.subAreas.create, {
+      waterBodyId: body,
+      name: 'Malletts Bay',
+      polygon: rect(-73.2, 44.2, -73.0, 44.4),
+    });
+    const derivedAt = Date.now() - 1000;
+    await t.run((ctx) =>
+      ctx.db.patch(id, {
+        maxDepthM: 18,
+        maxDepthSource: 'state_agency',
+        depthUnderstatesMax: true,
+        depthDerivedAt: derivedAt,
+      }),
+    );
+
+    await mod.as.mutation(api.subAreas.rename, { subAreaId: id, name: 'Mallett’s Bay' });
+    const renamed = await t.run((ctx) => ctx.db.get(id));
+    expect(renamed?.maxDepthM).toBe(18);
+    expect(renamed?.geometryUpdatedAt).toBeUndefined();
+
+    await mod.as.mutation(api.subAreas.redraw, {
+      subAreaId: id,
+      polygon: rect(-73.2, 44.2, -72.9, 44.4),
+    });
+    const redrawn = await t.run((ctx) => ctx.db.get(id));
+    // The number, its source and its caveat go; the date it was derived stays, so the admin card
+    // can say "derived <then> · geometry changed <now>".
+    expect(redrawn?.maxDepthM).toBeUndefined();
+    expect(redrawn?.maxDepthSource).toBeUndefined();
+    expect(redrawn?.depthUnderstatesMax).toBeUndefined();
+    expect(redrawn?.depthDerivedAt).toBe(derivedAt);
+    expect(redrawn?.geometryUpdatedAt).toBeGreaterThan(derivedAt);
+  });
+
+  test('a restore whose re-clip changes nothing keeps the depth — nothing about it stopped being true', async () => {
+    const t = harness();
+    const body = await seedBody(t);
+    const mod = await seedUser(t, 'mod', 'moderator');
+    const id = await mod.as.mutation(api.subAreas.create, {
+      waterBodyId: body,
+      name: 'Malletts Bay',
+      polygon: rect(-73.2, 44.2, -73.0, 44.4),
+    });
+    await t.run((ctx) => ctx.db.patch(id, { maxDepthM: 18, maxDepthSource: 'state_agency' }));
+    await mod.as.mutation(api.subAreas.remove, { subAreaId: id });
+    await mod.as.mutation(api.subAreas.restore, { subAreaId: id });
+    const row = await t.run((ctx) => ctx.db.get(id));
+    expect(row?.maxDepthM).toBe(18);
+    expect(row?.geometryUpdatedAt).toBeUndefined();
+  });
+
+  test('mintSubAreaKeys backfills a legacy row once and leaves keyed rows alone', async () => {
+    const t = harness();
+    const body = await seedBody(t);
+    const mod = await seedUser(t, 'mod', 'moderator');
+    const keyed = await mod.as.mutation(api.subAreas.create, {
+      waterBodyId: body,
+      name: 'Keyed',
+      polygon: rect(-73.2, 44.2, -73.0, 44.4),
+    });
+    const legacy = await t.run((ctx) =>
+      ctx.db.insert('waterBodySubAreas', {
+        waterBodyId: body,
+        name: 'Legacy',
+        searchText: 'Legacy',
+        polygon: rect(-72.9, 44.2, -72.7, 44.4),
+        bbox: { minLat: 44.2, minLng: -72.9, maxLat: 44.4, maxLng: -72.7 },
+        centroid: { lat: 44.3, lng: -72.8 },
+        surfaceAreaSqM: 1e8,
+        displayScore: 1,
+        minVisibleZoom: 10,
+        createdByUserId: mod.id,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      }),
+    );
+    const keyBefore = (await t.run((ctx) => ctx.db.get(keyed)))?.subAreaKey;
+    const first = await t.mutation(internal.subAreas.mintSubAreaKeys, {});
+    expect(first).toMatchObject({ keyed: 1, fetched: 1, isDone: true });
+    const second = await t.mutation(internal.subAreas.mintSubAreaKeys, {});
+    expect(second).toMatchObject({ keyed: 0, fetched: 0 });
+    const legacyRow = await t.run((ctx) => ctx.db.get(legacy));
+    expect(legacyRow?.subAreaKey).toMatch(/^sa_/);
+    expect(legacyRow?.fetchProfileM).toHaveLength(16);
+    expect((await t.run((ctx) => ctx.db.get(keyed)))?.subAreaKey).toBe(keyBefore);
+  });
+});
+
+describe('the two-bay skate and the reportSubAreas join (N9 / D175)', () => {
+  /** Two bays on the west and east shores; open water between them. */
+  async function setup() {
+    const t = harness();
+    const body = await seedBody(t);
+    const mod = await seedUser(t, 'mod', 'moderator');
+    const west = await mod.as.mutation(api.subAreas.create, {
+      waterBodyId: body,
+      name: 'West Bay',
+      polygon: rect(-73.5, 44.2, -73.3, 44.6),
+    });
+    const east = await mod.as.mutation(api.subAreas.create, {
+      waterBodyId: body,
+      name: 'East Bay',
+      polygon: rect(-72.8, 44.2, -72.5, 44.6),
+    });
+    await settle(t);
+    const author = await seedUser(t, 'author');
+    return { t, body, mod, west, east, author };
+  }
+
+  /** West bay → open water → east bay (most of the samples), starting at a west-shore put-in. */
+  const TWO_BAY_TRACK: [number, number][] = [
+    [-73.45, 44.4],
+    [-73.4, 44.4],
+    [-73.35, 44.4],
+    [-73.1, 44.4],
+    [-72.75, 44.4],
+    [-72.7, 44.4],
+    [-72.65, 44.4],
+    [-72.6, 44.4],
+    [-72.55, 44.4],
+  ];
+
+  test('an activity report is stamped from the track, not its start point, and lists both bays', async () => {
+    const { t, body, west, east, author } = await setup();
+    const activityId = await seedTrack(t, author.id, body, TWO_BAY_TRACK);
+    const reportId = await author.as.mutation(api.reports.create, {
+      waterBodyId: body,
+      skateEndTime: Date.now(),
+      activityId,
+      // The put-in — in the west bay. Before N9 this alone decided the stamp.
+      point: { lat: 44.4, lng: -73.45 },
+    });
+    const report = await t.run((ctx) => ctx.db.get(reportId));
+    expect(report?.subAreaId).toBe(east);
+    expect(report?.subAreaName).toBe('East Bay');
+    expect(report?.subAreaIds).toEqual([east, west]);
+    expect(report?.subAreaNames).toEqual(['East Bay', 'West Bay']);
+    expect(await joinRows(t, reportId)).toEqual(
+      byBay([
+        [east, 'visible', report?.skateEndTime],
+        [west, 'visible', report?.skateEndTime],
+      ]),
+    );
+  });
+
+  test('the bay feed serves a spanning report under both bays — once each, never twice in one', async () => {
+    const { t, body, west, east, author } = await setup();
+    const activityId = await seedTrack(t, author.id, body, TWO_BAY_TRACK);
+    const spanning = await author.as.mutation(api.reports.create, {
+      waterBodyId: body,
+      skateEndTime: Date.now(),
+      activityId,
+      point: { lat: 44.4, lng: -73.45 },
+    });
+    const westOnly = await author.as.mutation(api.reports.create, {
+      waterBodyId: body,
+      skateEndTime: Date.now() - 1000,
+      point: { lat: 44.3, lng: -73.4 },
+    });
+    const PAGE = { numItems: 50, cursor: null };
+    const eastFeed = await t.query(api.reports.listByWaterBody, {
+      waterBodyId: body,
+      subAreaId: east,
+      paginationOpts: PAGE,
+    });
+    expect(eastFeed.page.map((r) => r._id)).toEqual([spanning]);
+    const westFeed = await t.query(api.reports.listByWaterBody, {
+      waterBodyId: body,
+      subAreaId: west,
+      paginationOpts: PAGE,
+    });
+    expect(westFeed.page.map((r) => r._id)).toEqual([spanning, westOnly]);
+    // And the lake's own feed is still one row per report.
+    const lakeFeed = await t.query(api.reports.listByWaterBody, {
+      waterBodyId: body,
+      paginationOpts: PAGE,
+    });
+    expect(lakeFeed.page.map((r) => r._id)).toEqual([spanning, westOnly]);
+  });
+
+  test('a bounty on the second bay is satisfied by the spanning report', async () => {
+    const { t, body, west, east, author } = await setup();
+    const requester = await seedUser(t, 'requester');
+    const bountyId = await requester.as.action(api.bounties.create, {
+      waterBodyId: body,
+      subAreaId: west,
+    });
+    const activityId = await seedTrack(t, author.id, body, TWO_BAY_TRACK);
+    const spanning = await author.as.mutation(api.reports.create, {
+      waterBodyId: body,
+      skateEndTime: Date.now(),
+      activityId,
+      point: { lat: 44.4, lng: -72.55 }, // launched from the *east* shore this time
+      iceTypes: ['black_ice'],
+    });
+    expect((await t.run((ctx) => ctx.db.get(spanning)))?.subAreaId).toBe(east);
+    expect((await t.run((ctx) => ctx.db.get(bountyId)))?.fulfillingReportIds).toEqual([spanning]);
+  });
+
+  test('a moderation verdict and an edited skate time reach the join', async () => {
+    const { t, body, west, mod, author } = await setup();
+    const reportId = await author.as.mutation(api.reports.create, {
+      waterBodyId: body,
+      skateEndTime: Date.now(),
+      point: { lat: 44.3, lng: -73.4 },
+    });
+    const later = Date.now() - 5 * 60 * 1000;
+    await author.as.mutation(api.reports.update, { reportId, skateEndTime: later });
+    expect(await joinRows(t, reportId)).toEqual([[west, 'visible', later]]);
+
+    await mod.as.mutation(api.moderation.setModerationStatus, {
+      targetType: 'report',
+      targetId: reportId,
+      status: 'hidden',
+      reason: 'test',
+    });
+    expect(await joinRows(t, reportId)).toEqual([[west, 'hidden', later]]);
+    const feed = await t.query(api.reports.listByWaterBody, {
+      waterBodyId: body,
+      subAreaId: west,
+      paginationOpts: { numItems: 50, cursor: null },
+    });
+    expect(feed.page).toEqual([]);
+  });
+
+  test('editing the pin re-resolves membership without collapsing a track-stamped report', async () => {
+    const { t, body, west, east, author } = await setup();
+    const activityId = await seedTrack(t, author.id, body, TWO_BAY_TRACK);
+    const reportId = await author.as.mutation(api.reports.create, {
+      waterBodyId: body,
+      skateEndTime: Date.now(),
+      activityId,
+      point: { lat: 44.4, lng: -73.45 },
+    });
+    await author.as.mutation(api.reports.update, {
+      reportId,
+      skateEndTime: Date.now(),
+      point: { lat: 44.4, lng: -73.1 }, // open water — irrelevant, the track decides
+    });
+    const report = await t.run((ctx) => ctx.db.get(reportId));
+    expect(report?.subAreaIds).toEqual([east, west]);
+    expect((await joinRows(t, reportId)).map((r) => r[0])).toEqual([east, west].sort());
+  });
+
+  test('the backfill seeds the join from existing stamps and is idempotent', async () => {
+    const { t, body, west, author } = await setup();
+    const reportId = await author.as.mutation(api.reports.create, {
+      waterBodyId: body,
+      skateEndTime: Date.now(),
+      point: { lat: 44.3, lng: -73.4 },
+    });
+    // Simulate a pre-N9 row: stamped, but with no join.
+    await t.run(async (ctx) => {
+      for (const row of await ctx.db
+        .query('reportSubAreas')
+        .withIndex('by_report', (q) => q.eq('reportId', reportId))
+        .collect()) {
+        await ctx.db.delete(row._id);
+      }
+    });
+    expect(await joinRows(t, reportId)).toEqual([]);
+    const first = await t.mutation(internal.subAreas.backfillReportSubAreas, {});
+    expect(first).toMatchObject({ withBay: 1, inserted: 1, isDone: true });
+    const second = await t.mutation(internal.subAreas.backfillReportSubAreas, {});
+    expect(second).toMatchObject({ withBay: 1, inserted: 0 });
+    expect((await joinRows(t, reportId)).map((r) => r[0])).toEqual([west]);
+  });
+});
+
+describe('the wider re-stamp (N9)', () => {
+  test('a redraw re-tags put-ins by distance, tracks by majority, and features by centre', async () => {
+    const t = harness();
+    const body = await seedBody(t);
+    const mod = await seedUser(t, 'mod', 'moderator');
+    const author = await seedUser(t, 'author');
+    const bay = await mod.as.mutation(api.subAreas.create, {
+      waterBodyId: body,
+      name: 'West Bay',
+      polygon: rect(-73.5, 44.2, -73.3, 44.6),
+    });
+    await settle(t);
+
+    // A launch on the lake's west shore, a track that runs the width of the bay-to-be, a feature
+    // in the middle of the lake: none of them is in the bay yet.
+    const putIn = await t.run((ctx) =>
+      ctx.db.insert('putIns', {
+        waterBodyId: body,
+        coord: { lat: 44.8, lng: -73.5 },
+        source: 'official' as const,
+        status: 'visible' as const,
+        createdAt: Date.now(),
+      }),
+    );
+    const track = await seedTrack(t, author.id, body, [
+      [-73.2, 44.8],
+      [-73.1, 44.8],
+      [-73.0, 44.8],
+    ]);
+    const feature = await t.run((ctx) =>
+      ctx.db.insert('bodyFeatures', {
+        waterBodyId: body,
+        type: 'spring_current' as const,
+        geometryKind: 'point_radius' as const,
+        geometry: { type: 'Point' as const, coordinates: [-73.1, 44.8] },
+        radiusMeters: 50,
+        bbox: { minLat: 44.79, minLng: -73.11, maxLat: 44.81, maxLng: -73.09 },
+        addedByUserId: mod.id,
+        active: true,
+        createdAt: Date.now(),
+      }),
+    );
+    await settle(t);
+    expect((await t.run((ctx) => ctx.db.get(putIn)))?.subAreaId).toBeUndefined();
+    expect((await t.run((ctx) => ctx.db.get(track)))?.subAreaId).toBeUndefined();
+    expect((await t.run((ctx) => ctx.db.get(feature)))?.subAreaId).toBeUndefined();
+
+    // Redraw the bay to take in the north-west of the lake, where all three sit.
+    await mod.as.mutation(api.subAreas.redraw, {
+      subAreaId: bay,
+      polygon: rect(-73.5, 44.2, -73.05, 44.9),
+    });
+    await settle(t);
+    expect((await t.run((ctx) => ctx.db.get(putIn)))?.subAreaId).toBe(bay);
+    const stampedTrack = await t.run((ctx) => ctx.db.get(track));
+    expect(stampedTrack?.subAreaId).toBe(bay);
+    expect(stampedTrack?.subAreaIds).toBeUndefined();
+    // Its last sample (−73.0) is on the lake outside the bay: the mouth-line flag.
+    expect(stampedTrack?.leftSubArea).toBe(true);
+    expect((await t.run((ctx) => ctx.db.get(feature)))?.subAreaId).toBe(bay);
+
+    // And shrinking it back releases them all.
+    await mod.as.mutation(api.subAreas.redraw, {
+      subAreaId: bay,
+      polygon: rect(-73.5, 44.2, -73.3, 44.6),
+    });
+    await settle(t);
+    expect((await t.run((ctx) => ctx.db.get(putIn)))?.subAreaId).toBeUndefined();
+    expect((await t.run((ctx) => ctx.db.get(track)))?.subAreaId).toBeUndefined();
+    expect((await t.run((ctx) => ctx.db.get(track)))?.leftSubArea).toBeUndefined();
+    expect((await t.run((ctx) => ctx.db.get(feature)))?.subAreaId).toBeUndefined();
+  });
+});

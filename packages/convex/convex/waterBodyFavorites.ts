@@ -31,7 +31,9 @@ export async function loadFavoriteBodyIds(
 async function favoriteRow(ctx: QueryCtx, userId: Id<'profiles'>, waterBodyId: Id<'waterBodies'>) {
   return ctx.db
     .query('waterBodyFavorites')
-    .withIndex('by_user_water_body', (q) => q.eq('userId', userId).eq('waterBodyId', waterBodyId))
+    .withIndex('by_user_water_body_sub_area', (q) =>
+      q.eq('userId', userId).eq('waterBodyId', waterBodyId).eq('subAreaId', undefined),
+    )
     .unique();
 }
 

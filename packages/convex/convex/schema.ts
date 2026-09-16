@@ -399,6 +399,20 @@ export default defineSchema({
     path: v.optional(geoJson), // TRUSTED GPS track = skated extent
     waterBodyId: v.optional(v.id('waterBodies')), // resolved at ingest (D44)
     waterBodyIds: v.optional(v.array(v.id('waterBodies'))), // when a skate spans bodies
+    /**
+     * The named bay this skate was mostly in (N9 / D175) — the bay holding the **majority of the
+     * sampled points**, the same rule `resolveTrackToBodies` uses for the body. Absent on a body with
+     * no bays, or a skate that stayed in open water. Re-stamped by `subAreas.restampParent`.
+     */
+    subAreaId: v.optional(v.id('waterBodySubAreas')),
+    /** Every bay the track touched, primary first — stored only when more than one (the `waterBodyIds` convention). */
+    subAreaIds: v.optional(v.array(v.id('waterBodySubAreas'))),
+    /**
+     * Samples fell on the parent **outside every bay** — the mouth-line evidence (N9 kickoff Q4).
+     * Nothing acts on it; the admin card counts it beside the redraw control, because a bay's seaward
+     * edge is a judgement a skater can prove wrong by skating past it, and this is where that shows.
+     */
+    leftSubArea: v.optional(v.literal(true)),
     photoUrls: v.optional(v.array(v.string())),
     promptState: literals(ACTIVITY_PROMPT_STATES),
     linkedReportId: v.optional(v.id('reports')),
@@ -445,7 +459,11 @@ export default defineSchema({
      * every report in the window before knowing which to keep, which is the read this index exists to
      * avoid.
      */
-    .index('by_water_body_start_time', ['waterBodyId', 'startTime']),
+    .index('by_water_body_start_time', ['waterBodyId', 'startTime'])
+    // The admin card's mouth-line count (N9): this season's skates in one bay, take-bounded, filtered
+    // to `leftSubArea` in memory. Not sparse — a bare range on `subAreaId` would match every
+    // un-stamped track — so it is only ever read with an `eq()` on the bay.
+    .index('by_sub_area_start_time', ['subAreaId', 'startTime']),
 
   waterBodies: defineTable({
     name: v.string(),
@@ -1248,11 +1266,52 @@ export default defineSchema({
     // on the row, so `listForBody` carries it into the editor where the redraw actually happens (D5:
     // never silent). Cleared by any write that re-establishes containment — restore or redraw.
     systemDelistReason: v.optional(v.string()),
+
+    // ── N9 (D175): a bay is a place ──────────────────────────────────────────────────────────────
+
+    /**
+     * Our own opaque, sortable identity for the bay — `sa_<uuid>`, the `waterBodyKey` treatment
+     * (D93). Minted **once at insert** and never on a redraw, so a thing stamped on a tile or an
+     * export can be matched back after the outline moves. Optional only for the rows that predate
+     * it; `mintSubAreaKeys` backfills, and every insert path writes one.
+     */
+    subAreaKey: v.optional(v.string()),
+    /**
+     * The bay's own 16-sector fetch profile in metres, off its **own** clipped outline — the one
+     * bay-specific wind signal we can compute for free, and genuinely local where the rose is not
+     * (a bay never carries a `windRose`: it inherits the parent's, and the caption says so).
+     * Recomputed by `rederiveSubArea` on every geometry write.
+     */
+    fetchProfileM: v.optional(v.array(v.number())),
+    /**
+     * Max depth **inside this outline**, derived by clipping the parent's archived soundings or
+     * isobaths to the bay polygon (`scripts/bathymetry/src/exportBayDepths.ts`) and loaded through
+     * `setDerivedDepth`. Max only — a sounding cloud is a survey track, not a sample of the basin,
+     * so no mean is ever produced (founder, 2026-08-09). **Never inherited**: Malletts Bay is not as
+     * deep as Champlain's broad lake, and a bay page reading the lake's 122 m would be a
+     * safety-relevant lie (D3). Nothing here is ever counsel (D82).
+     */
+    maxDepthM: v.optional(v.number()),
+    maxDepthSource: v.optional(literals(DEPTH_SOURCES)),
+    /** Contour lane: the deepest isobath fully inside the bay is a **lower bound**, and the caption says so. */
+    depthUnderstatesMax: v.optional(v.boolean()),
+    /** When the depth was last derived — kept across an invalidation so the admin card can date it. */
+    depthDerivedAt: v.optional(v.number()),
+    /**
+     * When the outline last changed (redraw / restore / re-clip). The depth's inputs live in the
+     * bathymetry archive on disk, not in Convex, so a geometry change **clears** the derived depth
+     * rather than recomputing it, and this is what tells the admin card the re-run is owed
+     * (`geometryUpdatedAt > depthDerivedAt`). Nothing beats stale (D3).
+     */
+    geometryUpdatedAt: v.optional(v.number()),
   })
     // Every non-map read is scoped to a parent already in hand — the report being created knows its
     // `waterBodyId`, the search hit carries its parent, the lake editor is one body. Bounded by the
     // handful of sub-areas one lake has, not by the corpus.
     .index('by_parent', ['waterBodyId'])
+    // The depth loader's lookup by our own key (N9). `eq()` only — an optional field's index is not
+    // sparse, so a range here would walk every un-keyed legacy row first.
+    .index('by_sub_area_key', ['subAreaKey'])
     .searchIndex('search_subarea', { searchField: 'searchText' }),
 
   // The sub-area spatial index (N2) — the third table on N1's shared ladder-grid mechanism, same
@@ -1864,6 +1923,17 @@ export default defineSchema({
     // point sits outside all of them (open water on a lake with named bays).
     subAreaId: v.optional(v.id('waterBodySubAreas')),
     subAreaName: v.optional(v.string()),
+    /**
+     * Every bay this report is a member of, primary first (N9 / D175) — the `subAreaId` above is the
+     * **label** (finest place, the weather strip's point); this is the **membership** (every place
+     * that contains it). Filled from the track's sampled points when the report is activity-sourced
+     * — a skate that spends an hour in two bays lists both — and stored only when there is more
+     * than one, the `gpsActivities.waterBodyIds` convention; a pin-only report keeps the single
+     * stamp. `subAreaNames` mirrors it one-for-one so the list-form location line costs no reads.
+     * The indexable copy is the `reportSubAreas` join below.
+     */
+    subAreaIds: v.optional(v.array(v.id('waterBodySubAreas'))),
+    subAreaNames: v.optional(v.array(v.string())),
     reportTime: v.number(), // when submitted (may be later, offline sync)
     source: literals(REPORT_SOURCES),
     activityId: v.optional(v.id('gpsActivities')), // set when source == activity
@@ -1945,15 +2015,10 @@ export default defineSchema({
       'moderationStatus',
       'skateEndTime',
     ])
-    // The sub-area-scoped freshness index (N2 / D60). `moderationStatus` sits in the middle for the
-    // same reason as its body-scoped sibling above: the gate's cap has to be spent on rows it will
-    // actually weigh, and a post-read `visible` filter lets hidden reports eat it. Sparse — only
-    // reports on a lake with named bays carry a `subAreaId` at all.
-    .index('by_sub_area_moderation_and_skate_end_time', [
-      'subAreaId',
-      'moderationStatus',
-      'skateEndTime',
-    ])
+    // The sub-area-scoped reads (the bay feed, the bay bounty gate) moved onto the `reportSubAreas`
+    // join in N9 — a report can be a member of two bays, and an index over one `subAreaId` column
+    // cannot see it under the second. The old `by_sub_area_moderation_and_skate_end_time` index
+    // was dropped with them: an unread index is write amplification plus a trap.
     .index('by_author', ['authorId'])
     // Newest-first author history for the profile page, bounded by a `.take()` on skate-end time so a
     // prolific reporter's page never `.collect()`s an unbounded set (D13).
@@ -1969,6 +2034,31 @@ export default defineSchema({
     // former (a photo is attached at create, whatever the skate time claims).
     .index('by_created_at', ['createdAt'])
     .index('by_idempotency_key', ['idempotencyKey']), // offline-flush dedup (F2/D30)
+
+  /**
+   * **A report's bay memberships, one row per (report, bay)** (N9 / D175) — the indexable copy of
+   * `reports.subAreaIds`, because Convex cannot index an array and the bay-scoped feed and the bay
+   * bounty gate must both find a spanning report under its *second* bay too. The
+   * `parkingAreaBodies` argument, one table over.
+   *
+   * `moderationStatus` and `skateEndTime` are **mirrors** of the report's, kept by the only writers
+   * of those fields — `reports.create` / `update` (skate time), `moderation.setModerationStatus`
+   * (status), `subAreas.restampParent` (membership) and `waterBodies.merge` (`waterBodyId`) — all
+   * through `lib/reportSubAreas.ts`. They are in the row so the gate is applied *in* the index, for
+   * the same reason `by_water_body_moderation_and_skate_end_time` keeps it there: a page of
+   * all-hidden reports must not come back empty with `isDone: false`.
+   *
+   * Reports are never deleted (D62 keeps and redacts them), so the join never has to be, either.
+   */
+  reportSubAreas: defineTable({
+    reportId: v.id('reports'),
+    subAreaId: v.id('waterBodySubAreas'),
+    waterBodyId: v.id('waterBodies'),
+    moderationStatus: literals(MODERATION_STATUSES),
+    skateEndTime: v.number(),
+  })
+    .index('by_sub_area_moderation_skate_end', ['subAreaId', 'moderationStatus', 'skateEndTime'])
+    .index('by_report', ['reportId']),
 
   comments: defineTable({
     reportId: v.id('reports'),
@@ -2346,6 +2436,10 @@ export default defineSchema({
     promotedFromHazardId: v.optional(v.id('hazards')),
     active: v.boolean(), // demotion flips this off (reversible, never hard-deleted)
     createdAt: v.number(),
+    // The named bay the feature's footprint centre falls in (N9 / D175) — the hazard rule
+    // (`hazardCenter` → smallest containing), stamped at write and re-stamped by `restampParent`.
+    // "Known outlet", never "outlet" (D103) — the bay view lists what the lake already knows.
+    subAreaId: v.optional(v.id('waterBodySubAreas')),
   }).index('by_water_body_active', ['waterBodyId', 'active']),
 
   // No `follows` table (D13): the social graph was removed. Reports are all public — the only
@@ -2653,12 +2747,23 @@ export default defineSchema({
   waterBodyFavorites: defineTable({
     userId: v.id('profiles'),
     waterBodyId: v.id('waterBodies'),
+    /**
+     * A favorite of one named bay rather than the whole lake (N9 / D175). A bay favorite still
+     * carries the parent's `waterBodyId`, so the notification fan-out's one `by_water_body` scan
+     * finds both audiences; it then keeps this row only for reports whose membership includes the
+     * bay. Wanting to hear about Malletts Bay is a different statement from wanting all of
+     * Champlain, and only the user can make it — which is why this is stored, not derived.
+     */
+    subAreaId: v.optional(v.id('waterBodySubAreas')),
     createdAt: v.number(),
   })
     .index('by_user', ['userId'])
     .index('by_water_body', ['waterBodyId'])
-    // Point lookup + uniqueness for `toggle`/`isFavorite` (one row per user×body).
-    .index('by_user_water_body', ['userId', 'waterBodyId']),
+    // Point lookup + uniqueness for `toggle`/`isFavorite` — one row per user × body × bay. The lake
+    // row is the one with `subAreaId` undefined, looked up with `.eq('subAreaId', undefined)`: an
+    // optional field's index is not sparse, `undefined` is a real key (the `bodyWeatherCells.by_body`
+    // pattern), and it is exactly what makes the lake row and each bay row distinct entries.
+    .index('by_user_water_body_sub_area', ['userId', 'waterBodyId', 'subAreaId']),
 
   // Routable put-in markers (Phase 4, decision #7). `derived` markers are materialized by clustering
   // visible report points (approximate — a report `point` can be mid-lake); `official` markers are
@@ -2768,10 +2873,22 @@ export default defineSchema({
      * reservoir open around the clock with one launch shut at dusk is not a reservoir shut at dusk.
      */
     postedAccess: v.optional(postedAccess),
+    /**
+     * The named bay this launch serves (N9 / D175), tagged at write and re-stamped by
+     * `subAreas.restampParent`. **By distance, not containment**: put-ins are snapped *to the
+     * shoreline*, so point-in-polygon is a coin flip at the edge — a launch within
+     * `SUB_AREA_PUT_IN_TOLERANCE_M` of a bay's outline belongs to it, smallest bay winning (the
+     * `nearestBodyForPoint` shape). Parking gets no stored tag: a lot belongs to a bay through the
+     * put-in it serves, else by proximity, derived at read.
+     */
+    subAreaId: v.optional(v.id('waterBodySubAreas')),
   })
     .index('by_water_body', ['waterBodyId'])
     // Idempotent OSM upsert (N6d B3), mirroring `waterBodies.by_external_id`.
     .index('by_external_id', ['externalId'])
+    // A bay's own launches (N9) — the drive-time coordinate and the bay view's access list. `eq()`
+    // only; an optional-field index is not sparse.
+    .index('by_sub_area', ['subAreaId'])
     // Every access point one uploader has attached a photo to — the third arm of the orphan-GC
     // reference scan (N3 / `lib/photoOrphans`). Without it the sweep would have to scan the whole
     // table to decide whether one person's photo is referenced, and the alternative it would fall
