@@ -109,9 +109,13 @@ export function withAccessDim(baseOpacity: unknown): unknown[] {
 /**
  * The drawer line for a settled verdict, or `null` when nobody has ruled.
  *
- * An `open` verdict says so out loud rather than rendering nothing. It is what explains why the report
- * control behaves differently, and stating the date is what makes the ruling contestable instead of
- * merely final.
+ * **The two verdicts get different registers, and that is the founder's call (2026-09-16).** An
+ * `open` ruling is the ordinary state of a lake — it reads as a plain fact, *"Accessible to the
+ * public"*, with no date and no moderator, because dressing the normal case in the language of a
+ * review makes it sound contested. A `none` ruling is the exceptional one, and it *should* carry who
+ * decided and when: it is the only verdict that costs a reader something, so it is the one that has
+ * to be contestable on its face. The `open` verdict's date still exists — it moves to the re-report
+ * gate (`accessReportGateMessage`), which is the only place a reader needs it.
  */
 export function describePublicAccess(
   access: PublicAccess | undefined,
@@ -119,9 +123,9 @@ export function describePublicAccess(
 ): string | null {
   if (!access) return null;
   if (access.verdict === 'none') {
-    return 'No public access — every approach crosses private land.';
+    return `A moderator reviewed this on ${formatDecidedAt(access.decidedAt, timeZone)} and found no public access — every approach crosses private land.`;
   }
-  return `A moderator reviewed this on ${formatDecidedAt(access.decidedAt, timeZone)} and found public access.`;
+  return 'Accessible to the public.';
 }
 
 /** "3 people have reported no public access here — under review." `null` below one report. */
@@ -138,6 +142,9 @@ export function describePendingAccessReports(count: number): string | null {
  * gates go up, and a body that was public in 2026 may not be in 2029 — but letting the same report be
  * refiled with one tap makes the review worthless. Asking what changed costs a genuine reporter one
  * sentence and stops the casual re-flag entirely.
+ *
+ * This is where the `open` verdict's date lives now that the drawer line dropped it: "since when" is
+ * exactly the question a re-reporter is being asked to answer.
  */
 export function accessReportGateMessage(access: PublicAccess, timeZone?: string): string {
   return `A moderator reviewed this on ${formatDecidedAt(access.decidedAt, timeZone)} and found public access. If that has changed, say what changed.`;
