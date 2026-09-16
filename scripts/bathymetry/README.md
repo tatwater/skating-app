@@ -327,6 +327,28 @@ The date suffix exists for that, and a second build the same day takes `-2`.
 
 ---
 
+## 10. Bay depths — a max depth per named bay, out of the same archive (N9)
+
+```bash
+pnpm --filter @skating/bathymetry export-bay-depths --dry            # derive, report, write nothing
+pnpm --filter @skating/bathymetry export-bay-depths --campaign=<id>  # derive and load
+```
+
+Reads the cached join, exports the live bays from Convex (`subAreas:exportForDepths`), clips each
+parent's soundings or isobaths to each bay's outline (`bayDepths.ts`), writes
+`.scratch/bay-depths.ndjson`, and loads it through `subAreas:setDerivedDepth` — matched on our own
+`subAreaKey`, refused for any bay whose outline moved after the run's snapshot. A sounding lane
+gives a measurement; a contour lane gives the deepest isobath with a vertex inside the bay, which
+is a **floor** and is flagged `understatesMax` so the bay header reads *"max at least"*.
+
+**Run it again after any bay is redrawn.** The inputs live here and nowhere else, so a redraw
+*clears* the bay's depth rather than recomputing it, and the lake editor's per-bay line says the
+re-run is owed. First run on dev 2026-09-16: 63 of 128 bays (21 measured, 42 floors); 24 sit on a
+parent the archive does not cover and 41 had no sounding or isobath vertex inside their outline —
+both correctly nothing.
+
+---
+
 ## Not built yet
 
 **The rung-1 depth write** for the D68 ladder, which is gated behind N6a's ordering gate — hold the

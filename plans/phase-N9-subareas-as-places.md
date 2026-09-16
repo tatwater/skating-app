@@ -14,7 +14,7 @@
 > the Great Lakes case that surfaced it. That case took a different answer (see §The bay class,
 > below) and is not a dependency.
 >
-> **Status 2026-09-16: PR 1 built and on dev; PR 2 (the depth ETL) next.** See §Built record,
+> **Status 2026-09-16: ✅ built, both PRs on dev (PR 1 = #58, PR 2 stacked on it); prod deferred.** See §Built record,
 > directly below, for what shipped and where it departs from the kickoff pass. The §Kickoff pass
 > after it is the build spec — every call it records supersedes the scoping prose after it where the
 > two disagree, and each such place is marked ⚠ inline.
@@ -90,10 +90,26 @@ Planning: *Put in at ESE launch* (a bay launch, chosen over the lake's 172), the
 weather. Camera framed the bay with the parent's contours drawing under it. Console clean apart from
 a pre-existing `<div>`-in-`<p>` warning in `DetailSkeleton` (not this phase's).
 
+### PR 2 — `phase-n9-bay-depths` (2026-09-16, stacked on PR 1)
+
+`scripts/bathymetry/src/bayDepths.ts` (the clip rule, tested) + `exportBayDepths.ts` (the CLI,
+`export-bay-depths`, README §10) + `subAreas.exportForDepths` / `setDerivedDepth`. **Run on dev**,
+campaign `n9-bay-depths-20260916`: 128 live bays on 22 parents; 104 sit on a parent the archive
+covers; **63 got a depth** — 21 measured from soundings (Champlain's ten, Moosehead, Sebec, Seboeis),
+42 isobath floors (Winnipesaukee 41, Cochituate 1); 41 had no sounding or isobath vertex inside
+their outline and 24 sit on an uncovered parent (Placid, Belleau, Pine River Pond…), both correctly
+nothing. Refused 0. *Greptile pass:* the loader's guard became a **version check** — a row echoes
+the `geometryUpdatedAt` it was derived against and the loader demands equality, so the CLI host's
+clock is not in it; the persistence boundary enforces `MAX_PLAUSIBLE_DEPTH_M` itself; omissions are
+counted once per bay (63 + 41 + 24 = 128); written/refused land on the run row after every batch. Sanity: Champlain's *Broad Lake* bay takes the lake's 121.6 m — the deepest
+point is in it — and *Malletts Bay* reads 24.7 m measured. Delta from the kickoff: contour lanes are
+**not** superseded here (that list governs lake depth, where NH's band polygons win; nothing clips
+bands per bay), and the isobath test is *any vertex inside*, not *fully inside* — a vertex of the
+60 ft line inside the bay is water at least 60 ft deep inside the bay, and the tighter rule threw
+away exactly the crossing contours a bay mouth has most of.
+
 ### Deferred / not built
 
-- **PR 2, the depth lane** — `exportBayDepths` + `setDerivedDepth`; every bay currently reads
-  "no depth", which is the correct D3 state until it runs.
 - The mobile bay view is type-checked and suite-green but not device-tested.
 - The shelter index, the station study, US spellings — post-alpha, as scoped.
 

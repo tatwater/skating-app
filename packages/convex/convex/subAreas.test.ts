@@ -2318,3 +2318,78 @@ describe('restampAllParents — the one-off for rows that predate N9', () => {
     expect((await t.run((ctx) => ctx.db.get(putIn)))?.subAreaId).toBe(bay);
   });
 });
+
+describe('the depth lane’s two ends (N9 PR 2)', () => {
+  test('setDerivedDepth writes by key, refuses a bay whose outline is not the one exported, and dryRun writes nothing', async () => {
+    const t = harness();
+    const body = await seedBody(t);
+    const mod = await seedUser(t, 'mod', 'moderator');
+    const bay = await mod.as.mutation(api.subAreas.create, {
+      waterBodyId: body,
+      name: 'West Bay',
+      polygon: rect(-73.5, 44.2, -73.3, 44.6),
+    });
+    await settle(t);
+    const exported = await t.query(internal.subAreas.exportForDepths, {});
+    expect(exported.map((b) => b.subAreaId)).toEqual([bay]);
+    const key = exported[0]?.subAreaKey as string;
+    const snapshotAt = Date.now();
+    // Never redrawn: no stamp, and the row echoes that back.
+    expect(exported[0]?.geometryUpdatedAt).toBeUndefined();
+
+    const dry = await t.mutation(internal.subAreas.setDerivedDepth, {
+      rows: [{ subAreaKey: key, maxDepthM: 18.3, understatesMax: true }],
+      dryRun: true,
+    });
+    expect(dry).toMatchObject({ written: 1, dryRun: true });
+    expect((await t.run((ctx) => ctx.db.get(bay)))?.maxDepthM).toBeUndefined();
+
+    const wet = await t.mutation(internal.subAreas.setDerivedDepth, {
+      rows: [
+        { subAreaKey: key, maxDepthM: 18.3, understatesMax: true },
+        { subAreaKey: 'sa_nope', maxDepthM: 5, understatesMax: false },
+      ],
+    });
+    expect(wet.written).toBe(1);
+    expect(wet.refused).toEqual([{ subAreaKey: 'sa_nope', reason: 'not_found' }]);
+    // The persistence boundary's own cap, whatever the caller applied.
+    const deep = await t.mutation(internal.subAreas.setDerivedDepth, {
+      rows: [{ subAreaKey: key, maxDepthM: 401, understatesMax: false }],
+    });
+    expect(deep.refused).toEqual([{ subAreaKey: key, reason: 'implausible' }]);
+    const row = await t.run((ctx) => ctx.db.get(bay));
+    expect(row).toMatchObject({
+      maxDepthM: 18.3,
+      maxDepthSource: 'state_agency',
+      depthUnderstatesMax: true,
+    });
+    expect(row?.depthDerivedAt).toBeGreaterThanOrEqual(snapshotAt);
+
+    // A redraw after the export: the export's number is about an outline that no longer exists.
+    // A version check, not a clock comparison — the same millisecond, or a host clock running ahead
+    // of the server's, changes nothing.
+    await mod.as.mutation(api.subAreas.redraw, {
+      subAreaId: bay,
+      polygon: rect(-73.5, 44.2, -73.25, 44.6),
+    });
+    const stale = await t.mutation(internal.subAreas.setDerivedDepth, {
+      rows: [{ subAreaKey: key, maxDepthM: 20, understatesMax: false }],
+    });
+    expect(stale.refused).toEqual([{ subAreaKey: key, reason: 'geometry_moved' }]);
+    expect((await t.run((ctx) => ctx.db.get(bay)))?.maxDepthM).toBeUndefined();
+    // Re-exported after the redraw, the row carries the new stamp and lands.
+    const again = await t.query(internal.subAreas.exportForDepths, {});
+    const fresh = await t.mutation(internal.subAreas.setDerivedDepth, {
+      rows: [
+        {
+          subAreaKey: key,
+          maxDepthM: 20,
+          understatesMax: false,
+          geometryUpdatedAt: again[0]?.geometryUpdatedAt,
+        },
+      ],
+    });
+    expect(fresh).toMatchObject({ written: 1, refused: [] });
+    expect(snapshotAt).toBeLessThanOrEqual(Date.now());
+  });
+});
