@@ -21,8 +21,7 @@ import { requireContributorRole, requireRole } from './lib/auth';
 import { recomputeBodySummary } from './lib/bodySummary';
 import { bumpContributionCount, visibleDelta } from './lib/contributionCounts';
 import { MODERATION_ACTIONS, MODERATION_STATUSES, MODERATION_TARGET_TYPES } from './lib/enums';
-import { bumpMetricMetaCounter } from './lib/metrics';
-import { enqueueActorNotification } from './lib/notificationQueue';
+import { closeFlag } from './lib/flagResolution';
 import { literals } from './lib/validators';
 
 /** The audit action implied by a target moderation status (D37). */
@@ -125,11 +124,9 @@ export const resolveFlag = mutation({
     }
 
     const now = Date.now();
-    await ctx.db.patch(args.flagId, {
-      status: args.resolution,
-      resolvedByUserId: actor._id,
-      resolvedAt: now,
-    });
+    // The status, the Phase 7b disposition metric, and the N8 verdict notification — shared with
+    // `waterBodies.setPublicAccess`, which closes flags as a side effect of ruling on a lake.
+    await closeFlag(ctx, flag, args.resolution, actor._id, now);
 
     await ctx.db.insert('moderationActions', {
       actorId: actor._id,
@@ -139,39 +136,6 @@ export const resolveFlag = mutation({
       reason: args.reason,
       createdAt: now,
     });
-
-    // The enforcement funnel's last stage (Phase 7b): upheld vs dismissed, **keyed by flag reason**.
-    // The reason is what makes it a tuning signal rather than a workload stat — mostly-dismissed
-    // `auto_low_quality` says AUTO_LOW_QUALITY_NET_UNHELPFUL is too low, and mostly-dismissed
-    // `unsafe_false_report` says CONTRADICTION_FLAG_THRESHOLD is. Counted on write because the
-    // dispositions of *today's* resolutions can't be reconstructed from a queue that only holds
-    // what's still open.
-    await bumpMetricMetaCounter(
-      ctx,
-      'flag_dispositions',
-      `${flag.reason}:${args.resolution}`,
-      1,
-      now,
-    );
-
-    // `content_flag_resolved` (N8/B3): tell the person who filed it that a moderator ruled. Verdict
-    // only — not what was done, not to whom, not by which moderator. **`origin === 'user'` only**:
-    // an auto-filed flag names a real person in `flaggerId` who never filed anything (the rater whose
-    // thumb crossed a threshold), and telling them "the report you filed was actioned" would both
-    // confuse them and disclose that their thumb produced a moderation flag. Absent origin (rows from
-    // before the field) reads as auto — silence is the fail-quiet direction. Through the settle queue
-    // (D169); there's no undo for a resolution, but one path in is the point. No `actorId`: the
-    // moderator is deliberately not the actor (a block between flagger and moderator must not
-    // swallow a verdict), so the self gate is spelled out here — a moderator ruling on their own
-    // flag already knows.
-    if (flag.origin === 'user' && flag.flaggerId !== actor._id) {
-      await enqueueActorNotification(ctx, {
-        recipientId: flag.flaggerId,
-        targetId: flag._id,
-        trigger: { kind: 'flag_resolved', flagId: flag._id, resolution: args.resolution },
-        now,
-      });
-    }
     return args.flagId;
   },
 });

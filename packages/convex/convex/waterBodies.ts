@@ -96,6 +96,7 @@ import {
   REMOVAL_REASONS,
   WATER_BODY_SOURCES,
 } from './lib/enums';
+import { closeFlag } from './lib/flagResolution';
 import { isListed } from './lib/listing';
 import { takeCapped, takeCappedResult } from './lib/scan';
 import { bbox, geoJson, latLng, literals } from './lib/validators';
@@ -2849,6 +2850,11 @@ export const setPublicAccess = mutation({
     // Ruling on the lake resolves the reports about it. `actioned` says the reporters were right;
     // `dismissed` says they weren't. Clearing the verdict leaves them open — the question is once
     // again unsettled, and the queue should say so.
+    //
+    // Through `closeFlag`, not a bare patch: each reporter was told "it's with the moderators", and
+    // this is the moment they hear back (N8 `content_flag_resolved`) — and the ruling counts toward
+    // the Phase 7b disposition chart like any other resolution. Both were missed when this path
+    // patched the rows itself, because both were built after it.
     const resolution = verdict === 'none' ? 'actioned' : verdict === 'open' ? 'dismissed' : null;
     let resolved = 0;
     if (resolution) {
@@ -2863,11 +2869,7 @@ export const setPublicAccess = mutation({
         )
         .collect();
       for (const row of open) {
-        await ctx.db.patch(row._id, {
-          status: resolution,
-          resolvedByUserId: actor._id,
-          resolvedAt: now,
-        });
+        await closeFlag(ctx, row, resolution, actor._id, now);
         resolved++;
       }
     }
