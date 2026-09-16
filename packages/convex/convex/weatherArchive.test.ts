@@ -1810,6 +1810,50 @@ describe('weatherArchive: the sub-area spread reads Tier B (N6h open question 5)
     );
   });
 
+  test('the daily bay append (N9 / G) fetches every live bay’s browse cell — days and hours — in season only', async () => {
+    const t = convexTest(schema, modules);
+    const lake = await seedBody(t, ANCHOR, 30);
+    await seedBay(t, lake, 'North Bay', NORTH);
+    await seedBay(t, lake, 'South Bay', SOUTH);
+    const gone = await seedBay(t, lake, 'Gone Bay', { lat: SOUTH.lat - 0.2, lng: SOUTH.lng });
+    await t.run((ctx) => ctx.db.patch(gone, { removedAt: Date.now() }));
+    // The membership registry is the list of live bays — the walk writes it.
+    await t.action(internal.weatherArchive.backfillWeatherCells, { tier: 'filter' });
+    const fetchMock = vi.fn(async () => okJson(isoResponse(recentDates(3))));
+    vi.stubGlobal('fetch', fetchMock);
+
+    // Closed season: nothing is spent.
+    const closed = await t.action(internal.weatherArchive.maybeRefreshBayTier, {});
+    await t.finishInProgressScheduledFunctions();
+    expect(closed.started).toBe(false);
+    expect(fetchMock).not.toHaveBeenCalled();
+
+    const gate = await t.run((ctx) =>
+      ctx.runQuery(internal.weatherArchive.isSweepSeasonOpen, { nowMs: Date.now() }),
+    );
+    await t.run((ctx) =>
+      ctx.db.insert('imageryIngestSeasons', {
+        season: gate.season,
+        opensOn: '2025-12-01',
+        openedBy: ['sentinel pond'],
+        winterFrom: '2025-11-01',
+        sitesSampled: 25,
+        detectedAt: Date.now(),
+      }),
+    );
+    const open = await t.action(internal.weatherArchive.maybeRefreshBayTier, {});
+    await t.finishInProgressScheduledFunctions();
+    expect(open.started).toBe(true);
+    // Two live bays in two browse cells; the delisted one has no membership row and costs nothing.
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    const days = await t.run((ctx) => ctx.db.query('weatherDays').collect());
+    expect(days.every((r) => r.tier === 'browse')).toBe(true);
+    expect(new Set(days.map((r) => r.cellKey)).size).toBe(2);
+    // The drawer's own path: hours too, so the season's record is the panel's record.
+    const hours = await t.run((ctx) => ctx.db.query('weatherHours').collect());
+    expect(new Set(hours.map((r) => r.cellKey)).size).toBe(2);
+  });
+
   test("primeSubAreaWeather fills the bays' filter cells out of season, once per cell", async () => {
     const t = convexTest(schema, modules);
     const lake = await seedBody(t, ANCHOR, 30);

@@ -153,6 +153,15 @@ crons.interval(
   internal.weatherArchive.maybeRefreshFilterTier,
   {},
 );
+// **The Tier-A bay append (N9 / Workstream G).** Every live bay's browse cell, days and hours, so the
+// season's record is complete for every bay whether or not anyone opened it — ~128 calls a day. Same
+// interval-with-a-gate shape as the filter append above, for the same reason.
+crons.interval(
+  'append daily bay weather archive',
+  { hours: 24 },
+  internal.weatherArchive.maybeRefreshBayTier,
+  {},
+);
 // The gap sweep (D161's recovery ladder). Separate from the append so a retry storm in one cannot
 // starve the other, and offset by running on its own 24h interval: past data is immutable, so a gap
 // is permanent unless something notices — and nothing in the weather path retried before N6h.
