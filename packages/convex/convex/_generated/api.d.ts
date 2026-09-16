@@ -54,6 +54,7 @@ import type * as lib_depth from "../lib/depth.js";
 import type * as lib_enums from "../lib/enums.js";
 import type * as lib_expoPush from "../lib/expoPush.js";
 import type * as lib_exportBundles from "../lib/exportBundles.js";
+import type * as lib_flagResolution from "../lib/flagResolution.js";
 import type * as lib_hazardMerge from "../lib/hazardMerge.js";
 import type * as lib_hazardValidators from "../lib/hazardValidators.js";
 import type * as lib_listing from "../lib/listing.js";
@@ -150,6 +151,7 @@ declare const fullApi: ApiFromModules<{
   "lib/enums": typeof lib_enums;
   "lib/expoPush": typeof lib_expoPush;
   "lib/exportBundles": typeof lib_exportBundles;
+  "lib/flagResolution": typeof lib_flagResolution;
   "lib/hazardMerge": typeof lib_hazardMerge;
   "lib/hazardValidators": typeof lib_hazardValidators;
   "lib/listing": typeof lib_listing;
