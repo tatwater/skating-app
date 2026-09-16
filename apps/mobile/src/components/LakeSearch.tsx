@@ -1,5 +1,10 @@
 import { api } from '@skating/convex/api';
-import { searchQueryArg, waterBodyClassLabel, waterBodyDisplayName } from '@skating/core';
+import {
+  INACTIVE_BADGE,
+  searchQueryArg,
+  waterBodyClassLabel,
+  waterBodyDisplayName,
+} from '@skating/core';
 import { useQuery } from 'convex/react';
 import { useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
@@ -28,6 +33,8 @@ export type LakeHit = {
   centroid: { lat: number; lng: number };
   bbox: { minLat: number; minLng: number; maxLat: number; maxLng: number };
   states: string[];
+  /** The body is dormant (N7b): the row wears the "Inactive" badge. Removed bodies never appear. */
+  inactive?: boolean;
 };
 
 /**
@@ -39,7 +46,8 @@ export type LakeHit = {
 function hitMeta(hit: LakeHit): string {
   if (hit.kind === 'subArea' && hit.parentName) return `in ${hit.parentName}`;
   const type = waterBodyClassLabel(hit.type);
-  return hit.states.length ? `${type} · ${hit.states.join(', ')}` : type;
+  const meta = hit.states.length ? `${type} · ${hit.states.join(', ')}` : type;
+  return hit.inactive ? `${INACTIVE_BADGE} · ${meta}` : meta;
 }
 
 /** How long the bar takes to leave/return. Long enough to read as one object moving, short enough

@@ -128,3 +128,19 @@ describe('isTopDecile / isBottomDecile', () => {
     expect(isBottomDecile(50, block)).toBe(false);
   });
 });
+
+describe('corpus count lines (N7b)', () => {
+  it('pairs known with active, names the state, and ranks by known', async () => {
+    const { corpusCountLines, formatCorpusCount } = await import('./regionStats');
+    const lines = corpusCountLines([
+      { state: 'NH', bodiesScanned: 3_000, bodiesActive: 120 },
+      { state: 'VT', bodiesScanned: 4_102, bodiesActive: 220 },
+      { state: 'XX', bodiesScanned: 1 },
+      { state: 'ME', bodiesScanned: 9_000 },
+    ]);
+    expect(lines.map((l) => l.state)).toEqual(['ME', 'VT', 'NH']);
+    expect(lines[1]?.stateName).toBe('Vermont');
+    expect(formatCorpusCount(lines[1] as (typeof lines)[number])).toBe('4,102 known · 220 active');
+    expect(formatCorpusCount(lines[0] as (typeof lines)[number])).toBe('9,000 known');
+  });
+});

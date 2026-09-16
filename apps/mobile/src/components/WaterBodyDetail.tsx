@@ -8,6 +8,7 @@ import {
   formatAreaAcres,
   formatSkateTime,
   humanizeEnum,
+  isActive,
   profileRevealEnabled,
   resolveWeatherSubArea,
   revealEmptySections,
@@ -41,6 +42,7 @@ import { PublicAccessSection } from './PublicAccessSection';
 import { ReferenceLinks } from './ReferenceLinks';
 import { ReportForm } from './ReportForm';
 import { SeasonEmptyState, SeasonFilter, useResetBrowseSeason } from './SeasonFilter';
+import { StandingNotice } from './StandingNotice';
 import { SubAreaSpread } from './SubAreaSpread';
 import { WeatherPlacePicker } from './WeatherPlacePicker';
 import { WindExposure } from './WindExposure';
@@ -280,6 +282,8 @@ export function WaterBodyDetail({
                 ) : null}
               </>
             )}
+            {/* Why this lake is not on the active map (N7b) — nothing on the active majority. */}
+            <StandingNotice body={result.body} />
             {/* The derived profile (N6c/C), assembled by the same @skating/core function web calls so
                 the two surfaces cannot drift. Nothing renders when there is nothing to say. */}
             {/* The lake's caption is the lake's (its depth, its fetch); under a bay header it would
@@ -306,9 +310,12 @@ export function WaterBodyDetail({
                   >
                     Add a report
                   </Button>
-                  <Button variant="outlined" onPress={() => setBountyFormOpen(true)}>
-                    Post a bounty
-                  </Button>
+                  {/* A bounty asks other people to go there — only on a lake we push (N7b). */}
+                  {isActive(result.body) ? (
+                    <Button variant="outlined" onPress={() => setBountyFormOpen(true)}>
+                      Post a bounty
+                    </Button>
+                  ) : null}
                 </>
               )}
               {/* Official NWS alerts (N6c/B5) ABOVE the tab strip, always visible — a warning from the

@@ -77,6 +77,10 @@ const NAV: NavItem[] = [
   // could not settle — and burying it one click deep is how 2,010 stored rows went unseen for a
   // campaign. See `admin.water.review.tsx`.
   { to: '/admin/water/review', label: 'Intake review' },
+  // The corpus-lifecycle page (N7b): what the machines shelved and what came back. Its own entry
+  // for the same reason as the intake queue — a page nobody can reach is a page nobody judges the
+  // rollover from.
+  { to: '/admin/water/standing', label: 'Standing' },
   { to: '/admin/features', label: 'Body features' },
   { to: '/admin/recurrence', label: 'Hazard identity' },
   // D160's dark instrument. It has to be *reachable* to be an instrument at all — a page nobody can

@@ -13,7 +13,13 @@
 import { convertFilter, type StyleSpecification } from '@maplibre/maplibre-gl-style-spec';
 import type { LngLatBounds } from '@maplibre/maplibre-react-native';
 import { layers, namedFlavor } from '@protomaps/basemaps';
-import { type BBox, composeBasemapLayers, REGION_BOUNDS_CORNERS } from '@skating/core';
+import {
+  type BBox,
+  composeBasemapLayers,
+  isActiveRow,
+  type PartialStandingInput,
+  REGION_BOUNDS_CORNERS,
+} from '@skating/core';
 import { themes } from '@skating/design';
 import { REGION_FILTER_JSON, REGION_MASK_JSON } from '../assets/regionMask';
 
@@ -283,8 +289,17 @@ export interface MappableBody {
   name: string;
   type: string;
   polygon: GeoJSON.Geometry;
-  /** A moderator's access ruling (N6f). `verdict: 'none'` draws the body dimmed. */
-  publicAccess?: { verdict: string };
+  /**
+   * The standing fields (N7b): `removedAt`, `publicAccess`, `dormant`, `reviewStatus`, `dedupStatus`.
+   * Any body that is not `active` draws dimmed — `isActiveRow` reads them all, so the map cannot
+   * show a dormant lake at full opacity by forgetting a case.
+   */
+  removedAt?: number;
+  removalReason?: PartialStandingInput['removalReason'];
+  publicAccess?: PartialStandingInput['publicAccess'];
+  dormant?: PartialStandingInput['dormant'];
+  reviewStatus?: PartialStandingInput['reviewStatus'];
+  dedupStatus?: PartialStandingInput['dedupStatus'];
 }
 
 /**
@@ -313,7 +328,7 @@ export function waterBodiesToFeatureCollection(
         _id: body._id,
         name: body.name,
         type: body.type,
-        noPublicAccess: body.publicAccess?.verdict === 'none',
+        inactive: !isActiveRow(body),
         selfFlagged: selfFlaggedIds.has(body._id),
         weatherDimmed: weatherDimmedIds.has(body._id),
       },

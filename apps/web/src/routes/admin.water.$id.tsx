@@ -7,6 +7,7 @@ import {
   DEFAULT_SAMPLE_SPACING_KM,
   DEPTH_SOURCE_LABELS,
   type DepthSource,
+  describeStanding,
   displayScore,
   formatDepthFeet,
   formatSeason,
@@ -20,6 +21,8 @@ import {
   satelliteImageryAvailable,
   seasonOf,
   snapToEdge,
+  standingOf,
+  standingReasonLabel,
   suggestSamplePoints,
   timingWindowLabel,
 } from '@skating/core';
@@ -1162,51 +1165,132 @@ const REMOVAL_REASON_LABELS: Record<string, string> = {
 };
 
 /**
- * Take a body off the map, or put it back (D48) — **admin-only, reversible, never a hard delete.**
+ * Standing (N7b) — active, dormant, or off the map — with D48's remove/restore folded in.
  *
- * `remove`/`restore` shipped in Phase 2 and had no caller in either app until now, which meant a
+ * `remove`/`restore` shipped in Phase 2 and had no caller in either app until N6c, which meant a
  * landowner takedown — the case D48 was built *for* — could only be performed from the Convex
- * dashboard. Same shape of gap as `putIns.setOfficial`: a fully implemented, authz'd, audited
- * mutation with nothing to press.
+ * dashboard. N7b widened the card from "on the map or not" to the full standing: a moderator can
+ * set a lake dormant with a note (the third rung the plan asked about — keep it, stop pushing it,
+ * without the legal claim `none` makes), bring a shelved one back, or take it off the map
+ * outright. The sentence at the top is `describeStanding` — the same one the skater reads in the
+ * drawer — so an operator sees exactly what the public is told.
  *
- * Removing drops the body's cell rows so it leaves the map at zero read cost, and takes its named
- * bays with it — a delisted Champlain still drawing "Malletts Bay" would be worse than either
- * outcome. Restoring brings back the bays that weren't delisted in their own right.
+ * Since N7b a removed body still draws when zoomed right in (dimmed, with the reason), so the old
+ * "it draws nowhere" line is gone; what removal takes away is standing, search and every push
+ * surface, and its bays' cells.
  *
- * Last in the tool column, above the history: it is the one action here that removes rather than
- * refines, and nothing that refines should sit below it.
+ * Last in the tool column, above the history: it is the one card here that shelves or removes
+ * rather than refines, and nothing that refines should sit below it.
  */
 function RemovalTool({ body, onResult }: { body: Doc<'waterBodies'>; onResult: SetBanner }) {
   const remove = useMutation(api.waterBodies.remove);
   const restore = useMutation(api.waterBodies.restore);
+  const setStanding = useMutation(api.standing.setStanding);
   const [reason, setReason] = useState('landowner_request');
-  const removed = body.removedAt !== undefined;
+  const [note, setNote] = useState('');
+  const standing = standingOf(body);
+  const line = describeStanding(standing);
+  const label =
+    standing.standing === 'active'
+      ? 'Active'
+      : standing.standing === 'unlisted'
+        ? 'Not on the map'
+        : `${standing.standing === 'removed' ? 'Removed' : 'Dormant'} — ${standingReasonLabel(standing.reason)}`;
 
   return (
-    <ToolCard title="Listing">
-      {removed ? (
-        <>
-          <p className="text-foreground-muted text-sm">
-            Delisted{body.removalReason ? ` — ${REMOVAL_REASON_LABELS[body.removalReason]}` : ''}.
-            It draws nowhere, and its bays are off the map with it.
-          </p>
-          <Button
-            size="sm"
-            variant="outline"
-            className="self-start"
-            onClick={async () => {
+    <ToolCard title="Standing">
+      <p className="text-foreground text-sm">{label}</p>
+      {line ? <p className="text-foreground-muted text-sm">{line}</p> : null}
+      {body.activatedAt !== undefined ? (
+        <p className="text-foreground-muted text-xs">
+          Activated {new Date(body.activatedAt).toLocaleDateString()}.
+        </p>
+      ) : null}
+
+      {standing.standing === 'removed' ? (
+        <Button
+          size="sm"
+          variant="outline"
+          className="self-start"
+          onClick={async () => {
+            try {
+              await restore({ waterBodyId: body._id as Id<'waterBodies'> });
+              onResult({ tone: 'ok', text: 'Restored — active again, and re-scored.' });
+            } catch (err) {
+              onResult({ tone: 'error', text: errorText(err) });
+            }
+          }}
+        >
+          Restore to the map
+        </Button>
+      ) : null}
+
+      {standing.standing === 'dormant' && standing.reason === 'no_public_access' ? (
+        <p className="text-foreground-muted text-xs">
+          Dormant because of the access ruling — change or clear the ruling in the Access section to
+          bring it back.
+        </p>
+      ) : null}
+
+      {standing.standing === 'dormant' && standing.reason !== 'no_public_access' ? (
+        <Button
+          size="sm"
+          variant="outline"
+          className="self-start"
+          onClick={async () => {
+            try {
+              await setStanding({ waterBodyId: body._id as Id<'waterBodies'>, standing: 'active' });
+              onResult({ tone: 'ok', text: 'Back on the active map.' });
+            } catch (err) {
+              onResult({ tone: 'error', text: errorText(err) });
+            }
+          }}
+        >
+          Bring back to the active map
+        </Button>
+      ) : null}
+
+      {standing.standing === 'active' ? (
+        <div className="flex flex-col gap-2">
+          <Label htmlFor="standing-note">Note for skaters (shown on the lake)</Label>
+          <Input
+            id="standing-note"
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            placeholder="e.g. Drained for dam work through 2027"
+            maxLength={160}
+          />
+          <ReasonDialog
+            trigger={
+              <Button size="sm" variant="outline" className="self-start">
+                Set dormant
+              </Button>
+            }
+            title="Set this water body dormant"
+            description="It stays on the map when zoomed right in, dimmed, with your note. It leaves search results’ top, notifications, weather discovery and the recommended strip. A report or a track will NOT bring it back — only a moderator will."
+            confirmLabel="Set dormant"
+            confirmVariant="secondary"
+            requireReason={false}
+            reasonPlaceholder="Optional note for the audit log"
+            onConfirm={async (auditReason) => {
               try {
-                await restore({ waterBodyId: body._id as Id<'waterBodies'> });
-                onResult({ tone: 'ok', text: 'Restored to the map.' });
+                await setStanding({
+                  waterBodyId: body._id as Id<'waterBodies'>,
+                  standing: 'dormant',
+                  ...(note.trim() ? { note: note.trim() } : {}),
+                  ...(auditReason?.trim() ? { reason: auditReason.trim() } : {}),
+                });
+                setNote('');
+                onResult({ tone: 'ok', text: 'Set dormant.' });
               } catch (err) {
                 onResult({ tone: 'error', text: errorText(err) });
               }
             }}
-          >
-            Restore to the map
-          </Button>
-        </>
-      ) : (
+          />
+        </div>
+      ) : null}
+
+      {standing.standing !== 'removed' && standing.standing !== 'unlisted' ? (
         <>
           <select
             className="rounded border border-border bg-surface px-2 py-1 text-sm"
@@ -1226,9 +1310,9 @@ function RemovalTool({ body, onResult }: { body: Doc<'waterBodies'>; onResult: S
                 Take off the map
               </Button>
             }
-            title="Delist this water body"
-            description="It stops drawing, its cell rows are dropped, and its named bays go with it. Reversible from this card — nothing is deleted."
-            confirmLabel="Delist"
+            title="Remove this water body"
+            description="It leaves search and every push surface, its named bays go with it, and it draws only when zoomed right in — dimmed, with the reason. Reversible from this card — nothing is deleted."
+            confirmLabel="Remove"
             confirmVariant="secondary"
             requireReason={false}
             reasonPlaceholder="Optional note for the audit log"
@@ -1246,10 +1330,10 @@ function RemovalTool({ body, onResult }: { body: Doc<'waterBodies'>; onResult: S
           />
           <p className="text-foreground-muted text-xs">
             Admin only, and reversible — the row, its reports and its hazards all survive. A
-            re-import preserves the delisting rather than quietly putting the lake back.
+            re-import preserves the removal rather than quietly putting the lake back.
           </p>
         </>
-      )}
+      ) : null}
     </ToolCard>
   );
 }

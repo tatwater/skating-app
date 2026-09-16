@@ -12,6 +12,7 @@ import {
   formatAreaAcres,
   formatSkateTime,
   humanizeEnum,
+  isActive,
   isLeaving,
   profileRevealEnabled,
   resolveWeatherSubArea,
@@ -47,6 +48,7 @@ import { PublicAccessSection } from './PublicAccessSection';
 import { ReferenceLinks } from './ReferenceLinks';
 import { ReportForm } from './ReportForm';
 import { SeasonEmptyState, SeasonFilter, useResetBrowseSeason } from './SeasonFilter';
+import { StandingNotice } from './StandingNotice';
 import { SubAreaSpread } from './SubAreaSpread';
 import { Badge } from './ui/badge';
 import { Button } from './ui/button';
@@ -188,6 +190,7 @@ export function WaterBodyDetail({
 
   const depth = describeLakeDepth(result.body);
   const caption = buildLakeCaption(result.body, regionStats);
+  const active = isActive(result.body);
   // The bay view (N9 / D175): a live `?sub=` reframes the header as the bay — its own name and heart,
   // its own area, depth and fetch; the lake's elevation and rose, said to be inherited. Everything
   // below the header stays the lake's drawer with its lists narrowed to the bay, because a bay is a
@@ -263,6 +266,8 @@ export function WaterBodyDetail({
             ) : null}
           </>
         )}
+        {/* Why this lake is not on the active map (N7b) — nothing on the active majority. */}
+        <StandingNotice body={result.body} />
         {/* The derived profile (N6c/C). Renders NOTHING — no heading, no empty section — when
             there is nothing to say, which is most of the corpus and is the correct outcome rather
             than a gap to fill with hedged filler. */}
@@ -291,9 +296,12 @@ export function WaterBodyDetail({
               <Button variant="outline" onClick={() => setHazardFormOpen(true)}>
                 Report a hazard
               </Button>
-              <Button variant="outline" onClick={() => setBountyFormOpen(true)}>
-                Post a bounty
-              </Button>
+              {/* A bounty asks other people to go there — only on a lake we push (N7b). */}
+              {active ? (
+                <Button variant="outline" onClick={() => setBountyFormOpen(true)}>
+                  Post a bounty
+                </Button>
+              ) : null}
             </>
           )}
           <DirectionsButton waterBodyId={result.body._id} />

@@ -155,6 +155,19 @@ export function isActive(body: StandingInput): boolean {
   return standingOf(body).standing === 'active';
 }
 
+/** A row shape a client's map builder may hold — every standing field optional. */
+export type PartialStandingInput = Omit<StandingInput, 'dedupStatus'> & {
+  dedupStatus?: StandingInput['dedupStatus'] | undefined;
+};
+
+/**
+ * `isActive` for a partial row, as the clients' map feature builders hold one: an absent
+ * `dedupStatus` reads as `clean`, because a body that reached a map read is listed by construction.
+ */
+export function isActiveRow(body: PartialStandingInput): boolean {
+  return isActive({ ...body, dedupStatus: body.dedupStatus ?? 'clean' });
+}
+
 /**
  * Is the body reachable at all — cell-indexed, openable by id, resolvable by coordinate?
  *

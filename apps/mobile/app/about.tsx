@@ -1,3 +1,6 @@
+import { api } from '@skating/convex/api';
+import { corpusCountLines, formatCorpusCount } from '@skating/core';
+import { useQuery } from 'convex/react';
 import Constants from 'expo-constants';
 import { openBrowserAsync } from 'expo-web-browser';
 import { ScrollView } from 'react-native';
@@ -10,6 +13,8 @@ import { DOC_URLS } from '../src/lib/links';
  * license-hygiene requirement. Final legal wording remains Q10.
  */
 export default function AboutScreen() {
+  const regionStats = useQuery(api.regionStats.list, {});
+  const counts = regionStats ? corpusCountLines(regionStats) : [];
   return (
     <ScrollView contentContainerStyle={{ padding: 16 }}>
       <YStack gap="$3" backgroundColor="$background">
@@ -20,6 +25,23 @@ export default function AboutScreen() {
           and place — never a guarantee that ice is safe. You alone decide whether to step on the
           ice.
         </Paragraph>
+
+        {/* Both numbers, always (N7b, founder call): what the map knows and what it recommends. */}
+        {counts.length > 0 ? (
+          <>
+            <H2 color="$foreground">The map</H2>
+            <Paragraph color="$foregroundMuted">
+              Every lake we know about is on the map when you zoom in. The active ones — the lakes
+              people actually skate and can actually reach — are the ones we recommend, notify about
+              and show first.
+            </Paragraph>
+            {counts.map((line) => (
+              <Paragraph key={line.state} color="$foregroundMuted" fontSize={13}>
+                {line.stateName} — {formatCorpusCount(line)}
+              </Paragraph>
+            ))}
+          </>
+        ) : null}
 
         <H2 color="$foreground">License</H2>
         <Paragraph color="$foregroundMuted">

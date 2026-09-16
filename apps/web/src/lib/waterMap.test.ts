@@ -227,7 +227,7 @@ describe('waterBodiesToFeatureCollection', () => {
       type: 'lake',
       // Always present, never absent (N6f): the dim expression compares against `true`, and a missing
       // property would evaluate to null inside an `any`, which throws rather than reading as false.
-      noPublicAccess: false,
+      inactive: false,
       selfFlagged: false,
       weatherDimmed: false,
     });
@@ -237,19 +237,22 @@ describe('waterBodiesToFeatureCollection', () => {
     expect(waterBodiesToFeatureCollection([]).features).toHaveLength(0);
   });
 
-  describe('no public access (N6f)', () => {
+  describe('standing (N6f → N7b)', () => {
+    const inactive = (over: Record<string, unknown>) =>
+      waterBodiesToFeatureCollection([{ ...(bodies[0] as (typeof bodies)[number]), ...over }])
+        .features[0]?.properties?.inactive;
+
     it('marks a body a moderator ruled shut', () => {
-      const fc = waterBodiesToFeatureCollection([
-        { ...(bodies[0] as (typeof bodies)[number]), publicAccess: { verdict: 'none' } },
-      ]);
-      expect(fc.features[0]?.properties?.noPublicAccess).toBe(true);
+      expect(inactive({ publicAccess: { verdict: 'none', decidedAt: 1 } })).toBe(true);
     });
 
     it('leaves an “open” ruling undimmed — it changes no pixel', () => {
-      const fc = waterBodiesToFeatureCollection([
-        { ...(bodies[0] as (typeof bodies)[number]), publicAccess: { verdict: 'open' } },
-      ]);
-      expect(fc.features[0]?.properties?.noPublicAccess).toBe(false);
+      expect(inactive({ publicAccess: { verdict: 'open', decidedAt: 1 } })).toBe(false);
+    });
+
+    it('marks a removed body and a dormant one the same way', () => {
+      expect(inactive({ removedAt: 1 })).toBe(true);
+      expect(inactive({ dormant: { since: 1, reason: 'not_in_campaign' } })).toBe(true);
     });
 
     it('marks the viewer’s own reports, and nobody else’s body', () => {

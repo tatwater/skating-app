@@ -1,4 +1,7 @@
+import { api } from '@skating/convex/api';
+import { corpusCountLines, formatCorpusCount } from '@skating/core';
 import { createFileRoute } from '@tanstack/react-router';
+import { useQuery } from 'convex/react';
 import { DOC_URLS } from '../lib/links';
 
 /**
@@ -16,6 +19,8 @@ const links = [
 ];
 
 function AboutPage() {
+  const regionStats = useQuery(api.regionStats.list, {});
+  const counts = regionStats ? corpusCountLines(regionStats) : [];
   return (
     <div className="mx-auto flex max-w-prose flex-col gap-4 py-10">
       <h1 className="font-semibold text-2xl text-foreground">Gli</h1>
@@ -24,6 +29,25 @@ function AboutPage() {
         observations at a specific time and place — never a guarantee that ice is safe. You alone
         decide whether to step on the ice.
       </p>
+      {/* Both numbers, always (N7b, founder call): what the map knows and what it recommends. */}
+      {counts.length > 0 ? (
+        <>
+          <h2 className="font-semibold text-foreground text-lg">The map</h2>
+          <p className="text-foreground-muted">
+            Every lake we know about is on the map when you zoom in. The <em>active</em> ones — the
+            lakes people actually skate and can actually reach — are the ones we recommend, notify
+            about and show first.
+          </p>
+          <ul className="flex flex-col gap-1 text-foreground-muted text-sm">
+            {counts.map((line) => (
+              <li key={line.state}>
+                <span className="text-foreground">{line.stateName}</span> —{' '}
+                {formatCorpusCount(line)}
+              </li>
+            ))}
+          </ul>
+        </>
+      ) : null}
       <h2 className="font-semibold text-foreground text-lg">License</h2>
       <p className="text-foreground-muted">
         Licensed under AGPL-3.0, with a GPLv3 §7 additional permission (an App Store / Google Play
