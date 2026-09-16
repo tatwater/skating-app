@@ -5658,3 +5658,45 @@ re-import and both prunes. The real hole was user re-creation over a removed bod
 reachable-removed rule.
 
 **Related:** D91, D97, D176, D177.
+
+## D179 — Requests: five kinds, a moderator answers, and the catalogue is asked live (N7b PR 2)
+
+**2026-09-16, founder calls at the N7b kickoff; built the same day.** D106–D108 proposed a
+request as *a coordinate plus a requester*, resolved against the archives, admitted by a moderator.
+Built with three changes the kickoff settled.
+
+**Five kinds, not one.** With standing (D176) a request is usually about a lake we already hold:
+`activate` a dormant body (the common case once the corpus is tiered — no geometry, one decision),
+`restore` a removed one, `contest_access` a `none` ruling, and the landowner's `takedown` D48
+deferred to Phase 7 and nobody built (*"we should add landowner takedown request as a fifth kind"*).
+`admit` — water the corpus does not hold — is the one that needs the catalogue. `requestKindsFor`
+maps a standing to the kinds it admits; the drawer offers exactly those and `create` refuses the
+rest. One open ask per person per lake per kind; the count of distinct people is the queue's rank;
+ten open asks per person.
+
+**The resolver asks the live service, not the archives** — the plan's order inverted. "The
+archives" is a laptop, and a request that waits on a person at a terminal is a request nobody
+answers. A Convex action fetches the 3DHP waterbody under the point (`hydro.nationalmap.gov`, the
+endpoint `scripts/etl` already measures; 3DHP re-publishes NHD, which is frozen), the smallest
+polygon containing the point is the candidate, classified by `classifyThreeDhp`, with the service
+URL and fetch time as provenance. A river or a canal comes back as a candidate with no class, so the
+queue says why there is nothing to admit. The archive lane stays the manual fallback.
+
+**Approving performs the act through the verb that already exists** — `activateBody`, `restore`,
+`remove`, `setPublicAccess('open')` — so the audit log reads the same from the queue as from the
+lake editor, and one decision closes every sibling ask. An admitted body is inserted `source:
+'3dhp'` with the catalogue id as `externalId` and `threeDhpId`, `includedByRequest` and active from
+birth, so a later campaign upserts *that* row (D93) and the transform's floor cannot delete it; a
+feature already in the corpus is activated, never twinned. `restore` and `takedown` approvals take an
+admin, as their verbs do.
+
+**Declines are visible to the requester** (the plan's open question): the lake's drawer reads the
+ask back and, after, the moderator's note. Not a notification type — the N8 pipeline's 1:1 pref
+mirror makes a new type a wider change than this warrants; deferred.
+
+**A track over a removed body attaches to it** (D48's deferred edge (a)). `findMatchCandidates`
+carries each match's standing, `NewWaterPrompt` shows a shelved or removed lake for what it is, and
+`create` refuses to mint over a removed body even with `confirmedNew` — the takedown cannot be
+re-drawn around.
+
+**Related:** D48, D106–D108, D176–D178, [`phase-N7b`](./phase-N7b-corpus-by-request.md).

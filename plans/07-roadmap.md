@@ -1455,8 +1455,8 @@ per catalogue (D109/D110). 178,095 groups in, **24,958 bodies** out.
   reaching the data.*
 
 **N7b — Corpus lifecycle: standing, the request path, and the trajectory from 25,000 to a few
-hundred.** 🔨 **PR 1 of 2 built 2026-09-16** (branch `phase-n7b-corpus-lifecycle`; PR 2 = requests,
-next). The founder's widening at kickoff: not only admitting a body by request but the whole
+hundred.** ✅ **Built 2026-09-16 in two PRs** (`phase-n7b-corpus-lifecycle` #61 and
+`phase-n7b-requests`, stacked; not deployed, not device-tested, seed not run). The founder's widening at kickoff: not only admitting a body by request but the whole
 lifecycle — *"instead of 25,000 bodies clogging up our map, we should eventually settle down to a
 refined corpus of actually-accessible, actually-skated bodies … more like 500."* See
 [`phase-N7b-corpus-by-request.md`](./phase-N7b-corpus-by-request.md) and, for skaters,
@@ -1472,6 +1472,13 @@ prunes demote instead of delete. A seed partitions the stored corpus by evidence
 (plus the design-corpus gazetteer); a July cron shelves what nobody skated in three seasons; an admin
 page shows the lanes and what came back. The campaign-walk test walks every standing through a
 re-import and both prunes.
+
+**What PR 2 landed.** Requests (D179): five kinds by standing — activate · admit · restore ·
+contest access · takedown — asked from the lake's drawer or by long-press / right-click on water we
+don't hold; an `admit` resolved by an action against the live 3DHP catalogue (the plan's
+archive-first order inverted); a moderator queue whose approve performs the act through the verb
+that already exists and closes every sibling ask; `NewWaterPrompt` finally mounted (D108), with a
+removed lake un-drawable-around.
 
 **N5c — Hazard identity: one clustering primitive, two time windows.** ✅ **Built 2026-07-31, both
 halves.** The within-season half shipped as **PR #34** (clustering, nudge, pooling, consensus

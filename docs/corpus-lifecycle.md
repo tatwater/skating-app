@@ -9,7 +9,7 @@ actually reach.
 > **Who this is for.** A skater who found a lake marked *Inactive* and wants to know why (and what
 > to do about it); a moderator deciding whether to shelve or restore one; a developer meeting the
 > `standing` field for the first time. The decision record is
-> [`plans/01-decisions.md`](../plans/01-decisions.md) (**D176–D178**) and the engineering record is
+> [`plans/01-decisions.md`](../plans/01-decisions.md) (**D176–D179**) and the engineering record is
 > [`plans/phase-N7b-corpus-by-request.md`](../plans/phase-N7b-corpus-by-request.md).
 
 ---
@@ -90,6 +90,19 @@ saying the lake matters, and the July pass leaves a favourited lake alone.
 
 ---
 
+## Asking for a lake
+
+Every lake's page offers the asks its standing allows: **Ask for this lake back** (dormant), **There
+is public access** (a no-access ruling), **Ask to restore this lake** (removed), and on any lake
+**I own this — take it off the map**. One sentence to the moderators; the page reads your ask back
+and, later, their answer. You can see how many other people have asked for the same thing.
+
+For water we don't have at all, **long-press it** on the phone or **right-click it** on the web. If
+we already hold a lake there — shelved or removed — you land on its page; otherwise you say what it
+is and a moderator looks it up in the public hydrography catalogue and adds it with its real
+outline. You never draw the shape. A recorded skate over unknown water offers the same path from
+the You tab, with the track as evidence.
+
 ## What a returning lake gets
 
 Coming back is not just a flag flip. The lake is re-scored with everything it has earned (its
@@ -120,6 +133,9 @@ The counts are public: the About page shows each state's **known** and **active*
   moderator, no public access, removed), newest first, and the list of recent activations with what
   brought each back.
 - **Remove / restore** stay on the same card (admin only). Restoring is an activation.
+- **Answer requests**: `/admin/water/requests` — approve performs the act (activate, restore,
+  remove, confirm access, admit from the catalogue) and closes every sibling ask; decline takes a
+  note the skater reads.
 - **The July pass** records a run on `/admin/imports` (`standing_rollover`); if it failed, it retries
   daily through July 14.
 
