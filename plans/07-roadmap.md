@@ -51,7 +51,6 @@ deploy took a chain of fixes recorded in the plan doc. *Both apps sign in, rende
 Newsfeed pages, and crash-report.*
 
 #### Owed
-- `SENTRY_AUTH_TOKEN` on Vercel for build-time source maps (runtime reporting works without it)
 - Apple dev-build distribution for the mobile alpha crew
 
 ## Phase 1 — Water-body data
@@ -196,9 +195,6 @@ every tunable.*
 - 🟢 **`activeBountyPostLimit` lever** — N2
 - 🟢 **`weatherSamplePoints` writer** — Phase 10 shipped a reader; N2 shipped the mutation
 - **`appConfig` runtime-override table** — a documented seam, deliberately not built
-
-#### Owed
-- Resend: domain verified on dev; prod key at cutover
 
 ## Phase 8 — Native track capture + Strava push
 🟢 **Complete** 2026-07-24 · PR #26 · [plan](./phase-8-native-capture.md) · D14 D36 D58 D59
@@ -614,8 +610,7 @@ fixed the Clerk mirrors that had never refreshed, with change-email and the `use
 - **True-sunset digest timing** — dropped (D173)
 
 #### Owed
-- FCM key + `google-services.json` (Android) and the APNs key (iOS) — founder credentials
-- The end-to-end smoke, an install of the APK, a real change-email run
+- An install of the APK, a real change-email run
 - Prod: the webhook endpoint and secret need their own registration
 
 ## Phase N9 — A bay is a place
@@ -649,7 +644,6 @@ long-form register this table replaced is archived verbatim in
 | --- | --- | --- | --- |
 | **The prod cutover** — Convex prod init, Clerk prod vars, the corpus and tile URL into prod, Vercel/EAS env, Resend key, the N8 webhook | ⚪ | a founder task; Clerk prod env vars first | [`docs/deployment-and-release.md`](../docs/deployment-and-release.md) |
 | Device verification — Phase 8 recorder, 9.5 on-ice mode, N5a/N5b native surfaces, the Layer-3 tile-pack's one on-device check | ⚪ | device access; no owned iPhone | the phases' *Owed* lines |
-| Push credentials — FCM key + `google-services.json`, APNs key | ⚪ | founder | N8 |
 | Silent background push to a sleeping phone (D54) | ⚪ | a privacy decision + iOS throttling | 9.5 |
 | Legal engagement — ToS, privacy, risk-ack enforceability, minor-data posture, deletion wording, the AGPL store exception, takedown wording (Q10 / L1–L4, L11) | ⚪ | a lawyer; one engagement clears most of it | [`08`](./08-legal-feasibility-checklist.md) |
 | Forum / Facebook / Google-Group ingestion (Q8 / L5) · AI summarization beyond weather facts (Q9 / L6) · PostHog session replay (L12) · ODbL share-alike (L10) | ⚪ | legal, per item | `08` |
