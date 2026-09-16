@@ -70,21 +70,30 @@ export async function lastActivityAt(
     .withIndex('by_water_body_skate_end_time', (q) => q.eq('waterBodyId', waterBodyId))
     .order('desc')
     .first();
-  const track = await ctx.db
+  // `by_water_body` orders by ingest, not by skate — an old track pushed from a watch last week
+  // would sort first. There is no end-time index, so read the newest few by ingest and take the
+  // latest *skate* among them: a body with more than this many tracks in the window is retained
+  // by any one of them.
+  const tracks = await ctx.db
     .query('gpsActivities')
     .withIndex('by_water_body', (q) => q.eq('waterBodyId', waterBodyId))
     .order('desc')
-    .first();
+    .take(RECENT_TRACKS_READ);
   const hazard = await ctx.db
     .query('hazards')
     .withIndex('by_water_body_first_reported', (q) => q.eq('waterBodyId', waterBodyId))
     .order('desc')
     .first();
-  const candidates = [report?.skateEndTime, track?.endTime, hazard?.firstReportedAt].filter(
-    (t): t is number => t !== undefined,
-  );
+  const candidates = [
+    report?.skateEndTime,
+    ...tracks.map((t) => t.endTime),
+    hazard?.firstReportedAt,
+  ].filter((t): t is number => t !== undefined);
   return candidates.length === 0 ? undefined : Math.max(...candidates);
 }
+
+/** Tracks read per body by `lastActivityAt` — a read bound, not a claim about the world. */
+const RECENT_TRACKS_READ = 25;
 
 /** Has anyone at all favourited this body? One index probe. */
 export async function anyFavorite(ctx: QueryCtx, waterBodyId: Id<'waterBodies'>): Promise<boolean> {

@@ -709,7 +709,7 @@ describe('push surfaces', () => {
     });
     await expect(
       requester.as.action(api.bounties.create, { waterBodyId: dormant }),
-    ).rejects.toThrow(/not found/i);
+    ).rejects.toThrow(/active map/i);
   });
 
   test('the weather cell registry walk registers active bodies only', async () => {
@@ -898,6 +898,13 @@ describe('the season rollover', () => {
         status: 'succeeded',
         campaignId: `standing-rollover-${SEASON}`,
       });
+      // A dry run records under its own id, so it can never satisfy the gate.
+      await t.action(internal.standing.runStandingRollover, { season: SEASON, apply: false });
+      const dry = await t.run((ctx) => ctx.db.query('importRuns').collect());
+      expect(dry.map((r) => r.campaignId).sort()).toEqual([
+        `standing-rollover-${SEASON}`,
+        `standing-rollover-${SEASON}-dry`,
+      ]);
       expect(runs[0]?.counts).toEqual(
         expect.arrayContaining([
           { name: 'demoted', value: 1 },
@@ -914,6 +921,22 @@ describe('the season rollover', () => {
       vi.setSystemTime(Date.UTC(SEASON, 0, 4));
       expect(await t.mutation(internal.standing.maybeRunStandingRollover, {})).toMatchObject({
         ran: false,
+      });
+      // A run that died mid-walk (a stale `running` row) is retried once it is old enough.
+      vi.setSystemTime(Date.UTC(SEASON, 6, 5));
+      await t.run(async (ctx) => {
+        const live = (await ctx.db.query('importRuns').collect()).find(
+          (r) => r.campaignId === `standing-rollover-${SEASON}`,
+        );
+        if (!live) throw new Error('expected the live row');
+        await ctx.db.patch(live._id, {
+          status: 'running',
+          startedAt: Date.UTC(SEASON, 6, 4),
+          finishedAt: undefined,
+        });
+      });
+      expect(await t.mutation(internal.standing.maybeRunStandingRollover, {})).toMatchObject({
+        ran: true,
       });
     } finally {
       vi.useRealTimers();

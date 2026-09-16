@@ -102,13 +102,7 @@ import { isListed } from './lib/listing';
 import { mirrorReportSubAreas } from './lib/reportSubAreas';
 import { takeCapped, takeCappedResult } from './lib/scan';
 import { richnessFor, scoreFields, zoomSortKey } from './lib/scoring';
-import {
-  activateBody,
-  anyFavorite,
-  demoteBody,
-  lastActivityAt,
-  transitionStanding,
-} from './lib/standing';
+import { activateBody, demoteBody, transitionStanding } from './lib/standing';
 import { bbox, geoJson, latLng, literals } from './lib/validators';
 import {
   reclipSubAreasToParent,
@@ -2792,7 +2786,7 @@ export const setPublicAccess = mutation({
     // (`null`) simply re-derives from whatever else is on the row. All three go through
     // `transitionStanding`, so the score, the cells, the bays and the registry move together and
     // the audit row below is the one record of it.
-    if (verdict === 'open') {
+    if (verdict === 'open' && isListed(body)) {
       await activateBody(ctx, body, {
         via: 'access_confirmed',
         actorId: actor._id,
@@ -4811,23 +4805,23 @@ export const applyCuratedBoostSeed = internalMutation({
         notFound.push(name);
         continue;
       }
-      const scores = scoreFields({
-        surfaceAreaSqM: target.surfaceAreaSqM,
-        curatedBoost: boost,
-        active: isActive(target),
-      });
-      await ctx.db.patch(target._id, { curatedBoost: boost, ...scores });
-      await syncWaterBodyCells(ctx, target._id, {
-        bbox: target.bbox,
-        minVisibleZoom: scores.minVisibleZoom,
-        listed: isListed(target),
-      });
+      // Through the same transition `setCuratedBoost` uses (N7b): a seeded boost on a body the
+      // machine shelved brings it back — with `activatedAt`, the weather cell and the audit row —
+      // rather than leaving a boosted lake at the dormant rung where the rollover never revisits it.
+      const scored =
+        boost > 0 && reactivatesOnEvidence(target)
+          ? await activateBody(ctx, target, {
+              via: 'moderator',
+              audit: false,
+              extraPatch: { curatedBoost: boost },
+            }).then(() => ctx.db.get(target._id))
+          : (await transitionStanding(ctx, target, { curatedBoost: boost }, { audit: false })).body;
       applied.push({
         name,
         id: target._id,
         states: target.states ?? [],
         areaSqM: target.surfaceAreaSqM ?? 0,
-        minVisibleZoom: scores.minVisibleZoom,
+        minVisibleZoom: scored?.minVisibleZoom ?? MIN_VISIBLE_ZOOM_FLOOR,
       });
     }
     return { applied, notFound };
@@ -4984,7 +4978,17 @@ export const listInViewport = query({
           body = await ctx.db.get(body.mergedIntoId);
         }
         if (!body || byId.has(body._id)) continue;
-        if (isListed(body) && bboxIntersects(body.bbox, viewport)) byId.set(body._id, body);
+        // A dormant favourite is pinned — the favourite is what keeps it from going dormant again,
+        // and its owner knows something we don't — but a removed one is not (N7b): a takedown must
+        // not stay highlighted at every zoom for the people who favourited it, and `listForUser`
+        // hides the same favourite.
+        if (
+          isListed(body) &&
+          standingOf(body).standing !== 'removed' &&
+          bboxIntersects(body.bbox, viewport)
+        ) {
+          byId.set(body._id, body);
+        }
       }
     }
     return [...byId.values()];

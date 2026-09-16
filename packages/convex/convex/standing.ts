@@ -357,10 +357,22 @@ export const demoteInactiveBodies = internalMutation({
   },
 });
 
-/** The campaign id a season's rollover is recorded under — one row per season, by construction. */
-export function rolloverCampaignId(season: number): string {
-  return `standing-rollover-${season}`;
+/**
+ * The campaign id a season's rollover is recorded under — one live row per season, by construction.
+ *
+ * A dry run gets its own id, because the daily gate reads this: a `succeeded` dry row under the live
+ * id would silently suppress the real July pass for that season (review finding, 2026-09-16).
+ */
+export function rolloverCampaignId(season: number, apply: boolean): string {
+  return apply ? `standing-rollover-${season}` : `standing-rollover-${season}-dry`;
 }
+
+/**
+ * How long a `running` rollover row is trusted before the gate treats it as a dead action and
+ * retries. A live pass over 25,000 bodies at 100 a page is minutes; six hours is generous and still
+ * inside the July window.
+ */
+const ROLLOVER_STALE_MS = 6 * 60 * 60 * 1000;
 
 /**
  * The whole rollover, as a run: opens an `importRuns` row, walks every page, closes it. An action
@@ -378,7 +390,7 @@ export const runStandingRollover = internalAction({
     const runId = await ctx.runMutation(internal.importRuns.start, {
       kind: 'standing_rollover',
       label: `standing rollover into ${season}${apply === true ? '' : ' (dry)'}`,
-      campaignId: rolloverCampaignId(season),
+      campaignId: rolloverCampaignId(season, apply === true),
       deployment: process.env.CONVEX_CLOUD_URL ?? 'unknown',
       isProd: !(process.env.CONVEX_CLOUD_URL ?? '').includes('agile-bee-397'),
       stages: [
@@ -455,10 +467,16 @@ export const maybeRunStandingRollover = internalMutation({
     const season = seasonOf(now);
     const prior = await ctx.db
       .query('importRuns')
-      .withIndex('by_campaign', (q) => q.eq('campaignId', rolloverCampaignId(season)))
+      .withIndex('by_campaign', (q) => q.eq('campaignId', rolloverCampaignId(season, true)))
       .order('desc')
       .first();
-    if (prior && prior.status !== 'failed') return { ran: false as const, season };
+    if (prior?.status === 'succeeded') return { ran: false as const, season };
+    // A `running` row is trusted for a while, then treated as an action that died mid-walk: the
+    // demotions it made are idempotent, and a row that is `running` forever would otherwise block
+    // the season for good.
+    if (prior?.status === 'running' && now - prior.startedAt < ROLLOVER_STALE_MS) {
+      return { ran: false as const, season };
+    }
     await ctx.scheduler.runAfter(0, internal.standing.runStandingRollover, {
       season,
       apply: true,

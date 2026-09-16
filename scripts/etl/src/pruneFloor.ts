@@ -122,7 +122,7 @@ function main(): void {
   }
   process.stderr.write(
     apply
-      ? `[prune] APPLYING the ${MIN_SURFACE_AREA_ACRES}-acre floor — unnamed bodies under it will be DELETED.\n`
+      ? `[prune] APPLYING the ${MIN_SURFACE_AREA_ACRES}-acre floor — unnamed bodies under it will be set DORMANT.\n`
       : `[prune] dry run (pass --apply to demote). Floor: named, or >= ${MIN_SURFACE_AREA_ACRES} acres.\n`,
   );
 

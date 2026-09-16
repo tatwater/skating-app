@@ -991,10 +991,12 @@ export const pageSubAreaCells = internalQuery({
       let parent = parents.get(subArea.waterBodyId);
       if (parent === undefined) {
         const row = await ctx.db.get(subArea.waterBodyId);
-        parent = row && !row.removedAt ? { elevationM: row.elevationM } : null;
+        // Active, not merely un-removed (N7b): a bay follows its lake's standing, and registering
+        // a shelved lake's bays would put its cells straight back after `dropWeatherMembership`.
+        parent = row && isActive(row) ? { elevationM: row.elevationM } : null;
         parents.set(subArea.waterBodyId, parent);
       }
-      // A bay whose lake is gone is not a place anyone can open.
+      // A bay whose lake is gone or shelved is not a place anyone can open.
       if (parent === null) continue;
       const cell = subAreaWeatherCell(subArea, parent, tier);
       countCell(byKey, cell);
