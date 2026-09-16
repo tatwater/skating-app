@@ -3627,7 +3627,7 @@ beside it — so this is a new lane on an existing table, not a new concept:
 - **A bay with no parent at all is still demoted and queued**, unchanged. Half Moon Cove is 330
   acres, named "Cove", contained in nothing, and is a wetland.
 
-**Related:** [D60](#d60--a-bay-is-a-named-sub-area-of-one-polygon-not-a-water-body-n2), [D96](#d96--settled-the-four-admission-rules-n7), [`phase-N2`](./phase-N2-subareas-lake-editor.md), [`phase-N7`](./phase-N7-unified-corpus.md).
+**Related:** [D60](#d60--a-bay-is-a-named-sub-area-of-one-polygon-not-a-water-body-n2), [D96](#d96--settled-the-four-admission-rules-n7), [`phase-N2`](./phase-N2-lake-editor-and-subareas.md), [`phase-N7`](./phase-N7-unified-corpus.md).
 
 ---
 

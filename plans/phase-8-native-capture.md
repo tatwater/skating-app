@@ -419,3 +419,101 @@ Both came out of a full read of `plans/` against the code after the phase was ca
   opacity decay to bound what's worth drawing.
 - **Watch-wins default** before auto-detect exists — v1 per-session toggle defaults on for
   phone-only; a user with a watch could double-record until they toggle off. Acceptable for alpha.
+
+
+---
+
+## Relocated from the roadmap (2026-09-16)
+
+*The roadmap entry for Phase 8 as it stood before the 2026-09-16 rewrite, kept verbatim so nothing it said is lost. The roadmap now carries a one-paragraph summary; this is the long form.*
+
+### Phase 8 — Native track capture + Strava push (the A→B→C pipeline) ✅ Complete (dev; prod deferred) (2026-07-24)
+> **Status: ✅ complete — all five workstreams shipped.** Suites green: core 752 / convex 540 /
+> web 157 / mobile 76. **Still device-unverified** (Android-emulator GPX playback + a friend's iPhone
+> for iOS background/battery parity) — the one outstanding item that isn't the prod cutover.
+> 8a unified freshness (D59) → 8b recorder + B spine → 8c user bodies + dedup (D14/D36) →
+> 8d Strava push (C) → 8e aggregate layer + privacy (D58).
+>
+> **Key build deltas vs this plan** (the phase doc's "Open questions" resolved, plus what the code found):
+> - **D59's premise was partly wrong.** `bounties.ts` had **no recency-decay curve to extract** — it
+>   computes a *window in hours* and compares. The genuinely shared surface is the netThumbs clamp; the
+>   decay curve is **net-new**. Every Phase 6 bounty test passes untouched (the D59 acceptance gate).
+> - **Two deliberate bounty↔report divergences, now documented rather than accidental:** net-unhelpful
+>   thumbs *shorten* a bounty window (shortening summons fresh eyes — safety-positive) but are
+>   **boost-only** for report freshness, where they'd let downvotes fade someone's path off the map;
+>   and weather collapses a bounty window to 0 but only *multiplies* report freshness down.
+> - **Freshness has no visible report-aging consumer in v1** (founder call): it drives path opacity +
+>   the shared bounty primitives; report cards keep their relative-time labels. Least D3 risk.
+> - **`pathToBody` buffers but does NOT hull** — a hull swallows land/islands on any non-circumnavigating
+>   track. It *does* fill interior rings (a lap around a pond would otherwise store a donut with a hole
+>   at the lake's centre where reports fail to resolve) and refuses a track with no extent (turf happily
+>   buffers a motionless phone into a perfect circular "pond"). No `@turf/convex` dep added.
+> - **`waterBodies.create` is now path-only at the trust boundary** — it takes an `activityId`, **not a
+>   polygon**, so "no freehand drawing, ever" is a server contract rather than a UI convention. Existing
+>   tests were migrated to the new contract, not relaxed.
+> - **`near_certain` added to `DEDUP_STATUSES`** — D36 always had three tiers and the schema had two.
+>   `listDedupCandidates` now surfaces both, near-certain first. A flagged body stays **listed** (D3).
+> - **New `oauthStates` table + `convex/http.ts`** (first HTTP router in the repo): an OAuth callback is
+>   an unauthenticated browser redirect, so a single-use state nonce is what binds it to a user.
+>   **Token refresh is net-new** for this codebase (every other integration uses a static key).
+> - **No `toEncodedPolyline`/`@mapbox/polyline`** — both maps draw the GeoJSON path directly.
+> - **Aggregate layer caps at 200 tracks/body** and returns the dropped count (no silent truncation).
+>
+> **Follow-ups after the build (2026-07-25):** the D58 aggregate opt-out shipped **mobile-only** and was
+> added to the web settings page (copy single-sourced in `core/trackPrivacy.ts` so a privacy promise
+> can't drift between surfaces); `ingestTrack` stopped accepting a `distanceMeters` it never stored
+> (derivable from `path` exactly).
+>
+> **Outstanding:** device verification (Android-emulator GPX playback + a friend's iPhone for iOS
+> background/battery parity), a real Strava sandbox upload (callback domain now set), and the prod
+> cutover.
+
+> **Detailed build plan:** [`phase-8-native-capture.md`](./phase-8-native-capture.md) (scoped
+> 2026-07-24). Reframe write-up:
+> [`research/native-track-capture-and-strava-push.md`](./research/native-track-capture-and-strava-push.md)
+> + Strava legal read (`08-legal-feasibility-checklist.md` L7). New decisions: **D58** (aggregate-track
+> privacy), **D59** (unified report freshness).
+
+> **⚠️ The old "pull GPS from Strava" plan is dead.** Strava's Nov-2024 terms **forbid** displaying one
+> athlete's data to any other user (even public data) and **ban AI/ML** over it — killing the cross-user
+> map/heatmap/report-path off Strava data. **The whole phase inverted:** we **record the track in a native
+> in-app recorder** (first-party data we own → legal to aggregate + draw on public reports) and **push** it
+> to Strava (`activity:write`, the Garmin model — clearly allowed, the adoption lever: *record once, keep
+> your Strava stats*). Modeled as **A → B → C**: A = capture inputs (**native recorder** first;
+> Garmin/HealthKit/COROS/Polar deferred), **B = our own track store + resolve-to-lake + aggregate, the
+> always-owned hub**, C = push outputs (**Strava** first). No provider keys exist yet; only the **free
+> Strava app** (instant, no review) is needed, and only for the push slice.
+
+- **Native recorder (A-input #1)** — session record/pause/resume/stop over a durable expo-sqlite buffer,
+  a Record-grade GPS profile, background/foreground-service, reusing the **Phase 9.5 on-ice primitives**.
+  Track post-processing (smooth/gate/cull → GPX + GeoJSON) in `@skating/core`. Phone-only skater's source;
+  battery is an honest, opt-in trade (D3 copy). **Paths only ever come from legitimate recorded sources —
+  no freehand drawing, ever.**
+- **B — our track store + resolve-to-lake (D44)** — normalize any track → `gpsActivities`, resolve to its
+  `waterBodyId`, link to a report. **The recorded path renders on the report detail view** (display-only)
+  **and** on the aggregate tracks layer.
+- **User-created water bodies (D14) + match-on-create dedup (D36)** *(moved here from Phase 2 — needs a
+  trusted path)*. A skate resolving to **no** known body creates/attaches one **from the trusted path only**
+  (buffer + hull → polygon; new `core/dedup.ts` + `pathToBody.ts`; `findMatchCandidates` steer; stamp
+  `dedupStatus`/`duplicateCandidateIds`; auto-visible then review-after, D37). **Path-only gated — no manual
+  draw** (no path ⇒ no proof of presence, no scale/shape reference). **Feeds the already-built Phase 7 merge
+  queue** (which has had nothing flowing into it).
+- **Strava push (C-output #1)** — new `convex/http.ts` router (first in the repo), OAuth `activity:write` +
+  per-user token refresh, `POST /uploads` + poll, per-session "also upload?" toggle (watch-wins deferred),
+  "Powered by Strava" / "Connect with Strava" brand kit (L7).
+- **Aggregate tracks layer (B, D58)** — decaying public-track overlay per selected body (opacity fades as
+  the linked report ages, D59). Privacy = **publish-is-consent** (only report-linked, non-minor paths), **no
+  k-anonymity** (a public report is meant to be shared — one skater is enough), **put-in-gated endpoint
+  clipping** (`showPutIn` withheld ⇒ clip first/last ~150 m, protecting a skate-from-home), **minors excluded
+  by construction**, global **opt-out**. The tuning-heavy crowd-intelligence derivations (pressure-ridge /
+  clearest-side, L9 deduction) are **deferred** — need volume + calibration.
+- **Unified report freshness (D59)** — one `core/reportFreshness` primitive; report-aging and path-opacity
+  consume the *identical* value (the path is the report's extent — can't diverge); **bounties refactor onto
+  the shared primitives** (keeping their own window/trust/reopen policy; existing Phase 6 tests stay green).
+- **Done:** a phone-only skater records a skate in-app, sees the real path on their report and on the lake
+  map (fading as it ages), can push it to their Strava, and a skate on **new** water creates/attaches a body
+  from the trusted path (dedup-steered).
+- **Deferred:** third-party capture adapters (Garmin/HealthKit/HC/COROS/Polar) + the watch-wins ingest path
+  — each integrated individually later (**apply for Garmin/COROS/Polar partner programs now**, ~weeks of
+  review); additional push targets (Whoop); path-cluster hazard deduction (L9/Q11).
+

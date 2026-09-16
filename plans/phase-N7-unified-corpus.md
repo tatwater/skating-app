@@ -2229,3 +2229,51 @@ deleted. **No `HANDOFF-*` documents remain.**
 [`phase-1`](./phase-1-water-bodies.md) · [`phase-N6a`](./phase-N6a-lake-depth.md) ·
 [`phase-N6b`](./phase-N6b-bathymetry-layer.md) ·
 [`phase-N6c`](./phase-N6c-expanded-lake-profiles.md) · [`phase-N7b`](./phase-N7b-corpus-by-request.md).
+
+
+---
+
+## Relocated from the roadmap (2026-09-16)
+
+*The roadmap entry for N7 as it stood before the 2026-09-16 rewrite, kept verbatim so nothing it said is lost. The roadmap now carries a one-paragraph summary; this is the long form.*
+
+**N7 — The unified corpus: one record per lake, two catalogues behind it, and a full data campaign.**
+✅ **Corpus + campaign complete on dev, 2026-08-09** (the 250 m wind fetch runs on; prod deferred) — the phase this roadmap had no entry for at all until now. See [`phase-N7-unified-corpus.md`](./phase-N7-unified-corpus.md) — the one N7 document, with the
+operator's half (commands, the governing rule, and everything expensive to re-learn) at the bottom —
+and [`docs/water-body-data.md`](../docs/water-body-data.md) for the same story written for humans.
+Decisions **D92–D105** and **D109–D137**.
+
+Three PRs so far: **#39** (the merge, the master list, the review queue), **#40** (the audit and the
+referee), and the current unmerged branch `phase-n7-3-unified-corpus` (the data campaign).
+
+**What it replaced.** The corpus was OSM-only, per-state, and a lake split across two features was two
+rows. N7 merges **OSM + NHD + 3DHP + GNIS** into one record per lake with our own minted key (D93),
+best-of-both per field (D94), and one admission floor applied **once** to the merged body rather than
+per catalogue (D109/D110). 178,095 groups in, **24,958 bodies** out.
+
+**Where the data campaign stands** (`n7-3-20260809`):
+
+| lane | state |
+| --- | --- |
+| elevation | ✅ **99.5%** — 3DEP, 98.2% at 1 m LiDAR, replacing a metered forecast API (D127) |
+| depth | ✅ 24.2% overall, **83–90% above 50 acres**, 81.2% of stored depths measured |
+| wind roses | ✅ **11,114 / 11,114 bodies** at the widened 250 m gate (D135), derived offline from a byte-faithful archive (D134) — finished 2026-08-15 |
+| wind archive | ✅ **47,765 / 47,765 cell-years** (9,553 cells × 5 winters), 418.4M hourly rows, mirrored to R2 and hash-verified at 0 differences |
+| bathymetry | ✅ **2,298 lakes → 52,522 contour lines → 2,287 bodies** (D95 re-key: +232 net-new) |
+| `regionStats` | ✅ recomputed — 24,953 bodies × 5 metrics × 5 states |
+
+**Four findings worth carrying forward.**
+
+- **`state_agency` was a ladder rung with no producer.** Rank 1 on D68's ladder, above LAGOS and
+  HydroLAKES, and nothing had ever written to it while 298 MB of state survey data sat on disk from
+  N6b. It now holds **3,033 measurements**.
+- **There was no `osm→osm` matching lane** (D136). Three lanes ran and none matched a catalogue
+  against itself, so an OSM multipolygon relation and its own outer way both shipped as corpus rows.
+  Every one of the 18 duplicate pairs at IoU ≥ 0.6 was OSM–OSM; two scored 1.000.
+- **One constant was doing two jobs** (D135). `MIN_FETCH_CLAUSE_M`, chosen for pressure-ridge captions,
+  was silently deciding which lakes got wind data fetched at all — and wind holes have no fetch
+  minimum.
+- **Denominators lie by default, and so do instruments.** The campaign corrected five misleading
+  denominators, and a "the coverage table is empty" finding turned out to be a query against a table
+  name that does not exist. *If a measurement comes back suspiciously clean, check the instrument is
+  reaching the data.*

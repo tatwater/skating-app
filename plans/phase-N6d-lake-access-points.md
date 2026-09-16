@@ -1108,3 +1108,76 @@ handled:
 Northeast. It is a guess, it will be falsified quickly by a dense state, and it should be eyeballed
 against one state's real output before the full run. Now it's a guess with a bounded blast radius —
 getting it wrong costs some missed or spurious *inferences*, never a rejected human assertion.
+
+
+---
+
+## Relocated from the roadmap (2026-09-16)
+
+*The roadmap entry for N6d as it stood before the 2026-09-16 rewrite, kept verbatim so nothing it said is lost. The roadmap now carries a one-paragraph summary; this is the long form.*
+
+**N6d — Lake access points: parking, named put-ins, and access alerts.** ✅ **COMPLETE on dev
+2026-08-13** — all five workstreams, every UI surface, and the ETL run end to end: **3,588 put-ins,
+11,375 parking areas, 4,209 bodies with access** (16.7% of the corpus), routing 99.4%. Prod deferred. —
+scoped 2026-07-30; see [`phase-N6d-lake-access-points.md`](./phase-N6d-lake-access-points.md); decisions
+**D72** (parking modelled apart from put-ins) and **D73** (access blockers decay, they aren't notes), plus
+**D143**/**D144** and a **D72 second amendment** taken at the 2026-08-10 kickoff. **Split out of N6c at
+scoping** — it was roughly the size of everything else there combined, and it's the only part introducing
+a new lifecycle. Independent of N6c; either order.
+
+> **The kickoff re-read this entry against the post-N7 codebase and found seven corrections** — see the
+> doc's *§What the kickoff found in the plan*. The one that changes the build: **the body association
+> has to run server-side**, exactly as N6a discovered mid-build, because the transform has no polygons
+> and the merge output is no longer the loaded corpus. The one that would have shipped as data loss:
+> **`photoOrphans` would delete access-point photos** thirty days after upload, since its soundness
+> argument is that only an uploader's own reports and hazards can reference a photo.
+> **Founder calls (2026-08-10):** all five workstreams ship together; the **directions link** re-targets
+> to parking but the **drive-time bands do not** (D72 amendment); an `osm` put-in scores as `derived`
+> **+0.06** (D143); approach thresholds are **150 / 800 / 1,600 m** (D144). A moderator-pinned access
+> alert **never expires** — the analogue of an official put-in outranks the seasonal reset — and posting
+> one notifies nobody.
+>
+> **The first real run found three things** — see the doc's *§What the first real run found*. The
+> eyeballing pass B2 asked for paid off immediately: `amenity=parking` yields **95,294 lots across
+> five states, 92,384 unpaired** (fire departments, ski clubs, supermarkets), so the loader gained a
+> water-relevance gate. ORS's free tier caps directions at **40/minute**, not the ~85 the gap assumed
+> — and worse, a `429` fallback was being **cached as an answer**, which would have made 2,173 legs
+> permanently unroutable.
+>
+> **✅ `backfillCells` ran 2026-08-14** — 24,961 bodies re-scored in 84 batches, closing the single
+> full-corpus re-score N6c had held since 2026-08-02. D2's put-in terms are live for the first time.
+>
+> ⚠ **The parking load cost 104.95 GB of database I/O and disabled the dev deployment** (restored by
+> raising the spending cap). One parameter: `listedBodiesNearCoord`'s candidate box was a fixed
+> ~1,113 m for every caller, so a 250 m gate read 20× the area it needed and a 30 m gate read 1,377×
+> — of *whole documents*, polygons included, since Convex has no projection. Fixed with an optional
+> `marginMeters`. `matchBathymetryLakes` (51 GB) and `coveringBodyForPoints` (21 GB) are the same
+> shape and remain unfixed. D2's put-in terms have never fired (dev carried 0
+> `putIns` rows), and the held re-score bakes D143's rung in on its first pass. The order is: run the
+> access ETL, *then* `backfillCells` — running the re-score first would score a corpus with no access
+> data and have to be repeated, which is the duplicated work that gate exists to avoid.
+
+- **The bug this fixes:** `putIns` is a bare coordinate and `directionsUrl` routes a car to it. For a
+  hike-in pond that's a destination a maps app cannot route to, discovered at the trailhead in winter.
+- **OSM already has the data, and already named it.** A second `osmium tags-filter` pass over the *same*
+  Geofabrik extract yields named slipways, parking, toilets and trails — no new source, no new download,
+  no new account. Compass-side fallback labels ("North launch") where OSM is silent. This is what makes
+  named access points a 116k feature rather than a 36-lake one.
+- **Access blockers reuse the hazard confirm/deny machinery but must *not* reuse its decay.** A locked
+  gate does not thaw; applying the D56 weather multiplier would let a warm week silently expire a road
+  closure (D73). Plain TTL + confirmation, hard-expiring at the N5a season boundary.
+- **One N5a carve-out:** access-point photos document infrastructure, not conditions, so they're excluded
+  from the seasonal photo purge (D66) while staying inside N3's redact-don't-erase.
+
+> **All four open questions answered 2026-07-31.** **D87** — approach distance is **routed**, not flown:
+> **OpenRouteService's `foot-hiking` profile** is the same account, key and client Phase 4's drive-time
+> isochrones already use, and with `elevation: true` it returns **ascent in metres**, which answers the
+> founder's *"elevation gain is going to affect people just as much as distance"* with a request parameter
+> rather than a second integration. Called at ETL time and cached — **never from a request path**. The
+> **Hike-In chip** ships on the map card, the drawer and the feed card, and the drive time and the walk are
+> **never summed**: a 55-minute drive plus a 25-minute walk is not an 80-minute drive.
+> **D88** — access photos ride D57's existing posting permission; a permission always equal to another
+> permission is one that will silently drift.
+> **A D72 amendment** — the ~250 m radius caps the OSM pass's *guessing*, never a human's assertion, so an
+> author can associate a trailhead lot a mile from the ice. That makes `parkingAreas` **many-to-many** with
+> bodies (a trailhead serving three ponds is normal here), which is cheap now and awkward later.

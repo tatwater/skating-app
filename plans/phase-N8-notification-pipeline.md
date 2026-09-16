@@ -975,3 +975,44 @@ because the *reasoning* is what a later reader needs:
 None blocking. Two constants want one round of real data before they're trusted, both flagged in place:
 B4a's overlap/start-time thresholds (needs an actual dual-source user) and D4's reverse-index trigger
 (needs a profile count we don't have yet). Neither gates the build.
+
+
+---
+
+## Relocated from the roadmap (2026-09-16)
+
+*The roadmap entry for N8 as it stood before the 2026-09-16 rewrite, kept verbatim so nothing it said is lost. The roadmap now carries a one-paragraph summary; this is the long form.*
+
+**N8 — The notification pipeline.** ✅ **COMPLETE 2026-09-15** (PRs #52/#53/#55 + PR 4 on
+`phase-n8-notification-pipeline-4`, [`phase-N8-notification-pipeline.md`](./phase-N8-notification-pipeline.md),
+D167–D174). Push credentials in on both platforms, the Android small icon shipped, the Clerk
+webhook registered on dev; what's still owed — the end-to-end smoke, an install, a change-email
+run, the prod-cutover items, the scale-triggered reverse index — is the plan's **Deferred** list,
+none of it unwritten code. The scoping pass
+found the real problem was neither bullet below: **nothing in the app could read a notification** —
+six types were being written and had never been seen. So the phase is the inbox first, then every
+declared type gets a producer, then the transports, and the two original bullets move to the back.
+- **PR 1 ✅ built:** `notifications.list / unreadCount / markRead` + a typed resolver; web
+  `/notifications` + bell, mobile You-tab bell + tab dot; every actor-triggered type now **settles
+  60 s in the queue and is re-checked at flush** (D169 — a retracted thumb never sends); producers for
+  `report_commented`, `hazard_confirmation` (phase transitions only), `content_flag_resolved`
+  (user-origin flags only, new `contentFlags.origin`), and `bounty_answered` to the requester (D170,
+  replacing the misdirected `bounty_fulfilled`). Both settings pages render all ten toggles.
+- **PR 2 ✅ built:** `activity_detected` from the recorder's un-prompted skates (hourly sweep, 3 h
+  delay) + the B4a dedup ladder (`supersededByActivityId`, the link moves to the winner; one provider
+  today, so exercised only in tests); the **season-boundary inbox purge** (daily); **per-user digest
+  zone** (`profiles.timezone` from the device; the hour stays 20:00 — true-sunset dropped, D173).
+- **PR 3 ✅ built (D174):** the transports — Expo Push (server posts to `exp.host`; dead tokens
+  disabled from tickets/receipts; **credentials are the founder's step**: FCM key + `google-services.json`
+  for Android now, APNs key via `eas credentials` for iOS), **email via Resend** for the digest-class
+  types with two channel switches and a one-click unsubscribe route (primary email mirrored from
+  Clerk onto `profiles`), and the mobile offline inbox cache with a replayed read overlay.
+- **PR 4 ✅ built (2026-09-15):** the coverage audit's findings — `profiles.syncFromClerk` (the
+  email/avatar mirrors had never refreshed after onboarding; docs said "every cold start" and were
+  wrong), **change-email on both clients** (`core/changeEmail.ts`) + the **Clerk `user.updated`
+  webhook** (`standardwebhooks`, writers ordered by `clerkUpdatedAt`), the Android **small icon**,
+  and the pipeline to 100% lines (`lib/clerkEmail.ts` had no tests at all).
+- **Deferred, by design:** the **reverse reach index** (D172 — filters candidates, never replaces the
+  polygon test; trigger ~1,000 profiles); **true-sunset digest timing** (dropped — sunset runs opposite
+  to the season); **web push** (no service worker yet; web = inbox + email). The full owed list is
+  the plan's Deferred section.
