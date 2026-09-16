@@ -19,6 +19,7 @@ export * from './coldChain';
 export * from './comment';
 export * from './confidence';
 export * from './contourLayer';
+export * from './corpusRequests';
 export * from './dedup';
 export * from './depthMatch';
 export * from './detailTabs';

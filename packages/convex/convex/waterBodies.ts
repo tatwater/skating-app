@@ -2503,6 +2503,21 @@ export const create = mutation({
         candidateIds: matches.map((m) => m.ref),
       });
     }
+    // **A takedown cannot be re-drawn around** (N7b, D48's deferred edge (a)). Since removed bodies
+    // are listed, the dedup above sees them; and however sure the skater is that this is new water,
+    // minting a public body over a pond a landowner asked us to remove is the one outcome
+    // `confirmedNew` must not be able to buy. The skate attaches to the removed body instead —
+    // `NewWaterPrompt` offers it as a match — and the request path is how it comes back.
+    for (const m of matches) {
+      const candidate = await ctx.db.get(m.ref);
+      if (candidate && standingOf(candidate).standing === 'removed') {
+        throw new ConvexError({
+          code: 'removed_water',
+          message: 'This water was taken off the map. Your skate can still be recorded against it.',
+          waterBodyId: m.ref,
+        });
+      }
+    }
 
     // No boost on a new body, and active: it exists because somebody skated it (N7b).
     const scores = scoreFields({ surfaceAreaSqM: derived.surfaceAreaSqM, active: true });
@@ -2606,6 +2621,9 @@ export const findMatchCandidates = query({
             official: m.official,
             verdict: m.verdict,
             centroidDistanceM: Math.round(m.centroidDistanceM),
+            // A dormant or removed match is still the water they skated (N7b): attaching to it is
+            // the evidence that brings a shelved lake back, and the prompt says which it is.
+            ...(body ? { standing: standingOf(body) } : {}),
           };
         }),
       ),
