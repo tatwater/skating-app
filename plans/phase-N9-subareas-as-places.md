@@ -14,10 +14,88 @@
 > the Great Lakes case that surfaced it. That case took a different answer (see §The bay class,
 > below) and is not a dependency.
 >
-> **Status 2026-09-16: kicked off, unbuilt.** The §Kickoff pass below is the build spec — every call
-> it records supersedes the scoping prose after it where the two disagree, and each such place is
-> marked ⚠ inline. A fresh thread should read the kickoff pass first, then §Pickup checklist at the
-> very end, and treat the rest of this doc as the argument behind them.
+> **Status 2026-09-16: PR 1 built and on dev; PR 2 (the depth ETL) next.** See §Built record,
+> directly below, for what shipped and where it departs from the kickoff pass. The §Kickoff pass
+> after it is the build spec — every call it records supersedes the scoping prose after it where the
+> two disagree, and each such place is marked ⚠ inline.
+
+---
+
+## Built record — 2026-09-16 (PR 1, `phase-n9-subareas-as-places`)
+
+Built in one sitting against `main` at `5bb3f93`, in the eight commits the kickoff pass planned plus
+two review passes (a local `/code-review` and a headless web smoke). **D175** is written. Deployed to
+dev (`agile-bee-397`) and backfilled: `mintSubAreaKeys` keyed and fetch-profiled all 128 bays,
+`backfillReportSubAreas` found the two dev reports have no bay, `restampAllParents` swept the 22
+parents and tagged 132 of their 388 put-ins (Champlain 42/172, Winnipesaukee 69/76, Mascoma 6/6).
+Suites at build: core 2,689 · convex 1,614 · web 552 · mobile 111, all green; ~4,600 lines over 63
+files. **Prod is deferred, as for every phase since N1.**
+
+### What shipped, by workstream
+
+- **The rule + the join.** `reportSubAreas` (one row per report × bay, `moderationStatus` +
+  `skateEndTime` mirrored, every writer through `lib/reportSubAreas.ts`); `reports.subAreaIds` +
+  `subAreaNames`; the bay feed and the bay bounty gate read the join; the old per-report bay index
+  dropped. `attachReportToOpenBounties` accepts any member bay.
+- **The re-derivation.** `insertSubArea` (mints `subAreaKey`, computes `fetchProfileM`) and
+  `rederiveSubArea` (derived fields, depth invalidation on a real outline change, cells) are the only
+  two writers of a bay's geometry; six former inline copies are gone. `restampParent` walks
+  `gpsActivities → reports → hazards → putIns → bodyFeatures`.
+- **Stamps at write.** Put-ins by distance to the outline (30 m, smallest wins, tie judged to a
+  millimetre); features by footprint centre; tracks by majority of 64 samples with `leftSubArea`;
+  activity reports from their track.
+- **Favorites** with `subAreaId` (triple uniqueness), split reads (`loadFavorites` for the feed's
+  per-report test, `loadFavoriteBodyIds` for the map/discovery's per-lake test), the recipient-set
+  de-dup in `enqueueReportNotifications`, and the copy *"New report in Malletts Bay (Lake Champlain)"*.
+- **Drive-time** from the bay's best put-in (`subAreaDriveCoord`), in the feed and the fan-out.
+- **The bay view** on both clients (`describeSubAreaHeader`, `windRoseCaption` on every body),
+  narrowed hazards / bounties / access reads, the admin card line (`adminStatsForBody`).
+- **Workstream G**: `maybeRefreshBayTier` daily, season-gated, Tier A days + hours per live bay.
+
+### Deltas from the kickoff pass — read these before extending
+
+1. **Restamp order is tracks first**, not "put-ins and tracks after reports": an activity report's
+   membership *is* its track's list, so the report pass reads the stamp the track pass just wrote.
+   `bodyFeatures` joined the walk too (five tables, not four).
+2. **`reports.subAreaNames` mirrors `subAreaIds`**, stored only when there is more than one (the
+   `waterBodyIds` convention). The list-form location line on the feed card and both report-detail
+   screens therefore costs no reads. `memberSubAreaIds` in core is the one reader of the pair.
+3. **A membership floor** (`SUB_AREA_MEMBERSHIP_MIN_SHARE` = 10% of samples, ~6 minutes of an hour).
+   Found by the review: with plurality alone, a lake-wide skate that crossed Malletts' mouth for
+   one sample would be labelled, banded, fed and notified as a Malletts Bay report — and before N9 it
+   carried no bay at all. Below the floor the samples are open water for everything but the
+   mouth-line flag. The primary is a plurality among *members*, the body rule.
+4. **`depthDerivedAt` survives the invalidation.** The kickoff said clear all four; the admin card's
+   sentence *"derived Sep 2 · geometry changed Sep 14"* needs the date it is replacing, so the
+   number, its source and its caveat go and the date stays. Readers key on `maxDepthM`.
+5. **`notificationResolve` had no `subAreaName` path** — the kickoff's "via the existing path" was
+   wrong. One was added: a bucket of exactly one report names its bay; a bucket of several names the
+   lake, since it may span bays.
+6. **The bay bounty list keeps lake-wide bounties**: a lake-wide ask is satisfiable from this bay
+   (D175), so it is an ask the bay's skaters can answer. A bounty on a *different* bay is dropped.
+7. **The bay view omits the lake's profile caption** (smoke finding): it carried the lake's 399 ft
+   and 11-mile fetch one line under "no depth inside this bay".
+8. **`restampAllParents`** is a third one-off the kickoff did not list: nothing else would ever have
+   tagged the put-ins, tracks and features from before the phase.
+9. **`putIns.by_sub_area`** was added (the drive-time read and the bay access read); the kickoff's
+   schema block did not have it.
+
+### Smoke — Malletts Bay on web, headless (2026-09-16)
+
+Signed in by Clerk sign-in token (the N6h recipe; Chrome needs `--use-angle=swiftshader` or MapLibre
+throws into the error boundary). Header: *Malletts Bay* + own heart · *Part of Lake Champlain* +
+lake's heart · *1585.1 acres* · *No depth inside this bay recorded* (reveal) · *Elevation 97 ft —
+the lake's*. Overview: the wind caption's bay form. Reporting: bay filter seeded to Malletts.
+Planning: *Put in at ESE launch* (a bay launch, chosen over the lake's 172), the spread, the bay's
+weather. Camera framed the bay with the parent's contours drawing under it. Console clean apart from
+a pre-existing `<div>`-in-`<p>` warning in `DetailSkeleton` (not this phase's).
+
+### Deferred / not built
+
+- **PR 2, the depth lane** — `exportBayDepths` + `setDerivedDepth`; every bay currently reads
+  "no depth", which is the correct D3 state until it runs.
+- The mobile bay view is type-checked and suite-green but not device-tested.
+- The shelter index, the station study, US spellings — post-alpha, as scoped.
 
 ---
 
