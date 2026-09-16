@@ -22,6 +22,7 @@ export default defineConfig({
         'src/archiveCli.ts',
         'src/**/*.test.ts',
         'src/cli.ts',
+        'src/standing.ts', // the seed-standing CLI; its rules are in standingSeed.ts and covered
         'src/corroborateAlsc.ts', // read-only census joining the ALSC archive to the merge artifacts
         'src/load.ts',
         'src/loadElevation.ts', // reads the archive + writes; the rules are in elevationArchive/epqs

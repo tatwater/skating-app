@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { dedupeDestinations, gazetteerToDestinations } from './standing';
+import { dedupeDestinations, gazetteerToDestinations } from './standingSeed';
 
 describe('gazetteerToDestinations', () => {
   it('reads name and region, ignores the tallies, and skips blank rows', () => {

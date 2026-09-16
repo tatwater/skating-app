@@ -25,45 +25,10 @@ import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 import { convexRun, RunLogger, resolveDeployment } from '@skating/run-log';
 import { type CandidateBody, type Destination, matchAll } from './match';
+import { dedupeDestinations, gazetteerToDestinations } from './standingSeed';
 
 const SHORTLIST = fileURLToPath(new URL('../destinations.json', import.meta.url));
 const REPORT = fileURLToPath(new URL('../.standing-report.json', import.meta.url));
-
-/**
- * The gazetteer's rows as destinations — `water_body` is the name, `region` the state the corpus
- * analysis attributed it to. No coordinate: the mbox knows where people are, not where the lake is.
- */
-export function gazetteerToDestinations(csv: string): Destination[] {
-  const lines = csv.split(/\r?\n/).filter((l) => l.trim().length > 0);
-  const header = (lines.shift() ?? '').split(',');
-  const nameAt = header.indexOf('water_body');
-  const regionAt = header.indexOf('region');
-  if (nameAt < 0 || regionAt < 0) {
-    throw new Error('gazetteer: expected `water_body` and `region` columns');
-  }
-  return lines.flatMap((line) => {
-    const cols = line.split(',');
-    const name = cols[nameAt]?.trim();
-    const state = cols[regionAt]?.trim();
-    if (!name || !state) return [];
-    return [{ name, state, sources: ['community' as const] }];
-  });
-}
-
-/** Two lists, one keep set: a lake on both is one entry, not two matches. */
-export function dedupeDestinations(lists: readonly Destination[][]): Destination[] {
-  const seen = new Set<string>();
-  const out: Destination[] = [];
-  for (const list of lists) {
-    for (const d of list) {
-      const key = `${d.state}:${d.name.trim().toLowerCase()}`;
-      if (seen.has(key)) continue;
-      seen.add(key);
-      out.push(d);
-    }
-  }
-  return out;
-}
 
 async function main() {
   const args = process.argv.slice(2);
@@ -213,10 +178,7 @@ async function main() {
   logger.succeed([`${totals.demoted} bodies shelved as inactive`]);
 }
 
-// Only the CLI entry runs `main`; the two pure helpers above are imported by the tests.
-if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
-  main().catch((err) => {
-    process.stderr.write(`[standing] ${err instanceof Error ? err.message : String(err)}\n`);
-    process.exit(1);
-  });
-}
+main().catch((err) => {
+  process.stderr.write(`[standing] ${err instanceof Error ? err.message : String(err)}\n`);
+  process.exit(1);
+});
