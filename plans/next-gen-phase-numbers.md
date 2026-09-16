@@ -130,7 +130,7 @@ second pass: **zero-pad everywhere, not just filenames**, and **only two lettere
 | After that | `feat-<slug>` | — | see "When phases stop" |
 
 **The token is `[A|B]NN[a-z]`, zero-padded to two digits, in every slot**: filenames
-`phase-A06e-satellite-imagery.md`, prose `Phase A06e`, branches `phase-a06e-<slug>[-N]`, commit
+`phases/A06e-satellite-imagery.md`, prose `Phase A06e`, branches `phase-a06e-<slug>[-N]`, commit
 scopes `feat(a06e):`. Sub-phases are a lowercase letter; the PR / campaign sequence inside a doc is
 `-N` (`A06c-2`, `A07a-3`, `B01-4`). `.5` is retired: `2.5 → 02b`, `9.5 → 09b`, and their siblings are
 `02a`/`09a`. Old prose "Phase 2" → `Phase 02a` mechanically — nobody ever wrote "Phase 2" to mean
@@ -347,7 +347,7 @@ that outlive them — the "alpha" era is still dev-only. Neutral letters age bet
    runtime strings, and the memory dir; the workstream renumbering (`§3.2`) with its two hand-checked
    exclusions; link check before/after; full test suite (behavior must be byte-identical — only
    test *names* and log/blurb text may change). ~650 files, ~3,700 hits, ~1.5 days including the
-   review by category. Back-to-back with the US-spellings sweep (which becomes `backlog/us-spellings.md`).
+   review by category. Back-to-back with the US-spellings sweep (which becomes `features/us-spellings.md`).
 2b. **PR titles + bodies + banner** — right after (2) merges, once `plans/README.md` is on `main`
    so the banner's link resolves: the same table over every PR up to and including the rename PR
    via `gh pr edit`, plus the "predates the renumbering" banner on each. Dry-run first (print the
