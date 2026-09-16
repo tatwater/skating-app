@@ -7,6 +7,7 @@ import {
   DETAIL_TAB_LABELS,
   DETAIL_TABS,
   describeLakeDepth,
+  describeSubAreaHeader,
   formatAerialCaptureDate,
   formatAreaAcres,
   formatSkateTime,
@@ -187,6 +188,11 @@ export function WaterBodyDetail({
 
   const depth = describeLakeDepth(result.body);
   const caption = buildLakeCaption(result.body, regionStats);
+  // The bay view (N9 / D175): a live `?sub=` reframes the header as the bay — its own name and heart,
+  // its own area, depth and fetch; the lake's elevation and rose, said to be inherited. Everything
+  // below the header stays the lake's drawer with its lists narrowed to the bay, because a bay is a
+  // place *on* the lake, not a lake beside it.
+  const bayHeader = focusSubArea ? describeSubAreaHeader(focusSubArea, result.body) : null;
   // N6c-2's reveal flag. Every surface below is built to render nothing when it has nothing to say,
   // which is right for skaters and hostile to testing — on this corpus almost all of them are
   // invisible, and "invisible because there is no data" looks exactly like "invisible because it
@@ -196,25 +202,67 @@ export function WaterBodyDetail({
   return (
     <>
       <PanelHeader>
-        <div className="flex items-start justify-between gap-2">
-          <PanelTitle>{waterBodyDisplayName(result.body.name)}</PanelTitle>
-          <FavoriteButton waterBodyId={result.body._id} />
-        </div>
-        <PanelDescription>
-          {waterBodyClassLabel(result.body.type)}
-          {result.body.surfaceAreaSqM !== undefined
-            ? ` · ${formatAreaAcres(result.body.surfaceAreaSqM)}`
-            : ''}
-          {depth ? ` · ${depth.text}` : ''}
-        </PanelDescription>
-        {/* Provenance sits under the numbers rather than beside them: most bodies have no depth at all
-            (73% of the corpus is below every source's area floor), so this line is absent far more often
-            than present, and a caveat inline in the description would read as clutter when it IS there. */}
-        {depth ? (
-          <p className="text-muted-foreground text-xs" title={depth.caption}>
-            {depth.caption}
-          </p>
-        ) : null}
+        {focusSubArea && bayHeader ? (
+          <>
+            <div className="flex items-start justify-between gap-2">
+              <PanelTitle>{focusSubArea.name}</PanelTitle>
+              <FavoriteButton waterBodyId={result.body._id} subAreaId={focusSubArea._id} />
+            </div>
+            {/* The lake, with its own heart: a bay favorite and a lake favorite are two different
+                statements, and the header offers both rather than making the reader leave the bay. */}
+            <div className="flex items-center justify-between gap-2">
+              <PanelDescription>
+                <Link
+                  to="/water/$id"
+                  params={{ id: result.body._id }}
+                  className="underline-offset-2 hover:underline"
+                >
+                  {bayHeader.partOf}
+                </Link>
+              </PanelDescription>
+              <FavoriteButton waterBodyId={result.body._id} />
+            </div>
+            <PanelDescription>
+              {bayHeader.area}
+              {bayHeader.depth ? ` · ${bayHeader.depth.text}` : ''}
+            </PanelDescription>
+            {bayHeader.depth ? (
+              <p className="text-muted-foreground text-xs" title={bayHeader.depth.caption}>
+                {bayHeader.depth.caption}
+              </p>
+            ) : reveal ? (
+              <p className="text-muted-foreground text-xs italic">
+                {revealPlaceholder('depth inside this bay')}
+              </p>
+            ) : null}
+            {bayHeader.elevation ? (
+              <p className="text-muted-foreground text-xs">{bayHeader.elevation}</p>
+            ) : null}
+          </>
+        ) : (
+          <>
+            <div className="flex items-start justify-between gap-2">
+              <PanelTitle>{waterBodyDisplayName(result.body.name)}</PanelTitle>
+              <FavoriteButton waterBodyId={result.body._id} />
+            </div>
+            <PanelDescription>
+              {waterBodyClassLabel(result.body.type)}
+              {result.body.surfaceAreaSqM !== undefined
+                ? ` · ${formatAreaAcres(result.body.surfaceAreaSqM)}`
+                : ''}
+              {depth ? ` · ${depth.text}` : ''}
+            </PanelDescription>
+            {/* Provenance sits under the numbers rather than beside them: most bodies have no depth at
+                all (73% of the corpus is below every source's area floor), so this line is absent far
+                more often than present, and a caveat inline in the description would read as clutter
+                when it IS there. */}
+            {depth ? (
+              <p className="text-muted-foreground text-xs" title={depth.caption}>
+                {depth.caption}
+              </p>
+            ) : null}
+          </>
+        )}
         {/* The derived profile (N6c/C). Renders NOTHING — no heading, no empty section — when
             there is nothing to say, which is most of the corpus and is the correct outcome rather
             than a gap to fill with hedged filler. */}
@@ -225,7 +273,7 @@ export function WaterBodyDetail({
             {revealPlaceholder('profile caption')}
           </p>
         ) : null}
-        {depth ? null : reveal ? (
+        {depth || focusSubArea ? null : reveal ? (
           <p className="text-muted-foreground text-xs italic">{revealPlaceholder('depth')}</p>
         ) : null}
       </PanelHeader>
@@ -291,7 +339,18 @@ export function WaterBodyDetail({
                 winters did — which is exactly why it is a fact about the body and not a planning
                 input. Renders nothing on the ~56% of the corpus with no rose, and says nothing about
                 safety (D145). */}
-            <WindExposure body={result.body} />
+            {focusSubArea ? (
+              <WindExposure
+                body={{
+                  windRose: result.body.windRose,
+                  meanWindMps: result.body.meanWindMps,
+                  fetchProfileM: focusSubArea.fetchProfileM,
+                }}
+                scope="subArea"
+              />
+            ) : (
+              <WindExposure body={result.body} />
+            )}
             <WaterBodyModeratorControls body={result.body} />
             {/* Reference links (N6c/B), below our own content and above the credits. Everything here
                 leaves the app, so it sits after everything a skater came for — and it renders nothing
@@ -327,12 +386,18 @@ export function WaterBodyDetail({
           </TabsContent>
           <TabsContent value="reporting" className="flex flex-col gap-4">
             <SeasonFilter waterBodyId={result.body._id} />
-            <BountyList waterBodyId={result.body._id} />
+            <BountyList
+              waterBodyId={result.body._id}
+              {...(focusSubArea ? { subAreaId: focusSubArea._id } : {})}
+            />
             {/* Above the hazard list, and nowhere else — not the map, the feed, notifications, the
                 recommended strip or search. The map is where a mark means somebody reported this,
                 and an advisory has no reporter this season (§9.1). */}
             <IceHistory waterBodyId={result.body._id} />
-            <HazardList waterBodyId={result.body._id} />
+            <HazardList
+              waterBodyId={result.body._id}
+              {...(focusSubArea ? { subAreaId: focusSubArea._id } : {})}
+            />
             <ReportFeed
               waterBodyId={result.body._id}
               subAreaId={feedBayId}
@@ -343,7 +408,10 @@ export function WaterBodyDetail({
             {/* How you get onto the ice (N6d) — above the weather, because it decides whether the
                 trip is possible at all, where the weather decides whether it is worth making. Renders
                 nothing on the great majority of bodies OSM has never mapped access for. */}
-            <AccessSection waterBodyId={result.body._id} />
+            <AccessSection
+              waterBodyId={result.body._id}
+              {...(focusSubArea ? { subAreaId: focusSubArea._id } : {})}
+            />
             {/* Which place on the lake the weather below is about — a scope line and a switcher on a
                 giant with named bays, nothing on everything else (open question 5). */}
             {/* The lake's spread across its bays, with the ends named as tap targets (open question 5).

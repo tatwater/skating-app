@@ -33,6 +33,9 @@ import {
   type SubAreaCandidate,
   samplePath,
   searchTextFor,
+  seasonEndMs,
+  seasonOf,
+  seasonStartMs,
   smallestContainingSubArea,
   subAreaDriveCoord,
   subAreaForPutIn,
@@ -1777,5 +1780,72 @@ export const backfillReportSubAreas = internalMutation({
       });
     }
     return { scanned: page.page.length, withBay, inserted, isDone: page.isDone };
+  },
+});
+
+/**
+ * Skates read per bay for the admin card's mouth-line count (N9). A bound on the read, not on the
+ * answer: a bay with more than this many skates in one season reads as "200+", which is the honest
+ * shape of a take-bounded count (D5) and far past the point where the count changes a decision.
+ */
+const MOUTH_LINE_SCAN_CAP = 200;
+
+/**
+ * **The admin card, per bay** (N9): this season's skates that ran past the mouth line, the derived
+ * depth and when it was derived against when the outline last moved, and the stored fetch profile.
+ * Beside the redraw control in `/admin/water/$id`, because a bay's seaward edge is a judgement a
+ * skater can prove wrong by skating past it, and this is where the evidence collects. Nothing here
+ * is automatic — a mouth line that moves on its own is a boundary nobody can reason about.
+ *
+ * Moderator-gated like every operator read; bounded per bay by `MOUTH_LINE_SCAN_CAP` on the
+ * season-scoped `by_sub_area_start_time` index.
+ */
+export const adminStatsForBody = query({
+  args: { waterBodyId: v.id('waterBodies') },
+  handler: async (ctx, { waterBodyId }) => {
+    await requireContributorRole(ctx, 'moderator');
+    const season = seasonOf(Date.now());
+    const from = seasonStartMs(season);
+    const to = seasonEndMs(season);
+    const out: Record<
+      string,
+      {
+        leftSubAreaCount: number;
+        leftSubAreaTruncated: boolean;
+        skatesCount: number;
+        subAreaKey?: string;
+        fetchProfileM?: number[];
+        maxDepthM?: number;
+        maxDepthSource?: string;
+        depthUnderstatesMax?: boolean;
+        depthDerivedAt?: number;
+        geometryUpdatedAt?: number;
+      }
+    > = {};
+    for (const bay of await subAreasForBody(ctx, waterBodyId)) {
+      const skates = await ctx.db
+        .query('gpsActivities')
+        .withIndex('by_sub_area_start_time', (q) =>
+          q.eq('subAreaId', bay._id).gte('startTime', from).lt('startTime', to),
+        )
+        .take(MOUTH_LINE_SCAN_CAP);
+      out[bay._id] = {
+        leftSubAreaCount: skates.filter((s) => s.leftSubArea === true).length,
+        leftSubAreaTruncated: skates.length === MOUTH_LINE_SCAN_CAP,
+        skatesCount: skates.length,
+        ...(bay.subAreaKey !== undefined ? { subAreaKey: bay.subAreaKey } : {}),
+        ...(bay.fetchProfileM !== undefined ? { fetchProfileM: bay.fetchProfileM } : {}),
+        ...(bay.maxDepthM !== undefined ? { maxDepthM: bay.maxDepthM } : {}),
+        ...(bay.maxDepthSource !== undefined ? { maxDepthSource: bay.maxDepthSource } : {}),
+        ...(bay.depthUnderstatesMax !== undefined
+          ? { depthUnderstatesMax: bay.depthUnderstatesMax }
+          : {}),
+        ...(bay.depthDerivedAt !== undefined ? { depthDerivedAt: bay.depthDerivedAt } : {}),
+        ...(bay.geometryUpdatedAt !== undefined
+          ? { geometryUpdatedAt: bay.geometryUpdatedAt }
+          : {}),
+      };
+    }
+    return out;
   },
 });

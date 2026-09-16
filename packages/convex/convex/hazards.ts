@@ -518,8 +518,14 @@ export const listForBody = query({
      * the way across, and it is a decision somebody makes.
      */
     season: v.optional(v.number()),
+    /**
+     * Narrow to one named bay (N9) — the bay view's hazard list. Filtered in memory off the row's
+     * stamp: the read is already bounded by body, and a hazard's bay is its footprint centre's, so
+     * a ridge that straddles the mouth line is listed under the bay its middle is in.
+     */
+    subAreaId: v.optional(v.id('waterBodySubAreas')),
   },
-  handler: async (ctx, { waterBodyId, includeArchived, season }) => {
+  handler: async (ctx, { waterBodyId, includeArchived, season, subAreaId }) => {
     const body = await resolveSurvivor(ctx, waterBodyId);
     if (!body) return [];
     const now = Date.now();
@@ -552,7 +558,8 @@ export const listForBody = query({
     // remains, which is the desired end state reached by machinery N5a already built.
     const inScope = rows
       .filter((h) => h.moderationStatus === 'visible')
-      .filter((h) => isInSeason(h.firstReportedAt, target));
+      .filter((h) => isInSeason(h.firstReportedAt, target))
+      .filter((h) => subAreaId === undefined || h.subAreaId === subAreaId);
     // Tombstones are pooled but not rendered: the survivor carries the warning, with the union of the
     // chain's footprints, so drawing the loser too would put a second outline over the same ice.
     const rendered = inScope.filter((h) => h.mergedIntoHazardId === undefined);

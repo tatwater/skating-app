@@ -17,12 +17,16 @@ import { Button } from './ui/button';
  */
 export function FavoriteButton({
   waterBodyId,
+  subAreaId,
   showLabel = false,
 }: {
   waterBodyId: Id<'waterBodies'>;
+  /** A bay's own heart (N9): favorites the bay, not the lake. The lake keeps its own button. */
+  subAreaId?: Id<'waterBodySubAreas'>;
   showLabel?: boolean;
 }) {
-  const favorited = useQuery(api.waterBodyFavorites.isFavorite, { waterBodyId });
+  const target = { waterBodyId, ...(subAreaId !== undefined ? { subAreaId } : {}) };
+  const favorited = useQuery(api.waterBodyFavorites.isFavorite, target);
   const toggle = useMutation(api.waterBodyFavorites.toggle);
   const isFav = favorited === true;
 
@@ -33,7 +37,7 @@ export function FavoriteButton({
       size={showLabel ? 'sm' : 'icon'}
       aria-pressed={isFav}
       aria-label={isFav ? 'Remove from favorites' : 'Add to favorites'}
-      onClick={() => void toggle({ waterBodyId })}
+      onClick={() => void toggle(target)}
       disabled={favorited === undefined}
     >
       <FontAwesomeIcon

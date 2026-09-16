@@ -128,11 +128,19 @@ export function HazardListView({
  * `bodyFeatures` are **not** season-scoped: a spring hole is there every winter by definition (D53),
  * and that persistence is the whole point of promoting a recurring hazard into one.
  */
-export function HazardList({ waterBodyId }: { waterBodyId: Id<'waterBodies'> }) {
+export function HazardList({
+  waterBodyId,
+  subAreaId,
+}: {
+  waterBodyId: Id<'waterBodies'>;
+  /** The bay view (N9): only the hazards whose footprint centre falls in this bay. */
+  subAreaId?: Id<'waterBodySubAreas'>;
+}) {
   const { browseSeason } = useMapSelection();
   const hazards = useQuery(api.hazards.listForBody, {
     waterBodyId,
     ...(browseSeason === null ? {} : { season: browseSeason }),
+    ...(subAreaId !== undefined ? { subAreaId } : {}),
   });
   const knownFeatures = useQuery(api.bodyFeatures.listForBody, { waterBodyId });
 

@@ -910,17 +910,27 @@ export const answeredByMyReport = query({
   },
 });
 
-/** The open bounties on a body (for the map/detail surfaces), newest first, with the requester's name. */
+/**
+ * The open bounties on a body (for the map/detail surfaces), newest first, with the requester's name.
+ *
+ * With a `subAreaId` (N9, the bay view): the bounties **on that bay, plus the lake-wide ones** — a
+ * lake-wide ask is satisfied by a report from this bay (D175), so it is an ask this bay's skaters can
+ * answer; a bounty on a *different* bay is not, and is dropped.
+ */
 export const listForBody = query({
-  args: { waterBodyId: v.id('waterBodies') },
-  handler: async (ctx, { waterBodyId }) => {
+  args: { waterBodyId: v.id('waterBodies'), subAreaId: v.optional(v.id('waterBodySubAreas')) },
+  handler: async (ctx, { waterBodyId, subAreaId }) => {
     const now = Date.now();
-    const open = await ctx.db
-      .query('bounties')
-      .withIndex('by_water_body_status', (q) =>
-        q.eq('waterBodyId', waterBodyId).eq('status', 'open'),
-      )
-      .collect();
+    const open = (
+      await ctx.db
+        .query('bounties')
+        .withIndex('by_water_body_status', (q) =>
+          q.eq('waterBodyId', waterBodyId).eq('status', 'open'),
+        )
+        .collect()
+    ).filter(
+      (b) => subAreaId === undefined || b.subAreaId === undefined || b.subAreaId === subAreaId,
+    );
     open.sort((a, b) => b.createdAt - a.createdAt);
     return Promise.all(
       open.map(async (b) => {

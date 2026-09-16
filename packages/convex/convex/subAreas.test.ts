@@ -2100,3 +2100,165 @@ describe('the stamps at write (N9)', () => {
     expect((await t.run((ctx) => ctx.db.get(id)))?.subAreaId).toBe(west);
   });
 });
+
+describe('the bay view reads (N9)', () => {
+  async function setup() {
+    const t = harness();
+    const body = await seedBody(t);
+    const mod = await seedUser(t, 'mod', 'moderator');
+    const west = await mod.as.mutation(api.subAreas.create, {
+      waterBodyId: body,
+      name: 'West Bay',
+      polygon: rect(-73.5, 44.2, -73.3, 44.6),
+    });
+    await settle(t);
+    return { t, body, mod, west };
+  }
+
+  test('hazards narrow to the bay by footprint centre', async () => {
+    const { t, body, west } = await setup();
+    const author = await seedUser(t, 'author');
+    const inBay = await author.as.mutation(api.hazards.create, {
+      waterBodyId: body,
+      type: 'pressure_ridge',
+      geometryKind: 'point_radius',
+      geometry: { type: 'Point', coordinates: [-73.4, 44.4] },
+      radiusMeters: 25,
+    });
+    await author.as.mutation(api.hazards.create, {
+      waterBodyId: body,
+      type: 'pressure_ridge',
+      geometryKind: 'point_radius',
+      geometry: { type: 'Point', coordinates: [-72.7, 44.8] },
+      radiusMeters: 25,
+    });
+    const all = await t.query(api.hazards.listForBody, { waterBodyId: body });
+    expect(all).toHaveLength(2);
+    const bay = await t.query(api.hazards.listForBody, { waterBodyId: body, subAreaId: west });
+    expect(bay.map((h) => h._id)).toEqual([inBay]);
+  });
+
+  test('bounties narrow to the bay plus the lake-wide asks a bay report can answer', async () => {
+    const { t, body, west, mod } = await setup();
+    const east = await mod.as.mutation(api.subAreas.create, {
+      waterBodyId: body,
+      name: 'East Bay',
+      polygon: rect(-72.8, 44.2, -72.5, 44.6),
+    });
+    await settle(t);
+    const a = await seedUser(t, 'a');
+    const b = await seedUser(t, 'b');
+    const c = await seedUser(t, 'c');
+    const onWest = await a.as.action(api.bounties.create, { waterBodyId: body, subAreaId: west });
+    await b.as.action(api.bounties.create, { waterBodyId: body, subAreaId: east });
+    const lakeWide = await c.as.action(api.bounties.create, { waterBodyId: body });
+    const listed = await t.query(api.bounties.listForBody, { waterBodyId: body, subAreaId: west });
+    expect(listed.map((x) => x._id).sort()).toEqual([onWest, lakeWide].sort());
+    expect((await t.query(api.bounties.listForBody, { waterBodyId: body })).length).toBe(3);
+  });
+
+  test('access narrows to the bay’s launches, the lots they serve, and lots within reach of its shore', async () => {
+    const { t, body, west } = await setup();
+    const insertLot = (lng: number, lat: number) =>
+      t.run(async (ctx) => {
+        const id = await ctx.db.insert('parkingAreas', {
+          coord: { lat, lng },
+          source: 'osm' as const,
+          status: 'visible' as const,
+          amenities: [],
+          createdAt: Date.now(),
+        });
+        await ctx.db.insert('parkingAreaBodies', {
+          parkingAreaId: id,
+          waterBodyId: body,
+          inferred: true,
+          createdAt: Date.now(),
+        });
+        return id;
+      });
+    // A lot far up the lake, served by the open-shore launch; a lot just west of the bay's shore
+    // that no launch references; and a lot served by the bay's launch.
+    const farLot = await insertLot(-73.52, 44.9);
+    const nearBayLot = await insertLot(-73.5015, 44.3); // ~120 m west of the bay's shore
+    const bayLot = await insertLot(-73.52, 44.4);
+    const insertPutIn = (lng: number, lat: number, parkingAreaId: Id<'parkingAreas'>) =>
+      t.run((ctx) =>
+        ctx.db.insert('putIns', {
+          waterBodyId: body,
+          coord: { lat, lng },
+          source: 'osm' as const,
+          status: 'visible' as const,
+          parkingAreaId,
+          createdAt: Date.now(),
+        }),
+      );
+    const openLaunch = await insertPutIn(-73.5, 44.9, farLot);
+    const bayLaunch = await insertPutIn(-73.5, 44.4, bayLot);
+    // Tag them the way a redraw would (the rows were inserted raw).
+    await t.run((ctx) => ctx.db.patch(bayLaunch, { subAreaId: west }));
+
+    const lake = await t.query(api.accessPoints.accessForBody, { waterBodyId: body });
+    expect(lake.putIns.map((p) => p.id).sort()).toEqual([openLaunch, bayLaunch].sort());
+    expect(lake.parking).toHaveLength(3);
+
+    const bay = await t.query(api.accessPoints.accessForBody, {
+      waterBodyId: body,
+      subAreaId: west,
+    });
+    expect(bay.putIns.map((p) => p.id)).toEqual([bayLaunch]);
+    expect(bay.parking.map((p) => p.id).sort()).toEqual([bayLot, nearBayLot].sort());
+  });
+
+  test('the admin card counts this season’s skates past the mouth line and dates the depth', async () => {
+    const { t, body, west, mod } = await setup();
+    const skater = await seedUser(t, 'skater');
+    const now = Date.now();
+    const track = async (key: string, points: [number, number][]) =>
+      skater.as.mutation(api.gpsActivities.ingestTrack, {
+        idempotencyKey: key,
+        path: { type: 'LineString', coordinates: points },
+        startTime: now - 3_600_000,
+        endTime: now,
+        waterBodyId: body,
+      });
+    await track('stayed', [
+      [-73.45, 44.4],
+      [-73.4, 44.4],
+      [-73.35, 44.4],
+    ]);
+    await track('left', [
+      [-73.45, 44.4],
+      [-73.4, 44.4],
+      [-73.1, 44.4],
+    ]);
+    await expect(
+      skater.as.query(api.subAreas.adminStatsForBody, { waterBodyId: body }),
+    ).rejects.toThrow(/moderator/i);
+    const derivedAt = now - 10_000;
+    await t.run((ctx) =>
+      ctx.db.patch(west, {
+        maxDepthM: 12,
+        maxDepthSource: 'state_agency',
+        depthDerivedAt: derivedAt,
+      }),
+    );
+    const before = await mod.as.query(api.subAreas.adminStatsForBody, { waterBodyId: body });
+    expect(before[west]).toMatchObject({
+      skatesCount: 2,
+      leftSubAreaCount: 1,
+      leftSubAreaTruncated: false,
+      maxDepthM: 12,
+      depthDerivedAt: derivedAt,
+    });
+    expect(before[west]?.fetchProfileM).toHaveLength(16);
+    // A redraw clears the depth and dates the change; the card can now say the re-run is owed.
+    await mod.as.mutation(api.subAreas.redraw, {
+      subAreaId: west,
+      polygon: rect(-73.5, 44.2, -73.25, 44.6),
+    });
+    const after = await mod.as.query(api.subAreas.adminStatsForBody, { waterBodyId: body });
+    expect(after[west]?.maxDepthM).toBeUndefined();
+    expect(after[west]?.depthDerivedAt).toBe(derivedAt);
+    expect(after[west]?.geometryUpdatedAt).toBeGreaterThan(derivedAt);
+  });
+});

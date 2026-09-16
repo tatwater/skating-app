@@ -4,6 +4,7 @@ import {
   buildLakeCaption,
   contourBodyKey,
   describeLakeDepth,
+  describeSubAreaHeader,
   formatAreaAcres,
   formatSkateTime,
   humanizeEnum,
@@ -71,6 +72,7 @@ export function WaterBodyDetail({
   /** A synced skate to attach (N6f) — the server id, from the You tab's unreported list. */
   activityId?: string;
 }) {
+  const router = useRouter();
   const result = useQuery(api.waterBodies.get, {
     waterBodyId: waterBodyId as Id<'waterBodies'>,
   });
@@ -196,6 +198,10 @@ export function WaterBodyDetail({
 
   const depth = describeLakeDepth(result.body);
   const caption = buildLakeCaption(result.body, regionStats);
+  // The bay view (N9 / D175), the same reframing as web: a live `?sub=` puts the bay's own name,
+  // heart, area, depth and fetch in the header, inherits the lake's elevation and rose and says so,
+  // and narrows the lists below to the bay.
+  const bayHeader = focusSubArea ? describeSubAreaHeader(focusSubArea, result.body) : null;
   // N6c-2's reveal flag — see `profileReveal` in @skating/core. Forced off against production
   // regardless of the constant, so the device build (a release build pointing at dev) still shows
   // every slot while a real skater never can.
@@ -212,26 +218,68 @@ export function WaterBodyDetail({
       <DrawerHead>
         <YStack gap="$3" paddingHorizontal={16} paddingTop={16} paddingBottom={12}>
           <YStack gap="$1">
-            <XStack justifyContent="space-between" alignItems="center" gap="$2">
-              <H4 color="$foreground" flex={1}>
-                {result.body.name}
-              </H4>
-              <FavoriteButton waterBodyId={result.body._id} />
-            </XStack>
-            <Text color="$foregroundMuted">
-              {waterBodyClassLabel(result.body.type)}
-              {result.body.surfaceAreaSqM !== undefined
-                ? ` · ${formatAreaAcres(result.body.surfaceAreaSqM)}`
-                : ''}
-              {depth ? ` · ${depth.text}` : ''}
-            </Text>
-            {/* Provenance under the numbers, same as web: absent for most bodies, and a caveat inline in
-                the type/area line would read as clutter on the minority that do have a depth. */}
-            {depth ? (
-              <Text color="$foregroundMuted" fontSize="$1">
-                {depth.caption}
-              </Text>
-            ) : null}
+            {focusSubArea && bayHeader ? (
+              <>
+                <XStack justifyContent="space-between" alignItems="center" gap="$2">
+                  <H4 color="$foreground" flex={1}>
+                    {focusSubArea.name}
+                  </H4>
+                  <FavoriteButton waterBodyId={result.body._id} subAreaId={focusSubArea._id} />
+                </XStack>
+                {/* The lake, with its own heart — a bay favorite and a lake favorite are two
+                    different statements, and the header offers both. */}
+                <XStack justifyContent="space-between" alignItems="center" gap="$2">
+                  <Text
+                    color="$foregroundMuted"
+                    flex={1}
+                    onPress={() =>
+                      router.navigate({ pathname: '/water/[id]', params: { id: result.body._id } })
+                    }
+                  >
+                    {bayHeader.partOf}
+                  </Text>
+                  <FavoriteButton waterBodyId={result.body._id} />
+                </XStack>
+                <Text color="$foregroundMuted">
+                  {bayHeader.area}
+                  {bayHeader.depth ? ` · ${bayHeader.depth.text}` : ''}
+                </Text>
+                {bayHeader.depth ? (
+                  <Text color="$foregroundMuted" fontSize="$1">
+                    {bayHeader.depth.caption}
+                  </Text>
+                ) : null}
+                {bayHeader.elevation ? (
+                  <Text color="$foregroundMuted" fontSize="$1">
+                    {bayHeader.elevation}
+                  </Text>
+                ) : null}
+              </>
+            ) : (
+              <>
+                <XStack justifyContent="space-between" alignItems="center" gap="$2">
+                  <H4 color="$foreground" flex={1}>
+                    {result.body.name}
+                  </H4>
+                  <FavoriteButton waterBodyId={result.body._id} />
+                </XStack>
+                <Text color="$foregroundMuted">
+                  {waterBodyClassLabel(result.body.type)}
+                  {result.body.surfaceAreaSqM !== undefined
+                    ? ` · ${formatAreaAcres(result.body.surfaceAreaSqM)}`
+                    : ''}
+                  {depth ? ` · ${depth.text}` : ''}
+                </Text>
+                {/* Provenance under the numbers, same as web: absent for most bodies, and a caveat
+                    inline in the type/area line would read as clutter on the minority that do have a
+                    depth. */}
+                {depth ? (
+                  <Text color="$foregroundMuted" fontSize="$1">
+                    {depth.caption}
+                  </Text>
+                ) : null}
+              </>
+            )}
             {/* The derived profile (N6c/C), assembled by the same @skating/core function web calls so
                 the two surfaces cannot drift. Nothing renders when there is nothing to say. */}
             {caption ? (
@@ -321,7 +369,18 @@ export function WaterBodyDetail({
             {/* Winter wind (N7-3 / D90) — a climatology, what the last five winters did, which is
                       exactly why it is a fact about the body rather than a planning input. Renders
                       nothing without a rose, and says nothing about safety (D145). */}
-            <WindExposure body={result.body} />
+            {focusSubArea ? (
+              <WindExposure
+                body={{
+                  windRose: result.body.windRose,
+                  meanWindMps: result.body.meanWindMps,
+                  fetchProfileM: focusSubArea.fetchProfileM,
+                }}
+                scope="subArea"
+              />
+            ) : (
+              <WindExposure body={result.body} />
+            )}
             {/* Reference links (N6c/B), below our own content and above the credits. Every one
                       opens in-app via `openBrowserAsync` (D76), never by ejecting the skater into
                       Safari. */}
@@ -340,7 +399,10 @@ export function WaterBodyDetail({
         ) : tab === 'reporting' ? (
           <>
             <SeasonFilter waterBodyId={result.body._id} />
-            <BountyList waterBodyId={result.body._id} />
+            <BountyList
+              waterBodyId={result.body._id}
+              {...(focusSubArea ? { subAreaId: focusSubArea._id } : {})}
+            />
             {/* The lake page and nowhere else (§9.1) — not the map, the feed, notifications or
                       the recommended strip. A mark on the map means somebody reported this; an advisory
                       has no reporter this season. */}
@@ -356,7 +418,10 @@ export function WaterBodyDetail({
             {/* How you get onto the ice (N6d) — above the weather, because it decides whether the
                       trip is possible at all, where the weather decides whether it is worth making.
                       Absent on the great majority of bodies OSM has never mapped access for. */}
-            <AccessSection waterBodyId={result.body._id} />
+            <AccessSection
+              waterBodyId={result.body._id}
+              {...(focusSubArea ? { subAreaId: focusSubArea._id } : {})}
+            />
             {/* Which place on the lake the weather below is about — a scope line and chips on a
                       giant with named bays, nothing on everything else (open question 5). */}
             {/* The lake's spread across its bays, with the ends named as tap targets (open question 5).
