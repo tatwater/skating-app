@@ -4,9 +4,14 @@ import { describe, expect, it } from 'vitest';
 import { pointInPolygon, surfaceAreaSqM } from './geometry';
 import {
   clipSubAreaToParent,
+  memberSubAreaIds,
+  resolveTrackSubAreas,
   SUB_AREA_CLIP_MESSAGES,
   SUB_AREA_MIN_RETAINED_FRACTION,
+  SUB_AREA_PUT_IN_TOLERANCE_M,
   smallestContainingSubArea,
+  subAreaForPutIn,
+  subAreaMembershipFields,
 } from './subArea';
 
 /** An axis-aligned rectangle as a GeoJSON Polygon, in the Champlain latitude band. */
@@ -197,6 +202,142 @@ describe('smallestContainingSubArea', () => {
         },
       ),
       { numRuns: 200 },
+    );
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+// N9 (D175): the rules that tag what sits in a bay
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+
+describe('subAreaForPutIn — by distance to the outline, not containment (N9 call 3)', () => {
+  // Two bays sharing the parent's west shore; the small one is nested inside the big one.
+  const big = { ref: 'big', polygon: rect(-73.5, 44.2, -73.2, 44.6), surfaceAreaSqM: 1e9 };
+  const small = { ref: 'small', polygon: rect(-73.5, 44.3, -73.4, 44.4), surfaceAreaSqM: 1e8 };
+  const candidates = [big, small];
+
+  it('a launch a few metres *outside* the outline still belongs to the bay', () => {
+    // ~10 m west of the shared west shore at 44.5°N — outside both polygons by point-in-polygon.
+    const coord = { lat: 44.5, lng: -73.5 - 10 / (111_320 * Math.cos((44.5 * Math.PI) / 180)) };
+    expect(pointInPolygon(coord, big.polygon)).toBe(false);
+    expect(subAreaForPutIn(coord, candidates)).toBe('big');
+  });
+
+  it('smallest wins on a shared shore even when the two distances differ by float noise', () => {
+    // The nested bay's west edge sits a nanometre east of the big bay's — the re-noding a clip
+    // introduces — so an exact tie never happens, and a bit-level rule would pick the *bigger* bay.
+    const nudged = {
+      ref: 'small',
+      polygon: rect(-73.5 + 1e-11, 44.3, -73.4, 44.4),
+      surfaceAreaSqM: 1e8,
+    };
+    const coord = { lat: 44.35, lng: -73.5 - 2 / (111_320 * Math.cos((44.35 * Math.PI) / 180)) };
+    expect(subAreaForPutIn(coord, [big, nudged])).toBe('small');
+    expect(subAreaForPutIn(coord, [nudged, big])).toBe('small');
+  });
+
+  it('smallest wins when two bays are within tolerance', () => {
+    const coord = { lat: 44.35, lng: -73.5 - 5 / (111_320 * Math.cos((44.35 * Math.PI) / 180)) };
+    expect(subAreaForPutIn(coord, candidates)).toBe('small');
+  });
+
+  it('beyond the tolerance it is open-lake access', () => {
+    const metres = SUB_AREA_PUT_IN_TOLERANCE_M * 3;
+    const coord = { lat: 44.5, lng: -73.5 - metres / (111_320 * Math.cos((44.5 * Math.PI) / 180)) };
+    expect(subAreaForPutIn(coord, candidates)).toBeNull();
+  });
+
+  it('no bays, no tag', () => {
+    expect(subAreaForPutIn({ lat: 44.5, lng: -73.5 }, [])).toBeNull();
+  });
+});
+
+describe('resolveTrackSubAreas — the two-bay skate (N9 kickoff Q4)', () => {
+  const west = { ref: 'west', polygon: rect(-73.5, 44.2, -73.3, 44.6), surfaceAreaSqM: 5e8 };
+  const east = { ref: 'east', polygon: rect(-72.8, 44.2, -72.5, 44.6), surfaceAreaSqM: 6e8 };
+  const inner = { ref: 'inner', polygon: rect(-73.5, 44.5, -73.4, 44.6), surfaceAreaSqM: 5e7 };
+  const candidates = [west, east, inner];
+  const at = (lng: number, lat = 44.4) => ({ lat, lng });
+
+  it('primary is the bay with the most samples, and every bay touched is listed most-visited first', () => {
+    // Five samples in the east bay, three in the west, none in open water.
+    const samples = [
+      at(-73.45),
+      at(-73.4),
+      at(-73.35),
+      at(-72.7),
+      at(-72.65),
+      at(-72.6),
+      at(-72.55),
+      at(-72.75),
+    ];
+    const out = resolveTrackSubAreas(samples, candidates, PARENT);
+    expect(out.primary).toBe('east');
+    expect(out.all).toEqual(['east', 'west']);
+    expect(out.leftSubArea).toBe(false);
+  });
+
+  it('a sample on the parent outside every bay is the mouth-line evidence', () => {
+    const samples = [at(-73.45), at(-73.4), at(-73.1) /* open water, on the parent */];
+    const out = resolveTrackSubAreas(samples, candidates, PARENT);
+    expect(out.primary).toBe('west');
+    expect(out.all).toEqual(['west']);
+    expect(out.leftSubArea).toBe(true);
+  });
+
+  it('a sample off the parent (shoreline jitter on the way to the car) is not evidence', () => {
+    const samples = [at(-73.45), at(-73.4), at(-73.6) /* west of the lake entirely */];
+    expect(resolveTrackSubAreas(samples, candidates, PARENT).leftSubArea).toBe(false);
+  });
+
+  it('a bay one sample brushed past is not a member — the floor (SUB_AREA_MEMBERSHIP_MIN_SHARE)', () => {
+    // 19 samples in open water and one in the west bay: 5%, under the 10% floor. No bay, no
+    // primary — the skate was on the lake — but the mouth line was crossed on the way past.
+    const samples = [...Array.from({ length: 19 }, () => at(-73.1)), at(-73.45)];
+    const out = resolveTrackSubAreas(samples, candidates, PARENT);
+    expect(out).toEqual({ primary: null, all: [], leftSubArea: true });
+    // Two of twenty clears it.
+    const two = [...Array.from({ length: 18 }, () => at(-73.1)), at(-73.45), at(-73.4)];
+    expect(resolveTrackSubAreas(two, candidates, PARENT).all).toEqual(['west']);
+  });
+
+  it('a track that never entered a bay is not evidence about any mouth line', () => {
+    const out = resolveTrackSubAreas([at(-73.1), at(-73.0)], candidates, PARENT);
+    expect(out).toEqual({ primary: null, all: [], leftSubArea: false });
+  });
+
+  it('a sample in nested bays counts once, for the smaller (Decision 9)', () => {
+    const out = resolveTrackSubAreas([at(-73.45, 44.55), at(-73.45, 44.55)], candidates, PARENT);
+    expect(out.all).toEqual(['inner']);
+  });
+
+  it('the answer is independent of candidate order', () => {
+    const samples = [at(-73.45), at(-72.7), at(-72.65), at(-73.1)];
+    const a = resolveTrackSubAreas(samples, candidates, PARENT);
+    const b = resolveTrackSubAreas(samples, [...candidates].reverse(), PARENT);
+    expect(b).toEqual(a);
+  });
+});
+
+describe('membership fields — the stored convention (N9)', () => {
+  it('one member is the label alone; two or more fill the list', () => {
+    expect(subAreaMembershipFields(['a'])).toEqual({ subAreaId: 'a', subAreaIds: undefined });
+    expect(subAreaMembershipFields(['a', 'b'])).toEqual({ subAreaId: 'a', subAreaIds: ['a', 'b'] });
+    expect(subAreaMembershipFields([])).toEqual({ subAreaId: undefined, subAreaIds: undefined });
+  });
+
+  it('memberSubAreaIds reads either shape back, primary first', () => {
+    expect(memberSubAreaIds({})).toEqual([]);
+    expect(memberSubAreaIds({ subAreaId: 'a' })).toEqual(['a']);
+    expect(memberSubAreaIds({ subAreaId: 'a', subAreaIds: ['a', 'b'] })).toEqual(['a', 'b']);
+  });
+
+  it('round-trips', () => {
+    fc.assert(
+      fc.property(fc.uniqueArray(fc.string({ minLength: 1 }), { maxLength: 4 }), (ids) => {
+        const fields = subAreaMembershipFields(ids);
+        expect(memberSubAreaIds(fields)).toEqual(ids);
+      }),
     );
   });
 });

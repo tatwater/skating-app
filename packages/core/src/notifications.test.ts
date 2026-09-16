@@ -116,6 +116,40 @@ describe('describeNotification', () => {
     expect(d.target).toBeNull();
   });
 
+  it('a single report in a named bay says the bay, with the lake in parentheses (N9)', () => {
+    expect(
+      describeNotification({
+        ...base,
+        type: 'favorite_report',
+        target: ok,
+        body: { id: 'b1', name: 'Lake Champlain' },
+        count: 1,
+        subAreaName: 'Malletts Bay',
+      }).title,
+    ).toBe('New report in Malletts Bay (Lake Champlain)');
+    expect(
+      describeNotification({
+        ...base,
+        type: 'great_report_nearby',
+        target: ok,
+        body: { id: 'b1', name: 'Lake Champlain' },
+        count: 1,
+        subAreaName: 'Malletts Bay',
+      }).title,
+    ).toBe('Great ice reported in Malletts Bay (Lake Champlain)');
+    // A bucket of several may span bays, so it names the lake even when a bay is supplied.
+    expect(
+      describeNotification({
+        ...base,
+        type: 'favorite_report',
+        target: ok,
+        body: { id: 'b1', name: 'Lake Champlain' },
+        count: 2,
+        subAreaName: 'Malletts Bay',
+      }).title,
+    ).toBe('2 new reports on Lake Champlain');
+  });
+
   it('report buckets land on the lake, the digest summarises across lakes', () => {
     expect(
       describeNotification({

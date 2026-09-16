@@ -103,6 +103,7 @@ export * from './solar';
 export * from './spatialCells';
 export * from './strava';
 export * from './subArea';
+export * from './subAreaPlace';
 export * from './subAreaSpread';
 export * from './track';
 export * from './trackPrivacy';

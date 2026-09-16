@@ -7,6 +7,7 @@ import {
   spokenDirection,
   WIND_ARROW_REFERENCE_MPS,
   windExposureSummary,
+  windRoseCaption,
   windRoseChartModel,
 } from '@skating/core';
 import { useState } from 'react';
@@ -35,7 +36,14 @@ export interface WindExposureBody {
   fetchProfileM?: number[];
 }
 
-export function WindExposure({ body }: { body: WindExposureBody }) {
+export function WindExposure({
+  body,
+  scope = 'body',
+}: {
+  body: WindExposureBody;
+  /** `subArea` when `body` is a bay's composite — the parent's rose with the bay's own fetch (N9). */
+  scope?: 'body' | 'subArea';
+}) {
   const theme = useTheme();
   const [showTable, setShowTable] = useState(false);
 
@@ -148,6 +156,10 @@ export function WindExposure({ body }: { body: WindExposureBody }) {
         against a {Math.round(WIND_ARROW_REFERENCE_MPS * MPS_TO_MPH)} mph scale shared by every
         lake.
         {model.emphasizedSector !== null ? ' The solid arrow marks the most exposed shore.' : ''}
+      </Text>
+      {/* The over-claim, said on every body (N9 kickoff call 6) — the same sentence web shows. */}
+      <Text color="$foregroundMuted" fontSize={11}>
+        {windRoseCaption(scope)}
       </Text>
 
       {/* The values, reachable without reading a shape or a size. */}

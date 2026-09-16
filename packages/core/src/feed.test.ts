@@ -115,6 +115,32 @@ describe('formatLocationLine', () => {
       'Lake Champlain',
     );
   });
+
+  it('lists every member bay of a two-bay skate, and the list outranks the single stamp (N9)', () => {
+    expect(
+      formatLocationLine({
+        subAreaName: 'Malletts Bay',
+        subAreaNames: ['Malletts Bay', 'Shelburne Bay'],
+        bodyName: 'Lake Champlain',
+        place,
+      }),
+    ).toBe('Malletts Bay & Shelburne Bay · Lake Champlain · Colchester, VT');
+    // An empty or blank list falls back to the single stamp rather than to nothing.
+    expect(
+      formatLocationLine({
+        subAreaName: 'Malletts Bay',
+        subAreaNames: [' '],
+        bodyName: 'Lake Champlain',
+      }),
+    ).toBe('Malletts Bay · Lake Champlain');
+    // And the two-row split shares the same segment, so the heading is the whole list.
+    expect(
+      splitLocationLine({
+        subAreaNames: ['Malletts Bay', 'Shelburne Bay'],
+        bodyName: 'Lake Champlain',
+      }).primary,
+    ).toBe('Malletts Bay & Shelburne Bay');
+  });
 });
 
 describe('splitLocationLine', () => {

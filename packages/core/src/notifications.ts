@@ -255,6 +255,12 @@ export type NotificationView = { id: string; createdAt: number; readAt?: number 
       target: NotificationContentRef;
       body: NotificationBodyRef | null;
       count: number;
+      /**
+       * The bay the report was stamped with (N9), when the bucket holds exactly one report — so a
+       * favorite of Malletts Bay reads *"New report in Malletts Bay (Lake Champlain)"* rather than
+       * naming the whole lake. Absent on a bucket of several, which may span bays.
+       */
+      subAreaName?: string;
     }
   | {
       type: 'nearby_report_digest';
@@ -441,13 +447,19 @@ export function describeNotification(
     case 'great_report_nearby': {
       const n = view.count;
       const lake = view.body ? view.body.name : 'a lake';
+      // A single report in a named bay says the bay, with the lake in parentheses (N9) — the label
+      // carries specificity, and a bay fan asked about the bay.
+      const place =
+        n === 1 && view.subAreaName !== undefined
+          ? `in ${view.subAreaName} (${lake})`
+          : `on ${lake}`;
       const title =
         view.type === 'great_report_nearby'
           ? n === 1
-            ? `Great ice reported on ${lake}`
+            ? `Great ice reported ${place}`
             : `${n} great reports on ${lake}`
           : n === 1
-            ? `New report on ${lake}`
+            ? `New report ${place}`
             : `${n} new reports on ${lake}`;
       // A body-level target rather than the report: the report may have been superseded by the time
       // the tap lands, and the lake's report list is where "N new reports" makes sense anyway.

@@ -167,3 +167,107 @@ describe('waterBodyFavorites.isFavorite / listForUser', () => {
     expect(await t.query(api.waterBodyFavorites.listForUser, {})).toEqual([]);
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+// N9 (D175): a favorite can name a bay
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+
+/** A bay covering the west half of the fixture lake, drawn straight into the table. */
+async function seedBay(
+  t: ReturnType<typeof convexTest>,
+  waterBodyId: Awaited<ReturnType<typeof seedBody>>,
+  name = 'West Bay',
+) {
+  const author = await t.run(async (ctx) => {
+    const profile = await ctx.db.query('profiles').first();
+    if (!profile) throw new Error('seed a profile first');
+    return profile._id;
+  });
+  return t.run((ctx) =>
+    ctx.db.insert('waterBodySubAreas', {
+      waterBodyId,
+      name,
+      searchText: name,
+      polygon: {
+        type: 'Polygon' as const,
+        coordinates: [
+          [
+            [0, 0],
+            [0, 1],
+            [0.5, 1],
+            [0.5, 0],
+            [0, 0],
+          ],
+        ],
+      },
+      bbox: { minLat: 0, minLng: 0, maxLat: 1, maxLng: 0.5 },
+      centroid: { lat: 0.5, lng: 0.25 },
+      surfaceAreaSqM: 500_000,
+      displayScore: 1,
+      minVisibleZoom: 10,
+      createdByUserId: author,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    }),
+  );
+}
+
+describe('bay favorites (N9)', () => {
+  test('the lake and a bay of it are separate favorites, each with its own heart', async () => {
+    const t = convexTestWithGeo();
+    const asUser = await seedUser(t, 'clerk_a');
+    const id = await seedBody(t, 'osm/1', 'Lake Champlain');
+    const bay = await seedBay(t, id, 'Malletts Bay');
+
+    expect(
+      await asUser.mutation(api.waterBodyFavorites.toggle, { waterBodyId: id, subAreaId: bay }),
+    ).toEqual({ favorited: true });
+    expect(
+      await asUser.query(api.waterBodyFavorites.isFavorite, { waterBodyId: id, subAreaId: bay }),
+    ).toBe(true);
+    // The lake's own heart is untouched by the bay's.
+    expect(await asUser.query(api.waterBodyFavorites.isFavorite, { waterBodyId: id })).toBe(false);
+
+    expect(await asUser.mutation(api.waterBodyFavorites.toggle, { waterBodyId: id })).toEqual({
+      favorited: true,
+    });
+    const rows = await t.run((ctx) => ctx.db.query('waterBodyFavorites').collect());
+    expect(rows.map((r) => r.subAreaId).sort()).toEqual([bay, undefined]);
+
+    // The list names the bay beside its lake; a second toggle on the bay removes only that row.
+    const list = await asUser.query(api.waterBodyFavorites.listForUser, {});
+    expect(list.map((f) => [f.name, f.subAreaName])).toEqual([
+      ['Lake Champlain', undefined],
+      ['Lake Champlain', 'Malletts Bay'],
+    ]);
+    expect(
+      await asUser.mutation(api.waterBodyFavorites.toggle, { waterBodyId: id, subAreaId: bay }),
+    ).toEqual({ favorited: false });
+    expect(await asUser.query(api.waterBodyFavorites.isFavorite, { waterBodyId: id })).toBe(true);
+  });
+
+  test("refuses a bay that is not this lake's, and one that has been delisted", async () => {
+    const t = convexTestWithGeo();
+    const asUser = await seedUser(t, 'clerk_a');
+    const morey = await seedBody(t, 'osm/1', 'Lake Morey');
+    const champlain = await seedBody(t, 'osm/2', 'Lake Champlain');
+    const bay = await seedBay(t, champlain);
+    await expect(
+      asUser.mutation(api.waterBodyFavorites.toggle, { waterBodyId: morey, subAreaId: bay }),
+    ).rejects.toThrow(/not on this water body/i);
+    await t.run((ctx) => ctx.db.patch(bay, { removedAt: Date.now() }));
+    await expect(
+      asUser.mutation(api.waterBodyFavorites.toggle, { waterBodyId: champlain, subAreaId: bay }),
+    ).rejects.toThrow(/not on this water body/i);
+  });
+
+  test('a favorite of a bay that later delists is skipped from the list, not surfaced', async () => {
+    const t = convexTestWithGeo();
+    const asUser = await seedUser(t, 'clerk_a');
+    const id = await seedBody(t);
+    const bay = await seedBay(t, id);
+    await asUser.mutation(api.waterBodyFavorites.toggle, { waterBodyId: id, subAreaId: bay });
+    await t.run((ctx) => ctx.db.patch(bay, { removedAt: Date.now() }));
+    expect(await asUser.query(api.waterBodyFavorites.listForUser, {})).toEqual([]);
+  });
+});

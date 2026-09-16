@@ -5523,3 +5523,47 @@ replays on reconnect; nothing arrives offline, and the offline case that matters
 hazard alert — was already client-side (Phase 9.5, D171).
 
 **Related:** D16, D38, D54, D167, D169, D171, [`phase-N8`](./phase-N8-notification-pipeline.md).
+
+## D175 — A report belongs to the finest place that contains it, and appears under every place that contains that one — once (N9)
+
+**2026-09-16, founder calls at the N9 kickoff; built 2026-09-16 (N9 PR 1).** The rule that touches
+everything a bay does, written down before the schema changed rather than discovered per consumer —
+the N7 audit's recurring lesson, applied one phase early.
+
+> **A report belongs to the finest-grained place that contains it, and appears under every place
+> that contains that one — once.** Membership carries reach; the label carries specificity. Nothing
+> is ever counted twice: one feed row, one notification per person per event, one corroboration, one
+> prominence contribution — however many places contain the report.
+
+**Applied.** Reports stay on the parent: `waterBodyId` never changes, so prominence, corroboration,
+conditions and the body card all roll up without a line of new code. `subAreaId` is the **primary**
+bay — the label, the weather strip's point, the feed card's heading. `reportSubAreas` rows are the
+**membership** — one per (report, bay), because Convex cannot index an array and the bay feed and the
+bay bounty gate must both find a spanning report under its *second* bay. The join mirrors
+`moderationStatus` and `skateEndTime` so both reads stay in-index, and every writer of those two
+fields goes through `lib/reportSubAreas.ts`. A bounty on any member bay is satisfied; a bounty on the
+lake is satisfied by any report on the lake, including one in a bay — the asymmetry is correct.
+Notifications de-dup on the recipient set before enqueue, so favoriting Champlain *and* Malletts Bay
+yields one row, not "2 new reports" for one.
+
+**The two-bay skate (founder, Q4): option (a), list both.** A skater who spends an hour in each of
+two bays was in both. Auto-splitting into two reports manufactures two skates from one — two feed
+rows, two weather strips, two corroborations, exactly the double-counting the rule forbids — and
+promoting to the parent throws away the finest information we hold to dodge a hard question. So an
+activity-sourced report's membership is its **track's** list, majority-of-samples first, the same
+rule `resolveTrackToBodies` applies one level up; a pin-only report has one. This also fixes a bug
+that predates the phase: an activity report's `point` is the GPS *start* (D44), so it was stamped
+with the bay you launched from, whatever you skated. `gpsActivities.leftSubArea` — samples on the
+parent outside every bay — is the mouth-line evidence, counted on the admin card and acted on by
+nobody: a boundary that moves on its own is one nobody can reason about.
+
+**What a bay stores, and why each answer differs.** Its own *geometry* is the only new information
+a bay brings. What follows from geometry is derived (fetch off its own outline, the put-ins on its
+shore, the tracks through it); what does not is inherited (elevation — the same water surface; the
+wind rose — because our data has *no finer answer*, not because the wind is the same, and the caption
+says so on every body, since the corpus median is a tenth of one WTK cell); and the one thing that is
+neither, a favorite, is stored. **Depth is derived and stored but never inherited**: Malletts Bay is
+not as deep as the broad lake, and a bay page reading the lake's 122 m is worse than one reading
+nothing (D3). Its inputs live on disk, so a redraw *clears* it and the admin card asks for the re-run.
+
+**Related:** D4, D9, D44, D60, D93, [`phase-N9`](./phase-N9-subareas-as-places.md).

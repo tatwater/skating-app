@@ -17,7 +17,7 @@ import { feature, featureCollection } from '@turf/helpers';
 import intersect from '@turf/intersect';
 import truncate from '@turf/truncate';
 import type { MultiPolygon, Polygon } from 'geojson';
-import { type LatLng, pointInPolygon } from './geometry';
+import { distanceToPolygonMeters, type LatLng, pointInPolygon } from './geometry';
 
 /**
  * How much of a drawn shape must survive the clip for the write to be accepted (Decision 10).
@@ -194,4 +194,174 @@ export function smallestContainingSubArea<T>(
       best = { ref: c.ref, area: c.surfaceAreaSqM };
   }
   return best?.ref ?? null;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+// N9 (D175): a bay is a place — the rules that tag what sits in one
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+
+/**
+ * How far off a bay's outline a put-in may sit and still be *its* launch (N9 kickoff call 3).
+ *
+ * Put-ins are snapped **to the shoreline**, and a bay's clipped outline *is* that shoreline — so
+ * point-in-polygon on a launch is a coin flip decided by which side of a shared edge the float
+ * noise landed on. Distance is the honest test: within this of the outline, the launch is on the
+ * bay's shore. 30 m is a snap tolerance, not a walking radius — wide enough to absorb the
+ * re-noding a clip introduces, narrow enough that a launch on the far side of a headland stays
+ * with the open lake.
+ */
+export const SUB_AREA_PUT_IN_TOLERANCE_M = 30;
+
+/**
+ * Two bays' outlines are "the same shore" when a launch's distance to each differs by less than
+ * this. Nested bays trace the parent's shoreline through their own re-noded clips, so a launch a
+ * metre off the shore they share measures ~1e-10 m apart from each — an exact-equality tie would be
+ * decided by float rounding, and could flip on the next re-import. A millimetre is far below any
+ * distance the geometry can mean and far above the noise.
+ */
+const SHARED_SHORE_EPSILON_M = 0.001;
+
+/**
+ * The bay a put-in belongs to (N9): the nearest bay within {@link SUB_AREA_PUT_IN_TOLERANCE_M},
+ * **smallest wins** on a tie — `nearestBodyForPoint`'s shape, because a launch inside both
+ * "Inner" and "Outer" Malletts belongs to the inner one for the same reason a report does
+ * (Decision 9) — with the tie judged to {@link SHARED_SHORE_EPSILON_M} rather than to the bit.
+ * `null` when no bay's shore is within tolerance: open-lake access.
+ */
+export function subAreaForPutIn<T>(
+  coord: LatLng,
+  candidates: readonly SubAreaCandidate<T>[],
+): T | null {
+  let best: { ref: T; distance: number; area: number } | null = null;
+  for (const c of candidates) {
+    const distance = distanceToPolygonMeters(coord, c.polygon);
+    if (distance > SUB_AREA_PUT_IN_TOLERANCE_M) continue;
+    if (
+      best === null ||
+      distance < best.distance - SHARED_SHORE_EPSILON_M ||
+      (Math.abs(distance - best.distance) <= SHARED_SHORE_EPSILON_M && c.surfaceAreaSqM < best.area)
+    ) {
+      best = { ref: c.ref, distance, area: c.surfaceAreaSqM };
+    }
+  }
+  return best?.ref ?? null;
+}
+
+/**
+ * The share of a track's samples a bay needs before the track is a **member** of it (N9).
+ *
+ * Membership carries reach (D175): a member bay's favoriters are told, its bounty is satisfied, its
+ * feed lists the report. A skate that crossed a bay's mouth for one sample of sixty-four — ninety
+ * seconds of an hour — was not *in* that bay in any sense a bounty requester meant, and before N9
+ * such a skate carried no bay at all (its pin sat in open water). So a bay counts only past this
+ * floor; below it, the samples are open water for every purpose except the mouth-line flag. At
+ * `SUB_AREA_TRACK_SAMPLE_POINTS` = 64 this is ~6 samples, or about six minutes of an hour's skate.
+ *
+ * Taken **against all samples**, open water included, so a track that is mostly open water can end
+ * in no bay: the primary is a plurality among *members*, and the floor is what keeps a plurality of
+ * three samples from labelling a lake-wide skate "Malletts Bay".
+ */
+export const SUB_AREA_MEMBERSHIP_MIN_SHARE = 0.1;
+
+/** What a recorded track says about the bays it crossed — see {@link resolveTrackSubAreas}. */
+export interface TrackSubAreas<T> {
+  /** The member bay holding the most sampled points, or `null` when no bay reached the floor. */
+  primary: T | null;
+  /** Every bay past {@link SUB_AREA_MEMBERSHIP_MIN_SHARE}, most-visited first. `[]` when none. */
+  all: T[];
+  /**
+   * Some sample fell on the **parent, outside every bay** — the mouth-line evidence (N9 kickoff Q4).
+   * Judged only against samples that are actually on the parent when its polygon is supplied, so
+   * shoreline GPS jitter on the way to the car does not read as a skater leaving the bay.
+   */
+  leftSubArea: boolean;
+}
+
+/**
+ * Resolve a track's sampled points to the bays it was skated in (N9 kickoff Q4, "the two-bay
+ * skate").
+ *
+ * **Majority of samples, not the start point.** A report derived from an activity carries the GPS
+ * *start* as its `point` (D44), which is the put-in — so before N9 an activity report was stamped
+ * with the bay you launched from, whatever you skated. The primary is instead the bay with the most
+ * sampled points, the same rule `resolveTrackToBodies` applies one level up for the body; and the
+ * list is *every* bay touched, because a skater who spent an hour in each of two bays was in both,
+ * and the rule that governs everything downstream (D175) says a report appears under every place
+ * that contains it — once.
+ *
+ * A sample in two overlapping bays counts for the **smallest** (Decision 9), so nested "Inner" /
+ * "Outer" pairs do not double-count one point. `leftSubArea` is the one output nothing acts on: it
+ * is stored so the admin card can count skates that ran past a bay's drawn mouth, which is the
+ * evidence a moderator adjusts the line on.
+ */
+export function resolveTrackSubAreas<T>(
+  samples: readonly LatLng[],
+  candidates: readonly SubAreaCandidate<T>[],
+  parentPolygon?: Polygon | MultiPolygon,
+): TrackSubAreas<T> {
+  const hits = new Map<T, number>();
+  let leftSubArea = false;
+  for (const sample of samples) {
+    const bay = smallestContainingSubArea(sample, candidates);
+    if (bay !== null) {
+      hits.set(bay, (hits.get(bay) ?? 0) + 1);
+      continue;
+    }
+    if (parentPolygon === undefined || pointInPolygon(sample, parentPolygon)) leftSubArea = true;
+  }
+  // Only meaningful when there is a bay to have left: open water on a lake with no bays, or a track
+  // that never entered one, is not evidence about any mouth line.
+  if (hits.size === 0) return { primary: null, all: [], leftSubArea: false };
+  const floor = samples.length * SUB_AREA_MEMBERSHIP_MIN_SHARE;
+  const ranked = [...hits.entries()]
+    .filter(([, count]) => count >= floor)
+    .sort((a, b) => b[1] - a[1]);
+  return {
+    primary: ranked[0]?.[0] ?? null,
+    all: ranked.map(([bay]) => bay),
+    leftSubArea,
+  };
+}
+
+/**
+ * The bays a stamped row is a member of, primary first — the one way to read the pair of fields
+ * that carry membership (N9). `subAreaIds` is stored only when there is more than one (the
+ * `waterBodyIds` convention), so most rows answer through `subAreaId` alone; a row with neither is
+ * in no bay.
+ */
+export function memberSubAreaIds<T>(row: { subAreaId?: T; subAreaIds?: readonly T[] }): T[] {
+  if (row.subAreaIds !== undefined && row.subAreaIds.length > 0) return [...row.subAreaIds];
+  return row.subAreaId === undefined ? [] : [row.subAreaId];
+}
+
+/**
+ * The membership fields to store for a resolved list, in the stored convention: the primary in
+ * `subAreaId`, the whole list in `subAreaIds` **only when it has more than one entry**. A
+ * single-element array on every ordinary row would be noise, and a reader that forgot the array
+ * would silently see one bay less on the rows that have two — so the convention is written down
+ * once, here, and both writers use it.
+ */
+export function subAreaMembershipFields<T>(all: readonly T[]): {
+  subAreaId: T | undefined;
+  subAreaIds: T[] | undefined;
+} {
+  return {
+    subAreaId: all[0],
+    subAreaIds: all.length > 1 ? [...all] : undefined,
+  };
+}
+
+/**
+ * Does this report count as favorited for a viewer (N9)? A lake favorite takes every report on the
+ * lake; a bay favorite takes only reports whose **membership** includes the bay — the feed boost and
+ * badge follow the report, not the lake, so favoriting Malletts Bay does not lift Burlington Bay's
+ * reports. Both shapes of favorite are tested, because a person very plausibly holds both.
+ */
+export function isFavoriteReport(
+  favorites: { bodyIds: ReadonlySet<string>; subAreaIds: ReadonlySet<string> },
+  report: { waterBodyId: string; subAreaId?: string; subAreaIds?: readonly string[] },
+): boolean {
+  if (favorites.bodyIds.has(report.waterBodyId)) return true;
+  if (favorites.subAreaIds.size === 0) return false;
+  return memberSubAreaIds(report).some((id) => favorites.subAreaIds.has(id));
 }

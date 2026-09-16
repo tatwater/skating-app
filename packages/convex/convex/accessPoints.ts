@@ -61,6 +61,7 @@ import { requireContributor, requireContributorRole } from './lib/auth';
 import { ACCESS_ALERT_TARGETS, ACCESS_AMENITIES, APPROACH_KINDS } from './lib/enums';
 import { assertOwnedPhotos, resolvePhotoUrls } from './lib/photoAccess';
 import { latLng, literals } from './lib/validators';
+import { resolveSubAreaForPutIn } from './subAreas';
 import { listedBodiesNearCoord } from './waterBodies';
 
 /**
@@ -411,6 +412,9 @@ export const matchAndImportPutIns = internalMutation({
         approachAscentM: candidate.approachAscentM,
         approachRouted: candidate.approachRouted,
         approachPath: candidate.approachPath,
+        // The bay this launch serves (N9), by distance to the outline. Written on insert and on
+        // the ordinary update alike, so a re-import after a bay was drawn tags the launch too.
+        subAreaId: await resolveSubAreaForPutIn(ctx, waterBodyId, candidate.point),
       };
 
       if (!existing) {
@@ -703,12 +707,29 @@ export const listPhotos = query({
  * set still use that query — this one answers "where do I park and how far is the walk".
  */
 export const accessForBody = query({
-  args: { waterBodyId: v.id('waterBodies') },
-  handler: async (ctx, { waterBodyId }) => {
+  args: {
+    waterBodyId: v.id('waterBodies'),
+    /**
+     * Narrow to one named bay (N9 kickoff call 3): the launches tagged with it, the lots those
+     * launches serve, and any other lot within `PARKING_INFER_RADIUS_M` of the bay's outline. Parking
+     * carries no stored bay tag — a lot belongs to a bay through the put-in it serves, else by
+     * proximity, derived here from the parent's already-bounded set (Champlain's 160 lots is the
+     * worst case, and it is one polygon-distance each).
+     */
+    subAreaId: v.optional(v.id('waterBodySubAreas')),
+  },
+  handler: async (ctx, { waterBodyId, subAreaId }) => {
     const body = await ctx.db.get(waterBodyId);
     // `alerts` included even here, so the shape is total: a caller that reads `access.alerts` on the
     // unknown-body branch shouldn't have to know it is sometimes absent.
     if (!body) return { putIns: [], parking: [], blockedIds: [], alerts: [] };
+    const bay = subAreaId === undefined ? null : await ctx.db.get(subAreaId);
+    // A stale or foreign bay id answers for the lake rather than for nothing — the same posture as
+    // `getWeatherDaysForBody`: the clients only ever hand over ids from a live `listForBody` row.
+    const bayPolygon =
+      bay && bay.waterBodyId === waterBodyId && bay.removedAt === undefined
+        ? (bay.polygon as unknown as Polygon | MultiPolygon)
+        : null;
 
     // **Scanned wide, answered narrow.** Suppression needs every `hidden` row on the body — one that
     // sorted past a render-sized page would leave the drawer naming a launch the moderator removed —
@@ -718,7 +739,9 @@ export const accessForBody = query({
       .query('putIns')
       .withIndex('by_water_body', (q) => q.eq('waterBodyId', waterBodyId))
       .take(MAX_PUT_IN_ROWS_SCANNED);
-    const live = visibleAfterHides(rows).slice(0, MAX_ACCESS_ROWS_PER_BODY);
+    const live = visibleAfterHides(rows)
+      .filter((r) => bayPolygon === null || r.subAreaId === bay?._id)
+      .slice(0, MAX_ACCESS_ROWS_PER_BODY);
     // ── The lots our put-ins actually reference, resolved BY ID before anything else ──────────────
     //
     // `loadParkingForBody` is capped and reads in index order, which is fine for listing and wrong for
@@ -745,10 +768,27 @@ export const accessForBody = query({
       });
     }
     for (const lot of await loadParkingForBody(ctx, waterBodyId)) {
-      if (!referenced.has(lot.id)) referenced.set(lot.id, lot);
+      if (referenced.has(lot.id)) continue;
+      // In the bay view, a lot no launch of the bay references still belongs if it is within the
+      // inference radius of the bay's own outline — the walk from it lands on this shore.
+      if (
+        bayPolygon !== null &&
+        distanceToPolygonMeters(lot.coord, bayPolygon) > PARKING_INFER_RADIUS_M
+      ) {
+        continue;
+      }
+      referenced.set(lot.id, lot);
     }
     const parking = [...referenced.values()];
-    const alerts = await loadLiveAlertsForBody(ctx, waterBodyId);
+    // Alerts on launches and lots this answer does not contain are noise in the bay view; the lake
+    // view keeps every one.
+    const inAnswer = new Set<string>([...live.map((r) => r._id), ...referenced.keys()]);
+    const alerts = (await loadLiveAlertsForBody(ctx, waterBodyId)).filter(
+      (a) =>
+        bayPolygon === null ||
+        (a.putInId !== undefined && inAnswer.has(a.putInId)) ||
+        (a.parkingAreaId !== undefined && inAnswer.has(a.parkingAreaId)),
+    );
 
     const interior = (body.interiorPoint ?? body.centroid) as LatLng | undefined;
     const putIns = live.map((r) => ({

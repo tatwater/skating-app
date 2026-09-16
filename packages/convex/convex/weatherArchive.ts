@@ -2456,3 +2456,134 @@ export const subAreaFilterCells = internalQuery({
     return [...byKey.values()];
   },
 });
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+// Workstream G (N9): every bay's weather, every day of the season
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Bay rows read per batch of the daily bay append. ~128 live bays on dev, so this is one or two
+ * batches; sized like `CELL_BATCH_SIZE` because each row is one Open-Meteo call.
+ */
+export const BAY_BATCH_SIZE = 40;
+
+/**
+ * One page of live bays with the `browse` cell each resolves to (N9 / Workstream G). Paged on the
+ * `by_bay` membership index rather than `waterBodySubAreas` directly, because that index *is* the
+ * registry's list of live bays — a delisted bay has no row, and a bay on a delisted lake has none.
+ * The bay and its parent are then read to key the cell the way the drawer keys it
+ * (`subAreaWeatherCell`), so the cron and the drawer can never fetch two cells for one bay.
+ *
+ * **Deduped across pages, not just within one** (`seenKeys`). Bays that share a browse cell share
+ * its filter cell too — the grids nest — and the index sorts on the filter key, so sharers sit in
+ * one run that a page boundary can split; without the carry, the run's cell was fetched again on the
+ * next page, every day. The set is the keys fetched so far, bounded by the live bay count.
+ */
+export const pageBayBrowseCells = internalQuery({
+  args: { cursor: v.optional(v.string()), numItems: v.number(), seenKeys: v.array(v.string()) },
+  handler: async (
+    ctx,
+    { cursor, numItems, seenKeys },
+  ): Promise<{ cells: WeatherCell[]; continueCursor: string; isDone: boolean }> => {
+    const page = await ctx.db
+      .query('bodyWeatherCells')
+      .withIndex('by_bay', (q) => q.eq('isBay', true))
+      .paginate({ cursor: cursor ?? null, numItems });
+    const seen = new Set(seenKeys);
+    const byKey = new Map<string, WeatherCell>();
+    for (const row of page.page) {
+      if (row.subAreaId === undefined) continue;
+      const bay = await ctx.db.get(row.subAreaId);
+      if (!bay || bay.removedAt !== undefined) continue;
+      const parent = await ctx.db.get(bay.waterBodyId);
+      if (!parent || !isListed(parent)) continue;
+      const cell = subAreaWeatherCell(bay, parent, 'browse');
+      if (seen.has(cell.key)) continue;
+      byKey.set(cell.key, cell);
+    }
+    return { cells: [...byKey.values()], continueCursor: page.continueCursor, isDone: page.isDone };
+  },
+});
+
+/**
+ * Append `pastDays` of Tier-A weather — days **and** hours, the drawer's own path — to every live
+ * bay's cell, in batches that reschedule themselves (N9 / Workstream G).
+ *
+ * **Coverage was the gap, never retention.** `weatherDays` is kept for ever (D153), but a bay's
+ * browse cell was only ever fetched lazily, on the drawer-open of somebody who picked that bay — so
+ * the season's record existed for the bays people looked at and not for the rest, which is
+ * precisely the selection bias a post-season station study cannot work around
+ * (`next-gen-weather-stations.md`, the consumer this exists for; nothing renders it in N9). ~128
+ * calls a day in season, against a budget with two million spare.
+ *
+ * Season-gated by its caller like the filter tier; this function does what it is told, so an
+ * operator can run it by hand out of season.
+ */
+export const refreshBayDays = internalAction({
+  args: {
+    cursor: v.optional(v.string()),
+    pastDays: v.optional(v.number()),
+    /** The cells earlier batches already fetched — carried so a shared cell is fetched once. */
+    seenKeys: v.optional(v.array(v.string())),
+  },
+  handler: async (
+    ctx,
+    { cursor, pastDays, seenKeys },
+  ): Promise<{ done: boolean; cells: number }> => {
+    const seen = seenKeys ?? [];
+    const page = await ctx.runQuery(internal.weatherArchive.pageBayBrowseCells, {
+      ...(cursor === undefined ? {} : { cursor }),
+      numItems: BAY_BATCH_SIZE,
+      seenKeys: seen,
+    });
+    const days = pastDays ?? APPEND_PAST_DAYS;
+    for (const cell of page.cells) {
+      // Per-cell isolation, as in `refreshTierDays`: one transport failure must not abandon the
+      // batch, and the gap sweep comes back for whatever this missed.
+      try {
+        await ingestCellDays(ctx, 'browse', cell, days, { hourlyDays: days });
+      } catch (err) {
+        console.warn(`weatherArchive: bay cell ${cell.key} failed`, err);
+      }
+    }
+    if (!page.isDone) {
+      await ctx.scheduler.runAfter(0, internal.weatherArchive.refreshBayDays, {
+        cursor: page.continueCursor,
+        ...(pastDays === undefined ? {} : { pastDays }),
+        // A failed cell counts as seen: the gap sweep is its retry, not the next page.
+        seenKeys: [...seen, ...page.cells.map((cell) => cell.key)],
+      });
+      return { done: false, cells: page.cells.length };
+    }
+    return { done: true, cells: page.cells.length };
+  },
+});
+
+/**
+ * The daily bay tick (N9 / Workstream G): gate on the same season-open signal as Tier B (D161),
+ * then start the batched bay append. Cold-start reaches back a fortnight, judged by whether the
+ * *browse* tier holds yesterday at all — the same test `maybeRefreshFilterTier` makes on its tier.
+ */
+export const maybeRefreshBayTier = internalAction({
+  args: {},
+  handler: async (
+    ctx,
+  ): Promise<{ started: boolean; season: string; pastDays?: number; reason?: string }> => {
+    const now = Date.now();
+    const gate = await ctx.runQuery(internal.weatherArchive.isSweepSeasonOpen, { nowMs: now });
+    if (!gate.open) {
+      return {
+        started: false,
+        season: gate.season,
+        reason: gate.closesOn === null ? 'season not open' : `season closed ${gate.closesOn}`,
+      };
+    }
+    const cold = !(await ctx.runQuery(internal.weatherArchive.tierHasDay, {
+      tier: 'browse',
+      dayMs: todayKey(now) - DAY_MS,
+    }));
+    const pastDays = cold ? SEASON_OPEN_PAST_DAYS : APPEND_PAST_DAYS;
+    await ctx.runAction(internal.weatherArchive.refreshBayDays, { pastDays });
+    return { started: true, season: gate.season, pastDays };
+  },
+});

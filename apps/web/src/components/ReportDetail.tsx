@@ -41,6 +41,8 @@ export interface ReportViewData {
   bodyName?: string;
   /** The named sub-area the report sits in (N2/D60) — composed ahead of the lake, never beside it. */
   subAreaName?: string;
+  /** Every member bay of a two-bay skate (N9) — the list form, so this and the feed card agree. */
+  subAreaNames?: string[];
   authorName?: string;
   authorImageUrl?: string;
   /** The author's cosmetic trust class (D50) — the `TrustAvatar` ring color; `null`/absent ⇒ no ring. */
@@ -98,6 +100,7 @@ export function ReportView({
           {data.bodyName
             ? formatLocationLine({
                 ...(data.subAreaName !== undefined ? { subAreaName: data.subAreaName } : {}),
+                ...(data.subAreaNames !== undefined ? { subAreaNames: data.subAreaNames } : {}),
                 bodyName: data.bodyName,
               })
             : 'Report'}
@@ -351,6 +354,7 @@ export function ReportDetail({ reportId }: { reportId: string }) {
           waterBodyId: report.waterBodyId,
           bodyName: body?.available ? body.body.name : undefined,
           subAreaName: report.subAreaName,
+          subAreaNames: report.subAreaNames,
           authorName: authors?.[report.authorId]?.displayName,
           authorImageUrl: authors?.[report.authorId]?.profileImageUrl,
           authorTrustClass: authors?.[report.authorId]?.trustClass,

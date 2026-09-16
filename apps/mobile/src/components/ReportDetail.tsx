@@ -130,6 +130,7 @@ export function ReportDetail({ reportId }: { reportId: string }) {
           {bodyName
             ? formatLocationLine({
                 ...(report.subAreaName !== undefined ? { subAreaName: report.subAreaName } : {}),
+                ...(report.subAreaNames !== undefined ? { subAreaNames: report.subAreaNames } : {}),
                 bodyName,
               })
             : 'Report'}
