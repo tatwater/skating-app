@@ -89,7 +89,7 @@ async function main(): Promise<void> {
       {
         name: 'bays · load',
         detail:
-          'subAreas:setDerivedDepth, matched on subAreaKey, refused when the outline moved after the snapshot',
+          'subAreas:setDerivedDepth, matched on subAreaKey, refused when the outline is no longer the one exported',
       },
     ],
   });
@@ -97,7 +97,7 @@ async function main(): Promise<void> {
 
   try {
     log('exporting live bays…');
-    const snapshotAt = Date.now();
+    const exportedAt = Date.now();
     const bays = convexRun<ExportedBay[]>('subAreas:exportForDepths', {});
     log(`${bays.length} live bays on ${new Set(bays.map((b) => b.waterBodyId)).size} parents`);
 
@@ -110,12 +110,12 @@ async function main(): Promise<void> {
         `sit on a parent the archive covers`,
     );
 
-    const { depths, skipped, skippedKeys, uncovered } = bayDepths(bays, byParent);
+    const { depths, skipped, skippedPairs, uncovered } = bayDepths(bays, byParent);
     mkdirSync(dirname(outPath), { recursive: true });
     writeFileSync(
       outPath,
       depths.length > 0
-        ? `${depths.map((d) => JSON.stringify({ ...d, snapshotAt })).join('\n')}\n`
+        ? `${depths.map((d) => JSON.stringify({ ...d, exportedAt })).join('\n')}\n`
         : '',
     );
     const floors = depths.filter((d) => d.understatesMax).length;
@@ -126,6 +126,10 @@ async function main(): Promise<void> {
     for (const [reason, n] of Object.entries(skipped)) if (n > 0) log(`  skipped ${n} · ${reason}`);
     log(`  ${uncovered} bays on a parent no archive covers — no depth, correctly`);
 
+    // Written and refused are recorded on the run row **after every batch**, not once at the end:
+    // a batch is a committed mutation, so if a later one fails the earlier ones stand, and a failed
+    // row that said nothing about them would hide exactly how much landed and how much to repair.
+    logger.count('withMaxDepth', depths.length);
     let written = 0;
     const refused: { subAreaKey: string; reason: string }[] = [];
     for (let i = 0; i < depths.length; i += LOAD_BATCH) {
@@ -134,29 +138,29 @@ async function main(): Promise<void> {
         written: number;
         refused: { subAreaKey: string; reason: string }[];
       }>('subAreas:setDerivedDepth', {
-        snapshotAt,
         rows: batch.map((d) => ({
           subAreaKey: d.subAreaKey,
           maxDepthM: d.maxDepthM,
           understatesMax: d.understatesMax,
+          ...(d.geometryUpdatedAt !== undefined ? { geometryUpdatedAt: d.geometryUpdatedAt } : {}),
         })),
         ...(dry ? { dryRun: true } : {}),
       });
       written += result.written;
       refused.push(...result.refused);
+      for (const r of result.refused)
+        logger.fail({ stage: 'bays · load', key: r.subAreaKey, reason: r.reason });
+      logger.count('written', written);
+      logger.count('refused', refused.length);
+      logger.flush();
     }
     log(`${dry ? 'would write' : 'wrote'} ${written} · refused ${refused.length}`);
-    for (const r of refused)
-      logger.fail({ stage: 'bays · load', key: r.subAreaKey, reason: r.reason });
 
     logger.count('bays', bays.length);
     logger.count('bays.covered', covered.length);
     logger.count('bays.uncovered', uncovered);
-    logger.count('withMaxDepth', depths.length);
     logger.count('fromSoundings', depths.length - floors);
     logger.count('fromContours', floors);
-    logger.count('written', written);
-    logger.count('refused', refused.length);
     for (const [reason, n] of Object.entries(skipped))
       if (n > 0) logger.count(`skipped.${reason}`, n);
     logger.coverage({
@@ -172,9 +176,9 @@ async function main(): Promise<void> {
     });
     logger.succeed([
       `${written} bay depths ${dry ? 'would be ' : ''}written from ${depths.length} derived`,
-      ...(skippedKeys.length > 0
+      ...(skippedPairs.length > 0
         ? [
-            `skipped: ${skippedKeys
+            `skipped: ${skippedPairs
               .slice(0, SKIP_SAMPLE_CAP)
               .map((s) => `${s.bay} ← ${s.lake} (${s.reason})`)
               .join(', ')}`,

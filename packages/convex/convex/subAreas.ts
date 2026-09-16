@@ -23,6 +23,7 @@ import {
   displayScore,
   fetchProfileMeters,
   type LatLng,
+  MAX_PLAUSIBLE_DEPTH_M,
   memberSubAreaIds,
   minVisibleZoom,
   polygonBBox,
@@ -1927,26 +1928,36 @@ export const exportForDepths = internalQuery({
  * Load derived bay depths (N9 PR 2) — the only writer of `waterBodySubAreas.maxDepthM`.
  *
  * Each row is matched on **our own key**, not the Convex id: the id is what the export read a
- * moment ago, the key is what survives everything. Two refusals, both named on the result rather
- * than thrown, so a batch of a hundred lands its ninety-nine: a bay whose outline moved *after* the
- * export's snapshot (`geometryUpdatedAt > snapshotAt`) — the depth would describe a shape that no
- * longer exists, which is exactly what `rederiveSubArea` clears to avoid — and a bay the key no
- * longer finds. `dryRun` reports without writing.
+ * moment ago, the key is what survives everything. Three refusals, all named on the result rather
+ * than thrown, so a batch of a hundred lands its ninety-nine:
+ *
+ * - **`geometry_moved`** — the bay's `geometryUpdatedAt` is not the one the export saw. A row
+ *   echoes back the stamp it was derived against and the loader demands equality, so a redraw
+ *   between export and load is refused *whatever the clocks say*. The first cut compared the
+ *   server's stamp against a snapshot time taken on the CLI host with a strict `>`, and Greptile
+ *   was right that a host clock running ahead — or a redraw landing in the same millisecond — would
+ *   have let a depth for the old outline through. A version check has no clock in it.
+ * - **`implausible`** — non-positive, non-finite, or past `MAX_PLAUSIBLE_DEPTH_M`, the same cap the
+ *   water-body depth mutations enforce at their own persistence boundary. The export applies the
+ *   tighter agency backstop first; this is the floor under any caller.
+ * - **`not_found`** — the key finds nothing (delisted keys still resolve; a missing one is a bad file).
+ *
+ * `dryRun` reports without writing.
  */
 export const setDerivedDepth = internalMutation({
   args: {
-    /** When the export read the bays. A row older than the bay's outline is refused. */
-    snapshotAt: v.number(),
     rows: v.array(
       v.object({
         subAreaKey: v.string(),
         maxDepthM: v.number(),
         understatesMax: v.boolean(),
+        /** The bay's `geometryUpdatedAt` as the export saw it — absent when the outline never moved. */
+        geometryUpdatedAt: v.optional(v.number()),
       }),
     ),
     dryRun: v.optional(v.boolean()),
   },
-  handler: async (ctx, { snapshotAt, rows, dryRun }) => {
+  handler: async (ctx, { rows, dryRun }) => {
     const now = Date.now();
     let written = 0;
     const refused: {
@@ -1962,11 +1973,15 @@ export const setDerivedDepth = internalMutation({
         refused.push({ subAreaKey: row.subAreaKey, reason: 'not_found' });
         continue;
       }
-      if (bay.geometryUpdatedAt !== undefined && bay.geometryUpdatedAt > snapshotAt) {
+      if (bay.geometryUpdatedAt !== row.geometryUpdatedAt) {
         refused.push({ subAreaKey: row.subAreaKey, reason: 'geometry_moved' });
         continue;
       }
-      if (!(row.maxDepthM > 0) || !Number.isFinite(row.maxDepthM)) {
+      if (
+        !(row.maxDepthM > 0) ||
+        !Number.isFinite(row.maxDepthM) ||
+        row.maxDepthM > MAX_PLAUSIBLE_DEPTH_M
+      ) {
         refused.push({ subAreaKey: row.subAreaKey, reason: 'implausible' });
         continue;
       }

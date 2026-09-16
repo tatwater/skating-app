@@ -98,7 +98,10 @@ campaign `n9-bay-depths-20260916`: 128 live bays on 22 parents; 104 sit on a par
 covers; **63 got a depth** — 21 measured from soundings (Champlain's ten, Moosehead, Sebec, Seboeis),
 42 isobath floors (Winnipesaukee 41, Cochituate 1); 41 had no sounding or isobath vertex inside
 their outline and 24 sit on an uncovered parent (Placid, Belleau, Pine River Pond…), both correctly
-nothing. Refused 0. Sanity: Champlain's *Broad Lake* bay takes the lake's 121.6 m — the deepest
+nothing. Refused 0. *Greptile pass:* the loader's guard became a **version check** — a row echoes
+the `geometryUpdatedAt` it was derived against and the loader demands equality, so the CLI host's
+clock is not in it; the persistence boundary enforces `MAX_PLAUSIBLE_DEPTH_M` itself; omissions are
+counted once per bay (63 + 41 + 24 = 128); written/refused land on the run row after every batch. Sanity: Champlain's *Broad Lake* bay takes the lake's 121.6 m — the deepest
 point is in it — and *Malletts Bay* reads 24.7 m measured. Delta from the kickoff: contour lanes are
 **not** superseded here (that list governs lake depth, where NH's band polygons win; nothing clips
 bands per bay), and the isobath test is *any vertex inside*, not *fully inside* — a vertex of the

@@ -130,6 +130,32 @@ describe('bayDepthFor', () => {
 });
 
 describe('bayDepths', () => {
+  it('reports one reason per bay, so the coverage columns add up', () => {
+    // Two archives on one parent: the first has nothing inside the bay, the second has only a
+    // shoreline zero — one bay, one omission, the more informative reason.
+    const byParent = new Map([
+      ['lake1', [sounded([[-73.0, 44.5, 400]]), sounded([[-73.4, 44.4, 0]])]],
+    ]);
+    const out = bayDepths([BAY], byParent);
+    expect(out.depths).toHaveLength(0);
+    expect(out.skipped).toEqual({ 'nothing-inside': 0, 'no-positive-depth': 1, implausible: 0 });
+    expect(out.skippedPairs).toHaveLength(2);
+    // And a bay one archive answers is covered, not also omitted for the other.
+    const half = bayDepths(
+      [BAY],
+      new Map([['lake1', [sounded([[-73.0, 44.5, 400]]), sounded([[-73.4, 44.4, 60]])]]]),
+    );
+    expect(half.depths).toHaveLength(1);
+    expect(Object.values(half.skipped).reduce((a, b) => a + b, 0)).toBe(0);
+    expect(half.skippedPairs).toHaveLength(1);
+  });
+
+  it('echoes the exported geometry stamp onto the row', () => {
+    const stamped = { ...BAY, geometryUpdatedAt: 1_700_000_000_000 };
+    const out = bayDepthFor(sounded([[-73.4, 44.4, 60]]), stamped);
+    expect(out.ok && out.depth.geometryUpdatedAt).toBe(1_700_000_000_000);
+  });
+
   it('counts an uncovered parent rather than inventing a depth, and takes the deeper of two lakes', () => {
     const other: ExportedBay = {
       ...BAY,

@@ -44,7 +44,10 @@ export interface ExportedBay {
   waterBodyId: string;
   name: string;
   polygon: Polygon | MultiPolygon;
-  /** When the outline last moved; the loader refuses a row older than this. */
+  /**
+   * When the outline last moved, as exported. Echoed back on the row so the loader can demand the
+   * bay still carries exactly this stamp — a version check, immune to the CLI host's clock.
+   */
   geometryUpdatedAt?: number;
 }
 
@@ -52,6 +55,8 @@ export interface ExportedBay {
 export interface BayDepth {
   subAreaId: string;
   subAreaKey: string;
+  /** The stamp the depth was derived against — see `ExportedBay.geometryUpdatedAt`. */
+  geometryUpdatedAt?: number;
   maxDepthM: number;
   lane: Lane;
   understatesMax: boolean;
@@ -108,6 +113,7 @@ export function bayDepthFor(
     depth: {
       subAreaId: bay.subAreaId,
       subAreaKey: bay.subAreaKey,
+      ...(bay.geometryUpdatedAt !== undefined ? { geometryUpdatedAt: bay.geometryUpdatedAt } : {}),
       maxDepthM,
       lane: lake.lane,
       understatesMax: lake.lane === 'contours',
@@ -119,11 +125,30 @@ export function bayDepthFor(
 
 export interface BayDepthResult {
   depths: BayDepth[];
+  /**
+   * **One final reason per bay that got no depth** — not one per (bay, archive) pair. A parent
+   * covered by two archives can give a bay a depth from one and a skip from the other, and counting
+   * the pair would put that bay in both the covered and the omitted columns, so the run row's
+   * "unexplained" remainder would go negative (Greptile, PR #59). These add up with `depths` and
+   * `uncovered` to exactly the bays in.
+   */
   skipped: Record<BayDepthSkip, number>;
-  skippedKeys: { bay: string; lake: string; reason: BayDepthSkip }[];
+  /** Every refused (bay, archive) pair, for the log — the detail behind `skipped`, not its sum. */
+  skippedPairs: { bay: string; lake: string; reason: BayDepthSkip }[];
   /** Live bays whose parent no archived lake covers — the correct D3 answer, counted so it is seen. */
   uncovered: number;
 }
+
+/**
+ * The reason to report for a bay every archive refused: the most *informative* one. An implausible
+ * reading says the archive has something inside the bay and it is wrong; a shoreline zero says the
+ * survey reached the bay's edge and no further; nothing-inside says it never got there at all.
+ */
+const SKIP_PRIORITY: readonly BayDepthSkip[] = [
+  'implausible',
+  'no-positive-depth',
+  'nothing-inside',
+];
 
 /**
  * Every bay against every archived lake that joined to its parent. A parent covered by two archives
@@ -139,7 +164,7 @@ export function bayDepths(
     'no-positive-depth': 0,
     implausible: 0,
   };
-  const skippedKeys: BayDepthResult['skippedKeys'] = [];
+  const skippedPairs: BayDepthResult['skippedPairs'] = [];
   const depths: BayDepth[] = [];
   let uncovered = 0;
   for (const bay of bays) {
@@ -149,11 +174,12 @@ export function bayDepths(
       continue;
     }
     let best: BayDepth | null = null;
+    const reasons: BayDepthSkip[] = [];
     for (const lake of lakes) {
       const outcome = bayDepthFor(lake, bay);
       if (!outcome.ok) {
-        skipped[outcome.reason]++;
-        skippedKeys.push({
+        reasons.push(outcome.reason);
+        skippedPairs.push({
           bay: bay.name,
           lake: `${lake.sourceKey}/${lake.lakeKey}`,
           reason: outcome.reason,
@@ -162,7 +188,12 @@ export function bayDepths(
       }
       if (best === null || outcome.depth.maxDepthM > best.maxDepthM) best = outcome.depth;
     }
-    if (best) depths.push(best);
+    if (best) {
+      depths.push(best);
+      continue;
+    }
+    const reason = SKIP_PRIORITY.find((r) => reasons.includes(r));
+    if (reason !== undefined) skipped[reason]++;
   }
-  return { depths, skipped, skippedKeys, uncovered };
+  return { depths, skipped, skippedPairs, uncovered };
 }
