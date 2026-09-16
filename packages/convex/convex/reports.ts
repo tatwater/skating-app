@@ -91,7 +91,7 @@ import { awardPointEvent, checkAndAwardBadges, trustClassFor } from './lib/reput
 import { bodyWeatherCell, subAreaWeatherCell } from './lib/sampling';
 import { latLng, literals } from './lib/validators';
 import { enqueueReportNotifications } from './notifications';
-import { resolveReportSubAreas, stampCandidates } from './subAreas';
+import { resolveReportSubAreas, stampCandidates, subAreaDriveCoordFor } from './subAreas';
 import { loadFavorites, type ViewerFavorites } from './waterBodyFavorites';
 
 /** Editable report content, shared by `create` and `update` args (the schema mirrors these). */
@@ -905,11 +905,23 @@ export const listFeed = query({
       bayCells: new Map<string, string | null>(),
       digests: new Map<string, boolean>(),
     };
+    // The bay's own drive-time coordinate (N9 kickoff call 2), one read per distinct bay on the
+    // page beside `bodyInfo`. `null` caches a bay that is gone, which bands on the lake instead.
+    const bayCoords = new Map<string, LatLng | null>();
     const page: FeedCardData[] = [];
     for (const r of result.page) {
       const body = await bodyInfoFor(ctx, r.waterBodyId, caches.bodyInfo);
       const isFavorite = isFavoriteReport(favorites, r);
-      const band = bandForCoord(body.centroid, bands, home);
+      let coord: LatLng = body.centroid;
+      if (r.subAreaId !== undefined) {
+        let bayCoord = bayCoords.get(r.subAreaId);
+        if (bayCoord === undefined) {
+          bayCoord = await subAreaDriveCoordFor(ctx, r.subAreaId);
+          bayCoords.set(r.subAreaId, bayCoord);
+        }
+        if (bayCoord !== null) coord = bayCoord;
+      }
+      const band = bandForCoord(coord, bands, home);
       // The weather narrow (D165): resolved here, applied inside `matchesFilters` with the rest.
       const weatherMatched =
         filters.weather === undefined

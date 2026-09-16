@@ -331,6 +331,60 @@ describe('notifications — nearby digest (X₁)', () => {
     expect(await t.run((ctx) => ctx.db.query('notifications').collect())).toEqual([]);
   });
 
+  test('a bay report is banded from the bay’s own put-in, not the lake’s representative point (N9)', async () => {
+    const t = convexTestWithGeo();
+    const id = await seedBody(t);
+    const author = await seedProfile(t, 'author');
+    const bay = await seedBay(t, id);
+    // A viewer whose 30-minute band covers the bay's west shore and nothing near the lake's
+    // representative point at (0.5, 0.5).
+    const westShore: Polygon = {
+      type: 'Polygon',
+      coordinates: [
+        [
+          [-0.1, 0.3],
+          [0.15, 0.3],
+          [0.15, 0.7],
+          [-0.1, 0.7],
+          [-0.1, 0.3],
+        ],
+      ],
+    };
+    const nearby = await seedProfile(t, 'nearby', {
+      prefs: { nearbyReportDigest: true },
+      allRadiusMinutes: 30,
+    });
+    await t.run((ctx) => ctx.db.patch(nearby.id, { cachedIsochrones: { band30: westShore } }));
+    // The bay's launch, on the west shore.
+    await t.run((ctx) =>
+      ctx.db.insert('putIns', {
+        waterBodyId: id,
+        subAreaId: bay,
+        coord: { lat: 0.5, lng: 0.001 },
+        source: 'osm' as const,
+        status: 'visible' as const,
+        createdAt: Date.now(),
+      }),
+    );
+
+    // Open water, far from the launch — banded on the lake, outside the viewer's band.
+    await createReport(t, author.as, {
+      waterBodyId: id,
+      skateEndTime: SKATE_TIME,
+      point: { lat: 0.5, lng: 0.75 },
+    } as never);
+    expect(await t.run((ctx) => ctx.db.query('notificationQueue').collect())).toEqual([]);
+
+    // In the bay — banded from its launch, inside the band.
+    await createReport(t, author.as, {
+      waterBodyId: id,
+      skateEndTime: SKATE_TIME + 1,
+      point: { lat: 0.5, lng: 0.25 },
+    } as never);
+    const queue = await t.run((ctx) => ctx.db.query('notificationQueue').collect());
+    expect(queue.map((q) => [q.userId, q.kind])).toEqual([[nearby.id, 'digest']]);
+  });
+
   test('rolls all of a user’s due digest rows into ONE consolidated notification, grouped by body', async () => {
     const t = convexTestWithGeo();
     const bodyA = await seedBody(t, 'osm/1');

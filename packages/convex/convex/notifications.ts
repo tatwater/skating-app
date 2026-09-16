@@ -57,6 +57,7 @@ import {
 import { resolveNotifications } from './lib/notificationResolve';
 import { loadBlockedAuthorIds } from './lib/reportVisibility';
 import { takeCapped, takeCappedResult } from './lib/scan';
+import { subAreaDriveCoordFor } from './subAreas';
 
 /**
  * The digest rolls up to 8pm **local** — the hour is the same for everyone, the zone is each
@@ -216,7 +217,12 @@ export const fanOutNearbyNotifications = internalMutation({
     if (report?.moderationStatus !== 'visible') return { stopped: 'report_gone' as const };
     const body = await ctx.db.get(report.waterBodyId);
     if (!body) return { stopped: 'body_gone' as const };
-    const centroid = body.centroid;
+    // A bay report is banded from the bay's own drive-time coordinate — its best put-in, else its
+    // representative point (N9 kickoff call 2) — never from the lake's, whose representative point
+    // can sit 30 km from where anyone launches. Resolved once per page, not once per profile.
+    const centroid =
+      (report.subAreaId === undefined ? null : await subAreaDriveCoordFor(ctx, report.subAreaId)) ??
+      body.centroid;
 
     const isGreat = report.skateQuality === 'great';
     const page = await ctx.db

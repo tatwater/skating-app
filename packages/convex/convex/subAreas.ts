@@ -34,6 +34,7 @@ import {
   samplePath,
   searchTextFor,
   smallestContainingSubArea,
+  subAreaDriveCoord,
   subAreaForPutIn,
   subAreaMembershipFields,
   surfaceAreaSqM,
@@ -222,6 +223,31 @@ export function trackSubAreaStamp(
   );
   const fields = subAreaMembershipFields(resolved.all.map((bay) => bay._id));
   return { ...fields, leftSubArea: resolved.leftSubArea ? true : undefined };
+}
+
+/**
+ * The coordinate a bay's drive-time is judged from (N9 kickoff call 2): its best put-in, else its
+ * own representative point — the rule is `@skating/core`'s `subAreaDriveCoord`; this is the read
+ * around it. `null` when the bay is gone or delisted, so the caller falls back to the parent's
+ * coordinate rather than banding a place that is no longer a place.
+ *
+ * Callers on a hot read (the feed) cache this per bay per page: the put-ins are one `by_sub_area`
+ * read, bounded by the handful of launches a bay has.
+ */
+export async function subAreaDriveCoordFor(
+  ctx: QueryCtx,
+  subAreaId: Id<'waterBodySubAreas'>,
+): Promise<LatLng | null> {
+  const bay = await ctx.db.get(subAreaId);
+  if (!bay || bay.removedAt !== undefined) return null;
+  const putIns = await ctx.db
+    .query('putIns')
+    .withIndex('by_sub_area', (q) => q.eq('subAreaId', subAreaId))
+    .collect();
+  return subAreaDriveCoord(
+    bay,
+    putIns.filter((p) => p.status === 'visible').map((p) => ({ coord: p.coord, source: p.source })),
+  );
 }
 
 /** A report's membership in the stored shape: the label pair plus the list pair (N9 / D175). */
