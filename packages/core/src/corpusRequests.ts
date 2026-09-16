@@ -117,6 +117,53 @@ export function requestKindLabel(kind: RequestKind): string {
   }
 }
 
+/** The dialog a request opens — title, one sentence of guidance, and an example note. */
+export interface RequestPrompt {
+  title: string;
+  description: string;
+  placeholder: string;
+}
+
+export function requestPrompt(kind: RequestKind): RequestPrompt {
+  switch (kind) {
+    case 'activate':
+      return {
+        title: 'Ask for this lake back',
+        description:
+          'Tell the moderators why it belongs on the active map — when you skate it, how you get on.',
+        placeholder: 'We skate it most Januarys; the town launch is on the north shore.',
+      };
+    case 'admit':
+      return {
+        title: 'This is skateable',
+        description:
+          'We don’t have water here. Say what it is and how you reach it; a moderator will look it up in the catalogue and add it with its real outline.',
+        placeholder: 'A pond behind the school; the trail from the parking lot reaches the shore.',
+      };
+    case 'restore':
+      return {
+        title: 'Ask to restore this lake',
+        description: 'This lake was taken off the map. If that has changed, say what changed.',
+        placeholder: 'The land was sold to the town in 2027 and the sign came down.',
+      };
+    case 'contest_access':
+      return {
+        title: 'There is public access',
+        description:
+          'A moderator found no lawful way in. If there is one, say where — a launch, a right-of-way, a town lot.',
+        placeholder: 'State boat launch off Route 5, open year-round.',
+      };
+    case 'takedown':
+      return {
+        title: 'Take this lake off the map',
+        description:
+          'If you own the land around this water and don’t want people sent here, say so. An admin will remove it; you can still record your own skates on it.',
+        placeholder:
+          'I own the parcel; there is no public access and we’d rather not have visitors.',
+      };
+  }
+}
+
 /** The moderator-facing label. */
 export function requestKindTitle(kind: RequestKind): string {
   switch (kind) {

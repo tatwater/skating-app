@@ -117,6 +117,7 @@ import { ImageryDock } from './ImageryDock';
 import { coveredFractionForIndex, DRAWER_PEEK } from './MapDrawer';
 import { useMapSelection } from './MapSelectionContext';
 import { OnIceDock } from './OnIceDock';
+import { AdmitPrompt } from './RequestLake';
 import { ReturnToRegion } from './ReturnToRegion';
 import { useFreezeUpTimeline } from './useFreezeUpTimeline';
 
@@ -223,6 +224,8 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
   // pass exists to remove. The window is only the seed, for the frames before the first layout.
   const { height: windowHeight } = useWindowDimensions();
   const [mapHeight, setMapHeight] = useState(windowHeight);
+  // "This is skateable" — the long-press ask (N7b PR 2). Set by `onMapLongPress`, cleared by the prompt.
+  const [admitCoord, setAdmitCoord] = useState<{ lat: number; lng: number } | null>(null);
   const onMapLayout = useCallback((event: LayoutChangeEvent) => {
     const { height } = event.nativeEvent.layout;
     if (height > 0) setMapHeight((current) => (Math.abs(current - height) > 1 ? height : current));
@@ -818,6 +821,15 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
     }
   }
 
+  // Long-press on water with no body (N7b PR 2 / D106): "this is skateable." The prompt resolves
+  // the coordinate itself — a dormant or removed lake under the press is reachable now and is what
+  // the press was about — so this only records where.
+  function onMapLongPress(e: NativeSyntheticEvent<PressEvent>) {
+    if (pinDropMode || hazardDropMode) return;
+    const [lng, lat] = e.nativeEvent.lngLat;
+    setAdmitCoord({ lat, lng });
+  }
+
   function onWaterPress(e: NativeSyntheticEvent<PressEventWithFeatures>) {
     if (pinDropMode || hazardDropMode) return; // a tap while placing is handled by onMapPress
     // A hazard footprint always lies *inside* a lake, so a tap on a pin hits both sources. The more
@@ -900,6 +912,7 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
         // thing the map was for.
         touchRotate={false}
         onPress={onMapPress}
+        onLongPress={onMapLongPress}
         onRegionDidChange={onRegionDidChange}
         // The settled read: the tiles for this view are in, so the ramp keeps up as the skater pans.
         onDidFinishRenderingMapFully={() => void readDrawnContours()}
@@ -1300,6 +1313,8 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
           </Text>
         </XStack>
       ) : null}
+
+      {admitCoord ? <AdmitPrompt coord={admitCoord} onClose={() => setAdmitCoord(null)} /> : null}
 
       <ReturnToRegion
         visible={regionOffscreen}

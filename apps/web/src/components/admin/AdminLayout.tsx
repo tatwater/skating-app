@@ -81,6 +81,9 @@ const NAV: NavItem[] = [
   // for the same reason as the intake queue — a page nobody can reach is a page nobody judges the
   // rollover from.
   { to: '/admin/water/standing', label: 'Standing' },
+  // Skaters asking for lakes (N7b PR 2). Beside Standing because the two are one story: what the
+  // machines shelved, and who is asking for it back.
+  { to: '/admin/water/requests', label: 'Requests' },
   { to: '/admin/features', label: 'Body features' },
   { to: '/admin/recurrence', label: 'Hazard identity' },
   // D160's dark instrument. It has to be *reachable* to be an instrument at all — a page nobody can
