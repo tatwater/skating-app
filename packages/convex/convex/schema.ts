@@ -55,6 +55,7 @@ import {
   COMMENT_SOURCES,
   DATA_EXPORT_STATUSES,
   DEDUP_STATUSES,
+  DORMANCY_REASONS,
   FLAG_ORIGINS,
   FLAG_REASONS,
   FLAG_STATUSES,
@@ -1063,9 +1064,44 @@ export default defineSchema({
     dedupStatus: literals(DEDUP_STATUSES), // default clean (D36)
     mergedIntoId: v.optional(v.id('waterBodies')), // reads follow the survivor (D36)
     duplicateCandidateIds: v.optional(v.array(v.id('waterBodies'))),
-    removedAt: v.optional(v.number()), // soft-delist (D48); reversible, cleared on restore
+    /**
+     * Soft-delist (D48); reversible, cleared on restore.
+     *
+     * **A removed body is still cell-indexed** (N7b, founder call 2026-09-16): it draws at the dormant
+     * rung — zoomed right in, dimmed, with the removal reason in the drawer — and is resolvable by
+     * coordinate, so a landowner skating their own taken-down pond attaches to *this* row rather than
+     * minting a fresh public one. It is on no push surface and not in search. `standingOf` reads it
+     * as `removed`; `isListed` no longer reads it at all.
+     */
+    removedAt: v.optional(v.number()),
     removedByUserId: v.optional(v.id('profiles')), // the admin who removed it (D48)
     removalReason: v.optional(literals(REMOVAL_REASONS)), // why it was delisted (D48)
+    /**
+     * **Dormant: in the corpus, on no push surface** (N7b) — the field for the standings no other
+     * field expresses. Read only through `standingOf` (`@skating/core`), which ranks it below a
+     * removal and a `none` access ruling; never written directly — every transition goes through
+     * `lib/standing.ts` so the re-score, the cell rows, the sub-areas and the audit row move together.
+     *
+     * `reason` is `DORMANCY_REASONS`: `inactive` (the season cron / the seed — nobody has been here
+     * in `INACTIVE_SEASONS`), `not_in_campaign` (the prunes — the admission rules refuse it now, and
+     * demoting is what they do instead of deleting), or `moderator` (a person, with a `note` the
+     * skater sees). Absent ⇒ not dormant on this field's account.
+     */
+    dormant: v.optional(
+      v.object({
+        since: v.number(),
+        reason: literals(DORMANCY_REASONS),
+        byUserId: v.optional(v.id('profiles')),
+        note: v.optional(v.string()),
+      }),
+    ),
+    /**
+     * When this body last became active — by evidence, a moderator, a restore or an admitted request
+     * (N7b). The admin standing page lists recent activations so a machine's re-activation is seen
+     * by a person, and the ETL enrichment passes use it to find bodies that came back after their
+     * last run. Absent on a body that has been active since import.
+     */
+    activatedAt: v.optional(v.number()),
     createdAt: v.number(),
   })
     .index('by_dedup_status', ['dedupStatus']) // dedup review queue (D36)
@@ -1096,6 +1132,15 @@ export default defineSchema({
     // rows and nothing else: `undefined` sorts before every number, so unboosted bodies are excluded
     // by the range rather than filtered after the read.
     .index('by_curated_boost', ['curatedBoost'])
+    // The standing lists (N7b): dormant bodies by reason, newest first, and recent activations. Both
+    // are `eq()` / `gt()` reads on optional fields — `undefined` sorts first and an equality or a
+    // strictly-positive range never includes it, so neither read touches the active majority.
+    .index('by_dormant_reason', ['dormant.reason', 'dormant.since'])
+    .index('by_activated_at', ['activatedAt'])
+    // The other two standing lanes (N7b): removed bodies newest first (`gt(0)` — undefined sorts
+    // first and is excluded by the range), and `none` rulings (`eq('none')`).
+    .index('by_removed_at', ['removedAt'])
+    .index('by_public_access_verdict', ['publicAccess.verdict', 'publicAccess.decidedAt'])
     // **Reason first, then prominence**, so the queue opens on the lakes anybody has heard of. An
     // `.eq()` on the reason never reads the rows that carry none — `undefined` sorts before every
     // value, but an equality range simply does not include it, which is what makes this cheap.
@@ -1194,6 +1239,11 @@ export default defineSchema({
     }),
     /** Bodies scanned for this state, whether or not they carried any metric — the honest denominator. */
     bodiesScanned: v.number(),
+    /**
+     * How many of those are **active** (N7b) — the public "X known, Y active" pair (founder call,
+     * 2026-09-16). Optional because rows predate it; the next `recompute` fills it.
+     */
+    bodiesActive: v.optional(v.number()),
     updatedAt: v.number(),
   }).index('by_state', ['state']),
 

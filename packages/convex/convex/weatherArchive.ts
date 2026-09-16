@@ -55,6 +55,7 @@ import {
   coldChain,
   dayMsToLocalDate,
   HARD_FREEZE_NIGHT_F,
+  isActive,
   isCompleteDay,
   type LocalHourlyWeather,
   localDateToDayMs,
@@ -935,11 +936,13 @@ export const pageBodyCells = internalQuery({
     const byKey = new Map<string, CellPageEntry>();
     const members: MemberEntry[] = [];
     for (const body of page.page) {
-      if (body.removedAt) continue;
+      // Active bodies only (N7b): the registry is what the daily sweep pays Open-Meteo for, and a
+      // dormant or removed body is one nobody is shown weather for. This is the cron saving the
+      // founder asked trimming to deliver — cells occupied only by shelved bodies are pruned on the
+      // next completed walk.
+      if (!isActive(body)) continue;
       const cell = bodyWeatherCell(body, tier);
       countCell(byKey, cell);
-      // A merged body still counts into its cell (the registry describes the corpus's points) but
-      // is not joinable: discovery must surface the survivor, which registers itself.
       if (tier === 'filter' && body.mergedIntoId === undefined && isListed(body)) {
         members.push({ cellKey: cell.key, waterBodyId: body._id });
       }

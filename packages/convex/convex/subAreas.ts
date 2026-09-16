@@ -22,6 +22,7 @@ import {
   clipSubAreaToParent,
   displayScore,
   fetchProfileMeters,
+  isActive,
   type LatLng,
   MAX_PLAUSIBLE_DEPTH_M,
   memberSubAreaIds,
@@ -38,6 +39,7 @@ import {
   seasonOf,
   seasonStartMs,
   smallestContainingSubArea,
+  standingOf,
   subAreaDriveCoord,
   subAreaForPutIn,
   subAreaMembershipFields,
@@ -123,12 +125,18 @@ function scoreFields(input: { surfaceAreaSqM: number; curatedBoost?: number }) {
   return { displayScore: score, minVisibleZoom: minVisibleZoom(score) };
 }
 
-/** A sub-area is reachable only while it is un-delisted **and** its parent is listed (Decision 11). */
+/**
+ * A sub-area is reachable only while it is un-delisted **and** its parent is *active* (Decision 11,
+ * extended by N7b). Active rather than listed, because a removed or dormant lake is listed too now —
+ * it draws at the dormant rung, dimmed — and a bay outlined and labelled at z10 over a lake that
+ * only appears at z16 would be the exact "Malletts Bay on a map with no Champlain" Decision 11
+ * exists to prevent.
+ */
 export function subAreaListed(
   subArea: { removedAt?: number },
-  parent: Parameters<typeof isListed>[0],
+  parent: Parameters<typeof isActive>[0],
 ): boolean {
-  return subArea.removedAt === undefined && isListed(parent);
+  return subArea.removedAt === undefined && isActive(parent);
 }
 
 /** Every sub-area on a body, delisted ones included — the read behind both the stamp and the editor. */
@@ -333,7 +341,7 @@ export async function resolveReportSubAreas(
 export async function syncCellsForParent(
   ctx: MutationCtx,
   waterBodyId: Id<'waterBodies'>,
-  parent: Parameters<typeof isListed>[0],
+  parent: Parameters<typeof isActive>[0],
 ): Promise<void> {
   for (const subArea of await subAreasForBody(ctx, waterBodyId)) {
     await syncSubAreaCells(ctx, subArea._id, {
@@ -367,7 +375,8 @@ export async function reclipSubAreasToParent(
   actorId?: Id<'profiles'>,
 ): Promise<{ reclipped: number; delisted: number }> {
   const parentPolygon = parent.polygon as unknown as Polygon | MultiPolygon;
-  const parentListed = isListed(parent);
+  // `isActive`, not `isListed`: the bay's cells follow the lake's standing (see `subAreaListed`).
+  const parentListed = isActive(parent);
   let reclipped = 0;
   let delisted = 0;
 
@@ -681,8 +690,11 @@ async function requireParent(
   const parent = await ctx.db.get(waterBodyId);
   if (!parent) throw new ConvexError('Water body not found');
   // Drawing a bay on a body that isn't on the map produces a row nothing can reach — the cascade
-  // would give it no cell rows anyway. Say so rather than accepting the work silently.
-  if (!isListed(parent)) throw new ConvexError('That water body is not on the map');
+  // would give it no cell rows anyway. Say so rather than accepting the work silently. A dormant
+  // lake is fine (N7b): curation precedes activity, and the bay lists the day the lake does.
+  if (!isListed(parent) || standingOf(parent).standing === 'removed') {
+    throw new ConvexError('That water body is not on the map');
+  }
   return parent;
 }
 
@@ -1391,7 +1403,7 @@ export const importSeed = internalMutation({
 
     for (const row of seed) {
       const parent = await ctx.db.get(row.waterBodyId);
-      if (!parent || !isListed(parent)) {
+      if (!parent || !isListed(parent) || standingOf(parent).standing === 'removed') {
         results.push({ name: row.name, ok: false, reason: 'parent_unavailable' });
         continue;
       }
@@ -1613,7 +1625,7 @@ export const importBaySubAreas = internalMutation({
         continue;
       }
       const parent = await resolveParentByCatalogueIds(ctx, bay.parentIds);
-      if (!parent || !isListed(parent)) {
+      if (!parent || !isListed(parent) || standingOf(parent).standing === 'removed') {
         // The ETL only emits a sub-area whose parent is in the same master list, so this means the
         // load order was wrong (bodies first, then bays) — worth naming rather than counting.
         results.push({ name, ok: false, reason: 'parent_unavailable' });

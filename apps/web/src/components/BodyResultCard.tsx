@@ -62,7 +62,6 @@ export function BodyResultCard({
       <div className="flex flex-wrap items-center gap-1">
         <Badge variant="secondary">Weather match</Badge>
         {card.isHikeIn ? <Badge variant="outline">Hike-in</Badge> : null}
-        {card.noPublicAccess ? <Badge variant="outline">No public access</Badge> : null}
       </div>
     </button>
   );

@@ -62,6 +62,7 @@ import { HAZARD_GEOMETRY_KINDS, HAZARD_TYPES_VALIDATOR } from './lib/hazardValid
 import { isListed } from './lib/listing';
 import { assertOwnedPhotos } from './lib/photoAccess';
 import { loadBlockedAuthorIds } from './lib/reportVisibility';
+import { activateOnEvidence } from './lib/standing';
 import { geoJson, literals } from './lib/validators';
 import { resolveSubAreaForPoint } from './subAreas';
 
@@ -197,7 +198,7 @@ export async function insertHazard(
     lat: (bbox.minLat + bbox.maxLat) / 2,
     lng: (bbox.minLng + bbox.maxLng) / 2,
   });
-  return ctx.db.insert('hazards', {
+  const hazardId = await ctx.db.insert('hazards', {
     waterBodyId: body._id, // the resolved survivor, not the (possibly merged) requested id
     type: args.type,
     geometryKind: shape.geometryKind,
@@ -227,6 +228,9 @@ export async function insertHazard(
     goneCount: lifecycle.goneCount,
     createdAt: now,
   });
+  // Standing (N7b): someone stood on this ice and marked something — a dormant body yields to it.
+  await activateOnEvidence(ctx, body._id, 'hazard');
+  return hazardId;
 }
 
 /**

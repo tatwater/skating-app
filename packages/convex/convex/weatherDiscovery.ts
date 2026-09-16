@@ -36,6 +36,7 @@ import {
   digestFreshnessCutoffMs,
   digestIsFresh,
   eventInstantMs,
+  isActive,
   matchWeatherFilter,
   sanitizeFeedFilters,
   spansMultipleSampleCells,
@@ -47,7 +48,6 @@ import { v } from 'convex/values';
 import type { Doc, Id } from './_generated/dataModel';
 import { type QueryCtx, query } from './_generated/server';
 import { getCurrentProfile } from './lib/auth';
-import { isListed } from './lib/listing';
 import { loadFavoriteBodyIds } from './waterBodyFavorites';
 
 /** Body results per read. Bounded because the interleave (D165) is over a list, not a cursor. */
@@ -285,7 +285,9 @@ export const listBodyResults = query({
           body = await ctx.db.get(m.waterBodyId);
           bodyCache.set(m.waterBodyId, body);
         }
-        if (!body || !isListed(body)) continue;
+        // Active, not merely listed (N7b): a discovery card *recommends* a lake. N6h deliberately
+        // left `none` bodies in, pending the corpus-lifecycle answer; this is that answer.
+        if (!body || !isActive(body)) continue;
         // Unnamed water is left out of the *list*, as `viewportLakes` leaves it out of the sidebar:
         // on the map an unnamed pond is a distinct shape in a place, but a card reading only
         // "Lake or pond · NH" is not a destination anyone can pick from three of them. It still
@@ -318,7 +320,6 @@ export const listBodyResults = query({
             (body.weatherSamplePoints?.length ?? 0) <= 1 &&
             spansMultipleSampleCells(body.bbox),
           ...(body.accessKind !== undefined ? { accessKind: body.accessKind } : {}),
-          noPublicAccess: body.publicAccess?.verdict === 'none',
           isFavorite,
         };
         byBody.set(body._id, data);

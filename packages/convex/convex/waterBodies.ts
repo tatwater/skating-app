@@ -26,11 +26,11 @@ import {
   type DedupClassification,
   type DedupShape,
   type DepthSource,
-  displayScore,
   distinctNameClaims,
   ELEVATION_SOURCES,
   haversineMeters,
   type IdMatch,
+  isActive,
   isAdvisoryReviewReason,
   isKnownStateCode,
   isMeasuredDepthSource,
@@ -48,10 +48,8 @@ import {
   MIN_FETCH_CLAUSE_M,
   MIN_VISIBLE_ZOOM_FLOOR,
   matchDepthSource,
-  minVisibleZoom,
   type NameClaim,
   nearestBodyForPoint,
-  type ProfileRichness,
   pathToBody,
   pointInPolygon,
   polygonBBox,
@@ -59,11 +57,14 @@ import {
   primaryReviewReason,
   REVIEW_REASONS,
   type ReviewReason,
+  reactivatesOnEvidence,
   referenceLinkError,
   resolveUpsert,
+  retainsActive,
   SATELLITE_IMAGERY_MODES,
   satelliteImageryAvailable,
   searchTextFor,
+  standingOf,
   WATER_BODY_CLASSES,
 } from '@skating/core';
 import { ConvexError, v } from 'convex/values';
@@ -100,6 +101,14 @@ import { closeFlag } from './lib/flagResolution';
 import { isListed } from './lib/listing';
 import { mirrorReportSubAreas } from './lib/reportSubAreas';
 import { takeCapped, takeCappedResult } from './lib/scan';
+import { richnessFor, scoreFields, zoomSortKey } from './lib/scoring';
+import {
+  activateBody,
+  anyFavorite,
+  demoteBody,
+  lastActivityAt,
+  transitionStanding,
+} from './lib/standing';
 import { bbox, geoJson, latLng, literals } from './lib/validators';
 import {
   reclipSubAreasToParent,
@@ -408,105 +417,6 @@ function nameFields(
 }
 
 /**
- * Derived display-prominence fields (D49/D2) from a body's area, admin boost and profile richness.
- * `minVisibleZoom` is stored on the row AND denormalized onto its cell rows (see `./lib/cellIndex`),
- * where it's the trailing field of `by_cell` — so a wide-zoom query returns the most-prominent
- * bodies first and never reads the rest at all.
- *
- * ⚠ **`noPublicAccess` is a property of an *existing* row, and every caller that re-scores one has to
- * pass it.** It is the only input here that isn't derivable from the incoming record, so an omission
- * doesn't fail — it silently restores the body's undemoted zoom and nothing says so. `importCanonical`
- * is the dangerous one: it would preserve the verdict (it patches a named field list) while undoing
- * the demotion the verdict exists to cause. `assertScoredWithAccess` in the tests pins this.
- */
-function scoreFields(input: {
-  surfaceAreaSqM?: number;
-  curatedBoost?: number;
-  richness?: ProfileRichness;
-  noPublicAccess?: boolean;
-}) {
-  const score = displayScore(input);
-  return { displayScore: score, minVisibleZoom: minVisibleZoom(score) };
-}
-
-/** The demotion input for a stored row — one place, so the six scoring call sites can't spell it differently. */
-function noPublicAccessOf(body: { publicAccess?: { verdict: string } }): boolean {
-  return body.publicAccess?.verdict === 'none';
-}
-
-/**
- * A body's D2 profile richness, read from what it actually has.
- *
- * **Costs two index reads per body**, which is why it is computed in `backfillCells` (paginated,
- * a few hundred bodies per transaction) and NOT in `importCanonical`, which already does the
- * heaviest work in the app and would pay this on all 116,070 rows mid-import.
- *
- * `hasContours` reads the `bathymetryCoverage` side table rather than a column, because contour
- * coverage is a property of the N6b TILESET rather than of the body — see that table's comment.
- */
-async function richnessFor(ctx: QueryCtx, body: Doc<'waterBodies'>): Promise<ProfileRichness> {
-  const putIns = await ctx.db
-    .query('putIns')
-    .withIndex('by_water_body', (q) => q.eq('waterBodyId', body._id))
-    .take(25);
-  const visiblePutIns = putIns.filter((p) => p.status === 'visible');
-
-  const report = await ctx.db
-    .query('reports')
-    .withIndex('by_water_body_skate_end_time', (q) => q.eq('waterBodyId', body._id))
-    .first();
-  const hazard = report
-    ? null
-    : await ctx.db
-        .query('hazards')
-        .withIndex('by_water_body_first_reported', (q) => q.eq('waterBodyId', body._id))
-        .first();
-
-  const coverage = await ctx.db
-    .query('bathymetryCoverage')
-    .withIndex('by_external_id', (q) =>
-      q.eq('source', body.source === 'nhd' ? 'nhd' : 'osm').eq('externalId', body.externalId ?? ''),
-    )
-    .first();
-
-  return {
-    // A blank name is the 92% case; a name is a weak but real signal that someone cared.
-    hasName: body.name.trim().length > 0,
-    hasContours: coverage !== null,
-    hasDepth: body.meanDepthM !== undefined || body.maxDepthM !== undefined,
-    // ⚠ **`osm` counts as derived, not official** (D143, founder call 2026-08-10). An OSM slipway is
-    // stored like an operator's pin and approximate like a report cluster, so neither term was the
-    // obvious default — and the resemblance that matters is provenance, not storage. `official` means
-    // *a human confirmed you can get on the ice here*, which is what makes it the strongest static
-    // signal we have; letting an ETL reach it would not raise OSM's standing, it would lower
-    // `official`'s, across the whole corpus in one pass. Both terms have never fired (dev carried 0
-    // put-in rows before N6d), so the held `backfillCells` re-score bakes this choice in on its first
-    // run with no incumbent to compare against — which is the argument for the conservative rung.
-    hasDerivedPutIn: visiblePutIns.some((p) => p.source === 'derived' || p.source === 'osm'),
-    hasOfficialPutIn: visiblePutIns.some((p) => p.source === 'official'),
-    hasActivity: report !== null || hazard !== null,
-  };
-}
-
-/**
- * A stored body's `minVisibleZoom` (D49), recomputed from area + boost + the N6f access demotion.
- * Used when a mutation re-cells a body without changing its score inputs
- * (`approve`/`remove`/`restore`), so the cell rows stay correct even for a legacy row missing the
- * field.
- *
- * **Not the richness term**, which is `backfillCells`' alone — so these paths already knowingly drop
- * it. The access demotion is different: it is a moderator's decision rather than a derived statistic,
- * and dropping it would silently un-demote a body every time somebody approved or restored it.
- */
-function zoomSortKey(body: {
-  surfaceAreaSqM?: number;
-  curatedBoost?: number;
-  publicAccess?: { verdict: string };
-}): number {
-  return scoreFields({ ...body, noPublicAccess: noPublicAccessOf(body) }).minVisibleZoom;
-}
-
-/**
  * Did a canonical re-import actually move this body's outline? (N2)
  *
  * Cheap on purpose — four bbox floats, an area, and a vertex count, all of which the loader hands us
@@ -703,11 +613,12 @@ export const importCanonical = internalMutation({
         const scores = scoreFields({
           surfaceAreaSqM: item.surfaceAreaSqM,
           curatedBoost: existing.curatedBoost,
-          // N6f: the verdict itself survives because this patch names its fields and does not name
-          // `publicAccess` — but the *demotion* is derived, so omitting it here would preserve the
-          // ruling and quietly restore the body's original zoom on the next campaign. Same shape as
-          // the richness caveat above, and worse, because a moderator made this one by hand.
-          noPublicAccess: noPublicAccessOf(existing),
+          // N6f/N7b: the standing fields (`removedAt`, `publicAccess`, `dormant`) all survive because
+          // this patch names its fields and does not name them — but the *rung* is derived, so
+          // omitting it here would preserve a dormancy and quietly put the body back on the
+          // browsable ladder on the next campaign. Same shape as the richness caveat above, and
+          // worse, because a moderator made some of these by hand.
+          active: isActive(existing),
         });
         await ctx.db.patch(existing._id, {
           // `name` + `nameClaims` + `searchText` together, because a moderator's pick outranks the
@@ -784,7 +695,11 @@ export const importCanonical = internalMutation({
         updated++;
       } else {
         const now = Date.now();
-        const scores = scoreFields({ surfaceAreaSqM: item.surfaceAreaSqM }); // no boost on import
+        // No boost on import, and **active**: a fresh canonical body is on the map until the next
+        // season rollover asks whether anyone skated it, or until `seedStanding` is re-run after the
+        // campaign (N7b). Inserting dormant would have made every fixture-seeded test body invisible
+        // and every new-region import a season of dead map; the rollover is the honest clock.
+        const scores = scoreFields({ surfaceAreaSqM: item.surfaceAreaSqM, active: true });
         const id = await ctx.db.insert('waterBodies', {
           ...nameFields(undefined, item),
           type: item.type,
@@ -1411,7 +1326,7 @@ export const backfillCells = internalMutation({
         richness,
         surfaceAreaSqM: body.surfaceAreaSqM,
         curatedBoost: body.curatedBoost,
-        noPublicAccess: noPublicAccessOf(body),
+        active: isActive(body),
       });
       const patch: Partial<Doc<'waterBodies'>> = {};
       if (body.displayScore !== scores.displayScore) patch.displayScore = scores.displayScore;
@@ -1473,7 +1388,7 @@ export const backfillRepresentativePoint = internalMutation({
  * by-body index — but both are *derived*: a queue row exists only because a hazard, report or bounty
  * for that body exists, all three of which are checked here. No hazard ⇒ no recurrence row to strand.
  */
-async function bodyAttachmentKind(
+export async function bodyAttachmentKind(
   ctx: MutationCtx,
   waterBodyId: Id<'waterBodies'>,
 ): Promise<string | null> {
@@ -1531,18 +1446,26 @@ async function bodyAttachmentKind(
 }
 
 /**
- * Delete the canonical bodies the D91 floor would never have imported — **paginated, dry by
+ * Demote the canonical bodies the D91 floor would never have imported — **paginated, dry by
  * default, and refusing anything with a claim on it.**
  *
  * The rule (`belongsInCorpus`, `@skating/core`) governs what a *future* import writes; it cannot
- * reach the ~116,000 rows already stored, because `importCanonical` upserts and never deletes. This
- * is the other half: one pass that brings the stored corpus into agreement with the rule, driven
- * from `pnpm --filter @skating/etl prune-floor`.
+ * reach the rows already stored, because `importCanonical` upserts and never deletes. This is the
+ * other half: one pass that brings the stored corpus into agreement with the rule, driven from
+ * `pnpm --filter @skating/etl prune-floor`.
+ *
+ * **Since N7b this demotes rather than deletes** (founder call, 2026-09-16: a body the rules refuse
+ * *"shouldn't leave our database entirely"*). A refused body becomes dormant with reason
+ * `not_in_campaign`: on no push surface, drawn only when zoomed in on, and reachable — so the
+ * skater who finds it learns why it is not on the active map and can ask for it back. The D91
+ * campaign that deleted 102,000 rows ran before this change; those live in the archives and come
+ * back one at a time through the request path. `deleted` in the return value is kept as the
+ * field name so the ETL wrapper's tallies do not change shape; it now counts demotions.
  *
  * **It runs dry unless `apply` is true.** The tallies are identical either way, so the operator sees
  * exactly what a real run would do before it does it.
  *
- * A body is deleted only when it fails the floor **and** nothing else speaks for it:
+ * A body is demoted only when it fails the floor **and** nothing else speaks for it:
  *  - `source: 'user'` is never touched — a skater drew it from a track they recorded (Phase 8).
  *  - `surfaceAreaSqM` absent ⇒ kept. The field is optional; "we can't measure it" is not "it's
  *    small", and a silent delete on a missing number is how you lose Champlain to a schema gap.
@@ -1582,6 +1505,7 @@ export const pruneBelowAreaFloor = internalMutation({
       dedupOrMerged: 0,
       delisted: 0,
       attached: 0,
+      alreadyDormant: 0,
     };
     const attachedBy: Record<string, number> = {};
     let deleted = 0;
@@ -1635,13 +1559,14 @@ export const pruneBelowAreaFloor = internalMutation({
         continue;
       }
 
+      // Already dormant on any account ⇒ nothing to do, and not counted as a demotion.
+      if (!isActive(body)) {
+        kept.alreadyDormant++;
+        continue;
+      }
+
       if (apply === true) {
-        await syncWaterBodyCells(ctx, body._id, {
-          bbox: body.bbox,
-          minVisibleZoom: body.minVisibleZoom ?? MIN_VISIBLE_ZOOM_FLOOR,
-          listed: false,
-        });
-        await ctx.db.delete(body._id);
+        await demoteBody(ctx, body, { reason: 'not_in_campaign' });
       }
       deleted++;
     }
@@ -1659,7 +1584,8 @@ export const pruneBelowAreaFloor = internalMutation({
 });
 
 /**
- * Delete the stored bodies the campaign's master list did **not** re-affirm — campaign step 6 (N7).
+ * Demote the stored bodies the campaign's master list did **not** re-affirm — campaign step 6 (N7;
+ * demote-not-delete since N7b, see `pruneBelowAreaFloor` for the founder call).
  *
  * ## The gap this closes, and why the two existing prunes cannot
  *
@@ -1763,6 +1689,7 @@ export const pruneNotInCampaign = internalMutation({
       dedupOrMerged: 0,
       delisted: 0,
       attached: 0,
+      alreadyDormant: 0,
     };
     const attachedBy: Record<string, number> = {};
     /** Named, not just counted — a deletion nobody can inspect is one nobody can veto. */
@@ -1824,6 +1751,11 @@ export const pruneNotInCampaign = internalMutation({
         continue;
       }
 
+      if (!isActive(body)) {
+        kept.alreadyDormant++;
+        continue;
+      }
+
       if (sample.length < PRUNE_SAMPLE_CAP) {
         sample.push({
           name: body.name,
@@ -1851,12 +1783,7 @@ export const pruneNotInCampaign = internalMutation({
 
     if (apply === true) {
       for (const body of doomed) {
-        await syncWaterBodyCells(ctx, body._id, {
-          bbox: body.bbox,
-          minVisibleZoom: body.minVisibleZoom ?? MIN_VISIBLE_ZOOM_FLOOR,
-          listed: false,
-        });
-        await ctx.db.delete(body._id);
+        await demoteBody(ctx, body, { reason: 'not_in_campaign' });
       }
     }
 
@@ -1922,7 +1849,9 @@ const DEFAULT_MAX_DELETE_FRACTION = 0.33;
 const PRUNE_GUARD_MIN_PAGE = 25;
 
 /**
- * Delete water we no longer claim to cover — the corpus edge that is not the map's edge.
+ * Demote water we no longer claim to cover — the corpus edge that is not the map's edge. (Deleted
+ * until N7b; now dormant with reason `not_in_campaign`, like the other two prunes — see
+ * `pruneBelowAreaFloor` for the founder call.)
  *
  * ## Why there is anything to delete
  *
@@ -1983,7 +1912,7 @@ export const pruneOutsideCoverage = internalMutation({
     const numItems = Math.min(500, Math.max(1, batchSize ?? 100));
     const page = await ctx.db.query('waterBodies').paginate({ cursor: cursor ?? null, numItems });
 
-    const kept = { inCoverage: 0, userCreated: 0, attached: 0 };
+    const kept = { inCoverage: 0, userCreated: 0, attached: 0, alreadyDormant: 0 };
     const attachedBy: Record<string, number> = {};
     let deleted = 0;
 
@@ -2028,13 +1957,14 @@ export const pruneOutsideCoverage = internalMutation({
         continue;
       }
 
+      // Already dormant on any account ⇒ nothing to do, and not counted as a demotion.
+      if (!isActive(body)) {
+        kept.alreadyDormant++;
+        continue;
+      }
+
       if (apply === true) {
-        await syncWaterBodyCells(ctx, body._id, {
-          bbox: body.bbox,
-          minVisibleZoom: body.minVisibleZoom ?? MIN_VISIBLE_ZOOM_FLOOR,
-          listed: false,
-        });
-        await ctx.db.delete(body._id);
+        await demoteBody(ctx, body, { reason: 'not_in_campaign' });
       }
       deleted++;
     }
@@ -2146,8 +2076,15 @@ export const listNeedingElevation = internalQuery({
      * construction; a parameter invites a caller to invent a different floor.
      */
     importFloorOnly: v.optional(v.boolean()),
+    /**
+     * Also enrich bodies that are not active (N7b). Off by default: a dormant body is one nobody is
+     * shown, and fetching elevation for 24,000 of them is exactly the cost the founder asked
+     * trimming to save. A body that comes back is stamped `activatedAt`, and the next run picks it
+     * up without this flag.
+     */
+    includeDormant: v.optional(v.boolean()),
   },
-  handler: async (ctx, { cursor, batchSize, refresh, importFloorOnly }) => {
+  handler: async (ctx, { cursor, batchSize, refresh, importFloorOnly, includeDormant }) => {
     const numItems = Math.min(1000, Math.max(1, batchSize ?? 500));
     const page = await ctx.db.query('waterBodies').paginate({ cursor: cursor ?? null, numItems });
     const belowFloor = (body: Doc<'waterBodies'>) =>
@@ -2156,9 +2093,14 @@ export const listNeedingElevation = internalQuery({
         surfaceAreaSqM: body.surfaceAreaSqM ?? 0,
         includedByRequest: body.includedByRequest,
       });
+    let dormant = 0;
     const targets = page.page
       .filter((body) => {
         if (body.elevationSource === 'operator') return false;
+        if (includeDormant !== true && !isActive(body)) {
+          dormant++;
+          return false;
+        }
         if (importFloorOnly === true && belowFloor(body)) return false;
         return refresh === true || body.elevationM === undefined;
       })
@@ -2189,6 +2131,8 @@ export const listNeedingElevation = internalQuery({
       // otherwise "scanned 116,070, looked up 16,817" reads like a 14% failure rather than a 14%
       // target.
       belowFloor: importFloorOnly === true ? page.page.filter(belowFloor).length : 0,
+      /** Walked past for not being active — the N7b saving, made visible in the run row. */
+      dormant,
       cursor: page.continueCursor,
       isDone: page.isDone,
     };
@@ -2372,15 +2316,25 @@ export const listNeedingWindRose = internalQuery({
      * not "measured", and the run reports `belowFloor` either way.
      */
     importFloorOnly: v.optional(v.boolean()),
+    /** Also enrich bodies that are not active — see `listNeedingElevation` (N7b). */
+    includeDormant: v.optional(v.boolean()),
   },
-  handler: async (ctx, { cursor, batchSize, refresh, minFetchM, importFloorOnly }) => {
+  handler: async (
+    ctx,
+    { cursor, batchSize, refresh, minFetchM, importFloorOnly, includeDormant },
+  ) => {
     const numItems = Math.min(1000, Math.max(1, batchSize ?? 500));
     const floor = minFetchM ?? MIN_FETCH_CLAUSE_M;
     let belowFloor = 0;
+    let dormant = 0;
     const page = await ctx.db.query('waterBodies').paginate({ cursor: cursor ?? null, numItems });
     const targets = page.page
       .filter((body) => {
         if (!isListed(body)) return false;
+        if (includeDormant !== true && !isActive(body)) {
+          dormant++;
+          return false;
+        }
         if (!refresh && body.windRose !== undefined) return false;
         if (
           importFloorOnly === true &&
@@ -2405,6 +2359,7 @@ export const listNeedingWindRose = internalQuery({
       targets,
       scanned: page.page.length,
       belowFloor,
+      dormant,
       cursor: page.continueCursor,
       isDone: page.isDone,
     };
@@ -2555,7 +2510,8 @@ export const create = mutation({
       });
     }
 
-    const scores = scoreFields({ surfaceAreaSqM: derived.surfaceAreaSqM }); // no boost on a new body
+    // No boost on a new body, and active: it exists because somebody skated it (N7b).
+    const scores = scoreFields({ surfaceAreaSqM: derived.surfaceAreaSqM, active: true });
     const id = await ctx.db.insert('waterBodies', {
       name: args.name,
       // A user-drawn body has one name and no catalogue claims — but `searchText` is required, so
@@ -2704,9 +2660,15 @@ export const approve = mutation({
 });
 
 /**
- * Admin: soft-delist a body from the map — curation or a landowner takedown (D48). Reversible
- * (never a hard delete): stamp `removed*`, drop its cell-index rows, and
- * write a `moderationActions` audit row. A re-import preserves this (see `importCanonical`).
+ * Admin: soft-delist a body — curation or a landowner takedown (D48). Reversible (never a hard
+ * delete): stamp `removed*`, write a `moderationActions` audit row. A re-import preserves this (see
+ * `importCanonical`).
+ *
+ * **Since N7b a removed body keeps its cell rows** — it draws at the dormant rung, dimmed, with the
+ * reason in the drawer, and is found by someone standing on it (so the landowner's own skate attaches
+ * here rather than minting a fresh public body). What removal takes away is standing: search, every
+ * push surface, the weather registry, and its bays' cells all go with it, through
+ * `transitionStanding`.
  */
 export const remove = mutation({
   args: { waterBodyId: v.id('waterBodies'), reason: literals(REMOVAL_REASONS) },
@@ -2718,20 +2680,12 @@ export const remove = mutation({
     if (body.removedAt !== undefined) throw new ConvexError('Water body is already removed');
 
     const now = Date.now();
-    await ctx.db.patch(args.waterBodyId, {
-      removedAt: now,
-      removedByUserId: actor._id,
-      removalReason: args.reason,
-    });
-    // A removed body loses its cell rows outright, so it costs the read path nothing (N1).
-    await syncWaterBodyCells(ctx, args.waterBodyId, {
-      bbox: body.bbox,
-      minVisibleZoom: zoomSortKey(body),
-      listed: isListed({ ...body, removedAt: now }),
-    });
-    // The case this exists for: a landowner takedown must take the lake's named bays off the map
-    // with it, or "Malletts Bay" keeps drawing on a map that no longer has Lake Champlain.
-    await syncCellsForParent(ctx, args.waterBodyId, { ...body, removedAt: now });
+    await transitionStanding(
+      ctx,
+      body,
+      { removedAt: now, removedByUserId: actor._id, removalReason: args.reason },
+      { actorId: actor._id, audit: false, now },
+    );
     await ctx.db.insert('moderationActions', {
       actorId: actor._id,
       action: 'remove',
@@ -2745,7 +2699,17 @@ export const remove = mutation({
   },
 });
 
-/** Admin: reverse a removal — clear `removed*`, re-derive `listed`, audit the restore (D48). */
+/**
+ * Admin: reverse a removal — clear `removed*`, bring the body back to active, audit the restore
+ * (D48).
+ *
+ * **A restore is an activation** (N7b, founder call: *"restoring a body should trigger the whole
+ * data backfill for that body, so that it has a full profile when it goes live"*). It clears any
+ * stored dormancy too, re-scores with richness, re-cells, re-registers the weather cell and stamps
+ * `activatedAt` — which is what the enrichment passes read to find bodies that came back since their
+ * last run. A `none` access ruling under the removal still stands: that is a separate decision with
+ * its own verb.
+ */
 export const restore = mutation({
   args: { waterBodyId: v.id('waterBodies') },
   handler: async (ctx, args) => {
@@ -2754,25 +2718,21 @@ export const restore = mutation({
     if (!body) throw new ConvexError('Water body not found');
     if (body.removedAt === undefined) throw new ConvexError('Water body is not removed');
 
-    await ctx.db.patch(args.waterBodyId, {
-      removedAt: undefined,
-      removedByUserId: undefined,
-      removalReason: undefined,
+    const now = Date.now();
+    await activateBody(ctx, body, {
+      via: 'restore',
+      actorId: actor._id,
+      audit: false,
+      now,
+      extraPatch: { removedAt: undefined, removedByUserId: undefined, removalReason: undefined },
     });
-    await syncWaterBodyCells(ctx, args.waterBodyId, {
-      bbox: body.bbox,
-      minVisibleZoom: zoomSortKey(body),
-      listed: isListed({ ...body, removedAt: undefined }),
-    });
-    // Restoring the lake brings back the bays that weren't delisted in their own right.
-    await syncCellsForParent(ctx, args.waterBodyId, { ...body, removedAt: undefined });
     await ctx.db.insert('moderationActions', {
       actorId: actor._id,
       action: 'restore',
       targetType: 'waterbody',
       targetId: args.waterBodyId,
       reason: 'Restored to the map',
-      createdAt: Date.now(),
+      createdAt: now,
     });
     return args.waterBodyId;
   },
@@ -2825,28 +2785,29 @@ export const setPublicAccess = mutation({
             ...(trimmedNote ? { note: trimmedNote } : {}),
           };
 
-    // The demotion is derived, so the score and the cell rows both move with the verdict. Skipping
-    // the re-sync would leave the body drawing at its old zoom until something else happened to
-    // re-cell it — `minVisibleZoom` is part of `by_cell`'s range, not just a stamp (N1).
-    //
-    // **Richness is read here rather than dropped**, unlike the bulk paths that omit it (see
-    // `richnessFor`). Their reason is cost — two extra index reads across 116,070 rows inside the
-    // heaviest mutation in the app — and it does not apply to one body under a moderator's hand. It
-    // matters more here than anywhere: this is the only *penalty* in the ladder, so scoring it
-    // without the boosts the body has earned would demote it further than the ruling asks, and
-    // clearing the verdict later would restore it to the wrong zoom rather than the one it had.
-    const scores = scoreFields({
-      richness: await richnessFor(ctx, body),
-      surfaceAreaSqM: body.surfaceAreaSqM,
-      curatedBoost: body.curatedBoost,
-      noPublicAccess: verdict === 'none',
-    });
-    await ctx.db.patch(waterBodyId, { publicAccess: next, ...scores });
-    await syncWaterBodyCells(ctx, waterBodyId, {
-      bbox: body.bbox,
-      minVisibleZoom: scores.minVisibleZoom,
-      listed: isListed(body),
-    });
+    // The standing is derived from the verdict (N7b): `none` makes the body dormant — the dormant
+    // rung, no push surface, out of the weather registry — and `open` is the founder's "confirm
+    // public access activates": it clears a stored dormancy as well, since a moderator who has just
+    // established that the public may go there has answered the retention question too. Clearing
+    // (`null`) simply re-derives from whatever else is on the row. All three go through
+    // `transitionStanding`, so the score, the cells, the bays and the registry move together and
+    // the audit row below is the one record of it.
+    if (verdict === 'open') {
+      await activateBody(ctx, body, {
+        via: 'access_confirmed',
+        actorId: actor._id,
+        audit: false,
+        now,
+        extraPatch: { publicAccess: next },
+      });
+    } else {
+      await transitionStanding(
+        ctx,
+        body,
+        { publicAccess: next },
+        { actorId: actor._id, audit: false, now },
+      );
+    }
 
     // Ruling on the lake resolves the reports about it. `actioned` says the reporters were right;
     // `dismissed` says they weren't. Clearing the verdict leaves them open — the question is once
@@ -3412,6 +3373,10 @@ export const get = query({
       body = await ctx.db.get(body.mergedIntoId);
     }
     if (!body) return null;
+    // Unlisted (rejected / merged-and-unresolvable) is the only "unavailable" now: a removed or
+    // dormant body is returned whole, and the clients read `standingOf(body)` to say why it is not
+    // on the active map and offer the way back (N7b). Hiding the row was how a skater got
+    // "unavailable" with no reason and no recourse.
     if (!isListed(body)) return { available: false as const };
     return { available: true as const, body };
   },
@@ -3429,31 +3394,30 @@ export const setCuratedBoost = mutation({
     const body = await ctx.db.get(waterBodyId);
     if (!body) throw new ConvexError('Water body not found');
 
-    // Richness for the same reason `setPublicAccess` reads it: one body under a moderator's hand is
-    // nowhere near the bulk paths' cost argument, and the two mutations have to agree — a boost
-    // applied right after an access ruling would otherwise strip the richness that ruling just
-    // scored in, and the body's zoom would swing on which control a moderator touched last.
-    const scores = scoreFields({
-      richness: await richnessFor(ctx, body),
-      surfaceAreaSqM: body.surfaceAreaSqM,
-      curatedBoost,
-      noPublicAccess: noPublicAccessOf(body),
-    });
-    await ctx.db.patch(waterBodyId, { curatedBoost, ...scores });
-    // Restamp the cell rows with the new `minVisibleZoom` — it's part of `by_cell`'s range, so a
-    // boost that didn't move the body still has to move its rows, or it draws at the old zoom (N1).
-    await syncWaterBodyCells(ctx, waterBodyId, {
-      bbox: body.bbox,
-      minVisibleZoom: scores.minVisibleZoom,
-      listed: isListed(body),
-    });
+    // Through `transitionStanding` (N7b): richness is read for the same reason `setPublicAccess`
+    // reads it — one body under a moderator's hand — and the cell rows are restamped with the new
+    // `minVisibleZoom`, which is part of `by_cell`'s range (N1). A **positive** boost on a body the
+    // machine set dormant brings it back: a curated boost is a standing human decision (it is what
+    // `retainsActive` honours), and a moderator boosting a lake the season cron shelved has plainly
+    // decided it belongs on the map.
+    if (curatedBoost > 0 && reactivatesOnEvidence(body)) {
+      await activateBody(ctx, body, {
+        via: 'moderator',
+        actorId: actor._id,
+        audit: false,
+        extraPatch: { curatedBoost },
+      });
+    } else {
+      await transitionStanding(ctx, body, { curatedBoost }, { audit: false });
+    }
+    const after = await ctx.db.get(waterBodyId);
     await ctx.db.insert('moderationActions', {
       actorId: actor._id,
       action: 'set_curated_boost',
       targetType: 'waterbody',
       targetId: waterBodyId,
       reason: `Set curatedBoost to ${curatedBoost}`,
-      metadata: { curatedBoost, minVisibleZoom: scores.minVisibleZoom },
+      metadata: { curatedBoost, minVisibleZoom: after?.minVisibleZoom },
       createdAt: Date.now(),
     });
     return waterBodyId;
@@ -4850,7 +4814,7 @@ export const applyCuratedBoostSeed = internalMutation({
       const scores = scoreFields({
         surfaceAreaSqM: target.surfaceAreaSqM,
         curatedBoost: boost,
-        noPublicAccess: noPublicAccessOf(target),
+        active: isActive(target),
       });
       await ctx.db.patch(target._id, { curatedBoost: boost, ...scores });
       await syncWaterBodyCells(ctx, target._id, {
@@ -5223,6 +5187,10 @@ export const searchByName = query({
     const results: SearchHit[] = [];
     for (const body of raw) {
       if (!isListed(body)) continue;
+      // A removed body is map-only (founder call, 2026-09-16): findable by someone standing on it,
+      // never by someone typing its name. A dormant one is searchable, badged (N7b).
+      const standing = standingOf(body);
+      if (standing.standing === 'removed') continue;
       results.push({
         kind: 'body',
         _id: body._id,
@@ -5232,6 +5200,7 @@ export const searchByName = query({
         centroid: body.centroid,
         bbox: body.bbox,
         states: body.states ?? [],
+        ...(standing.standing !== 'active' ? { inactive: true } : {}),
       });
       if (results.length >= bodyRoom) break;
     }
@@ -5244,9 +5213,15 @@ export const searchByName = query({
     //
     // Bodies still win at equal relevance — "Champlain" is a substring match on Lake Champlain and
     // on nothing else, so the lake lands first, which is the behaviour the merge must not break.
+    // Inactive bodies rank after every active hit of the same tier: an exact match on a dormant
+    // pond still beats a fuzzy one on a live lake, but among equals the lake we push comes first.
     const merged = [...results, ...subAreaHits.slice(0, bayShare)];
     return merged
-      .map((hit, index) => ({ hit, index, tier: matchTier(hit, term) }))
+      .map((hit, index) => ({
+        hit,
+        index,
+        tier: matchTier(hit, term) * 2 + (hit.inactive ? 1 : 0),
+      }))
       .sort((a, b) => (a.tier !== b.tier ? a.tier - b.tier : a.index - b.index))
       .slice(0, max)
       .map(({ hit }) => hit);
@@ -5281,6 +5256,8 @@ type SearchHit = {
   parentName?: string;
   /** A bay's spelling variants, so an alias match can rank as the exact match it is. */
   aliases?: string[];
+  /** Set when the body is dormant (N7b) — the result wears the "Inactive" badge and ranks last. */
+  inactive?: boolean;
   type: Doc<'waterBodies'>['type'];
   centroid: Doc<'waterBodies'>['centroid'];
   /** The frame to fly to. **The bay's own**, not the parent's — searching Malletts Bay shouldn't
@@ -5307,7 +5284,9 @@ async function searchSubAreas(ctx: QueryCtx, term: string, max: number): Promise
   for (const subArea of raw) {
     if (subArea.removedAt !== undefined) continue;
     const parent = await ctx.db.get(subArea.waterBodyId);
-    if (!parent || !isListed(parent)) continue;
+    // Active, not merely listed (N7b): a bay is a name on a lake we push, and a bay of a dormant or
+    // removed lake is not reachable from the map either (`subAreaListed`).
+    if (!parent || !isActive(parent)) continue;
     hits.push({
       kind: 'subArea',
       _id: subArea._id,
@@ -6152,7 +6131,20 @@ export const setIncludedByRequest = internalMutation({
     const body = await ctx.db.get(key);
     if (!body) throw new ConvexError('setIncludedByRequest: body not found');
 
-    await ctx.db.patch(key, { includedByRequest: included ? true : undefined });
+    // Keeping a body by request is also an activation when the machine had shelved it (N7b): a
+    // request is precisely the evidence `not_in_campaign` yields to, and an operator running this
+    // against an inactive body means "put it back". Withdrawing the flag changes nothing about
+    // standing — the next prune or rollover is the honest place for that.
+    if (included && reactivatesOnEvidence(body)) {
+      await activateBody(ctx, body, {
+        via: 'request',
+        actorId: actorUserId,
+        audit: false,
+        extraPatch: { includedByRequest: true },
+      });
+    } else {
+      await ctx.db.patch(key, { includedByRequest: included ? true : undefined });
+    }
     await ctx.db.insert('moderationActions', {
       actorId: actorUserId,
       action: 'set_included_by_request',

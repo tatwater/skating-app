@@ -45,6 +45,7 @@ import {
   seasonStartMs,
   seasonsBetween,
   selectRecommended,
+  standingOf,
   THICKNESS_METHODS,
   type TrustClass,
   validateReportInput,
@@ -89,6 +90,7 @@ import { syncReportSubAreas } from './lib/reportSubAreas';
 import { getViewableReport, loadBlockedAuthorIds } from './lib/reportVisibility';
 import { awardPointEvent, checkAndAwardBadges, trustClassFor } from './lib/reputation';
 import { bodyWeatherCell, subAreaWeatherCell } from './lib/sampling';
+import { activateOnEvidence } from './lib/standing';
 import { latLng, literals } from './lib/validators';
 import { enqueueReportNotifications } from './notifications';
 import { resolveReportSubAreas, stampCandidates, subAreaDriveCoordFor } from './subAreas';
@@ -370,6 +372,11 @@ export const create = mutation({
     // merged body is unlisted — and leave the survivor, the card a skater is actually looking at,
     // stale until the six-hourly sweep.
     await recomputeBodySummary(ctx, body._id);
+
+    // Standing (N7b): a report is evidence of use, and a dormant body yields to it — before the
+    // notification fan-out below, which only pushes an *active* body. A `none` ruling or a removal
+    // does not yield (the resident of a private lake skating it is not evidence the public may).
+    await activateOnEvidence(ctx, body._id, 'report');
 
     // Reputation (D50): per-report author awards + retroactive corroboration (both authors, capped),
     // then a single badge recompute per affected author. Read the inserted doc once (photoIds /
@@ -670,6 +677,13 @@ export const seasonsForBody = query({
 interface BodyInfo {
   name: string;
   centroid: LatLng;
+  /**
+   * The body's standing (N7b). The global feed shows a report on a *dormant* body (a report there is
+   * what brought it back, and the drawer explains the rest) but not on a *removed* one — a
+   * landowner's own skate on a taken-down pond is theirs and the pond's, not the feed's. The
+   * recommended strip, which *pushes*, wants `active` only.
+   */
+  standing: 'active' | 'dormant' | 'removed' | 'unlisted';
   /** The body's easiest known approach (N6d/D144) — drives the feed card's Hike-In chip. */
   accessKind?: string;
   /**
@@ -696,6 +710,7 @@ async function bodyInfoFor(
   }
   const info: BodyInfo = {
     name: body?.name ?? 'Unknown water body',
+    standing: body ? standingOf(body).standing : 'unlisted',
     // A resolvable body always has a centroid; the fallback keeps the type total for a dangling ref.
     centroid: body?.centroid ?? { lat: 0, lng: 0 },
     // The Hike-In chip (N6d/D87). Free here — the body doc is already loaded and cached per query, so
@@ -911,6 +926,8 @@ export const listFeed = query({
     const page: FeedCardData[] = [];
     for (const r of result.page) {
       const body = await bodyInfoFor(ctx, r.waterBodyId, caches.bodyInfo);
+      // A takedown reaches the feed (N7b) — see `BodyInfo.standing`.
+      if (body.standing === 'removed') continue;
       const isFavorite = isFavoriteReport(favorites, r);
       let coord: LatLng = body.centroid;
       if (r.subAreaId !== undefined) {
@@ -1084,6 +1101,7 @@ export const recommended = query({
     const recentById = new Map<string, Doc<'reports'>>();
     const candidates: RecommendableReport[] = [];
     const authorTrust = new Map<string, TrustClass | null>();
+    const recommendedBodies = new Map<string, BodyInfo>();
     for (const r of recent) {
       recentById.set(r._id, r);
       // Cheap mandatory gates first (each also re-checked by `isRecommendable`): never break blocks (D3),
@@ -1092,6 +1110,10 @@ export const recommended = query({
       if (r.skateQuality !== 'great') continue;
       if (!r.iceTypes.includes('black_ice')) continue;
       if (r.photoIds.length < RECOMMENDED_MIN_PHOTOS) continue;
+      // The strip *recommends* a lake, so the lake has to be one we push (N7b). Cached per body
+      // for the page, like the feed's own lookup.
+      const bodyInfo = await bodyInfoFor(ctx, r.waterBodyId, recommendedBodies);
+      if (bodyInfo.standing !== 'active') continue;
 
       let trust = authorTrust.get(r.authorId);
       if (trust === undefined) {

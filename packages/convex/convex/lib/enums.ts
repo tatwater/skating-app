@@ -14,10 +14,12 @@ import {
   ACCESS_ALERT_VERDICTS as CORE_ACCESS_ALERT_VERDICTS,
   APPROACH_KINDS as CORE_APPROACH_KINDS,
   BODY_FEATURE_TYPES as CORE_BODY_FEATURE_TYPES,
+  DORMANCY_REASONS as CORE_DORMANCY_REASONS,
   NOTIFICATION_PREF_DEFAULTS as CORE_NOTIFICATION_PREF_DEFAULTS,
   NOTIFICATION_PREF_KEYS as CORE_NOTIFICATION_PREF_KEYS,
   NOTIFICATION_TYPES as CORE_NOTIFICATION_TYPES,
   PUBLIC_ACCESS_VERDICTS as CORE_PUBLIC_ACCESS_VERDICTS,
+  REMOVAL_REASONS as CORE_REMOVAL_REASONS,
   SATELLITE_IMAGERY_MODES as CORE_SATELLITE_IMAGERY_MODES,
   HAZARD_VERDICTS,
 } from '@skating/core';
@@ -101,14 +103,19 @@ export const DEDUP_STATUSES = ['clean', 'suspected_duplicate', 'near_certain', '
  */
 export const PUBLIC_ACCESS_VERDICTS = CORE_PUBLIC_ACCESS_VERDICTS;
 
-/** Why an admin soft-delisted a water body — reversible, never a hard delete (D48). */
-export const REMOVAL_REASONS = [
-  'landowner_request',
-  'unskateable',
-  'junk',
-  'duplicate',
-  'other',
-] as const;
+/**
+ * Why an admin soft-delisted a water body — reversible, never a hard delete (D48). Re-exported from
+ * `@skating/core` since N7b, where `describeStanding` turns each reason into the drawer's sentence;
+ * the schema, the mutation and the copy share one list.
+ */
+export const REMOVAL_REASONS = CORE_REMOVAL_REASONS;
+
+/**
+ * Why a body carries a `dormant` field (N7b) — see `standing.ts` in `@skating/core`. Only the
+ * reasons no other field expresses: a `none` ruling is read from `publicAccess`, a removal from
+ * `removedAt`.
+ */
+export const DORMANCY_REASONS = CORE_DORMANCY_REASONS;
 
 /** How a report entered the system. */
 /**
@@ -271,6 +278,14 @@ export const MODERATION_ACTIONS = [
   // prominence — it overrides `belongsInCorpus` and both prunes, where a boost only moves a body up
   // and down the zoom ladder.
   'set_included_by_request',
+  // Corpus standing (N7b). `set_standing` is a person — a moderator setting a body dormant with a
+  // note, or bringing one back. `activate_body` and `demote_body` are the machine: evidence
+  // (a report, a track, a put-in) re-activating a dormant body, the season cron or a prune demoting
+  // one. Both are audited with no actor, like `merge_hazards`, because a corpus that changes shape
+  // without a row saying so is one nobody can check.
+  'set_standing',
+  'activate_body',
+  'demote_body',
   'set_put_in', // admin placed an official put-in marker (Phase 4, decision #7)
   'resolve_flag',
   'dismiss_flag',
@@ -543,6 +558,11 @@ export const IMPORT_RUN_KINDS = [
   'raw_archive', // a `.raw/` archive populated from third parties (OSM extracts, agency services)
   'r2_mirror', // scripts/lib/mirror-r2.sh — pushing an archive to its private R2 bucket
   'bathymetry_join', // scripts/bathymetry join — archived lakes matched to corpus bodies
+  // Corpus standing (N7b). The seed partitions the stored corpus into active / dormant once (and
+  // again after any campaign); the rollover is the season cron's pass over the active set, recorded
+  // as a run so "did this season's rollover finish" is a row rather than a guess.
+  'standing_seed',
+  'standing_rollover',
   'bathymetry_build', // scripts/bathymetry build-contours — soundings/contours → drawable isobaths
   'bathymetry_tiles', // scripts/bathymetry tile — contours → PMTiles
   // scripts/etl load-access — the N6d access pass. **Two kinds rather than one**, because they fail
@@ -576,6 +596,10 @@ export const WEATHER_CELL_INVALIDATING_KINDS: readonly (typeof IMPORT_RUN_KINDS)
   'canonical_water',
   'dedup_resolve',
   'elevation',
+  // A standing pass moves thousands of bodies out of (or, rarely, into) the active set, and the
+  // registry only counts active bodies now (N7b) — so the cells they vacated need a walk to prune.
+  'standing_seed',
+  'standing_rollover',
 ];
 
 /**

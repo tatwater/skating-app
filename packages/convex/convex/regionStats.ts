@@ -13,8 +13,10 @@
 import {
   computeDeciles,
   type DecileBlock,
+  isActive,
   isKnownStateCode,
   KNOWN_STATE_CODES,
+  standingOf,
 } from '@skating/core';
 import { v } from 'convex/values';
 import { internal } from './_generated/api';
@@ -42,9 +44,14 @@ export const pageMetricValues = internalQuery({
     const numItems = Math.min(2000, Math.max(1, batchSize ?? 1000));
     const page = await ctx.db.query('waterBodies').paginate({ cursor: cursor ?? null, numItems });
     const rows = page.page
-      .filter((body) => isListed(body))
+      // Listed and not removed: a taken-down pond is still not part of the population a skater
+      // compares against, even though it is reachable now (N7b). A dormant body *is* — "deeper than
+      // 80% of Vermont's lakes" is a statement about the lakes, not about which ones we push — and
+      // the row carries `active` so the same walk can count both numbers.
+      .filter((body) => isListed(body) && standingOf(body).standing !== 'removed')
       .map((body) => ({
         states: body.states ?? [],
+        active: isActive(body),
         maxDepthM: body.maxDepthM,
         meanDepthM: body.meanDepthM,
         elevationM: body.elevationM,
@@ -61,13 +68,14 @@ export const upsertState = internalMutation({
     state: v.string(),
     metrics: v.any(),
     bodiesScanned: v.number(),
+    bodiesActive: v.number(),
   },
-  handler: async (ctx, { state, metrics, bodiesScanned }) => {
+  handler: async (ctx, { state, metrics, bodiesScanned, bodiesActive }) => {
     const existing = await ctx.db
       .query('regionStats')
       .withIndex('by_state', (q) => q.eq('state', state))
       .unique();
-    const doc = { state, metrics, bodiesScanned, updatedAt: Date.now() };
+    const doc = { state, metrics, bodiesScanned, bodiesActive, updatedAt: Date.now() };
     if (existing) await ctx.db.patch(existing._id, doc);
     else await ctx.db.insert('regionStats', doc);
   },
@@ -116,13 +124,14 @@ export const recompute = internalAction({
       // state → metric → values
       const byState = new Map<string, Map<Metric, number[]>>();
       const scanned = new Map<string, number>();
+      const active = new Map<string, number>();
 
       let cursor: string | undefined;
       let isDone = false;
       let total = 0;
       while (!isDone) {
         const page: {
-          rows: Array<{ states: string[] } & Partial<Record<Metric, number>>>;
+          rows: Array<{ states: string[]; active: boolean } & Partial<Record<Metric, number>>>;
           cursor: string;
           isDone: boolean;
         } = await ctx.runQuery(internal.regionStats.pageMetricValues, {
@@ -138,6 +147,7 @@ export const recompute = internalAction({
             // Defence in depth against a bad tag reaching the caption as a region name.
             if (!isKnownStateCode(state)) continue;
             scanned.set(state, (scanned.get(state) ?? 0) + 1);
+            if (row.active) active.set(state, (active.get(state) ?? 0) + 1);
             let metrics = byState.get(state);
             if (!metrics) {
               metrics = new Map();
@@ -154,7 +164,12 @@ export const recompute = internalAction({
         }
       }
 
-      const written: Array<{ state: string; bodiesScanned: number; metrics: string[] }> = [];
+      const written: Array<{
+        state: string;
+        bodiesScanned: number;
+        bodiesActive: number;
+        metrics: string[];
+      }> = [];
       for (const state of KNOWN_STATE_CODES) {
         const metrics = byState.get(state);
         if (!metrics) continue;
@@ -166,12 +181,14 @@ export const recompute = internalAction({
           if (block) blocks[metric] = block;
         }
         const bodiesScanned = scanned.get(state) ?? 0;
+        const bodiesActive = active.get(state) ?? 0;
         await ctx.runMutation(internal.regionStats.upsertState, {
           state,
           metrics: blocks,
           bodiesScanned,
+          bodiesActive,
         });
-        written.push({ state, bodiesScanned, metrics: Object.keys(blocks) });
+        written.push({ state, bodiesScanned, bodiesActive, metrics: Object.keys(blocks) });
       }
 
       await ctx.runMutation(internal.importRuns.finish, {
@@ -181,6 +198,7 @@ export const recompute = internalAction({
           { name: 'bodiesRead', value: total },
           { name: 'statesWritten', value: written.length },
           ...written.map((w) => ({ name: `${w.state}.bodiesScanned`, value: w.bodiesScanned })),
+          ...written.map((w) => ({ name: `${w.state}.bodiesActive`, value: w.bodiesActive })),
         ],
         stages: [
           {

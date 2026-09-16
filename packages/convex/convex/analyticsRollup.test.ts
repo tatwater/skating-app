@@ -442,7 +442,8 @@ describe('sweepCorpus', () => {
     await seedBody(t, { states: ['VT'], minVisibleZoom: 9 });
     await seedBody(t, { states: ['VT'], minVisibleZoom: 9 });
     await seedBody(t, { states: ['NY', 'VT'], minVisibleZoom: 7 }); // a border-spanning body counts in both
-    await seedBody(t, { states: ['NH'], minVisibleZoom: 12, removedAt: Date.now() }); // delisted
+    await seedBody(t, { states: ['NH'], minVisibleZoom: 12, removedAt: Date.now() }); // removed
+    await seedBody(t, { states: ['NH'], minVisibleZoom: 12, reviewStatus: 'rejected' }); // unlisted
 
     await t.mutation(internal.analyticsRollup.sweepCorpus, {});
     const today = metricDay(Date.now());

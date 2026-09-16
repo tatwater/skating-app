@@ -16,6 +16,7 @@
  * index stores as a real key.
  */
 
+import { standingOf } from '@skating/core';
 import { ConvexError, v } from 'convex/values';
 import type { Id } from './_generated/dataModel';
 import { mutation, type QueryCtx, query } from './_generated/server';
@@ -103,7 +104,12 @@ export const toggle = mutation({
       return { favorited: false };
     }
     const body = await ctx.db.get(waterBodyId);
-    if (!body || !isListed(body)) throw new ConvexError('Water body not found');
+    // A dormant lake can be favourited — *"if you favourited it, you know something we don't"*, and
+    // a favourite is what keeps it from going dormant again. A removed one cannot (N7b): a takedown
+    // is the one standing a favourite must not quietly subscribe someone to.
+    if (!body || !isListed(body) || standingOf(body).standing === 'removed') {
+      throw new ConvexError('Water body not found');
+    }
     if (subAreaId !== undefined) {
       const subArea = await ctx.db.get(subAreaId);
       if (!subArea || subArea.waterBodyId !== waterBodyId || !subAreaListed(subArea, body)) {
@@ -156,7 +162,7 @@ export const listForUser = query({
     }[] = [];
     for (const row of rows) {
       const body = await resolveSurvivor(ctx, row.waterBodyId);
-      if (!body || !isListed(body)) continue;
+      if (!body || !isListed(body) || standingOf(body).standing === 'removed') continue;
       if (row.subAreaId === undefined) {
         out.push({ waterBodyId: body._id, name: body.name, createdAt: row.createdAt });
         continue;

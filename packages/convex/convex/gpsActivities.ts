@@ -41,6 +41,7 @@ import {
   seasonEndMs,
   seasonOf,
   seasonStartMs,
+  standingOf,
 } from '@skating/core';
 import { ConvexError, v } from 'convex/values';
 import type { LineString, MultiPolygon, Polygon } from 'geojson';
@@ -57,6 +58,7 @@ import { resolveSurvivor } from './lib/bodies';
 import { ACTIVITY_PROMPT_STATES } from './lib/enums';
 import { isListed } from './lib/listing';
 import { enqueueActorNotification } from './lib/notificationQueue';
+import { activateOnEvidence } from './lib/standing';
 import { geoJson, literals } from './lib/validators';
 import { stampCandidates, trackSubAreaStamp } from './subAreas';
 import { listedBodiesNearCoord } from './waterBodies';
@@ -211,7 +213,7 @@ export const ingestTrack = mutation({
     // body just resolved, returning nothing on the ~99% with no bays.
     const bays = await bayStampFor(ctx, resolved.primary, path);
 
-    return await ctx.db.insert('gpsActivities', {
+    const activityId = await ctx.db.insert('gpsActivities', {
       userId: profile._id,
       provider: 'native',
       providerActivityId: args.idempotencyKey,
@@ -232,6 +234,10 @@ export const ingestTrack = mutation({
       promptState: 'pending',
       detectedAt: now,
     });
+    // Standing (N7b): a recorded skate is the strongest evidence there is — someone *was* here — so
+    // every body the track resolved to yields if the machine had shelved it.
+    for (const bodyId of resolved.all) await activateOnEvidence(ctx, bodyId, 'track');
+    return activityId;
   },
 });
 
@@ -772,7 +778,12 @@ export const listTracksForBody = query({
   },
   handler: async (ctx, args): Promise<{ tracks: AggregateTrackView[]; truncated: number }> => {
     const body = await resolveSurvivor(ctx, args.waterBodyId);
-    if (!body || !isListed(body)) return { tracks: [], truncated: 0 };
+    // Reachable and not removed (N7b): a dormant lake's tracks are its history and the reason it may
+    // come back; a taken-down pond's would publish exactly the ground somebody asked us to stop
+    // showing.
+    if (!body || !isListed(body) || standingOf(body).standing === 'removed') {
+      return { tracks: [], truncated: 0 };
+    }
 
     const limit = Math.min(Math.max(args.limit ?? MAX_TRACKS_PER_BODY, 1), MAX_TRACKS_PER_BODY);
     // Sanitized, not trusted: a `NaN` off the wire is an index bound that matches nothing, which would

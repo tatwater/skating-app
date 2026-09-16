@@ -26,6 +26,7 @@ import { mutation, type QueryCtx, query } from './_generated/server';
 import { recomputeAccessKind } from './accessPoints';
 import { requireContributorRole } from './lib/auth';
 import { HIDE_SUPPRESS_METERS, isSuppressed } from './lib/putInSuppression';
+import { activateOnEvidence } from './lib/standing';
 import { latLng } from './lib/validators';
 import { resolveSubAreaForPutIn } from './subAreas';
 
@@ -313,6 +314,10 @@ export const setOfficial = mutation({
       metadata: { coord: snapped, putInId: id, ...(trimmedName ? { name: trimmedName } : {}) },
       createdAt: Date.now(),
     });
+    // Standing (N7b, founder call): an official put-in on a dormant body brings it back — a human
+    // saying "you can get on the ice here" is evidence of access, and access is what the seed
+    // partitions on. Then the retention clock runs: a put-in alone does not *keep* a body active.
+    await activateOnEvidence(ctx, waterBodyId, 'put_in');
     // The body's denormalized `accessKind` is derived from its visible put-ins, so every mutation
     // that changes that set owes it a recompute (PR #43 review). A fresh `official` marker carries no
     // measured approach, so today this is usually a no-op — `bodyAccessKind` ignores an unknown kind.

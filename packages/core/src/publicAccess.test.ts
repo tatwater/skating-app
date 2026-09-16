@@ -1,10 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import {
-  displayScore,
-  MIN_VISIBLE_ZOOM_FLOOR,
-  minVisibleZoom,
-  NO_PUBLIC_ACCESS_DEMOTION,
-} from './display';
+import { displayScore, MIN_VISIBLE_ZOOM_FLOOR, minVisibleZoomFor } from './display';
 import {
   accessReportGateMessage,
   describePendingAccessReports,
@@ -15,6 +10,7 @@ import {
   type PublicAccess,
   withAccessDim,
 } from './publicAccess';
+import { DORMANT_MIN_VISIBLE_ZOOM, standingOf } from './standing';
 
 const UTC = 'UTC';
 const RULED_AT = Date.parse('2026-03-04T15:00:00Z');
@@ -22,44 +18,36 @@ const RULED_AT = Date.parse('2026-03-04T15:00:00Z');
 const NONE: PublicAccess = { verdict: 'none', decidedAt: RULED_AT, decidedByUserId: 'u1' };
 const OPEN: PublicAccess = { verdict: 'open', decidedAt: RULED_AT, decidedByUserId: 'u1' };
 
-describe('the zoom demotion', () => {
-  test('a flagged body draws later than the same body unflagged', () => {
+describe('the zoom rung (N7b — a `none` body is dormant, not demoted)', () => {
+  test('a `none` body draws at the dormant rung, past the D49 floor', () => {
     const area = 5_000_000;
-    const plain = minVisibleZoom(displayScore({ surfaceAreaSqM: area }));
-    const shut = minVisibleZoom(displayScore({ surfaceAreaSqM: area, noPublicAccess: true }));
-    expect(shut).toBeGreaterThan(plain);
-    expect(shut - plain).toBe(2); // ~two zoom levels, the tuned figure
+    const plain = minVisibleZoomFor(displayScore({ surfaceAreaSqM: area }), true);
+    const shut = minVisibleZoomFor(displayScore({ surfaceAreaSqM: area }), false);
+    expect(plain).toBeLessThanOrEqual(MIN_VISIBLE_ZOOM_FLOOR);
+    expect(shut).toBe(DORMANT_MIN_VISIBLE_ZOOM);
+    expect(shut).toBeGreaterThan(MIN_VISIBLE_ZOOM_FLOOR);
   });
 
-  /**
-   * The guarantee that makes this the *first* penalty term safe to add. `display.ts` states that every
-   * term is a boost, so that no obscure pond is pushed below the discoverability floor — the reason a
-   * subtraction is admissible here is the clamp, not judgement about the size of the number.
-   */
-  test('the discoverability floor holds — a tiny pond still draws by the floor zoom', () => {
-    const tiny = displayScore({ surfaceAreaSqM: 1, noPublicAccess: true });
-    expect(tiny).toBeLessThan(0); // the raw score really does go negative
-    expect(minVisibleZoom(tiny)).toBe(MIN_VISIBLE_ZOOM_FLOOR);
+  test('an enormous private lake lands on the same rung as a tiny one — standing, not size', () => {
+    const champlain = minVisibleZoomFor(displayScore({ surfaceAreaSqM: 1.1e9 }), false);
+    const puddle = minVisibleZoomFor(displayScore({ surfaceAreaSqM: 1 }), false);
+    expect(champlain).toBe(puddle);
   });
 
-  test('an enormous private lake is demoted rather than hidden', () => {
-    const champlain = minVisibleZoom(displayScore({ surfaceAreaSqM: 1.1e9, noPublicAccess: true }));
-    expect(champlain).toBeGreaterThan(6);
-    expect(champlain).toBeLessThan(MIN_VISIBLE_ZOOM_FLOOR);
-  });
-
-  test('the demotion composes with a curated boost rather than overriding it', () => {
+  test('the score itself is untouched — every term is still a boost', () => {
     const base = { surfaceAreaSqM: 5_000_000, curatedBoost: 0.3 };
-    expect(displayScore({ ...base, noPublicAccess: true })).toBeCloseTo(
-      displayScore(base) - NO_PUBLIC_ACCESS_DEMOTION,
-      10,
-    );
+    expect(displayScore(base)).toBeGreaterThan(displayScore({ surfaceAreaSqM: 5_000_000 }));
+    expect(displayScore({ surfaceAreaSqM: 1 })).toBeGreaterThanOrEqual(0);
   });
 
-  test('absent means undemoted — the default cannot silently penalise the corpus', () => {
-    expect(displayScore({ surfaceAreaSqM: 5_000_000 })).toBe(
-      displayScore({ surfaceAreaSqM: 5_000_000, noPublicAccess: false }),
-    );
+  test('standingOf reads the verdict as dormancy', () => {
+    const body = { dedupStatus: 'clean' as const, publicAccess: NONE };
+    expect(standingOf(body)).toEqual({
+      standing: 'dormant',
+      since: RULED_AT,
+      reason: 'no_public_access',
+    });
+    expect(standingOf({ dedupStatus: 'clean', publicAccess: OPEN }).standing).toBe('active');
   });
 });
 
@@ -93,7 +81,7 @@ describe('the map dim expression', () => {
    */
   test('compares against true rather than reading the property as a boolean', () => {
     const json = JSON.stringify(withAccessDim(1));
-    expect(json).toContain('["==",["get","noPublicAccess"],true]');
+    expect(json).toContain('["==",["get","inactive"],true]');
     expect(json).toContain('["==",["get","selfFlagged"],true]');
   });
 });

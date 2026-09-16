@@ -13,7 +13,7 @@
  * to reason about at all.
  */
 
-import { belongsInCorpus } from '@skating/core';
+import { belongsInCorpus, isActive } from '@skating/core';
 import { v } from 'convex/values';
 import { internalQuery } from './_generated/server';
 import { loadParkingForBody } from './accessPoints';
@@ -71,7 +71,9 @@ export const listForImageryMask = internalQuery({
       //
       // This is the one filter here whose omission fails *open*, which is why it runs before the
       // corpus floor rather than after it.
-      if (!isListed(body)) {
+      // Active, not merely listed (N7b): a dormant body is one nobody is shown and needs no
+      // imagery, and a removed one is the takedown this filter was written for.
+      if (!isListed(body) || !isActive(body)) {
         unlisted++;
         continue;
       }
@@ -199,7 +201,7 @@ export const listSubAreasForImageryMask = internalQuery({
         continue;
       }
       const parent = await ctx.db.get(subArea.waterBodyId);
-      if (!parent || !isListed(parent)) {
+      if (!parent || !isActive(parent)) {
         parentUnavailable++;
         continue;
       }
