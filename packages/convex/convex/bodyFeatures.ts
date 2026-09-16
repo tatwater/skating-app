@@ -21,7 +21,9 @@ import { resolveSurvivor } from './lib/bodies';
 import { BODY_FEATURE_TYPES } from './lib/enums';
 import { HAZARD_GEOMETRY_KINDS } from './lib/hazardValidators';
 import { MAX_BODY_CLUSTERS } from './lib/recurrence';
+import { hazardCenter } from './lib/sampling';
 import { geoJson, literals } from './lib/validators';
+import { resolveSubAreaForPoint } from './subAreas';
 
 /** Active known features for a body — rendered alongside hazards with distinct styling. */
 export const listForBody = query({
@@ -223,7 +225,10 @@ export const demote = mutation({
 
 export async function insertBodyFeature(
   ctx: MutationCtx,
-  args: Omit<Doc<'bodyFeatures'>, '_id' | '_creationTime' | 'bbox' | 'active' | 'createdAt'>,
+  args: Omit<
+    Doc<'bodyFeatures'>,
+    '_id' | '_creationTime' | 'bbox' | 'active' | 'createdAt' | 'subAreaId'
+  >,
 ): Promise<Id<'bodyFeatures'>> {
   // Reuse the hazard footprint math so a feature's bbox is computed identically to a hazard's — a
   // promoted ridge must not shift or resize just because it changed tables. The shape is built from
@@ -247,11 +252,16 @@ export async function insertBodyFeature(
   // MultiLineString would otherwise reach `turf/buffer` and throw mid-mutation or store a junk bbox.
   if (!isValidHazardShape(shape)) throw new ConvexError('Invalid body-feature geometry');
 
+  const bbox = hazardBbox(shape);
+  // The bay the feature sits in (N9) — the hazard rule, by the footprint's centre. Re-stamped by
+  // `subAreas.restampParent` on a redraw, like the hazard it may have been promoted from.
+  const subArea = await resolveSubAreaForPoint(ctx, args.waterBodyId, hazardCenter({ bbox }));
   return ctx.db.insert('bodyFeatures', {
     ...args,
-    bbox: hazardBbox(shape),
+    bbox,
     active: true,
     createdAt: Date.now(),
+    ...(subArea !== null ? { subAreaId: subArea.subAreaId } : {}),
   });
 }
 

@@ -2018,3 +2018,85 @@ describe('the wider re-stamp (N9)', () => {
     expect((await t.run((ctx) => ctx.db.get(feature)))?.subAreaId).toBeUndefined();
   });
 });
+
+describe('the stamps at write (N9)', () => {
+  async function setup() {
+    const t = harness();
+    const body = await seedBody(t);
+    const mod = await seedUser(t, 'mod', 'moderator');
+    const west = await mod.as.mutation(api.subAreas.create, {
+      waterBodyId: body,
+      name: 'West Bay',
+      polygon: rect(-73.5, 44.2, -73.3, 44.6),
+    });
+    const east = await mod.as.mutation(api.subAreas.create, {
+      waterBodyId: body,
+      name: 'East Bay',
+      polygon: rect(-72.8, 44.2, -72.5, 44.6),
+    });
+    await settle(t);
+    return { t, body, mod, west, east };
+  }
+
+  test('an official put-in on a bay shore is tagged with the bay; one on open shore is not', async () => {
+    const { t, body, mod, west } = await setup();
+    // The lake's west shore, inside the bay's latitude band — snapped onto the outline both share.
+    const inBay = await mod.as.mutation(api.putIns.setOfficial, {
+      waterBodyId: body,
+      coord: { lat: 44.4, lng: -73.5005 },
+    });
+    expect((await t.run((ctx) => ctx.db.get(inBay)))?.subAreaId).toBe(west);
+    const openShore = await mod.as.mutation(api.putIns.setOfficial, {
+      waterBodyId: body,
+      coord: { lat: 44.9, lng: -73.5005 },
+    });
+    expect((await t.run((ctx) => ctx.db.get(openShore)))?.subAreaId).toBeUndefined();
+    // A hide row is tagged too.
+    const hidden = await mod.as.mutation(api.putIns.hide, {
+      waterBodyId: body,
+      coord: { lat: 44.3, lng: -73.5 },
+      reason: 'private',
+    });
+    expect((await t.run((ctx) => ctx.db.get(hidden)))?.subAreaId).toBe(west);
+  });
+
+  test('a recorded track is stamped at ingest: majority bay, every bay, and the mouth-line flag', async () => {
+    const { t, body, west, east } = await setup();
+    const skater = await seedUser(t, 'skater');
+    const now = Date.now();
+    const activityId = await skater.as.mutation(api.gpsActivities.ingestTrack, {
+      idempotencyKey: 'two-bay',
+      path: {
+        type: 'LineString',
+        coordinates: [
+          [-73.45, 44.4],
+          [-73.4, 44.4],
+          [-73.1, 44.4],
+          [-72.7, 44.4],
+          [-72.65, 44.4],
+          [-72.6, 44.4],
+        ],
+      },
+      startTime: now - 3_600_000,
+      endTime: now,
+      waterBodyId: body,
+    });
+    const row = await t.run((ctx) => ctx.db.get(activityId));
+    expect(row?.waterBodyId).toBe(body);
+    expect(row?.subAreaId).toBe(east);
+    expect(row?.subAreaIds).toEqual([east, west]);
+    expect(row?.leftSubArea).toBe(true);
+  });
+
+  test('a known feature is stamped by its footprint centre', async () => {
+    const { t, body, mod, west } = await setup();
+    const id = await mod.as.mutation(api.bodyFeatures.create, {
+      waterBodyId: body,
+      type: 'spring_current',
+      geometry: { type: 'Point', coordinates: [-73.4, 44.4] },
+      radiusMeters: 30,
+      reason: 'known spring',
+    });
+    expect((await t.run((ctx) => ctx.db.get(id)))?.subAreaId).toBe(west);
+  });
+});

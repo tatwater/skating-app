@@ -58,6 +58,7 @@ import { ACTIVITY_PROMPT_STATES } from './lib/enums';
 import { isListed } from './lib/listing';
 import { enqueueActorNotification } from './lib/notificationQueue';
 import { geoJson, literals } from './lib/validators';
+import { stampCandidates, trackSubAreaStamp } from './subAreas';
 import { listedBodiesNearCoord } from './waterBodies';
 
 /**
@@ -205,6 +206,11 @@ export const ingestTrack = mutation({
       resolved = await resolveTrackToBodies(ctx, path);
     }
 
+    // And the bays of that body the track ran through (N9 / D175): majority-of-samples primary,
+    // every bay touched, and whether it ran past a bay's drawn mouth. One `by_parent` read on the
+    // body just resolved, returning nothing on the ~99% with no bays.
+    const bays = await bayStampFor(ctx, resolved.primary, path);
+
     return await ctx.db.insert('gpsActivities', {
       userId: profile._id,
       provider: 'native',
@@ -218,6 +224,9 @@ export const ingestTrack = mutation({
       // Only stored when the skate genuinely spanned more than one body — a single-element array
       // would be noise on every ordinary row.
       ...(resolved.all.length > 1 ? { waterBodyIds: resolved.all } : {}),
+      ...(bays.subAreaId !== undefined ? { subAreaId: bays.subAreaId } : {}),
+      ...(bays.subAreaIds !== undefined ? { subAreaIds: bays.subAreaIds } : {}),
+      ...(bays.leftSubArea !== undefined ? { leftSubArea: bays.leftSubArea } : {}),
       // `pending` = recorded but not yet offered as a report. The recorder prompts on stop; a skate
       // that resolves to nothing goes down the D14 create-or-attach path instead.
       promptState: 'pending',
@@ -225,6 +234,24 @@ export const ingestTrack = mutation({
     });
   },
 });
+
+/**
+ * The bay stamp for a track on a resolved body (N9) — the read around `trackSubAreaStamp`, which is
+ * the rule. Empty when the track resolved to nothing or the body has no bays.
+ */
+async function bayStampFor(
+  ctx: QueryCtx,
+  waterBodyId: Id<'waterBodies'> | null,
+  path: LineString,
+): Promise<ReturnType<typeof trackSubAreaStamp>> {
+  const none = { subAreaId: undefined, subAreaIds: undefined, leftSubArea: undefined };
+  if (waterBodyId === null) return none;
+  const candidates = await stampCandidates(ctx, waterBodyId);
+  if (candidates.length === 0) return none;
+  const parent = await ctx.db.get(waterBodyId);
+  if (!parent) return none;
+  return trackSubAreaStamp(path, candidates, parent.polygon as unknown as Polygon | MultiPolygon);
+}
 
 /**
  * Move an activity through its report-prompt lifecycle (`pending → prompted → converted | dismissed`).
@@ -385,6 +412,14 @@ export const sweepUnpromptedActivities = internalMutation({
                     waterBodyId: loserRow.waterBodyId,
                     ...(loserRow.waterBodyIds !== undefined
                       ? { waterBodyIds: loserRow.waterBodyIds }
+                      : {}),
+                    // And the lake's bays with it (N9): the stamp is a fact about the same skate.
+                    ...(loserRow.subAreaId !== undefined ? { subAreaId: loserRow.subAreaId } : {}),
+                    ...(loserRow.subAreaIds !== undefined
+                      ? { subAreaIds: loserRow.subAreaIds }
+                      : {}),
+                    ...(loserRow.leftSubArea !== undefined
+                      ? { leftSubArea: loserRow.leftSubArea }
                       : {}),
                   }
                 : {}),

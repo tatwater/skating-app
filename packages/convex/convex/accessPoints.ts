@@ -61,6 +61,7 @@ import { requireContributor, requireContributorRole } from './lib/auth';
 import { ACCESS_ALERT_TARGETS, ACCESS_AMENITIES, APPROACH_KINDS } from './lib/enums';
 import { assertOwnedPhotos, resolvePhotoUrls } from './lib/photoAccess';
 import { latLng, literals } from './lib/validators';
+import { resolveSubAreaForPutIn } from './subAreas';
 import { listedBodiesNearCoord } from './waterBodies';
 
 /**
@@ -411,6 +412,9 @@ export const matchAndImportPutIns = internalMutation({
         approachAscentM: candidate.approachAscentM,
         approachRouted: candidate.approachRouted,
         approachPath: candidate.approachPath,
+        // The bay this launch serves (N9), by distance to the outline. Written on insert and on
+        // the ordinary update alike, so a re-import after a bay was drawn tags the launch too.
+        subAreaId: await resolveSubAreaForPutIn(ctx, waterBodyId, candidate.point),
       };
 
       if (!existing) {

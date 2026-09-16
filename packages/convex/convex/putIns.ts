@@ -27,6 +27,7 @@ import { mutation, type QueryCtx, query } from './_generated/server';
 import { recomputeAccessKind } from './accessPoints';
 import { requireContributorRole } from './lib/auth';
 import { latLng } from './lib/validators';
+import { resolveSubAreaForPutIn } from './subAreas';
 
 /** How many recent reports feed the derived-cluster read — bounds the per-body scan (read-cap). */
 const PUTIN_REPORT_SCAN_LIMIT = 200;
@@ -295,6 +296,9 @@ export const setOfficial = mutation({
       );
     }
     const snapped = snapToEdge(coord, polygon);
+    // The bay this launch serves (N9) — by distance to the bay's outline, since the coord was just
+    // snapped onto the shoreline that outline traces. Absent on the ~99% of bodies with no bays.
+    const subAreaId = await resolveSubAreaForPutIn(ctx, waterBodyId, snapped);
 
     const id = await ctx.db.insert('putIns', {
       waterBodyId,
@@ -304,6 +308,7 @@ export const setOfficial = mutation({
       // Absent rather than empty, so `resolvePutInName` falls back to the compass label instead of
       // rendering a launch with a blank name.
       ...(trimmedName ? { name: trimmedName } : {}),
+      ...(subAreaId !== undefined ? { subAreaId } : {}),
       createdByUserId: actor._id,
       createdAt: Date.now(),
     });
@@ -342,11 +347,15 @@ export const hide = mutation({
     const body = await ctx.db.get(waterBodyId);
     if (!body) throw new ConvexError('Water body not found');
     if (reason.trim().length === 0) throw new ConvexError('A reason is required');
+    // Stamped like any other row (N9), so a bay-scoped access read can find the suppression rows
+    // that apply to its shore without re-deriving them from the coordinate.
+    const subAreaId = await resolveSubAreaForPutIn(ctx, waterBodyId, coord);
     const id = await ctx.db.insert('putIns', {
       waterBodyId,
       coord,
       source: 'derived',
       status: 'hidden',
+      ...(subAreaId !== undefined ? { subAreaId } : {}),
       createdByUserId: actor._id,
       createdAt: Date.now(),
     });
