@@ -355,6 +355,85 @@ describe('the re-report gate under an “open” verdict', () => {
   });
 });
 
+/** Make every queued notification due and flush it — the settle window (N8 / D169), fast-forwarded. */
+async function flushAllDue(t: ReturnType<typeof convexTest>) {
+  await t.run(async (ctx) => {
+    for (const row of await ctx.db.query('notificationQueue').collect()) {
+      await ctx.db.patch(row._id, { flushAfter: Date.now() - 1 });
+    }
+  });
+  await t.mutation(internal.notifications.flushNotificationQueue, {});
+  return t.run((ctx) => ctx.db.query('notifications').collect());
+}
+
+describe('a ruling resolves the reports the way the queue would', () => {
+  // The drawer told each reporter "it's with the moderators". This is the moment they hear back —
+  // and the ruling has to count on the Phase 7b chart like any other resolution. Both were built
+  // after N6f and hang off `moderation.resolveFlag`; this path patched the rows itself and skipped
+  // both, silently.
+  test('every distinct reporter is told the verdict, once, and the ruling moderator is not', async () => {
+    const t = convexTest(schema, modules);
+    const id = await seedBody(t);
+    const a = await seedUser(t, 'a');
+    const b = await seedUser(t, 'b');
+    const mod = await seedUser(t, 'mod', 'moderator');
+    await report(a, id);
+    await report(b, id);
+    // A moderator can file too — they already know how it went.
+    await report(mod, id);
+
+    await mod.as.mutation(api.waterBodies.setPublicAccess, { waterBodyId: id, verdict: 'none' });
+
+    const notes = await flushAllDue(t);
+    expect(notes.map((n) => n.userId).sort()).toEqual([a.id, b.id].sort());
+    for (const n of notes) {
+      expect(n.type).toBe('content_flag_resolved');
+      expect(n.payload).toMatchObject({ resolution: 'actioned' });
+    }
+  });
+
+  test('“open” tells them their claim was dismissed', async () => {
+    const t = convexTest(schema, modules);
+    const id = await seedBody(t);
+    const a = await seedUser(t, 'a');
+    const mod = await seedUser(t, 'mod', 'moderator');
+    await report(a, id);
+
+    await mod.as.mutation(api.waterBodies.setPublicAccess, { waterBodyId: id, verdict: 'open' });
+
+    const notes = await flushAllDue(t);
+    expect(notes).toHaveLength(1);
+    expect(notes[0]?.payload).toMatchObject({ resolution: 'dismissed' });
+  });
+
+  test('the ruling counts on the disposition chart, keyed by reason', async () => {
+    const t = convexTest(schema, modules);
+    const id = await seedBody(t);
+    const a = await seedUser(t, 'a');
+    const b = await seedUser(t, 'b');
+    const mod = await seedUser(t, 'mod', 'moderator');
+    await report(a, id);
+    await report(b, id);
+
+    const dispositions = () =>
+      t.run(async (ctx) => {
+        const rows = await ctx.db
+          .query('metricSnapshots')
+          .withIndex('by_metric_date', (q) => q.eq('metric', 'flag_dispositions'))
+          .collect();
+        return rows[0]?.meta ?? {};
+      });
+
+    await mod.as.mutation(api.waterBodies.setPublicAccess, { waterBodyId: id, verdict: 'none' });
+    expect(await dispositions()).toEqual({ 'no_public_access:actioned': 2 });
+
+    // Clearing leaves the (now-closed) reports alone — nothing to count, nobody to tell.
+    await mod.as.mutation(api.waterBodies.setPublicAccess, { waterBodyId: id, verdict: null });
+    expect(await dispositions()).toEqual({ 'no_public_access:actioned': 2 });
+    expect(await flushAllDue(t)).toHaveLength(2);
+  });
+});
+
 describe('the queue lane', () => {
   test('collapses per-lake and ranks by how many people agree', async () => {
     const t = convexTest(schema, modules);
