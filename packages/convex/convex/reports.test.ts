@@ -3,7 +3,26 @@ import { convexTest } from 'convex-test';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { api, internal } from './_generated/api';
 import type { Id } from './_generated/dataModel';
+import { syncReportSubAreas } from './lib/reportSubAreas';
 import schema from './schema';
+
+/**
+ * Stamp a report into a bay by hand — the row *and* its `reportSubAreas` join row (N9), which is
+ * what the bay-scoped read actually serves. A fixture that patched only the row would test a path
+ * nothing reads any more.
+ */
+async function stampInBay(
+  t: ReturnType<typeof convexTest>,
+  reportId: Id<'reports'>,
+  subAreaId: Id<'waterBodySubAreas'>,
+) {
+  await t.run(async (ctx) => {
+    await ctx.db.patch(reportId, { subAreaId });
+    const report = await ctx.db.get(reportId);
+    if (!report) throw new Error('report vanished');
+    await syncReportSubAreas(ctx, report, [subAreaId]);
+  });
+}
 
 const modules = import.meta.glob('./**/*.*s');
 
@@ -362,7 +381,7 @@ describe('reports.listByWaterBody (all public, D13)', () => {
         skateEndTime: SKATE_TIME - 1000,
       });
       const bay = await seedSubArea(t, morey, 'Malletts Bay');
-      await t.run((ctx) => ctx.db.patch(inBay, { subAreaId: bay }));
+      await stampInBay(t, inBay, bay);
 
       const narrowed = await t.query(api.reports.listByWaterBody, {
         waterBodyId: morey,
@@ -394,7 +413,7 @@ describe('reports.listByWaterBody (all public, D13)', () => {
         skateEndTime: SKATE_TIME,
       });
       const bay = await seedSubArea(t, survivor, 'Malletts Bay');
-      await t.run((ctx) => ctx.db.patch(inBay, { subAreaId: bay }));
+      await stampInBay(t, inBay, bay);
 
       const page = await t.query(api.reports.listByWaterBody, {
         waterBodyId: loser,
@@ -594,10 +613,8 @@ describe('reports.listByWaterBody (all public, D13)', () => {
         skateEndTime: SKATE_TIME,
       });
       const lastSeason = await seedLastSeason(t, authorId, id);
-      await t.run(async (ctx) => {
-        await ctx.db.patch(thisSeason, { subAreaId: bay });
-        await ctx.db.patch(lastSeason, { subAreaId: bay });
-      });
+      await stampInBay(t, thisSeason, bay);
+      await stampInBay(t, lastSeason, bay);
 
       const current = await t.query(api.reports.listByWaterBody, {
         waterBodyId: id,

@@ -40,8 +40,18 @@ const AMENITY_LABELS: Record<string, string> = {
  * warning. A lake with three launches and one locked gate is still a lake worth telling someone about,
  * which is the same never-hide invariant hazards hold, for the same reason.
  */
-export function AccessSection({ waterBodyId }: { waterBodyId: Id<'waterBodies'> }) {
-  const access = useQuery(api.accessPoints.accessForBody, { waterBodyId });
+export function AccessSection({
+  waterBodyId,
+  subAreaId,
+}: {
+  waterBodyId: Id<'waterBodies'>;
+  /** The bay view (N9): the bay's own launches, the lots they serve, and lots within reach of its shore. */
+  subAreaId?: Id<'waterBodySubAreas'>;
+}) {
+  const access = useQuery(api.accessPoints.accessForBody, {
+    waterBodyId,
+    ...(subAreaId !== undefined ? { subAreaId } : {}),
+  });
   const vote = useMutation(api.accessAlerts.vote);
   const createAlert = useMutation(api.accessAlerts.create);
 

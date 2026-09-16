@@ -57,6 +57,12 @@ export function formatPlaceLabel(place: PlaceLabelParts | undefined): string | n
 export interface LocationLineParts {
   /** The named sub-area stamped at create (N2 / D60) — "Malletts Bay". Absent on most bodies. */
   subAreaName?: string;
+  /**
+   * Every bay the report is a member of, primary first (N9 / D175) — present only on a skate that
+   * crossed more than one. When present it replaces `subAreaName` in the line: *"Malletts Bay &
+   * Shelburne Bay · Lake Champlain"*, because a skater who was in both was in both.
+   */
+  subAreaNames?: readonly string[];
   /** The parent water body — always present on a report or hazard. */
   bodyName: string;
   /** The point-derived admin place (`reports.place`), stamped at create via `adminAreas` (Phase 5). */
@@ -82,10 +88,22 @@ const LOCATION_SEPARATOR = ' · ';
  */
 function locationSegments(parts: LocationLineParts): string[] {
   return [
-    parts.subAreaName?.trim() || null,
+    formatSubAreaNames(parts),
     parts.bodyName.trim() || null,
     formatPlaceLabel(parts.place),
   ].filter((segment): segment is string => !!segment);
+}
+
+/** Joins the member bays of a two-bay skate; a comma list would read as a place-name with a county. */
+const SUB_AREA_LIST_SEPARATOR = ' & ';
+
+/** The bay segment: the list form when there is one, else the single stamped name, else nothing. */
+function formatSubAreaNames(parts: LocationLineParts): string | null {
+  const names = (parts.subAreaNames ?? [])
+    .map((name) => name.trim())
+    .filter((name) => name.length > 0);
+  if (names.length > 0) return names.join(SUB_AREA_LIST_SEPARATOR);
+  return parts.subAreaName?.trim() || null;
 }
 
 /** The whole line on one row — report detail's subtitle, the hazard reporter line, a search result. */
@@ -144,6 +162,8 @@ export interface FeedCardData {
   bodyName: string;
   /** The report's named sub-area (N2 / D60), stamped at create. Absent on all but a few giants. */
   subAreaName?: string;
+  /** Every member bay of a two-bay skate, primary first (N9) — see `LocationLineParts`. */
+  subAreaNames?: string[];
   place?: PlaceLabelParts;
   skateEndTime: number;
   skateStartTime?: number;
@@ -251,6 +271,7 @@ export function buildFeedCardView(data: FeedCardData, now: number): FeedCardView
   const chips = [...data.iceTypes.map(humanizeEnum), ...data.surfaceTags.map(humanizeEnum)];
   const location = splitLocationLine({
     ...(data.subAreaName !== undefined ? { subAreaName: data.subAreaName } : {}),
+    ...(data.subAreaNames !== undefined ? { subAreaNames: data.subAreaNames } : {}),
     bodyName: data.bodyName,
     ...(data.place !== undefined ? { place: data.place } : {}),
   });

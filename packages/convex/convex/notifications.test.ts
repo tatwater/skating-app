@@ -120,6 +120,42 @@ async function seedBody(t: ReturnType<typeof convexTest>, externalId = 'osm/1') 
 
 const SKATE_TIME = Date.UTC(2026, 0, 10);
 
+/** A bay covering the west half of the fixture lake (N9), drawn straight into the table. */
+async function seedBay(t: ReturnType<typeof convexTest>, waterBodyId: Id<'waterBodies'>) {
+  const author = await t.run(async (ctx) => {
+    const profile = await ctx.db.query('profiles').first();
+    if (!profile) throw new Error('seed a profile first');
+    return profile._id;
+  });
+  return t.run((ctx) =>
+    ctx.db.insert('waterBodySubAreas', {
+      waterBodyId,
+      name: 'West Bay',
+      searchText: 'West Bay',
+      polygon: {
+        type: 'Polygon' as const,
+        coordinates: [
+          [
+            [0, 0],
+            [0, 1],
+            [0.5, 1],
+            [0.5, 0],
+            [0, 0],
+          ],
+        ],
+      },
+      bbox: { minLat: 0, minLng: 0, maxLat: 1, maxLng: 0.5 },
+      centroid: { lat: 0.5, lng: 0.25 },
+      surfaceAreaSqM: 500_000,
+      displayScore: 1,
+      minVisibleZoom: 10,
+      createdByUserId: author,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    }),
+  );
+}
+
 /** Make every pending queue row due, then flush; returns the delivered `notifications` rows. */
 async function flushAllDue(t: ReturnType<typeof convexTest>) {
   await t.run(async (ctx) => {
@@ -186,6 +222,59 @@ describe('notifications — favorites', () => {
     expect(queue[0]?.count).toBe(2);
   });
 
+  test('a lake favorite plus a bay favorite is ONE queue row with count 1, not "2 new reports" (N9)', async () => {
+    const t = convexTestWithGeo();
+    const id = await seedBody(t);
+    const author = await seedProfile(t, 'author');
+    const fan = await seedProfile(t, 'fan');
+    const bay = await seedBay(t, id);
+    await fan.as.mutation(api.waterBodyFavorites.toggle, { waterBodyId: id });
+    await fan.as.mutation(api.waterBodyFavorites.toggle, { waterBodyId: id, subAreaId: bay });
+
+    // In the bay — both favorites apply, and the person is told once.
+    await author.as.mutation(api.reports.create, {
+      waterBodyId: id,
+      skateEndTime: SKATE_TIME,
+      point: { lat: 0.5, lng: 0.25 },
+    });
+    const queue = await t.run((ctx) => ctx.db.query('notificationQueue').collect());
+    expect(queue).toHaveLength(1);
+    expect(queue[0]).toMatchObject({ userId: fan.id, kind: 'favorite', count: 1 });
+  });
+
+  test('a bay favorite hears about reports in the bay and not the rest of the lake (N9)', async () => {
+    const t = convexTestWithGeo();
+    const id = await seedBody(t);
+    const author = await seedProfile(t, 'author');
+    const fan = await seedProfile(t, 'fan');
+    const bay = await seedBay(t, id);
+    await fan.as.mutation(api.waterBodyFavorites.toggle, { waterBodyId: id, subAreaId: bay });
+
+    // Open water on the east side: not the bay.
+    await author.as.mutation(api.reports.create, {
+      waterBodyId: id,
+      skateEndTime: SKATE_TIME,
+      point: { lat: 0.5, lng: 0.75 },
+    });
+    expect(await t.run((ctx) => ctx.db.query('notificationQueue').collect())).toEqual([]);
+
+    await author.as.mutation(api.reports.create, {
+      waterBodyId: id,
+      skateEndTime: SKATE_TIME + 1,
+      point: { lat: 0.5, lng: 0.25 },
+    });
+    const queue = await t.run((ctx) => ctx.db.query('notificationQueue').collect());
+    expect(queue).toHaveLength(1);
+    expect(queue[0]).toMatchObject({ userId: fan.id, kind: 'favorite', count: 1 });
+
+    // And the delivered copy names the bay.
+    await flushAllDue(t);
+    const page = (
+      await fan.as.query(api.notifications.list, { paginationOpts: { numItems: 5, cursor: null } })
+    ).page;
+    expect(page[0]).toMatchObject({ type: 'favorite_report', subAreaName: 'West Bay' });
+  });
+
   test('the author is never notified about their own favorited body', async () => {
     const t = convexTestWithGeo();
     const id = await seedBody(t);
@@ -240,6 +329,114 @@ describe('notifications — nearby digest (X₁)', () => {
     // The immediate cron flush does NOT deliver it (not due yet).
     await t.mutation(internal.notifications.flushNotificationQueue, {});
     expect(await t.run((ctx) => ctx.db.query('notifications').collect())).toEqual([]);
+  });
+
+  test('a bay report is banded from the bay’s own put-in, not the lake’s representative point (N9)', async () => {
+    const t = convexTestWithGeo();
+    const id = await seedBody(t);
+    const author = await seedProfile(t, 'author');
+    const bay = await seedBay(t, id);
+    // A viewer whose 30-minute band covers the bay's west shore and nothing near the lake's
+    // representative point at (0.5, 0.5).
+    const westShore: Polygon = {
+      type: 'Polygon',
+      coordinates: [
+        [
+          [-0.1, 0.3],
+          [0.15, 0.3],
+          [0.15, 0.7],
+          [-0.1, 0.7],
+          [-0.1, 0.3],
+        ],
+      ],
+    };
+    const nearby = await seedProfile(t, 'nearby', {
+      prefs: { nearbyReportDigest: true },
+      allRadiusMinutes: 30,
+    });
+    await t.run((ctx) => ctx.db.patch(nearby.id, { cachedIsochrones: { band30: westShore } }));
+    // The bay's launch, on the west shore.
+    await t.run((ctx) =>
+      ctx.db.insert('putIns', {
+        waterBodyId: id,
+        subAreaId: bay,
+        coord: { lat: 0.5, lng: 0.001 },
+        source: 'osm' as const,
+        status: 'visible' as const,
+        createdAt: Date.now(),
+      }),
+    );
+
+    // Open water, far from the launch — banded on the lake, outside the viewer's band.
+    await createReport(t, author.as, {
+      waterBodyId: id,
+      skateEndTime: SKATE_TIME,
+      point: { lat: 0.5, lng: 0.75 },
+    } as never);
+    expect(await t.run((ctx) => ctx.db.query('notificationQueue').collect())).toEqual([]);
+
+    // In the bay — banded from its launch, inside the band.
+    await createReport(t, author.as, {
+      waterBodyId: id,
+      skateEndTime: SKATE_TIME + 1,
+      point: { lat: 0.5, lng: 0.25 },
+    } as never);
+    const queue = await t.run((ctx) => ctx.db.query('notificationQueue').collect());
+    expect(queue.map((q) => [q.userId, q.kind])).toEqual([[nearby.id, 'digest']]);
+  });
+
+  // ⚠ The review found this one. A moderator's hide is a separate `hidden` row, not a status on the
+  // launch, so the bay's drive coordinate was still the hidden launch — and the fan-out judged from
+  // an access point a moderator had said not to use.
+  test('a bay whose only launch a moderator hid is banded from the bay itself, not the hidden launch (N9)', async () => {
+    const t = convexTestWithGeo();
+    const id = await seedBody(t);
+    const author = await seedProfile(t, 'author');
+    const bay = await seedBay(t, id);
+    const westShore: Polygon = {
+      type: 'Polygon',
+      coordinates: [
+        [
+          [-0.1, 0.3],
+          [0.15, 0.3],
+          [0.15, 0.7],
+          [-0.1, 0.7],
+          [-0.1, 0.3],
+        ],
+      ],
+    };
+    const nearby = await seedProfile(t, 'nearby', {
+      prefs: { nearbyReportDigest: true },
+      allRadiusMinutes: 30,
+    });
+    await t.run((ctx) => ctx.db.patch(nearby.id, { cachedIsochrones: { band30: westShore } }));
+    // The launch, and the hide that suppresses it — the shape `putIns.hide` writes.
+    await t.run(async (ctx) => {
+      await ctx.db.insert('putIns', {
+        waterBodyId: id,
+        subAreaId: bay,
+        coord: { lat: 0.5, lng: 0.001 },
+        source: 'osm' as const,
+        status: 'visible' as const,
+        createdAt: Date.now(),
+      });
+      await ctx.db.insert('putIns', {
+        waterBodyId: id,
+        subAreaId: bay,
+        coord: { lat: 0.5, lng: 0.001 },
+        source: 'derived' as const,
+        status: 'hidden' as const,
+        createdAt: Date.now(),
+      });
+    });
+
+    // In the bay — banded from the bay's own point at (0.5, 0.25), outside the band.
+    await createReport(t, author.as, {
+      waterBodyId: id,
+      skateEndTime: SKATE_TIME,
+      point: { lat: 0.5, lng: 0.25 },
+    } as never);
+    expect(await t.run((ctx) => ctx.db.query('notificationQueue').collect())).toEqual([]);
   });
 
   test('rolls all of a user’s due digest rows into ONE consolidated notification, grouped by body', async () => {

@@ -68,18 +68,18 @@ describe('PublicAccessSectionView — the three states', () => {
   it('a "none" ruling prints the line, the note, and no report button', () => {
     renderView({ access: NONE });
     expect(
-      screen.getByText('No public access — every approach crosses private land.'),
+      screen.getByText(
+        'A moderator reviewed this on February 1, 2026 and found no public access — every approach crosses private land.',
+      ),
     ).toBeInTheDocument();
     expect(screen.getByText('Ringed by posted parcels; no legal approach.')).toBeInTheDocument();
     // The body already says so; a report would be a claim about a settled fact.
     expect(screen.queryByRole('button')).toBeNull();
   });
 
-  it('an "open" ruling says so out loud, with the date, and still offers the report', () => {
+  it('an "open" ruling reads as a plain fact, and still offers the report', () => {
     renderView({ access: OPEN });
-    expect(
-      screen.getByText('A moderator reviewed this on February 1, 2026 and found public access.'),
-    ).toBeInTheDocument();
+    expect(screen.getByText('Accessible to the public.')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Report no public access' })).toBeInTheDocument();
   });
 

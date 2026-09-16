@@ -755,6 +755,8 @@ function SubAreaTool({
   const rename = useMutation(api.subAreas.rename);
   const remove = useMutation(api.subAreas.remove);
   const restore = useMutation(api.subAreas.restore);
+  // Per-bay evidence beside the redraw control (N9): the mouth-line count and the depth's currency.
+  const stats = useQuery(api.subAreas.adminStatsForBody, { waterBodyId });
 
   const [name, setName] = useState('');
   const [aliases, setAliases] = useState('');
@@ -856,6 +858,17 @@ function SubAreaTool({
                 {bay.systemDelistReason ? (
                   <span className="block text-warning text-xs">{bay.systemDelistReason}</span>
                 ) : null}
+                {/* The mouth line's evidence and the depth's currency (N9). Nothing here is
+                    automatic: a bay's seaward edge is a judgement a skater can prove wrong by
+                    skating past it, and this is where the proof collects for a human to act on. */}
+                {(() => {
+                  const bayStats = stats?.[bay._id];
+                  return bayStats ? (
+                    <span className="block text-foreground-muted text-xs">
+                      {describeSubAreaAdminStats(bayStats)}
+                    </span>
+                  ) : null;
+                })()}
               </span>
               <span className="flex shrink-0 gap-1">
                 <Button
@@ -2341,4 +2354,44 @@ function ReferenceLinkTool({ body, onResult }: { body: Doc<'waterBodies'>; onRes
       </div>
     </ToolCard>
   );
+}
+
+/**
+ * The admin card's one line per bay (N9): *"3 of 12 skates this season ran past the mouth line ·
+ * depth derived Sep 2 · geometry changed Sep 14 — re-run export-bay-depths · fetch measured"*.
+ * Take-bounded counts read as "200+" rather than as exact, per D5.
+ */
+function describeSubAreaAdminStats(stats: {
+  leftSubAreaCount: number;
+  leftSubAreaTruncated: boolean;
+  skatesCount: number;
+  fetchProfileM?: number[];
+  maxDepthM?: number;
+  depthDerivedAt?: number;
+  geometryUpdatedAt?: number;
+}): string {
+  const parts: string[] = [];
+  const plus = stats.leftSubAreaTruncated ? '+' : '';
+  parts.push(
+    stats.skatesCount === 0
+      ? 'No skates this season'
+      : `${stats.leftSubAreaCount}${plus} of ${stats.skatesCount}${plus} skates this season ran past the mouth line`,
+  );
+  const day = (ms: number) =>
+    new Date(ms).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  const owed =
+    stats.geometryUpdatedAt !== undefined &&
+    (stats.depthDerivedAt === undefined || stats.geometryUpdatedAt > stats.depthDerivedAt);
+  if (stats.maxDepthM !== undefined && stats.depthDerivedAt !== undefined) {
+    parts.push(`depth derived ${day(stats.depthDerivedAt)}`);
+  } else if (stats.depthDerivedAt !== undefined) {
+    parts.push(`depth cleared (was derived ${day(stats.depthDerivedAt)})`);
+  } else {
+    parts.push('no derived depth');
+  }
+  if (owed && stats.geometryUpdatedAt !== undefined) {
+    parts.push(`geometry changed ${day(stats.geometryUpdatedAt)} — re-run export-bay-depths`);
+  }
+  parts.push(stats.fetchProfileM ? 'fetch measured' : 'no fetch profile');
+  return parts.join(' · ');
 }

@@ -20,8 +20,18 @@ export function expiryLabel(expiresAt: number, now: number): string {
  * many candidate reports have attached, and remaining lifetime. Each row links to the `/bounty/$id`
  * detail. Renders nothing while empty so the drawer stays quiet on a lake nobody’s asked about.
  */
-export function BountyList({ waterBodyId }: { waterBodyId: Id<'waterBodies'> }) {
-  const bounties = useQuery(api.bounties.listForBody, { waterBodyId });
+export function BountyList({
+  waterBodyId,
+  subAreaId,
+}: {
+  waterBodyId: Id<'waterBodies'>;
+  /** The bay view (N9): this bay's bounties plus the lake-wide ones, which a bay report answers. */
+  subAreaId?: Id<'waterBodySubAreas'>;
+}) {
+  const bounties = useQuery(api.bounties.listForBody, {
+    waterBodyId,
+    ...(subAreaId !== undefined ? { subAreaId } : {}),
+  });
   if (!bounties || bounties.length === 0) return null;
   const now = Date.now();
 

@@ -24,6 +24,7 @@ import {
   resolvePutInName,
   SHORT_WALK_MAX_M,
   straightLineApproach,
+  subAreaDriveCoord,
 } from './access';
 import { bearingDegrees, destinationPoint, haversineMeters } from './geometry';
 
@@ -620,5 +621,24 @@ describe('bodyAccessKind', () => {
 
   test('is order-independent', () => {
     expect(bodyAccessKind(['drive_up', 'hike_in'])).toBe(bodyAccessKind(['hike_in', 'drive_up']));
+  });
+});
+
+describe('subAreaDriveCoord (N9)', () => {
+  const bay = {
+    representativePoint: { lat: 44.6, lng: -73.3 },
+    centroid: { lat: 44.61, lng: -73.31 },
+  };
+  test('takes the best put-in by the source ladder', () => {
+    const coord = subAreaDriveCoord(bay, [
+      { coord: { lat: 1, lng: 1 }, source: 'derived' },
+      { coord: { lat: 2, lng: 2 }, source: 'official' },
+      { coord: { lat: 3, lng: 3 }, source: 'osm' },
+    ]);
+    expect(coord).toEqual({ lat: 2, lng: 2 });
+  });
+  test('falls back to the bay’s own representative point, then its centroid — never the parent', () => {
+    expect(subAreaDriveCoord(bay, [])).toEqual(bay.representativePoint);
+    expect(subAreaDriveCoord({ centroid: bay.centroid }, [])).toEqual(bay.centroid);
   });
 });

@@ -21,17 +21,29 @@ import {
   bboxIntersects,
   clipSubAreaToParent,
   displayScore,
+  fetchProfileMeters,
+  type LatLng,
+  memberSubAreaIds,
   minVisibleZoom,
   polygonBBox,
   representativePoint,
+  resolveTrackSubAreas,
   SUB_AREA_CLIP_MESSAGES,
   SUB_AREA_MIN_RENDER_ZOOM,
+  type SubAreaCandidate,
+  samplePath,
   searchTextFor,
+  seasonEndMs,
+  seasonOf,
+  seasonStartMs,
   smallestContainingSubArea,
+  subAreaDriveCoord,
+  subAreaForPutIn,
+  subAreaMembershipFields,
   surfaceAreaSqM,
 } from '@skating/core';
 import { ConvexError, v } from 'convex/values';
-import type { MultiPolygon, Polygon } from 'geojson';
+import type { LineString, MultiPolygon, Polygon } from 'geojson';
 import { internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
 import {
@@ -46,6 +58,8 @@ import { requireContributorRole } from './lib/auth';
 import { syncSubAreaCells, WATER_BODY_LADDER } from './lib/cellIndex';
 import { rankCandidates, scanCells } from './lib/cellScan';
 import { isListed } from './lib/listing';
+import { isSuppressed } from './lib/putInSuppression';
+import { syncReportSubAreas } from './lib/reportSubAreas';
 import { hazardCenter } from './lib/sampling';
 import { bbox, geoJson } from './lib/validators';
 
@@ -59,9 +73,24 @@ const RESTAMP_BATCH = 200;
 /** See `importSeed.minRetainedFraction` — a box is a coarser input than a traced outline. */
 const SEED_MIN_RETAINED_FRACTION = 0.35;
 
-/** The tables carrying a denormalized sub-area stamp, re-stamped in this order. */
-const RESTAMP_TABLES = ['reports', 'hazards'] as const;
+/**
+ * The tables carrying a denormalized sub-area stamp, re-stamped in this order (N2, widened in N9).
+ *
+ * **Tracks go first, and the order is load-bearing.** An activity-sourced report's membership is
+ * the *track's* list (D175 / the two-bay skate), so the report pass reads the path the track pass
+ * just re-resolved; walking reports first would rebuild each of them from a stamp about to change.
+ * Put-ins and features follow because nothing else depends on them.
+ */
+const RESTAMP_TABLES = ['gpsActivities', 'reports', 'hazards', 'putIns', 'bodyFeatures'] as const;
 type RestampTable = (typeof RESTAMP_TABLES)[number];
+
+/**
+ * How many points along a track the bay stamp tests (N9). More than `resolveTrackToBodies`'s 24:
+ * that number bounds *reads* (each sample can cost a cell lookup), where this is pure CPU against
+ * a handful of bays already in hand — and a bay is a finer place than a lake, so a coarser sample
+ * would miss the ten minutes spent in a cove on the way past.
+ */
+export const SUB_AREA_TRACK_SAMPLE_POINTS = 64;
 
 /**
  * `[name, ...aliases]` as the one searchable string — Convex search indexes a single field.
@@ -130,19 +159,167 @@ export async function resolveSubAreaForPoint(
   waterBodyId: Id<'waterBodies'>,
   point: { lat: number; lng: number },
 ): Promise<{ subAreaId: Id<'waterBodySubAreas'>; subAreaName: string } | null> {
-  const subAreas = (await subAreasForBody(ctx, waterBodyId)).filter(
-    (row) => row.removedAt === undefined,
-  );
-  if (subAreas.length === 0) return null;
-  const match = smallestContainingSubArea(
-    point,
-    subAreas.map((row) => ({
+  const candidates = await stampCandidates(ctx, waterBodyId);
+  if (candidates.length === 0) return null;
+  const match = smallestContainingSubArea(point, candidates);
+  return match ? { subAreaId: match._id, subAreaName: match.name } : null;
+}
+
+/** The live bays of a body in the shape every stamp rule takes — one `by_parent` read. */
+export async function stampCandidates(
+  ctx: QueryCtx,
+  waterBodyId: Id<'waterBodies'>,
+): Promise<SubAreaCandidate<Doc<'waterBodySubAreas'>>[]> {
+  return toCandidates(await subAreasForBody(ctx, waterBodyId));
+}
+
+function toCandidates(
+  rows: readonly Doc<'waterBodySubAreas'>[],
+): SubAreaCandidate<Doc<'waterBodySubAreas'>>[] {
+  return rows
+    .filter((row) => row.removedAt === undefined)
+    .map((row) => ({
       ref: row,
       polygon: row.polygon as unknown as Polygon | MultiPolygon,
       surfaceAreaSqM: row.surfaceAreaSqM,
-    })),
+    }));
+}
+
+/**
+ * The bay a put-in belongs to (N9 kickoff call 3) — by **distance to the outline**, not
+ * containment, because the launch was snapped to the shoreline the bay's clip traces. Called from
+ * every `putIns` writer; `null` on the ~99% of bodies with no bays and on open-lake access.
+ */
+export async function resolveSubAreaForPutIn(
+  ctx: QueryCtx,
+  waterBodyId: Id<'waterBodies'>,
+  coord: LatLng,
+): Promise<Id<'waterBodySubAreas'> | undefined> {
+  const candidates = await stampCandidates(ctx, waterBodyId);
+  if (candidates.length === 0) return undefined;
+  return subAreaForPutIn(coord, candidates)?._id;
+}
+
+/** What a recorded track's stamp resolves to, in the stored shape (N9 kickoff Q4). */
+export interface TrackSubAreaStamp {
+  subAreaId: Id<'waterBodySubAreas'> | undefined;
+  subAreaIds: Id<'waterBodySubAreas'>[] | undefined;
+  leftSubArea: true | undefined;
+}
+
+/**
+ * Stamp a track against a body's bays: majority-of-samples primary, every bay touched, and the
+ * mouth-line flag. The rule is `@skating/core`'s `resolveTrackSubAreas`; this is the read around
+ * it. Called from `ingestTrack` and the re-stamp job, which therefore cannot disagree.
+ */
+export function trackSubAreaStamp(
+  path: LineString,
+  candidates: readonly SubAreaCandidate<Doc<'waterBodySubAreas'>>[],
+  parentPolygon: Polygon | MultiPolygon,
+): TrackSubAreaStamp {
+  if (candidates.length === 0) {
+    return { subAreaId: undefined, subAreaIds: undefined, leftSubArea: undefined };
+  }
+  const resolved = resolveTrackSubAreas(
+    samplePath(path, SUB_AREA_TRACK_SAMPLE_POINTS),
+    candidates,
+    parentPolygon,
   );
-  return match ? { subAreaId: match._id, subAreaName: match.name } : null;
+  const fields = subAreaMembershipFields(resolved.all.map((bay) => bay._id));
+  return { ...fields, leftSubArea: resolved.leftSubArea ? true : undefined };
+}
+
+/**
+ * The coordinate a bay's drive-time is judged from (N9 kickoff call 2): its best put-in, else its
+ * own representative point — the rule is `@skating/core`'s `subAreaDriveCoord`; this is the read
+ * around it. `null` when the bay is gone or delisted, so the caller falls back to the parent's
+ * coordinate rather than banding a place that is no longer a place.
+ *
+ * Callers on a hot read (the feed) cache this per bay per page: the put-ins are one `by_sub_area`
+ * read, bounded by the handful of launches a bay has.
+ *
+ * **A moderator's hide is a coordinate, not a status** (`lib/putInSuppression`). `putIns.hide`
+ * writes a separate `hidden` row and leaves the visible one in place, so `status === 'visible'`
+ * alone still picks the hidden launch — the review found the feed's bands and the nearby fan-out
+ * being judged from an access point a moderator had said not to use. The hide is stamped into the
+ * same bay as the launch it targets (both by distance to the outline, at the same coordinate), so
+ * this one `by_sub_area` read already holds the suppression rows that apply; the visible launches
+ * are tested against them exactly as `putIns.listForBody` tests its markers.
+ */
+export async function subAreaDriveCoordFor(
+  ctx: QueryCtx,
+  subAreaId: Id<'waterBodySubAreas'>,
+): Promise<LatLng | null> {
+  const bay = await ctx.db.get(subAreaId);
+  if (!bay || bay.removedAt !== undefined) return null;
+  const putIns = await ctx.db
+    .query('putIns')
+    .withIndex('by_sub_area', (q) => q.eq('subAreaId', subAreaId))
+    .collect();
+  const hidden = putIns.filter((p) => p.status === 'hidden');
+  return subAreaDriveCoord(
+    bay,
+    putIns
+      .filter((p) => p.status === 'visible' && !isSuppressed(p.coord, hidden))
+      .map((p) => ({ coord: p.coord, source: p.source })),
+  );
+}
+
+/** A report's membership in the stored shape: the label pair plus the list pair (N9 / D175). */
+export interface ReportSubAreaStamp {
+  subAreaId: Id<'waterBodySubAreas'> | undefined;
+  subAreaName: string | undefined;
+  subAreaIds: Id<'waterBodySubAreas'>[] | undefined;
+  subAreaNames: string[] | undefined;
+}
+
+/**
+ * Which bays a report belongs to (D175): **the track's list when it has a track, else the pin's
+ * bay.** The one place the rule is applied — `reports.create`, `reports.update` and the re-stamp
+ * job all come through here — so a report cannot be labelled one way at create and another on a
+ * redraw.
+ *
+ * The track is resolved against *this report's* body's bays, whatever body the activity itself
+ * resolved to: a spanning skate can be filed on the lake the skater chose (D44), and a bay of the
+ * neighbouring body is not a bay of this one.
+ */
+export async function resolveReportSubAreas(
+  ctx: QueryCtx,
+  report: {
+    waterBodyId: Id<'waterBodies'>;
+    point: LatLng;
+    activityId?: Id<'gpsActivities'>;
+  },
+  candidates: readonly SubAreaCandidate<Doc<'waterBodySubAreas'>>[],
+  parentPolygon: Polygon | MultiPolygon,
+): Promise<ReportSubAreaStamp> {
+  const none: ReportSubAreaStamp = {
+    subAreaId: undefined,
+    subAreaName: undefined,
+    subAreaIds: undefined,
+    subAreaNames: undefined,
+  };
+  if (candidates.length === 0) return none;
+  const byId = new Map(candidates.map((c) => [c.ref._id, c.ref]));
+  let members: Doc<'waterBodySubAreas'>[] = [];
+  const activity = report.activityId === undefined ? null : await ctx.db.get(report.activityId);
+  if (activity?.path?.type === 'LineString') {
+    const stamp = trackSubAreaStamp(activity.path as LineString, candidates, parentPolygon);
+    members = memberSubAreaIds(stamp)
+      .map((id) => byId.get(id))
+      .filter((bay): bay is Doc<'waterBodySubAreas'> => bay !== undefined);
+  } else {
+    const match = smallestContainingSubArea(report.point, candidates);
+    if (match) members = [match];
+  }
+  if (members.length === 0) return none;
+  const ids = subAreaMembershipFields(members.map((bay) => bay._id));
+  return {
+    subAreaId: ids.subAreaId,
+    subAreaName: members[0]?.name,
+    subAreaIds: ids.subAreaIds,
+    subAreaNames: ids.subAreaIds === undefined ? undefined : members.map((bay) => bay.name),
+  };
 }
 
 /**
@@ -210,25 +387,10 @@ export async function reclipSubAreasToParent(
       continue;
     }
     if (result.clipped) {
-      const bbox = polygonBBox(result.polygon);
-      const area = surfaceAreaSqM(result.polygon);
-      const scores = scoreFields({
-        surfaceAreaSqM: area,
-        ...(subArea.curatedBoost !== undefined ? { curatedBoost: subArea.curatedBoost } : {}),
-      });
-      await ctx.db.patch(subArea._id, {
+      await rederiveSubArea(ctx, subArea, {
         polygon: result.polygon,
-        bbox,
-        centroid: representativePoint(result.polygon),
-        representativePoint: representativePoint(result.polygon),
-        surfaceAreaSqM: area,
-        ...scores,
-        updatedAt: Date.now(),
-      });
-      await syncSubAreaCells(ctx, subArea._id, {
-        bbox,
-        minVisibleZoom: scores.minVisibleZoom,
         listed: parentListed,
+        clearDelistReason: false,
       });
       reclipped++;
       continue;
@@ -239,7 +401,158 @@ export async function reclipSubAreasToParent(
       listed: parentListed,
     });
   }
+  // The re-stamp is the caller's: `importCanonical` and `merge` both schedule one when this reports
+  // movement, and the ETL gates it so an unchanged batch schedules nothing.
   return { reclipped, delisted };
+}
+
+/**
+ * Everything a sub-area stores that follows from its clipped outline (N9): the geometry-derived
+ * fields the row has always carried, the D49 prominence pair, and the bay's own fetch profile.
+ *
+ * **One function, every writer.** `create`, `redraw`, `restore`, the re-clip, the seed and the N7
+ * bay import all used to recompute the same five fields inline, and the N9 fields (fetch, depth
+ * invalidation) would have made it seven copies to keep in step. Two places that recompute a bay's
+ * derived state is how a bay ends up with last week's depth under this week's outline — the class
+ * of drift `extract.ts` was created to end.
+ */
+function deriveSubAreaFields(polygon: Polygon | MultiPolygon, curatedBoost: number | undefined) {
+  const area = surfaceAreaSqM(polygon);
+  const point = representativePoint(polygon);
+  const scores = scoreFields({
+    surfaceAreaSqM: area,
+    ...(curatedBoost !== undefined ? { curatedBoost } : {}),
+  });
+  // Pure and O(vertices × 16) — fine for an 1,100-vertex Champlain bay inside one mutation. `null`
+  // on a degenerate outline the ray-cast cannot find an interior for; then the field is absent.
+  const fetch = fetchProfileMeters(polygon);
+  return {
+    polygon,
+    bbox: polygonBBox(polygon),
+    centroid: point,
+    representativePoint: point,
+    surfaceAreaSqM: area,
+    ...scores,
+    fetchProfileM: fetch ?? undefined,
+  };
+}
+
+/** Our own opaque, sortable identity for a bay — the `waterBodyKey` treatment (D93), minted once. */
+function mintSubAreaKey(): string {
+  return `sa_${crypto.randomUUID()}`;
+}
+
+/**
+ * Insert a sub-area from an already-clipped outline: the derived fields, a freshly minted
+ * `subAreaKey`, and its cell rows. The three insert paths (`create`, `importSeed`,
+ * `importBaySubAreas`) differ only in where the outline came from and what the audit row says, so
+ * the row itself is written in exactly one place. The caller schedules the re-stamp, because the
+ * seed batches one per parent.
+ */
+async function insertSubArea(
+  ctx: MutationCtx,
+  input: {
+    waterBodyId: Id<'waterBodies'>;
+    name: string;
+    aliases: string[];
+    polygon: Polygon | MultiPolygon;
+    curatedBoost?: number;
+    createdByUserId: Id<'profiles'>;
+    now: number;
+  },
+): Promise<Id<'waterBodySubAreas'>> {
+  const derived = deriveSubAreaFields(input.polygon, input.curatedBoost);
+  const subAreaId = await ctx.db.insert('waterBodySubAreas', {
+    waterBodyId: input.waterBodyId,
+    name: input.name,
+    ...(input.aliases.length > 0 ? { aliases: input.aliases } : {}),
+    searchText: subAreaSearchText(input.name, input.aliases),
+    subAreaKey: mintSubAreaKey(),
+    polygon: derived.polygon,
+    bbox: derived.bbox,
+    centroid: derived.centroid,
+    representativePoint: derived.representativePoint,
+    surfaceAreaSqM: derived.surfaceAreaSqM,
+    displayScore: derived.displayScore,
+    minVisibleZoom: derived.minVisibleZoom,
+    ...(derived.fetchProfileM !== undefined ? { fetchProfileM: derived.fetchProfileM } : {}),
+    ...(input.curatedBoost !== undefined ? { curatedBoost: input.curatedBoost } : {}),
+    createdByUserId: input.createdByUserId,
+    createdAt: input.now,
+    updatedAt: input.now,
+  });
+  await syncSubAreaCells(ctx, subAreaId, {
+    bbox: derived.bbox,
+    minVisibleZoom: derived.minVisibleZoom,
+    listed: true, // every insert path has just proved the parent is listed
+  });
+  return subAreaId;
+}
+
+/**
+ * Apply a (possibly new) clipped outline to an existing sub-area — **the re-derivation** (N9).
+ *
+ * Owns, in order: the derived fields, the depth invalidation, the cell rows. The `subAreaKey` is
+ * deliberately *not* here: it is minted once at insert and survives every redraw, which is the
+ * whole point of having one. The re-stamp is the caller's, because the re-clip schedules one per
+ * parent rather than one per bay.
+ *
+ * **Depth is the one derived value this cannot recompute, so it clears it.** The soundings live in
+ * the bathymetry archive on disk, not in Convex; when the outline changes the stored max depth
+ * describes a shape that no longer exists, and the honest states are "re-derived" or "absent" —
+ * never last week's number under this week's outline (D3). `geometryUpdatedAt` is what tells the
+ * admin card the re-run is owed; `depthDerivedAt` is kept so the card can date what it is replacing.
+ * A write whose outline is *unchanged* (a restore of a bay the parent never moved under) keeps its
+ * depth, because nothing about it stopped being true.
+ */
+export async function rederiveSubArea(
+  ctx: MutationCtx,
+  subArea: Doc<'waterBodySubAreas'>,
+  next: {
+    polygon: Polygon | MultiPolygon;
+    listed: boolean;
+    /** A redraw is the fix for an auto-delist, so it clears the note asking for one; the re-clip is not. */
+    clearDelistReason: boolean;
+  },
+): Promise<{ geometryChanged: boolean }> {
+  const now = Date.now();
+  const derived = deriveSubAreaFields(next.polygon, subArea.curatedBoost);
+  const geometryChanged = !sameOutline(subArea.polygon, next.polygon);
+  await ctx.db.patch(subArea._id, {
+    polygon: derived.polygon,
+    bbox: derived.bbox,
+    centroid: derived.centroid,
+    representativePoint: derived.representativePoint,
+    surfaceAreaSqM: derived.surfaceAreaSqM,
+    displayScore: derived.displayScore,
+    minVisibleZoom: derived.minVisibleZoom,
+    fetchProfileM: derived.fetchProfileM,
+    ...(geometryChanged
+      ? {
+          maxDepthM: undefined,
+          maxDepthSource: undefined,
+          depthUnderstatesMax: undefined,
+          geometryUpdatedAt: now,
+        }
+      : {}),
+    ...(next.clearDelistReason ? { systemDelistReason: undefined } : {}),
+    updatedAt: now,
+  });
+  await syncSubAreaCells(ctx, subArea._id, {
+    bbox: derived.bbox,
+    minVisibleZoom: derived.minVisibleZoom,
+    listed: next.listed,
+  });
+  return { geometryChanged };
+}
+
+/**
+ * Did the outline actually move? Compared on the coordinates, not on object identity: a restore
+ * re-clips the stored polygon against the parent and gets the same shape back whenever the parent
+ * did not move, and treating that as a change would clear a depth for nothing.
+ */
+function sameOutline(a: unknown, b: unknown): boolean {
+  return JSON.stringify(a) === JSON.stringify(b);
 }
 
 /**
@@ -450,33 +763,14 @@ export const create = mutation({
     await assertNameFree(ctx, args.waterBodyId, name);
 
     const geometry = deriveGeometry(args.polygon as unknown as Polygon | MultiPolygon, parent);
-    const aliases = normalizeAliases(args.aliases);
-    const scores = scoreFields({
-      surfaceAreaSqM: geometry.surfaceAreaSqM,
-      ...(args.curatedBoost !== undefined ? { curatedBoost: args.curatedBoost } : {}),
-    });
-    const now = Date.now();
-
-    const subAreaId = await ctx.db.insert('waterBodySubAreas', {
+    const subAreaId = await insertSubArea(ctx, {
       waterBodyId: args.waterBodyId,
       name,
-      ...(aliases.length > 0 ? { aliases } : {}),
-      searchText: subAreaSearchText(name, aliases),
+      aliases: normalizeAliases(args.aliases),
       polygon: geometry.polygon,
-      bbox: geometry.bbox,
-      centroid: geometry.centroid,
-      representativePoint: geometry.centroid,
-      surfaceAreaSqM: geometry.surfaceAreaSqM,
-      ...scores,
       ...(args.curatedBoost !== undefined ? { curatedBoost: args.curatedBoost } : {}),
       createdByUserId: actor._id,
-      createdAt: now,
-      updatedAt: now,
-    });
-    await syncSubAreaCells(ctx, subAreaId, {
-      bbox: geometry.bbox,
-      minVisibleZoom: scores.minVisibleZoom,
-      listed: true, // freshly drawn on a parent `requireParent` just proved is listed
+      now: Date.now(),
     });
     await audit(ctx, actor._id, 'create_sub_area', subAreaId, `Drew "${name}" on ${parent.name}`, {
       waterBodyId: args.waterBodyId,
@@ -500,31 +794,19 @@ export const redraw = mutation({
     const parent = await requireParent(ctx, subArea.waterBodyId);
 
     const geometry = deriveGeometry(polygon as unknown as Polygon | MultiPolygon, parent);
-    const scores = scoreFields({
-      surfaceAreaSqM: geometry.surfaceAreaSqM,
-      ...(subArea.curatedBoost !== undefined ? { curatedBoost: subArea.curatedBoost } : {}),
-    });
-    await ctx.db.patch(subAreaId, {
+    // A redraw is the fix for an auto-delist, so it clears the note asking for one. (The row stays
+    // delisted — `restore` is the separate, deliberate act of putting it back on the map.)
+    const { geometryChanged } = await rederiveSubArea(ctx, subArea, {
       polygon: geometry.polygon,
-      bbox: geometry.bbox,
-      centroid: geometry.centroid,
-      representativePoint: geometry.centroid,
-      surfaceAreaSqM: geometry.surfaceAreaSqM,
-      ...scores,
-      // A redraw is the fix for an auto-delist, so it clears the note asking for one. (The row stays
-      // delisted — `restore` is the separate, deliberate act of putting it back on the map.)
-      systemDelistReason: undefined,
-      updatedAt: Date.now(),
-    });
-    await syncSubAreaCells(ctx, subAreaId, {
-      bbox: geometry.bbox,
-      minVisibleZoom: scores.minVisibleZoom,
       listed: subAreaListed(subArea, parent),
+      clearDelistReason: true,
     });
     await audit(ctx, actor._id, 'redraw_sub_area', subAreaId, `Redrew "${subArea.name}"`, {
       waterBodyId: subArea.waterBodyId,
       clipped: geometry.clipped,
       retainedFraction: geometry.retainedFraction,
+      // Whether the outline actually moved — and so whether a derived depth was cleared (N9).
+      geometryChanged,
     });
     // Membership changed, so the stamps did too — in *both* directions. A shrunk bay releases reports
     // it no longer contains, which is why the job recomputes from the whole sub-area set rather than
@@ -647,32 +929,28 @@ export const restore = mutation({
     // it means the lake moved under this bay while it was retired, and the answer is a redraw — which
     // is the paste-GeoJSON / draw path, not a flag someone flips.
     const geometry = deriveGeometry(subArea.polygon as unknown as Polygon | MultiPolygon, parent);
-    const scores = scoreFields({
-      surfaceAreaSqM: geometry.surfaceAreaSqM,
-      ...(subArea.curatedBoost !== undefined ? { curatedBoost: subArea.curatedBoost } : {}),
-    });
 
     await ctx.db.patch(subAreaId, {
       removedAt: undefined,
       removedByUserId: undefined,
-      systemDelistReason: undefined,
-      polygon: geometry.polygon,
-      bbox: geometry.bbox,
-      centroid: geometry.centroid,
-      representativePoint: geometry.centroid,
-      surfaceAreaSqM: geometry.surfaceAreaSqM,
-      ...scores,
       updatedAt: Date.now(),
     });
-    await syncSubAreaCells(ctx, subAreaId, {
-      bbox: geometry.bbox,
-      minVisibleZoom: scores.minVisibleZoom,
-      // Restoring a bay on a delisted lake leaves it off the map, correctly — Decision 11 is a
-      // conjunction, and this mutation isn't a way around it.
-      listed: subAreaListed({ removedAt: undefined }, parent),
-    });
+    // The re-derivation runs on the restored row (the patch above has landed) so a bay whose
+    // outline the re-clip *did* move gets its depth cleared like any other geometry change, and one
+    // the parent never moved under keeps it. Restoring a bay on a delisted lake leaves it off the
+    // map, correctly — Decision 11 is a conjunction, and this mutation isn't a way around it.
+    const { geometryChanged } = await rederiveSubArea(
+      ctx,
+      { ...subArea, removedAt: undefined, removedByUserId: undefined },
+      {
+        polygon: geometry.polygon,
+        listed: subAreaListed({ removedAt: undefined }, parent),
+        clearDelistReason: true,
+      },
+    );
     await audit(ctx, actor._id, 'restore', subAreaId, `Restored "${subArea.name}"`, {
       waterBodyId: subArea.waterBodyId,
+      geometryChanged,
     });
     await scheduleRestamp(ctx, subArea.waterBodyId);
     return subAreaId;
@@ -725,43 +1003,114 @@ export const setCuratedBoost = mutation({
 export const restampParent = internalMutation({
   args: {
     waterBodyId: v.id('waterBodies'),
-    table: v.union(v.literal('reports'), v.literal('hazards')),
+    table: v.union(...RESTAMP_TABLES.map((t) => v.literal(t))),
     cursor: v.optional(v.string()),
     /** Rows re-stamped so far across every page and table — carried for the completion log. */
     stamped: v.optional(v.number()),
   },
   handler: async (ctx, { waterBodyId, table, cursor, stamped }) => {
-    const active = (await subAreasForBody(ctx, waterBodyId)).filter(
-      (row) => row.removedAt === undefined,
-    );
-    const candidates = active.map((row) => ({
-      ref: row,
-      polygon: row.polygon as unknown as Polygon | MultiPolygon,
-      surfaceAreaSqM: row.surfaceAreaSqM,
-    }));
-
-    const page =
-      table === 'reports'
-        ? await ctx.db
-            .query('reports')
-            .withIndex('by_water_body_skate_end_time', (q) => q.eq('waterBodyId', waterBodyId))
-            .paginate({ cursor: cursor ?? null, numItems: RESTAMP_BATCH })
-        : // Hazards have no skate-end index — that one is reports-only — so the hazard half pages
-          // `by_water_body`. Any total order works here; the job visits every row either way.
-          await ctx.db
-            .query('hazards')
-            .withIndex('by_water_body', (q) => q.eq('waterBodyId', waterBodyId))
-            .paginate({ cursor: cursor ?? null, numItems: RESTAMP_BATCH });
+    const candidates = await stampCandidates(ctx, waterBodyId);
+    const parent = await ctx.db.get(waterBodyId);
+    const parentPolygon = parent?.polygon as unknown as Polygon | MultiPolygon;
 
     let changed = stamped ?? 0;
-    for (const row of page.page) {
-      const point = 'point' in row ? row.point : hazardCenter(row);
-      const match = smallestContainingSubArea(point, candidates);
-      const nextId = match?._id;
-      const nextName = match?.name;
-      if (row.subAreaId === nextId && row.subAreaName === nextName) continue;
-      await ctx.db.patch(row._id, { subAreaId: nextId, subAreaName: nextName });
-      changed++;
+    let page: { isDone: boolean; continueCursor: string };
+    const opts = { cursor: cursor ?? null, numItems: RESTAMP_BATCH };
+    switch (table) {
+      case 'gpsActivities': {
+        // Tracks first (see `RESTAMP_TABLES`): the majority-of-samples rule over the whole bay set,
+        // and the mouth-line flag alongside. A row with no path (a stub) is left as it is.
+        const p = await ctx.db
+          .query('gpsActivities')
+          .withIndex('by_water_body_start_time', (q) => q.eq('waterBodyId', waterBodyId))
+          .paginate(opts);
+        for (const row of p.page) {
+          if (row.path?.type !== 'LineString' || parent === null) continue;
+          const next = trackSubAreaStamp(row.path as LineString, candidates, parentPolygon);
+          if (
+            row.subAreaId === next.subAreaId &&
+            sameIds(row.subAreaIds, next.subAreaIds) &&
+            row.leftSubArea === next.leftSubArea
+          ) {
+            continue;
+          }
+          await ctx.db.patch(row._id, next);
+          changed++;
+        }
+        page = p;
+        break;
+      }
+      case 'reports': {
+        const p = await ctx.db
+          .query('reports')
+          .withIndex('by_water_body_skate_end_time', (q) => q.eq('waterBodyId', waterBodyId))
+          .paginate(opts);
+        for (const row of p.page) {
+          const next = await resolveReportSubAreas(ctx, row, candidates, parentPolygon);
+          const moved =
+            row.subAreaId !== next.subAreaId ||
+            row.subAreaName !== next.subAreaName ||
+            !sameIds(row.subAreaIds, next.subAreaIds) ||
+            !sameIds(row.subAreaNames, next.subAreaNames);
+          if (moved) {
+            await ctx.db.patch(row._id, next);
+            changed++;
+          }
+          // The join is re-synced whether or not the label moved: a redraw can change a second
+          // member without touching the primary, and the sync is a no-op when nothing did.
+          await syncReportSubAreas(ctx, row, memberSubAreaIds(next));
+        }
+        page = p;
+        break;
+      }
+      case 'hazards': {
+        // Hazards have no skate-end index — that one is reports-only — so this half pages
+        // `by_water_body`. Any total order works here; the job visits every row either way.
+        const p = await ctx.db
+          .query('hazards')
+          .withIndex('by_water_body', (q) => q.eq('waterBodyId', waterBodyId))
+          .paginate(opts);
+        for (const row of p.page) {
+          const match = smallestContainingSubArea(hazardCenter(row), candidates);
+          const nextId = match?._id;
+          const nextName = match?.name;
+          if (row.subAreaId === nextId && row.subAreaName === nextName) continue;
+          await ctx.db.patch(row._id, { subAreaId: nextId, subAreaName: nextName });
+          changed++;
+        }
+        page = p;
+        break;
+      }
+      case 'putIns': {
+        // By distance to the outline, not containment — see `resolveSubAreaForPutIn`.
+        const p = await ctx.db
+          .query('putIns')
+          .withIndex('by_water_body', (q) => q.eq('waterBodyId', waterBodyId))
+          .paginate(opts);
+        for (const row of p.page) {
+          const nextId =
+            candidates.length === 0 ? undefined : subAreaForPutIn(row.coord, candidates)?._id;
+          if (row.subAreaId === nextId) continue;
+          await ctx.db.patch(row._id, { subAreaId: nextId });
+          changed++;
+        }
+        page = p;
+        break;
+      }
+      case 'bodyFeatures': {
+        const p = await ctx.db
+          .query('bodyFeatures')
+          .withIndex('by_water_body_active', (q) => q.eq('waterBodyId', waterBodyId))
+          .paginate(opts);
+        for (const row of p.page) {
+          const nextId = smallestContainingSubArea(hazardCenter(row), candidates)?._id;
+          if (row.subAreaId === nextId) continue;
+          await ctx.db.patch(row._id, { subAreaId: nextId });
+          changed++;
+        }
+        page = p;
+        break;
+      }
     }
 
     if (!page.isDone) {
@@ -1086,28 +1435,15 @@ export const importSeed = internalMutation({
         continue;
       }
 
-      const aliases = normalizeAliases(row.aliases);
       const now = Date.now();
-      const subAreaId = await ctx.db.insert('waterBodySubAreas', {
+      const subAreaId = await insertSubArea(ctx, {
         waterBodyId: row.waterBodyId,
         name: row.name.trim(),
-        ...(aliases.length > 0 ? { aliases } : {}),
-        searchText: subAreaSearchText(row.name.trim(), aliases),
+        aliases: normalizeAliases(row.aliases),
         polygon: clip.polygon,
-        bbox: polygonBBox(clip.polygon),
-        centroid: representativePoint(clip.polygon),
-        representativePoint: representativePoint(clip.polygon),
-        surfaceAreaSqM: area,
-        ...scores,
         ...(row.curatedBoost !== undefined ? { curatedBoost: row.curatedBoost } : {}),
         createdByUserId: actorUserId,
-        createdAt: now,
-        updatedAt: now,
-      });
-      await syncSubAreaCells(ctx, subAreaId, {
-        bbox: polygonBBox(clip.polygon),
-        minVisibleZoom: scores.minVisibleZoom,
-        listed: true,
+        now,
       });
       await ctx.db.insert('moderationActions', {
         actorId: actorUserId,
@@ -1132,6 +1468,12 @@ export const importSeed = internalMutation({
     };
   },
 });
+
+/** Two optional id lists are the same stamp when both are absent or both hold the same sequence. */
+function sameIds(a: readonly string[] | undefined, b: readonly string[] | undefined): boolean {
+  if (a === undefined || b === undefined) return a === b;
+  return a.length === b.length && a.every((id, i) => id === b[i]);
+}
 
 /** Positions across every ring — the render payload's real unit. See the vertex budget above. */
 function polygonVertexCount(geometry: unknown): number {
@@ -1192,6 +1534,19 @@ export const listForBody = query({
         displayScore: row.displayScore,
         minVisibleZoom: row.minVisibleZoom,
         ...(row.curatedBoost !== undefined ? { curatedBoost: row.curatedBoost } : {}),
+        // The bay-as-a-place fields (N9 / D175): its own fetch and its own max depth, for the bay
+        // header and the wind section. Elevation is deliberately *not* here — a bay inherits its
+        // parent's, and the drawer already holds the parent.
+        ...(row.fetchProfileM !== undefined ? { fetchProfileM: row.fetchProfileM } : {}),
+        ...(row.maxDepthM !== undefined ? { maxDepthM: row.maxDepthM } : {}),
+        ...(row.maxDepthSource !== undefined ? { maxDepthSource: row.maxDepthSource } : {}),
+        ...(row.depthUnderstatesMax !== undefined
+          ? { depthUnderstatesMax: row.depthUnderstatesMax }
+          : {}),
+        ...(row.depthDerivedAt !== undefined ? { depthDerivedAt: row.depthDerivedAt } : {}),
+        ...(row.geometryUpdatedAt !== undefined
+          ? { geometryUpdatedAt: row.geometryUpdatedAt }
+          : {}),
         removed: row.removedAt !== undefined,
         // Why the *system* retired it, if it did — the editor renders this next to the row, which is
         // the whole point of storing it rather than logging it (N2).
@@ -1286,7 +1641,6 @@ export const importBaySubAreas = internalMutation({
         continue;
       }
       const area = surfaceAreaSqM(clip.polygon);
-      const score = displayScore({ surfaceAreaSqM: area });
       const summary = {
         name,
         ok: true,
@@ -1299,25 +1653,13 @@ export const importBaySubAreas = internalMutation({
         continue;
       }
       const now = Date.now();
-      const subAreaId = await ctx.db.insert('waterBodySubAreas', {
+      const subAreaId = await insertSubArea(ctx, {
         waterBodyId: parent._id,
         name,
-        searchText: subAreaSearchText(name, []),
+        aliases: [],
         polygon: clip.polygon,
-        bbox: polygonBBox(clip.polygon),
-        centroid: representativePoint(clip.polygon),
-        representativePoint: representativePoint(clip.polygon),
-        surfaceAreaSqM: area,
-        displayScore: score,
-        minVisibleZoom: minVisibleZoom(score),
         createdByUserId: actorUserId,
-        createdAt: now,
-        updatedAt: now,
-      });
-      await syncSubAreaCells(ctx, subAreaId, {
-        bbox: polygonBBox(clip.polygon),
-        minVisibleZoom: minVisibleZoom(score),
-        listed: true,
+        now,
       });
       await ctx.db.insert('moderationActions', {
         actorId: actorUserId,
@@ -1379,3 +1721,165 @@ async function resolveParentByCatalogueIds(
   }
   return null;
 }
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+// N9 backfills — run once on a deployment with rows from before the phase
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Mint a `subAreaKey` for every sub-area that lacks one, and a `fetchProfileM` for every one that
+ * has none (N9 / D93). Every insert path since N9 writes both; this is for the 128 rows that
+ * predate it. Idempotent — a keyed row is untouched, so a re-run mints nothing.
+ * `pnpm exec convex run subAreas:mintSubAreaKeys`.
+ */
+export const mintSubAreaKeys = internalMutation({
+  args: { cursor: v.optional(v.string()) },
+  handler: async (ctx, { cursor }) => {
+    const page = await ctx.db
+      .query('waterBodySubAreas')
+      .paginate({ cursor: cursor ?? null, numItems: 50 });
+    let keyed = 0;
+    let fetched = 0;
+    for (const row of page.page) {
+      const patch: Partial<Doc<'waterBodySubAreas'>> = {};
+      if (row.subAreaKey === undefined) {
+        patch.subAreaKey = mintSubAreaKey();
+        keyed++;
+      }
+      if (row.fetchProfileM === undefined) {
+        const fetch = fetchProfileMeters(row.polygon as unknown as Polygon | MultiPolygon);
+        if (fetch) {
+          patch.fetchProfileM = fetch;
+          fetched++;
+        }
+      }
+      if (Object.keys(patch).length > 0) await ctx.db.patch(row._id, patch);
+    }
+    if (!page.isDone) {
+      await ctx.scheduler.runAfter(0, internal.subAreas.mintSubAreaKeys, {
+        cursor: page.continueCursor,
+      });
+    }
+    return { scanned: page.page.length, keyed, fetched, isDone: page.isDone };
+  },
+});
+
+/**
+ * Seed the `reportSubAreas` join from the stamps reports already carry (N9). Pages the report table
+ * once; a report with no bay writes nothing, and one that already has its rows is a no-op through
+ * `syncReportSubAreas`, so the pass is idempotent. The stamps themselves are trusted as they stand
+ * — Champlain's restamp already ran under N2 — and the next redraw on any lake recomputes them.
+ * `pnpm exec convex run subAreas:backfillReportSubAreas`.
+ */
+export const backfillReportSubAreas = internalMutation({
+  args: { cursor: v.optional(v.string()), batchSize: v.optional(v.number()) },
+  handler: async (ctx, { cursor, batchSize }) => {
+    const page = await ctx.db
+      .query('reports')
+      .paginate({ cursor: cursor ?? null, numItems: Math.min(500, Math.max(1, batchSize ?? 200)) });
+    let inserted = 0;
+    let withBay = 0;
+    for (const report of page.page) {
+      const members = memberSubAreaIds(report);
+      if (members.length === 0) continue;
+      withBay++;
+      inserted += (await syncReportSubAreas(ctx, report, members)).inserted;
+    }
+    if (!page.isDone) {
+      await ctx.scheduler.runAfter(0, internal.subAreas.backfillReportSubAreas, {
+        cursor: page.continueCursor,
+        ...(batchSize !== undefined ? { batchSize } : {}),
+      });
+    }
+    return { scanned: page.page.length, withBay, inserted, isDone: page.isDone };
+  },
+});
+
+/**
+ * Skates read per bay for the admin card's mouth-line count (N9). A bound on the read, not on the
+ * answer: a bay with more than this many skates in one season reads as "200+", which is the honest
+ * shape of a take-bounded count (D5) and far past the point where the count changes a decision.
+ */
+const MOUTH_LINE_SCAN_CAP = 200;
+
+/**
+ * **The admin card, per bay** (N9): this season's skates that ran past the mouth line, the derived
+ * depth and when it was derived against when the outline last moved, and the stored fetch profile.
+ * Beside the redraw control in `/admin/water/$id`, because a bay's seaward edge is a judgement a
+ * skater can prove wrong by skating past it, and this is where the evidence collects. Nothing here
+ * is automatic — a mouth line that moves on its own is a boundary nobody can reason about.
+ *
+ * Moderator-gated like every operator read; bounded per bay by `MOUTH_LINE_SCAN_CAP` on the
+ * season-scoped `by_sub_area_start_time` index.
+ */
+export const adminStatsForBody = query({
+  args: { waterBodyId: v.id('waterBodies') },
+  handler: async (ctx, { waterBodyId }) => {
+    await requireContributorRole(ctx, 'moderator');
+    const season = seasonOf(Date.now());
+    const from = seasonStartMs(season);
+    const to = seasonEndMs(season);
+    const out: Record<
+      string,
+      {
+        leftSubAreaCount: number;
+        leftSubAreaTruncated: boolean;
+        skatesCount: number;
+        subAreaKey?: string;
+        fetchProfileM?: number[];
+        maxDepthM?: number;
+        maxDepthSource?: string;
+        depthUnderstatesMax?: boolean;
+        depthDerivedAt?: number;
+        geometryUpdatedAt?: number;
+      }
+    > = {};
+    for (const bay of await subAreasForBody(ctx, waterBodyId)) {
+      const skates = await ctx.db
+        .query('gpsActivities')
+        .withIndex('by_sub_area_start_time', (q) =>
+          q.eq('subAreaId', bay._id).gte('startTime', from).lt('startTime', to),
+        )
+        .take(MOUTH_LINE_SCAN_CAP);
+      out[bay._id] = {
+        leftSubAreaCount: skates.filter((s) => s.leftSubArea === true).length,
+        leftSubAreaTruncated: skates.length === MOUTH_LINE_SCAN_CAP,
+        skatesCount: skates.length,
+        ...(bay.subAreaKey !== undefined ? { subAreaKey: bay.subAreaKey } : {}),
+        ...(bay.fetchProfileM !== undefined ? { fetchProfileM: bay.fetchProfileM } : {}),
+        ...(bay.maxDepthM !== undefined ? { maxDepthM: bay.maxDepthM } : {}),
+        ...(bay.maxDepthSource !== undefined ? { maxDepthSource: bay.maxDepthSource } : {}),
+        ...(bay.depthUnderstatesMax !== undefined
+          ? { depthUnderstatesMax: bay.depthUnderstatesMax }
+          : {}),
+        ...(bay.depthDerivedAt !== undefined ? { depthDerivedAt: bay.depthDerivedAt } : {}),
+        ...(bay.geometryUpdatedAt !== undefined
+          ? { geometryUpdatedAt: bay.geometryUpdatedAt }
+          : {}),
+      };
+    }
+    return out;
+  },
+});
+
+/**
+ * Schedule a re-stamp for every parent that has a sub-area (N9) — the one-off that tags the rows
+ * from before the phase. Every writer stamps at write from N9 on, and a redraw re-stamps its lake,
+ * but nothing else ever would: the put-ins, tracks and features on the 22 parents that predate N9
+ * would sit untagged until each lake happened to be edited, and until then the bay view's access
+ * list would be empty, a bay report would be banded from its shoreline point instead of its launch,
+ * and the admin card would count no skates. Distinct parents are collected from the sub-area table
+ * (128 rows) so a lake with forty-eight bays schedules one sweep, not forty-eight.
+ * `pnpm exec convex run subAreas:restampAllParents`.
+ */
+export const restampAllParents = internalMutation({
+  args: {},
+  handler: async (ctx) => {
+    const parents = new Set<Id<'waterBodies'>>();
+    for (const row of await ctx.db.query('waterBodySubAreas').collect()) {
+      parents.add(row.waterBodyId);
+    }
+    for (const waterBodyId of parents) await scheduleRestamp(ctx, waterBodyId);
+    return { parents: parents.size };
+  },
+});

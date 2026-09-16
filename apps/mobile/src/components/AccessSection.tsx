@@ -34,8 +34,18 @@ const AMENITY_LABELS: Record<string, string> = {
  * Renders nothing when there is no access data, which is most of the corpus — a section saying "we
  * don't know where to park" on 20,000 lakes is worse than no section.
  */
-export function AccessSection({ waterBodyId }: { waterBodyId: Id<'waterBodies'> }) {
-  const access = useQuery(api.accessPoints.accessForBody, { waterBodyId });
+export function AccessSection({
+  waterBodyId,
+  subAreaId,
+}: {
+  waterBodyId: Id<'waterBodies'>;
+  /** The bay view (N9): the bay's own launches, the lots they serve, and lots within reach of its shore. */
+  subAreaId?: Id<'waterBodySubAreas'>;
+}) {
+  const access = useQuery(api.accessPoints.accessForBody, {
+    waterBodyId,
+    ...(subAreaId !== undefined ? { subAreaId } : {}),
+  });
   const vote = useMutation(api.accessAlerts.vote);
   const createAlert = useMutation(api.accessAlerts.create);
   const [busy, setBusy] = useState<string | null>(null);

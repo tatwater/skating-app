@@ -3,13 +3,16 @@
 *Some water is reachable only across private land. The map had two ways to say it — an alert that
 expires, or a body that vanishes — and needed a third: **on the map, and marked.***
 
-> **Status:** ✅ **COMPLETE on dev — built 2026-08-16, review fixes 2026-08-17, merged as PR #44
-> (`phase-n6e-n6f-access-and-qol`) 2026-08-17.** Prod deferred, as every phase since 2.5. Suites at
-> merge: core 1,945 · convex 1,303 · web 352 · mobile 97, `lint` and `check-types` clean.
-> **This document was written after the fact (2026-09-14).** The phase shipped without a plan doc —
-> it was a founder ask taken directly into the N6e branch, and the design lives in commit messages,
-> module docstrings and the PR body. This is those sources reconciled against the code as it stands,
-> in the shape of the other N-series docs, so the next person can find it.
+> **Status:** ✅ **COMPLETE — built 2026-08-16, review fixes 2026-08-17, merged as PR #44
+> (`phase-n6e-n6f-access-and-qol`) 2026-08-17; the follow-up that closed the phase's one gap merged
+> as PR #56 on 2026-09-16.** On dev since #44; #56's client changes ride the next deploy. Prod
+> deferred, as every phase since 2.5. Suites at #44: core 1,945 · convex 1,303 · web 352 · mobile 97;
+> at #56: web 539 · mobile 111, `lint` and `check-types` clean on both.
+> **This document was written after the fact (2026-09-14, PR #56).** The phase shipped without a
+> plan doc — it was a founder ask taken directly into the N6e branch, and the design lives in commit
+> messages, module docstrings and the PR body. This is those sources reconciled against the code as
+> it stands, in the shape of the other N-series docs, so the next person can find it. See *§The
+> follow-up* for what writing it turned up.
 > **No D-number was assigned.** The founder calls are recorded in *§Founder calls* below rather than
 > in [`01-decisions.md`](./01-decisions.md); the only entry there that touches this phase is **D166**
 > (N6h), which re-uses the map dim this phase built.
@@ -20,9 +23,10 @@ expires, or a body that vanishes — and needed a third: **on the map, and marke
 > and reason), `moderation` (a grouped queue lane), the D2 zoom ladder in `core/display.ts`, both
 > clients' map layers, the web drawer, the web list, and — under the same prefix — the lake editor's
 > placement tools, `reports.update`'s first UI, and the recorder's unreported-skates list.
-> **Not built at merge:** a mobile report control (mobile had the map dim and nothing to press) —
-> **closed 2026-09-14** in the PR that added this doc; a live moderator render was not verified
-> before merge. See *§What is not built*.
+> **Not built at #44:** a mobile report control (mobile had the map dim and nothing to press) —
+> **closed by PR #56**, along with the web surface's missing test and a form-state bug on both
+> clients that the test's review found. A live moderator render has still not been verified. See
+> *§What is not built* and *§The follow-up*.
 
 ---
 
@@ -380,28 +384,102 @@ red run teaches anyone is to re-run it.
 
 ## What is not built
 
-- ~~**A mobile report control.**~~ **Closed 2026-09-14, in the same PR as this doc.** At merge,
-  mobile carried the map dim — `noPublicAccess` and the viewer's own `selfFlagged` via
-  `myAccessFlags` — and the `BodyResultCard` badge, but no drawer section: a member on the phone
-  could not file, see the pending count, or read a ruling's note, and the phone is where a skater is
-  standing when they get turned away. `apps/mobile/src/components/PublicAccessSection.tsx` is now
-  the member's half of web's component — report, corroborate, the note gate, all three verdict
-  lines — mounted on the Overview tab beside `PostedAccess`. **Deliberately no rule buttons:**
-  moderation stays on `/admin/flags`, where the corroboration count is the rank. `setPublicAccess`
-  still has zero mobile callers, and that is by design.
-- **A live moderator render was not verified before merge.** MCP cannot authenticate as a
-  moderator, so ruling on Tomhannock (`m9761xrcwchdgky9g8gxvyz8hx8ajcz3`, seeded on dev) via
-  `/admin/flags` and the drawer's three states were reasoned about rather than seen. Put-in
-  placement *was* click-tested by hand.
+- ~~**A mobile report control.**~~ **Closed by PR #56 (merged 2026-09-16)** — see *§The
+  follow-up*. At #44, mobile carried the map dim — `noPublicAccess` and the viewer's own
+  `selfFlagged` via `myAccessFlags` — and the `BodyResultCard` badge, but no drawer section: a
+  member on the phone could not file, see the pending count, or read a ruling's note, and the phone
+  is where a skater is standing when they get turned away.
+- **A live moderator render has not been verified.** MCP cannot authenticate as a moderator, so
+  ruling on Tomhannock (`m9761xrcwchdgky9g8gxvyz8hx8ajcz3`, seeded on dev) via `/admin/flags` and
+  the drawer's three states were reasoned about rather than seen — and #56's mobile section has not
+  been on a device. Put-in placement *was* click-tested by hand. Both want a look on the next
+  preview build; neither is code.
 - **No corpus-lifecycle consequence of a `none` verdict.** Recorded in
   [N6h](./phase-N6h-weather-detail.md) rather than here: weather discovery deliberately does *not*
   filter `none` bodies, because the founder's read is that a confirmed ruling should eventually
   **remove a body from the corpus** rather than have every query learn to skip it — *"the ideal
   situation eventually (way down the line) would be managing 5,000 lakes that actually get skated
-  on, not 20,000 nobody ever touches."* That is a decision across this phase's third state, N7's
-  purge lane and the weather registry's prune, and it wants its own scoping.
+  on, not 20,000 nobody ever touches."* **Scoped 2026-09-16 as [N7b Workstream L1](./phase-N7b-corpus-by-request.md#workstream-l1--what-a-none-verdict-does-next-on-the-map-and-marked-never-recommended)
+  and proposed as D175:** a `none` verdict removes a body from every *discovery* surface and no
+  *reference* surface (one `isDiscoverable` predicate; purge stays a human act via D48 plus a
+  purge-candidate list). Its own PR, because it touches the Phase 4 fan-out.
 - **No D-number.** This doc is the record; the roadmap and README entries (added with it) point
   here rather than at `01-decisions.md`.
+
+---
+
+## The follow-up — PR #56, 2026-09-14 → 2026-09-16
+
+*Writing this doc a month after the fact meant reading every N6f reference in the tree, and the
+reading found three things. The PR that added the doc closed all three, its review found a fourth
+that had been on both clients since #44, and closing the phase out found a fifth.*
+
+**1. The mobile drawer had the dim and nothing to press.** `apps/mobile/src/components/
+PublicAccessSection.tsx` is now the member's half of web's component — report, corroborate
+(*"Confirm — I've been turned away"* once someone else has), the note gate under an `open` verdict
+with the server's refusal surfaced verbatim, and all three verdict lines — mounted on the Overview
+tab beside `PostedAccess`, since both are facts about permission rather than about the trip.
+**Deliberately no rule buttons:** moderation stays on `/admin/flags`, where the corroboration count
+is the rank. `setPublicAccess` still has zero mobile callers, and that is by design.
+
+**2. The web surface was the one N6f component with no test.** `AccessSection.test.tsx` and
+`PostedAccess.test.tsx` sit either side of it — the exact finding N6d's pre-PR review made about
+its own surfaces, repeated. The component had its three Convex hooks and the role hook inline, so
+nothing could render it without mocking four boundaries. Split into the `AccessSectionView` pattern
+(data half / view half, no visible change) and 14 tests pin the rules: silent on the unruled
+majority, count-is-history once ruled, the viewer's own claim acknowledged rather than offered a
+no-op button, the note compulsory under `open` with whitespace refused client-side, the gate
+message surfaced with the form left open, Clear only when there is something to clear.
+
+The split exposed a real bug: **a failed moderator ruling was silent.** `ruleAs` set an error that
+only rendered inside the report form — which a moderator never has open. It now renders beside the
+rule buttons, and is pinned.
+
+**3. `cut-granule.sh` said the SCL/NDSI bands are "the bands N6f is built on."** They are N6g's.
+One letter.
+
+**4. ⚠ Greptile's P1: a half-written note could be filed against the wrong lake — on both clients.**
+Flagged on the new mobile section; the web drawer had the identical shape. Neither client keys its
+detail view by body: the `/water/[id]` route re-renders in place when its param changes, and the web
+drawer swaps `body` when the map selection moves. The form's note and error lived in component
+state, so an explanation started for lake A could be the one submitted against lake B — B's id,
+A's sentence, and nothing would look wrong. Both sections now key their stateful half by `body._id`
+**themselves** — a wrapper on mobile, `key` on the View in web's data half — so no mount site has
+to remember, which is precisely the failure the finding described. The web test renders the real
+data half across a rerender from one body to another and asserts the textbox and its sentence are
+gone; it was verified to fail without the key.
+
+Greptile's other P2 — *"anonymous reporting dead end"* — was not reachable: both apps are sign-in
+gated at the root (`AuthGate` in `__root.tsx`; mobile's `Stack.Protected`), so the drawer never
+renders for a signed-out visitor and `myAccessFlags`' `[]`-when-anonymous branch is server-side
+courtesy for the map. But the comments said *"no way to report (signed out)"*, which invited exactly
+that reading; they now say what `undefined` actually is there — loading. **A comment that describes
+an unreachable state is a bug report waiting to be filed.**
+
+**5. A ruling never told the reporters, and never counted — found closing the phase out
+(2026-09-16, committed on the N9 branch).** `setPublicAccess` closes a lake's open reports by
+patching the rows, and two systems built *after* N6f hang off `moderation.resolveFlag` instead: the
+N8 `content_flag_resolved` notification (PR #55) and the Phase 7b `flag_dispositions` counter. So a
+reporter the drawer had told *"it's with the moderators"* never heard the verdict — their fade
+flipped silently, and for an `open` ruling that is their claim dismissed without a word — and the
+control-room chart read zero upheld / zero dismissed for `no_public_access` forever. Now one
+`lib/flagResolution.closeFlag` (status + metric + notification) that both paths call; the audit row
+stays with each caller, because the queue's per-flag row and the ruling's one-per-lake row are both
+right. Three tests, verified to fail first.
+
+*Left as a founder call:* the N8 copy is verdict-only and target-less — *"A moderator reviewed
+something you flagged and left it up"* — because the flagged party is usually a person. Here it is a
+lake, so a reason-aware line (*"…your access report on Tomhannock — public access confirmed"*) would
+extend B3 rather than break it. Not done.
+
+**6. The ordinary verdict reads as a plain fact (founder call, 2026-09-16, from the first live look
+at the drawer).** *"A moderator reviewed this on August 25, 2026 and found public access"* dressed
+the normal state of a lake in the language of a dispute. `open` now renders **"Accessible to the
+public."** — no date, no moderator — and the review register moves to `none`, the only verdict that
+costs a reader something: *"A moderator reviewed this on … and found no public access — every
+approach crosses private land."* The `open` date is not lost; it lives in the re-report gate, where
+"since when" is the question being asked. One core function, both clients. Committed on the N9
+branch with finding 5 and deployed to dev the same day.
 
 ---
 
@@ -421,6 +499,11 @@ The edit path's photo behaviours (kept ids, explicit empty, omitted) and the wea
 pinned in `reports.test.ts` and `core/reportForm.test.ts`; every review fix was verified to fail
 against the pre-fix code first.
 
+`apps/web/src/components/PublicAccessSection.test.tsx` (14 tests, PR #56) covers the web surface —
+the three states, reporting, the moderator, and the body key. Mobile has no component-test
+convention (its suite is `lib/`-level), so the mobile section is covered by the shared strings in
+core and by the same server tests, not by a render.
+
 ---
 
 ## Where this phase is referenced from
@@ -435,8 +518,10 @@ against the pre-fix code first.
 - [**N6e**](./phase-N6e-satellite-imagery.md) — `postedAccess`, the annotate-never-suppress contract
   that made this a separate field.
 - **PR #44** — the merged branch, with the N7-3 wind rose and N6e's posted rules in the same history.
+- **PR #56** — this doc, the mobile section, the web test, and the body-key fix (*§The follow-up*).
 
-> ⚠ One stray reference is a mislabel, not a link: `scripts/imagery/cut-granule.sh:210` says the SCL /
+> One stray reference *was* a mislabel, not a link: `scripts/imagery/cut-granule.sh` said the SCL /
 > NDSI bands are *"the bands N6f is built on."* They are the ice-classification bands the roadmap
 > defers to **N6g** ([`phase-N6g-imagery-research.md`](./phase-N6g-imagery-research.md)); nothing in
-> this phase reads a granule.
+> this phase reads a granule. Corrected in #56 — noted so a future grep for `N6f` that comes up one
+> short knows why.

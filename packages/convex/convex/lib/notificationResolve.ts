@@ -315,6 +315,12 @@ async function resolveOne(
         target: { id: payload.reportId, available: report?.moderationStatus === 'visible' },
         body: await bodyRef(load, payload.waterBodyId),
         count: payload.count,
+        // The bay, off the report's own stamp (N9) — a bucket of one is about one place. Read from
+        // the report already in hand rather than the bay row, so a rename that has not been
+        // re-stamped yet reads the way the feed card does.
+        ...(payload.count === 1 && report?.subAreaName !== undefined
+          ? { subAreaName: report.subAreaName }
+          : {}),
       };
     }
     case 'digest': {

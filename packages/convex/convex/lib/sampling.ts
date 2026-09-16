@@ -123,8 +123,11 @@ export function subAreaWeatherCell(
   return weatherCellFor(tier, point.lat, point.lng, parent.elevationM);
 }
 
-/** Center of a hazard's footprint bbox — its representative point for nearest-sample-point selection. */
-export function hazardCenter(hazard: Doc<'hazards'>): { lat: number; lng: number } {
+/**
+ * Center of a hazard's footprint bbox — its representative point for nearest-sample-point selection,
+ * and (N9) the point a hazard *or a body feature* is stamped into a bay by; the two share the bbox.
+ */
+export function hazardCenter(hazard: Pick<Doc<'hazards'>, 'bbox'>): { lat: number; lng: number } {
   return {
     lat: (hazard.bbox.minLat + hazard.bbox.maxLat) / 2,
     lng: (hazard.bbox.minLng + hazard.bbox.maxLng) / 2,

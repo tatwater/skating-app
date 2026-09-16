@@ -633,3 +633,23 @@ export function bufferedLineOverlap(a: LineString, b: LineString, bufferMeters: 
   >;
   return polygonIoU(ribbonA.geometry, ribbonB.geometry);
 }
+
+/**
+ * An evenly-spaced sample of a path's positions, always including both endpoints — the bounded
+ * input behind every "which places did this track cross" question (`resolveTrackToBodies`,
+ * `resolveTrackSubAreas`). A skate can cross from a lake into its channel and back; testing a
+ * bounded number of points catches that without walking a 3,000-point path against every candidate
+ * polygon. Shared so the ingest stamp and the re-stamp job sample the same points and cannot
+ * disagree about what a track touched.
+ */
+export function samplePath(path: LineString, count: number): LatLng[] {
+  const coords = path.coordinates;
+  if (coords.length <= count) {
+    return coords.map(([lng, lat]) => ({ lat: lat as number, lng: lng as number }));
+  }
+  const step = (coords.length - 1) / (count - 1);
+  return Array.from({ length: count }, (_, i) => {
+    const [lng, lat] = coords[Math.round(i * step)] as number[];
+    return { lat: lat as number, lng: lng as number };
+  });
+}

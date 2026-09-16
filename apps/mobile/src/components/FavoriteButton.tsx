@@ -24,8 +24,16 @@ import { Button, Text, useTheme } from 'tamagui';
  * The icon takes a resolved hex rather than a `$token` because `FontAwesomeIcon` renders SVG, which
  * has no idea what a Tamagui theme token is.
  */
-export function FavoriteButton({ waterBodyId }: { waterBodyId: Id<'waterBodies'> }) {
-  const favorited = useQuery(api.waterBodyFavorites.isFavorite, { waterBodyId });
+export function FavoriteButton({
+  waterBodyId,
+  subAreaId,
+}: {
+  waterBodyId: Id<'waterBodies'>;
+  /** A bay's own heart (N9): favorites the bay, not the lake. The lake keeps its own button. */
+  subAreaId?: Id<'waterBodySubAreas'>;
+}) {
+  const target = { waterBodyId, ...(subAreaId !== undefined ? { subAreaId } : {}) };
+  const favorited = useQuery(api.waterBodyFavorites.isFavorite, target);
   const toggle = useMutation(api.waterBodyFavorites.toggle);
   const isFav = favorited === true;
   const theme = useTheme();
@@ -37,7 +45,7 @@ export function FavoriteButton({ waterBodyId }: { waterBodyId: Id<'waterBodies'>
       chromeless={!isFav}
       borderWidth={1}
       borderColor={isFav ? '$primary' : '$border'}
-      onPress={() => void toggle({ waterBodyId })}
+      onPress={() => void toggle(target)}
       disabled={favorited === undefined}
       aria-label={isFav ? 'Remove from favorites' : 'Add to favorites'}
     >

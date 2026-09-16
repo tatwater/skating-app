@@ -28,6 +28,7 @@ import {
   haversineMeters,
   isMinor,
   MAX_OPEN_BOUNTIES_PER_DAY,
+  memberSubAreaIds,
   reportSuppressesBounty,
   weatherExplainsIceChange,
   withinDailyBountyLimit,
@@ -98,34 +99,45 @@ async function recentReports(
    */
   subAreaId?: Id<'waterBodySubAreas'>,
 ): Promise<{ reports: Doc<'reports'>[]; truncated: boolean }> {
-  // The two indexes are the same shape with a different leading key, and both keep `moderationStatus`
-  // *in* the index for the same reason: a post-read `visible` filter lets hidden reports eat the cap.
-  const scan =
-    subAreaId === undefined
-      ? ctx.db
-          .query('reports')
-          .withIndex('by_water_body_moderation_and_skate_end_time', (q) =>
-            q
-              .eq('waterBodyId', waterBodyId)
-              .eq('moderationStatus', 'visible')
-              .gte('skateEndTime', cutoff),
-          )
-      : ctx.db
-          .query('reports')
-          .withIndex('by_sub_area_moderation_and_skate_end_time', (q) =>
-            q
-              .eq('subAreaId', subAreaId)
-              .eq('moderationStatus', 'visible')
-              .gte('skateEndTime', cutoff),
-          );
   // `takeCappedResult`, not `takeCapped`: the boundary has to be exact here, because `truncated` is
   // what turns into a block. A body with *exactly* the cap's worth of reports is a complete scan,
   // and reading it as a truncation would reject a valid bounty (Greptile PR #27).
-  const { rows: reports, truncated } = await takeCappedResult(
-    scan.order('desc'),
+  if (subAreaId === undefined) {
+    const { rows: reports, truncated } = await takeCappedResult(
+      ctx.db
+        .query('reports')
+        .withIndex('by_water_body_moderation_and_skate_end_time', (q) =>
+          q
+            .eq('waterBodyId', waterBodyId)
+            .eq('moderationStatus', 'visible')
+            .gte('skateEndTime', cutoff),
+        )
+        .order('desc'),
+      RECENT_REPORT_SCAN_CAP,
+      `bounties.recentReports(${waterBodyId})`,
+    );
+    return { reports, truncated };
+  }
+  // The bay half reads the `reportSubAreas` join (N9): a spanning report satisfies a bounty on
+  // *either* bay it was skated in (D175), and only the join can find it under its second one. The
+  // join mirrors `moderationStatus` and `skateEndTime` so the gate and the window stay in the index,
+  // for the same reason as above; the survivors are then hydrated one `get` per row, which the cap
+  // already bounds.
+  const { rows: joined, truncated } = await takeCappedResult(
+    ctx.db
+      .query('reportSubAreas')
+      .withIndex('by_sub_area_moderation_skate_end', (q) =>
+        q.eq('subAreaId', subAreaId).eq('moderationStatus', 'visible').gte('skateEndTime', cutoff),
+      )
+      .order('desc'),
     RECENT_REPORT_SCAN_CAP,
-    `bounties.recentReports(${subAreaId ?? waterBodyId})`,
+    `bounties.recentReports(${subAreaId})`,
   );
+  const reports: Doc<'reports'>[] = [];
+  for (const row of joined) {
+    const report = await ctx.db.get(row.reportId);
+    if (report && report.moderationStatus === 'visible') reports.push(report);
+  }
   return { reports, truncated };
 }
 
@@ -712,7 +724,12 @@ export async function attachReportToOpenBounties(
     // flips a bounty, so a Burlington Bay report attaching to a Malletts Bay bounty would let the
     // wrong ice satisfy the ask. A body-wide bounty still takes any report on the body — narrowing
     // that would break the ordinary case for no reason.
-    if (bounty.subAreaId !== undefined && report.subAreaId !== bounty.subAreaId) continue;
+    // **Any member bay satisfies** (N9 / D175): a skate that crossed from Malletts into Shelburne
+    // answers a bounty on either — membership carries reach — while a report from open water or a
+    // third bay still does not.
+    if (bounty.subAreaId !== undefined && !memberSubAreaIds(report).includes(bounty.subAreaId)) {
+      continue;
+    }
     if (bounty.fulfillingReportIds.includes(report._id)) continue;
     await ctx.db.patch(bounty._id, {
       fulfillingReportIds: [...bounty.fulfillingReportIds, report._id],
@@ -893,17 +910,27 @@ export const answeredByMyReport = query({
   },
 });
 
-/** The open bounties on a body (for the map/detail surfaces), newest first, with the requester's name. */
+/**
+ * The open bounties on a body (for the map/detail surfaces), newest first, with the requester's name.
+ *
+ * With a `subAreaId` (N9, the bay view): the bounties **on that bay, plus the lake-wide ones** — a
+ * lake-wide ask is satisfied by a report from this bay (D175), so it is an ask this bay's skaters can
+ * answer; a bounty on a *different* bay is not, and is dropped.
+ */
 export const listForBody = query({
-  args: { waterBodyId: v.id('waterBodies') },
-  handler: async (ctx, { waterBodyId }) => {
+  args: { waterBodyId: v.id('waterBodies'), subAreaId: v.optional(v.id('waterBodySubAreas')) },
+  handler: async (ctx, { waterBodyId, subAreaId }) => {
     const now = Date.now();
-    const open = await ctx.db
-      .query('bounties')
-      .withIndex('by_water_body_status', (q) =>
-        q.eq('waterBodyId', waterBodyId).eq('status', 'open'),
-      )
-      .collect();
+    const open = (
+      await ctx.db
+        .query('bounties')
+        .withIndex('by_water_body_status', (q) =>
+          q.eq('waterBodyId', waterBodyId).eq('status', 'open'),
+        )
+        .collect()
+    ).filter(
+      (b) => subAreaId === undefined || b.subAreaId === undefined || b.subAreaId === subAreaId,
+    );
     open.sort((a, b) => b.createdAt - a.createdAt);
     return Promise.all(
       open.map(async (b) => {

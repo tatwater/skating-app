@@ -613,3 +613,25 @@ export function bodyAccessKind(
   if (known.length === 0) return undefined;
   return known.reduce((best, k) => (APPROACH_EASE[k] < APPROACH_EASE[best] ? k : best));
 }
+
+/**
+ * Where a bay's drive-time is measured from (N9 kickoff call 2): its **best put-in** — `official`
+ * over `osm` over `derived`, the same ladder as `chooseAccessTarget` — else the bay's own
+ * `representativePoint`, and **never the parent's**. The parent's representative point is Turf's
+ * `pointOnFeature`, which lands on the shoreline wherever the ray-cast happens to hit it: Champlain's
+ * sits 30.7 km off mid-lake, and a bay banded from there is banded for a place nobody launches from.
+ *
+ * Bands are per-viewer polygon tests against a coordinate, so choosing a different coordinate per
+ * bay costs no extra cache — N2's "multiplied cache" objection was mistaken about the mechanism.
+ */
+export function subAreaDriveCoord(
+  bay: { representativePoint?: LatLng; centroid: LatLng },
+  putIns: readonly { coord: LatLng; source: AccessPutIn['source'] }[],
+): LatLng {
+  let best: { coord: LatLng; rank: number } | null = null;
+  for (const putIn of putIns) {
+    const rank = PUTIN_RANK[putIn.source];
+    if (best === null || rank > best.rank) best = { coord: putIn.coord, rank };
+  }
+  return best?.coord ?? bay.representativePoint ?? bay.centroid;
+}

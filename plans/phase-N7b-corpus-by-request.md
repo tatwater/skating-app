@@ -7,7 +7,12 @@
 > exactly the bodies this feature admits.
 > **Reuses:** N2's lake-editor review queue, Phase 8's `pathToBody`, the archive lane in
 > `scripts/etl`.
-> **Decisions:** D106–D108, proposed here.
+> **Decisions:** D106–D108, proposed here; **D175 proposed 2026-09-16** (see *§The other half*).
+> **Widened 2026-09-16 (founder):** this phase is now the home for **corpus lifecycle** as a whole —
+> not only admitting a body by request, but demoting and removing one, keeping a removed body out of
+> the next ETL campaign, and what happens to everything attached to a body in each state. The first
+> concrete piece, the consequence of an N6f `none` verdict, is scoped below; the rest is named with
+> what exists today so it can be scoped in one pass when this phase is picked up.
 
 ---
 
@@ -171,6 +176,107 @@ floor before the loader ever sees it. Since the import is an upsert, the row is 
 keeps the geometry it was admitted with. Acceptable, and deliberate — but if a catalogue later
 revises that shoreline, we will not pick it up until someone re-requests. Worth revisiting if the set
 grows large.
+
+---
+
+## The other half — corpus lifecycle (added 2026-09-16)
+
+*Admission is one transition. A body has several states and the code got them one phase at a time,
+each with its own field, its own verb, and its own idea of what "gone" means. This section is the
+map of them, one fully-scoped workstream, and the list of what still needs scoping.*
+
+### The states a body can be in today
+
+| State | Field | Set by | On the map? | Survives an ETL re-import? |
+|---|---|---|---|---|
+| **listed** | *(none of the below)* | import / approval | yes | yes — upsert on `externalId` |
+| **pending review** | `reviewStatus: 'pending'` (user-drawn, D37) | `waterBodies.create` | yes, marked | n/a — never in a catalogue |
+| **rejected** | `reviewStatus: 'rejected'` | moderator | no (`isListed`) | n/a |
+| **merged** | `dedupStatus: 'merged'` + `mergedIntoId` (D36) | moderator / N7 dedup | no; reads follow the survivor | kept by the prune; **unverified** against the loader |
+| **removed** | `removedAt` + `removalReason` (D48) | admin `remove` | no (`isListed`) | **yes** — `importCanonical` preserves it, the prune keeps it (`kept.delisted`) |
+| **no public access** | `publicAccess.verdict: 'none'` (N6f) | moderator | yes — dimmed, −2 zoom | yes — the six `scoreFields` sites (N6f §B) |
+| **admitted by request** | `includedByRequest` (this phase) | moderator | yes | left alone — the transform drops it at the floor (above) |
+
+Two things fall out of the table. **`isListed` is the only membership predicate the read paths
+share** (`lib/listing.ts`: not rejected ∧ not merged ∧ not removed), and the `none` verdict is
+deliberately *not* in it — a `none` body is listed. And **"survives re-import" was answered
+per-state, in different phases, by different mechanisms** — a field list in `importCanonical`, a
+`continue` in the prune, six scoring sites. There is no single test that walks every state through a
+campaign. That test is the first thing this workstream should write.
+
+### Workstream L1 — What a `none` verdict does next: on the map and marked, never recommended
+
+**The founder's read** ([N6h](./phase-N6h-weather-detail.md), open questions): a moderator-confirmed
+`none` should *"eventually remove a body from the corpus rather than have every query learn to skip
+it — the ideal situation eventually (way down the line) would be managing 5,000 lakes that actually
+get skated on, not 20,000 nobody ever touches."*
+
+**The scoped version, agreed 2026-09-16.** Deleting on a verdict is the wrong mechanism for the right
+goal. N6f's own argument for a third state — someone may hold a key, an invitation, or a landowner's
+word, and a ruling we got wrong is only corrected by someone who went anyway — is an argument
+against ever purging on it automatically. What the founder actually wants is narrower and better: a
+lake nobody can lawfully reach **stops being pushed at people**. So:
+
+> **D175 (proposed) — A `none` verdict removes a body from every *discovery* surface and from no
+> *reference* surface.** One core predicate, `isDiscoverable(body)` ≡ `isListed(body) ∧
+> !isNoPublicAccess(body)`, applied to every surface that *recommends* a lake and to nothing a
+> skater navigates to on purpose. Removal from the corpus stays a human act with a reason (D48).
+
+| Filter — these *push* | Leave — these are *reference* |
+|---|---|
+| Phase 4 drive-time notification fan-out (`notifications.ts` — `bandForCoord` call site) and the 8 pm nearby digest | the map — never-hide (D49), the dim + demotion is the whole treatment |
+| N6h weather-discovery cards (`weatherDiscovery.ts:288` gates on `isListed` today, **deliberately** not on `none`) | search, and the drawer |
+| the Phase 6 recommended strip (`listFeed` recommended caps) | favourites — *if you favourited it, you know something we don't* |
+| bounty requests fanned to nearby reporters (`bounties.ts`) | the viewport list (already sinks `none` to the bottom — N6f §D) |
+| the N8 `great_report_nearby` and `activity_detected` triggers, if the body is the subject | a report or hazard *on* the body — content is never suppressed (N6f's `AccessSection` invariant) |
+
+**Build shape.** This is the N6d "a new surface added to a system that enumerates its inputs" shape,
+so the work is the enumeration, not the predicate: each push surface gets the filter *and a test that
+seeds a `none` body and asserts it is absent*, because every omission fails silently and
+permissively. Five surfaces, five tests, one predicate in core. Its own PR — it touches the Phase 4
+fan-out, and should not ride a feature phase.
+
+**The purge half, deliberately human.** `waterBodies.remove` (D48) already exists, takes a reason,
+and is preserved through re-import. The only new lever worth building is a **purge-candidate list**
+in the admin tree: bodies with `none` standing **and** zero reports for N seasons (N5a boundaries),
+surfaced for a moderator to act on one at a time — a queue, never a cron. That gives the founder the
+"5,000 lakes" trajectory without a machine ever deciding a lake is gone.
+
+**Not in L1:** a notification copy change for `content_flag_resolved` on a lake (N6f follow-up
+finding 5 — founder call pending); a `none` body's hazards and reports, which stay exactly as they
+are.
+
+### What still needs scoping — named, not specced
+
+Each of these has *some* machinery today; the gap in every case is that nobody has written down the
+rule and tested it across states. Listed so the pass that picks this phase up scopes them together.
+
+- **Demoting versus removing.** Today there are two demotions (`curatedBoost` < 0, and the N6f
+  penalty) and one removal (D48). Whether a moderator needs a *third* rung — "keep it but stop it
+  ever surfacing wide" without the legal claim `none` makes — or whether `curatedBoost` already is
+  that rung, is a founder call. The N2 editor's Prominence tool already exposes the boost.
+- **Keeping a removed body out of the next campaign.** `importCanonical` preserves `removedAt` and
+  the prune keeps delisted rows, so today this *works by upsert* — but only because the row still
+  exists. If a removed body's row were ever hard-deleted, or its `externalId` changed under a
+  catalogue re-key (N7-3's D95 lane is still unbuilt), the next campaign re-admits it as new, with no
+  memory of the takedown. A **tombstone keyed on `externalId`** (or a `removedExternalIds` set the
+  loader consults) is the durable version. Wants a test: remove → hard-delete the row → re-import →
+  assert absent.
+- **What happens to attached records, per state.** `bodyAttachmentKind` (the prune's guard) knows
+  what *kinds* of rows hang off a body; nothing states what each transition does to them. The
+  matrix to fill in, per attachment kind — reports, hazards (+ recurrences, N5c), comments, photos,
+  favourites, bounties, put-ins / parking (N6d), access alerts, sub-areas (inherit listing, N2
+  Decision 11), weather-registry rows (N6h), notification-queue rows (N8) — against each transition:
+  remove / restore / merge / unmerge / `none` / clear / prune. Some cells are known (merge: reads
+  follow the survivor; sub-areas: follow the parent; prune: refuses if anything is attached); most
+  are "whatever the code happens to do." Fill the matrix first, then decide which cells are wrong.
+- **Restore semantics.** `restore` clears `removedAt` and re-syncs cells. Whether it should also
+  re-run the derived scoring (a removed body's `minVisibleZoom` may be stale by several campaigns)
+  and re-check dedup is unstated.
+- **The one test that walks every state through a campaign.** Seed one body per row of the table
+  above, run `importCanonical` + `pruneBelowAreaFloor` over them, assert each is exactly where the
+  table says. This is the regression net for everything else in this section, and it should be
+  written before any of it is changed.
 
 ---
 
