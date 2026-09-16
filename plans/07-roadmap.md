@@ -1,12 +1,8 @@
 # Roadmap
 
-Every phase with its status, what it was, and what it left behind. Each entry is a
-summary; the detail lives in the phase doc it links to. Decisions are `D#` in
-[`01-decisions.md`](./01-decisions.md); the conventions (phase names, workstreams, statuses) are in
+Every phase with its status, what it was, and what it left behind. Each entry links to its phase doc for more detail. Decisions are `D#` in
+[`01-decisions.md`](./01-decisions.md). The conventions (phase names, workstreams, statuses) are in
 [`README.md`](./README.md).
-
-**Statuses:** 🟢 **Complete** (merged and on dev) · 🟡 **In progress** · ⚪ **Scoped** (a plan exists,
-nothing built) · ⚫ **Withdrawn** (a number that was assigned and never built).
 
 **Nothing is in production.** Convex prod has never been initialized; every 🟢 below means *on dev*.
 The prod cutover is one item in the [deferred register](#deferred-register) at the bottom, not a
