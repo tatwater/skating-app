@@ -99,16 +99,14 @@ describe('the map dim expression', () => {
 });
 
 describe('copy', () => {
-  test('“none” states the claim about the approach, not about ownership', () => {
-    expect(describePublicAccess(NONE)).toBe(
-      'No public access — every approach crosses private land.',
+  test('“none” names the review, and states the claim about the approach, not about ownership', () => {
+    expect(describePublicAccess(NONE, UTC)).toBe(
+      'A moderator reviewed this on March 4, 2026 and found no public access — every approach crosses private land.',
     );
   });
 
-  test('“open” says so out loud, and dates itself', () => {
-    expect(describePublicAccess(OPEN, UTC)).toBe(
-      'A moderator reviewed this on March 4, 2026 and found public access.',
-    );
+  test('“open” is a plain fact — no date, no moderator (founder call, 2026-09-16)', () => {
+    expect(describePublicAccess(OPEN, UTC)).toBe('Accessible to the public.');
   });
 
   test('nothing ruled renders nothing', () => {
