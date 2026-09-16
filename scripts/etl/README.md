@@ -522,22 +522,29 @@ better has claimed, and it can never overwrite a moderator's reading or rejectio
 ### Pruning an already-loaded corpus
 
 The floor above governs what a **future** import writes. It cannot reach rows already stored, because
-`importCanonical` upserts and never deletes — so a deployment loaded before 2026-08-02 still holds the
-~100,000 sub-floor bodies the transform now skips. `prune-floor` walks the table and deletes exactly
-those, applying the same `meetsAreaFloor` from `@skating/core` that the transform does (which is why
-the rule lives there and not in `transform.ts` — two copies would drift into a prune that deletes rows
-the next import puts straight back).
+`importCanonical` upserts and never deletes. `prune-floor` walks the table and finds exactly the rows
+the rule refuses, applying the same `belongsInCorpus` from `@skating/core` that the transform does
+(which is why the rule lives there and not in `transform.ts` — two copies would drift into a prune
+that shelves rows the next import puts straight back).
+
+> ⚠ **Since N7b every prune *demotes* rather than deletes** (founder call, 2026-09-16: a body the
+> rules refuse *"shouldn't leave our database entirely"*). A refused body becomes **dormant** with
+> reason `not_in_campaign`: on no push surface, drawn only when zoomed right in, still reachable — and
+> back on the active map, flagged `includedByRequest`, the moment somebody reports on it. The 2026-08-02
+> campaign that *deleted* 102,000 rows ran before this; those live in the archives and come back one at
+> a time through the request path. The CLI's `deleted` tally is kept as the field name and now counts
+> demotions. See `docs/corpus-lifecycle.md`.
 
 ```bash
 pnpm --filter @skating/etl prune-floor            # DRY RUN — counts, writes nothing
-pnpm --filter @skating/etl prune-floor --apply    # actually delete
+pnpm --filter @skating/etl prune-floor --apply    # actually demote
 ```
 
-**Dry by default, and dev-only unless `--prod`** — the same two guards the loader has, for a stronger
-reason: this is the only script here that destroys rows. A page is one transaction, so killing it
-mid-run leaves the corpus consistent and the next run resumes from the start of the table.
+**Dry by default, and dev-only unless `--prod`** — the same two guards the loader has. A page is one
+transaction, so killing it mid-run leaves the corpus consistent and the next run resumes from the
+start of the table.
 
-It **refuses to delete a sub-floor body that anything speaks for**, and reports each kind separately
+It **refuses to shelve a sub-floor body that anything speaks for**, and reports each kind separately
 so the summary shows why:
 
 | kept as | because |
@@ -549,6 +556,7 @@ so the summary shows why:
 | `dedupOrMerged` | a merge pointer or non-`clean` dedup status; reads follow the survivor (D36) |
 | `delisted` | `removedAt` is set — a soft-delist carries a reason, sometimes a takedown (D48) |
 | `attached` | a report, hazard, bounty, favourite, put-in, track, sub-area or gate event names it |
+| `alreadyDormant` | not active on some other account (a removal, a `none` ruling, an earlier pass) — counted, not re-shelved |
 
 Expect the run to take roughly **20 ms per body** (it reads whole rows, polygons included), so a
 five-state corpus is ~40 minutes per pass.

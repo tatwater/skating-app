@@ -176,7 +176,14 @@ state park, because "flow" sounds like moving water.
 
 ## Step 5 — The prune, and why it's separate
 
-Importing and deleting are **different commands, and the deleting one is dry-run by default.**
+Importing and pruning are **different commands, and the pruning one is dry-run by default.**
+
+> **Since September 2026 the prune shelves rather than deletes.** A body the rules refuse becomes
+> *dormant* — still on the map when you zoom right in, with the drawer saying why, and back on the
+> active map the moment somebody reports on it. What "active" and "dormant" mean, and how a lake
+> moves between them over years, is its own story: [corpus lifecycle](./corpus-lifecycle.md). The
+> guards below still hold; the consequence of getting them wrong is now a lake going quiet rather
+> than a lake going missing.
 
 The reason is a specific, embarrassing failure mode: a lake measured at 1.0001 acres by the import
 and 0.9999 acres by the cleanup would be **added by every import and deleted by every cleanup,
@@ -332,8 +339,9 @@ on it describes the *ice*.
 
 ## Related
 
-[Bathymetry challenges](./bathymetry-challenges.md) · [Report lifecycle](./report-lifecycle.md) ·
-[Hazard decay](./hazard-decay-and-lifecycle.md) · [Adding a region](./adding-a-region.md)
+[Corpus lifecycle](./corpus-lifecycle.md) · [Bathymetry challenges](./bathymetry-challenges.md) ·
+[Report lifecycle](./report-lifecycle.md) · [Hazard decay](./hazard-decay-and-lifecycle.md) ·
+[Adding a region](./adding-a-region.md)
 
 For the engineering record: [`plans/phase-N7-unified-corpus.md`](../plans/phase-N7-unified-corpus.md)
 (the full phase, with the operator's runbook at the bottom) and

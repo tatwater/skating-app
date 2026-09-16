@@ -4,10 +4,11 @@
  * The floor in `./transform` governs what a *future* import writes. It cannot reach rows already in
  * the database, because `importCanonical` upserts and never deletes — so a deployment loaded before
  * 2026-08-02 still holds the ~100,000 unnamed sub-five-acre bodies the transform would now skip.
- * This walks the table through `waterBodies:pruneBelowAreaFloor` and deletes exactly those.
+ * This walks the table through `waterBodies:pruneBelowAreaFloor` and shelves exactly those —
+ * **demotes to dormant, never deletes, since N7b** (the CLI's `deleted` tally counts demotions).
  *
  *   pnpm --filter @skating/etl prune-floor              # DRY RUN — counts, writes nothing
- *   pnpm --filter @skating/etl prune-floor --apply      # actually delete (resumes if interrupted)
+ *   pnpm --filter @skating/etl prune-floor --apply      # actually demote (resumes if interrupted)
  *   pnpm --filter @skating/etl prune-floor --apply --restart   # ignore the checkpoint, start over
  *   pnpm --filter @skating/etl prune-floor --apply --prod
  *
@@ -122,7 +123,7 @@ function main(): void {
   process.stderr.write(
     apply
       ? `[prune] APPLYING the ${MIN_SURFACE_AREA_ACRES}-acre floor — unnamed bodies under it will be DELETED.\n`
-      : `[prune] dry run (pass --apply to delete). Floor: named, or >= ${MIN_SURFACE_AREA_ACRES} acres.\n`,
+      : `[prune] dry run (pass --apply to demote). Floor: named, or >= ${MIN_SURFACE_AREA_ACRES} acres.\n`,
   );
 
   // Resume where a killed run left off, unless told to start over. Only `--apply` runs checkpoint:
@@ -132,7 +133,7 @@ function main(): void {
   if (saved) {
     process.stderr.write(
       `[prune] resuming from checkpoint: ${saved.scanned.toLocaleString()} scanned · ` +
-        `${saved.deleted.toLocaleString()} deleted so far (--restart to start over)\n`,
+        `${saved.deleted.toLocaleString()} demoted so far (--restart to start over)\n`,
     );
   }
 
@@ -184,7 +185,7 @@ function main(): void {
     if (pages % PROGRESS_EVERY === 0 || done) {
       process.stderr.write(
         `[prune] ${scanned.toLocaleString()} scanned · ` +
-          `${deleted.toLocaleString()} ${apply ? 'deleted' : 'deletable'}\n`,
+          `${deleted.toLocaleString()} ${apply ? 'demoted' : 'demotable'}\n`,
       );
     }
   }
@@ -192,7 +193,7 @@ function main(): void {
   process.stderr.write(
     `\n[prune] ${apply ? 'DONE' : 'DRY RUN'} — ${scanned.toLocaleString()} bodies scanned in ` +
       `${pages.toLocaleString()} pages\n` +
-      `[prune] ${deleted.toLocaleString()} ${apply ? 'deleted' : 'would be deleted'}\n` +
+      `[prune] ${deleted.toLocaleString()} ${apply ? 'demoted to dormant' : 'would be demoted'}\n` +
       `[prune] kept: ${summarize(kept)}\n`,
   );
   // Named separately because it is the interesting one: a sub-floor body someone has *used* is the
@@ -203,7 +204,7 @@ function main(): void {
   // The pass completed, so the checkpoint is now a lie waiting to be resumed from. Clear it.
   if (apply && existsSync(CHECKPOINT)) rmSync(CHECKPOINT);
   if (!apply && deleted > 0) {
-    process.stderr.write('[prune] nothing was written. Re-run with --apply to delete.\n');
+    process.stderr.write('[prune] nothing was written. Re-run with --apply to demote.\n');
   }
 }
 

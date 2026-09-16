@@ -1,18 +1,24 @@
 # N7b — Corpus by request: the skater says "this is skateable", and the catalogue answers
 
-> **Status:** 📋 Scoped, not built (2026-08-03). Split out of [`N7`](./phase-N7-unified-corpus.md)
-> because it is a product feature across two clients, not a data campaign.
+> **Status:** 🔨 **PR 1 of 2 built 2026-09-16** (branch `phase-n7b-corpus-lifecycle`, from `main`):
+> the lifecycle model — standing, transitions, the seed, the rollover, the surfaces, the docs. PR 2
+> (requests: the table, the gestures, the resolver, the moderator queue, `NewWaterPrompt`) is next.
+> Split out of [`N7`](./phase-N7-unified-corpus.md) because it is a product feature across two
+> clients, not a data campaign.
 > **Depends on:** N7's `includedByRequest` field and `belongsInCorpus` predicate — **both landed
 > 2026-08-03**, deliberately ahead of this phase, because without them N7's own prune deletes
 > exactly the bodies this feature admits.
 > **Reuses:** N2's lake-editor review queue, Phase 8's `pathToBody`, the archive lane in
 > `scripts/etl`.
-> **Decisions:** D106–D108, proposed here; **D175 proposed 2026-09-16** (see *§The other half*).
+> **Decisions:** D106–D108 (requests, proposed here, PR 2); **D176–D178 decided and built 2026-09-16**
+> (standing, retention, prunes-demote — see *§What PR 1 built*). The L1 draft below proposed a
+> number that N9 took; it is superseded by D176 and kept as the record of the argument.
 > **Widened 2026-09-16 (founder):** this phase is now the home for **corpus lifecycle** as a whole —
 > not only admitting a body by request, but demoting and removing one, keeping a removed body out of
-> the next ETL campaign, and what happens to everything attached to a body in each state. The first
-> concrete piece, the consequence of an N6f `none` verdict, is scoped below; the rest is named with
-> what exists today so it can be scoped in one pass when this phase is picked up.
+> the next ETL campaign, and what happens to everything attached to a body in each state. The
+> founder's vision at kickoff: *"instead of 25,000 bodies clogging up our map, we should eventually
+> settle down to a refined corpus of actually-accessible, actually-skated bodies … more like 500."*
+> The skater-facing story is [`docs/corpus-lifecycle.md`](../docs/corpus-lifecycle.md).
 
 ---
 
@@ -179,6 +185,86 @@ grows large.
 
 ---
 
+## What PR 1 built — the lifecycle model (2026-09-16)
+
+*The kickoff pass answered fourteen questions; the answers are D176–D178 and the founder's calls are
+quoted there. This is the shape of what landed, and the seams PR 2 plugs into.*
+
+### The model
+
+**Standing** (`@skating/core` `standing.ts`): `standingOf(body)` derives `unlisted › removed › dormant
+› active` from `reviewStatus`/`dedupStatus`, `removedAt`, `publicAccess.verdict` and the new stored
+`dormant: { since, reason, byUserId?, note? }` (reasons `inactive` · `not_in_campaign` · `moderator`;
+`no_public_access` and removal are *read* from their own fields, never copied). `isActive` gates every
+push surface; `isListed` (Convex) now means *reachable* and a removed body is listed. A non-active
+body draws at `DORMANT_MIN_VISIBLE_ZOOM` (z16), past the D49 floor; N6f's −2-zoom penalty is gone.
+
+**The transition** (`convex/lib/standing.ts`): `transitionStanding` is the one write — re-score with
+richness, cell rows, sub-area cells (a bay follows its lake's *active* standing), weather registry
+membership, `activatedAt`, audit row. `activateBody` / `demoteBody` / `activateOnEvidence` wrap it.
+`remove`, `restore` (now an activation), `setPublicAccess` (`none` ⇒ dormant, `open` ⇒ activation
+that clears a stored dormancy too), `setCuratedBoost` (a positive boost on a shelved body brings it
+back) and `setIncludedByRequest` all go through it. Scoring moved to `lib/scoring.ts`
+(`scoreFields({ …, active })`, `richnessFor`, `zoomSortKey`).
+
+**Evidence hooks:** `reports.create`, `gpsActivities.ingestTrack` (every body the track resolved
+to), `hazards` create, `putIns.setOfficial`, the N6d access pass on a *new* launch. Only `inactive`
+and `not_in_campaign` yield; coming back from `not_in_campaign` sets `includedByRequest`.
+
+**The prunes demote** — all three, `deleted` kept as the tally name, `alreadyDormant` added.
+
+**The surfaces:** fan-out (`body_not_active` stop; favourites still told unless removed), weather
+discovery, recommended strip, bounty creation and fan-out, the feed (hides reports on *removed*
+bodies, shows dormant), the weather cell registry, `listNeedingElevation` / `listNeedingWindRose`
+(`includeDormant` opt-in, `dormant` tally), imagery masks, sub-area seeding, favourites (dormant yes,
+removed no), tracks (`listTracksForBody` hides removed), search (dormant badged and ranked last,
+removed absent), `get` (returns removed/dormant whole), `regionStats` (`bodiesActive`).
+
+**The operator surface** (`convex/standing.ts`): `setStanding` (moderator; refusals name the right
+verb), `listLane` × 5, `listRecentActivations` (with `via` and what enrichment is missing),
+`seedStanding` (dry by default, paged, `keepIds`), `demoteInactiveBodies` + `runStandingRollover`
+(an `importRuns` row, `standing_rollover`) + `maybeRunStandingRollover` (daily cron, July 1–14,
+gated on the run row). `scripts/seed-destinations seed-standing --gazetteer=<csv>` builds the keep
+list from the destination shortlist and the design-corpus gazetteer and drives the seed;
+`run-corpus.sh` names it as the campaign's third manual step.
+
+**Clients:** `StandingNotice` under the drawer title (both), the map's `inactive` property from
+`isActiveRow` (both), *Inactive* on search hits (both), bounty composer hidden off-active, the About
+page's per-state *known · active* pair. Web admin: the lake editor's Listing card is now *Standing*;
+`/admin/water/standing` lists the lanes and recent activations.
+
+### The regression net
+
+`standing.test.ts` (34 tests): the **campaign walk** — one body per standing through a re-affirming
+re-import, a non-re-affirming campaign prune and the floor prune, each asserted to land where the
+table says, with the rung on every cell row — plus transitions, the evidence hooks (including the
+three that must *not* flip), every push surface seeding a non-active body and asserting absence, the
+seed, the rollover and its once-per-season gate, and the lanes. Core `standing.test.ts` (24) pins the
+precedence, the retention arithmetic and the copy.
+
+### Not built, and why
+
+- **The tombstone.** No path hard-deletes a removed row and the walk pins it (D178).
+- **Auto-elevation on activation.** EPQS is a plain HTTP point service and an action could fetch it;
+  deferred to keep PR 1 to the model. `activatedAt` + `listRecentActivations`' *missing* column are
+  the hooks.
+- **The attachment matrix as a document.** The cells the model changed are stated in D176/D177
+  (a removed body's reports attach, reach no push surface; bays follow the lake; favourites on
+  dormant yes / removed no; tracks hidden on removed). The rest — comments, photos, access alerts,
+  notification-queue rows — behave as before and were not audited cell by cell.
+- **Mobile moderator controls.** Standing is set from the web editor, like every other lake edit.
+
+### PR 2 — requests
+
+The `waterBodyRequests` table with five kinds (`activate` · `admit` · `restore` · `contest_access` ·
+`takedown`), long-press (mobile) / right-click (web) on water with no *active* body, the drawer's
+"Request this lake" from `StandingNotice`, a Convex **action** resolving an `admit` against the live
+USGS NHD service (the plan's archive-first order is inverted — the archives need a laptop), the
+moderator queue, `NewWaterPrompt` mounted in `UnreportedSkates` with `findMatchCandidates` extended
+to dormant and removed bodies, and `create` refusing to mint over a removed body.
+
+---
+
 ## The other half — corpus lifecycle (added 2026-09-16)
 
 *Admission is one transition. A body has several states and the code got them one phase at a time,
@@ -205,6 +291,12 @@ per-state, in different phases, by different mechanisms** — a field list in `i
 campaign. That test is the first thing this workstream should write.
 
 ### Workstream L1 — What a `none` verdict does next: on the map and marked, never recommended
+
+> **Superseded by D176 (2026-09-16), the same day it was written.** The kickoff pass generalised
+> this into *standing*: a `none` body is one dormancy reason among four, drawn at the dormant rung
+> rather than the −2 demotion, and `isActive` is the one predicate. The D-number this section
+> proposed was taken by N9. Kept as the record of the argument — the *push vs reference* table below
+> is exactly the split the build made.
 
 **The founder's read** ([N6h](./phase-N6h-weather-detail.md), open questions): a moderator-confirmed
 `none` should *"eventually remove a body from the corpus rather than have every query learn to skip

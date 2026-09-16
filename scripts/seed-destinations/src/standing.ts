@@ -1,0 +1,222 @@
+/**
+ * `pnpm --filter @skating/seed-destinations seed-standing [--gazetteer=<csv>] [--apply]` (N7b).
+ *
+ * **The one-time partition of the stored corpus into active and dormant**, re-runnable after any
+ * campaign. The rule is `standing:seedStanding`'s (evidence of access or use keeps a body active);
+ * what this script adds is the founder's keep list — every lake the design corpus talks about
+ * (`training_data/google_group/gazetteer.csv`, gitignored, 73 rows) plus the curated destination
+ * shortlist, matched to corpus bodies by name and state exactly as the boost seed matches them.
+ *
+ * **Two commands, and the default is the safe one.** Without `--apply` this writes a reviewable
+ * report — matched, ambiguous (a name with several same-named bodies in the state; the founder
+ * picks), unmatched (a lake the corpus does not hold at all, which is a to-do for the request path)
+ * — and pages the seed dry, printing what it *would* shelve. With `--apply` it shelves, recorded as
+ * a `standing_seed` run row, and the finish schedules the weather-registry walk that prunes the
+ * cells the shelved bodies vacated.
+ *
+ * An ambiguous match is deliberately NOT kept: keeping every candidate would keep the wrong pond
+ * active on the strength of a name, which is the Phase-2.5 mistake this matcher exists to refuse.
+ * Resolve them by hand in the lake editor's Standing card, or add a `near` coordinate to the
+ * shortlist and re-run.
+ */
+
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import process from 'node:process';
+import { fileURLToPath } from 'node:url';
+import { convexRun, RunLogger, resolveDeployment } from '@skating/run-log';
+import { type CandidateBody, type Destination, matchAll } from './match';
+
+const SHORTLIST = fileURLToPath(new URL('../destinations.json', import.meta.url));
+const REPORT = fileURLToPath(new URL('../.standing-report.json', import.meta.url));
+
+/**
+ * The gazetteer's rows as destinations — `water_body` is the name, `region` the state the corpus
+ * analysis attributed it to. No coordinate: the mbox knows where people are, not where the lake is.
+ */
+export function gazetteerToDestinations(csv: string): Destination[] {
+  const lines = csv.split(/\r?\n/).filter((l) => l.trim().length > 0);
+  const header = (lines.shift() ?? '').split(',');
+  const nameAt = header.indexOf('water_body');
+  const regionAt = header.indexOf('region');
+  if (nameAt < 0 || regionAt < 0) {
+    throw new Error('gazetteer: expected `water_body` and `region` columns');
+  }
+  return lines.flatMap((line) => {
+    const cols = line.split(',');
+    const name = cols[nameAt]?.trim();
+    const state = cols[regionAt]?.trim();
+    if (!name || !state) return [];
+    return [{ name, state, sources: ['community' as const] }];
+  });
+}
+
+/** Two lists, one keep set: a lake on both is one entry, not two matches. */
+export function dedupeDestinations(lists: readonly Destination[][]): Destination[] {
+  const seen = new Set<string>();
+  const out: Destination[] = [];
+  for (const list of lists) {
+    for (const d of list) {
+      const key = `${d.state}:${d.name.trim().toLowerCase()}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push(d);
+    }
+  }
+  return out;
+}
+
+async function main() {
+  const args = process.argv.slice(2);
+  const apply = args.includes('--apply');
+  const gazetteerPath = args
+    .find((a) => a.startsWith('--gazetteer='))
+    ?.slice('--gazetteer='.length);
+  const campaignId = args.find((a) => a.startsWith('--campaign='))?.slice('--campaign='.length);
+
+  const shortlist = JSON.parse(readFileSync(SHORTLIST, 'utf8')) as Destination[];
+  const gazetteer =
+    gazetteerPath && existsSync(gazetteerPath)
+      ? gazetteerToDestinations(readFileSync(gazetteerPath, 'utf8'))
+      : [];
+  if (gazetteerPath && gazetteer.length === 0) {
+    throw new Error(`gazetteer: nothing read from ${gazetteerPath}`);
+  }
+  const destinations = dedupeDestinations([shortlist, gazetteer]);
+  process.stderr.write(
+    `[standing] keep list: ${shortlist.length} shortlist + ${gazetteer.length} gazetteer → ${destinations.length} distinct\n`,
+  );
+
+  const bodies: CandidateBody[] = [];
+  let cursor: string | undefined;
+  let isDone = false;
+  while (!isDone) {
+    const page = convexRun<{ bodies: CandidateBody[]; cursor: string; isDone: boolean }>(
+      'waterBodies:listNamedForSeeding',
+      cursor ? { cursor } : {},
+    );
+    bodies.push(...page.bodies);
+    cursor = page.cursor;
+    isDone = page.isDone;
+  }
+  process.stderr.write(`[standing] ${bodies.length} named bodies read\n`);
+
+  const outcomes = matchAll(destinations, bodies);
+  const matched = outcomes.filter((o) => o.kind === 'matched');
+  const ambiguous = outcomes.filter((o) => o.kind === 'ambiguous');
+  const unmatched = outcomes.filter((o) => o.kind === 'unmatched');
+  const keepIds = matched.map((o) => (o.kind === 'matched' ? o.body._id : '')).filter(Boolean);
+
+  // The seed itself, paged. Dry unless --apply; the tallies are identical either way.
+  const totals = { scanned: 0, demoted: 0, kept: {} as Record<string, number> };
+  let seedCursor: string | undefined;
+  let seedDone = false;
+  while (!seedDone) {
+    const page = convexRun<{
+      scanned: number;
+      demoted: number;
+      kept: Record<string, number>;
+      cursor: string;
+      isDone: boolean;
+    }>('standing:seedStanding', {
+      keepIds,
+      ...(apply ? { apply: true } : {}),
+      ...(seedCursor ? { cursor: seedCursor } : {}),
+    });
+    totals.scanned += page.scanned;
+    totals.demoted += page.demoted;
+    for (const [k, v] of Object.entries(page.kept)) totals.kept[k] = (totals.kept[k] ?? 0) + v;
+    seedCursor = page.cursor;
+    seedDone = page.isDone;
+    process.stderr.write(`[standing] …${totals.scanned} scanned, ${totals.demoted} to shelve\r`);
+  }
+  process.stderr.write('\n');
+
+  writeFileSync(
+    REPORT,
+    `${JSON.stringify(
+      {
+        applied: apply,
+        totals,
+        matched: matched.map((o) =>
+          o.kind === 'matched'
+            ? { name: o.destination.name, state: o.destination.state, bodyId: o.body._id }
+            : null,
+        ),
+        ambiguous: ambiguous.map((o) =>
+          o.kind === 'ambiguous'
+            ? {
+                name: o.destination.name,
+                state: o.destination.state,
+                candidates: o.candidates.map((c) => ({ _id: c._id, name: c.name })),
+              }
+            : null,
+        ),
+        unmatched: unmatched.map((o) => ({ name: o.destination.name, state: o.destination.state })),
+      },
+      null,
+      2,
+    )}\n`,
+  );
+
+  process.stderr.write(
+    `[standing] keep list: ${matched.length} matched · ${ambiguous.length} ambiguous · ${unmatched.length} unmatched\n` +
+      `[standing] corpus: ${totals.scanned} scanned · ${totals.demoted} ${apply ? 'shelved' : 'would be shelved'} · kept ${JSON.stringify(totals.kept)}\n` +
+      `[standing] report written to ${REPORT}\n`,
+  );
+  for (const o of unmatched) {
+    process.stderr.write(
+      `[standing]   unmatched: ${o.destination.name} (${o.destination.state})\n`,
+    );
+  }
+  for (const o of ambiguous) {
+    if (o.kind !== 'ambiguous') continue;
+    process.stderr.write(
+      `[standing]   ambiguous: ${o.destination.name} (${o.destination.state}) — ${o.candidates.length} candidates, NOT kept\n`,
+    );
+  }
+
+  if (!apply) {
+    process.stderr.write('[standing] dry run. Review the report, then re-run with --apply.\n');
+    return;
+  }
+
+  // Recorded after the fact rather than around the loop: the seed's writes are per-page mutations
+  // that each commit on their own, and the run row's job is the tallies and the registry walk
+  // `importRuns.finish` schedules for `standing_seed`.
+  const logger = new RunLogger({
+    kind: 'standing_seed',
+    label: 'corpus standing seed (N7b)',
+    ...(campaignId ? { campaignId } : {}),
+    target: resolveDeployment(),
+    call: convexRun,
+  });
+  logger.start();
+  logger.count('scanned', totals.scanned);
+  logger.count('demoted', totals.demoted);
+  for (const [k, v] of Object.entries(totals.kept)) logger.count(`kept.${k}`, v);
+  logger.count('keepList.matched', matched.length);
+  logger.count('keepList.ambiguous', ambiguous.length);
+  logger.count('keepList.unmatched', unmatched.length);
+  logger.coverage({
+    covered: matched.length,
+    eligible: destinations.length,
+    unit: 'keep-list lakes',
+    omissions: [
+      ...(ambiguous.length
+        ? [{ count: ambiguous.length, reason: 'ambiguous — needs a human, not kept' }]
+        : []),
+      ...(unmatched.length
+        ? [{ count: unmatched.length, reason: 'no corpus body of that name' }]
+        : []),
+    ],
+  });
+  logger.succeed([`${totals.demoted} bodies shelved as inactive`]);
+}
+
+// Only the CLI entry runs `main`; the two pure helpers above are imported by the tests.
+if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
+  main().catch((err) => {
+    process.stderr.write(`[standing] ${err instanceof Error ? err.message : String(err)}\n`);
+    process.exit(1);
+  });
+}

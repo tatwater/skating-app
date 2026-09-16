@@ -1454,6 +1454,25 @@ per catalogue (D109/D110). 178,095 groups in, **24,958 bodies** out.
   name that does not exist. *If a measurement comes back suspiciously clean, check the instrument is
   reaching the data.*
 
+**N7b — Corpus lifecycle: standing, the request path, and the trajectory from 25,000 to a few
+hundred.** 🔨 **PR 1 of 2 built 2026-09-16** (branch `phase-n7b-corpus-lifecycle`; PR 2 = requests,
+next). The founder's widening at kickoff: not only admitting a body by request but the whole
+lifecycle — *"instead of 25,000 bodies clogging up our map, we should eventually settle down to a
+refined corpus of actually-accessible, actually-skated bodies … more like 500."* See
+[`phase-N7b-corpus-by-request.md`](./phase-N7b-corpus-by-request.md) and, for skaters,
+[`docs/corpus-lifecycle.md`](../docs/corpus-lifecycle.md). Decisions **D176–D178**.
+
+**What PR 1 landed.** A body has a *standing* — `active` · `dormant` (inactive three seasons, the
+rules changed, a moderator, no public access) · `removed` · `unlisted` — derived from four fields by
+one function; only `active` is pushed (notifications, discovery, recommended, bounties, the weather
+registry, enrichment), everything reachable draws at the dormant rung (z16) when you zoom in on it,
+and the drawer says why. Evidence (a report, a track, a hazard, a put-in) re-activates a
+machine-shelved body; a person's dormancy, a `none` ruling and a removal need a person. All three
+prunes demote instead of delete. A seed partitions the stored corpus by evidence of access or use
+(plus the design-corpus gazetteer); a July cron shelves what nobody skated in three seasons; an admin
+page shows the lanes and what came back. The campaign-walk test walks every standing through a
+re-import and both prunes.
+
 **N5c — Hazard identity: one clustering primitive, two time windows.** ✅ **Built 2026-07-31, both
 halves.** The within-season half shipped as **PR #34** (clustering, nudge, pooling, consensus
 rendering, auto-merge, manual authoring, the D53 amendment and the rename); the cross-season half —
