@@ -1871,3 +1871,116 @@ export const restampAllParents = internalMutation({
     return { parents: parents.size };
   },
 });
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+// N9 PR 2 — the depth lane's two ends: what the export reads, what the load writes
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Every live bay with what `scripts/bathymetry export-bay-depths` needs to clip its parent's survey:
+ * our own key, the parent's Convex id (which the join file already names), the outline, and when
+ * the outline last moved — the snapshot the loader is refused against.
+ * `pnpm exec convex run subAreas:exportForDepths` from the script; 128 rows, ~2 MB of polygons.
+ */
+export const exportForDepths = internalQuery({
+  args: {},
+  handler: async (ctx) => {
+    const rows = await ctx.db.query('waterBodySubAreas').collect();
+    const out: {
+      subAreaId: Id<'waterBodySubAreas'>;
+      subAreaKey: string;
+      waterBodyId: Id<'waterBodies'>;
+      name: string;
+      polygon: unknown;
+      geometryUpdatedAt?: number;
+    }[] = [];
+    // Parents read once each: Winnipesaukee's polygon read forty-eight times, once per bay, put
+    // this query at 15 of the 16 MB read limit on its first run.
+    const parentListed = new Map<Id<'waterBodies'>, boolean>();
+    for (const row of rows) {
+      if (row.removedAt !== undefined) continue;
+      // A bay without a key predates `mintSubAreaKeys` — run that first; the loader matches on the key.
+      if (row.subAreaKey === undefined) continue;
+      let listed = parentListed.get(row.waterBodyId);
+      if (listed === undefined) {
+        const parent = await ctx.db.get(row.waterBodyId);
+        listed = parent !== null && isListed(parent);
+        parentListed.set(row.waterBodyId, listed);
+      }
+      if (!listed) continue;
+      out.push({
+        subAreaId: row._id,
+        subAreaKey: row.subAreaKey,
+        waterBodyId: row.waterBodyId,
+        name: row.name,
+        polygon: row.polygon,
+        ...(row.geometryUpdatedAt !== undefined
+          ? { geometryUpdatedAt: row.geometryUpdatedAt }
+          : {}),
+      });
+    }
+    return out;
+  },
+});
+
+/**
+ * Load derived bay depths (N9 PR 2) — the only writer of `waterBodySubAreas.maxDepthM`.
+ *
+ * Each row is matched on **our own key**, not the Convex id: the id is what the export read a
+ * moment ago, the key is what survives everything. Two refusals, both named on the result rather
+ * than thrown, so a batch of a hundred lands its ninety-nine: a bay whose outline moved *after* the
+ * export's snapshot (`geometryUpdatedAt > snapshotAt`) — the depth would describe a shape that no
+ * longer exists, which is exactly what `rederiveSubArea` clears to avoid — and a bay the key no
+ * longer finds. `dryRun` reports without writing.
+ */
+export const setDerivedDepth = internalMutation({
+  args: {
+    /** When the export read the bays. A row older than the bay's outline is refused. */
+    snapshotAt: v.number(),
+    rows: v.array(
+      v.object({
+        subAreaKey: v.string(),
+        maxDepthM: v.number(),
+        understatesMax: v.boolean(),
+      }),
+    ),
+    dryRun: v.optional(v.boolean()),
+  },
+  handler: async (ctx, { snapshotAt, rows, dryRun }) => {
+    const now = Date.now();
+    let written = 0;
+    const refused: {
+      subAreaKey: string;
+      reason: 'not_found' | 'geometry_moved' | 'implausible';
+    }[] = [];
+    for (const row of rows) {
+      const bay = await ctx.db
+        .query('waterBodySubAreas')
+        .withIndex('by_sub_area_key', (q) => q.eq('subAreaKey', row.subAreaKey))
+        .unique();
+      if (!bay) {
+        refused.push({ subAreaKey: row.subAreaKey, reason: 'not_found' });
+        continue;
+      }
+      if (bay.geometryUpdatedAt !== undefined && bay.geometryUpdatedAt > snapshotAt) {
+        refused.push({ subAreaKey: row.subAreaKey, reason: 'geometry_moved' });
+        continue;
+      }
+      if (!(row.maxDepthM > 0) || !Number.isFinite(row.maxDepthM)) {
+        refused.push({ subAreaKey: row.subAreaKey, reason: 'implausible' });
+        continue;
+      }
+      if (dryRun !== true) {
+        await ctx.db.patch(bay._id, {
+          maxDepthM: row.maxDepthM,
+          maxDepthSource: 'state_agency',
+          depthUnderstatesMax: row.understatesMax,
+          depthDerivedAt: now,
+          updatedAt: now,
+        });
+      }
+      written++;
+    }
+    return { written, refused, dryRun: dryRun === true };
+  },
+});
