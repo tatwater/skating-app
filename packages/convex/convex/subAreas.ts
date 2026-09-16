@@ -1849,3 +1849,25 @@ export const adminStatsForBody = query({
     return out;
   },
 });
+
+/**
+ * Schedule a re-stamp for every parent that has a sub-area (N9) — the one-off that tags the rows
+ * from before the phase. Every writer stamps at write from N9 on, and a redraw re-stamps its lake,
+ * but nothing else ever would: the put-ins, tracks and features on the 22 parents that predate N9
+ * would sit untagged until each lake happened to be edited, and until then the bay view's access
+ * list would be empty, a bay report would be banded from its shoreline point instead of its launch,
+ * and the admin card would count no skates. Distinct parents are collected from the sub-area table
+ * (128 rows) so a lake with forty-eight bays schedules one sweep, not forty-eight.
+ * `pnpm exec convex run subAreas:restampAllParents`.
+ */
+export const restampAllParents = internalMutation({
+  args: {},
+  handler: async (ctx) => {
+    const parents = new Set<Id<'waterBodies'>>();
+    for (const row of await ctx.db.query('waterBodySubAreas').collect()) {
+      parents.add(row.waterBodyId);
+    }
+    for (const waterBodyId of parents) await scheduleRestamp(ctx, waterBodyId);
+    return { parents: parents.size };
+  },
+});

@@ -223,6 +223,19 @@ describe('subAreaForPutIn — by distance to the outline, not containment (N9 ca
     expect(subAreaForPutIn(coord, candidates)).toBe('big');
   });
 
+  it('smallest wins on a shared shore even when the two distances differ by float noise', () => {
+    // The nested bay's west edge sits a nanometre east of the big bay's — the re-noding a clip
+    // introduces — so an exact tie never happens, and a bit-level rule would pick the *bigger* bay.
+    const nudged = {
+      ref: 'small',
+      polygon: rect(-73.5 + 1e-11, 44.3, -73.4, 44.4),
+      surfaceAreaSqM: 1e8,
+    };
+    const coord = { lat: 44.35, lng: -73.5 - 2 / (111_320 * Math.cos((44.35 * Math.PI) / 180)) };
+    expect(subAreaForPutIn(coord, [big, nudged])).toBe('small');
+    expect(subAreaForPutIn(coord, [nudged, big])).toBe('small');
+  });
+
   it('smallest wins when two bays are within tolerance', () => {
     const coord = { lat: 44.35, lng: -73.5 - 5 / (111_320 * Math.cos((44.35 * Math.PI) / 180)) };
     expect(subAreaForPutIn(coord, candidates)).toBe('small');
@@ -275,6 +288,17 @@ describe('resolveTrackSubAreas — the two-bay skate (N9 kickoff Q4)', () => {
   it('a sample off the parent (shoreline jitter on the way to the car) is not evidence', () => {
     const samples = [at(-73.45), at(-73.4), at(-73.6) /* west of the lake entirely */];
     expect(resolveTrackSubAreas(samples, candidates, PARENT).leftSubArea).toBe(false);
+  });
+
+  it('a bay one sample brushed past is not a member — the floor (SUB_AREA_MEMBERSHIP_MIN_SHARE)', () => {
+    // 19 samples in open water and one in the west bay: 5%, under the 10% floor. No bay, no
+    // primary — the skate was on the lake — but the mouth line was crossed on the way past.
+    const samples = [...Array.from({ length: 19 }, () => at(-73.1)), at(-73.45)];
+    const out = resolveTrackSubAreas(samples, candidates, PARENT);
+    expect(out).toEqual({ primary: null, all: [], leftSubArea: true });
+    // Two of twenty clears it.
+    const two = [...Array.from({ length: 18 }, () => at(-73.1)), at(-73.45), at(-73.4)];
+    expect(resolveTrackSubAreas(two, candidates, PARENT).all).toEqual(['west']);
   });
 
   it('a track that never entered a bay is not evidence about any mouth line', () => {

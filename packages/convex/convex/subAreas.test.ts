@@ -2262,3 +2262,35 @@ describe('the bay view reads (N9)', () => {
     expect(after[west]?.geometryUpdatedAt).toBeGreaterThan(derivedAt);
   });
 });
+
+describe('restampAllParents — the one-off for rows that predate N9', () => {
+  test('schedules one sweep per parent, and the sweep tags the untagged rows', async () => {
+    const t = harness();
+    const body = await seedBody(t);
+    const mod = await seedUser(t, 'mod', 'moderator');
+    const bay = await mod.as.mutation(api.subAreas.create, {
+      waterBodyId: body,
+      name: 'West Bay',
+      polygon: rect(-73.5, 44.2, -73.3, 44.6),
+    });
+    await mod.as.mutation(api.subAreas.create, {
+      waterBodyId: body,
+      name: 'East Bay',
+      polygon: rect(-72.8, 44.2, -72.5, 44.6),
+    });
+    await settle(t);
+    // A pre-N9 launch: on the bay's shore, never tagged.
+    const putIn = await t.run((ctx) =>
+      ctx.db.insert('putIns', {
+        waterBodyId: body,
+        coord: { lat: 44.4, lng: -73.5 },
+        source: 'osm' as const,
+        status: 'visible' as const,
+        createdAt: Date.now(),
+      }),
+    );
+    expect(await t.mutation(internal.subAreas.restampAllParents, {})).toEqual({ parents: 1 });
+    await settle(t);
+    expect((await t.run((ctx) => ctx.db.get(putIn)))?.subAreaId).toBe(bay);
+  });
+});
