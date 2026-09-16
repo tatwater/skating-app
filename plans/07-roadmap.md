@@ -678,4 +678,3 @@ long-form register this table replaced is archived verbatim in
 Strava (L7) · k-anonymity contributor gating (D58) · Fitbit as a provider · the `appConfig`
 runtime-tuning seam · encoded-polyline transport · contours from GLOBathy rasters · true-sunset digest
 timing (D173) · tasked commercial imagery · an always-on radar server.
-y

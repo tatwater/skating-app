@@ -2,6 +2,9 @@
 
 > **Feat — scoped, measured, not started.** Moved out of `07-roadmap.md` verbatim in the 2026-09-16 rewrite, where it had been filed as "N8b" — a code sweep that borrowed a phase number. Stage 1 (the data half) is done; this is the ~100-read-site code sweep, and its own text says it should not linger.
 
+**N8b — Finish the `centroid` → `representativePoint` rename (stage 2).** ⏰ **Deferred 2026-08-10, and
+it should not sit long.** The data half is **done** — `backfillRepresentativePoint` ran across all
+three tables (`waterBodies` 24,961 · `adminAreas` 2,546 · `waterBodySubAreas` 126, nine filled), so
 every row now carries the field and nothing is blocked on a pass.
 
 What is left is purely a code sweep: **migrate ~100 read sites** to `representativePoint`, make the

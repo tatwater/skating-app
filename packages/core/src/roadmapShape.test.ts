@@ -6,7 +6,9 @@
  * phase listed twice, and status written five different ways. A template nobody checks drifts
  * again, so this test reads the file and holds it to what the template promises:
  *
- * - every `## Phase …` heading is followed by exactly one status line of the fixed shape;
+ * - every `## Phase …` heading is followed by exactly one status line of the fixed shape, then a
+ *   blank line, then the summary paragraph — present, and bounded (the old file's entries ran to
+ *   hundreds of lines; the template says ~120 words, up to ~180 for a big phase);
  * - the `####` sections under an entry come from the fixed set, in the fixed order, once each;
  * - every phase doc in `plans/` has an entry, and every entry's `[plan](…)` link resolves;
  * - the deferred register is present and is a table.
@@ -29,7 +31,14 @@ const STATUS_LINE =
 
 const SECTIONS = ['Data runs', 'Deferred', 'Ruled out', 'Owed'] as const;
 
-type Entry = { heading: string; statusLine: string; planPath: string; sections: string[] };
+type Entry = {
+  heading: string;
+  statusLine: string;
+  afterStatus: string;
+  summaryWords: number;
+  planPath: string;
+  sections: string[];
+};
 
 function parseEntries(text: string): Entry[] {
   const lines = text.split('\n');
@@ -38,14 +47,23 @@ function parseEntries(text: string): Entry[] {
     const line = lines[i] ?? '';
     if (!line.startsWith('## Phase ')) continue;
     const statusLine = lines[i + 1] ?? '';
+    const afterStatus = lines[i + 2] ?? '';
     const sections: string[] = [];
-    for (let j = i + 2; j < lines.length; j++) {
+    const summary: string[] = [];
+    let inSummary = true;
+    for (let j = i + 3; j < lines.length; j++) {
       const l = lines[j] ?? '';
       if (l.startsWith('## ')) break;
-      if (l.startsWith('#### ')) sections.push(l.slice(5).trim());
+      if (l.startsWith('#### ')) {
+        inSummary = false;
+        sections.push(l.slice(5).trim());
+        continue;
+      }
+      if (inSummary) summary.push(l);
     }
+    const summaryWords = summary.join(' ').split(/\s+/).filter(Boolean).length;
     const planPath = statusLine.match(/\[plan\]\((\.\/[^)]+\.md)\)/)?.[1] ?? '';
-    entries.push({ heading: line, statusLine, planPath, sections });
+    entries.push({ heading: line, statusLine, afterStatus, summaryWords, planPath, sections });
   }
   return entries;
 }
@@ -62,6 +80,24 @@ describe('plans/07-roadmap.md follows its own entry template', () => {
     expect(
       bad.map((e) => `${e.heading}\n  got: ${e.statusLine}`),
       'status line must be: <dot> **<Status>** YYYY-MM-DD · PR #n · [plan](./…md) · D#…',
+    ).toEqual([]);
+  });
+
+  test('the status line stands alone, followed by a blank line', () => {
+    const bad = entries.filter((e) => e.afterStatus.trim() !== '');
+    expect(
+      bad.map((e) => `${e.heading}\n  after the status line: ${e.afterStatus}`),
+      'nothing rides on the status line — the summary starts after a blank line',
+    ).toEqual([]);
+  });
+
+  test('every entry has a summary paragraph, and it is a paragraph, not an essay', () => {
+    const MIN = 40;
+    const MAX = 220; // the template says ~120, up to ~180; this catches the essay, not the 130
+    const bad = entries.filter((e) => e.summaryWords < MIN || e.summaryWords > MAX);
+    expect(
+      bad.map((e) => `${e.heading}: ${e.summaryWords} words (want ${MIN}–${MAX})`),
+      'the summary is the entry; the detail belongs in the phase doc',
     ).toEqual([]);
   });
 

@@ -2,7 +2,7 @@
 
 > **Backlog — moved out of `07-roadmap.md` in the 2026-09-16 rewrite, verbatim.** Design sketch from the Phase 4 discussion (2026-07-17). A cost/ops decision, not a technical one; Fly is now the settled host for owned infrastructure (N6e, D148).
 
-**Phase 4 ships drive-time on the
+Phase 4 ships drive-time on the
   **hosted ORS**, whose isochrone API is hardcoded to a **60-min max range** for `driving-car` — so the
   90-min band is a uniform crow-flies radius fallback there. Self-hosting ORS (a memory-hungry JVM/Docker
   service loading an OSM routing graph — **cannot** run on Convex or Vercel; needs a persistent container
