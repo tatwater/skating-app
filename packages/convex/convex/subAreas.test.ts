@@ -1607,7 +1607,7 @@ describe('subAreas.importBaySubAreas (the N7 bay lane)', () => {
 
 /** A recorded track for `author` on `body`, straight along the given points (lng/lat pairs). */
 async function seedTrack(
-  t: ReturnType<typeof convexTest>,
+  t: ReturnType<typeof harness>,
   userId: Id<'profiles'>,
   waterBodyId: Id<'waterBodies'>,
   points: [number, number][],
@@ -1633,7 +1633,7 @@ async function seedTrack(
  * The `reportSubAreas` rows for a report, as `[subAreaId, moderationStatus, skateEndTime]`, sorted
  * by bay id — the join has no order of its own, so neither does this.
  */
-async function joinRows(t: ReturnType<typeof convexTest>, reportId: Id<'reports'>) {
+async function joinRows(t: ReturnType<typeof harness>, reportId: Id<'reports'>) {
   const rows = await t.run((ctx) =>
     ctx.db
       .query('reportSubAreas')

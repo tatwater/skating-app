@@ -309,3 +309,18 @@ export function subAreaMembershipFields<T>(all: readonly T[]): {
     subAreaIds: all.length > 1 ? [...all] : undefined,
   };
 }
+
+/**
+ * Does this report count as favorited for a viewer (N9)? A lake favorite takes every report on the
+ * lake; a bay favorite takes only reports whose **membership** includes the bay — the feed boost and
+ * badge follow the report, not the lake, so favoriting Malletts Bay does not lift Burlington Bay's
+ * reports. Both shapes of favorite are tested, because a person very plausibly holds both.
+ */
+export function isFavoriteReport(
+  favorites: { bodyIds: ReadonlySet<string>; subAreaIds: ReadonlySet<string> },
+  report: { waterBodyId: string; subAreaId?: string; subAreaIds?: readonly string[] },
+): boolean {
+  if (favorites.bodyIds.has(report.waterBodyId)) return true;
+  if (favorites.subAreaIds.size === 0) return false;
+  return memberSubAreaIds(report).some((id) => favorites.subAreaIds.has(id));
+}

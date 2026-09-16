@@ -120,6 +120,42 @@ async function seedBody(t: ReturnType<typeof convexTest>, externalId = 'osm/1') 
 
 const SKATE_TIME = Date.UTC(2026, 0, 10);
 
+/** A bay covering the west half of the fixture lake (N9), drawn straight into the table. */
+async function seedBay(t: ReturnType<typeof convexTest>, waterBodyId: Id<'waterBodies'>) {
+  const author = await t.run(async (ctx) => {
+    const profile = await ctx.db.query('profiles').first();
+    if (!profile) throw new Error('seed a profile first');
+    return profile._id;
+  });
+  return t.run((ctx) =>
+    ctx.db.insert('waterBodySubAreas', {
+      waterBodyId,
+      name: 'West Bay',
+      searchText: 'West Bay',
+      polygon: {
+        type: 'Polygon' as const,
+        coordinates: [
+          [
+            [0, 0],
+            [0, 1],
+            [0.5, 1],
+            [0.5, 0],
+            [0, 0],
+          ],
+        ],
+      },
+      bbox: { minLat: 0, minLng: 0, maxLat: 1, maxLng: 0.5 },
+      centroid: { lat: 0.5, lng: 0.25 },
+      surfaceAreaSqM: 500_000,
+      displayScore: 1,
+      minVisibleZoom: 10,
+      createdByUserId: author,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    }),
+  );
+}
+
 /** Make every pending queue row due, then flush; returns the delivered `notifications` rows. */
 async function flushAllDue(t: ReturnType<typeof convexTest>) {
   await t.run(async (ctx) => {
@@ -184,6 +220,59 @@ describe('notifications — favorites', () => {
     expect(queue[0]?.userId).toBe(fan.id);
     expect(queue[0]?.kind).toBe('favorite');
     expect(queue[0]?.count).toBe(2);
+  });
+
+  test('a lake favorite plus a bay favorite is ONE queue row with count 1, not "2 new reports" (N9)', async () => {
+    const t = convexTestWithGeo();
+    const id = await seedBody(t);
+    const author = await seedProfile(t, 'author');
+    const fan = await seedProfile(t, 'fan');
+    const bay = await seedBay(t, id);
+    await fan.as.mutation(api.waterBodyFavorites.toggle, { waterBodyId: id });
+    await fan.as.mutation(api.waterBodyFavorites.toggle, { waterBodyId: id, subAreaId: bay });
+
+    // In the bay — both favorites apply, and the person is told once.
+    await author.as.mutation(api.reports.create, {
+      waterBodyId: id,
+      skateEndTime: SKATE_TIME,
+      point: { lat: 0.5, lng: 0.25 },
+    });
+    const queue = await t.run((ctx) => ctx.db.query('notificationQueue').collect());
+    expect(queue).toHaveLength(1);
+    expect(queue[0]).toMatchObject({ userId: fan.id, kind: 'favorite', count: 1 });
+  });
+
+  test('a bay favorite hears about reports in the bay and not the rest of the lake (N9)', async () => {
+    const t = convexTestWithGeo();
+    const id = await seedBody(t);
+    const author = await seedProfile(t, 'author');
+    const fan = await seedProfile(t, 'fan');
+    const bay = await seedBay(t, id);
+    await fan.as.mutation(api.waterBodyFavorites.toggle, { waterBodyId: id, subAreaId: bay });
+
+    // Open water on the east side: not the bay.
+    await author.as.mutation(api.reports.create, {
+      waterBodyId: id,
+      skateEndTime: SKATE_TIME,
+      point: { lat: 0.5, lng: 0.75 },
+    });
+    expect(await t.run((ctx) => ctx.db.query('notificationQueue').collect())).toEqual([]);
+
+    await author.as.mutation(api.reports.create, {
+      waterBodyId: id,
+      skateEndTime: SKATE_TIME + 1,
+      point: { lat: 0.5, lng: 0.25 },
+    });
+    const queue = await t.run((ctx) => ctx.db.query('notificationQueue').collect());
+    expect(queue).toHaveLength(1);
+    expect(queue[0]).toMatchObject({ userId: fan.id, kind: 'favorite', count: 1 });
+
+    // And the delivered copy names the bay.
+    await flushAllDue(t);
+    const page = (
+      await fan.as.query(api.notifications.list, { paginationOpts: { numItems: 5, cursor: null } })
+    ).page;
+    expect(page[0]).toMatchObject({ type: 'favorite_report', subAreaName: 'West Bay' });
   });
 
   test('the author is never notified about their own favorited body', async () => {

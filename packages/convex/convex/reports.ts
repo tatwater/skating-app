@@ -21,6 +21,7 @@ import {
   hasMeasuredThickness,
   ICE_TYPES,
   isBrowsableSeason,
+  isFavoriteReport,
   isFormRoundTripOf,
   isMinor,
   type LatLng,
@@ -91,7 +92,7 @@ import { bodyWeatherCell, subAreaWeatherCell } from './lib/sampling';
 import { latLng, literals } from './lib/validators';
 import { enqueueReportNotifications } from './notifications';
 import { resolveReportSubAreas, stampCandidates } from './subAreas';
-import { loadFavoriteBodyIds } from './waterBodyFavorites';
+import { loadFavorites, type ViewerFavorites } from './waterBodyFavorites';
 
 /** Editable report content, shared by `create` and `update` args (the schema mirrors these). */
 const reportContent = {
@@ -786,7 +787,7 @@ async function toFeedCard(
   ctx: QueryCtx,
   r: Doc<'reports'>,
   caches: FeedCardCaches,
-  sets: { blocked: Set<string>; favorites: Set<string> },
+  sets: { blocked: Set<string>; favorites: ViewerFavorites },
   now: number,
 ): Promise<FeedCardData> {
   const body = await bodyInfoFor(ctx, r.waterBodyId, caches.bodyInfo);
@@ -797,6 +798,9 @@ async function toFeedCard(
     // The bay name, when the lake has one (N2/D60) — `buildFeedCardView` composes it ahead of the
     // body and the town through `formatLocationLine`, so the card can't disagree with report detail.
     ...(r.subAreaName !== undefined ? { subAreaName: r.subAreaName } : {}),
+    // The list form for a two-bay skate (N9) — the names travel with the report, so this costs no
+    // read; `formatLocationLine` prefers the list when it is present.
+    ...(r.subAreaNames !== undefined ? { subAreaNames: r.subAreaNames } : {}),
     ...(r.place !== undefined ? { place: r.place } : {}),
     skateEndTime: r.skateEndTime,
     ...(r.skateStartTime !== undefined ? { skateStartTime: r.skateStartTime } : {}),
@@ -806,7 +810,8 @@ async function toFeedCard(
     photoThumbUrls: await thumbUrlsFor(ctx, r.photoIds),
     author: await authorFor(ctx, r.authorId, caches.authors, now),
     blocked: sets.blocked.has(r.authorId),
-    isFavorite: sets.favorites.has(r.waterBodyId),
+    // A lake favorite takes the whole lake; a bay favorite takes only the reports in the bay (N9).
+    isFavorite: isFavoriteReport(sets.favorites, r),
     ...(body.accessKind !== undefined ? { accessKind: body.accessKind } : {}),
   };
 }
@@ -859,7 +864,7 @@ export const listFeed = query({
     const viewerId = viewer?._id ?? '';
     const [blocked, favorites] = await Promise.all([
       loadBlockedAuthorIds(ctx, viewerId),
-      loadFavoriteBodyIds(ctx, viewerId),
+      loadFavorites(ctx, viewerId),
     ]);
     const filters = sanitizeFeedFilters(rawFilters);
     // Stored bands validate as the broad GeoJSON union, but ORS only ever writes Polygon/MultiPolygon;
@@ -903,7 +908,7 @@ export const listFeed = query({
     const page: FeedCardData[] = [];
     for (const r of result.page) {
       const body = await bodyInfoFor(ctx, r.waterBodyId, caches.bodyInfo);
-      const isFavorite = favorites.has(r.waterBodyId);
+      const isFavorite = isFavoriteReport(favorites, r);
       const band = bandForCoord(body.centroid, bands, home);
       // The weather narrow (D165): resolved here, applied inside `matchesFilters` with the rest.
       const weatherMatched =
@@ -982,7 +987,7 @@ export const recentCardsForBodies = query({
     const viewerId = viewer?._id ?? '';
     const [blocked, favorites] = await Promise.all([
       loadBlockedAuthorIds(ctx, viewerId),
-      loadFavoriteBodyIds(ctx, viewerId),
+      loadFavorites(ctx, viewerId),
     ]);
     const now = Date.now();
     // The season bound only ever *tightens* the 72h window, and only for the few days after July 1 —
@@ -1108,7 +1113,8 @@ export const recommended = query({
     // Hydrate each winning report into a full `FeedCardData` so the client renders it like a feed card
     // (author ring, chips, thumbnails) inside the distinct "Recommended" wrapper. Reuses `toFeedCard`.
     const caches: FeedCardCaches = { bodyInfo: new Map(), authors: new Map() };
-    const noFavorites = new Set<string>(); // recommended breaks filters; favorite boost is irrelevant here
+    // Recommended breaks filters; the favorite boost is irrelevant here.
+    const noFavorites: ViewerFavorites = { bodyIds: new Set(), subAreaIds: new Set() };
     const result: { waterBodyId: string; cards: FeedCardData[] }[] = [];
     for (const card of cards) {
       const cardData: FeedCardData[] = [];

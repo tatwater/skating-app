@@ -38,6 +38,7 @@ import {
   bandWithinRadius,
   type DriveTimeBands,
   isDriveTimeBand,
+  memberSubAreaIds,
   nextZonedHourMs,
 } from '@skating/core';
 import { paginationOptsValidator } from 'convex/server';
@@ -158,16 +159,29 @@ export async function enqueueReportNotifications(
   if (!body) return;
 
   // 1. Favorites — notify anyone who favorited this body (any distance), default on.
+  //
+  // **The recipient set is built first, then enqueued once per person** (N9 / D175). A bay favorite
+  // shares the parent's `waterBodyId`, so this one scan finds the lake's favoriters *and* every
+  // bay's; a row is kept only when it names the lake or a bay the report is a member of. Somebody
+  // who favorited both Champlain and Malletts Bay — a real case, since the bay fan very plausibly
+  // favorited the lake first — must land in the set once: enqueued twice under the same coalesce key
+  // they would be told "2 new reports" about one.
   const favorites = await ctx.db
     .query('waterBodyFavorites')
     .withIndex('by_water_body', (q) => q.eq('waterBodyId', report.waterBodyId))
     .collect();
+  const members = new Set(memberSubAreaIds(report));
+  const recipients = new Set<Id<'profiles'>>();
   for (const fav of favorites) {
     if (fav.userId === report.authorId) continue;
-    const user = await ctx.db.get(fav.userId);
+    if (fav.subAreaId !== undefined && !members.has(fav.subAreaId)) continue;
+    recipients.add(fav.userId);
+  }
+  for (const userId of recipients) {
+    const user = await ctx.db.get(userId);
     if (!user || !recipientWants(user, 'favorite_report')) continue;
     await enqueue(ctx, {
-      userId: fav.userId,
+      userId,
       waterBodyId: report.waterBodyId,
       reportId: report._id,
       kind: 'favorite',
