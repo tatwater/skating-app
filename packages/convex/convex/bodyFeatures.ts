@@ -27,14 +27,25 @@ import { resolveSubAreaForPoint } from './subAreas';
 
 /** Active known features for a body — rendered alongside hazards with distinct styling. */
 export const listForBody = query({
-  args: { waterBodyId: v.id('waterBodies') },
-  handler: async (ctx, { waterBodyId }) => {
+  args: {
+    waterBodyId: v.id('waterBodies'),
+    /**
+     * Narrow to one named bay (N9) — the bay view's list, the same scope `hazards.listForBody`
+     * takes. Filtered in memory off the row's stamp, like the hazards: the read is already bounded
+     * by body, and a feature's bay is its footprint centre's. A spring in the next bay over is a
+     * standing fact about *that* bay, and listing it under this one would be the map's "known
+     * features" card claiming a hazard that is not on the ice the skater picked.
+     */
+    subAreaId: v.optional(v.id('waterBodySubAreas')),
+  },
+  handler: async (ctx, { waterBodyId, subAreaId }) => {
     const body = await resolveSurvivor(ctx, waterBodyId);
     if (!body) return [];
-    return ctx.db
+    const rows = await ctx.db
       .query('bodyFeatures')
       .withIndex('by_water_body_active', (q) => q.eq('waterBodyId', body._id).eq('active', true))
       .collect();
+    return subAreaId === undefined ? rows : rows.filter((f) => f.subAreaId === subAreaId);
   },
 });
 

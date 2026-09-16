@@ -13,7 +13,6 @@
 
 import {
   clusterPutIns,
-  DEFAULT_PUTIN_MERGE_METERS,
   distanceToPolygonMeters,
   haversineMeters,
   type LatLng,
@@ -26,13 +25,16 @@ import type { Doc, Id } from './_generated/dataModel';
 import { mutation, type QueryCtx, query } from './_generated/server';
 import { recomputeAccessKind } from './accessPoints';
 import { requireContributorRole } from './lib/auth';
+import { HIDE_SUPPRESS_METERS, isSuppressed } from './lib/putInSuppression';
 import { latLng } from './lib/validators';
 import { resolveSubAreaForPutIn } from './subAreas';
 
+// The suppression rule itself lives in `lib/putInSuppression` (so `subAreas` can apply it without a
+// module cycle); re-exported here because this is where readers of put-ins look for it.
+export { isSuppressed };
+
 /** How many recent reports feed the derived-cluster read — bounds the per-body scan (read-cap). */
 const PUTIN_REPORT_SCAN_LIMIT = 200;
-/** A derived cluster or official marker within this distance of a `hidden` coord is suppressed. */
-const HIDE_SUPPRESS_METERS = DEFAULT_PUTIN_MERGE_METERS;
 /** A label on a map pin, not a description — "Town Beach", not a paragraph about the town beach. */
 const MAX_PUT_IN_NAME_LENGTH = 60;
 
@@ -133,19 +135,6 @@ function approachOf(row: Doc<'putIns'>): {
     ...(row.approachMeters === undefined ? {} : { approachMeters: row.approachMeters }),
     ...(row.approachAscentM === undefined ? {} : { approachAscentM: row.approachAscentM }),
   };
-}
-
-/**
- * Is `coord` within the suppression radius of any moderator-hidden coord?
- *
- * Exported because a hidden coordinate has to suppress its neighbours **everywhere the coordinate is
- * read**, not only in `listForBody`. The imagery reveal mask (`imageryMasks`) buffers put-ins into the
- * shape a satellite photograph is allowed to show through, so a marker this predicate would hide on
- * the map but not in the bake would reveal the ground anyway — the same suppression, defeated by the
- * slower path.
- */
-export function isSuppressed(coord: LatLng, hidden: Doc<'putIns'>[]): boolean {
-  return hidden.some((h) => haversineMeters(coord, h.coord) <= HIDE_SUPPRESS_METERS);
 }
 
 /**

@@ -133,7 +133,7 @@ export function HazardList({
   subAreaId,
 }: {
   waterBodyId: Id<'waterBodies'>;
-  /** The bay view (N9): only the hazards whose footprint centre falls in this bay. */
+  /** The bay view (N9): only the hazards and known features whose footprint centre falls in this bay. */
   subAreaId?: Id<'waterBodySubAreas'>;
 }) {
   const { browseSeason } = useMapSelection();
@@ -142,7 +142,12 @@ export function HazardList({
     ...(browseSeason === null ? {} : { season: browseSeason }),
     ...(subAreaId !== undefined ? { subAreaId } : {}),
   });
-  const knownFeatures = useQuery(api.bodyFeatures.listForBody, { waterBodyId });
+  // Same bay scope as the hazards: a feature is stamped by its footprint centre exactly as a hazard
+  // is, so the two lists agree on which bay a ridge across the mouth belongs to.
+  const knownFeatures = useQuery(api.bodyFeatures.listForBody, {
+    waterBodyId,
+    ...(subAreaId !== undefined ? { subAreaId } : {}),
+  });
 
   if (hazards === undefined) return <Skeleton className="h-12 w-full" />;
 

@@ -58,6 +58,7 @@ import { requireContributorRole } from './lib/auth';
 import { syncSubAreaCells, WATER_BODY_LADDER } from './lib/cellIndex';
 import { rankCandidates, scanCells } from './lib/cellScan';
 import { isListed } from './lib/listing';
+import { isSuppressed } from './lib/putInSuppression';
 import { syncReportSubAreas } from './lib/reportSubAreas';
 import { hazardCenter } from './lib/sampling';
 import { bbox, geoJson } from './lib/validators';
@@ -236,6 +237,14 @@ export function trackSubAreaStamp(
  *
  * Callers on a hot read (the feed) cache this per bay per page: the put-ins are one `by_sub_area`
  * read, bounded by the handful of launches a bay has.
+ *
+ * **A moderator's hide is a coordinate, not a status** (`lib/putInSuppression`). `putIns.hide`
+ * writes a separate `hidden` row and leaves the visible one in place, so `status === 'visible'`
+ * alone still picks the hidden launch — the review found the feed's bands and the nearby fan-out
+ * being judged from an access point a moderator had said not to use. The hide is stamped into the
+ * same bay as the launch it targets (both by distance to the outline, at the same coordinate), so
+ * this one `by_sub_area` read already holds the suppression rows that apply; the visible launches
+ * are tested against them exactly as `putIns.listForBody` tests its markers.
  */
 export async function subAreaDriveCoordFor(
   ctx: QueryCtx,
@@ -247,9 +256,12 @@ export async function subAreaDriveCoordFor(
     .query('putIns')
     .withIndex('by_sub_area', (q) => q.eq('subAreaId', subAreaId))
     .collect();
+  const hidden = putIns.filter((p) => p.status === 'hidden');
   return subAreaDriveCoord(
     bay,
-    putIns.filter((p) => p.status === 'visible').map((p) => ({ coord: p.coord, source: p.source })),
+    putIns
+      .filter((p) => p.status === 'visible' && !isSuppressed(p.coord, hidden))
+      .map((p) => ({ coord: p.coord, source: p.source })),
   );
 }
 

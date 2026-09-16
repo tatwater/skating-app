@@ -2473,17 +2473,23 @@ export const BAY_BATCH_SIZE = 40;
  * registry's list of live bays — a delisted bay has no row, and a bay on a delisted lake has none.
  * The bay and its parent are then read to key the cell the way the drawer keys it
  * (`subAreaWeatherCell`), so the cron and the drawer can never fetch two cells for one bay.
+ *
+ * **Deduped across pages, not just within one** (`seenKeys`). Bays that share a browse cell share
+ * its filter cell too — the grids nest — and the index sorts on the filter key, so sharers sit in
+ * one run that a page boundary can split; without the carry, the run's cell was fetched again on the
+ * next page, every day. The set is the keys fetched so far, bounded by the live bay count.
  */
 export const pageBayBrowseCells = internalQuery({
-  args: { cursor: v.optional(v.string()), numItems: v.number() },
+  args: { cursor: v.optional(v.string()), numItems: v.number(), seenKeys: v.array(v.string()) },
   handler: async (
     ctx,
-    { cursor, numItems },
+    { cursor, numItems, seenKeys },
   ): Promise<{ cells: WeatherCell[]; continueCursor: string; isDone: boolean }> => {
     const page = await ctx.db
       .query('bodyWeatherCells')
       .withIndex('by_bay', (q) => q.eq('isBay', true))
       .paginate({ cursor: cursor ?? null, numItems });
+    const seen = new Set(seenKeys);
     const byKey = new Map<string, WeatherCell>();
     for (const row of page.page) {
       if (row.subAreaId === undefined) continue;
@@ -2492,6 +2498,7 @@ export const pageBayBrowseCells = internalQuery({
       const parent = await ctx.db.get(bay.waterBodyId);
       if (!parent || !isListed(parent)) continue;
       const cell = subAreaWeatherCell(bay, parent, 'browse');
+      if (seen.has(cell.key)) continue;
       byKey.set(cell.key, cell);
     }
     return { cells: [...byKey.values()], continueCursor: page.continueCursor, isDone: page.isDone };
@@ -2513,11 +2520,21 @@ export const pageBayBrowseCells = internalQuery({
  * operator can run it by hand out of season.
  */
 export const refreshBayDays = internalAction({
-  args: { cursor: v.optional(v.string()), pastDays: v.optional(v.number()) },
-  handler: async (ctx, { cursor, pastDays }): Promise<{ done: boolean; cells: number }> => {
+  args: {
+    cursor: v.optional(v.string()),
+    pastDays: v.optional(v.number()),
+    /** The cells earlier batches already fetched — carried so a shared cell is fetched once. */
+    seenKeys: v.optional(v.array(v.string())),
+  },
+  handler: async (
+    ctx,
+    { cursor, pastDays, seenKeys },
+  ): Promise<{ done: boolean; cells: number }> => {
+    const seen = seenKeys ?? [];
     const page = await ctx.runQuery(internal.weatherArchive.pageBayBrowseCells, {
       ...(cursor === undefined ? {} : { cursor }),
       numItems: BAY_BATCH_SIZE,
+      seenKeys: seen,
     });
     const days = pastDays ?? APPEND_PAST_DAYS;
     for (const cell of page.cells) {
@@ -2533,6 +2550,8 @@ export const refreshBayDays = internalAction({
       await ctx.scheduler.runAfter(0, internal.weatherArchive.refreshBayDays, {
         cursor: page.continueCursor,
         ...(pastDays === undefined ? {} : { pastDays }),
+        // A failed cell counts as seen: the gap sweep is its retry, not the next page.
+        seenKeys: [...seen, ...page.cells.map((cell) => cell.key)],
       });
       return { done: false, cells: page.cells.length };
     }

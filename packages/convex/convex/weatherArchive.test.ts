@@ -1854,6 +1854,44 @@ describe('weatherArchive: the sub-area spread reads Tier B (N6h open question 5)
     expect(new Set(hours.map((r) => r.cellKey)).size).toBe(2);
   });
 
+  // ⚠ The review found this one: the sweep deduped shared cells within a page only, so two bays
+  // in one browse cell on either side of a page boundary fetched that cell twice, every day.
+  test('the bay append dedupes a shared browse cell across page boundaries, not just within a page', async () => {
+    const t = convexTest(schema, modules);
+    const lake = await seedBody(t, ANCHOR, 30);
+    await seedBay(t, lake, 'North Bay', NORTH);
+    await seedBay(t, lake, 'Also North', { lat: NORTH.lat + 0.001, lng: NORTH.lng + 0.001 });
+    await t.action(internal.weatherArchive.backfillWeatherCells, { tier: 'filter' });
+
+    // One row per page, so the two sharers land on opposite sides of a boundary.
+    const first = await t.run((ctx) =>
+      ctx.runQuery(internal.weatherArchive.pageBayBrowseCells, { numItems: 1, seenKeys: [] }),
+    );
+    expect(first.cells).toHaveLength(1);
+    expect(first.isDone).toBe(false);
+    const seenKeys = first.cells.map((c) => c.key);
+
+    const second = await t.run((ctx) =>
+      ctx.runQuery(internal.weatherArchive.pageBayBrowseCells, {
+        cursor: first.continueCursor,
+        numItems: 1,
+        seenKeys,
+      }),
+    );
+    expect(second.cells).toEqual([]);
+    expect(second.isDone).toBe(true);
+
+    // The same page without the carry is the defect: the cell comes back to be fetched again.
+    const uncarried = await t.run((ctx) =>
+      ctx.runQuery(internal.weatherArchive.pageBayBrowseCells, {
+        cursor: first.continueCursor,
+        numItems: 1,
+        seenKeys: [],
+      }),
+    );
+    expect(uncarried.cells.map((c) => c.key)).toEqual(seenKeys);
+  });
+
   test("primeSubAreaWeather fills the bays' filter cells out of season, once per cell", async () => {
     const t = convexTest(schema, modules);
     const lake = await seedBody(t, ANCHOR, 30);

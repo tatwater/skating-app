@@ -2138,6 +2138,30 @@ describe('the bay view reads (N9)', () => {
     expect(bay.map((h) => h._id)).toEqual([inBay]);
   });
 
+  // ⚠ The review found this one: the bay view narrowed its hazards but still listed every known
+  // feature on the lake, so a spring in the far bay showed up as safety context for this one.
+  test('known features narrow to the bay by the same footprint-centre stamp', async () => {
+    const { t, body, mod, west } = await setup();
+    const inBay = await mod.as.mutation(api.bodyFeatures.create, {
+      waterBodyId: body,
+      type: 'spring_current',
+      geometry: { type: 'Point', coordinates: [-73.4, 44.4] },
+      radiusMeters: 30,
+      reason: 'known spring',
+    });
+    await mod.as.mutation(api.bodyFeatures.create, {
+      waterBodyId: body,
+      type: 'gas_hole',
+      geometry: { type: 'Point', coordinates: [-72.7, 44.8] },
+      radiusMeters: 30,
+      reason: 'marsh gas, other end of the lake',
+    });
+    const all = await t.query(api.bodyFeatures.listForBody, { waterBodyId: body });
+    expect(all).toHaveLength(2);
+    const bay = await t.query(api.bodyFeatures.listForBody, { waterBodyId: body, subAreaId: west });
+    expect(bay.map((f) => f._id)).toEqual([inBay]);
+  });
+
   test('bounties narrow to the bay plus the lake-wide asks a bay report can answer', async () => {
     const { t, body, west, mod } = await setup();
     const east = await mod.as.mutation(api.subAreas.create, {

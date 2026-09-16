@@ -385,6 +385,60 @@ describe('notifications — nearby digest (X₁)', () => {
     expect(queue.map((q) => [q.userId, q.kind])).toEqual([[nearby.id, 'digest']]);
   });
 
+  // ⚠ The review found this one. A moderator's hide is a separate `hidden` row, not a status on the
+  // launch, so the bay's drive coordinate was still the hidden launch — and the fan-out judged from
+  // an access point a moderator had said not to use.
+  test('a bay whose only launch a moderator hid is banded from the bay itself, not the hidden launch (N9)', async () => {
+    const t = convexTestWithGeo();
+    const id = await seedBody(t);
+    const author = await seedProfile(t, 'author');
+    const bay = await seedBay(t, id);
+    const westShore: Polygon = {
+      type: 'Polygon',
+      coordinates: [
+        [
+          [-0.1, 0.3],
+          [0.15, 0.3],
+          [0.15, 0.7],
+          [-0.1, 0.7],
+          [-0.1, 0.3],
+        ],
+      ],
+    };
+    const nearby = await seedProfile(t, 'nearby', {
+      prefs: { nearbyReportDigest: true },
+      allRadiusMinutes: 30,
+    });
+    await t.run((ctx) => ctx.db.patch(nearby.id, { cachedIsochrones: { band30: westShore } }));
+    // The launch, and the hide that suppresses it — the shape `putIns.hide` writes.
+    await t.run(async (ctx) => {
+      await ctx.db.insert('putIns', {
+        waterBodyId: id,
+        subAreaId: bay,
+        coord: { lat: 0.5, lng: 0.001 },
+        source: 'osm' as const,
+        status: 'visible' as const,
+        createdAt: Date.now(),
+      });
+      await ctx.db.insert('putIns', {
+        waterBodyId: id,
+        subAreaId: bay,
+        coord: { lat: 0.5, lng: 0.001 },
+        source: 'derived' as const,
+        status: 'hidden' as const,
+        createdAt: Date.now(),
+      });
+    });
+
+    // In the bay — banded from the bay's own point at (0.5, 0.25), outside the band.
+    await createReport(t, author.as, {
+      waterBodyId: id,
+      skateEndTime: SKATE_TIME,
+      point: { lat: 0.5, lng: 0.25 },
+    } as never);
+    expect(await t.run((ctx) => ctx.db.query('notificationQueue').collect())).toEqual([]);
+  });
+
   test('rolls all of a user’s due digest rows into ONE consolidated notification, grouped by body', async () => {
     const t = convexTestWithGeo();
     const bodyA = await seedBody(t, 'osm/1');
