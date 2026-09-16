@@ -266,7 +266,10 @@ export function WaterBodyDetail({
         {/* The derived profile (N6c/C). Renders NOTHING — no heading, no empty section — when
             there is nothing to say, which is most of the corpus and is the correct outcome rather
             than a gap to fill with hedged filler. */}
-        {caption ? (
+        {/* The lake's profile caption is the lake's — its depth, its fetch, its deciles — and under a
+            bay header it would put "measured maximum depth of 399 ft" one line below "no depth
+            inside this bay", which is the inherited-depth lie D3 forbids. The bay says its own. */}
+        {focusSubArea ? null : caption ? (
           <p className="pt-1 text-muted-foreground text-sm">{caption}</p>
         ) : reveal ? (
           <p className="pt-1 text-muted-foreground text-sm italic">

@@ -282,7 +282,9 @@ export function WaterBodyDetail({
             )}
             {/* The derived profile (N6c/C), assembled by the same @skating/core function web calls so
                 the two surfaces cannot drift. Nothing renders when there is nothing to say. */}
-            {caption ? (
+            {/* The lake's caption is the lake's (its depth, its fetch); under a bay header it would
+                contradict the bay's own depth line, so the bay view omits it — same as web. */}
+            {caption && !focusSubArea ? (
               <Paragraph color="$foregroundMuted" fontSize={14} paddingTop="$1">
                 {caption}
               </Paragraph>
