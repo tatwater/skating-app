@@ -1,6 +1,8 @@
 # Next-gen — one phase-naming scheme: what a rename actually touches, and the traps in it
 
-> **Scoped 2026-09-16 (after N9 merged), deliberately not started.** Founder: the numbering has
+> **✅ The tree is renamed (2026-09-17, PR 2 of 3).** What remains is step 2b — `gh pr edit` over the pre-pass PRs with the banner — and it runs after that PR merges. This doc keeps the old names deliberately: it is the record of the mapping.
+>
+> **Scoped 2026-09-16 (after N9 merged).** Founder: the numbering has
 > drifted through three schemes — pre-build docs `00–08`, roadmap phases `1–10` with `.5` splits,
 > post-roadmap phases `N1–N9` with `a–h` splits — and "it's become a problem knowing what to name the
 > next batch." This doc records the inventory, the scheme we lean toward, the amendments the

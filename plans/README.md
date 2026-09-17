@@ -5,11 +5,6 @@ open questions, and the build sequence. Read `00`–`08` top-to-bottom the first
 a reference. Decisions are numbered `D#`, open questions `Q#`, and both are cross-referenced
 throughout.
 
-> ⏳ **Almost the layout below.** `backlog/`, `features/`, `research/` and `phases/00-foundations.md`
-> exist; the other phase docs still sit flat in this directory under their old names until the
-> renumbering pass ([`features/phase-numbers.md`](./features/phase-numbers.md)) lands after
-> `phase-n7b-corpus-lifecycle` merges. The crosswalk at the bottom links to them where they are today.
-
 ## Layout
 
 ```
@@ -78,8 +73,23 @@ phase, and `D74` can only ever be a decision.
 - **`L#`** — a legal / ToS / feasibility gate, in
   [`08-legal-feasibility-checklist.md`](./08-legal-feasibility-checklist.md).
 
+### Words
+
+- **Water body**, not *lake*, for the general case — people skate ponds, reservoirs, bays and
+  reaches too (founder call, 2026-09-16). *Lake* stays in proper nouns, dataset names and terms of
+  art (lake-effect, lake-skating). `plans/` follows this; `docs/`, code comments and UI copy are
+  still to be swept (see the deferred register).
+- US spellings in all new text.
+
 Nothing here is final code; the data model in `06` is schema-flavored pseudocode meant to be
 reacted to.
+
+The renumbering pass (2026-09-17) swapped tokens **everywhere** text is read — including text quoted
+or relocated from before it, and the archived register — so a document that says `A06e` may be
+quoting something that originally said `N6e`. Only three things kept the old spellings on purpose:
+this table's *Old* column, [`features/phase-numbers.md`](./features/phase-numbers.md), and lowercase
+literals (`feat(n6e):` scopes, branch names, campaign ids), which name things that existed under
+those names.
 
 ## Read in this order
 
@@ -103,7 +113,7 @@ rewritten (it would strip the signed merge commits). PR titles and descriptions 
 the renumbering pass and carry a banner pointing here; their branch names and commit lists never
 change. This table is how to read them.
 
-| Old | New | PRs | Doc today | Note |
+| Old | New | PRs | Doc | Note |
 | --- | --- | --- | --- | --- |
 | 0 | 00 | #1–#6 | — | foundations; no phase doc, see the roadmap |
 | 1 | 01 | #7–#11 | [phases/01-water-bodies.md](./phases/01-water-bodies.md) | |

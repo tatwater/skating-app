@@ -527,7 +527,7 @@ you can't legally reach stays visible and says so.*
 Three research lanes that read A06e's archive — single-frame ice identification, corpus shrinking by
 observed freeze behavior, and the phenology derivations — none of which can start before the
 nine-season backfill exists. Assigned a number at A06e's scoping, never built, and now a backlog item;
-the number stays vacant. *(The doc moves to `backlog/imagery-research.md` in the renumbering pass.)*
+the number stays vacant; the doc carries it in the backlog.
 
 ## Phase A06h — The weather panel
 🟡 **In progress** 2026-09-12 · PRs #48 #49 #50 #51 #54 · [plan](./phases/A06h-weather-detail.md) · D152–D166
@@ -687,8 +687,9 @@ long-form register this table replaced is archived verbatim in
 | A06h Workstream 6 — radar | ⚪ | nothing; next in A06h | A06h |
 | Multi-season weather climatology · paying Open-Meteo (D158) | ⚪ | D153 unlocked it; season two | A06h |
 | `centroid` → `representativePoint` stage 2 — the ~100-site code sweep | ⚪ | nothing, and it shouldn't linger | [`features/representative-point-rename.md`](./features/representative-point-rename.md) |
-| Phase renumbering — the mechanical PR and the PR-title pass | ⚪ | nothing — A07b landed 2026-09-16 | [`features/phase-numbers.md`](./features/phase-numbers.md) |
-| US spellings sweep | ⚪ | same window | [`features/us-spellings.md`](./features/us-spellings.md) |
+| Phase renumbering — the PR-title/body pass with the banner (the tree is done) | ⚪ | the rename PR merging | [`features/phase-numbers.md`](./features/phase-numbers.md) |
+| US spellings sweep | ⚪ | nothing | [`features/us-spellings.md`](./features/us-spellings.md) |
+| "Water body", not "lake" — in `docs/`, code comments and UI copy (`plans/` is done) | ⚪ | a founder call on the user-visible strings ("Lake editor", route names) | `README.md` § Words |
 | Reverse spatial index for notification fan-out (D172) | ⚪ | ~1,000 profiles | A08 |
 | Web push | ⚪ | a service worker | A08 |
 | GPS-path hazard deduction (Q11 / L9) · pressure-ridge / clearest-side crowd intelligence | ⚪ | path volume + an L14 privacy pass | Phase 08, 9 |

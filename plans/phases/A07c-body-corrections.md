@@ -2,7 +2,7 @@
 
 > **Status:** ⚪ **Scoped 2026-09-16.** Not built. First phase named under the new scheme
 > ([`README.md`](../README.md#phase-names)); the era stays `A` because this is the last of the
-> corpus-knowing work, not the first of launch readiness. Branch `phase-a07c-lake-corrections`,
+> corpus-knowing work, not the first of launch readiness. Branch `phase-a07c-body-corrections`,
 > commit scope `feat(a07c):`.
 > **Depends on:** A07b's standing and request path (merged 2026-09-16, PRs #61 #63) — three of the
 > categories first scoped here are *requests*, not corrections, and are already built there.
@@ -343,10 +343,10 @@ Two PRs, stacked, under the "one PR per phase unless a review boundary wants its
 this one does, because PR 1 changes a mutation moderators already depend on and PR 2 is the first
 outline writer in the app.
 
-- **PR 1 — `phase-a07c-lake-corrections`:** §1, §2, §3, §5.1–§5.2, §6. Every report can be filed
+- **PR 1 — `phase-a07c-body-corrections`:** §1, §2, §3, §5.1–§5.2, §6. Every report can be filed
   and every one with a lever can be acted on. Ends with a dev deploy and one of each category filed
   from the web and the phone against dev.
-- **PR 2 — `phase-a07c-lake-corrections-2`:** §4.2 union, §5.3 imagery suppression, §5.4, §7.
+- **PR 2 — `phase-a07c-body-corrections-2`:** §4.2 union, §5.3 imagery suppression, §5.4, §7.
   §4.3 if it fits; a feat doc in `features/` if it does not.
 
 ---
