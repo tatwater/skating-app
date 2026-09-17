@@ -86,7 +86,7 @@ export function PastWeatherPanel({
   const [state, setState] = useState<PanelState>(emptyPanel(null, true));
 
   useEffect(() => {
-    let cancelled = false;
+    let canceled = false;
     // ⚠ Keep the held data across a *bay* switch; drop it across a *lake* switch. Blanking the
     // panel to its one-line "Reading…" state while a bay loads removed ~400 px from under the
     // reader's scroll position, the scroll view clamped upward, and when the timeline came back they
@@ -103,7 +103,7 @@ export function PastWeatherPanel({
       ...(subAreaId ? { subAreaId: subAreaId as Id<'waterBodySubAreas'> } : {}),
     })
       .then((result) => {
-        if (cancelled) return;
+        if (canceled) return;
         if (!result) {
           setState(emptyPanel(waterBodyId, false));
           return;
@@ -135,10 +135,10 @@ export function PastWeatherPanel({
         });
       })
       .catch(() => {
-        if (!cancelled) setState(emptyPanel(waterBodyId, false));
+        if (!canceled) setState(emptyPanel(waterBodyId, false));
       });
     return () => {
-      cancelled = true;
+      canceled = true;
     };
   }, [getDays, waterBodyId, subAreaId, pending, days]);
 

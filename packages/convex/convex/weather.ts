@@ -195,7 +195,7 @@ async function fetchOpenMeteoHourly(
     Math.max(1, Math.ceil((Date.now() - windowStartMs) / DAY_MS)),
   );
   const params = new URLSearchParams({
-    // **The cell's snapped centre, never the body's own coordinates (D152).** Two bodies that share
+    // **The cell's snapped center, never the body's own coordinates (D152).** Two bodies that share
     // a cache key must produce the identical request, or the shared entry describes whichever of
     // them fetched first.
     latitude: String(cell.lat),
@@ -218,7 +218,7 @@ async function fetchOpenMeteoHourly(
   // **Elevation is the other half of D152's key.** Open-Meteo lapse-rate-downscales temperature to
   // whatever elevation it is given, and a Green Mountain valley lake can sit 400 m below its grid
   // cell's mean — several degrees, across freezing, which is the only threshold this app cares
-  // about. We send the *band centre* the key was built from, not the body's exact elevation, so the
+  // about. We send the *band center* the key was built from, not the body's exact elevation, so the
   // request and the key describe the same thing. Absent ⇒ send nothing and let Open-Meteo use its own
   // model elevation, which the key records as an unbanded cell.
   if (cell.elevationM !== undefined) params.set('elevation', String(cell.elevationM));
@@ -672,7 +672,7 @@ export const getForecastForBody = action({
 /**
  * The forecast's place — its weather cell — plus the viewer's band to it, in one read so the action
  * makes one round trip. The band is judged on the body's (or bay's) own point, not the snapped cell
- * centre: a cell is 5 km across and the isochrone edge can run through it.
+ * center: a cell is 5 km across and the isochrone edge can run through it.
  */
 export const resolveForecastPlace = internalQuery({
   args: {

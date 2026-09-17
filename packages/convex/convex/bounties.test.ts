@@ -157,7 +157,7 @@ describe('bounties.create', () => {
     });
   });
 
-  test('a bounty cancelled inside the settle window never asks anyone (D169)', async () => {
+  test('a bounty canceled inside the settle window never asks anyone (D169)', async () => {
     const t = harness();
     const requester = await seedUser(t, 'requester');
     const reporter = await seedUser(t, 'reporter');
@@ -751,9 +751,9 @@ describe('bounties.cancel', () => {
     );
 
     await requester.as.mutation(api.bounties.cancel, { bountyId });
-    expect((await t.run((ctx) => ctx.db.get(bountyId)))?.status).toBe('cancelled');
+    expect((await t.run((ctx) => ctx.db.get(bountyId)))?.status).toBe('canceled');
 
-    // Cancelling a non-open bounty is rejected.
+    // Canceling a non-open bounty is rejected.
     await expect(requester.as.mutation(api.bounties.cancel, { bountyId })).rejects.toThrow(
       /not open/,
     );
@@ -783,7 +783,7 @@ describe('bounties fulfillment', () => {
     expect(bounty?.status).toBe('fulfilled');
     // Reward is the separate bountyPoints currency, awarded to the report author.
     expect((await t.run((ctx) => ctx.db.get(author.id)))?.bountyPoints).toBe(bounty?.rewardPoints);
-    // The author is NOT notified of fulfilment (D170): the requester's thumb is visible on the report
+    // The author is NOT notified of fulfillment (D170): the requester's thumb is visible on the report
     // already, and the only person who needed telling was the requester when the report arrived —
     // which, because they thumbed inside the settle window, is a `bounty_answered` that never sends:
     // the flush finds the bounty no longer open.
@@ -891,7 +891,7 @@ describe('bounties fulfillment', () => {
 });
 
 describe('bounties.listOpen (global / near-me / viewport browse)', () => {
-  test('returns open bounties newest-first; excludes cancelled + expired', async () => {
+  test('returns open bounties newest-first; excludes canceled + expired', async () => {
     const t = harness();
     const requester = await seedUser(t, 'requester');
     const body0 = await seedBody(t);

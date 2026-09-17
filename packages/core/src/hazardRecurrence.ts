@@ -2,7 +2,7 @@
  * Cross-season recurrence — the second window on D77's one clustering primitive (A05c / D78).
  *
  * Within a winter the question is *"is this the same ridge you already marked?"*. Across winters it is
- * *"is this the ridge that forms here every winter?"* — the same geometric judgement at a looser
+ * *"is this the ridge that forms here every winter?"* — the same geometric judgment at a looser
  * tolerance, plus the arithmetic in this file: how many distinct winters, out of how many, when in the
  * season, and how much of that is worth an operator's attention before first ice.
  *
@@ -50,7 +50,7 @@ export const RECURRENCE_PUBLIC_MIN_SEASONS = 2;
  * meant three winters of rows nobody ever looked at as a series (D78). What ships *dark* is the
  * skater-facing half: until this is on, every output of this module reaches an operator dashboard and
  * nothing else. Flip it when the queue has been read across at least two rollovers and the clusters at
- * the current bar look like real patterns — a judgement from `/admin/recurrence` and the tuning chart,
+ * the current bar look like real patterns — a judgment from `/admin/recurrence` and the tuning chart,
  * not a date.
  *
  * There is no feature-flag system in this repo and this phase does not invent one: a constant and a
@@ -203,7 +203,7 @@ export function recurrencePriority(input: RecurrenceScoreInput): number {
  * The decay tier a cluster is ranked at: the **most permanent** tier among its member types.
  *
  * Most permanent rather than an average, because a cluster is one physical thing and its tier is a
- * claim about that thing's behaviour. A cluster holding both `pressure_ridge` (C) and `ice_heave` (C)
+ * claim about that thing's behavior. A cluster holding both `pressure_ridge` (C) and `ice_heave` (C)
  * is straightforward; one holding `thin_ice` (A) and `thawed_rotten` (A) is tier A whichever way you
  * count. Where they differ, the more structural reading is the one an operator should be shown, since
  * the list exists to surface things that come back.
@@ -237,7 +237,7 @@ function clamp01(value: number): number {
 }
 
 /**
- * The member whose footprint centre is most central to the cluster — the **representative**.
+ * The member whose footprint center is most central to the cluster — the **representative**.
  *
  * A medoid rather than a centroid, and the difference is the point: a medoid is a shape somebody
  * actually drew. An averaged line can bend a ridge through ice nobody ever marked, and a promoted
@@ -248,7 +248,7 @@ function clamp01(value: number): number {
  * that flipped between two equidistant pins would rewrite a body feature's shape on a job nobody ran
  * on purpose.
  */
-export function medoidOf<T extends { id: string; centre: LatLng; firstReportedAt: number }>(
+export function medoidOf<T extends { id: string; center: LatLng; firstReportedAt: number }>(
   members: readonly T[],
 ): T | null {
   if (members.length === 0) return null;
@@ -257,7 +257,7 @@ export function medoidOf<T extends { id: string; centre: LatLng; firstReportedAt
     let total = 0;
     for (const other of members) {
       if (other.id === candidate.id) continue;
-      total += haversineMeters(candidate.centre, other.centre);
+      total += haversineMeters(candidate.center, other.center);
     }
     if (
       best === null ||

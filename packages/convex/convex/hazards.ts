@@ -97,7 +97,7 @@ export const hazardCreateArgs = {
   /**
    * Offline-flush dedup (Phase 09a offline / §6.2/D30). A hazard captured on the ice is queued with one
    * client-generated key and keeps it across every retry, so a create whose ack was lost returns the
-   * same hazard instead of dropping a second pin a few metres from the first. Duplicate pins are
+   * same hazard instead of dropping a second pin a few meters from the first. Duplicate pins are
    * worse here than duplicate reports: two overlapping footprints read as two hazards, and the
    * confirm loop then has to retire both. Omitted by web/online callers.
    */
@@ -191,7 +191,7 @@ export async function insertHazard(
 
   const lifecycle = initialLifecycleState(now);
   const bbox = hazardBbox(shape, clippedFootprint);
-  // The named sub-area the footprint sits in (A02/D60), measured at the footprint's bbox centre — the
+  // The named sub-area the footprint sits in (A02/D60), measured at the footprint's bbox center — the
   // same representative point `hazardCenter` gives the weather sampler, so "which bay is this hazard
   // in" and "which weather cell is it in" can't disagree about where the hazard is.
   const subArea = await resolveSubAreaForPoint(ctx, body._id, {
@@ -421,7 +421,7 @@ function clusterFields(
  *
  * Archived rows are excluded by the index, which also means an **archived hazard is not in its own
  * scope** and therefore gets no pooled consensus — correctly. A pin the community voted healed must
- * not borrow freshness from a live neighbour; that would be pooling in the unsafe direction by the
+ * not borrow freshness from a live neighbor; that would be pooling in the unsafe direction by the
  * back door.
  */
 export async function clusterScopeFor(
@@ -524,7 +524,7 @@ export const listForBody = query({
     season: v.optional(v.number()),
     /**
      * Narrow to one named bay (A09) — the bay view's hazard list. Filtered in memory off the row's
-     * stamp: the read is already bounded by body, and a hazard's bay is its footprint centre's, so
+     * stamp: the read is already bounded by body, and a hazard's bay is its footprint center's, so
      * a ridge that straddles the mouth line is listed under the bay its middle is in.
      */
     subAreaId: v.optional(v.id('waterBodySubAreas')),
@@ -672,7 +672,7 @@ export const listPromotionCandidates = query({
  * confirming *"the ridge is here right now"* is a different statement from *"ridges form here"*, and
  * only the first is confirmable at all — so the pin is exactly the thing that should still take votes
  * once a feature exists beside it. Moderation stays the only visibility axis, which is what it always
- * should have been: one is a judgement about a *report*, the other is provenance about a *feature*.
+ * should have been: one is a judgment about a *report*, the other is provenance about a *feature*.
  */
 function isUserVisibleHazard(hazard: Doc<'hazards'> | null): hazard is Doc<'hazards'> {
   return hazard !== null && hazard.moderationStatus === 'visible';
@@ -693,8 +693,8 @@ export const get = query({
     if (!isUserVisibleHazard(hazard)) return null;
     const now = Date.now();
 
-    // **The drawer reads the same consensus the map does** (D80). Not an optimisation — a correctness
-    // requirement: a pin drawn solid on the map because its cluster is confirmed, and then labelled
+    // **The drawer reads the same consensus the map does** (D80). Not an optimization — a correctness
+    // requirement: a pin drawn solid on the map because its cluster is confirmed, and then labeled
     // "Unconfirmed" the moment you open it, is the app disagreeing with itself about live ice. Costs
     // one body-bounded read on a single-hazard path, which is the same read `listForBody` already
     // makes, and the pooling itself short-circuits for the singleton case.

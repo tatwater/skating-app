@@ -12,7 +12,7 @@
  * five-state region mask and found it could only build three fifths of one.
  *
  * **The cause is structural, not a bad import.** A US state boundary is an OSM *relation* whose member
- * ways are shared with its neighbours. Geofabrik's per-state extract carries the relation — `r61320`
+ * ways are shared with its neighbors. Geofabrik's per-state extract carries the relation — `r61320`
  * New York and `r67213` New Hampshire are both present, tagged `admin_level=4` — but not every member
  * way, because those ways belong as much to Québec, Ontario, Pennsylvania and Connecticut as to us.
  * `osmium export` cannot close a ring from a partial member list, so it emits nothing. Maine and
@@ -24,7 +24,7 @@
  * for all fifty states, with each state already a closed polygon. No relations, no rings to build,
  * no dependence on which ways a third-party extract happened to include.
  *
- * **Overpass was tried first and rejected**, not on principle but on behaviour: it answered for New
+ * **Overpass was tried first and rejected**, not on principle but on behavior: it answered for New
  * York and then timed out on New Hampshire (`Dispatcher_Client::request_read_and_idx::timeout`). A
  * shared, rate-limited service is not something an archive step should depend on when a static file
  * will do.
@@ -260,7 +260,7 @@ function main(): void {
     const rows = byState.get(code) ?? [];
     // **One file per state, because the loader stamps `state` from a single `--state=XX` flag.**
     // One combined file loaded five times would label New York as Maine four times over, and `state`
-    // is denormalised onto every place label a user reads.
+    // is denormalized onto every place label a user reads.
     writeFileSync(join(RAW, `areas-${code.toLowerCase()}.ndjson`), `${rows.join('\n')}\n`);
     const c = (l: string) => counts[l]?.[code] ?? 0;
     log(

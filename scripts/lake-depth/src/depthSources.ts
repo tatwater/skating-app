@@ -18,7 +18,7 @@ export type DepthFetchSpec =
     }
   | {
       kind: 'figshare';
-      /** Article id — the API gives a download URL, byte count, publisher md5 *and* the licence. */
+      /** Article id — the API gives a download URL, byte count, publisher md5 *and* the license. */
       articleId: number;
       /** Which file in the article; articles routinely hold several. */
       filename: string;
@@ -44,11 +44,11 @@ export interface DepthSource {
   /** Who published it, for attribution and for the run row. */
   publisher: string;
   /**
-   * The licence **as we believe it to be before downloading**. Recorded separately from what the
+   * The license **as we believe it to be before downloading**. Recorded separately from what the
    * archive actually reports, because for LAGOS-US the whole open question is that we do not know:
-   * `undefined` here means "read it off the package and write it down", not "no licence".
+   * `undefined` here means "read it off the package and write it down", not "no license".
    */
-  expectedLicence?: string;
+  expectedLicense?: string;
   fetch: DepthFetchSpec;
   /** What this source contributes to the D68 ladder — mean, max, or both. */
   provides: ('mean' | 'max')[];
@@ -60,7 +60,7 @@ export const DEPTH_SOURCES: DepthSource[] = [
     key: 'hydrolakes',
     label: 'HydroLAKES v1.0 polygons',
     publisher: 'HydroSHEDS / WWF',
-    expectedLicence: 'CC-BY 4.0',
+    expectedLicense: 'CC-BY 4.0',
     fetch: {
       kind: 'direct',
       url: 'https://data.hydrosheds.org/file/hydrolakes/HydroLAKES_polys_v10.gdb.zip',
@@ -68,13 +68,13 @@ export const DEPTH_SOURCES: DepthSource[] = [
     },
     provides: ['mean'],
     notes:
-      'Mean depth is Vol_total / Lake_area, and Vol_src distinguishes reported from modelled. Includes lakes ≥ 10 ha only, which is ~7% of our corpus and ~100% of what draws at regional zoom.',
+      'Mean depth is Vol_total / Lake_area, and Vol_src distinguishes reported from modeled. Includes lakes ≥ 10 ha only, which is ~7% of our corpus and ~100% of what draws at regional zoom.',
   },
   {
     key: 'globathy',
     label: 'GLOBathy basic parameters (Dmax)',
     publisher: 'Khazaei et al. / figshare',
-    expectedLicence: 'CC0 1.0',
+    expectedLicense: 'CC0 1.0',
     fetch: { kind: 'figshare', articleId: 13_402_070, filename: 'GLOBathy_basic_parameters.zip' },
     provides: ['max'],
     notes:
@@ -89,13 +89,13 @@ export const DEPTH_SOURCES: DepthSource[] = [
      * — so this is not a free-to-use source: it carries an **attribution obligation** the app has to
      * discharge, same as HydroLAKES. See `DEPTH_SOURCE_TERMS` in `@skating/core`.
      *
-     * Recorded here as what we read; `--adopt` still requires `--licence` to be passed explicitly,
+     * Recorded here as what we read; `--adopt` still requires `--license` to be passed explicitly,
      * because the package can be revised and the human doing the download is the one who can see
      * whether the statement has changed under us. The statement itself asks for exactly that: *"data
      * are updated periodically and it is the responsibility of the Data User to check for new
      * versions"*.
      */
-    expectedLicence: 'CC BY 4.0 (https://creativecommons.org/licenses/by/4.0/)',
+    expectedLicense: 'CC BY 4.0 (https://creativecommons.org/licenses/by/4.0/)',
     fetch: {
       kind: 'manual',
       portalUrl: 'https://portal.edirepository.org/nis/mapbrowse?packageid=edi.1043.1',
@@ -103,7 +103,7 @@ export const DEPTH_SOURCES: DepthSource[] = [
     },
     provides: ['mean', 'max'],
     notes:
-      "The only MEASURED source of the three — ~65 compiled surveys, 17,675 max depths and 6,137 means. Licence read 2026-08-02: CC BY 4.0, so it carries an attribution obligation (see DEPTH_SOURCE_TERMS). Column names are confirmed against the package's own data_dictionary_depth, archived alongside; the transform also matches headers case-insensitively and raises a named error listing what it did find, so a mismatch fails loudly rather than importing zero depths silently.",
+      "The only MEASURED source of the three — ~65 compiled surveys, 17,675 max depths and 6,137 means. License read 2026-08-02: CC BY 4.0, so it carries an attribution obligation (see DEPTH_SOURCE_TERMS). Column names are confirmed against the package's own data_dictionary_depth, archived alongside; the transform also matches headers case-insensitively and raises a named error listing what it did find, so a mismatch fails loudly rather than importing zero depths silently.",
   },
 ];
 
@@ -118,7 +118,7 @@ export interface DepthArchiveFile {
  * What `.raw/<key>/manifest.json` holds.
  *
  * Same job as the OSM and bathymetry manifests: make a download reproducible without anyone
- * remembering anything. `licence` is the field this ETL specifically needed — the A06a open question
+ * remembering anything. `license` is the field this ETL specifically needed — the A06a open question
  * is *"confirm the Intellectual Rights statement at download"*, and a confirmation that lives in a
  * terminal is not a confirmation.
  */
@@ -130,7 +130,7 @@ export interface DepthManifest {
   source: { url: string; kind: DepthFetchSpec['kind'] };
   files: DepthArchiveFile[];
   /** As reported by the publisher at fetch time, or typed in by whoever adopted a manual download. */
-  licence?: string;
+  license?: string;
   /** Publisher-provided checksum, when there is one to compare against. */
   publishedMd5?: string;
   /** Whether that comparison actually ran and passed. Absent ≠ failed — see `checksumState`. */
@@ -155,17 +155,17 @@ export function checksumState(manifest: DepthManifest): ChecksumState {
 }
 
 /**
- * A licence short enough to sit in a status line.
+ * A license short enough to sit in a status line.
  *
  * Rights statements are paragraphs — LAGOS-US' is 1,100 characters — and pasting one verbatim into
  * a one-line-per-source summary buries the other four sources under it. The full text stays in the
  * manifest, which is the thing that has to be complete; this is for the reader who wants to know
- * *which* licence at a glance.
+ * *which* license at a glance.
  */
-export function shortLicence(licence: string | undefined): string {
-  if (!licence?.trim()) return 'UNRECORDED';
-  const text = licence.trim();
-  // The recognisable identifier is what a reader is scanning for, and it is almost always in the
+export function shortLicense(license: string | undefined): string {
+  if (!license?.trim()) return 'UNRECORDED';
+  const text = license.trim();
+  // The recognizable identifier is what a reader is scanning for, and it is almost always in the
   // first clause. Fall back to a hard truncation rather than inventing a label we cannot verify.
   const known = text.match(
     /CC0[\s-]?1\.0|CC[\s-]?BY[\s-]?(?:-?SA)?[\s-]?4\.0|CC-BY|CC BY|ODbL[\s-]?1\.0|ODbL/i,
@@ -182,7 +182,7 @@ export function totalBytes(manifest: DepthManifest): number {
 /**
  * Is this archive complete enough to run the ETL from?
  *
- * A source is only ready when it has at least one file **and** a licence recorded. The licence gate
+ * A source is only ready when it has at least one file **and** a license recorded. The license gate
  * is the point: LAGOS-US' rights statement has been an open question since the phase was scoped, and
  * an archive that imports cleanly while nobody has read it would close that question by forgetting
  * it rather than by answering it.
@@ -195,11 +195,11 @@ export function isRunnable(manifest: DepthManifest): { ok: boolean; reason?: str
       reason: 'checksum mismatch — the download does not match what was published',
     };
   }
-  if (!manifest.licence?.trim()) {
+  if (!manifest.license?.trim()) {
     return {
       ok: false,
       reason:
-        "no licence recorded — read the source's rights statement and re-adopt with --licence",
+        "no license recorded — read the source's rights statement and re-adopt with --license",
     };
   }
   return { ok: true };

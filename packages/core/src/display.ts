@@ -86,7 +86,7 @@ export const SCORE_PER_ZOOM_LEVEL = 1 / (14 - 6);
 
 /** Someone cared enough to name it. Weak but real, and free — the name is already on the row. */
 export const RICHNESS_NAMED = 0.02;
-/** Any depth rung (A06a). Weaker than contours, because most of it is modelled. */
+/** Any depth rung (A06a). Weaker than contours, because most of it is modeled. */
 export const RICHNESS_DEPTH = 0.04;
 /** A state surveyed it (A06b) — itself a statement that the water matters. */
 export const RICHNESS_CONTOURS = 0.06;
@@ -107,7 +107,7 @@ export const RICHNESS_ACTIVITY = 0.3;
  * Ceiling on the static-metadata half.
  *
  * Metadata says a body is *documented*; it does not say anybody wants to skate it. Capping the
- * imported signals below `curatedBoost`'s 0.3 keeps a fully-catalogued but unvisited pond from
+ * imported signals below `curatedBoost`'s 0.3 keeps a fully-cataloged but unvisited pond from
  * out-ranking a lake a human vouched for, while leaving activity free to do exactly that.
  */
 export const RICHNESS_STATIC_CAP = 0.15;

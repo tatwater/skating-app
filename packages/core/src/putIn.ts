@@ -78,11 +78,11 @@ export function clusterPutIns(
   }));
 }
 
-/** Mean Earth radius in metres (matches `geometry.ts` / Turf's WGS84 mean radius). */
+/** Mean Earth radius in meters (matches `geometry.ts` / Turf's WGS84 mean radius). */
 const EARTH_RADIUS_M = 6_371_008.8;
 const DEG = Math.PI / 180;
 
-/** Project a `[lng, lat]` position into local metres relative to `origin` (equirectangular). */
+/** Project a `[lng, lat]` position into local meters relative to `origin` (equirectangular). */
 function toLocal([lng, lat]: readonly [number, number], origin: LatLng): [number, number] {
   return [
     (lng - origin.lng) * DEG * EARTH_RADIUS_M * Math.cos(origin.lat * DEG),
@@ -90,7 +90,7 @@ function toLocal([lng, lat]: readonly [number, number], origin: LatLng): [number
   ];
 }
 
-/** Inverse of `toLocal`: local metres back to a `{ lat, lng }` relative to `origin`. */
+/** Inverse of `toLocal`: local meters back to a `{ lat, lng }` relative to `origin`. */
 function fromLocal([x, y]: [number, number], origin: LatLng): LatLng {
   return {
     lat: origin.lat + y / (DEG * EARTH_RADIUS_M),
@@ -98,7 +98,7 @@ function fromLocal([x, y]: [number, number], origin: LatLng): LatLng {
   };
 }
 
-/** Closest point (local metres) on segment `a–b` to the origin `(0,0)`; handles a zero-length edge. */
+/** Closest point (local meters) on segment `a–b` to the origin `(0,0)`; handles a zero-length edge. */
 function closestOnSegment(
   [ax, ay]: [number, number],
   [bx, by]: [number, number],

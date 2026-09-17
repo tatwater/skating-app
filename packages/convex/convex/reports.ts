@@ -533,7 +533,7 @@ async function notifyCorroboration(
  * **Scoped to one season (D63/A05a), defaulting to this one.** The bound rides the index's own range
  * field, so this is a *narrower* read than it used to be rather than the same read with rows dropped —
  * seasonal visibility costs nothing and refunds something. Hiding is not unreachability: a report from
- * a past season still resolves by permalink through `get`, labelled with the season it belongs to.
+ * a past season still resolves by permalink through `get`, labeled with the season it belongs to.
  */
 export const listByWaterBody = query({
   args: {

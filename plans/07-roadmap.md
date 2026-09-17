@@ -42,7 +42,7 @@ The monorepo (Turborepo + pnpm, `apps/mobile` on Expo, `apps/web` on TanStack St
 the trust boundary, and the ack is stamped there, never client-supplied. A profile-provisioning gate
 admits a signed-in user only once their row records a current ack, with onboarding and re-ack screens
 for the other states, sharing one pure `resolveAuthRoute`. Design tokens bridged into Tailwind and
-Tamagui with a drift-guard test; Sentry on both apps; AGPL licence plus the store exception. The first
+Tamagui with a drift-guard test; Sentry on both apps; AGPL license plus the store exception. The first
 deploy took a chain of fixes recorded in the plan doc. *Both apps sign in, render empty Map and
 Newsfeed pages, and crash-report.*
 
@@ -311,7 +311,7 @@ profile to fan out notifications — now a paged scheduled job. *The map can't c
 
 Named sub-areas (D60): a bay is a region *inside* one polygon, not a water body beside it, so one sheet of
 ice keeps one set of reports, hazards, bounties and favorites while carrying the name skaters use.
-Labelled on cards and detail surfaces, searchable by alias, drawn from a third ladder-grid table,
+Labeled on cards and detail surfaces, searchable by alias, drawn from a third ladder-grid table,
 targetable by a bounty. And the per-body editor (D61) at `/admin/water/$id` with the camera locked to
 the body — including the `weatherSamplePoints` writer Phase 10 shipped a reader for and never a
 mutation, auto-flag bundling, and `activeBountyPostLimit`. `MapView` became a shared shell so the
@@ -374,7 +374,7 @@ page was a dead link (a TanStack outlet-less leaf), and favorite paint drifted b
 🟢 **Complete** 2026-07-31 · PRs #34 #35 · [plan](./phases/A05c-hazard-memory.md) · D77 D78 D79 D80
 
 Two founder asks that were one problem: "which hazards were on this water body in '24/'25?" and "if three
-people pin the same ridge, do their confirmations split?" are the same geometric judgement at two time
+people pin the same ridge, do their confirmations split?" are the same geometric judgment at two time
 scales. One `clusterHazards` primitive, two windows (D77): within a season it prevents, pools, renders
 as consensus and auto-merges reversibly on the D36 tombstone pattern (D80); across seasons it becomes
 recurrence, ranked promotion suggestions, and body-level "ice history" advisories. The three-season
@@ -385,14 +385,14 @@ directly (D79); supersession is a backlink, never a hiding mechanism. *Duplicate
 corroboration, and operators watch recurrence form.*
 
 #### Deferred
-- ⚪ **Flip `RECURRENCE_ADVISORIES_PUBLIC`** — after operators have read the queue across two rollovers; a judgement, not a date
+- ⚪ **Flip `RECURRENCE_ADVISORIES_PUBLIC`** — after operators have read the queue across two rollovers; a judgment, not a date
 
 ## Phase A06a — Water body depth
 🟢 **Complete** 2026-07-30 · PR #33 · [plan](./phases/A06a-body-depth.md) · D68 D69
 
 The body-level depth D56 was designed around and never got — the `isShallow` scalar Phase 10 described
 never existed; the manual `bodyFeature` was wired to nothing. Depth arrives as a provenance-carrying
-precedence ladder (D68: operator → state agency → LAGOS-US observed → HydroLAKES → GLOBathy modelled)
+precedence ladder (D68: operator → state agency → LAGOS-US observed → HydroLAKES → GLOBathy modeled)
 because mean and max come from different sources and one `depthSource` couldn't be honest, plus the
 shallow decay consumer that makes it mean something (D69: shallowness amplifies the thaw response
 only, never the cold one). The data reaches ~7% of the corpus and ~100% of what a skater browses at
@@ -427,7 +427,7 @@ its basin.*
 #### Deferred
 - ⚪ **A curving anisotropy axis** — mitigated by capping at each water body's elongation; revisit only when a user complains about a named water body
 - ⚪ **Contour crowding on steep beds** — the obvious fix understates depth by omission
-- ⚪ **NY has no statewide source** — covered only via Champlain; the PDF digitisation path is costed in the plan doc
+- ⚪ **NY has no statewide source** — covered only via Champlain; the PDF digitization path is costed in the plan doc
 
 #### Ruled out
 - **Contours from GLOBathy rasters, permanently** — a linear distance-from-shore transform; an authoritative-looking rendering of a guess
@@ -457,7 +457,7 @@ including that `waterBodies.centroid` is a point *on the shoreline*, which would
 ## Phase A06d — Water body access points
 🟢 **Complete** 2026-08-13 · PR #43 · [plan](./phases/A06d-body-access-points.md) · D72 D73 D87 D88 D143 D144
 
-Parking modelled apart from put-ins so directions stop routing cars to hike-in shorelines (D72,
+Parking modeled apart from put-ins so directions stop routing cars to hike-in shorelines (D72,
 many-to-many after the amendment — a trailhead lot serves three ponds), named access points from a
 second OSM pass over the same extract, and access blockers as decaying community alerts that reuse the
 hazard confirm machinery but *not* its weather decay — a locked gate doesn't thaw (D73). Approach
@@ -585,7 +585,7 @@ why. Evidence re-activates a machine-shelved body, while a person's dormancy, a 
 removal need a person (D177); the prunes demote, never delete (D178). A seed partitions the stored
 corpus by evidence of use and a July cron shelves three idle seasons. Then requests (D179): five
 kinds by standing — activate, admit, restore, contest access, takedown — asked from the drawer or
-by long-press on unheld water, `admit` resolved live against the 3DHP catalogue, and a moderator
+by long-press on unheld water, `admit` resolved live against the 3DHP catalog, and a moderator
 queue whose approve performs the act. *A skater can vouch a water body into the corpus, and an operator
 can stand one down.*
 
@@ -666,7 +666,7 @@ launches.*
 
 #### Deferred
 - ⚪ **Weather shelter index and station-bias study** — scoped at kickoff, post-alpha → [`backlog/weather-shelter-index.md`](./backlog/weather-shelter-index.md), [`backlog/weather-stations.md`](./backlog/weather-stations.md)
-- ⚪ **US spellings sweep** → [`features/us-spellings.md`](./features/us-spellings.md)
+- 🟢 **US spellings sweep** — done 2026-09-17 (D185, [`README.md` § Words](./README.md#words))
 
 ## Deferred register
 
@@ -691,8 +691,8 @@ long-form register this table replaced is archived verbatim in
 | A06h Workstream 6 — radar | ⚪ | nothing; next in A06h | A06h |
 | Multi-season weather climatology · paying Open-Meteo (D158) | ⚪ | D153 unlocked it; season two | A06h |
 | `centroid` → `representativePoint` stage 2 — the ~100-site code sweep | ⚪ | nothing, and it shouldn't linger | [`features/representative-point-rename.md`](./features/representative-point-rename.md) |
-| Phase renumbering — the PR-title/body pass with the banner (the tree is done) | ⚪ | the rename PR merging | [`features/phase-numbers.md`](./features/phase-numbers.md) |
-| US spellings sweep | ⚪ | nothing | [`features/us-spellings.md`](./features/us-spellings.md) |
+| Phase renumbering — scheme, tree, PR-title/body pass with the banner | 🟢 | done 2026-09-17 (#60, #62, #64, #65 + `gh pr edit`); A06h's own lettered definitions followed in the spellings PR | [`README.md` § Reading old history](./README.md#reading-old-history) |
+| US spellings sweep | 🟢 | done 2026-09-17, one PR (D185); owed: the preview APK predates the `canceled` status rename — rebuild before any bounty is canceled | [`README.md` § Words](./README.md#words) |
 | "Water body", not "lake" — in `docs/`, code comments and UI copy (`plans/` is done) | ⚪ | a founder call on the user-visible strings ("Lake editor", route names) | `README.md` § Words |
 | Reverse spatial index for notification fan-out (D172) | ⚪ | ~1,000 profiles | A08 |
 | Web push | ⚪ | a service worker | A08 |

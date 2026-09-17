@@ -1,4 +1,4 @@
-# A06b — The bathymetry layer: real isobaths inside the water body
+# Phase A06b — The bathymetry layer: real isobaths inside the water body
 
 *An underwater-contour layer inside an open water body's drawer, drawn from state-agency surveys.*
 
@@ -35,7 +35,7 @@
 > **Originally: 📋 Designed at A06a's kickoff (2026-07-29), deliberately not built.** Split out of the
 > register's single **A06** entry when the founder asked whether we could draw topographic lines inside
 > the water body bodies. The answer is **yes, from measured state-agency data, and emphatically not from the
-> global modelled sources** — the finding that made this its own phase rather than a bullet in
+> global modeled sources** — the finding that made this its own phase rather than a bullet in
 > [A06a](./A06a-body-depth.md). Storage/serving settled at kickoff: **PMTiles on R2**.
 > **All six open questions were answered 2026-07-31** — see *§Settled by the founder*. The largest
 > consequence: **there is no contour toggle.** Contours are a property of the detail view, and the map's
@@ -92,8 +92,8 @@ per water body and cannot describe a shape at all.)*
 > survey-not-model, the datum trap, the coverage caveat — survives the corrections intact, and because
 > the shape of the error is itself worth not repeating: **every one of these rows was plausible.**
 
-All five states have digitised bathymetry, at varying maturity. Every one of them is a **survey** —
-GPS/depth-sounder transects or digitised chart soundings — not a model.
+All five states have digitized bathymetry, at varying maturity. Every one of them is a **survey** —
+GPS/depth-sounder transects or digitized chart soundings — not a model.
 
 | State | Source | Form | Notes |
 | --- | --- | --- | --- |
@@ -101,7 +101,7 @@ GPS/depth-sounder transects or digitised chart soundings — not a model.
 | **NH** | NH GRANIT *NH Bathymetry — Water bodies (Lines)*; NHDES surveys since 2000 + NH Fish & Game; updated Feb 2024 | contour lines, depth in feet ✅ | also a Polygons layer (contour-interval areas) |
 | **MA** | MassGIS *MassWildlife Inland Water Bathymetry*, 1:10,000, GPS/depth-sounder | contour lines ✅ (+ a depth raster we don't need) | ~~shapefile + TIFF in one zip~~ **→ a live FeatureServer** |
 | **NY** | NYSDEC Lake Contours, NYS GIS Clearinghouse | ~~contours~~ **→ no statewide dataset exists** | maturity/format needs a look; much of DEC's fishing-map corpus is PDF |
-| **ME** | Maine GeoLibrary *Lake Depths* | **sounding points, not contours** ✅ | ~~IFW water body survey maps are PDFs~~ **→ the state already digitised them** |
+| **ME** | Maine GeoLibrary *Lake Depths* | **sounding points, not contours** ✅ | ~~IFW water body survey maps are PDFs~~ **→ the state already digitized them** |
 
 **Vermont has usable prior art, and we build our own anyway.** An open-source project
 ([`cboone/vermont-lakes-and-ponds-bathymetry`](https://github.com/cboone/vermont-lakes-and-ponds-bathymetry),
@@ -175,7 +175,7 @@ build-it-ourselves call above is the right one.)*
 Maine is the one state in our set that publishes **soundings, not contours**. Maine GeoLibrary's *Lake
 Depths* layer is a point dataset — each point a measured depth at a location, with surface elevation —
 consolidated from several sources; Maine IF&W's ~1,900 water body survey maps exist as **PDFs**, which is a
-digitisation project, not an ETL.
+digitization project, not an ETL.
 
 So contours for Maine mean **we** would be interpolating, and that changes what we'd be drawing: not
 "the state surveyed this water body and here are its isobaths" but "here is our surface fitted through the
@@ -192,11 +192,11 @@ because it is constrained by real measurements inside the basin instead of only 
    cannot support isobaths and must be left blank; a water body with dense transects can. The gate is the whole
    integrity of this path — it is what stops the layer from silently degrading into "smooth surface
    through three points" on the water bodies with the least data. Pick the threshold from the real distribution
-   (candidate: minimum point count *and* a maximum nearest-neighbour gap relative to water body extent), and
+   (candidate: minimum point count *and* a maximum nearest-neighbor gap relative to water body extent), and
    **log every water body dropped**, per the register's own no-silent-caps rule.
 3. **Interpolate** per water body, clipped to our polygon, with the shoreline as a depth-0 boundary
    constraint — that constraint is what keeps the fit from running deep at the shore, and it is the one
-   place the distance-transform intuition is legitimately useful. Natural-neighbour or TIN-based
+   place the distance-transform intuition is legitimately useful. Natural-neighbor or TIN-based
    interpolation over kriging: fewer knobs, no variogram to defend.
 4. **Contour** the fitted surface (`gdal_contour`) at the same interval as the other states, and tile it
    into the same PMTiles set.
@@ -227,7 +227,7 @@ checked finding rather than an assumption, and the search is recorded so nobody 
 | Where we looked | What is there |
 | --- | --- |
 | **NYSDEC's public ArcGIS server** — every folder, every service, every layer, enumerated programmatically | Exactly two depth layers, both **Hudson River estuary** |
-| **NYS GIS Clearinghouse** (`data.gis.ny.gov`), full DCAT catalogue — 385 datasets | A *topographic* contour download app (land), one Seneca Lake document. No water body bathymetry |
+| **NYS GIS Clearinghouse** (`data.gis.ny.gov`), full DCAT catalog — 385 datasets | A *topographic* contour download app (land), one Seneca Lake document. No water body bathymetry |
 | **ArcGIS Online**, org- and keyword-scoped searches | Nothing from NYSDEC or any NY state agency |
 | **`data.ny.gov`** open-data portal | Nothing |
 | Regional candidates (Adirondack Park Agency, Finger Lakes, Lake George) | One item: *"Bathymetry of the Finger Lakes"* — **50 unattributed depth-band polygons** for eleven water bodies, no published copyright, no traceable agency |
@@ -245,7 +245,7 @@ Champlain source covers the water body, not the state.** Its 104,910 soundings s
 So New York's most prominent skating water is covered — by a source filed under Vermont. That is an
 accident of filing that happens to be correct, and it means the pipeline does run end-to-end for NY.
 
-### The digitisation path, costed
+### The digitization path, costed
 
 NYSDEC has historically published water body contour maps as **PDFs** — the fishing-map corpus this doc's
 source table gestured at. They are the only NY bathymetry that exists, and turning them into a layer is
@@ -306,13 +306,13 @@ pilot is what turns "low hundreds of maps" from a guess into a schedule.
 
 All six questions answered in one pass. Three became decisions; the other three became build constraints.
 
-### 1 — Native intervals and native units, labelled (D83)
+### 1 — Native intervals and native units, labeled (D83)
 
 > *"The ideal would be common units, but I agree that we shouldn't invent lines that we don't have true
 > data for. Let's use the units we're given and we can come back to this in the future."*
 
 **Carry each source's native interval and unit; never resample.** NH and MA publish in **feet**, VT in
-metres, and retiling to a common interval would mean interpolating isobaths that nobody surveyed — a line
+meters, and retiling to a common interval would mean interpolating isobaths that nobody surveyed — a line
 drawn where no depth-sounder went, rendered identically to one that was measured. That is the GLOBathy
 mistake at a smaller scale, and this document exists because we refused it once already.
 
@@ -325,7 +325,7 @@ contours."*
 real data is* stands regardless. Champlain (NGVD 1929) and VT ANR (pool elevation at collection) do not
 share a reference, so the styling reads **depth-below-surface** and never an absolute elevation, and
 depths from different sources are never silently unioned into one styled-by-depth ramp. Native intervals
-make that rule easier to hold, not harder: each set already renders as its own labelled thing.
+make that rule easier to hold, not harder: each set already renders as its own labeled thing.
 
 **The revisit is real, and it has a trigger:** if we ever ship a cross-state comparison surface — "the
 deepest water bodies within 90 minutes" — that surface needs common units, and it should convert *at read time*
@@ -447,7 +447,7 @@ treated as **requirements rather than nice-to-haves**:
    every dropped water body is logged. Under D82 this is easier to hold than it looks: since contours make no
    claim, a blank water body costs the skater nothing, so the gate can be set conservatively without a
    product argument against it.
-3. **Provenance labelling** (Q1, Q5) — state-surveyed vs interpolated-from-soundings never render as the
+3. **Provenance labeling** (Q1, Q5) — state-surveyed vs interpolated-from-soundings never render as the
    same thing.
 
 **And one honest limit that no amount of care removes:** coverage is *"water bodies that have been surveyed,"*
@@ -460,7 +460,7 @@ and unlabelled when absent has no coverage embarrassment to manage.
 
 ~~**NY's actual maturity.**~~ → **Answered 2026-07-31, and the answer is "neither."** See
 *§What the build found in the plan* §5. NY behaves like neither NH nor ME: there is no statewide water body
-bathymetry dataset in any form, vector or digitised-point. The afternoon of looking happened.
+bathymetry dataset in any form, vector or digitized-point. The afternoon of looking happened.
 
 ---
 
@@ -479,7 +479,7 @@ otherwise re-derive them in the same order.*
 | Decimate | `gmt blockmedian` | One value per grid cell. The median resists a bad reading; a sonar log has thousands of points per cell. |
 | Constrain | shoreline at depth 0 | §Maine step 3. **The load-bearing step** — without it contours never close and nothing nests. Sampled against a budget tied to the *sounding* count (`shoreSpacingFor`), so the outline cannot outvote the survey — see §*Rebuilt against the charts*. |
 | Solve | `gmt surface`, `-T0.25`, `-Ll0 -Lu<max>` | Tensioned spline. The clamps stop it inventing a hole deeper than anything sounded. |
-| Anisotropy | compress along-axis for the solve, `grdedit` back to real metres | Connects a trough the isotropic fit was splitting. Capped by each water body's own elongation. |
+| Anisotropy | compress along-axis for the solve, `grdedit` back to real meters | Connects a trough the isotropic fit was splitting. Capped by each water body's own elongation. |
 | Smooth | `gmt grdfilter -Fg`, 3 cells | Removes the raster tracing stair-step. Narrower than the sounding spacing, so it cannot erase a surveyed feature. |
 | Mask | `surface -M`, at the density gate's ratio | Refuses to draw water further from a reading than the gate allows. |
 | Contour | `gdal_contour` on the fixed 5 ft ladder | **D89.** Steps coarser (10, 25, 50 ft) for depth or thin data, never finer, so ring count reads as depth. |
@@ -494,7 +494,7 @@ table below. The rest are edit-and-rerun, which is the honest interface for a ch
 setting was chosen by looking at a render.
 
 *(`MAX_GAP_RATIO` reads **0.22**, not the 0.12 this section first recorded. Both numbers gate the same
-water bodies: the fairness fix renormalised the gap by `sqrt(area)` instead of the bbox diagonal, which runs
+water bodies: the fairness fix renormalized the gap by `sqrt(area)` instead of the bbox diagonal, which runs
 1.82× smaller, so the old threshold silently tightened from 271 dropped water bodies to 1,224. Re-deriving
 it against the new denominator restored the keep-rate. The lesson is in `density.ts` and worth
 lifting: **a threshold is calibrated against its denominator, and changing one without re-deriving
@@ -505,7 +505,7 @@ same day; shore share is computed and printed on every sample card but gates not
 measured the wrong thing*. `TARGET_CONTOUR_COUNT` (12) was retired outright by D89. `GRID_CELLS` (500)
 survives as a fallback default in `grid.ts` for callers that don't know a water body's extent, but the
 pipeline itself uses `gridCellsFor`: a constant cell count and a constant band count were the same
-mistake twice, a per-body normalisation that ignored how big the water body was and how much of it had been
+mistake twice, a per-body normalization that ignored how big the water body was and how much of it had been
 measured.)*
 
 ### What was tried and rejected, in order
@@ -532,7 +532,7 @@ Recorded because each looked correct in advance:
    measured contour elongation held at ~2.2 across ratios from 0.25 to 4, and the fragment count went
    *up*. Worth recording that the obvious flag is inert here.
 
-What works is **compress for the solve, then `grdedit -R` back to real metres** before anything else
+What works is **compress for the solve, then `grdedit -R` back to real meters** before anything else
 touches the grid. `grdedit` rewrites the coordinate range without altering a value, so the solver sees
 a squashed water body while the filter, mask and contour tracer all see real distances.
 
@@ -562,7 +562,7 @@ axis, just a gentler one.**
 **A — Curvilinear (medial-axis) frame.** *The proper fix.* Compute the water body's centreline, parameterise
 every point as (distance along the centreline, signed distance across it), grid in that space, map
 back. The anisotropy then follows the water body wherever it goes, and the same transform would make
-near-shore behaviour more natural as a side effect.
+near-shore behavior more natural as a side effect.
 
 > **Cost: the largest of these, and the risk is in the branches.** A centreline for a simple
 > elongated basin is tractable; for a water body with three arms it is a *skeleton*, and the inverse map is
@@ -613,7 +613,7 @@ read as hatching. The obvious fix — dropping levels that render too close toge
 by the founder and correctly**: a deep water body with a steep bed would then show *fewer* rings than a
 shallow one with a gentle bed, understating depth by omission, which is the misleading-by-rendering
 D82 exists to prevent. No accepted fix yet. Most likely candidates are a zoom-dependent client-side
-thinning (which moves cartographic judgement into two clients) or simply accepting it.
+thinning (which moves cartographic judgment into two clients) or simply accepting it.
 
 **Near-shore detail is unearned.** The shoreline is pinned at 0 ft and the nearest sounding is often
 30–40 ft, with nothing measured in between, so a band of contours crowds into the one place we have no
@@ -783,7 +783,7 @@ of that depth, drawn as though it were bathymetry.
 **The transferable point is where it is measured.** Every other check in this pipeline asks something
 about the *inputs* and tries to predict whether the output will be honest. This one waits for the
 output and looks at it. That is the third time an input ratio has failed to predict quality here —
-nearest-neighbour spacing (rejected while building the density gate), the coverage gap ratio itself
+nearest-neighbor spacing (rejected while building the density gate), the coverage gap ratio itself
 (*"visual quality does not track this ratio"*), and now shore share. Three for three.
 
 ### And one fairness bug the founder found by asking the right question
@@ -793,11 +793,11 @@ nearest-neighbour spacing (rejected while building the density gate), the covera
 
 The answer is that the density floor already exists and is better than soundings-per-area — the
 coverage gap measures the **worst-covered** water, so it catches clustering that an average density
-cannot. But the question exposed a real bias in it: **the gap was normalised by the bounding-box
+cannot. But the question exposed a real bias in it: **the gap was normalized by the bounding-box
 diagonal**, and measured across all 2,437 joined bodies, diagonal ÷ sqrt(area) runs **1.76× at the 5th
 percentile, 3.36× at the 95th, 6.9× at the extreme.** A long thin water body was being handed a denominator
 nearly twice as large as a round water body of the same area, and therefore nearly twice as easy a pass. Now
-normalised by `sqrt(area)`, which is a *stricter* gate and strictest on exactly the elongated water bodies
+normalized by `sqrt(area)`, which is a *stricter* gate and strictest on exactly the elongated water bodies
 that were getting the easy ride.
 
 ---
@@ -840,7 +840,7 @@ exists for the pages an interrupted run left behind.)*
 navigation' class of notice, which is worth reading properly before it renders next to anything on a
 safety product." Read properly, it changed the credit line in three ways.*
 
-**Our licence relationship runs to VCGI, not to NOAA.** We take the data from VCGI's service; VCGI's
+**Our license relationship runs to VCGI, not to NOAA.** We take the data from VCGI's service; VCGI's
 archived metadata says the layer is *"bathymetric data derived NOAA nautical charts… digitized from
 the RF 40,000 scale NOAA charts."* NOAA's terms govern the character of the underlying survey, not
 our redistribution chain.
@@ -851,17 +851,17 @@ our redistribution chain.
    Vermont (JEFF LAIBLE), VCGI"* — so the placeholder left out UVM and added VT ANR and VT DEC, who
    are not in it at all.
 2. **NOAA asks that attribution not imply endorsement or affiliation**, and that modified data not be
-   presented as unaltered NOAA data. Champlain's contours are *doubly* derived — NOAA chart, digitised
+   presented as unaltered NOAA data. Champlain's contours are *doubly* derived — NOAA chart, digitized
    by UVM/VCGI, then interpolated by us — so the credit has to say where the soundings came from and
    stop short of implying NOAA drew any of this.
 3. **The notice is a separate obligation from the credit**, and is stored and rendered as its own
    field rather than folded into the attribution string.
 
-The credit is now *"Soundings digitised from NOAA nautical charts by University of Vermont and
+The credit is now *"Soundings digitized from NOAA nautical charts by University of Vermont and
 VCGI"*, with the notice *"Not for navigation."*
 
 **This does not breach D82.** D82 refuses copy telling a skater what a depth *means* for ice; a
-licence notice makes no claim about ice at all. If anything it points the same way — it says do not
+license notice makes no claim about ice at all. If anything it points the same way — it says do not
 navigate by this. Worth stating because the first reader of the drawer copy will ask.
 
 ---
@@ -873,7 +873,7 @@ interval is a fixed ladder, not a per-body target.*
 
 > **D89 — Every water body is drawn on the same 5 ft ladder, and the ladder only ever steps coarser.**
 > Ring *count* is therefore a readout of depth — three rings on a 17 ft pond, eleven on a 59 ft one —
-> rather than every water body being normalised to a dozen bands. The interval may step up (10, 25, 50 ft)
+> rather than every water body being normalized to a dozen bands. The interval may step up (10, 25, 50 ft)
 > for depth or for thin data, never down. Contour lanes reach the same ladder by **subtraction only**:
 > the agency's published levels are thinned toward it, and no level is ever moved or added.
 
@@ -935,7 +935,7 @@ looking — and it is the reason this one lasted hours instead of shipping.
 
 *The founder's question was the right one: **we had no ideal to compare against.** We do now. Both
 Maine IF&W and VT DEC publish finished depth charts as PDFs, including for water bodies in our sample grid —
-and for Maine those charts are the **originals our digitised points came from**, which makes the
+and for Maine those charts are the **originals our digitized points came from**, which makes the
 comparison as close to apples-to-apples as this phase will ever get.*
 
 | Water body | Official chart | Their max | **Our max** | Their interval | **Our interval** |
@@ -1080,7 +1080,7 @@ digitised from NOAA nautical charts by University of Vermont and VCGI. Not for n
 
 `contourColorExpression` needs a maximum to ramp against, and the honest source is the tile rather
 than the body's A06a `maxDepthM` — the two come from different measurements, and a water body whose deepest
-sounding is 42 ft can carry a modelled `maxDepthM` of 60, which leaves every drawn ring in the pale
+sounding is 42 ft can carry a modeled `maxDepthM` of 60, which leaves every drawn ring in the pale
 end of the ramp and flattens exactly the contrast it exists to give.
 
 Read per-body and **monotonically**: `querySourceFeatures` answers from the tiles currently loaded,
@@ -1092,7 +1092,7 @@ nothing. Reset on body change.
 The layer mounts at `line-opacity: 0` and fades to 0.75 on the *first successful read* — not on add.
 So the fade covers the tile fetch instead of competing with it, and a water body with no contours never
 fades in at all rather than flashing an empty layer. On both clients this is a paint transition
-(`line-opacity-transition`), which the native renderer honours the same way the web one does.
+(`line-opacity-transition`), which the native renderer honors the same way the web one does.
 
 **Z-order is a string convention between two files, so it is tested.** Contours insert before
 `sub-area-outline` — a layer both maps add unconditionally — which puts them under every pin, track
@@ -1194,7 +1194,7 @@ one, because the public R2 URL is CDN-cached and overwriting is how a fix appear
 one boolean, so any fitted line made the whole body read as ours. It is now
 `lane: 'surveyed' | 'interpolated' | 'mixed'`, symmetric with how `intervalFt` already went `null` on
 disagreement, and `'mixed'` renders *"part surveyed and part interpolated by us from published
-soundings."* Defence in depth rather than the fix — **a tile archive outlives the build that made
+soundings."* Defense in depth rather than the fix — **a tile archive outlives the build that made
 it**, and the currently-uploaded one still contains those two water bodies.
 
 ---
@@ -1205,7 +1205,7 @@ it**, and the currently-uploaded one still contains those two water bodies.
 rather than against a portal description. Same discipline A01/A02/A03/A06a applied to their register
 entries — and it found more here than in any of them, because this doc's source table was assembled
 from dataset landing pages and **a landing page describes a dataset the way its author thinks of it,
-not the way it is serialised.***
+not the way it is serialized.***
 
 The machine-readable version of all of this lives in `scripts/bathymetry/src/sources.ts`, as `notes`
 on each registry entry. It is duplicated there deliberately: the person who next re-runs this ETL will
@@ -1239,16 +1239,16 @@ declining to reuse was its tiles, which are the cheap part.
 defensible density gate by an order of magnitude, which makes the interpolation genuinely defensible
 there in a way *§Maine* correctly doubts for Maine. Same shape of data, opposite problem.
 
-### 2 — Maine's PDFs have already been digitised, by Maine
+### 2 — Maine's PDFs have already been digitized, by Maine
 
-*§Maine* opens: *"Maine IF&W's ~1,900 water body survey maps exist as **PDFs**, which is a digitisation
-project, not an ETL."* The state did the digitisation. Maine DEP's *Depth Points* layer carries
+*§Maine* opens: *"Maine IF&W's ~1,900 water body survey maps exist as **PDFs**, which is a digitization
+project, not an ETL."* The state did the digitization. Maine DEP's *Depth Points* layer carries
 **147,755 points** whose provenance columns read `FMSRC=depthmap`, `FMSRCORG=meifw`, `FMPROCSS=dig` —
-those *are* the IF&W depth maps, digitised, published, and queryable.
+those *are* the IF&W depth maps, digitized, published, and queryable.
 
 So the §Maine process stands as written, minus its step 0. What it gains instead is a wrinkle it didn't
 anticipate: **the layer is two datasets wearing one schema**, and `FMSRC` is the discriminator —
-`depthmap` rows are digitised IF&W map soundings, `gpscarrier`/`gpsrec` rows are Maine DEP
+`depthmap` rows are digitized IF&W map soundings, `gpscarrier`/`gpsrec` rows are Maine DEP
 depth-sounder tracks. Two provenances, two collection methods, one table.
 
 Maine also keeps its density problem, and it is exactly the one §Maine step 2 was written for:
@@ -1258,7 +1258,7 @@ theoretical here; it is the whole integrity of the Maine lane.
 ### 3 — Maine's depth columns are both wrong, by a constant
 
 `DEPTHM` was computed with a **3.3 ft/m** constant rather than 3.28084. `DEPTHM × 3.3` lands on a whole
-foot for the digitised rows; `DEPTHM × 3.28084` does not:
+foot for the digitized rows; `DEPTHM × 3.28084` does not:
 
 | `DEPTHM` | `× 3.3` | published `DEPTHF` |
 | --- | --- | --- |
@@ -1266,17 +1266,17 @@ foot for the digitised rows; `DEPTHM × 3.28084` does not:
 | 10.90909 | **36.0** | 35.79097769 |
 | 23.63636 | **78.0** | 77.54711286 |
 
-Since `DEPTHF` was then derived from the bad metres with the *good* constant, **every published Maine
+Since `DEPTHF` was then derived from the bad meters with the *good* constant, **every published Maine
 depth in feet is systematically 0.58% shallow.** Small, and on the safe side, and precisely the class
 of thing that becomes permanent if nobody writes it down. Native feet are recoverable exactly as
-`DEPTHM × 3.3` for the `depthmap` rows; the GPS rows are genuine metre readings and convert normally.
+`DEPTHM × 3.3` for the `depthmap` rows; the GPS rows are genuine meter readings and convert normally.
 
 ### 4 — Contour interval is a per-body property, and every source is in feet
 
 Two corrections to **D83**, one of which makes it easier to hold and one of which makes its example
 label unwritable.
 
-**The unit seam does not exist.** D83 says *"NH and MA publish in **feet**, VT in **metres**"* and
+**The unit seam does not exist.** D83 says *"NH and MA publish in **feet**, VT in **meters**"* and
 builds its cost argument on a skater crossing a state line and seeing the spacing change. Every source
 in the set is feet — VT's columns are literally named `DepthInFeet` and `DEPTH_FT`. D83's *rule*
 (carry native intervals, never resample) is untouched and still right; its worked example was
@@ -1288,9 +1288,9 @@ below. Each *water body* has an interval; a *state* does not. The label has to b
 values actually present for that water body, or dropped — and since D82 already says the layer makes no
 claim, dropping it is a live option rather than a failure.
 
-*(A small trap inside this one: NH's `depth` column has been round-tripped through metres, so it holds
+*(A small trap inside this one: NH's `depth` column has been round-tripped through meters, so it holds
 `1.00000003` alongside `1`. A naive `DISTINCT` returns 116 values where about 60 exist. Round before
-grouping, labelling, or deriving an interval.)*
+grouping, labeling, or deriving an interval.)*
 
 ### 5 — New York has no water body bathymetry, and Champlain covers for it anyway
 
@@ -1299,7 +1299,7 @@ exhaustively:
 
 - **NYSDEC's public ArcGIS server** — every folder, every service, every layer — carries exactly **two**
   depth layers, and both are the Hudson River *estuary*.
-- **The NYS GIS Clearinghouse's full DCAT catalogue** (385 datasets) holds no statewide water body
+- **The NYS GIS Clearinghouse's full DCAT catalog** (385 datasets) holds no statewide water body
   bathymetry: a topographic contour *download app* for land contours, and one Seneca Lake document.
 - The only candidate that surfaced anywhere, *"Bathymetry of the Finger Lakes"*, is **50 unattributed
   depth-band polygons** for eleven water bodies, with no published copyright and no traceable agency. That is
@@ -1362,7 +1362,7 @@ can act on wrongly.
   Champlain. Batching is adaptive — split-and-retry, with a water body that fails alone recorded as a named
   reject.
 - **Checked against the agencies' own charts.** Maine IF&W and VT DEC both publish finished depth maps,
-  and for Maine those are the *originals our points were digitised from*. Max depth matches exactly on
+  and for Maine those are the *originals our points were digitized from*. Max depth matches exactly on
   both water bodies checked (36 ft, 42 ft), which independently validates the whole unit chain.
 - **⚠ Three gates, and two of them had to be re-derived by looking.** The density gate's premise was
   overturned by its own comparison (quality does not track the gap ratio); the shore-share gate was
@@ -1373,23 +1373,23 @@ can act on wrongly.
   The whole sequence is written up for a non-specialist reader in
   [`docs/bathymetry-challenges.md`](../../docs/bathymetry-challenges.md).
 - **A fairness bug in the primary gate**, found by the founder asking whether the floor should be a
-  density rather than a count: the coverage gap was normalised by the **bbox diagonal**, which across
+  density rather than a count: the coverage gap was normalized by the **bbox diagonal**, which across
   2,437 bodies runs 1.76–3.36× `sqrt(area)` — so long thin water bodies got up to a 4× easier pass. Now
-  normalised by `sqrt(area)`.
+  normalized by `sqrt(area)`.
 
 - **All five states are covered, and two of them aren't what this entry assumed.** VT publishes
   **soundings, not isobaths** (2.4M BioBase sonar points over 66 water bodies, plus 105k NOAA-chart points for
   Champlain), which makes it the *hardest* lane rather than the easy pilot half. Maine's IF&W depth maps
-  turned out to be **already digitised by the state** (147,755 points over 1,525 water bodies). NH (9,285
+  turned out to be **already digitized by the state** (147,755 points over 1,525 water bodies). NH (9,285
   contours / 558 water bodies) and MA (27,989 contours) are clean published isobaths. **NY publishes nothing** —
-  checked exhaustively; it is covered only via Champlain, and the PDF digitisation path is costed in the
+  checked exhaustively; it is covered only via Champlain, and the PDF digitization path is costed in the
   phase doc.
 - **The interpolation was the hard part by a wide margin**, and every failure was invisible in review and
   obvious on a render. Five mechanisms were rejected — IDW (bullseyes), TIN (facets), moving average
   (search-radius arcs), isotropic GMT `surface` (splits a real trough into isolated pits), and coordinate
   compression left uncompressed (smears every water body into a lens). What works: `gmt surface` with the
   shoreline as a depth-0 constraint, solved on an axis-compressed grid and `grdedit`-ed back to real
-  metres. **The shoreline constraint is load-bearing** — without it contours never close and nothing
+  meters. **The shoreline constraint is load-bearing** — without it contours never close and nothing
   nests.
 - **⚠ One limitation is documented and unresolved: the anisotropy axis is straight, and water bodies bend.**
   Mitigated by capping anisotropy at each water body's own measured elongation (a curved basin's point cloud is
@@ -1404,13 +1404,13 @@ can act on wrongly.
   soundings than any other sample.
 - **D89 — the contour interval is a fixed 5 ft ladder, not a per-body target.** Ring *count* now reads as
   depth across water bodies (three on a 17 ft pond, eleven on a 59 ft one) rather than every water body being
-  normalised to a dozen bands. The old depth-only rule was backwards in the way that mattered: it gave
+  normalized to a dozen bands. The old depth-only rule was backwards in the way that mattered: it gave
   Washington Pond (36 ft, **105 soundings**) a 2 ft interval and Lake Morey (42 ft, **68,139 soundings**)
   a 5 ft one. The ladder only ever steps *coarser* — for depth, or for thin data — never finer. Contour
   lanes reach it by **subtraction only**: an agency's published levels are thinned toward the ladder and
   never moved or added to, and the deepest published level is always kept, because thinning away the
   innermost ring is D82's understating-by-omission by another road.
-- **The render half found one real thing, and it was a licence problem rather than a rendering one.** To
+- **The render half found one real thing, and it was a license problem rather than a rendering one.** To
   stay small, a tile carries a short agency label — and for Champlain that label is `VCGI / NOAA`, which
   is exactly the credit we may **not** render: VCGI's terms name the University of Vermont, and NOAA asks
   that attribution not imply its involvement in data it did not draw. So the client resolves each label
@@ -1440,7 +1440,7 @@ point-interpolation path written up rather than built. Two findings worth carryi
   (there's no preference left to persist). **D82** — bathymetry is context, not counsel — removes what the
   doc called its hardest part: the copy that had to explain that "shallow = safer" reverses across the
   season is now **no copy at all**, since depth's safety role stays inside the decay math the skater never
-  reads. **D83** keeps each state's native contour interval and units, labelled, because resampling a
+  reads. **D83** keeps each state's native contour interval and units, labeled, because resampling a
   survey means drawing isobaths nobody surveyed. And attribution turned out smaller than feared: OSM's
   on-map obligation is the *basemap's*, while state-agency contour credits have no placement rule and
   belong at the bottom of the water body drawer with the depth provenance.

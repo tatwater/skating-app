@@ -275,7 +275,7 @@ export type NotificationView = { id: string; createdAt: number; readAt?: number 
     }
   | {
       /**
-       * A stored row whose payload the resolver didn't recognise — a shape from before the payloads
+       * A stored row whose payload the resolver didn't recognize — a shape from before the payloads
        * were typed, or a type retired after the row was written. Rendered as a plain line rather than
        * hidden, for the same reason a removed target is (A08 #5). The season purge retires these.
        */

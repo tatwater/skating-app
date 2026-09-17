@@ -41,8 +41,8 @@ const SQ_KM_TO_SQ_M = 1_000_000;
 /** Hectares → m², for LAGOS-US and ALSC, both of which report lake area in hectares. */
 const HA_TO_SQ_M = 10_000;
 
-/** Feet → metres, and acres → m². NH publishes its bathymetry in both imperial units. */
-const FEET_PER_METRE = 3.28084;
+/** Feet → meters, and acres → m². NH publishes its bathymetry in both imperial units. */
+const FEET_PER_METER = 3.28084;
 const SQ_M_PER_ACRE = 4046.8564224;
 
 // --- CSV ---
@@ -128,7 +128,7 @@ export function parseNumber(cell: string | undefined): number | undefined {
  * pure column and is why it is the one to take.
  *
  * The one consequence worth knowing: for that 0.5%, a `globathy` rung is really a reported depth
- * wearing a modelled label, so D68 under-rates it. Left alone deliberately — the substitutions are
+ * wearing a modeled label, so D68 under-rates it. Left alone deliberately — the substitutions are
  * the world's largest lakes, our region has almost none of them, and a per-row "is this substituted"
  * test would mean carrying a second column to correct a rung that is already the ladder's floor.
  */
@@ -225,7 +225,7 @@ export function parseLagosDepth(csv: string): LagosDepthRow[] {
 
 /**
  * Which rung a HydroLAKES `Depth_avg` earns. `Vol_src` 1/2 mean the volume it divides was **reported**;
- * 3 means modelled. Anything unexpected is treated as modelled — the conservative reading, since
+ * 3 means modeled. Anything unexpected is treated as modeled — the conservative reading, since
  * claiming a measurement we can't substantiate is the error that matters here.
  */
 export function hydroLakesRung(volSrc: number | undefined): DepthSource {
@@ -429,7 +429,7 @@ export interface TransformInput {
   /**
    * CSLAP lakes, read back out of `.raw/cslap/lakes.ndjson` (founder, 2026-08-09).
    *
-   * Independent of `--states` for the same reason ALSC is: the programme is New York's by
+   * Independent of `--states` for the same reason ALSC is: the program is New York's by
    * construction, so a state filter would have nothing to do.
    */
   cslap?: readonly CslapLake[];
@@ -505,7 +505,7 @@ export function transformDepths(input: TransformInput): TransformResult {
 
     // Prefer the source's own reported area over our geodesic recomputation of its polygon: it is what
     // the depth was derived from, so it is the number the area gate should compare against.
-    // `Shore_len` is km in HydroLAKES; ours is metres everywhere (D85 cross-check).
+    // `Shore_len` is km in HydroLAKES; ours is meters everywhere (D85 cross-check).
     const shorelineKm = parseNumber(String(feature.properties?.Shore_len ?? ''));
     const reportedAreaKm2 = parseNumber(String(feature.properties?.Lake_area ?? ''));
     const areaSqM =
@@ -561,7 +561,7 @@ export function transformDepths(input: TransformInput): TransformResult {
     if (merged.contested) {
       errors.push({
         key,
-        message: `${merged.rowCount} records disagree across a shallow threshold (means ${fmt(merged.means)}, maxima ${fmt(merged.maxima)}) — merged, but the shallow classification is a judgement call here`,
+        message: `${merged.rowCount} records disagree across a shallow threshold (means ${fmt(merged.means)}, maxima ${fmt(merged.maxima)}) — merged, but the shallow classification is a judgment call here`,
       });
     }
     records.push({
@@ -633,7 +633,7 @@ export function transformDepths(input: TransformInput): TransformResult {
   //
   // The mirror image of ALSC. That source has the depths and pre-GPS coordinates; this one has
   // fewer depths and a modern point, so it joins on containment far more often and needs no
-  // special handling at all. Mean only — the programme publishes no maximum.
+  // special handling at all. Mean only — the program publishes no maximum.
   for (const lake of input.cslap ?? []) {
     const key = `cslap/${lake.cslapNumber}`;
     if (!(lake.meanDepthM > 0)) {
@@ -664,8 +664,8 @@ export function transformDepths(input: TransformInput): TransformResult {
   const nh = nhLakeDepths(input.nhBands ?? []);
   for (const lake of nh.lakes) {
     const key = `nh-bands/${lake.auId}`;
-    const maxDepthM = lake.maxDepthFt / FEET_PER_METRE;
-    const meanDepthM = lake.meanDepthFt / FEET_PER_METRE;
+    const maxDepthM = lake.maxDepthFt / FEET_PER_METER;
+    const meanDepthM = lake.meanDepthFt / FEET_PER_METER;
     records.push({
       key,
       point: { lat: lake.lat, lng: lake.lng },

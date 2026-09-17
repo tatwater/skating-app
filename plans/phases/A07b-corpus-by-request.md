@@ -1,4 +1,4 @@
-# A07b — Corpus by request: the skater says "this is skateable", and the catalogue answers
+# Phase A07b — Corpus by request: the skater says "this is skateable", and the catalog answers
 
 > **Status:** ✅ **Built 2026-09-16, two PRs** — PR 1 (`phase-n7b-corpus-lifecycle`, #61): the
 > lifecycle model — standing, transitions, the seed, the rollover, the surfaces, the docs. PR 2
@@ -36,7 +36,7 @@ The entire decision rests on one sentence:
 the floor globally and re-importing ~100,000 rows to rescue one pond. Nobody would ever do it, so in
 practice a missing pond has no remedy at all.
 
-This is the scalpel: a skater points at water we filtered out, and if a catalogue knows about it, it
+This is the scalpel: a skater points at water we filtered out, and if a catalog knows about it, it
 comes into the corpus — that body, alone, with its real geometry.
 
 **It also dissolves a question A07a could not answer honestly.** A07a measured 19,610 unnamed bodies NHD
@@ -46,7 +46,7 @@ skate this" is evidence, and a threshold invented at a desk is not.
 
 ---
 
-## D106 — The request is a coordinate, and the catalogue supplies the geometry
+## D106 — The request is a coordinate, and the catalog supplies the geometry
 
 **Proposed.** A user long-presses (mobile) or right-clicks (web) on water that has no body, and picks
 **"This is skateable"**. That writes a request — a coordinate and a requester — and nothing else.
@@ -83,13 +83,13 @@ provenance story exactly as much as one admitted by a campaign.
 ## D107 — A request is a proposal; a moderator admits
 
 **Proposed.** The resolver attaches a candidate polygon to the request and queues it. A moderator sees
-the outline on a map, the catalogue it came from, its area, and the requester, and approves or
+the outline on a map, the catalog it came from, its area, and the requester, and approves or
 declines.
 
 **Automatic admission is wrong here for a reason worth stating**: the floor deleted 102,000 bodies,
 and the overwhelming majority of them are farm dugouts, retention basins and widenings in a brook.
 One tap is not evidence against that; it is a request to look. The review is cheap — the moderator is
-approving *geometry that already exists in a catalogue*, not adjudicating a drawing.
+approving *geometry that already exists in a catalog*, not adjudicating a drawing.
 
 **Approval sets `includedByRequest: true`** and runs the body through the ordinary pipeline: cells,
 prominence, depth, elevation, wind, bathymetry. That is the whole point of `belongsInCorpus` landing
@@ -108,13 +108,13 @@ lookup.
 
 **This is the stronger signal and it should be weighted as such.** A long-press means *someone thinks
 this is skateable*; a track means *someone skated it*. Phase 08 already built `pathToBody`, so the
-mechanism exists — what is new is checking the catalogues before falling back to a path-derived
+mechanism exists — what is new is checking the catalogs before falling back to a path-derived
 outline.
 
 Two cases the resolver must distinguish, because they need different answers:
 
-- **The catalogue knows this water** — we filtered it out. Admit the catalogue's polygon.
-- **No catalogue knows it** — a flooded field, a beaver flowage, a new impoundment. That is A02's
+- **The catalog knows this water** — we filtered it out. Admit the catalog's polygon.
+- **No catalog knows it** — a flooded field, a beaver flowage, a new impoundment. That is A02's
   hand-drawn path, and Phase 08's `pathToBody` is already the right tool.
 
 ### ⚠ The client half is already written and unmounted — wire it, don't write it (noted 2026-08-16)
@@ -162,8 +162,8 @@ It was the founder's first instinct and it is a **good signal that cannot do thi
 
 It is durable — D62's second amendment keeps published observations forever, redacting only what a
 person typed ("*there is no report cascade any more*"), and seasons scope reads rather than deleting
-rows. It is already honoured: the prune's attachment check covers reports, hazards, bounties,
-`gpsActivities`, favourites, put-ins, body features and sub-areas. And it already feeds prominence,
+rows. It is already honored: the prune's attachment check covers reports, hazards, bounties,
+`gpsActivities`, favorites, put-ins, body features and sub-areas. And it already feeds prominence,
 which is where it belongs.
 
 **But at the moment of admission there is no report and no track.** That is the entire point — someone
@@ -181,7 +181,7 @@ silently changing what survives a prune — `externalId` doing three jobs, again
 
 A body admitted by request is **not re-imported** by a later campaign: the transform drops it at the
 floor before the loader ever sees it. Since the import is an upsert, the row is simply left alone and
-keeps the geometry it was admitted with. Acceptable, and deliberate — but if a catalogue later
+keeps the geometry it was admitted with. Acceptable, and deliberate — but if a catalog later
 revises that shoreline, we will not pick it up until someone re-requests. Worth revisiting if the set
 grows large.
 
@@ -215,10 +215,10 @@ and `not_in_campaign` yield; coming back from `not_in_campaign` sets `includedBy
 
 **The prunes demote** — all three, `deleted` kept as the tally name, `alreadyDormant` added.
 
-**The surfaces:** fan-out (`body_not_active` stop; favourites still told unless removed), weather
+**The surfaces:** fan-out (`body_not_active` stop; favorites still told unless removed), weather
 discovery, recommended strip, bounty creation and fan-out, the feed (hides reports on *removed*
 bodies, shows dormant), the weather cell registry, `listNeedingElevation` / `listNeedingWindRose`
-(`includeDormant` opt-in, `dormant` tally), imagery masks, sub-area seeding, favourites (dormant yes,
+(`includeDormant` opt-in, `dormant` tally), imagery masks, sub-area seeding, favorites (dormant yes,
 removed no), tracks (`listTracksForBody` hides removed), search (dormant badged and ranked last,
 removed absent), `get` (returns removed/dormant whole), `regionStats` (`bodiesActive`).
 
@@ -251,7 +251,7 @@ precedence, the retention arithmetic and the copy.
   deferred to keep PR 1 to the model. `activatedAt` + `listRecentActivations`' *missing* column are
   the hooks.
 - **The attachment matrix as a document.** The cells the model changed are stated in D176/D177
-  (a removed body's reports attach, reach no push surface; bays follow the water body; favourites on
+  (a removed body's reports attach, reach no push surface; bays follow the water body; favorites on
   dormant yes / removed no; tracks hidden on removed). The rest — comments, photos, access alerts,
   notification-queue rows — behave as before and were not audited cell by cell.
 - **Mobile moderator controls.** Standing is set from the web editor, like every other water body edit.
@@ -263,7 +263,7 @@ table): five kinds — `activate` · `admit` · `restore` · `contest_access` ·
 `requestKindsFor(standing)` deciding which a water body admits; `create` (one open ask per person per water body
 per kind, ten open per person; an `admit` at a point we already hold is refused with `known_water`
 + the body and its standing); `resolveAdmit` (an action: one fetch of the 3DHP waterbody layer,
-parsed by `parseCatalogueResponse` — smallest containing polygon, classified, with provenance;
+parsed by `parseCatalogResponse` — smallest containing polygon, classified, with provenance;
 misses and outages recorded on the row, `reresolve` for a moderator); `listMineForBody`,
 `listMine`, `openCountsForBody` (public — the "3 people have asked" count); `listQueue` /
 `queueCount` (moderator); `approve` (performs the act through `activateBody` / `restore` / `remove` /
@@ -288,7 +288,7 @@ for a service outage (the water body editor's hand-draw is the fallback today).
 ### The review pass on PR 2 — one root cause, five findings
 
 Greptile returned five times to `corpusRequests.ts`, and every finding was the same one: the
-sibling set a decision closes (open asks of one kind on one water body, or on one catalogue feature)
+sibling set a decision closes (open asks of one kind on one water body, or on one catalog feature)
 has **no bound by construction**, so every read of it needed its own defense, and each defense
 created the next finding — a page cap truncated the group; walking it all could exceed a
 mutation's write budget; paging across scheduled mutations let an ask filed mid-drain inherit a
@@ -347,7 +347,7 @@ map of them, one fully-scoped workstream, and the list of what still needs scopi
 | State | Field | Set by | On the map? | Survives an ETL re-import? |
 |---|---|---|---|---|
 | **listed** | *(none of the below)* | import / approval | yes | yes — upsert on `externalId` |
-| **pending review** | `reviewStatus: 'pending'` (user-drawn, D37) | `waterBodies.create` | yes, marked | n/a — never in a catalogue |
+| **pending review** | `reviewStatus: 'pending'` (user-drawn, D37) | `waterBodies.create` | yes, marked | n/a — never in a catalog |
 | **rejected** | `reviewStatus: 'rejected'` | moderator | no (`isListed`) | n/a |
 | **merged** | `dedupStatus: 'merged'` + `mergedIntoId` (D36) | moderator / A07a dedup | no; reads follow the survivor | kept by the prune; **unverified** against the loader |
 | **removed** | `removedAt` + `removalReason` (D48) | admin `remove` | no (`isListed`) | **yes** — `importCanonical` preserves it, the prune keeps it (`kept.delisted`) |
@@ -363,7 +363,7 @@ campaign. That test is the first thing this workstream should write.
 
 ### Workstream L1 — What a `none` verdict does next: on the map and marked, never recommended
 
-> **Superseded by D176 (2026-09-16), the same day it was written.** The kickoff pass generalised
+> **Superseded by D176 (2026-09-16), the same day it was written.** The kickoff pass generalized
 > this into *standing*: a `none` body is one dormancy reason among four, drawn at the dormant rung
 > rather than the −2 demotion, and `isActive` is the one predicate. The D-number this section
 > proposed was taken by A09. Kept as the record of the argument — the *push vs reference* table below
@@ -389,7 +389,7 @@ water body nobody can lawfully reach **stops being pushed at people**. So:
 |---|---|
 | Phase 04 drive-time notification fan-out (`notifications.ts` — `bandForCoord` call site) and the 8 pm nearby digest | the map — never-hide (D49), the dim + demotion is the whole treatment |
 | A06h weather-discovery cards (`weatherDiscovery.ts:288` gates on `isListed` today, **deliberately** not on `none`) | search, and the drawer |
-| the Phase 06 recommended strip (`listFeed` recommended caps) | favourites — *if you favourited it, you know something we don't* |
+| the Phase 06 recommended strip (`listFeed` recommended caps) | favorites — *if you favorited it, you know something we don't* |
 | bounty requests fanned to nearby reporters (`bounties.ts`) | the viewport list (already sinks `none` to the bottom — A06f §4) |
 | the A08 `great_report_nearby` and `activity_detected` triggers, if the body is the subject | a report or hazard *on* the body — content is never suppressed (A06f's `AccessSection` invariant) |
 
@@ -421,14 +421,14 @@ rule and tested it across states. Listed so the pass that picks this phase up sc
 - **Keeping a removed body out of the next campaign.** `importCanonical` preserves `removedAt` and
   the prune keeps delisted rows, so today this *works by upsert* — but only because the row still
   exists. If a removed body's row were ever hard-deleted, or its `externalId` changed under a
-  catalogue re-key (A07a-3's D95 lane is still unbuilt), the next campaign re-admits it as new, with no
+  catalog re-key (A07a-3's D95 lane is still unbuilt), the next campaign re-admits it as new, with no
   memory of the takedown. A **tombstone keyed on `externalId`** (or a `removedExternalIds` set the
   loader consults) is the durable version. Wants a test: remove → hard-delete the row → re-import →
   assert absent.
 - **What happens to attached records, per state.** `bodyAttachmentKind` (the prune's guard) knows
   what *kinds* of rows hang off a body; nothing states what each transition does to them. The
   matrix to fill in, per attachment kind — reports, hazards (+ recurrences, A05c), comments, photos,
-  favourites, bounties, put-ins / parking (A06d), access alerts, sub-areas (inherit listing, A02
+  favorites, bounties, put-ins / parking (A06d), access alerts, sub-areas (inherit listing, A02
   Decision 11), weather-registry rows (A06h), notification-queue rows (A08) — against each transition:
   remove / restore / merge / unmerge / `none` / clear / prune. Some cells are known (merge: reads
   follow the survivor; sub-areas: follow the parent; prune: refuses if anything is attached); most

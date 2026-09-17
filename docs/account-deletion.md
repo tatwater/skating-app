@@ -91,7 +91,7 @@ The **observations**, indefinitely, for the community's sake rather than yours:
 
 ---
 
-## Signing back in, and what cancelling can't do
+## Signing back in, and what canceling can't do
 
 **Nothing locks you out.** The login is the last thing touched, because banning it would lock someone
 out of the very sign-in they need in order to undo.
@@ -100,9 +100,9 @@ Sign in as normal, then press **Cancel deletion** in Settings. Signing in alone 
 that's an explicit button, never inferred from a session, because someone who logs in once to save a
 photo before leaving must not silently un-delete themselves.
 
-**Cancelling keeps the account. It does not restore you.**
+**Canceling keeps the account. It does not restore you.**
 
-| Cancelling gets back | Cancelling cannot get back |
+| Canceling gets back | Canceling cannot get back |
 |---|---|
 | The account and its login | Your name, photo, bio, town, home location |
 | Your reserved @handle | The notes, comments and captions already cleared |
@@ -118,7 +118,7 @@ you might well cancel in.
 
 One field is deliberately *not* scrubbed at request, and it's worth knowing why: **date of birth**.
 Scrubbing it means writing the tombstone's fixed 1900 sentinel, which derives to *adult* — so a minor
-who cancelled would come back with an adult's posting rights. It's the one place a privacy scrub would
+who canceled would come back with an adult's posting rights. It's the one place a privacy scrub would
 open a safety hole, so it waits for finalization, where there's no coming back.
 
 ---
@@ -134,7 +134,7 @@ The line is **contributions to the public record**, not writes in general.
 | Photo uploads, recorded-track ingest | Support tickets, data export |
 | New Strava (or other provider) connections | The **aggregate-tracks opt-out** |
 | Creating a water body from a track | **Saving a lake** (favorites) |
-| **Every profile field** — name, bio, town, home location, notification and filter preferences | **Cancelling the deletion** |
+| **Every profile field** — name, bio, town, home location, notification and filter preferences | **Canceling the deletion** |
 | **Every moderator and admin *action*** — see below | Every moderator and admin **read** |
 
 Each exemption has its own reason: a hazard is no less dangerous because the person who spotted it is
@@ -188,14 +188,14 @@ Two deliberate exceptions to that emptying-out:
 they ask, so a report filed after that would go up with nobody behind it — attributed to a tombstone
 by an account still being used.
 
-**The accepted cost:** a skater on bad ice during their window can't file the hazard. Cancelling is
+**The accepted cost:** a skater on bad ice during their window can't file the hazard. Canceling is
 one tap and the message says so, but it's a real trade rather than a free win.
 
 ### Your own profile
 
 Your profile page stops showing a profile: no avatar, no name but *"Deleted skater"*, no town, bio,
 badges, trust ring or counts — with a line explaining that your reports are still helping people, that
-the words you wrote alongside them are going, and that cancelling means setting up from scratch.
+the words you wrote alongside them are going, and that canceling means setting up from scratch.
 
 This is not a preview. The row really is empty by the time it renders. And **nobody else can reach the
 page at all** — a ghost is not-found to every other viewer — so the only person who ever sees it is
@@ -361,7 +361,7 @@ Two mechanisms in this codebase both take something off the screen, and they are
 | What it does | **hides** | **erases** (private) / **redacts** (personal) |
 | What it reaches | whole reports and hazards | side-tables, and free-text fields |
 | Who it applies to | everyone | only someone who chose to leave |
-| Reversible | yes, with a labelled way back | no |
+| Reversible | yes, with a labeled way back | no |
 
 Seasonal scoping (A05a, built 2026-07-28) hides last season's reports and hazards from the default
 view — reachable by permalink, browsable by a per-lake season selector. That is not this. The 30-day
@@ -489,7 +489,7 @@ rows look right, and something is quietly wrong for a person who can no longer c
   was no throwaway to delete. Worth doing against a disposable account before the alpha.
 - **Deleting is one click behind a live session, and the irreversible part happens first.** The classic
   job of a grace window is protecting against a misclick or a stolen session — and here the profile
-  scrub and the redaction land *before* the window, where cancelling can't reach them. The decided fix
+  scrub and the redaction land *before* the window, where canceling can't reach them. The decided fix
   is an emailed confirmation whose link forces a Clerk re-authentication even with a live session:
   three factors instead of one, and a message in the victim's inbox saying it's happening. Blocked on
   Resend provisioning, with a reverification-only fallback so a mail outage can never strand somebody's
@@ -502,7 +502,7 @@ rows look right, and something is quietly wrong for a person who can no longer c
   [D66](../plans/01-decisions.md#d66--a-departed-skaters-photos-split-on-evidential-value-and-expire-at-the-season-boundary-a05a)
   and built in A05a (2026-07-28).** This was the largest unresolved question in the design: a photo on a
   surviving report or hazard was kept whole — bytes, timestamp, coordinate — and the *image* is a far
-  larger identifiability surface than any text field on this page. Faces, a licence plate, a house
+  larger identifiability surface than any text field on this page. Faces, a license plate, a house
   behind the put-in, the departed skater themselves.
 
   It was never simply "erase them", because a photo is also the most *evidential* thing in a hazard
@@ -546,7 +546,7 @@ rows look right, and something is quietly wrong for a person who can no longer c
   with.
 - **No implicit cancel on sign-in** — the intent to stay is stated, never inferred. Which is also why
   posting doesn't cancel it: the app refuses the post rather than reading it as a change of heart.
-- **No restore.** Cancelling stops the deletion; it doesn't undo one. Nothing in the system keeps a
+- **No restore.** Canceling stops the deletion; it doesn't undo one. Nothing in the system keeps a
   shadow copy of a scrubbed profile so that it could.
 - **No selective content deletion.** There's no "delete my reports but keep my account". The lever for
   leaving is leaving.

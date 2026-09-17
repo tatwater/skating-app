@@ -12,7 +12,7 @@ import {
   type EpqsOutcome,
   epqsUrl,
   parseEpqsResponse,
-  resolutionMetres,
+  resolutionMeters,
 } from './epqs';
 
 /** The live response for Paugus Bay's interior point — Winnipesaukee's surface, from 1 m LiDAR. */
@@ -126,30 +126,30 @@ describe('parseEpqsResponse', () => {
   });
 });
 
-describe('resolutionMetres — because 3DEP does not always answer in metres', () => {
-  it('passes a metre figure through', () => {
-    expect(resolutionMetres(1, 44)).toBe(1);
-    expect(resolutionMetres(30, 44)).toBe(30);
+describe('resolutionMeters — because 3DEP does not always answer in meters', () => {
+  it('passes a meter figure through', () => {
+    expect(resolutionMeters(1, 44)).toBe(1);
+    expect(resolutionMeters(30, 44)).toBe(30);
   });
 
   it('converts the degree-expressed form the Frost Cove tile returned', () => {
     // Measured 2026-08-08: 44 of 45 probes returned `1`, and this one returned
     // 0.00003086419871794868 — not a 31-micrometre DEM, but 3.4 m as a fraction of a degree.
     // Storing both raw would silently break D104's "re-stamp the coarse ones" comparison.
-    const metres = resolutionMetres(0.00003086419871794868, 44.99);
-    expect(metres).toBeGreaterThan(2);
-    expect(metres).toBeLessThan(5);
+    const meters = resolutionMeters(0.00003086419871794868, 44.99);
+    expect(meters).toBeGreaterThan(2);
+    expect(meters).toBeLessThan(5);
   });
 
   it('reads a string, which is how several numeric fields arrive here', () => {
-    expect(resolutionMetres('10', 44)).toBe(10);
+    expect(resolutionMeters('10', 44)).toBe(10);
   });
 
   it('returns undefined for a missing or nonsensical value rather than guessing', () => {
-    expect(resolutionMetres(undefined, 44)).toBeUndefined();
-    expect(resolutionMetres(0, 44)).toBeUndefined();
-    expect(resolutionMetres(-1, 44)).toBeUndefined();
-    expect(resolutionMetres('nope', 44)).toBeUndefined();
-    expect(resolutionMetres(null, 44)).toBeUndefined();
+    expect(resolutionMeters(undefined, 44)).toBeUndefined();
+    expect(resolutionMeters(0, 44)).toBeUndefined();
+    expect(resolutionMeters(-1, 44)).toBeUndefined();
+    expect(resolutionMeters('nope', 44)).toBeUndefined();
+    expect(resolutionMeters(null, 44)).toBeUndefined();
   });
 });

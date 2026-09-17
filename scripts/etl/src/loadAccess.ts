@@ -21,7 +21,7 @@
  *
  * ## Failures are isolated, not fatal
  *
- * Also inherited from A06a: one dense neighbourhood must not kill a run with 1,600 loadable batches
+ * Also inherited from A06a: one dense neighborhood must not kill a run with 1,600 loadable batches
  * behind it. Isolated failures are recorded and skipped, five consecutive aborts, and skipped batches
  * are itemized **by OSM key** — a batch index is meaningless once the scratch file is gone, and the
  * named features are exactly what a `--batch=1` retry needs.
@@ -34,7 +34,7 @@ import { convexRun, type ImportRunKind, RunLogger, resolveDeployment } from '@sk
 /** See the header: the corpus is what the mutation reads, so the input's own size proves nothing. */
 const DEFAULT_BATCH = 8;
 
-/** Five in a row means the deployment is unwell, not that one neighbourhood is dense. */
+/** Five in a row means the deployment is unwell, not that one neighborhood is dense. */
 const MAX_CONSECUTIVE_FAILURES = 5;
 
 type Stage = 'parking' | 'put-ins';

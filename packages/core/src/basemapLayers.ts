@@ -4,7 +4,7 @@
  * The map draws from **two** Protomaps archives, not one. A whole-planet overview at z0–6 (45 MB)
  * gives the world its oceans, its landmasses, its country lines and a few names, at every zoom,
  * everywhere. A regional archive clipped to the five states gives detail — towns, roads, water — and
- * only where we have anything to say. Between them sits the mask: the neighbourhood around us that
+ * only where we have anything to say. Between them sits the mask: the neighborhood around us that
  * is not ours — sea, then land over it, then the big lakes — painted flat, which is what stops
  * Connecticut from rendering in full just because it shares a tile with New York.
  *
@@ -16,8 +16,8 @@
  * The draw order, bottom to top:
  *
  *   1. **world base** — background, earth, water. The floor: ocean everywhere, land everywhere.
- *   2. **region** — the full basemap flavour, from z6 up, over the floor and inside our states.
- *   3. **mask** — flat fill over the whole neighbourhood, hiding the region archive's tile bleed.
+ *   2. **region** — the full basemap flavor, from z6 up, over the floor and inside our states.
+ *   3. **mask** — flat fill over the whole neighborhood, hiding the region archive's tile bleed.
  *      Water as well as land, because a label anchored on the Connecticut shore overhangs the Sound,
  *      and just short of opaque, because MapLibre draws opaque fills in a pass that runs *before*
  *      every symbol. See `maskLayers` in either app.
@@ -45,9 +45,9 @@ export const REGION_MIN_ZOOM = 6;
  * The zoom admin lines and admin labels stop at.
  *
  * They come from the z0–6 overview, so past its native zoom they are drawn from overzoomed tiles and
- * carry that generalisation with them — a state line good to a few hundred metres. At low zoom that
+ * carry that generalization with them — a state line good to a few hundred meters. At low zoom that
  * is invisible. Past z10 it is not: the line would visibly part company with the mask's edge, which
- * is cut from TIGER and accurate to tens of metres, and would wander across Lake Champlain rather
+ * is cut from TIGER and accurate to tens of meters, and would wander across Lake Champlain rather
  * than down it. So they fade out, and past z10 the border is shown by where the flat fill stops —
  * which is the more accurate of the two lines anyway.
  */
@@ -109,7 +109,7 @@ export const REGION_EXCLUDED_LAYER_IDS = [
  * filter against the region outline. Theirs are dropped instead of covered; ours draw over the flat
  * fill, legible. Fills and lines stay beneath the mask, where covering is exactly right.
  *
- * The outline is generated a kilometre *outside* the true border (see `buildRegion.ts`), because the
+ * The outline is generated a kilometer *outside* the true border (see `buildRegion.ts`), because the
  * failure modes are not symmetric: too small silently drops Vermont's own town names, too large lets
  * one border town's name show against flat fill.
  */
@@ -131,7 +131,7 @@ export const REGION_LABEL_FILTER_NOTE = 'see composeBasemapLayers';
  * overhanging the border, which for a lake is rare and for a building is meaningless.
  *
  * Keyed on the **source layer** rather than the style layer's id on purpose: geometry is a property
- * of the source, so this survives the flavour renaming or adding a style layer, and a new
+ * of the source, so this survives the flavor renaming or adding a style layer, and a new
  * point-based label layer is filtered automatically rather than silently escaping.
  */
 export const REGION_LABEL_SOURCE_LAYERS = ['places', 'roads', 'pois'] as const;
@@ -151,21 +151,21 @@ export interface ZoomableLayer {
  *
  * Zoom bounds are **narrowed, never widened**: a layer that already starts at z14 keeps z14 rather
  * than being pulled down to the regional floor, and one that already ends at z12 is not extended to
- * the admin cap. The policy is a clamp on the flavour's own judgement, not a replacement for it.
+ * the admin cap. The policy is a clamp on the flavor's own judgment, not a replacement for it.
  */
 export function composeBasemapLayers<L extends ZoomableLayer>(input: {
   /** `layers()` against the whole-planet overview source. */
   world: readonly L[];
   /** `layers()` against the regional source. */
   region: readonly L[];
-  /** The mask fills, already built by the caller (they need the flavour's colors). */
+  /** The mask fills, already built by the caller (they need the flavor's colors). */
   mask: readonly L[];
   /**
    * The region outline the regional archive's labels are filtered against, plus the style-spec's
-   * `convertFilter`. Omitted ⇒ labels stay beneath the mask, which is the pre-filter behaviour:
+   * `convertFilter`. Omitted ⇒ labels stay beneath the mask, which is the pre-filter behavior:
    * theirs are covered and so are the parts of ours that overhang.
    *
-   * **`convertFilter` is not optional plumbing.** The Protomaps flavour writes eight of its symbol
+   * **`convertFilter` is not optional plumbing.** The Protomaps flavor writes eight of its symbol
    * filters in *legacy* syntax (`["==", "kind", "locality"]`), and a filter is judged legacy or
    * expression as a whole — so `["all", <legacy>, ["within", …]]` is read as legacy, `within` is not
    * a legacy operator, and MapLibre rejects **the entire style**. Not the layer: the style. The map
@@ -201,7 +201,7 @@ export function composeBasemapLayers<L extends ZoomableLayer>(input: {
     .map((layer) => ({ ...layer, minzoom: Math.max(REGION_MIN_ZOOM, layer.minzoom ?? 0) }));
 
   // Without an outline to filter against there is nothing to lift, so everything stays under the
-  // mask exactly as before — a caller that has not generated one gets the old behaviour, not a
+  // mask exactly as before — a caller that has not generated one gets the old behavior, not a
   // broken map.
   if (input.regionFilter === undefined) {
     return [...base, ...regional, ...input.mask, ...overlay] as L[];
@@ -213,7 +213,7 @@ export function composeBasemapLayers<L extends ZoomableLayer>(input: {
     layer.type === 'symbol' && filterable.has(layer['source-layer'] ?? '');
   const labels = regional.filter(isFilterable).map((layer) => ({
     ...layer,
-    // ANDed rather than replacing: the flavour's own filters are what keep a locality layer from
+    // ANDed rather than replacing: the flavor's own filters are what keep a locality layer from
     // drawing every hamlet, and dropping them would trade one kind of clutter for another. Both
     // sides go through `convertFilter` first — see the note on `regionFilter` for what happens
     // when they don't.

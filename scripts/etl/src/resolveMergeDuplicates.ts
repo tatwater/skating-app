@@ -7,7 +7,7 @@
  * ## What it is for
  *
  * A master list that now collapses a duplicate pair meets a corpus still holding both halves. The
- * incoming record carries both catalogue ids, `resolveUpsert` returns `merge`, and — by D93's rule
+ * incoming record carries both catalog ids, `resolveUpsert` returns `merge`, and — by D93's rule
  * that an automatic merge which is wrong is unrecoverable in a way a queued one is not — the loader
  * writes nothing and flags both rows. Run 7 produced **110** of these, every one a pair the
  * gazetteer ordering fix correctly collapsed.

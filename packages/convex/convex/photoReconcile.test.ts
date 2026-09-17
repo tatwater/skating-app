@@ -346,7 +346,7 @@ describe('photoReconcile — season_expiry mode (D66)', () => {
     // The whole content of D66: a picture of an open lead is what the next skater on that shore needs.
     expect(await t.run((ctx) => ctx.db.get(onHazard))).not.toBeNull();
     // And the half that distinguishes this mode from the orphan check — the `reports` phase is absent
-    // on purpose, so a surviving report is no defence.
+    // on purpose, so a surviving report is no defense.
     expect(await t.run((ctx) => ctx.db.get(onReport))).toBeNull();
     expect(await t.run((ctx) => ctx.db.get(loose))).toBeNull();
   });
@@ -408,7 +408,7 @@ describe('photoReconcile — season_expiry mode (D66)', () => {
     expect(profile?.photosExpiredForSeason).toBe(seasonOf(T0));
   });
 
-  test('abandons the run if the deletion was cancelled underneath it', async () => {
+  test('abandons the run if the deletion was canceled underneath it', async () => {
     const t = harness();
     const { uploader, loose } = await seedDeparted(t);
     // Between the escalation and the run, they changed their mind. An ordinary account's photos are

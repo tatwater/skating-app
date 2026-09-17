@@ -22,7 +22,7 @@ export const env = {
   worldPmtilesUrl: import.meta.env.VITE_WORLD_PMTILES_URL ?? '',
   // Bathymetric contours (A06b). A SECOND `.pmtiles` archive, hosted alongside the basemap and added
   // to the style only while a lake's drawer is open (D81). Blank ⇒ the layer never mounts, which is
-  // the correct behaviour rather than a degraded one: contours are decoration under D82, so an
+  // the correct behavior rather than a degraded one: contours are decoration under D82, so an
   // unconfigured deployment simply shows a flat lake exactly as it does for the majority of bodies
   // that no agency ever surveyed. Public.
   bathymetryPmtilesUrl: import.meta.env.VITE_BATHYMETRY_PMTILES_URL ?? '',

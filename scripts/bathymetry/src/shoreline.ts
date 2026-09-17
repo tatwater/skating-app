@@ -58,7 +58,7 @@ import type { MultiPolygon, Polygon, Position } from 'geojson';
 export const MIN_SHORE_POINTS = 120;
 
 /**
- * Planar area of a lake, in square metres.
+ * Planar area of a lake, in square meters.
  *
  * **Interior rings subtract.** A lake with islands is smaller than its outline, and `ringsOf` — which
  * flattens every ring for the shoreline constraint, where an island's bank is as much a depth-0
@@ -66,7 +66,7 @@ export const MIN_SHORE_POINTS = 120;
  * instead of removing it.
  *
  * Equirectangular about each ring's own first latitude. Over one lake the distortion is far below
- * what this is used for: a characteristic length to normalise a coverage gap by.
+ * what this is used for: a characteristic length to normalize a coverage gap by.
  */
 export function areaSquareMeters(geometry: Polygon | MultiPolygon): number {
   const polygons = geometry.type === 'Polygon' ? [geometry.coordinates] : geometry.coordinates;
@@ -177,8 +177,8 @@ export function ringsOf(geometry: Polygon | MultiPolygon): Position[][] {
  * Resample a lake's shoreline to points no more than `spacingM` apart, each at depth 0.
  *
  * **Resampled rather than taken as-is**, and the distinction matters in both directions. OSM
- * shorelines are wildly uneven: a straight stretch may run hundreds of metres between two vertices
- * while a rocky point carries a vertex every two metres. Using the raw vertices would under-constrain
+ * shorelines are wildly uneven: a straight stretch may run hundreds of meters between two vertices
+ * while a rocky point carries a vertex every two meters. Using the raw vertices would under-constrain
  * the straight stretches — leaving the fit free to run deep right up to the beach — and pile thousands
  * of redundant constraints onto the headlands, which is where a spline is most likely to ring.
  *

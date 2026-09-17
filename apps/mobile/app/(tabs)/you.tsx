@@ -532,17 +532,17 @@ function ChannelSettings({
     'unknown',
   );
   useEffect(() => {
-    let cancelled = false;
+    let canceled = false;
     (async () => {
       if (isDeviceOptedOut()) {
-        if (!cancelled) setDevice('off');
+        if (!canceled) setDevice('off');
         return;
       }
       const token = await registerIfPermitted(effects);
-      if (!cancelled) setDevice(token ? 'on' : 'off');
+      if (!canceled) setDevice(token ? 'on' : 'off');
     })().catch(() => {});
     return () => {
-      cancelled = true;
+      canceled = true;
     };
   }, [effects]);
 

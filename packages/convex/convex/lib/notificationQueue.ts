@@ -11,7 +11,7 @@
  * this still true?"* before it delivers — re-reading the rating, the comment, the hazard's phase, the
  * flag's verdict, the bounty's status.
  *
- * **Re-check at send rather than cancel at undo.** Cancelling means every undo path — retract a
+ * **Re-check at send rather than cancel at undo.** Canceling means every undo path — retract a
  * thumb, flip a verdict, delete a comment, hide a report — has to know the queue exists and find
  * the right row; miss one and a phantom notification ships. Re-check is one place, it covers paths
  * nobody thought of, and it covers content that vanished for reasons that were never an "undo".
@@ -69,7 +69,7 @@ export const TYPE_FOR_KIND: Record<ActorQueueKind, NotificationType> = {
  * "a few seconds", and a few seconds is the *real* window — a misclick is corrected almost at once.
  * Sixty is what ships anyway because the flush cron ticks once a minute (`crons.ts`), so anything
  * shorter buys nothing measurable: effective latency is 0–60 s either way. Sixty also covers the
- * slower version of the same mistake — reading the hazard properly, realising you voted wrong,
+ * slower version of the same mistake — reading the hazard properly, realizing you voted wrong,
  * fixing it.
  */
 export const SETTLE_MS = 60 * 1000;

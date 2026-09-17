@@ -69,7 +69,7 @@ export interface PutInMarker {
    *
    * *"Lake Fairlee Boat Ramp"* is what makes a pin worth tapping rather than a dot, and it is the
    * headline of the phase's A06d §1.3: OSM already names these features, so the names arrive free with the
-   * geometry. Absent on `derived` clusters, which are a statistical artefact of report points and have
+   * geometry. Absent on `derived` clusters, which are a statistical artifact of report points and have
    * nothing to be named after.
    */
   name?: string;
@@ -78,7 +78,7 @@ export interface PutInMarker {
    * When somebody was last known to get on the ice here — the newest `skateEndTime` among the reports
    * that formed the cluster, or the write time for a stored row.
    *
-   * Put-ins are the one thing on the map deliberately exempt from every ageing rule in the app (A05a
+   * Put-ins are the one thing on the map deliberately exempt from every aging rule in the app (A05a
    * correction 1: access is the corpus's single most-discussed concern, so a marker outlives its
    * season and its author). That exemption is right, and it has a cost this field pays: an access
    * point from three winters ago renders identically to one used last week, while being the kind of
@@ -247,7 +247,7 @@ export const listForBody = query({
  * three phases while the admin card linked to the public map, which never grew a control either.
  *
  * `name` is optional and new with that UI. An `osm` launch arrives with whatever OSM called it and a
- * `derived` one is labelled by compass bearing (`resolvePutInName`), so a hand-placed launch was the
+ * `derived` one is labeled by compass bearing (`resolvePutInName`), so a hand-placed launch was the
  * one rung that could never be named — despite being the rung where somebody actually knows.
  */
 export const setOfficial = mutation({

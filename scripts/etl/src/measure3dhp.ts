@@ -1,5 +1,5 @@
 /**
- * Measure how much of 3DHP is elevation-derived, and file it as a `catalogue_edh_coverage` snapshot.
+ * Measure how much of 3DHP is elevation-derived, and file it as a `catalog_edh_coverage` snapshot.
  *
  *   pnpm --filter @skating/etl measure-3dhp [--no-live] [--date=YYYY-MM-DD] [--dry-run]
  *
@@ -43,7 +43,7 @@ import {
 } from './threeDhpArchive';
 
 const CLIP_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', '.raw-3dhp', 'waterbody');
-const METRIC = 'catalogue_edh_coverage';
+const METRIC = 'catalog_edh_coverage';
 const SERVICE = 'https://hydro.nationalmap.gov/arcgis/rest/services/3DHP_all/MapServer/60/query';
 
 function log(message: string): void {
@@ -207,7 +207,7 @@ async function main(): Promise<void> {
       return;
     }
 
-    convexRun('analytics:recordCatalogueSnapshot', {
+    convexRun('analytics:recordCatalogSnapshot', {
       metric: METRIC,
       date,
       scalar: archive.share,

@@ -184,8 +184,8 @@ function distanceOf<T>(
   const only = candidates.filter((c) => c.ref === ref);
   // Walk the buffer up until the single candidate is admitted; cheaper than exporting the raw
   // distance helper and keeps `nearestBodyForPoint` the one place that measures.
-  for (const metres of [0, 50, 100, 150, 200, 250, 300, 350, 400, 450, DEPTH_PROXIMITY_METERS]) {
-    if (nearestBodyForPoint(source.point, only, metres) !== null) return metres;
+  for (const meters of [0, 50, 100, 150, 200, 250, 300, 350, 400, 450, DEPTH_PROXIMITY_METERS]) {
+    if (nearestBodyForPoint(source.point, only, meters) !== null) return meters;
   }
   return DEPTH_PROXIMITY_METERS;
 }

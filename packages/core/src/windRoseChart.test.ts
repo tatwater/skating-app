@@ -89,7 +89,7 @@ describe('windRoseChartModel', () => {
     expect(east?.intensity).toBeCloseTo(6.26 / WIND_ARROW_REFERENCE_MPS, 9);
 
     // A calmer lake must draw visibly smaller arrows for the same sector — the property a per-lake
-    // normalisation would destroy by making every chart peak at full size.
+    // normalization would destroy by making every chart peak at full size.
     const calm = windRoseChartModel({
       rose: WILLOUGHBY_ROSE,
       meanWindMps: WILLOUGHBY_MEAN_MPS.map((v) => v / 3),
@@ -141,7 +141,7 @@ describe('windRoseChartModel', () => {
     }
   });
 
-  it('emphasises only the sector it was given, and never more than one', () => {
+  it('emphasizes only the sector it was given, and never more than one', () => {
     const m = windRoseChartModel({
       rose: WILLOUGHBY_ROSE,
       meanWindMps: WILLOUGHBY_MEAN_MPS,
@@ -153,7 +153,7 @@ describe('windRoseChartModel', () => {
     expect(m?.emphasizedSector).toBe(7);
   });
 
-  it('emphasises nothing when no sector was named', () => {
+  it('emphasizes nothing when no sector was named', () => {
     // The chart must not invent its own "most exposed": one function owns that meaning (D90) so the
     // picture and the sentence beside it cannot disagree.
     const m = model();
@@ -187,7 +187,7 @@ describe('ringFrequencies', () => {
   });
 });
 
-describe('svg serialisation', () => {
+describe('svg serialization', () => {
   it('closes the area path', () => {
     const m = model() as NonNullable<ReturnType<typeof windRoseChartModel>>;
     const d = areaPath(m);

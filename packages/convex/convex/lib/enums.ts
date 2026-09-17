@@ -53,7 +53,7 @@ export const ACTIVITY_PROMPT_STATES = ['pending', 'prompted', 'converted', 'dism
  * **`3dhp` is here for completeness rather than for traffic.** The merge's last run produced zero
  * 3DHP-sourced bodies — 3DHP re-publishes NHD across the whole Northeast, so every 3DHP feature that
  * survives the filter has an NHD counterpart that outranks it as identity (D92). But a 3DHP feature
- * matching nothing is a lake neither other catalogue draws, and refusing to store it would mean the
+ * matching nothing is a lake neither other catalog draws, and refusing to store it would mean the
  * import silently dropping exactly the kind of body this phase exists to find.
  */
 export const WATER_BODY_SOURCES = ['osm', 'nhd', '3dhp', 'user'] as const;
@@ -408,7 +408,7 @@ export const SUPPORT_STATUSES = ['open', 'in_progress', 'resolved'] as const;
 export const DATA_EXPORT_STATUSES = ['building', 'ready', 'failed'] as const;
 
 /** Bounty lifecycle (D17). */
-export const BOUNTY_STATUSES = ['open', 'fulfilled', 'expired', 'cancelled'] as const;
+export const BOUNTY_STATUSES = ['open', 'fulfilled', 'expired', 'canceled'] as const;
 
 /**
  * What the bounty-create gate decided (Phase 07-2 analytics). One row per *attempt* — including the two

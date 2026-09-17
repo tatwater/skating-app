@@ -15,7 +15,7 @@ import path from 'node:path';
 import process from 'node:process';
 import { createInterface } from 'node:readline';
 import { listRawPages, rawDir, readRawPage } from './cache';
-import { assessDensity, type DensityAssessment, summariseDensity } from './density';
+import { assessDensity, type DensityAssessment, summarizeDensity } from './density';
 import {
   groupByLake,
   type NormalizedSounding,
@@ -58,7 +58,7 @@ function report(label: string, groups: Map<string, NormalizedSounding[]>, ratios
     const assessments: DensityAssessment[] = inputs.map((input) =>
       assessDensity(input, { maxGapRatio: ratio }),
     );
-    const s = summariseDensity(assessments);
+    const s = summarizeDensity(assessments);
     const share = ((s.kept.length / assessments.length) * 100).toFixed(0);
     process.stdout.write(
       `| ${(ratio * 100).toFixed(0)}% | ${s.kept.length} | ${share}% | ` +

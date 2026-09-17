@@ -41,7 +41,7 @@ const LANE_LABELS: Record<Lane, string> = {
 
 const LANE_BLURBS: Record<Lane, string> = {
   inactive:
-    'Nobody has reported, tracked or marked anything here in three seasons, and nobody has boosted or favourited it — the July rollover, or the seed. A report brings it back on its own.',
+    'Nobody has reported, tracked or marked anything here in three seasons, and nobody has boosted or favorited it — the July rollover, or the seed. A report brings it back on its own.',
   not_in_campaign:
     'The admission rules refuse it now — a raised acreage floor, a class the merge no longer takes. Shelved by a campaign prune rather than deleted. A report brings it back and keeps it by request.',
   moderator:

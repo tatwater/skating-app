@@ -135,11 +135,11 @@ const MASK_FILL_OPACITY = 0.999;
 /**
  * The flat fills that make everywhere-but-here look like nowhere — the mobile mirror of web's.
  *
- * Three layers — **sea**, **land** over it, then the major **lakes** — so the whole neighbourhood is
- * covered rather than just its land, and colored from the flavour itself so the mask is the same
- * white and pale grey the basemap already paints with.
+ * Three layers — **sea**, **land** over it, then the major **lakes** — so the whole neighborhood is
+ * covered rather than just its land, and colored from the flavor itself so the mask is the same
+ * white and pale gray the basemap already paints with.
  *
- * **`fill-opacity: 0.999` is load-bearing**, not a rounding artefact: MapLibre only sends a fill to
+ * **`fill-opacity: 0.999` is load-bearing**, not a rounding artifact: MapLibre only sends a fill to
  * the opaque render pass at exactly opacity 1, and symbols render in the translucent pass afterwards
  * with depth testing off — so an opaque mask draws *under* the labels it is meant to hide, whatever
  * the layer order says. See web's `maskLayers` for the longer version.
@@ -169,7 +169,7 @@ function maskLayers(flavor: MapFlavor): StyleSpecification['layers'] {
  * `regionUrl` is the archive clipped to the five states — detail, from z6 up. `worldUrl` is a
  * whole-planet z0–6 overview that gives the map oceans and continents at every zoom, everywhere;
  * without it the map ends in a straight line wherever the regional archive's bbox ended. It is
- * optional, and a build with no world archive degrades to the previous behaviour rather than to a
+ * optional, and a build with no world archive degrades to the previous behavior rather than to a
  * blank screen — which matters more here than on web, since `resolveBasemapSource` may hand back a
  * local `file://` archive with no overview beside it.
  *
@@ -311,7 +311,7 @@ export interface MappableBody {
  * `selfFlaggedIds` are the bodies **this viewer** has reported as having no public access (A06f) —
  * dimmed for them alone, because an unconfirmed report must not change anyone else's map. Carried as
  * a property rather than a filtered layer so both clients share one opacity expression; that RN gap
- * above is exactly why web puts it in properties too instead of using feature-state as favourites do.
+ * above is exactly why web puts it in properties too instead of using feature-state as favorites do.
  */
 export function waterBodiesToFeatureCollection(
   bodies: readonly MappableBody[],

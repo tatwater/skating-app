@@ -228,7 +228,7 @@ const CONDITION_FIELD = {
  *
  * ⚠ **This predicts the round trip rather than allowing a tolerance**, and the difference is not
  * academic. Both inputs accept decimals, so "did these two round to the same whole unit?" would call
- * 26.4 °F typed over a modelled 26 °F *unchanged* and silently restore the model's number — throwing
+ * 26.4 °F typed over a modeled 26 °F *unchanged* and silently restore the model's number — throwing
  * away an edit to protect provenance, which is a worse trade than the bug it fixes. Reconstructing
  * `toMetric(display(stored))` and comparing exactly has no such window: the arithmetic is the same
  * ops in the same order as the form's, so an untouched field matches bit for bit, and anything the

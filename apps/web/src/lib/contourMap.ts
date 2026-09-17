@@ -15,7 +15,7 @@
  * So the ramp is drawn from **`ice`** — the brand hue — and varies only in lightness. The hazard
  * palette is `danger` (red), `warning` (amber) and `success` (green); a cyan line cannot be read as a
  * point on that scale. Deliberately *not* a multi-hue ramp, however much more legible a
- * green→yellow→red depth scale would be: legibility is not the constraint being optimised here, and
+ * green→yellow→red depth scale would be: legibility is not the constraint being optimized here, and
  * the most readable version of this layer is the one that most looks like a severity scale.
  *
  * ## Why the ramp direction flips between themes

@@ -14,7 +14,7 @@ const STATUS_LABEL: Record<string, string> = {
   open: 'Open',
   fulfilled: 'Fulfilled',
   expired: 'Expired',
-  cancelled: 'Cancelled',
+  canceled: 'Canceled',
 };
 
 /** "3.2 mi away" — a browse row's distance when `listOpen` was asked to sort by proximity. */
@@ -41,7 +41,7 @@ export default function BountiesScreen() {
 
   // Reuse an already-granted foreground permission; never prompt from the browse tab.
   useEffect(() => {
-    let cancelled = false;
+    let canceled = false;
     (async () => {
       try {
         const perm = await Location.getForegroundPermissionsAsync();
@@ -49,13 +49,13 @@ export default function BountiesScreen() {
         const pos = await Location.getCurrentPositionAsync({
           accuracy: Location.Accuracy.Balanced,
         });
-        if (!cancelled) setCoord({ lat: pos.coords.latitude, lng: pos.coords.longitude });
+        if (!canceled) setCoord({ lat: pos.coords.latitude, lng: pos.coords.longitude });
       } catch {
         // Location unavailable — keep the home-sort fallback below.
       }
     })();
     return () => {
-      cancelled = true;
+      canceled = true;
     };
   }, []);
 

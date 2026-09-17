@@ -236,7 +236,7 @@ crons.interval(
  * The corpus-standing rollover (A07b) — the third once-a-year job, same shape.
  *
  * Every active body with no report, track or hazard in the last `INACTIVE_SEASONS` (three) seasons
- * and no standing human decision (a curated boost, a favourite) becomes dormant: off every push
+ * and no standing human decision (a curated boost, a favorite) becomes dormant: off every push
  * surface, drawn only when zoomed in on, and back the moment someone reports on it. Automatic
  * because dormancy is cheap to undo; recorded as an `importRuns` row so "did this season's pass
  * finish" is a fact, and gated on that row so the daily tick outside July 1–14 costs one indexed
@@ -277,7 +277,7 @@ crons.interval('refresh nws alerts', { minutes: 15 }, internal.weatherAlerts.ref
 
 /**
  * Map summary cards (A06c §5). Six-hourly because the only thing this catches is *time* — a report
- * ageing out of the 14-day window, or a season boundary — and neither is urgent to the hour. Every
+ * aging out of the 14-day window, or a season boundary — and neither is urgent to the hour. Every
  * event-driven change to a card already happens synchronously on the write that caused it.
  */
 crons.interval(

@@ -1,5 +1,5 @@
 /**
- * Reconciling one lake across two catalogues — the decision, without the I/O (A07a step 2, D93).
+ * Reconciling one lake across two catalogs — the decision, without the I/O (A07a step 2, D93).
  *
  * ## What this is for, and what it must not become
  *
@@ -24,12 +24,12 @@
  *
  * ## Why GNIS proposes but never decides
  *
- * The GNIS Feature ID is the one identifier all three catalogues carry, and an exact match on it is
- * far stronger evidence than any geometric score. But GNIS names **places**, and a catalogue may
+ * The GNIS Feature ID is the one identifier all three catalogs carry, and an exact match on it is
+ * far stronger evidence than any geometric score. But GNIS names **places**, and a catalog may
  * split one place into several features: **92 GNIS ids resolve to more than one NHD body** (measured
  * over the archives, 0.8% of 10,984). So a GNIS agreement *narrows the candidates* and *lowers the
  * bar* — it never bypasses the geometry check, because the case where it would help most (a lake one
- * catalogue splits) is exactly the case where it is wrong.
+ * catalog splits) is exactly the case where it is wrong.
  */
 
 import type { MultiPolygon, Polygon } from 'geojson';
@@ -38,10 +38,10 @@ import { type BBox, bboxIntersects, polygonIoU, surfaceAreaSqM } from './geometr
 /**
  * The overlap two polygons need before we will call them the same lake.
  *
- * **0.5 means they share more area than they don't.** Two catalogues tracing the same shoreline
+ * **0.5 means they share more area than they don't.** Two catalogs tracing the same shoreline
  * routinely land at 0.85–0.98; the measured OSM-vs-NHD median disagreement on area is 2.4%. A pair
  * scoring below 0.5 is not "the same lake drawn differently", it is a bay against its parent, a
- * reservoir against the river it dams, or two neighbours in a chain.
+ * reservoir against the river it dams, or two neighbors in a chain.
  *
  * Set from what the failure looks like rather than from a target match rate: the point is to refuse
  * the Moosehead/North Bay class, and a bay is typically well under 0.3 of its parent.
@@ -49,7 +49,7 @@ import { type BBox, bboxIntersects, polygonIoU, surfaceAreaSqM } from './geometr
 export const RECONCILE_MIN_IOU = 0.5;
 
 /**
- * The bar when both catalogues independently assert the same GNIS Feature ID.
+ * The bar when both catalogs independently assert the same GNIS Feature ID.
  *
  * Lower, because the geometric evidence is no longer alone — a shared GNIS id is two publishers
  * agreeing this is the same named place. Still a real bar, not a bypass: a lake NHD splits into two
@@ -68,9 +68,9 @@ export const RECONCILE_MIN_IOU_WITH_GNIS = 0.3;
 export const RECONCILE_MIN_MARGIN = 0.15;
 
 /**
- * A precomputed geodesic area, in square metres.
+ * A precomputed geodesic area, in square meters.
  *
- * **Optional, and purely an optimisation — but a load-bearing one at merge scale.** The area bound
+ * **Optional, and purely an optimization — but a load-bearing one at merge scale.** The area bound
  * below is evaluated once per *pair*, so without this a candidate's area is recomputed for every
  * target that comes near it, over its full vertex list. Lake Champlain is 10,755 vertices and sits in
  * hundreds of grid cells; a three-lane merge over 264,000 features re-walks those vertices millions
@@ -78,9 +78,9 @@ export const RECONCILE_MIN_MARGIN = 0.15;
  */
 type PrecomputedArea = { areaSqM?: number | undefined };
 
-/** One catalogue feature offered as a possible match. */
+/** One catalog feature offered as a possible match. */
 export interface ReconcileCandidate extends PrecomputedArea {
-  /** The catalogue's identifier — becomes `nhdId` when this candidate wins. */
+  /** The catalog's identifier — becomes `nhdId` when this candidate wins. */
   id: string;
   polygon: Polygon | MultiPolygon;
   bbox: BBox;
@@ -124,7 +124,7 @@ export type ReconcileOutcome =
  *
  * Measured over the 2026-08-03 run: of 9,022 unmatched bodies, **815 had a best candidate scoring
  * above zero**, 350 of them between 0.40 and the 0.50 bar and **196 within 0.05 of it**. Today all
- * 9,022 look identical in the output, which conflates two completely different facts — *"no catalogue
+ * 9,022 look identical in the output, which conflates two completely different facts — *"no catalog
  * has ever heard of this lake"* and *"we found its counterpart and rejected it by two points"*. The
  * first is coverage; the second is a threshold, and only one of them is worth a human's time.
  *
@@ -229,11 +229,11 @@ export function decideMatch(
 
   if (second && best.iou - second.iou < minMargin) {
     // Geometry cannot separate them. Picking the marginally larger number here is how a lake in a
-    // chain acquires its neighbour's identity — and the error would be invisible afterwards.
+    // chain acquires its neighbor's identity — and the error would be invisible afterwards.
     //
     // **This fired zero times across 21,665 bodies on the 2026-08-03 run, and the reason is not that
     // the rule is dead.** Two candidates both clearing 0.50 against one target must overlap each
-    // other heavily, which a catalogue deduped on its own primary key does not produce. The case it
+    // other heavily, which a catalog deduped on its own primary key does not produce. The case it
     // was written for is the *split lake*, which clears the lower `minIouWithGnis` bar (0.30) — and
     // that bar never applied, because the stored corpus carries **no GNIS ids at all**: the OSM
     // transform never captured `gnis:feature_id`, though 35.3% of named features have one.

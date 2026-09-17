@@ -6,7 +6,7 @@ import { Avatar } from './Avatar';
  * Trust display primitives (D50 decision 5), the mobile mirror of web's `TrustDisplay` — the cosmetic,
  * boost-only reputation signal rendered as a **class**, never a raw number. One shared `TrustAvatar`
  * (a colored ring + corner dot around the author avatar) is used *everywhere* an author appears (feed
- * cards, comments, report/hazard/bounty authors); the `TrustClassChip` is the labelled pill on the
+ * cards, comments, report/hazard/bounty authors); the `TrustClassChip` is the labeled pill on the
  * profile page.
  *
  * A `null` class is a real state — a below-`trusted` account past the New window — and renders **no**
@@ -67,7 +67,7 @@ export function TrustAvatar({
   );
 }
 
-/** The labelled class pill for the profile page. `null` ⇒ renders nothing (no "Not trusted", D50). */
+/** The labeled class pill for the profile page. `null` ⇒ renders nothing (no "Not trusted", D50). */
 export function TrustClassChip({ trustClass }: { trustClass: TrustClass | null }) {
   if (!trustClass) return null;
   const color = TRUST_CLASS_COLORS[trustClass];

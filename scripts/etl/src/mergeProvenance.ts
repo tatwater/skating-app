@@ -9,7 +9,7 @@
  * Path and the line "the loader was given no provenance sidecars" — technically true, and useless:
  * the sidecars were all on disk, sitting in the same function.
  *
- * ## One file, one stage — and the catalogue is in the name
+ * ## One file, one stage — and the catalog is in the name
  *
  * Seventeen archives is seventeen checksums, and rolling them into one `sources` stage would throw
  * away the only field that answers "is this the archive we think": `RunStage` carries exactly one
@@ -44,12 +44,12 @@ import {
 } from '@skating/run-log';
 
 /**
- * The families archive stages are filed under — **one per catalogue, not one for "sources"**.
+ * The families archive stages are filed under — **one per catalog, not one for "sources"**.
  *
  * A single `source` family was the first cut and it read badly: seventeen files under one heading,
  * with a checksum roll-up ("11/17 verified") that spans four publishers with four different
  * verification stories. Geofabrik publishes an md5, USGS publishes nothing and we check byte counts,
- * the 3DHP clip is derived and has no upstream to check at all. Per catalogue, each roll-up is a
+ * the 3DHP clip is derived and has no upstream to check at all. Per catalog, each roll-up is a
  * claim about one publisher, which is the form the question actually takes.
  */
 export const OSM_FAMILY = 'osm';
@@ -181,7 +181,7 @@ function maskStage(input: { name: string; detail: string; path: string }): RunSt
 /**
  * The stage for an archive that was not there.
  *
- * Deliberately not an omission: a corpus built without one of its four catalogues is a *different
+ * Deliberately not an omission: a corpus built without one of its four catalogs is a *different
  * corpus*, and the run row is the only place that can be noticed after the fact.
  */
 function missing(name: string, path: string, what: string): RunStage {
@@ -215,7 +215,7 @@ export const MERGE_MANIFEST_FILENAME = 'merge-manifest.json';
  * **Discovery rather than a flag, because a flag is exactly what gets forgotten.**
  * `run-canonical.sh` exists because the interesting arguments are the easy-to-drop ones — and the
  * A07a path had no wrapper at all, so the pass that loaded the entire corpus was invoked with
- * `--campaign=` and nothing else, producing a run row labelled "unscoped canonical water" with an
+ * `--campaign=` and nothing else, producing a run row labeled "unscoped canonical water" with an
  * empty Path. The complete record has to be what happens when nobody types anything.
  *
  * `override` covers the one case discovery cannot: an NDJSON copied away from the manifest that

@@ -29,7 +29,7 @@ export type OsmWaterFeature = Feature<Geometry, OsmWaterProperties>;
  */
 export interface CanonicalBody {
   /**
-   * Which catalogue this record arrived from. **No longer half the upsert key** (A07a / D93) — the
+   * Which catalog this record arrived from. **No longer half the upsert key** (A07a / D93) — the
    * ids below are — but still stored, because "where did this row come from" is a real question.
    */
   source: 'osm' | 'nhd' | '3dhp';
@@ -39,7 +39,7 @@ export interface CanonicalBody {
    */
   externalId: string;
   /**
-   * **What this lake is, in each catalogue that knows it** — the actual upsert key. At least one
+   * **What this lake is, in each catalog that knows it** — the actual upsert key. At least one
    * must be present or `importCanonical` refuses the record rather than inventing an identity.
    */
   osmId?: string;

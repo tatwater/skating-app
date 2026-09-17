@@ -49,12 +49,12 @@ export interface HazardAlert {
   hazardId: string;
   type: HazardType;
   kind: HazardAlertKind;
-  /** Metres from the skater to the hazard footprint's edge; 0 when they are inside it. */
+  /** Meters from the skater to the hazard footprint's edge; 0 when they are inside it. */
   distanceMeters: number;
 }
 
 /**
- * How close (in metres beyond the hazard's own footprint) triggers an alert. Generous on purpose: the
+ * How close (in meters beyond the hazard's own footprint) triggers an alert. Generous on purpose: the
  * footprint is already fuzzy, GPS on a cold phone is not great, and a skater with speed carries a long
  * way. Tunable in Phase 07 (D49).
  */

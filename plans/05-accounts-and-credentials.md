@@ -30,7 +30,7 @@ missing" is now the question that gates several deferred items, and the list bel
 | USGS / The National Map (NAIP) | ⬜ nothing to set up | 🆓 **no account, no key, no quota** — public-domain aerial. Ships A06e's aerial reveal. ⚠ Use **`USGSNAIPPlus`** (0.3 m), **not** `USGSImageryOnly` (caps at z16) — §14b |
 | Fly.io | ⬜ **needed for A06e** | 💰 First infrastructure we operate. Granule pipeline ≈ **$4/mo** (per-job Machines, seasonal); self-hosted ORS later ≈ **$46/mo** always-warm at 8 GB. Chosen over Railway (~$81/mo for the same ORS) — D148 |
 | Windy API | ⬜ deliberately not set up | €990/yr, and there is **no MapLibre overlay path** — we link out instead (D75, §15) |
-| Planet | ⬜ deliberately not set up | Quote-based. Their free catalogue duplicates Copernicus; only PlanetScope is new (§16) |
+| Planet | ⬜ deliberately not set up | Quote-based. Their free catalog duplicates Copernicus; only PlanetScope is new (§16) |
 | Apple Developer | ✅ enrolled | Per the Phase 08 doc. TestFlight distribution to the alpha crew still pending |
 | Strava API app | ✅ registered | **Callback domain not yet set** to the Convex `.site` host ⇒ no real OAuth round-trip yet |
 | Resend | ✅ dev, 2026-09-16 | Key + verified sending domain on dev Convex; operator alerts and A08 email send. Prod needs its own key at the cutover (D38) |
@@ -130,7 +130,7 @@ See `04-integrations.md` for per-provider integration detail.
 > key, and the obvious worry is an ETL starving the drive-time bands a user waits on. It cannot: the
 > quotas are separate, verified while directions was refusing.
 >
-> **The reset behaviour is still unexplained** and is the thing to check in the portal. A plausible
+> **The reset behavior is still unexplained** and is the thing to check in the portal. A plausible
 > reading is that HeiGIT's migration changed the free allotment from a daily quota to something
 > smaller or longer-cycled; our own usage is the only evidence we have either way.
 >
@@ -138,7 +138,7 @@ See `04-integrations.md` for per-provider integration detail.
 > circuit breaker and the pass stops calling. Before that existed, one run sent **2,978 requests to an
 > endpoint that had already said no**.
 - **Second use, same key (D87, A06d):** the **`foot-hiking`** profile for parking → put-in approach
-  distance, with `elevation: true` for **ascent in metres**. Called at **ETL time, once per put-in** and
+  distance, with `elevation: true` for **ascent in meters**. Called at **ETL time, once per put-in** and
   cached on the row — never from a request path — so it adds no per-user quota pressure. This is why
   A06d's trail-routing question needed no new vendor: *"do you know of a service with an API"* was already
   answered by an account we've had since Phase 04.
@@ -193,7 +193,7 @@ See `04-integrations.md` for per-provider integration detail.
   - Step 2's Apple login died on `iTunes service key is empty` — an Apple-side error, not a bad
     password (a stored one lives in the macOS Keychain as an **internet** password, server
     `deliver.<apple-id>`). The APNs key was created by hand at developer.apple.com and pasted in.
-  - Step 3 was done: expo.dev token labelled `convex-dev-push`, set as `EXPO_ACCESS_TOKEN` on dev.
+  - Step 3 was done: expo.dev token labeled `convex-dev-push`, set as `EXPO_ACCESS_TOKEN` on dev.
   - Verified with a direct POST to `exp.host/--/api/v2/push/send` + `getReceipts` → `status: ok`,
     then a real token in `pushTokens` from the `preview` build.
   1. **Android:** <https://console.firebase.google.com> → new project → add an Android app with
@@ -253,8 +253,8 @@ Founder ask: record cost, benefit and setup for the providers we evaluated durin
 
 **The decision:** deep-link now (no account), integrate later (free account, quota-bound).
 
-- **Licence — this is the part that unblocked a deferred roadmap item.** Copernicus Sentinel data is
-  under the **free, full and open Copernicus licence**: reproduce, distribute and adapt, with
+- **License — this is the part that unblocked a deferred roadmap item.** Copernicus Sentinel data is
+  under the **free, full and open Copernicus license**: reproduce, distribute and adapt, with
   attribution. The roadmap parked the satellite-imagery layer for want of *"an imagery source whose
   terms permit the use"* — that question is now answered, and what remains is cost, not permission.
 - **Tier 1 — the deep link (A06c, ships now): 🆓, no account, no quota.**
@@ -265,7 +265,7 @@ Founder ask: record cost, benefit and setup for the providers we evaluated durin
   - **Free-tier quota: 10,000 requests + 10,000 processing units per month; 300/min.**
   - A full-screen tile view is ~10–20 requests ⇒ only **~500–1,000 water body views/month** raw. Not enough
     for general use.
-  - **Server-side tile caching is what makes it viable**, and the open licence permits it: a popular
+  - **Server-side tile caching is what makes it viable**, and the open license permits it: a popular
     body is viewed many times but only needs fetching once per **~5-day** satellite revisit. That turns
     the quota from per-view into per-body-per-week, which fits comfortably.
   - **Benefit:** 10 m resolution is enough that open water vs. black ice vs. snow-covered ice is
@@ -300,7 +300,7 @@ Founder ask: record cost, benefit and setup for the providers we evaluated durin
 - **The acquisition date is queryable per water body**, which is what makes an honest date stamp possible:
   `USGSNAIPPlus/ImageServer/identify?…&returnCatalogItems=true` returns the source scene with
   `acquisition_date` in epoch ms. One cached call per body.
-- **Public domain.** USDA/USGS federal imagery: **no account, no key, no quota, no licence review.**
+- **Public domain.** USDA/USGS federal imagery: **no account, no key, no quota, no license review.**
 - **Cost: €0**, with no tier to outgrow.
 - **What it's for:** reading *access*, not ice — which is why it pairs with A06d rather than the weather
   work.
@@ -320,7 +320,7 @@ Founder ask: record cost, benefit and setup for the providers we evaluated durin
   | Product | Free "Testing" tier | Professional |
   |---|---|---|
   | **Map Forecast API** | 500 sessions/day, **GFS only**, 3 layers, *"development purpose only, not intended for production"* | **€990/year** (+ **€1,000** for ECMWF), 10,000 sessions/day, 40+ layers |
-  | **Point Forecast API** | 500 requests/day, and it **returns randomly shuffled and slightly modified data** | **€990/year**, 10,000 requests/day, ECMWF excluded by licence |
+  | **Point Forecast API** | 500 requests/day, and it **returns randomly shuffled and slightly modified data** | **€990/year**, 10,000 requests/day, ECMWF excluded by license |
   *(Priced per product — using both looks like ~€1,980/yr. Confirm with them before assuming a bundle.)*
 - **The blocker is technical, not financial.** The Map Forecast API is, in their words, *"a simple-to-use
   library based on Leaflet 1.4.x"* and is tightly coupled to it. **We render MapLibre.** There is no way
@@ -344,7 +344,7 @@ Founder ask: record cost, benefit and setup for the providers we evaluated durin
 - **Cost: not publicly listed — quote-based via sales.** Their pricing page carries no figures. Assume a
   commercial subscription scoped per area-of-interest; budget a real conversation, not a signup.
   *(They also run an Education & Research program; we are not academic, so it doesn't apply.)*
-- **What money does *not* buy.** Planet's public-data catalogue — Sentinel-1, Sentinel-2 L1C/L2A,
+- **What money does *not* buy.** Planet's public-data catalog — Sentinel-1, Sentinel-2 L1C/L2A,
   Landsat 4–9, HLS, Copernicus DEM — is **the same free data we can get directly from Copernicus**.
   Paying does not unlock it.
 - **What money *does* buy: PlanetScope — ~3 m, near-daily revisit.** For ice this is a genuine product

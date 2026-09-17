@@ -10,7 +10,7 @@
 import { metricDay } from '@skating/core';
 import { convexTest } from 'convex-test';
 import { describe, expect, test } from 'vitest';
-import { api } from './_generated/api';
+import { api, internal } from './_generated/api';
 import type { Id } from './_generated/dataModel';
 import schema from './schema';
 
@@ -174,12 +174,12 @@ describe('recordClientSignal', () => {
 });
 
 describe('role gates', () => {
-  test('the charts are admin-only — a moderator cannot read the series, latest, or catalogue', async () => {
+  test('the charts are admin-only — a moderator cannot read the series, latest, or catalog', async () => {
     const t = harness();
     const mod = await seedUser(t, 'mod', 'moderator');
     await expect(mod.as.query(api.analytics.series, { metrics: ['signups'] })).rejects.toThrow();
     await expect(mod.as.query(api.analytics.latest, { metrics: ['signups'] })).rejects.toThrow();
-    await expect(mod.as.query(api.analytics.catalogue, {})).rejects.toThrow();
+    await expect(mod.as.query(api.analytics.catalog, {})).rejects.toThrow();
     await expect(mod.as.query(api.analytics.bountyGateScatter, {})).rejects.toThrow();
   });
 
@@ -257,11 +257,69 @@ describe('analytics.latest', () => {
   });
 });
 
-describe('analytics.catalogue', () => {
+describe('analytics.renameMetricKey', () => {
+  const snapshot = (metric: string, date: string, scalar: number) => ({
+    metric,
+    date,
+    scalar,
+    updatedAt: Date.now(),
+  });
+
+  test('moves every row of the old key to the new one, keeping (metric, date) unique', async () => {
+    const t = harness();
+    await t.run(async (ctx) => {
+      await ctx.db.insert('metricSnapshots', snapshot('catalogue_edh_coverage', '2026-08-03', 0.1));
+      await ctx.db.insert('metricSnapshots', snapshot('catalogue_edh_coverage', '2026-09-01', 0.2));
+      // Written by the renamed code after the deploy — the newer measurement for the same date.
+      await ctx.db.insert('metricSnapshots', snapshot('catalog_edh_coverage', '2026-09-01', 0.3));
+    });
+
+    const result = await t.mutation(internal.analytics.renameMetricKey, {
+      from: 'catalogue_edh_coverage',
+      to: 'catalog_edh_coverage',
+    });
+    expect(result).toEqual({ moved: 1, dropped: 1 });
+
+    const rows = await t.run((ctx) => ctx.db.query('metricSnapshots').collect());
+    expect(rows.map((r) => [r.metric, r.date, r.scalar]).sort()).toEqual([
+      ['catalog_edh_coverage', '2026-08-03', 0.1],
+      ['catalog_edh_coverage', '2026-09-01', 0.3],
+    ]);
+  });
+
+  test('refuses a target the catalog does not know, so a typo cannot strand a series', async () => {
+    const t = harness();
+    await expect(
+      t.mutation(internal.analytics.renameMetricKey, { from: 'x', to: 'not_a_metric' }),
+    ).rejects.toThrow(/unknown target metric/);
+    // `in` would have admitted an `Object.prototype` name; the spec lookup does not.
+    await expect(
+      t.mutation(internal.analytics.renameMetricKey, { from: 'x', to: 'constructor' }),
+    ).rejects.toThrow(/unknown target metric/);
+  });
+
+  test('refuses a counter or rollup target — the cron would become a second writer', async () => {
+    const t = harness();
+    await expect(
+      t.mutation(internal.analytics.renameMetricKey, { from: 'x', to: 'signups' }),
+    ).rejects.toThrow(/not an external catalog measurement/);
+  });
+
+  test('is a no-op when the keys are equal', async () => {
+    const t = harness();
+    const result = await t.mutation(internal.analytics.renameMetricKey, {
+      from: 'catalog_edh_coverage',
+      to: 'catalog_edh_coverage',
+    });
+    expect(result).toEqual({ moved: 0, dropped: 0 });
+  });
+});
+
+describe('analytics.catalog', () => {
   test('serves each metric’s axis labels from the same edges the rollup buckets against', async () => {
     const t = harness();
     const admin = await seedUser(t, 'admin', 'admin');
-    const entries = await admin.as.query(api.analytics.catalogue, {});
+    const entries = await admin.as.query(api.analytics.catalog, {});
     const hist = entries.find((e) => e.key === 'reputation_points_hist');
     expect(hist?.shape).toBe('buckets');
     expect(hist?.bucketLabels?.at(-1)).toBe('250+');

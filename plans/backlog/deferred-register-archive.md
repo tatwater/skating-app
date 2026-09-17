@@ -72,7 +72,7 @@ Grouped by *what* is blocking, because that's what determines when it moves.
   dedup pairs~~ — **both folded into A05c (2026-07-30, D80)**, since the clustering primitive A05c needs
   across seasons is the same one they need within a season; community "same place?" confirmations and the
   re-ETL overlap scan (D36's staged half) stay here;
-  **in-app satellite imagery** (moved here from "needs design" by A06c — the licence is settled, what's
+  **in-app satellite imagery** (moved here from "needs design" by A06c — the license is settled, what's
   left is whether reads concentrate enough for server-side tile caching to fit the free quota, plus the
   standing Planet cost question); a
   **decay-magnitude refit** of `HAZARD_DECAY` + the `decayMultiplier` magnitudes against a real in-app
@@ -80,7 +80,7 @@ Grouped by *what* is blocking, because that's what determines when it moves.
   (only past the 200-scan cap); and **self-hosted ORS** for a true 90-min band (a ~$15–50/mo warm
   container — a cost/ops decision, not a technical one).
 - **Needs design before it's buildable.** ~~The **satellite imagery layer**~~ **→ resolved by A06c
-  (2026-07-30, D75): the licence question is answered** (Copernicus Sentinel data is free/full/open with
+  (2026-07-30, D75): the license question is answered** (Copernicus Sentinel data is free/full/open with
   attribution), the deep link ships in A06c, and what's left — imagery rendered *in* the app — moved to
   **Volume + calibration** below, since it's now a cost/traffic call rather than a design one. Still
   here: **in-app guides**;
@@ -168,7 +168,7 @@ The long-form write-ups the entries above point at — preserved verbatim, since
   **✅ EXPLORED — and the blocking question is answered (A06c, 2026-07-30, D75).** Kept as a pointer
   because the shape of the answer is worth carrying: *"an imagery source whose terms permit the use"* had
   been treated as an open search, and **Copernicus Sentinel data already satisfied it** — free, full and
-  open licence, reproduce/distribute/adapt with attribution. The blocker was never a missing source; it
+  open license, reproduce/distribute/adapt with attribution. The blocker was never a missing source; it
   was that nobody had checked the one obvious one.
   - **What ships in A06c:** a Copernicus Browser **deep link** per body — zero cost, zero quota, no
     account. Sentinel-2 is 10 m on a ~5-day revisit, which is enough that open water vs. black ice vs.
@@ -183,13 +183,13 @@ The long-form write-ups the entries above point at — preserved verbatim, since
     highest-frequency use of a satellite view — read the landscape, find the pull-off, check the
     put-in — is served *better* by 0.6 m summer aerial than by 10 m winter Sentinel-2, **and** it's the
     unconstrained tier. So the toggle ships on Tier 1 now; Tier 2 (dated Sentinel-2 ice imagery, with
-    server-side tile caching the open licence permits) keeps the traffic trigger under **Volume +
+    server-side tile caching the open license permits) keeps the traffic trigger under **Volume +
     calibration**.
   - **The toggle's semantics are settled (D81):** satellite is the map's **only** layer switch, it
     replaces the *base map* rather than the content, and hazards, skate paths and access points stay drawn
     in both modes. Bathymetric contours go with the base map — they're cartographic furniture, and they
     have no toggle of their own.
-  - **Planet** stays deferred as a *cost* decision (D75): their public catalogue is the same free data,
+  - **Planet** stays deferred as a *cost* decision (D75): their public catalog is the same free data,
     and only PlanetScope (~3 m, near-daily) is new. Full numbers in `05-accounts-and-credentials.md`.
 - ~~**Photo-orphan GC cron (cleanup/polish).**~~ **→ folded into A03 (2026-07-27).** The Phase 02a photo
   pipeline uploads before `reports.create`, so failed/abandoned/partial submits can strand storage. The

@@ -100,9 +100,9 @@ export interface TrailWay {
 /** Where an access point enters the network, and what it costs to reach either end of its way. */
 export interface TrailEntry {
   wayIndex: number;
-  /** Off-trail metres from the point to the vertex it snapped to. Counted in the total. */
+  /** Off-trail meters from the point to the vertex it snapped to. Counted in the total. */
   snapMeters: number;
-  /** Along-way metres from that vertex to the way's first and last vertex. */
+  /** Along-way meters from that vertex to the way's first and last vertex. */
   toStart: number;
   toEnd: number;
 }
@@ -189,7 +189,7 @@ export function createTrailGraphBuilder(): {
       if (i > 0) running += haversineMeters(way.coords[i - 1] as LatLng, point);
       cumulative[i] = running;
     }
-    // A way whose vertices are all the same point is a mapping artefact, not a trail. It would enter
+    // A way whose vertices are all the same point is a mapping artifact, not a trail. It would enter
     // the graph as a self-loop of zero length and settle in every search that reached it.
     if (running === 0) {
       degenerate++;
@@ -240,7 +240,7 @@ export function createTrailGraphBuilder(): {
  * Where a point enters the network, or nothing if no trail comes within `maxMeters`.
  *
  * Snaps to the nearest **vertex** rather than the nearest point on a segment. OSM trail geometry is
- * densely vertexed — Vermont averages ~16 vertices per way — so the difference is metres, and a
+ * densely vertexed — Vermont averages ~16 vertices per way — so the difference is meters, and a
  * vertex gives the along-way distance for free out of the cumulative array, where a projected point
  * would need it interpolated. The error is absorbed by `TRAIL_SNAP_M` being a threshold rather than a
  * measurement we report.
@@ -295,8 +295,8 @@ export function snapToTrail(
  * of nodes; `MAX_NODES_SETTLED` bounds the pathological case where "local" still means an entire
  * ski area's trail map.
  *
- * The two off-trail snaps are part of the answer: a walk is the metres from the car to the path, plus
- * the path, plus the metres from the path to the water.
+ * The two off-trail snaps are part of the answer: a walk is the meters from the car to the path, plus
+ * the path, plus the meters from the path to the water.
  */
 export function trailWalkMeters(
   graph: TrailGraph,
@@ -397,7 +397,7 @@ export function trailWalkMeters(
    * Dijkstra settles nodes in order of *node* cost, but the answer is `nodeCost + arrival`, and
    * `arrival` differs between the target way's two ends. A launch that snapped one vertex in from a
    * 2 km way's start has `toEnd ≈ 2 km`, so reaching that end first would have returned a two
-   * kilometre walk for a two hundred metre one — inside the budget, so it was returned rather than
+   * kilometer walk for a two hundred meter one — inside the budget, so it was returned rather than
    * rejected, and `pairByTrailConnectivity` then compared lots on it.
    *
    * Recorded and carried on instead: an arrival can only improve, and once the frontier's cheapest

@@ -16,7 +16,7 @@ const modules = import.meta.glob('./**/*.*s');
  *
  * So the three tests that matter most here are regressions against what shipped, not proofs that a
  * join works: the survey must reach the lake rather than its bay, must be bounded by its own
- * footprint rather than by nothing at all, and must survive a shoreline disagreement of a few metres.
+ * footprint rather than by nothing at all, and must survive a shoreline disagreement of a few meters.
  */
 describe('waterBodies.matchBathymetryLakes', () => {
   /** Insert a body directly, for a typed id. `importCanonical` below is what makes it reachable. */
@@ -34,7 +34,7 @@ describe('waterBodies.matchBathymetryLakes', () => {
         searchText: String(extra.name ?? ''),
         // The hand-inserted row has to look like an imported one, or the `importCanonical` call
         // below inserts a SECOND body instead of patching this one — the upsert keys on the
-        // catalogue id now, and a row without one matches nothing (A07a / D93).
+        // catalog id now, and a row without one matches nothing (A07a / D93).
         osmId: externalId,
         dedupStatus: 'clean' as const,
         createdAt: Date.now(),
@@ -44,7 +44,7 @@ describe('waterBodies.matchBathymetryLakes', () => {
   }
 
   /**
-   * A square body centred on `centre`. Inserted for a typed id, then run through `importCanonical`
+   * A square body centered on `center`. Inserted for a typed id, then run through `importCanonical`
    * to build the A01 cell rows — `listedBodiesNearCoord` reads those, so a hand-inserted body is
    * unreachable from any spatial lookup.
    */
@@ -53,32 +53,32 @@ describe('waterBodies.matchBathymetryLakes', () => {
     half: number,
     areaSqM: number,
     name = 'Test Lake',
-    centre = { lat: 44, lng: -72 },
+    center = { lat: 44, lng: -72 },
   ) {
     const externalId = `way/${name.replace(/\s+/g, '-')}`;
     const polygon = {
       type: 'Polygon' as const,
       coordinates: [
         [
-          [centre.lng - half, centre.lat - half],
-          [centre.lng + half, centre.lat - half],
-          [centre.lng + half, centre.lat + half],
-          [centre.lng - half, centre.lat + half],
-          [centre.lng - half, centre.lat - half],
+          [center.lng - half, center.lat - half],
+          [center.lng + half, center.lat - half],
+          [center.lng + half, center.lat + half],
+          [center.lng - half, center.lat + half],
+          [center.lng - half, center.lat - half],
         ],
       ],
     };
     const bbox = {
-      minLat: centre.lat - half,
-      minLng: centre.lng - half,
-      maxLat: centre.lat + half,
-      maxLng: centre.lng + half,
+      minLat: center.lat - half,
+      minLng: center.lng - half,
+      maxLat: center.lat + half,
+      maxLng: center.lng + half,
     };
     const id = await insertBody(t, externalId, {
       name,
       polygon,
       bbox,
-      centroid: centre,
+      centroid: center,
       surfaceAreaSqM: areaSqM,
     });
     await t.mutation(internal.waterBodies.importCanonical, {
@@ -91,7 +91,7 @@ describe('waterBodies.matchBathymetryLakes', () => {
           osmId: externalId,
           polygon,
           bbox,
-          centroid: centre,
+          centroid: center,
           surfaceAreaSqM: areaSqM,
         },
       ],
@@ -105,11 +105,11 @@ describe('waterBodies.matchBathymetryLakes', () => {
    * Spread to 80% of the half-width so every point is comfortably inside a body of the same extent:
    * the gate is being tested, not our floating-point boundary handling.
    */
-  function survey(half: number, centre = { lat: 44, lng: -72 }, n = 16) {
+  function survey(half: number, center = { lat: 44, lng: -72 }, n = 16) {
     return Array.from({ length: n }, (_, i) => {
       const t = ((i + 0.5) / n) * 2 - 1;
       const u = (((i * 5) % n) / n) * 2 - 1;
-      return { lat: centre.lat + t * half * 0.8, lng: centre.lng + u * half * 0.8 };
+      return { lat: center.lat + t * half * 0.8, lng: center.lng + u * half * 0.8 };
     });
   }
 
@@ -282,9 +282,9 @@ describe('waterBodies.matchBathymetryLakes', () => {
     expect(result.rejects[0]?.reason).toContain('no listed body within');
   });
 
-  test('a metres-wide shoreline disagreement still resolves — 7 real lakes were lost to this', async () => {
+  test('a meters-wide shoreline disagreement still resolves — 7 real lakes were lost to this', async () => {
     // Two agencies drawing the same shore from different imagery on different dates. The deepest
-    // sounding in a lake is the furthest point from any shore, so a few metres outside our polygon is
+    // sounding in a lake is the furthest point from any shore, so a few meters outside our polygon is
     // never the pond across the road. Burncoat Park Pond sat 0 m outside its own namesake; Wat-Tuh
     // Lake 1 m; Middle Pond 2 m — all rejected outright by the zero buffer this replaces.
     const t = convexTest(schema, modules);
@@ -377,32 +377,32 @@ describe('matchBathymetryLakes — the MIDAS crosswalk', () => {
     half: number,
     areaSqM: number,
     nhdId?: string,
-    centre = { lat: 44, lng: -72 },
+    center = { lat: 44, lng: -72 },
   ) {
     const externalId = `way/${name.replace(/\s+/g, '-')}`;
     const polygon = {
       type: 'Polygon' as const,
       coordinates: [
         [
-          [centre.lng - half, centre.lat - half],
-          [centre.lng + half, centre.lat - half],
-          [centre.lng + half, centre.lat + half],
-          [centre.lng - half, centre.lat + half],
-          [centre.lng - half, centre.lat - half],
+          [center.lng - half, center.lat - half],
+          [center.lng + half, center.lat - half],
+          [center.lng + half, center.lat + half],
+          [center.lng - half, center.lat + half],
+          [center.lng - half, center.lat - half],
         ],
       ],
     };
     const bbox = {
-      minLat: centre.lat - half,
-      minLng: centre.lng - half,
-      maxLat: centre.lat + half,
-      maxLng: centre.lng + half,
+      minLat: center.lat - half,
+      minLng: center.lng - half,
+      maxLat: center.lat + half,
+      maxLng: center.lng + half,
     };
     const id = await insertBody(t, externalId, {
       name,
       polygon,
       bbox,
-      centroid: centre,
+      centroid: center,
       surfaceAreaSqM: areaSqM,
       ...(nhdId ? { nhdId } : {}),
     });
@@ -417,7 +417,7 @@ describe('matchBathymetryLakes — the MIDAS crosswalk', () => {
           ...(nhdId ? { nhdId } : {}),
           polygon,
           bbox,
-          centroid: centre,
+          centroid: center,
           surfaceAreaSqM: areaSqM,
         },
       ],
@@ -426,11 +426,11 @@ describe('matchBathymetryLakes — the MIDAS crosswalk', () => {
   }
 
   /** A survey confined to the SMALL lake, so both bodies cover it and only one is right. */
-  function smallSurvey(half: number, centre = { lat: 44, lng: -72 }, n = 16) {
+  function smallSurvey(half: number, center = { lat: 44, lng: -72 }, n = 16) {
     return Array.from({ length: n }, (_, i) => {
       const a = ((i + 0.5) / n) * 2 - 1;
       const b = (((i * 5) % n) / n) * 2 - 1;
-      return { lat: centre.lat + a * half * 0.8, lng: centre.lng + b * half * 0.8 };
+      return { lat: center.lat + a * half * 0.8, lng: center.lng + b * half * 0.8 };
     });
   }
 

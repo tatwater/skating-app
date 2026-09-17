@@ -49,11 +49,11 @@ this? Is the bounty still open? If not, the notification is dropped — not retr
 that would make it true again is a new action, and that new action queues its own notification.
 
 The same minute does something else useful: five thumbs inside it become one "5 people found this
-helpful", and a thumb retracted inside it drops out of the count rather than cancelling the whole
+helpful", and a thumb retracted inside it drops out of the count rather than canceling the whole
 thing. Helpful → unhelpful → helpful, all inside one window, is exactly one notification.
 
 Why sixty seconds rather than "a few"? The queue drains once a minute, so anything shorter would be
-indistinguishable. And why re-check at send rather than cancel at undo? Because cancelling means every
+indistinguishable. And why re-check at send rather than cancel at undo? Because canceling means every
 undo path in the app — retract a thumb, delete a comment, hide a report, flip a verdict — would need to
 know the queue exists and find the right row, and the one nobody thought of would ship a phantom.
 Re-checking is one place, and it covers content that vanished for reasons that were never an "undo".

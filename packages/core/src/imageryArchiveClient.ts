@@ -12,7 +12,7 @@
  *
  * All three are static objects in R2 behind a CDN, so the correct cache policy here is *"forever,
  * within a session"*. A skater who opens five lakes in a row pays for one index and reuses every
- * manifest the lakes have in common — and neighbouring lakes share most of their granules, which is
+ * manifest the lakes have in common — and neighboring lakes share most of their granules, which is
  * the whole reason the manifest is per-granule rather than per-body.
  *
  * ## Failure is quiet on purpose, and counted so it cannot hide

@@ -7,7 +7,7 @@ import {
   localBounds,
   MAX_GRID_CELLS,
   MIN_GRID_CELLS,
-  metresPerLngDegree,
+  metersPerLngDegree,
   spanDegrees,
   TARGET_CELL_M,
 } from './grid';
@@ -125,7 +125,7 @@ describe('gridPlan', () => {
   });
 
   it('carries the ratio into the filter width but not into the increment', () => {
-    // The filter runs AFTER grdedit, so it measures real metres; the increment runs before, so it
+    // The filter runs AFTER grdedit, so it measures real meters; the increment runs before, so it
     // measures compressed ones. Miss this and the Gaussian is 4x too narrow along the axis — which
     // does not fail, it just stops removing the artifact it exists to remove.
     const isotropic = gridPlan(cloud, 1);
@@ -139,7 +139,7 @@ describe('gridPlan', () => {
     expect(plan.maskRadius).toBeCloseTo(2000 * 0.1, 6);
   });
 
-  it('honours the tunables it is given', () => {
+  it('honors the tunables it is given', () => {
     const plan = gridPlan(cloud, 1, { gridCells: 100, smoothCells: 5 });
     expect(Number(plan.increment.slice(2))).toBeCloseTo(2000 / 100, 6);
     expect(plan.filterWidthM).toBeCloseTo((2000 / 100) * 5, 6);
@@ -155,7 +155,7 @@ describe('gridPlan', () => {
   });
 
   it('floors the shoreline spacing at 5 m, so a small pond is not over-constrained', () => {
-    // Below the floor a 2 km lake asks for 4 m and a farm pond for centimetres, which would put more
+    // Below the floor a 2 km lake asks for 4 m and a farm pond for centimeters, which would put more
     // zero-depth constraints around the bank than the survey has readings in the water.
     expect(2000 / GRID_CELLS).toBeLessThan(5);
     expect(gridPlan(cloud, 1).shoreSpacingM).toBe(5);
@@ -204,13 +204,13 @@ describe('compressedCloud', () => {
   });
 });
 
-describe('metresPerLngDegree', () => {
+describe('metersPerLngDegree', () => {
   it('shrinks with latitude', () => {
-    expect(metresPerLngDegree(0)).toBeCloseTo(111_320, 0);
-    expect(metresPerLngDegree(44)).toBeLessThan(metresPerLngDegree(0));
-    // ~0.72 of a degree of latitude at our region's centre — the factor whose omission squashed every
+    expect(metersPerLngDegree(0)).toBeCloseTo(111_320, 0);
+    expect(metersPerLngDegree(44)).toBeLessThan(metersPerLngDegree(0));
+    // ~0.72 of a degree of latitude at our region's center — the factor whose omission squashed every
     // lake horizontally by 28%.
-    expect(metresPerLngDegree(44) / 111_320).toBeCloseTo(0.719, 2);
+    expect(metersPerLngDegree(44) / 111_320).toBeCloseTo(0.719, 2);
   });
 });
 

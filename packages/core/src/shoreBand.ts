@@ -29,9 +29,9 @@ import { haversineMeters, type LatLng, simplifyPath } from './geometry';
 import { HAZARD_MAX_VERTICES } from './hazardGeometry';
 
 /**
- * How far from the shoreline a tap may land and still be read as "on the shore", in metres.
+ * How far from the shoreline a tap may land and still be read as "on the shore", in meters.
  *
- * Generous, because a tap on a zoomed-out map is easily a couple of hundred metres out and the
+ * Generous, because a tap on a zoomed-out map is easily a couple of hundred meters out and the
  * affordance would be useless if it demanded precision it exists to avoid needing. But finite: without
  * a bound, a tap in the middle of a big lake snaps silently to whichever shore happens to be nearest,
  * and the skater gets a band nowhere near the thing they were pointing at.
@@ -39,12 +39,12 @@ import { HAZARD_MAX_VERTICES } from './hazardGeometry';
 export const SHORE_BAND_MAX_TAP_DISTANCE_M = 500;
 
 /**
- * Starting half-width of a shore band, in metres — how far out from the shoreline the ice is
+ * Starting half-width of a shore band, in meters — how far out from the shoreline the ice is
  * affected.
  *
  * Not the type's `HAZARD_DEFAULT_BUFFER_M`, which is a *linear hazard's* uncertainty half-width
  * (10 m for both shore types) and describes how sure you are about where a line is. A shore band's
- * width is a claim about the ice itself: rotten shore ice runs tens of metres out, not ten. Stepped
+ * width is a claim about the ice itself: rotten shore ice runs tens of meters out, not ten. Stepped
  * on the same `HAZARD_BUFFER_STEPS_M` ladder, so the control is the same pair of −/+ buttons.
  */
 export const SHORE_BAND_DEFAULT_HALF_WIDTH_M = 25;
@@ -67,7 +67,7 @@ export interface ShoreBand {
   arc: LatLng[];
   /** The band's ring as polygon-draft corners (unclosed, the way a draft holds them). */
   vertices: LatLng[];
-  /** Length of the shoreline arc in metres — what the UI shows so "1.2 km of shore" is legible. */
+  /** Length of the shoreline arc in meters — what the UI shows so "1.2 km of shore" is legible. */
   arcLengthMeters: number;
   /** True when the *longer* way round the ring was taken (Decision 4's "go the other way"). */
   theOtherWay: boolean;
@@ -144,7 +144,7 @@ function walkRing(ring: readonly LatLng[], from: number, to: number, step: 1 | -
   return out;
 }
 
-/** Total great-circle length of a path in metres. */
+/** Total great-circle length of a path in meters. */
 function pathLengthMeters(path: readonly LatLng[]): number {
   let total = 0;
   for (let i = 0; i + 1 < path.length; i++) {
@@ -276,7 +276,7 @@ export function shoreBandRefusalText(reason: ShoreBandRefusal): string {
     case 'no_boundary':
       return 'This lake’s outline isn’t detailed enough to snap to. Trace the hazard as a line instead.';
     case 'tap_off_shore':
-      return 'That wasn’t close enough to the shore. Click nearer the edge of the lake — anywhere within a few hundred metres of it.';
+      return 'That wasn’t close enough to the shore. Click nearer the edge of the lake — anywhere within a few hundred meters of it.';
     case 'different_rings':
       return 'Those two points are on different shorelines — an island and the main shore, or two separate parts of this lake. Pick two ends of the same stretch.';
     case 'degenerate_arc':

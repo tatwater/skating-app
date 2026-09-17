@@ -91,7 +91,7 @@ export interface JoinedLake {
   crosswalk?: 'confirmed' | 'promoted' | 'disagreed';
 }
 
-/** Disagreeing keys named in the log. Enough to recognise a pattern, small enough to read. */
+/** Disagreeing keys named in the log. Enough to recognize a pattern, small enough to read. */
 const CROSSWALK_SAMPLE_CAP = 15;
 
 function log(message: string): void {

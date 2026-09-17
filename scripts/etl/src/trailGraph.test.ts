@@ -86,7 +86,7 @@ describe('createTrailGraphBuilder', () => {
 describe('snapToTrail', () => {
   const graph = graphOf({ id: 'way/1', coords: run(ORIGIN, 0, 400) });
 
-  test('finds a trail within the snap radius and reports the off-trail metres', () => {
+  test('finds a trail within the snap radius and reports the off-trail meters', () => {
     const beside = destinationPoint(destinationPoint(ORIGIN, 0, 200), 90, 20);
     const entry = snapToTrail(graph, beside);
     expect(entry?.wayIndex).toBe(0);
@@ -214,7 +214,7 @@ describe('trailWalkMeters', () => {
     }
   });
 
-  /** Off-trail metres are part of the walk: the car to the path, the path, the path to the water. */
+  /** Off-trail meters are part of the walk: the car to the path, the path, the path to the water. */
   test('counts both snaps in the total', () => {
     const graph = graphOf({ id: 'way/1', coords: run(ORIGIN, 0, 500) });
     const beside = destinationPoint(ORIGIN, 90, 30);
@@ -233,7 +233,7 @@ describe('trailWalkMeters', () => {
 });
 
 describe('pairByTrailConnectivity', () => {
-  /** The case the whole pass exists for: a lot a kilometre up a trail, which no radius can reach. */
+  /** The case the whole pass exists for: a lot a kilometer up a trail, which no radius can reach. */
   test('pairs a trailhead lot with the launch its trail leads to', () => {
     const trail = run(ORIGIN, 0, 1_000);
     const graph = graphOf({ id: 'way/1', coords: trail });

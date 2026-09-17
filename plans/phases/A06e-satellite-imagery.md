@@ -10,7 +10,7 @@ with a date on it — and behind it, a season of passes you can scrub through an
 >
 > | | | |
 > |---|---|---|
-> | **PR 0** — the way in | ✅ Built 2026-08-21 | [Workstream 0](#workstream-0--getting-the-way-in-into-the-app--built-2026-08-21) — the access prerequisite that grew into a build of its own, landed on this phase's branch rather than as an A06d follow-up (founder call) |
+> | **PR 0** — the way in | ✅ Built 2026-08-21 | [Workstream 0](#0--getting-the-way-in-into-the-app--built-2026-08-21) — the access prerequisite that grew into a build of its own, landed on this phase's branch rather than as an A06d follow-up (founder call) |
 > | **PR 1** — the reveal, web only | ✅ Merged 2026-08-23 | PR **#45** |
 > | **PR 2** — the producer | ✅ Merged 2026-08-25 | PR **#46** — the Fly box, the granule transform, the masked archive, the S1 pipeline, and the single-season backfill |
 > | **PR 3** — the consumer | ✅ **Built 2026-08-26**, branch `phase-n6e-satellite-imagery-3` — **no PR opened yet, undeployed** | The Convex read path, both scrubbers, the band selector, **mobile's reveal**, attribution, and the per-frame date and cloud caveat |
@@ -48,7 +48,7 @@ with a date on it — and behind it, a season of passes you can scrub through an
 > one masked raster PMTiles per pass), **D149** (ingest is weather-gated; the archive turns over on the
 > first frame, not on a date), **D150** (derived ice classification is an observation, never counsel —
 > deferred to A06g). Carried in from D138: the Copernicus deep link, `satelliteImagery` and
-> `SATELLITE_MIN_AREA_SQM`. Still true: **D84** (two tiers, different jobs), **D75** (the licence
+> `SATELLITE_MIN_AREA_SQM`. Still true: **D84** (two tiers, different jobs), **D75** (the license
 > question was answered by Copernicus).
 
 ---
@@ -230,7 +230,7 @@ and makes the client nearly free — at the cost of needing an ETL re-run to cha
 | **OSM / ODbL** | Attribution *"reasonably calculated to make users aware"* | ⚠ **The binding one** |
 
 OSM's guidance for a browsable map wants the credit in the map corner, or — where that is impractical
-— reachable through a **clearly-labelled affordance on the map itself**. Credits that live only in a
+— reachable through a **clearly-labeled affordance on the map itself**. Credits that live only in a
 drawer, with no on-map path, is the configuration that risks non-compliance.
 
 **So: a small ⓘ on the map that opens the drawer's credits panel.** Clean map, compliant attribution,
@@ -238,14 +238,14 @@ and one place that composes the whole credit list instead of a control that grow
 
 ⚠ **This touches the existing map, not just imagery.** Both clients currently run a live MapLibre
 attribution control (`apps/web/src/components/MapView.tsx`, and `attribution` on mobile's `MapGL` at
-`MapView.tsx:568`), so this is a change to shipped behaviour and wants its own commit.
+`MapView.tsx:568`), so this is a change to shipped behavior and wants its own commit.
 
 **Strings, read off the services rather than paraphrased:**
 `USDA, USGS The National Map: Orthoimagery. Data refreshed June, 2024.` · `© OpenStreetMap
 contributors` · Copernicus Sentinel data \[year].
 
 ⚠ **Verify on device:** MapLibre native's attribution button behaves differently from GL JS's control,
-and suppressing it in favour of our own ⓘ has not been checked on Android.
+and suppressing it in favor of our own ⓘ has not been checked on Android.
 
 ---
 
@@ -283,7 +283,7 @@ ice** — it is a photograph taken on the summer solstice.
 
 ### §2.3 — Caching
 
-Public-domain imagery may be freely cached and redistributed, so there is no licence obstacle. **v1
+Public-domain imagery may be freely cached and redistributed, so there is no license obstacle. **v1
 points at the service and measures**, but the trigger to put a proxy in front is much closer than it
 was for the cached tier, because every request renders. The Tier 2 pipeline (§3) is the same
 infrastructure, so it gets designed once.
@@ -416,7 +416,7 @@ sounds like it settles this and does not.
   (`winter-2024-25`), which is what the founder asked for over calendar-year invalidation.
 
 **Backfill last season on first build**, so the feature ships with a full scrubber instead of an empty
-one that fills up over three weeks. Copernicus' catalogue is open back to 2015, so depth of backfill is
+one that fills up over three weeks. Copernicus' catalog is open back to 2015, so depth of backfill is
 a storage question, not an availability one.
 
 #### The Mt Washington problem, and why it turns out to be cheap
@@ -451,7 +451,7 @@ notes on making it safe:
    over** (D149). An over-eager gate costs a few dollars of granule fetches. **Mt Washington can make
    us start looking in September; it cannot make the app claim the season turned.**
 
-That asymmetry is licence to make the gate deliberately generous — the expensive failure is a *late*
+That asymmetry is license to make the gate deliberately generous — the expensive failure is a *late*
 gate that misses freeze-up, not an early one that wastes compute.
 
 ### §3.4 — The scrubber, and the honesty that rides with it
@@ -561,7 +561,7 @@ What exists is more useful than a dataset anyway:
   an ArcGIS FeatureServer query endpoint.** Machine-readable ground truth, in one of our five states,
   from people who watch these water bodies. **This is the validation set**, and it is better than anything the
   literature search turned up. ⚠ Two cautions: the site asserts *"©2026 Lake Stewards of Maine"* with no
-  stated licence, so **validating against it and republishing it are different acts** — ask before the
+  stated license, so **validating against it and republishing it are different acts** — ask before the
   second. And citizen-science definitions drift between observers (first skim vs. full cover), which is
   exactly what NSIDC's standard definitions are for.
 
@@ -583,7 +583,7 @@ imagery-derived ice-in date. Neither lane could produce this sentence alone.
 > **2026-08-21c:** *"Open-Meteo tells us when snow falls, imagery bands tell us if/when that snow has
 > blown away or melted or piled up into snowdrifts/dunes and ice is uncovered again?!"*
 
-That is the right division of labour, and it answers a question neither source can answer alone.
+That is the right division of labor, and it answers a question neither source can answer alone.
 **Snowfall is an event; snow *cover* is a state**, and in a Northeast winter the two come apart
 constantly — wind strips a water body bare while the gauge records six inches, or drifts pile into dunes and
 leave black ice between them. The weather lane knows what fell; **only the imagery knows what stayed**.
@@ -672,14 +672,14 @@ the OSM extract on the reasoning that a successful `foot-hiking` route *is* the 
 > over 150 m (~2 days), or **262 hike-in legs (under one day)**.
 >
 > **Founder call, 2026-08-21: hike-in only.** The line exists to be drawn and to be buffered into
-> A06e's mask, and below 800 m it is a few metres of tarmac between a car and a bank — invisible at
+> A06e's mask, and below 800 m it is a few meters of tarmac between a car and a bank — invisible at
 > the drawer's zoom, invisible inside a 30 m buffer, and paid for on every read of the row. The
 > residue, stated: the 2,087 legs between 150 m and 800 m keep their distance and their chip and
 > render no line, so A06e's mask on a short-walk body buffers the water body and the parking alone.
 
 **What shipped.** `approachPathWanted` is one predicate shared by the parser and the ETL, so a leg can
 never be re-routed against the quota and then have its geometry thrown away. The path is stripped to
-2D (`elevation: true` returns `[lng, lat, metres]` triples, and the climb is already on the row),
+2D (`elevation: true` returns `[lng, lat, meters]` triples, and the climb is already on the row),
 simplified to `APPROACH_PATH_TOLERANCE_M` — 5 m, the corpus shoreline's own tolerance — and refused
 entirely above `APPROACH_PATH_MAX_VERTICES` rather than truncated, because a truncated route is a walk
 that stops in the woods.
@@ -703,7 +703,7 @@ authoritatively as the routed ones beside it.
 > the same pass.
 
 A06d's *§Sized 2026-08-14* recommended *"don't, yet"* and the founder overrode it. The case is real and
-nothing else reaches it: `pairAccessFeatures` caps at `PARKING_INFER_RADIUS_M`, so **a lot a kilometre
+nothing else reaches it: `pairAccessFeatures` caps at `PARKING_INFER_RADIUS_M`, so **a lot a kilometer
 up a trail never pairs, and a leg that never pairs is never routed.** Widening the radius does not
 help — the measured distance curve from unpaired lots to the nearest launch rises monotonically to
 3–8 km with no trailhead population to aim at.
@@ -729,7 +729,7 @@ stream into `Float64Array`s, build a graph, and are discarded. Nothing about tra
 
 ### 0c — The walk, drawn
 
-A06d gave a distance, a climb and a Hike-In chip and no way to see **where** the kilometre goes. The
+A06d gave a distance, a climb and a Hike-In chip and no way to see **where** the kilometer goes. The
 line now renders on both clients from `packages/core/src/approachLayer.ts` — dashed, because a solid
 line reads as surveyed infrastructure and this is an ORS route over OSM's trail data.
 
@@ -820,7 +820,7 @@ coastal launches we do not carry.
 **PR 0 — the way in.** ✅ **Built 2026-08-21**, on this branch rather than inside A06d (founder call —
 A06d is merged, and a follow-up PR against it would have been a second review of the same code). The
 route geometry, the trail connectivity pass the founder took at the same time, and the approach drawn
-on both clients. See [Workstream 0](#workstream-0--getting-the-way-in-into-the-app--built-2026-08-21)
+on both clients. See [Workstream 0](#0--getting-the-way-in-into-the-app--built-2026-08-21)
 — including why *"while the routing pass is still running"* arrived eight days too late to be free.
 
 **PR 1 — the reveal, web only. Zero infrastructure.** ✅ **Merged 2026-08-23** (PR #45).
@@ -866,7 +866,7 @@ still settling**, which is the point of putting the seam here.
 > logic that the render loop has already caught three separate bugs in.
 >
 > **The cost, stated plainly:** mobile skaters get the Copernicus deep link and no reveal until PR 3.
-> **The fallback if PR 3's clipping does not generalise:** Skia, revisited then rather than now.
+> **The fallback if PR 3's clipping does not generalize:** Skia, revisited then rather than now.
 
 **PR 2 — the producer.** ✅ **Merged 2026-08-25** (PR #46). **Everything server-side, so that PR 3 can
 be everything client-side** *(founder, 2026-08-25 — this is the seam, and it is what decides where a
@@ -937,7 +937,7 @@ everything user-facing that reads what PR 4 derived. This is A06g's content, and
 > anywhere earlier: it needs the derived ice-coverage series PR 4 computes, and it needs enough of a
 > season behind it to know that a jump is real rather than a cloud artifact.
 >
-> **Who gets told, in the founder's order of preference:** a body the user has **favourited** first,
+> **Who gets told, in the founder's order of preference:** a body the user has **favorited** first,
 > then bodies inside their **drive-time** radius (Phase 04 already models this, and its
 > quality-weighting distinguishes *browse* from *notify* — this is squarely the notify side), then
 > **popular** bodies generally.
@@ -1041,7 +1041,7 @@ irreversibly.
   timeline. No new layout — the control exists only while the map is visible, which was already D146's
   rule.
 - **No zoom floor.** *"They should be able to zoom so far out that it's not visible or so far in that
-  it's too blurry to read. That's up to them."* Free to honour: the archive's own tiling decides what
+  it's too blurry to read. That's up to them."* Free to honor: the archive's own tiling decides what
   renders, and it matches the phase's posture — we show the picture, the skater reads it. (Client-side
   restraint on *firing* NAIP requests at absurd zooms is courtesy, not a product rule.)
 - **Parent bodies only.** Search a bay, jump to it, turn imagery on, and **the whole water body reveals** —
@@ -1100,7 +1100,7 @@ once.
 > `winter-2025-26` is fully replaced — 4,381 `visual` + 4,381 `scl` + 503 `vh` + 4,884 manifests,
 > **every object fresh and zero stale**, audited by modification time rather than by presence. One
 > pass carried the SCL raster, the sub-area zone grids, thermal-noise removal, the local-`h_ref`
-> geocode correction and the four-colour SCL palette. Cut throughout by a single pinned image
+> geocode correction and the four-color SCL palette. Cut throughout by a single pinned image
 > (`ace80ca`), so every manifest's cost figures name identifiable code.
 >
 > ⚠ **The wall-clock estimate above is wrong for a re-cut, and the reason is worth keeping.** The
@@ -1114,9 +1114,9 @@ once.
 
 | item | why it wants a pass we are already making |
 | --- | --- |
-| ~~**Per-body NDSI**~~ (green + swir16) | ✅ **BUILT 2026-08-25** as `zonal-ndsi.py` — a statistic, not a frame (two band warps, no tiling). ⚠ **It found a trap that would have ruined the nine-season series:** L2A reflectance is `DN·scale + offset`, and baseline **04.00 (2022-01-25)** introduced `BOA_ADD_OFFSET = -1000`. The scale cancels in a normalised index; the offset does not. Same synthetic snow pixel reads **NDSI 1.000 on the new baseline and 0.778 on the old** — either side of the 0.4 threshold the literature uses. A nine-season backfill spans that date, so a hardcoded offset puts a step change at January 2022 indistinguishable from a climate signal. Read per granule from STAC's `raster:bands`, skipped rather than guessed. |
+| ~~**Per-body NDSI**~~ (green + swir16) | ✅ **BUILT 2026-08-25** as `zonal-ndsi.py` — a statistic, not a frame (two band warps, no tiling). ⚠ **It found a trap that would have ruined the nine-season series:** L2A reflectance is `DN·scale + offset`, and baseline **04.00 (2022-01-25)** introduced `BOA_ADD_OFFSET = -1000`. The scale cancels in a normalized index; the offset does not. Same synthetic snow pixel reads **NDSI 1.000 on the new baseline and 0.778 on the old** — either side of the 0.4 threshold the literature uses. A nine-season backfill spans that date, so a hardcoded offset puts a step change at January 2022 indistinguishable from a climate signal. Read per granule from STAC's `raster:bands`, skipped rather than guessed. |
 | ~~**The DEM-corrected radar geocode**~~ *(question 8)* | ✅ **BUILT AND CALIBRATED 2026-08-25.** See [what the calibration found](#the-radar-geocode-calibrated-2026-08-25) — it is no longer a queue item, and two of the things it turned up were not what the queue expected. |
-| ~~**The SCL raster, now that it is on by default**~~ *(founder, 2026-08-25)* | ✅ **DONE 2026-08-26 by the season re-cut.** `scl` is now a real band at **4,381 frames, matching `visual` exactly** — the selector's third option has data. The queue's own argument is what paid off here: the item sat waiting for a pass rather than justifying one, and when the pass came it carried the sub-area grids, the de-noised radar, the geocode correction and the four-colour palette with it. PR 3 should still render whatever bands the index offers rather than a hardcoded three. |
+| ~~**The SCL raster, now that it is on by default**~~ *(founder, 2026-08-25)* | ✅ **DONE 2026-08-26 by the season re-cut.** `scl` is now a real band at **4,381 frames, matching `visual` exactly** — the selector's third option has data. The queue's own argument is what paid off here: the item sat waiting for a pass rather than justifying one, and when the pass came it carried the sub-area grids, the de-noised radar, the geocode correction and the four-color palette with it. PR 3 should still render whatever bands the index offers rather than a hardcoded three. |
 
 ~~⚠ **Measure the SCL raster on a dense granule before committing a season to it.**~~ ✅ **MEASURED
 2026-08-26, and the gate passes.** The worry was that a season-wide average of +24% job time hid a
@@ -1139,7 +1139,7 @@ it predates both the tiler swap and the removal of the statistics' intermediates
 ⚠ **The gate was worth running for a second reason.** The first attempt ran against an image built
 from an earlier commit, which is invisible in any artifact — so the run *timed* the pipeline without
 proving which pipeline it timed. Rebuilding from `HEAD` and re-running is what made `color_scl`'s
-presence in the manifest the evidence that the four-colour palette shipped. **A season run should pin
+presence in the manifest the evidence that the four-color palette shipped. **A season run should pin
 `FLY_IMAGE` to a freshly built image and record the commit**, or the manifests record cost for code
 nobody can identify afterwards.
 
@@ -1385,7 +1385,7 @@ that produced the `27% ice / 65% water` reading can now answer the question that
 **A06e — Imagery, scoped to a water body: the aerial reveal and the freeze-up timeline.** ✅ **Built through
 PR 3, 2026-08-26** — a water body can be revealed as a photograph and its freeze-up scrubbed, on **both**
 clients. Re-scoped 2026-08-21; see [`phases/A06e-satellite-imagery.md`](./A06e-satellite-imagery.md);
-decisions **D146**–**D151**, plus **D84** (two tiers) and **D75** (the licence question is answered).
+decisions **D146**–**D151**, plus **D84** (two tiers) and **D75** (the license question is answered).
 Gated behind A06d, which is complete on dev.
 
 **Four of six PRs done.** **PR 0** the way in (2026-08-21) · **PR 1** the web reveal (#45, 2026-08-23)

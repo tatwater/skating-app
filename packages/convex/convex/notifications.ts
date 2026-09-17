@@ -162,7 +162,7 @@ export async function enqueueReportNotifications(
   if (!body) return;
 
   // 1. Favorites — notify anyone who favorited this body (any distance), default on. A removed body
-  // is the one exception (A07b): a takedown must not keep paging the people who favourited it.
+  // is the one exception (A07b): a takedown must not keep paging the people who favorited it.
   if (standingOf(body).standing === 'removed') return;
   //
   // **The recipient set is built first, then enqueued once per person** (A09 / D175). A bay favorite
@@ -223,7 +223,7 @@ export const fanOutNearbyNotifications = internalMutation({
     if (!body) return { stopped: 'body_gone' as const };
     // Only an active body is pushed at people (A07b). A report on a machine-shelved body activated it
     // before this ran; what is left here is a `none` ruling, a moderator's dormancy or a removal —
-    // none of which "ice near you" should send anyone to. Favourites were already told above: that
+    // none of which "ice near you" should send anyone to. Favorites were already told above: that
     // is a reference surface, and they asked.
     if (!isActive(body)) return { stopped: 'body_not_active' as const };
     // A bay report is banded from the bay's own drive-time coordinate — its best put-in, else its

@@ -114,15 +114,15 @@ export const PUTIN_SHORE_RADIUS_M = 30;
  * tolerance for deciding whether an OSM slipway belongs to *this lake or the next one over* — a
  * question about identity, where being loose produces a confidently wrong answer. This is a human
  * saying "here" on a canvas locked to one lake, where identity is already settled and the only
- * question is how badly they missed. Thirty metres would reject an ordinary click at a wide zoom.
+ * question is how badly they missed. Thirty meters would reject an ordinary click at a wide zoom.
  *
  * Every put-in is snapped to the shoreline before it is stored, so the *inside* case needs no bound
  * at all: `distanceToPolygonMeters` reads 0 anywhere on the water, and a click in the middle of
- * Champlain snaps five kilometres to the nearest shore with no complaint, which is right — mid-water
+ * Champlain snaps five kilometers to the nearest shore with no complaint, which is right — mid-water
  * is the obvious "I meant the edge nearest here" gesture, and it is exactly what a floating pin is.
  *
  * The bound exists for the other direction: a click well inland is not a missed shoreline, it is
- * someone marking a trailhead or a lot, and snapping it half a kilometre onto the water would turn a
+ * someone marking a trailhead or a lot, and snapping it half a kilometer onto the water would turn a
  * mistake into a plausible-looking wrong answer that directions would then send someone to. Refusing
  * beats silently relocating, especially since there is no "move this put-in" — correcting one means
  * hiding it, which leaves a suppression row behind.
@@ -243,7 +243,7 @@ export interface OrsRouteResponse {
     };
     /**
      * The line ORS walked. `elevation: true` makes these **three**-element positions
-     * (`[lng, lat, metres]`), which is why the reader indexes rather than destructures a pair.
+     * (`[lng, lat, meters]`), which is why the reader indexes rather than destructures a pair.
      */
     geometry?: { type?: string; coordinates?: number[][] };
   }[];
@@ -252,8 +252,8 @@ export interface OrsRouteResponse {
 /**
  * How finely the approach line is kept.
  *
- * Five metres, matching the corpus shoreline's own simplification — a walking route is drawn beside a
- * lake outline already generalised to that, and keeping the path finer than the shore it runs along
+ * Five meters, matching the corpus shoreline's own simplification — a walking route is drawn beside a
+ * lake outline already generalized to that, and keeping the path finer than the shore it runs along
  * would store precision the map cannot show. An ORS foot route through a switchbacked trail arrives
  * with several hundred vertices; this typically takes a few dozen.
  */
@@ -293,7 +293,7 @@ export interface ApproachLeg {
  * Should this leg's line be kept?
  *
  * The line exists to be drawn and to be buffered into A06e's mask, and both of those want the walk a
- * skater has to think about. Below the hike-in line a path is a few metres of tarmac between a car
+ * skater has to think about. Below the hike-in line a path is a few meters of tarmac between a car
  * and a bank — invisible at any zoom the drawer uses, invisible inside a 30 m mask buffer, and paid
  * for on every read of the row.
  *
@@ -360,7 +360,7 @@ export function parseOrsFootHikingRoute(response: OrsRouteResponse): ApproachLeg
  * Three things happen here and each of them has cost us something before:
  *
  * - **The third ordinate is dropped.** `elevation: true` is mandatory for `ascent` (see
- *   `orsFootHikingBody`), so every position arrives as `[lng, lat, metres]`. A `LatLng` reader that
+ *   `orsFootHikingBody`), so every position arrives as `[lng, lat, meters]`. A `LatLng` reader that
  *   destructured a pair would silently keep the elevation as nothing at all; one that stored the
  *   triple would put a third of the array's weight into a number no map reads. The climb is already
  *   on the row as `approachAscentM`.
@@ -390,7 +390,7 @@ function approachPathFrom(coordinates: number[][] | undefined): LatLng[] | undef
  * **Not a tuning value — a shape in the data.** Sorted, the corpus's routed approaches run
  * continuously out to 4,061 m and then jump: 4.9 km, a cluster at 5.2–5.7 km, then 8 km, 17 km,
  * 26 km, and three legs of **99 km**. Every one of those long ones is a lot within
- * `PARKING_INFER_RADIUS_M` of its launch — 250 metres — that ORS could only reach by walking around
+ * `PARKING_INFER_RADIUS_M` of its launch — 250 meters — that ORS could only reach by walking around
  * an inlet, a river with no bridge, or an entire lake.
  *
  * The number ORS returns is *correct*: that genuinely is the shortest walk. It is not an **approach**,
@@ -593,7 +593,7 @@ export function describeApproach(
   return `Park here, then ${hedge} ${distance} on foot${climb}.`;
 }
 
-/** Easiest first — the order `bodyAccessKind` minimises over. */
+/** Easiest first — the order `bodyAccessKind` minimizes over. */
 const APPROACH_EASE: Record<ApproachKind, number> = { drive_up: 0, short_walk: 1, hike_in: 2 };
 
 /**

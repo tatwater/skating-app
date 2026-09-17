@@ -19,7 +19,7 @@ const STATUS_LABEL: Record<string, string> = {
   open: 'Open',
   fulfilled: 'Fulfilled',
   expired: 'Expired',
-  cancelled: 'Cancelled',
+  canceled: 'Canceled',
 };
 
 /**
@@ -32,7 +32,7 @@ export function BountyDetail({ bountyId }: { bountyId: string }) {
   const detail = useQuery(api.bounties.getDetail, { bountyId: bountyId as Id<'bounties'> });
   const leaving = useIsLeaving();
   const cancel = useMutation(api.bounties.cancel);
-  const [cancelling, setCancelling] = useState(false);
+  const [canceling, setCanceling] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   if (detail === undefined) return <DetailSkeleton />;
@@ -40,7 +40,7 @@ export function BountyDetail({ bountyId }: { bountyId: string }) {
     return (
       <UnavailableState
         title="Bounty not available"
-        message="This bounty may have been cancelled or removed."
+        message="This bounty may have been canceled or removed."
       />
     );
   }
@@ -49,7 +49,7 @@ export function BountyDetail({ bountyId }: { bountyId: string }) {
   const isOpen = detail.status === 'open';
 
   const onCancel = async () => {
-    setCancelling(true);
+    setCanceling(true);
     setError(null);
     try {
       await cancel({ bountyId: bountyId as Id<'bounties'> });
@@ -60,7 +60,7 @@ export function BountyDetail({ bountyId }: { bountyId: string }) {
           : 'Could not cancel — check your connection and try again.',
       );
     } finally {
-      setCancelling(false);
+      setCanceling(false);
     }
   };
 
@@ -168,10 +168,10 @@ export function BountyDetail({ bountyId }: { bountyId: string }) {
               <Button
                 variant="outline"
                 onClick={onCancel}
-                disabled={cancelling}
+                disabled={canceling}
                 className="self-start"
               >
-                {cancelling ? 'Cancelling…' : 'Cancel bounty'}
+                {canceling ? 'Canceling…' : 'Cancel bounty'}
               </Button>
               {error ? (
                 <p role="alert" className="text-destructive text-xs">

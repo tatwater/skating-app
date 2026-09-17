@@ -190,9 +190,10 @@ describe('featureToCanonicalBody', () => {
     const body = importedBody(waterFeature({}, [ring]));
     expect(largestRingSize(body.polygon)).toBeLessThanOrEqual(MAX_RING_VERTICES);
     expect(body.surfaceAreaSqM).toBeGreaterThan(0);
-    // Adaptive coarsening of a ~9k-vertex ring is genuinely CPU-heavy; CI runs ~8× slower than
-    // local, so give this a longer-than-default (5s) timeout to avoid flaky timeouts.
-  }, 30_000);
+    // Adaptive coarsening of a ~9k-vertex ring is genuinely CPU-heavy, and under turbo every
+    // package's vitest pool runs at once on a 2-vCPU runner: 0.2 s locally has been 31.6 s on CI
+    // (PR #67), so the cap is wide — this is contention, not the test.
+  }, 120_000);
 
   it('largestRingSize reports the biggest ring across polygons and holes', () => {
     expect(
@@ -317,13 +318,13 @@ describe('transformFeatures (batch resilience)', () => {
     // **Reeds Marsh — 103 acres, named, and this fixture used to drop it.** `natural=wetland` with
     // no `wetland=*` subtag was a skip under the old OSM-only classifier, which accepted `marsh` and
     // nothing else. That is the D96 asymmetry in miniature: NHD publishes the same ground as
-    // SwampMarsh and we accept it there, so refusing it here made *which catalogue drew the polygon*
+    // SwampMarsh and we accept it there, so refusing it here made *which catalog drew the polygon*
     // decide whether the lake existed. Switching to `classifyWaterBody` (D109) closes it.
     expect(byId.get('way/43152092')).toMatchObject({ type: 'wetland', name: 'Reeds Marsh' });
 
     // **A snowmaking basin at a ski resort is not water anyone skates.** `water=basin` used to fall
     // through to `other` and be imported; it is now an explicit drop. The old assertion here read
-    // `{ type: 'other', name: '' }` — an unnamed 14.8-acre "water area of unrecognised kind", which
+    // `{ type: 'other', name: '' }` — an unnamed 14.8-acre "water area of unrecognized kind", which
     // is precisely the shape of thing `other` was hiding.
     expect(byId.has('way/30930914')).toBe(false);
 
@@ -427,7 +428,7 @@ describe('transformFeatures (batch resilience)', () => {
 describe('surface-area floor', () => {
   /** A square pond of roughly `acres`, at Vermont's latitude. */
   function pondOfAcres(acres: number, props: Record<string, unknown> = {}): OsmWaterFeature {
-    const side = Math.sqrt(acres * 4046.8564224); // metres
+    const side = Math.sqrt(acres * 4046.8564224); // meters
     const dLat = side / 111_320;
     const dLng = side / (111_320 * Math.cos((44 * Math.PI) / 180));
     return waterFeature(props, [
@@ -514,7 +515,7 @@ describe('surface-area floor', () => {
  * make the bottom rung safe to trust at all.
  */
 describe('parseOsmDepthMeters', () => {
-  it('reads a bare number as metres (the OSM default unit)', () => {
+  it('reads a bare number as meters (the OSM default unit)', () => {
     expect(parseOsmDepthMeters('4')).toBe(4);
     expect(parseOsmDepthMeters('3.5')).toBe(3.5);
     expect(parseOsmDepthMeters(6)).toBe(6);

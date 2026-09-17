@@ -80,7 +80,7 @@ export const ORS_BAND_RANGES_SEC = { band30: 1800, band60: 3600 } as const;
 export const OUTER_BAND_SPEED_MPH = 45;
 const METERS_PER_MILE = 1609.344;
 
-/** Crow-flies radius (metres) for the outer band: `speed × minutes`. The 90-min fallback ring. */
+/** Crow-flies radius (meters) for the outer band: `speed × minutes`. The 90-min fallback ring. */
 export function outerBandRadiusMeters(
   minutes: number,
   speedMph: number = OUTER_BAND_SPEED_MPH,

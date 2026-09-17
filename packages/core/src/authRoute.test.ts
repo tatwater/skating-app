@@ -39,11 +39,11 @@ describe('resolveAuthRoute', () => {
   });
 
   /**
-   * A cancelled deletion (D62 amendment). The row survived, but its identity was really scrubbed at
+   * A canceled deletion (D62 amendment). The row survived, but its identity was really scrubbed at
    * request time and the cancel does not restore it — so the account has to be introduced again
    * before it can be used, and the alternative is a nameless account posting as "Deleted skater".
    */
-  describe('after a cancelled deletion', () => {
+  describe('after a canceled deletion', () => {
     it('routes an emptied profile back through onboarding', () => {
       expect(
         resolveAuthRoute({

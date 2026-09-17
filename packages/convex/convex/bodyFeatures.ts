@@ -32,7 +32,7 @@ export const listForBody = query({
     /**
      * Narrow to one named bay (A09) — the bay view's list, the same scope `hazards.listForBody`
      * takes. Filtered in memory off the row's stamp, like the hazards: the read is already bounded
-     * by body, and a feature's bay is its footprint centre's. A spring in the next bay over is a
+     * by body, and a feature's bay is its footprint center's. A spring in the next bay over is a
      * standing fact about *that* bay, and listing it under this one would be the map's "known
      * features" card claiming a hazard that is not on the ice the skater picked.
      */
@@ -264,7 +264,7 @@ export async function insertBodyFeature(
   if (!isValidHazardShape(shape)) throw new ConvexError('Invalid body-feature geometry');
 
   const bbox = hazardBbox(shape);
-  // The bay the feature sits in (A09) — the hazard rule, by the footprint's centre. Re-stamped by
+  // The bay the feature sits in (A09) — the hazard rule, by the footprint's center. Re-stamped by
   // `subAreas.restampParent` on a redraw, like the hazard it may have been promoted from.
   const subArea = await resolveSubAreaForPoint(ctx, args.waterBodyId, hazardCenter({ bbox }));
   return ctx.db.insert('bodyFeatures', {

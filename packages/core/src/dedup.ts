@@ -41,7 +41,7 @@ export const DEDUP_THRESHOLDS = {
   iouSuspected: 0.5,
   /** ...and at or above which they're near-certainly the same. */
   iouNearCertain: 0.9,
-  /** Centroids closer than this (metres) suspect a duplicate even with little overlap — the
+  /** Centroids closer than this (meters) suspect a duplicate even with little overlap — the
    *  small-body / point-body case, where two hand-placed ponds barely intersect but obviously match. */
   centroidSuspectedM: 75,
   /** Normalized name similarity at or above which a match bumps up one tier. */

@@ -273,7 +273,7 @@ export function OnIceDock({
   );
 }
 
-/** One labelled switch — the cadence choice and the Strava choice have the same shape. */
+/** One labeled switch — the cadence choice and the Strava choice have the same shape. */
 function OptionRow({
   title,
   detail,

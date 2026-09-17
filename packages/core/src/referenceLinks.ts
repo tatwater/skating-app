@@ -69,7 +69,7 @@ export type SatelliteImageryMode = (typeof SATELLITE_IMAGERY_MODES)[number];
  * The surface area below which a Sentinel-2 view of a body is not worth offering.
  *
  * **A 10 m pixel cannot resolve a small pond**, and the failure is worse than useless: the browser
- * opens, the skater sees a handful of grey-green pixels, and the honest conclusion available to them
+ * opens, the skater sees a handful of gray-green pixels, and the honest conclusion available to them
  * is *"this feature is broken"* rather than *"this sensor is too coarse."*
  *
  * 10 hectares is ~1,000 pixels of water — roughly 30 × 30 — which is the point where shape becomes
@@ -105,7 +105,7 @@ export function satelliteImageryAvailable(body: ReferenceLinkBody): boolean {
  *
  * **Framed to the lake, which is the opposite of {@link WINDY_ZOOM} and for the opposite reason.**
  * Wind is synoptic and wants regional context; a satellite pass is about *this water*, so the view
- * should open on it. z13 puts a few kilometres across the viewport, which fits the bodies that clear
+ * should open on it. z13 puts a few kilometers across the viewport, which fits the bodies that clear
  * `SATELLITE_MIN_AREA_SQM` without cropping the large ones beyond recognition.
  */
 export const COPERNICUS_ZOOM = 13;
@@ -158,8 +158,8 @@ export const WINDY_ZOOM = 9;
  * **`interiorPoint` first, and this is a correction rather than a preference.** The Workstream 2
  * text specified these links as "a pure function of `(centroid, name, states[])`", which was written
  * before A06c-1 measured what `centroid` actually is: Turf's `pointOnFeature`, which returns a point
- * on the **shoreline** whenever the bbox centre falls outside the polygon. Lake Willoughby's is ring
- * vertex 199; Lake Champlain's sits 30.7 km from mid-lake. A Windy link centred on that is 30 km
+ * on the **shoreline** whenever the bbox center falls outside the polygon. Lake Willoughby's is ring
+ * vertex 199; Lake Champlain's sits 30.7 km from mid-lake. A Windy link centered on that is 30 km
  * from the lake it claims to describe, and — exactly like the fetch profile before it — nothing
  * would have caught it, because a shoreline coordinate is a perfectly valid coordinate.
  *

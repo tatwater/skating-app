@@ -102,7 +102,7 @@ async function bodiesWithin(
  *
  * `putIns.hide` does not flip a row's status — it **inserts a `hidden` suppression row at a coord**,
  * so that one action outlives however many rows are later imported near it. `listForBody` has always
- * honoured that. The two read paths this phase added did not: they filtered on `status === 'visible'`
+ * honored that. The two read paths this phase added did not: they filtered on `status === 'visible'`
  * alone, so hiding a lake's only launch removed its marker from the map while the drawer went on
  * naming it, the directions button went on routing to it, and the body kept its Hike-In chip.
  *
@@ -755,7 +755,7 @@ export const accessForBody = query({
     // *choosing*. The first full load put 160 lots on Lake Champlain, 97 on Winnipesaukee and 64 on
     // Seneca; on those bodies the lot a chosen put-in points at can sit outside the window, and
     // `chooseAccessTarget` would then silently fall back to routing a car at the launch — exactly the
-    // pre-A06d behaviour this phase exists to fix, on the four lakes that matter most.
+    // pre-A06d behavior this phase exists to fix, on the four lakes that matter most.
     //
     // Bounded by construction: put-ins are themselves capped, so this adds at most that many gets.
     const referenced = new Map<string, Awaited<ReturnType<typeof loadParkingForBody>>[number]>();

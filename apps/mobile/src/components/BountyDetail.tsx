@@ -15,7 +15,7 @@ const STATUS_LABEL: Record<string, string> = {
   open: 'Open',
   fulfilled: 'Fulfilled',
   expired: 'Expired',
-  cancelled: 'Cancelled',
+  canceled: 'Canceled',
 };
 
 /**
@@ -29,7 +29,7 @@ export function BountyDetail({ bountyId }: { bountyId: string }) {
   const router = useRouter();
   const detail = useQuery(api.bounties.getDetail, { bountyId: bountyId as Id<'bounties'> });
   const cancel = useMutation(api.bounties.cancel);
-  const [cancelling, setCancelling] = useState(false);
+  const [canceling, setCanceling] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   if (detail === undefined) return <DetailLoading />;
@@ -37,7 +37,7 @@ export function BountyDetail({ bountyId }: { bountyId: string }) {
     return (
       <Unavailable
         title="Bounty not available"
-        message="This bounty may have been cancelled or removed."
+        message="This bounty may have been canceled or removed."
       />
     );
   }
@@ -46,7 +46,7 @@ export function BountyDetail({ bountyId }: { bountyId: string }) {
   const isOpen = detail.status === 'open';
 
   const onCancel = async () => {
-    setCancelling(true);
+    setCanceling(true);
     setError(null);
     try {
       await cancel({ bountyId: bountyId as Id<'bounties'> });
@@ -57,7 +57,7 @@ export function BountyDetail({ bountyId }: { bountyId: string }) {
           : 'Could not cancel — check your connection and try again.',
       );
     } finally {
-      setCancelling(false);
+      setCanceling(false);
     }
   };
 
@@ -175,8 +175,8 @@ export function BountyDetail({ bountyId }: { bountyId: string }) {
         <>
           <Separator borderColor="$border" />
           <YStack gap="$1" alignItems="flex-start">
-            <Button size="$4" chromeless onPress={onCancel} disabled={cancelling}>
-              {cancelling ? 'Cancelling…' : 'Cancel bounty'}
+            <Button size="$4" chromeless onPress={onCancel} disabled={canceling}>
+              {canceling ? 'Canceling…' : 'Cancel bounty'}
             </Button>
             {error ? (
               <Text color="$danger" fontSize={12} accessibilityRole="alert">

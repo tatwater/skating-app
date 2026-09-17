@@ -327,7 +327,7 @@ describe('the membership stamp', () => {
     expect((await t.run((ctx) => ctx.db.get(report)))?.subAreaName).toBe('Malletts Bay');
   });
 
-  test('delisting a bay strips its name from the reports it labelled', async () => {
+  test('delisting a bay strips its name from the reports it labeled', async () => {
     const t = harness();
     const body = await seedBody(t);
     const mod = await seedUser(t, 'mod', 'moderator');
@@ -708,7 +708,7 @@ describe('system delists are visible where they get fixed', () => {
 /**
  * Decision 11, and the one hole the build found in the plan: sub-areas got their own soft-delist and
  * their own cell table with nothing connecting the two, so a takedown on the lake would have left the
- * bay labelled on a map that no longer had the lake.
+ * bay labeled on a map that no longer had the lake.
  */
 describe('the parent-listing cascade', () => {
   async function cellCount(t: ReturnType<typeof harness>, id: Id<'waterBodySubAreas'>) {
@@ -1353,7 +1353,7 @@ describe('waterBodies.setWeatherSamplePoints', () => {
  *
  * `load-sub-areas` calls this, and on the 2026-08-07 campaign it aborted the whole pass on one bad
  * batch and left three `sub_area_seed` rows stuck in `running` — the exact D99 signature, produced
- * by the loader written to honour D99. It had no tests at all until this block.
+ * by the loader written to honor D99. It had no tests at all until this block.
  */
 describe('subAreas.importBaySubAreas (the A07a bay lane)', () => {
   /** A bay inside `LAKE`, which is what the merge emits after clipping to the parent. */
@@ -1562,8 +1562,8 @@ describe('subAreas.importBaySubAreas (the A07a bay lane)', () => {
     ).toEqual(['Keeler Bay', 'Missisquoi Bay']);
   });
 
-  test('resolves the parent by any of its catalogue ids, not only OSM', async () => {
-    // D93: identity is the ids on the record, and which catalogue drew the outline is a separate
+  test('resolves the parent by any of its catalog ids, not only OSM', async () => {
+    // D93: identity is the ids on the record, and which catalog drew the outline is a separate
     // question. A bay whose parent is an NHD-drawn body must still find it.
     const t = harness();
     const { id: actor } = await seedUser(t, 'mod', 'moderator');
@@ -1660,7 +1660,7 @@ describe('the re-derivation (A09)', () => {
     const before = await t.run((ctx) => ctx.db.get(id));
     expect(before?.subAreaKey).toMatch(/^sa_[0-9a-f-]{36}$/);
     expect(before?.fetchProfileM).toHaveLength(16);
-    // A 0.2° × 0.2° box: every sector's fetch is hundreds of metres at least, none is zero.
+    // A 0.2° × 0.2° box: every sector's fetch is hundreds of meters at least, none is zero.
     expect(Math.min(...(before?.fetchProfileM ?? [0]))).toBeGreaterThan(500);
 
     await mod.as.mutation(api.subAreas.redraw, {
@@ -1946,7 +1946,7 @@ describe('the two-bay skate and the reportSubAreas join (A09 / D175)', () => {
 });
 
 describe('the wider re-stamp (A09)', () => {
-  test('a redraw re-tags put-ins by distance, tracks by majority, and features by centre', async () => {
+  test('a redraw re-tags put-ins by distance, tracks by majority, and features by center', async () => {
     const t = harness();
     const body = await seedBody(t);
     const mod = await seedUser(t, 'mod', 'moderator');
@@ -2088,7 +2088,7 @@ describe('the stamps at write (A09)', () => {
     expect(row?.leftSubArea).toBe(true);
   });
 
-  test('a known feature is stamped by its footprint centre', async () => {
+  test('a known feature is stamped by its footprint center', async () => {
     const { t, body, mod, west } = await setup();
     const id = await mod.as.mutation(api.bodyFeatures.create, {
       waterBodyId: body,
@@ -2115,7 +2115,7 @@ describe('the bay view reads (A09)', () => {
     return { t, body, mod, west };
   }
 
-  test('hazards narrow to the bay by footprint centre', async () => {
+  test('hazards narrow to the bay by footprint center', async () => {
     const { t, body, west } = await setup();
     const author = await seedUser(t, 'author');
     const inBay = await author.as.mutation(api.hazards.create, {
@@ -2140,7 +2140,7 @@ describe('the bay view reads (A09)', () => {
 
   // ⚠ The review found this one: the bay view narrowed its hazards but still listed every known
   // feature on the lake, so a spring in the far bay showed up as safety context for this one.
-  test('known features narrow to the bay by the same footprint-centre stamp', async () => {
+  test('known features narrow to the bay by the same footprint-center stamp', async () => {
     const { t, body, mod, west } = await setup();
     const inBay = await mod.as.mutation(api.bodyFeatures.create, {
       waterBodyId: body,

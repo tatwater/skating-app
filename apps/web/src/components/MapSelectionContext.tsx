@@ -53,7 +53,7 @@ interface MapSelectionValue {
   pinDropMode: boolean;
   setPinDropMode: (on: boolean) => void;
   /**
-   * The hazard being authored (Phase 09a, D51) — a circle awaiting a centre, or a polyline collecting
+   * The hazard being authored (Phase 09a, D51) — a circle awaiting a center, or a polyline collecting
    * vertices. Held as the shared `@skating/core` draft rather than web-local state so the map can
    * preview the *real* buffered footprint (the same math the server stores and the proximity
    * evaluator measures), and so mobile's capture flow inherits the identical transitions.
@@ -68,7 +68,7 @@ interface MapSelectionValue {
   setHazardDraftType: (type: HazardType | null) => void;
   /**
    * True while the hazard form has armed map-click placement. A circle disarms on the click that
-   * sets its centre; a polyline **stays armed**, taking one vertex per click until Done.
+   * sets its center; a polyline **stays armed**, taking one vertex per click until Done.
    */
   hazardDropMode: boolean;
   setHazardDropMode: (on: boolean) => void;

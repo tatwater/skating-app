@@ -10,7 +10,7 @@ open-source-friendly licensing. Founder to narrow down.
 - **Testing:** Vitest everywhere (+ `fast-check`, `convex-test`; Playwright/Maestro
   for E2E later); GitHub Actions CI (D40).
 - **DB / backend:** Convex (+ file storage). **No Convex components** — `@convex-dev/geospatial` was
-  retired by A01 in favour of a plain-table ladder-grid spatial index (see D5).
+  retired by A01 in favor of a plain-table ladder-grid spatial index (see D5).
 - **Language:** TypeScript everywhere.
 - **Mobile:** Expo / React Native + Tamagui.
 - **Web:** TanStack Start + Tailwind + shadcn.

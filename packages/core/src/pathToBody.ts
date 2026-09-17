@@ -9,7 +9,7 @@
  * skated track is far better evidence than anything a finger can draw.
  *
  * **The shape deliberately under-claims.** We buffer the track and use that; we do **not** hull it out
- * to a convex boundary. A hull would swallow land, islands and the neighbouring bay on any track that
+ * to a convex boundary. A hull would swallow land, islands and the neighboring bay on any track that
  * doesn't circumnavigate — asserting water where nobody went. The buffered corridor claims exactly
  * "this is where somebody skated, plus a margin", which is the strongest honest statement the data
  * supports. The costs are real and accepted: an out-and-back on a big lake produces a sausage rather
@@ -28,11 +28,11 @@ import type { Feature, LineString, MultiPolygon, Polygon } from 'geojson';
 import { type BBox, haversineMeters, type LatLng, polygonBBox } from './geometry';
 
 /**
- * Half-width of the corridor drawn around the track, in metres.
+ * Half-width of the corridor drawn around the track, in meters.
  *
  * Wide enough that a lap around a small pond closes into a plausible pond rather than a ring, and that
  * two passes down the same channel merge into one shape; narrow enough that a straight-line crossing
- * of Champlain doesn't claim a kilometre of open water nobody visited. Tunable — this is the single
+ * of Champlain doesn't claim a kilometer of open water nobody visited. Tunable — this is the single
  * number that decides how generous a user-created body is.
  */
 export const PATH_BUFFER_M = 120;
@@ -58,7 +58,7 @@ const COORD_PRECISION = 7;
  * slightly generous outline. Skating all the way around something is good evidence that the middle is
  * water too, so we keep only the exterior rings. (An island inside the loop gets absorbed; that's a
  * small over-claim a moderator can correct under D37 review-after, and far less harmful than a body
- * with a void at its centre.)
+ * with a void at its center.)
  */
 function fillHoles(geometry: Polygon | MultiPolygon): Polygon | MultiPolygon {
   if (geometry.type === 'Polygon') {

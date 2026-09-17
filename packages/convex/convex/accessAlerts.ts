@@ -5,7 +5,7 @@
  *
  * *"Road closed south of the gate until repairs are done"* is the most useful sentence on a lake page
  * and the one most certain to be wrong. It is correct the day it is written and wrong by spring, and
- * nothing in the system knows the difference — because nothing is ever asked. So a blocker is modelled
+ * nothing in the system knows the difference — because nothing is ever asked. So a blocker is modeled
  * like a hazard: somebody asserts it, others confirm or deny, and absent either it expires on its own.
  * Freshness is enforced by the people who benefit from it, which is the only enforcement that scales.
  *
@@ -428,7 +428,7 @@ async function liveAlertsByParkingArea(
  * Every live alert annotating an access point on this body.
  *
  * Liveness is re-checked here and not left to the sweep, because **the cron's schedule must never be a
- * visible behaviour**: a row whose expiry passed an hour ago stops annotating the moment it passes,
+ * visible behavior**: a row whose expiry passed an hour ago stops annotating the moment it passes,
  * not the moment a job next runs.
  */
 export async function loadLiveAlertsForBody(
@@ -447,7 +447,7 @@ export async function loadLiveAlertsForBody(
   // cap spends itself on answers. See `liveAlertsByBody`.
   const direct = await liveAlertsByBody(ctx, waterBodyId, now);
 
-  // ── The shared-lot half, and it is not an optimisation ────────────────────────────────────────
+  // ── The shared-lot half, and it is not an optimization ────────────────────────────────────────
   //
   // An alert on a **parking area** is filed against one body — the first the lot is associated with —
   // because fanning out a row per body would make one locked gate look like three. But a trailhead lot

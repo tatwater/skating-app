@@ -41,14 +41,14 @@ export interface SubAreaHeader {
   elevation: string | null;
 }
 
-/** Feet, rounded, from metres — an elevation is read to the nearest foot on every surface. */
+/** Feet, rounded, from meters — an elevation is read to the nearest foot on every surface. */
 function formatElevationFeet(meters: number): string {
   return `${Math.round(meters * 3.28084).toLocaleString('en-US')} ft`;
 }
 
 /**
  * The bay header. `depth` reuses `describeLakeDepth` so a bay's number is framed exactly like a
- * lake's — measured reads plainly, modelled carries a `~` — with one addition: the contour lane's
+ * lake's — measured reads plainly, modeled carries a `~` — with one addition: the contour lane's
  * `understatesMax`, which the lake header never needed because a lake's contour depth is stamped
  * on the body by the same ETL with the same caveat baked into its label. A bay's is derived from a
  * clip, and the deepest isobath fully inside a bay is a **lower bound** on the water it encloses.

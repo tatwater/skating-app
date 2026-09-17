@@ -2,7 +2,7 @@ import type { Polygon } from 'geojson';
 import { describe, expect, it } from 'vitest';
 import { AUTOSELECT_BUFFER_M, type CachedBody, nearestCachedBody } from './offlineBody';
 
-/** ~111 m unit square on the equator (a degree ≈ the same metres each axis). */
+/** ~111 m unit square on the equator (a degree ≈ the same meters each axis). */
 function square(id: string, minLng: number, minLat: number, sizeDeg: number): CachedBody {
   return {
     waterBodyId: id,

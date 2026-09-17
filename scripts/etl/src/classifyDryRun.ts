@@ -1,5 +1,5 @@
 /**
- * Classify **every feature in all three catalogues** and report the funnel — A07a, read-only.
+ * Classify **every feature in all three catalogs** and report the funnel — A07a, read-only.
  *
  *   pnpm --filter @skating/etl classify-dry-run              # all three lanes
  *   pnpm --filter @skating/etl classify-dry-run --osm        # one lane at a time
@@ -13,9 +13,9 @@
  *
  * | origin | what a bad number there would mean |
  * | --- | --- |
- * | kept on the catalogue's own class | our vocabulary map has a hole |
+ * | kept on the catalog's own class | our vocabulary map has a hole |
  * | kept on a **name keyword** | we are inferring where the source could have told us |
- * | **dropped** on the catalogue's class | we are refusing a class we should carry |
+ * | **dropped** on the catalog's class | we are refusing a class we should carry |
  * | dropped on a name keyword | a drop-word is deleting real water — the `Higley Flow` failure |
  * | **unresolved** | the honest residue, and the only one worth reading one row at a time |
  *
@@ -396,12 +396,12 @@ function parseCsvLine(line: string): string[] {
 // ─────────────────────────────────────────────────────────────────────────────
 
 const BASIS_LABEL: Record<ClassBasis, string> = {
-  'name-reservoir': 'kept · name said "reservoir" (outranks the catalogue)',
-  'name-still-water': 'kept · catalogue said flowing, a still-water name overruled it',
-  'source-class': 'kept · the catalogue named a class we map',
-  'name-keyword': 'kept · catalogue silent, a name keyword decided it',
-  'dropped-by-class': 'DROPPED · the catalogue named a class we refuse',
-  'dropped-by-name': 'DROPPED · catalogue silent, the name refused it',
+  'name-reservoir': 'kept · name said "reservoir" (outranks the catalog)',
+  'name-still-water': 'kept · catalog said flowing, a still-water name overruled it',
+  'source-class': 'kept · the catalog named a class we map',
+  'name-keyword': 'kept · catalog silent, a name keyword decided it',
+  'dropped-by-class': 'DROPPED · the catalog named a class we refuse',
+  'dropped-by-name': 'DROPPED · catalog silent, the name refused it',
   'unresolved-named': 'unclassified · named, but nothing resolved it',
   'unresolved-unnamed': 'unclassified · no name, no class, no evidence',
 };
@@ -457,7 +457,7 @@ function report(funnel: Funnel): void {
   }
   if (funnel.unknownTokens.size > 0) {
     out.push('');
-    out.push('   ⚠ values this catalogue carries that our tables do not map');
+    out.push('   ⚠ values this catalog carries that our tables do not map');
     for (const [token, n] of [...funnel.unknownTokens.entries()].sort((a, b) => b[1] - a[1])) {
       out.push(`     ${n.toLocaleString().padStart(9)}          ${token}`);
     }

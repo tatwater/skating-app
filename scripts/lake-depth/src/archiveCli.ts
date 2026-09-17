@@ -3,11 +3,11 @@
  *
  *   pnpm --filter @skating/lake-depth archive [<key>…] [--refresh]
  *   pnpm --filter @skating/lake-depth archive --adopt=<key> --file=<path> [--file=<path>…] \
- *     --licence="…" [--url=…]
+ *     --license="…" [--url=…]
  *   pnpm --filter @skating/lake-depth archive --status
  *
  * Downloads each fetchable source into a permanent `.raw/<key>/` with a `manifest.json` carrying the
- * URL, fetch time, byte count, our sha256 and the publisher's checksum and licence where they exist.
+ * URL, fetch time, byte count, our sha256 and the publisher's checksum and license where they exist.
  * Then `./mirror-r2.sh push` puts a second copy in a private bucket, so the archive is not one laptop.
  *
  * **`--adopt` exists because one of the three cannot be fetched by a script.** LAGOS-US DEPTH sits
@@ -41,7 +41,7 @@ import {
   type DepthManifest,
   type DepthSource,
   isRunnable,
-  shortLicence,
+  shortLicense,
   totalBytes,
 } from './depthSources';
 
@@ -115,11 +115,11 @@ async function download(
   return { bytes, sha256: sha.digest('hex'), md5: digest };
 }
 
-/** figshare's API hands over the download URL, the size, the publisher md5 *and* the licence. */
+/** figshare's API hands over the download URL, the size, the publisher md5 *and* the license. */
 async function figshareFile(
   articleId: number,
   filename: string,
-): Promise<{ url: string; md5?: string; licence?: string }> {
+): Promise<{ url: string; md5?: string; license?: string }> {
   const response = await fetch(`https://api.figshare.com/v2/articles/${articleId}`, {
     headers: { 'User-Agent': USER_AGENT },
   });
@@ -133,7 +133,7 @@ async function figshareFile(
   return {
     url: file.download_url,
     md5: file.computed_md5,
-    licence: article.license?.name
+    license: article.license?.name
       ? `${article.license.name}${article.license.url ? ` (${article.license.url})` : ''}`
       : undefined,
   };
@@ -144,7 +144,7 @@ async function archiveOne(source: DepthSource, refresh: boolean): Promise<DepthM
     throw new Error(
       `${source.key} cannot be fetched by a script — it is behind ${source.fetch.portalUrl}\n` +
         `  Download it in a browser, then:\n` +
-        `  pnpm --filter @skating/lake-depth archive --adopt=${source.key} --file=<path> --licence="<the package's rights statement>"`,
+        `  pnpm --filter @skating/lake-depth archive --adopt=${source.key} --file=<path> --license="<the package's rights statement>"`,
     );
   }
 
@@ -159,7 +159,7 @@ async function archiveOne(source: DepthSource, refresh: boolean): Promise<DepthM
   let url: string;
   let filename: string;
   let publishedMd5: string | undefined;
-  let licence: string | undefined = source.expectedLicence;
+  let license: string | undefined = source.expectedLicense;
 
   if (source.fetch.kind === 'figshare') {
     const resolved = await figshareFile(source.fetch.articleId, source.fetch.filename);
@@ -167,7 +167,7 @@ async function archiveOne(source: DepthSource, refresh: boolean): Promise<DepthM
     filename = source.fetch.filename;
     publishedMd5 = resolved.md5;
     // The publisher's own statement beats our expectation — the point of recording it at fetch time.
-    licence = resolved.licence ?? licence;
+    license = resolved.license ?? license;
   } else {
     url = source.fetch.url;
     filename = source.fetch.filename;
@@ -183,7 +183,7 @@ async function archiveOne(source: DepthSource, refresh: boolean): Promise<DepthM
     fetchedAt: new Date().toISOString(),
     source: { url, kind: source.fetch.kind },
     files: [{ name: filename, bytes, sha256 }],
-    licence,
+    license,
     publishedMd5,
     // Omitted entirely when there is nothing to compare against, rather than written as `false`.
     // HydroLAKES publishes no checksum, and a stored `md5Verified: false` reads as "the check
@@ -212,7 +212,7 @@ async function archiveOne(source: DepthSource, refresh: boolean): Promise<DepthM
 function adopt(
   key: string,
   filePaths: string[],
-  licence: string | undefined,
+  license: string | undefined,
   url: string | undefined,
 ): DepthManifest {
   const source = DEPTH_SOURCES.find((s) => s.key === key);
@@ -250,16 +250,16 @@ function adopt(
       kind: 'manual',
     },
     files,
-    licence,
+    license,
     adopted: true,
     notes: source.notes,
   };
   writeFileSync(manifestPath(key), `${JSON.stringify(manifest, null, 2)}\n`);
   const bytes = files.reduce((sum, f) => sum + f.bytes, 0);
   log(`✓ adopted ${key}: ${files.length} file(s), ${(bytes / 1_000_000).toFixed(1)} MB`);
-  if (!licence?.trim()) {
+  if (!license?.trim()) {
     log(
-      `⚠ no --licence recorded for ${key}. The ETL will refuse to run from it — that is the point:\n` +
+      `⚠ no --license recorded for ${key}. The ETL will refuse to run from it — that is the point:\n` +
         "  this source's rights statement has been an open question since the phase was scoped.",
     );
   }
@@ -281,7 +281,7 @@ function status(): void {
     const runnable = isRunnable(manifest);
     log(
       `${runnable.ok ? '✓' : '⚠'} ${source.key.padEnd(16)} ${(totalBytes(manifest) / 1_000_000).toFixed(1)} MB · ` +
-        `${checksumState(manifest)} · licence: ${shortLicence(manifest.licence)}` +
+        `${checksumState(manifest)} · license: ${shortLicense(manifest.license)}` +
         `${runnable.ok ? '' : ` — NOT RUNNABLE: ${runnable.reason}`}`,
     );
   }
@@ -297,7 +297,7 @@ async function main(): Promise<void> {
     if (files.length === 0) {
       throw new Error('--adopt needs at least one --file=<path> (repeat it for companion files)');
     }
-    const manifest = adopt(adoptKey, files, flag(args, 'licence'), flag(args, 'url'));
+    const manifest = adopt(adoptKey, files, flag(args, 'license'), flag(args, 'url'));
     recordRun(adoptKey, manifest);
     return;
   }
@@ -364,7 +364,7 @@ function recordRun(key: string, manifest: DepthManifest | undefined, error?: str
     logger.count('bytes', totalBytes(manifest));
     const runnable = isRunnable(manifest);
     logger.succeed([
-      `licence: ${manifest.licence ?? 'UNRECORDED — the ETL will refuse to run from this archive'}`,
+      `license: ${manifest.license ?? 'UNRECORDED — the ETL will refuse to run from this archive'}`,
       `checksum: ${checksumState(manifest)}`,
       ...(manifest.adopted
         ? ['Adopted from a manual download — this source cannot be fetched by a script.']

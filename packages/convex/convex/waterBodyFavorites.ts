@@ -104,9 +104,9 @@ export const toggle = mutation({
       return { favorited: false };
     }
     const body = await ctx.db.get(waterBodyId);
-    // A dormant lake can be favourited — *"if you favourited it, you know something we don't"*, and
-    // a favourite is what keeps it from going dormant again. A removed one cannot (A07b): a takedown
-    // is the one standing a favourite must not quietly subscribe someone to.
+    // A dormant lake can be favorited — *"if you favorited it, you know something we don't"*, and
+    // a favorite is what keeps it from going dormant again. A removed one cannot (A07b): a takedown
+    // is the one standing a favorite must not quietly subscribe someone to.
     if (!body || !isListed(body) || standingOf(body).standing === 'removed') {
       throw new ConvexError('Water body not found');
     }

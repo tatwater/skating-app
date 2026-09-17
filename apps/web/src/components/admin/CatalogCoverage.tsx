@@ -29,7 +29,7 @@ import { AdminEmpty, StatTile } from './adminUi';
  * - With a single measurement there is no trend, and the honest form for "a current value" is a stat
  *   tile, not a one-point line (which the chart kit would draw as literally nothing, since it renders
  *   lines without dots). The trend appears once a second year exists, and says so until then.
- * - The read goes through `analytics.catalogueHistory`, which returns the rows **as measured**, rather
+ * - The read goes through `analytics.catalogHistory`, which returns the rows **as measured**, rather
  *   than `analytics.series`, which generates a dense run of days and fills gaps with nulls. Dense days
  *   are right for a rollup, where a quiet day is a real zero; here the gaps are years of nothing being
  *   published, and the dense reader also caps at 365 days — which would hide every prior year, the
@@ -43,7 +43,7 @@ import { AdminEmpty, StatTile } from './adminUi';
  * western Massachusetts. Showing both makes that visible instead of a surprise at the next refresh.
  */
 
-const METRIC = 'catalogue_edh_coverage';
+const METRIC = 'catalog_edh_coverage';
 
 interface CoverageSide {
   total?: number;
@@ -83,14 +83,14 @@ const LINES: SeriesLine[] = [
   { key: 'live', label: 'Published upstream' },
 ];
 
-export function CatalogueCoverage() {
-  const history = useQuery(api.analytics.catalogueHistory, { metric: METRIC });
+export function CatalogCoverage() {
+  const history = useQuery(api.analytics.catalogHistory, { metric: METRIC });
 
   if (history === undefined) return <AdminEmpty>Loading…</AdminEmpty>;
   if (history.length === 0) {
     return (
       <AdminEmpty>
-        No catalogue measurement yet — run <code>pnpm --filter @skating/etl measure-3dhp</code>.
+        No catalog measurement yet — run <code>pnpm --filter @skating/etl measure-3dhp</code>.
       </AdminEmpty>
     );
   }

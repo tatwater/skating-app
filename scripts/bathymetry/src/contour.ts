@@ -4,7 +4,7 @@
  * `blockmedian` → `surface` → `grdedit` → `grdfilter` → `gdal_contour` → clip, for the sounding lanes;
  * a thinning and a clip for the contour lanes. Extracted from the sample renderer so the **tiler and
  * the sample page run the same code** — a second notion of "how we draw a lake" is exactly what the
- * rest of this package is organised to avoid, and it is the notion where a divergence would be least
+ * rest of this package is organized to avoid, and it is the notion where a divergence would be least
  * visible: the samples would keep looking right while the tiles quietly drifted.
  *
  * The whole sounding chain runs in the lake's own frame with the along-axis coordinate compressed for
@@ -268,12 +268,12 @@ export function interpolate(
   if (!solved) return { lines: [], depths: [], note: 'surface failed' };
 
   spawnSync('cp', [solvedGrid, realGrid]);
-  const relabelled = gmt(['grdedit', realGrid, plan.realRegion], label);
-  const grid = relabelled ? realGrid : solvedGrid;
+  const relabeled = gmt(['grdedit', realGrid, plan.realRegion], label);
+  const grid = relabeled ? realGrid : solvedGrid;
 
   // Smooth the SURFACE, not the contours. `gdal_contour` traces a raster, so its output follows cell
-  // boundaries — at 500 cells across a lake that is a kink every few metres, and reads as pointy
-  // corners no lake bed has. Smoothing the lines instead would let neighbours cross, since each would
+  // boundaries — at 500 cells across a lake that is a kink every few meters, and reads as pointy
+  // corners no lake bed has. Smoothing the lines instead would let neighbors cross, since each would
   // move independently. Deliberately NOT a fix for crowding: it changes the shape of the lines and
   // never their number, because dropping bunched levels would understate depth by omission (D82).
   const filtered = gmt(

@@ -6,7 +6,7 @@
 # arguments are the ones that are easy to forget, and a run row missing its provenance is the failure
 # that whole workstream was about. The A07a path — the one that decides every row in the corpus — had
 # no wrapper at all. It was four commands typed by hand, and the 2026-08-07 campaign is what that
-# costs: a `corpus_merge` run with an empty Path, and a `canonical_water` run labelled "unscoped
+# costs: a `corpus_merge` run with an empty Path, and a `canonical_water` run labeled "unscoped
 # canonical water" for the load of all 25,050 bodies.
 #
 #   ./run-corpus.sh <campaign-id> [--refresh] [--apply-sub-areas --actor=<profileId>]
@@ -93,7 +93,7 @@ echo "══ logging to ${SCRATCH#./}/run-${CAMPAIGN}.log — do NOT pipe this s
 echo "══ region masks (TIGER)"
 pnpm --filter @skating/admin-areas build-region
 
-echo "══ merge — three catalogues, one filter"
+echo "══ merge — three catalogs, one filter"
 pnpm --filter @skating/etl merge --campaign="$CAMPAIGN" $REFRESH
 
 # **The merge is not a step that can be half-done.** It writes `bodies.ndjson` before the manifest,
@@ -107,7 +107,7 @@ fi
 echo "══ load bodies"
 pnpm --filter @skating/etl load "${SCRATCH}/bodies.ndjson" --campaign="$CAMPAIGN"
 
-# Bays after bodies, always: `importBaySubAreas` resolves a parent by catalogue id and refuses a bay
+# Bays after bodies, always: `importBaySubAreas` resolves a parent by catalog id and refuses a bay
 # whose lake is not in the table yet. Dry by default — seeding sub-areas is audited to a person, so
 # it needs an explicit actor and an explicit --apply-sub-areas.
 if [ ! -s "${SCRATCH}/sub-areas.ndjson" ]; then
@@ -121,7 +121,7 @@ elif [ -z "$ACTOR" ]; then
   #
   # Bays need an actor by design (A02/D60 audits every sub-area write to a person), and this script's
   # own comment already said it needs *both* an actor and `--apply-sub-areas`. So the honest
-  # behaviour when neither is present is to say what was not done and carry on — the bay lane is
+  # behavior when neither is present is to say what was not done and carry on — the bay lane is
   # idempotent and can be run on its own afterwards, which is exactly what the message tells you.
   #
   # This branch is reachable only when the operator asked for **neither**. `--apply-sub-areas` with no

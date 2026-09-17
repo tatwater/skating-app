@@ -266,7 +266,7 @@ export function FeedFilterBar({
   );
 }
 
-/** A labelled segmented control: a row of chips where the selected value is filled. */
+/** A labeled segmented control: a row of chips where the selected value is filled. */
 function Segmented<T>({
   label,
   options,

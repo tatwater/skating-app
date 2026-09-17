@@ -321,7 +321,7 @@ describe('bodyFeatures.promote', () => {
     expect(feature?.bbox).toEqual(hazard?.bbox);
   });
 
-  // The D53 amendment (A05c), stated as the behaviour it replaced: a promoted hazard used to be
+  // The D53 amendment (A05c), stated as the behavior it replaced: a promoted hazard used to be
   // unreachable by permalink and unconfirmable. Both were wrong, and for the same reason — confirming
   // "the ridge is here right now" is a different statement from "ridges form here", and only the first
   // is confirmable at all. The pin is exactly the thing that should still take votes.

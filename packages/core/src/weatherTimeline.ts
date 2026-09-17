@@ -28,8 +28,8 @@
  *
  * ## The rule every auxiliary lane follows
  *
- * **Draw the whole series, emphasise the condition.** Wind is drawn for every hour and emphasised
- * while it was both freezing and calm; sun is drawn for every hour and emphasised while it was both
+ * **Draw the whole series, emphasize the condition.** Wind is drawn for every hour and emphasized
+ * while it was both freezing and calm; sun is drawn for every hour and emphasized while it was both
  * sunlit and above freezing. Those two emphases are *conjunctions with temperature* — the simultaneity
  * that a column layout destroys — so they are the payload, and the base trace is the context that
  * makes them legible as exceptions rather than as isolated marks.
@@ -165,7 +165,7 @@ export const MAX_INTERPOLATED_SLOTS = 2.5;
  * Narrowest column, in px, that can carry its own `Wed 14` label.
  *
  * ⚠ **Found by rendering the panned-out view, which nothing else would have caught.** At the seven-day
- * default a column is ~53px and every day is labelled comfortably. Dragged out to the founder's
+ * default a column is ~53px and every day is labeled comfortably. Dragged out to the founder's
  * thirty, a column is ~12px and thirty labels overprint into a solid unreadable band — the axis stops
  * being an axis. Labels are thinned to every Nth day instead, which keeps the *scale* legible even
  * when every date cannot be named.
@@ -208,18 +208,18 @@ export const FETCH_INTENSITY_LEVELS = 4;
  *
  * ## ⚠ It returns `null` for about 95% of the corpus, and that is the correct answer
  *
- * `MIN_FETCH_CLAUSE_M` already settled this for the lake caption: below a kilometre of open water
+ * `MIN_FETCH_CLAUSE_M` already settled this for the lake caption: below a kilometer of open water
  * *"the answer is 'there isn't any' in every direction — a clause naming the most exposed bearing
  * would imply a distinction the geometry cannot support."* Measured against the corpus, that rules
  * out most of it: max fetch is **224 m at the median**, 692 m at p90, and only **5% of bodies exceed
- * a kilometre** in any direction.
+ * a kilometer** in any direction.
  *
  * So a per-lake opacity ramp on a typical pond would be pure noise dressed as insight — it would
  * paint a vivid contrast between a 60 m shore and a 90 m one. Gating on the same threshold the prose
  * uses means the two surfaces agree about which lakes have an exposure story at all, and the wind
  * lane simply draws flat on the ones that do not.
  *
- * Shared by both public readers so the gate is stated once: {@link fetchAlong} takes the metres and
+ * Shared by both public readers so the gate is stated once: {@link fetchAlong} takes the meters and
  * {@link fetchIntensityAt} takes the ratio.
  */
 function fetchReachAt(
@@ -237,12 +237,12 @@ function fetchReachAt(
 }
 
 /**
- * The metres of open water behind the wind at a bearing — or `null` when the claim is not worth
+ * The meters of open water behind the wind at a bearing — or `null` when the claim is not worth
  * making.
  *
  * The words half of {@link fetchIntensityAt}, gated on the same `MIN_FETCH_CLAUSE_M` so the drawing
- * and the readout agree about which lakes have an exposure story. Returns the **raw metres** rather
- * than a normalised share, because a sentence should name the measurement and a fill should show the
+ * and the readout agree about which lakes have an exposure story. Returns the **raw meters** rather
+ * than a normalized share, because a sentence should name the measurement and a fill should show the
  * proportion.
  */
 export function fetchAlong(
@@ -256,7 +256,7 @@ export function fetchAlong(
  * How exposed this lake was to the wind at a given bearing, in `[0, 1]` — or `null` when the
  * question does not apply (see {@link fetchReachAt}).
  *
- * **Normalised per lake, not against a fixed reference**, which is the opposite of the wind rose's
+ * **Normalized per lake, not against a fixed reference**, which is the opposite of the wind rose's
  * choice and right for the opposite reason: the rose compares lakes ("is this one windy?"), while
  * this compares *bearings within one lake* ("was the wind running the long way today?"). A shared
  * scale would flatten Willoughby's own contrast to nothing next to Champlain.
@@ -323,7 +323,7 @@ export function timelineScrollbar(opts: {
 /**
  * The scroll position a pointer at `trackX` selects — for dragging the thumb and clicking the track.
  *
- * `trackX` is read as where the **centre** of the thumb wants to be, which is what makes a click on
+ * `trackX` is read as where the **center** of the thumb wants to be, which is what makes a click on
  * bare track jump the thumb *to the cursor* rather than to a position half a thumb-width off.
  *
  * ⚠ **No longer rounded to a whole day.** The scale is fixed and the viewport crops mid-day on
@@ -390,7 +390,7 @@ export interface TimelineHour {
    * Open-Meteo `wind_direction_10m` — degrees **meteorological**, i.e. the direction wind blows
    * *from*, which is the convention every compass label in this app already uses.
    *
-   * ⚠ Read it with `windSectorOf` rather than dividing by 22.5: the sectors are centred on the
+   * ⚠ Read it with `windSectorOf` rather than dividing by 22.5: the sectors are centered on the
    * compass points, so N spans 348.75°–11.25° and a naive floor puts half of north into NNE.
    */
   windDirectionDeg?: number;
@@ -417,10 +417,10 @@ export interface WeatherTimelineInput {
   height?: number;
   laneHeights?: Partial<Record<TimelineLane, number>>;
   /**
-   * The body's 16-sector fetch profile, in metres — how far the lake runs from each bearing.
+   * The body's 16-sector fetch profile, in meters — how far the lake runs from each bearing.
    *
    * Optional, and absent simply leaves the wind fill flat. See {@link fetchIntensityAt} for why it is
-   * also ignored on lakes under a kilometre of reach, which is most of them.
+   * also ignored on lakes under a kilometer of reach, which is most of them.
    */
   fetchProfileM?: readonly number[] | null;
   /** Scale. Defaults to {@link PX_PER_HOUR}; raise it to zoom in. */
@@ -461,10 +461,10 @@ export interface TimelineDayColumn {
    */
   showLabel: boolean;
   /**
-   * Where to centre this column's label — **the column centre, pulled inside the viewport at the
+   * Where to center this column's label — **the column center, pulled inside the viewport at the
    * ends.**
    *
-   * ⚠ A centred label on the first column overhangs the left edge and gets clipped: at 30 days the
+   * ⚠ A centered label on the first column overhangs the left edge and gets clipped: at 30 days the
    * column is ~12px wide and `Mon 12` is ~34px, so two thirds of it hangs off. Clamping is not a
    * cosmetic nicety here — the leftmost label is the one that says *where the window starts*, which
    * is exactly what a reader who has just panned needs to read.
@@ -668,7 +668,7 @@ export function precipitationKind(hour: TimelineHour): PrecipKind | null {
   if (typeof hour.weatherCode === 'number') {
     const mapped = WMO_PRECIPITATION[hour.weatherCode];
     if (mapped) return mapped;
-    // A precipitating hour whose code we do not recognise still gets drawn — falling through to the
+    // A precipitating hour whose code we do not recognize still gets drawn — falling through to the
     // derivation below rather than returning null, because an unknown code is not an absence.
   }
 
@@ -728,7 +728,7 @@ export function temperatureWindowF(valuesF: readonly number[]): { minF: number; 
  * gets right. It also renders identically under `react-native-svg`.
  *
  * ⚠ **Two stops share an offset at 32°F, and that is the hard step.** A smooth blend across freezing
- * would put a green-grey midpoint on the one boundary the chart exists to make obvious. Every other
+ * would put a green-gray midpoint on the one boundary the chart exists to make obvious. Every other
  * transition blends, because 30°F and 25°F genuinely are the same kind of weather.
  *
  * Edges outside the visible window are **dropped, never clamped**. Clamping put a `deepCold` stop at
@@ -856,7 +856,7 @@ function emphasisSpans(
     previousX = p.x;
     if (holds(p.hour)) {
       // Spans are drawn from the *left edge* of the first qualifying hour to the right edge of the
-      // last, not between hour centres. A single calm-freezing hour must still be a visible block
+      // last, not between hour centers. A single calm-freezing hour must still be a visible block
       // rather than a zero-width line, and an hour is a duration.
       if (start === null) start = p.x - hourWidth / 2;
       end = p.x + hourWidth / 2;
@@ -943,7 +943,7 @@ function auxLayer(
   // replace each other: a run must end at a data hole and also at every crossing into or out of
   // activity, or one path gets stroked in a single color that is wrong for half its length.
   //
-  // Each active run is extended by one point into its neighbour so consecutive segments meet instead
+  // Each active run is extended by one point into its neighbor so consecutive segments meet instead
   // of leaving a one-hour hole at every sunrise and sunset — without it the sun trace is visibly
   // dashed at exactly the two moments a reader looks for.
   const segments: { d: string; active: boolean }[] = [];
@@ -971,7 +971,7 @@ function auxLayer(
   const areaSegments: { d: string; intensity: number }[] = [];
   // ⚠ Nothing is banded unless *something* has a second measure. A lake under `MIN_FETCH_CLAUSE_M`
   // returns null for every hour, and it must keep falling through to the flat `area` — emitting
-  // floor-intensity bands for it would repaint the whole lane in the density channel's colour to say
+  // floor-intensity bands for it would repaint the whole lane in the density channel's color to say
   // nothing at all.
   if (intensity && values.some((v) => v.intensity !== null)) {
     const bucket = (i: number | null) =>
@@ -1000,7 +1000,7 @@ function auxLayer(
           // middle of an otherwise-banded week left bare background where the lane should be. The
           // floor is the honest reading of "no reach information here", and it keeps the shape whole.
           //
-          // Otherwise reported as the band's own centre rather than the raw value, so the renderer's
+          // Otherwise reported as the band's own center rather than the raw value, so the renderer's
           // opacity steps line up with the runs the geometry actually cut.
           intensity:
             first.intensity === null ? 0 : (bucket(first.intensity) + 0.5) / FETCH_INTENSITY_LEVELS,
@@ -1037,7 +1037,7 @@ function auxLayer(
  * - **Fall back** has *two* 01:00s. The second is dropped by the `(localDate, localHour)` dedupe.
  *
  * That loses one observed hour on one night a year, which is a deliberate trade against the
- * alternative: positioning by array index would make a 25-hour day 4% wider than its neighbours and
+ * alternative: positioning by array index would make a 25-hour day 4% wider than its neighbors and
  * silently slide every divider after it. A bounded, documented cosmetic loss beats an unbounded,
  * invisible scale error.
  */
@@ -1071,7 +1071,7 @@ export function weatherTimelineModel(input: WeatherTimelineInput): WeatherTimeli
   // and cost the two things the lane is actually for: the *line* is wind speed, and the rail is the
   // calm-while-freezing span that `weatherDay.ts` calls "the single most useful number in this
   // record". Both are measured on every lake regardless of its shape. **Only the fill's density needs
-  // a kilometre of reach** — so a small lake now draws a normal wind lane with a flat fill, which is
+  // a kilometer of reach** — so a small lake now draws a normal wind lane with a flat fill, which is
   // one missing channel rather than a missing measurement.
   //
   // `hiddenLanes` stays because `laneBoxes` needs the concept: a lane with no data at all (an archive
@@ -1083,7 +1083,7 @@ export function weatherTimelineModel(input: WeatherTimelineInput): WeatherTimeli
   const positioned: PositionedHour[] = [];
 
   // Every Nth column carries a label once they get too narrow to each hold one. Anchored on index 0
-  // so the labelled set is stable as the window pans — labels that reshuffle under a drag read as the
+  // so the labeled set is stable as the window pans — labels that reshuffle under a drag read as the
   // chart jumping rather than sliding.
   const labelEvery = Math.max(1, Math.ceil(MIN_DAY_LABEL_WIDTH / dayWidth));
 
@@ -1104,7 +1104,7 @@ export function weatherTimelineModel(input: WeatherTimelineInput): WeatherTimeli
       missing: day.missing === true || !hasHours,
       partial: day.partial === true,
       // ⚠ Both of these read the column's **visible** width, not its full one. A day cropped to 9px
-      // at the edge has no room to be named — labelling it would overprint its neighbour — and a
+      // at the edge has no room to be named — labeling it would overprint its neighbor — and a
       // fully off-screen column must not have its label dragged into the viewport, which is what
       // clamping against the viewport alone used to do: every off-screen day piled its label on the
       // same pixel.
@@ -1162,7 +1162,7 @@ export function weatherTimelineModel(input: WeatherTimelineInput): WeatherTimeli
     // "one confident line across weather nobody observed" the gap rule above exists to prevent, now
     // arriving through the provisional flag instead of through a hole. It also left a one-hour break
     // between the settled trace and the dashed one at every boundary, because the two never shared a
-    // point. Each stretch is extended one point into its neighbour so they meet, the same way the
+    // point. Each stretch is extended one point into its neighbor so they meet, the same way the
     // auxiliary lanes' active/inactive split does.
     const settled: string[] = [];
     const provisional: string[] = [];
@@ -1226,7 +1226,7 @@ export function weatherTimelineModel(input: WeatherTimelineInput): WeatherTimeli
     20,
     // The second channel: the line's height is how hard it blew, the fill's density how much open
     // water that bearing had behind it. Returns null — and so draws flat — on any lake under a
-    // kilometre of fetch, which is most of them.
+    // kilometer of fetch, which is most of them.
     { intensity: (h) => fetchIntensityAt(input.fetchProfileM, h.windDirectionDeg) },
   );
 
@@ -1236,7 +1236,7 @@ export function weatherTimelineModel(input: WeatherTimelineInput): WeatherTimeli
     hourWidth,
     (h) => h.shortwaveWm2 ?? null,
     // The founder's "sticky and soft" mechanism, and `weatherDay.ts`'s `sunlitThawHours` predicate:
-    // both conditions on the same hour. A sunny morning followed by a mild grey afternoon is not it.
+    // both conditions on the same hour. A sunny morning followed by a mild gray afternoon is not it.
     (h) => (h.shortwaveWm2 ?? 0) >= SUNLIT_WM2 && h.temperatureC > 0,
     // Clear-sky midwinter noon at this latitude, so lanes are comparable between lakes and weeks.
     400,
@@ -1252,7 +1252,7 @@ export function weatherTimelineModel(input: WeatherTimelineInput): WeatherTimeli
     positioned,
     hourWidth,
     (h) => h.snowDepthM ?? null,
-    () => false, // depth has no condition to emphasise; it is the slow context under everything else
+    () => false, // depth has no condition to emphasize; it is the slow context under everything else
     0.1,
   );
 
@@ -1299,7 +1299,7 @@ export interface ArchiveTimelineInput {
    * The **lake's** current local day — `localDayMsAt(Date.now(), cellOffsetSeconds)`.
    *
    * Required so the current column can be drawn as partial. Today's row arrives holding all 24 hours
-   * with the un-elapsed ones forecast, so it cannot be recognised by hour count alone.
+   * with the un-elapsed ones forecast, so it cannot be recognized by hour count alone.
    */
   todayLocalDayMs: number;
 }
@@ -1351,7 +1351,7 @@ export function timelineDaysFromArchive(input: ArchiveTimelineInput): TimelineDa
         ...(hourRow ? { hours: hourRow.hours.map(toTimelineHour) } : {}),
         ...(known.has(dayMs) || (!hourRow && !summary) ? { missing: true } : {}),
         // Two ways to be partial: too few hours for even a spring-forward day (23, not 24 — calling
-        // that partial would grey out a settled day once a year), or being today.
+        // that partial would gray out a settled day once a year), or being today.
         ...(typeof observed === 'number' && !isCompleteDay(observed, dayMs, input.todayLocalDayMs)
           ? { partial: true }
           : {}),

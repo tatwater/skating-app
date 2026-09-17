@@ -21,7 +21,7 @@
  * clause. Most of the 116,070 will render one clause or none, and that is the correct outcome
  * rather than a coverage failure to paper over with hedged filler.
  *
- * **4. Provenance discipline carries through from A06a (D68).** A modelled depth's clause must read
+ * **4. Provenance discipline carries through from A06a (D68).** A modeled depth's clause must read
  * as an estimate. If the number is a 90 m-DEM guess, the sentence built on it cannot sound like a
  * depth-sounder transect.
  *

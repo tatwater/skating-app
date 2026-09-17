@@ -37,7 +37,7 @@ import { Textarea } from './ui/textarea';
  * **`AdmitPrompt`** is what a right-click on water with no body opens. It first asks the server
  * whether we already hold a body there (a dormant or removed lake is reachable now, so the tap is
  * about *it*), and navigates to the lake if so; otherwise it takes the sentence and files an
- * `admit`, which the catalogue resolver picks up.
+ * `admit`, which the catalog resolver picks up.
  */
 
 function messageOf(err: unknown): string {

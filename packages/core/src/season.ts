@@ -1,7 +1,7 @@
 /**
  * Seasons (D63) — the vocabulary every seasonal read is derived from.
  *
- * **A season is July 1 → June 30, labelled by the two calendar years it spans: `'24/'25`.** July is the
+ * **A season is July 1 → June 30, labeled by the two calendar years it spans: `'24/'25`.** July is the
  * deadest point of the year in the Northeast, so the boundary never cuts a live season and the reset
  * lands when nobody is looking at the map.
  *
@@ -81,7 +81,7 @@ export function isBrowsableSeason(value: number): boolean {
 /**
  * The season a read should actually use: the one asked for if it is nameable, otherwise `fallback`.
  *
- * The single place the wire value is sanitized, so a new seasonal read gets the behaviour by calling
+ * The single place the wire value is sanitized, so a new seasonal read gets the behavior by calling
  * one function rather than by remembering the argument is unvalidated.
  */
 export function resolveSeason(requested: number | undefined, fallback: Season): Season {

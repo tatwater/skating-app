@@ -241,7 +241,7 @@ function compose(masks: Parameters<typeof composeImagery>[0]['masks'], clip = tr
 
 describe('composeImagery — the buffer is rasterised, not geometry', () => {
   it('dilates a lake by stroking its own ring at twice the buffer', () => {
-    // The whole reason `revealShape`'s Turf buffer left the render path: a stroke is centred on its
+    // The whole reason `revealShape`'s Turf buffer left the render path: a stroke is centered on its
     // path, so fill + stroke(2 × solid) IS the ring dilated outward by `solid` — at rasteriser cost
     // rather than fifty geodesic buffers on the main thread, and portable to a canvas with no Turf.
     const { mask } = compose([{ polygon: POND }]);
@@ -306,7 +306,7 @@ describe('composeImagery — the buffer is rasterised, not geometry', () => {
     expect(target.ops.filter((o) => o.op === 'drawImage')).toHaveLength(2);
   });
 
-  it('feathers in ground metres, so the ramp does not change width with the zoom', () => {
+  it('feathers in ground meters, so the ramp does not change width with the zoom', () => {
     const { target, feathered } = compose([{ polygon: POND }]);
     expect(feathered).toBe(true);
     const blur = target.ops.find((o) => o.op === 'set:filter');

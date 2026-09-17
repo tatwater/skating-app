@@ -58,7 +58,7 @@ export type ActivationEvidence =
  * on a descending time key, so the cost is constant per body — which is what lets the season cron
  * ask it of every active body.
  *
- * Deliberately **not** favourites (intent, not presence — and they retain through `retainsActive`
+ * Deliberately **not** favorites (intent, not presence — and they retain through `retainsActive`
  * separately), not bounties (a request to go, not a going), not comments.
  */
 export async function lastActivityAt(
@@ -95,7 +95,7 @@ export async function lastActivityAt(
 /** Tracks read per body by `lastActivityAt` — a read bound, not a claim about the world. */
 const RECENT_TRACKS_READ = 25;
 
-/** Has anyone at all favourited this body? One index probe. */
+/** Has anyone at all favorited this body? One index probe. */
 export async function anyFavorite(ctx: QueryCtx, waterBodyId: Id<'waterBodies'>): Promise<boolean> {
   const row = await ctx.db
     .query('waterBodyFavorites')

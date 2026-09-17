@@ -217,9 +217,9 @@ describe('the grace window', () => {
    * The first amendment erased aged content outright. The correction draws the line between what a
    * person *typed* and what they *observed*: the observation is the community's and stays, the prose
    * is theirs and goes. So the assertion pair below is the whole posture in six lines — the row
-   * survives, the words don't, and cancelling brings back neither.
+   * survives, the words don't, and canceling brings back neither.
    */
-  test('aged words are redacted at the request, and cancelling does not bring them back', async () => {
+  test('aged words are redacted at the request, and canceling does not bring them back', async () => {
     const t = harness();
     const user = await seedUser(t, 'leaver');
     const bodyId = await seedBody(t);
@@ -325,7 +325,7 @@ describe('the grace window', () => {
    * reports on every read — so the marker survives precisely because the report does. Under the first
    * amendment it didn't, and the purge had to materialize a row to compensate.
    *
-   * It also pins `lastUsedAt`: put-ins are exempt from every ageing rule in the app, so the date is
+   * It also pins `lastUsedAt`: put-ins are exempt from every aging rule in the app, so the date is
    * how a three-winters-old access point avoids reading as current (D3).
    */
   test("a departed skater's put-in survives, dated by the skate that revealed it", async () => {
@@ -371,7 +371,7 @@ describe('the grace window', () => {
     expect(await user.as.query(api.putIns.listForBody, { waterBodyId: bodyId })).toEqual([]);
   });
 
-  test('cancelling leaves the profile empty, so the app sends them back through onboarding', async () => {
+  test('canceling leaves the profile empty, so the app sends them back through onboarding', async () => {
     const t = harness();
     const user = await seedUser(t, 'leaver');
     await user.as.mutation(api.accountDeletion.requestDeletion, {});
@@ -417,19 +417,19 @@ describe('the grace window', () => {
     expect(second.scheduledFor).toBeLessThan(first.scheduledFor);
   });
 
-  test('cancelling clears the stamp', async () => {
+  test('canceling clears the stamp', async () => {
     const t = harness();
     const user = await seedUser(t, 'leaver');
     await user.as.mutation(api.accountDeletion.requestDeletion, {});
 
     expect(await user.as.mutation(api.accountDeletion.cancelDeletion, {})).toEqual({
-      cancelled: true,
+      canceled: true,
     });
     const profile = await t.run((ctx) => ctx.db.get(user.id));
     expect(profile?.deletionRequestedAt).toBeUndefined();
-    // Idempotent: cancelling twice is not an error.
+    // Idempotent: canceling twice is not an error.
     expect(await user.as.mutation(api.accountDeletion.cancelDeletion, {})).toEqual({
-      cancelled: false,
+      canceled: false,
     });
   });
 
@@ -470,13 +470,13 @@ describe('the grace window', () => {
     const direct = await t.mutation(internal.accountDeletion.finalizeAccount, {
       userId: untouched.id,
     });
-    expect(direct).toEqual({ stopped: 'cancelled' });
+    expect(direct).toEqual({ stopped: 'canceled' });
     const profile = await t.run((ctx) => ctx.db.get(untouched.id));
     expect(profile?.status).toBe('active');
     expect(profile?.displayName).toBe('never_asked');
   });
 
-  test('cancelling mid-flight stops the job before anything irreversible happens', async () => {
+  test('canceling mid-flight stops the job before anything irreversible happens', async () => {
     const t = harness();
     const user = await seedUser(t, 'waverer');
     await t.run((ctx) => ctx.db.patch(user.id, { deletionRequestedAt: T0 }));
@@ -484,7 +484,7 @@ describe('the grace window', () => {
     await t.run((ctx) => ctx.db.patch(user.id, { deletionRequestedAt: undefined }));
     const result = await t.mutation(internal.accountDeletion.finalizeAccount, { userId: user.id });
 
-    expect(result).toEqual({ stopped: 'cancelled' });
+    expect(result).toEqual({ stopped: 'canceled' });
     const profile = await t.run((ctx) => ctx.db.get(user.id));
     expect(profile?.status).toBe('active');
     expect(profile?.displayName).toBe('waverer');
@@ -578,11 +578,11 @@ describe('read-only while a deletion is pending', () => {
     ).resolves.toBeDefined();
     await expect(user.as.mutation(api.dataExport.requestExport, {})).resolves.toBeDefined();
     await expect(user.as.mutation(api.accountDeletion.cancelDeletion, {})).resolves.toEqual({
-      cancelled: true,
+      canceled: true,
     });
   });
 
-  test('cancelling restores posting — the gate is the stamp, nothing else', async () => {
+  test('canceling restores posting — the gate is the stamp, nothing else', async () => {
     const t = harness();
     const bodyId = await seedBody(t);
     const user = await pendingUser(t);
@@ -1048,7 +1048,7 @@ describe('finalize redacts unconditionally (the age cutoff is a ghost-window rul
     await t.finishAllScheduledFunctions(vi.runAllTimers);
 
     // Still there during the window — the promise is "kept while the community maintains it", and that
-    // promise is real for as long as cancelling is.
+    // promise is real for as long as canceling is.
     expect((await t.run((ctx) => ctx.db.get(hazardId)))?.description).toBeDefined();
 
     // ...but finalization is the end of it, because nothing can come back for this row afterwards.
@@ -1249,7 +1249,7 @@ describe('bucket 3 — keep, severed from identity (D62)', () => {
    * silently deleted, and the suite reported green because no test ever let 30 days pass.
    *
    * So this one advances the clock and goes in through `finalizeDueDeletions`, asserting the three
-   * things the shortcut can't see: the report survives its own ageing, the track survives with it, and
+   * things the shortcut can't see: the report survives its own aging, the track survives with it, and
    * the map still draws it.
    */
   test('the real path — request, thirty days, cron — keeps the published track drawing', async () => {

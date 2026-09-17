@@ -39,7 +39,7 @@ describe('estimateIceThickness (D160 — admin-only instrument)', () => {
     }
   });
 
-  it('honours an override α, which is the whole point of storing it alongside the result', () => {
+  it('honors an override α, which is the whole point of storing it alongside the result', () => {
     const e = estimateIceThickness(2400, { alpha: 3 });
     expect(e.alpha).toBe(3);
     expect(e.thicknessCm).toBeCloseTo(30, 6);
@@ -99,7 +99,7 @@ describe('fitStefanAlpha', () => {
 });
 
 describe('unit conversion', () => {
-  it('round-trips inches and centimetres', () => {
+  it('round-trips inches and centimeters', () => {
     expect(inchesToCm(4)).toBeCloseTo(10.16, 6);
     expect(cmToInches(10.16)).toBeCloseTo(4, 6);
     expect(cmToInches(inchesToCm(7.5))).toBeCloseTo(7.5, 6);

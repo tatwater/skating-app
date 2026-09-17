@@ -216,7 +216,7 @@ describe('subAreaForPutIn — by distance to the outline, not containment (A09 c
   const small = { ref: 'small', polygon: rect(-73.5, 44.3, -73.4, 44.4), surfaceAreaSqM: 1e8 };
   const candidates = [big, small];
 
-  it('a launch a few metres *outside* the outline still belongs to the bay', () => {
+  it('a launch a few meters *outside* the outline still belongs to the bay', () => {
     // ~10 m west of the shared west shore at 44.5°N — outside both polygons by point-in-polygon.
     const coord = { lat: 44.5, lng: -73.5 - 10 / (111_320 * Math.cos((44.5 * Math.PI) / 180)) };
     expect(pointInPolygon(coord, big.polygon)).toBe(false);
@@ -242,8 +242,8 @@ describe('subAreaForPutIn — by distance to the outline, not containment (A09 c
   });
 
   it('beyond the tolerance it is open-lake access', () => {
-    const metres = SUB_AREA_PUT_IN_TOLERANCE_M * 3;
-    const coord = { lat: 44.5, lng: -73.5 - metres / (111_320 * Math.cos((44.5 * Math.PI) / 180)) };
+    const meters = SUB_AREA_PUT_IN_TOLERANCE_M * 3;
+    const coord = { lat: 44.5, lng: -73.5 - meters / (111_320 * Math.cos((44.5 * Math.PI) / 180)) };
     expect(subAreaForPutIn(coord, candidates)).toBeNull();
   });
 

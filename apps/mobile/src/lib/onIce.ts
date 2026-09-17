@@ -132,7 +132,7 @@ export interface AdvanceOnIceOptions {
   cadence?: RealertCadence;
   /**
    * Include the Layer-2 directional "hazard ahead" projection. Off (default) is Layer-1 proximity
-   * only — the unarmed foreground behaviour. On is armed on-ice mode.
+   * only — the unarmed foreground behavior. On is armed on-ice mode.
    */
   directional?: boolean;
   alertBufferMeters?: number;
@@ -245,7 +245,7 @@ export function advanceOnIceSession(
   if (!top) return { alerted, approached, banner: session.banner, fired: null };
   if (session.banner) return { alerted, approached, banner: session.banner, fired: null };
   // A proximity hit fires *because* the skater is within the buffer, so it's "approached" from the moment
-  // it fires (leaving past hysteresis then re-arms it — the original every-approach behaviour). A
+  // it fires (leaving past hysteresis then re-arms it — the original every-approach behavior). A
   // directional hit fires far ahead and is *not* yet approached; it becomes so once the skater closes in.
   const nextApproached =
     top.secondsToEncounter === undefined ? new Set([...approached, top.hazardId]) : approached;

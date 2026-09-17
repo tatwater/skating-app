@@ -21,7 +21,7 @@
  *
  * With every claim on the row, a name conflict stops being something a moderator must resolve before
  * the corpus is correct — both names are findable either way — and becomes a question of which one
- * to *show*. `waterBodySubAreas` reached this shape first (`aliases` + a denormalised `searchText`);
+ * to *show*. `waterBodySubAreas` reached this shape first (`aliases` + a denormalized `searchText`);
  * this is the same idea one table over, plus the provenance a sub-area's operator-typed aliases
  * cannot have.
  *
@@ -31,7 +31,7 @@
  * information the chooser needs.
  *
  * **A moderator's own alias is a claim too**, with `source: 'user'`. One field rather than two, and
- * `NAME_SOURCE_RANK` already ranks `user` above every catalogue *"so that the day one does, the rule
+ * `NAME_SOURCE_RANK` already ranks `user` above every catalog *"so that the day one does, the rule
  * is already right"*.
  */
 
@@ -76,22 +76,22 @@ export function distinctNameClaims(claims: readonly NameClaim[]): NameClaim[] {
 }
 
 /**
- * A moderator's pick, ahead of the catalogue claims — **without erasing the one it mirrors**.
+ * A moderator's pick, ahead of the catalog claims — **without erasing the one it mirrors**.
  *
- * The obvious `distinctNameClaims([user, ...catalogue])` is wrong and fails quietly. A moderator
+ * The obvious `distinctNameClaims([user, ...catalog])` is wrong and fails quietly. A moderator
  * choosing `Lake Auburn` creates a `user` claim whose *value* equals OSM's, so the dedupe drops the
  * OSM claim — and then clearing the override restores `The Basin` with **no alias at all**, because
  * the claim that would have become one no longer exists. The name the whole field was built to keep
  * is destroyed by the act of preferring it.
  *
  * So the two sets are deduped separately and concatenated. `aliasesFor` folds the resulting
- * repetition, and every catalogue claim survives a pick and a clear intact.
+ * repetition, and every catalog claim survives a pick and a clear intact.
  */
 export function composeNameClaims(
   user: readonly NameClaim[],
-  catalogue: readonly NameClaim[],
+  catalog: readonly NameClaim[],
 ): NameClaim[] {
-  return [...distinctNameClaims(user), ...distinctNameClaims(catalogue)];
+  return [...distinctNameClaims(user), ...distinctNameClaims(catalog)];
 }
 
 /**

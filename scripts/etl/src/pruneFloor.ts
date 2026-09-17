@@ -17,7 +17,7 @@
  * checkpoints its cursor after every committed page, so a kill costs seconds rather than the whole
  * pass — see `CHECKPOINT`. The mutation decides what
  * is deletable (and refuses anything curated, delisted, merged, user-drawn or attached to a report,
- * hazard, bounty, favourite, put-in or track) — this only drives the cursor and reports.
+ * hazard, bounty, favorite, put-in or track) — this only drives the cursor and reports.
  *
  * Thin subprocess + loop; excluded from coverage. The rule it enforces is tested in
  * `@skating/core`'s `meetsAreaFloor` and `waterBodies.pruneBelowAreaFloor`.
@@ -38,7 +38,7 @@ import { convexRun, resolveDeployment } from '@skating/run-log';
  * position in a local variable loses everything to a SIGTERM, and the restart is not free: the rows
  * it already deleted are gone, but re-reaching page 800 means re-reading the ~20,000 survivors ahead
  * of it at full row cost (polygons included). Deleting is idempotent, so resuming is purely an
- * optimisation — which is exactly why it should be automatic rather than something you remember.
+ * optimization — which is exactly why it should be automatic rather than something you remember.
  */
 const CHECKPOINT = fileURLToPath(new URL('../.scratch/prune-cursor.json', import.meta.url));
 

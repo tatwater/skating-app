@@ -29,7 +29,7 @@ L2A pixels are integers. Reflectance is `DN * scale + offset`, and processing **
 (2022-01-25)** introduced `BOA_ADD_OFFSET = -1000`, i.e. `offset = -0.1` at `scale = 0.0001`. Older
 granules carry `offset = 0`.
 
-In a normalised difference the **scale cancels and the offset does not**:
+In a normalized difference the **scale cancels and the offset does not**:
 
     NDSI = (G - S) / (G + S + 2*offset/scale)
 

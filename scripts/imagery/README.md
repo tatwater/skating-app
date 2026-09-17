@@ -236,7 +236,7 @@ category, silently.
 
 **9b. L2A reflectance is `DN * scale + offset`, and the offset changed mid-archive.** Processing
 baseline **04.00 (2022-01-25)** introduced `BOA_ADD_OFFSET = -1000`, so `offset` is `-0.1` on recent
-granules and `0` on older ones. In a normalised index the scale cancels and **the offset does not**:
+granules and `0` on older ones. In a normalized index the scale cancels and **the offset does not**:
 on the synthetic snow pixel used to verify `zonal-ndsi.py`, the same DN pair yields **NDSI 1.000 under
 the new baseline and 0.778 under the old** — either side of the 0.4 threshold the snow literature
 uses.
@@ -361,7 +361,7 @@ repo the whole time: `zonal-clear.py` recorded Mascoma at 98% clear reporting **
 ### The interior statistics, and why the count matters more than the percentage
 
 `build_interior` runs one `gdal_proximity` pass over the zone grid so each statistic also reports what
-it looked like with the shoreline eroded off. ⚠ **`EROSION_M` is a centre-to-centre distance, so it
+it looked like with the shoreline eroded off. ⚠ **`EROSION_M` is a center-to-center distance, so it
 erodes one ring fewer than it reads**: a threshold of *k* pixel widths removes *k−1* rings. Verified on
 a synthetic 20×20 lake — at 20 m (≈2 grid pixels) the interior came out **18×18, not 16×16**. Optical
 uses 20 m (one ring, the mixed-pixel fix); radar uses 60 m (two rings, because a bank pixel there is a
@@ -440,8 +440,8 @@ Every one of these was run against a real granule before it was written down —
 1. **Read only the intersecting masks** — `ogr2ogr -spat` over `/vsis3/`, using the R2 credentials the
    job already holds rather than a public URL. The frames archive will need public access eventually;
    the masks never will, so requiring it here would widen exposure to buy nothing.
-2. **Warp to EPSG:3857** at 14 m/px, over the mask extent only. 14 projected metres is ~10 ground
-   metres here — Sentinel-2's native sample, so we neither invent detail nor discard it.
+2. **Warp to EPSG:3857** at 14 m/px, over the mask extent only. 14 projected meters is ~10 ground
+   meters here — Sentinel-2's native sample, so we neither invent detail nor discard it.
 3. **Rasterize the masks** onto exactly that grid.
 4. **Distance transform** (`gdal_proximity`) — this is the feather, and it is a true ramp by ground
    distance rather than a blur.
@@ -449,9 +449,9 @@ Every one of these was run against a real granule before it was written down —
 6. **Tile, pack and convert** — `gdal raster tile` writes the whole z7–z14 pyramid as a WEBP tile
    directory, `tiles-to-mbtiles.py` packs it into MBTiles, `pmtiles convert` finishes.
 
-**⚠ The feather is measured in projected metres, and they are not ground metres.** Web Mercator
+**⚠ The feather is measured in projected meters, and they are not ground meters.** Web Mercator
 inflates distance by 1/cos(φ) — ~1.39× at 44°N. Handing `gdal_proximity` a bare 240 would ramp over
-240 *projected* metres, which is **173 m on the ground**: a 28% error that reads as a slightly tight
+240 *projected* meters, which is **173 m on the ground**: a 28% error that reads as a slightly tight
 edge rather than as a units bug. `groundMetersPerPixel` carries the identical correction on the
 client; step 4 is the server's copy of it.
 
@@ -467,7 +467,7 @@ geometry**, which knows nothing about where the satellite was looking: the raste
 of every body the granule touches, while the acquisition swath is a rotated quadrilateral inside it.
 Lakes in the corners the swath misses got nodata black under a fully-opaque alpha — **843 of 3,213
 tiles on that granule, 26% of its output**, including the northern third of Lake Champlain as a black
-lake-shaped blob. `gdal raster tile` honours the source's per-band nodata (`scene.tif` inherits
+lake-shaped blob. `gdal raster tile` honors the source's per-band nodata (`scene.tif` inherits
 `NoData=0` from Sentinel's TCI) and applies it **per pixel**, so out-of-swath pixels come out
 transparent even inside tiles it keeps. Verified against a build with the alpha explicitly clipped to
 a `-dstalpha` validity band: zero pixels differed, which is why no separate clipping stage exists.
@@ -552,7 +552,7 @@ R2_BUCKET=skating-imagery
 ```
 
 `--stage` is load-bearing — see
-[Five ways to get this wrong](#-five-ways-to-get-this-wrong-each-of-which-costs-money).
+[Five ways to get this wrong](#-six-ways-to-get-this-wrong-each-of-which-costs-money).
 
 Values come from the **bucket-scoped** R2 API token (Cloudflare dashboard → R2 → Manage API Tokens).
 The account endpoint and key pair are the same ones the basemap uses; they are recorded locally in
@@ -647,7 +647,7 @@ fly machine list --app skating-imagery   # empty between runs
 fly status --app skating-imagery
 ```
 
-See [Five ways to get this wrong](#-five-ways-to-get-this-wrong-each-of-which-costs-money) for what
+See [Five ways to get this wrong](#-six-ways-to-get-this-wrong-each-of-which-costs-money) for what
 a non-empty list means and how to clear it.
 
 ## Local development, no Fly involved
@@ -674,7 +674,7 @@ If that ever stops working, the host-neutrality claim has quietly stopped being 
 - ~~**VM sizing.** `shared-cpu-4x` / 8 GB is a guess, not a measurement.~~ **Settled 2026-08-24:**
   measured against Fly's billing dashboard, `FLY_VM_MEMORY` now defaults to 2048 and `GDAL_CACHEMAX`
   is pinned so the block cache does not shrink with it. See
-  [Five ways to get this wrong](#-five-ways-to-get-this-wrong-each-of-which-costs-money). `fly.toml`'s
+  [Five ways to get this wrong](#-six-ways-to-get-this-wrong-each-of-which-costs-money). `fly.toml`'s
   `[[vm]]` block was moved to `2gb` to match, and is still ignored by `fly machine run` — see trap 5.
 - **Where buffered geometries come from.** A Convex read per job, or a pre-baked GeoJSON the caller
   stages. The second keeps this container's only network dependencies the granule store and R2, which

@@ -128,7 +128,7 @@ function scoreFields(input: { surfaceAreaSqM: number; curatedBoost?: number }) {
 /**
  * A sub-area is reachable only while it is un-delisted **and** its parent is *active* (Decision 11,
  * extended by A07b). Active rather than listed, because a removed or dormant lake is listed too now —
- * it draws at the dormant rung, dimmed — and a bay outlined and labelled at z10 over a lake that
+ * it draws at the dormant rung, dimmed — and a bay outlined and labeled at z10 over a lake that
  * only appears at z16 would be the exact "Malletts Bay on a map with no Champlain" Decision 11
  * exists to prevent.
  */
@@ -285,12 +285,12 @@ export interface ReportSubAreaStamp {
 /**
  * Which bays a report belongs to (D175): **the track's list when it has a track, else the pin's
  * bay.** The one place the rule is applied — `reports.create`, `reports.update` and the re-stamp
- * job all come through here — so a report cannot be labelled one way at create and another on a
+ * job all come through here — so a report cannot be labeled one way at create and another on a
  * redraw.
  *
  * The track is resolved against *this report's* body's bays, whatever body the activity itself
  * resolved to: a spanning skate can be filed on the lake the skater chose (D44), and a bay of the
- * neighbouring body is not a bay of this one.
+ * neighboring body is not a bay of this one.
  */
 export async function resolveReportSubAreas(
   ctx: QueryCtx,
@@ -1589,7 +1589,7 @@ export const listForBody = query({
  * entirely, and one that does not is evidence the merge's parent test was wrong rather than evidence
  * the box was coarse. So the bar is the strict interactive one.
  *
- * The parent is resolved by **catalogue id**, the same way `waterBodies.importCanonical` resolves
+ * The parent is resolved by **catalog id**, the same way `waterBodies.importCanonical` resolves
  * anything (D93) — never by name, and never by a Convex id the ETL cannot know.
  *
  * **Dry by default**, like every other pass in this campaign that writes.
@@ -1601,9 +1601,9 @@ export const importBaySubAreas = internalMutation({
     bays: v.array(
       v.object({
         name: v.string(),
-        /** The bay's own traced outline, from whichever catalogue drew it. */
+        /** The bay's own traced outline, from whichever catalog drew it. */
         polygon: geoJson,
-        /** The parent's catalogue ids — at least one, resolved the way D93 resolves identity. */
+        /** The parent's catalog ids — at least one, resolved the way D93 resolves identity. */
         parentIds: v.object({
           osmId: v.optional(v.string()),
           nhdId: v.optional(v.string()),
@@ -1624,7 +1624,7 @@ export const importBaySubAreas = internalMutation({
         results.push({ name: bay.name, ok: false, reason: 'unnamed' });
         continue;
       }
-      const parent = await resolveParentByCatalogueIds(ctx, bay.parentIds);
+      const parent = await resolveParentByCatalogIds(ctx, bay.parentIds);
       if (!parent || !isListed(parent) || standingOf(parent).standing === 'removed') {
         // The ETL only emits a sub-area whose parent is in the same master list, so this means the
         // load order was wrong (bodies first, then bays) — worth naming rather than counting.
@@ -1699,15 +1699,15 @@ export const importBaySubAreas = internalMutation({
 });
 
 /**
- * The parent body an incoming sub-area names, by catalogue id.
+ * The parent body an incoming sub-area names, by catalog id.
  *
  * The same three indexes `waterBodies.importCanonical` upserts through, and the same reason: a
- * catalogue id is what an ETL record can assert about itself, where a Convex `_id` is something only
+ * catalog id is what an ETL record can assert about itself, where a Convex `_id` is something only
  * the database knows. **First id that resolves wins**, in the fixed order — an OSM-keyed row outranks
  * an NHD-keyed one because the OSM lane has been the corpus since Phase 01 and its rows are the ones
  * carrying user content.
  */
-async function resolveParentByCatalogueIds(
+async function resolveParentByCatalogIds(
   ctx: MutationCtx,
   ids: { osmId?: string; nhdId?: string; threeDhpId?: string },
 ): Promise<Doc<'waterBodies'> | null> {
@@ -1818,7 +1818,7 @@ const MOUTH_LINE_SCAN_CAP = 200;
 /**
  * **The admin card, per bay** (A09): this season's skates that ran past the mouth line, the derived
  * depth and when it was derived against when the outline last moved, and the stored fetch profile.
- * Beside the redraw control in `/admin/water/$id`, because a bay's seaward edge is a judgement a
+ * Beside the redraw control in `/admin/water/$id`, because a bay's seaward edge is a judgment a
  * skater can prove wrong by skating past it, and this is where the evidence collects. Nothing here
  * is automatic — a mouth line that moves on its own is a boundary nobody can reason about.
  *

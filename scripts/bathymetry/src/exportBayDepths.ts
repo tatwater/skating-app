@@ -38,7 +38,7 @@ const DEFAULT_OUT = join(HERE, '..', '.scratch', 'bay-depths.ndjson');
 
 /** Rows per `setDerivedDepth` call — each is one indexed read and one patch, well inside a mutation. */
 const LOAD_BATCH = 50;
-/** Skipped pairs named on the run row. Enough to recognise a pattern, small enough for a row. */
+/** Skipped pairs named on the run row. Enough to recognize a pattern, small enough for a row. */
 const SKIP_SAMPLE_CAP = 15;
 
 function log(message: string): void {

@@ -70,7 +70,7 @@ export interface SarGranuleKey {
 const SAR_GRANULE_ID =
   /^(S1[A-D])_(IW|EW|SM|WV|S[1-6])_(GRDH|GRDM|SLC|OCN)_1([SA])(SH|SV|DH|DV)_(\d{8}T\d{6})_(\d{8}T\d{6})_([0-9A-F]{6})_([0-9A-F]{6})$/;
 
-/** Parse a Sentinel-1 granule id, or `null` if it is not one we recognise. */
+/** Parse a Sentinel-1 granule id, or `null` if it is not one we recognize. */
 export function parseSarGranuleId(id: string): SarGranuleKey | null {
   const match = SAR_GRANULE_ID.exec(id);
   if (!match) return null;
@@ -151,7 +151,7 @@ const DEFAULT_PRODUCTS = new Set(['GRDH']);
  * Same platform, same orbit, same data-take, **different ground** — the second slice begins where the
  * first ends. Keying dedup on the data-take would collapse them and silently drop half a pass; keying
  * on the date would drop even more. A satellite is in exactly one place at one instant, so
- * `platform + startedAt` identifies an acquisition slice uniquely and cannot merge neighbours.
+ * `platform + startedAt` identifies an acquisition slice uniquely and cannot merge neighbors.
  *
  * That leaves reprocessings, which is what dedup is actually for: the same slice re-delivered under a
  * newer baseline. Earth Search's id omits the trailing product-unique suffix, so those arrive as

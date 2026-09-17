@@ -16,7 +16,7 @@
  * **The reasoning was right and the specific prediction was wrong, which is why we went and looked.**
  * NREL's WIND Toolkit at 2 km, winter hours only, puts Willoughby at 19.4% SE and 16.1% SSE, with a
  * second lobe of 18.6% NW — a strongly **bimodal rose aligned with the trough**, and almost nothing
- * from the E or NE quadrant that the ridges block. That is exactly the terrain channelling the
+ * from the E or NE quadrant that the ridges block. That is exactly the terrain channeling the
  * founder described; it just funnels wind *along* the valley rather than excluding the southerly
  * half of it.
  *
@@ -40,7 +40,7 @@
 
 /**
  * Where a wind rose came from. One source, like elevation and for the same reason — this is a
- * modelled climatology, not a scarce measurement, so a precedence ladder would be ceremony. The
+ * modeled climatology, not a scarce measurement, so a precedence ladder would be ceremony. The
  * literal exists so a second source (a finer downscaling, a longer record) can be added without
  * making every stored rose ambiguous.
  */
@@ -125,7 +125,7 @@ export interface WindExposure {
   sector: number;
   /** Share of winter hours wind blows from this sector, in `[0, 1]`. */
   frequency: number;
-  /** Open water in that direction, metres. */
+  /** Open water in that direction, meters. */
   fetchM: number;
 }
 
@@ -171,7 +171,7 @@ export function mostExposedSector(
  * That matters because the two wind hazards on a lake are different questions:
  *
  * - **Pressure ridges** are a *fetch* problem. Frequency × fetch, which `mostExposedSector` answers,
- *   and which is why `MIN_FETCH_CLAUSE_M` gates that clause at a kilometre.
+ *   and which is why `MIN_FETCH_CLAUSE_M` gates that clause at a kilometer.
  * - **Wind holes** are a *speed* problem. They are driven by sustained strong wind and have **no
  *   comparable fetch minimum** — so the 1 km gate is meaningful for the first and must not be
  *   assumed meaningful for the second (founder, 2026-08-02).
@@ -227,7 +227,7 @@ export const STRONG_WIND_MIN_MPS = 8.94;
  * `derive` both scope themselves with it, and `derive` **refuses** when a cell it wants is absent
  * from the archive — so a flag that could be passed to one and not the other turns a scope decision
  * into a failed run, or worse, a coverage figure quoted over the cells that happened to be there.
- * The same reasoning retired `--min-area-acres=N` in favour of `meetsAreaFloor`: a parameter invites
+ * The same reasoning retired `--min-area-acres=N` in favor of `meetsAreaFloor`: a parameter invites
  * a caller to invent a floor; a shared constant cannot drift.
  */
 export const WIND_ARCHIVE_MIN_FETCH_M = 250;

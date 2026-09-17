@@ -3,7 +3,7 @@
  *
  * ## The rule, and why it changed
  *
- * This module used to target **~12 bands per lake**, snapping to a recognisable interval. Checked
+ * This module used to target **~12 bands per lake**, snapping to a recognizable interval. Checked
  * against the agencies' own charts on 2026-08-01, that turned out to be backwards in the way that
  * matters: it made the interval a function of *depth alone*, so Washington Pond (36 ft, **105
  * soundings**) got a 2 ft interval and seventeen levels while Lake Morey (42 ft, **68,139 soundings**)
@@ -47,9 +47,9 @@
 /**
  * The ladder everything is drawn on, in feet.
  *
- * Five because it is what the agencies themselves reach for — Maine IF&W's charts are labelled in
+ * Five because it is what the agencies themselves reach for — Maine IF&W's charts are labeled in
  * 5 ft and 10 ft, and MassGIS steps in 5 ft below the shallows — and because a skater reads "every
- * five feet" without a legend. It is a judgement, but it is not an arbitrary one.
+ * five feet" without a legend. It is a judgment, but it is not an arbitrary one.
  */
 export const BASE_INTERVAL_FT = 5;
 

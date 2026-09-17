@@ -40,8 +40,8 @@ export const SOURCES: BathymetrySource[] = [
     notes:
       '9,285 contour lines over 558 lakes, surveyed since 2000. The strongest source in the set and ' +
       'the one the whole chain was proved on. Carries both `depth` (ft) and `meters`. ' +
-      'CAUTION: `depth` has been round-tripped through metres, so it holds 1.00000003 alongside 1 — ' +
-      'a naive DISTINCT returns 116 values where ~60 exist. Round before grouping or labelling. ' +
+      'CAUTION: `depth` has been round-tripped through meters, so it holds 1.00000003 alongside 1 — ' +
+      'a naive DISTINCT returns 116 values where ~60 exist. Round before grouping or labeling. ' +
       'Interval is per lake, not per state (the plan assumed "10 ft"; the real set spans 1–180 ft).',
   },
   {
@@ -61,16 +61,16 @@ export const SOURCES: BathymetrySource[] = [
     //    the actual named copyright holder, and added VT ANR / VT DEC, who are not in it.
     // 2. NOAA asks that attribution not "state or imply endorsement by or affiliation with NOAA", and
     //    that modified data not be presented as unaltered NOAA data. Our Champlain surface is doubly
-    //    derived — NOAA chart, digitised by UVM/VCGI, then interpolated by us — so the credit says
+    //    derived — NOAA chart, digitized by UVM/VCGI, then interpolated by us — so the credit says
     //    where the soundings came from and stops short of implying NOAA drew any of this.
-    // 3. Our licence relationship runs to **VCGI**, not to NOAA: we take the data from VCGI's service.
+    // 3. Our license relationship runs to **VCGI**, not to NOAA: we take the data from VCGI's service.
     //    NOAA's terms govern the character of the underlying survey, not our redistribution chain.
     attribution: 'Soundings digitised from NOAA nautical charts by University of Vermont and VCGI',
     notice: 'Not for navigation.',
     sourceUrl: 'https://geodata.vermont.gov/datasets/7f451335fc6644e7a7376adbcd6282df_2/about',
     datum: 'NGVD 1929',
     notes:
-      '104,910 POINTS with a single DEPTH_FT column — not isobaths. Digitised from 1:40,000 NOAA ' +
+      '104,910 POINTS with a single DEPTH_FT column — not isobaths. Digitized from 1:40,000 NOAA ' +
       'charts; VCGI added the Mallets Bay–north and Crown Point–south gaps in 2003 and replaced the ' +
       'shoreline points in 2010. Covers the whole lake, so it is also our only New York coverage. ' +
       'NGVD 1929 does NOT share a datum with the VT ANR set below — never union the two into one ramp. ' +
@@ -111,7 +111,7 @@ export const SOURCES: BathymetrySource[] = [
       type: 'arcgis',
       url: 'https://arcgisserver.digital.mass.gov/arcgisserver/rest/services/AGOL/MassWildlife_Inland_Bathymetry/FeatureServer/0',
       // The service advertises maxRecordCount 2000 and 500s on anything above ~500. This is exactly
-      // the case `pageSize` exists for: an advertised capacity the server cannot actually honour.
+      // the case `pageSize` exists for: an advertised capacity the server cannot actually honor.
       // (Odder still, `resultRecordCount=250` is ignored outright and streams the entire layer, so
       // "smaller is safer" does not hold here — 500 is a measured value, not a conservative guess.)
       pageSize: 500,
@@ -135,7 +135,7 @@ export const SOURCES: BathymetrySource[] = [
     fetch: {
       type: 'arcgis',
       url: 'https://gis.maine.gov/mapservices/rest/services/dep/MaineDEP_Lakes_Data/MapServer/2',
-      // The service advertises 5,000, and honours it.
+      // The service advertises 5,000, and honors it.
       pageSize: 5000,
     },
     attribution:
@@ -150,14 +150,14 @@ export const SOURCES: BathymetrySource[] = [
       'made Maine look badly under-extracted — it is not. Every MIDAS in the layer is read, and the ' +
       'layer is the only depth layer the service publishes (MapServer/2 of five). ' +
       'TWO findings that change the plan: (1) the IF&W depth maps the ' +
-      'plan calls "PDFs, a digitisation project, not an ETL" HAVE ALREADY BEEN DIGITISED by the ' +
+      'plan calls "PDFs, a digitization project, not an ETL" HAVE ALREADY BEEN DIGITIZED by the ' +
       'state — those are the FMSRC=depthmap rows (FMPROCSS=dig, FMSRCORG=meifw). (2) This layer is ' +
-      'TWO datasets wearing one schema, and FMSRC tells them apart: `depthmap` rows are digitised ' +
+      'TWO datasets wearing one schema, and FMSRC tells them apart: `depthmap` rows are digitized ' +
       'IF&W map soundings, `gpscarrier`/`gpsrec` rows are Maine DEP depth-sounder tracks. ' +
       'UNIT TRAP: DEPTHM was computed with a 3.3 ft/m constant, not 3.28084 — DEPTHM * 3.3 lands on a ' +
       'whole foot for the depthmap rows, DEPTHM * 3.28084 does not. So the published DEPTHF is ' +
       'systematically 0.58% shallow and must NOT be read as-is. Recover feet as DEPTHM * 3.3 for ' +
-      'depthmap rows; the GPS rows are genuine metre readings and convert normally. ' +
+      'depthmap rows; the GPS rows are genuine meter readings and convert normally. ' +
       'Density IS the concern here, but not as badly as this note used to claim: the "~29 points per ' +
       'lake" figure followed from the wrong lake count. The real distribution is a MEDIAN of 48 ' +
       "points per lake (mean 97), against Vermont's ~37,000 — still the sparsest source by orders of " +
@@ -170,7 +170,7 @@ export const SOURCES: BathymetrySource[] = [
  *
  * Checked 2026-07-31, exhaustively: NYSDEC's public ArcGIS server (every folder, every service, every
  * layer) carries exactly two depth layers and both are the Hudson River **estuary**. The NYS GIS
- * Clearinghouse's full DCAT catalogue (385 datasets) holds no statewide lake bathymetry — only a
+ * Clearinghouse's full DCAT catalog (385 datasets) holds no statewide lake bathymetry — only a
  * topographic contour download app and a single Seneca Lake document. The one candidate that surfaced,
  * "Bathymetry of the Finger Lakes", is 50 unattributed depth-band polygons for eleven lakes, with no
  * published copyright and no traceable agency — which is exactly the kind of authoritative-looking

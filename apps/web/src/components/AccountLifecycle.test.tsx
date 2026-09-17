@@ -58,7 +58,7 @@ describe('DeleteAccountView', () => {
     expect(screen.getByText(/no way back to you/i)).toBeInTheDocument();
   });
 
-  it('is honest that cancelling is not a restore', () => {
+  it('is honest that canceling is not a restore', () => {
     renderDelete(undefined);
     expect(screen.getByText(/set it up again from scratch/i)).toBeInTheDocument();
   });
@@ -101,7 +101,7 @@ describe('DeleteAccountView', () => {
     });
     expect(screen.getByText(expected)).toBeInTheDocument();
     // The date is the least of it. A ghost is told what has already happened — profile cleared,
-    // unfindable, older content gone — and what cancelling can and can't get back.
+    // unfindable, older content gone — and what canceling can and can't get back.
     expect(screen.getByText(/profile has been cleared/i)).toBeInTheDocument();
     expect(screen.getByText(/nobody can find you/i)).toBeInTheDocument();
     expect(screen.getByText(/deleted for good once it's 30 days old/i)).toBeInTheDocument();
@@ -109,7 +109,7 @@ describe('DeleteAccountView', () => {
     expect(screen.getByRole('button', { name: /cancel deletion/i })).toBeInTheDocument();
   });
 
-  it('returns to the normal state after cancelling', () => {
+  it('returns to the normal state after canceling', () => {
     const { onCancel } = renderDelete(Date.UTC(2026, 0, 1));
     fireEvent.click(screen.getByRole('button', { name: /cancel deletion/i }));
     expect(onCancel).toHaveBeenCalledTimes(1);

@@ -625,7 +625,7 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
   // ── Bathymetric contours for the open lake (A06b / D81 / D82).
   //
   // **The one source in this file that is not always mounted**, and that is the decision rather than
-  // an optimisation: contours are a property of the detail view, so the source exists while a lake's
+  // an optimization: contours are a property of the detail view, so the source exists while a lake's
   // sheet is open and not otherwise. No toggle, no persisted preference, no settings row — the
   // visibility is derived from something the app already knows, which body is selected.
   //
@@ -768,14 +768,14 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
   // which frames on its own target instead (see `geolocateOnMount`).
   useEffect(() => {
     if (!geolocateOnMount) return;
-    let cancelled = false;
+    let canceled = false;
     (async () => {
       try {
         const granted = await ensureForegroundPermission();
         if (!granted) return; // denied ⇒ keep the default framing
         const pos = await Location.getCurrentPositionAsync({});
         const frame = frameForCoord({ lat: pos.coords.latitude, lng: pos.coords.longitude });
-        if (!cancelled && frame) {
+        if (!canceled && frame) {
           cameraRef.current?.jumpTo({ center: frame.center, zoom: frame.zoom });
         }
       } catch {
@@ -783,7 +783,7 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
       }
     })();
     return () => {
-      cancelled = true;
+      canceled = true;
     };
   }, [geolocateOnMount]);
 

@@ -8,7 +8,7 @@ import { Paragraph } from 'tamagui';
  * amendment). Mobile twin of the web component — same copy, same reasoning.
  *
  * The alternative to a button is not *nothing*: a lake sheet that quietly lost "Add a report" reads
- * as a broken build. So the empty space is labelled, and the label names the way back. It points at
+ * as a broken build. So the empty space is labeled, and the label names the way back. It points at
  * the You tab rather than deep-linking, because that's where the Cancel button lives and a person
  * mid-deletion has already been there once.
  */

@@ -28,17 +28,17 @@ export default function NewDraftScreen() {
   const [state, setState] = useState<Located>({ phase: 'locating' });
 
   useEffect(() => {
-    let cancelled = false;
+    let canceled = false;
     void (async () => {
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status !== 'granted') {
-        if (!cancelled) setState({ phase: 'denied' });
+        if (!canceled) setState({ phase: 'denied' });
         return;
       }
       const pos = await Location.getCurrentPositionAsync({});
       const coord = { lat: pos.coords.latitude, lng: pos.coords.longitude };
       const match = resolveCachedBody(coord);
-      if (!cancelled) {
+      if (!canceled) {
         setState({
           phase: 'ready',
           coord,
@@ -48,7 +48,7 @@ export default function NewDraftScreen() {
       }
     })();
     return () => {
-      cancelled = true;
+      canceled = true;
     };
   }, []);
 

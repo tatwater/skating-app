@@ -5,7 +5,7 @@
  *
  * ## Why this is a file and not an import
  *
- * The bake-off compares an OSM outline against an NHD one, so it needs both catalogues' geometry —
+ * The bake-off compares an OSM outline against an NHD one, so it needs both catalogs' geometry —
  * which lives in `scripts/etl` — and it needs 2.4 million depth measurements, which live here. One
  * of the two has to cross a package boundary, and a **file is the seam every other stage in this
  * campaign already uses**: the archives, the merge's master list, the reconciliation mapping. Making
@@ -112,7 +112,7 @@ async function main(): Promise<void> {
         // half rather than two for both.
         polygon: joined.polygon,
         // Flat [lng, lat, lng, lat, …] at 5 decimals (~1.1 m) — a third the bytes of objects, and
-        // the referee's metres are measured on the ground rather than read off the file.
+        // the referee's meters are measured on the ground rather than read off the file.
         pts: points.flatMap((p) => [Number(p.lng.toFixed(5)), Number(p.lat.toFixed(5))]),
       }),
     );

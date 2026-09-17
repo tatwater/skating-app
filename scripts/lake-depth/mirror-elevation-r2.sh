@@ -18,7 +18,7 @@
 # moved since the LiDAR was flown.
 #
 # Separate from `mirror-r2.sh` (and from its bucket) because that one mirrors third-party *source
-# data* under licences of varying clarity, where this is a public-domain USGS product we derived
+# data* under licenses of varying clarity, where this is a public-domain USGS product we derived
 # ourselves. Different provenance, different retention argument, different bucket.
 #
 # Config: cp .env.example .env.local and set ELEVATION_BUCKET / RCLONE_REMOTE. Shared body in

@@ -35,7 +35,7 @@ function colorFor(value: unknown, properties: Record<string, unknown>, favorite 
     .toLowerCase();
 }
 
-/** MapLibre serialises an opaque color back as hex, so this is the whole of "white". */
+/** MapLibre serializes an opaque color back as hex, so this is the whole of "white". */
 const WHITE = '#ffffff';
 
 describe('waterOutlineColor', () => {
@@ -52,9 +52,9 @@ describe('waterOutlineColor', () => {
     expect(colorFor(waterOutlineColor('dark', ['a']), { _id: 'a' })).toBe(WHITE);
   });
 
-  it('leaves an unrevealed lake alone, favourite gold included', () => {
+  it('leaves an unrevealed lake alone, favorite gold included', () => {
     // The v2 bug in one assertion: revealing lake `a` used to paint `b`'s shoreline white too, so a
-    // favourited lake elsewhere in the viewport silently lost its D#1 gold to someone else's reveal.
+    // favorited lake elsewhere in the viewport silently lost its D#1 gold to someone else's reveal.
     const gold = colorFor(waterOutlineColor('dark', ['a']), { _id: 'b' }, true);
     expect(gold).not.toBe(WHITE);
     expect(colorFor(waterOutlineColor('dark', []), { _id: 'b' }, true)).toBe(gold);
@@ -185,7 +185,7 @@ describe('aerialAnchorId — the summer aerial goes UNDER the winter frame', () 
   });
 
   it('falls back to the road anchor when no frame is mounted', () => {
-    // The ordinary case — imagery on, no lake open — and it must keep the v2 behaviour exactly:
+    // The ordinary case — imagery on, no lake open — and it must keep the v2 behavior exactly:
     // the first road layer AFTER `water`, so the photograph is not buried under the basemap's own
     // water fill.
     expect(aerialAnchorId(styleOf(['roads_runway', 'water', 'roads_minor']))).toBe('roads_minor');

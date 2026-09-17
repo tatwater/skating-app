@@ -13,7 +13,7 @@
  *    body, a report or a hazard, and no other module imports from here. The estimate is measured
  *    *against* the world and nothing reads it back; the moment a derived thickness becomes an input
  *    it acquires authority it has not earned.
- * 3. **Graduating it to a skater surface needs its own decision.** D160 authorises a dark instrument
+ * 3. **Graduating it to a skater surface needs its own decision.** D160 authorizes a dark instrument
  *    and nothing more.
  *
  * ## Why it exists at all
@@ -183,7 +183,7 @@ async function windowIntegrals(
  * `localDayMsInZone` is exact and has no degenerate cases to enumerate.
  *
  * The offset path remains for rows written before `timeZone` existed, and longitude behind that —
- * never UTC, which is the original bug. Both are approximations and are now labelled as such.
+ * never UTC, which is the original bug. Both are approximations and are now labeled as such.
  */
 interface SkateAnchor {
   /** The local calendar day the skate ended on — the calibration window's newest day. */

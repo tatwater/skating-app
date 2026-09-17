@@ -43,7 +43,7 @@ describe('normalizeDescriptor', () => {
     expect(d.supportsPagination).toBe(true);
   });
 
-  it('collapses whitespace in the copyright so a reformat is not read as a licence change', () => {
+  it('collapses whitespace in the copyright so a reformat is not read as a license change', () => {
     // NH's real copyrightText carries an embedded newline and a trailing space.
     expect(d.copyrightText).toBe(
       'New Hampshire Department of Environmental Services New Hampshire Fish and Game',

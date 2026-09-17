@@ -15,7 +15,7 @@
  * **orthogonal demands** on one session, and the profile is derived from whichever is active.
  *
  * **Record fidelity wins the knob.** On-ice alerts run at `Balanced`/20 m because cold-weather battery
- * matters more than sub-metre precision for a fuzzy hazard alert. A recorded track needs
+ * matters more than sub-meter precision for a fuzzy hazard alert. A recorded track needs
  * `BestForNavigation`/~5 m or it produces a jagged line, inflated distance and an ugly activity. When
  * both are on, record wins — **you can always alert off a finer stream; you can't refine a coarse one
  * after the fact.** Changing profile means stop-then-start (the OS gives no way to retune a live

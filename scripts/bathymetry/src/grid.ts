@@ -9,11 +9,11 @@
  *   by exactly one factor of `ratio` on the along-axis coordinate, applied to both ends. Get the
  *   factor backwards and every lake in the corpus is stretched or squashed by 2–4×, which looks
  *   entirely plausible in a thumbnail of a lake you have never seen.
- * - The **filter width** is in real metres while the grid increment is in compressed ones, so it
+ * - The **filter width** is in real meters while the grid increment is in compressed ones, so it
  *   carries the `ratio` and the increment does not. Miss that and the Gaussian is 4× too narrow along
  *   the axis — which does not fail, it just stops removing the artifact it exists to remove.
  * - The **mask radius** is in compressed units because `surface -M` runs before `grdedit`. A circle in
- *   the compressed frame is an along-axis ellipse in the real one, which is the *intended* behaviour
+ *   the compressed frame is an along-axis ellipse in the real one, which is the *intended* behavior
  *   (the anisotropy prior says we will extrapolate further along the axis than across it) but is worth
  *   stating, because it looks like a bug until you know it isn't.
  *
@@ -33,7 +33,7 @@ import { compressAlong, type Frame, type LocalPoint, toLocal } from './thalweg';
 export const GRID_CELLS = 500;
 
 /**
- * Ground resolution to aim for, in metres per cell.
+ * Ground resolution to aim for, in meters per cell.
  *
  * A constant *cell count* was the bug: 500 cells is 349 m per cell on Champlain, which is why it
  * rendered as blobs, and 1.9 m per cell on a 935 m pond, which is resolution no sounding survey can
@@ -79,7 +79,7 @@ export const TENSION = 0.25;
  */
 export const SMOOTH_CELLS = 3;
 
-/** Metres per degree of latitude. Matches `thalweg.ts`. */
+/** Meters per degree of latitude. Matches `thalweg.ts`. */
 const M_PER_DEG_LAT = 111_320;
 
 /** Pad the solve region by this fraction of its long side, so the mask isn't clipped by the frame. */
@@ -90,15 +90,15 @@ export interface GridPlan {
   ratio: number;
   /** `-R` for the solve, in the compressed local frame. */
   region: string;
-  /** `-R` for `grdedit`, relabelling the solved grid back to real metres. */
+  /** `-R` for `grdedit`, relabeling the solved grid back to real meters. */
   realRegion: string;
   /** `-I`, the cell size, square in the compressed frame. */
   increment: string;
   /** `-M` for `surface`, in compressed units. */
   maskRadius: number;
-  /** `-Fg` for `grdfilter`, in real metres. */
+  /** `-Fg` for `grdfilter`, in real meters. */
   filterWidthM: number;
-  /** Shoreline resampling interval, real metres — roughly one grid cell. */
+  /** Shoreline resampling interval, real meters — roughly one grid cell. */
   shoreSpacingM: number;
   /** Bounds of the compressed cloud, for callers that need the extent. */
   bounds: { minAlong: number; maxAlong: number; minAcross: number; maxAcross: number };
@@ -183,7 +183,7 @@ export function gridPlan(
     realRegion: `-R${lo.along * ratio}/${hi.along * ratio}/${lo.across}/${hi.across}`,
     increment: `-I${increment}`,
     maskRadius: longSide * maxGapRatio,
-    // Real metres: the along span is un-compressed here because `grdfilter` runs after `grdedit`.
+    // Real meters: the along span is un-compressed here because `grdfilter` runs after `grdedit`.
     filterWidthM: (Math.max(spanAlong * ratio, spanAcross) / gridCells) * smoothCells,
     shoreSpacingM: Math.max(5, (longSide * ratio) / gridCells),
     bounds,
@@ -208,7 +208,7 @@ export function compressedCloud(
   ];
 }
 
-/** Degrees of longitude per metre at a latitude — for sizing a shoreline resample in degrees. */
-export function metresPerLngDegree(lat: number): number {
+/** Degrees of longitude per meter at a latitude — for sizing a shoreline resample in degrees. */
+export function metersPerLngDegree(lat: number): number {
   return M_PER_DEG_LAT * Math.cos((lat * Math.PI) / 180);
 }

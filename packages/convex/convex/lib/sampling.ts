@@ -8,11 +8,11 @@
  * the few genuinely multi-cell giants (Champlain ~200 km), where a hazard/report picks its nearest point.
  *
  * **That derived point is `interiorPoint`, not `centroid` (A06c).** `centroid` is Turf's
- * `pointOnFeature`, which falls back to a point on the **shoreline** whenever the bbox centre lands
+ * `pointOnFeature`, which falls back to a point on the **shoreline** whenever the bbox center lands
  * outside the polygon — true of any curved or narrow lake, and measured at **30.7 km** off mid-lake for
  * Champlain. Against Open-Meteo's 2–25 km grid that is one to several cells wrong, on an input the D56
  * decay math is supposed to be reproducible from. Every *other* `centroid` consumer wants the old
- * behaviour (you drive to a shore, and a shore is in the shore's town), which is why this is a second
+ * behavior (you drive to a shore, and a shore is in the shore's town), which is why this is a second
  * field rather than a correction to the first.
  */
 
@@ -57,7 +57,7 @@ export function nearestSamplePoint(
 /**
  * The point to sample when there is no anchor to be near (A06c §2.5b).
  *
- * The weather-since strip always has one — a report's put-in, a hazard's centre — because it is
+ * The weather-since strip always has one — a report's put-in, a hazard's center — because it is
  * *about* something that happened somewhere. A body-level forward forecast is about the lake, so it
  * samples the lake: the same interior point every other consumer falls back to, which on a
  * multi-sample-point giant like Champlain resolves to whichever stored point is nearest mid-lake.
@@ -86,7 +86,7 @@ export function defaultSampleAnchor(body: Doc<'waterBodies'>): { lat: number; ln
  * `resolveForecast` take a `WeatherCell`, which can only come from here, which means the four cannot
  * disagree without deleting this function.
  *
- * `target` is the thing the weather is *about* — a report's put-in, a hazard's centre — used to pick
+ * `target` is the thing the weather is *about* — a report's put-in, a hazard's center — used to pick
  * among a giant's `weatherSamplePoints`. Omit it for a body-level question and it falls back to
  * `defaultSampleAnchor`.
  */

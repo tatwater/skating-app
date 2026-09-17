@@ -1,4 +1,4 @@
-# Phase 02a build plan — Map + reports (the MVP)
+# Phase 02a — Map + reports (the MVP)
 
 > **✅ Phase 02a COMPLETE (2026-07-16).** All workstreams shipped: web MVP §1–§5 (2026-07-13),
 > mobile online loop §6.1 (2026-07-14, PR #13), regional expansion §8 → Phase 02b (2026-07-15, PR #14),

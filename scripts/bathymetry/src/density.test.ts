@@ -6,7 +6,7 @@ import {
   MAX_FRAGMENTS_PER_LEVEL,
   MAX_GAP_RATIO,
   MIN_SOUNDINGS,
-  summariseDensity,
+  summarizeDensity,
 } from './density';
 
 /** A filled grid of soundings over a square patch — the well-surveyed case. */
@@ -81,7 +81,7 @@ describe('assessDensity', () => {
   });
 
   it('is scale-free — the same shape passes at pond size and at Champlain size', () => {
-    // gapRatio normalises by extent, so a 200 m pond and a 200 km lake are judged on the same terms.
+    // gapRatio normalizes by extent, so a 200 m pond and a 200 km lake are judged on the same terms.
     const pond = assessDensity({ lakeKey: 'pond', points: grid(10, 0.002) });
     const huge = assessDensity({ lakeKey: 'huge', points: grid(10, 0.9) });
     expect(pond.verdict).toBe('ok');
@@ -103,7 +103,7 @@ describe('assessDensity', () => {
     expect(result.reason).toContain('line, not an area');
   });
 
-  it('honours a caller-supplied threshold, so the gate can be swept over real data', () => {
+  it('honors a caller-supplied threshold, so the gate can be swept over real data', () => {
     const clustered = [
       ...grid(6, 0.004),
       { lng: -70 + 0.04, lat: 45 + 0.04 },
@@ -162,7 +162,7 @@ describe('the gate threshold', () => {
     // three bands, which found that quality does not track this ratio at all (the worst sample was at
     // 10%, with the most soundings in the grid).
     //
-    // It reads 0.22 rather than 0.12 because the denominator changed, not because the judgement did.
+    // It reads 0.22 rather than 0.12 because the denominator changed, not because the judgment did.
     // `sqrt(area)` runs a median 1.82x smaller than the bbox diagonal, so holding 0.12 would have
     // silently tightened the gate by that factor — it took the drop count from 271 to 1,224. 0.22
     // reproduces the approved keep-rate (279) while letting the fairness fix redistribute WHICH lakes
@@ -180,9 +180,9 @@ describe('the gate threshold', () => {
   });
 });
 
-describe('summariseDensity', () => {
+describe('summarizeDensity', () => {
   it('splits kept from dropped and counts by verdict', () => {
-    const summary = summariseDensity([
+    const summary = summarizeDensity([
       assessDensity({ lakeKey: 'a', points: grid(12) }),
       assessDensity({ lakeKey: 'b', points: grid(2) }),
       assessDensity({

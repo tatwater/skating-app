@@ -132,7 +132,7 @@ function writeArchive(entries: readonly ElevationArchiveEntry[], refusals: Recor
     archive: 'usgs-3dep-epqs',
     sourceUrl: EPQS_URL,
     // 3DEP is a USGS product; US federal government works are public domain (17 U.S.C. § 105).
-    licence: 'Public domain (US Government work, 17 U.S.C. § 105) — USGS 3DEP',
+    license: 'Public domain (US Government work, 17 U.S.C. § 105) — USGS 3DEP',
     fetchedAt: new Date().toISOString(),
     entries: entries.length,
     resolutionsM: resolutionBands(entries),

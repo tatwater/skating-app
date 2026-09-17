@@ -64,7 +64,7 @@ describe('the emphasis rails borrow the temperature poles', () => {
   // auxiliary emphases are conjunctions with temperature — wind is highlighted when calm *and below*
   // freezing, sun when bright *and above* — so they must wear the same poles the temperature line
   // does. An earlier version used one shared blue for both, which drew a sunny thaw (the condition
-  // that softens a skating surface) in the same colour as the hard freeze that makes black ice.
+  // that softens a skating surface) in the same color as the hard freeze that makes black ice.
   it.each(['light', 'dark'] as const)('%s', (mode) => {
     const palette = weatherChartPalette(mode);
     expect(palette.emphasis.cold).toBe(palette.temperature.deepCold);
@@ -73,10 +73,10 @@ describe('the emphasis rails borrow the temperature poles', () => {
   });
 });
 
-describe('the scrubber colour is not a data colour', () => {
+describe('the scrubber color is not a data color', () => {
   it.each(['light', 'dark'] as const)('%s', (mode) => {
     // The thumb and the scrub crosshair are chrome. Chrome that borrows a scale's hue starts reading
-    // as a measurement — a thumb sitting under the wind lane in a wind colour was already ambiguous.
+    // as a measurement — a thumb sitting under the wind lane in a wind color was already ambiguous.
     const p = weatherChartPalette(mode);
     const dataColors = [
       ...Object.values(p.temperature),

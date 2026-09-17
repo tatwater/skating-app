@@ -9,7 +9,7 @@ import {
   shapeSignature,
 } from './imageryMask';
 
-/** A ~1 km square pond near Burlington, big enough that metre-scale buffers are visible in it. */
+/** A ~1 km square pond near Burlington, big enough that meter-scale buffers are visible in it. */
 const POND: Polygon = {
   type: 'Polygon',
   coordinates: [

@@ -6,7 +6,7 @@
  * One GeoJSON feature per body: the **solid** reveal — water, the walk in, and the parking, each
  * buffered by `SENTINEL_MASK_METERS.solid` and unioned. That is `revealShape` from `@skating/core`,
  * unchanged, which is the point: the web client and this archive must agree about what a reveal
- * covers, and two implementations of a geodesic buffer are two chances to disagree by metres.
+ * covers, and two implementations of a geodesic buffer are two chances to disagree by meters.
  *
  * **The feather is not here.** `SENTINEL_MASK_METERS.feather` is 240 m of ramp outside this shape,
  * and it is applied in the container as a distance transform against the rasterised mask — where
@@ -64,7 +64,7 @@ export interface CorpusMaskRow {
   approachPaths?: readonly (readonly LatLng[])[];
   parkingCoords?: readonly LatLng[];
   markerCoords?: readonly LatLng[];
-  /** Surface elevation in metres — the radar geocode's input. See {@link MaskProperties.elevationM}. */
+  /** Surface elevation in meters — the radar geocode's input. See {@link MaskProperties.elevationM}. */
   elevationM?: number;
 }
 
@@ -95,7 +95,7 @@ export interface MaskProperties {
   waterBodyId: string;
   name?: string;
   /**
-   * Surface elevation in metres, where the corpus has one.
+   * Surface elevation in meters, where the corpus has one.
    *
    * ⚠ **For the radar geocode rather than for anything a skater sees.** A GRD is projected onto an
    * ellipsoid at a single average scene height, so a lake above or below that reference lands

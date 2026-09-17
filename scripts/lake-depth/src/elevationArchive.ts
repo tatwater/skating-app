@@ -56,12 +56,12 @@ export interface ElevationArchiveManifest {
   /** The service, so the archive names its own provenance without a reader consulting this file. */
   sourceUrl: string;
   /**
-   * The licence, recorded because `depthSources.ts` made it a gate and the reasoning carries:
+   * The license, recorded because `depthSources.ts` made it a gate and the reasoning carries:
    * an archive with no rights statement is one nobody can safely act on later.
    *
    * 3DEP is a USGS product and US federal government works are **public domain** (17 U.S.C. § 105).
    */
-  licence: string;
+  license: string;
   fetchedAt: string;
   entries: number;
   /** Distribution of source-raster resolutions, so a coarse-DEM cohort is visible rather than latent. */
@@ -119,7 +119,7 @@ export function missingKeys(
 }
 
 /**
- * Summarise the resolutions present, for the manifest and the run row.
+ * Summarize the resolutions present, for the manifest and the run row.
  *
  * **Banded rather than exact**, because 3DEP reports a float and the interesting question is
  * categorical: how much of the corpus came from 1 m LiDAR, and how much from the 10 m or 30 m

@@ -174,7 +174,7 @@ async function flushAllDue(t: ReturnType<typeof convexTest>) {
  * convex-test backs `runAfter(0)` with a *real* `setTimeout(0)`. It stays dormant only while the
  * test does microtask work — the first yield to the event loop would run the continuation and drain
  * the queue underneath the assertions that follow (verified: one `setTimeout(0)` await flips the job
- * to `success`). Cancelling makes the ordering explicit instead of an accident of the event loop.
+ * to `success`). Canceling makes the ordering explicit instead of an accident of the event loop.
  */
 async function cancelScheduledFlushes(t: ReturnType<typeof convexTest>): Promise<number> {
   return t.run(async (ctx) => {

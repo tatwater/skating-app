@@ -156,7 +156,7 @@ export function windowStartMs(currentSeason: Season): number {
 /**
  * Compute every cluster for one body across the window.
  *
- * **What is excluded, and why each one is a judgement rather than a filter** (§3.2):
+ * **What is excluded, and why each one is a judgment rather than a filter** (§3.2):
  *
  * - **Moderator-hidden pins.** A moderator judged the pin bad; it is not evidence.
  * - **Merge tombstones**, which are represented by the pin they were folded into (D80) — counting both
@@ -349,8 +349,8 @@ async function readNeverExisted(
   return { neverExisted: bogus, votesRead: votes.length };
 }
 
-/** The bbox centre of a hazard's stored footprint — what the medoid is measured on. */
-function centreOf(hazard: Doc<'hazards'>) {
+/** The bbox center of a hazard's stored footprint — what the medoid is measured on. */
+function centerOf(hazard: Doc<'hazards'>) {
   return {
     lat: (hazard.bbox.minLat + hazard.bbox.maxLat) / 2,
     lng: (hazard.bbox.minLng + hazard.bbox.maxLng) / 2,
@@ -398,7 +398,7 @@ function describeCluster(
     medoidOf(
       members.map((m) => ({
         id: m._id as string,
-        centre: centreOf(m),
+        center: centerOf(m),
         firstReportedAt: m.firstReportedAt,
       })),
     ) ?? null;
@@ -470,8 +470,8 @@ function describeCluster(
  * `shallow_early_thaw` is a claim about the lake *bed*: shallow water over a sandbar or a reef goes out
  * from the bottom first. If the body's depth says it is deep, that claim is at odds with the only
  * physical measurement we hold — so the suggestion is withheld when the depth **positively
- * contradicts** it *and* was **measured** rather than modelled. D68's provenance ladder exists exactly
- * so a claim can be weighted by what it was read off, and a modelled mean is not evidence enough to
+ * contradicts** it *and* was **measured** rather than modeled. D68's provenance ladder exists exactly
+ * so a claim can be weighted by what it was read off, and a modeled mean is not evidence enough to
  * overrule several winters of people standing there.
  *
  * The cluster is still recorded either way. What is withheld is the *suggestion*, not the history.
@@ -489,6 +489,6 @@ function suggestionFor(
   const measured = source !== undefined && isMeasuredDepthSource(source);
   const hasDepth = body.meanDepthM !== undefined || body.maxDepthM !== undefined;
   // Deep *and* measured is the one combination that withholds. Unknown depth doesn't contradict
-  // anything, and a modelled depth is a guess this evidence outweighs.
+  // anything, and a modeled depth is a guess this evidence outweighs.
   return hasDepth && measured ? null : suggested;
 }

@@ -623,7 +623,7 @@ describe('evidence hooks', () => {
     expect(body.activatedAt).toBeDefined();
   });
 
-  test('a favourite does not activate — it retains, and it is the request path’s job to ask', async () => {
+  test('a favorite does not activate — it retains, and it is the request path’s job to ask', async () => {
     const t = harness();
     const skater = await seedUser(t, 'skater');
     const id = await seedBody(t, 'osm/1', dormant('inactive'));
@@ -641,7 +641,7 @@ describe('push surfaces', () => {
     publicAccess: { verdict: 'none' as const, decidedAt: Date.now(), decidedByUserId: modId },
   });
 
-  test('the drive-time fan-out skips a `none` body; a favouriter is still told; a removed body tells nobody', async () => {
+  test('the drive-time fan-out skips a `none` body; a favoriter is still told; a removed body tells nobody', async () => {
     const t = harness();
     const mod = await seedUser(t, 'mod', 'moderator');
     const author = await seedUser(t, 'author');
@@ -667,7 +667,7 @@ describe('push surfaces', () => {
     expect(queued.map((q) => [q.userId, q.type])).toEqual([[fan.id, 'favorite_report']]);
     expect(queued.some((q) => q.userId === nearby.id)).toBe(false);
 
-    // A removed body: the favourite predates the takedown; the report still tells nobody.
+    // A removed body: the favorite predates the takedown; the report still tells nobody.
     const removed = await seedBody(t, 'osm/removed');
     await fan.as.mutation(api.waterBodyFavorites.toggle, { waterBodyId: removed });
     await t.run((ctx) => ctx.db.patch(removed, { removedAt: Date.now() }));
@@ -824,7 +824,7 @@ describe('seedStanding — the partition by evidence of access or use', () => {
 describe('the season rollover', () => {
   const SEASON = 2029;
 
-  test('demotes an active body with no activity in the window; retains use, boosts and favourites', async () => {
+  test('demotes an active body with no activity in the window; retains use, boosts and favorites', async () => {
     const t = harness();
     const skater = await seedUser(t, 'skater');
     const fan = await seedUser(t, 'fan');
@@ -832,8 +832,8 @@ describe('the season rollover', () => {
     const old = await seedBody(t, 'osm/old');
     const recent = await seedBody(t, 'osm/recent');
     const boosted = await seedBody(t, 'osm/boosted', { curatedBoost: 0.3 });
-    const favourited = await seedBody(t, 'osm/fav');
-    await fan.as.mutation(api.waterBodyFavorites.toggle, { waterBodyId: favourited });
+    const favorited = await seedBody(t, 'osm/fav');
+    await fan.as.mutation(api.waterBodyFavorites.toggle, { waterBodyId: favorited });
     // The window into '29/'30 is the start of the '26/'27 season onward.
     const cutoff = seasonStartMs(SEASON - 3);
     await t.run(async (ctx) => {
@@ -877,7 +877,7 @@ describe('the season rollover', () => {
     expect(standingOf((await get(t, old)) as Doc<'waterBodies'>)).toMatchObject({
       reason: 'inactive',
     });
-    for (const id of [recent, boosted, favourited]) {
+    for (const id of [recent, boosted, favorited]) {
       expect(standingOf((await get(t, id)) as Doc<'waterBodies'>).standing).toBe('active');
     }
   });

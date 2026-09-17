@@ -129,7 +129,7 @@ const SEVERED_PREFIX = 'severed:';
  * runs:
  *
  * - the profile is **really scrubbed** — name, avatar, bio, town, home coordinate, isochrones — and
- *   cancelling does not put any of it back;
+ *   canceling does not put any of it back;
  * - the public profile and profile search **stop returning them entirely**: to everyone else, this
  *   person no longer exists;
  * - every surviving report, comment and hazard reads as `Deleted skater`;
@@ -203,9 +203,9 @@ export const cancelDeletion = mutation({
   args: {},
   handler: async (ctx) => {
     const profile = await requireProfile(ctx);
-    if (profile.deletionRequestedAt === undefined) return { cancelled: false };
+    if (profile.deletionRequestedAt === undefined) return { canceled: false };
     await ctx.db.patch(profile._id, { deletionRequestedAt: undefined });
-    return { cancelled: true };
+    return { canceled: true };
   },
 });
 
@@ -226,10 +226,10 @@ export const redactGhostContent = internalMutation({
   handler: async (ctx, { userId, cursor, pageSize }) => {
     const profile = await ctx.db.get(userId);
     if (!profile) return { stopped: 'gone' as const };
-    // Cancelled between two passes: stop. What is already redacted stays redacted — see
+    // Canceled between two passes: stop. What is already redacted stays redacted — see
     // `cancelDeletion`.
     if (profile.deletionRequestedAt === undefined && profile.status !== 'deleting') {
-      return { stopped: 'cancelled' as const };
+      return { stopped: 'canceled' as const };
     }
 
     // No `final` here, deliberately: this is the ghost-window sweep, where the age cutoff *is* the
@@ -381,10 +381,10 @@ export const finalizeAccount = internalMutation({
   handler: async (ctx, { userId, stage = STAGES[0], cursor, pageSize }) => {
     const profile = await ctx.db.get(userId);
     if (!profile) return { stopped: 'gone' as const };
-    // Cancelled mid-flight: the user changed their mind between the sweep and this page. Stop, and
+    // Canceled mid-flight: the user changed their mind between the sweep and this page. Stop, and
     // leave what's already erased erased — those rows are notifications and cached bands, all of which
     // regenerate. Nothing that was anonymized or severed has been touched yet (see the stage order).
-    if (profile.deletionRequestedAt === undefined) return { stopped: 'cancelled' as const };
+    if (profile.deletionRequestedAt === undefined) return { stopped: 'canceled' as const };
     if (profile.status === 'deleted') return { stopped: 'already_deleted' as const };
 
     const size = pageSizeFor(pageSize);
@@ -485,7 +485,7 @@ async function runStage(
  * Two consequences worth stating:
  *
  * - **Finalization is no longer cancellable**, because `cancelDeletion` needs an active profile.
- *   That's the correct end state, and it also removes a hole: cancelling mid-chain used to leave a
+ *   That's the correct end state, and it also removes a hole: canceling mid-chain used to leave a
  *   live account whose favorites, blocks and support tickets had already been erased, described in a
  *   comment as things that "regenerate". Notifications regenerate. Blocks do not.
  * - **A crashed job self-heals.** The hourly sweep skips only `deleted`, so an account left in

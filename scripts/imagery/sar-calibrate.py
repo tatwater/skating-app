@@ -24,7 +24,7 @@ So the score is a **contrast** across the shoreline:
 
     score(dx, dy) = mean_dB(ring just OUTSIDE the polygon) − mean_dB(inside the polygon)
 
-At the true offset the inside is water and the ring is land, which maximises it. That depends only on
+At the true offset the inside is water and the ring is land, which maximizes it. That depends only on
 the boundary, so it is as sharp for Champlain as for a farm pond.
 
 ⚠ **The ring is built from the WATER polygon, never the reveal.** The reveal is already buffered 60 m
@@ -136,7 +136,7 @@ def fetch_pass(granule_id: str, work: Path) -> dict | None:
 
 
 def best_offset(image: np.ndarray, inside: np.ndarray, ring: np.ndarray, search_px: int):
-    """The (dx, dy) in pixels maximising ring-minus-inside contrast, by FFT cross-correlation.
+    """The (dx, dy) in pixels maximizing ring-minus-inside contrast, by FFT cross-correlation.
 
     Shifting the *mask* over a fixed image is a correlation, so every candidate offset is evaluated in
     one transform instead of one rasterisation each. Invalid pixels are handled by correlating the
@@ -333,7 +333,7 @@ def main() -> int:
             "elevationM": float(elevation),
             "acres": acres,
             "wkb": geom.ExportToWkb(),
-            "centre": ((minx + maxx) / 2, (miny + maxy) / 2),
+            "center": ((minx + maxx) / 2, (miny + maxy) / 2),
         })
 
     buckets: dict[int, list] = {}
@@ -374,7 +374,7 @@ def main() -> int:
 
         for p in passes:
             footprint = ogr.CreateGeometryFromJson(json.dumps(p["footprint"]))
-            cx, cy = lake["centre"]
+            cx, cy = lake["center"]
             point = ogr.CreateGeometryFromJson(json.dumps({
                 "type": "Point",
                 "coordinates": [cx / MW * 180.0, latitude_of(cy)],

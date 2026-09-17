@@ -148,7 +148,7 @@ describe('the retention rule', () => {
     expect(retainsActive({ favorited: false }, season)).toBe(false);
   });
 
-  test('a positive curated boost or any favourite retains regardless of activity', () => {
+  test('a positive curated boost or any favorite retains regardless of activity', () => {
     expect(retainsActive({ curatedBoost: 0.3, favorited: false }, season)).toBe(true);
     expect(retainsActive({ favorited: true }, season)).toBe(true);
   });

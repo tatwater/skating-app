@@ -35,7 +35,7 @@ export const IMAGERY_LAYER_ID = 'imagery-raster';
 
 /**
  * How far the reveal extends past what it is revealing, per tier — **and the units are pixels
- * whether we write them in metres or not.**
+ * whether we write them in meters or not.**
  *
  * At Sentinel's 10 m ground sample, a 10 m buffer is **one pixel**: invisible, and a feather built
  * from it is a hard edge with extra steps. So the aerial tier's numbers cannot simply be reused, and
@@ -57,7 +57,7 @@ export interface ImageryMaskInput {
    * Routed hike-in approaches, parking → put-in (`putIns.approachPath`, A06e Workstream 0).
    *
    * Only routed hike-in legs have one, which is the correct set: a drive-up ramp's "walk" is a few
-   * metres already inside the water's own buffer, so it would add vertices and no shape.
+   * meters already inside the water's own buffer, so it would add vertices and no shape.
    */
   approachPaths?: readonly (readonly LatLng[])[];
   /** Parking coordinates. Points, not lots — `parkingAreas` stores a `coord`, so these buffer to circles. */

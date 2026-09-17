@@ -163,7 +163,7 @@ still feeds the wind clause, the §4.2 prominence terms and §1.5's deciles, so 
 ### 2. `waterBodies.centroid` is not a centroid, and the fetch profile was cast from the shore
 
 §1.4 says *"cast a ray through the centroid"*. **That cannot be taken literally.** `centroid` comes from
-`representativePoint` → Turf's `pointOnFeature`, which returns the bbox centre only when it lands
+`representativePoint` → Turf's `pointOnFeature`, which returns the bbox center only when it lands
 inside the polygon and a point on the **boundary** when it does not — true of any curved or narrow
 water body. Measured: **Lake Willoughby's stored centroid is ring vertex 199**, and Lake Champlain's sits
 **30.7 km** from mid-lake.
@@ -173,7 +173,7 @@ harmless for every prior consumer. Here it was fatal: **7 of Willoughby's 16 bea
 Champlain's came back 0.0**, because a ray cast north from a west-shore vertex correctly finds no
 water.
 
-The fetch profile now derives its own origin (`fetchOrigin`), and a supplied origin is honoured only
+The fetch profile now derives its own origin (`fetchOrigin`), and a supplied origin is honored only
 if it is *strictly* interior, so passing the stored centroid can never silently reproduce the bug.
 
 **Founder call on the wider fix:** `centroid` itself is **left alone** — drive-time bands
@@ -209,7 +209,7 @@ full-corpus derive reads:
 Same trough, same 15× NW-over-NE terrain block, same energy — redistributed across adjacent sectors,
 and the *leading* sector is now NW rather than SE. **The likely cause is that Willoughby's sampling
 point moved**: the rose is folded onto WTK's 2 km grid from `interiorPoint`, and A07a re-merged the
-outline from four catalogues between the two runs, so the body may now resolve to a different cell.
+outline from four catalogs between the two runs, so the body may now resolve to a different cell.
 That is a hypothesis from the sequence, **not something confirmed** — worth pinning down before any
 copy quotes a leading sector, since *"most exposed to the southeast"* would now be wrong.
 
@@ -242,7 +242,7 @@ never automatic, because a check that removes itself is not a check.
 ### 5. The caption's units contradicted D25
 
 This doc's illustrative caption reads *"1,688 acres, about 5 × 1 miles… a measured 91 m maximum
-depth… Its 8 km axis"*, and §1.3 says *"Metric per D25: nearest kilometre"*. **D25 says store metric,
+depth… Its 8 km axis"*, and §1.3 says *"Metric per D25: nearest kilometer"*. **D25 says store metric,
 *display imperial*, and there is no metric display mode in this product.** The caption is imperial
 throughout.
 
@@ -322,7 +322,7 @@ A test fails if step 1 stops clobbering richness, so the constraint cannot drift
 ### 7. `centroid` was never a centroid, and now says so
 
 Renamed to **`representativePoint`** across all three tables that carried it (founder call,
-2026-08-02). It is Turf's `pointOnFeature` and it lands on the **shoreline** whenever the bbox centre
+2026-08-02). It is Turf's `pointOnFeature` and it lands on the **shoreline** whenever the bbox center
 falls outside the polygon.
 
 **It must not be "fixed" into a true centroid**, which is the tempting reading of the mismatch. The
@@ -360,7 +360,7 @@ findings had not been propagated into its later workstreams.***
 
 B says every link is *"a pure function of `(centroid, name, states[])`"*. Finding 2 of this same
 document measured what `centroid` actually is — Turf `pointOnFeature`, which returns a point on the
-**boundary** whenever the bbox centre falls outside the polygon, so Willoughby's is ring vertex 199
+**boundary** whenever the bbox center falls outside the polygon, so Willoughby's is ring vertex 199
 and Champlain's sits **30.7 km** from mid-lake.
 
 B predates that measurement and was never re-checked against it. A Windy link for Champlain would
@@ -391,11 +391,11 @@ weather-since summary still reports zero.
 12-hour horizon against a UTC `now` slides the whole strip by 4–5 hours in this region — most of its
 own length.)*
 
-### 3. §5's counter is the wrong shape, and the neighbouring file is why — **D141**
+### 3. §5's counter is the wrong shape, and the neighboring file is why — **D141**
 
 §5.2 specifies `summary` as a counter *"generalizing the Phase 04 contribution-counter pattern"*, and
 `lib/contributionCounts.ts` makes ±1 look obvious. But a profile's `reportCount` is a lifetime total
-where a card's counts are **window- and season-scoped**: a report ageing out has no event to hang a
+where a card's counts are **window- and season-scoped**: a report aging out has no event to hang a
 decrement on, and the D86 mean cannot be maintained incrementally at all — you cannot remove a value
 from a mean without knowing which value left.
 
@@ -495,7 +495,7 @@ that the pass walked the whole table.)*
 >
 > | field | what it is | on how many |
 > | --- | --- | --- |
-> | `centroid` | Turf `pointOnFeature`. Lands **on the shoreline** whenever the bbox centre falls outside the polygon | all rows, all three tables |
+> | `centroid` | Turf `pointOnFeature`. Lands **on the shoreline** whenever the bbox center falls outside the polygon | all rows, all three tables |
 > | `representativePoint` | **A rename of `centroid`, not a different point.** Byte-identical wherever both exist — measured: 126 of 126 sub-areas match exactly, zero differ | all rows, all three tables |
 > | `interiorPoint` | **The genuinely different one** — strictly interior, added by A06c-1 for weather sampling. Measured: differs from `centroid` on **1,200 of 1,200** sampled bodies | `waterBodies` only |
 >
@@ -610,7 +610,7 @@ canonical re-import untouched, same as depth.
 
 **Why one source and not a ladder.** Depth needed a five-rung ladder because measured bathymetry is
 scarce and wildly uneven in quality. Elevation is not scarce — a 90 m global DEM is accurate to a few
-metres at a water body surface, far inside the precision this signal needs. A ladder here would be ceremony.
+meters at a water body surface, far inside the precision this signal needs. A ladder here would be ceremony.
 
 ### §1.2 — Long axis: length, bearing, and a dimension line
 
@@ -644,7 +644,7 @@ crenellated water bodies where the number is most interesting.
 
 **The fix: measure before we simplify.** The ETL transform holds the full-resolution OSM geometry
 immediately before `simplify()` runs. Perimeter computed *there* and stored as a scalar has none of the
-simplification error, costs no storage beyond one number, and needs no new download, no new licence and
+simplification error, costs no storage beyond one number, and needs no new download, no new license and
 no new join. The Champlain array cap is irrelevant to a scalar — that cap constrains what we can *store
 as geometry*, not what we can *measure in flight*.
 
@@ -666,7 +666,7 @@ at zero marginal cost. Two caveats keep it a *check* rather than a *source*:
   tail, and a stat that exists only on big water bodies is worse than one that exists everywhere.
 - **Its polygon is a different water mask at a different date and its own resolution**, so a disagreement
   doesn't tell us which is right. What it *does* tell us is whether our number is in the right
-  neighbourhood — a 2× gap on a well-known water body means the join or the ring handling is wrong, and that is
+  neighborhood — a 2× gap on a well-known water body means the join or the ring handling is wrong, and that is
   worth finding at load time rather than in a screenshot. **Log the comparison; store ours.**
 
 *(LAGOS-US also publishes a water body perimeter and would be a third opinion on the same terms. Not worth a
@@ -680,14 +680,14 @@ directions:
 
 - Under 1 mile: *"under a mile of shoreline"* — no decimal, no false precision on a farm pond.
 - Otherwise: *"about 11 miles of shoreline"*.
-- Metric per D25: nearest kilometre, same framing.
+- Metric per D25: nearest kilometer, same framing.
 
 **Even measured at source, never present it as authoritative.** Source-resolution perimeter is a real
 improvement over simplified-copy perimeter, but OSM's shoreline is still a tracing, drawn by different
 mappers at different zooms from different imagery, and it still won't equal a published survey figure.
-Same honesty problem A06a solved for modelled depth, same treatment: the framing carries the uncertainty.
+Same honesty problem A06a solved for modeled depth, same treatment: the framing carries the uncertainty.
 This is D3-adjacent and worth stating plainly, because a shoreline number *looks* like a hard fact in a
-way a modelled depth does not — which makes it more dangerous, not less.
+way a modeled depth does not — which makes it more dangerous, not less.
 
 ### §1.4 — Directional fetch profile *(the interesting one)*
 
@@ -783,7 +783,7 @@ app, which is where navigation belongs.)*
 
 **The roadmap entry this closes.** [`07-roadmap.md`](../07-roadmap.md) has parked the satellite-imagery
 layer as *"needs design — and it needs an imagery source whose terms permit the use."* That second half
-is now answered: **Copernicus Sentinel data is under the free, full and open Copernicus licence** —
+is now answered: **Copernicus Sentinel data is under the free, full and open Copernicus license** —
 reproduce, distribute and adapt, with attribution. The terms question was the blocker; it is no longer
 one.
 
@@ -862,7 +862,7 @@ exposes Sentinel Hub–compatible OGC/Process APIs on a free tier of **10,000 re
 units per month, 300/min**. A full-screen tile view is roughly 10–20 requests, so raw that's only
 ~500–1,000 water body views per month — not enough for general use.
 
-It becomes viable with **server-side tile caching**, which the open licence permits: popular bodies get
+It becomes viable with **server-side tile caching**, which the open license permits: popular bodies get
 viewed many times but only need fetching once per satellite revisit (~5 days). That turns the quota from
 a per-view cost into a per-body-per-week cost, which comfortably fits. **The gate is knowing which
 handful of bodies get real traffic** — caching only wins if reads concentrate, and right now we're
@@ -899,7 +899,7 @@ chill advisories — issued by the local forecast office.
 > Open-Meteo stays the single source for anything that feeds a calculation. **Do not blend.** Two
 > providers disagreeing produces a *worse* number, not a better one, and it would silently break the
 > reproducibility of the decay math, which depends on one deterministic input.
-> NWS alerts render as a clearly-labelled advisory strip that **never feeds a calculation**.
+> NWS alerts render as a clearly-labeled advisory strip that **never feeds a calculation**.
 
 **Shape:**
 - Poll `/alerts/active?area={state}` per state we cover (5 states — a handful of calls), on a cron,
@@ -1013,7 +1013,7 @@ what the stats *mean*.
 3. **Every clause traces to a stored number, and every clause is optional.** No depth ⇒ no depth clause.
    Most of the 116k will render a one-clause caption or none. That is the correct outcome, not a coverage
    failure to paper over.
-4. **Provenance discipline carries through from A06a.** A modelled depth's clause must read as an
+4. **Provenance discipline carries through from A06a.** A modeled depth's clause must read as an
    estimate. If the number is a 90 m-DEM guess, the sentence built on it cannot sound like a
    depth-sounder transect.
 
@@ -1076,12 +1076,12 @@ and a lot of what's stored will never be skated. Measured against the corpus (8,
 **92% of the corpus is unnamed**, so "drop unnamed bodies" is very nearly "drop the corpus." And D49
 is *already* doing the filtering: at regional zoom the split is 62% named, and named bodies average
 **529,301 m²** against unnamed **13,986 m²** — 38× larger. The crowding at z13+ is unnamed ponds you
-only see zoomed right in, which is arguably correct behaviour rather than a bug.
+only see zoomed right in, which is arguably correct behavior rather than a bug.
 
 So the answer is not subtraction. It is that **prominence should reward how much we know about a
 body**, which is additive, reversible, and self-correcting: a pond nobody has documented stays quiet
 until someone documents it, and then it surfaces. It also makes the map reward contribution, which is
-the behaviour this product wants most.
+the behavior this product wants most.
 
 ### The shape
 
@@ -1092,7 +1092,7 @@ a skater's attention:
 | --- | --- | --- |
 | Has a real name | **+1** | Weak but real: someone cared enough to name it. Near-free, since it's already on the row. |
 | Has bathymetric contours (A06b) | **+2** | A state surveyed it, which is itself a statement that the water matters. |
-| Has a depth (A06a, any rung) | **+1** | Weaker than contours — most of it is modelled. |
+| Has a depth (A06a, any rung) | **+1** | Weaker than contours — most of it is modeled. |
 | Has **derived** put-ins (A06d) | **+2** | Access exists and we found it. |
 | Has **official/moderated** put-ins (A06d) | **+4** | A human confirmed you can get on the ice here. The strongest static signal we have. |
 | Has hazards or reports on record | **+3** | Someone has actually been there — the only signal that is evidence of *use* rather than of data. |
@@ -1183,7 +1183,7 @@ itself a reason to draw one**:
 | Body | Card? |
 |---|---|
 | Named, has recent reports/hazards | **Yes** — name + counts + types |
-| Unnamed *or* generically named, has recent reports/hazards | **Yes** — activity is the trigger, and a skater still needs to know *something is happening there*. Falls back to the map's existing label behaviour for the title. |
+| Unnamed *or* generically named, has recent reports/hazards | **Yes** — activity is the trigger, and a skater still needs to know *something is happening there*. Falls back to the map's existing label behavior for the title. |
 | Named, no recent activity | **No card.** A name alone is not news, and the basemap already labels prominent bodies. |
 | Unnamed, no recent activity | **No card**, emphatically. |
 
@@ -1386,7 +1386,7 @@ replaces.
 > **§1.1 (elevation) should land before the A06a depth ETL is run.**
 
 That loader is written and tested but **has not been run yet** — it's waiting on three third-party
-downloads plus a licence/column confirmation. Elevation is a per-centroid lookup against a free
+downloads plus a license/column confirmation. Elevation is a per-centroid lookup against a free
 endpoint. Folding it into that same run costs one column; doing it afterwards costs a **second full pass
 over 116,070 bodies**. This is the only hard ordering constraint in the phase, and it expires the moment
 someone runs that loader.
@@ -1458,7 +1458,7 @@ in, point-in-polygon at ETL, a stamped id per body. We have built this exact thi
 
 Rung 2 is the v1 fallback and it is **already specified and cheap**, so a slipping zone import cannot
 block the feature — it just means some bodies over-show for a while, which was the acceptable v1
-behaviour anyway. Build the state path first, then stamp zones; the alert-matching code reads whichever
+behavior anyway. Build the state path first, then stamp zones; the alert-matching code reads whichever
 rung is present.
 
 **Two things that don't change:**
@@ -1507,7 +1507,7 @@ in. Log every unmatched entry by name; that list is short and it is a to-do.
 > whatever, we could show some kind of symbol or fill-bar or dots or something."*
 
 **This reverses the recommendation above, and the founder's instinct closes the exact gap that made me
-recommend deferring.** My objection was that *"a single word summarising how good the ice is here is a
+recommend deferring.** My objection was that *"a single word summarizing how good the ice is here is a
 safety claim wearing a summary's clothes."* That objection is about **words**, and the founder's answer
 removes the words:
 
@@ -1532,7 +1532,7 @@ content as the count next to it.
   denominator. **No new user-facing input**, which is most of why this is small.
 - **A quorum floor, and it is the load-bearing rule.** Below ~3 rating reports in the window: **no dots at
   all**, not a low score. One person's opinion rendered as a consensus mark is the single worst failure
-  mode here, and it fails silently — the mark looks identical whether it summarises 1 report or 40. This
+  mode here, and it fails silently — the mark looks identical whether it summarizes 1 report or 40. This
   is the same denominator discipline **D78** applied to recurrence claims, and it applies for the same
   reason.
 - **Season-scoped and window-scoped** like the counts beside it (§5.4) — a mark that carries last winter's
@@ -1576,7 +1576,7 @@ time. Only *"change it right now"* requires a deploy, and none of these constant
 change in a hurry.
 
 **The one class that could reasonably move later** is A06d's OSM association radii (the ~250 m parking
-rule), because those want *iteration against real output* rather than judgement — the loop is
+rule), because those want *iteration against real output* rather than judgment — the loop is
 change-and-look, not change-and-reason. If that turns into a real annoyance during the ETL tuning pass,
 the honest fix is a script flag, not a database row: the tuning happens at ETL time, where a CLI argument
 is already the natural knob and the chosen value ends up in the runbook.
@@ -1599,7 +1599,7 @@ this is source material, not a feature.
 | Taberlet, N. & Plihon, N. (2021), *Sublimation-driven Morphogenesis of Zen Stones on Ice Surfaces*, PNAS | Sublimation and surface morphology. |
 
 Plus the standing practical reference already cited throughout `plans/` — Bob Dill's lakeice site, still
-the most useful single source for skater-facing ice behaviour.
+the most useful single source for skater-facing ice behavior.
 
 > **Link, don't rehost.** The CRREL report is US-government work and freely distributable; the 2007 and
 > 2021 journal papers are **not** ours to mirror.
@@ -1672,7 +1672,7 @@ passed its unit tests:
   Replaced with the minimum-area bounding rectangle; Champlain now measures 106.3 × 14.8 mi against
   a published ~107 × 14.
 - **`waterBodies.centroid` is not a centroid** — it is `pointOnFeature`, which falls back to a point
-  on the *shoreline* whenever the bbox centre lands outside the polygon. Willoughby's is ring vertex
+  on the *shoreline* whenever the bbox center lands outside the polygon. Willoughby's is ring vertex
   199; Champlain's sits 30.7 km from mid-lake. The fetch profile was casting rays from the shore, so
   7 of Willoughby's 16 bearings came back 0.0. `centroid` is deliberately left alone (drive-time and
   town stamps want it); a new `interiorPoint` serves weather sampling, the one consumer it hurt.
@@ -1683,7 +1683,7 @@ passed its unit tests:
   documented API.
 - **§4.2's prominence weights were ~13× the score's whole dynamic range.** A "+1 for a name" would
   have pushed every named body to the widest zoom bucket with all tests still green.
-- **The plan's illustrative caption contradicted D25**, mixing acres and miles with metres and km.
+- **The plan's illustrative caption contradicted D25**, mixing acres and miles with meters and km.
 - **`hasContours` had no data source** — A06b's join is a read-only query that stores nothing. Fixed
   at the founder's ask: a `bathymetryCoverage` side table records the **2,022** bodies that actually
   produced a contour line (not the 2,437 the join matched), keyed on `externalId` so it survives a
@@ -1725,7 +1725,7 @@ thumbs, which measure whether a *report* was helpful rather than what the ice wa
   predictions into the decay multiplier, the bounty gate and the contradiction settle. The fetch now
   returns `{ past, forecast }` and D74 is a return type rather than a rule each call site remembers.
 - **§5's counter is the wrong shape (D141).** Card counts are window- and season-scoped, so a report
-  ageing out has no event to decrement on, and the D86 mean cannot be maintained incrementally at all.
+  aging out has no event to decrement on, and the D86 mean cannot be maintained incrementally at all.
   Recomputed from a bounded index range, with a cron for the decay no write can catch.
 - **§5 cannot be validated on dev**, which holds 1 report and 2 hazards. It ships correct and renders
   nothing anywhere. Founder call: build it, validate at A06d or device testing.
@@ -1785,7 +1785,7 @@ elevation, and where else to look.
   `(centroid, name, states)`, so full-corpus coverage costs a `@skating/core` module and no migration.
   The founder asked for ETL coverage; not storing them is what delivers it.
 - **This retires the satellite-imagery blocker below.** Copernicus Sentinel data is under the free, full
-  and open licence, so *"needs an imagery source whose terms permit the use"* is answered — the deep link
+  and open license, so *"needs an imagery source whose terms permit the use"* is answered — the deep link
   ships here (D75), and **in-app imagery is now its own phase, [A06e](./A06e-satellite-imagery.md)**
   (scoped 2026-07-31 at the founder's ask). The cost trigger turned out to bind only *half* of it: see
   **D84**.

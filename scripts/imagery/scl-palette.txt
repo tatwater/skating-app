@@ -2,7 +2,7 @@
 #
 # `gdaldem color-relief` format: <class> <R> <G> <B> <A>. Fed with `-nearest_color_entry`, which
 # picks an entry outright instead of interpolating between two — the same rule every other resample
-# of this band follows, and for the same reason: a colour half way between "water" and "cloud" is a
+# of this band follows, and for the same reason: a color half way between "water" and "cloud" is a
 # category nobody classified.
 #
 # ## ⚠ Why this exists at all
@@ -11,17 +11,17 @@
 # brightness — and eleven over two hundred and fifty-five is black. Measured on a real granule
 # (S2C_18TXP_20260824, 1.44 Mpixels over Vermont) every class present rendered between **0.8% and
 # 3.9% brightness**: vegetation at 1.6%, water at 2.4%, high cloud at 3.5%. Water and vegetation, the
-# two most different things in the frame, were two grey levels apart out of 255.
+# two most different things in the frame, were two gray levels apart out of 255.
 #
-# ## ⚠ Four colours, not twelve, and that is the product decision in this file
+# ## ⚠ Four colors, not twelve, and that is the product decision in this file
 #
 # The twelve classes are ESA's taxonomy. A skater has four questions: **is it frozen, is it open
 # water, can we not see, is this even the lake.** Rendering the taxonomy would answer a question
-# nobody asked in a palette nobody could hold in their head — and the colours it forces are worse
+# nobody asked in a palette nobody could hold in their head — and the colors it forces are worse
 # than useless: vegetation against bare soil measured **ΔE 3.7 for a protanope**, indistinguishable.
 #
 # Nothing is lost by collapsing. `zonal-clear.py` stores the full twelve-class histogram per body in
-# the manifest, so the picture gets four colours and the numbers keep every class. Same split the
+# the manifest, so the picture gets four colors and the numbers keep every class. Same split the
 # radar path already makes: the frame is a picture, the manifest is the measurement.
 #
 # ## The palette, and why these four
@@ -34,12 +34,12 @@
 #
 # ⚠ The first two attempts FAILED that check, and both failures were instructive. Snow as pale cyan
 # beside cloud as near-white came out at **3.8 dE for a protanope** — putting the two classes this
-# band exists to tell apart into the two colours nobody can tell apart. Violet shadow against blue
+# band exists to tell apart into the two colors nobody can tell apart. Violet shadow against blue
 # water was worse, 2.0. The fix was fewer classes and more hue between them.
 #
 # **Lightness is deliberately NOT flattened**, which is the one check this palette knowingly fails.
 # That check keeps chart series at an even visual weight against a surface; here lightness carries
-# meaning — cloud is bright, water is dark, and a skater flips to true colour to compare. Forcing an
+# meaning — cloud is bright, water is dark, and a skater flips to true color to compare. Forcing an
 # even band would make a dark cloud over a bright lake, which is the misreading the band exists to
 # prevent. The "reads gray" flag on cloud is intent, too: cloud is a veil, not an identity.
 
@@ -57,11 +57,11 @@
 
 # ── open water ──────────────────────────────────────────────────────────────────────────────────
 # Deep blue, dark enough to separate from snow by lightness as well as hue, so the pair survives
-# both kinds of colour blindness.
+# both kinds of color blindness.
 6   29  78  216   255
 
 # ── cannot see: cloud, cirrus, and the shadows they cast ────────────────────────────────────────
-# One neutral grey for every kind of obstruction, because the distinction between medium cloud, high
+# One neutral gray for every kind of obstruction, because the distinction between medium cloud, high
 # cloud and a cloud's shadow is a distinction about the sky rather than about the lake. `7` is
 # ESA declining to classify, which is the same answer: we do not know what is here.
 2   168 162 158   255

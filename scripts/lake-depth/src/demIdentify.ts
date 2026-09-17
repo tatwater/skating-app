@@ -1,5 +1,5 @@
 /**
- * Asking 3DEP **every** raster's opinion of a point, not just its favourite — the pure half.
+ * Asking 3DEP **every** raster's opinion of a point, not just its favorite — the pure half.
  *
  * ## The mistake this exists to catch
  *
@@ -26,7 +26,7 @@
  *
  * ## Why the fix is a different endpoint rather than more requests
  *
- * The instinct is to sample neighbouring points and compare. That cannot work from one reading: you
+ * The instinct is to sample neighboring points and compare. That cannot work from one reading: you
  * have no way to know a reading is worth re-checking until you have already re-checked it, so the
  * cost lands on all 25,000 bodies to catch a handful.
  *
@@ -59,11 +59,11 @@ export const IDENTIFY_URL =
   'https://elevation.nationalmap.gov/arcgis/rest/services/3DEPElevation/ImageServer/identify';
 
 /**
- * How far two rasters may disagree before the reading is refused, in metres.
+ * How far two rasters may disagree before the reading is refused, in meters.
  *
  * **Not zero, because a lake's surface genuinely moves.** Rasters are flown years apart and a
  * reservoir's drawdown or a lake's seasonal range is a real difference between two correct
- * readings — Champlain alone varies by about a metre and a half across a year. Three metres is
+ * readings — Champlain alone varies by about a meter and a half across a year. Three meters is
  * comfortably above that and far below the 26 m that exposed Portland.
  *
  * ⚠ Tuned against the *measured* spread of healthy lakes, which is essentially nil (Seneca and
@@ -93,7 +93,7 @@ export const MIN_SURFACE_ELEVATION_M = -3;
 export interface RasterReading {
   /** The dataset's own name, e.g. `ME_SouthCoastal_2020_A20`. Kept for triage, never for logic. */
   name: string;
-  /** Ground sample distance in metres, as the catalogue reports it. */
+  /** Ground sample distance in meters, as the catalog reports it. */
   groundSampleM: number | undefined;
   elevationM: number | null;
 }
@@ -193,7 +193,7 @@ export function parseIdentify(body: unknown): RasterReading[] {
  *     44.36450,-70.05632   86.40@n45w071 · 86.40@n45w071 · 86.40@ME_SouthCoastal_2020_A20
  *                          · 81.64@ME_SouthernArea_2012
  *
- * Three rasters agree to the centimetre and a 2012 survey dissents by 4.8 m. The median was already
+ * Three rasters agree to the centimeter and a 2012 survey dissents by 4.8 m. The median was already
  * *right*, and the range test discarded it anyway — a rule that gets stricter every time USGS adds
  * another survey, which is backwards.
  *

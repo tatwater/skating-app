@@ -249,7 +249,7 @@ export const listForBody = query({
     // `resolveSurvivor`, matching every other per-body query in the codebase (bounties, hazards,
     // put-ins): a deep link to a merged body follows the merge rather than reading a tombstone's
     // row. The drawer already resolves before it gets here, so this is consistency insurance rather
-    // than a live fix — but a per-body query that behaves differently from its neighbours is how the
+    // than a live fix — but a per-body query that behaves differently from its neighbors is how the
     // next caller gets surprised.
     const body = await resolveSurvivor(ctx, waterBodyId);
     if (!body || body.removedAt) return [];

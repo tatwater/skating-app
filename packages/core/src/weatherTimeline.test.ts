@@ -32,7 +32,7 @@ const WIDTH = 336; // 7 days × 48px — a realistic sidebar plot width
  * A fetch profile that clears `MIN_FETCH_CLAUSE_M`, so the wind lane is drawn at all.
  *
  * ⚠ Needed by every wind assertion since the 2026-09-04 founder call: the lane is **hidden** on a body
- * with under a kilometre of reach, which is ~95% of the corpus. Tests about wind therefore have to
+ * with under a kilometer of reach, which is ~95% of the corpus. Tests about wind therefore have to
  * describe a lake big enough to have a wind lane, or they are testing the hiding rule by accident.
  */
 const EXPOSED_FETCH = Array.from({ length: 16 }, (_, i) => (i === 14 ? 2900 : 700));
@@ -188,7 +188,7 @@ describe('precipitationKind', () => {
   });
 
   it('scales snowfall to water-equivalent before applying the threshold', () => {
-    // 0.3 cm of snow is ~3 mm of water. Comparing the centimetre figure against a millimetre floor
+    // 0.3 cm of snow is ~3 mm of water. Comparing the centimeter figure against a millimetre floor
     // set the bar ten times too high and dropped most light snow.
     expect(precipitationKind(hour(3, { snowfallCm: 0.3 }))).not.toBeNull();
   });
@@ -198,7 +198,7 @@ describe('precipitationKind', () => {
     expect(precipitationKind(hour(3, { precipitationMm: 0 }))).toBeNull();
   });
 
-  it('falls through to the derivation for an unrecognised code rather than dropping the hour', () => {
+  it('falls through to the derivation for an unrecognized code rather than dropping the hour', () => {
     const kind = precipitationKind(
       hour(3, { weatherCode: 999, snowfallCm: 1, precipitationMm: 10 }),
     );
@@ -278,7 +278,7 @@ describe('weatherTimelineModel', () => {
 
   it('drops the repeated hour on a fall-back DST night', () => {
     // Two 01:00s. The second is dropped so the day still spans exactly its column; positioning by
-    // array index instead would make a 25-hour day wider than its neighbours and slide every
+    // array index instead would make a 25-hour day wider than its neighbors and slide every
     // divider after it.
     const dst = day('2026-11-01', D0, [
       hour(0),
@@ -357,7 +357,7 @@ describe('weatherTimelineModel', () => {
     expect(model?.boxes.temperature.height).toBeGreaterThan(0);
   });
 
-  it('emphasises calm freezing hours and nothing else in the wind lane', () => {
+  it('emphasizes calm freezing hours and nothing else in the wind lane', () => {
     const days = [
       fullDay('2026-01-15', D0, -5, (h) => ({
         // Hours 0–3 calm and freezing; 4–7 calm but mild; the rest windy.
@@ -368,12 +368,12 @@ describe('weatherTimelineModel', () => {
     const model = weatherTimelineModel({ days, width: WIDTH, fetchProfileM: EXPOSED_FETCH });
     expect(model?.wind?.emphasis).toHaveLength(1);
     const span = model?.wind?.emphasis[0];
-    // Four hours wide at the fixed scale, drawn edge to edge rather than centre to centre.
+    // Four hours wide at the fixed scale, drawn edge to edge rather than center to center.
     expect(span?.width).toBeCloseTo(PX_PER_HOUR * 4);
     expect(span?.x).toBeCloseTo(0);
   });
 
-  it('emphasises sunlit hours above freezing and nothing else in the sun lane', () => {
+  it('emphasizes sunlit hours above freezing and nothing else in the sun lane', () => {
     const days = [
       fullDay('2026-01-15', D0, 2, (h) => ({
         shortwaveWm2: h >= 10 && h < 14 ? 300 : 10,
@@ -395,7 +395,7 @@ describe('weatherTimelineModel', () => {
     expect(model?.snowDepth).toBeNull();
   });
 
-  it('draws precipitation blocks one hour wide, typed and labelled', () => {
+  it('draws precipitation blocks one hour wide, typed and labeled', () => {
     const days = [
       fullDay('2026-01-15', D0, -2, (h) =>
         h === 5 ? { snowfallCm: 2, precipitationMm: 20, weatherCode: 73 } : {},
@@ -493,7 +493,7 @@ describe('timelineDaysFromArchive', () => {
       missingDayMs: [],
     });
     expect(days[0]?.partial).toBe(true);
-    // 23 hours is a complete DST day; calling it partial would grey out a settled day once a year.
+    // 23 hours is a complete DST day; calling it partial would gray out a settled day once a year.
     expect(days[1]?.partial).toBeUndefined();
   });
 
@@ -642,7 +642,7 @@ describe('day labels under a fixed scale', () => {
 
 describe('labels stay inside the viewport', () => {
   it('pulls the first and last label in from the edges', () => {
-    // A centred label on a 12px column overhangs the left edge by two thirds of its width, and the
+    // A centered label on a 12px column overhangs the left edge by two thirds of its width, and the
     // leftmost label is the one that says where the panned window starts.
     const days = Array.from({ length: 30 }, (_, i) =>
       fullDay(dayMsToLocalDate(D0 + i * DAY_MS), D0 + i * DAY_MS, -5),
@@ -655,7 +655,7 @@ describe('labels stay inside the viewport', () => {
     expect(model?.days[0]?.labelX).toBeGreaterThan(model?.days[0]?.x ?? 0);
   });
 
-  it('leaves an ordinary wide column centred', () => {
+  it('leaves an ordinary wide column centered', () => {
     const model = weatherTimelineModel({
       days: Array.from({ length: 7 }, (_, i) =>
         fullDay(dayMsToLocalDate(D0 + i * DAY_MS), D0 + i * DAY_MS, -5),
@@ -729,12 +729,12 @@ describe('scrollPxAtTrackX', () => {
     // scroll back. An off-by-half-a-thumb here makes every click jump slightly.
     for (let scrollPx = 0; scrollPx <= maxScrollPx; scrollPx += 71) {
       const bar = timelineScrollbar({ ...geom, maxScrollPx, scrollPx });
-      const centre = (bar?.x ?? 0) + (bar?.width ?? 0) / 2;
-      expect(scrollPxAtTrackX(centre, { ...geom, maxScrollPx })).toBeCloseTo(scrollPx, 4);
+      const center = (bar?.x ?? 0) + (bar?.width ?? 0) / 2;
+      expect(scrollPxAtTrackX(center, { ...geom, maxScrollPx })).toBeCloseTo(scrollPx, 4);
     }
   });
 
-  it('reads the pointer as the thumb centre, so a click lands under the cursor', () => {
+  it('reads the pointer as the thumb center, so a click lands under the cursor', () => {
     expect(scrollPxAtTrackX(0, { ...geom, maxScrollPx })).toBeCloseTo(maxScrollPx);
     expect(scrollPxAtTrackX(300, { ...geom, maxScrollPx })).toBeCloseTo(0);
   });
@@ -788,7 +788,7 @@ describe('the sun trace splits where the sun is up', () => {
   });
 
   it('leaves no hole at sunrise or sunset', () => {
-    // Each run is extended one point into its neighbour, or the trace is visibly dashed at exactly
+    // Each run is extended one point into its neighbor, or the trace is visibly dashed at exactly
     // the two moments a reader looks for.
     const model = weatherTimelineModel({ days: [sunnyDay('2026-01-15', D0)], width: WIDTH });
     const xs = (d: string) => [...d.matchAll(/[ML] ([\d.]+)/g)].map((m) => Number(m[1]));
@@ -801,7 +801,7 @@ describe('the sun trace splits where the sun is up', () => {
   });
 
   it('gives a lane with no active predicate a single run covering everything', () => {
-    // Wind and snow depth must be unaffected — they draw in one colour, so `segments` has to be
+    // Wind and snow depth must be unaffected — they draw in one color, so `segments` has to be
     // usable everywhere rather than being a sun-only field the other lanes ignore.
     const days = [
       day(
@@ -844,27 +844,27 @@ describe('wind direction survives the round trip', () => {
       missingDayMs: [],
     });
     expect(days[0]?.hours?.[0]?.windDirectionDeg).toBe(315);
-    // 315° is NW, and `windSectorOf` centres its sectors on the compass points rather than flooring.
+    // 315° is NW, and `windSectorOf` centers its sectors on the compass points rather than flooring.
     expect(windSectorOf(315)).toBe(14);
   });
 });
 
 describe('fetch as the wind lane second channel', () => {
-  // ⚠ NW is sector **14** and NE is sector **2** — `windSectorOf` centres sectors on the compass
+  // ⚠ NW is sector **14** and NE is sector **2** — `windSectorOf` centers sectors on the compass
   // points, so 45° rounds to 2 rather than flooring into a quadrant. Getting this wrong in the
   // fixture is what the first draft of this test did.
   const exposed = Array.from({ length: 16 }, (_, i) => (i === 14 ? 4000 : i === 2 ? 400 : 1200));
   const pond = Array.from({ length: 16 }, (_, i) => (i === 14 ? 300 : 80));
 
   describe('fetchAlong', () => {
-    it('names the metres behind the wind on a lake big enough to have any', () => {
+    it('names the meters behind the wind on a lake big enough to have any', () => {
       expect(fetchAlong(exposed, 315)).toBe(4000); // 315° = NW
       expect(fetchAlong(exposed, 45)).toBe(400); // 45° = NE
     });
 
     it('stays silent on a pond, which is ~95% of the corpus', () => {
       // ⚠ Not a data gap — a deliberate refusal. `MIN_FETCH_CLAUSE_M` already settled that below a
-      // kilometre "there isn't any" open water in any direction, so naming 300 m would imply a
+      // kilometer "there isn't any" open water in any direction, so naming 300 m would imply a
       // distinction the geometry cannot support. Median max fetch corpus-wide is 224 m.
       expect(fetchAlong(pond, 315)).toBeNull();
     });
@@ -877,7 +877,7 @@ describe('fetch as the wind lane second channel', () => {
   });
 
   describe('fetchIntensityAt', () => {
-    it('normalises against the lake itself, so its own shores can be compared', () => {
+    it('normalizes against the lake itself, so its own shores can be compared', () => {
       // Per-lake, unlike the wind rose's fixed reference — the rose compares lakes, this compares
       // bearings within one. A shared scale would flatten a mid-size lake's contrast to nothing.
       expect(fetchIntensityAt(exposed, 315)).toBeCloseTo(1);
@@ -933,7 +933,7 @@ describe('the wind lane survives a lake with no fetch story', () => {
   const exposed = Array.from({ length: 16 }, (_, i) => (i === 14 ? 2900 : 700));
   const pond = Array.from({ length: 16 }, () => 200);
 
-  it('shows the lane on a lake with a kilometre of reach', () => {
+  it('shows the lane on a lake with a kilometer of reach', () => {
     const model = weatherTimelineModel({
       days: [windy('2026-01-15', D0)],
       width: WIDTH,
@@ -946,7 +946,7 @@ describe('the wind lane survives a lake with no fetch story', () => {
   it('keeps speed and the calm-freezing rail on a pond, losing only the fill density', () => {
     // ⚠ **The regression this pins.** For one day the lane was hidden below `MIN_FETCH_CLAUSE_M`,
     // which bought 24px and cost wind speed and the black-ice rail on ~95% of the corpus. Only the
-    // *fill* needs a kilometre of reach; the measurements do not.
+    // *fill* needs a kilometer of reach; the measurements do not.
     const pondModel = weatherTimelineModel({
       days: [windy('2026-01-15', D0)],
       width: WIDTH,

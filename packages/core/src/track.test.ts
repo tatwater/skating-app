@@ -148,16 +148,16 @@ describe('smoothTrack', () => {
     expect(after).toBeLessThan(before);
   });
 
-  it('weights by accuracy — a confident neighbour pulls harder than a fuzzy one', () => {
+  it('weights by accuracy — a confident neighbor pulls harder than a fuzzy one', () => {
     const base = straightTrack(5);
-    const withFuzzyNeighbour = base.map((p, i) =>
+    const withFuzzyNeighbor = base.map((p, i) =>
       i === 0 ? { ...p, lat: p.lat + 0.001, accuracy: 45 } : p,
     );
-    const withSharpNeighbour = base.map((p, i) =>
+    const withSharpNeighbor = base.map((p, i) =>
       i === 0 ? { ...p, lat: p.lat + 0.001, accuracy: 1 } : p,
     );
-    const fuzzyPull = (smoothTrack(withFuzzyNeighbour)[1] as TrackPoint).lat;
-    const sharpPull = (smoothTrack(withSharpNeighbour)[1] as TrackPoint).lat;
+    const fuzzyPull = (smoothTrack(withFuzzyNeighbor)[1] as TrackPoint).lat;
+    const sharpPull = (smoothTrack(withSharpNeighbor)[1] as TrackPoint).lat;
     expect(sharpPull).toBeGreaterThan(fuzzyPull);
   });
 
@@ -245,7 +245,7 @@ describe('trimStationaryTail', () => {
     // two — that's the radius doing its job, not an off-by-one.)
     const skate = straightTrack(10, 50, 3);
     const end = skate.at(-1) as TrackPoint;
-    // Forgot to stop: an hour of jitter within a few metres of the last stride.
+    // Forgot to stop: an hour of jitter within a few meters of the last stride.
     const tail = Array.from({ length: 12 }, (_, i) =>
       pt({ lat: end.lat + 0.00001 * i, lng: end.lng, t: end.t + (i + 1) * 5 * 60_000 }),
     );

@@ -69,7 +69,7 @@ describe('accessAlertIsLive', () => {
   });
 
   /**
-   * The sweep's schedule must never be a visible behaviour: a row past its expiry stops annotating
+   * The sweep's schedule must never be a visible behavior: a row past its expiry stops annotating
    * the moment it is past, not the moment a cron happens to run.
    */
   test('an active row past its expiry is already dead before the sweep reaches it', () => {

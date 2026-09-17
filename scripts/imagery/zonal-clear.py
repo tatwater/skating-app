@@ -27,7 +27,7 @@ over a lake plus a ring of its shoreline, and the error scaled with perimeter ov
 Champlain, **7x a 1-acre pond's own area**. The frames already in R2 carry that denominator. See
 `revealMasks.ts` for the full arithmetic and `build_zones` for the fix.
 
-## The classes, and the two judgement calls
+## The classes, and the two judgment calls
 
 ESA's L2A scene classification, per pixel:
 
@@ -86,7 +86,7 @@ CLEAR = frozenset({4, 5, 6, 7, 11})
 INVALID = frozenset({0, 1})
 
 # ESA defines 0–11 and nothing else. Anything outside that is counted separately rather than folded
-# into a neighbour, because a silently-clamped class 12 would land in "snow / ice".
+# into a neighbor, because a silently-clamped class 12 would land in "snow / ice".
 NUM_CLASSES = 12
 
 # ## The two classes worth keeping apart, and why they are counted here rather than derived later
@@ -135,7 +135,7 @@ def main() -> int:
     parser.add_argument(
         "--erode-projected-m",
         type=float,
-        help="how far from the bank a pixel must sit to count as interior, in PROJECTED metres",
+        help="how far from the bank a pixel must sit to count as interior, in PROJECTED meters",
     )
     args = parser.parse_args()
 

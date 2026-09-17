@@ -11,7 +11,7 @@
  * of granule reads, while a late one misses freeze-up entirely — the single most valuable frame of
  * the season, gone, with nothing to say it was ever there.
  *
- * That is a licence to be generous, and every default below takes it.
+ * That is a license to be generous, and every default below takes it.
  *
  * ## The sentinel, and why it is a one-acre pond
  *

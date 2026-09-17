@@ -229,7 +229,7 @@ describe('gpsActivities.ingestTrack', () => {
     const realBody = await seedBody(t);
     // A body the device cached that has since been merged away — `isListed` is false, so the hint
     // is dropped and the track re-resolves from its own geometry. (A *removed* body would be
-    // honoured: since A07b it is reachable, so the landowner's own skate lands on it — see
+    // honored: since A07b it is reachable, so the landowner's own skate lands on it — see
     // `resolveBodyForCoord`'s test in waterBodies.)
     const mergedBody = await seedBody(t, { name: 'Merged Pond', offset: 10 });
     await t.run((ctx) =>
@@ -1120,7 +1120,7 @@ describe('gpsActivities.sweepUnpromptedActivities', () => {
     expect(
       (await me.as.query(api.gpsActivities.getForReport, { reportId: watchReport }))?.activityId,
     ).toBe(watchId);
-    // But the lake draws the skate once — the superseded copy is skipped, not merely de-prioritised.
+    // But the lake draws the skate once — the superseded copy is skipped, not merely de-prioritized.
     const { tracks } = await me.as.query(api.gpsActivities.listTracksForBody, {
       waterBodyId: bodyId,
     });

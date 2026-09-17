@@ -65,7 +65,7 @@ Which means the ingredients all exist in the archive, and none of them requires 
 
 ### Why it is nonetheless the riskiest thing in the roadmap
 
-- **Resolution.** 10–20 m pixels over a water body whose interesting features are metres across.
+- **Resolution.** 10–20 m pixels over a water body whose interesting features are meters across.
 - **Latency.** Black ice is a *condition of a few days* and often of a few hours. A pass is up to six
   days old, and a six-day-old smoothness observation is not a claim about today.
 - **The incentive structure is the actual hazard.** Everyone wants black ice. **A false positive is
@@ -102,7 +102,7 @@ Checked, because "38% below the floor" reads like over-subtraction:
 - **It is not.** Only **2 nulls in 2,578**; the margin distribution runs to **p90 +8.8 dB** across a
   45 dB spread. Over-subtraction collapses a distribution; this one is broad.
 - **The size trend is flat to inverted** — 34% below floor for bodies under 50 interior pixels against
-  **51% for bodies over 1,000**. An estimation artefact would punish small water bodies hardest; this does the
+  **51% for bodies over 1,000**. An estimation artifact would punish small water bodies hardest; this does the
   opposite, which is the signature of a real property of large open surfaces.
 - **NESZ is ESA's own annotation**, consistent with the IW specification (≤ −22 dB) and with published
   calm-water `VH` values of −25 to −30 dB. Water bodies are genuinely that dark.
@@ -174,7 +174,7 @@ exists precisely to catch "the mean hides the shape" finds no shape to catch eit
 
 ⚠ **NDSI is worse than merely unhelpful here: it is unstable over water.** The two *open-water* dates
 differ by 0.54 in mean and by 0.05 against 1.95 in spread, and March's p90 reaches +0.95 — pixels
-reading as snow on an ice-free water body. Green and SWIR are both near zero over water, so a normalised
+reading as snow on an ice-free water body. Green and SWIR are both near zero over water, so a normalized
 difference between them amplifies noise rather than measuring anything. It is excellent at its actual
 job (snow, 0.991 at zero spread) and should never be pointed at this one.
 
@@ -269,8 +269,8 @@ prompts rather than as a plan:
   even if every frame in between was clouded — which bounds an ice-in date from the *other* direction.
 - **Snowfall without a brightening** means the snow did not stay, which is the founder's
   "blown clear" case (§3.5) and is *itself* evidence of a hard smooth surface.
-- **Neighbouring water bodies are a control.** Bodies within a few kilometres share weather; one behaving
-  unlike its neighbours is either genuinely different (depth, flow, spring-fed) or a measurement
+- **Neighboring water bodies are a control.** Bodies within a few kilometers share weather; one behaving
+  unlike its neighbors is either genuinely different (depth, flow, spring-fed) or a measurement
   artifact — and the corpus already knows depth and elevation.
 - **A water body that never darkens through a whole winter** is Lane 2's candidate arriving from a different
   direction entirely.

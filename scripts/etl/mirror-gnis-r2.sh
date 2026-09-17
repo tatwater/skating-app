@@ -19,7 +19,7 @@
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# Its OWN config file. The shared body honours an inherited `RAW_BUCKET` over `DEFAULT_BUCKET`, so
+# Its OWN config file. The shared body honors an inherited `RAW_BUCKET` over `DEFAULT_BUCKET`, so
 # sourcing a sibling's `.env` here would push this archive into that bucket and report success —
 # which is exactly the bug a `sed`-generated mirror script produced once already.
 # shellcheck disable=SC1091

@@ -5,19 +5,19 @@ import {
   granuleGeocodeHeight,
   localGeocodeReference,
   maskOffsetMeters,
-  rangeDisplacementPerMetre,
+  rangeDisplacementPerMeter,
   shiftCoordinate,
 } from './sarGeocode';
 
-describe('rangeDisplacementPerMetre', () => {
-  it('is ~1.4 m per metre at IW incidence, which is the whole problem', () => {
+describe('rangeDisplacementPerMeter', () => {
+  it('is ~1.4 m per meter at IW incidence, which is the whole problem', () => {
     // 35° is mid-swath for IW. 100 m of height error becoming ~140 m of ground error is why this is
     // visible at 28 m pixels rather than being a rounding concern.
-    expect(rangeDisplacementPerMetre(35)).toBeCloseTo(1.428, 2);
+    expect(rangeDisplacementPerMeter(35)).toBeCloseTo(1.428, 2);
   });
 
   it('grows steeply as the look gets shallower', () => {
-    expect(rangeDisplacementPerMetre(30)).toBeGreaterThan(rangeDisplacementPerMetre(45));
+    expect(rangeDisplacementPerMeter(30)).toBeGreaterThan(rangeDisplacementPerMeter(45));
   });
 });
 
@@ -79,7 +79,7 @@ describe('geocodeOffsetMeters — the sign is the part to get right', () => {
     expect(Math.sign(above.eastM)).toBe(-Math.sign(below.eastM));
   });
 
-  it('honours a left-looking sensor, so the assumption stays visible', () => {
+  it('honors a left-looking sensor, so the assumption stays visible', () => {
     const args = { heightM: 300, referenceHeightM: 0, incidenceDeg: 35, headingDeg: ASCENDING };
     const right = geocodeOffsetMeters(args);
     const left = geocodeOffsetMeters({ ...args, lookRight: false });
@@ -94,9 +94,9 @@ describe('maskOffsetMeters — the direction that was actually measured', () => 
   // lake mask covers the darkest pixels — i.e. where the water really is in the product. Both landed
   // at **+150 m of EPSG:3857 easting**, which is the unit the scan worked in.
   //
-  // ⚠ **Projected metres, not ground metres, and conflating them cost an hour.** Web Mercator
+  // ⚠ **Projected meters, not ground meters, and conflating them cost an hour.** Web Mercator
   // inflates distance by 1/cos(φ) — 1.382 at Mascoma's 43.65°N — while everything in this module is
-  // in *ground* metres. The first reading of this measurement compared the two directly and
+  // in *ground* meters. The first reading of this measurement compared the two directly and
   // concluded the model agreed to within half a pixel. It does not; see the magnitude test below.
   // ⚠ The corpus value, not a remembered one. An earlier pass through this used 224 m from memory;
   // 3.9 m of height is 6 m of ground displacement, which is small but it is exactly the kind of
@@ -213,7 +213,7 @@ describe('localGeocodeReference — the fix that made the correction work at all
     expect(near?.incidenceDeg).toBeCloseTo(31, 5);
     expect(far?.incidenceDeg).toBeCloseTo(45, 5);
     // 1/tan changes by ~60% over that span — using mid-swath for both is a 60% magnitude error.
-    const ratio = rangeDisplacementPerMetre(31) / rangeDisplacementPerMetre(45);
+    const ratio = rangeDisplacementPerMeter(31) / rangeDisplacementPerMeter(45);
     expect(ratio).toBeGreaterThan(1.5);
   });
 
@@ -238,7 +238,7 @@ describe('localGeocodeReference — the fix that made the correction work at all
 });
 
 describe('shiftCoordinate', () => {
-  it('moves north and east by the requested metres', () => {
+  it('moves north and east by the requested meters', () => {
     const moved = shiftCoordinate(43.65, -72.15, { eastM: 314, northM: 0 });
     expect(moved.lat).toBeCloseTo(43.65, 6);
     // ~314 m east at 43.65°N is ~0.0039° of longitude.

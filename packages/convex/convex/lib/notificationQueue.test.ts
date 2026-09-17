@@ -196,7 +196,7 @@ describe('parsePayload (the typed boundary over notifications.payload)', () => {
 
 // ── The "still true?" table, negatives (A08 §5.2 / D169) ─────────────────────────────────────────────
 //
-// The producer tests pin the common drops — a retracted thumb, a removed comment, a cancelled
+// The producer tests pin the common drops — a retracted thumb, a removed comment, a canceled
 // bounty, a converted skate. These are the rest of the table, driven through `settleTrigger`
 // directly: every "deliver only if" clause has a row here whose answer is `null`, so a future
 // reader who loosens one finds a red test rather than a phantom notification.

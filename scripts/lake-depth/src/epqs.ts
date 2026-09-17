@@ -10,7 +10,7 @@
  * it needed a forecast API.
  *
  * **And it is a data upgrade, not merely a cheaper one.** `@skating/core`'s `elevation.ts` records
- * GLO-90 reading Shelburne Pond **20 m high** — the expected behaviour of a 90 m radar *surface*
+ * GLO-90 reading Shelburne Pond **20 m high** — the expected behavior of a 90 m radar *surface*
  * model over water, where small ponds are never flattened to their waterline. EPQS serves 3DEP,
  * which is **1 m LiDAR** wherever the region has been flown. Measured at build time: every one of
  * the 45 bodies in the tidal probe came back `resolution: 1`, and Paugus Bay and Melvin Bay both
@@ -76,9 +76,9 @@ export function epqsUrl(lat: number, lng: number): string {
 
 /** One 3DEP reading, as the archive stores it. */
 export interface EpqsReading {
-  /** Metres above the vertical datum, already checked against the regional plausibility window. */
+  /** Meters above the vertical datum, already checked against the regional plausibility window. */
   elevationM: number;
-  /** The source raster's ground sample distance in **metres** — see `resolutionMetres`. */
+  /** The source raster's ground sample distance in **meters** — see `resolutionMeters`. */
   resolutionM?: number | undefined;
   /** 3DEP's own raster id, so a lake stamped from a coarse DEM can be found and re-stamped later. */
   rasterId?: number | undefined;
@@ -98,7 +98,7 @@ export type EpqsOutcome =
   | { readonly ok: false; readonly reason: EpqsRefusal; readonly raw: string };
 
 /**
- * 3DEP's `resolution`, in metres — **and it is not always in metres.**
+ * 3DEP's `resolution`, in meters — **and it is not always in meters.**
  *
  * The service echoes the raster's native cell size, and for some tiles that is expressed in the
  * raster's own units, which are **degrees**. Measured on the tidal probe: 44 of 45 points returned
@@ -109,17 +109,17 @@ export type EpqsOutcome =
  * (D104) is that *"a lake stamped from a 30 m raster can be re-stamped from 1 m later"* — a
  * comparison that silently breaks the day two rows carry two different units.
  *
- * The cut is at 0.01: no real DEM has a centimetre posting, and no degree-expressed resolution
- * reaches a hundredth of a degree (1.1 km) for a product mapped at metre scale.
+ * The cut is at 0.01: no real DEM has a centimeter posting, and no degree-expressed resolution
+ * reaches a hundredth of a degree (1.1 km) for a product mapped at meter scale.
  */
-export function resolutionMetres(raw: unknown, lat: number): number | undefined {
+export function resolutionMeters(raw: unknown, lat: number): number | undefined {
   const value = typeof raw === 'string' ? Number(raw) : raw;
   if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) return undefined;
   if (value >= 0.01) return value;
   // Degrees. One degree of latitude is ~111,132 m; longitude shrinks with the cosine, and a cell is
-  // square in degrees rather than in metres, so the latitude figure is the honest one to quote.
-  const metresPerDegree = 111_132 * Math.cos((lat * Math.PI) / 180);
-  return value * metresPerDegree;
+  // square in degrees rather than in meters, so the latitude figure is the honest one to quote.
+  const metersPerDegree = 111_132 * Math.cos((lat * Math.PI) / 180);
+  return value * metersPerDegree;
 }
 
 /**
@@ -148,7 +148,7 @@ export function parseEpqsResponse(body: unknown, lat: number): EpqsOutcome {
     ok: true,
     reading: {
       elevationM: value,
-      resolutionM: resolutionMetres(json.resolution, lat),
+      resolutionM: resolutionMeters(json.resolution, lat),
       rasterId,
       acquisitionDate: typeof acquired === 'string' && acquired.length > 0 ? acquired : undefined,
     },

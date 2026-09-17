@@ -46,7 +46,7 @@ describe('the water classes', () => {
 });
 
 describe('null island', () => {
-  it('recognises GNIS’s "no coordinate", which is a real place in the Gulf of Guinea', () => {
+  it('recognizes GNIS’s "no coordinate", which is a real place in the Gulf of Guinea', () => {
     // Read as a position it piles every unplaced feature into one grid cell off Africa; read as a
     // name source it does nothing at all, which is worse because nothing would say so.
     expect(isNullIsland(0, 0)).toBe(true);
@@ -102,7 +102,7 @@ describe('the staged artifact', () => {
 
   it('builds the staged URL — which carries NO vintage, hence the archive', () => {
     // `DomesticNames_VT_Text.zip` is overwritten in place on every publication, so today's gazetteer
-    // is not recoverable tomorrow. And a GNIS name decides admission (D96), not just labelling, so an
+    // is not recoverable tomorrow. And a GNIS name decides admission (D96), not just labeling, so an
     // un-pinned gazetteer means the corpus changes shape between runs for a reason nothing records.
     expect(gnisUrl('VT')).toBe(
       'https://prd-tnm.s3.amazonaws.com/StagedProducts/GeographicNames/DomesticNames/DomesticNames_VT_Text.zip',

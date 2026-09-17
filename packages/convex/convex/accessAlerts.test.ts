@@ -418,7 +418,7 @@ describe('accessAlerts.listForBody', () => {
   });
 
   /**
-   * The sweep's schedule must never be a visible behaviour: an alert past its expiry stops annotating
+   * The sweep's schedule must never be a visible behavior: an alert past its expiry stops annotating
    * the moment it passes, not the moment the cron next runs.
    */
   test('an alert past its expiry is already gone before the cron reaches it', async () => {

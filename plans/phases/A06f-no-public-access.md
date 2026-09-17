@@ -215,7 +215,7 @@ record.
 
 ## §4 — The surfaces
 
-**Both map signals ride GeoJSON `properties`, not feature-state.** Favourites use feature-state on
+**Both map signals ride GeoJSON `properties`, not feature-state.** Favorites use feature-state on
 web; copying that here would have forced mobile into a parallel filtered layer, because the React
 Native binding has no ergonomic `setFeatureState`, and two mechanisms for one visual effect is how
 the platforms drift. So `noPublicAccess` and `selfFlagged` are properties on the feature, and one
@@ -283,7 +283,7 @@ clusters, and hiding takes a mandatory reason.
 `listForBody`, `osm` launches arrive on the shore — and a put-in coord is the directions destination,
 so a hand-placed floating pin reintroduced the exact bug put-ins exist to fix, one water body at a time.
 Snapped on write and previewed snapped. The bound is only reachable from *outside* the polygon
-(`distanceToPolygonMeters` reads 0 on the water, so a mid-Champlain click snaps five kilometres,
+(`distanceToPolygonMeters` reads 0 on the water, so a mid-Champlain click snaps five kilometers,
 which is right); a click well inland is somebody marking a trailhead, and is **refused** rather than
 dragged onto the water — there is no "move this put-in", so a wrong one means hiding it and leaving
 a suppression row. Its own constant, not `PUTIN_SHORE_RADIUS_M`: that 30 m is the ETL's *identity*
@@ -358,13 +358,13 @@ published report's images the moment someone opened the edit form and backed out
 **3. Weather provenance was decided by an exact float comparison.** The conditions fields are whole
 °F and mph; the stored numbers are precise metric from Open-Meteo. −3.4 °C renders as `26` and comes
 back as −3.33, so `stored === next` was false for weather nobody touched, and the block was
-relabelled `user` — a model's figure restamped as a personal observation, with the number nudged on
+relabeled `user` — a model's figure restamped as a personal observation, with the number nudged on
 the way through. The existing tests had used −8 °C and 12 kph, which happen to be whole imperial
 units, which is why they passed.
 
 **4. The first fix opened a false negative, and Greptile caught it.** Comparing "did these round to
 the same whole unit?" fixed the false positive — and both inputs accept decimals, so 26.4 °F typed
-over a modelled 26 °F read as unchanged and the server restored the model's number. *Discarding an
+over a modeled 26 °F read as unchanged and the server restored the model's number. *Discarding an
 author's edit to protect provenance is a worse failure than the one the check was added to prevent.*
 The tolerance was the wrong instrument. **`isFormRoundTripOf`** (`core/reportForm.ts:241`)
 reconstructs `toMetric(display(stored))` — the exact arithmetic `reportFormFromReport` →
@@ -488,14 +488,14 @@ branch with finding 5 and deployed to dev the same day.
 `packages/core/src/publicAccess.test.ts` (19 tests) pins the pure half: the dim expression's
 null-safety, the multiplier, the drawer strings, the `>=` boundary of `disputesReview`.
 
-`packages/convex/convex/publicAccess.test.ts` (24 tests) is organised by the argument above:
+`packages/convex/convex/publicAccess.test.ts` (24 tests) is organized by the argument above:
 *reporting — an unconfirmed claim touches nothing* · *the moderator verdict* · *the re-report gate
 under an "open" verdict* · *the queue lane* · *a re-import preserves the ruling AND the demotion*.
 The last block is the one that earns its keep — `importCanonical`, `setCuratedBoost` and
 `backfillCells` each asserted on `minVisibleZoom`, not on the field's survival — plus the
 richness round-trip from Greptile finding 1.
 
-The edit path's photo behaviours (kept ids, explicit empty, omitted) and the weather round trip are
+The edit path's photo behaviors (kept ids, explicit empty, omitted) and the weather round trip are
 pinned in `reports.test.ts` and `core/reportForm.test.ts`; every review fix was verified to fail
 against the pre-fix code first.
 

@@ -6,7 +6,7 @@
  *
  * **The OSM classifier that used to live here is gone** (A07a, D109 amendment). `waterBodyTypeFromOsmTags`
  * mapped tags into the retired eight-value vocabulary, and `waterClass.ts` already did the same job
- * into the stored one — across all three catalogues rather than just OSM, with a bilingual
+ * into the stored one — across all three catalogs rather than just OSM, with a bilingual
  * name-keyword table and a veto path this never had. Two classifiers for one feed is how a body ends
  * up admitted by one rule and refused by another; see `classifyOsmTags` + `classifyWaterBody`.
  *
@@ -27,7 +27,7 @@ export type OsmTags = Record<string, string | undefined>;
 // each would mean a prune that deletes rows the next import puts straight back, or leaves rows no
 // import would ever produce — and both failures are invisible until someone counts.
 
-/** Square metres in an acre — the unit the floor below is *decided* in, exactly. */
+/** Square meters in an acre — the unit the floor below is *decided* in, exactly. */
 const SQ_M_PER_ACRE = 4046.8564224;
 
 /**
@@ -90,7 +90,7 @@ export const MIN_SURFACE_AREA_SQM = MIN_SURFACE_AREA_ACRES * SQ_M_PER_ACRE;
  */
 export const HARD_MIN_SURFACE_AREA_ACRES = 1;
 
-/** `HARD_MIN_SURFACE_AREA_ACRES` in square metres. */
+/** `HARD_MIN_SURFACE_AREA_ACRES` in square meters. */
 export const HARD_MIN_SURFACE_AREA_SQM = HARD_MIN_SURFACE_AREA_ACRES * SQ_M_PER_ACRE;
 
 // ── The corpus-admission CEILING (A07a audit, founder call 2026-08-06) ─────────────────────────────
@@ -100,8 +100,8 @@ export const HARD_MIN_SURFACE_AREA_SQM = HARD_MIN_SURFACE_AREA_ACRES * SQ_M_PER_
  *
  * ## Why a ceiling exists at all
  *
- * The merge's ocean veto is keyed on a catalogue's own class token, so it only fires when the
- * vetoing feature lands in the merged group — which depends on a cross-catalogue `polygonIoU` match
+ * The merge's ocean veto is keyed on a catalog's own class token, so it only fires when the
+ * vetoing feature lands in the merged group — which depends on a cross-catalog `polygonIoU` match
  * succeeding over the largest, most awkwardly-clipped polygons in the archive. NHD publishes **Lake
  * Erie as FTYPE 390 `LakePond`**, so nothing in NHD alone refuses it; the refusal was contingent on
  * 3DHP's counterpart matching. `assertsOceanOrGreatLake` closes the named half of that hole. This
@@ -121,7 +121,7 @@ export const HARD_MIN_SURFACE_AREA_SQM = HARD_MIN_SURFACE_AREA_ACRES * SQ_M_PER_
  */
 export const MAX_BODY_SURFACE_AREA_ACRES = 100_000;
 
-/** `MAX_BODY_SURFACE_AREA_ACRES` in square metres. */
+/** `MAX_BODY_SURFACE_AREA_ACRES` in square meters. */
 export const MAX_BODY_SURFACE_AREA_SQM = MAX_BODY_SURFACE_AREA_ACRES * SQ_M_PER_ACRE;
 
 /**
@@ -192,7 +192,7 @@ export function meetsAreaFloor(candidate: { name: string; surfaceAreaSqM: number
  *
  * `meetsAreaFloor` answers *"is it big enough"*. That is not the same question, and treating it as
  * though it were is a live inconsistency: `pruneBelowAreaFloor` keeps a below-floor body that carries
- * a report, a track or a favourite, while `listNeedingElevation` and `listNeedingWindRose` walk
+ * a report, a track or a favorite, while `listNeedingElevation` and `listNeedingWindRose` walk
  * straight past it. So a lake somebody skated could survive forever with no elevation and no wind
  * rose, and nothing would ever say so.
  *
@@ -202,7 +202,7 @@ export function meetsAreaFloor(candidate: { name: string; surfaceAreaSqM: number
  *
  * **`includedByRequest` is a statement about membership, not about prominence.** It is deliberately
  * not `curatedBoost` (a A06c §4.2 display lever that gets tuned) and deliberately not "has this been
- * skated?" — that signal is durable, already feeds prominence, and is already honoured by the prune's
+ * skated?" — that signal is durable, already feeds prominence, and is already honored by the prune's
  * attachment check, but it **cannot protect the moment that matters**: at promotion there is no
  * report and no track yet, because the whole point is that someone is asking for a lake they *want*
  * to skate. Protect it only by use, and the next prune deletes it before anyone can use it.
@@ -278,7 +278,7 @@ export function isWetlandClass(type: LegacyWaterBodyType | WaterBodyClass | unde
  * **This replaced a long-axis exemption that was designed, measured and dropped**, and the reason is
  * worth keeping. Axis is the better signal — D91 argues it at length, and the corpus holds a
  * 516-acre unnamed marsh with a **3,027 m** axis — but it was the only rule here gated on a *derived
- * statistic*, and that split the correct behaviour in two: an import must refuse a body whose axis is
+ * statistic*, and that split the correct behavior in two: an import must refuse a body whose axis is
  * unknown, a prune must keep it, or it deletes on absence of evidence. Two opposite readings of one
  * rule is how a silent deletion happens. Area needs no such branch.
  *
@@ -306,15 +306,15 @@ export const UNNAMED_WETLAND_MIN_SQM = UNNAMED_WETLAND_MIN_ACRES * SQ_M_PER_ACRE
  *
  * Two things fall out. **SwampMarsh is 13% of Maine's post-floor set and 63% of New Hampshire's** —
  * so "the mechanical part is small, 98.9% is LakePond variants" was a Maine fact that does not
- * generalise, and D96 could not have been decided from one state. And the naming gradient is the
+ * generalize, and D96 could not have been decided from one state. And the naming gradient is the
  * discriminator, consistently: lakes are named more than half the time, wetland almost never.
  *
  * Of the 19,610 unnamed bodies NHD would add to our region, **13,976 (71%) are SwampMarsh**, 82% of
  * them under 25 acres. Admitting them would roughly double the corpus with water nobody drives to.
  *
- * **Symmetric across catalogues on purpose.** OSM accepts `wetland=marsh`; NHD's FTYPE 466 lumps
+ * **Symmetric across catalogs on purpose.** OSM accepts `wetland=marsh`; NHD's FTYPE 466 lumps
  * swamp with marsh under one code whose FCODEs do not separate them (5,053 of NH's 5,138 post-floor
- * are the unspecified `46600`). A one-sided rule would make *which catalogue drew this lake* change
+ * are the unspecified `46600`). A one-sided rule would make *which catalog drew this lake* change
  * *what kind of thing it is* — the exact confusion D93 exists to remove.
  *
  * The two clauses, both live in `belongsInCorpus`:

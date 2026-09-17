@@ -155,7 +155,7 @@ describe('measure', () => {
 });
 
 describe('spatialClusters', () => {
-  /** A blob of points around a centre, tight enough to be unambiguously one water body. */
+  /** A blob of points around a center, tight enough to be unambiguously one water body. */
   function blob(lng: number, lat: number, n = 40): { lng: number; lat: number }[] {
     return Array.from({ length: n }, (_, i) => ({
       lng: lng + (i % 8) * 0.0009,

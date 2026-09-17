@@ -345,10 +345,10 @@ export function LakeEditorMap({
     // biome-ignore lint/correctness/useExhaustiveDependencies: setData reads mapRef.
   }, [loaded, data.draftPolygon, setData]);
 
-  // Labelled as a region rather than left as an anonymous div (D34): this canvas is the primary
+  // Labeled as a region rather than left as an anonymous div (D34): this canvas is the primary
   // content of the route, and a screen reader landing on an unlabelled full-page div has nothing to
   // announce. The tools beside it are the operable surface; this is the subject they act on.
-  // A labelled `section` rather than an anonymous div (D34): this canvas is the primary content of
+  // A labeled `section` rather than an anonymous div (D34): this canvas is the primary content of
   // the route, and a screen reader landing on an unlabelled full-page div has nothing to announce.
   // The tools beside it are the operable surface; this is the subject they act on. MapLibre takes any
   // `HTMLElement` as its container, so the semantic element costs nothing.

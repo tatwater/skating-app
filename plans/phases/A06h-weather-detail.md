@@ -44,7 +44,7 @@
 > ### Founder calls, 2026-09-03 — third pass
 >
 > 5. **The feed becomes heterogeneous and is renamed "Newsfeed" → "Latest"**, with a user-set
->    *"only show reports"* boolean in the filter row for anyone who wants the old behaviour. See
+>    *"only show reports"* boolean in the filter row for anyone who wants the old behavior. See
 >    **D159**.
 > 6. **The season checker and the cell scanner play along rather than merge** — the cheap 25-site
 >    checker stays the year-round trigger and *starts* the expensive scanner. See **D161**.
@@ -153,7 +153,7 @@
 >   in Vermont matches *"3 nights below 20°F"*; ~1,500 cells × ~8 bodies/cell is the read-cap shape
 >   again. So the digest carries the chain length per threshold as **four indexed scalars**, the
 >   query reads only digests at or above the asked-for length, the drive-time band and viewport are
->   applied to **cell centres** before any body is read, and body resolution runs newest-event-first
+>   applied to **cell centers** before any body is read, and body resolution runs newest-event-first
 >   to a cap. See D165.
 > - **The digest cannot be a full-history recompute.** A chain can be forty nights; re-reading 92
 >   rows × 3,043 cells daily is ~280k document reads for nothing. It recomputes over a bounded
@@ -192,7 +192,7 @@
 > **Open question 2 has no answer from dev, but the Google Group corpus answers it properly.**
 >
 > ⚠ **First, a correction.** The initial query looked for a table called `favorites`; the table is
-> **`waterBodyFavorites`**, and the "0 favorites" it reported was an artefact of the wrong name. The
+> **`waterBodyFavorites`**, and the "0 favorites" it reported was an artifact of the wrong name. The
 > real dev numbers are **14 favorites, 2 reports, 3 hazards, 1 bounty — 16 distinct bodies** (the 14
 > favorites are all the founder's own account). Still far too little to size a job from, but the
 > correction matters because the wrong number made the situation look worse than it is.
@@ -343,7 +343,7 @@ branch gained, in order:
 (170 km span), Lake Memphremagog (41 km) and Connecticut River Reservoir (20 km). Everything needed
 to fix that shipped in A02 — `suggestSamplePoints` proposes a grid at `DEFAULT_SAMPLE_SPACING_KM` and a
 moderator action writes it. Running it is a founder/operator call (it costs one forecast fetch and one
-cache row per point, and the spacing is a judgement), so it is recorded here rather than done.
+cache row per point, and the spacing is a judgment), so it is recorded here rather than done.
 
 Until then the panel says which claim it is making, which is the honest interim state rather than the
 fixed one.
@@ -353,7 +353,7 @@ fixed one.
 - **The ERA5 leg of the recovery ladder (D161 step 3).** Only reachable for gaps older than 92 days,
   which cannot arise in a first season for a cell whose range starts this winter. The `archive`
   source literal is already in the enum, so wiring it later needs no migration.
-- **The A05a season rollup.** An optimisation for a season that has not happened: 150 daily rows per
+- **The A05a season rollup.** An optimization for a season that has not happened: 150 daily rows per
   cell is ~548 MB against Convex Pro's included 50 GB, and the rows are append-only. Can land any
   time before the season closes.
 
@@ -595,7 +595,7 @@ had no headless path — by making one cell cold for the check and restoring its
 - **`bodyWeatherCells`** — the join, written by the registry walk it already rides; **paged** prune.
 - **`weatherCellDigests`** — one row per filter cell, rebuilt after every ingest and gap repair over
   `DIGEST_WINDOW_DAYS` (30), as of the cell's newest complete day; four indexed chain-length fields.
-- **`weatherDiscovery.listBodyResults`** — index walk → in-memory predicate → band on cell centres →
+- **`weatherDiscovery.listBodyResults`** — index walk → in-memory predicate → band on cell centers →
   bodies newest-event-first to a cap. `matchedCells` is the map's read; `status` the knobs' gate.
 - **`FeedFilters.weather` + `onlyReports`**, persisted like the rest; a shared store per client that
   the map now reads (D166). `listFeed` narrows reports by their water body's (or bay's) digest.
@@ -647,13 +647,13 @@ The `/code-review` skill hit a session limit before running, so the pass was by 
 
 ### Two things a render found that no test did
 
-- **The dim is subtle.** Measured on the Lake Morey frame: a matched neighbour fills at
+- **The dim is subtle.** Measured on the Lake Morey frame: a matched neighbor fills at
   `(197,213,224)`, a non-match in the next cell at `(216,233,244)` — half strength, as built, and
   legible up close but not at a regional zoom. The founder's call was dim-only, to re-assess after
   testing (D166); the number to change is `NO_PUBLIC_ACCESS_OPACITY_SCALE`, or a second scale for it.
 - **"As of" can differ by a day between the legend and a card.** `status` reads one arbitrary digest;
   a cell rebuilt after its local midnight is a day ahead of the 3,042 that were not. In season the
-  sweep rebuilds them all each morning, so the split is a rebuild-timing artefact; out of season the
+  sweep rebuilds them all each morning, so the split is a rebuild-timing artifact; out of season the
   digests simply hold their date.
 
 ### Holes closed by this PR
@@ -752,7 +752,7 @@ land:
   freezing will make the ice's surface sticky and soft in a way that kind of ruins it."* Shortwave
   penetrates clear ice and melts it internally at the grain boundaries, producing candled, rotten ice
   with little load-bearing capacity — a process that runs while the **air is still below freezing**,
-  which is exactly why air temperature alone under-describes a spring thaw. A grey 2 °C day and a
+  which is exactly why air temperature alone under-describes a spring thaw. A gray 2 °C day and a
   sunny 2 °C day score identically on `hoursAboveFreezing` and differently here.
 - **`meltIndexMm`** — the standard *enhanced temperature-index* form from glaciology,
   `M = TF·T + SRF·(1−α)·SW`, which exists precisely because pure degree-day models miss that melt is
@@ -771,7 +771,7 @@ land:
 - **`hoursOfSun` survives, with a warning on it.** It is the right answer to *"was it sunny?"* and
   the wrong answer to *"how much did the sun do?"*, and now says so in its docblock.
 
-**⚠ What this does not model, and should not be read as modelling:** snow insulation of the ice
+**⚠ What this does not model, and should not be read as modeling:** snow insulation of the ice
 below, water depth, current, springs, wind-driven turbulent exchange, or ice thickness. Albedo here
 is a property of the *snow*, inferred from depth alone — nothing in the archive knows whether the ice
 underneath is black, white, or gone.
@@ -904,7 +904,7 @@ multiply), `precipitation_probability` (planning), `weather_code` (icons), `dew_
 rime) — put us at **14**, a flat 1.4× on every call. Dropping feels-like and humidity as offered saves
 about 13% of weighted cost, not a tier; so keep whichever is genuinely useful. Recommendation: keep
 `apparent_temperature` (a skater stands on wind-exposed ice for hours — it is the number they feel),
-skip `relative_humidity_2m` in favour of `dew_point_2m`, which is the better frost signal at the same
+skip `relative_humidity_2m` in favor of `dew_point_2m`, which is the better frost signal at the same
 price. ⚠ `precipitation_probability` exists only on forecast hours; it is null in the past and must not
 reach the reducer (the D74 wall at `weather.ts:380-386`).
 
@@ -1018,7 +1018,7 @@ costs nothing until someone cares.
 
 This is the same instinct as the imagery archive being built by *listing R2* rather than remembering
 what was launched — **let the artifact tell you what exists** instead of maintaining a prediction of
-it. Here the artifact is user behaviour.
+it. Here the artifact is user behavior.
 
 ⚠ **Year one has no three-year history to look back on.** Dev holds 14 favorites, 2 reports,
 3 hazards, 1 bounty across 16 bodies — all of it the founder's own. The first season's set is whatever
@@ -1162,7 +1162,7 @@ reads raster and `pmtiles://` natively. The summer aerial never shipped on mobil
 ## D158 — Paying Open-Meteo is a season-two decision with a written trigger
 
 **Open-Meteo API Standard: $29/month, or $319/year — 1,000,000 calls/month**, with a commercial-use
-licence, an API key, a dedicated endpoint, no daily rate limit, and a 99.9% uptime target.
+license, an API key, a dedicated endpoint, no daily rate limit, and a 99.9% uptime target.
 
 **Founder call, 2026-09-02:** not this season. *"It's not out of the question, but it's probably not
 going to happen for this first season until we see what community adoption looks like."*
@@ -1179,7 +1179,7 @@ same resolution as the panel.
    Phase 07 analytics rollups from day one, since there is no counter today.
 2. The feed's weather filter proves used enough that Tier B's 11 km coarseness is a felt limitation
    rather than a theoretical one.
-3. The project stops being plainly non-commercial, at which point the free tier's licence no longer
+3. The project stops being plainly non-commercial, at which point the free tier's license no longer
    covers us regardless of volume.
 
 ⚠ **There is no request counter anywhere in the weather path today.** No token bucket, no rate
@@ -1210,7 +1210,7 @@ small documents. The pipeline:
 
 1. Evaluate the predicate over the 3,043 Tier-B cell-days → a matching cell set (typically a few
    hundred, often far fewer).
-2. Resolve matching cells → bodies through a **denormalised `weatherCellKeyB` on `waterBodies`, with
+2. Resolve matching cells → bodies through a **denormalized `weatherCellKeyB` on `waterBodies`, with
    its own index** — stamped at import, one more field alongside the A01 ladder-grid cells. Only
    matched cells are ever read as bodies.
 3. Intersect with the user's Phase 04 drive-time band **last**, because it is per-user and
@@ -1219,7 +1219,7 @@ small documents. The pipeline:
 The cost is then *proportional to the answer*, not to the corpus. This is the same lesson as A01's
 two-tier fix, one dataset over.
 
-**⚠ PR 2 correction — the per-cell digest is not an optimisation, it is the only shape that fits.**
+**⚠ PR 2 correction — the per-cell digest is not an optimization, it is the only shape that fits.**
 This was written as *"better still, precompute the predicate inputs"*, which undersold it into a
 nice-to-have. Do the arithmetic: **3,043 Tier-B cells × a 7-day predicate window = ~21,300 documents
 in one query**, against Convex's **16,384-document read cap** — and that is *before* resolving a
@@ -1304,7 +1304,7 @@ exactly what a season of paired observations would fit. Calibrate against `measu
 - **It never feeds anything.** Not hazard decay, not bounty freshness, not trust, not the reports
   themselves. It is measured *against* the world, and nothing reads it back. The moment a derived
   thickness becomes an input, it acquires authority it has not earned.
-- **Graduating it to a skater surface requires its own decision.** This D authorises a dark
+- **Graduating it to a skater surface requires its own decision.** This D authorizes a dark
   instrument and nothing more. D3 (never a safety verdict) and D150 (derived classification is an
   observation, never counsel) both still bind, and a thickness in inches is the single most
   counsel-shaped number this app could ever publish.
@@ -1339,7 +1339,7 @@ November–March, so gating costs nothing real and saves nearly half the annual 
 - *"Has winter started anywhere in the region?"* is coarse and region-wide. 25 sites is plenty; more
   resolution would not make the answer better.
 - *"Which specific water bodies look frozen?"* needs per-cell fidelity, because the whole point is
-  distinguishing one water body from its neighbour.
+  distinguishing one water body from its neighbor.
 
 **Their failure modes differ too, which is the stronger argument.** A season gate that fires two days
 late costs a couple of satellite passes. A discovery scanner that is wrong sends somebody driving two
@@ -1406,7 +1406,7 @@ whole corpus**, against a free tier of 10,000 calls/day.
 | **What it produces** | A regular lattice of unnamed points | Named places: *Malletts Bay*, *Broad Lake* |
 | **Champlain** | ~15–20 points | 10 bays, already drawn |
 | **Which one does the panel show?** | ⚠ **Unanswered** — a grid has no target, so the panel must pick, and "point 7 of 18" is not a claim | Falls out: the sub-area the user selected, else the body anchor, and the label names it |
-| **Operator work** | One action per body, three bodies owed, judgement on spacing | **None — 128 already placed** |
+| **Operator work** | One action per body, three bodies owed, judgment on spacing | **None — 128 already placed** |
 | **Coverage** | Any body, on demand | Only the 22 bodies that have them |
 | **Cost on small water bodies** | A grid is placed regardless | Collapses to the anchor cell; free |
 | **Serves D159's "where matched?"** | No — a grid index is not a place name | Yes, directly |
@@ -1501,7 +1501,7 @@ honest and the pre-selection is fewer taps; A02 already stores `displayScore`, s
 rows** on dev (checked 2026-09-03) — no season has ever been recorded, the checker does not start
 looking until October, and D163's gate only opens on a real regional freeze. So the corpus-wide daily
 rows the spread ranks bays against do not exist yet. Writing the ranking, the copy, the
-collapse-when-they-agree threshold and the extremes labelling against a table nobody can look at,
+collapse-when-they-agree threshold and the extremes labeling against a table nobody can look at,
 inside a metered review, on a PR already at 46 files and 8,377 lines, is the wrong order.
 
 Two structural reasons agree:
@@ -1526,14 +1526,14 @@ to say while the spread does not exist, and it is the same sentence that argues 
 
 ## Workstreams
 
-**A — Re-key (blocks everything).** Measure Tier-A cardinality with real elevations; implement the
+**§1 — Re-key (blocks everything).** Measure Tier-A cardinality with real elevations; implement the
 two-tier key; migrate `weatherCache` and `weatherForecastCache`. Both are ephemeral and prunable, so
 the migration is *delete and let it refill* — no backfill, no widen→deploy→narrow dance.
 
-**B — `weatherDays` + the season archive.** New table, 92-day first-touch backfill, daily append cron
+**§2 — `weatherDays` + the season archive.** New table, 92-day first-touch backfill, daily append cron
 at Tier B, season rollup on the A05a boundary, off-season idle. Add the request counter here.
 
-**C — The past panel.** The headline. Per-day summaries with the freeze/thaw/snow story, leading with
+**§3 — The past panel.** The headline. Per-day summaries with the freeze/thaw/snow story, leading with
 the two things no general weather app shows: **wind at the moment of freezing** (calm night → black
 ice; blowing night → rough ice) and **snow since the ice formed, and whether wind cleared it.** The
 wind-rose × fetch-profile multiply already exists in `windRose.ts`; this is largely wiring.
@@ -1544,11 +1544,11 @@ that.** The FDD integrals are right there and the ~1″/15-FDD backbone is writt
 Observations only — *"four nights below 20°F, calm; no snow since Feb 2"* — never derived ice. This is
 D3 and D150, and it is not negotiable in a safety app.
 
-**D — The forecast panel.** ✅ **Shipped as PR 4 (2026-09-11)** — see *§What PR 4 shipped*. Per D155
+**§4 — The forecast panel.** ✅ **Shipped as PR 4 (2026-09-11)** — see *§What PR 4 shipped*. Per D155
 in principle, per founder call 14 in shape: day cards as the selector, an hourly card row as the
 view (all seven days, opens at now), run-up always a drag away, drive time as an "≈ arrival" band.
 
-**E — Weather-first discovery (D159).** ✅ **Shipped as PR 5 (2026-09-12)** — see *§What PR 5
+**§5 — Weather-first discovery (D159).** ✅ **Shipped as PR 5 (2026-09-12)** — see *§What PR 5
 shipped*. Reads Tier B. The founder's target query: *"bodies within two
 hours' drive that got at least three nights below 20°F and no snow since."* This is the reason Tier B
 exists and the reason a cron exists at all — on-demand fetching cannot answer a question about water bodies
@@ -1558,7 +1558,7 @@ cells and Convex has no array index), the shared discovery-filter store across m
 body-result card. ~~**⚠ Answer the feed-shape question (bodies vs reports) before building the card,
 not after.**~~ ✅ Answered by founder call 20: interleaved by event time (D165).
 
-**H — The three-tab drawer IA (open question 4).** ⚠ **PR 2 addition: this was resolved as an open
+**§8 — The three-tab drawer IA (open question 4).** ⚠ **PR 2 addition: this was resolved as an open
 question and then never listed as work, which is how it got skipped.** PR 1 stacked
 `PastWeatherPanel` flat into `WaterBodyDetail` on both clients, adding to exactly the pile the tabs
 exist to relieve — the web sidebar now runs alert → access → forecast → wind exposure → bathymetry →
@@ -1586,7 +1586,7 @@ Ships as:
   machine-compiled facts about the body; Reporting = user-supplied, this season; Planning = weather,
   put-ins, directions, derived season trends.
 
-**F — Radar.** RainViewer proxied server-side as v1; MRMS-with-RQI as the honest version. Pay for the
+**§6 — Radar.** RainViewer proxied server-side as v1; MRMS-with-RQI as the honest version. Pay for the
 layer-registry refactor. Extract the lane pool from `useFreezeUpFrame.ts` first.
 
 ⚠ **PR 2 founder call: F stays in, and it runs season-gated.** The review recommended deferring it
@@ -1603,9 +1603,9 @@ the *operational* burden was. So two conditions ride along:
    [`08-legal-feasibility-checklist.md`](../08-legal-feasibility-checklist.md) *before* the first Fly
    deploy, not alongside it.** Borrowing LibreWXR's source selection and RQI handling is fine;
    deploying a modified LibreWXR as a network service obliges us to offer that modified source to
-   its users. They sell commercial licences, which implies they expect this to bite.
+   its users. They sell commercial licenses, which implies they expect this to bite.
 
-**G — The admin thickness instrument (D160).** Small: a Stefan estimator over the Tier-A/B degree-hour
+**§7 — The admin thickness instrument (D160).** Small: a Stefan estimator over the Tier-A/B degree-hour
 integrals, a role-gated `/admin` view, and a computed-vs-`measured` comparison table that accumulates
 across the season. Ship it **early in the phase, not late** — its entire value is the season of paired
 observations it collects, and every week it is not running is a week of data that cannot be recovered.
@@ -1680,7 +1680,7 @@ rendered, and put the reason in a comment where a future reader will hit it.
 ### 2. Multi-cell giants are unspecified — and Champlain is the single most-discussed body in the corpus
 
 `nearestSamplePoint` (`lib/sampling.ts:32-48`) picks the sample point closest to **a target**, which
-works when there is one (a report's coordinate, a hazard's centre). **A body-level weather panel has
+works when there is one (a report's coordinate, a hazard's center). **A body-level weather panel has
 no target.** Lake Champlain is ~200 km long, spans many 0.05° cells, and is the top of the Google Group
 corpus at 60 mentions — so the least-specified case is also the most-visited one.
 
@@ -1850,7 +1850,7 @@ range. That answers "is a storm coming" and nothing else. The question a skater 
   about them, so 25,000 bodies are invisible and the few with reports take all the attention. ⚠ It
   **filters cells, then bodies**, because the naive shape is exactly what made `listInViewport`
   read-cap-fragile at A01 and cost the A06d load 105 GB. **The feed becomes heterogeneous and is
-  renamed "Newsfeed" → "Latest"**, with an *"only show reports"* boolean for the old behaviour.
+  renamed "Newsfeed" → "Latest"**, with an *"only show reports"* boolean for the old behavior.
 - **Radar: resolution is not the fix (D156).** NEXRAD's failure in the Greens and Adirondacks is beam
   geometry, and no vendor tier changes physics. MRMS fuses radars with gauges and model fields **and
   publishes a Radar Quality Index encoding terrain blockage** — so the layer **draws where it cannot

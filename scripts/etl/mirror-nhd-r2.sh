@@ -16,7 +16,7 @@
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # **Deliberately NOT `.env.local`.** That file belongs to the OSM mirror and sets
-# `RAW_BUCKET=skating-raw-lake-osm`; the shared body honours an inherited `RAW_BUCKET` over
+# `RAW_BUCKET=skating-raw-lake-osm`; the shared body honors an inherited `RAW_BUCKET` over
 # `DEFAULT_BUCKET`, so sourcing it here would push a geodatabase archive into the OSM bucket and
 # report success. Two archives in one package need two config files, not one shared one.
 # shellcheck disable=SC1091

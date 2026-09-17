@@ -136,7 +136,7 @@ export function clipSubAreaToParent(
   // overhanging the parent by half a percent of its area be stored *as drawn*, which quietly turns
   // "inside its parent by construction" (Decision 2's whole argument for moderator drawing) into
   // "inside its parent nearly always". A property test found exactly that: a tall thin rectangle
-  // whose bottom edge sat three metres past the shoreline, accepted unclipped at 0.995 retained.
+  // whose bottom edge sat three meters past the shoreline, accepted unclipped at 0.995 retained.
   if (retainedFraction >= 1 - CLIP_EPSILON) {
     return { ok: true, polygon: drawn, retainedFraction, clipped: false };
   }
@@ -215,7 +215,7 @@ export const SUB_AREA_PUT_IN_TOLERANCE_M = 30;
 /**
  * Two bays' outlines are "the same shore" when a launch's distance to each differs by less than
  * this. Nested bays trace the parent's shoreline through their own re-noded clips, so a launch a
- * metre off the shore they share measures ~1e-10 m apart from each — an exact-equality tie would be
+ * meter off the shore they share measures ~1e-10 m apart from each — an exact-equality tie would be
  * decided by float rounding, and could flip on the next re-import. A millimetre is far below any
  * distance the geometry can mean and far above the noise.
  */
@@ -259,7 +259,7 @@ export function subAreaForPutIn<T>(
  *
  * Taken **against all samples**, open water included, so a track that is mostly open water can end
  * in no bay: the primary is a plurality among *members*, and the floor is what keeps a plurality of
- * three samples from labelling a lake-wide skate "Malletts Bay".
+ * three samples from labeling a lake-wide skate "Malletts Bay".
  */
 export const SUB_AREA_MEMBERSHIP_MIN_SHARE = 0.1;
 

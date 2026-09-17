@@ -219,7 +219,7 @@ export function weatherDecaySignal(
   // A shallow body's thaw counts for more — and ONLY its thaw (D69). Applied as a factor on each
   // branch's `thawTerm` rather than on the finished multiplier, which is what makes it structurally
   // impossible for shallowness to touch a cold term or to change any sign: whatever direction the
-  // type's thaw response already pointed, this scales the distance travelled in it.
+  // type's thaw response already pointed, this scales the distance traveled in it.
   const shallowK = body.isShallow ? Math.max(0, o.shallowThawK) : 1;
 
   let multiplier: number;

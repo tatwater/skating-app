@@ -20,7 +20,7 @@ import { useQuery } from 'convex/react';
  * **It renders nothing today, and that is the shipped state.** `RECURRENCE_ADVISORIES_PUBLIC` is off,
  * so the server's public read returns an empty list whatever the corpus holds. The flag flips when the
  * operator queue has been read across at least two rollovers and the clusters at the current bar look
- * like real patterns — a judgement from `/admin/recurrence`, not a date.
+ * like real patterns — a judgment from `/admin/recurrence`, not a date.
  *
  * The server also decides when this **yields**: a pin reported this season inside a cluster has a date,
  * a reporter and a confirm loop, and is better than history in every respect, so the cluster stands

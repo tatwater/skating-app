@@ -39,7 +39,7 @@ describe('maskFeatureFor', () => {
 
     const before = bboxOf(row.polygon);
     const after = bboxOf(outcome.feature.geometry);
-    // Every side moved outward. Asserting the direction rather than a distance: the exact metre count
+    // Every side moved outward. Asserting the direction rather than a distance: the exact meter count
     // is Turf's business and pinning it here would make this a change-detector for their rounding.
     expect(after.minLng).toBeLessThan(before.minLng);
     expect(after.minLat).toBeLessThan(before.minLat);

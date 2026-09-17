@@ -10,7 +10,7 @@ Generated 2026-08-01 · 5/5 sources archived · 312.4 MB total.
 
 ## Refreshing
 
-Agencies republish independently, so **staleness is a per-state judgement** and refreshing is a
+Agencies republish independently, so **staleness is a per-state judgment** and refreshing is a
 per-state action. Check first, then refresh only what moved:
 
 ```bash
@@ -69,7 +69,7 @@ mirror is `rclone copy`, never `sync`, so a previous push is still there.
 
 <details><summary>Field notes (traps found in the real data)</summary>
 
-147,755 depth POINTS over 5,000+ lakes, grouped by MIDAS (Maine's lake id) — so the per-lake split needs no spatial work. TWO findings that change the plan: (1) the IF&W depth maps the plan calls "PDFs, a digitisation project, not an ETL" HAVE ALREADY BEEN DIGITISED by the state — those are the FMSRC=depthmap rows (FMPROCSS=dig, FMSRCORG=meifw). (2) This layer is TWO datasets wearing one schema, and FMSRC tells them apart: `depthmap` rows are digitised IF&W map soundings, `gpscarrier`/`gpsrec` rows are Maine DEP depth-sounder tracks. UNIT TRAP: DEPTHM was computed with a 3.3 ft/m constant, not 3.28084 — DEPTHM * 3.3 lands on a whole foot for the depthmap rows, DEPTHM * 3.28084 does not. So the published DEPTHF is systematically 0.58% shallow and must NOT be read as-is. Recover feet as DEPTHM * 3.3 for depthmap rows; the GPS rows are genuine metre readings and convert normally. Density IS the concern here: ~29 points per lake on average, against Vermont's ~37,000.
+147,755 depth POINTS over 5,000+ lakes, grouped by MIDAS (Maine's lake id) — so the per-lake split needs no spatial work. TWO findings that change the plan: (1) the IF&W depth maps the plan calls "PDFs, a digitization project, not an ETL" HAVE ALREADY BEEN DIGITIZED by the state — those are the FMSRC=depthmap rows (FMPROCSS=dig, FMSRCORG=meifw). (2) This layer is TWO datasets wearing one schema, and FMSRC tells them apart: `depthmap` rows are digitized IF&W map soundings, `gpscarrier`/`gpsrec` rows are Maine DEP depth-sounder tracks. UNIT TRAP: DEPTHM was computed with a 3.3 ft/m constant, not 3.28084 — DEPTHM * 3.3 lands on a whole foot for the depthmap rows, DEPTHM * 3.28084 does not. So the published DEPTHF is systematically 0.58% shallow and must NOT be read as-is. Recover feet as DEPTHM * 3.3 for depthmap rows; the GPS rows are genuine meter readings and convert normally. Density IS the concern here: ~29 points per lake on average, against Vermont's ~37,000.
 
 </details>
 
@@ -93,7 +93,7 @@ mirror is `rclone copy`, never `sync`, so a previous push is still there.
 
 <details><summary>Field notes (traps found in the real data)</summary>
 
-9,285 contour lines over 558 lakes, surveyed since 2000. The strongest source in the set and the one the whole chain was proved on. Carries both `depth` (ft) and `meters`. CAUTION: `depth` has been round-tripped through metres, so it holds 1.00000003 alongside 1 — a naive DISTINCT returns 116 values where ~60 exist. Round before grouping or labelling. Interval is per lake, not per state (the plan assumed "10 ft"; the real set spans 1–180 ft).
+9,285 contour lines over 558 lakes, surveyed since 2000. The strongest source in the set and the one the whole chain was proved on. Carries both `depth` (ft) and `meters`. CAUTION: `depth` has been round-tripped through meters, so it holds 1.00000003 alongside 1 — a naive DISTINCT returns 116 values where ~60 exist. Round before grouping or labeling. Interval is per lake, not per state (the plan assumed "10 ft"; the real set spans 1–180 ft).
 
 </details>
 
@@ -118,7 +118,7 @@ mirror is `rclone copy`, never `sync`, so a previous push is still there.
 
 <details><summary>Field notes (traps found in the real data)</summary>
 
-104,910 POINTS with a single DEPTH_FT column — not isobaths. Digitised from 1:40,000 NOAA charts; VCGI added the Mallets Bay–north and Crown Point–south gaps in 2003 and replaced the shoreline points in 2010. Covers the whole lake, so it is also our only New York coverage. NGVD 1929 does NOT share a datum with the VT ANR set below — never union the two into one ramp. COUNT TRAP: only **20,345** of the 104,910 points are depth readings. The other 84,565 (80.6%) are DEPTH_FT = 0 — that 2010 shoreline replacement. They are not soundings and must not be counted as coverage, but they are not junk either: they are the depth-0 boundary constraint that keeps an interpolated surface from running deep at the shore. Dropped by the normalizer, re-added deliberately by the gridder.
+104,910 POINTS with a single DEPTH_FT column — not isobaths. Digitized from 1:40,000 NOAA charts; VCGI added the Mallets Bay–north and Crown Point–south gaps in 2003 and replaced the shoreline points in 2010. Covers the whole lake, so it is also our only New York coverage. NGVD 1929 does NOT share a datum with the VT ANR set below — never union the two into one ramp. COUNT TRAP: only **20,345** of the 104,910 points are depth readings. The other 84,565 (80.6%) are DEPTH_FT = 0 — that 2010 shoreline replacement. They are not soundings and must not be counted as coverage, but they are not junk either: they are the depth-0 boundary constraint that keeps an interpolated surface from running deep at the shore. Dropped by the normalizer, re-added deliberately by the gridder.
 
 </details>
 
@@ -149,7 +149,7 @@ mirror is `rclone copy`, never `sync`, so a previous push is still there.
 
 **No statewide lake bathymetry exists to archive.** This is a checked finding, not a gap — see
 `plans/phases/A06b-bathymetry-layer.md` §New York for the search that established it and for the
-costed digitisation path if we ever fund it.
+costed digitization path if we ever fund it.
 
 New York is nonetheless covered where it matters most: the VCGI/NOAA Champlain source above spans
 the whole lake, including its entire New York shore.

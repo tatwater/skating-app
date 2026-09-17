@@ -137,7 +137,7 @@ describe('waterBodies.setDepth (D68 rung 1)', () => {
 
   test('an UNTOUCHED field keeps its value and its rung — no provenance laundering', async () => {
     // The review regression (2026-07-31). The editor pre-filled every field and the mutation stamped
-    // `operator` on everything it received, so saving a max you did know relabelled the imported mean
+    // `operator` on everything it received, so saving a max you did know relabeled the imported mean
     // beside it as a survey reading: the public caption lost its `~` and the ETL could never fix it.
     const t = convexTest(schema, modules);
     const body = await seedBody(t, 'way/1', {
@@ -322,7 +322,7 @@ describe('waterBodies.importDepths (the D68 ladder, enforced at the write bounda
       meanDepthM: 4,
       meanDepthSource: 'lagos_us' as const,
     });
-    // Modelled mean loses; the max is unset, so it lands.
+    // Modeled mean loses; the max is unset, so it lands.
     await t.mutation(internal.waterBodies.importDepths, {
       depths: [
         {
@@ -338,7 +338,7 @@ describe('waterBodies.importDepths (the D68 ladder, enforced at the write bounda
     const row = await t.run((ctx) => ctx.db.get(body));
     expect(row?.meanDepthM).toBe(4); // measured mean held
     expect(row?.meanDepthSource).toBe('lagos_us');
-    expect(row?.maxDepthM).toBe(20); // modelled max filled an empty slot
+    expect(row?.maxDepthM).toBe(20); // modeled max filled an empty slot
   });
 
   test('a better rung does displace a worse one, in either load order', async () => {
@@ -735,14 +735,14 @@ describe('the depth pair is never left inverted', () => {
       ],
     });
     const row = await t.run((ctx) => ctx.db.get(body));
-    // The measured max outranks the modelled mean, so the mean is refused — not stored beside it.
+    // The measured max outranks the modeled mean, so the mean is refused — not stored beside it.
     expect(row?.maxDepthM).toBe(6);
     expect(row?.meanDepthM).toBeUndefined();
     expect(result.inverted).toBe(1);
     expect(result.rejects[0]?.reason).toMatch(/exceeds max/);
   });
 
-  test('a better-ranked incoming max retracts the modelled mean it contradicts', async () => {
+  test('a better-ranked incoming max retracts the modeled mean it contradicts', async () => {
     // The other direction of arrival, and the reason a refusal alone isn't enough: leaving the stored
     // mean would keep the impossible pair on display and in the classifier.
     const t = convexTest(schema, modules);

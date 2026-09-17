@@ -34,7 +34,7 @@ describe('contourLevels', () => {
 describe('chooseInterval', () => {
   it('puts every well-measured lake on the same 5 ft ladder', () => {
     // The founder's call: a fixed interval, so ring COUNT reads as depth across lakes rather than
-    // every lake being normalised to a dozen bands.
+    // every lake being normalized to a dozen bands.
     for (const depth of [17, 23, 29, 36, 42, 48, 59]) {
       expect(chooseInterval(depth, PLENTY).intervalFt).toBe(BASE_INTERVAL_FT);
     }

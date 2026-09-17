@@ -1,5 +1,5 @@
 /**
- * Archive the GNIS Domestic Names gazetteer — the fourth catalogue (A07a, D105).
+ * Archive the GNIS Domestic Names gazetteer — the fourth catalog (A07a, D105).
  *
  *   pnpm --filter @skating/etl archive-gnis            # fetch + verify + manifest
  *   pnpm --filter @skating/etl archive-gnis --refresh  # re-fetch, accepting a new upstream version
@@ -148,7 +148,7 @@ function main(): void {
     `${JSON.stringify(
       {
         source: 'USGS / U.S. Board on Geographic Names — GNIS Domestic Names',
-        licence: 'Public domain (U.S. Government work, 17 U.S.C. §105)',
+        license: 'Public domain (U.S. Government work, 17 U.S.C. §105)',
         note: 'The staged URL carries no vintage and is overwritten in place; this archive IS the version record.',
         waterClasses: [...GNIS_WATER_CLASSES],
         states,

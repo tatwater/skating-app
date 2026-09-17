@@ -10,10 +10,10 @@
  * batch tripped the cap and halved 250 → 15, burning five failed calls per success.
  *
  * A lookup grid was added to fix that, on the reasoning that *"a sounding survey is dense — transects
- * run tens of metres apart — so rounding collapses many measurements onto one lookup."* That is true
+ * run tens of meters apart — so rounding collapses many measurements onto one lookup."* That is true
  * of a normal lake survey and **exactly false for the one key the lane exists for**: MIDAS 870's
  * soundings are scattered one or two per lake across 263 lakes and 348 km, so no two share an 11 m
- * cell. Measured: **16,191 measurements → 16,155 cells.** A 0.2% reduction. The optimisation was
+ * cell. Measured: **16,191 measurements → 16,155 cells.** A 0.2% reduction. The optimization was
  * written for the common case, and the pathological case is the entire job.
  *
  * None of it was necessary. **The corpus is already on disk** — `bodies.ndjson` is the merge's own

@@ -20,7 +20,7 @@
  *     cursor and schedules its own continuation.
  *   - **`pruneGateEvents` (daily)** enforces `bountyGateEvents` retention. It's the one append-per-
  *     attempt table here, and it carries `requesterId` — so bounding it is both a storage decision and
- *     a "don't keep a permanent behavioural record" one.
+ *     a "don't keep a permanent behavioral record" one.
  *
  * `backfill` likewise self-chains one UTC day per transaction (`backfillStep`). So every entry point
  * here keeps a single transaction's read load bounded by *one* day or *one* point-in-time chunk, never
@@ -594,7 +594,7 @@ export const backfillStep = internalMutation({
 
 /**
  * `bountyGateEvents` retention. The one append-per-attempt table in the analytics set, and the one
- * carrying `requesterId` — so the bound is as much "don't accumulate a permanent behavioural record"
+ * carrying `requesterId` — so the bound is as much "don't accumulate a permanent behavioral record"
  * as it is storage. Deletes a bounded page per run; the daily cadence keeps up with any real volume,
  * and a backlog just takes a few days to drain rather than blowing one transaction.
  */

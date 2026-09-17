@@ -113,7 +113,7 @@ export function LakeSearchBox({
     if (height > 0) setInputHeight(height);
   };
 
-  // The bar's own top edge is at `topInset + 8`, so clearing the screen means travelling that plus
+  // The bar's own top edge is at `topInset + 8`, so clearing the screen means traveling that plus
   // its height — and a little more, so nothing peeks out under a rounded display corner.
   const travel = topInset + 8 + inputHeight + 8;
 

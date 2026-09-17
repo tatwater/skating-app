@@ -7,7 +7,7 @@
  * consent screen inside the TTL, and their Strava tokens land on your profile — an account-linking
  * takeover where the victim's account is the one that gets used.
  *
- * The standard defence is to bind the flow to the **browser session**, not just to a user id. So the
+ * The standard defense is to bind the flow to the **browser session**, not just to a user id. So the
  * app no longer opens Strava's URL directly: it opens *our* `/strava/start`, which drops a cookie
  * carrying the nonce and then forwards to Strava. The callback requires that cookie to match the
  * `state` it was handed. An attacker cannot set a cookie in someone else's browser, so a victim's

@@ -6,7 +6,7 @@ import { describe, expect, it } from 'vitest';
 
 /**
  * The legend a skater reads and the palette the cutter applies are two copies of one decision, in
- * two languages, applied months apart — a `gdaldem` colour table baked into tiles on a Fly Machine,
+ * two languages, applied months apart — a `gdaldem` color table baked into tiles on a Fly Machine,
  * and a list of hexes rendered in a panel. **Nothing at runtime can reconcile them**, so the only
  * thing standing between us and a legend that confidently mislabels an entire season is this file.
  *
@@ -40,7 +40,7 @@ describe('the SCL palette and the legend that explains it', () => {
     }
   });
 
-  it('⚠ paints each legend colour with at least one class, and invents none', () => {
+  it('⚠ paints each legend color with at least one class, and invents none', () => {
     const painted = new Set([...palette.values()].filter((e) => e.alpha > 0).map((e) => e.hex));
     const legend = new Set(SCL_LEGEND.map((e) => e.color.toUpperCase()));
     expect(painted).toEqual(legend);
@@ -58,7 +58,7 @@ describe('the SCL palette and the legend that explains it', () => {
     for (const cls of [4, 5]) expect(hex(cls)).toBe('#3F6212');
   });
 
-  it('⚠ leaves "no observation" transparent rather than colouring it', () => {
+  it('⚠ leaves "no observation" transparent rather than coloring it', () => {
     // Class 0 is no-data and class 1 is a sensor defect. Both are the absence of a measurement, and
     // painting them would put a category on screen where nothing was seen — the basemap has to show
     // through instead.

@@ -112,7 +112,7 @@ const DISJOINT_GAP_FLOOR_M = 600;
  *
  * **Grid-based connected components, not pairwise distances.** The honest test is single-link
  * clustering, which is O(n²) and would be 400 million haversines across the corpus; binning to cells
- * of the gap size and unioning occupied neighbours answers the same question in one pass. The cost is
+ * of the gap size and unioning occupied neighbors answers the same question in one pass. The cost is
  * that the effective threshold is the cell diagonal rather than the radius, which errs toward
  * *merging* — the safe direction, since a false split would drop a real lake.
  */
@@ -160,10 +160,10 @@ export function clusterLabels(
     for (let dx = -1; dx <= 1; dx += 1) {
       for (let dy = -1; dy <= 1; dy += 1) {
         if (dx === 0 && dy === 0) continue;
-        const neighbour = cells.get(`${cx + dx},${cy + dy}`);
-        if (neighbour === undefined) continue;
+        const neighbor = cells.get(`${cx + dx},${cy + dy}`);
+        if (neighbor === undefined) continue;
         const a = find(index);
-        const b = find(neighbour);
+        const b = find(neighbor);
         if (a !== b) parent[a] = b;
       }
     }
@@ -411,7 +411,7 @@ export function spanSelect<T>(
     let best = candidates[0] as T;
     let bestDistance = -1;
     for (const candidate of candidates) {
-      // Distance to the NEAREST already-picked shape, maximised: a candidate is interesting when it
+      // Distance to the NEAREST already-picked shape, maximized: a candidate is interesting when it
       // resembles nothing we already have, not when it differs from the average.
       let nearest = Number.POSITIVE_INFINITY;
       for (const already of picked) {

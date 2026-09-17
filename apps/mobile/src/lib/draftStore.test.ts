@@ -21,7 +21,7 @@ import { ensureSchema, readHazardItems, readReportDrafts, type SqliteLike } from
  *
  * The store is written against a small `SqliteLike` interface; here we back it with Node's built-in
  * SQLite so the migration runs against a *real* engine (same SQL semantics as `expo-sqlite`), not a
- * hand-rolled fake that would just re-encode the behaviour under test.
+ * hand-rolled fake that would just re-encode the behavior under test.
  */
 function adapt(db: DatabaseSync): SqliteLike {
   return {

@@ -226,7 +226,7 @@ export const listRecentActivations = query({
  * campaign** (A07b, founder call 2026-09-16, option (b)).
  *
  * A body stays active on any evidence of *access or use*: a put-in, a curated boost, any human
- * attachment (a report, a hazard, a track, a favourite, a bounty, a body feature, a hand-drawn bay),
+ * attachment (a report, a hazard, a track, a favorite, a bounty, a body feature, a hand-drawn bay),
  * an admission by request, a user-drawn origin, or a name on the caller's keep list (the
  * design-corpus mentions, matched offline by `seed-destinations seed-standing`). Everything else
  * becomes dormant with reason `inactive` — and comes back the moment someone reports, tracks or
@@ -312,7 +312,7 @@ export const seedStanding = internalMutation({
  *
  * `season` is the season being rolled *into*; the window is the `INACTIVE_SEASONS` before it — see
  * `inactivityCutoffMs`. Four reads per active body (three for `lastActivityAt`, one for a
- * favourite) plus the demotion's own, so a page of 100 all-demoted sits around 3,000 reads.
+ * favorite) plus the demotion's own, so a page of 100 all-demoted sits around 3,000 reads.
  */
 export const demoteInactiveBodies = internalMutation({
   args: {
@@ -396,7 +396,7 @@ export const runStandingRollover = internalAction({
       stages: [
         {
           name: 'rollover',
-          detail: `demoteInactiveBodies — active bodies with nothing in the last ${INACTIVE_SEASONS} seasons and no boost or favourite become dormant`,
+          detail: `demoteInactiveBodies — active bodies with nothing in the last ${INACTIVE_SEASONS} seasons and no boost or favorite become dormant`,
         },
       ],
     });

@@ -247,7 +247,7 @@ export async function getText(url: string): Promise<string> {
 /**
  * How many times to try a page before giving up.
  *
- * Not politeness-theatre: MassGIS returned a 500 partway through a 56-page fetch during the first
+ * Not politeness-theater: MassGIS returned a 500 partway through a 56-page fetch during the first
  * real run. Without a retry that is fourteen minutes of work lost to one transient, and — worse — the
  * natural response to losing it repeatedly is to reach for `--refresh` on a whole state, which is the
  * opposite of what the archive is for.

@@ -112,7 +112,7 @@ export interface GranuleKey {
 
 const GRANULE_ID = /^(S2[A-D])_([0-9]{2}[A-Z]{3})_([0-9]{8})_([0-9]+)_(L2A|L1C)$/;
 
-/** Parse a granule id, or `null` if it is not one we recognise. */
+/** Parse a granule id, or `null` if it is not one we recognize. */
 export function parseGranuleId(id: string): GranuleKey | null {
   const match = GRANULE_ID.exec(id);
   if (!match) return null;

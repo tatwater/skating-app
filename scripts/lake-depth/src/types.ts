@@ -15,8 +15,8 @@ import type { Feature, Geometry } from 'geojson';
  * Units per the HydroLAKES technical documentation: `Lake_area` km², `Depth_avg` m, `Shore_len` km.
  *
  * `Vol_src` is the field that earns HydroLAKES two rungs on the D68 ladder instead of one: 1 = reported
- * lake volume, 2 = reported reservoir volume, 3 = modelled. Since `Depth_avg` is defined as
- * `Vol_total / Lake_area`, a reported volume makes the depth measured-ish and a modelled one doesn't.
+ * lake volume, 2 = reported reservoir volume, 3 = modeled. Since `Depth_avg` is defined as
+ * `Vol_total / Lake_area`, a reported volume makes the depth measured-ish and a modeled one doesn't.
  */
 export type HydroLakesProperties = Record<string, unknown> & {
   Hylak_id?: number | string;
@@ -82,7 +82,7 @@ export interface DepthRecord {
   maxDepthM?: number;
   maxDepthSource?: DepthSource;
   /**
-   * HydroLAKES' own shoreline length, in **metres** (its `Shore_len` is km).
+   * HydroLAKES' own shoreline length, in **meters** (its `Shore_len` is km).
    *
    * **A cross-check, never a source** (D85). Its polygon is a different water mask at a different
    * date and its own resolution, so a disagreement does not say who is right — but a 2× gap on a

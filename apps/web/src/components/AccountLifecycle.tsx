@@ -144,7 +144,7 @@ function DataExport() {
  *
  * **The copy carried the most weight when the model changed under it** (D62 amendment). It used to
  * say "nothing happens for 30 days", which stopped being true: the request now clears the profile and
- * erases aged content immediately, and cancelling recovers neither. Copy that promises reversibility
+ * erases aged content immediately, and canceling recovers neither. Copy that promises reversibility
  * for an irreversible action is worse than no copy, so the confirm screen leads with what can't be
  * undone and the tests assert that sentence specifically.
  */
@@ -174,8 +174,8 @@ export function DeleteAccountView({
             your notes, your comments, your photo captions. You can browse, but not post.
           </p>
           <p className="text-foreground-muted text-sm">
-            Cancelling keeps the account and stops the deletion. It <strong>can't</strong> bring
-            back your profile or the words already deleted — you'd set your profile up again from
+            Canceling keeps the account and stops the deletion. It <strong>can't</strong> bring back
+            your profile or the words already deleted — you'd set your profile up again from
             scratch.
           </p>
           <div>
@@ -204,7 +204,7 @@ export function DeleteAccountView({
           days.
         </p>
         <p className="text-foreground-muted text-sm">
-          During those {DELETION_GRACE_DAYS} days you can still sign in, and cancelling keeps the
+          During those {DELETION_GRACE_DAYS} days you can still sign in, and canceling keeps the
           account — but your profile stays empty and you'd set it up again from scratch. Export your
           data first if you want a copy.
         </p>

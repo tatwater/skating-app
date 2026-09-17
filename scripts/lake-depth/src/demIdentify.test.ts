@@ -70,13 +70,13 @@ describe('parseIdentify', () => {
     expect(parseIdentify(broken)).toEqual([]);
   });
 
-  it('says nothing about a response it does not recognise', () => {
+  it('says nothing about a response it does not recognize', () => {
     expect(parseIdentify(null)).toEqual([]);
     expect(parseIdentify('<html>error</html>')).toEqual([]);
     expect(parseIdentify({})).toEqual([]);
   });
 
-  it('asks for the catalogue, which is the entire point of this endpoint', () => {
+  it('asks for the catalog, which is the entire point of this endpoint', () => {
     const url = identifyUrl(43.6, -70.3);
     expect(url).toContain('returnCatalogItems=true');
     expect(url).toContain(encodeURIComponent('"wkid":4326'));
@@ -91,7 +91,7 @@ describe('judgeReadings — what the rasters together will say', () => {
     expect(verdict).toMatchObject({ ok: true, elevationM: 135.107, spreadM: 0, used: 3 });
   });
 
-  it('allows the metre or so a real lake surface moves between flights', () => {
+  it('allows the meter or so a real lake surface moves between flights', () => {
     // Champlain measured 29.6921 and 29.6928 — but rasters are flown years apart, and drawdown and
     // seasonal range are real differences between two correct readings.
     expect(judgeReadings([reading(29.7), reading(31.4)])).toMatchObject({ ok: true });

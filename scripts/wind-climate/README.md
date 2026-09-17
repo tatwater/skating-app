@@ -112,7 +112,7 @@ spend requests on a number nothing will ever render.
 pnpm --filter @skating/wind-climate load
 ```
 
-Fetches five winters (2010–2014) per cell, accumulates Dec–Mar hours into 16 sectors, normalises to
+Fetches five winters (2010–2014) per cell, accumulates Dec–Mar hours into 16 sectors, normalizes to
 frequencies, and writes one rose per body.
 
 **It is resumable, and that is not incidental.** The server-side query skips bodies that already
@@ -153,7 +153,7 @@ Nothing is fetched at read time. The caption reads the stored column.
 **Two denominator guards**, the same discipline as D78 and D86:
 
 - A cell with fewer than **4,000 winter hours** stores **nothing**. A rose renders as *"about 19% of
-  the time"*, which reads identically whether it summarises 300 hours or 14,000.
+  the time"*, which reads identically whether it summarizes 300 hours or 14,000.
 - The caption always states the **percentage**, never a bare superlative. *"Most exposed to the
   northwest"* is a claim with nothing behind it.
 

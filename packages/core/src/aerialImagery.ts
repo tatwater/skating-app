@@ -22,7 +22,7 @@
  *    *"no CDN, and therefore a courtesy problem"* — and building on that was expensive. Measured
  *    against the live service on 2026-08-21, `exportImage` answers with `cache-control: max-age=43200`
  *    through CloudFront, and a repeat of an identical URL is **0.08 s against 29.3 s** for a fresh
- *    render. A one-metre change of bbox, or a one-pixel change of size, is a full miss.
+ *    render. A one-meter change of bbox, or a one-pixel change of size, is a full miss.
  *
  *    So the courtesy problem is real but it is not the one that was written down: the cost is not
  *    "every request is compute", it is *"every request we make is compute **because we never repeat a
@@ -99,9 +99,9 @@ export function aerialExportUrl(
  * outward from the *solid* shape, so an image cropped to that shape's bounding box cuts the fade off
  * wherever the shape touches its own bbox — which is every lake, at the northernmost and southernmost
  * points at minimum. On screen that is a **hard straight line across the middle of a soft gradient**,
- * and it reads as a rendering artefact because it is one.
+ * and it reads as a rendering artifact because it is one.
  *
- * Pass the tier's feather distance. Erring generous costs a few metres of image nobody sees; erring
+ * Pass the tier's feather distance. Erring generous costs a few meters of image nobody sees; erring
  * tight costs the edge the feather exists to create.
  */
 export function aerialBoundsFor(shape: Polygon | MultiPolygon, padMeters = 0): BBox {
@@ -136,7 +136,7 @@ export function aerialIdentifyUrl(point: LatLng): string {
 export interface AerialScene {
   /** Epoch ms the photograph was taken. */
   capturedAt: number;
-  /** Ground sample distance in metres, from the scene name (`…_030_…` ⇒ 0.30 m). */
+  /** Ground sample distance in meters, from the scene name (`…_030_…` ⇒ 0.30 m). */
   resolutionM?: number;
   /** The USGS scene id, kept so a surprising date can be traced to a file. */
   sceneName?: string;
@@ -194,7 +194,7 @@ export function parseAerialScene(response: unknown): AerialScene | null {
 export function resolutionFromSceneName(name: string): number | undefined {
   const parts = name.split('_');
   for (const part of parts) {
-    // A three-digit field of centimetres: 030 ⇒ 0.3 m, 060 ⇒ 0.6 m, 100 ⇒ 1 m.
+    // A three-digit field of centimeters: 030 ⇒ 0.3 m, 060 ⇒ 0.6 m, 100 ⇒ 1 m.
     if (/^\d{3}$/.test(part)) {
       const cm = Number(part);
       if (cm > 0 && cm <= 200) return cm / 100;
@@ -262,7 +262,7 @@ export function formatAerialSeason(capturedAt: number, now: number = Date.now())
       : `${season} ${year}`;
   // "latest **aerial** available", where the month form says only "latest available": in the heading
   // it sits beside a season the archive also publishes, and an unqualified "latest" there would read
-  // as a claim about the satellite timeline rather than about the flight programme.
+  // as a claim about the satellite timeline rather than about the flight program.
   const years = (now - capturedAt) / (365.25 * 24 * 60 * 60 * 1000);
   return years >= 3 ? `${label} · latest aerial available` : label;
 }

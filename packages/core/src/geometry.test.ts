@@ -313,7 +313,7 @@ describe('bufferedLineOverlap (rivers, D36)', () => {
 });
 
 describe('distanceToPolygonMeters (offline auto-select / Phase 09a proximity)', () => {
-  // ~111 m square centred on the equator, so a degree of lat or lng ≈ the same metres and the
+  // ~111 m square centered on the equator, so a degree of lat or lng ≈ the same meters and the
   // local equirectangular projection is easy to reason about analytically.
   const M_PER_DEG = 6_371_008.8 * (Math.PI / 180); // ≈ 111,194.9 m per degree at the equator
   const box = rect({ minLat: -0.0005, minLng: -0.0005, maxLat: 0.0005, maxLng: 0.0005 });
@@ -325,7 +325,7 @@ describe('distanceToPolygonMeters (offline auto-select / Phase 09a proximity)', 
   it('measures the perpendicular distance to the nearest edge', () => {
     // 0.0005° east of the east edge (which sits at lng 0.0005).
     const d = distanceToPolygonMeters({ lat: 0, lng: 0.001 }, box);
-    expect(d).toBeCloseTo(0.0005 * M_PER_DEG, -1); // ≈ 55.6 m, within a metre
+    expect(d).toBeCloseTo(0.0005 * M_PER_DEG, -1); // ≈ 55.6 m, within a meter
   });
 
   it('measures the distance to the nearest corner for a diagonally-outside point', () => {
@@ -577,9 +577,9 @@ describe('destinationPoint (Phase 09b directional projection)', () => {
       fc.property(
         fc.integer({ min: 0, max: 359 }),
         fc.integer({ min: 10, max: 1500 }),
-        (bearing, metres) => {
-          const measured = haversineMeters(origin, destinationPoint(origin, bearing, metres));
-          expect(Math.abs(measured - metres) / metres).toBeLessThan(0.01);
+        (bearing, meters) => {
+          const measured = haversineMeters(origin, destinationPoint(origin, bearing, meters));
+          expect(Math.abs(measured - meters) / meters).toBeLessThan(0.01);
         },
       ),
     );

@@ -277,7 +277,7 @@ const DEPARTED_PAGE = 25;
  * The last place D62's "what a person typed vs what they observed" seam doesn't cut cleanly. Under the
  * second amendment a photo on a surviving report is kept whole — bytes, timestamp, coordinate — and
  * only its caption is redacted. But the image is the largest identifiability surface in the system:
- * faces, a licence plate, a house behind the put-in, the departed skater themselves. It is
+ * faces, a license plate, a house behind the put-in, the departed skater themselves. It is
  * *observation*, which is why no bucket ever questioned it, and it is also the richest personal data
  * we hold.
  *
@@ -362,7 +362,7 @@ export const expireDepartedPhotos = internalMutation({
   },
   handler: async (ctx, { userId, cursor, season, scanCap }) => {
     const owner = await ctx.db.get(userId);
-    // Only tombstones. A cancelled deletion restores an ordinary account, and an ordinary account's
+    // Only tombstones. A canceled deletion restores an ordinary account, and an ordinary account's
     // photos are not on any clock at all — aging never removes anything (D62 second amendment).
     if (owner?.status !== 'deleted') return { deleted: 0, done: true, kept: 0 };
 

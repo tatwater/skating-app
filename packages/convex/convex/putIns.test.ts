@@ -203,7 +203,7 @@ describe('putIns.setOfficial / hide (auth + audit)', () => {
 
   /**
    * The operator UI (A06f) can name a hand-placed launch. `osm` arrives with OSM's name and `derived`
-   * is labelled by compass bearing, so `official` was the one rung that could never be named —
+   * is labeled by compass bearing, so `official` was the one rung that could never be named —
    * despite being the rung where somebody actually knows what the place is called.
    */
   test('setOfficial stores an operator-supplied name, and says it in the audit line', async () => {
@@ -260,7 +260,7 @@ describe('putIns.setOfficial / hide (auth + audit)', () => {
     const id = await seedBody(t); // the unit square [0,1]²
     const asMod = await seedUser(t, 'clerk_mod', 'moderator');
 
-    // Dead centre of the body — as far from any shore as this lake gets.
+    // Dead center of the body — as far from any shore as this lake gets.
     await asMod.mutation(api.putIns.setOfficial, {
       waterBodyId: id,
       coord: { lat: 0.5, lng: 0.5 },
@@ -294,8 +294,8 @@ describe('putIns.setOfficial / hide (auth + audit)', () => {
   /**
    * The bound is only ever reached from *outside*: `distanceToPolygonMeters` reads 0 anywhere on the
    * water, so a mid-lake click can never trip it however big the lake. A click well inland is not a
-   * missed shoreline — it is somebody marking a trailhead — and silently dragging it half a kilometre
-   * onto the water would turn a mistake into a plausible wrong answer that directions would honour.
+   * missed shoreline — it is somebody marking a trailhead — and silently dragging it half a kilometer
+   * onto the water would turn a mistake into a plausible wrong answer that directions would honor.
    */
   test('refuses a click far inland instead of silently relocating it', async () => {
     const t = convexTestWithGeo();
@@ -353,7 +353,7 @@ describe('OSM-derived launches on the map (A06d)', () => {
    * ⚠ Caught in pre-PR review, and it would have shipped silently. `loadPutInRows` bucketed rows as
    * `official` or `derived`; an `osm` row is neither, so the **3,588 launches the access ETL imported
    * were invisible to the map's marker query** while the drawer — which reads `accessForBody`
-   * directly — described them perfectly happily. The most visible artefact of the phase, missing.
+   * directly — described them perfectly happily. The most visible artifact of the phase, missing.
    */
   test('an osm put-in renders, carrying its OSM name', async () => {
     const t = convexTest(schema, modules);

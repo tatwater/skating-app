@@ -48,7 +48,7 @@ import {
 const STAC_URL = process.env.STAC_URL ?? 'https://earth-search.aws.element84.com/v1';
 
 /**
- * Which mission's catalogue to search.
+ * Which mission's catalog to search.
  *
  * ⚠ **Two collections, and almost nothing downstream is shared.** Sentinel-2 items carry
  * `eo:cloud_cover` and an MGRS tile in the id; Sentinel-1 items carry neither and add

@@ -258,7 +258,7 @@ async function resolveFlagTarget(
         exists: true,
         author: await loadQueueUser(ctx, doc.createdByUserId),
         // The reason is the claim and the note is the evidence for it; a bogus alert is usually only
-        // recognisable from the second, so it leads where there is one.
+        // recognizable from the second, so it leads where there is one.
         summary: snippet(doc.note) || `Access alert: ${doc.reason}`,
       };
     }

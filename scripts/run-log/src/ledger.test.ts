@@ -116,7 +116,7 @@ describe('DropLedger bookkeeping', () => {
     expect(names).not.toContain('nhdId.rejected.sentinel');
   });
 
-  it('summarises in one line for a log', () => {
+  it('summarizes in one line for a log', () => {
     const ledger = new DropLedger('nhdId');
     ledger.normalize('601f3c2e-2c78-4691-8aec-8735a10d22b5', guidOnly);
     ledger.normalize('141034078', guidOnly);

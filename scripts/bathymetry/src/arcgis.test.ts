@@ -50,7 +50,7 @@ describe('pageUrl', () => {
 
   it('always requests WGS84, even for geojson', () => {
     // MassGIS and Maine publish in State Plane; an implicitly-reprojected GeoJSON is a silent
-    // several-hundred-kilometre offset, so `outSR` is not left to the service's discretion.
+    // several-hundred-kilometer offset, so `outSR` is not left to the service's discretion.
     expect(url).toContain('outSR=4326');
   });
 

@@ -31,7 +31,7 @@ describe('summarizeQuality', () => {
     expect(atQuorum.qualityDots).toBe(1);
   });
 
-  it('summarises the mean once quorum is met, and names its denominator', () => {
+  it('summarizes the mean once quorum is met, and names its denominator', () => {
     expect(summarizeQuality(['great', 'great', 'good'])).toEqual({
       qualityDots: 4, // (4+4+3)/3 = 3.67 → 4
       qualityCount: 3,

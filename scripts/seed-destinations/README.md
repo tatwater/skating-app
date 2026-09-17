@@ -62,7 +62,7 @@ A seed is a **cold-start hack with a retirement path** (D49), not a permanent re
 richness (A06c §4.2) is the durable mechanism meant to take over, and `curatedBoostIsRedundant` is the
 advisory signal that says when a given seed has been earned organically.
 
-**A boost a human already set is never overwritten.** A hand-set value is a judgement about a
+**A boost a human already set is never overwritten.** A hand-set value is a judgment about a
 specific lake; this list is a seed, and a seed that silently overrides curation is the opposite of
 what D49 wants from it. Those are recorded as itemized failures on the run row.
 

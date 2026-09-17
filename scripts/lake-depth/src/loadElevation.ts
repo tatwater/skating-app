@@ -50,12 +50,12 @@ const WRITE_BATCH_SIZE = 200;
 const MISSING_SAMPLE_CAP = 10;
 
 /**
- * Delta bands for `--compare`, in metres.
+ * Delta bands for `--compare`, in meters.
  *
  * Chosen against what the two sources *are* rather than by taste: GLO-90 is a 90 m posting, so a
- * lake surface read off it is routinely a few metres from a 1 m LiDAR reading of the same point
+ * lake surface read off it is routinely a few meters from a 1 m LiDAR reading of the same point
  * with no datum shift involved at all. The question the bands have to answer is whether the
- * disagreement is **centred on zero**.
+ * disagreement is **centered on zero**.
  */
 const DELTA_BANDS = [1, 3, 10, 30] as const;
 
@@ -173,7 +173,7 @@ function compare(archive: Map<string, ElevationArchiveEntry>, importFloorOnly: b
     );
   }
   process.stderr.write(
-    '\n  Read it this way: a distribution centred near zero with both tails is GLO-90 being coarse,\n' +
+    '\n  Read it this way: a distribution centered near zero with both tails is GLO-90 being coarse,\n' +
       '  which is an accuracy improvement. A distribution displaced off zero — most bodies moving\n' +
       '  the same way by a similar amount — is a DATUM shift, and every `regionStats` decile moves\n' +
       '  with it. Do not load until this reads as the first one.\n\n',

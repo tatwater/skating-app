@@ -20,21 +20,21 @@ import {
  * metric (or a small set) and renders it through the right chart for its shape, so the dashboard and
  * the tuning control-room stay declarative — a page names the metric it wants and gets a titled,
  * table-backed, empty-state-aware card. The metric's label + description + axis labels come from the
- * server `catalogue`, so a chart can never drift from the rollup that fills it.
+ * server `catalog`, so a chart can never drift from the rollup that fills it.
  */
 
 /** A day count for trend windows — the default the analytics queries use. */
 const DEFAULT_DAYS = 30;
 
-/** The metric catalogue, keyed for lookup. Cached by Convex, so calling this per card is cheap. */
-export function useCatalogue() {
-  const entries = useQuery(api.analytics.catalogue, {});
+/** The metric catalog, keyed for lookup. Cached by Convex, so calling this per card is cheap. */
+export function useCatalog() {
+  const entries = useQuery(api.analytics.catalog, {});
   if (!entries) return null;
   return new Map(entries.map((e) => [e.key, e]));
 }
 
-type CatalogueEntry =
-  NonNullable<ReturnType<typeof useCatalogue>> extends Map<string, infer V> ? V : never;
+type CatalogEntry =
+  NonNullable<ReturnType<typeof useCatalog>> extends Map<string, infer V> ? V : never;
 
 /** Humanize a metric meta key: `spam:actioned` → "Spam · Actioned", `still_here` → "Still here". */
 function humanizeMetaKey(key: string): string {
@@ -51,7 +51,7 @@ function humanizeMetaKey(key: string): string {
 /**
  * A time series of one or more scalar metrics over a trailing window. Pass `status` on a line whose
  * value carries polarity (a rate); otherwise it takes the next categorical slot. Renders the shared
- * `catalogue` description under the chart, so the "what does this tune?" text lives in one place.
+ * `catalog` description under the chart, so the "what does this tune?" text lives in one place.
  */
 export function ScalarTrend({
   metrics,
@@ -128,27 +128,26 @@ function formatCell(value: number | string | null | undefined, percent: boolean)
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * The latest snapshot of a bucketed metric, drawn as a histogram with axis labels from the catalogue.
- * `markers` overlays labelled reference lines at named buckets — the trust-class cutoffs on the
+ * The latest snapshot of a bucketed metric, drawn as a histogram with axis labels from the catalog.
+ * `markers` overlays labeled reference lines at named buckets — the trust-class cutoffs on the
  * reputation distribution, the flag threshold on the contradiction distribution.
  */
 export function MetricHistogram({
   metricKey,
-  catalogue,
+  catalog,
   markers,
   color,
   height,
 }: {
   metricKey: string;
-  catalogue: Map<string, CatalogueEntry> | null;
+  catalog: Map<string, CatalogEntry> | null;
   markers?: { atLabel: string; label: string }[];
   color?: ChartStatus;
   height?: number;
 }) {
   const result = useQuery(api.analytics.latest, { metrics: [metricKey] });
-  const entry = catalogue?.get(metricKey);
-  if (result === undefined || catalogue === null)
-    return <LoadingCard title={entry?.label ?? '…'} />;
+  const entry = catalog?.get(metricKey);
+  if (result === undefined || catalog === null) return <LoadingCard title={entry?.label ?? '…'} />;
   const point = result[metricKey];
   const labels = entry?.bucketLabels ?? [];
   const counts = point?.buckets ?? [];
@@ -200,19 +199,18 @@ function metaStatus(key: string): ChartStatus | undefined {
  */
 export function MetricComposition({
   metricKey,
-  catalogue,
+  catalog,
   semantic = false,
   height,
 }: {
   metricKey: string;
-  catalogue: Map<string, CatalogueEntry> | null;
+  catalog: Map<string, CatalogEntry> | null;
   semantic?: boolean;
   height?: number;
 }) {
   const result = useQuery(api.analytics.latest, { metrics: [metricKey] });
-  const entry = catalogue?.get(metricKey);
-  if (result === undefined || catalogue === null)
-    return <LoadingCard title={entry?.label ?? '…'} />;
+  const entry = catalog?.get(metricKey);
+  if (result === undefined || catalog === null) return <LoadingCard title={entry?.label ?? '…'} />;
   const meta = result[metricKey]?.meta ?? {};
   const slices: CompositionSlice[] = Object.entries(meta).map(([key, value]) => ({
     key,

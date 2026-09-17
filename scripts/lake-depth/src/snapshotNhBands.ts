@@ -96,7 +96,7 @@ async function main(): Promise<void> {
       if (features.length < NH_BANDS_PAGE_SIZE) break;
     }
 
-    // Summarised at archive time so the manifest states what the archive is worth, rather than
+    // Summarized at archive time so the manifest states what the archive is worth, rather than
     // leaving the first reader to discover that 636 assessment units are really 600-odd lakes.
     const { lakes, skipped } = nhLakeDepths(rows);
 

@@ -52,10 +52,10 @@ import { normalizeGnisId, normalizeNhdId } from './nhdArchive';
 /** 0.1° ≈ 11 km. A few candidates per cell in our region. */
 export const CELL_DEG = 0.1;
 
-/** Square metres in an acre. */
+/** Square meters in an acre. */
 export const SQ_M_PER_ACRE = 4046.8564224;
 
-/** One catalogue's claim about one polygon, after classification. */
+/** One catalog's claim about one polygon, after classification. */
 export interface Feature {
   readonly source: ClaimSource;
   readonly id: string;
@@ -64,7 +64,7 @@ export interface Feature {
   /** The classifier's token, e.g. `3dhp:featuretype=4` — what the ladder concluded. */
   readonly token: string;
   /**
-   * The **catalogue's own** token, which is what the veto reads.
+   * The **catalog's own** token, which is what the veto reads.
    *
    * Separate from `token` because the classification ladder can replace that one: a feature NHD
    * publishes as FTYPE 493 whose name contains "Reservoir" comes back with `token: 'name:reservoir'`,
@@ -77,7 +77,7 @@ export interface Feature {
   readonly areaSqM: number;
 }
 
-/** One lake, as agreed by every catalogue that knows it. */
+/** One lake, as agreed by every catalog that knows it. */
 export interface Merged {
   key: string;
   members: Feature[];
@@ -92,8 +92,8 @@ export interface Merged {
    * The members a `sameSourceDuplicate` group absorbed — **named, because they leave no other trace**
    * (A07a second audit).
    *
-   * A group holding two features from one catalogue merges into one body: `chooseGeometry` keeps one
-   * outline and `catalogueIdsOf` keeps one id per catalogue, so the other feature's polygon *and* its
+   * A group holding two features from one catalog merges into one body: `chooseGeometry` keeps one
+   * outline and `catalogIdsOf` keeps one id per catalog, so the other feature's polygon *and* its
    * id are gone. The plan's own verification section describes such a group as one that "queues
    * rather than merging"; it queues **and** merges, and if the union-find chained two genuinely
    * distinct lakes then one of them silently ceased to exist. Listing the losers is what makes the
@@ -107,7 +107,7 @@ export interface Merged {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Refusals that **no other catalogue may overrule** (founder call, 2026-08-04: no Great Lakes, no
+ * Refusals that **no other catalog may overrule** (founder call, 2026-08-04: no Great Lakes, no
  * ocean, no Long Island Sound).
  *
  * The ordinary merge rule is that one source's refusal loses to another's class — that is what
@@ -128,7 +128,7 @@ export const VETO_TOKENS: ReadonlySet<string> = new Set([
 /**
  * Why a group was vetoed — three independent refusals, counted apart because they fail differently.
  *
- * `token` is a catalogue naming the ocean. `name` and `area` need **no cross-catalogue match at all**,
+ * `token` is a catalog naming the ocean. `name` and `area` need **no cross-catalog match at all**,
  * which is the point: the token veto only fires when the vetoing feature landed in the merged group,
  * and that is contingent on a `polygonIoU` match succeeding over the largest polygons in the archive.
  */
@@ -139,7 +139,7 @@ export type VetoReason = 'token' | 'name' | 'area';
  *
  * ## Three vetoes, and only the first one used to exist
  *
- * 1. **`token`** — a catalogue's own class says ocean (`VETO_TOKENS`). Read from `sourceToken`, never
+ * 1. **`token`** — a catalog's own class says ocean (`VETO_TOKENS`). Read from `sourceToken`, never
  *    from `token`, because the classification ladder can overwrite the latter with `name:reservoir`.
  * 2. **`name`** — `assertsOceanOrGreatLake`. **NHD publishes Lake Erie as FTYPE 390 `LakePond`**, so
  *    rule 1 could only refuse Erie if 3DHP's counterpart matched it geometrically; the merge's own
@@ -161,7 +161,7 @@ export function vetoReason(members: readonly Feature[]): VetoReason | undefined 
   const largest = members.reduce((max, m) => Math.max(max, m.areaSqM), 0);
   if (members.some((m) => assertsOceanOrGreatLake(m.name, largest))) return 'name';
   // **Every name any member offers**, not the first one. Champlain is the allow-list's only entry and
-  // three catalogues spell it three ways; testing only the first named member would veto the largest
+  // three catalogs spell it three ways; testing only the first named member would veto the largest
   // body we cover on whichever ordering the union-find happened to produce.
   const names = members.map((m) => m.name).filter((n) => n.length > 0);
   const allowed = names.some((name) => !exceedsAreaCeiling({ name, surfaceAreaSqM: largest }));
@@ -182,8 +182,8 @@ export function isVetoed(members: readonly Feature[]): boolean {
  * **No salt water** (founder call, 2026-08-06) — and the reason it needed a new mechanism.
  *
  * The token veto refuses NHD's `Estuary` and `SeaOcean` and 3DHP's `Ocean or Great Lake`, but only
- * when the vetoing feature **lands in the merged group** — which requires a cross-catalogue
- * `polygonIoU` match to have succeeded. It routinely does not: the federal catalogues draw one
+ * when the vetoing feature **lands in the merged group** — which requires a cross-catalog
+ * `polygonIoU` match to have succeeded. It routinely does not: the federal catalogs draw one
  * enormous estuary polygon where OSM draws forty separate coves, so the IoU between any one cove and
  * the estuary is near zero and the cove arrives as its own body. And then `hasBayParent` finds no
  * parent for it — because the parent *is* the ocean, which we refused — so the bay is **demoted to
@@ -196,7 +196,7 @@ export function isVetoed(members: readonly Feature[]): boolean {
  * Salt Marsh, Menemsha Pond, Sengekontacket Pond, Cutler Harbor.
  *
  * So the fix is to ask the question **spatially instead of by group membership**: is this body
- * inside water a federal catalogue calls the sea? That needs no match to succeed, which is the
+ * inside water a federal catalog calls the sea? That needs no match to succeed, which is the
  * property `VETO_TOKENS` lacks and the reason Lake Erie escaped it in the first audit.
  */
 export const SALT_TOKENS: ReadonlySet<string> = new Set([
@@ -338,7 +338,7 @@ export function isFreshwaterException(name: string): boolean {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * A catalogue **explicitly calling this salt**, where our classifier then let another one overrule it.
+ * A catalog **explicitly calling this salt**, where our classifier then let another one overrule it.
  *
  * Surfaced by the `classDissent` split (A07a-2): 92 kept bodies carry one of these tags. `chooseClass`
  * lets a real class beat a drop — that rule is load-bearing, it is the 123-body wetland rescue — but
@@ -356,9 +356,9 @@ export const SALT_CLAIM_TOKENS: ReadonlySet<string> = new Set([
 ]);
 
 /**
- * Highest a body may sit and still be judged tidal — **five metres above the vertical datum**.
+ * Highest a body may sit and still be judged tidal — **five meters above the vertical datum**.
  *
- * ## The measurement, which for once handed over a threshold rather than a judgement call
+ * ## The measurement, which for once handed over a threshold rather than a judgment call
  *
  * The salt-containment histogram was *"smooth from 0 to 1 with no gap to cut at"* and had to be set
  * by reading names in each band. This one is the opposite. Probed against 3DEP at 1 m LiDAR over
@@ -380,11 +380,11 @@ export const SALT_CLAIM_TOKENS: ReadonlySet<string> = new Set([
  * ## ⚠ Only ever applied to a body a publisher already called salt or called a bay
  *
  * **Measured, because the temptation is to make it general and that would be a catastrophe.** 1,002
- * bodies in the corpus sit at or below five metres and only 81 are bay-class or tidally named. A
+ * bodies in the corpus sit at or below five meters and only 81 are bay-class or tidally named. A
  * corpus-wide rule would delete ~920 freshwater bodies — including **Nequasset Lake** (449 ac) and
  * **Winnegance Lake** (187 ac), which are the *entire contents of `FRESHWATER_ALLOW_LIST`*, plus two
  * separate ponds named **Fresh Pond**. Coastal Maine and Cape Cod are full of freshwater kettle
- * ponds and impoundments sitting a metre or two above the sea.
+ * ponds and impoundments sitting a meter or two above the sea.
  *
  * So elevation is a **referee between two publishers**, never an admission rule of its own.
  */
@@ -393,8 +393,8 @@ export const TIDAL_MAX_ELEVATION_M = 5;
 /**
  * Is this group one the elevation referee is entitled to judge?
  *
- * Two ways in, both of them a publisher asserting something about the water: a catalogue classed it
- * a `bay` (an arm of something, and the something is often the sea), or a catalogue tagged it salt
+ * Two ways in, both of them a publisher asserting something about the water: a catalog classed it
+ * a `bay` (an arm of something, and the something is often the sea), or a catalog tagged it salt
  * outright. See `SALT_CLAIM_TOKENS`.
  */
 export function isTidalCandidate(members: readonly Feature[], cls: WaterBodyClass): boolean {
@@ -418,9 +418,9 @@ export function isTidalByElevation(
   elevation: ReadonlyMap<string, number>,
   maxElevationM = TIDAL_MAX_ELEVATION_M,
 ): boolean | undefined {
-  const metres = elevation.get(key);
-  if (metres === undefined) return undefined;
-  return metres <= maxElevationM;
+  const meters = elevation.get(key);
+  if (meters === undefined) return undefined;
+  return meters <= maxElevationM;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -523,7 +523,7 @@ export const CLASS_ORDER: readonly WaterBodyClass[] = [
  *
  * A name is a boolean assertion that a place is a place, so taking one over its absence biases
  * nothing (D94). "More specific" is operationalised as *longer*, which is a heuristic and is worth
- * naming as one: it prefers "Little Moose Pond" to "Moose Pond", which is right when the catalogues
+ * naming as one: it prefers "Little Moose Pond" to "Moose Pond", which is right when the catalogs
  * disagree about which lake this is, and prefers a parenthesised qualifier to a bare name, which is
  * arguably wrong. Ties break toward the earlier member, so a stable order in equals a stable name out.
  */
@@ -536,7 +536,7 @@ export function chooseName(members: readonly Feature[]): string {
       continue;
     }
     const delta = NAME_SOURCE_RANK[m.source] - NAME_SOURCE_RANK[best.source];
-    // Rank first; length only inside one source, where it separates two features of one catalogue in
+    // Rank first; length only inside one source, where it separates two features of one catalog in
     // a `sameSourceDuplicate` group and nothing else.
     if (delta < 0 || (delta === 0 && m.name.length > best.name.length)) best = m;
   }
@@ -556,7 +556,7 @@ export function chooseName(members: readonly Feature[]): string {
  * nondeterminism `chooseName`'s own rank exists to remove.
  *
  * The gazetteer name is appended as a `gnis` claim rather than merged into a member, because it has
- * no member to belong to: it is what `resolveGnisNames` supplied for a body no catalogue named.
+ * no member to belong to: it is what `resolveGnisNames` supplied for a body no catalog named.
  */
 export function nameClaimsOf(
   members: readonly Feature[],
@@ -573,10 +573,10 @@ export function nameClaimsOf(
 }
 
 /**
- * Whose name wins when two catalogues both have one — **authority, not length**.
+ * Whose name wins when two catalogs both have one — **authority, not length**.
  *
  * The rule this replaced was longest-wins, and its own docstring defended it as *"right when the
- * catalogues disagree about which lake this is"*. That is backwards: if the catalogues disagree about
+ * catalogs disagree about which lake this is"*. That is backwards: if the catalogs disagree about
  * which lake this is, the merge is already wrong and preferring the longer string entrenches the
  * error under a more confident-looking label. Length is not evidence of anything.
  *
@@ -604,14 +604,14 @@ export const NAME_SOURCE_RANK: Readonly<Record<ClaimSource, number>> = {
   nhd: 1,
   '3dhp': 2,
   osm: 3,
-  // Not a catalogue: `name` is a keyword read off a string a catalogue already supplied.
+  // Not a catalog: `name` is a keyword read off a string a catalog already supplied.
   name: 4,
 };
 
 /**
  * Pick the class for a merged group, or `null` if the group is not water we cover.
  *
- * **A group every catalogue refused is refused — it is not `unclassified`.** `null` means "not water
+ * **A group every catalog refused is refused — it is not `unclassified`.** `null` means "not water
  * we cover"; `unclassified` means "water, but nobody said what kind". Collapsing the first into the
  * second admitted **Lake Huron and seven polygons of the Atlantic Ocean** on the first real run,
  * because 3DHP publishes ocean and river features that `classifyThreeDhp` drops and the merge then
@@ -658,7 +658,7 @@ export function chooseGeometry(
   members: readonly Feature[],
   overrides: ReadonlyMap<string, ClaimSource> = GEOMETRY_OVERRIDES,
 ): Feature | undefined {
-  // A per-lake override, keyed on any catalogue id in the group. Checked first, because the whole
+  // A per-lake override, keyed on any catalog id in the group. Checked first, because the whole
   // point of D93's minted key is that this decision is a field rather than a migration.
   for (const m of members) {
     const preferred = overrides.get(`${m.source}:${m.id}`);
@@ -674,12 +674,12 @@ export function chooseGeometry(
 }
 
 /**
- * The member that speaks for one catalogue in this group — **the largest, never the first**
+ * The member that speaks for one catalog in this group — **the largest, never the first**
  * (second audit, 2026-08-06).
  *
  * ## What "the first" was actually choosing
  *
- * A group can hold several features from one catalogue: OSM carries invisible duplicates, and it also
+ * A group can hold several features from one catalog: OSM carries invisible duplicates, and it also
  * traces a big lake as one relation *and* its arms as separate ways. `chooseGeometry` took
  * `members.find(m => m.source === 'osm')` — the first in array order, which is the order the extracts
  * happened to stream in. It is arbitrary, and the run showed what arbitrary costs:
@@ -704,10 +704,10 @@ export function chooseGeometry(
  *
  * **This is not D94's "never the larger of two claims".** That rule is about *area*, and it still
  * holds: the stored area is measured from whichever polygon this returns, never taken as the max of
- * what the catalogues assert. This is about *which polygon* — a different question, and one where
- * taking the biggest piece of one catalogue's account of one lake is the whole point.
+ * what the catalogs assert. This is about *which polygon* — a different question, and one where
+ * taking the biggest piece of one catalog's account of one lake is the whole point.
  *
- * Used by `chooseGeometry`, `catalogueIdsOf` and the absorbed-member list alike, so all three name
+ * Used by `chooseGeometry`, `catalogIdsOf` and the absorbed-member list alike, so all three name
  * the same feature. They did not, before: the key would have been the largest and the `osmId` the
  * first, and a row's `externalId` and `osmId` would have pointed at two different OSM features.
  */
@@ -733,7 +733,7 @@ export function representativeOf(
  * its per-lake scores to a scratch file nothing read, and `chooseGeometry` was a hardcoded OSM-first
  * placeholder.
  *
- * Keyed `<source>:<id>` on **any** member of the group, because which catalogue we would have picked
+ * Keyed `<source>:<id>` on **any** member of the group, because which catalog we would have picked
  * is exactly what is being overridden — keying on the OSM id alone would be unable to express "prefer
  * NHD for a lake OSM draws badly", which is the only case that ever arises.
  *
@@ -771,7 +771,7 @@ export function mergeGroup(members: Feature[]): Merged | null {
  * Why a group was refused, for a report that would otherwise conflate different findings.
  *
  * The three veto reasons are separated because they say different things about our data: `vetoed`
- * means a catalogue itself called this the ocean, `vetoed-name` and `vetoed-area` mean it did not and
+ * means a catalog itself called this the ocean, `vetoed-name` and `vetoed-area` mean it did not and
  * we refused anyway. A change in the last two is a change in *our* rules; a change in the first is a
  * change in the source.
  */
@@ -779,7 +779,7 @@ export type RefusalReason =
   | 'vetoed'
   | 'vetoed-name'
   | 'vetoed-area'
-  /** Inside water a federal catalogue calls the sea — see `saltContainment`. Founder: no salt water. */
+  /** Inside water a federal catalog calls the sea — see `saltContainment`. Founder: no salt water. */
   | 'salt-water'
   | 'no-class'
   | 'refused-over-silence'
@@ -796,7 +796,7 @@ const VETO_REFUSAL: Readonly<Record<VetoReason, RefusalReason>> = {
  * `mergeGroup`, but saying *why* on a refusal.
  *
  * The two refusals mean opposite things about our data: `vetoed` is a rule firing correctly on the
- * ocean, `no-class` is every catalogue independently declining to call this water. A report that adds
+ * ocean, `no-class` is every catalog independently declining to call this water. A report that adds
  * them together — as the first version of this did — cannot tell "the veto is working" from "the
  * classifier has a hole".
  */
@@ -814,8 +814,8 @@ export function mergeGroupWithReason(members: Feature[]): {
   const cls = chooseClass(members);
   if (cls === null) {
     // Two different findings, and the report must not add them together. `no-class` is every
-    // catalogue independently declining to call this water — the classifier may have a hole.
-    // `refused-over-silence` is a catalogue explicitly refusing it while another said nothing, which
+    // catalog independently declining to call this water — the classifier may have a hole.
+    // `refused-over-silence` is a catalog explicitly refusing it while another said nothing, which
     // is a rule working correctly and is new as of the A07a audit; watching it separately is how we
     // learn whether it removed 12 rivers or 1,200.
     const refusedExplicitly = members.some((m) => m.cls === null);
@@ -829,8 +829,8 @@ export function mergeGroupWithReason(members: Feature[]): {
   const preferred = chooseGeometry(members);
   if (preferred === undefined) return { body: null, reason: 'empty' };
 
-  // Two features from ONE catalogue in one group means either our matching chained two distinct
-  // lakes, or the catalogue carries a duplicate it cannot see. Both are findings; neither may merge
+  // Two features from ONE catalog in one group means either our matching chained two distinct
+  // lakes, or the catalog carries a duplicate it cannot see. Both are findings; neither may merge
   // unattended. This is the only guard against a three-lane union-find chaining unrelated bodies.
   const bySource = new Map<ClaimSource, number>();
   for (const m of members) bySource.set(m.source, (bySource.get(m.source) ?? 0) + 1);
@@ -838,7 +838,7 @@ export function mergeGroupWithReason(members: Feature[]): {
   // The members that lose — the ones whose polygon and id the merged body does not carry. Named
   // rather than counted, because they are otherwise the only records in the pipeline that leave no
   // trace at all: not in `bodies.ndjson`, not in any ledger, not on the surviving row.
-  // Everything that is NOT its catalogue's representative — the features whose polygon and id the
+  // Everything that is NOT its catalog's representative — the features whose polygon and id the
   // merged body does not carry. Derived from `representativeOf` so it cannot disagree with the two
   // callers above about which member won.
   const kept = new Set(
@@ -866,7 +866,7 @@ export function mergeGroupWithReason(members: Feature[]): {
 }
 
 /**
- * The catalogue id inside a group's key — `osm:way/123` → `way/123`.
+ * The catalog id inside a group's key — `osm:way/123` → `way/123`.
  *
  * Split on the *first* colon only: an OSM id contains a slash but a 3DHP id is opaque and an NHD
  * `Permanent_Identifier` is a brace-free GUID, so neither may be assumed colon-free.
@@ -888,7 +888,7 @@ export function idFromKey(key: string): string {
  * A member that reached the group **transitively** — 3DHP joined to OSM through NHD, never compared
  * to OSM directly — has no entry in either direction, and the old code substituted
  * `RECONCILE_MIN_IOU` (0.5). That sits below `POLYGON_DISAGREE_IOU` (0.7), so **every
- * three-catalogue group scored its polygon `low` by construction**: not because the outlines
+ * three-catalog group scored its polygon `low` by construction**: not because the outlines
  * disagreed, but because of which lane happened to run. The published confidence distribution was
  * measuring our own pipeline, which is the exact failure D85 and the bake-off both already guard
  * against elsewhere.
@@ -919,7 +919,7 @@ export function polygonClaims(
 /**
  * **The second audit's headline finding, and this is the fix.**
  *
- * A missed match does not produce a gap — it produces a **duplicate**. The upsert key is a catalogue
+ * A missed match does not produce a gap — it produces a **duplicate**. The upsert key is a catalog
  * id (D93), so a group with no OSM member has no `osmId`, meets a corpus that has one, and inserts a
  * brand-new row alongside the lake it already had. Nothing downstream can tell the two apart.
  * Measured on the pre-fix master list: **632 pairs of separate bodies overlapping at IoU ≥ 0.3**, of
@@ -930,9 +930,9 @@ export function polygonClaims(
  *
  * `scoreCandidates` skips any pair whose **exact** IoU ceiling `min(area)/max(area)` falls under the
  * bar. At `RECONCILE_MIN_IOU = 0.5` that means **any pair whose areas differ by more than 2× is
- * rejected before an intersection is ever computed** — and on small ponds the two catalogues differ
+ * rejected before an intersection is ever computed** — and on small ponds the two catalogs differ
  * by 2–3× routinely, because they disagree about where a marshy margin stops being water. The bar is
- * unreachable exactly where the catalogues disagree most, which is also the measured explanation for
+ * unreachable exactly where the catalogs disagree most, which is also the measured explanation for
  * the long-open *"OSM↔NHD matches 33% and nobody knows why"*.
  *
  * Lowering the bar is not the answer: 0.5 is what refuses a bay its parent's identity, and that
@@ -985,7 +985,7 @@ export const NAME_MATCH_MIN_IOU = RECONCILE_MIN_IOU_WITH_GNIS;
  * Pairs the name lane proposes: `[targetId, candidateId]`, same shape the geometric lanes emit.
  *
  * `alreadyMatched` is the set of target ids the geometric lanes have already spoken for. Skipping
- * them is not an optimisation — it keeps the geometric verdict authoritative, so a lane that said
+ * them is not an optimization — it keeps the geometric verdict authoritative, so a lane that said
  * `ambiguous` (*"geometry cannot separate these"*) is not then overruled by a name.
  */
 export function nameMatchPairs(
@@ -1027,7 +1027,7 @@ export function nameMatchPairs(
 /**
  * Where two **kept** bodies still cover the same water — reported, never merged.
  *
- * The name lane closes the case where both catalogues named the lake. It cannot close the case where
+ * The name lane closes the case where both catalogs named the lake. It cannot close the case where
  * neither did, and 4,070 of the NHD-only bodies in the master list are unnamed ponds. So this runs
  * over the final set as a backstop and flags both sides `duplicate-candidate`, which is a review
  * reason a moderator can act on and — critically — a thing that *exists*, where today a duplicate
@@ -1262,7 +1262,7 @@ export function bayParent(
       // landed in **no table at all**.
       //
       // So the containment test has to ask the outline the next stage will actually clip against.
-      // A rule may only decide something the storage model can express; the federal catalogue
+      // A rule may only decide something the storage model can express; the federal catalog
       // knowing a relationship we do not draw is a D92 consequence, recorded here and surfaced as
       // `bay-without-parent` rather than acted on.
       let inside = 0;
@@ -1286,7 +1286,7 @@ export function hasBayParent(
 /**
  * How much of a bay's outline must lie inside a body before that body is its parent.
  *
- * **A half**, and the half is doing work in both directions. Not higher, because the two catalogues
+ * **A half**, and the half is doing work in both directions. Not higher, because the two catalogs
  * disagree at the edges and a bay traced by OSM against a parent drawn by NHD will have shoreline
  * vertices falling just outside. Not lower, because a body merely *adjacent* to a bay — the next lake
  * in a chain, sharing a narrows — would otherwise adopt it.
@@ -1297,7 +1297,7 @@ export function hasBayParent(
 export const BAY_PARENT_MIN_CONTAINMENT = 0.5;
 
 /**
- * **A lake whose stored outline excludes its own named bay is drawn from the wrong catalogue** —
+ * **A lake whose stored outline excludes its own named bay is drawn from the wrong catalog** —
  * D92's per-lake `geometrySource` override, applied on evidence (founder, 2026-08-07).
  *
  * ## Why this is an override rather than a matching rule
@@ -1385,7 +1385,7 @@ export function overrideGeometryForContainedBays(
         // **The largest qualifying member, never the first** — `representativeOf`'s rule, and the
         // reason it exists (A07a-2 audit, 2026-08-08). This shipped as `.find()`, which is precisely
         // the pattern D125 removed from `chooseGeometry` after `Indian Lake` was stored at 534 acres
-        // with a 3,743-acre member in the same group. A catalogue can put several features in one
+        // with a 3,743-acre member in the same group. A catalog can put several features in one
         // group, more than one of them can contain the bay, and array order is the order the
         // extracts happened to stream in. Harmless on the four overrides this fires on today, which
         // is exactly when a latent ordering bug is cheapest to remove.
@@ -1552,9 +1552,9 @@ export function sampleOutline(g: Polygon | MultiPolygon): [number, number][] {
 /**
  * Does any part of this body lie in our five states?
  *
- * **Any part, not its centre**, and that is the difference between keeping Beau Lake and losing it.
+ * **Any part, not its center**, and that is the difference between keeping Beau Lake and losing it.
  * Beau Lake is the phase's headline fixture — 1,875 acres, absent from the corpus because Geofabrik
- * clips the Québec half — and a centre-based test on a body that straddles the border is a coin flip.
+ * clips the Québec half — and a center-based test on a body that straddles the border is a coin flip.
  * Sampling the outline and keeping on the first hit answers the question we actually mean.
  */
 export function inRegion(
@@ -1646,10 +1646,10 @@ export const IN_REGION_FRACTION_POINTS = 64;
  * it *is* in it, so a reservoir lying across the Putnam/Dutchess line is decided by where its bulk
  * sits rather than by whichever county its southernmost inlet happens to reach.
  *
- * ⚠ **The bbox centre is not guaranteed to be inside the body.** For a crescent or an L, it lands in
+ * ⚠ **The bbox center is not guaranteed to be inside the body.** For a crescent or an L, it lands in
  * open ground — the same trap `waterBodies.centroid` fell into by storing a `pointOnFeature`. It is
  * tolerable here and nowhere else in this file, because the question is answered against *county*
- * polygons: being a few hundred metres off the water changes the answer only for a body sitting
+ * polygons: being a few hundred meters off the water changes the answer only for a body sitting
  * exactly on the cut line, where either answer is defensible. Do not copy this pattern to a test
  * whose polygons are lake-sized.
  */
@@ -1676,7 +1676,7 @@ export interface GnisPoint {
   /**
    * The GNIS Feature ID — **D105's other half, which was specified and never read.**
    *
-   * The lane was built to do two jobs: supply names for bodies whose catalogue entry is unnamed, and
+   * The lane was built to do two jobs: supply names for bodies whose catalog entry is unnamed, and
    * *settle a GNIS id where OSM, NHD and 3DHP disagree*. Only the first was implemented; `loadGnis`
    * read `feature_name`, `feature_class` and the coordinates and never touched `feature_id`, so the
    * gazetteer could not resolve the identifier it is the authority for.
@@ -1696,11 +1696,11 @@ export interface GnisMatch {
  * **Zero was the wrong answer and it was silently costing matches.** GNIS publishes one coordinate
  * per feature, and for water it is not reliably the middle: for many lakes it is placed at the outlet
  * or the mouth, which lands *on* the shoreline — and a shoreline traced by a different publisher than
- * the one that placed the point puts it a few tens of metres outside as often as not. The lane
+ * the one that placed the point puts it a few tens of meters outside as often as not. The lane
  * decides admission for hundreds of bodies (D96 admits a *named* wetland at five acres and refuses an
  * unnamed one under fifty), so a miss here deletes a lake.
  *
- * A hundred metres is small against the bodies this matters for — an acre is 64 m across, but a body
+ * A hundred meters is small against the bodies this matters for — an acre is 64 m across, but a body
  * that a *name* rescues is by definition one where the name changes the verdict, and those are the
  * five-to-fifty-acre wetlands, 160 m across and up. The ambiguity rule does the real safety work:
  * a buffered point is accepted only if it is still the **only** candidate, so a pond next door
@@ -1738,7 +1738,7 @@ export const GNIS_ATTACH_BUFFER_M = 100;
  * gnis 614353 → 5 bodies, all "Teal Pond":       64ac · 1146ac · 16ac · 152ac · 22ac
  * ```
  *
- * Those are not one lake a catalogue split — the documented case, which is 158 ids and which shows up
+ * Those are not one lake a catalog split — the documented case, which is 158 ids and which shows up
  * as two features of *similar* size. They are six different ponds wearing one pond's name.
  *
  * **And the name is not cosmetic here**, which is what makes this worth a restructure rather than a
@@ -1815,7 +1815,7 @@ export function resolveGnisNames<
  * ambiguity accounting all still happen after the merge, untouched.
  *
  * **And an id is not a merge.** It lowers a threshold; `polygonIoU` still adjudicates, which is
- * D93's stated division of labour — *"it proposes; `polygonIoU` decides"*.
+ * D93's stated division of labor — *"it proposes; `polygonIoU` decides"*.
  */
 export function attachGazetteerIds(
   features: readonly Feature[],
@@ -1911,7 +1911,7 @@ export type LaneDropReason =
    *
    * ## Two known, measured, accepted asymmetries — flagged rather than fixed (second audit)
    *
-   * **1. The floor is applied per lane, on each catalogue's own area.** "Merge first, filter once" is
+   * **1. The floor is applied per lane, on each catalog's own area.** "Merge first, filter once" is
    * the rule this file exists for, and this is the one place it is not applied — because it cannot
    * be: the floor removes roughly two thirds of raw OSM, and carrying those into the matching stage
    * would triple the most expensive computation in the pipeline to decide the same thing afterwards.
@@ -2209,7 +2209,7 @@ export function parseLine<T>(line: string): { ok: true; value: T } | LaneDrop {
 /**
  * Why the admission floor refused a body — the label that appears in the merge report.
  *
- * **Reads the merged name, not the catalogue name.** The first version of this read `group.name`
+ * **Reads the merged name, not the catalog name.** The first version of this read `group.name`
  * while `belongsInCorpus` was given the GNIS-augmented name, so a wetland admitted by its gazetteer
  * name and then refused for size was reported as "unnamed" — the one lane whose contribution the
  * report exists to measure, described as absent.
@@ -2228,24 +2228,24 @@ export function dropReason(body: { name: string; cls: WaterBodyClass; areaSqM: n
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * The catalogue ids a merged group carries — **the upsert key `importCanonical` now runs on** (D93).
+ * The catalog ids a merged group carries — **the upsert key `importCanonical` now runs on** (D93).
  *
- * One id per catalogue, and a group holding two features from the same catalogue takes the *first*
+ * One id per catalog, and a group holding two features from the same catalog takes the *first*
  * — which is safe only because such a group is already flagged `sameSourceDuplicate` and queued for
  * a human. Silently picking one of two OSM ids for a body that may be two lakes chained together is
  * exactly the kind of guess that should not also decide identity, so the flag is what makes this
  * tolerable rather than the tie-break being clever.
  *
  * `gnisId` is included and is **not** an upsert key: it proposes candidates, and 92 GNIS ids resolve
- * to more than one NHD body. Taken from any member that has one, since all three catalogues publish
+ * to more than one NHD body. Taken from any member that has one, since all three catalogs publish
  * the same gazetteer id for the same place.
  *
- * `fromGazetteer` is the id the GNIS lane itself resolved, used **only when no catalogue asserted
- * one**. The ordering is deliberate: a catalogue naming a GNIS id is naming *this feature*, where the
+ * `fromGazetteer` is the id the GNIS lane itself resolved, used **only when no catalog asserted
+ * one**. The ordering is deliberate: a catalog naming a GNIS id is naming *this feature*, where the
  * gazetteer is naming a place we located geometrically — and geometric location is exactly the
  * inference `gnisId` is documented not to be trusted for. So it fills a hole and never overrules.
  */
-export function catalogueIdsOf(
+export function catalogIdsOf(
   members: readonly Feature[],
   fromGazetteer?: string | undefined,
 ): {
@@ -2338,7 +2338,7 @@ export function statesFor(
  * **256, where 64 was already exact.** Measured over all 7,359 escalation candidates, a budget of 64
  * returns the identical answer to walking every vertex, in 2.8 seconds. 256 is four times that for
  * no meaningful cost, and the headroom is deliberate: the number that has to hold is not today's
- * corpus but the next catalogue's geometry.
+ * corpus but the next catalog's geometry.
  */
 export const STATE_SAMPLE_POINTS = 256;
 

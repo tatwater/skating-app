@@ -481,7 +481,7 @@ export const getPushProfile = internalQuery({
  *
  * The upload endpoint is **asynchronous**: it returns an upload id immediately and the activity id
  * appears a second or two later, so there's no way to confirm success without polling. `external_id`
- * carries our own activity id, which is what lets Strava recognise a re-send of the same skate and
+ * carries our own activity id, which is what lets Strava recognize a re-send of the same skate and
  * reject it as a duplicate — and a duplicate rejection is a *success* from our side (the activity is
  * already on Strava), not something to retry.
  */

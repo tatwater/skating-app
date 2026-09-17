@@ -444,7 +444,7 @@ describe('buildPastWeatherPanel — today has not finished happening', () => {
     const panel = panelOf(days, { todayLocalDayMs: TODAY });
     expect(panel.partialDays).toBe(1);
     expect(panel.rows.at(-1)?.partial).toBe(true);
-    // Nine centimetres of *forecast* snow stays out of the settled total.
+    // Nine centimeters of *forecast* snow stays out of the settled total.
     expect(panel.headline.some((l) => l.includes('No snow in the last 6 days'))).toBe(true);
   });
 

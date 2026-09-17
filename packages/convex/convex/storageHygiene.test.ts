@@ -534,7 +534,7 @@ describe('expireDepartedPhotos (D66)', () => {
     expect(result).toMatchObject({ deleted: 0 });
   });
 
-  test('a cancelled deletion restores an account whose photos are on no clock at all', async () => {
+  test('a canceled deletion restores an account whose photos are on no clock at all', async () => {
     const t = harness();
     const userId = await seedTombstone(t, 'departed');
     const photoId = await seedPhoto(t, userId, lastSeason());

@@ -429,11 +429,11 @@ export function HazardDetail({ hazardId, action }: { hazardId: string; action?: 
 
   useEffect(() => {
     if (!hazard) return;
-    const centre = {
+    const center = {
       lat: (hazard.bbox.minLat + hazard.bbox.maxLat) / 2,
       lng: (hazard.bbox.minLng + hazard.bbox.maxLng) / 2,
     };
-    setFocus({ ...centre, zoom: 14 });
+    setFocus({ ...center, zoom: 14 });
     setHighlightWaterBodyId(hazard.waterBodyId);
   }, [hazard, setFocus, setHighlightWaterBodyId]);
 

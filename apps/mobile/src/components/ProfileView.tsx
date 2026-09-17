@@ -64,7 +64,7 @@ function Stat({ value, label }: { value: number; label: string }) {
  */
 /**
  * Your own profile once you've asked to be deleted (D62 amendment). **Not a preview** — the request
- * really scrubbed these fields, and cancelling doesn't restore them.
+ * really scrubbed these fields, and canceling doesn't restore them.
  *
  * Nobody else can reach this page: a ghost is not-found to every other viewer. The only person who
  * sees it is its owner, in the space where they used to be — which is the intended feeling rather

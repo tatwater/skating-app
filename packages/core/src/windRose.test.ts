@@ -18,7 +18,7 @@ import {
 
 /** Willoughby's real winter rose counts, NREL WTK 2 km, Dec–Mar 2012. Bimodal along the trough. */
 const WILLOUGHBY_COUNTS = [110, 58, 23, 20, 20, 102, 563, 468, 87, 58, 93, 107, 163, 264, 540, 229];
-/** Willoughby's fetch, metres by sector — longest to the SSE (index 7). */
+/** Willoughby's fetch, meters by sector — longest to the SSE (index 7). */
 const WILLOUGHBY_FETCH = [
   1900, 500, 300, 200, 200, 200, 400, 4500, 1900, 1300, 1100, 1000, 1200, 1100, 1300, 3000,
 ];

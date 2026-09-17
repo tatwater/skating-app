@@ -10,9 +10,9 @@ import { describe, expect, it } from 'vitest';
 import { refusalFamily, settledClassDissent } from './waterClass';
 
 describe('refusalFamily', () => {
-  it('reads moving water across all three catalogues’ vocabularies', () => {
-    // The impoundment and deadwater case: a catalogue calls it a river, another calls it a lake, and
-    // D96 already settles it in our favour — we carry 26 `river`-class bodies on purpose.
+  it('reads moving water across all three catalogs’ vocabularies', () => {
+    // The impoundment and deadwater case: a catalog calls it a river, another calls it a lake, and
+    // D96 already settles it in our favor — we carry 26 `river`-class bodies on purpose.
     // Measured: osm:water=river 109, 3dhp:featuretype=1 43, osm:water=stream 12.
     for (const token of [
       'osm:water=river', //      109 — the largest single pattern

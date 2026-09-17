@@ -3,7 +3,7 @@
  *
  * ## The half of the referee that `containedFraction` cannot be
  *
- * D92 decides which catalogue draws a lake by asking our own 2.4 million soundings, and one metric
+ * D92 decides which catalog draws a lake by asking our own 2.4 million soundings, and one metric
  * cannot answer it. `containedFraction` asks *"what share of the survey falls inside this outline"* —
  * which punishes a polygon that is **too small** and is completely blind to one that is too large. A
  * polygon covering the lake and the field next to it contains every sounding, scores 1.0, and wins.
@@ -32,7 +32,7 @@
  * a long thin lake got a denominator nearly twice a round lake's of the same area, and therefore
  * nearly twice as easy a pass. `sqrt(area)` is shape-neutral.
  *
- * **For the bake-off the ratio barely matters and the raw metres do.** Two candidate polygons are
+ * **For the bake-off the ratio barely matters and the raw meters do.** Two candidate polygons are
  * scored against the *same* soundings, so the comparison needs no threshold at all — which is what
  * makes the bake-off free of D98's unresolved recalibration.
  */
@@ -49,9 +49,9 @@ const GAP_PERCENTILE = 0.95;
 export interface ProbeCoverage {
   /** Probes that landed inside the polygon. `0` means the result is `null`, not zero-gap. */
   readonly probes: number;
-  /** Distance from the worst-covered probe (p95) to its nearest measurement, in metres. */
+  /** Distance from the worst-covered probe (p95) to its nearest measurement, in meters. */
   readonly gapM: number;
-  /** Mean probe-to-measurement distance, in metres — reported alongside, never decided on. */
+  /** Mean probe-to-measurement distance, in meters — reported alongside, never decided on. */
   readonly meanGapM: number;
   /** `sqrt(surfaceAreaSqM)`, the shape-neutral scale the gap is judged against. */
   readonly scaleM: number;
@@ -60,16 +60,16 @@ export interface ProbeCoverage {
 }
 
 /**
- * A uniform-grid nearest-neighbour index over the measurements.
+ * A uniform-grid nearest-neighbor index over the measurements.
  *
  * **Needed, not premature.** The naive loop is probes × points, and the bake-off runs it twice per
  * lake over ~2,400 lakes: at a 32² grid and a few thousand soundings that is billions of haversines
  * and the script does not finish. Bucketing to a grid and expanding ring by ring makes each query
  * cost the handful of points actually nearby.
  *
- * Degrees, not metres, because the buckets only need to be *consistent* — the distances themselves
+ * Degrees, not meters, because the buckets only need to be *consistent* — the distances themselves
  * are still measured with `haversineMeters`. Longitude degrees shrink with latitude, so a cell is
- * wider than it is tall in metres; that costs a few extra candidates per query and no correctness,
+ * wider than it is tall in meters; that costs a few extra candidates per query and no correctness,
  * because the ring expansion is bounded by the best distance found rather than by a cell count.
  */
 class PointGrid {
@@ -90,7 +90,7 @@ class PointGrid {
     return `${Math.floor(lng / this.size)}:${Math.floor(lat / this.size)}`;
   }
 
-  /** Metres to the nearest measurement, or `Infinity` if the index is empty. */
+  /** Meters to the nearest measurement, or `Infinity` if the index is empty. */
   nearest(probe: LatLng): number {
     const cx = Math.floor(probe.lng / this.size);
     const cy = Math.floor(probe.lat / this.size);
@@ -102,7 +102,7 @@ class PointGrid {
       if (Number.isFinite(best)) {
         const floorDeg = (ring - 1) * this.size;
         // Degrees of latitude are ~111 km everywhere; using latitude alone is a conservative
-        // (under-)estimate of the true metre distance, which is what a search bound must be.
+        // (under-)estimate of the true meter distance, which is what a search bound must be.
         if (floorDeg * 111_320 > best) break;
       }
       let sawAny = false;

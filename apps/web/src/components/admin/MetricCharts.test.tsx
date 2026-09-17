@@ -11,7 +11,7 @@ import { describe, expect, it, vi } from 'vitest';
 const { useQuery } = vi.hoisted(() => ({ useQuery: vi.fn() }));
 vi.mock('convex/react', () => ({ useQuery }));
 
-import { GateScatterCard, MetricComposition, ScalarTrend, useCatalogue } from './MetricCharts';
+import { GateScatterCard, MetricComposition, ScalarTrend, useCatalog } from './MetricCharts';
 
 function withTheme(node: React.ReactNode) {
   return render(<ThemeProvider attribute="class">{node}</ThemeProvider>);
@@ -47,7 +47,7 @@ describe('ScalarTrend', () => {
 
 describe('MetricComposition', () => {
   it('renders the humanized meta keys with their counts', () => {
-    // The catalogue call and the latest call share the same mock; return by shape.
+    // The catalog call and the latest call share the same mock; return by shape.
     useQuery.mockImplementation((_fn: unknown, args: { metrics?: string[] }) => {
       if (!args?.metrics)
         return [
@@ -55,8 +55,8 @@ describe('MetricComposition', () => {
         ];
       return { bounty_outcomes: { date: '2026-01-01', meta: { fulfilled: 3, expired: 1 } } };
     });
-    const catalogue = useCatalogue();
-    withTheme(<MetricComposition metricKey="bounty_outcomes" catalogue={catalogue} semantic />);
+    const catalog = useCatalog();
+    withTheme(<MetricComposition metricKey="bounty_outcomes" catalog={catalog} semantic />);
     // The label appears in both the composition bar and the table fallback — both are wanted.
     expect(screen.getAllByText('Fulfilled').length).toBeGreaterThan(0);
     expect(screen.getAllByText('Expired').length).toBeGreaterThan(0);

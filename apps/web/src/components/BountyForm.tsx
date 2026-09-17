@@ -90,7 +90,7 @@ export function BountyForm({
                 ))}
               </select>
               <span className="text-foreground-muted text-xs">
-                Narrowing the ask means only a report from that part of the lake will fulfil it —
+                Narrowing the ask means only a report from that part of the lake will fulfill it —
                 and a recent report somewhere else won’t stop you asking.
               </span>
             </label>

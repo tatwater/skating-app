@@ -13,7 +13,7 @@ import {
 } from './driveTime';
 import type { LatLng } from './geometry';
 
-/** An axis-aligned square polygon centred on `[0,0]` with half-width `half` degrees. */
+/** An axis-aligned square polygon centered on `[0,0]` with half-width `half` degrees. */
 function square(half: number): Polygon {
   return {
     type: 'Polygon',
@@ -47,7 +47,7 @@ describe('DRIVE_TIME_BANDS / isDriveTimeBand', () => {
 });
 
 describe('isWithinRadius', () => {
-  it('is true at the centre and false far away', () => {
+  it('is true at the center and false far away', () => {
     expect(isWithinRadius(HOME, HOME, 1000)).toBe(true);
     expect(isWithinRadius(HOME, { lat: 1, lng: 0 }, 1000)).toBe(false);
   });

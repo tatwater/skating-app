@@ -7,11 +7,11 @@
  *
  * Two rules make the suggestion robust without much machinery:
  * - **Debounced leaves.** A single lap that clips the shoreline (a brief resolve to `null` or a
- *   neighbour) is not a departure — a leave is only committed once the skater has been off the body for
+ *   neighbor) is not a departure — a leave is only committed once the skater has been off the body for
  *   `graceMs`. So a normal skate is one interval, not a shredded pile of them.
  * - **Per-body earliest-in / latest-out.** The suggestion is `min(start)` and `max(end)` across *all* of
  *   today's intervals on that body, so even if bookkeeping does fragment (a snack break off the ice, a
- *   peek at a neighbouring lake), the window collapses back to one honest span — and excursions to
+ *   peek at a neighboring lake), the window collapses back to one honest span — and excursions to
  *   *other* lakes never touch this body's suggestion.
  *
  * On-device only (D12): these observations never leave the phone, and they're pruned to the current day.

@@ -84,7 +84,7 @@ describe('fitProjection', () => {
     expect(p.y(44.1)).toBeLessThan(p.y(43.9));
   });
 
-  it('preserves true ground aspect — a 0.2° box at 44°N is wider in degrees than in metres', () => {
+  it('preserves true ground aspect — a 0.2° box at 44°N is wider in degrees than in meters', () => {
     // The bug: scaling lng and lat by the same factor renders this square box as a square card, which
     // is wrong. On the ground it is ~28% narrower east-west than it is north-south.
     const p = fitProjection(boundsOfPolygon(square), 320, 0);

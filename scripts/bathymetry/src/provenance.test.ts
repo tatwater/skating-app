@@ -94,7 +94,7 @@ describe('renderProvenance', () => {
     expect(never).toContain('0/1 sources archived');
   });
 
-  it('says "(none published)" rather than leaving a licence row blank', () => {
+  it('says "(none published)" rather than leaving a license row blank', () => {
     const noCredit = renderProvenance(
       [{ source: SOURCE, manifest: { ...MANIFEST, service: { fields: [] } } }],
       '2026-07-31T20:30:00.000Z',

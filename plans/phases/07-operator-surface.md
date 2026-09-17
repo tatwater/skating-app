@@ -317,7 +317,7 @@ mutations gate at moderator; role-grant/revoke and support/tuning stay admin. Ev
 3. Maintain-on-write counters for the events that leave no trace (contradiction funnel, flag
    dispositions, future-skate-time rejections via a narrow client signal).
 4. `analyticsRollup.ts` — the 6-hourly rollup + weekly corpus sweep + daily gate-event prune + backfill.
-5. The admin read layer (`series`/`latest`/`catalogue`/`bountyGateScatter`) + the tenure-aware
+5. The admin read layer (`series`/`latest`/`catalog`/`bountyGateScatter`) + the tenure-aware
    `contributorTrend`.
 6. The themed Recharts chart kit (dataviz-validated palette) in `components/charts/`.
 7. `admin.index` app-health strip + `admin.tuning` control-room + the contributor-trend panel on
@@ -409,7 +409,7 @@ pnpm --filter @skating/convex exec convex env set --prod OPERATOR_ALERT_EMAIL 'd
 - **Snapshot granularity/retention** for `metricSnapshots`: **daily rows, kept forever** (one row per
   metric per day is tiny; revisit only if it grows). `bountyGateEvents` — the one append-per-attempt
   table — is **pruned at 180d** by the daily cron, both to bound storage and because it carries
-  `requesterId` (don't keep a permanent behavioural record). Days are UTC (`metricDay`).
+  `requesterId` (don't keep a permanent behavioral record). Days are UTC (`metricDay`).
 - **Clerk lock mechanism** — resolved in 07-1 (`banUser`/`unbanUser` lock/unlock the Clerk user via the
   Backend API from a Convex action; unban fully reverses). Not touched in 7b.
 - **Metric channels** (settled during 07-2): three ways a number enters the surface — a **rollup** (cron,

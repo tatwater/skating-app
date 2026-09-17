@@ -1,5 +1,5 @@
 /**
- * **Every catalogue's vocabulary, mapped into ours** (A07a, D109).
+ * **Every catalog's vocabulary, mapped into ours** (A07a, D109).
  *
  * Three publishers describe the same water in three languages, and until this file existed we spoke
  * only one of them — the OSM classifier in `./osm` — while silently dropping the rest into `other`.
@@ -31,7 +31,7 @@ import type { WaterBodyClass } from './types';
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * What one catalogue says about one feature.
+ * What one catalog says about one feature.
  *
  * **Three outcomes, not two, and the third is the one that keeps being got wrong.** `silent` means
  * the source carries no opinion — `natural=water` with no subtag, which is 96% of our `other` — and
@@ -59,7 +59,7 @@ const silent = (token: string): SourceClaim => ({ outcome: 'silent', token });
 /**
  * Which class wins when one feature carries two claims.
  *
- * **`reservoir` outranks `lakePond` on purpose** (founder call, 2026-08-04): the catalogues disagree
+ * **`reservoir` outranks `lakePond` on purpose** (founder call, 2026-08-04): the catalogs disagree
  * constantly — NHD calls 1,717 of our reservoirs `LakePond`, because it classes a dammed lake by what
  * it *is* — but the reason we keep the class at all is that a reservoir may carry use restrictions or
  * drinking-water concerns. Being wrong toward "treat this more carefully" is the safe direction.
@@ -193,7 +193,7 @@ const OSM_WETLAND: Readonly<Record<string, SourceClaim>> = {
 export type OsmTagBag = Record<string, string | undefined>;
 
 /**
- * Read one OSM tag value, honouring **semicolon multi-values** (`water=lake;pond`).
+ * Read one OSM tag value, honoring **semicolon multi-values** (`water=lake;pond`).
  *
  * OSM's convention for "both of these apply" is a semicolon list, and an exact-match lookup on the
  * joined string matches nothing — silently, which is the failure mode this whole phase keeps finding.
@@ -277,7 +277,7 @@ const NHD_FTYPE: Readonly<Record<number, WaterBodyClass | null>> = {
   466: 'wetland', // SwampMarsh 44,295
   // An estuary is a tidal arm, the same shape of thing as a bay. **This mapping is unreachable in
   // practice** — `VETO_TOKENS` refuses `nhd:ftype=493` outright, and the run confirms it: zero
-  // `bay`-class bodies come from NHD. Kept so the table describes the catalogue completely.
+  // `bay`-class bodies come from NHD. Kept so the table describes the catalog completely.
   //
   // ⚠ **"Filtered by elevation, not by class" was this comment's original claim, and elevation does
   // not work.** Measured 2026-08-06 over the salt-refused set: of the 12 bodies OSM tags `ele >= 3`
@@ -394,7 +394,7 @@ export function classifyThreeDhp(featureType: number): SourceClaim {
  * made the unresolved set look tidier than it was.
  */
 /**
- * The regional words for water that is **still despite a catalogue calling it a river** (founder,
+ * The regional words for water that is **still despite a catalog calling it a river** (founder,
  * 2026-08-09).
  *
  * Every term here also appears in `NAME_KEEP` below, and this is deliberately the *narrow* subset of
@@ -476,7 +476,7 @@ export function classifyName(name: string): SourceClaim | undefined {
  * The class a **still-water name** asserts, where it asserts one — `undefined` otherwise.
  *
  * The class comes from `NAME_KEEP`, never from `STILL_WATER_NAME`, so the two can only ever agree:
- * this function decides whether the name is allowed to outrank a catalogue, and `classifyName`
+ * this function decides whether the name is allowed to outrank a catalog, and `classifyName`
  * decides what it says. `Sewall Deadwater Pond` therefore resolves to `river` rather than `lakePond`,
  * because `NAME_KEEP` already orders the slow-reach entry above the pond one.
  */
@@ -486,7 +486,7 @@ export function stillWaterClass(name: string): WaterBodyClass | undefined {
   return fromName?.outcome === 'class' ? fromName.cls : undefined;
 }
 
-/** Does this name assert a reservoir? The one case where a name outranks a catalogue's own class. */
+/** Does this name assert a reservoir? The one case where a name outranks a catalog's own class. */
 export function nameAssertsReservoir(name: string): boolean {
   return /\breservoirs?\b/.test(fold(name));
 }
@@ -497,13 +497,13 @@ export function nameAssertsReservoir(name: string): boolean {
 
 /** Where a verdict's class came from — the axis the dry-run funnel is reported along. */
 export type ClassBasis =
-  | 'name-reservoir' // a name said "reservoir" and outranked the catalogue
-  | 'name-still-water' // the catalogue refused it as flowing; a regional still-water name overruled
-  | 'source-class' // the catalogue named a class we map
-  | 'name-keyword' // the catalogue was silent; a name keyword decided it
-  | 'dropped-by-class' // the catalogue named something we refuse
-  | 'dropped-by-name' // the catalogue was silent and the name refused it
-  | 'unresolved-named' // named, and neither the catalogue nor the name resolved it
+  | 'name-reservoir' // a name said "reservoir" and outranked the catalog
+  | 'name-still-water' // the catalog refused it as flowing; a regional still-water name overruled
+  | 'source-class' // the catalog named a class we map
+  | 'name-keyword' // the catalog was silent; a name keyword decided it
+  | 'dropped-by-class' // the catalog named something we refuse
+  | 'dropped-by-name' // the catalog was silent and the name refused it
+  | 'unresolved-named' // named, and neither the catalog nor the name resolved it
   | 'unresolved-unnamed'; // nothing said anything at all
 
 export interface ClassVerdict {
@@ -513,7 +513,7 @@ export interface ClassVerdict {
   /** Stable token for the ledger, e.g. `osm:water=wastewater` or `name:lakePond`. */
   readonly token: string;
   /**
-   * The **catalogue's own** token, whatever the ladder above decided — never a `name:` token.
+   * The **catalog's own** token, whatever the ladder above decided — never a `name:` token.
    *
    * The two used to be one field, and that was a live hole in the merge's ocean veto. `VETO_TOKENS`
    * is keyed on `nhd:ftype=493` / `3dhp:featuretype=4`, but rung 1 of the ladder returns early with
@@ -525,22 +525,22 @@ export interface ClassVerdict {
 }
 
 /**
- * Classify one incoming feature from one catalogue.
+ * Classify one incoming feature from one catalog.
  *
  * The ladder, in order, and every rung was a founder call on 2026-08-04:
  *
- * 1. **A name containing "reservoir" wins outright.** Overrides the catalogue in ~407 measured cases,
+ * 1. **A name containing "reservoir" wins outright.** Overrides the catalog in ~407 measured cases,
  *    deliberately: NHD classes a dammed lake by what it is, and we class it by what it is *used for*,
  *    because that is what carries access rules.
  * 2. **A regional still-water name outranks a *flowing* refusal** (founder, 2026-08-09). See below.
- * 3. **The catalogue's own class**, where it has one we map.
- * 4. **A name keyword**, where the catalogue is silent.
+ * 3. **The catalog's own class**, where it has one we map.
+ * 4. **A name keyword**, where the catalog is silent.
  * 5. **`unclassified`** — and this is a real answer, not a failure. It is the prompt that puts a body
  *    in front of a moderator, which is why it is named for what it is rather than called `other`.
  *
  * ## Why rung 2 exists — the same question answered two ways
  *
- * Rung 4 only fires on **silence**, so a name keyword could never overrule a catalogue that had
+ * Rung 4 only fires on **silence**, so a name keyword could never overrule a catalog that had
  * spoken. That produced two opposite answers to one question, decided by whether a mapper had
  * bothered to add a subtag: `Debsconeag Deadwater` is in the corpus as a `river` because OSM tags it
  * `natural=water` and nothing else, while `Pockwockamus Deadwater` (335 ac), `Ninemile Deadwater`
@@ -549,23 +549,23 @@ export interface ClassVerdict {
  * ones we keep, measured over the 2026-08-08 merge artifacts.
  *
  * **Narrow on both sides, on purpose.** The refusal must be in the `flowing` family — a body a
- * catalogue calls wastewater, a settling basin or a salt pool is not rescued by any name — and the
+ * catalog calls wastewater, a settling basin or a salt pool is not rescued by any name — and the
  * name must be in `STILL_WATER_NAME` rather than anywhere in `NAME_KEEP`. Widening the name side to
  * every keep-word would also admit `Round Pond Rips` and `Cedar Pond Brook`, which are the rapids and
  * the brook their names say they are. This is `NAME_DROP`'s asymmetry pointed the other way: keeping
  * a rapid costs one row nobody skates, and dropping a deadwater deletes real ice.
  *
- * ⚠ **It cannot launder a veto.** `sourceToken` still carries the catalogue's own word, so
+ * ⚠ **It cannot launder a veto.** `sourceToken` still carries the catalog's own word, so
  * `VETO_TOKENS` reads what NHD said rather than what this ladder concluded — the same hole rung 1
  * had to be closed against.
  *
- * Cross-source reconciliation is **not** here: this answers "what does *this* catalogue say", one
- * feature at a time. Combining two catalogues' verdicts happens at merge time, where the evidence for
+ * Cross-source reconciliation is **not** here: this answers "what does *this* catalog say", one
+ * feature at a time. Combining two catalogs' verdicts happens at merge time, where the evidence for
  * a confidence score also lives.
  */
 export function classifyWaterBody(input: { name: string; claim: SourceClaim }): ClassVerdict {
   const { name, claim: sourceClaim } = input;
-  // Carried through **every** return below, so the merge's ocean veto reads what the catalogue said
+  // Carried through **every** return below, so the merge's ocean veto reads what the catalog said
   // rather than what the ladder concluded. See `ClassVerdict.sourceToken`.
   const sourceToken = sourceClaim.token;
 
@@ -586,7 +586,7 @@ export function classifyWaterBody(input: { name: string; claim: SourceClaim }): 
     };
   }
   if (sourceClaim.outcome === 'drop') {
-    // Rung 2 — and it is checked here rather than above the class rung because a catalogue that
+    // Rung 2 — and it is checked here rather than above the class rung because a catalog that
     // names a class we map has said something more specific than "river", and there is nothing to
     // overrule. `refusalFamily` is the same triage `settledClassDissent` reads, so "which refusals
     // are the flowing ones" is answered in exactly one place.
@@ -620,24 +620,24 @@ export function classifyWaterBody(input: { name: string; claim: SourceClaim }): 
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Absolute refusals — the veto that needs no cross-catalogue match
+// Absolute refusals — the veto that needs no cross-catalog match
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Water we refuse **by name**, whatever any catalogue calls it (A07a audit, founder call 2026-08-06).
+ * Water we refuse **by name**, whatever any catalog calls it (A07a audit, founder call 2026-08-06).
  *
  * ## Why a name list, when there is already a token veto
  *
- * `VETO_TOKENS` in the merge is keyed on a catalogue's own class — `3dhp:featuretype=4`
+ * `VETO_TOKENS` in the merge is keyed on a catalog's own class — `3dhp:featuretype=4`
  * (*Ocean or Great Lake*), `nhd:ftype=445` (*SeaOcean*), `nhd:ftype=493` (*Estuary*). It works only
- * when the vetoing feature **is in the merged group**, which means it depends on a cross-catalogue
+ * when the vetoing feature **is in the merged group**, which means it depends on a cross-catalog
  * `polygonIoU` match succeeding. **NHD publishes Lake Erie as FTYPE 390 `LakePond`**, so Erie's and
  * Ontario's exclusion rested entirely on the 3DHP counterpart matching at IoU ≥ 0.5 — over polygons
  * that are enormous, multi-part, and clipped differently between a state geodatabase and a Northeast
  * bbox clip. And `inRegion` would not have caught the escape: TIGER's state outlines include New
  * York's share of both lakes.
  *
- * So this is the belt to the token veto's braces: it needs no match, no second catalogue, and no
+ * So this is the belt to the token veto's braces: it needs no match, no second catalog, and no
  * geometry. A refusal this categorical should not be contingent on anything.
  *
  * **The list is small and closed on purpose.** Every entry is a body that is unambiguously not
@@ -677,12 +677,12 @@ const VETOED_NAME_PATTERN =
  * already refuses everything on this list on size alone today — which is precisely why the *name*
  * rule was near-redundant and all cost. But the ceiling is a general rule and this is a specific
  * refusal, and the founder's call (2026-08-06) is that Québec and Alaska are coming: the Gulf of
- * St. Lawrence and Lake Huron arrive as *our* neighbours the moment Québec does, and a named veto
- * that needs no cross-catalogue match is worth keeping for that. Gated on area it costs nothing.
+ * St. Lawrence and Lake Huron arrive as *our* neighbors the moment Québec does, and a named veto
+ * that needs no cross-catalog match is worth keeping for that. Gated on area it costs nothing.
  */
 export const OCEAN_NAME_VETO_MIN_ACRES = 50_000;
 
-/** `OCEAN_NAME_VETO_MIN_ACRES` in square metres. Local so this module keeps standing alone. */
+/** `OCEAN_NAME_VETO_MIN_ACRES` in square meters. Local so this module keeps standing alone. */
 const OCEAN_NAME_VETO_MIN_SQM = OCEAN_NAME_VETO_MIN_ACRES * 4046.8564224;
 
 /**
@@ -701,7 +701,7 @@ export function assertsOceanOrGreatLake(name: string, surfaceAreaSqM?: number): 
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Why a catalogue refused — the classDissent triage
+// Why a catalog refused — the classDissent triage
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
@@ -711,7 +711,7 @@ export function assertsOceanOrGreatLake(name: string, surfaceAreaSqM?: number): 
  *
  * `chooseClass` lets a real class beat a drop. That rule is load-bearing — it is the 123-body rescue
  * where OSM tags a body `wetland=marsh` and NHD calls the same polygon `LakePond` — but it means an
- * *explicit* contradiction between two catalogues resolves in silence. The merge counts those as
+ * *explicit* contradiction between two catalogs resolves in silence. The merge counts those as
  * `classDissent`, and on the 2026-08-08 run there were **354** of them, which is a number and not a
  * queue: nobody can work 354 rows without knowing which are a rule firing correctly.
  *
@@ -721,14 +721,14 @@ export function assertsOceanOrGreatLake(name: string, surfaceAreaSqM?: number): 
  *
  * ## The two families, measured
  *
- * **`flowing`** — a catalogue calls it moving water and another calls it a lake. This is the
- * impoundment and deadwater case, which D96 already settles in our favour: we carry 26 `river`-class
+ * **`flowing`** — a catalog calls it moving water and another calls it a lake. This is the
+ * impoundment and deadwater case, which D96 already settles in our favor: we carry 26 `river`-class
  * bodies on purpose, and `classifyName` keeps `Higley Flow` and `Debsconeag Deadwater` by name. 164
  * bodies on the measured run, dominated by `osm:water=river` (109) and `3dhp:featuretype=1` (43).
  * The fixture is **Lac Saint-François**, 87,927 acres of the St. Lawrence: OSM `water=lake`, 3DHP
  * `River`.
  *
- * **`engineered`** — a catalogue refuses it as built infrastructure: wastewater, settling, cooling,
+ * **`engineered`** — a catalog refuses it as built infrastructure: wastewater, settling, cooling,
  * a basin. NHD drops **43% of its reservoirs** by FCODE for this reason, which is the volume D96
  * warned would bury the queue. ~87 bodies, split between the NHD 436xx family and OSM's
  * `water=wastewater` / `water=basin`.
@@ -740,13 +740,13 @@ export function assertsOceanOrGreatLake(name: string, surfaceAreaSqM?: number): 
  * refuses them (98 bodies, 2026-08-08). Adding them here would launder the exact thing that rule
  * exists to catch. See `mergeRules.isTidalCandidate`.
  *
- * ⚠ **The residue count is the tripwire, not this table.** Token strings drift with the catalogues;
+ * ⚠ **The residue count is the tripwire, not this table.** Token strings drift with the catalogs;
  * what does not drift is that a sharp move in the *unsettled* count means a source changed shape.
  * The merge reports both.
  */
 export type RefusalFamily = 'flowing' | 'engineered' | 'unsettled';
 
-/** Value fragments that mean moving water, in any catalogue's token. */
+/** Value fragments that mean moving water, in any catalog's token. */
 const FLOWING_VALUES = [
   'river',
   'stream',
@@ -782,9 +782,9 @@ const ENGINEERED_VALUES = [
 const NHD_RESERVOIR_PURPOSE_PREFIX = 'nhd:fcode=436';
 
 /**
- * Which family a refusing catalogue's token belongs to.
+ * Which family a refusing catalog's token belongs to.
  *
- * Reads the token's **value**, after the `=`, so it works across all three catalogues without a
+ * Reads the token's **value**, after the `=`, so it works across all three catalogs without a
  * per-source table: `osm:water=river`, `3dhp:featuretype=1` and `nhd:fcode=46006` are the same
  * finding wearing three vocabularies. The 3DHP and NHD numeric codes are named explicitly because a
  * number carries no meaning to match on.

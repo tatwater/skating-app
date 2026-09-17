@@ -20,7 +20,7 @@ import { hasMapDrawer, parseMapSelection } from '../lib/mapSelection';
  * shell doesn't need, and the sidebar sits beside it rather than on it, permanently open. Nothing
  * selected is a state the sidebar has content for (`ViewportLakeList`), not a state it disappears in.
  *
- * **Below `md` there is no room for two columns**, so the sidebar keeps its old behaviour: absent on
+ * **Below `md` there is no room for two columns**, so the sidebar keeps its old behavior: absent on
  * the bare map, covering the map when something is selected. Note it *covers* rather than *overlays*
  * — same pixels, but it's the same element in the same flow, so there is no dialog, no backdrop and
  * no focus trap. That's a CSS breakpoint rather than a measured viewport on purpose: a JS media
@@ -88,7 +88,7 @@ function MapLayoutInner() {
       >
         {/* The outlet is the selected thing's panel; with nothing selected the index route renders
             nothing and the list takes the column. Both are rendered by the same element, so the
-            sidebar's width and scroll behaviour are defined once. */}
+            sidebar's width and scroll behavior are defined once. */}
         {drawerOpen ? null : <ViewportLakeList />}
         <Outlet />
       </aside>

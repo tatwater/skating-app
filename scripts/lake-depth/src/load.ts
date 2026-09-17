@@ -21,7 +21,7 @@ import { convexRun, RunLogger, resolveDeployment } from '@skating/run-log';
  * **The original 25 was reasoned against the wrong limit, and the first real run proved it.** The note
  * here used to say bytes "never bind" because the *records* are tiny — a point and two numbers. True,
  * and irrelevant: what the mutation reads is the corpus, not the input. Each lake pulls every listed
- * body whose bbox covers its neighbourhood, and Convex counts **16 MB of reads per transaction**. A
+ * body whose bbox covers its neighborhood, and Convex counts **16 MB of reads per transaction**. A
  * body averages 1.8 KB, but the cell index files large bodies at coarse rungs, so a lookup anywhere
  * near Champlain or Ontario drags a ~300 KB polygon in with it. Twenty-five such lookups in one
  * transaction blew the byte cap at batch 8 of 1,611 on 2026-08-02.
@@ -29,7 +29,7 @@ import { convexRun, RunLogger, resolveDeployment } from '@skating/run-log';
  * **8 turned out to be marginal, not conservative — measured, not guessed.** The 2026-08-02 run
  * completed with zero failures, but Convex emitted near-cap warnings on five batches, peaking at
  * **16.2 MB against the 16.8 MB ceiling**. Within 4%. So 8 is the number that *happens to fit this
- * corpus today*, and the corpus only grows; a denser neighbourhood or one more large polygon indexed
+ * corpus today*, and the corpus only grows; a denser neighborhood or one more large polygon indexed
  * at a coarse rung tips it over.
  *
  * **4 is the number that deserves the word conservative**, and it is what a first run against prod
@@ -46,7 +46,7 @@ const DEFAULT_BATCH_COUNT = 8;
  * How many batches may fail back-to-back before the load gives up.
  *
  * Matches the water ETL, and for the reason that loader learned first: this pass is thousands of
- * `convex run` calls, a single dense neighbourhood blowing the read cap is a *local* fact about the
+ * `convex run` calls, a single dense neighborhood blowing the read cap is a *local* fact about the
  * corpus rather than a broken run, and the ladder is enforced server-side so retrying is free. A
  * streak means something systemic. **This loader used to rethrow on the first failure**, which is why
  * the 2026-08-02 run stopped at batch 8 with 1,603 batches of perfectly loadable depth behind it.

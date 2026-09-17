@@ -22,7 +22,7 @@ import { Button } from './ui/button';
  *
  * ## The map route gets a different shell
  *
- * Every other page is a document: it scrolls, and it's centred in a readable column. The map is an
+ * Every other page is a document: it scrolls, and it's centered in a readable column. The map is an
  * *application surface* — it should be as large as the window allows, and the window should not
  * scroll, because scrolling a page that contains a map is how you end up dragging the page when you
  * meant to pan. So on a map route the shell locks to the viewport height and hands the whole

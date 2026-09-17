@@ -144,7 +144,7 @@ export const recompute = internalAction({
 
         for (const row of page.rows) {
           for (const state of row.states) {
-            // Defence in depth against a bad tag reaching the caption as a region name.
+            // Defense in depth against a bad tag reaching the caption as a region name.
             if (!isKnownStateCode(state)) continue;
             scanned.set(state, (scanned.get(state) ?? 0) + 1);
             if (row.active) active.set(state, (active.get(state) ?? 0) + 1);

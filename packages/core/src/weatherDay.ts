@@ -265,7 +265,7 @@ export const DAYLIGHT_END_HOUR = 16;
  *
  * 120 W/m² is roughly the difference between "the sun is technically up" and "you can feel it on a
  * dark surface". A midwinter Northeast noon under clear sky runs ~350–450 W/m²; heavy overcast at the
- * same hour is ~40–80. The threshold sits between them so a grey thaw and a sunny thaw separate.
+ * same hour is ~40–80. The threshold sits between them so a gray thaw and a sunny thaw separate.
  */
 export const SUNLIT_WM2 = 120;
 
@@ -382,7 +382,7 @@ export interface WeatherDaySummary {
    *
    * Founder observation, 2026-09-03, and it is the mechanism the literature agrees on: *"a single
    * afternoon with sun above freezing will make the ice's surface sticky and soft in a way that kind
-   * of ruins it."* A grey 2 °C afternoon and a sunny 2 °C afternoon have the same
+   * of ruins it."* A gray 2 °C afternoon and a sunny 2 °C afternoon have the same
    * `hoursAboveFreezing` and do very different things to a skating surface, because shortwave
    * penetrates clear ice and melts it at the grain boundaries from *within* — the process that
    * produces candled, rotten ice with little load-bearing capacity, and which can run while air
@@ -605,7 +605,7 @@ function summarizeOneDay(
       // one that matters. Using the daily max would let the morning's snow shield the whole day.
       absorbedInsolationWhM2 += h.shortwaveWm2 * (1 - estimateAlbedo(h.snowDepthM ?? null));
       // The founder's "sunny afternoon above freezing". Both conditions, on the same hour — a sunny
-      // morning followed by a mild grey afternoon is not this, and would score zero here correctly.
+      // morning followed by a mild gray afternoon is not this, and would score zero here correctly.
       if (t > 0 && h.shortwaveWm2 >= SUNLIT_WM2) sunlitThawHours += 1;
     }
 

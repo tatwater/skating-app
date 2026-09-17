@@ -84,7 +84,7 @@ describe('selectGranules', () => {
     expect(result.selected).toHaveLength(1);
   });
 
-  it('honours an explicit threshold', () => {
+  it('honors an explicit threshold', () => {
     const strict = selectGranules([at('S2C_18TXP_20260215_0_L2A', 40)], { maxCloudPct: 15 });
     expect(strict.selected).toEqual([]);
     expect(strict.counts.cloud).toBe(1);

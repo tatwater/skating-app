@@ -209,7 +209,7 @@ async function main(): Promise<void> {
     subAreas: subAreaCount,
     // ⚠ **The flag the cutter refuses to run without.** Bakes before 2026-08-25 shipped one file, and
     // `cut-granule.sh` rasterised the reveal shape as its zone grid — which measured a 60 m ring of
-    // shore as lake. A cutter that silently fell back to that behaviour against an old bake would
+    // shore as lake. A cutter that silently fell back to that behavior against an old bake would
     // reintroduce the bug on exactly the runs nobody was watching, so the sidecar asserts the second
     // artifact exists and the container dies without it. See `revealMasks.ts` for the arithmetic.
     waterMasks: true,

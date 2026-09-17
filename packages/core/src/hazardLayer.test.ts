@@ -94,7 +94,7 @@ describe('hazardsToFeatureCollection — consensus rendering (D80)', () => {
       { ...(pair[0] as MappableHazard), clusterMemberIds: ['first', 'broken'] },
       broken,
     ]);
-    // The good pin renders. Losing one hazard because a neighbour's geometry is malformed would be
+    // The good pin renders. Losing one hazard because a neighbor's geometry is malformed would be
     // the failure `safeFootprint` exists to prevent, one level up.
     expect(fc.features.map((f) => f.properties?.hazardId)).toContain('first');
   });
@@ -174,7 +174,7 @@ describe('hazardsToFeatureCollection', () => {
   });
 
   // Losing one pin is bad; losing every pin on the lake because one row is malformed is a safety
-  // failure — so a bad geometry is skipped and its neighbours still render.
+  // failure — so a bad geometry is skipped and its neighbors still render.
   it('drops an unusable geometry without taking the rest of the layer down', () => {
     const fc = hazardsToFeatureCollection([
       hazard({

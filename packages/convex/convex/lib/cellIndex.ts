@@ -129,7 +129,7 @@ export async function syncWaterBodyCells(
  * reachable only while it is itself un-delisted *and* its parent body `isListed`. The plan gave
  * sub-areas their own `removedAt` and their own cell table and never connected the two, which would
  * have meant a landowner takedown on Lake Champlain dropping the lake's cell rows while "Malletts
- * Bay" stayed outlined and labelled on a map that no longer had the lake. A01's invariant is that an
+ * Bay" stayed outlined and labeled on a map that no longer had the lake. A01's invariant is that an
  * unreachable object has *no rows at all*, so the filter costs nothing; inheriting the mechanism
  * without inheriting the rule would have quietly reintroduced the filter-you-have-to-remember.
  *

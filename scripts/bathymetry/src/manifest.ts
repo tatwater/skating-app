@@ -52,7 +52,7 @@ export function normalizeDescriptor(raw: unknown): ServiceDescriptor {
     descriptor.supportedQueryFormats = d.supportedQueryFormats;
   }
   // Agencies pad the credit with newlines and trailing spaces (NH's carries both). Collapse whitespace
-  // so a cosmetic reformat on their side doesn't read to `verify` as a licence change on ours.
+  // so a cosmetic reformat on their side doesn't read to `verify` as a license change on ours.
   if (typeof d.copyrightText === 'string') {
     const collapsed = d.copyrightText.replace(/\s+/g, ' ').trim();
     if (collapsed.length > 0) descriptor.copyrightText = collapsed;
@@ -135,7 +135,7 @@ export interface DriftReport {
  *
  * - **breaking** — a field the transform reads has disappeared, or the geometry type changed. Code is
  *   now wrong, not merely stale.
- * - **notable** — record count moved, or the licence wording changed. Nothing crashes; a human has to
+ * - **notable** — record count moved, or the license wording changed. Nothing crashes; a human has to
  *   look, because one of them changes what we render and the other changes what we may render.
  * - **cosmetic** — a field was *added*, or a validator moved with no other evidence of change. Worth
  *   printing, not worth blocking on.
@@ -204,8 +204,8 @@ export function diffManifests(prev: RawManifest, next: Partial<RawManifest>): Dr
   }
 
   // Guarded on `next.service` for the same reason the field comparison is: a probe that did not read
-  // a descriptor reports *nothing* about the licence, and treating that silence as "the agency
-  // withdrew its copyright" would raise a false licence alarm on every file-source check.
+  // a descriptor reports *nothing* about the license, and treating that silence as "the agency
+  // withdrew its copyright" would raise a false license alarm on every file-source check.
   const prevCredit = prev.service?.copyrightText;
   const nextCredit = next.service?.copyrightText;
   if (next.service && prevCredit !== nextCredit && (prevCredit || nextCredit)) {

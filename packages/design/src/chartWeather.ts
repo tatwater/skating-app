@@ -122,7 +122,7 @@ export const WEATHER_PRECIPITATION_SCALE = {
 /**
  * The auxiliary lanes (wind, sun, snow depth) draw in **neutrals, plus two borrowed colors**.
  *
- * Not a fifth, sixth and seventh hue. Each of those lanes is a single series in its own labelled
+ * Not a fifth, sixth and seventh hue. Each of those lanes is a single series in its own labeled
  * strip, so it needs no hue to establish identity — position already does that — and the anti-pattern
  * of "more than ~7 color classes carrying meaning" is real at this size.
  *
@@ -179,7 +179,7 @@ export const WEATHER_SUN_RAMP = {
  * ⚠ **Widened from 0.25–0.95 after looking at it on a real lake: the steps were not separable.** The
  * floor came down and the ceiling went to opaque, and — the part that actually fixed it — the banded
  * fill now paints in `trace` rather than `fill`. `fill` is a hair off the surface by design (it is
- * the colour of an inert lane), so no opacity ramp on it could ever produce much contrast; the range
+ * the color of an inert lane), so no opacity ramp on it could ever produce much contrast; the range
  * was never the whole problem.
  */
 export const WIND_FETCH_OPACITY = { min: 0.15, max: 1 } as const;

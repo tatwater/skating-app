@@ -46,7 +46,7 @@ export interface ProfileViewData {
  * Your own profile once you've asked to be deleted (D62 amendment).
  *
  * **Not a preview — the row really is empty.** The avatar, name, bio, town and home location were
- * scrubbed by the request itself, and cancelling doesn't bring them back. So this card isn't hiding
+ * scrubbed by the request itself, and canceling doesn't bring them back. So this card isn't hiding
  * anything: it's the honest rendering of what's left, which is nothing.
  *
  * Nobody else can reach this page at all — `getPublicProfile` returns not-found for a ghost — so the

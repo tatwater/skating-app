@@ -4,7 +4,7 @@
  * body that already has fresh eyes, decision 8) and a **rolling per-requester cap** (decision 7). Both
  * gates are pure `@skating/core` functions, re-enforced here at the trust boundary.
  *
- * Lifecycle: `open` → `fulfilled` (the requester thumbs a fulfilling report helpful), `cancelled` (the
+ * Lifecycle: `open` → `fulfilled` (the requester thumbs a fulfilling report helpful), `canceled` (the
  * requester cancels), or `expired` (the sweep, past `expiresAt`). The reward is a **separate currency**
  * (`bountyPoints`, decision 11): fulfilling awards `bounties.rewardPoints` to the *report author*, never
  * touching `reputationPoints`, so trust stays purely about report/hazard accuracy.
@@ -647,7 +647,7 @@ export const createChecked = internalMutation({
 
 /**
  * Notify the eligible: authors who reported on this body within `windowHours` (decision 9). One
- * `bounty_request` per recent author, through the settle queue (A08 / D169) so a bounty cancelled a
+ * `bounty_request` per recent author, through the settle queue (A08 / D169) so a bounty canceled a
  * moment after it was posted never rings anyone; the flush re-checks that it's still open. Never the
  * requester. The GPS-skate half of eligibility (D44) lands in Phase 08.
  */
@@ -688,7 +688,7 @@ async function fanOutEligibility(
   }
 }
 
-/** Cancel your own open bounty (→ `cancelled`, decision 10). Only the requester; only while open. */
+/** Cancel your own open bounty (→ `canceled`, decision 10). Only the requester; only while open. */
 export const cancel = mutation({
   args: { bountyId: v.id('bounties') },
   handler: async (ctx, { bountyId }) => {
@@ -697,7 +697,7 @@ export const cancel = mutation({
     if (!bounty) throw new ConvexError('Bounty not found');
     if (bounty.requesterId !== profile._id) throw new ConvexError('Only the requester can cancel');
     if (bounty.status !== 'open') throw new ConvexError('Bounty is not open');
-    await ctx.db.patch(bountyId, { status: 'cancelled' });
+    await ctx.db.patch(bountyId, { status: 'canceled' });
   },
 });
 
@@ -890,7 +890,7 @@ const ANSWERED_SCAN_CAP = 100;
  * Counts **open, fulfilled and expired** bounties, not only open ones: the requester thumbing this
  * report helpful is the intended end of the D170 loop, and it flips the bounty to `fulfilled` — the
  * one moment the sentence is most true is the moment an open-only count would have made it vanish.
- * Cancelled is the exception (the requester withdrew the ask). Reads the body's bounties by status
+ * Canceled is the exception (the requester withdrew the ask). Reads the body's bounties by status
  * (bounded per status; the open set is a handful, the terminal sets grow across seasons) rather than
  * an index on `fulfillingReportIds`, which Convex can't index anyway.
  */

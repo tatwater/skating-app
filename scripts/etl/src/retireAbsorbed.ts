@@ -21,7 +21,7 @@
  * ## It never deletes
  *
  * `retireAbsorbedBodies` folds each absorbed row into its survivor through the same helper the
- * moderator merge uses, so reports, hazards, bounties, tracks, favourites, put-ins, body features and
+ * moderator merge uses, so reports, hazards, bounties, tracks, favorites, put-ins, body features and
  * hand-drawn sub-areas all move rather than strand. The row is soft-tombstoned and reads chase
  * `mergedIntoId` to the survivor, which is what keeps a deep link to a retired duplicate working.
  *

@@ -13,7 +13,7 @@ import { sunTimes } from './solar';
  */
 const TOLERANCE_MS = 90_000;
 
-/** Burlington, VT — the corpus's centre of gravity, and a latitude where the winter day is short. */
+/** Burlington, VT — the corpus's center of gravity, and a latitude where the winter day is short. */
 const BURLINGTON = { lat: 44.4759, lon: -73.2121 };
 const ET = 'America/New_York';
 

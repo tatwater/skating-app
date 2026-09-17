@@ -131,12 +131,12 @@ corpus at all** (see the A02 doc's *Open after this phase*).
   EXIF strip + geotag opt-in; signup assumption-of-risk ack.
 - **License → D43** — AGPL-3.0 + App Store / Play distribution exception.
 - **Skate→water body → D44** — GPS activities resolved to a `waterBodyId` (findable by water body).
-- **S1 → D72/D73** — Access is two questions, not one: parking is modelled apart from put-ins and
+- **S1 → D72/D73** — Access is two questions, not one: parking is modeled apart from put-ins and
   directions route to the car; access blockers decay like hazards instead of sitting in a note that rots.
 - **Water-body profile content → D70/D71** — derived or third-party, never hand-maintained; reference links are
   generated at render time, which is what gives all 116,070 bodies coverage instead of a curated few.
 - **Weather providers → D74** — Open-Meteo computes, NWS informs; never blended.
-- **Satellite imagery → D75, then D81/D84** — the deferred layer's blocker was a licence question, and
+- **Satellite imagery → D75, then D81/D84** — the deferred layer's blocker was a license question, and
   Copernicus Sentinel data already answered it. Deep link ships in A06c; **in-app imagery is now
   [A06e](./phases/A06e-satellite-imagery.md)** (2026-07-31), where the cost call turned out to bind only one
   of two tiers: public-domain **USGS/NAIP** aerial has no quota at all, and it's the tier that serves the

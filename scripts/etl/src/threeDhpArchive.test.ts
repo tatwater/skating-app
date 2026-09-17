@@ -81,8 +81,8 @@ describe('clipCommand', () => {
     expect(cmd[cmd.indexOf('-nln') + 1]).toBe(THREE_DHP_WATERBODY_LAYER);
   });
 
-  it('declares the -spat SRS, because the source is Albers metres', () => {
-    // Without -spat_srs, ogr2ogr reads the envelope in the SOURCE srs: a degrees box becomes metres
+  it('declares the -spat SRS, because the source is Albers meters', () => {
+    // Without -spat_srs, ogr2ogr reads the envelope in the SOURCE srs: a degrees box becomes meters
     // from the Albers origin, selects ocean, and the clip "succeeds" with zero features.
     expect(cmd[cmd.indexOf('-spat_srs') + 1]).toBe('EPSG:4326');
   });
@@ -205,7 +205,7 @@ describe('summarizeEdhCoverage', () => {
     );
   });
 
-  it('is a rate, not a percent, and survives an empty catalogue', () => {
+  it('is a rate, not a percent, and survives an empty catalog', () => {
     const empty = summarizeEdhCoverage([]);
     expect(empty.share).toBe(0); // never NaN on an axis
     expect(empty.total).toBe(0);

@@ -88,7 +88,7 @@ describe('draftForType', () => {
 });
 
 describe('applyDraftMapClick', () => {
-  it('sets, then moves, a circle’s centre', () => {
+  it('sets, then moves, a circle’s center', () => {
     const placed = applyDraftMapClick(draftForType('open_water'), A);
     expect(draftPlacementCount(placed)).toBe(1);
     const moved = applyDraftMapClick(placed, B);
@@ -96,7 +96,7 @@ describe('applyDraftMapClick', () => {
     expect(draftPlacementCount(moved)).toBe(1);
   });
 
-  it('exposes the placed centre as a vertex, so a lone circle click is still visible', () => {
+  it('exposes the placed center as a vertex, so a lone circle click is still visible', () => {
     expect(draftVertices(applyDraftMapClick(draftForType('open_water'), A))).toEqual([A]);
   });
 
@@ -123,9 +123,9 @@ describe('applyDraftMapClick', () => {
 });
 
 describe('submittability', () => {
-  // A circle is committable the instant it has a centre — the two-tap guarantee the on-ice flow
+  // A circle is committable the instant it has a center — the two-tap guarantee the on-ice flow
   // depends on (a mitten-fumble that hits Done early must still produce a useful pin).
-  it('accepts a circle as soon as it has a centre', () => {
+  it('accepts a circle as soon as it has a center', () => {
     expect(isDraftSubmittable(applyDraftMapClick(draftForType('open_water'), A))).toBe(true);
   });
 
@@ -189,7 +189,7 @@ describe('undoDraftPlacement', () => {
     expect(undoDraftPlacement(draft)).toEqual(draft); // undoing nothing is a no-op, not a crash
   });
 
-  it('clears a circle’s centre without losing its size', () => {
+  it('clears a circle’s center without losing its size', () => {
     const draft = resizeDraft(applyDraftMapClick(draftForType('thin_ice'), A), 1);
     const undone = undoDraftPlacement(draft);
     expect(undone).toEqual({
@@ -215,7 +215,7 @@ describe('switchDraftKind', () => {
     expect(switchDraftKind(draft, 'point_radius', 'open_water')).toBe(draft);
   });
 
-  it('seeds a line with the circle’s centre — the spot you already knew', () => {
+  it('seeds a line with the circle’s center — the spot you already knew', () => {
     const draft = applyDraftMapClick(draftForType('open_water'), A);
     expect(switchDraftKind(draft, 'line', 'open_water')).toEqual({
       geometryKind: 'line',
@@ -329,7 +329,7 @@ describe('stepSize / resizeDraft', () => {
   });
 
   // Per-type defaults (5, 15, 20, 30, 60 m …) deliberately don't all sit on the ladder, so the
-  // first press has to snap to the neighbouring rung instead of jumping to an end or standing still.
+  // first press has to snap to the neighboring rung instead of jumping to an end or standing still.
   it('snaps an off-ladder default inward on the first press', () => {
     expect(stepSize(60, HAZARD_RADIUS_STEPS_M, 1)).toBe(100);
     expect(stepSize(60, HAZARD_RADIUS_STEPS_M, -1)).toBe(50);

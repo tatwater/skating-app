@@ -65,7 +65,7 @@ describe('compareBodies', () => {
     expect(rowFor(rows, 'surfaceAreaSqM').differs).toBe(false);
   });
 
-  it('formats area in acres and lengths in metres — the units the corpus rules are written in', () => {
+  it('formats area in acres and lengths in meters — the units the corpus rules are written in', () => {
     const rows = compareBodies([body({ surfaceAreaSqM: 342_537.25, longAxisM: 1234.6 })]);
     expect(rowFor(rows, 'surfaceAreaSqM').values[0]).toBe('84.6 acres');
     expect(rowFor(rows, 'longAxisM').values[0]).toBe('1,235 m');
@@ -89,13 +89,13 @@ describe('bodyLabel', () => {
 describe('describeAgreement', () => {
   it('describes the geometry without ever returning a verdict', () => {
     const text = describeAgreement({ iou: 0.94, centroidDistanceM: 12, areaRatio: 1.0 });
-    expect(text).toBe('94% overlap · centres 12 m apart · same area');
+    expect(text).toBe('94% overlap · centers 12 m apart · same area');
     expect(text).not.toMatch(/duplicate/i);
   });
 
-  it('switches to kilometres once the centres are far apart, and names the area gap', () => {
+  it('switches to kilometers once the centers are far apart, and names the area gap', () => {
     expect(describeAgreement({ iou: null, centroidDistanceM: 4200, areaRatio: 4.13 })).toBe(
-      'centres 4.2 km apart · one is 4.13× the other',
+      'centers 4.2 km apart · one is 4.13× the other',
     );
   });
 });

@@ -1,4 +1,4 @@
-# A07c — Water body corrections: the skater says "this is wrong", and a moderator fixes it
+# Phase A07c — Water body corrections: the skater says "this is wrong", and a moderator fixes it
 
 > **Status:** ⚪ **Scoped 2026-09-16.** Not built. First phase named under the new scheme
 > ([`README.md`](../README.md#phase-names)); the era stays `A` because this is the last of the
@@ -144,7 +144,7 @@ coordinates (which put-in? where should it be?) and for a lot with the wrong ame
 arm holding only what the client had in hand when the sheet opened:
 
 - `imagery_broken` — the layer id (aerial / winter frame), the season or capture label, the
-  viewport's centre and zoom, and the tile URL that was drawn. Captured, never typed.
+  viewport's center and zoom, and the tile URL that was drawn. Captured, never typed.
 - `geometry_wrong` — `kind: 'union' | 'split' | 'shape'`, and for `union` the other body's id, which
   the sheet lets the reporter pick from the bodies in the viewport.
 - `access_point_wrong` — the put-in or lot id, `kind: 'coords' | 'missing' | 'private' | 'gone'`,
@@ -168,9 +168,9 @@ Recorded here so the next reader of `contentPurge` does not have to work out whe
 ## D182 — An operator's outline is the evidence that the outline is theirs; the import respects it
 
 **Proposed.** `importCanonical` patches `polygon`, `bbox`, `centroid`, `representativePoint` and
-`surfaceAreaSqM` on every touch (`waterBodies.ts:693`). Right for a value the catalogues own; wrong
+`surfaceAreaSqM` on every touch (`waterBodies.ts:693`). Right for a value the catalogs own; wrong
 the moment a person has corrected it, for exactly the reason `nameFields` gives: *a rule that
-re-imposed the catalogue next campaign would undo that choice silently, every campaign, for ever.*
+re-imposed the catalog next campaign would undo that choice silently, every campaign, for ever.*
 
 **The rule, following the name precedent:** a corrected outline sets `geometrySource: 'user'`. The
 value already exists in `GEOMETRY_SOURCES` — a body drawn from a track carries it — and the enum's own
@@ -183,17 +183,17 @@ second column, no flag to keep in step.
 
 **What the import still patches on such a body:** everything that is not geometry — name claims,
 states, campaign stamp, `dropped` — and it *does* re-score, because richness and the boost are not
-geometry. It does not re-derive `hasContours`; that reads the tile catalogue by `externalId`, which
+geometry. It does not re-derive `hasContours`; that reads the tile catalog by `externalId`, which
 the override does not touch (verify at build — the second-audit note at `waterBodies.ts:715`
 records that this exact field has been silently dropped before).
 
-**Releasing it:** a moderator clearing the override sets `geometrySource` back to the catalogue's
+**Releasing it:** a moderator clearing the override sets `geometrySource` back to the catalog's
 value and the next campaign refills the outline — the depth override's `Released the operator
 override … the import may refill it` shape, audited the same way.
 
 **The interim before an editor exists (§4.1):** the only outline writer this phase ships is the union
 (§4.2). A hand-drawn outline correction is §4.3 and is the phase's biggest unknown; D182 is written so
-that both writers set one field and the import honours one predicate.
+that both writers set one field and the import honors one predicate.
 
 ---
 
@@ -207,7 +207,7 @@ water body*, and tombstoning it deletes that half from the map.
 
 **Union is merge plus geometry.** It takes a survivor and a loser like `merge` does, and calls
 `mergeBodyInto` for everything that already works — reports, hazards, bounties, features, put-ins,
-favourites, sub-areas re-clipped, the loser tombstoned with `mergedIntoId`, the audit row. Then:
+favorites, sub-areas re-clipped, the loser tombstoned with `mergedIntoId`, the audit row. Then:
 
 1. **The outline** becomes `turf.union(survivor, loser)`, with `bbox`, `interiorPoint` (never
    `centroid` — it is `pointOnFeature`, on the shoreline) and `surfaceAreaSqM` re-derived, and
@@ -227,7 +227,7 @@ favourites, sub-areas re-clipped, the loser tombstoned with `mergedIntoId`, the 
    union changes the area and the area is the score's first term.
 
 **Split is deferred to §4.4 and probably to a feat.** A true split — one row that is really two
-unconnected ponds — needs a cut line, a new body with no catalogue identity, and a reassignment of
+unconnected ponds — needs a cut line, a new body with no catalog identity, and a reassignment of
 every report by point-in-polygon with a rule for the ones that have no point. Most "this should be
 split" reports are a bay that wants a name, and the sheet says so before the category is chosen.
 
@@ -269,7 +269,7 @@ split" reports are a bay that wants a name, and the sheet says so before the cat
 - **§2.4 The A06f control folds in.** `PublicAccessSection`'s *Report no public access* becomes the
   `no_public_access` row of the same sheet, keeping its gate message and its *you reported this*
   read-back. One place to report, not two side by side.
-- **§2.5 "You reported this."** `myAccessFlags` generalises to `myOpenFlagsFor(waterBodyId)` so the
+- **§2.5 "You reported this."** `myAccessFlags` generalizes to `myOpenFlagsFor(waterBodyId)` so the
   sheet marks the categories already filed and the drawer can say *2 things reported — with the
   moderators*. The A08 `content_flag_resolved` notification already tells them the outcome.
 
@@ -392,7 +392,7 @@ outline writer in the app.
 ## Related
 
 - [`phases/A06f-no-public-access.md`](./A06f-no-public-access.md) — the first place in
-  `contentFlags`, and the dedup-as-corroboration argument this phase generalises.
+  `contentFlags`, and the dedup-as-corroboration argument this phase generalizes.
 - [`phases/A07b-corpus-by-request.md`](./A07b-corpus-by-request.md) — the request door.
 - [`phases/A09-subareas-as-places.md`](./A09-subareas-as-places.md) — why a bay is the answer to
   most "split" reports, and the put-in suppression row.

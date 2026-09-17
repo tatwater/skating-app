@@ -185,7 +185,7 @@ export function HazardCapture() {
 
   /**
    * Full reset for an *abandoned* capture (Cancel, or the type sheet's `onRequestClose`): free the
-   * persisted photo files too. Without this, photos picked then cancelled leak their full+thumb copies
+   * persisted photo files too. Without this, photos picked then canceled leak their full+thumb copies
    * into app storage forever — `removePhoto` frees a single removal, but bailing out skipped the rest.
    */
   function reset() {
@@ -196,7 +196,7 @@ export function HazardCapture() {
   /**
    * Authoring closes while a deletion is pending (D62 amendment), and the render below returns `null`
    * for it — but **returning `null` is not unmounting**, so every `useState` above survives, and a
-   * pending deletion can be cancelled, which makes this a round trip rather than an exit.
+   * pending deletion can be canceled, which makes this a round trip rather than an exit.
    *
    * The nudge state is what must not survive it. A dismissal that outlived the read-only window would
    * be inherited by the next capture, which would then skip duplicate detection entirely and send an
@@ -204,7 +204,7 @@ export function HazardCapture() {
    * by a door that never runs `resetDraftState`.
    *
    * Only the nudge state is cleared here, deliberately. Freeing the draft and its photo files on a
-   * pending deletion is arguably right too, but that is a D62 behaviour question rather than this
+   * pending deletion is arguably right too, but that is a D62 behavior question rather than this
    * phase's, and guessing at it in a hazard-identity change is how unrelated things break.
    */
   useEffect(() => {

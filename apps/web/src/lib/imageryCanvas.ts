@@ -169,7 +169,7 @@ export interface ComposeOptions {
   masks: readonly ImageryMaskInput[];
   /** How far the reveal extends past what it reveals, at full opacity. */
   solidMeters: number;
-  /** Metres over which the edge then fades to nothing. `0` ⇒ a hard edge. */
+  /** Meters over which the edge then fades to nothing. `0` ⇒ a hard edge. */
   featherMeters: number;
   /** `false` ⇒ keep the whole composite, masks untouched (the admin editor's unmasked mode). */
   clip?: boolean;
@@ -189,7 +189,7 @@ export interface ComposeOptions {
  * A worker was the obvious fix and the wrong one: PR 2 puts this on React Native, which has no Web
  * Workers, so it would have bought a smooth web build and left mobile with the same stall.
  *
- * Dilating in *pixel space* removes the work instead of moving it. A stroke is centred on its path,
+ * Dilating in *pixel space* removes the work instead of moving it. A stroke is centered on its path,
  * so filling a ring and stroking it at `2 × solid` yields exactly the ring dilated outward by
  * `solid` — with round joins, which is what Turf's default buffer produces too. The rasteriser does
  * it, so fifty bodies cost fifty fills rather than fifty buffers, and there is no union to compute:
@@ -226,7 +226,7 @@ function paintRevealMask(
   // shoreline would otherwise grow a spike several times the buffer distance.
   ctx.lineJoin = 'round';
   ctx.lineCap = 'round';
-  // Centred on the path ⇒ `solidPx` outward and `solidPx` inward, and the inward half lands inside
+  // Centered on the path ⇒ `solidPx` outward and `solidPx` inward, and the inward half lands inside
   // the fill. Net: dilated outward by exactly `solidPx`.
   ctx.lineWidth = Math.max(0.01, solidPx * 2);
 
@@ -272,13 +272,13 @@ function paintRevealMask(
  * opaque and erases it everywhere else. The blur on that draw is what turns a hard edge into a
  * gradient — one `filter` rather than stacked fills, and a true ramp rather than steps of one.
  *
- * **Blur is measured in ground metres and converted here.** A radius in pixels would mean the feather
+ * **Blur is measured in ground meters and converted here.** A radius in pixels would mean the feather
  * changed width every time the zoom did — the sort of thing that looks like a rendering bug and is
  * really a units bug.
  *
- * **A missing cell leaves its ground empty rather than stretching a neighbour over it.** The caller
+ * **A missing cell leaves its ground empty rather than stretching a neighbor over it.** The caller
  * only swaps a composite in once its cells have settled, so a hole here means a cell genuinely failed
- * — and blank ground the basemap shows through is honest, where a smeared neighbour is a photograph
+ * — and blank ground the basemap shows through is honest, where a smeared neighbor is a photograph
  * of somewhere else.
  *
  * Returns `false` when there is no 2D context, or when the edge came out hard because the browser has
@@ -316,7 +316,7 @@ export function composeImagery({
   // honest answer to "did this feather?", which is the only question the return value asks.
   if (clip === false) return false;
 
-  // Mercator metres are not ground metres — they are inflated by 1/cos(φ), ~1.4× at our latitude.
+  // Mercator meters are not ground meters — they are inflated by 1/cos(φ), ~1.4× at our latitude.
   // `groundMetersPerPixel` already carries that conversion, and having one copy of it is the point.
   const groundPerPixel = groundMetersPerPixel(bounds, width);
   // Half the feather, because a blur spreads both ways from the edge it is applied to — so a radius

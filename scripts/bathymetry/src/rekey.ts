@@ -5,8 +5,8 @@
  *
  * Maine files **MIDAS 870** as North Pond, 59 acres. It holds **17,922 soundings spanning
  * 151 × 348 km** — essentially the whole state — of which 0.51% are inside North Pond. Every row is
- * `FMSRC=depthmap`, `FMSRCORG=meifw`: the digitised IF&W paper maps, where everything the
- * digitisation could not key was dumped. It is not a lake; it is a bucket.
+ * `FMSRC=depthmap`, `FMSRCORG=meifw`: the digitized IF&W paper maps, where everything the
+ * digitization could not key was dumped. It is not a lake; it is a bucket.
  *
  * `splitByBody` already exists to break a key that holds several ponds, and on this one it fails in a
  * way worth stating precisely, because the failure is a property of its *design* rather than a bug:
@@ -35,7 +35,7 @@
  * re-clustered and not split. This is a hard boundary rather than a heuristic — it is the difference
  * between recovering 17,922 orphaned soundings and quietly re-deciding where 2.4 million
  * measurements belong. `rekey.test.ts` asserts it with **China Lake (MIDAS 5448)**, a real
- * 3,939-acre lake with 25,807 legitimate soundings, because a future refactor that generalises this
+ * 3,939-acre lake with 25,807 legitimate soundings, because a future refactor that generalizes this
  * is exactly the change that would break it silently.
  *
  * ## What it does NOT do

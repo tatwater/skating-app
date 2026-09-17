@@ -189,8 +189,8 @@ export function TimeSeriesChart({
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * A bucket histogram. `labels` are the axis categories (from the metric catalogue, so the axis can't
- * drift from what the rollup bucketed), `counts` the parallel values. `markers` overlays a labelled
+ * A bucket histogram. `labels` are the axis categories (from the metric catalog, so the axis can't
+ * drift from what the rollup bucketed), `counts` the parallel values. `markers` overlays a labeled
  * vertical reference at a named bucket edge — how the trust-class cutoffs are drawn *onto* the
  * reputation distribution, which is the whole point of that chart.
  */
@@ -233,7 +233,7 @@ export function HistogramChart({
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Composition (a labelled record) — funnels, gate mix, point sources, dispositions
+// Composition (a labeled record) — funnels, gate mix, point sources, dispositions
 // ─────────────────────────────────────────────────────────────────────────────
 
 export interface CompositionSlice {

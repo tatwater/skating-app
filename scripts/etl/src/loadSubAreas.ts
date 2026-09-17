@@ -5,7 +5,7 @@
  *
  * ## Why this is a separate pass, after the bodies
  *
- * A sub-area is resolved to its parent **by catalogue id** and clipped to that parent's polygon, so
+ * A sub-area is resolved to its parent **by catalog id** and clipped to that parent's polygon, so
  * the parent has to exist first. Running it as part of the body load would mean resolving a parent
  * that may be later in the same file — which is exactly the ordering trap this phase keeps meeting,
  * one table down. Two commands, in order, is the version that cannot be got wrong:
@@ -109,7 +109,7 @@ function main(): void {
     stages: found?.manifest.stages ?? [],
     call: convexRun,
     notes: [
-      'Bays the merge found a parent for. Parent resolved by catalogue id, outline clipped to it.',
+      'Bays the merge found a parent for. Parent resolved by catalog id, outline clipped to it.',
       'Run AFTER waterBodies:importCanonical — the parent has to exist.',
       ...(found ? [`path replayed from ${found.path}`] : []),
     ],
@@ -178,7 +178,7 @@ function main(): void {
   logger.stage({
     name: 'load',
     detail:
-      'subAreas:importBaySubAreas — parent by catalogue id (D93), outline clipped to the parent (D60)',
+      'subAreas:importBaySubAreas — parent by catalog id (D93), outline clipped to the parent (D60)',
     input: inputPath,
     output: target.label,
     counts: [
@@ -205,7 +205,7 @@ function main(): void {
 
 // **The run row must not be left `running`** (D99). The first attempt at this pass threw out of
 // `main` on a mutation timeout and left three rows in that state on dev — the exact signature D99
-// records from the abandoned A06c campaign, reproduced by the loader written to honour it. `merge.ts`
+// records from the abandoned A06c campaign, reproduced by the loader written to honor it. `merge.ts`
 // has carried this handler since the first audit; this file was written without it.
 try {
   main();

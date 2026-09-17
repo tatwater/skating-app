@@ -65,7 +65,7 @@ describe('aerialExportUrl', () => {
   it('sends a Web Mercator bbox, because the mask is traced in the same projection', () => {
     const url = new URL(aerialExportUrl(BOX, 512, 512));
     const [minX, minY, maxX, maxY] = (url.searchParams.get('bbox') ?? '').split(',').map(Number);
-    // Projected metres, not degrees — a degrees bbox here is the units bug that misregisters the mask.
+    // Projected meters, not degrees — a degrees bbox here is the units bug that misregisters the mask.
     expect(Math.abs(minX as number)).toBeGreaterThan(1e6);
     expect(maxX as number).toBeGreaterThan(minX as number);
     expect(maxY as number).toBeGreaterThan(minY as number);
@@ -144,7 +144,7 @@ describe('parseAerialScene', () => {
 });
 
 describe('resolutionFromSceneName', () => {
-  it('reads centimetres out of the quarter-quad name', () => {
+  it('reads centimeters out of the quarter-quad name', () => {
     expect(resolutionFromSceneName('m_4407339_ne_18_030_20230621')).toBe(0.3);
     expect(resolutionFromSceneName('m_4407339_ne_18_060_20190612')).toBe(0.6);
     expect(resolutionFromSceneName('m_4407339_ne_18_100_20150801')).toBe(1);

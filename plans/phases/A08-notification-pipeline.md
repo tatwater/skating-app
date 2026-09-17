@@ -1,4 +1,4 @@
-# A08 — The notification pipeline: the inbox, the missing producers, and the reverse reach index
+# Phase A08 — The notification pipeline: the inbox, the missing producers, and the reverse reach index
 
 > **Status:** ✅ **COMPLETE (2026-09-15)** — four PRs off `phase-n8-notification-pipeline`, all on
 > dev: **PR 1** (inbox + settled queue + producers §2.1–§2.3) #52; **PR 2** (§2.4/§2.4a, §1.5 purge, §3
@@ -174,7 +174,7 @@ someone found their report helpful, by someone who no longer does.
 and the queue re-reads the triggering state at flush.** Delivery asks *"is this still true?"*, not
 *"was this true a minute ago?"*
 
-**Re-check at send rather than cancel at undo**, which is the load-bearing half. Cancelling means every
+**Re-check at send rather than cancel at undo**, which is the load-bearing half. Canceling means every
 undo path — retract a thumb, flip a verdict, delete a comment, remove a report, a moderator hiding it —
 has to know the queue exists and find the right row; miss one and a phantom notification ships. Re-check
 is one place, it covers paths nobody thought of, and it covers content that vanished for reasons that
@@ -454,7 +454,7 @@ A **`SETTLE_MS` of 60 seconds** for actor-triggered notifications. The founder's
 seconds", and a few seconds is the *real* window — a misclick is corrected almost immediately. Sixty is
 recommended anyway because the flush cron already ticks once a minute (`crons.ts:13`), so anything
 shorter buys nothing measurable: effective latency is 0–60s either way. Sixty covers the slower version
-of the same mistake — reading the hazard properly, realising you voted wrong, fixing it.
+of the same mistake — reading the hazard properly, realizing you voted wrong, fixing it.
 
 Coalescing keys on `(recipient, target, kind)`, so five thumbs inside a minute become one *"5 people
 found this helpful"* rather than five rows. That is the same `coalesceKey` shape the report buckets
@@ -510,7 +510,7 @@ fan-out has the recipient's profile in hand when it computes `flushAfter` — so
 | Longitude approximation | trivial | wrong near every zone boundary, and the Northeast has one |
 
 **Recommended: store the device timezone**, fall back to `America/New_York`. The digest is a
-*"when will this person look at their phone"* question, and travelling to a different zone is a case
+*"when will this person look at their phone"* question, and traveling to a different zone is a case
 where the device answer is the right one. `homeCoord` derivation stays available as a fallback if a
 web-only user turns out to matter.
 
@@ -708,7 +708,7 @@ p.timezone ?? DIGEST_TIMEZONE)`). Logged as **D173**.
    That is the reminder "not now" asks for; the You-tab list's "Not reporting this one" is the
    `dismissed` that means never, and the sweep respects it. Recorded because the review read the stop
    card as a bug; changing it would mean carrying a decline through the offline track queue to
-   `ingestTrack` for a behaviour nobody wants.
+   `ingestTrack` for a behavior nobody wants.
 7. **Greptile pass (latent, multi-provider only):** the dedup candidates are now read as **one
    start-time window per due row** (new `by_user_start_time` index, ±`ACTIVITY_DEDUP_START_WINDOW_MS`)
    rather than the user's fifty most recently *inserted* rows — the latter dropped an already-prompted
@@ -738,7 +738,7 @@ p.timezone ?? DIGEST_TIMEZONE)`). Logged as **D173**.
 (`loadForDelivery` → `deliverBatch` → `markDelivered`; `checkPushReceipts` 15 min later;
 `disableTokens` on `DeviceNotRegistered`) scheduled by the flush in batches of 200; `lib/expoPush.ts`
 (chunked send, receipts, never throws); email via `lib/resend.ts` (now with headers, and a 429
-retry that honours `Retry-After` — Resend's default is 2 req/s, a digest batch is faster) rendered
+retry that honors `Retry-After` — Resend's default is 2 req/s, a digest batch is faster) rendered
 by `lib/notificationEmail.ts`; `profiles.email` mirrored from the identity's `email` claim,
 `profiles.channelPrefs`, `profiles.emailUnsubscribeSecret`, `profiles.setChannelPrefs`; the
 `/unsubscribe` HTTP route (GET is a confirm page that changes nothing — link scanners follow every
@@ -967,7 +967,7 @@ because the *reasoning* is what a later reader needs:
    four-rung precedence ladder that sorts on fidelity **and** displayability — D24's Strava
    cross-user restriction is why the second axis exists. Loser rows are superseded, never deleted.
 9. **Notifications settle before they send** (D81 / Workstream 5). 60-second window, and the trigger is
-   **re-read at flush** rather than cancelled at undo — one place to get right instead of every undo
+   **re-read at flush** rather than canceled at undo — one place to get right instead of every undo
    path in the app.
 
 ## Open questions remaining

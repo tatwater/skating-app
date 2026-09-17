@@ -9,12 +9,12 @@
  *
  * ## The plan's proposed metric doesn't work, and the data says so
  *
- * §Maine suggests *"a maximum **nearest-neighbour** gap relative to lake extent."* For transect data
- * — which is what both a sonar log and a digitised depth map are — nearest-neighbour measures the
+ * §Maine suggests *"a maximum **nearest-neighbor** gap relative to lake extent."* For transect data
+ * — which is what both a sonar log and a digitized depth map are — nearest-neighbor measures the
  * spacing of readings **along** a boat's track, and says nothing about the distance **between**
  * tracks. Measured across real Maine lakes, the true coverage gap runs **8–12× larger** than
- * nearest-neighbour implies. One example from the archive: a lake with a 81 m median
- * nearest-neighbour distance whose worst-covered water is **981 m** from any sounding, on a basin
+ * nearest-neighbor implies. One example from the archive: a lake with a 81 m median
+ * nearest-neighbor distance whose worst-covered water is **981 m** from any sounding, on a basin
  * 4.4 km across.
  *
  * So the gate asks the question that actually matters for interpolation:
@@ -92,9 +92,9 @@ export type DensityVerdict =
 export interface DensityAssessment {
   lakeKey: string;
   pointCount: number;
-  /** The bbox diagonal, in metres. The lake's characteristic size. */
+  /** The bbox diagonal, in meters. The lake's characteristic size. */
   extentM: number;
-  /** p95 distance from a probe inside the surveyed hull to the nearest sounding, in metres. */
+  /** p95 distance from a probe inside the surveyed hull to the nearest sounding, in meters. */
   coverageGapM: number;
   /**
    * `coverageGapM` over the lake's characteristic length — `sqrt(area)` when the caller knows the
@@ -333,7 +333,7 @@ export function shoreShare(soundingCells: number, shorelineCells: number): numbe
  * The reasoning it encodes: a depth level that traces as one or two closed rings is describing a
  * basin. The same level traced as eight disconnected squiggles is describing the interpolator — the
  * fit wobbling either side of that depth, drawn as though it were bathymetry. Four is where the
- * sampled lakes separate; it is a judgement, but it is a judgement about a picture rather than about
+ * sampled lakes separate; it is a judgment, but it is a judgment about a picture rather than about
  * a ratio of inputs.
  *
  * **Sounding lanes only.** On a contour lane the fragments are the agency's own cartography — a real
@@ -386,8 +386,8 @@ export function fragmentsPerLevel(lineCount: number, levelCount: number): number
   return lineCount / levelCount;
 }
 
-/** Summarise a run for the drop log — counts by verdict, and every dropped lake named. */
-export function summariseDensity(assessments: readonly DensityAssessment[]): {
+/** Summarize a run for the drop log — counts by verdict, and every dropped lake named. */
+export function summarizeDensity(assessments: readonly DensityAssessment[]): {
   kept: DensityAssessment[];
   dropped: DensityAssessment[];
   byVerdict: Record<DensityVerdict, number>;

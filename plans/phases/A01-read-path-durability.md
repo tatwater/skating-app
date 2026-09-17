@@ -1,4 +1,4 @@
-# A01 — Read-path durability: the crash class
+# Phase A01 — Read-path durability: the crash class
 
 > **Status: ✅ complete on dev (2026-07-26); prod deferred.** PR **#27**. The first item in the
 > roadmap's *Next-phase candidates* register ([`07-roadmap.md`](../07-roadmap.md) → *Later /
@@ -103,7 +103,7 @@ next person to touch these constants inherits evidence instead of folklore.
 
 **Decision 5 — `zoom` becomes a required argument to `listInViewport`.**
 Completeness is only provable when the zoom filter is in play (see the invariant below), and both
-clients already pass it. The optional-`zoom` legacy path (pre-D49 behaviour) goes away.
+clients already pass it. The optional-`zoom` legacy path (pre-D49 behavior) goes away.
 
 ---
 
@@ -297,7 +297,7 @@ rows that have *already* been read. Now indexed `by_status_weather_adjusted` and
 `undefined` sorts first, so never-refreshed hazards lead, then the longest-stale — and a refresh
 stamps `weatherAdjustedAt`, sending that hazard to the back. The cap became a rotation rather than a
 wall. (A hazard whose Open-Meteo fetch keeps failing deliberately isn't stamped, so it stays at the
-head and retries; that's the fail-open behaviour, and it only costs a slot.)
+head and retries; that's the fail-open behavior, and it only costs a slot.)
 
 ### The viewport kept whichever cell it scanned first
 
@@ -319,7 +319,7 @@ but it is a real change, and it's why the note above cares which budget binds.
 **And sorting alone wasn't enough** (review round 3, same finding pushed one level down). Ranking
 after the scan only helps if the scan collected candidates from across the box. With each cell free
 to take `limit + 1` rows, two dense cells could spend the whole 1,500-row budget between them and the
-sort would faithfully rank a *spatially selected* prefix — whole neighbourhoods of a dense viewport
+sort would faithfully rank a *spatially selected* prefix — whole neighborhoods of a dense viewport
 blank while the first corner scanned rendered its every pond.
 
 So each cell now takes what it wants only after reserving `MIN_ROWS_PER_CELL` for every cell still

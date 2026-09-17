@@ -17,11 +17,11 @@ import type { Feature, Geometry, LineString, MultiLineString } from 'geojson';
 
 import { SHORELINE_DEPTH } from './sources';
 
-/** Feet per metre. The real one — see `ME_FEET_PER_METRE` for the one Maine used. */
-const FEET_PER_METRE = 3.28084;
+/** Feet per meter. The real one — see `ME_FEET_PER_METER` for the one Maine used. */
+const FEET_PER_METER = 3.28084;
 
 /**
- * Maine converted feet to metres with **two different constants**, and which one a row used has to be
+ * Maine converted feet to meters with **two different constants**, and which one a row used has to be
  * decided per row.
  *
  * Some rows were built with a sloppy **3.3** ft/m: `DEPTHM 3.0303 × 3.3 = 10.0` exactly, where the
@@ -45,13 +45,13 @@ const FEET_PER_METRE = 3.28084;
  * When both do, the correct one wins — they only agree where the depth is small enough that the 0.58%
  * difference is below the tolerance anyway.
  */
-const ME_SLOPPY_FEET_PER_METRE = 3.3;
+const ME_SLOPPY_FEET_PER_METER = 3.3;
 
 /**
  * How close to a whole foot counts as "this was originally a whole foot".
  *
  * 0.02 ft is about 6 mm — far tighter than any depth sounder resolves, so it cannot accidentally
- * capture a genuine fractional reading, and far looser than the float noise a metre round-trip
+ * capture a genuine fractional reading, and far looser than the float noise a meter round-trip
  * introduces.
  */
 const WHOLE_FOOT_TOLERANCE = 0.02;
@@ -59,14 +59,14 @@ const WHOLE_FOOT_TOLERANCE = 0.02;
 /**
  * Recover a Maine depth in feet.
  *
- * The GPS lanes (`gpscarrier`, `gpsrec`) are depth-sounder tracks — genuine metre readings — and are
- * converted normally. Only the digitised map lane is ambiguous, because only it was converted *from*
+ * The GPS lanes (`gpscarrier`, `gpsrec`) are depth-sounder tracks — genuine meter readings — and are
+ * converted normally. Only the digitized map lane is ambiguous, because only it was converted *from*
  * feet in the first place.
  */
-function maineDepthFt(metres: number, method: string): number {
-  if (method !== 'depthmap') return metres * FEET_PER_METRE;
-  const correct = metres * FEET_PER_METRE;
-  const sloppy = metres * ME_SLOPPY_FEET_PER_METRE;
+function maineDepthFt(meters: number, method: string): number {
+  if (method !== 'depthmap') return meters * FEET_PER_METER;
+  const correct = meters * FEET_PER_METER;
+  const sloppy = meters * ME_SLOPPY_FEET_PER_METER;
   if (Math.abs(correct - Math.round(correct)) < WHOLE_FOOT_TOLERANCE) return Math.round(correct);
   if (Math.abs(sloppy - Math.round(sloppy)) < WHOLE_FOOT_TOLERANCE) return Math.round(sloppy);
   return correct;
@@ -75,7 +75,7 @@ function maineDepthFt(metres: number, method: string): number {
 /**
  * How much rounding recovers a round-tripped value.
  *
- * NH's `depth` has been through metres and back with mismatched constants, so it holds `2.00000006`
+ * NH's `depth` has been through meters and back with mismatched constants, so it holds `2.00000006`
  * where the survey said `2`. The error is ~3e-8 relative, which means rounding to a hundredth of a
  * foot recovers the original exactly while leaving any genuine sub-foot precision (Maine's GPS rows
  * carry real fractional depths) untouched. Rounding to whole feet would destroy that.
@@ -105,7 +105,7 @@ export interface NormalizedSounding {
   lakeName: string;
   /**
    * Sub-source provenance, where one source mixes collection methods. Maine's single layer holds both
-   * digitised IF&W map soundings and DEP GPS depth-sounder tracks; nothing else sets this.
+   * digitized IF&W map soundings and DEP GPS depth-sounder tracks; nothing else sets this.
    */
   method?: string;
 }
@@ -296,13 +296,13 @@ export function normalizeChamplainSoundings(
 /**
  * Maine DEP *Depth Points*.
  *
- * Two datasets in one schema, told apart by `FMSRC`: `depthmap` rows are digitised IF&W lake-survey
+ * Two datasets in one schema, told apart by `FMSRC`: `depthmap` rows are digitized IF&W lake-survey
  * maps (the ones the plan believed were still PDFs), `gpscarrier`/`gpsrec` rows are DEP depth-sounder
  * tracks. The distinction is carried through as `method` because it is a provenance difference, not a
  * formatting one.
  *
  * Depth comes from `DEPTHM` with the constant that undoes Maine's own conversion error — see
- * `ME_FEET_PER_METRE`. `DEPTHF` is never read: it is the corrupted column.
+ * `ME_FEET_PER_METER`. `DEPTHF` is never read: it is the corrupted column.
  *
  * `MIDAS` is Maine's lake id, so the per-lake split needs no spatial work at all.
  */
@@ -319,8 +319,8 @@ export function normalizeMeSoundings(
       skip(skipped, 'not a point');
       continue;
     }
-    const metres = num(p.DEPTHM);
-    if (metres === undefined) {
+    const meters = num(p.DEPTHM);
+    if (meters === undefined) {
       skip(skipped, 'no depth value');
       continue;
     }
@@ -332,7 +332,7 @@ export function normalizeMeSoundings(
       continue;
     }
     const method = str(p.FMSRC).toLowerCase();
-    const depthFt = cleanDepth(maineDepthFt(metres, method));
+    const depthFt = cleanDepth(maineDepthFt(meters, method));
     if (depthFt <= SHORELINE_DEPTH) {
       skip(skipped, 'shoreline or above surface (depth <= 0)');
       continue;

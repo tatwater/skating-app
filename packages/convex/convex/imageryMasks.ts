@@ -101,7 +101,7 @@ export const listForImageryMask = internalQuery({
     // independent, they touch different tables, and none of them feeds another's arguments. `map` +
     // `Promise.all` keeps the output order identical to the page order (so `masks[i]` still lines up
     // with the body the caller scanned), which is what makes this a free change rather than a
-    // behavioural one.
+    // behavioral one.
     const masks = await Promise.all(
       eligible.map(async (body) => {
         const [putIns, parking] = await Promise.all([
@@ -133,7 +133,7 @@ export const listForImageryMask = internalQuery({
           // constant rather than a per-pixel warp, and this is the number it needs. Optional because
           // the corpus is at 99.5% coverage, not 100%; a body without one is geocoded as before.
           elevationM: body.elevationM,
-          // Only routed hike-in legs carry a path. A drive-up ramp's "walk" is a few metres already
+          // Only routed hike-in legs carry a path. A drive-up ramp's "walk" is a few meters already
           // inside the water's buffer, so it would add vertices and no shape (`ImageryMaskInput`).
           approachPaths: visiblePutIns.flatMap((p) =>
             p.approachPath && p.approachPath.length >= 2 ? [p.approachPath] : [],

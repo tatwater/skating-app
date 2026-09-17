@@ -22,7 +22,7 @@
  * **A full record is the default, not a flag.** Those sidecars describe the *OSM* path, and the A07a
  * corpus does not take it: `merge` reads seventeen archives and emits one NDJSON, so every flag
  * above was inapplicable and the campaign was run with `--campaign=` alone — producing a run row
- * labelled "unscoped canonical water" with an empty path, for the load of the entire corpus. The
+ * labeled "unscoped canonical water" with an empty path, for the load of the entire corpus. The
  * loader now looks for a `merge-manifest.json` beside its input and replays the merge's stages,
  * campaign and label from it without being asked. See `mergeProvenance.loadMergeProvenance`.
  */
@@ -273,7 +273,7 @@ function main(): void {
   }
 
   const stages: RunStage[] = [];
-  // **The merge's path, replayed verbatim.** Not summarised: an operator looking at the load run
+  // **The merge's path, replayed verbatim.** Not summarized: an operator looking at the load run
   // asks the same question as one looking at the merge run — "which files became these rows" — and
   // a load row that answers it only by cross-reference to another row is a row that answers it
   // eventually, in a different tab, if the campaign id happened to be passed.
@@ -468,7 +468,7 @@ function main(): void {
   logger.stage({
     name: 'load',
     detail:
-      'waterBodies:importCanonical — idempotent upsert keyed on the catalogue ids (D93), ' +
+      'waterBodies:importCanonical — idempotent upsert keyed on the catalog ids (D93), ' +
       'cell-indexed (A01); merge/conflict verdicts are queued, never performed',
     input: inputPath,
     output: target.label,

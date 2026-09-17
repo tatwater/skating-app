@@ -345,7 +345,7 @@ error baked in (**under-drawing a hazard is the dangerous mistake**):
   the largest on purpose — it's a condition of the sheet and the #1 fatality cause). Open water
   40 m, thin_ice 50 m, springs 30 m, small holes 10–15 m.
 - **`HAZARD_DEFAULT_BUFFER_M`** (linear half-width): wet_crack 4 m (a hairline crack is mostly
-  positional uncertainty) → pressure_ridge 15 m (loose plates several metres each side plus a
+  positional uncertainty) → pressure_ridge 15 m (loose plates several meters each side plus a
   deep central puddle). Drawing both as the same zero-width line would be a lie in opposite
   directions.
 - **Authoring ladders** the UI snaps to: `HAZARD_RADIUS_STEPS_M = [5, 10, 25, 50, 100, 200, 400]`
@@ -371,7 +371,7 @@ Stated so nobody hunts for a constant that doesn't exist:
   a troll pin must never read as the community clearing a real hazard (see
   [reputation](./user-reputation.md)).
 
-## A near-neighbour that must NOT reuse this model (D73)
+## A near-neighbor that must NOT reuse this model (D73)
 
 A06d adds **access alerts** — "the gate is locked", "the road isn't plowed" — and they borrow this page's
 *machinery* (the confirm/deny loop, `pointEvents`, the "never existed" retraction) while deliberately

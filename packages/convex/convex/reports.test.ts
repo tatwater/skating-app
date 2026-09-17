@@ -773,16 +773,16 @@ describe('reports.update (author-only LWW, D25)', () => {
      * client sends whatever the *form* round-tripped — so this drives the actual round trip rather
      * than hand-writing the numbers, and would have caught an exact `===` here.
      */
-    test('an unedited modelled reading survives the form’s whole-unit rounding', async () => {
+    test('an unedited modeled reading survives the form’s whole-unit rounding', async () => {
       const t = convexTestWithGeo();
       const { asAuthor, reportId } = await seedReport(t);
-      const modelled = { airTempC: -3.4, windSpeedKph: 18.7, source: 'openmeteo' as const };
-      await t.run((ctx) => ctx.db.patch(reportId, { conditions: modelled }));
+      const modeled = { airTempC: -3.4, windSpeedKph: 18.7, source: 'openmeteo' as const };
+      await t.run((ctx) => ctx.db.patch(reportId, { conditions: modeled }));
 
       // Exactly what the edit form does: seed from the stored report, change only the notes, submit.
-      const form = reportFormFromReport({ skateEndTime: SKATE_TIME, conditions: modelled });
+      const form = reportFormFromReport({ skateEndTime: SKATE_TIME, conditions: modeled });
       const input = buildReportInput({ ...form, notes: 'fixed a typo' }, 'unused');
-      expect(input.conditions?.airTempC).not.toBe(modelled.airTempC); // the rounding really is lossy
+      expect(input.conditions?.airTempC).not.toBe(modeled.airTempC); // the rounding really is lossy
       await asAuthor.mutation(api.reports.update, {
         reportId,
         skateEndTime: SKATE_TIME,
@@ -791,7 +791,7 @@ describe('reports.update (author-only LWW, D25)', () => {
       });
 
       const after = await t.run((ctx) => ctx.db.get(reportId));
-      expect(after?.conditions?.source).toBe('openmeteo'); // not relabelled as the author's claim
+      expect(after?.conditions?.source).toBe('openmeteo'); // not relabeled as the author's claim
       expect(after?.conditions?.airTempC).toBe(-3.4); // and not nudged by the round trip
       expect(after?.conditions?.windSpeedKph).toBe(18.7);
       expect(after?.notes).toBe('fixed a typo');
@@ -800,7 +800,7 @@ describe('reports.update (author-only LWW, D25)', () => {
     /**
      * The other side of the same line, and the reason the check predicts the round trip instead of
      * allowing a whole-unit tolerance: both inputs take decimals. A tolerance would read 26.4 °F
-     * typed over a modelled 26 °F as unchanged and restore the model's number — discarding an edit
+     * typed over a modeled 26 °F as unchanged and restore the model's number — discarding an edit
      * to protect provenance, which is worse than the bug the check exists to prevent.
      */
     test('a fractional edit inside the displayed unit is still the author’s', async () => {
@@ -834,12 +834,12 @@ describe('reports.update (author-only LWW, D25)', () => {
     test('editing one weather field does not nudge the other', async () => {
       const t = convexTestWithGeo();
       const { asAuthor, reportId } = await seedReport(t);
-      const modelled = { airTempC: -3.4, windSpeedKph: 18.7, source: 'openmeteo' as const };
-      await t.run((ctx) => ctx.db.patch(reportId, { conditions: modelled }));
+      const modeled = { airTempC: -3.4, windSpeedKph: 18.7, source: 'openmeteo' as const };
+      await t.run((ctx) => ctx.db.patch(reportId, { conditions: modeled }));
 
       // Seed the form, retype the air temp (26 °F → 30 °F), leave the wind field alone — derived
       // rather than hand-written, because the untouched value is whatever the round trip emits.
-      const form = reportFormFromReport({ skateEndTime: SKATE_TIME, conditions: modelled });
+      const form = reportFormFromReport({ skateEndTime: SKATE_TIME, conditions: modeled });
       const edited = buildReportInput(
         { ...form, conditions: { ...form.conditions, airTempF: '30' } },
         'unused',

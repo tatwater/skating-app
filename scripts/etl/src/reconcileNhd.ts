@@ -314,7 +314,7 @@ async function match(logger: RunLogger): Promise<void> {
   log(`OSM duplicate pairs collapsed onto one nhdId: ${dupes.length.toLocaleString()}`);
   for (const d of dupes.slice(0, 10)) log(`   ${d.id} ← ${d.keys.length} bodies`);
   if (nearMisses.length) {
-    log('near misses (best IoU 0.3-0.5, the threshold’s neighbourhood):');
+    log('near misses (best IoU 0.3-0.5, the threshold’s neighborhood):');
     for (const m of nearMisses.slice(0, 8)) log(`   ${m.name}: ${m.iou.toFixed(3)}`);
   }
   log(`→ ${OUT_FILE}`);

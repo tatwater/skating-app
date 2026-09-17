@@ -6,7 +6,7 @@
  * ends up reported clean and archived stale.
  *
  * **Per-state selection is the primary interface**, not a convenience. Agencies republish
- * independently, so "our records are out of date" is a per-state judgement and the refresh has to
+ * independently, so "our records are out of date" is a per-state judgment and the refresh has to
  * match its granularity. Selecting nothing means everything, which is the right default for the first
  * run and the wrong one for a routine refresh — hence `verify` first, then a targeted `--refresh`.
  */

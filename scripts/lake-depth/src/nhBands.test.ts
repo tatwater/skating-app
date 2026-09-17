@@ -110,7 +110,7 @@ describe('nhLakeDepth', () => {
 
   it('refuses a lake the layer lists but nobody sounded', () => {
     // Jones Pond: one `0–0` row with `bathy_int = 0`. Read naively it is a lake with a maximum
-    // depth of zero metres, which renders as a measurement.
+    // depth of zero meters, which renders as a measurement.
     expect(
       nhLakeDepth('NHIMP600030402-01', [
         band({

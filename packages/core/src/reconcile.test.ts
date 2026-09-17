@@ -97,7 +97,7 @@ describe('the failure this exists to prevent: a bay inheriting its parent', () =
 });
 
 describe('the ordinary match', () => {
-  it('matches two catalogues tracing the same shoreline', () => {
+  it('matches two catalogs tracing the same shoreline', () => {
     // Measured median OSM-vs-NHD area disagreement is 2.4%; real pairs land at 0.85-0.98.
     const outcome = reconcileOne(target(box(-72, 44, -71.9, 44.1)), [
       candidate('nhd-1', box(-72.001, 43.999, -71.899, 44.101)),
@@ -123,7 +123,7 @@ describe('the ordinary match', () => {
 });
 
 describe('GNIS proposes, geometry decides', () => {
-  it('lowers the bar when both catalogues name the same place', () => {
+  it('lowers the bar when both catalogs name the same place', () => {
     // Two equal boxes offset by 40% of their width: IoU ~0.43 — below the 0.5 default, above the
     // 0.3 GNIS bar. (Computed, not eyeballed: intersection 0.06x0.1 over union 0.014.)
     const t = box(-72, 44, -71.9, 44.1);
@@ -152,7 +152,7 @@ describe('GNIS proposes, geometry decides', () => {
 describe('ambiguity is an outcome, not a tie-break', () => {
   it('refuses when the top two are too close to separate', () => {
     // A lake in a chain — Moose Pond's five NHD rows, the Rangeley string — overlaps two candidates
-    // plausibly. Picking the marginally larger number is how it acquires a neighbour's identity.
+    // plausibly. Picking the marginally larger number is how it acquires a neighbor's identity.
     const outcome = decideMatch([score('a', 0.62), score('b', 0.55)]);
     expect(outcome.verdict).toBe('ambiguous');
     if (outcome.verdict === 'ambiguous') expect(outcome.candidates).toHaveLength(2);
@@ -181,7 +181,7 @@ describe('ambiguity is an outcome, not a tie-break', () => {
 });
 
 describe('findCollapsedDuplicates — what OSM cannot see about itself', () => {
-  it('surfaces two of our bodies landing on one catalogue id', () => {
+  it('surfaces two of our bodies landing on one catalog id', () => {
     // Long Pond is way/150404999 at 2,552 acres AND relation/2602300 at 2,532. OSM cannot see that;
     // NHD can, because both collapse onto one Permanent_Identifier. Five known pairs do this.
     const dupes = findCollapsedDuplicates([
@@ -228,9 +228,9 @@ describe('the area bound — an exact skip, not a heuristic', () => {
     expect(scored[0]?.iou).toBeGreaterThan(0.9);
   });
 
-  it('honours a lowered threshold, so a custom bar cannot be silently skipped past', () => {
+  it('honors a lowered threshold, so a custom bar cannot be silently skipped past', () => {
     // The bound must key off the LOWEST bar in play, or re-tuning downward would stop finding pairs
-    // that the new threshold accepts — a silent behaviour change from a performance optimisation.
+    // that the new threshold accepts — a silent behavior change from a performance optimization.
     const t = box(-72, 44, -71.9, 44.1);
     const c = box(-72, 44, -71.8, 44.2); // 4x the area: ceiling 0.25
     expect(scoreCandidates(target(t), [candidate('c', c)])).toEqual([]);
@@ -244,7 +244,7 @@ describe('isNearMiss', () => {
   const cand = (iou: number) => ({ id: 'x', iou, gnisAgrees: false });
 
   // 815 of the 9,022 unmatched bodies had a real candidate; 196 were within 0.05 of the bar. Today
-  // they are indistinguishable from "no catalogue has heard of this lake", which is a different fact.
+  // they are indistinguishable from "no catalog has heard of this lake", which is a different fact.
   it('separates a rejected candidate from nothing at all', () => {
     expect(isNearMiss({ verdict: 'none', best: cand(0.47) })).toBe(true);
     expect(isNearMiss({ verdict: 'none', best: cand(0.12) })).toBe(false);

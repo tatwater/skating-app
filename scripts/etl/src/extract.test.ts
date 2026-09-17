@@ -100,7 +100,7 @@ describe('the access extract (A06d §2.1)', () => {
 });
 
 describe('the federal extracts', () => {
-  it('floors both catalogues at exactly one acre, in km²', () => {
+  it('floors both catalogs at exactly one acre, in km²', () => {
     // Expressed exactly rather than rounded, because it is compared with `>=` against a float the
     // publisher computed. This is a pre-filter whose exclusions nothing downstream can see.
     expect(ONE_ACRE_SQ_KM).toBeCloseTo(4046.8564224 / 1e6, 12);
@@ -120,7 +120,7 @@ describe('the federal extracts', () => {
 
   it('reprojects to WGS84 and flattens the third ordinate', () => {
     // NHD is NAD83 (EPSG:4269) in a compound 3D `NAD83 + NAVD88 height` CRS with 3D multipolygons;
-    // 3DHP staged is NAD83(2011)/Conus Albers (EPSG:5070), a metre grid. Both need saying explicitly.
+    // 3DHP staged is NAD83(2011)/Conus Albers (EPSG:5070), a meter grid. Both need saying explicitly.
     for (const args of [nhdExtractArgs('/a', '/o'), threeDhpExtractArgs('/a', '/o')]) {
       expect(args.join(' ')).toContain('-t_srs EPSG:4326');
       expect(args.join(' ')).toContain('-dim XY');

@@ -1,4 +1,4 @@
-# A03/A04 — Account lifecycle + storage hygiene
+# Phase A03 / A04 — Account lifecycle + storage hygiene
 
 *The D33 phase: delete, export, anonymize — plus the two storage-hygiene crons that used to be their
 own entry (the old A04 and A03 respectively), bundled because **A04 creates exactly the storage problems
@@ -70,8 +70,8 @@ tombstone D36, demotion D53) and protects against the rage-quit and the misclick
 > grace window (reversible), delete the Clerk user at finalize." That is wrong and would have shipped a
 > trap: **banning the Clerk user locks them out of the very sign-in they need to undo.** So Clerk is not
 > touched until finalize. During the grace window the account stays fully functional — they can sign in,
-> post, and cancel — and a persistent banner says when it will be deleted. Cancelling is an **explicit
-> button**, never an implicit side effect of signing in; silently cancelling on sign-in would mean a
+> post, and cancel — and a persistent banner says when it will be deleted. Canceling is an **explicit
+> button**, never an implicit side effect of signing in; silently canceling on sign-in would mean a
 > user who logs in once to save a photo has quietly un-deleted themselves.
 >
 > **A second correction, to the correction** (founder, 2026-07-27, built with A05a). "Fully functional"
@@ -84,7 +84,7 @@ tombstone D36, demotion D53) and protects against the rage-quit and the misclick
 >
 > And it was too slow about the **person**: `requestDeletion` now actually scrubs the profile, the
 > public profile and search return not-found, surviving content reads as "Deleted skater", and content
-> past 30 days is erased on the spot. Cancelling keeps the account but restores none of it — they
+> past 30 days is erased on the spot. Canceling keeps the account but restores none of it — they
 > re-onboard. What the 30 days preserve is the login and the still-useful reports, and nothing else.
 > See the D62 amendment. Two knock-on effects worth carrying: the erasure schedule became provable
 > rather than approximate, and `upsertFromClerk` needed a ghost branch or the next cold start would
@@ -220,7 +220,7 @@ profile in the table. The schema comment claiming the index was "sparse in pract
 carry the field" was the assumption, written down and never checked, which is the part worth carrying
 forward: it read as documentation and was actually a guess.
 
-**Nothing was lost.** `finalizeAccount` re-reads the stamp and returns `stopped: 'cancelled'` before any
+**Nothing was lost.** `finalizeAccount` re-reads the stamp and returns `stopped: 'canceled'` before any
 stage runs. That guard was written for a user changing their mind mid-flight, and it turned out to be
 the only thing between a query bug and every account in the app. Both dev profiles, the one report and
 A02's nine sub-areas were verified intact afterwards. Two independent guards is now the deliberate

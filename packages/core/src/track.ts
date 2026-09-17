@@ -27,11 +27,11 @@ import { haversineMeters, type LatLng } from './geometry';
 export interface TrackPoint {
   lat: number;
   lng: number;
-  /** Metres above the WGS84 ellipsoid, when the OS supplies it. */
+  /** Meters above the WGS84 ellipsoid, when the OS supplies it. */
   elevation?: number;
   /** Fix time, epoch ms. */
   t: number;
-  /** Horizontal accuracy radius in metres — smaller is better. Absent ⇒ unknown. */
+  /** Horizontal accuracy radius in meters — smaller is better. Absent ⇒ unknown. */
   accuracy?: number;
   /** Ground speed, m/s (`< 0` or absent ⇒ unknown). */
   speed?: number;
@@ -54,14 +54,14 @@ export interface TrackPointDecision {
 
 export interface TrackFilterOptions {
   /**
-   * Drop fixes whose accuracy radius is worse than this (metres). The Record GPS profile targets ~5 m;
+   * Drop fixes whose accuracy radius is worse than this (meters). The Record GPS profile targets ~5 m;
    * 50 m admits a cold-start or tree-line fix while still rejecting the wild ones a phone emits in the
    * first seconds. A fix with **unknown** accuracy is kept — fail-open, like every other
    * "we can't tell" branch in this codebase.
    */
   maxAccuracyMeters?: number;
   /**
-   * Minimum movement from the previous kept fix (metres) for a new point. This is the stationary cull:
+   * Minimum movement from the previous kept fix (meters) for a new point. This is the stationary cull:
    * standing on the ice tightening a lace shouldn't accumulate a hairball of jitter at one spot, which
    * would both inflate distance and drag `pathToBody`'s hull.
    */
@@ -176,7 +176,7 @@ export function smoothTrack(points: readonly TrackPoint[], opts: SmoothOptions =
 
 /** Aggregate measurements over a finished track. */
 export interface TrackStats {
-  /** Total great-circle distance along the track, metres. */
+  /** Total great-circle distance along the track, meters. */
   distanceMeters: number;
   /** Wall-clock span, seconds — `endTime − startTime`. */
   elapsedSeconds: number;
@@ -252,7 +252,7 @@ export function trackStats(
 }
 
 export interface TrimTailOptions {
-  /** Points within this distance of the final fix count as "the same place" (metres). */
+  /** Points within this distance of the final fix count as "the same place" (meters). */
   radiusMeters?: number;
   /** Only trim when the stationary run lasted at least this long (seconds). */
   minTailSeconds?: number;
@@ -306,7 +306,7 @@ export function toGeoJsonLineString(points: readonly TrackPoint[]): LineString |
   };
 }
 
-/** The centre-ish point of a track — the coord we resolve to a water body first (D44). */
+/** The center-ish point of a track — the coord we resolve to a water body first (D44). */
 export function trackMidpoint(points: readonly TrackPoint[]): LatLng | null {
   if (points.length === 0) return null;
   const mid = points[Math.floor(points.length / 2)] as TrackPoint;
@@ -444,16 +444,16 @@ export function clipPathEnds(
   };
 
   let start = 0;
-  let travelled = 0;
-  while (start < coords.length - 1 && travelled < clipMeters) {
-    travelled += haversineMeters(at(start), at(start + 1));
+  let traveled = 0;
+  while (start < coords.length - 1 && traveled < clipMeters) {
+    traveled += haversineMeters(at(start), at(start + 1));
     start++;
   }
 
   let end = coords.length - 1;
-  travelled = 0;
-  while (end > 0 && travelled < clipMeters) {
-    travelled += haversineMeters(at(end), at(end - 1));
+  traveled = 0;
+  while (end > 0 && traveled < clipMeters) {
+    traveled += haversineMeters(at(end), at(end - 1));
     end--;
   }
 

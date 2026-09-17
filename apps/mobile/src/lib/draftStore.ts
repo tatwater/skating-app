@@ -52,7 +52,7 @@ export interface SqliteLike {
  *
  * The second migration (A08) renames a queued confirmation's kind from `hazard_confirmation` to
  * `confirmation_vote`. The kind is stored **twice** — as the queryable column and inside the JSON
- * blob the flush deserialises — so both are rewritten, in one statement each, and only for rows still
+ * blob the flush deserializes — so both are rewritten, in one statement each, and only for rows still
  * carrying the old name (a rerun matches nothing). A confirmation cast on the ice and left in the queue
  * across the app update is exactly the row this exists for: without it the flush would never select it,
  * and the vote would sit there forever, unsent and unlisted.
@@ -72,7 +72,7 @@ export function ensureSchema(db: SqliteLike): void {
     db.execSync(`ALTER TABLE report_drafts ADD COLUMN kind TEXT NOT NULL DEFAULT '${KIND_REPORT}'`);
   }
   // `json_set` keeps the rest of the blob byte-for-byte; the column and the blob move together so a
-  // row can't end up selectable under the new name but deserialised under the old one.
+  // row can't end up selectable under the new name but deserialized under the old one.
   db.runSync(
     `UPDATE report_drafts
        SET kind = ?, data = json_set(data, '$.kind', ?)

@@ -137,7 +137,7 @@ describe('hazards.create', () => {
       createArgs(waterBodyId, { type: 'drilled_hole', radiusMeters: undefined }),
     );
     const hazard = await t.run((ctx) => ctx.db.get(hazardId));
-    // A drilled hole is metres across, not tens of metres.
+    // A drilled hole is meters across, not tens of meters.
     expect(hazard?.radiusMeters).toBe(5);
   });
 
@@ -226,7 +226,7 @@ describe('hazards clip-to-body (Phase 09b)', () => {
 
 describe('hazards.create idempotency (offline flush)', () => {
   // A hazard is flagged standing next to it, which is exactly where there's no signal — so the
-  // offline flush is the common path, and a lost ack must not drop a second pin metres from the
+  // offline flush is the common path, and a lost ack must not drop a second pin meters from the
   // first. Duplicate hazards are worse than duplicate reports: two overlapping footprints read as
   // two dangers, and the confirm loop then has to retire both.
   test('replays to the same hazard instead of creating a second pin', async () => {
@@ -677,7 +677,7 @@ describe('hazards.listBundleCandidates (D55)', () => {
     });
     expect((await t.run((ctx) => ctx.db.get(reportId)))?.hazardIdsCreated).toEqual([]);
     // And the tombstone is left exactly as it was — refusing to bundle it is not the same as editing
-    // it. (`t.run` serialises an absent field as `null` on the way out, hence the loose check.)
+    // it. (`t.run` serializes an absent field as `null` on the way out, hence the loose check.)
     expect(
       await t.run(async (ctx) => (await ctx.db.get(loser?._id as Id<'hazards'>))?.originReportId),
     ).toBeFalsy();
@@ -1010,7 +1010,7 @@ describe('a nonsense season argument falls back rather than emptying the lake', 
  * about 0.00036°. Two 40 m-radius pins that close overlap comfortably inside `DUPLICATE_MATCH_METERS`.
  */
 describe('hazards.listForBody — cluster consensus', () => {
-  /** ~`meters` east of the body's centre, at this latitude. */
+  /** ~`meters` east of the body's center, at this latitude. */
   const eastOf = (meters: number) => ({
     type: 'Point' as const,
     coordinates: [0.5 + meters / 111_320, 0.5],
@@ -1086,7 +1086,7 @@ describe('hazards.listForBody — cluster consensus', () => {
 
     const listed = await alex.as.query(api.hazards.listForBody, { waterBodyId });
     // Two witnesses across the cluster, though each stored row still shows one — the stored counts are
-    // untouched, because pooling is a read-time judgement and never rewrites what somebody said.
+    // untouched, because pooling is a read-time judgment and never rewrites what somebody said.
     for (const h of listed) expect(h.clusterConfirmCount).toBe(2);
     const stored = await t.run(async (ctx) => (await ctx.db.get(first))?.confirmCount);
     expect(stored).toBe(1);
@@ -1126,7 +1126,7 @@ describe('hazards.listForBody — cluster consensus', () => {
 
   test('clearance votes are never pooled — archival stays strictly per-row', async () => {
     // The unsafe direction, and the one this must never take: two people clearing one pin must not
-    // retire the neighbouring pin nobody looked at.
+    // retire the neighboring pin nobody looked at.
     const t = harness();
     const alex = await seedUser(t, 'alex');
     const sam = await seedUser(t, 'sam');
@@ -1155,7 +1155,7 @@ describe('hazards.listForBody — cluster consensus', () => {
   });
 
   test('the drawer agrees with the map about the same pin', async () => {
-    // A pin drawn solid on the map and then labelled "Unconfirmed" the moment you open it is the app
+    // A pin drawn solid on the map and then labeled "Unconfirmed" the moment you open it is the app
     // disagreeing with itself about live ice.
     const t = harness();
     const alex = await seedUser(t, 'alex');
@@ -1559,7 +1559,7 @@ describe('hazards auto-merge', () => {
 
   test('clearance votes still archive one row at a time', async () => {
     // Merging reduces the N× retirement work by making duplicates one row — never by sharing their
-    // clearance votes, which would let two people clearing one pin retire an unexamined neighbour.
+    // clearance votes, which would let two people clearing one pin retire an unexamined neighbor.
     const t = harness();
     const alex = await seedUser(t, 'alex');
     const sam = await seedUser(t, 'sam');
@@ -1620,7 +1620,7 @@ describe('hazards cluster scope', () => {
     coordinates: [0.5 + meters / 111_320, 0.5],
   });
 
-  // A pin the community voted healed must not read its freshness off a live neighbour — that is
+  // A pin the community voted healed must not read its freshness off a live neighbor — that is
   // pooling in the unsafe direction by the back door, and the `status: 'active'` bound is what stops
   // it. Asserted because the bound is a line in an index expression, not a visible guard.
   test('an archived pin neither borrows a cluster nor lends itself to one', async () => {
@@ -1676,7 +1676,7 @@ describe('hazards.listRecentMerges', () => {
     );
   }
 
-  test('reads a window, so an ageing audit log never makes the panel slower', async () => {
+  test('reads a window, so an aging audit log never makes the panel slower', async () => {
     const t = harness();
     const mod = await seedUser(t, 'mod', { role: 'moderator' });
     const recent = await seedAction(t, Date.now() - 2 * 24 * 60 * 60 * 1000);

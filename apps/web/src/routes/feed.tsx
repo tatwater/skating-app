@@ -201,7 +201,7 @@ function FeedPage() {
 }
 
 /**
- * The labelled fallback (D63, kickoff decision 3).
+ * The labeled fallback (D63, kickoff decision 3).
  *
  * Season-scoping the feed empties it on July 1 and leaves it empty until first ice — five months, not
  * a July curiosity — so the server serves the newest season that has anything in it. What it must

@@ -39,7 +39,7 @@ them there thins each road **proportionally to its class**:
 | desktop (z14.5) | 4.04 | 2.60 | 1.53 | 0.69 |
 
 The mobile file is not the desktop one shrunk. It's the app at z13.2 — different stroke weights,
-fewer labels, coarser generalisation, read from z13 tiles instead of z14.
+fewer labels, coarser generalization, read from z13 tiles instead of z14.
 
 ## Layer tree
 
@@ -47,13 +47,13 @@ fewer labels, coarser generalisation, read from z13 tiles instead of z14.
 `landuse_park`, `water`, `roads_minor_casing`, `roads_minor`, … That order is what puts casings under
 their roads, so keep it if you reorder anything.
 
-Within a group, shapes are merged into one `<path>` per distinct (colour, width, dash) bucket —
+Within a group, shapes are merged into one `<path>` per distinct (color, width, dash) bucket —
 select one object, change one fill, every minor road moves together. Labels are individual `<text>`.
 
 `Bathymetry` is one group per depth (`10 ft` … `70 ft`), each holding one path per isobath ring
 (`Depth-10ft-01` …), so a single line is selectable without ungrouping.
 
-## Colours (dark theme)
+## Colors (dark theme)
 
 | | value | source |
 | --- | --- | --- |
@@ -77,7 +77,7 @@ the drawer open (D81), so 2.5 is the state that pairs with them.
    labels collide. The Scale tool (`K`) scales all three together. Using the right preset avoids the
    question entirely.
 2. **Contour crowding is cartographic, not numerical.** Isobaths on a steep drop-off are genuinely a
-   few metres apart, so below some output size they are sub-pixel and merge however precise the path
+   few meters apart, so below some output size they are sub-pixel and merge however precise the path
    is. The fix is to draw fewer, not to add accuracy: `--contour-step 2` keeps only every 20 ft, and
    rings shorter than `MIN_RING_PX` (6px at output size) are dropped as slivers.
 
@@ -85,7 +85,7 @@ the drawer open (D81), so 2.5 is the state that pairs with them.
 
 1. **Label placement is approximate.** Point labels are exact; line labels sit at the midpoint of the
    longest segment at a fixed rotation, where MapLibre curves text along the spline. Collision *is*
-   modelled — greedy box rejection, prioritised by importance (towns > lakes > major > minor roads),
+   modeled — greedy box rejection, prioritized by importance (towns > lakes > major > minor roads),
    which is deliberately not MapLibre's placement order since that lets a lane name beat a town.
 2. **Labels under the lake.** App layers draw above the basemap, so the water fill covers basemap
    labels — the Shaker village names really are clipped in the app. Anything more than half covered
@@ -121,7 +121,7 @@ Sentinel's native 10 m). So `mobile` (1181 px) is fed from *above* native and is
 Two details worth knowing:
 
 - **RGB is premultiplied before resampling and unpremultiplied after.** The archive's transparent
-  pixels do not necessarily hold black, so resampling colour independently of alpha drags whatever
+  pixels do not necessarily hold black, so resampling color independently of alpha drags whatever
   they carry into the fade as a dark fringe.
 - **Only Mascoma is revealed.** The granule masks all 1,167 bodies it covers, so the raw frame lights
   up Crystal Lake, Smith Pond and the rest. The default narrows to Mascoma with a soft-edged
@@ -169,6 +169,6 @@ why the first version of this export looked heavy. `layer_visible()` is not opti
 2. `grep '"bodyId":"<externalId>"' contours.geojsonl > src/<lake>-contours.geojsonl`
 3. Point `BODY` / `CONTOURS` at them.
 
-For light mode, regenerate the style with `namedFlavor('white')` and swap the four app colours for
+For light mode, regenerate the style with `namedFlavor('white')` and swap the four app colors for
 `WATER_PALETTE.white` / `CONTOUR_PALETTE.white`. Note the dark flavor has **71** style layers and the
-white one **69** — the sets genuinely differ, so the style JSON must be regenerated, not recoloured.
+white one **69** — the sets genuinely differ, so the style JSON must be regenerated, not recolored.

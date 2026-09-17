@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { CATALOGUE_ID_FIELDS, type IdMatch, requiresReview, resolveUpsert } from './bodyIdentity';
+import { CATALOG_ID_FIELDS, type IdMatch, requiresReview, resolveUpsert } from './bodyIdentity';
 
 /** A stored row's key, as the caller's lookup would report it. */
-const hit = (field: (typeof CATALOGUE_ID_FIELDS)[number], value: string, ...keys: string[]) =>
+const hit = (field: (typeof CATALOG_ID_FIELDS)[number], value: string, ...keys: string[]) =>
   ({ field, value, keys }) as IdMatch<string>;
 
 describe('the normal traffic', () => {
-  it('inserts a lake no catalogue id resolves to', () => {
+  it('inserts a lake no catalog id resolves to', () => {
     expect(resolveUpsert({ nhdId: '141034078' }, [])).toEqual({ action: 'insert' });
   });
 
@@ -55,13 +55,13 @@ describe('the case the campaign ordering exists to make rare', () => {
       hit('osmId', 'way/1', 'k-osm'),
     ]);
     expect(verdict.action).toBe('merge');
-    // Note the caller passed nhdId FIRST. The survivor must be ranked by CATALOGUE_ID_FIELDS, not by
+    // Note the caller passed nhdId FIRST. The survivor must be ranked by CATALOG_ID_FIELDS, not by
     // the order someone else's lookup code happened to use — otherwise which row survives a merge
     // depends on the shape of the caller, and both orderings look correct at the call site.
     if (verdict.action === 'merge') expect(verdict.into).toBe('k-osm');
   });
 
-  it('honours an explicit survivor rule over the default', () => {
+  it('honors an explicit survivor rule over the default', () => {
     const verdict = resolveUpsert(
       { osmId: 'way/1', nhdId: 'n1' },
       [hit('osmId', 'way/1', 'k-osm'), hit('nhdId', 'n1', 'k-nhd')],
@@ -102,11 +102,11 @@ describe('the corpus-invariant violations, which must never be guessed at', () =
     expect(verdict.action).toBe('conflict');
   });
 
-  it('refuses a feature carrying no catalogue id at all', () => {
+  it('refuses a feature carrying no catalog id at all', () => {
     // It cannot be upserted, only counted as a drop — which the DropLedger is for.
     const verdict = resolveUpsert({}, []);
     expect(verdict.action).toBe('conflict');
-    if (verdict.action === 'conflict') expect(verdict.reason).toMatch(/no catalogue id/);
+    if (verdict.action === 'conflict') expect(verdict.reason).toMatch(/no catalog id/);
   });
 });
 
@@ -128,11 +128,11 @@ describe('requiresReview', () => {
 
 describe('the field order is the contract', () => {
   it('puts OSM first, since the default survivor rule reads it', () => {
-    expect(CATALOGUE_ID_FIELDS).toEqual(['osmId', 'nhdId', 'threeDhpId']);
+    expect(CATALOG_ID_FIELDS).toEqual(['osmId', 'nhdId', 'threeDhpId']);
   });
 
   it('does not include gnisId — GNIS names places, and a place can be split', () => {
     // Measured: 92 GNIS ids resolve to more than one NHD body. Upserting on it would merge them.
-    expect(CATALOGUE_ID_FIELDS).not.toContain('gnisId');
+    expect(CATALOG_ID_FIELDS).not.toContain('gnisId');
   });
 });

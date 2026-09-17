@@ -1,11 +1,11 @@
 /**
- * NHD acquisition and provenance — the second canonical-water catalogue (A07a).
+ * NHD acquisition and provenance — the second canonical-water catalog (A07a).
  *
  * ## Why this sits beside `archive.ts` rather than in its own package
  *
  * The unified corpus is **one pipeline with three source lanes**, not three pipelines. That is the
  * same call `scripts/bathymetry` made for its five state agencies: a registry file, so that adding a
- * catalogue is data rather than a code path. `archive.ts` pins the OSM lane; this pins the NHD one.
+ * catalog is data rather than a code path. `archive.ts` pins the OSM lane; this pins the NHD one.
  *
  * ## The pin is the freeze date, and that is unusual enough to explain
  *
@@ -69,9 +69,9 @@ export const NHD_SOURCES: NhdSource[] = [
 
 /**
  * Public domain, and the attribution is courtesy rather than obligation — recorded because every
- * other source in this repo carries a real licence and an unstated one reads as an oversight.
+ * other source in this repo carries a real license and an unstated one reads as an oversight.
  */
-export const NHD_LICENCE = 'Public domain (USGS · US Government work, 17 U.S.C. §105)';
+export const NHD_LICENSE = 'Public domain (USGS · US Government work, 17 U.S.C. §105)';
 export const NHD_ATTRIBUTION = 'U.S. Geological Survey, National Hydrography Dataset';
 
 export function nhdZipUrl(source: NhdSource): string {
@@ -80,7 +80,7 @@ export function nhdZipUrl(source: NhdSource): string {
 
 /**
  * The FGDC metadata sitting beside each payload — ~29 KB, and it is the provenance record: process
- * lineage, publication date, the licence statement in the publisher's own words.
+ * lineage, publication date, the license statement in the publisher's own words.
  *
  * Taken for the same reason `DepthManifest` archives a data dictionary. It costs nothing and it is
  * the thing nobody can reconstruct once a retired dataset is pulled down.
@@ -158,23 +158,23 @@ export const NHD_ID_CENSUS = {
 } as const;
 
 /**
- * The GNIS Feature ID, in the one form we ever store it in — **the bridge all three catalogues share**.
+ * The GNIS Feature ID, in the one form we ever store it in — **the bridge all three catalogs share**.
  *
  * OSM tags it `gnis:feature_id`, NHD stores `gnis_id`, 3DHP stores `gnisid`. That makes it the only
- * identifier common to every catalogue we read, and unlike `polygonIoU` it is an *exact* match rather
+ * identifier common to every catalog we read, and unlike `polygonIoU` it is an *exact* match rather
  * than a geometric guess. Measured against the Vermont extract: every OSM water feature carrying a
  * `gnis:feature_id` is also named, and it covers **35.3% of named** features.
  *
  * **The spellings do not agree, and the join returns exactly zero until they do.** NHD zero-pads to
  * eight characters as a string (`"00869848"`); 3DHP stores a bare integer (`561883`). Joining them raw
- * over Maine matched **0 of 3,031** ids — a silent, total failure that looked like "these catalogues
- * have nothing in common". Normalised, the same join matches **3,007**.
+ * over Maine matched **0 of 3,031** ids — a silent, total failure that looked like "these catalogs
+ * have nothing in common". Normalized, the same join matches **3,007**.
  *
  * Stripping leading zeros is safe here precisely because we have the evidence the strict `nhdId` case
  * lacks: GNIS ids are integers that NHD pads for display, and 3DHP proves it by storing them as ints.
  *
  * **A GNIS id is a candidate generator, not a uniqueness proof.** GNIS names *places*, so one id can
- * legitimately span two features when a catalogue splits a lake. Use it to propose a match; let
+ * legitimately span two features when a catalog splits a lake. Use it to propose a match; let
  * `polygonIoU` adjudicate.
  */
 export function normalizeGnisId(raw: string | number | null | undefined): Normalized {
@@ -245,7 +245,7 @@ export interface NhdManifest {
   /** The FGDC metadata archived alongside, when it came down. */
   metadataFilename?: string;
   metadataSha256?: string;
-  licence: string;
+  license: string;
   attribution: string;
 }
 
@@ -279,7 +279,7 @@ export function buildNhdManifest(input: BuildNhdManifestInput): NhdManifest {
     sha256: input.sha256,
     expectedBytes: input.source.expectedBytes,
     bytesVerified: input.bytes === input.source.expectedBytes,
-    licence: NHD_LICENCE,
+    license: NHD_LICENSE,
     attribution: NHD_ATTRIBUTION,
   };
   if (input.lastModified) {

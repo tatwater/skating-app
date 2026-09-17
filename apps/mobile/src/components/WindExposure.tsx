@@ -83,7 +83,7 @@ export function WindExposure({
         Wind exposure
       </Text>
 
-      {/* Rose centred, prose beneath — side by side it was pinned left against a narrow column of
+      {/* Rose centered, prose beneath — side by side it was pinned left against a narrow column of
           wrapped text and read as an afterthought. */}
       <YStack gap="$3">
         <XStack justifyContent="center">

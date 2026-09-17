@@ -201,7 +201,7 @@ describe('weatherArchive: the request builder (D153)', () => {
     // misfiles an hour either side of a DST change, and both transitions fall inside a season.
     expect(params.get('timeformat')).toBe('iso8601');
     expect(params.get('timezone')).toBe('auto');
-    // Still the cell's snapped centre and band elevation — the key must not fork from `weather.ts`.
+    // Still the cell's snapped center and band elevation — the key must not fork from `weather.ts`.
     expect(params.get('latitude')).toBe('44');
     expect(params.get('elevation')).toBe('300');
   });
@@ -370,7 +370,7 @@ describe('weatherArchive: the cell registry', () => {
     expect(cells).toHaveLength(2);
     const busy = cells.find((c) => c.bodyCount === 2);
     expect(busy).toBeDefined();
-    // The snapped centre is stored so the cron never needs a body row.
+    // The snapped center is stored so the cron never needs a body row.
     expect(busy?.lat).toBe(44);
     expect(busy?.tier).toBe('filter');
     // `filter` never bands by elevation, so two bodies 13 m apart vertically still share a cell.
@@ -692,7 +692,7 @@ describe('weatherArchive: the recovery ladder (D161)', () => {
         .collect(),
     );
     const byDay = new Map(rows.map((r) => [r.dayMs, r]));
-    // d2 came from the parent — real data, honestly labelled as lower-resolution.
+    // d2 came from the parent — real data, honestly labeled as lower-resolution.
     expect(byDay.get(dayMsOf(d2))?.source).toBe('borrowed');
     expect(byDay.get(dayMsOf(d2))?.missing).toBeUndefined();
     // ⚠ d1 is the one the borrow could NOT cover, and it is the day a count-and-slice would have
@@ -1475,7 +1475,7 @@ describe('weatherArchive: one response, one offset — but many dates', () => {
   });
 
   test('falls back to the response-wide offset when no zone came back', async () => {
-    // Older Open-Meteo behaviour, or a response we could not read a zone from. One number for every
+    // Older Open-Meteo behavior, or a response we could not read a zone from. One number for every
     // date is wrong-ish, and it is still better than nothing — but it must not claim a zone.
     const t = convexTest(schema, modules);
     await t.mutation(internal.weatherArchive.upsertWeatherDays, {

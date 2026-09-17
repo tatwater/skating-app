@@ -253,7 +253,7 @@ a **build-time acceptance criterion**, the same class of obligation as "Powered 
   header identifying the app; rate limits are unpublished (retry a 429 after ~5 s), and their docs warn a
   key **may** be required in future.
 - Use: **official alerts only** — winter-storm, ice-storm and wind-chill warnings from the local forecast
-  office, rendered as a labelled, attributed advisory strip on the water body drawer.
+  office, rendered as a labeled, attributed advisory strip on the water body drawer.
 - **The boundary is the decision (D74): Open-Meteo computes, NWS informs.** Open-Meteo stays the single
   source for anything feeding a calculation, because the D56 decay math depends on one deterministic,
   re-fetchable input — a multiplier you cannot reproduce is one you cannot debug or refit. **Never blend
@@ -268,7 +268,7 @@ a **build-time acceptance criterion**, the same class of obligation as "Powered 
 ## Satellite imagery — Copernicus (D75, A06c)
 
 - Provider: **Copernicus Data Space Ecosystem**. **Copernicus Sentinel data is under the free, full and
-  open Copernicus licence** — reproduce, distribute and adapt, **with attribution**. That licence is what
+  open Copernicus license** — reproduce, distribute and adapt, **with attribution**. That license is what
   retired the long-deferred satellite-layer blocker; the open question was never a missing source.
 - **Ships in A06c: a deep link** to `browser.dataspace.copernicus.eu` per body (centroid, zoom, Sentinel-2
   L2A true color, ~14-day window). **No account, no quota, no key.** ⚠ The query-param shape is the one
@@ -277,11 +277,11 @@ a **build-time acceptance criterion**, the same class of obligation as "Powered 
 - **Imagery rendered in-app → [A06e](./phases/A06e-satellite-imagery.md) (D84, 2026-07-31)**, and the quota
   binds only *one* of two tiers. Sentinel-2 via their Sentinel Hub–compatible OGC/Process APIs is
   **10,000 requests + 10,000 processing units/month, 300/min**; a tile view is ~10–20 requests, so it only
-  works with **server-side tile caching** (which the open licence permits — a body needs re-fetching once
+  works with **server-side tile caching** (which the open license permits — a body needs re-fetching once
   per ~5-day revisit). Cost/traffic call, not a design one. **The other tier has no quota at all** — see
   the USGS/NAIP entry below, which is what actually ships the toggle.
 - **Attribution requirement** joins the L13 family alongside Open-Meteo / Strava / OpenStreetMap.
-- **Planet** is evaluated and deferred: their public catalogue is the same free Sentinel/Landsat/HLS data,
+- **Planet** is evaluated and deferred: their public catalog is the same free Sentinel/Landsat/HLS data,
   and only **PlanetScope** (~3 m, near-daily) is genuinely new. Same Sentinel Hub API surface, so choosing
   Copernicus now is not a lock-out. Numbers + triggers in `05-accounts-and-credentials.md`.
 
@@ -292,12 +292,12 @@ The other half of D84's two-tier split, and **the one that ships the satellite t
 - Provider: **USGS, The National Map** — `basemap.nationalmap.gov`'s `USGSImageryOnly` tile service,
   serving NAIP-derived aerial orthoimagery (~0.6 m from 2018 onward) for the conterminous US.
 - **Public domain.** NAIP is USDA Farm Service Agency imagery and USGS distributes it as public-domain
-  federal work: **no key, no quota, no licence review.** The three things that deferred in-app imagery are
+  federal work: **no key, no quota, no license review.** The three things that deferred in-app imagery are
   all absent here. It is the same imagery layer OSM editors offer for tracing.
 - **XYZ-compatible tiles**, so it drops into a MapLibre `raster` source directly — no new client library.
 - ⚠ **Confirm at build:** the ArcGIS endpoint's axis order is `/tile/{z}/{y}/{x}` — **y before x**, a
   classic silent failure that returns tiles, just the wrong ones. Also the service's stated usage
-  expectations and its behaviour past native max zoom. One tested URL function, same discipline as the
+  expectations and its behavior past native max zoom. One tested URL function, same discipline as the
   Copernicus link.
 - **What it's for, and what it isn't.** Leaf-on summer imagery refreshed every ~2–3 years: **useless for
   reading ice, ideal for reading access** — roads, lots, trailheads and shorelines don't change between
@@ -322,7 +322,7 @@ The other half of D84's two-tier split, and **the one that ships the satellite t
   trail."* ORS routes over the OSM `highway=path` / `route=hiking` ways A06d's second `osmium` pass is
   already extracting, so the routed distance and the trail data agree by construction.
 - **Elevation gain comes with it.** With `elevation: true` the Directions response carries **`ascent` /
-  `descent` in metres** — the second half of the ask, delivered by a request parameter rather than a
+  `descent` in meters** — the second half of the ask, delivered by a request parameter rather than a
   second integration. ⚠ Confirm we read the **one-way** figure (parking → put-in); there are known
   oddities on out-and-back routes, and reporting a round trip would silently double it.
 - **Quota is a non-issue because of *when* we call it:** at **ETL time, once per put-in**, cached on the

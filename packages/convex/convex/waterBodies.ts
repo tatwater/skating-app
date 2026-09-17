@@ -156,7 +156,7 @@ const CELL_ROW_SCAN_BUDGET = 1500;
  * budget before the walk reaches the rest of the viewport (Greptile PR #27). It is a *floor*, not a
  * ration: a cell still takes everything it wants whenever the budget is ample, which is every real
  * viewport measured. Four because that's what theorem 2 bounds a body's own-rung footprint to — a
- * cell that yields four rows has said something about what's there, and a whole neighbourhood of the
+ * cell that yields four rows has said something about what's there, and a whole neighborhood of the
  * map going blank is a worse failure than a slightly shallower read of one dense cell.
  */
 const MIN_ROWS_PER_CELL = 4;
@@ -188,8 +188,8 @@ function sanitizeLimit(limit: number | undefined): number {
  * every regional filter in the app — the feed, drive-time, the state chips — silently empty.
  *
  * So: **an explicit list from the producer is authoritative and replaces**; a `--state` tag is a
- * partial observation and unions. The rule is the same one `assertedCatalogueIds` follows for the
- * catalogue ids, and for the same reason — the difference between a complete record and a partial one
+ * partial observation and unions. The rule is the same one `assertedCatalogIds` follows for the
+ * catalog ids, and for the same reason — the difference between a complete record and a partial one
  * has to be expressed by the caller, because nothing in here can tell them apart.
  */
 function resolveStates(
@@ -203,16 +203,16 @@ function resolveStates(
 }
 
 /**
- * A canonical body as prepared by the ETL — **keyed by its catalogue ids, not by `(source,
+ * A canonical body as prepared by the ETL — **keyed by its catalog ids, not by `(source,
  * externalId)`** (A07a / D93).
  *
  * The ids are what changed. `externalId` is still carried and still written, because the contour
  * tiles are stamped with it and D93 keeps it in step for one full campaign before retiring it — but
- * it is no longer how a row is found. A merged record can hold three catalogue ids at once, and the
+ * it is no longer how a row is found. A merged record can hold three catalog ids at once, and the
  * pair `(source, externalId)` can only express one of them, which is why an NHD feature used to
  * insert a duplicate of every OSM body we already held.
  *
- * **At least one catalogue id must be present.** `resolveUpsert` refuses a feature carrying none —
+ * **At least one catalog id must be present.** `resolveUpsert` refuses a feature carrying none —
  * it cannot be upserted, only counted as a drop — and the mutation surfaces that as a conflict
  * rather than inventing an identity for it.
  */
@@ -220,7 +220,7 @@ const canonicalBody = v.object({
   source: literals(CANONICAL_SOURCES), // osm | nhd | 3dhp — never user (D14)
   externalId: v.string(),
   /**
-   * The catalogue ids this record carries. **All optional, at least one required** — enforced by
+   * The catalog ids this record carries. **All optional, at least one required** — enforced by
    * `resolveUpsert` rather than by the validator, because "which of these three" is a rule with a
    * reason attached and a validator can only say `false`.
    */
@@ -257,7 +257,7 @@ const canonicalBody = v.object({
   sourceAreaSqM: v.optional(v.number()),
   /** Share of the outline inside our five states, `[0, 1]` — see the schema note. */
   inRegionFraction: v.optional(v.number()),
-  /** Per-attribute agreement between the catalogues (D110) — see the schema note. */
+  /** Per-attribute agreement between the catalogs (D110) — see the schema note. */
   confidence: v.optional(
     v.object({
       name: literals(CONFIDENCE_LEVELS),
@@ -313,7 +313,7 @@ function shapeFields(item: {
  *
  * Written as explicit `undefined`s rather than omitted keys, for the same reason `shapeFields` is:
  * a re-import must be able to *clear* a value the new evidence no longer supports. A stale
- * `confidence: high` beside a body whose second catalogue just disappeared is worse than none, and a
+ * `confidence: high` beside a body whose second catalog just disappeared is worse than none, and a
  * stale `reviewReasons` would keep a moderator looking at a conflict that has since resolved.
  *
  * **The one asymmetry is `sourceAreaSqM`.** It is an area, and the D91 floor is decided on it, so
@@ -376,7 +376,7 @@ async function flagAsDuplicates(
 /**
  * The stored name and the string search covers — **and a moderator's choice outranks the import.**
  *
- * `importCanonical` overwrites `name` on every touch, which is right for a value the catalogues own.
+ * `importCanonical` overwrites `name` on every touch, which is right for a value the catalogs own.
  * It is wrong the moment a human has picked between them: `/admin/water/$id` lets a moderator choose
  * `Lake Auburn` over NHD's `The Basin`, and a rule that re-imposed the authority ranking next
  * campaign would undo that choice silently, every campaign, for ever. Exactly the shape of the
@@ -384,7 +384,7 @@ async function flagAsDuplicates(
  *
  * The choice is recorded as a `nameClaims` entry with `source: 'user'`, so it needs no second column
  * and no flag to keep in step — **the override is the evidence**. `NAME_SOURCE_RANK` already ranks
- * `user` above every catalogue.
+ * `user` above every catalog.
  *
  * `searchText` is rebuilt from whichever name wins plus every other claim, so a moderator's pick
  * changes what is *displayed* and never what is *findable*. Losing a name to a preference would be
@@ -395,7 +395,7 @@ function nameFields(
   item: { name: string; nameClaims?: { source: string; value: string }[] },
 ) {
   // **`composeNameClaims`, not a single dedupe.** A moderator's pick has the same *value* as the
-  // catalogue claim it prefers, so deduping the two together deletes that catalogue claim — and then
+  // catalog claim it prefers, so deduping the two together deletes that catalog claim — and then
   // clearing the override restores the ranked name with no alias, losing the very name the pick was
   // made to keep. See `composeNameClaims`.
   const claims = composeNameClaims(
@@ -451,7 +451,7 @@ function vertexCount(geometry: unknown): number {
 }
 
 /**
- * Look up every stored row each of an incoming record's catalogue ids resolves to (A07a / D93).
+ * Look up every stored row each of an incoming record's catalog ids resolves to (A07a / D93).
  *
  * One index read per id present, each on the id's **own** index. `osmId` deliberately does not go
  * through `by_external_id`: the two fields hold the same string today and D93 exists to end that
@@ -467,7 +467,7 @@ function vertexCount(geometry: unknown): number {
  * design exists to detect — an id resolving to two rows — and turn a finding we want queued into a
  * failed batch.
  */
-async function lookupByCatalogueIds(
+async function lookupByCatalogIds(
   ctx: MutationCtx,
   ids: { osmId?: string; nhdId?: string; threeDhpId?: string },
 ): Promise<IdMatch<Id<'waterBodies'>>[]> {
@@ -500,9 +500,9 @@ async function lookupByCatalogueIds(
  * Internal, never client-callable: idempotently upsert a batch of canonical bodies (D14/D48/D93).
  * Load via `pnpm exec convex run` from the ETL (chunk batches for the mutation size limit).
  *
- * ## Keyed on the catalogue ids, which is the change this phase exists to make
+ * ## Keyed on the catalog ids, which is the change this phase exists to make
  *
- * It used to key on `(source, externalId)`. That worked while the corpus was one catalogue and fails
+ * It used to key on `(source, externalId)`. That worked while the corpus was one catalog and fails
  * the moment it is three: **an NHD feature would insert a duplicate of every OSM body we hold**,
  * because the pair can only express one identity and the NHD row's is not the OSM row's.
  * `resolveUpsert` (`@skating/core`) takes what each id resolved to and returns one of four verdicts:
@@ -553,7 +553,7 @@ export const importCanonical = internalMutation({
     for (const item of bodies) {
       // Held rather than inlined: the `conflict` branch needs the same rows back, and re-reading
       // them would double the index reads in the heaviest mutation in the app.
-      const matches = await lookupByCatalogueIds(ctx, item);
+      const matches = await lookupByCatalogIds(ctx, item);
       const verdict = resolveUpsert(
         { osmId: item.osmId, nhdId: item.nhdId, threeDhpId: item.threeDhpId },
         matches,
@@ -573,7 +573,7 @@ export const importCanonical = internalMutation({
         // corpus-uniqueness violation by destroying the evidence of it.
         //
         // So the rows are marked for the same D36 queue a `merge` verdict uses. That is what the
-        // dedup status is for, and it is also what the prune's protection list already honours.
+        // dedup status is for, and it is also what the prune's protection list already honors.
         for (const match of matches) {
           await flagAsDuplicates(ctx, match.keys);
         }
@@ -649,11 +649,11 @@ export const importCanonical = internalMutation({
           ...(campaignId ? { lastCampaignId: campaignId } : {}),
           // **Every id the record asserts, and nothing it merely fails to mention.** The old rule
           // withheld `nhdId` entirely so a reconciliation survived a re-import; that was right when
-          // an incoming record was one catalogue's view, and too strict now that the merge resolves
+          // an incoming record was one catalog's view, and too strict now that the merge resolves
           // all three ids before emitting — it would freeze the corpus at whatever the first
           // reconciliation guessed. Overwriting unconditionally is the opposite error and a far
-          // worse one; see `assertedCatalogueIds`.
-          ...assertedCatalogueIds(item),
+          // worse one; see `assertedCatalogIds`.
+          ...assertedCatalogIds(item),
         });
         // Re-derive listing from the preserved fields (removed stays removed, D48) and re-cell the
         // body against its new geometry + prominence (A01).
@@ -706,7 +706,7 @@ export const importCanonical = internalMutation({
           waterBodyKey: `wb_${crypto.randomUUID()}`,
           // Identity alongside the key. Set here so a fresh import needs no backfill to be
           // reconcilable, and so the day `externalId` stops being an OSM id, this still is one.
-          ...catalogueIds(item),
+          ...catalogIds(item),
           polygon: item.polygon,
           bbox: item.bbox,
           centroid: item.centroid,
@@ -733,7 +733,7 @@ export const importCanonical = internalMutation({
     }
     // `unresolved` is capped: a batch is 150 bodies and a pathological run could make every one of
     // them ambiguous, but the *counts* are what the loader reports and the samples are for a human
-    // reading a run row. Twenty is enough to recognise a pattern and small enough to never dominate
+    // reading a run row. Twenty is enough to recognize a pattern and small enough to never dominate
     // the return value.
     return {
       inserted,
@@ -769,19 +769,19 @@ export const importCanonical = internalMutation({
  * cheap way to establish it: a one-off query cannot scan ~21,000 rows inside Convex's 16 MB read cap
  * (a body averages 1.8 KB and the large ones are far bigger), and no counting function existed.
  *
- * So this is paged and resumable, in the same shape as `backfillCatalogueIds` — hand back the cursor
+ * So this is paged and resumable, in the same shape as `backfillCatalogIds` — hand back the cursor
  * and the running totals, call it until `isDone`. It is a **query**, so it writes nothing and can be
  * run against a live corpus mid-campaign without interfering.
  *
  * **It counts the fields the campaign actually reasons about**, not just rows: how many bodies carry
- * each catalogue id (so the reconciliation's progress is visible), how many are listed, and the
+ * each catalog id (so the reconciliation's progress is visible), how many are listed, and the
  * per-state split (so a regional claim can be checked).
  *
  * **Contour coverage is deliberately absent.** It lives in the `contourCoverage` side table rather
  * than on the body — a property of the tileset, not of the lake — so counting it here would mean a
  * second scan inside a function whose whole job is to walk `waterBodies` once. Ask that table.
  */
-/** Square metres in an acre — local, so this query needs no extra import. */
+/** Square meters in an acre — local, so this query needs no extra import. */
 const SQ_M_PER_ACRE_LOCAL = 4046.8564224;
 
 /**
@@ -913,7 +913,7 @@ export const corpusStats = internalQuery({
       if (body.maxDepthM !== undefined || body.meanDepthM !== undefined) {
         withDepth++;
         // Per MEASUREMENT, because D68 makes provenance per measurement: a body routinely carries a
-        // measured max beside a modelled mean, and counting it once would have to pick one.
+        // measured max beside a modeled mean, and counting it once would have to pick one.
         for (const source of [body.maxDepthSource, body.meanDepthSource]) {
           if (source === undefined) continue;
           byDepthSource[source] = (byDepthSource[source] ?? 0) + 1;
@@ -1053,7 +1053,7 @@ export const listForReconcile = internalQuery({
  * row survives the merge.
  *
  * `near_certain` rather than `suspected_duplicate` because the evidence is unusually strong: two
- * independent catalogues, plus a geometric proof that the two bodies overlap each other (to both
+ * independent catalogs, plus a geometric proof that the two bodies overlap each other (to both
  * clear 0.5 IoU against one candidate, each must cover more than half of it). D36's queue exists for
  * exactly this decision, and merging is a moderator action, never an import's.
  *
@@ -1189,12 +1189,12 @@ export const backfillSearchText = internalMutation({
 });
 
 /**
- * A light projection for the D97 audit: what each body is, what it is called, and which catalogue
+ * A light projection for the D97 audit: what each body is, what it is called, and which catalog
  * rows it is tied to — **without the polygon** (A07a).
  *
  * Separate from `listForReconcile`, which carries geometry and therefore pages at 100. The audit's
  * questions are about *attributes* — how much of `other` could borrow a class from NHD, whether a
- * name keyword agrees with the catalogue's own type — and answering them a hundred rows at a time
+ * name keyword agrees with the catalog's own type — and answering them a hundred rows at a time
  * because of polygons nobody reads would be the expensive way to be slow.
  */
 export const listForClassificationAudit = internalQuery({
@@ -1251,7 +1251,7 @@ export const backfillWaterBodyKeys = internalMutation({
   },
 });
 
-export const backfillCatalogueIds = internalMutation({
+export const backfillCatalogIds = internalMutation({
   args: { cursor: v.optional(v.string()), batchSize: v.optional(v.number()) },
   handler: async (ctx, { cursor, batchSize }) => {
     const numItems = Math.min(500, Math.max(1, batchSize ?? 200));
@@ -1261,7 +1261,7 @@ export const backfillCatalogueIds = internalMutation({
     let alreadySet = 0;
     let noExternalId = 0;
     for (const body of page.page) {
-      const want = deriveCatalogueIds(body);
+      const want = deriveCatalogIds(body);
       if (Object.keys(want).length === 0) {
         noExternalId++;
         continue;
@@ -1374,7 +1374,7 @@ export const backfillRepresentativePoint = internalMutation({
  * Is anything at all attached to this body — and if so, what?
  *
  * Every table here holds a **human** act against a specific lake: a report, a hazard, a bounty, a
- * put-in, a favourite, a recorded track, a moderator's body feature. A body with any of them is not
+ * put-in, a favorite, a recorded track, a moderator's body feature. A body with any of them is not
  * a puddle no matter what it measures, and deleting it would orphan the row rather than tidy the
  * corpus. Returns the first table that claims it, for the run summary; `null` means unattached.
  *
@@ -1606,7 +1606,7 @@ export const pruneBelowAreaFloor = internalMutation({
  * Getting it from the data rather than re-deriving it is also what keeps this pass from disagreeing
  * with the import at the edges, which is the failure D97 named: *one deleter, one reporter.*
  *
- * ## Every protection `pruneBelowAreaFloor` honours, honoured identically
+ * ## Every protection `pruneBelowAreaFloor` honors, honored identically
  *
  * A body carrying user content is **never** deleted, whatever the master list says — that is D93's
  * closing rule and it is the reason the whole campaign patches in place. `source: 'user'`, a
@@ -1657,7 +1657,7 @@ export const pruneNotInCampaign = internalMutation({
     // `pruneBelowAreaFloor`'s page limit is about polygon bytes, and this mutation inherited the
     // number without inheriting the arithmetic. The binding constraint here is different:
     // `bodyAttachmentKind` runs on every body the campaign did **not** re-affirm and costs **10
-    // index reads** (reports, hazards, recurrence, bounties, tracks, favourites, put-ins, features,
+    // index reads** (reports, hazards, recurrence, bounties, tracks, favorites, put-ins, features,
     // sub-areas, gate events). Convex allows 4,096 reads per execution, so a page of 500 whose rows
     // are mostly deletion candidates asks for 5,000+ and dies:
     //
@@ -1872,7 +1872,7 @@ const PRUNE_GUARD_MIN_PAGE = 25;
  * ## What it will not delete
  *
  * Exactly what `pruneBelowAreaFloor` will not, and for the same reason: a coverage decision is about
- * *our* data, and a body someone has reported on, favourited, drawn a hazard on or created by hand
+ * *our* data, and a body someone has reported on, favorited, drawn a hazard on or created by hand
  * has stopped being only ours. Those are kept and named in the summary, so the residue is visible
  * rather than silently spared. Cell rows go through `syncWaterBodyCells` with `listed: false`, never
  * a hand-rolled delete, or the ladder grid keeps pointing at bodies that no longer load.
@@ -2233,7 +2233,7 @@ export const importElevations = internalMutation({
  * encodes: a human who typed a surveyed number knows more than a DEM, and an automated sweep that
  * quietly reverted them would make the override worthless the next time a pass ran.
  *
- * ⚠ **And it does not decide anything.** The judgement lives in the pass — see `demIdentify`, where
+ * ⚠ **And it does not decide anything.** The judgment lives in the pass — see `demIdentify`, where
  * a set of rasters is read for consensus and for whether that consensus is about water or about the
  * ground under it. This clears what it is told to clear and counts what it did. **The caller owns
  * the blast radius**: a service returning junk could refuse every point in the corpus, and the cap
@@ -2523,7 +2523,7 @@ export const create = mutation({
     const scores = scoreFields({ surfaceAreaSqM: derived.surfaceAreaSqM, active: true });
     const id = await ctx.db.insert('waterBodies', {
       name: args.name,
-      // A user-drawn body has one name and no catalogue claims — but `searchText` is required, so
+      // A user-drawn body has one name and no catalog claims — but `searchText` is required, so
       // that a row cannot exist which search is structurally unable to reach.
       searchText: searchTextFor(args.name, []),
       type: args.type,
@@ -3002,7 +3002,7 @@ export const merge = mutation({
  * **Extracted from `merge` so the ETL cannot grow a second, subtly different version** (A07a-3). The
  * import path needs exactly this — see `retireAbsorbedBodies` — and the parts that are easy to omit
  * when reimplementing are the ones that lose data silently: a stranded `bodyFeature` known-hazard
- * pin, a suppressed put-in whose suppression is forgotten, a favouriter cut off from drive-time
+ * pin, a suppressed put-in whose suppression is forgotten, a favoriter cut off from drive-time
  * matching, a hand-drawn sub-area left on a tombstone. None of those throw.
  *
  * `actorId` is **optional, and absent means the system acted** — the precedent is A05c/D80's
@@ -3196,7 +3196,7 @@ export async function mergeBodyInto(
  * ## What it will not do
  *
  * - **It never deletes.** `mergeBodyInto` soft-tombstones the loser and re-points every child, so a
- *   report, track, hazard, favourite, put-in or hand-drawn sub-area on an absorbed row survives on
+ *   report, track, hazard, favorite, put-in or hand-drawn sub-area on an absorbed row survives on
  *   the survivor. A deletion here would be silent data loss on rows a skater may have used.
  * - **It never merges into a tombstone, and never re-merges.** Both are skipped and counted, which
  *   is what makes the pass idempotent — re-running a campaign must not walk a merge chain.
@@ -3237,14 +3237,14 @@ export const retireAbsorbedBodies = internalMutation({
      * Resolve a merge-group key to the row that actually holds it.
      *
      * ⚠ **`(source, externalId)` is not enough, and assuming it was produced a misleading skip.**
-     * D93 mints our own key and `resolveUpsert` resolves an import by **catalogue id**, so a body
+     * D93 mints our own key and `resolveUpsert` resolves an import by **catalog id**, so a body
      * first seen under one key and later merged under another keeps its original `externalId` while
      * carrying the new group's `osmId` / `nhdId` / `threeDhpId`. `Ripple Pond` is stored as
      * `osm:way/1327067961` and carries `osmId: way/1228071699` — so a lookup for the survivor
      * `way/1228071699` found nothing, and the pass reported *"survivor not in the corpus"* for 15
      * pairs that were **already correctly merged into one row**.
      *
-     * With the catalogue-id fallback both halves of such a pair resolve to the same document and the
+     * With the catalog-id fallback both halves of such a pair resolve to the same document and the
      * self-pair guard below reports it as what it is. The fallback cannot cause a wrong retirement:
      * every path still ends at that guard.
      */
@@ -3290,7 +3290,7 @@ export const retireAbsorbedBodies = internalMutation({
       if (skippedSamples.length < 25) skippedSamples.push({ pair, why });
     };
     const retired: { absorbed: string; into: string; name: string }[] = [];
-    // **One row is retired once, even when two pairs point at it.** With the catalogue-id fallback
+    // **One row is retired once, even when two pairs point at it.** With the catalog-id fallback
     // above, two different merge-group keys can resolve to the same document — `Divol Pond` arrives
     // as both an OSM key and an NHD one. Under `--apply` the second attempt would harmlessly skip as
     // `already merged`, but the DRY RUN would count it, and a dry run that does not predict the
@@ -3345,7 +3345,7 @@ export const retireAbsorbedBodies = internalMutation({
           survivor,
           loser: absorbed,
           reason:
-            `Absorbed by the merge${campaignId ? ` (${campaignId})` : ''}: one catalogue published ` +
+            `Absorbed by the merge${campaignId ? ` (${campaignId})` : ''}: one catalog published ` +
             `this lake twice and D136's same-source lane collapsed it into ${survivor.name || 'the survivor'}.`,
         });
       }
@@ -3410,7 +3410,7 @@ export const setCuratedBoost = mutation({
     // reads it — one body under a moderator's hand — and the cell rows are restamped with the new
     // `minVisibleZoom`, which is part of `by_cell`'s range (A01). A **positive** boost on a body the
     // machine set dormant brings it back: a curated boost is a standing human decision (it is what
-    // `retainsActive` honours), and a moderator boosting a lake the season cron shelved has plainly
+    // `retainsActive` honors), and a moderator boosting a lake the season cron shelved has plainly
     // decided it belongs on the map.
     if (curatedBoost > 0 && reactivatesOnEvidence(body)) {
       await activateBody(ctx, body, {
@@ -3615,7 +3615,7 @@ export const setWeatherSamplePoints = mutation({
  * 2026-07-31). A field the moderator did not touch must arrive as `undefined` and be left *exactly* as it
  * was, rung included. The first cut took a plain `v.number()` per field and stamped `operator` on
  * everything it received — so a form that pre-filled a HydroLAKES mean and saved a max the moderator did
- * know relabelled a 90 m-DEM estimate as a survey reading: the public caption lost its `~`, and the value
+ * know relabeled a 90 m-DEM estimate as a survey reading: the public caption lost its `~`, and the value
  * became permanently immune to ETL correction. Provenance you can launder by accident is not provenance.
  *
  *  - **absent** — leave the measurement and its rung untouched, whatever they are.
@@ -3655,7 +3655,7 @@ export const setDepth = mutation({
     ] as const) {
       if (value === undefined || value === null) continue;
       if (!Number.isFinite(value) || value <= 0) {
-        throw new ConvexError(`${label} depth must be a positive number of metres.`);
+        throw new ConvexError(`${label} depth must be a positive number of meters.`);
       }
       if (value > MAX_PLAUSIBLE_DEPTH_M) {
         throw new ConvexError(
@@ -3781,7 +3781,7 @@ export const listReviewQueue = query({
         acres: Math.round((b.sourceAreaSqM ?? b.surfaceAreaSqM ?? 0) / SQ_M_PER_ACRE_LOCAL),
         reviewReasons: b.reviewReasons ?? [],
         // What the moderator is actually adjudicating, so the row is decidable without a click:
-        // the competing names for a name conflict, the catalogues present for a class one.
+        // the competing names for a name conflict, the catalogs present for a class one.
         nameClaims: b.nameClaims ?? [],
         confidence: b.confidence,
         osmId: b.osmId,
@@ -3830,7 +3830,7 @@ export const reviewQueueCounts = query({
  * `NAME_SOURCE_RANK` stores the most *authoritative* name — `gnis > nhd > 3dhp > osm` — and that rule
  * is right and costs 463 bodies their local name. Auburn, Maine's own water supply is stored as
  * `The Basin`, because that is NHD's `gnis_name`, while everyone including OSM calls it `Lake
- * Auburn`. The moderator is picking between claims the catalogues actually made, not typing a name,
+ * Auburn`. The moderator is picking between claims the catalogs actually made, not typing a name,
  * so the argument is **which claim wins**, and a free-text field would invite inventing a third.
  *
  * ## The pick has to survive the next campaign
@@ -3838,7 +3838,7 @@ export const reviewQueueCounts = query({
  * `importCanonical` rewrites `name` on every touch. Left alone, the authority ranking would re-impose
  * `The Basin` on the next run — silently, every run, for ever. The choice is therefore stored as a
  * `nameClaims` entry with `source: 'user'`, which `nameFields` merges *ahead* of the incoming
- * catalogue claims. **The override is the evidence**: no second column, nothing to keep in step.
+ * catalog claims. **The override is the evidence**: no second column, nothing to keep in step.
  * Same shape as `curatedBoost` and the depth override, and `NAME_SOURCE_RANK` already ranks `user`
  * first for exactly this day.
  *
@@ -3860,25 +3860,25 @@ export const setWaterBodyName = mutation({
     if (!body) throw new ConvexError('Water body not found');
 
     // **Split before deduping, never after.** A stored row holds the moderator's claim *and* the
-    // catalogue claim it mirrors, with the same value — so deduping the combined list drops the
-    // catalogue one, and Clear then restores the ranked name with no alias. Same trap
+    // catalog claim it mirrors, with the same value — so deduping the combined list drops the
+    // catalog one, and Clear then restores the ranked name with no alias. Same trap
     // `composeNameClaims` exists for, one layer up.
     const stored = (body.nameClaims ?? []) as NameClaim[];
-    const catalogue = distinctNameClaims(stored.filter((c) => c.source !== 'user'));
+    const catalog = distinctNameClaims(stored.filter((c) => c.source !== 'user'));
     const claims = composeNameClaims(
       stored.filter((c) => c.source === 'user'),
-      catalogue,
+      catalog,
     );
 
     if (name === null) {
-      // Back to whatever the catalogues rank first. Nothing to do if no override was ever set —
+      // Back to whatever the catalogs rank first. Nothing to do if no override was ever set —
       // returning quietly rather than throwing, because a double-click on Clear is not an error.
       if (!claims.some((c) => c.source === 'user')) return waterBodyId;
-      const restored = catalogue[0]?.value ?? body.name;
+      const restored = catalog[0]?.value ?? body.name;
       await ctx.db.patch(waterBodyId, {
         name: restored,
-        nameClaims: catalogue.length > 0 ? catalogue : undefined,
-        searchText: searchTextFor(restored, aliasesFor(catalogue, restored)),
+        nameClaims: catalog.length > 0 ? catalog : undefined,
+        searchText: searchTextFor(restored, aliasesFor(catalog, restored)),
       });
       await ctx.db.insert('moderationActions', {
         actorId: actor._id,
@@ -3906,9 +3906,9 @@ export const setWaterBodyName = mutation({
       );
     }
 
-    // The moderator's claim first, then every catalogue claim — including the one just chosen, under
+    // The moderator's claim first, then every catalog claim — including the one just chosen, under
     // its original source, so the audit trail still shows who published it.
-    const next = composeNameClaims([{ source: 'user', value: match.value }], catalogue);
+    const next = composeNameClaims([{ source: 'user', value: match.value }], catalog);
     await ctx.db.patch(waterBodyId, {
       name: match.value,
       nameClaims: next,
@@ -4012,7 +4012,7 @@ function describeDepthChange(
  *
  * Two rules the loader enforces rather than trusting its input for:
  *  - **an `operator` value is never overwritten.** A moderator typed a survey in; a re-run of a global
- *    modelled join must not quietly undo that. This is the durability half of D68's top rung.
+ *    modeled join must not quietly undo that. This is the durability half of D68's top rung.
  *  - **a worse rung never displaces a better one**, per measurement. So the pipeline can be re-run with
  *    sources in any order, or with one source added later, and converges on the same answer — the same
  *    property `importCanonical` has and for the same reason (these runs get interrupted and resumed).
@@ -4190,7 +4190,7 @@ interface PairSide {
  * cannot tell which from the numbers alone, so the ladder decides it the way it decides everything else.
  *
  * **The better-ranked measurement wins**, because that is what the ladder means: a measured LAGOS-US max
- * beats a modelled HydroLAKES mean that contradicts it, in either direction of arrival. When the loser is
+ * beats a modeled HydroLAKES mean that contradicts it, in either direction of arrival. When the loser is
  * an incumbent it is *retracted* — deliberately, since leaving it would keep the impossible pair on
  * display and feeding the classifier, and clearing its rung lets a later run refill it once the sources
  * agree. An `operator` value can never be the loser: `winsLadder` has already refused any offer that
@@ -4274,7 +4274,7 @@ const DEPTH_MATCH_AREA_RATIO = 4;
 const BATHYMETRY_APPROACH_M = 25;
 
 /**
- * The catalogue-identity fields an import can assert, from the row it is importing.
+ * The catalog-identity fields an import can assert, from the row it is importing.
  *
  * Only ever what the *importer* knows: an OSM import knows the lake's OSM id and that it drew OSM's
  * polygon, and knows nothing about NHD. `nhdId` is written by reconciliation, never by import —
@@ -4286,11 +4286,11 @@ const BATHYMETRY_APPROACH_M = 25;
  *
  * This used to infer `osmId` from `source === 'osm' && externalId`, which is `externalId` doing the
  * identity job all over again — the exact conflation D93 exists to undo. A merged record knows all
- * three of its catalogue ids because the merge worked them out; the import's job is to write them
+ * three of its catalog ids because the merge worked them out; the import's job is to write them
  * down, not to guess one of them back from where the row happened to arrive.
  *
  * **On insert every field is written; on patch, only the ones the record actually asserts** — see
- * `assertedCatalogueIds`. The asymmetry is deliberate and it is a safety property, not tidiness.
+ * `assertedCatalogIds`. The asymmetry is deliberate and it is a safety property, not tidiness.
  *
  * ⚠ **`geometrySource` falls back to `source`, never to nothing.** The schema says absent means "the
  * same as `source`", so leaving it undefined is technically correct and practically a trap: a later
@@ -4301,7 +4301,7 @@ const BATHYMETRY_APPROACH_M = 25;
  * Derive `osmId` / `nhdId` / `geometrySource` from `source` + `externalId` — **for the backfill of
  * legacy rows only.**
  *
- * This is the rule `catalogueIds` used to apply to every import, and it is exactly the conflation
+ * This is the rule `catalogIds` used to apply to every import, and it is exactly the conflation
  * D93 exists to undo — so it is deliberately *not* shared with the import path any more. It survives
  * because a row written before the identity fields existed genuinely has nowhere else to get them
  * from: `source: 'osm'` plus an `externalId` that is an OSM id is real evidence, just weaker than an
@@ -4310,7 +4310,7 @@ const BATHYMETRY_APPROACH_M = 25;
  * ⚠ **Do not call this from `importCanonical`.** An incoming record states its own identity; guessing
  * one back from where the row happened to arrive is how `externalId` ended up doing three jobs.
  */
-function deriveCatalogueIds(item: { source: string; externalId?: string }): {
+function deriveCatalogIds(item: { source: string; externalId?: string }): {
   osmId?: string;
   nhdId?: string;
   geometrySource?: 'osm' | 'nhd' | '3dhp' | 'user';
@@ -4334,7 +4334,7 @@ interface IncomingIds {
   geometrySource?: (typeof GEOMETRY_SOURCES)[number];
 }
 
-function catalogueIds(item: IncomingIds) {
+function catalogIds(item: IncomingIds) {
   return {
     osmId: item.osmId,
     nhdId: item.nhdId,
@@ -4366,8 +4366,8 @@ function catalogueIds(item: IncomingIds) {
  * `geometrySource` follows the same rule for the same reason: D92's per-lake override is a decision
  * someone made, and an import that has no opinion about geometry must not erase one that does.
  */
-function assertedCatalogueIds(item: IncomingIds): Record<string, string> {
-  const all = catalogueIds(item);
+function assertedCatalogIds(item: IncomingIds): Record<string, string> {
+  const all = catalogIds(item);
   const out: Record<string, string> = {};
   for (const [k, v] of Object.entries(all)) if (v !== undefined) out[k] = v;
   return out;
@@ -4413,7 +4413,7 @@ export const matchAndImportDepths = internalMutation({
         meanDepthSource: v.optional(literals(DEPTH_SOURCES)),
         maxDepthM: v.optional(v.number()),
         maxDepthSource: v.optional(literals(DEPTH_SOURCES)),
-        /** HydroLAKES' own shoreline in metres — D85's cross-check. Compared, logged, never stored. */
+        /** HydroLAKES' own shoreline in meters — D85's cross-check. Compared, logged, never stored. */
         shorelineM: v.optional(v.number()),
         /** The source's own name, corroboration for a proximity match only. Never stored. */
         name: v.optional(v.string()),
@@ -4494,7 +4494,7 @@ export const matchAndImportDepths = internalMutation({
       //
       // **Log the comparison; store ours.** HydroLAKES' polygon is a different water mask at a
       // different date and its own resolution, so a disagreement does not say who is right. What it
-      // does say is whether our number is in the right neighbourhood — a 2× gap on a known lake
+      // does say is whether our number is in the right neighborhood — a 2× gap on a known lake
       // means the join or the ring handling is broken, and that is worth catching at load time
       // rather than in a screenshot.
       //
@@ -4764,7 +4764,7 @@ export const matchBathymetryLakes = internalQuery({
       // the bodies we want here. What qualifies is being covered by the survey and nested inside the
       // body it resolved to — which is why this filters on the *primary's* area rather than its own.
       //
-      // Same-size neighbours are included on purpose: two OSM polygons for one lake (a cross-border
+      // Same-size neighbors are included on purpose: two OSM polygons for one lake (a cross-border
       // duplicate, most often) are a real case, and both should draw rather than one of them
       // rendering flat beside the other.
       const alsoCovers = covering
@@ -4996,10 +4996,10 @@ export const listInViewport = query({
           body = await ctx.db.get(body.mergedIntoId);
         }
         if (!body || byId.has(body._id)) continue;
-        // A dormant favourite is pinned — the favourite is what keeps it from going dormant again,
+        // A dormant favorite is pinned — the favorite is what keeps it from going dormant again,
         // and its owner knows something we don't — but a removed one is not (A07b): a takedown must
-        // not stay highlighted at every zoom for the people who favourited it, and `listForUser`
-        // hides the same favourite.
+        // not stay highlighted at every zoom for the people who favorited it, and `listForUser`
+        // hides the same favorite.
         if (
           isListed(body) &&
           standingOf(body).standing !== 'removed' &&
@@ -5095,7 +5095,7 @@ export const resolveBodyForCoord = query({
  */
 const NEAR_COORD_MARGIN_DEG = 0.01;
 
-/** Metres per degree of latitude — the constant that turns a radius into a candidate box. */
+/** Meters per degree of latitude — the constant that turns a radius into a candidate box. */
 const METERS_PER_DEG_LAT = 111_320;
 
 /**
@@ -5112,7 +5112,7 @@ export async function listedBodiesNearCoord(
   ctx: QueryCtx,
   coord: { lat: number; lng: number },
   /**
-   * How far from `coord` a body may be and still be a candidate, in metres.
+   * How far from `coord` a body may be and still be a candidate, in meters.
    *
    * **Pass this whenever you know it.** Convex has no projection — reading a candidate reads its
    * whole document, `polygon` included — so the box's *area* is the read bill, and the default
@@ -5121,7 +5121,7 @@ export async function listedBodiesNearCoord(
    *
    * That is not hypothetical. A06d's parking pass ran 95,294 lookups on the default and spent
    * **104.95 GB of database I/O — 1.1 MB per lot** — enough to disable the deployment, because
-   * Champlain's ~300 KB polygon was re-read for every lot within a kilometre of it.
+   * Champlain's ~300 KB polygon was re-read for every lot within a kilometer of it.
    *
    * Safe to tighten to exactly the radius you test: `bodiesCoveringBox` matches on **bbox**
    * intersection, and a polygon within *r* of a point always has a bbox within *r* of it. Omit it
@@ -5234,7 +5234,7 @@ export const searchByName = query({
     // whichever table holds it, so tier the merged set first and keep the index order inside a tier.
     //
     // Bodies still win at equal relevance — "Champlain" is a substring match on Lake Champlain and
-    // on nothing else, so the lake lands first, which is the behaviour the merge must not break.
+    // on nothing else, so the lake lands first, which is the behavior the merge must not break.
     // Inactive bodies rank after every active hit of the same tier: an exact match on a dormant
     // pond still beats a fuzzy one on a live lake, but among equals the lake we push comes first.
     const merged = [...results, ...subAreaHits.slice(0, bayShare)];
@@ -5342,7 +5342,7 @@ const CURATED_SCAN_CAP = CURATED_LIST_CAP * 2;
  * Moderator: every body carrying a `curatedBoost` (A02) — **the surface that makes a mis-match
  * visible**.
  *
- * The Phase-02b seed matched community favourites by name, and five of them landed on same-named
+ * The Phase-02b seed matched community favorites by name, and five of them landed on same-named
  * lakes in the wrong state. That wasn't five separate bugs so much as one missing screen: the boost
  * is editable per body, and nothing anywhere listed which bodies had one. Four of the five are
  * Champlain bays whose boost went to a namesake elsewhere, and the fix is one motion — strip the
@@ -5477,16 +5477,16 @@ export const listDedupCandidates = query({
 
     // Connected components, walking edges out of flagged rows only (both directions: a mutual pair
     // and a one-way D36 stamp must both come out as one card).
-    const neighbours = new Map<Id<'waterBodies'>, Set<Id<'waterBodies'>>>();
+    const neighbors = new Map<Id<'waterBodies'>, Set<Id<'waterBodies'>>>();
     const link = (a: Id<'waterBodies'>, b: Id<'waterBodies'>) => {
       if (!byId.has(a) || !byId.has(b)) return;
       for (const [from, to] of [
         [a, b],
         [b, a],
       ] as const) {
-        const set = neighbours.get(from) ?? new Set<Id<'waterBodies'>>();
+        const set = neighbors.get(from) ?? new Set<Id<'waterBodies'>>();
         set.add(to);
-        neighbours.set(from, set);
+        neighbors.set(from, set);
       }
     };
     for (const body of flagged) {
@@ -5511,7 +5511,7 @@ export const listDedupCandidates = query({
           continue;
         }
         members.push(doc);
-        for (const next of neighbours.get(id) ?? []) stack.push(next);
+        for (const next of neighbors.get(id) ?? []) stack.push(next);
       }
       // A flag whose only candidate has since been deleted leaves a group of one. It still belongs
       // in the queue — the flag is real and someone has to clear it — and the card says so.
@@ -5549,7 +5549,7 @@ export const listDedupCandidates = query({
  * shapes an operator asked to see.
  *
  * **The attachment counts are the survivor argument, not the duplicate argument.** `merge` re-points
- * every report, hazard, bounty, put-in, feature and favourite from loser to survivor, so nothing is
+ * every report, hazard, bounty, put-in, feature and favorite from loser to survivor, so nothing is
  * lost either way — but the row the community has actually been filing against is the one whose
  * `_id` is in people's links and caches, and that is worth knowing before choosing which id dies.
  */
@@ -5776,7 +5776,7 @@ async function clearDuplicateFlag(
  * ## The three things it refuses to do
  *
  * 1. **It never deletes a body carrying user content.** The ten attachment types `bodyAttachmentKind`
- *    knows are re-checked per body, and anything with a report, hazard, bounty, favourite, put-in,
+ *    knows are re-checked per body, and anything with a report, hazard, bounty, favorite, put-in,
  *    track, feature, sub-area, recurrence row or gate event is skipped and named. That check is not
  *    inherited from the prune: the prune tests `dedupOrMerged` *before* `attached`, so these 61 short
  *    circuited out of it and had never been attachment-checked at all.
@@ -5800,7 +5800,7 @@ async function clearDuplicateFlag(
  *
  * That pass answers a different question. Its survivor is *"the partner this campaign re-affirmed"*,
  * which works when the master list still emits both halves and one of them wins. Here the master
- * list emits **one record carrying both catalogue ids**, so `resolveUpsert` returns `merge`, nothing
+ * list emits **one record carrying both catalog ids**, so `resolveUpsert` returns `merge`, nothing
  * is written, and **neither** stored row is re-affirmed. Run 7 produced 110 of these — every one a
  * pair the gazetteer fix correctly collapsed, met by a corpus still holding both halves.
  *
@@ -5808,7 +5808,7 @@ async function clearDuplicateFlag(
  *
  * The survivor is the stored row whose `externalId` equals the incoming record's. That is not a
  * tie-break, it is the identity D93 already settled: `externalId` is the *arrival key*, it is what
- * contour tiles are stamped with, and it is the id of whichever catalogue drew the outline we are
+ * contour tiles are stamped with, and it is the id of whichever catalog drew the outline we are
  * about to store. Keeping any other row would leave the corpus stamped with a key no tile resolves.
  *
  * **Deterministic, and it refuses rather than guesses.** No survivor matching the key, a loser
@@ -5946,10 +5946,10 @@ export const resolveIncomingMergeDuplicates = internalMutation({
           if (inherit.windRose !== undefined) take('windRoseSource');
         }
         // **Decisions, not measurements — and the reason they are here is that losing one is worse
-        // than losing a modelled depth.** A curated boost is an operator saying this lake matters;
+        // than losing a modeled depth.** A curated boost is an operator saying this lake matters;
         // `includedByRequest` is A07b's override saying it exists *despite* a corpus rule. Both
         // survive every prune by design, and deleting the row that carries one would revoke a human
-        // judgement with no trace. Neither is present on run 7's losers — which is exactly why it
+        // judgment with no trace. Neither is present on run 7's losers — which is exactly why it
         // is cheap to be right about now rather than after the first one appears.
         if ((survivor.curatedBoost ?? 0) === 0 && (loser.curatedBoost ?? 0) !== 0) {
           inherit.curatedBoost = loser.curatedBoost;
@@ -6112,7 +6112,7 @@ export const resolveCampaignDuplicates = internalMutation({
  *
  * `includedByRequest` is already read in three places — `belongsInCorpus` short-circuits on it,
  * and both prunes protect it — and until now **nothing could set it**. A field every deletion path
- * honours and no path writes is a rule that cannot actually be used, and the campaign produced the
+ * honors and no path writes is a rule that cannot actually be used, and the campaign produced the
  * first body that needs it: a 5-acre unnamed wetland near Albany carrying an **active `open_water`
  * hazard**. D96 refuses it (an unnamed wetland needs fifty acres) and it is right to; but somebody
  * stood on that ice and marked open water, which is exactly the evidence A07b's request path is meant
@@ -6122,7 +6122,7 @@ export const resolveCampaignDuplicates = internalMutation({
  * technicality that gets re-proposed for deletion every single campaign and has to be re-argued
  * every time. The flag turns it into a decision somebody made once.
  *
- * **Keyed by catalogue id, not by Convex `_id`**, so an operator can name the body the way every
+ * **Keyed by catalog id, not by Convex `_id`**, so an operator can name the body the way every
  * other artifact in this phase names it, and so the same command is re-runnable across a re-import.
  * Audited like every other moderator-scale write, because it overrides a corpus rule.
  */
@@ -6139,7 +6139,7 @@ export const setIncludedByRequest = internalMutation({
     if (osmId === undefined && nhdId === undefined) {
       throw new ConvexError('setIncludedByRequest: name the body by osmId or nhdId');
     }
-    const matches = await lookupByCatalogueIds(ctx, { osmId, nhdId });
+    const matches = await lookupByCatalogIds(ctx, { osmId, nhdId });
     const keys = [...new Set(matches.flatMap((m) => m.keys))];
     if (keys.length === 0) throw new ConvexError('setIncludedByRequest: no body carries that id');
     if (keys.length > 1) {
@@ -6189,7 +6189,7 @@ export const setIncludedByRequest = internalMutation({
  *
  * **The counts decay with no write to hang the decay on.** Every other path that touches
  * `summary` is an event — a report created, a hazard archived, a moderator hiding something — but a
- * report simply *ageing out* of the 14-day window is not an event anywhere in the system. Without
+ * report simply *aging out* of the 14-day window is not an event anywhere in the system. Without
  * this tick, a lake that was busy in January still shows January's card in March, which is the exact
  * failure mode A06c §5.4 named: a card carrying last season's numbers into a month when the lake is open
  * water.
@@ -6204,7 +6204,7 @@ export const sweepBodySummaries = internalMutation({
     // **50, and this is a byte budget rather than a row budget.** Convex caps a transaction at
     // **16 MB of reads**, not just 4,096 rows, and a `waterBodies` doc carries its `polygon` —
     // ~300 KB for Champlain against a 1.8 KB average. A page is not a random sample of that
-    // distribution either: the import writes in catalogue order, so large lakes arrive together.
+    // distribution either: the import writes in catalog order, so large lakes arrive together.
     // The depth loader learned this the expensive way, blowing the byte cap at batch 8 of 1,611
     // with a size chosen against the row cap. 50 leaves an order of magnitude of headroom even on
     // a page that is all Champlains.

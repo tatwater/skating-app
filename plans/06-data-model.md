@@ -252,7 +252,7 @@ satelliteImagery?: enum(auto, on, off)  // ✅ BUILT in A06e (Workstream 4, D138
 referenceLinks?: { label, url }[]       // the ONE non-derivable link class: water body associations (D71)
 // ── The map summary card (A06c §5, D141). Absent ⇒ no card at all, which is §5.3's whole rule.
 //    Recomputed from a bounded window on every write that could change it, never incremented:
-//    the counts are window- AND season-scoped, so a report ageing out has no event to decrement
+//    the counts are window- AND season-scoped, so a report aging out has no event to decrement
 //    on, and the D86 mean cannot be maintained incrementally at all.
 summary?: {
   recentReportCount: number             // visible reports in the 14d window, current season
@@ -308,7 +308,7 @@ createdAt: timestamp
 > **`shorelineM` carries a caveat that must reach the UI (D70/D3):** perimeter is resolution-dependent
 > (the coastline paradox) and our polygons are simplified to ~5 m, so the figure is systematically shorter
 > than a published survey number and **not comparable** to one. Round hard (nearest 0.1 mi) so it can't
-> read as precise — a shoreline number *looks* like a hard fact in a way a modelled depth doesn't, which
+> read as precise — a shoreline number *looks* like a hard fact in a way a modeled depth doesn't, which
 > makes it more dangerous, not less.
 > **Reference links are generated, not stored (D71)** — every other outbound link is a pure function of
 > **`(interiorPoint, name, states)`** computed in `@skating/core`, which is what gives all 24,953 bodies
@@ -556,7 +556,7 @@ createdAt: timestamp
 ```
 > **Why a sibling table and not a generalized `accessPoints` with a `kind`** (D72): `putIns` is
 > load-bearing across drive-time bands, the notification fan-out, A03 deletion and the Phase 05 feed. A
-> metadata phase should not put five other systems on its critical path for a modelling nicety, so this
+> metadata phase should not put five other systems on its critical path for a modeling nicety, so this
 > is purely additive. **Food is deliberately absent** from `amenities` — everyone has a maps app for
 > restaurants, and it's the amenity most likely to be wrong. **Boat ramp is kept** for the ice-fishing
 > crossover, and costs nothing: it's the same OSM tag already read to find put-ins.
@@ -575,7 +575,7 @@ createdAt: timestamp
 ```
 > **A note would have been the obvious design and it rots** (D73). *"Road closed until repairs are done"*
 > is correct the day it's written and stale by spring, and nothing in the system knows the difference. So
-> an access blocker is modelled like a hazard: confirmed/refuted through the **Phase 09a machinery**
+> an access blocker is modeled like a hazard: confirmed/refuted through the **Phase 09a machinery**
 > (`pointEvents`, `by_ref`), including A05b's **"never existed"** retraction (D65).
 > **Decay is weather-INsensitive, and this is the trap.** The instinct is to reuse `HAZARD_DECAY`
 > wholesale. **A locked gate does not thaw** — applying the D56 weather multiplier would let a warm week
@@ -787,7 +787,7 @@ _id
 requesterId: ref(profiles)
 waterBodyId: ref(waterBodies)
 windowHours: number          // "skated in last 24/48h" (tunable)
-status: enum(open, fulfilled, expired, cancelled)
+status: enum(open, fulfilled, expired, canceled)
 rewardPoints: number         // cosmetic (D17)
 fulfillingReportIds: ref(reports)[]
 createdAt, expiresAt: timestamp
@@ -847,7 +847,7 @@ type: enum(activity_detected, bounty_request,
            content_flag_resolved)
 payload: any                 // typed at the BOUNDARY, not the schema (A08): `lib/notificationQueue.ts`
                              // builds it from a settled trigger, `lib/notificationResolve.ts` parses it
-                             // and renders anything unrecognised as a degraded "unknown" row
+                             // and renders anything unrecognized as a degraded "unknown" row
 readAt?: timestamp
 createdAt: timestamp
 pushedAt?, emailedAt?: timestamp  // A08 PR 3 — transport stamps; the delivery action reads before / writes after

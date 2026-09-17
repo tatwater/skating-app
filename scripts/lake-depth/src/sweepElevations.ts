@@ -159,8 +159,8 @@ async function main(): Promise<void> {
    * **9,004 of 24,838**, so scoping here turns a 2.9 h corpus sweep into about an hour.
    *
    * ⚠ **And the thing being looked for is a *large* error, not a better number.** At IW incidence
-   * half a metre of elevation buys 0.7 m of ground shift — 0.04 px against a calibrated residual of
-   * 42.1 m RMS whose floor is our own shoreline polygons. Thirty metres buys 37 m, which is 1.9 px
+   * half a meter of elevation buys 0.7 m of ground shift — 0.04 px against a calibrated residual of
+   * 42.1 m RMS whose floor is our own shoreline polygons. Thirty meters buys 37 m, which is 1.9 px
    * and comparable to the entire per-pass error. Refining is pointless; finding an outlier is not.
    */
   const minAreaSqM = Number(
@@ -207,7 +207,7 @@ async function main(): Promise<void> {
       // ⚠ **An unknown area is not a small one.** `?? 0` read a missing `surfaceAreaSqM` as below any
       // floor, so a body whose area was never computed was skipped by `--min-area` and counted
       // nowhere — silently outside the population the flag claims to scope to. Kept and counted
-      // instead: the scoping is a cost optimisation, and a handful of unmeasured bodies is cheaper
+      // instead: the scoping is a cost optimization, and a handful of unmeasured bodies is cheaper
       // than a gap nobody can see.
       if (areaFloor !== null && t.surfaceAreaSqM === undefined) areaUnknown++;
       if (suspects === null || suspects.has(coordinateKey(t.lat, t.lng))) candidates.push(t);

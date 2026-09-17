@@ -3,10 +3,10 @@
  *
  * **Why a ladder rather than a source.** No single dataset gives us lake depth. Some of what exists is
  * measured (a state agency's depth-sounder transects; LAGOS-US DEPTH's ~65 compiled monitoring sources)
- * and some is modelled (HydroLAKES' `Depth_avg` = volume/area off a 90 m DEM; GLOBathy's `Dmax` from a
- * random forest). A modelled depth is perfectly adequate as a volatility signal and must **not** be
+ * and some is modeled (HydroLAKES' `Depth_avg` = volume/area off a 90 m DEM; GLOBathy's `Dmax` from a
+ * random forest). A modeled depth is perfectly adequate as a volatility signal and must **not** be
  * rendered like a survey, so every stored depth carries where it came from — and because LAGOS-US holds
- * 17,675 maxima against 6,137 means, a body routinely carries a measured max next to a modelled mean.
+ * 17,675 maxima against 6,137 means, a body routinely carries a measured max next to a modeled mean.
  * Provenance is therefore **per measurement**, never per body (D68).
  *
  * **Why shallowness is a boolean.** The decay consumer (D69) needs one bit, and it has to be a bit,
@@ -36,8 +36,8 @@ import { formatDepthFeet } from './units';
  *                            newer measurement above it. See the note under `DEPTH_SOURCES`.
  *  - `hydrolakes_reported` — HydroLAKES `Depth_avg` where `Vol_src` is 1 or 2, i.e. derived from a
  *                            **reported** volume rather than the geostatistical model. Splitting this out
- *                            is free and treating all of HydroLAKES as modelled would discard real data.
- *  - `hydrolakes_modeled`  — HydroLAKES `Depth_avg` where `Vol_src` is 3 (modelled volume ÷ area).
+ *                            is free and treating all of HydroLAKES as modeled would discard real data.
+ *  - `hydrolakes_modeled`  — HydroLAKES `Depth_avg` where `Vol_src` is 3 (modeled volume ÷ area).
  *  - `globathy`            — GLOBathy `Dmax`, a random forest over shoreline length / area / volume /
  *                            elevation / watershed area, validated at 1,503 waterbodies *globally*.
  *  - `osm_tag`             — an OSM `depth`/`maxdepth` tag. Last not because tags are untrustworthy but
@@ -81,11 +81,11 @@ import { formatDepthFeet } from './units';
  * ordered and position *is* the precedence rule.
  *
  * **Above `lagos_us` deliberately, even though LAGOS-US probably contains it.** LAGOS-US DEPTH is a
- * compilation of ~65 programmes and CSLAP is plausibly one of them — so where the two disagree, this
+ * compilation of ~65 programs and CSLAP is plausibly one of them — so where the two disagree, this
  * is the primary source and that is the compilation, one re-publication removed and possibly a
  * decade stale. A primary beats its own aggregator.
  *
- * It contributes **mean depth only**: the programme does not publish a maximum.
+ * It contributes **mean depth only**: the program does not publish a maximum.
  */
 export const DEPTH_SOURCES = [
   'operator',
@@ -108,7 +108,7 @@ export const DEPTH_SOURCE_RANK: Record<DepthSource, number> = Object.fromEntries
 
 /**
  * Sources whose numbers come from someone putting an instrument in the water. Drives the display
- * framing (D3): a measured depth reads plainly and names its source, a modelled one reads as an estimate.
+ * framing (D3): a measured depth reads plainly and names its source, a modeled one reads as an estimate.
  * `osm_tag` counts — a mapper read it off something — while every global rung does not.
  */
 const MEASURED_DEPTH_SOURCES = new Set<DepthSource>([
@@ -163,7 +163,7 @@ export const SHALLOW_MEAN_DEPTH_M = 3;
  * moderator's `shallow_early_thaw` flag overrides the number entirely.
  *
  * **How this gets settled, rather than argued (founder call, 2026-07-30).** LAGOS-US DEPTH holds ~6,137
- * lakes with *both* a mean and a max — a labelled validation set. Once the ETL has run, fit the max cutoff
+ * lakes with *both* a mean and a max — a labeled validation set. Once the ETL has run, fit the max cutoff
  * that best reproduces the `mean ≤ 3 m` classification on our region's own lakes, and test whether
  * *relative depth* (max as a fraction of basin width, computable from the area every source carries)
  * separates "broad shallow sheet" from "small deep hole" well enough to earn its complexity. Step 6 of
@@ -172,7 +172,7 @@ export const SHALLOW_MEAN_DEPTH_M = 3;
 export const SHALLOW_MAX_DEPTH_M = 7;
 
 /**
- * Upper sanity bound on a stored depth, in metres. The deepest lake in our five states is Seneca at
+ * Upper sanity bound on a stored depth, in meters. The deepest lake in our five states is Seneca at
  * ~188 m, so 400 m is roughly double anything real here.
  *
  * **A backstop, not a unit detector** — and worth being precise about, because it is tempting to claim
@@ -216,7 +216,7 @@ export function isShallowDepth(depths: LakeDepths): boolean {
 export const DEPTH_SOURCE_LABELS: Record<DepthSource, string> = {
   operator: 'entered by a moderator',
   state_agency: 'state survey',
-  // Names the programme rather than "New York State", because who took the reading is the thing a
+  // Names the program rather than "New York State", because who took the reading is the thing a
   // reader would want to weigh — the same reason `alsc_1987` names a date.
   cslap: 'NY Citizen Statewide Lake Monitoring (CSLAP)',
   lagos_us: 'LAGOS-US DEPTH',
@@ -232,13 +232,13 @@ export const DEPTH_SOURCE_LABELS: Record<DepthSource, string> = {
 };
 
 /**
- * What each depth source's **licence** requires us to render, as opposed to what we call it.
+ * What each depth source's **license** requires us to render, as opposed to what we call it.
  *
  * **A label is not an attribution, and `DEPTH_SOURCE_LABELS` above is a label.** `'LAGOS-US DEPTH'`
- * tells a skater where a number came from; it does not identify the creators, name the licence, or
+ * tells a skater where a number came from; it does not identify the creators, name the license, or
  * link the material, which is what CC BY 4.0 §3.a.1 actually asks for. That distinction is the same
  * one `CONTOUR_SOURCE_TERMS` exists for in `contourLayer.ts` — *"the tile carries a short agency
- * label; the licence requires particular words"* — and depth needs it for the same reason.
+ * label; the license requires particular words"* — and depth needs it for the same reason.
  *
  * **Two of the three bulk sources are CC BY**, confirmed at download on 2026-08-02 rather than
  * assumed: HydroLAKES from hydrosheds.org, and LAGOS-US DEPTH from its EDI package page (that one
@@ -250,17 +250,17 @@ export const DEPTH_SOURCE_LABELS: Record<DepthSource, string> = {
  * obligation exists and has not been met yet. {@link attributionGaps} is what keeps the two apart.
  */
 export interface DepthSourceTerms {
-  /** Short licence name, for the caption. */
-  licence: string;
-  licenceUrl?: string;
+  /** Short license name, for the caption. */
+  license: string;
+  licenseUrl?: string;
   /**
-   * Whether this licence obliges us to credit the source where its data is shown.
+   * Whether this license obliges us to credit the source where its data is shown.
    *
    * **Stated, never inferred.** The first cut of this derived it from `credit === undefined`, which
-   * quietly reported CC0 GLOBathy as an unmet obligation — a licence permitting use without
+   * quietly reported CC0 GLOBathy as an unmet obligation — a license permitting use without
    * attribution and one whose attribution we simply haven't written down are opposite situations
-   * that look identical from the outside. Whether a licence requires attribution is a legal claim,
-   * and legal claims do not belong in a substring match on a licence name.
+   * that look identical from the outside. Whether a license requires attribution is a legal claim,
+   * and legal claims do not belong in a substring match on a license name.
    */
   requiresAttribution: boolean;
   /**
@@ -279,30 +279,30 @@ export const DEPTH_SOURCE_TERMS: Readonly<Record<DepthSource, DepthSourceTerms |
   // `state_agency` spans five publishers with five different required strings.
   state_agency: null,
   /**
-   * **No published licence either, and checked the same way** (2026-08-09).
+   * **No published license either, and checked the same way** (2026-08-09).
    *
    * The hosting ArcGIS item (`e3332be9630a4bd9978f0bdc8a67a3cd`, owned by `…@dec.ny.gov_nysdec`)
    * has an **empty `licenseInfo` and an empty `accessInformation`**, and the service itself carries
    * no `copyrightText`. Sharing is `public`. So this takes the same conservative reading as
    * `alsc_1987`: silence is not permission to go uncredited.
    *
-   * The credit names the **two** organisations the programme is run by, because CSLAP is a
+   * The credit names the **two** organizations the program is run by, because CSLAP is a
    * partnership and crediting only the state would misdescribe who takes the readings — which is the
    * very distinction this rung exists to preserve.
    */
   cslap: {
-    licence: 'No published terms (checked 2026-08-09)',
-    licenceUrl:
+    license: 'No published terms (checked 2026-08-09)',
+    licenseUrl:
       'https://www.dec.ny.gov/environmental-protection/water/water-quality/lakes/citizens-statewide-lake-assessment-program',
     requiresAttribution: true,
     credit:
-      'Citizens Statewide Lake Assessment Program (CSLAP), a cooperative programme of the New York ' +
+      'Citizens Statewide Lake Assessment Program (CSLAP), a cooperative program of the New York ' +
       'State Department of Environmental Conservation and the New York State Federation of Lake ' +
       'Associations.',
   },
   lagos_us: {
-    licence: 'CC BY 4.0',
-    licenceUrl: 'https://creativecommons.org/licenses/by/4.0/',
+    license: 'CC BY 4.0',
+    licenseUrl: 'https://creativecommons.org/licenses/by/4.0/',
     requiresAttribution: true,
     // Verbatim from the EDI package's own recommended citation, read 2026-08-02. The "Accessed"
     // date is ours and is the date the archive under `scripts/lake-depth/.raw/lagos-us-depth/` was
@@ -312,26 +312,26 @@ export const DEPTH_SOURCE_TERMS: Readonly<Record<DepthSource, DepthSourceTerms |
       'Stachelek, J., L.K. Rodriguez, J. Díaz Vázquez, A. Hawkins, E. Phillips, A. Shoffner, I.M. McCullough, K.B. King, J. Namovich, L.A. Egedy, M. Haite, P.J. Hanly, K.E. Webster, K.S. Cheruvelil, and P.A. Soranno. 2021. LAGOS-US DEPTH v1.0: Data module of observed maximum and mean lake depths for a subset of lakes in the conterminous U.S. ver 1. Environmental Data Initiative. https://doi.org/10.6073/pasta/64ddc4d04661d9aef4bd702dc5d8984f (Accessed 2026-08-02).',
   },
   /**
-   * **No published licence — and that is a finding, not a gap.**
+   * **No published license — and that is a finding, not a gap.**
    *
    * Every page of adirondacklakessurvey.org was checked on 2026-08-08: no terms-of-use, no data-use
    * statement, no rights page. The only assertion anywhere is a footer `copyright ©` whose year is
    * generated by JavaScript from the current date, i.e. template furniture rather than a claim about
    * a 1984–87 dataset.
    *
-   * So `requiresAttribution` is **true** and the licence reads as unstated. That is deliberate and it
-   * is the conservative direction: where a licence is silent we credit rather than assume permission,
+   * So `requiresAttribution` is **true** and the license reads as unstated. That is deliberate and it
+   * is the conservative direction: where a license is silent we credit rather than assume permission,
    * and the ALSC's own mission — *"for the benefit of regulatory agencies and the general public …
    * through an exchange of objective information"* — is the basis on which the data was taken
    * (founder call, 2026-08-08). Crediting the people who did the work is the least this owes them.
    *
-   * ⚠ Do **not** rewrite `licence` to something tidier. "No published terms" is the measurement;
+   * ⚠ Do **not** rewrite `license` to something tidier. "No published terms" is the measurement;
    * anything shorter would be an invention, and {@link attributionGaps} depends on the distinction
-   * between a licence that asks for nothing and one nobody has read.
+   * between a license that asks for nothing and one nobody has read.
    */
   alsc_1987: {
-    licence: 'No published terms (checked 2026-08-08)',
-    licenceUrl: 'https://www.adirondacklakessurvey.org/als.shtml',
+    license: 'No published terms (checked 2026-08-08)',
+    licenseUrl: 'https://www.adirondacklakessurvey.org/als.shtml',
     requiresAttribution: true,
     credit:
       'Adirondack Lakes Survey Corporation, Adirondack Lakes Survey 1984–1987 — a cooperative ' +
@@ -344,13 +344,13 @@ export const DEPTH_SOURCE_TERMS: Readonly<Record<DepthSource, DepthSourceTerms |
     // CC0 asks for nothing. Recorded anyway, because "no obligation" and "nobody checked" look
     // identical in an absent entry, and only one of them is safe to ship. Citing it is still good
     // manners and the caption does; it is simply not owed.
-    licence: 'CC0 1.0',
-    licenceUrl: 'https://creativecommons.org/publicdomain/zero/1.0/',
+    license: 'CC0 1.0',
+    licenseUrl: 'https://creativecommons.org/publicdomain/zero/1.0/',
     requiresAttribution: false,
   },
   osm_tag: {
-    licence: 'ODbL 1.0',
-    licenceUrl: 'https://www.openstreetmap.org/copyright',
+    license: 'ODbL 1.0',
+    licenseUrl: 'https://www.openstreetmap.org/copyright',
     requiresAttribution: true,
     credit: '© OpenStreetMap contributors',
   },
@@ -359,8 +359,8 @@ export const DEPTH_SOURCE_TERMS: Readonly<Record<DepthSource, DepthSourceTerms |
 /** Both HydroLAKES rungs are the same dataset under the same terms, so the wording is shared. */
 function HYDROLAKES_TERMS(): DepthSourceTerms {
   return {
-    licence: 'CC-BY 4.0',
-    licenceUrl: 'https://creativecommons.org/licenses/by/4.0/',
+    license: 'CC-BY 4.0',
+    licenseUrl: 'https://creativecommons.org/licenses/by/4.0/',
     requiresAttribution: true,
     // Verbatim from hydrosheds.org/products/hydrolakes, checked 2026-08-02.
     credit:
@@ -369,10 +369,10 @@ function HYDROLAKES_TERMS(): DepthSourceTerms {
 }
 
 /**
- * Sources whose licence requires attribution that we have not recorded yet.
+ * Sources whose license requires attribution that we have not recorded yet.
  *
  * **This is a shipping gate, not a lint.** A depth value rendered from a CC BY source with no credit
- * is a licence breach, and the failure is silent by nature — nothing in the app misbehaves, the
+ * is a license breach, and the failure is silent by nature — nothing in the app misbehaves, the
  * number just appears. So the gap is computed rather than remembered, and the test suite asserts the
  * set matches what is knowingly outstanding.
  */
@@ -414,11 +414,11 @@ export function requiredDepthCredits(sources: readonly DepthSource[]): string[] 
 
 /** A body's depth, ready to render: the numbers, their attribution, and whether any is an estimate. */
 export interface DepthDisplay {
-  /** e.g. `"mean ~13 ft · max 59 ft"` — a `~` marks a modelled value. */
+  /** e.g. `"mean ~13 ft · max 59 ft"` — a `~` marks a modeled value. */
   text: string;
   /** Sources named, deduped, in ladder order. */
   caption: string;
-  /** Whether any shown value is modelled (so the caller can style the caption as a caveat). */
+  /** Whether any shown value is modeled (so the caller can style the caption as a caveat). */
   hasEstimate: boolean;
 }
 
@@ -433,7 +433,7 @@ export interface LakeDepthRecord extends LakeDepths {
  * Render a body's depth for a skater, **framed by where each number came from** (D68, founder call).
  *
  * The framing rule is the whole point and it is one line of logic: a measured depth reads plainly, a
- * modelled one carries a `~` and the caption says the sources. A 90 m-DEM estimate and a depth-sounder
+ * modeled one carries a `~` and the caption says the sources. A 90 m-DEM estimate and a depth-sounder
  * transect are both useful and are not the same claim (D3), and since mean and max routinely arrive from
  * different rungs, the mark has to be **per value** rather than per lake.
  *

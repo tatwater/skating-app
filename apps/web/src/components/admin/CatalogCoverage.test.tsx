@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatShare } from './CatalogueCoverage';
+import { formatShare } from './CatalogCoverage';
 
 /**
  * This panel's whole job is to be readable while the number it reports is almost zero — USGS has

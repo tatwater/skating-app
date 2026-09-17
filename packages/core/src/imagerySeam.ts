@@ -8,7 +8,7 @@
  *
  * Two frames abut along a granule boundary. The visible join is therefore the boundary of whichever
  * one is drawn on top — the *primary* — restricted to the water, because that boundary also runs for
- * a hundred kilometres across land nobody is looking at.
+ * a hundred kilometers across land nobody is looking at.
  *
  * **Not the whole intersection outline.** Intersecting the footprint with the lake gives a polygon
  * whose boundary is part granule edge and part *shoreline*, and drawing all of it would trace the
@@ -18,7 +18,7 @@
  *
  * ## How, given what a footprint is
  *
- * A granule footprint is a quadrilateral — four segments, no curvature worth modelling. So each
+ * A granule footprint is a quadrilateral — four segments, no curvature worth modeling. So each
  * segment is walked at a fixed ground spacing, each sample tested against the lake, and contiguous
  * in-water runs become lines. That needs only `pointInPolygon`, which is exact for this purpose,
  * rather than a line/polygon clipper the package does not carry.
@@ -80,7 +80,7 @@ export function seamLineFor(
         const lat = from[1] + (to[1] - from[1]) * t;
         const position: Position = [lng, lat];
 
-        // The bbox test first, because it rejects the ninety-odd kilometres of every edge that never
+        // The bbox test first, because it rejects the ninety-odd kilometers of every edge that never
         // come near this lake for the cost of four comparisons.
         const inside = inBox(lng, lat, box) && pointInPolygon({ lat, lng }, body);
 
@@ -117,7 +117,7 @@ export function seamFeature(
   return geometry ? { type: 'Feature', geometry, properties: {} } : null;
 }
 
-/** Total length of a seam in metres — for deciding whether one is worth drawing at all. */
+/** Total length of a seam in meters — for deciding whether one is worth drawing at all. */
 export function seamLengthMeters(seam: MultiLineString | LineString): number {
   const lines = seam.type === 'LineString' ? [seam.coordinates] : seam.coordinates;
   let total = 0;

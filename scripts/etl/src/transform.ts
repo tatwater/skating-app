@@ -351,14 +351,14 @@ export function featureToCanonicalBody(
 // with no producer. It rides *this* pass rather than the depth ETL's, because the tags arrive with the
 // OSM export and the depth pipeline never sees an OSM feature.
 
-/** Feet → metres, for a tag that spells its unit. */
+/** Feet → meters, for a tag that spells its unit. */
 const M_PER_FOOT = 0.3048;
 
 /**
- * Parse an OSM depth tag value to metres, or `undefined` if it isn't an unambiguous single depth.
+ * Parse an OSM depth tag value to meters, or `undefined` if it isn't an unambiguous single depth.
  *
  * **Deliberately strict**, because this is the bottom rung and a wrong number here is worse than no
- * number: a bare value is metres (the OSM default unit), an explicit `m` / `ft` / `'` is converted, and
+ * number: a bare value is meters (the OSM default unit), an explicit `m` / `ft` / `'` is converted, and
  * everything else — ranges (`2-3`), approximations (`~5`), comparisons (`>10`), unparseable junk — is
  * refused rather than guessed at. There is no unit *detection* here and there can't be: `10` might be a
  * chart in feet, which is precisely why this rung sits below every model in the ladder.
@@ -366,7 +366,7 @@ const M_PER_FOOT = 0.3048;
 export function parseOsmDepthMeters(raw: unknown): number | undefined {
   if (typeof raw !== 'string' && typeof raw !== 'number') return undefined;
   const text = String(raw).trim().toLowerCase();
-  const match = /^(\d+(?:\.\d+)?)\s*(m|metre|metres|meter|meters|ft|feet|foot|')?$/.exec(text);
+  const match = /^(\d+(?:\.\d+)?)\s*(m|meter|meters|metre|metres|ft|feet|foot|')?$/.exec(text);
   if (!match) return undefined;
   const value = Number(match[1]);
   if (!Number.isFinite(value) || value <= 0) return undefined;

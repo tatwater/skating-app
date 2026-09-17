@@ -213,7 +213,7 @@ async function main() {
   let applied = 0;
   for (const o of matched) {
     if (o.kind !== 'matched') continue;
-    // **Never overwrite a boost a human already set.** A hand-set value is a judgement about a
+    // **Never overwrite a boost a human already set.** A hand-set value is a judgment about a
     // specific lake; this list is a cold-start seed, and a seed that silently overrides curation is
     // the opposite of what D49 wants from it.
     if ((o.body.curatedBoost ?? 0) !== 0) {

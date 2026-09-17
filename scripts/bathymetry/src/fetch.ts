@@ -199,7 +199,7 @@ async function main(): Promise<void> {
     return;
   }
 
-  // One run row per source (A06c §6.2), labelled to match what the archive backfill reconstructs, so a
+  // One run row per source (A06c §6.2), labeled to match what the archive backfill reconstructs, so a
   // re-fetch lands as the newest entry in that source's own history rather than as a stranger.
   // Per-source rather than per-invocation because that is the unit that succeeds or fails: these are
   // five independent state agencies, and "the snapshot failed" is never true of all of them at once.

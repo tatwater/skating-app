@@ -55,7 +55,7 @@ describe('the source registry', () => {
   });
 
   it('carries feet as the native unit everywhere, so there is no cross-state unit seam', () => {
-    // D83's premise was that VT publishes metres and NH/MA feet, which would put a unit change on a
+    // D83's premise was that VT publishes meters and NH/MA feet, which would put a unit change on a
     // state line. Every source we actually fetch is feet, so the rule stands and the seam does not.
     for (const source of SOURCES) expect(source.unit).toBe('ft');
   });
@@ -85,9 +85,9 @@ describe('attribution and notices', () => {
     expect(champlain?.attribution).toContain('VCGI');
   });
 
-  it('says the Champlain soundings were digitised rather than surveyed by NOAA', () => {
+  it('says the Champlain soundings were digitized rather than surveyed by NOAA', () => {
     // NOAA asks that attribution not imply endorsement or affiliation, and that modified data not be
-    // presented as unaltered NOAA data. Ours is doubly derived: chart -> digitised -> interpolated.
+    // presented as unaltered NOAA data. Ours is doubly derived: chart -> digitized -> interpolated.
     const champlain = sourceByKey('vt-vcgi-champlain-soundings');
     expect(champlain?.attribution).toMatch(/digitised|digitized/i);
     expect(champlain?.attribution).toContain('NOAA nautical charts');

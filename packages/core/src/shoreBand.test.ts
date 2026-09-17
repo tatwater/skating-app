@@ -18,18 +18,18 @@ import {
 } from './shoreBand';
 import { HAZARD_TYPES } from './types';
 
-const CENTRE: LatLng = { lat: 44.4759, lng: -73.2121 }; // Burlington, VT
+const CENTER: LatLng = { lat: 44.4759, lng: -73.2121 }; // Burlington, VT
 
 /**
- * A closed ring of `n` vertices on a circle of `radiusDeg` around `centre`.
+ * A closed ring of `n` vertices on a circle of `radiusDeg` around `center`.
  *
  * A circle stands in for a shoreline well enough for the properties under test: the arithmetic here
  * is about walking a ring, not about the shape of any particular lake.
  */
-function circleRing(n: number, radiusDeg: number, centre: LatLng = CENTRE): Position[] {
+function circleRing(n: number, radiusDeg: number, center: LatLng = CENTER): Position[] {
   const ring: Position[] = Array.from({ length: n }, (_, i) => {
     const a = (2 * Math.PI * i) / n;
-    return [centre.lng + radiusDeg * Math.cos(a), centre.lat + radiusDeg * Math.sin(a)];
+    return [center.lng + radiusDeg * Math.cos(a), center.lat + radiusDeg * Math.sin(a)];
   });
   return [...ring, ring[0] as Position];
 }
@@ -118,7 +118,7 @@ describe('deriveShoreBand', () => {
   it('refuses a tap that isn’t near any shore', () => {
     // Without the bound, a tap in the middle of the lake snaps silently to whichever shore happens
     // to be nearest and hands back a band nowhere near what was pointed at.
-    const result = deriveShoreBand(SIMPLE_LAKE, CENTRE, ringPoint(OUTER, 4), {
+    const result = deriveShoreBand(SIMPLE_LAKE, CENTER, ringPoint(OUTER, 4), {
       halfWidthMeters: 10,
     });
     expect(result).toEqual({ ok: false, reason: 'tap_off_shore' });
@@ -144,7 +144,7 @@ describe('deriveShoreBand', () => {
 
   it('refuses a body with no usable boundary rather than throwing', () => {
     expect(
-      deriveShoreBand({ type: 'Polygon', coordinates: [] }, CENTRE, CENTRE, {
+      deriveShoreBand({ type: 'Polygon', coordinates: [] }, CENTER, CENTER, {
         halfWidthMeters: 10,
       }),
     ).toEqual({ ok: false, reason: 'no_boundary' });
@@ -168,8 +168,8 @@ describe('deriveShoreBand', () => {
 
   it('either refuses or produces a storable shape — never a throw, never an invalid one (property)', () => {
     const arbTap: fc.Arbitrary<LatLng> = fc.record({
-      lat: fc.double({ min: CENTRE.lat - 0.03, max: CENTRE.lat + 0.03, noNaN: true }),
-      lng: fc.double({ min: CENTRE.lng - 0.03, max: CENTRE.lng + 0.03, noNaN: true }),
+      lat: fc.double({ min: CENTER.lat - 0.03, max: CENTER.lat + 0.03, noNaN: true }),
+      lng: fc.double({ min: CENTER.lng - 0.03, max: CENTER.lng + 0.03, noNaN: true }),
     });
     fc.assert(
       fc.property(
@@ -198,7 +198,7 @@ describe('deriveShoreBand', () => {
  *
  * A band derived at half-width `H` and stored with halo `B` warns from `H + B` out. That is two
  * *different* quantities, not one applied twice (D67): `H` is a claim about the **ice** — rotten shore
- * ice runs tens of metres out — and `B` is the type's uncertainty about **where any hazard's edge is**,
+ * ice runs tens of meters out — and `B` is the type's uncertainty about **where any hazard's edge is**,
  * which every other hazard in the app also gets. Dropping `B` would make a shore band the one hazard
  * whose footprint is exactly its author's eyeball estimate, which is D3's "never assert safety" read
  * backwards: the fail-safe direction for a hazard footprint is *out*, not in.
@@ -208,14 +208,14 @@ describe('deriveShoreBand', () => {
  */
 describe('the warned footprint vs the selected half-width (D67)', () => {
   // A ~2.2 km-radius lake, so the shore is locally near-straight and "distance out from shore" at the
-  // arc's midpoint is a clean measurement rather than a curvature artefact.
+  // arc's midpoint is a clean measurement rather than a curvature artifact.
   const BIG_RING = circleRing(180, 0.02);
   const BIG_LAKE: Polygon = { type: 'Polygon', coordinates: [BIG_RING] };
 
-  /** How far inward from `from`, toward `CENTRE`, the geometry still contains a point (metres). */
+  /** How far inward from `from`, toward `CENTER`, the geometry still contains a point (meters). */
   function reachInland(geom: Polygon | MultiPolygon, from: LatLng): number {
-    const dLat = CENTRE.lat - from.lat;
-    const dLng = CENTRE.lng - from.lng;
+    const dLat = CENTER.lat - from.lat;
+    const dLng = CENTER.lng - from.lng;
     const norm = Math.hypot(dLat, dLng);
     const degPerM = 1 / 111_320;
     let last = 0;

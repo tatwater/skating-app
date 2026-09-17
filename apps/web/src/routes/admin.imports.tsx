@@ -116,7 +116,7 @@ function AdminImports() {
 }
 
 /**
- * The most recent campaign, totalled.
+ * The most recent campaign, totaled.
  *
  * **Grouped rather than listed** because five state extracts are five loader invocations and one
  * canonical update — "how did the last import go" is a question about the update. A campaign that

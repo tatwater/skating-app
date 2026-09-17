@@ -1,4 +1,4 @@
-# A02 — The water body editor + named sub-areas
+# Phase A02 — The water body editor + named sub-areas
 
 > **Status: ✅ COMPLETE on dev (2026-07-26; prod deferred, as every phase since 2.5).** Decisions
 > **D60** (named sub-areas) and **D61** (the per-body operator canvas) are written into
@@ -158,7 +158,7 @@ the operator to redraw. See *§What the build found* item 1 for the hole this cl
 **Decision 12 — The editor's canvas comes from refactoring `MapView` into a shared shell**, not from a
 second map component (founder call, overriding the build's recommendation). One place for map bugs and
 one style/layer pipeline beats two diverging canvases, even though the refactor lands on the most
-load-bearing untested-by-design file in the web app. The skater path must come out behaviourally
+load-bearing untested-by-design file in the web app. The skater path must come out behaviorally
 identical; terra-draw stays lazy and admin-only regardless of who owns the shell.
 
 **Decision 13 — The curation session is drawn from the corpus, then corrected.** The build draws all
@@ -182,7 +182,7 @@ applied to the roadmap entry. Seven corrections, each verified against a file:
    rule is *unlisted means absent from the cell table*; that is what makes the listing filter free
    (`lib/cellIndex.ts`). This plan gave `waterBodySubAreas` its own `removedAt` and its own cell table
    keyed on that, and never connected the two. A landowner takedown on Lake Champlain drops the body's
-   cell rows and would have left "Malletts Bay" outlined and labelled on a map where the water body no longer
+   cell rows and would have left "Malletts Bay" outlined and labeled on a map where the water body no longer
    exists — the same for `reject`, and `merge` would have left the loser's bays pointing at a
    merged-away parent. Closed by **Decision 11**.
 
@@ -251,7 +251,7 @@ giants" is a fact about today's data, not a bound. So:
   Decision 1 asked for *one* spatial mechanism, and this stays inside it.
 - The query reuses `bodiesCoveringBox`'s **two-pass shape** — collect rows across every rung, sort by
   prominence, *then* hydrate — because the round-3 correction proved that ranking a spatially-selected
-  prefix silently blanks whole neighbourhoods. A sub-area layer that drew Champlain's bays and none of
+  prefix silently blanks whole neighborhoods. A sub-area layer that drew Champlain's bays and none of
   Lake George's, depending on cell arithmetic, is that bug wearing a smaller hat.
 - Its budgets are its own and much smaller — though **not for the reason first written here**. The
   original text sized them against A01's leftover headroom (worst measured viewport 1,771 of 4,096,
@@ -388,7 +388,7 @@ parameterized base — style, bounds, layer set, click handling — that the ska
 configure, leaving the pure transforms where they already live in `lib/waterMap`. The build's own
 recommendation was a second, leaner admin component; the founder's call is one shell, and the price is
 that this refactor lands on the most load-bearing file in the web app. **The skater path must come out
-behaviourally identical**, which is a testing obligation, not an aspiration: the existing map tests run
+behaviorally identical**, which is a testing obligation, not an aspiration: the existing map tests run
 green unchanged before anything editor-shaped is added.
 
 **The camera is locked to the body.** `maxBounds` = the body's bbox plus a small margin, `minZoom` =
@@ -746,7 +746,7 @@ rendered `MapView` or the shell. See *Testing* for the three files that now do.
     exactly the kind of UI courtesy §7c says is not an authority. `listByWaterBody` now resolves the
     body and refuses a bay that isn't on it.
 
-    Two judgement calls in the check, both different from `bounties.create`'s superficially identical
+    Two judgment calls in the check, both different from `bounties.create`'s superficially identical
     one. It compares against the **survivor** (D36), because a merge repoints the loser's bays onto
     the survivor — a link still naming the merged-away body is a legitimate pair, not a cross-body
     one, and 400ing someone's bookmark would be the fix inventing a second bug. And a **delisted bay
@@ -821,7 +821,7 @@ rendered `MapView` or the shell. See *Testing* for the three files that now do.
   a correct-but-conservative fallback that costs no index.
 - **terra-draw** — confirm at first use; paste-GeoJSON is the fallback and the break-glass path.
 - **How much of `MapView` the shared shell should own** (Decision 12). The line between "base map" and
-  "the skater map's behaviour" isn't obvious from outside the file, and drawing it too high produces a
+  "the skater map's behavior" isn't obvious from outside the file, and drawing it too high produces a
   shell with a dozen conditional props — which is two components wearing one name. Settle it against
   the diff, and keep the skater suite green as the arbiter.
 - **Bundling cooldown** — 30d is the opening number, and it belongs in the control room with the chart
@@ -840,7 +840,7 @@ seven corrections to what this entry and its own plan claimed, and the measured 
 
 Shipped: **named sub-areas** (D60) — a bay is a region *inside* one polygon, not a water body beside it, so
 one sheet of ice keeps one set of reports, hazards, bounties, favorites and tracks while carrying the
-name skaters actually use. Full citizens: labelled on the feed card and both detail surfaces, searchable
+name skaters actually use. Full citizens: labeled on the feed card and both detail surfaces, searchable
 by alias, drawn on both clients off a third ladder-grid cell table, and targetable by a bounty. Plus the
 **per-body editor** (D61) at `/admin/water/$id` with the camera locked to the body, the `weatherSamplePoints`
 writer that Phase 10 shipped a reader for and never a mutation, auto-flag bundling, and
