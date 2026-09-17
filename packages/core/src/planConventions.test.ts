@@ -161,10 +161,20 @@ describe('every phase doc is headed "# Phase <token> — <title>"', () => {
   });
 
   test('the rule accepts the shapes in use and rejects the three the pass had to fix', () => {
-    for (const ok of ['# Phase 00 — Foundations', '# Phase 02a — Map', '# Phase A06e — Imagery', '# Phase A03 / A04 — Accounts']) {
+    for (const ok of [
+      '# Phase 00 — Foundations',
+      '# Phase 02a — Map',
+      '# Phase A06e — Imagery',
+      '# Phase A03 / A04 — Accounts',
+    ]) {
       expect(PHASE_H1.test(ok), ok).toBe(true);
     }
-    for (const bad of ['# Phase 01 build plan — Water', '# A01 — Read-path', '# Phase A03/A04 — Accounts', '# Foundations']) {
+    for (const bad of [
+      '# Phase 01 build plan — Water',
+      '# A01 — Read-path',
+      '# Phase A03/A04 — Accounts',
+      '# Foundations',
+    ]) {
       expect(PHASE_H1.test(bad), bad).toBe(false);
     }
   });
