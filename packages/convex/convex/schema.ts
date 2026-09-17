@@ -2571,8 +2571,11 @@ export default defineSchema({
     // The per-person cap on OPEN asks: an equality on status, so a long history of decided rows
     // cannot push an open one out of a newest-N window (Greptile, PR #63).
     .index('by_requester_status', ['requesterId', 'status'])
-    // Everything asked about one lake, for its drawer and for the dedup on create.
-    .index('by_water_body', ['waterBodyId', 'status'])
+    // Everything asked about one lake, for its drawer and for the dedup on create. `kind` sits
+    // before `status` so the open asks of ONE kind — the sibling set a decision closes — are a
+    // contiguous range a mutation can drain page by page, not a filter over a capped page of every
+    // kind (Greptile, PR #63).
+    .index('by_water_body', ['waterBodyId', 'kind', 'status'])
     // Every `admit` that resolved to the same catalogue feature — the sibling set a decision closes.
     // `eq()` only: the field is optional and the index is not sparse.
     .index('by_candidate_external_id', ['candidateExternalId', 'status']),

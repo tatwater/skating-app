@@ -9,6 +9,7 @@ import type { Polygon } from 'geojson';
 import { describe, expect, test } from 'vitest';
 import { api, internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
+import { QUEUE_CAP, RANK_CAP } from './corpusRequests';
 import schema from './schema';
 
 const modules = import.meta.glob('./**/*.*s');
@@ -393,6 +394,51 @@ describe('decide — what approving performs', () => {
     expect(new Set(rows.map((r) => r.admittedWaterBodyId)).size).toBe(1);
     expect(await t.run((ctx) => ctx.db.query('waterBodies').collect())).toHaveLength(1);
   });
+
+  test('a decision closes every sibling past the page cap, of its own kind only; the rank says "50+"', async () => {
+    const t = harness();
+    const a = await seedUser(t, 'a');
+    const mod = await seedUser(t, 'mod', 'moderator');
+    const id = await seedBody(t, 'osm/1', dormant);
+    const first = await a.as.mutation(api.corpusRequests.create, {
+      kind: 'activate',
+      coord: INSIDE,
+      waterBodyId: id,
+    });
+    // More siblings than one page holds, plus open asks of another kind on the same lake, written
+    // straight to the table — `create` would refuse the second ask from one person.
+    const seedOpen = (kind: 'activate' | 'contest_access', n: number) =>
+      t.run(async (ctx) => {
+        for (let i = 0; i < n; i++) {
+          await ctx.db.insert('waterBodyRequests', {
+            kind,
+            status: 'open',
+            requesterId: a.id,
+            coord: INSIDE,
+            waterBodyId: id,
+            createdAt: Date.now() + i,
+          });
+        }
+      });
+    await seedOpen('activate', QUEUE_CAP + 30);
+    await seedOpen('contest_access', 5);
+
+    const counts = await t.query(api.corpusRequests.openCountsForBody, { waterBodyId: id });
+    expect(counts).toEqual({ activate: QUEUE_CAP, contest_access: 5 });
+    const queue = await mod.as.query(api.corpusRequests.listQueue, {});
+    const mine = queue.find((r) => r._id === first);
+    expect(mine).toMatchObject({ askers: RANK_CAP + 1, askersCapped: true });
+    expect(queue.find((r) => r.kind === 'contest_access')).not.toHaveProperty('askersCapped');
+
+    await mod.as.mutation(api.corpusRequests.approve, { requestId: first });
+    const rows = await t.run((ctx) => ctx.db.query('waterBodyRequests').collect());
+    const byKind = (kind: string) => rows.filter((r) => r.kind === kind).map((r) => r.status);
+    expect(new Set(byKind('activate'))).toEqual(new Set(['approved']));
+    expect(byKind('activate')).toHaveLength(QUEUE_CAP + 31);
+    expect(new Set(byKind('contest_access'))).toEqual(new Set(['open']));
+    const audits = await t.run((ctx) => ctx.db.query('moderationActions').collect());
+    expect(audits.filter((x) => x.action === 'approve_request')).toHaveLength(QUEUE_CAP + 31);
+  }, 20_000);
 
   test('approving an admit re-checks the point: a body admitted under it since, without a 3DHP id, is used', async () => {
     const t = harness();

@@ -94,7 +94,8 @@ function RequestQueue() {
                     {requestKindTitle(row.kind)}
                     {row.askers > 1 ? (
                       <span className="ml-2 font-mono text-foreground-muted text-xs">
-                        {row.askers} people
+                        {row.askers}
+                        {row.askersCapped ? '+' : ''} people
                       </span>
                     ) : null}
                   </p>
