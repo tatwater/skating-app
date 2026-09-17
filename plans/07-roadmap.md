@@ -526,8 +526,8 @@ you can't legally reach stays visible and says so.*
 
 Three research lanes that read A06e's archive — single-frame ice identification, corpus shrinking by
 observed freeze behavior, and the phenology derivations — none of which can start before the
-nine-season backfill exists. Assigned a number at A06e's scoping, never built, and now a backlog item;
-the number stays vacant; the doc carries it in the backlog.
+nine-season backfill exists. Assigned a number at A06e's scoping and never built; withdrawn rather
+than renamed, so the number stays vacant and the doc keeps it under `phases/`, unscheduled.
 
 ## Phase A06h — The weather panel
 🟡 **In progress** 2026-09-12 · PRs #48 #49 #50 #51 #54 · [plan](./phases/A06h-weather-detail.md) · D152–D166

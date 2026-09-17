@@ -1,6 +1,13 @@
 # Next-gen — one phase-naming scheme: what a rename actually touches, and the traps in it
 
-> **✅ The tree is renamed (2026-09-17, PR 2 of 3).** What remains is step 2b — `gh pr edit` over the pre-pass PRs with the banner — and it runs after that PR merges. This doc keeps the old names deliberately: it is the record of the mapping.
+> **✅ Done (2026-09-17).** The tree was renamed in PR #64 (step 2); step 2b — `gh pr edit` over
+> PRs #1–#63 with the banner — ran the same night, from a throwaway script that reused the token
+> table, dry-run first (#2, #53, #54), verified idempotent, and re-fetched to check: no old token
+> survives outside #60 and #64, which were left as written because the old names are their subject.
+> Step 3 (the roadmap restructure) had already landed as PR #62 *before* step 2, so the "written
+> once, in the new names" argument for its ordering went unused; what it left over (the root
+> `README.md` refresh, the prose that PR #64's token pass turned on itself in `plans/README.md`)
+> went into the 2b PR. This doc keeps the old names deliberately: it is the record of the mapping.
 >
 > **Scoped 2026-09-16 (after N9 merged).** Founder: the numbering has
 > drifted through three schemes — pre-build docs `00–08`, roadmap phases `1–10` with `.5` splits,
@@ -335,6 +342,12 @@ that outlive them — the "alpha" era is still dev-only. Neutral letters age bet
    founder prunes it, not a PR.
 
 ## How to run it (three PRs, in this order)
+
+*As run: (1) = PR #60; (3) = PR #62, which jumped the queue because the n7b branch was still
+landing; (2) = PR #64; (2b) = the PR pass plus a small tree PR. What the PR pass found that the plan
+didn't say: `Phases 0–2.5` ranges, `Phase-2.5` hyphenated, bare `PR 7b` / `2.5 runbook`, and
+workstream letters in PR text with two meanings (`F2` = 02a's offline queue in #14/#16/#20, A06c's
+run history in #42) — each mapped by hand from context, like the tree's own hand-checked shapes.*
 
 1. **Scheme + crosswalk** — `plans/README.md` rewritten: the *target* directory layout (with a ⏳
    line saying the move lands in the next PR), the phase-vs-feat test, the conventions (token

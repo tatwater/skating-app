@@ -116,7 +116,7 @@ test plan.
 
 ## Workstreams (web PR — in dependency order)
 
-### A. `@skating/core` additions (pure, tested first) — ✅ DONE (2026-07-13)
+### §1 — `@skating/core` additions (pure, tested first) — ✅ DONE (2026-07-13)
 The logic both Convex and the apps need, kept framework-free and property-tested (D40). All land
 before anything consumes them.
 
@@ -162,7 +162,7 @@ before anything consumes them.
     (property test); a minimal "notes-only" report validates; **a locked/minor profile can't set
     `public`** (clamp/reject).
 
-### B. Convex schema + geospatial — ✅ DONE (2026-07-13)
+### §2 — Convex schema + geospatial — ✅ DONE (2026-07-13)
 Minimal — the report/photo/comment tables already exist in full (Phase 00 schema). Only additive,
 migration-free optional fields.
 
@@ -190,7 +190,7 @@ migration-free optional fields.
 - **No `reports.point` geospatial index this phase** — report feeds query the existing
   `by_water_body_skate_time` DB index; near-me/cross-body geospatial is Phase 04/5.
 
-### C. Convex functions + `convex-test` — ✅ DONE (2026-07-13)
+### §3 — Convex functions + `convex-test` — ✅ DONE (2026-07-13)
 
 > **Shipped:** `waterBodies` `get` (merged→survivor redirect + unavailable signal) + `setCuratedBoost`
 > + `importCanonical`/`listInViewport` D49 wiring; `reports.ts` (`create`/`listByWaterBody`/`get`/
@@ -240,7 +240,7 @@ migration-free optional fields.
   high-`minVisibleZoom` (low-prominence) body is absent at wide zoom while a boosted body appears;
   `setCuratedBoost` gates on `admin`, recomputes `minVisibleZoom`, + writes the audit row.
 
-### D. Web UI — read + map (the loop, read side) — ✅ DONE (2026-07-13)
+### §4 — Web UI — read + map (the loop, read side) — ✅ DONE (2026-07-13)
 
 > **Shipped:** interactive `MapView` (tap→`/water/$id`, feature-state highlight, zoom passed into
 > `listInViewport` for the D49 filter, browser-geolocation framing, drawer-driven fly-to + report
@@ -279,7 +279,7 @@ migration-free optional fields.
   Testing Library) for detail rendering + imperial formatting; the imperative MapLibre shell stays
   excluded from coverage (Phase 01 precedent).
 
-### E. Web UI — write (report creation) — ✅ DONE (2026-07-13)
+### §5 — Web UI — write (report creation) — ✅ DONE (2026-07-13)
 
 > **Shipped:** `ReportForm` (a shadcn **Dialog** opened from the water-body drawer, D47) —
 > split into a presentational, Convex-free `ReportFormFields` (fully testable) + a container that
@@ -320,7 +320,7 @@ migration-free optional fields.
   profile is not offered `public`**; thickness add/remove + value-XOR-range UI; geotag opt-in
   toggles coord retention; put-in pin sets/clears `point`.
 
-### F. Mobile (separate follow-on PR(s)) — split into §6.1 (online) + §6.2 (offline queue), decided 2026-07-13
+### §6 — Mobile (separate follow-on PR(s)) — split into §6.1 (online) + §6.2 (offline queue), decided 2026-07-13
 Built after web ships; reuses **all** of §1–§3 unchanged. **Split into two PRs** (decided 2026-07-13):
 the online loop lands and gets proven first, then the offline queue (the single hardest, mobile-only
 piece) lands on its own so its review is scoped (Greptile reviews are metered).
@@ -466,14 +466,14 @@ web-only glue stays in web: the datetime-**local** `<input>` round-trip and the 
   auto-select; (4) mobile — draft queue (sqlite/fs persistence, photo checkpointing, flush triggers,
   offline put-in); (5) mobile — drafts list + edit; (6) §7 docs + hygiene.
 
-### G. Docs + hygiene — ✅ DONE (2026-07-16)
+### §7 — Docs + hygiene — ✅ DONE (2026-07-16)
 - README updates: `packages/convex` (reports/photos functions, displayScore/minVisibleZoom),
   `apps/web` (report flow, photo pipeline). Update `plans/README.md` index + the roadmap's Phase 02a
   status when it lands.
 - Confirm token/drift-guard tests still pass; keep OSM + "Powered by Strava" (N/A this phase) and
   ODbL attribution visible.
 
-### H. Regional expansion (post-MVP — Phase 02b, its own PR) — decided 2026-07-14 — ✅ DONE (2026-07-15, PR #14)
+### §8 — Regional expansion (post-MVP — Phase 02b, its own PR) — decided 2026-07-14 — ✅ DONE (2026-07-15, PR #14)
 
 > **Execution runbook:** [`phases/02b-regional-expansion.md`](./02b-regional-expansion.md) — the
 > step-by-step ops (per-state ETL + NY clip, multi-state `.pmtiles` → R2, bounds widening) and the
