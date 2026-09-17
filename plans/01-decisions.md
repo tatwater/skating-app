@@ -2545,8 +2545,8 @@ safety regression delivered by a display preference.
 - Contour tiles load lazily on drawer-open, so the browse map's tile budget is unchanged.
 - Contours are not drawn over imagery — no cartographic base to annotate, and they'd fight a photograph
   for legibility.
-- The satellite preference is per-device and persisted, default off (A06e §1.5). It is the map's **only**
-  persisted display state.
+- The satellite preference is per-device and persisted, default off (A06e as scoped 2026-07-31; D146
+  later made the reveal per-body and unpersisted). It is the map's **only** persisted display state.
 
 **Related:** [D82](#d82--bathymetry-is-context-not-counsel-a06b), [D84](#d84--satellite-imagery-is-two-tiers-with-different-jobs-a06e),
 [`phase-A06b`](./phases/A06b-bathymetry-layer.md), [`phase-A06e`](./phases/A06e-satellite-imagery.md).
@@ -4365,16 +4365,16 @@ A06c's Workstream **§2.3** specified a Copernicus Browser deep link, a `satelli
 'auto'|'on'|'off'` per-row override and a `SATELLITE_MIN_AREA_SQM` threshold — all of it now deferred
 to [A06e](./phases/A06e-satellite-imagery.md).
 
-**Why this is the right split rather than a slip.** B3's own argument for shipping the link early was
+**Why this is the right split rather than a slip.** A06c §2.3's own argument for shipping the link early was
 that it is *"zero cost, zero quota, no license question, works today"* — true, and it is also the
-half that teaches us least. The three things B3a's proving run was meant to establish (the URL shape
+half that teaches us least. The three things A06c §2.3a's proving run was meant to establish (the URL shape
 is right, name-matching works, imagery is legible at these bodies' sizes) are all things A06e has to
 establish anyway for the in-app tier, against the same bodies. Doing them twice, a phase apart, means
 the second pass re-derives what the first learned and the deep link spends a phase as the only
 imagery surface in the product — which is exactly the "a toggle appears later and works differently"
 seam A06e exists to avoid.
 
-**What this does NOT defer:** Workstream **4**'s curated boosts, which were bundled with A06c §2.3a because
+**What this does NOT defer:** A06c §4's curated boosts, which were bundled with A06c §2.3a because
 they share a matcher. They ship in A06c-2 — see [D139](#d139--the-seed-script-is-named-for-the-job-it-does-today-a06c-2).
 
 `referenceLinks.ts` carries a test asserting no Copernicus URL is emitted, so the link cannot creep
@@ -4454,14 +4454,14 @@ possible parts of a water body profile while testing dev… I'd rather not forge
 wild before the season starts just because I couldn't see it."*
 
 Nearly every profile surface is built to render nothing when it has nothing to say — the caption's
-clauses, the reference links, both weather strips, the bathymetry credit, E3's cards and D86's mark.
+clauses, the reference links, both weather strips, the bathymetry credit, A06c §5.3's cards and D86's mark.
 That is right for skaters and hostile to testing: on a corpus holding one report almost all of them
 are invisible, and *"invisible because there is no data"* is indistinguishable from *"invisible
 because I broke it."*
 
 `PROFILE_REVEAL_ALL` (`@skating/core/profileReveal.ts`) makes the slots visible. **It never
 fabricates a value** — a water body with no depth still has no depth, and the section says so. What it
-bypasses is the *suppression of data we do have* (E3's activity gate, D86's quorum) and the hiding of
+bypasses is the *suppression of data we do have* (A06c §5.3's activity gate, D86's quorum) and the hiding of
 empty sections.
 
 **Three properties stop it becoming the bug it prevents:**

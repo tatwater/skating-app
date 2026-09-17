@@ -550,7 +550,7 @@ export function qualityDotString(dots: number, total = 4): string {
 export function summaryCardText(body: MappableSummaryBody, reveal = false): string | null {
   const summary = body.summary;
   if (!summary) return null;
-  // **E3's rule, via `summaryHasCard` rather than restated here.** It was inlined at first, which
+  // **A06c §5.3's rule, via `summaryHasCard` rather than restated here.** It was inlined at first, which
   // left the rule implemented in two places that agreed — the shape that drifts silently, and the
   // one this codebase has already been bitten by (a hand-copied area floor became *more* permissive
   // than the import it mirrored). One definition, in core, where both clients can reach it.
@@ -641,7 +641,7 @@ export function summaryCardsToFeatureCollection(
  * Lives here rather than inline in `MapView` so it can be run through the style-spec validator in a
  * test — which is the point, because **an invalid layer fails silently**: MapLibre logs and declines
  * to draw, so the symptom is "the cards never appeared", indistinguishable from "no body had
- * anything to say", which is E3's *correct* behaviour on this corpus. There is no louder failure
+ * anything to say", which is A06c §5.3's *correct* behaviour on this corpus. There is no louder failure
  * available, so the check has to happen before the browser sees it.
  *
  * `['zoom']` inside a filter is the specific thing worth pinning: it is legal in MapLibre but

@@ -2,7 +2,7 @@
  * Matching a curated destination shortlist to corpus bodies (A06c Workstream §2.3a/D).
  *
  * **Renamed from `seed-satellite` (founder call, 2026-08-09).** That name was chosen to name the
- * *job* rather than the input list — provision and prove the imagery path. With B3's Copernicus deep
+ * *job* rather than the input list — provision and prove the imagery path. With A06c §2.3's Copernicus deep
  * link deferred to A06e so the whole imagery story lands together, the job this script actually does
  * today is the other half: match a shortlist to rows and set `curatedBoost`. A06e adds the URL
  * verification back on top when it needs it.

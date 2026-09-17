@@ -261,7 +261,7 @@ that a clearing is a parking lot; not enough to count spaces, and a footpath und
 `access-control-allow-origin: *`. It is an **ImageServer**, not a tile cache, so there is no `/tile/`
 endpoint; MapLibre's **`{bbox-epsg-3857}`** token makes `exportImage` a drop-in raster source. Verified
 returning a 256×256 JPEG at a z18 extent over Burlington, in which individual cars are countable —
-which is the §1.5 use case exactly.
+which is this tier's use case exactly.
 
 **The trade:** dynamic rendering, no CDN. Courtesy load matters much more here than against a cached
 service, which is why §2.3 exists. Keep `USGSImageryOnly` as the low-zoom floor if it proves useful;
@@ -829,8 +829,8 @@ on both clients. See [Workstream 0](#workstream-0--getting-the-way-in-into-the-a
    testable before anything is user-visible.
 2. **§2.1 + §2.2** — the 0.3 m source and its date stamp. The moment the feature exists.
 3. **§1.3 + the control** — the reveal, scoped to the detail view; then rings for the feather.
-4. **E** — the admin editor, unmasked. Cheap once 1–3 land, and where operators will stress it.
-5. **D** — the deep link and the `satelliteImagery` machinery.
+4. **§5** — the admin editor, unmasked. Cheap once 1–3 land, and where operators will stress it.
+5. **§4** — the deep link and the `satelliteImagery` machinery.
 
 Ships against a keyless public endpoint with no box, no archive and no cron. **Could land while A06d is
 still settling**, which is the point of putting the seam here.

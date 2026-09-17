@@ -357,7 +357,17 @@ token (`since A06h D`), and 02a's own `### A.`–`### H.` headings. Each bare re
 phase by file (the same letter means different things: `F2` is 02a's offline queue under
 `apps/mobile/` and A06c's run history in `WaterBodyTimeline.tsx`), spelled `§5.3` inside its own
 phase doc and `A06c §5.3` anywhere else. One collateral of the token pass itself: Phase 10's
-workstreams `§7a`/`§7b` had been caught by the `7a → 07-1` rule and read `§07-1`; restored.*
+workstreams `§7a`/`§7b` had been caught by the `7a → 07-1` rule and read `§07-1`; restored.
+The pre-PR review then caught what that pass's own boundary had excluded: the possessive (`E3's`,
+`B4a's`, `F1's` — ~40 sites, 9 in code), the single letters left in half-converted lists (`§2.1,
+§2.2, B3.`; `4. **C** —`), and A08 §4's `### D1`–`### D4` sub-headings, which collided with
+decisions D1–D4 (`D3 — Fail-open` read as the safety invariant) and are now `§4.1`–`§4.4`.
+Two things are deliberately still lettered: A06h's own workstream definitions (`**D — The
+forecast panel**` and the doc's prose, mid-flight on its PR 5 branch — the code now cites
+`A06h §4`/`§8`, which the doc's "Workstream 4"/"§8" lines answer but its headings do not), and
+A06e's one citation of its superseded 07-31 layout (*"that was `A2`'s original pitch in the 07-31
+scoping"*), where today's §1.2 is different content — the two beside it that name "the original
+doc" were converted by rule and carry the same caveat.*
 
 *⚠ Open founder call — `D2` is two things.* Decision D2 is "Convex as the app database"; A06c's
 *workstream* D2 (profile richness feeds prominence) is cited as `D2` in ~50 places across code and

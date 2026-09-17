@@ -112,7 +112,7 @@ Everything before the renumbering — the 63 pull requests before the rename PR 
 message, every branch name, the import-run rows in the admin UI — used the old names, and the
 commit history is deliberately **not** rewritten (it would strip the signed merge commits). PR
 titles and descriptions *were* rewritten (2026-09-17, `gh pr edit`) and carry a banner pointing
-here; their branch names and commit lists never change. Two of those PRs were left as written
+here; their branch names and commit lists never change. Two PRs were left as written
 because the old names are their subject: #60 (the crosswalk) and #64 (the rename). This table is
 how to read the rest.
 

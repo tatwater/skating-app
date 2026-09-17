@@ -18,7 +18,7 @@
  * **It never fabricates a value.** A lake with no depth still has no depth; the reveal shows the
  * section and says the data is absent. Two things would be actively harmful to fake and are not
  * faked: a depth, and a quality mark. What the flag bypasses is **suppression of data we actually
- * have** — E3's activity gate and D86's quorum — plus the hiding of empty sections.
+ * have** — A06c §5.3's activity gate and D86's quorum — plus the hiding of empty sections.
  *
  * **The D86 bypass is the dangerous one and is treated as such.** The quorum exists because one
  * person's opinion rendered as a consensus mark is that feature's worst failure, and it fails

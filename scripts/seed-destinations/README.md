@@ -5,7 +5,7 @@ Matches a curated shortlist of regional skating destinations to corpus bodies an
 the plan specifies them together: the matching is the hard part and both outputs need it.
 
 > **Renamed from `seed-satellite`** (founder call, 2026-08-09). That name was chosen to name the
-> *job* — provision and prove the imagery path — rather than the input list. With B3's Copernicus
+> *job* — provision and prove the imagery path — rather than the input list. With A06c §2.3's Copernicus
 > deep link deferred to [A06e](../../plans/phases/A06e-satellite-imagery.md) so the whole imagery story
 > ships together, the job this script does today is the other half. A06e adds the URL verification
 > back on top when it needs it; the input file is what changes, not the name.

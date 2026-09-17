@@ -59,7 +59,7 @@ export function WaterBodyTimeline({ waterBodyId }: { waterBodyId: string }) {
 }
 
 /**
- * The before/after line (F1's first gap).
+ * The before/after line (A06c §6.1's first gap).
  *
  * An audit row that records only what a field *became* can answer "who changed this" and never
  * "changed it from what", which is most of what someone reading a timeline actually wants.

@@ -428,7 +428,7 @@ fetchedAt: number
 > true almost immediately. Sharing would mean a key whose second and third components are meaningless
 > for half its rows, and a retention sweep unable to tell a durable observation from a stale guess.
 > **D140 — the split is a type, not a rule.** `fetchOpenMeteoHourly` returns `{ past, forecast }`, and
-> every calculation reads `.past`. B5b's cheap build — widening the window filter — would have put
+> every calculation reads `.past`. A06c §2.5b's cheap build — widening the window filter — would have put
 > predictions into the decay multiplier, the bounty gate and the contradiction settle, where a hazard
 > that decayed on snow which never fell could not be re-derived afterwards and nothing would say so.
 

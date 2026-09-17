@@ -34,7 +34,7 @@ const REPORT = fileURLToPath(new URL('../.report.json', import.meta.url));
 const IMAGERY_REPORT = fileURLToPath(new URL('../.imagery-report.json', import.meta.url));
 
 /**
- * B3a's proving run, moved here with the link it proves (D138) — **and it is not a link checker.**
+ * A06c §2.3a's proving run, moved here with the link it proves (D138) — **and it is not a link checker.**
  *
  * "Does the URL resolve" is the weakest question available: the Copernicus Browser is a single-page
  * app, so it answers 200 for any coordinate on earth, including ones in the middle of the Atlantic.

@@ -155,7 +155,7 @@ export function spokenDirection(point: CompassPoint16): string {
  * just go from surface-area acres to miles of shoreline"*). Acres and shoreline are two different
  * facts; acres, dimensions and shoreline are three ways of saying one, and the middle one is the
  * least useful of the three to someone deciding where to skate. The axis still earns its place —
- * it orients the wind clause, and `longAxisM` still feeds the D2 prominence terms and A5's deciles.
+ * it orients the wind clause, and `longAxisM` still feeds the D2 prominence terms and A06c §1.5's deciles.
  */
 function sizeClause(input: CaptionInput): string | null {
   const parts: string[] = [];

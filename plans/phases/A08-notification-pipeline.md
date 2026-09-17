@@ -94,7 +94,7 @@ The same type is inserted with `{ targetType, targetId, raterId }` from `ratings
 too, so `targetType` can be `'hazard'`. `payload` is `v.any()`, so nothing catches a shape mismatch.
 
 That matters only once something renders these — which is exactly what this phase does. It is the
-strongest argument for A2's typed resolver, and it's cheaper to fix now than after a second reader
+strongest argument for §1.2's typed resolver, and it's cheaper to fix now than after a second reader
 exists.
 
 ### Correction 4: both roadmap bullets are invisible at alpha scale, and one has no clock
@@ -432,8 +432,8 @@ water-body dedup: two devices genuinely saw this, the record of that is cheap, a
 unrecoverable if the ladder was wrong. If the loser already carries a `linkedReportId`, the link
 **moves** to the winner rather than breaking — a report must never lose its path to a dedup.
 
-**And it changes B4's timing.** The prompt sweep can't fire the moment a track lands, because the second
-source may arrive minutes or hours later (a watch syncs when it feels like it). B4's "still `pending`
+**And it changes §2.4's timing.** The prompt sweep can't fire the moment a track lands, because the second
+source may arrive minutes or hours later (a watch syncs when it feels like it). §2.4's "still `pending`
 after a few hours" window happens to be exactly the settle window dedup needs — so the sweep dedups
 first, then notifies **once, on the winner**. That's the same idea as D81 below, at a longer timescale.
 
@@ -482,7 +482,7 @@ unhelpful ⇒ the row is dropped, and the author is never told about a thumb tha
 ### §5.3 — Where it doesn't apply
 
 The digest and `activity_detected` already wait far longer than any settle window — to 8pm and to the
-pending sweep respectively — so they inherit the re-check (B4a's dedup is the same idea at hours rather
+pending sweep respectively — so they inherit the re-check (§2.4a's dedup is the same idea at hours rather
 than seconds) and need no debounce of their own.
 
 ---
@@ -540,13 +540,13 @@ failure direction is "slightly early", not "never".
 
 ## §4 — The reverse reach index
 
-### D1 — What it replaces, precisely
+### §4.1 — What it replaces, precisely
 
 `fanOutNearbyNotifications` paginates **the entire `profiles` table** per report and runs `bandForCoord`
 on each row. Cost is `users × reports`. It is bounded, self-continuing and off the write path (A01) —
 it is not a crash risk, it is a bill.
 
-### D2 — The shape, using machinery A01 already built
+### §4.2 — The shape, using machinery A01 already built
 
 A01 left a general ladder-grid toolkit: `core/spatialCells.ts` (`cellForPoint`, `indexLevelFor`,
 `scanLevels`), `lib/cellIndex.ts` (`diffCells`, the three `sync*Cells` writers) and `lib/cellScan.ts`
@@ -567,7 +567,7 @@ byte-identical and the existing tests meaningful.
 both radii *and* the digest/great toggles), plus deletion/ghosting and moderation status changes. One
 writer, `diffCells`-style, called from all of them. Two or more writers is how a stale row gets born.
 
-### D3 — Fail-open, because the failure is silent
+### §4.3 — Fail-open, because the failure is silent
 
 A missing cell row means someone is **not told about ice near them**, and nothing anywhere reports it.
 That is the D5 failure mode the fan-out's self-continuing design was chosen to avoid, reintroduced
@@ -585,7 +585,7 @@ Three guards, all cheap:
    the `waterBodies:viewportReadStats` posture from A01, where the claim stays checkable instead of
    trusted. Keep the walk as a flagged fallback until the comparison is clean.
 
-### D4 — Do this when
+### §4.4 — Do this when
 
 There is no user-visible symptom to wait for, so the trigger is cost: **~1,000 profiles**, or the first
 report whose fan-out spans more than a handful of pages. Below that, the walk is one page and this index
@@ -604,7 +604,7 @@ is the diff.
 names via `publicAuthor`, read-time block filtering, an `unknown` variant for unparseable payloads,
 one memoized loader per page), §1.3 (web `/notifications` + bell in `AppShell`; mobile `You → bell →
 modal list` with a dot on the You tab icon), §5.1/§5.2 (`lib/notificationQueue.ts` — every actor
-producer enqueues with `SETTLE_MS = 60 s` and a typed `trigger` the flush re-reads), §2.1, §2.2, B3.
+producer enqueues with `SETTLE_MS = 60 s` and a typed `trigger` the flush re-reads), §2.1, §2.2, §2.3.
 
 **Departures worth knowing:**
 
@@ -676,7 +676,7 @@ producer enqueues with `SETTLE_MS = 60 s` and a typed `trigger` the flush re-rea
 `ACTIVITY_PROMPT_DELAY_MS = 3 h`), §2.4a (`core/activityDedup.ts` — overlap + 10-minute start window +
 compatible body, the four-rung ladder, `supersededByActivityId`, the link moves to the winner; the
 sweep runs it per user over that user's recent rows, not only the due ones), §1.5
-(`storageHygiene.purgeLastSeasonNotifications`, daily, `notifications.by_created_at`), C
+(`storageHygiene.purgeLastSeasonNotifications`, daily, `notifications.by_created_at`), §3
 (`profiles.timezone`, `profiles.setTimezone` validated through `Intl`, both shells write it on app
 open via core's `deviceTimeZone`/`timezoneNeedsSync`; the fan-out stamps `nextZonedHourMs(now, 20,
 p.timezone ?? DIGEST_TIMEZONE)`). Logged as **D173**.
@@ -926,14 +926,14 @@ exclusions are struck rather than deleted, so the reasoning survives.*
    feel alive.
 4. **§2.2 / §2.3 (`hazard_confirmation`, `content_flag_resolved`)** — §2.3 needs the `origin` field first;
    §2.2 carries the queue-kind rename.
-5. **§2.4 + §2.4a (`activity_detected`)** — the `promptState` index and one sweep. **B4a's dedup ladder is
+5. **§2.4 + §2.4a (`activity_detected`)** — the `promptState` index and one sweep. **§2.4a's dedup ladder is
    design-only until a second provider exists** — write the rule and its tests, and note in the sweep
    that it currently has one source to choose between.
 6. **§1.5 — the July purge.** One cron in the `storageHygiene` family. Deliberately *after* the producers,
    so it's written against the full set of types rather than half of them.
-7. **C — per-user digest zone.** Needs a `timezone` field and a client that writes it; the server half
+7. **§3 — per-user digest zone.** Needs a `timezone` field and a client that writes it; the server half
    is a one-line change.
-8. **D — the reverse reach index.** Last, and only past its trigger (D4). It changes no behavior when
+8. **§4 — the reverse reach index.** Last, and only past its trigger (§4.4). It changes no behavior when
    it works, which is precisely why it goes after everything that does.
 
 Steps 1–3 are a shippable phase on their own. If A08 has to be cut short, cut from the bottom.
@@ -973,7 +973,7 @@ because the *reasoning* is what a later reader needs:
 ## Open questions remaining
 
 None blocking. Two constants want one round of real data before they're trusted, both flagged in place:
-B4a's overlap/start-time thresholds (needs an actual dual-source user) and D4's reverse-index trigger
+§2.4a's overlap/start-time thresholds (needs an actual dual-source user) and §4.4's reverse-index trigger
 (needs a profile count we don't have yet). Neither gates the build.
 
 

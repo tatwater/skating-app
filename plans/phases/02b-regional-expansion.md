@@ -140,7 +140,7 @@ pmtiles extract https://build.protomaps.com/<YYYYMMDD>.pmtiles \
 pmtiles verify scripts/basemap/.scratch/northeast-basemap.pmtiles
 ```
 - **Source = a live `build.protomaps.com/<date>.pmtiles`**, not the dead demo `v4.pmtiles` (they
-  prune dated builds; Phase 02a §6.1b already repointed the app default). Pick a current dated build.
+  prune dated builds; Phase 02a §6.1 already repointed the app default). Pick a current dated build.
 - **Size estimate:** the envelope is ~5× VT's area, so expect **~1.3–2 GB** at z0–14 (denser around
   Boston/Albany; a lot of the box is ocean, which costs little). This **overflows Convex free storage**
   → R2. Record the actual size in the README's "Last build" table.

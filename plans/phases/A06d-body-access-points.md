@@ -78,8 +78,8 @@ file before a line was written. Seven corrections. The third is the one that cha
 on the old figure four times — *"what makes named access points a 116k feature rather than a 36-water body
 one"*, *"nothing on most of the 116k"*. But A07a did not merely shrink the corpus, it **changed its
 composition**: one admission floor now applies once to the merged body (≥ 5 acres, or ≥ 1 acre if named
-— D91), so the ~90k sub-acre ponds B4's pessimism was calibrated against are no longer rows at all. The
-surviving population is exactly the set OSM is most likely to have named a slipway or a lot for. B4's
+— D91), so the ~90k sub-acre ponds §2.4's pessimism was calibrated against are no longer rows at all. The
+surviving population is exactly the set OSM is most likely to have named a slipway or a lot for. §2.4's
 *"expect solid results on well-known bodies and nothing on most"* should be re-read as a much narrower
 gap than it was written to describe.
 
@@ -89,7 +89,7 @@ still true, and `scripts/etl/.raw/<state>/` now holds **pinned, md5-verified, da
 `provenance.ts` replays into an `/admin/imports` run row. So this pass's provenance is free and its
 inputs are byte-identical to the ones behind the current corpus.
 
-**3. ⚠ B2's association rule cannot be implemented as written — the join has to run server-side.**
+**3. ⚠ §2.2's association rule cannot be implemented as written — the join has to run server-side.**
 *"Put-in candidates within ~30 m of a body's polygon boundary attach to that body"* reads as something
 the transform does. It can't: the transform has no access to our polygons, and post-A07a the merge output
 is **not** the loaded corpus (bodies are pruned, deduped, re-keyed and retired after it). This is
@@ -101,7 +101,7 @@ the app's own *"you're at Lake X"* resolution agree by construction, because bot
 `@skating/core`.
 
 **The half that *is* local, and this is what keeps the ETL's four-stage shape.** Pairing a parking lot
-to a put-in candidate is **OSM-to-OSM** — both are features in the same extract — so B2's ~250 m
+to a put-in candidate is **OSM-to-OSM** — both are features in the same extract — so §2.2's ~250 m
 inference, and the ORS `foot-hiking` leg that rides on it, need no corpus and happen in the transform.
 Only *which body this serves* needs the server. Without that split the pipeline would have to
 load → query back the unrouted pairs → route → patch, which is a shape none of the other three ETLs
@@ -155,7 +155,7 @@ read-cost decision, not a call-site tweak.
   can ever reference a photo are its uploader's own reports and hazards."* Workstream 4 breaks that
   invariant, so an access-point photo becomes an orphan and is **deleted after the 30-day grace** —
   silently, by a cron, a month later. `photoReconcile` has the same shape. Extending both is
-  unbudgeted work inside D, and it is the one finding here that would have shipped as data loss.
+  unbudgeted work inside §4, and it is the one finding here that would have shipped as data loss.
 - **Flags:** `FLAG_TARGET_TYPES` is `['report','comment','photo','user','hazard']` and
   `MODERATION_TARGET_TYPES` likewise. Photos ride it as §3.2 claims; an access **alert** has no slot yet.
 
@@ -372,8 +372,8 @@ to no privacy benefit; there is no personal information in a photograph of a gra
    extract before it touches the corpus.
 3. **§1.3 + the routing rule** — names and directions-target-parking. This is the first user-visible win
    and it is small once the data exists.
-4. **C** — the alert lifecycle. New table, new decay, reuses Phase 09a's confirm/deny UI.
-5. **D** — photos, and the purge carve-out.
+4. **§3** — the alert lifecycle. New table, new decay, reuses Phase 09a's confirm/deny UI.
+5. **§4** — photos, and the purge carve-out.
 
 **Suggested split if this grows:** steps 1–3 (derived access data) are shippable without 4–5 (the
 community layer), and the first three are where most of the value is.
@@ -390,7 +390,7 @@ community layer), and the first three are where most of the value is.
 *Five things the plan did not anticipate. Two are corrections to the plan, two are decisions it left
 implicit, and one is the shape of an unfinished edge.*
 
-**1. `parkingAreas.waterBodyIds` could not be an array, and the reason is the read.** A1's field
+**1. `parkingAreas.waterBodyIds` could not be an array, and the reason is the read.** §1.1's field
 sketch stores the association on the parking row. That records the fact and cannot answer what every
 read actually asks — *"what parking serves this water body?"* — because Convex has no array-contains index,
 so a body-side lookup is a full table scan on a table that grows with the corpus. It is the
@@ -1072,7 +1072,7 @@ saying so. It was never meant to constrain what a person can assert, and §2.2 d
 **The ramifications, since that's what was actually asked** — there are four, and three are already
 handled:
 
-1. **Drive time must target the parking, not the put-in.** ✅ Already the design (A1's routing rule), and
+1. **Drive time must target the parking, not the put-in.** ✅ Already the design (§1.1's routing rule), and
    at a mile it stops being cosmetic: the Phase 04 isochrone bands are computed to a coordinate, and
    computing them to a shoreline point a car cannot reach makes the band **wrong**, not just imprecise.
    The routing rule fixes drive time and directions together.
@@ -1083,7 +1083,7 @@ handled:
 3. **A distant lot may be nearer another water body — so the relationship is many-to-many.** ✅ Worth building
    for from the start rather than retrofitting: a trailhead serving three ponds is normal in the
    Northeast, and `parkingAreas` should not carry a single `waterBodyId` it will later have to grow out
-   of. **This is a real change to A1's table sketch**, and it is cheap now and annoying later.
+   of. **This is a real change to §1.1's table sketch**, and it is cheap now and annoying later.
 4. **A far-flung association is the one thing here a human can get wrong at no cost to themselves.**
    Mistyping a lot ten miles away sends someone to the wrong trailhead in the dark. Two mitigations, both
    already in the phase's vocabulary: **(a)** the `source` ladder means an operator value outranks OSM

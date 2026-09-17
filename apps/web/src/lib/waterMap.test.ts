@@ -671,7 +671,7 @@ describe('summaryCardLayer', () => {
     expect(errors.map((e) => e.message)).toEqual([]);
   });
 
-  /** E4's rule, and the reason `['zoom']`-in-a-filter is worth pinning rather than assuming. */
+  /** A06c §5.4's rule, and the reason `['zoom']`-in-a-filter is worth pinning rather than assuming. */
   it('filters on minVisibleZoom so a suppressed body cannot acquire a card', () => {
     const layer = summaryCardLayer(SUMMARY_CARD_PALETTE.white) as { filter?: unknown };
     expect(layer.filter).toEqual(['<=', ['get', 'minVisibleZoom'], ['zoom']]);
