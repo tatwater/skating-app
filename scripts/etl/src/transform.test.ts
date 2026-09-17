@@ -190,9 +190,10 @@ describe('featureToCanonicalBody', () => {
     const body = importedBody(waterFeature({}, [ring]));
     expect(largestRingSize(body.polygon)).toBeLessThanOrEqual(MAX_RING_VERTICES);
     expect(body.surfaceAreaSqM).toBeGreaterThan(0);
-    // Adaptive coarsening of a ~9k-vertex ring is genuinely CPU-heavy; CI runs ~8× slower than
-    // local, so give this a longer-than-default (5s) timeout to avoid flaky timeouts.
-  }, 30_000);
+    // Adaptive coarsening of a ~9k-vertex ring is genuinely CPU-heavy, and under turbo every
+    // package's vitest pool runs at once on a 2-vCPU runner: 0.2 s locally has been 31.6 s on CI
+    // (PR #67), so the cap is wide — this is contention, not the test.
+  }, 120_000);
 
   it('largestRingSize reports the biggest ring across polygons and holes', () => {
     expect(
