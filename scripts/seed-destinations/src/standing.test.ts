@@ -11,8 +11,20 @@ describe('gazetteerToDestinations', () => {
       '',
     ].join('\n');
     expect(gazetteerToDestinations(csv)).toEqual([
-      { name: 'Lake Champlain', state: 'VT', sources: ['community'] },
+      { name: 'Lake Champlain', state: 'VT', states: ['VT', 'NY'], sources: ['community'] },
       { name: 'Malletts Bay', state: 'VT', sources: ['community'] },
+    ]);
+  });
+
+  it('carries every state in the breakdown — the region is where the posters are, not the lake', () => {
+    const csv = [
+      'water_body,messages,mentions,region,region_breakdown',
+      'Lake George,20,26,VT,VT:20;NY:15;NH:2',
+      'Sebago Lake,5,6,NH,NH:5;VT:2;NY:1',
+    ].join('\n');
+    expect(gazetteerToDestinations(csv)).toEqual([
+      { name: 'Lake George', state: 'VT', states: ['VT', 'NY', 'NH'], sources: ['community'] },
+      { name: 'Sebago Lake', state: 'NH', states: ['NH', 'VT', 'NY'], sources: ['community'] },
     ]);
   });
 

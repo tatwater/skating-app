@@ -39,12 +39,18 @@ export function splitCsvLine(line: string): string[] {
 /**
  * The gazetteer's rows as destinations — `water_body` is the name, `region` the state the corpus
  * analysis attributed it to. No coordinate: the mbox knows where people are, not where the lake is.
+ *
+ * And `region` is where the *posters* are: a Vermont list discusses Lake George, Lake Placid and
+ * Sebago, and the first dry run left all three unmatched in "VT". `region_breakdown` (`VT:20;NY:15`)
+ * names every state the lake was mentioned from, so those become the destination's `states` and
+ * the matcher tries them all; `region` stays the headline state.
  */
 export function gazetteerToDestinations(csv: string): Destination[] {
   const lines = csv.split(/\r?\n/).filter((l) => l.trim().length > 0);
   const header = splitCsvLine(lines.shift() ?? '');
   const nameAt = header.indexOf('water_body');
   const regionAt = header.indexOf('region');
+  const breakdownAt = header.indexOf('region_breakdown');
   if (nameAt < 0 || regionAt < 0) {
     throw new Error('gazetteer: expected `water_body` and `region` columns');
   }
@@ -53,7 +59,14 @@ export function gazetteerToDestinations(csv: string): Destination[] {
     const name = cols[nameAt]?.trim();
     const state = cols[regionAt]?.trim();
     if (!name || !state) return [];
-    return [{ name, state, sources: ['community' as const] }];
+    const mentioned = (breakdownAt >= 0 ? (cols[breakdownAt] ?? '') : '')
+      .split(';')
+      .map((part) => part.split(':')[0]?.trim() ?? '')
+      .filter((s) => s.length > 0);
+    const states = [state, ...mentioned.filter((s) => s !== state)];
+    return [
+      { name, state, ...(states.length > 1 ? { states } : {}), sources: ['community' as const] },
+    ];
   });
 }
 

@@ -28,6 +28,17 @@ describe('normalizeName', () => {
   it('keeps distinct names distinct', () => {
     expect(normalizeName('Mill Pond')).not.toBe(normalizeName('Beaver Pond'));
   });
+
+  it('reads an apostrophe as nothing, the way GNIS spells the name', () => {
+    expect(normalizeName("Joe's Pond")).toBe(normalizeName('Joes Pond'));
+    expect(normalizeName('Joe\u2019s Pond')).toBe('joes');
+  });
+
+  it('never normalizes a name to nothing — a name made of noise words is compared whole', () => {
+    expect(normalizeName('Reservoir Pond')).toBe('reservoir pond');
+    expect(normalizeName('The Reservoir')).toBe('the reservoir');
+    expect(normalizeName('Reservoir Pond')).not.toBe(normalizeName('Reservoir'));
+  });
 });
 
 describe('distanceKm', () => {
@@ -49,6 +60,21 @@ describe('matchDestination', () => {
     ]);
     expect(result.kind).toBe('matched');
     expect(result.kind === 'matched' && result.body._id).toBe('a');
+  });
+
+  it('tries every state the author listed, and is ambiguous across them as within one', () => {
+    const ny = body({ _id: 'ny', name: 'Lake George', states: ['NY'] });
+    const acrossStates = {
+      name: 'Lake George',
+      state: 'VT',
+      states: ['VT', 'NY'],
+      sources: [] as [],
+    };
+    expect(matchDestination(acrossStates, [ny])).toMatchObject({ kind: 'matched', body: ny });
+    const vt = body({ _id: 'vt', name: 'Lake George', states: ['VT'] });
+    expect(matchDestination(acrossStates, [ny, vt])).toMatchObject({ kind: 'ambiguous' });
+    const vtOnly = { name: 'Lake George', state: 'VT', sources: [] as [] };
+    expect(matchDestination(vtOnly, [ny])).toMatchObject({ kind: 'unmatched' });
   });
 
   it('ignores a same-named body in the wrong state', () => {

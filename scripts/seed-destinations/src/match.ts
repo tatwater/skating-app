@@ -25,6 +25,12 @@
 export interface Destination {
   name: string;
   state: string;
+  /**
+   * Every state the lake might be in, when the list's author knows only where it was *talked
+   * about* — the gazetteer's `region` is the posters' state, and Lake Placid is discussed from
+   * Vermont. Tried together; a name that matches in two states is ambiguous, as within one.
+   */
+  states?: string[];
   /** Roughly where it is, for disambiguating same-named bodies. */
   near?: { lat: number; lng: number };
   /** Why it is on the list — the community corpus, the atlas survey, or both. */
@@ -77,12 +83,19 @@ export function distanceKm(
 
 /** Normalize a lake name for comparison: case, punctuation and the noise words a gazetteer varies. */
 export function normalizeName(name: string): string {
-  return name
+  const bare = name
     .toLowerCase()
+    .replaceAll(/['\u2019]/g, '') // Joe's Pond is Joes Pond in GNIS; an apostrophe is not a word break
     .replaceAll(/[^a-z0-9\s]/g, ' ')
+    .replaceAll(/\s+/g, ' ')
+    .trim();
+  const stripped = bare
     .replaceAll(/\b(lake|pond|reservoir|the)\b/g, ' ')
     .replaceAll(/\s+/g, ' ')
     .trim();
+  // A name that is *only* noise words ("Reservoir Pond") must not normalize to "" and match every
+  // body called "Reservoir" — 1,375 of them on the first dry run. Compare it whole.
+  return stripped.length > 0 ? stripped : bare;
 }
 
 /** Where a body is, preferring the on-water point for the same reason everything else does. */
@@ -113,8 +126,9 @@ export function matchDestination(
   bodies: readonly CandidateBody[],
 ): MatchOutcome {
   const target = normalizeName(destination.name);
+  const states = destination.states ?? [destination.state];
   const inState = bodies.filter(
-    (body) => body.states?.includes(destination.state) && body.name !== undefined,
+    (body) => body.states?.some((s) => states.includes(s)) && body.name !== undefined,
   );
   const byName = inState.filter((body) => normalizeName(body.name as string) === target);
 
