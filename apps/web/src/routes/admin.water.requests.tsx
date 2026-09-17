@@ -92,8 +92,17 @@ function RequestQueue() {
                 <div className="flex flex-wrap items-baseline justify-between gap-2">
                   <p className="font-medium text-foreground">
                     {requestKindTitle(row.kind)}
-                    {row.askers > 1 ? (
-                      <span className="ml-2 font-mono text-foreground-muted text-xs">
+                    {/* A capped count is a floor, shown even at "1+" — the queue is a backlog and
+                        the rest of this lake's askers may sit past the page (Greptile, PR #63). */}
+                    {row.askers > 1 || row.askersCapped ? (
+                      <span
+                        className="ml-2 font-mono text-foreground-muted text-xs"
+                        title={
+                          row.askersCapped
+                            ? 'The queue is past its page; more may have asked for this lake.'
+                            : undefined
+                        }
+                      >
                         {row.askers}
                         {row.askersCapped ? '+' : ''} people
                       </span>
