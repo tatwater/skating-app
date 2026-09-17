@@ -216,7 +216,7 @@ describe('buildNhdManifest', () => {
 
   it('records the license on every row, since nothing else in the repo states it', () => {
     const m = buildNhdManifest({ ...base, bytes: VT.expectedBytes });
-    expect(m.licence).toMatch(/Public domain/);
+    expect(m.license).toMatch(/Public domain/);
     expect(m.attribution).toMatch(/U\.S\. Geological Survey/);
   });
 

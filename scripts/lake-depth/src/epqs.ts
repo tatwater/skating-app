@@ -78,7 +78,7 @@ export function epqsUrl(lat: number, lng: number): string {
 export interface EpqsReading {
   /** Meters above the vertical datum, already checked against the regional plausibility window. */
   elevationM: number;
-  /** The source raster's ground sample distance in **meters** — see `resolutionMetres`. */
+  /** The source raster's ground sample distance in **meters** — see `resolutionMeters`. */
   resolutionM?: number | undefined;
   /** 3DEP's own raster id, so a lake stamped from a coarse DEM can be found and re-stamped later. */
   rasterId?: number | undefined;
@@ -112,14 +112,14 @@ export type EpqsOutcome =
  * The cut is at 0.01: no real DEM has a centimetre posting, and no degree-expressed resolution
  * reaches a hundredth of a degree (1.1 km) for a product mapped at meter scale.
  */
-export function resolutionMetres(raw: unknown, lat: number): number | undefined {
+export function resolutionMeters(raw: unknown, lat: number): number | undefined {
   const value = typeof raw === 'string' ? Number(raw) : raw;
   if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) return undefined;
   if (value >= 0.01) return value;
   // Degrees. One degree of latitude is ~111,132 m; longitude shrinks with the cosine, and a cell is
   // square in degrees rather than in meters, so the latitude figure is the honest one to quote.
-  const metresPerDegree = 111_132 * Math.cos((lat * Math.PI) / 180);
-  return value * metresPerDegree;
+  const metersPerDegree = 111_132 * Math.cos((lat * Math.PI) / 180);
+  return value * metersPerDegree;
 }
 
 /**
@@ -148,7 +148,7 @@ export function parseEpqsResponse(body: unknown, lat: number): EpqsOutcome {
     ok: true,
     reading: {
       elevationM: value,
-      resolutionM: resolutionMetres(json.resolution, lat),
+      resolutionM: resolutionMeters(json.resolution, lat),
       rasterId,
       acquisitionDate: typeof acquired === 'string' && acquired.length > 0 ? acquired : undefined,
     },

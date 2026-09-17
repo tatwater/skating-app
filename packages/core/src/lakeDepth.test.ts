@@ -31,10 +31,10 @@ describe('the depth source ladder (D68)', () => {
   it('ranks measured sources above the modeled ones — the point of the ladder', () => {
     // `osm_tag` is the deliberate exception: measured by someone, but with an unverifiable datum and
     // near-zero inland coverage, so it sits last. Every OTHER measured source outranks every model.
-    const modelled = DEPTH_SOURCES.filter((s) => !isMeasuredDepthSource(s));
+    const modeled = DEPTH_SOURCES.filter((s) => !isMeasuredDepthSource(s));
     const measured = DEPTH_SOURCES.filter((s) => isMeasuredDepthSource(s) && s !== 'osm_tag');
     for (const m of measured) {
-      for (const g of modelled) {
+      for (const g of modeled) {
         expect(DEPTH_SOURCE_RANK[m]).toBeLessThan(DEPTH_SOURCE_RANK[g]);
       }
     }
@@ -110,7 +110,7 @@ describe('the ALSC rung — measured, and older than everything', () => {
     expect(
       attributionGaps({
         ...DEPTH_SOURCE_TERMS,
-        alsc_1987: { licence: 'No published terms', requiresAttribution: true },
+        alsc_1987: { license: 'No published terms', requiresAttribution: true },
       }),
     ).toContain('alsc_1987');
   });
@@ -343,7 +343,7 @@ describe('depth source terms', () => {
     // mean a lake attributed or not depending on whether its volume was reported or modeled.
     for (const rung of ['hydrolakes_reported', 'hydrolakes_modeled'] as const) {
       const terms = DEPTH_SOURCE_TERMS[rung];
-      expect(terms?.licence).toMatch(/CC-BY/);
+      expect(terms?.license).toMatch(/CC-BY/);
       expect(terms?.credit).toContain('Messager');
       expect(terms?.credit).toContain('Nature Communications');
     }
@@ -351,7 +351,7 @@ describe('depth source terms', () => {
 
   it('records CC0 explicitly rather than leaving GLOBathy blank', () => {
     // "No obligation" and "nobody checked" look identical in an absent entry.
-    expect(DEPTH_SOURCE_TERMS.globathy?.licence).toBe('CC0 1.0');
+    expect(DEPTH_SOURCE_TERMS.globathy?.license).toBe('CC0 1.0');
     expect(DEPTH_SOURCE_TERMS.globathy?.credit).toBeUndefined();
   });
 
@@ -380,7 +380,7 @@ describe('depth source terms', () => {
     // The gate has to be able to fail, or passing means nothing.
     const gaps = attributionGaps({
       ...DEPTH_SOURCE_TERMS,
-      lagos_us: { licence: 'CC BY 4.0', requiresAttribution: true, credit: '   ' },
+      lagos_us: { license: 'CC BY 4.0', requiresAttribution: true, credit: '   ' },
     });
     expect(gaps).toEqual(['lagos_us']);
   });

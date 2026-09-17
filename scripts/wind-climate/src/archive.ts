@@ -52,7 +52,7 @@ export interface CellManifest {
   responses: ArchivedResponse[];
   archive: 'nrel-wind-toolkit';
   /** Recorded per cell rather than once, so a partial archive still states its own terms. */
-  licence: string;
+  license: string;
   attributes: string;
 }
 
@@ -64,7 +64,7 @@ export interface CellManifest {
  * length it deserves and no further: this file records what we were told, and a claim we cannot
  * support is worse than a short one.
  */
-export const WTK_LICENCE =
+export const WTK_LICENSE =
   'NREL WIND Toolkit (US DOE). Public data, free to use; the API requires a registered key and an ' +
   'email on every request. Attribution to NREL is expected where the data is shown.';
 

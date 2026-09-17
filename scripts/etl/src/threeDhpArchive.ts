@@ -137,7 +137,7 @@ export const THREE_DHP_WATERBODY_LAYER = 'waterbody';
  */
 export const THREE_DHP_SOURCE_SRS = 'EPSG:5070';
 
-export const THREE_DHP_LICENCE = 'Public domain (USGS · US Government work, 17 U.S.C. §105)';
+export const THREE_DHP_LICENSE = 'Public domain (USGS · US Government work, 17 U.S.C. §105)';
 export const THREE_DHP_ATTRIBUTION = 'U.S. Geological Survey, 3D Hydrography Program';
 
 /**
@@ -167,7 +167,7 @@ export function isElevationDerived(workUnitId: string | null | undefined): boole
   return trimmed.length > 0 && trimmed !== NHD_FALLBACK_WORK_UNIT;
 }
 
-/** What one EDH-coverage measurement records. Stored as a `catalogue_edh_coverage` snapshot. */
+/** What one EDH-coverage measurement records. Stored as a `catalog_edh_coverage` snapshot. */
 export interface EdhCoverage {
   /** Every water body in the clip, whatever its provenance. */
   total: number;
@@ -271,7 +271,7 @@ export interface ThreeDhpSourceManifest {
   /** Our hash of the full 11.9 GB. This is what makes the clip reproducible without the bytes. */
   sha256: string;
   lastModified?: string;
-  licence: string;
+  license: string;
   attribution: string;
   /**
    * Stated plainly, because a reader finding a manifest without its payload should not have to infer
@@ -295,7 +295,7 @@ export interface ThreeDhpClipManifest {
   bytes: number;
   sha256: string;
   features: number;
-  licence: string;
+  license: string;
   attribution: string;
 }
 
@@ -320,7 +320,7 @@ export function buildThreeDhpSourceManifest(
     bytesVerified: input.bytes === input.release.expectedBytes,
     sha256: input.sha256,
     ...(input.lastModified ? { lastModified: input.lastModified } : {}),
-    licence: THREE_DHP_LICENCE,
+    license: THREE_DHP_LICENSE,
     attribution: THREE_DHP_ATTRIBUTION,
     retention:
       'The 11.9 GB download is NOT mirrored and may be deleted locally once the clip exists. It is ~12 GB of national flowlines and catchments per annual release, none of which we read. Re-fetch from `url` and re-run `clipCommand` to reproduce; the sha256 above is what proves you got the same bytes.',
@@ -351,7 +351,7 @@ export function buildThreeDhpClipManifest(input: BuildClipManifestInput): ThreeD
     bytes: input.bytes,
     sha256: input.sha256,
     features: input.features,
-    licence: THREE_DHP_LICENCE,
+    license: THREE_DHP_LICENSE,
     attribution: THREE_DHP_ATTRIBUTION,
   };
 }

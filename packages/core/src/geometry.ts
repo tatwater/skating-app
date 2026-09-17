@@ -95,7 +95,7 @@ export function haversineMeters(a: LatLng, b: LatLng): number {
 
 /**
  * The point `distanceMeters` away from `origin` along `bearingDeg` (degrees clockwise from north) —
- * the **inverse** of the equirectangular projection `toLocalMetres` uses, so a point projected out and
+ * the **inverse** of the equirectangular projection `toLocalMeters` uses, so a point projected out and
  * measured back with `haversineMeters` round-trips to sub-1% at the sub-km scale this serves. Feeds the
  * Phase 09b on-ice directional projection (walk the skater's course forward, test each step against a
  * hazard footprint); dependency-free, matching the rest of this file's flat-earth-around-the-point math.
@@ -119,7 +119,7 @@ export function destinationPoint(
  * the **inverse of `destinationPoint`**, and the primitive A06d's compass-side put-in labels
  * ("North launch") derive from.
  *
- * Flat-earth around the origin, matching `destinationPoint` and `toLocalMetres` rather than the
+ * Flat-earth around the origin, matching `destinationPoint` and `toLocalMeters` rather than the
  * great-circle initial bearing, and that consistency is the point: at the sub-kilometer scale this
  * serves (a launch off a lake's interior point) the two differ by far less than the uncertainty in
  * where the "center" of a lake even is, while a mixed pair would not round-trip.
@@ -140,7 +140,7 @@ export function bearingDegrees(origin: LatLng, target: LatLng): number {
  * scale — sub-1% distance error out to several km, far tighter than the ~300 m buffer this
  * feeds — and dependency-free, so `distanceToPolygonMeters` doesn't pull a new Turf module.
  */
-function toLocalMetres([lng, lat]: readonly [number, number], origin: LatLng): [number, number] {
+function toLocalMeters([lng, lat]: readonly [number, number], origin: LatLng): [number, number] {
   return [
     (lng - origin.lng) * DEG * EARTH_RADIUS_M * Math.cos(origin.lat * DEG),
     (lat - origin.lat) * DEG * EARTH_RADIUS_M,
@@ -148,7 +148,7 @@ function toLocalMetres([lng, lat]: readonly [number, number], origin: LatLng): [
 }
 
 /** Distance from `(px,py)` to segment `a–b`, all in local meters. Handles a zero-length edge. */
-function segmentDistanceMetres(
+function segmentDistanceMeters(
   px: number,
   py: number,
   [ax, ay]: [number, number],
@@ -168,7 +168,7 @@ function segmentDistanceMetres(
  * binding: a skater standing in the parking lot is *near* the lake though not *on* it, so a plain
  * `pointInPolygon` would miss them.
  *
- * Uses a local equirectangular projection around the query point (see `toLocalMetres`), so it's
+ * Uses a local equirectangular projection around the query point (see `toLocalMeters`), so it's
  * pure/dependency-free and accurate far beyond the buffer distances that consume it.
  */
 export function distanceToPolygonMeters(point: LatLng, polygon: Polygon | MultiPolygon): number {
@@ -176,9 +176,9 @@ export function distanceToPolygonMeters(point: LatLng, polygon: Polygon | MultiP
   const rings = polygonRings(polygon);
   let min = Number.POSITIVE_INFINITY;
   for (const ring of rings) {
-    const local = (ring as [number, number][]).map((c) => toLocalMetres(c, point));
+    const local = (ring as [number, number][]).map((c) => toLocalMeters(c, point));
     for (let i = 0; i + 1 < local.length; i++) {
-      const d = segmentDistanceMetres(
+      const d = segmentDistanceMeters(
         0,
         0,
         local[i] as [number, number],
@@ -495,13 +495,13 @@ export function polygonIoU(a: Polygon | MultiPolygon, b: Polygon | MultiPolygon)
  * finer than the band's own half-width is storing precision the hazard does not have, and paying
  * `HAZARD_MAX_VERTICES` for it.
  *
- * Projected once around the first point (see `toLocalMetres`) rather than per recursion — at the scale
+ * Projected once around the first point (see `toLocalMeters`) rather than per recursion — at the scale
  * of one lake's shoreline the flat-earth error is far below any tolerance worth simplifying to.
  */
 export function simplifyPath(points: readonly LatLng[], toleranceMeters: number): LatLng[] {
   if (points.length < 3 || toleranceMeters <= 0) return [...points];
   const origin = points[0] as LatLng;
-  const local = points.map((p) => toLocalMetres([p.lng, p.lat], origin));
+  const local = points.map((p) => toLocalMeters([p.lng, p.lat], origin));
   const keep = new Array<boolean>(points.length).fill(false);
   keep[0] = true;
   keep[points.length - 1] = true;
@@ -514,7 +514,7 @@ export function simplifyPath(points: readonly LatLng[], toleranceMeters: number)
     let farthestDistance = toleranceMeters;
     for (let i = start + 1; i < end; i++) {
       const [px, py] = local[i] as [number, number];
-      const d = segmentDistanceMetres(
+      const d = segmentDistanceMeters(
         px,
         py,
         local[start] as [number, number],

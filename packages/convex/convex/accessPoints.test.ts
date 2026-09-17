@@ -80,8 +80,8 @@ async function seedSquareBody(
 }
 
 /** A point `meters` north of the body's northern shore (which sits at `lat + half`). */
-function northOfShore(metres: number, { half = 0.01, lat = 44, lng = -72 } = {}) {
-  return { lat: lat + half + metres * DEG_PER_M, lng };
+function northOfShore(meters: number, { half = 0.01, lat = 44, lng = -72 } = {}) {
+  return { lat: lat + half + meters * DEG_PER_M, lng };
 }
 
 /** A moderator identity — shared by every describe that exercises an operator write path. */

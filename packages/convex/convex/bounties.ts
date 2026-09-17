@@ -697,7 +697,7 @@ export const cancel = mutation({
     if (!bounty) throw new ConvexError('Bounty not found');
     if (bounty.requesterId !== profile._id) throw new ConvexError('Only the requester can cancel');
     if (bounty.status !== 'open') throw new ConvexError('Bounty is not open');
-    await ctx.db.patch(bountyId, { status: 'cancelled' });
+    await ctx.db.patch(bountyId, { status: 'canceled' });
   },
 });
 

@@ -832,8 +832,8 @@ describe('the season rollover', () => {
     const old = await seedBody(t, 'osm/old');
     const recent = await seedBody(t, 'osm/recent');
     const boosted = await seedBody(t, 'osm/boosted', { curatedBoost: 0.3 });
-    const favourited = await seedBody(t, 'osm/fav');
-    await fan.as.mutation(api.waterBodyFavorites.toggle, { waterBodyId: favourited });
+    const favorited = await seedBody(t, 'osm/fav');
+    await fan.as.mutation(api.waterBodyFavorites.toggle, { waterBodyId: favorited });
     // The window into '29/'30 is the start of the '26/'27 season onward.
     const cutoff = seasonStartMs(SEASON - 3);
     await t.run(async (ctx) => {
@@ -877,7 +877,7 @@ describe('the season rollover', () => {
     expect(standingOf((await get(t, old)) as Doc<'waterBodies'>)).toMatchObject({
       reason: 'inactive',
     });
-    for (const id of [recent, boosted, favourited]) {
+    for (const id of [recent, boosted, favorited]) {
       expect(standingOf((await get(t, id)) as Doc<'waterBodies'>).standing).toBe('active');
     }
   });

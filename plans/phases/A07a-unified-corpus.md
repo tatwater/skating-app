@@ -361,7 +361,7 @@ Against a 116k corpus an NHD gap-fill was a rounding error; against 18k it is th
 | Landed | Where | State |
 | --- | --- | --- |
 | `osmId` / `nhdId` / `geometrySource` + `by_nhd_id` | `convex/schema.ts` | built, deployed, **backfilled** (2026-08-05) |
-| `backfillCatalogueIds` — paginated, idempotent, never overwrites | `convex/waterBodies.ts` | built, **run** |
+| `backfillCatalogIds` — paginated, idempotent, never overwrites | `convex/waterBodies.ts` | built, **run** |
 | `mintWaterBodyKeys` (D93) | `convex/waterBodies.ts` | built, **run** — every sampled row carries a `waterBodyKey` |
 | `resolveUpsert` / `requiresReview` (D93's upsert key) | `core/bodyIdentity.ts` | built + tested, **wired to nothing** |
 | `merge.ts` — the master list, three lanes, one filter | `scripts/etl` | built, run; **untested and excluded from coverage** |
@@ -612,7 +612,7 @@ names **places** and a catalog may split one place into several features — **9
 more than one NHD body** (measured). Upserting on it would merge those water bodies.
 
 **One bug the tests caught before it shipped:** the default survivor rule read the first match in the
-*caller's* array, not the first in `CATALOGUE_ID_FIELDS` order. Which row survived a merge would have
+*caller's* array, not the first in `CATALOG_ID_FIELDS` order. Which row survived a merge would have
 depended on the shape of someone else's lookup code — nondeterministic, and untraceable, because both
 orderings look correct at the call site. Now ranked explicitly.
 
@@ -1201,7 +1201,7 @@ prune"* — and under the order below, nothing does.
  1b acquire 3DHP → clip → .raw-3dhp/waterbody/ → R2  ✅ done    (no Convex writes; divergence monitor, NOT a bake-off lane)
  1c acquire GNIS → .raw-gnis/ → R2                    ✅ done   (D105; the fourth lane, added after this list was written)
  1d admin areas from TIGER → adminAreas               ✅ done   (MOVED UP from step 8 — step 5 cannot run without it)
- 2  reconcile OSM ↔ NHD ↔ 3DHP by polygonIoU          ✅ done   (writes catalogue ids only)
+ 2  reconcile OSM ↔ NHD ↔ 3DHP by polygonIoU          ✅ done   (writes catalog ids only)
  3  D92 bake-off, refereed by our own soundings          ✅ done (read-only; OSM by default, ties 63%)
  4  mint waterBodyKey; backfill osmId / nhdId / geometrySource  ✅ done (D93)
  5  canonical re-import: the master list                 ✅ done (25,133 bodies, 0 conflicts)
@@ -1376,8 +1376,8 @@ end — it silently returned no match for a body whose two fields had diverged, 
 a duplicate. A test caught it. `3dhp` is now a value in both `WATER_BODY_SOURCES` and the new
 `GEOMETRY_SOURCES`.
 
-**4. ~~`catalogueIds()` derives ids instead of carrying them.~~ ✅ FIXED**, and the derivation
-survives under its own name (`deriveCatalogueIds`) for one caller only: the backfill of rows written
+**4. ~~`catalogIds()` derives ids instead of carrying them.~~ ✅ FIXED**, and the derivation
+survives under its own name (`deriveCatalogIds`) for one caller only: the backfill of rows written
 before the identity fields existed, which genuinely has nowhere else to get them from.
 
 **The update path asserts rather than overwrites**, which is a rule worth stating. The obvious

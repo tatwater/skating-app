@@ -148,7 +148,7 @@ function main(): void {
     `${JSON.stringify(
       {
         source: 'USGS / U.S. Board on Geographic Names — GNIS Domestic Names',
-        licence: 'Public domain (U.S. Government work, 17 U.S.C. §105)',
+        license: 'Public domain (U.S. Government work, 17 U.S.C. §105)',
         note: 'The staged URL carries no vintage and is overwritten in place; this archive IS the version record.',
         waterClasses: [...GNIS_WATER_CLASSES],
         states,

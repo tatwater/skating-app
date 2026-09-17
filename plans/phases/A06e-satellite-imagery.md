@@ -679,7 +679,7 @@ the OSM extract on the reasoning that a successful `foot-hiking` route *is* the 
 
 **What shipped.** `approachPathWanted` is one predicate shared by the parser and the ETL, so a leg can
 never be re-routed against the quota and then have its geometry thrown away. The path is stripped to
-2D (`elevation: true` returns `[lng, lat, metres]` triples, and the climb is already on the row),
+2D (`elevation: true` returns `[lng, lat, meters]` triples, and the climb is already on the row),
 simplified to `APPROACH_PATH_TOLERANCE_M` — 5 m, the corpus shoreline's own tolerance — and refused
 entirely above `APPROACH_PATH_MAX_VERTICES` rather than truncated, because a truncated route is a walk
 that stops in the woods.

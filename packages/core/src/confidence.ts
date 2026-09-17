@@ -92,16 +92,16 @@ export function scoreAttribute<T>(
 
   // `name` is a keyword read off a string a catalog already supplied; `gnis` is where NHD's own
   // name column comes from. Neither is a second opinion, so neither joins the vote.
-  const catalogue = claims.filter((c) => c.source !== 'name' && c.source !== 'gnis');
+  const catalog = claims.filter((c) => c.source !== 'name' && c.source !== 'gnis');
   // Nothing but a keyword or a gazetteer lookup. Better than silence, and never corroboration.
-  if (catalogue.length === 0) return 'medium';
+  if (catalog.length === 0) return 'medium';
 
-  const [reference, ...rest] = catalogue;
+  const [reference, ...rest] = catalog;
   if (reference === undefined) return 'medium';
   const unanimous = rest.every((c) => equals(c.value, reference.value));
   if (!unanimous) return 'low';
 
-  return independentVoices(catalogue.map((c) => c.source)) >= 2 ? 'high' : 'medium';
+  return independentVoices(catalog.map((c) => c.source)) >= 2 ? 'high' : 'medium';
 }
 
 /**
@@ -139,12 +139,12 @@ export const POLYGON_DISAGREE_IOU = 0.7;
  */
 export function scorePolygonAgreement(claims: readonly AttributeClaim<number>[]): Confidence {
   if (claims.some((c) => c.source === 'user')) return 'high';
-  const catalogue = claims.filter((c) => c.source !== 'name' && c.source !== 'gnis');
-  if (catalogue.length === 0) return 'none';
-  if (catalogue.length === 1 || independentVoices(catalogue.map((c) => c.source)) < 2) {
+  const catalog = claims.filter((c) => c.source !== 'name' && c.source !== 'gnis');
+  if (catalog.length === 0) return 'none';
+  if (catalog.length === 1 || independentVoices(catalog.map((c) => c.source)) < 2) {
     return 'medium'; // one outline, uncorroborated — not a conflict, just unverified
   }
-  const worst = Math.min(...catalogue.map((c) => c.value));
+  const worst = Math.min(...catalog.map((c) => c.value));
   if (worst >= POLYGON_AGREE_IOU) return 'high';
   return worst < POLYGON_DISAGREE_IOU ? 'low' : 'medium';
 }

@@ -194,7 +194,7 @@ describe('tierForTypes', () => {
 describe('medoidOf', () => {
   const at = (id: string, lat: number, firstReportedAt = 1) => ({
     id,
-    centre: { lat, lng: -72.5 },
+    center: { lat, lng: -72.5 },
     firstReportedAt,
   });
 

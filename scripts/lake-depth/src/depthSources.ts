@@ -48,7 +48,7 @@ export interface DepthSource {
    * archive actually reports, because for LAGOS-US the whole open question is that we do not know:
    * `undefined` here means "read it off the package and write it down", not "no license".
    */
-  expectedLicence?: string;
+  expectedLicense?: string;
   fetch: DepthFetchSpec;
   /** What this source contributes to the D68 ladder — mean, max, or both. */
   provides: ('mean' | 'max')[];
@@ -60,7 +60,7 @@ export const DEPTH_SOURCES: DepthSource[] = [
     key: 'hydrolakes',
     label: 'HydroLAKES v1.0 polygons',
     publisher: 'HydroSHEDS / WWF',
-    expectedLicence: 'CC-BY 4.0',
+    expectedLicense: 'CC-BY 4.0',
     fetch: {
       kind: 'direct',
       url: 'https://data.hydrosheds.org/file/hydrolakes/HydroLAKES_polys_v10.gdb.zip',
@@ -74,7 +74,7 @@ export const DEPTH_SOURCES: DepthSource[] = [
     key: 'globathy',
     label: 'GLOBathy basic parameters (Dmax)',
     publisher: 'Khazaei et al. / figshare',
-    expectedLicence: 'CC0 1.0',
+    expectedLicense: 'CC0 1.0',
     fetch: { kind: 'figshare', articleId: 13_402_070, filename: 'GLOBathy_basic_parameters.zip' },
     provides: ['max'],
     notes:
@@ -95,7 +95,7 @@ export const DEPTH_SOURCES: DepthSource[] = [
      * are updated periodically and it is the responsibility of the Data User to check for new
      * versions"*.
      */
-    expectedLicence: 'CC BY 4.0 (https://creativecommons.org/licenses/by/4.0/)',
+    expectedLicense: 'CC BY 4.0 (https://creativecommons.org/licenses/by/4.0/)',
     fetch: {
       kind: 'manual',
       portalUrl: 'https://portal.edirepository.org/nis/mapbrowse?packageid=edi.1043.1',
@@ -130,7 +130,7 @@ export interface DepthManifest {
   source: { url: string; kind: DepthFetchSpec['kind'] };
   files: DepthArchiveFile[];
   /** As reported by the publisher at fetch time, or typed in by whoever adopted a manual download. */
-  licence?: string;
+  license?: string;
   /** Publisher-provided checksum, when there is one to compare against. */
   publishedMd5?: string;
   /** Whether that comparison actually ran and passed. Absent ≠ failed — see `checksumState`. */
@@ -162,9 +162,9 @@ export function checksumState(manifest: DepthManifest): ChecksumState {
  * manifest, which is the thing that has to be complete; this is for the reader who wants to know
  * *which* license at a glance.
  */
-export function shortLicence(licence: string | undefined): string {
-  if (!licence?.trim()) return 'UNRECORDED';
-  const text = licence.trim();
+export function shortLicense(license: string | undefined): string {
+  if (!license?.trim()) return 'UNRECORDED';
+  const text = license.trim();
   // The recognizable identifier is what a reader is scanning for, and it is almost always in the
   // first clause. Fall back to a hard truncation rather than inventing a label we cannot verify.
   const known = text.match(
@@ -195,7 +195,7 @@ export function isRunnable(manifest: DepthManifest): { ok: boolean; reason?: str
       reason: 'checksum mismatch — the download does not match what was published',
     };
   }
-  if (!manifest.licence?.trim()) {
+  if (!manifest.license?.trim()) {
     return {
       ok: false,
       reason:

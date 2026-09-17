@@ -102,6 +102,6 @@ export function projectToPixel(
  */
 export function groundMetersPerPixel(box: MercatorBox, width: number): number {
   const projectedPerPixel = (box.maxX - box.minX) / Math.max(1, width);
-  const centreLat = mercatorYToLat((box.minY + box.maxY) / 2);
-  return projectedPerPixel * Math.cos((centreLat * Math.PI) / 180);
+  const centerLat = mercatorYToLat((box.minY + box.maxY) / 2);
+  return projectedPerPixel * Math.cos((centerLat * Math.PI) / 180);
 }

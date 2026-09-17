@@ -93,7 +93,7 @@ export interface Merged {
    * (A07a second audit).
    *
    * A group holding two features from one catalog merges into one body: `chooseGeometry` keeps one
-   * outline and `catalogueIdsOf` keeps one id per catalog, so the other feature's polygon *and* its
+   * outline and `catalogIdsOf` keeps one id per catalog, so the other feature's polygon *and* its
    * id are gone. The plan's own verification section describes such a group as one that "queues
    * rather than merging"; it queues **and** merges, and if the union-find chained two genuinely
    * distinct lakes then one of them silently ceased to exist. Listing the losers is what makes the
@@ -418,9 +418,9 @@ export function isTidalByElevation(
   elevation: ReadonlyMap<string, number>,
   maxElevationM = TIDAL_MAX_ELEVATION_M,
 ): boolean | undefined {
-  const metres = elevation.get(key);
-  if (metres === undefined) return undefined;
-  return metres <= maxElevationM;
+  const meters = elevation.get(key);
+  if (meters === undefined) return undefined;
+  return meters <= maxElevationM;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -707,7 +707,7 @@ export function chooseGeometry(
  * what the catalogs assert. This is about *which polygon* — a different question, and one where
  * taking the biggest piece of one catalog's account of one lake is the whole point.
  *
- * Used by `chooseGeometry`, `catalogueIdsOf` and the absorbed-member list alike, so all three name
+ * Used by `chooseGeometry`, `catalogIdsOf` and the absorbed-member list alike, so all three name
  * the same feature. They did not, before: the key would have been the largest and the `osmId` the
  * first, and a row's `externalId` and `osmId` would have pointed at two different OSM features.
  */
@@ -2245,7 +2245,7 @@ export function dropReason(body: { name: string; cls: WaterBodyClass; areaSqM: n
  * gazetteer is naming a place we located geometrically — and geometric location is exactly the
  * inference `gnisId` is documented not to be trusted for. So it fills a hole and never overrules.
  */
-export function catalogueIdsOf(
+export function catalogIdsOf(
   members: readonly Feature[],
   fromGazetteer?: string | undefined,
 ): {

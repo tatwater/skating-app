@@ -34,12 +34,12 @@ function rect(b: BBox): Polygon {
 }
 
 /** A square centered on the origin, `halfDeg` degrees to a side's midpoint. */
-function square(halfDeg: number, centre: LatLng = { lat: 44, lng: -73 }): Polygon {
+function square(halfDeg: number, center: LatLng = { lat: 44, lng: -73 }): Polygon {
   return rect({
-    minLat: centre.lat - halfDeg,
-    maxLat: centre.lat + halfDeg,
-    minLng: centre.lng - halfDeg,
-    maxLng: centre.lng + halfDeg,
+    minLat: center.lat - halfDeg,
+    maxLat: center.lat + halfDeg,
+    minLng: center.lng - halfDeg,
+    maxLng: center.lng + halfDeg,
   });
 }
 
@@ -334,7 +334,7 @@ describe('lakeAxes', () => {
 });
 
 describe('fetchProfileMeters', () => {
-  const centre: LatLng = { lat: 44, lng: -73 };
+  const center: LatLng = { lat: 44, lng: -73 };
 
   it('returns one distance per compass point', () => {
     const profile = fetchProfileMeters(square(0.01));
@@ -343,7 +343,7 @@ describe('fetchProfileMeters', () => {
   });
 
   it('measures the half-width to the shore due north', () => {
-    const profile = fetchProfileMeters(square(0.01), centre);
+    const profile = fetchProfileMeters(square(0.01), center);
     const north = profile?.[fetchBucketFor(0)] ?? 0;
     expect(north).toBeCloseTo(0.01 * M_PER_DEG_LAT, -1);
   });
@@ -379,8 +379,8 @@ describe('fetchProfileMeters', () => {
     const open: Polygon = { type: 'Polygon', coordinates: [outer] };
 
     const north = fetchBucketFor(0);
-    const holedNorth = fetchProfileMeters(holed, centre)?.[north] ?? 0;
-    const openNorth = fetchProfileMeters(open, centre)?.[north] ?? 0;
+    const holedNorth = fetchProfileMeters(holed, center)?.[north] ?? 0;
+    const openNorth = fetchProfileMeters(open, center)?.[north] ?? 0;
 
     expect(holedNorth).toBeLessThan(openNorth);
     expect(holedNorth).toBeCloseTo(0.01 * M_PER_DEG_LAT, -1); // the island's near shore
@@ -402,7 +402,7 @@ describe('fetchProfileMeters', () => {
     // The load-bearing guard. `waterBodies.centroid` is Turf's `pointOnFeature`, which returns a
     // point ON the boundary whenever the bbox center falls outside the polygon — true for any
     // curved or narrow lake. Casting rays from there produced 0.0 on half the compass.
-    const lake = square(0.02, centre);
+    const lake = square(0.02, center);
     const onTheShore: LatLng = { lat: 44, lng: -73.02 }; // exactly on the west edge
     const profile = fetchProfileMeters(lake, onTheShore);
     expect(profile).not.toBeNull();
@@ -411,10 +411,10 @@ describe('fetchProfileMeters', () => {
   });
 
   it('honors a supplied origin that IS strictly inside', () => {
-    const lake = square(0.02, centre);
-    const offCentre: LatLng = { lat: 44.01, lng: -73 };
+    const lake = square(0.02, center);
+    const offCenter: LatLng = { lat: 44.01, lng: -73 };
     // A point well inside but off-center has more water south of it than north.
-    const profile = fetchProfileMeters(lake, offCentre) ?? [];
+    const profile = fetchProfileMeters(lake, offCenter) ?? [];
     expect(profile[fetchBucketFor(180)]).toBeGreaterThan(profile[fetchBucketFor(0)] as number);
   });
 
@@ -453,7 +453,7 @@ describe('fetchProfileMeters', () => {
   });
 
   it('is symmetric on a symmetric lake', () => {
-    const profile = fetchProfileMeters(square(0.02), centre) ?? [];
+    const profile = fetchProfileMeters(square(0.02), center) ?? [];
     for (let k = 0; k < FETCH_BEARING_COUNT / 2; k++) {
       const opposite = (k + FETCH_BEARING_COUNT / 2) % FETCH_BEARING_COUNT;
       expect(profile[k]).toBeCloseTo(profile[opposite] as number, 0);
@@ -473,7 +473,7 @@ describe('fetchProfileMeters', () => {
             maxLng: -73 + dLng,
           });
           const profile = fetchProfileMeters(poly) ?? [];
-          const axes = lakeAxes(poly, centre);
+          const axes = lakeAxes(poly, center);
           // The bound is the bounding rectangle's DIAGONAL, not its long side. `longAxisM` became
           // a side when this module moved off hull-diameter onto the minimum-area rectangle, and a
           // ray cast toward a corner runs along the diagonal — which is up to 1.41x the long side
@@ -488,10 +488,10 @@ describe('fetchProfileMeters', () => {
 });
 
 describe('lakeGeometryStats', () => {
-  const centre: LatLng = { lat: 44, lng: -73 };
+  const center: LatLng = { lat: 44, lng: -73 };
 
   it('composes every stat for a well-formed body', () => {
-    const stats = lakeGeometryStats(square(0.01), centre);
+    const stats = lakeGeometryStats(square(0.01), center);
     expect(stats.shorelineM).toBeGreaterThan(0);
     expect(stats.longAxisM).toBeGreaterThan(0);
     expect(stats.shortAxisM).toBeGreaterThan(0);
@@ -508,6 +508,6 @@ describe('lakeGeometryStats', () => {
 
   it('returns an empty block for wholly degenerate geometry, never a throw', () => {
     const empty: Polygon = { type: 'Polygon', coordinates: [] };
-    expect(lakeGeometryStats(empty, centre)).toEqual({});
+    expect(lakeGeometryStats(empty, center)).toEqual({});
   });
 });

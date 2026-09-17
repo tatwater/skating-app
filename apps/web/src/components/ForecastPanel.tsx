@@ -81,7 +81,7 @@ export function ForecastPanel({
   }>({ payload: null, forBody: null, loading: true });
 
   useEffect(() => {
-    let cancelled = false;
+    let canceled = false;
     setState((s) =>
       s.forBody === waterBodyId
         ? { ...s, loading: true }
@@ -93,15 +93,15 @@ export function ForecastPanel({
       ...(subAreaId ? { subAreaId: subAreaId as Id<'waterBodySubAreas'> } : {}),
     })
       .then((p) => {
-        if (!cancelled) setState({ payload: p, forBody: waterBodyId, loading: false });
+        if (!canceled) setState({ payload: p, forBody: waterBodyId, loading: false });
       })
       .catch(() => {
         // Fail open and silently: a missing forecast is not an error a skater can act on, and the
         // next drawer-open retries because nothing was cached.
-        if (!cancelled) setState({ payload: null, forBody: waterBodyId, loading: false });
+        if (!canceled) setState({ payload: null, forBody: waterBodyId, loading: false });
       });
     return () => {
-      cancelled = true;
+      canceled = true;
     };
   }, [getForecast, waterBodyId, subAreaId, pending]);
 

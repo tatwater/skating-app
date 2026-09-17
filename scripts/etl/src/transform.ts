@@ -366,7 +366,7 @@ const M_PER_FOOT = 0.3048;
 export function parseOsmDepthMeters(raw: unknown): number | undefined {
   if (typeof raw !== 'string' && typeof raw !== 'number') return undefined;
   const text = String(raw).trim().toLowerCase();
-  const match = /^(\d+(?:\.\d+)?)\s*(m|metre|metres|meter|meters|ft|feet|foot|')?$/.exec(text);
+  const match = /^(\d+(?:\.\d+)?)\s*(m|meter|meters|metre|metres|ft|feet|foot|')?$/.exec(text);
   if (!match) return undefined;
   const value = Number(match[1]);
   if (!Number.isFinite(value) || value <= 0) return undefined;

@@ -8,7 +8,7 @@ import {
 } from './lakeDepths';
 import type { ArchivedLake } from './lakes';
 
-const FEET_PER_METRE = 3.28084;
+const FEET_PER_METER = 3.28084;
 
 function sounded(over: Partial<ArchivedLake> = {}): ArchivedLake {
   return {
@@ -78,7 +78,7 @@ describe('agencyDepthFor', () => {
     expect(out.ok).toBe(true);
     if (!out.ok) return;
     expect(out.detail.record.key).toBe('me-dep-soundings/5271');
-    expect(out.detail.record.maxDepthM).toBeCloseTo(316 / FEET_PER_METRE, 3);
+    expect(out.detail.record.maxDepthM).toBeCloseTo(316 / FEET_PER_METER, 3);
     expect(out.detail.record.maxDepthSource).toBe('state_agency');
     // The deepest sounding is the furthest point from any shore, so it is the one most likely to
     // fall inside an outline a different survey drew.
@@ -94,7 +94,7 @@ describe('agencyDepthFor', () => {
     // own measurement — but a consumer must be able to tell the two lanes apart without re-deriving.
     const out = agencyDepthFor(contoured());
     if (!out.ok) throw new Error('expected a depth');
-    expect(out.detail.record.maxDepthM).toBeCloseTo(180 / FEET_PER_METRE, 3);
+    expect(out.detail.record.maxDepthM).toBeCloseTo(180 / FEET_PER_METER, 3);
     expect(out.detail.understatesMax).toBe(true);
     // A mid-vertex of the deepest contour, never an endpoint — the ends sit against the shore, which
     // is exactly where two surveys' shorelines disagree.
@@ -126,14 +126,14 @@ describe('agencyDepthFor', () => {
   it('refuses a reading past the backstop, which means a units error', () => {
     // A depth published in centimetres, or a sentinel read as a depth. Champlain's 122 m is the
     // deepest water any of these sources covers, so anything past 250 m is not a lake.
-    const metres = MAX_PLAUSIBLE_AGENCY_DEPTH_M + 10;
+    const meters = MAX_PLAUSIBLE_AGENCY_DEPTH_M + 10;
     const out = agencyDepthFor(
       sounded({
         soundings: [
           {
             lng: -70.5,
             lat: 43.8,
-            depthFt: metres * FEET_PER_METRE,
+            depthFt: meters * FEET_PER_METER,
             lakeKey: '1',
             lakeName: 'x',
           },
@@ -241,8 +241,8 @@ describe('depthsBySource', () => {
   it('tallies per source, deepest first by lake count', () => {
     const result = agencyDepths([sounded(), sounded({ lakeKey: '2' }), contoured()]);
     expect(depthsBySource(result.depths)).toEqual([
-      { sourceKey: 'me-dep-soundings', state: 'ME', lakes: 2, deepestM: 316 / FEET_PER_METRE },
-      { sourceKey: 'ma-massgis-contours', state: 'MA', lakes: 1, deepestM: 180 / FEET_PER_METRE },
+      { sourceKey: 'me-dep-soundings', state: 'ME', lakes: 2, deepestM: 316 / FEET_PER_METER },
+      { sourceKey: 'ma-massgis-contours', state: 'MA', lakes: 1, deepestM: 180 / FEET_PER_METER },
     ]);
   });
 });

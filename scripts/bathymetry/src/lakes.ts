@@ -160,10 +160,10 @@ export function clusterLabels(
     for (let dx = -1; dx <= 1; dx += 1) {
       for (let dy = -1; dy <= 1; dy += 1) {
         if (dx === 0 && dy === 0) continue;
-        const neighbour = cells.get(`${cx + dx},${cy + dy}`);
-        if (neighbour === undefined) continue;
+        const neighbor = cells.get(`${cx + dx},${cy + dy}`);
+        if (neighbor === undefined) continue;
         const a = find(index);
-        const b = find(neighbour);
+        const b = find(neighbor);
         if (a !== b) parent[a] = b;
       }
     }

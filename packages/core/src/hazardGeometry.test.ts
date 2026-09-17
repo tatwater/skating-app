@@ -20,7 +20,7 @@ import {
 } from './hazardGeometry';
 import { HAZARD_TYPES } from './types';
 
-const CENTRE: LatLng = { lat: 44.4759, lng: -73.2121 }; // Burlington, VT
+const CENTER: LatLng = { lat: 44.4759, lng: -73.2121 }; // Burlington, VT
 
 const arbNearbyCoord: fc.Arbitrary<LatLng> = fc.record({
   lat: fc.double({ min: 44.4, max: 44.55, noNaN: true }),
@@ -67,44 +67,44 @@ describe('defaultShapeForType', () => {
   // types that ultimately want a polyline (one GPS fix can't make a line).
   it('yields an immediately valid shape for every type', () => {
     for (const type of HAZARD_TYPES) {
-      const shape = defaultShapeForType(type, CENTRE);
+      const shape = defaultShapeForType(type, CENTER);
       expect(isValidHazardShape(shape), type).toBe(true);
       expect(shape.geometryKind, type).toBe('point_radius');
     }
   });
 
   it('places the pin at the given coordinate', () => {
-    const shape = defaultShapeForType('open_water', CENTRE);
-    expect(shape.geometry).toEqual({ type: 'Point', coordinates: [CENTRE.lng, CENTRE.lat] });
+    const shape = defaultShapeForType('open_water', CENTER);
+    expect(shape.geometry).toEqual({ type: 'Point', coordinates: [CENTER.lng, CENTER.lat] });
   });
 });
 
 describe('distanceToHazard', () => {
   it('is 0 at the center of a point+radius hazard', () => {
-    expect(distanceToHazard(CENTRE, pointRadiusShape(CENTRE, 50))).toBe(0);
+    expect(distanceToHazard(CENTER, pointRadiusShape(CENTER, 50))).toBe(0);
   });
 
   it('is 0 anywhere inside the radius, and positive outside it', () => {
-    const shape = pointRadiusShape(CENTRE, 100);
+    const shape = pointRadiusShape(CENTER, 100);
     // ~0.0005° latitude ≈ 55 m — inside.
-    expect(distanceToHazard({ lat: CENTRE.lat + 0.0005, lng: CENTRE.lng }, shape)).toBe(0);
+    expect(distanceToHazard({ lat: CENTER.lat + 0.0005, lng: CENTER.lng }, shape)).toBe(0);
     // ~0.005° latitude ≈ 555 m — outside.
-    expect(distanceToHazard({ lat: CENTRE.lat + 0.005, lng: CENTRE.lng }, shape)).toBeGreaterThan(
+    expect(distanceToHazard({ lat: CENTER.lat + 0.005, lng: CENTER.lng }, shape)).toBeGreaterThan(
       0,
     );
   });
 
   it('subtracts exactly the radius from the center distance', () => {
-    const far = { lat: CENTRE.lat + 0.01, lng: CENTRE.lng };
-    const bare = distanceToHazard(far, pointRadiusShape(CENTRE, 0.0001));
-    const withRadius = distanceToHazard(far, pointRadiusShape(CENTRE, 200));
+    const far = { lat: CENTER.lat + 0.01, lng: CENTER.lng };
+    const bare = distanceToHazard(far, pointRadiusShape(CENTER, 0.0001));
+    const withRadius = distanceToHazard(far, pointRadiusShape(CENTER, 200));
     expect(bare - withRadius).toBeCloseTo(200, 0);
   });
 
   it('never returns a negative distance (property)', () => {
     fc.assert(
       fc.property(arbNearbyCoord, fc.integer({ min: 1, max: 500 }), (coord, radius) => {
-        expect(distanceToHazard(coord, pointRadiusShape(CENTRE, radius))).toBeGreaterThanOrEqual(0);
+        expect(distanceToHazard(coord, pointRadiusShape(CENTER, radius))).toBeGreaterThanOrEqual(0);
       }),
     );
   });
@@ -118,8 +118,8 @@ describe('distanceToHazard', () => {
         fc.integer({ min: 1, max: 400 }),
         (coord, r1, r2) => {
           const [small, large] = r1 <= r2 ? [r1, r2] : [r2, r1];
-          expect(distanceToHazard(coord, pointRadiusShape(CENTRE, large))).toBeLessThanOrEqual(
-            distanceToHazard(coord, pointRadiusShape(CENTRE, small)),
+          expect(distanceToHazard(coord, pointRadiusShape(CENTER, large))).toBeLessThanOrEqual(
+            distanceToHazard(coord, pointRadiusShape(CENTER, small)),
           );
         },
       ),
@@ -141,11 +141,11 @@ describe('distanceToHazard', () => {
 
 describe('hazardFootprint / hazardBbox', () => {
   it('grows a point into a polygon that contains its own center', () => {
-    const bbox = hazardBbox(pointRadiusShape(CENTRE, 100));
-    expect(bbox.minLat).toBeLessThan(CENTRE.lat);
-    expect(bbox.maxLat).toBeGreaterThan(CENTRE.lat);
-    expect(bbox.minLng).toBeLessThan(CENTRE.lng);
-    expect(bbox.maxLng).toBeGreaterThan(CENTRE.lng);
+    const bbox = hazardBbox(pointRadiusShape(CENTER, 100));
+    expect(bbox.minLat).toBeLessThan(CENTER.lat);
+    expect(bbox.maxLat).toBeGreaterThan(CENTER.lat);
+    expect(bbox.minLng).toBeLessThan(CENTER.lng);
+    expect(bbox.maxLng).toBeGreaterThan(CENTER.lng);
   });
 
   it('produces a bbox that grows with the radius (property)', () => {
@@ -155,8 +155,8 @@ describe('hazardFootprint / hazardBbox', () => {
         fc.integer({ min: 10, max: 200 }),
         (r1, r2) => {
           const [small, large] = r1 <= r2 ? [r1, r2] : [r2, r1];
-          const inner = hazardBbox(pointRadiusShape(CENTRE, small));
-          const outer = hazardBbox(pointRadiusShape(CENTRE, large));
+          const inner = hazardBbox(pointRadiusShape(CENTER, small));
+          const outer = hazardBbox(pointRadiusShape(CENTER, large));
           expect(outer.maxLat).toBeGreaterThanOrEqual(inner.maxLat);
           expect(outer.minLat).toBeLessThanOrEqual(inner.minLat);
         },
@@ -167,13 +167,13 @@ describe('hazardFootprint / hazardBbox', () => {
   // The bbox is the prefilter for the footprint; if a point inside the footprint fell outside the
   // bbox, proximity queries would silently miss real hazards.
   it('always contains the footprint it indexes', () => {
-    const shape = pointRadiusShape(CENTRE, 150);
+    const shape = pointRadiusShape(CENTER, 150);
     const bbox = hazardBbox(shape);
     const pointBox = {
-      minLat: CENTRE.lat,
-      maxLat: CENTRE.lat,
-      minLng: CENTRE.lng,
-      maxLng: CENTRE.lng,
+      minLat: CENTER.lat,
+      maxLat: CENTER.lat,
+      minLng: CENTER.lng,
+      maxLng: CENTER.lng,
     };
     expect(bboxIntersects(bbox, pointBox)).toBe(true);
   });
@@ -205,7 +205,7 @@ describe('hazardFootprint / hazardBbox', () => {
   it('never produces a degenerate zero-area footprint', () => {
     const bbox = hazardBbox({
       geometryKind: 'point_radius',
-      geometry: { type: 'Point', coordinates: [CENTRE.lng, CENTRE.lat] },
+      geometry: { type: 'Point', coordinates: [CENTER.lng, CENTER.lat] },
       radiusMeters: 0,
     });
     expect(bbox.maxLat).toBeGreaterThan(bbox.minLat);
@@ -215,15 +215,15 @@ describe('hazardFootprint / hazardBbox', () => {
 
 describe('isValidHazardShape', () => {
   it('accepts a well-formed point+radius', () => {
-    expect(isValidHazardShape(pointRadiusShape(CENTRE, 30))).toBe(true);
+    expect(isValidHazardShape(pointRadiusShape(CENTER, 30))).toBe(true);
   });
 
   it('rejects a point+radius with no positive radius', () => {
-    expect(isValidHazardShape(pointRadiusShape(CENTRE, 0))).toBe(false);
+    expect(isValidHazardShape(pointRadiusShape(CENTER, 0))).toBe(false);
     expect(
       isValidHazardShape({
         geometryKind: 'point_radius',
-        geometry: { type: 'Point', coordinates: [CENTRE.lng, CENTRE.lat] },
+        geometry: { type: 'Point', coordinates: [CENTER.lng, CENTER.lat] },
       }),
     ).toBe(false);
   });
@@ -245,11 +245,11 @@ describe('isValidHazardShape', () => {
   // Turf's buffer throws on a zero-length line, so an on-ice double-tap in one spot must be rejected
   // before it can become a row that crashes the renderer.
   it('rejects a line whose vertices are all identical', () => {
-    expect(isValidHazardShape(lineShape([CENTRE, CENTRE, CENTRE], 15))).toBe(false);
+    expect(isValidHazardShape(lineShape([CENTER, CENTER, CENTER], 15))).toBe(false);
   });
 
   it('rejects a single-vertex line', () => {
-    expect(isValidHazardShape(lineShape([CENTRE], 15))).toBe(false);
+    expect(isValidHazardShape(lineShape([CENTER], 15))).toBe(false);
   });
 
   it('rejects an unclosed / too-small polygon ring', () => {
@@ -340,10 +340,10 @@ describe('isValidHazardShape', () => {
   });
 
   it('rejects sizes past the absolute ceiling and non-finite sizes', () => {
-    expect(isValidHazardShape(pointRadiusShape(CENTRE, HAZARD_MAX_SIZE_M + 1))).toBe(false);
-    expect(isValidHazardShape(pointRadiusShape(CENTRE, HAZARD_MAX_SIZE_M))).toBe(true);
-    expect(isValidHazardShape(pointRadiusShape(CENTRE, Number.POSITIVE_INFINITY))).toBe(false);
-    expect(isValidHazardShape(pointRadiusShape(CENTRE, Number.NaN))).toBe(false);
+    expect(isValidHazardShape(pointRadiusShape(CENTER, HAZARD_MAX_SIZE_M + 1))).toBe(false);
+    expect(isValidHazardShape(pointRadiusShape(CENTER, HAZARD_MAX_SIZE_M))).toBe(true);
+    expect(isValidHazardShape(pointRadiusShape(CENTER, Number.POSITIVE_INFINITY))).toBe(false);
+    expect(isValidHazardShape(pointRadiusShape(CENTER, Number.NaN))).toBe(false);
   });
 
   it('rejects out-of-range coordinates', () => {
@@ -424,12 +424,12 @@ describe('hazardFootprint never yields a non-areal geometry', () => {
       ],
       12,
     );
-    for (const shape of [pointRadiusShape(CENTRE, 30), line]) {
+    for (const shape of [pointRadiusShape(CENTER, 30), line]) {
       const footprint = hazardFootprint(shape);
       expect(['Polygon', 'MultiPolygon']).toContain(footprint.type);
     }
     // And a distance query against any of them is finite, not a throw.
-    expect(Number.isFinite(distanceToHazard(CENTRE, line))).toBe(true);
+    expect(Number.isFinite(distanceToHazard(CENTER, line))).toBe(true);
   });
 });
 

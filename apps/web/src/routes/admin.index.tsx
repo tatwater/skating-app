@@ -2,7 +2,7 @@ import { api } from '@skating/convex/api';
 import { createFileRoute, Link } from '@tanstack/react-router';
 import { useQuery } from 'convex/react';
 import { AdminEmpty, AdminPageHeader, StatTile, Table, Td, Th } from '../components/admin/adminUi';
-import { CatalogueCoverage } from '../components/admin/CatalogueCoverage';
+import { CatalogCoverage } from '../components/admin/CatalogCoverage';
 import { ScalarTrend } from '../components/admin/MetricCharts';
 import { useRole } from '../lib/useRole';
 
@@ -107,7 +107,7 @@ function AdminDashboard() {
           <h2 className="font-mono text-foreground-muted text-xs uppercase tracking-widest">
             Base map · elevation-derived hydrography
           </h2>
-          <CatalogueCoverage />
+          <CatalogCoverage />
         </section>
       ) : null}
 

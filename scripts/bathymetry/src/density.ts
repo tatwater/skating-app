@@ -387,7 +387,7 @@ export function fragmentsPerLevel(lineCount: number, levelCount: number): number
 }
 
 /** Summarize a run for the drop log — counts by verdict, and every dropped lake named. */
-export function summariseDensity(assessments: readonly DensityAssessment[]): {
+export function summarizeDensity(assessments: readonly DensityAssessment[]): {
   kept: DensityAssessment[];
   dropped: DensityAssessment[];
   byVerdict: Record<DensityVerdict, number>;

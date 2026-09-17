@@ -56,7 +56,7 @@ import {
   attachGazetteerIds,
   type Boundary,
   bayParent,
-  catalogueIdsOf,
+  catalogIdsOf,
   cellsFor,
   DUPLICATE_SWEEP_MIN_IOU,
   type DuplicatePair,
@@ -1039,7 +1039,7 @@ export function buildMasterList(input: MasterListInput): MasterList {
       key: body.key,
       name: body.name,
       parentKey,
-      parentIds: catalogueIdsOf(parent?.members ?? [], parent?.gnisIdFromGazetteer),
+      parentIds: catalogIdsOf(parent?.members ?? [], parent?.gnisIdFromGazetteer),
       areaSqM: body.areaSqM,
       // **Simplified, like every other geometry we store** (D48) — and this was emitting the raw
       // source outline. A sub-area's polygon is a stored render payload under the same ~5 m rule and
@@ -1143,7 +1143,7 @@ export function emitCanonicalBodies(
           confidence: k.confidence as never,
           reviewReasons: k.reviewReasons,
           nameClaims: k.nameClaims,
-          ...catalogueIdsOf(k.members, k.gnisIdFromGazetteer),
+          ...catalogIdsOf(k.members, k.gnisIdFromGazetteer),
         }),
       );
       emittedKeys.add(k.key);

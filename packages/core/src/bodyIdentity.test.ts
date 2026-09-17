@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { CATALOGUE_ID_FIELDS, type IdMatch, requiresReview, resolveUpsert } from './bodyIdentity';
+import { CATALOG_ID_FIELDS, type IdMatch, requiresReview, resolveUpsert } from './bodyIdentity';
 
 /** A stored row's key, as the caller's lookup would report it. */
-const hit = (field: (typeof CATALOGUE_ID_FIELDS)[number], value: string, ...keys: string[]) =>
+const hit = (field: (typeof CATALOG_ID_FIELDS)[number], value: string, ...keys: string[]) =>
   ({ field, value, keys }) as IdMatch<string>;
 
 describe('the normal traffic', () => {
@@ -55,7 +55,7 @@ describe('the case the campaign ordering exists to make rare', () => {
       hit('osmId', 'way/1', 'k-osm'),
     ]);
     expect(verdict.action).toBe('merge');
-    // Note the caller passed nhdId FIRST. The survivor must be ranked by CATALOGUE_ID_FIELDS, not by
+    // Note the caller passed nhdId FIRST. The survivor must be ranked by CATALOG_ID_FIELDS, not by
     // the order someone else's lookup code happened to use — otherwise which row survives a merge
     // depends on the shape of the caller, and both orderings look correct at the call site.
     if (verdict.action === 'merge') expect(verdict.into).toBe('k-osm');
@@ -128,11 +128,11 @@ describe('requiresReview', () => {
 
 describe('the field order is the contract', () => {
   it('puts OSM first, since the default survivor rule reads it', () => {
-    expect(CATALOGUE_ID_FIELDS).toEqual(['osmId', 'nhdId', 'threeDhpId']);
+    expect(CATALOG_ID_FIELDS).toEqual(['osmId', 'nhdId', 'threeDhpId']);
   });
 
   it('does not include gnisId — GNIS names places, and a place can be split', () => {
     // Measured: 92 GNIS ids resolve to more than one NHD body. Upserting on it would merge them.
-    expect(CATALOGUE_ID_FIELDS).not.toContain('gnisId');
+    expect(CATALOG_ID_FIELDS).not.toContain('gnisId');
   });
 });

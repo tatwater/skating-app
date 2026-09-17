@@ -263,7 +263,7 @@ table): five kinds — `activate` · `admit` · `restore` · `contest_access` ·
 `requestKindsFor(standing)` deciding which a water body admits; `create` (one open ask per person per water body
 per kind, ten open per person; an `admit` at a point we already hold is refused with `known_water`
 + the body and its standing); `resolveAdmit` (an action: one fetch of the 3DHP waterbody layer,
-parsed by `parseCatalogueResponse` — smallest containing polygon, classified, with provenance;
+parsed by `parseCatalogResponse` — smallest containing polygon, classified, with provenance;
 misses and outages recorded on the row, `reresolve` for a moderator); `listMineForBody`,
 `listMine`, `openCountsForBody` (public — the "3 people have asked" count); `listQueue` /
 `queueCount` (moderator); `approve` (performs the act through `activateBody` / `restore` / `remove` /

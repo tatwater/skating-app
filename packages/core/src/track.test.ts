@@ -150,14 +150,14 @@ describe('smoothTrack', () => {
 
   it('weights by accuracy — a confident neighbor pulls harder than a fuzzy one', () => {
     const base = straightTrack(5);
-    const withFuzzyNeighbour = base.map((p, i) =>
+    const withFuzzyNeighbor = base.map((p, i) =>
       i === 0 ? { ...p, lat: p.lat + 0.001, accuracy: 45 } : p,
     );
-    const withSharpNeighbour = base.map((p, i) =>
+    const withSharpNeighbor = base.map((p, i) =>
       i === 0 ? { ...p, lat: p.lat + 0.001, accuracy: 1 } : p,
     );
-    const fuzzyPull = (smoothTrack(withFuzzyNeighbour)[1] as TrackPoint).lat;
-    const sharpPull = (smoothTrack(withSharpNeighbour)[1] as TrackPoint).lat;
+    const fuzzyPull = (smoothTrack(withFuzzyNeighbor)[1] as TrackPoint).lat;
+    const sharpPull = (smoothTrack(withSharpNeighbor)[1] as TrackPoint).lat;
     expect(sharpPull).toBeGreaterThan(fuzzyPull);
   });
 

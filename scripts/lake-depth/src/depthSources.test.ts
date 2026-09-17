@@ -4,7 +4,7 @@ import {
   DEPTH_SOURCES,
   type DepthManifest,
   isRunnable,
-  shortLicence,
+  shortLicense,
   totalBytes,
 } from './depthSources';
 
@@ -23,7 +23,7 @@ function manifest(over: Partial<DepthManifest> = {}): DepthManifest {
     fetchedAt: '2026-08-02T19:00:00.000Z',
     source: { url: 'https://example.test/x.zip', kind: 'direct' },
     files: [{ name: 'x.zip', bytes: 100, sha256: 'abc' }],
-    licence: 'CC-BY 4.0',
+    license: 'CC-BY 4.0',
     ...over,
   };
 }
@@ -41,17 +41,17 @@ describe('DEPTH_SOURCES', () => {
   });
 
   it('records every license, including the one that was an open question until 2026-08-02', () => {
-    expect(DEPTH_SOURCES.find((s) => s.key === 'hydrolakes')?.expectedLicence).toMatch(/CC-BY/);
-    expect(DEPTH_SOURCES.find((s) => s.key === 'globathy')?.expectedLicence).toMatch(/CC0/);
+    expect(DEPTH_SOURCES.find((s) => s.key === 'hydrolakes')?.expectedLicense).toMatch(/CC-BY/);
+    expect(DEPTH_SOURCES.find((s) => s.key === 'globathy')?.expectedLicense).toMatch(/CC0/);
     // Read off the EDI package page. It is CC BY, so it carries an attribution obligation — the
     // reason this mattered was never the field, it was what the answer would require of the app.
-    expect(DEPTH_SOURCES.find((s) => s.key === 'lagos-us-depth')?.expectedLicence).toMatch(/CC BY/);
+    expect(DEPTH_SOURCES.find((s) => s.key === 'lagos-us-depth')?.expectedLicense).toMatch(/CC BY/);
   });
 
   it('still makes --adopt pass a license explicitly, even now that we know it', () => {
     // Knowing today's answer must not stop tomorrow's download from checking: the statement itself
     // says versions change and it is the Data User's job to notice.
-    expect(isRunnable(manifest({ licence: undefined })).ok).toBe(false);
+    expect(isRunnable(manifest({ license: undefined })).ok).toBe(false);
   });
 
   it('covers both mean and max between the three', () => {
@@ -94,13 +94,13 @@ describe('isRunnable', () => {
   });
 
   it('refuses an archive with no license recorded', () => {
-    const verdict = isRunnable(manifest({ licence: undefined }));
+    const verdict = isRunnable(manifest({ license: undefined }));
     expect(verdict.ok).toBe(false);
     expect(verdict.reason).toMatch(/license/i);
   });
 
   it('treats whitespace as no license — an empty confirmation is not a confirmation', () => {
-    expect(isRunnable(manifest({ licence: '   ' })).ok).toBe(false);
+    expect(isRunnable(manifest({ license: '   ' })).ok).toBe(false);
   });
 
   it('refuses a checksum mismatch outright', () => {
@@ -119,7 +119,7 @@ describe('isRunnable', () => {
   });
 });
 
-describe('shortLicence', () => {
+describe('shortLicense', () => {
   it('pulls the identifier out of a paragraph-long rights statement', () => {
     // LAGOS-US' statement is ~1,100 characters. Verbatim in a status line, it buries every other
     // source under it — while the manifest keeps the full text, which is what must be complete.
@@ -127,22 +127,22 @@ describe('shortLicence', () => {
       'This information is released under the Creative Commons license - Attribution - CC BY ' +
       '(https://creativecommons.org/licenses/by/4.0/). The consumer of these data ("Data User" ' +
       'herein) is required to cite it appropriately in any publication that results from its use.';
-    expect(shortLicence(statement)).toBe('CC BY');
+    expect(shortLicense(statement)).toBe('CC BY');
   });
 
   it('recognizes the identifiers our sources actually use', () => {
-    expect(shortLicence('CC0 (https://creativecommons.org/publicdomain/zero/1.0/)')).toMatch(/CC0/);
-    expect(shortLicence('CC-BY 4.0')).toMatch(/CC-BY/);
+    expect(shortLicense('CC0 (https://creativecommons.org/publicdomain/zero/1.0/)')).toMatch(/CC0/);
+    expect(shortLicense('CC-BY 4.0')).toMatch(/CC-BY/);
   });
 
   it('truncates rather than inventing a label it cannot verify', () => {
     const odd = 'Released under the Frobnicator Public Data Terms, revision nine, as amended 2019';
-    expect(shortLicence(odd)).toHaveLength(58);
-    expect(shortLicence(odd).endsWith('…')).toBe(true);
+    expect(shortLicense(odd)).toHaveLength(58);
+    expect(shortLicense(odd).endsWith('…')).toBe(true);
   });
 
   it('says UNRECORDED for an absent or blank license', () => {
-    expect(shortLicence(undefined)).toBe('UNRECORDED');
-    expect(shortLicence('   ')).toBe('UNRECORDED');
+    expect(shortLicense(undefined)).toBe('UNRECORDED');
+    expect(shortLicense('   ')).toBe('UNRECORDED');
   });
 });

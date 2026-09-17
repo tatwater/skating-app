@@ -33,7 +33,7 @@ export const TIGER_STATES = {
   layer: 'tl_2024_us_state',
   bytes: 9_954_307,
   sha256: 'ad00cbe66c7177091b668cee202e93d4a1ddcee271c28d1c9f9874af59c04b92',
-  licence: 'Public domain (U.S. Census Bureau, 17 U.S.C. §105)',
+  license: 'Public domain (U.S. Census Bureau, 17 U.S.C. §105)',
   attribution: 'U.S. Census Bureau, TIGER/Line Shapefiles',
 } as const;
 

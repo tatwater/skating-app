@@ -248,7 +248,7 @@ function clamp01(value: number): number {
  * that flipped between two equidistant pins would rewrite a body feature's shape on a job nobody ran
  * on purpose.
  */
-export function medoidOf<T extends { id: string; centre: LatLng; firstReportedAt: number }>(
+export function medoidOf<T extends { id: string; center: LatLng; firstReportedAt: number }>(
   members: readonly T[],
 ): T | null {
   if (members.length === 0) return null;
@@ -257,7 +257,7 @@ export function medoidOf<T extends { id: string; centre: LatLng; firstReportedAt
     let total = 0;
     for (const other of members) {
       if (other.id === candidate.id) continue;
-      total += haversineMeters(candidate.centre, other.centre);
+      total += haversineMeters(candidate.center, other.center);
     }
     if (
       best === null ||

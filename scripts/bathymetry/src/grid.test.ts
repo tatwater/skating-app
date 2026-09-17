@@ -7,7 +7,7 @@ import {
   localBounds,
   MAX_GRID_CELLS,
   MIN_GRID_CELLS,
-  metresPerLngDegree,
+  metersPerLngDegree,
   spanDegrees,
   TARGET_CELL_M,
 } from './grid';
@@ -204,13 +204,13 @@ describe('compressedCloud', () => {
   });
 });
 
-describe('metresPerLngDegree', () => {
+describe('metersPerLngDegree', () => {
   it('shrinks with latitude', () => {
-    expect(metresPerLngDegree(0)).toBeCloseTo(111_320, 0);
-    expect(metresPerLngDegree(44)).toBeLessThan(metresPerLngDegree(0));
+    expect(metersPerLngDegree(0)).toBeCloseTo(111_320, 0);
+    expect(metersPerLngDegree(44)).toBeLessThan(metersPerLngDegree(0));
     // ~0.72 of a degree of latitude at our region's center — the factor whose omission squashed every
     // lake horizontally by 28%.
-    expect(metresPerLngDegree(44) / 111_320).toBeCloseTo(0.719, 2);
+    expect(metersPerLngDegree(44) / 111_320).toBeCloseTo(0.719, 2);
   });
 });
 

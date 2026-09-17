@@ -42,7 +42,7 @@ import {
   missingResponses,
   redactApiKey,
   responsePath,
-  WTK_LICENCE,
+  WTK_LICENSE,
   WTK_MEASURED_LATENCY_MS,
 } from './archive';
 import {
@@ -287,7 +287,7 @@ async function main(): Promise<void> {
             yearsRequested: [...WTK_YEARS],
             responses: [],
             archive: 'nrel-wind-toolkit' as const,
-            licence: WTK_LICENCE,
+            license: WTK_LICENSE,
             attributes: 'winddirection_10m,windspeed_10m',
           };
         manifest.responses = [...manifest.responses.filter((r) => r.year !== year), response].sort(

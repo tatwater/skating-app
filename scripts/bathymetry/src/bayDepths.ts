@@ -35,7 +35,7 @@ import type { ArchivedLake, Lane } from './lakes';
 import { contourVertices } from './lakes';
 
 /** Feet per meter — the archives are normalized to feet. */
-const FEET_PER_METRE = 3.28084;
+const FEET_PER_METER = 3.28084;
 
 /** A live bay as `subAreas.exportForDepths` hands it over. */
 export interface ExportedBay {
@@ -106,7 +106,7 @@ export function bayDepthFor(
   }
   if (inside === 0) return { ok: false, reason: 'nothing-inside' };
   if (!(deepestFt > 0)) return { ok: false, reason: 'no-positive-depth' };
-  const maxDepthM = deepestFt / FEET_PER_METRE;
+  const maxDepthM = deepestFt / FEET_PER_METER;
   if (maxDepthM > MAX_PLAUSIBLE_AGENCY_DEPTH_M) return { ok: false, reason: 'implausible' };
   return {
     ok: true,

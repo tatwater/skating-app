@@ -79,7 +79,7 @@ def latitude_of(northing: float) -> float:
 # How many geolocation grid points to blend. The grid is spaced every ~10–20 km, so a handful of
 # neighbors spans the terrain a lake actually sits in. Measured over 10 lake-passes: k=3 gave 53.7 m
 # RMS, k=6 44.4 m, k=12 44.1 m — it plateaus, and 8 is on the flat part.
-GRID_NEIGHBOURS = 8
+GRID_NEIGHBORS = 8
 
 
 def local_reference(points, lat: float, lng: float) -> tuple[float, float]:
@@ -98,7 +98,7 @@ def local_reference(points, lat: float, lng: float) -> tuple[float, float]:
     nearest = sorted(
         points,
         key=lambda p: (p["lat"] - lat) ** 2 + ((p["lng"] - lng) * scale) ** 2,
-    )[:GRID_NEIGHBOURS]
+    )[:GRID_NEIGHBORS]
 
     weights = []
     for p in nearest:

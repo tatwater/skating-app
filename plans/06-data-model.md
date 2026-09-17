@@ -787,7 +787,7 @@ _id
 requesterId: ref(profiles)
 waterBodyId: ref(waterBodies)
 windowHours: number          // "skated in last 24/48h" (tunable)
-status: enum(open, fulfilled, expired, cancelled)
+status: enum(open, fulfilled, expired, canceled)
 rewardPoints: number         // cosmetic (D17)
 fulfillingReportIds: ref(reports)[]
 createdAt, expiresAt: timestamp

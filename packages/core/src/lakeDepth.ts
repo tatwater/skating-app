@@ -251,8 +251,8 @@ export const DEPTH_SOURCE_LABELS: Record<DepthSource, string> = {
  */
 export interface DepthSourceTerms {
   /** Short license name, for the caption. */
-  licence: string;
-  licenceUrl?: string;
+  license: string;
+  licenseUrl?: string;
   /**
    * Whether this license obliges us to credit the source where its data is shown.
    *
@@ -291,8 +291,8 @@ export const DEPTH_SOURCE_TERMS: Readonly<Record<DepthSource, DepthSourceTerms |
    * very distinction this rung exists to preserve.
    */
   cslap: {
-    licence: 'No published terms (checked 2026-08-09)',
-    licenceUrl:
+    license: 'No published terms (checked 2026-08-09)',
+    licenseUrl:
       'https://www.dec.ny.gov/environmental-protection/water/water-quality/lakes/citizens-statewide-lake-assessment-program',
     requiresAttribution: true,
     credit:
@@ -301,8 +301,8 @@ export const DEPTH_SOURCE_TERMS: Readonly<Record<DepthSource, DepthSourceTerms |
       'Associations.',
   },
   lagos_us: {
-    licence: 'CC BY 4.0',
-    licenceUrl: 'https://creativecommons.org/licenses/by/4.0/',
+    license: 'CC BY 4.0',
+    licenseUrl: 'https://creativecommons.org/licenses/by/4.0/',
     requiresAttribution: true,
     // Verbatim from the EDI package's own recommended citation, read 2026-08-02. The "Accessed"
     // date is ours and is the date the archive under `scripts/lake-depth/.raw/lagos-us-depth/` was
@@ -330,8 +330,8 @@ export const DEPTH_SOURCE_TERMS: Readonly<Record<DepthSource, DepthSourceTerms |
    * between a license that asks for nothing and one nobody has read.
    */
   alsc_1987: {
-    licence: 'No published terms (checked 2026-08-08)',
-    licenceUrl: 'https://www.adirondacklakessurvey.org/als.shtml',
+    license: 'No published terms (checked 2026-08-08)',
+    licenseUrl: 'https://www.adirondacklakessurvey.org/als.shtml',
     requiresAttribution: true,
     credit:
       'Adirondack Lakes Survey Corporation, Adirondack Lakes Survey 1984–1987 — a cooperative ' +
@@ -344,13 +344,13 @@ export const DEPTH_SOURCE_TERMS: Readonly<Record<DepthSource, DepthSourceTerms |
     // CC0 asks for nothing. Recorded anyway, because "no obligation" and "nobody checked" look
     // identical in an absent entry, and only one of them is safe to ship. Citing it is still good
     // manners and the caption does; it is simply not owed.
-    licence: 'CC0 1.0',
-    licenceUrl: 'https://creativecommons.org/publicdomain/zero/1.0/',
+    license: 'CC0 1.0',
+    licenseUrl: 'https://creativecommons.org/publicdomain/zero/1.0/',
     requiresAttribution: false,
   },
   osm_tag: {
-    licence: 'ODbL 1.0',
-    licenceUrl: 'https://www.openstreetmap.org/copyright',
+    license: 'ODbL 1.0',
+    licenseUrl: 'https://www.openstreetmap.org/copyright',
     requiresAttribution: true,
     credit: '© OpenStreetMap contributors',
   },
@@ -359,8 +359,8 @@ export const DEPTH_SOURCE_TERMS: Readonly<Record<DepthSource, DepthSourceTerms |
 /** Both HydroLAKES rungs are the same dataset under the same terms, so the wording is shared. */
 function HYDROLAKES_TERMS(): DepthSourceTerms {
   return {
-    licence: 'CC-BY 4.0',
-    licenceUrl: 'https://creativecommons.org/licenses/by/4.0/',
+    license: 'CC-BY 4.0',
+    licenseUrl: 'https://creativecommons.org/licenses/by/4.0/',
     requiresAttribution: true,
     // Verbatim from hydrosheds.org/products/hydrolakes, checked 2026-08-02.
     credit:

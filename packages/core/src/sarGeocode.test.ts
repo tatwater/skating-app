@@ -5,19 +5,19 @@ import {
   granuleGeocodeHeight,
   localGeocodeReference,
   maskOffsetMeters,
-  rangeDisplacementPerMetre,
+  rangeDisplacementPerMeter,
   shiftCoordinate,
 } from './sarGeocode';
 
-describe('rangeDisplacementPerMetre', () => {
+describe('rangeDisplacementPerMeter', () => {
   it('is ~1.4 m per meter at IW incidence, which is the whole problem', () => {
     // 35° is mid-swath for IW. 100 m of height error becoming ~140 m of ground error is why this is
     // visible at 28 m pixels rather than being a rounding concern.
-    expect(rangeDisplacementPerMetre(35)).toBeCloseTo(1.428, 2);
+    expect(rangeDisplacementPerMeter(35)).toBeCloseTo(1.428, 2);
   });
 
   it('grows steeply as the look gets shallower', () => {
-    expect(rangeDisplacementPerMetre(30)).toBeGreaterThan(rangeDisplacementPerMetre(45));
+    expect(rangeDisplacementPerMeter(30)).toBeGreaterThan(rangeDisplacementPerMeter(45));
   });
 });
 
@@ -213,7 +213,7 @@ describe('localGeocodeReference — the fix that made the correction work at all
     expect(near?.incidenceDeg).toBeCloseTo(31, 5);
     expect(far?.incidenceDeg).toBeCloseTo(45, 5);
     // 1/tan changes by ~60% over that span — using mid-swath for both is a 60% magnitude error.
-    const ratio = rangeDisplacementPerMetre(31) / rangeDisplacementPerMetre(45);
+    const ratio = rangeDisplacementPerMeter(31) / rangeDisplacementPerMeter(45);
     expect(ratio).toBeGreaterThan(1.5);
   });
 

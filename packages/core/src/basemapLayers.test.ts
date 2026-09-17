@@ -14,7 +14,7 @@ const layer = (id: string, bounds: Partial<Omit<ZoomableLayer, 'id'>> = {}): Zoo
 });
 
 /** The handful of flavor layers the policy actually names, plus detail it should leave alone. */
-const flavour = (): ZoomableLayer[] => [
+const flavor = (): ZoomableLayer[] => [
   layer('background'),
   layer('earth'),
   layer('water'),
@@ -37,7 +37,7 @@ const flavour = (): ZoomableLayer[] => [
 ];
 
 const compose = (mask: ZoomableLayer[] = [layer('region-mask-land')]) =>
-  composeBasemapLayers({ world: flavour(), region: flavour(), mask });
+  composeBasemapLayers({ world: flavor(), region: flavor(), mask });
 
 const ids = (ls: ZoomableLayer[]) => ls.map((l) => l.id);
 const find = (ls: ZoomableLayer[], id: string) => ls.find((l) => l.id === id);
@@ -56,8 +56,8 @@ describe('composeBasemapLayers', () => {
   describe('region labels', () => {
     const withFilter = () =>
       composeBasemapLayers({
-        world: flavour(),
-        region: flavour(),
+        world: flavor(),
+        region: flavor(),
         mask: [layer('region-mask-land')],
         regionFilter: REGION,
       });
@@ -174,7 +174,7 @@ describe('composeBasemapLayers', () => {
   it('survives an overview archive that is missing a layer the policy names', () => {
     const composed = composeBasemapLayers({
       world: [layer('earth')],
-      region: flavour(),
+      region: flavor(),
       mask: [],
     });
     expect(ids(composed)).toContain(`${WORLD_LAYER_PREFIX}earth`);

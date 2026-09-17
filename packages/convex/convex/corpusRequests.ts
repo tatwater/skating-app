@@ -20,11 +20,11 @@
 
 import {
   ADMIT_KNOWN_WATER_MARGIN_M,
-  catalogueQueryUrl,
+  catalogQueryUrl,
   isActive,
   MAX_REQUEST_NOTE_LENGTH,
   nearestBodyForPoint,
-  parseCatalogueResponse,
+  parseCatalogResponse,
   REQUEST_KINDS,
   type RequestKind,
   requestKindsFor,
@@ -180,7 +180,7 @@ export const create = mutation({
 /**
  * Ask the catalog what water sits under an `admit` request's coordinate (D106).
  *
- * One HTTP call to the live 3DHP waterbody layer; the parsing is `parseCatalogueResponse` in core,
+ * One HTTP call to the live 3DHP waterbody layer; the parsing is `parseCatalogResponse` in core,
  * where it is tested against the service's shapes. A miss and a failure are both recorded on the
  * request rather than thrown: the queue shows a moderator "the catalog has nothing here" or "the
  * service was down" as a row they can act on, and a re-resolve is one button.
@@ -193,7 +193,7 @@ export const resolveAdmit = internalAction({
     const now = Date.now();
     let json: unknown;
     try {
-      const res = await fetch(catalogueQueryUrl(request.coord));
+      const res = await fetch(catalogQueryUrl(request.coord));
       if (!res.ok) throw new Error(`service returned ${res.status} ${res.statusText}`);
       json = await res.json();
     } catch (err) {
@@ -204,7 +204,7 @@ export const resolveAdmit = internalAction({
       });
       return { resolved: 'error' };
     }
-    const resolution = parseCatalogueResponse(json, request.coord, now);
+    const resolution = parseCatalogResponse(json, request.coord, now);
     try {
       await ctx.runMutation(internal.corpusRequests.recordResolution, {
         requestId,

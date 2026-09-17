@@ -61,7 +61,7 @@ export interface ElevationArchiveManifest {
    *
    * 3DEP is a USGS product and US federal government works are **public domain** (17 U.S.C. § 105).
    */
-  licence: string;
+  license: string;
   fetchedAt: string;
   entries: number;
   /** Distribution of source-raster resolutions, so a coarse-DEM cohort is visible rather than latent. */

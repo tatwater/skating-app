@@ -28,19 +28,19 @@ export function WeatherStrip(props: WeatherStripProps) {
   const hazardId = 'hazardId' in props ? props.hazardId : undefined;
 
   useEffect(() => {
-    let cancelled = false;
+    let canceled = false;
     getWeather({
       ...(reportId !== undefined ? { reportId: reportId as Id<'reports'> } : {}),
       ...(hazardId !== undefined ? { hazardId: hazardId as Id<'hazards'> } : {}),
     })
       .then((s) => {
-        if (!cancelled) setSummary(s);
+        if (!canceled) setSummary(s);
       })
       .catch(() => {
-        if (!cancelled) setSummary(null);
+        if (!canceled) setSummary(null);
       });
     return () => {
-      cancelled = true;
+      canceled = true;
     };
   }, [getWeather, reportId, hazardId]);
 

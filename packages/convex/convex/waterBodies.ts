@@ -188,7 +188,7 @@ function sanitizeLimit(limit: number | undefined): number {
  * every regional filter in the app — the feed, drive-time, the state chips — silently empty.
  *
  * So: **an explicit list from the producer is authoritative and replaces**; a `--state` tag is a
- * partial observation and unions. The rule is the same one `assertedCatalogueIds` follows for the
+ * partial observation and unions. The rule is the same one `assertedCatalogIds` follows for the
  * catalog ids, and for the same reason — the difference between a complete record and a partial one
  * has to be expressed by the caller, because nothing in here can tell them apart.
  */
@@ -467,7 +467,7 @@ function vertexCount(geometry: unknown): number {
  * design exists to detect — an id resolving to two rows — and turn a finding we want queued into a
  * failed batch.
  */
-async function lookupByCatalogueIds(
+async function lookupByCatalogIds(
   ctx: MutationCtx,
   ids: { osmId?: string; nhdId?: string; threeDhpId?: string },
 ): Promise<IdMatch<Id<'waterBodies'>>[]> {
@@ -553,7 +553,7 @@ export const importCanonical = internalMutation({
     for (const item of bodies) {
       // Held rather than inlined: the `conflict` branch needs the same rows back, and re-reading
       // them would double the index reads in the heaviest mutation in the app.
-      const matches = await lookupByCatalogueIds(ctx, item);
+      const matches = await lookupByCatalogIds(ctx, item);
       const verdict = resolveUpsert(
         { osmId: item.osmId, nhdId: item.nhdId, threeDhpId: item.threeDhpId },
         matches,
@@ -652,8 +652,8 @@ export const importCanonical = internalMutation({
           // an incoming record was one catalog's view, and too strict now that the merge resolves
           // all three ids before emitting — it would freeze the corpus at whatever the first
           // reconciliation guessed. Overwriting unconditionally is the opposite error and a far
-          // worse one; see `assertedCatalogueIds`.
-          ...assertedCatalogueIds(item),
+          // worse one; see `assertedCatalogIds`.
+          ...assertedCatalogIds(item),
         });
         // Re-derive listing from the preserved fields (removed stays removed, D48) and re-cell the
         // body against its new geometry + prominence (A01).
@@ -706,7 +706,7 @@ export const importCanonical = internalMutation({
           waterBodyKey: `wb_${crypto.randomUUID()}`,
           // Identity alongside the key. Set here so a fresh import needs no backfill to be
           // reconcilable, and so the day `externalId` stops being an OSM id, this still is one.
-          ...catalogueIds(item),
+          ...catalogIds(item),
           polygon: item.polygon,
           bbox: item.bbox,
           centroid: item.centroid,
@@ -769,7 +769,7 @@ export const importCanonical = internalMutation({
  * cheap way to establish it: a one-off query cannot scan ~21,000 rows inside Convex's 16 MB read cap
  * (a body averages 1.8 KB and the large ones are far bigger), and no counting function existed.
  *
- * So this is paged and resumable, in the same shape as `backfillCatalogueIds` — hand back the cursor
+ * So this is paged and resumable, in the same shape as `backfillCatalogIds` — hand back the cursor
  * and the running totals, call it until `isDone`. It is a **query**, so it writes nothing and can be
  * run against a live corpus mid-campaign without interfering.
  *
@@ -1251,7 +1251,7 @@ export const backfillWaterBodyKeys = internalMutation({
   },
 });
 
-export const backfillCatalogueIds = internalMutation({
+export const backfillCatalogIds = internalMutation({
   args: { cursor: v.optional(v.string()), batchSize: v.optional(v.number()) },
   handler: async (ctx, { cursor, batchSize }) => {
     const numItems = Math.min(500, Math.max(1, batchSize ?? 200));
@@ -1261,7 +1261,7 @@ export const backfillCatalogueIds = internalMutation({
     let alreadySet = 0;
     let noExternalId = 0;
     for (const body of page.page) {
-      const want = deriveCatalogueIds(body);
+      const want = deriveCatalogIds(body);
       if (Object.keys(want).length === 0) {
         noExternalId++;
         continue;
@@ -3864,21 +3864,21 @@ export const setWaterBodyName = mutation({
     // catalog one, and Clear then restores the ranked name with no alias. Same trap
     // `composeNameClaims` exists for, one layer up.
     const stored = (body.nameClaims ?? []) as NameClaim[];
-    const catalogue = distinctNameClaims(stored.filter((c) => c.source !== 'user'));
+    const catalog = distinctNameClaims(stored.filter((c) => c.source !== 'user'));
     const claims = composeNameClaims(
       stored.filter((c) => c.source === 'user'),
-      catalogue,
+      catalog,
     );
 
     if (name === null) {
       // Back to whatever the catalogs rank first. Nothing to do if no override was ever set —
       // returning quietly rather than throwing, because a double-click on Clear is not an error.
       if (!claims.some((c) => c.source === 'user')) return waterBodyId;
-      const restored = catalogue[0]?.value ?? body.name;
+      const restored = catalog[0]?.value ?? body.name;
       await ctx.db.patch(waterBodyId, {
         name: restored,
-        nameClaims: catalogue.length > 0 ? catalogue : undefined,
-        searchText: searchTextFor(restored, aliasesFor(catalogue, restored)),
+        nameClaims: catalog.length > 0 ? catalog : undefined,
+        searchText: searchTextFor(restored, aliasesFor(catalog, restored)),
       });
       await ctx.db.insert('moderationActions', {
         actorId: actor._id,
@@ -3908,7 +3908,7 @@ export const setWaterBodyName = mutation({
 
     // The moderator's claim first, then every catalog claim — including the one just chosen, under
     // its original source, so the audit trail still shows who published it.
-    const next = composeNameClaims([{ source: 'user', value: match.value }], catalogue);
+    const next = composeNameClaims([{ source: 'user', value: match.value }], catalog);
     await ctx.db.patch(waterBodyId, {
       name: match.value,
       nameClaims: next,
@@ -4290,7 +4290,7 @@ const BATHYMETRY_APPROACH_M = 25;
  * down, not to guess one of them back from where the row happened to arrive.
  *
  * **On insert every field is written; on patch, only the ones the record actually asserts** — see
- * `assertedCatalogueIds`. The asymmetry is deliberate and it is a safety property, not tidiness.
+ * `assertedCatalogIds`. The asymmetry is deliberate and it is a safety property, not tidiness.
  *
  * ⚠ **`geometrySource` falls back to `source`, never to nothing.** The schema says absent means "the
  * same as `source`", so leaving it undefined is technically correct and practically a trap: a later
@@ -4301,7 +4301,7 @@ const BATHYMETRY_APPROACH_M = 25;
  * Derive `osmId` / `nhdId` / `geometrySource` from `source` + `externalId` — **for the backfill of
  * legacy rows only.**
  *
- * This is the rule `catalogueIds` used to apply to every import, and it is exactly the conflation
+ * This is the rule `catalogIds` used to apply to every import, and it is exactly the conflation
  * D93 exists to undo — so it is deliberately *not* shared with the import path any more. It survives
  * because a row written before the identity fields existed genuinely has nowhere else to get them
  * from: `source: 'osm'` plus an `externalId` that is an OSM id is real evidence, just weaker than an
@@ -4310,7 +4310,7 @@ const BATHYMETRY_APPROACH_M = 25;
  * ⚠ **Do not call this from `importCanonical`.** An incoming record states its own identity; guessing
  * one back from where the row happened to arrive is how `externalId` ended up doing three jobs.
  */
-function deriveCatalogueIds(item: { source: string; externalId?: string }): {
+function deriveCatalogIds(item: { source: string; externalId?: string }): {
   osmId?: string;
   nhdId?: string;
   geometrySource?: 'osm' | 'nhd' | '3dhp' | 'user';
@@ -4334,7 +4334,7 @@ interface IncomingIds {
   geometrySource?: (typeof GEOMETRY_SOURCES)[number];
 }
 
-function catalogueIds(item: IncomingIds) {
+function catalogIds(item: IncomingIds) {
   return {
     osmId: item.osmId,
     nhdId: item.nhdId,
@@ -4366,8 +4366,8 @@ function catalogueIds(item: IncomingIds) {
  * `geometrySource` follows the same rule for the same reason: D92's per-lake override is a decision
  * someone made, and an import that has no opinion about geometry must not erase one that does.
  */
-function assertedCatalogueIds(item: IncomingIds): Record<string, string> {
-  const all = catalogueIds(item);
+function assertedCatalogIds(item: IncomingIds): Record<string, string> {
+  const all = catalogIds(item);
   const out: Record<string, string> = {};
   for (const [k, v] of Object.entries(all)) if (v !== undefined) out[k] = v;
   return out;
@@ -5477,16 +5477,16 @@ export const listDedupCandidates = query({
 
     // Connected components, walking edges out of flagged rows only (both directions: a mutual pair
     // and a one-way D36 stamp must both come out as one card).
-    const neighbours = new Map<Id<'waterBodies'>, Set<Id<'waterBodies'>>>();
+    const neighbors = new Map<Id<'waterBodies'>, Set<Id<'waterBodies'>>>();
     const link = (a: Id<'waterBodies'>, b: Id<'waterBodies'>) => {
       if (!byId.has(a) || !byId.has(b)) return;
       for (const [from, to] of [
         [a, b],
         [b, a],
       ] as const) {
-        const set = neighbours.get(from) ?? new Set<Id<'waterBodies'>>();
+        const set = neighbors.get(from) ?? new Set<Id<'waterBodies'>>();
         set.add(to);
-        neighbours.set(from, set);
+        neighbors.set(from, set);
       }
     };
     for (const body of flagged) {
@@ -5511,7 +5511,7 @@ export const listDedupCandidates = query({
           continue;
         }
         members.push(doc);
-        for (const next of neighbours.get(id) ?? []) stack.push(next);
+        for (const next of neighbors.get(id) ?? []) stack.push(next);
       }
       // A flag whose only candidate has since been deleted leaves a group of one. It still belongs
       // in the queue — the flag is real and someone has to clear it — and the card says so.
@@ -6139,7 +6139,7 @@ export const setIncludedByRequest = internalMutation({
     if (osmId === undefined && nhdId === undefined) {
       throw new ConvexError('setIncludedByRequest: name the body by osmId or nhdId');
     }
-    const matches = await lookupByCatalogueIds(ctx, { osmId, nhdId });
+    const matches = await lookupByCatalogIds(ctx, { osmId, nhdId });
     const keys = [...new Set(matches.flatMap((m) => m.keys))];
     if (keys.length === 0) throw new ConvexError('setIncludedByRequest: no body carries that id');
     if (keys.length > 1) {

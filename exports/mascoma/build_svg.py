@@ -290,7 +290,7 @@ def lonlat_to_3857(lon, lat):
     return R * math.radians(lon), R * math.log(math.tan(math.pi / 4 + math.radians(lat) / 2))
 
 
-def deg_per_metre(lat):
+def deg_per_meter(lat):
     """Ellipsoidal degree lengths, so '3 miles' is 3 ground miles and not 3 mercator miles."""
     p = math.radians(lat)
     return (111132.92 - 559.82 * math.cos(2 * p) + 1.175 * math.cos(4 * p),
@@ -299,7 +299,7 @@ def deg_per_metre(lat):
 
 body = json.load(open(BODY))["body"]
 bb = body["bbox"]
-mlat, mlon = deg_per_metre((bb["minLat"] + bb["maxLat"]) / 2)
+mlat, mlon = deg_per_meter((bb["minLat"] + bb["maxLat"]) / 2)
 pad = BUFFER_MILES * 1609.344
 
 MIN_LNG, MAX_LNG = bb["minLng"] - pad / mlon, bb["maxLng"] + pad / mlon

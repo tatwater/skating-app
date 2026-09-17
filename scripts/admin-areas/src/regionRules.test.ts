@@ -11,7 +11,7 @@ import {
   BLEED_BOX,
   bleedBoxRing,
   DOWNSTATE_NY_COUNTIES,
-  NEIGHBOUR_FIPS,
+  NEIGHBOR_FIPS,
   nearRegion,
   needsClipping,
   roundCoords,
@@ -46,12 +46,12 @@ describe('the neighbor states', () => {
   it('is the four that share a line with ours, by FIPS', () => {
     // Their border is the one edge of the mask that has to be right: every meter of simplification
     // there is a meter of their territory that may go unmasked and leak basemap detail.
-    expect([...NEIGHBOUR_FIPS].sort()).toEqual(['09', '34', '42', '44']); // CT, NJ, PA, RI
+    expect([...NEIGHBOR_FIPS].sort()).toEqual(['09', '34', '42', '44']); // CT, NJ, PA, RI
   });
 
   it('does not include a state of ours', () => {
     for (const fips of ['23', '33', '50', '25', '36']) {
-      expect(NEIGHBOUR_FIPS.has(fips)).toBe(false); // ME, NH, VT, MA, NY
+      expect(NEIGHBOR_FIPS.has(fips)).toBe(false); // ME, NH, VT, MA, NY
     }
   });
 });

@@ -768,14 +768,14 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
   // which frames on its own target instead (see `geolocateOnMount`).
   useEffect(() => {
     if (!geolocateOnMount) return;
-    let cancelled = false;
+    let canceled = false;
     (async () => {
       try {
         const granted = await ensureForegroundPermission();
         if (!granted) return; // denied ⇒ keep the default framing
         const pos = await Location.getCurrentPositionAsync({});
         const frame = frameForCoord({ lat: pos.coords.latitude, lng: pos.coords.longitude });
-        if (!cancelled && frame) {
+        if (!canceled && frame) {
           cameraRef.current?.jumpTo({ center: frame.center, zoom: frame.zoom });
         }
       } catch {
@@ -783,7 +783,7 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
       }
     })();
     return () => {
-      cancelled = true;
+      canceled = true;
     };
   }, [geolocateOnMount]);
 

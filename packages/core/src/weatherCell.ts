@@ -115,12 +115,12 @@ export function weatherCellFor(
     return { key: `${tier[0]}:${latIdx}:${lngIdx}:-`, lat: cellLat, lng: cellLng };
   }
   const bandIdx = Math.round(elevationM / bandM);
-  const bandCentreM = bandIdx * bandM;
+  const bandCenterM = bandIdx * bandM;
   return {
     key: `${tier[0]}:${latIdx}:${lngIdx}:${bandIdx}`,
     lat: cellLat,
     lng: cellLng,
-    elevationM: bandCentreM,
+    elevationM: bandCenterM,
   };
 }
 

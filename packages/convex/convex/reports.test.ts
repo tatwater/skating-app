@@ -776,13 +776,13 @@ describe('reports.update (author-only LWW, D25)', () => {
     test('an unedited modeled reading survives the form’s whole-unit rounding', async () => {
       const t = convexTestWithGeo();
       const { asAuthor, reportId } = await seedReport(t);
-      const modelled = { airTempC: -3.4, windSpeedKph: 18.7, source: 'openmeteo' as const };
-      await t.run((ctx) => ctx.db.patch(reportId, { conditions: modelled }));
+      const modeled = { airTempC: -3.4, windSpeedKph: 18.7, source: 'openmeteo' as const };
+      await t.run((ctx) => ctx.db.patch(reportId, { conditions: modeled }));
 
       // Exactly what the edit form does: seed from the stored report, change only the notes, submit.
-      const form = reportFormFromReport({ skateEndTime: SKATE_TIME, conditions: modelled });
+      const form = reportFormFromReport({ skateEndTime: SKATE_TIME, conditions: modeled });
       const input = buildReportInput({ ...form, notes: 'fixed a typo' }, 'unused');
-      expect(input.conditions?.airTempC).not.toBe(modelled.airTempC); // the rounding really is lossy
+      expect(input.conditions?.airTempC).not.toBe(modeled.airTempC); // the rounding really is lossy
       await asAuthor.mutation(api.reports.update, {
         reportId,
         skateEndTime: SKATE_TIME,
@@ -834,12 +834,12 @@ describe('reports.update (author-only LWW, D25)', () => {
     test('editing one weather field does not nudge the other', async () => {
       const t = convexTestWithGeo();
       const { asAuthor, reportId } = await seedReport(t);
-      const modelled = { airTempC: -3.4, windSpeedKph: 18.7, source: 'openmeteo' as const };
-      await t.run((ctx) => ctx.db.patch(reportId, { conditions: modelled }));
+      const modeled = { airTempC: -3.4, windSpeedKph: 18.7, source: 'openmeteo' as const };
+      await t.run((ctx) => ctx.db.patch(reportId, { conditions: modeled }));
 
       // Seed the form, retype the air temp (26 °F → 30 °F), leave the wind field alone — derived
       // rather than hand-written, because the untouched value is whatever the round trip emits.
-      const form = reportFormFromReport({ skateEndTime: SKATE_TIME, conditions: modelled });
+      const form = reportFormFromReport({ skateEndTime: SKATE_TIME, conditions: modeled });
       const edited = buildReportInput(
         { ...form, conditions: { ...form.conditions, airTempF: '30' } },
         'unused',

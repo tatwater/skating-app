@@ -83,7 +83,9 @@ a phase doc fails the build.
   reaches too (founder call, 2026-09-16). *Lake* stays in proper nouns, dataset names and terms of
   art (lake-effect, lake-skating). `plans/` follows this; `docs/`, code comments and UI copy are
   still to be swept (see the deferred register).
-- US spellings in all new text.
+- US spellings in all new text. The tree was swept 2026-09-17
+  ([`features/us-spellings.md`](./features/us-spellings.md), D185); what stays UK on purpose is
+  listed there.
 
 Nothing here is final code; the data model in `06` is schema-flavored pseudocode meant to be
 reacted to.

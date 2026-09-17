@@ -56,7 +56,7 @@
  */
 
 /** Meters of ground displacement per meter of height error, at a given incidence angle. */
-export function rangeDisplacementPerMetre(incidenceDeg: number): number {
+export function rangeDisplacementPerMeter(incidenceDeg: number): number {
   return 1 / Math.tan((incidenceDeg * Math.PI) / 180);
 }
 
@@ -92,7 +92,7 @@ export function geocodeOffsetMeters({
   lookRight?: boolean;
 }): { eastM: number; northM: number } {
   const delta = heightM - referenceHeightM;
-  const magnitude = delta * rangeDisplacementPerMetre(incidenceDeg);
+  const magnitude = delta * rangeDisplacementPerMeter(incidenceDeg);
 
   // Range points 90° from heading, on the look side.
   const rangeBearing = headingDeg + (lookRight ? 90 : -90);
@@ -115,7 +115,7 @@ export interface GeolocationGridPoint {
  * How many grid points to blend. Measured over 10 lake-passes: k=3 gave 53.7 m RMS, k=6 44.4 m,
  * k=12 44.1 m. It plateaus, and 8 sits on the flat part.
  */
-export const GEOCODE_GRID_NEIGHBOURS = 8;
+export const GEOCODE_GRID_NEIGHBORS = 8;
 
 /**
  * The reference height and incidence angle **at one lake**, from the grid points around it.
@@ -158,14 +158,14 @@ export function localGeocodeReference(
   points: readonly GeolocationGridPoint[],
   lat: number,
   lng: number,
-  neighbours: number = GEOCODE_GRID_NEIGHBOURS,
+  neighbors: number = GEOCODE_GRID_NEIGHBORS,
 ): { referenceHeightM: number; incidenceDeg: number } | null {
   if (points.length === 0) return null;
 
   const scale = Math.cos((lat * Math.PI) / 180);
   const squared = (p: GeolocationGridPoint) => (p.lat - lat) ** 2 + ((p.lng - lng) * scale) ** 2;
 
-  const nearest = [...points].sort((a, b) => squared(a) - squared(b)).slice(0, neighbours);
+  const nearest = [...points].sort((a, b) => squared(a) - squared(b)).slice(0, neighbors);
 
   let weightTotal = 0;
   let heightTotal = 0;
@@ -214,7 +214,7 @@ export function maskOffsetMeters(params: Parameters<typeof geocodeOffsetMeters>[
 }
 
 /** Meters per degree of latitude — near enough constant for a correction of a few hundred meters. */
-const METRES_PER_DEG_LAT = 111_132;
+const METERS_PER_DEG_LAT = 111_132;
 
 /**
  * Apply a ground offset to a coordinate.
@@ -228,10 +228,10 @@ export function shiftCoordinate(
   lng: number,
   offset: { eastM: number; northM: number },
 ): { lat: number; lng: number } {
-  const metresPerDegLng = METRES_PER_DEG_LAT * Math.cos((lat * Math.PI) / 180);
+  const metersPerDegLng = METERS_PER_DEG_LAT * Math.cos((lat * Math.PI) / 180);
   return {
-    lat: lat + offset.northM / METRES_PER_DEG_LAT,
-    lng: lng + (metresPerDegLng === 0 ? 0 : offset.eastM / metresPerDegLng),
+    lat: lat + offset.northM / METERS_PER_DEG_LAT,
+    lng: lng + (metersPerDegLng === 0 ? 0 : offset.eastM / metersPerDegLng),
   };
 }
 

@@ -502,9 +502,9 @@ describe('what the corpus must and must not contain', () => {
       polygon: square(-70.4, 44.4, sideForAcres(20)),
     });
     const grid = new Map<string, GnisPoint[]>();
-    const centre = { lng: -70.4 + sideForAcres(20) / 2, lat: 44.4 + sideForAcres(20) / 2 };
-    grid.set(`${Math.floor(centre.lng / 0.1)}:${Math.floor(centre.lat / 0.1)}`, [
-      { ...centre, name: 'Cicero Swamp', featureClass: 'Swamp', featureId: '12345' },
+    const center = { lng: -70.4 + sideForAcres(20) / 2, lat: 44.4 + sideForAcres(20) / 2 };
+    grid.set(`${Math.floor(center.lng / 0.1)}:${Math.floor(center.lat / 0.1)}`, [
+      { ...center, name: 'Cicero Swamp', featureClass: 'Swamp', featureId: '12345' },
     ]);
     const result = buildMasterList(inputFor({ osm: [bog], gnisGrid: grid }));
     expect(keys(result.bodies)).toEqual(['osm:way/bog']);

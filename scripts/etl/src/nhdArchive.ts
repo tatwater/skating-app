@@ -71,7 +71,7 @@ export const NHD_SOURCES: NhdSource[] = [
  * Public domain, and the attribution is courtesy rather than obligation — recorded because every
  * other source in this repo carries a real license and an unstated one reads as an oversight.
  */
-export const NHD_LICENCE = 'Public domain (USGS · US Government work, 17 U.S.C. §105)';
+export const NHD_LICENSE = 'Public domain (USGS · US Government work, 17 U.S.C. §105)';
 export const NHD_ATTRIBUTION = 'U.S. Geological Survey, National Hydrography Dataset';
 
 export function nhdZipUrl(source: NhdSource): string {
@@ -245,7 +245,7 @@ export interface NhdManifest {
   /** The FGDC metadata archived alongside, when it came down. */
   metadataFilename?: string;
   metadataSha256?: string;
-  licence: string;
+  license: string;
   attribution: string;
 }
 
@@ -279,7 +279,7 @@ export function buildNhdManifest(input: BuildNhdManifestInput): NhdManifest {
     sha256: input.sha256,
     expectedBytes: input.source.expectedBytes,
     bytesVerified: input.bytes === input.source.expectedBytes,
-    licence: NHD_LICENCE,
+    license: NHD_LICENSE,
     attribution: NHD_ATTRIBUTION,
   };
   if (input.lastModified) {

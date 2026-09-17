@@ -255,7 +255,7 @@ measurement is USGS's claim, not our inference — which matters, because the al
 3DHP's areas against NHD's and calling a divergence a new survey, a proxy that needs both archives and
 cannot tell a re-trace from a typo fix.
 
-`measure-3dhp` tallies it and files a `catalogue_edh_coverage` snapshot, plotted on `/admin`.
+`measure-3dhp` tallies it and files a `catalog_edh_coverage` snapshot, plotted on `/admin`.
 
 As of **2026-08-03** the FY26 archive reads **0 of 274,994** — nothing in our five states has been
 re-surveyed yet. The live service already reads **1,590 of 356,980 (0.445%)**, all of it in western
@@ -289,7 +289,7 @@ about 2023 with a shelf life; one about OSM or 3DHP is not.
    there. There is a test asserting exactly this.
 3. `pnpm --filter @skating/etl archive-3dhp` — downloads (~50 min at 6 MB/s), clips, archives, and
    deletes the 11.9 GB.
-4. `pnpm --filter @skating/etl measure-3dhp` — files a `catalogue_edh_coverage` snapshot. **Run it
+4. `pnpm --filter @skating/etl measure-3dhp` — files a `catalog_edh_coverage` snapshot. **Run it
    every year even while it reads zero**: `/admin` plots the series, and a series that starts at zero
    is only legible if somebody recorded the zeroes.
 4. `pnpm --filter @skating/etl archive --refresh` — a fresh OSM extract for the same run.

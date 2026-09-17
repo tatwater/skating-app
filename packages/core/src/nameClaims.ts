@@ -89,9 +89,9 @@ export function distinctNameClaims(claims: readonly NameClaim[]): NameClaim[] {
  */
 export function composeNameClaims(
   user: readonly NameClaim[],
-  catalogue: readonly NameClaim[],
+  catalog: readonly NameClaim[],
 ): NameClaim[] {
-  return [...distinctNameClaims(user), ...distinctNameClaims(catalogue)];
+  return [...distinctNameClaims(user), ...distinctNameClaims(catalog)];
 }
 
 /**

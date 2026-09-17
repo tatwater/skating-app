@@ -212,11 +212,11 @@ export function describeRequestOutcome(request: {
  * re-publishes NHD across the whole Northeast (D92: 68% byte-identical, the rest float round-trip),
  * so a polygon from here is the polygon a campaign would import.
  */
-export const CATALOGUE_POINT_SERVICE =
+export const CATALOG_POINT_SERVICE =
   'https://hydro.nationalmap.gov/arcgis/rest/services/3DHP_all/MapServer/60/query';
 
 /** The fields the resolver asks for — `THREE_DHP_SELECT` in the ETL, plus nothing. */
-export const CATALOGUE_POINT_FIELDS = [
+export const CATALOG_POINT_FIELDS = [
   'id3dhp',
   'gnisid',
   'gnisidlabel',
@@ -225,22 +225,22 @@ export const CATALOGUE_POINT_FIELDS = [
 ];
 
 /** The one-call point query: every waterbody feature intersecting the coordinate, as GeoJSON. */
-export function catalogueQueryUrl(coord: LatLng): string {
+export function catalogQueryUrl(coord: LatLng): string {
   const params = new URLSearchParams({
     geometry: `${coord.lng},${coord.lat}`,
     geometryType: 'esriGeometryPoint',
     inSR: '4326',
     spatialRel: 'esriSpatialRelIntersects',
-    outFields: CATALOGUE_POINT_FIELDS.join(','),
+    outFields: CATALOG_POINT_FIELDS.join(','),
     returnGeometry: 'true',
     outSR: '4326',
     f: 'geojson',
   });
-  return `${CATALOGUE_POINT_SERVICE}?${params.toString()}`;
+  return `${CATALOG_POINT_SERVICE}?${params.toString()}`;
 }
 
 /** What the resolver attaches to an `admit` request when the catalog knows the water. */
-export interface CatalogueCandidate {
+export interface CatalogCandidate {
   source: '3dhp';
   /** `id3dhp` — the catalog's own id, and the row's `externalId` / `threeDhpId` if admitted. */
   externalId: string;
@@ -257,8 +257,8 @@ export interface CatalogueCandidate {
   fetchedAt: number;
 }
 
-export type CatalogueResolution =
-  | { kind: 'found'; candidate: CatalogueCandidate }
+export type CatalogResolution =
+  | { kind: 'found'; candidate: CatalogCandidate }
   | { kind: 'none' }
   | { kind: 'error'; message: string };
 
@@ -271,11 +271,11 @@ export type CatalogueResolution =
  * A feature whose class we refuse (a river, a canal, an ocean) is still returned as a candidate with
  * no `cls`, so the moderator sees *why* there is nothing to admit rather than an empty queue row.
  */
-export function parseCatalogueResponse(
+export function parseCatalogResponse(
   json: unknown,
   coord: LatLng,
   now: number,
-): CatalogueResolution {
+): CatalogResolution {
   const body = json as {
     error?: { message?: string };
     features?: {
@@ -325,7 +325,7 @@ export function parseCatalogueResponse(
       bbox: polygonBBox(pick.geometry),
       centroid: representativePoint(pick.geometry),
       surfaceAreaSqM: pick.area,
-      serviceUrl: catalogueQueryUrl(coord),
+      serviceUrl: catalogQueryUrl(coord),
       fetchedAt: now,
     },
   };

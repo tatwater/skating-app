@@ -62,8 +62,8 @@ describe('composeNameClaims', () => {
       claim('osm', 'Lake Auburn'),
     ]);
     // …so clearing the override still has an alias to restore.
-    const catalogue = composed.filter((c) => c.source !== 'user');
-    expect(aliasesFor(catalogue, 'The Basin')).toEqual(['Lake Auburn']);
+    const catalog = composed.filter((c) => c.source !== 'user');
+    expect(aliasesFor(catalog, 'The Basin')).toEqual(['Lake Auburn']);
   });
 
   it('still dedupes within each side', () => {

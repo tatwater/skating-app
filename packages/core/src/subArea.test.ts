@@ -242,8 +242,8 @@ describe('subAreaForPutIn — by distance to the outline, not containment (A09 c
   });
 
   it('beyond the tolerance it is open-lake access', () => {
-    const metres = SUB_AREA_PUT_IN_TOLERANCE_M * 3;
-    const coord = { lat: 44.5, lng: -73.5 - metres / (111_320 * Math.cos((44.5 * Math.PI) / 180)) };
+    const meters = SUB_AREA_PUT_IN_TOLERANCE_M * 3;
+    const coord = { lat: 44.5, lng: -73.5 - meters / (111_320 * Math.cos((44.5 * Math.PI) / 180)) };
     expect(subAreaForPutIn(coord, candidates)).toBeNull();
   });
 

@@ -74,7 +74,7 @@ function writeArchive(
         lakesArchived: lakes.length,
         withMeanDepth: lakes.length,
         refusals,
-        licence:
+        license:
           'NO PUBLISHED TERMS. The hosting ArcGIS item (e3332be9630a4bd9978f0bdc8a67a3cd, owned by ' +
           'a dec.ny.gov account) has an EMPTY licenseInfo and an EMPTY accessInformation, and the ' +
           'service carries no copyrightText; sharing is public. Checked 2026-08-09. Same finding as ' +

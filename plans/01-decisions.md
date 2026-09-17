@@ -3322,7 +3322,7 @@ not have**, producing 27,000 rows with no state at all and silently emptying eve
 the app.
 
 So `resolveStates`: **an explicit list from the producer is authoritative and replaces; a `--state`
-tag is a partial observation and unions.** Same rule `assertedCatalogueIds` follows for the catalog
+tag is a partial observation and unions.** Same rule `assertedCatalogIds` follows for the catalog
 ids, for the same reason — nothing inside the mutation can tell a complete record from a partial one,
 so the caller has to say.
 
@@ -3709,7 +3709,7 @@ what actually addresses that.
 the stored area is measured from whichever polygon wins, never taken as the maximum of what the
 catalogs assert. This is about *which polygon*, within one catalog's account of one water body.
 
-**And one helper answers it for all three callers.** `chooseGeometry`, `catalogueIdsOf` and the
+**And one helper answers it for all three callers.** `chooseGeometry`, `catalogIdsOf` and the
 absorbed-member list each picked a representative separately, so a fix to one would have left a row
 whose `externalId` and `osmId` named two different OSM features. `representativeOf` is the single
 spelling.
@@ -5641,7 +5641,7 @@ queue says why there is nothing to admit. The archive lane stays the manual fall
 **Approving performs the act through the verb that already exists** — `activateBody`, `restore`,
 `remove`, `setPublicAccess('open')` — so the audit log reads the same from the queue as from the
 water body editor, and one decision closes every sibling ask. An admitted body is inserted `source:
-'3dhp'` with the catalogue id as `externalId` and `threeDhpId`, `includedByRequest` and active from
+'3dhp'` with the catalog id as `externalId` and `threeDhpId`, `includedByRequest` and active from
 birth, so a later campaign upserts *that* row (D93) and the transform's floor cannot delete it; a
 feature already in the corpus is activated, never twinned. `restore` and `takedown` approvals take an
 admin, as their verbs do.
@@ -5702,3 +5702,30 @@ flag claiming a survey we no longer draw. It records the **2,022** bodies that p
 contour line, not the 2,437 the join merely matched. **The put-in terms still wait on A06d.**
 
 **Related:** [D49](#d49), [D70](#d70--water-body-profile-content-is-derived-or-third-party-never-hand-maintained-a06ca06d), [`phase-A06c`](./phases/A06c-expanded-body-profiles.md).
+
+## D185 — A stored key spelled the UK way is migrated, not grandfathered (feat us-spellings)
+
+**Decided (2026-09-17, founder call at the kickoff of the US-spellings sweep).** The sweep's plan
+had written the opposite rule — *leave the stored literal, fix only prose* — for the three values
+that live outside the source tree: the bounty status `cancelled`, the metric key
+`catalogue_edh_coverage`, and (found at kickoff) the `licence` key in every archive `manifest.json`.
+The founder chose to migrate all three rather than carry a permanent exception list.
+
+**Why:** a grandfathered key is an allowlist entry forever, in every future sweep, every guard, every
+reviewer's head — and the one place a new contributor copies the spelling from. The cost of moving
+them was measured before the call: dev held **zero** `cancelled` bounties and **one**
+`catalogue_edh_coverage` snapshot, prod has never been initialized, and the 9,568 manifests are
+local files with `rclone copy` mirrors. Cheap now, never cheaper.
+
+**How:** `cancelled` → `canceled` is a plain rename (the schema push validates the existing rows
+and passes); `renameMetricKey` in `analytics.ts` re-keys the snapshot rows and keeps `(metric, date)`
+unique; `scripts/lib/rename-manifest-key.py` rewrites the manifests atomically and byte-faithfully,
+followed by a mirror push per archive. Each is idempotent.
+
+**The rule going forward:** a stored value is not exempt from a naming sweep by virtue of being
+stored — it is exempt only while its migration costs more than the exception it would leave behind.
+Third-party values (`water=harbour`, agency `copyrightText`) are a different category: they are not
+ours to spell, and never move.
+
+**Related:** D40, [`features/us-spellings.md`](./features/us-spellings.md),
+[`convex-schema-migration-order`](../CLAUDE.md).

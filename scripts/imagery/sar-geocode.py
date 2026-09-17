@@ -78,7 +78,7 @@ import xml.etree.ElementTree as ET
 
 # Meters per degree of latitude. Near enough constant for corrections of a few hundred meters, and
 # far more precision than the input height carries.
-METRES_PER_DEG_LAT = 111_132.0
+METERS_PER_DEG_LAT = 111_132.0
 
 
 def grid_points(root: ET.Element) -> list[dict[str, float]]:
@@ -224,7 +224,7 @@ def main() -> None:
             "targetHeightM": args.height,
             "offsetEastM": round(east, 2),
             "offsetNorthM": round(north, 2),
-            "metresPerDegLat": METRES_PER_DEG_LAT,
+            "metersPerDegLat": METERS_PER_DEG_LAT,
         },
         sys.stdout,
     )

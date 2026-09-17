@@ -6,7 +6,7 @@ import {
   MAX_FRAGMENTS_PER_LEVEL,
   MAX_GAP_RATIO,
   MIN_SOUNDINGS,
-  summariseDensity,
+  summarizeDensity,
 } from './density';
 
 /** A filled grid of soundings over a square patch — the well-surveyed case. */
@@ -180,9 +180,9 @@ describe('the gate threshold', () => {
   });
 });
 
-describe('summariseDensity', () => {
+describe('summarizeDensity', () => {
   it('splits kept from dropped and counts by verdict', () => {
-    const summary = summariseDensity([
+    const summary = summarizeDensity([
       assessDensity({ lakeKey: 'a', points: grid(12) }),
       assessDensity({ lakeKey: 'b', points: grid(2) }),
       assessDensity({

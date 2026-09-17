@@ -47,7 +47,7 @@ export const DOWNSTATE_NY_COUNTIES = [
 ] as const;
 
 /** Connecticut, New Jersey, Pennsylvania, Rhode Island — the states that touch ours. */
-export const NEIGHBOUR_FIPS: ReadonlySet<string> = new Set(['09', '34', '42', '44']);
+export const NEIGHBOR_FIPS: ReadonlySet<string> = new Set(['09', '34', '42', '44']);
 
 /**
  * How far the mask has to reach, and why it does not have to reach further.

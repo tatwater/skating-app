@@ -350,20 +350,20 @@ describe('reportFormFromReport', () => {
    */
   describe('a modeled reading that does not land on a whole imperial unit', () => {
     /** −3.4 °C → 25.88 °F → the field shows 26 → back to −3.33 °C. Off by a rounding step, untouched. */
-    const MODELLED: StoredReportForForm = {
+    const MODELED: StoredReportForForm = {
       skateEndTime: SKATE_END,
       conditions: { airTempC: -3.4, windSpeedKph: 18.7 },
     };
 
     it('does not survive an exact comparison — which is why the server cannot use one', () => {
-      const rebuilt = buildReportInput(reportFormFromReport(MODELLED), 'wb1');
+      const rebuilt = buildReportInput(reportFormFromReport(MODELED), 'wb1');
       expect(rebuilt.conditions?.airTempC).not.toBe(-3.4);
       expect(rebuilt.conditions?.windSpeedKph).not.toBe(18.7);
       expect(rebuilt.conditions?.airTempC).toBeCloseTo(-3.4, 0);
     });
 
     it('is recognized as untouched, because the round trip is predicted exactly', () => {
-      const rebuilt = buildReportInput(reportFormFromReport(MODELLED), 'wb1');
+      const rebuilt = buildReportInput(reportFormFromReport(MODELED), 'wb1');
       expect(isFormRoundTripOf('airTempC', -3.4, rebuilt.conditions?.airTempC)).toBe(true);
       expect(isFormRoundTripOf('windSpeedKph', 18.7, rebuilt.conditions?.windSpeedKph)).toBe(true);
     });

@@ -11,25 +11,25 @@ import {
 import type { ProximityHazard } from './hazardProximity';
 import { HAZARD_TYPES, type HazardType } from './types';
 
-const CENTRE: LatLng = { lat: 44.4759, lng: -73.2121 };
+const CENTER: LatLng = { lat: 44.4759, lng: -73.2121 };
 const NONE: ReadonlySet<string> = new Set();
 
 /** A fix heading due north at a skating clip unless overridden. */
 function fix(overrides: Partial<DirectionalFix> = {}): DirectionalFix {
-  return { coord: CENTRE, headingDeg: 0, speedMps: 10, ...overrides };
+  return { coord: CENTER, headingDeg: 0, speedMps: 10, ...overrides };
 }
 
 /** A point+radius hazard whose *center* sits `meters` away from CENTER along `bearingDeg`. */
 function hazardAt(
   id: string,
   bearingDeg: number,
-  metres: number,
+  meters: number,
   overrides: Partial<ProximityHazard> = {},
 ): ProximityHazard {
   return {
     id,
     type: 'open_water',
-    shape: pointRadiusShape(destinationPoint(CENTRE, bearingDeg, metres), 20),
+    shape: pointRadiusShape(destinationPoint(CENTER, bearingDeg, meters), 20),
     confirmCount: 1,
     ...overrides,
   };
@@ -80,10 +80,10 @@ describe('evaluateDirectionalAlert — the lead-time window', () => {
       fc.property(
         fc.integer({ min: 50, max: 1500 }),
         fc.integer({ min: 3, max: 15 }),
-        (metres, speed) => {
+        (meters, speed) => {
           for (const a of evaluateDirectionalAlert(
             fix({ speedMps: speed }),
-            [hazardAt('h', 0, metres)],
+            [hazardAt('h', 0, meters)],
             NONE,
           )) {
             expect(a.secondsToEncounter).toBeGreaterThanOrEqual(DEFAULT_LEAD_MIN_SEC);
@@ -102,10 +102,10 @@ describe('evaluateDirectionalAlert — direction matters', () => {
         fc.integer({ min: 100, max: 500 }),
         fc.integer({ min: 1, max: 15 }),
         fc.integer({ min: 0, max: 359 }),
-        (metres, speed, heading) => {
+        (meters, speed, heading) => {
           // Place the hazard directly behind the heading; radius (20) < distance, so its footprint is
           // entirely behind and no forward sample can land inside it.
-          const behind = hazardAt('b', (heading + 180) % 360, metres);
+          const behind = hazardAt('b', (heading + 180) % 360, meters);
           const alerts = evaluateDirectionalAlert(
             fix({ headingDeg: heading, speedMps: speed }),
             [behind],
@@ -237,7 +237,7 @@ describe('evaluateDirectionalAlert — degenerate inputs', () => {
       type: 'pressure_ridge',
       shape: {
         geometryKind: 'line',
-        geometry: { type: 'LineString', coordinates: [[CENTRE.lng, CENTRE.lat]] },
+        geometry: { type: 'LineString', coordinates: [[CENTER.lng, CENTER.lat]] },
         bufferMeters: 10,
       },
       confirmCount: 1,

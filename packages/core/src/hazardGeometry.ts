@@ -256,8 +256,8 @@ export function distanceToHazard(
   if (clippedFootprint) return distanceToPolygonMeters(coord, clippedFootprint);
   if (shape.geometryKind === 'point_radius' && shape.geometry.type === 'Point') {
     const [lng = 0, lat = 0] = shape.geometry.coordinates;
-    const centre = haversineMeters(coord, { lat, lng });
-    return Math.max(0, centre - (shape.radiusMeters ?? 0));
+    const center = haversineMeters(coord, { lat, lng });
+    return Math.max(0, center - (shape.radiusMeters ?? 0));
   }
   return distanceToPolygonMeters(coord, hazardFootprint(shape));
 }

@@ -203,9 +203,9 @@ export const cancelDeletion = mutation({
   args: {},
   handler: async (ctx) => {
     const profile = await requireProfile(ctx);
-    if (profile.deletionRequestedAt === undefined) return { cancelled: false };
+    if (profile.deletionRequestedAt === undefined) return { canceled: false };
     await ctx.db.patch(profile._id, { deletionRequestedAt: undefined });
-    return { cancelled: true };
+    return { canceled: true };
   },
 });
 
@@ -229,7 +229,7 @@ export const redactGhostContent = internalMutation({
     // Canceled between two passes: stop. What is already redacted stays redacted — see
     // `cancelDeletion`.
     if (profile.deletionRequestedAt === undefined && profile.status !== 'deleting') {
-      return { stopped: 'cancelled' as const };
+      return { stopped: 'canceled' as const };
     }
 
     // No `final` here, deliberately: this is the ghost-window sweep, where the age cutoff *is* the
@@ -384,7 +384,7 @@ export const finalizeAccount = internalMutation({
     // Canceled mid-flight: the user changed their mind between the sweep and this page. Stop, and
     // leave what's already erased erased — those rows are notifications and cached bands, all of which
     // regenerate. Nothing that was anonymized or severed has been touched yet (see the stage order).
-    if (profile.deletionRequestedAt === undefined) return { stopped: 'cancelled' as const };
+    if (profile.deletionRequestedAt === undefined) return { stopped: 'canceled' as const };
     if (profile.status === 'deleted') return { stopped: 'already_deleted' as const };
 
     const size = pageSizeFor(pageSize);

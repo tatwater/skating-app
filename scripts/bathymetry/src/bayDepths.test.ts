@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { bayDepthFor, bayDepths, type ExportedBay } from './bayDepths';
 import type { ArchivedLake } from './lakes';
 
-const FEET_PER_METRE = 3.28084;
+const FEET_PER_METER = 3.28084;
 
 function rect(minLng: number, minLat: number, maxLng: number, maxLat: number): Polygon {
   return {
@@ -76,7 +76,7 @@ describe('bayDepthFor', () => {
     const out = bayDepthFor(lake, BAY);
     expect(out.ok).toBe(true);
     if (!out.ok) return;
-    expect(out.depth.maxDepthM).toBeCloseTo(60 / FEET_PER_METRE, 6);
+    expect(out.depth.maxDepthM).toBeCloseTo(60 / FEET_PER_METER, 6);
     expect(out.depth.understatesMax).toBe(false);
     expect(out.depth.sampleCount).toBe(3);
   });
@@ -109,7 +109,7 @@ describe('bayDepthFor', () => {
     const out = bayDepthFor(lake, BAY);
     expect(out.ok).toBe(true);
     if (!out.ok) return;
-    expect(out.depth.maxDepthM).toBeCloseTo(30 / FEET_PER_METRE, 6);
+    expect(out.depth.maxDepthM).toBeCloseTo(30 / FEET_PER_METER, 6);
     expect(out.depth.understatesMax).toBe(true);
   });
 
@@ -183,7 +183,7 @@ describe('bayDepths', () => {
     const out = bayDepths([BAY, other], byParent);
     expect(out.uncovered).toBe(1);
     expect(out.depths).toHaveLength(1);
-    expect(out.depths[0]?.maxDepthM).toBeCloseTo(80 / FEET_PER_METRE, 6);
+    expect(out.depths[0]?.maxDepthM).toBeCloseTo(80 / FEET_PER_METER, 6);
     expect(out.depths[0]?.understatesMax).toBe(true);
   });
 });

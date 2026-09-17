@@ -27,14 +27,14 @@ import {
 const DEFAULT_DAYS = 30;
 
 /** The metric catalog, keyed for lookup. Cached by Convex, so calling this per card is cheap. */
-export function useCatalogue() {
-  const entries = useQuery(api.analytics.catalogue, {});
+export function useCatalog() {
+  const entries = useQuery(api.analytics.catalog, {});
   if (!entries) return null;
   return new Map(entries.map((e) => [e.key, e]));
 }
 
-type CatalogueEntry =
-  NonNullable<ReturnType<typeof useCatalogue>> extends Map<string, infer V> ? V : never;
+type CatalogEntry =
+  NonNullable<ReturnType<typeof useCatalog>> extends Map<string, infer V> ? V : never;
 
 /** Humanize a metric meta key: `spam:actioned` → "Spam · Actioned", `still_here` → "Still here". */
 function humanizeMetaKey(key: string): string {
@@ -134,20 +134,20 @@ function formatCell(value: number | string | null | undefined, percent: boolean)
  */
 export function MetricHistogram({
   metricKey,
-  catalogue,
+  catalog,
   markers,
   color,
   height,
 }: {
   metricKey: string;
-  catalogue: Map<string, CatalogueEntry> | null;
+  catalog: Map<string, CatalogEntry> | null;
   markers?: { atLabel: string; label: string }[];
   color?: ChartStatus;
   height?: number;
 }) {
   const result = useQuery(api.analytics.latest, { metrics: [metricKey] });
-  const entry = catalogue?.get(metricKey);
-  if (result === undefined || catalogue === null)
+  const entry = catalog?.get(metricKey);
+  if (result === undefined || catalog === null)
     return <LoadingCard title={entry?.label ?? '…'} />;
   const point = result[metricKey];
   const labels = entry?.bucketLabels ?? [];
@@ -200,18 +200,18 @@ function metaStatus(key: string): ChartStatus | undefined {
  */
 export function MetricComposition({
   metricKey,
-  catalogue,
+  catalog,
   semantic = false,
   height,
 }: {
   metricKey: string;
-  catalogue: Map<string, CatalogueEntry> | null;
+  catalog: Map<string, CatalogEntry> | null;
   semantic?: boolean;
   height?: number;
 }) {
   const result = useQuery(api.analytics.latest, { metrics: [metricKey] });
-  const entry = catalogue?.get(metricKey);
-  if (result === undefined || catalogue === null)
+  const entry = catalog?.get(metricKey);
+  if (result === undefined || catalog === null)
     return <LoadingCard title={entry?.label ?? '…'} />;
   const meta = result[metricKey]?.meta ?? {};
   const slices: CompositionSlice[] = Object.entries(meta).map(([key, value]) => ({

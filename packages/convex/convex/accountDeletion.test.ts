@@ -423,13 +423,13 @@ describe('the grace window', () => {
     await user.as.mutation(api.accountDeletion.requestDeletion, {});
 
     expect(await user.as.mutation(api.accountDeletion.cancelDeletion, {})).toEqual({
-      cancelled: true,
+      canceled: true,
     });
     const profile = await t.run((ctx) => ctx.db.get(user.id));
     expect(profile?.deletionRequestedAt).toBeUndefined();
     // Idempotent: canceling twice is not an error.
     expect(await user.as.mutation(api.accountDeletion.cancelDeletion, {})).toEqual({
-      cancelled: false,
+      canceled: false,
     });
   });
 
@@ -470,7 +470,7 @@ describe('the grace window', () => {
     const direct = await t.mutation(internal.accountDeletion.finalizeAccount, {
       userId: untouched.id,
     });
-    expect(direct).toEqual({ stopped: 'cancelled' });
+    expect(direct).toEqual({ stopped: 'canceled' });
     const profile = await t.run((ctx) => ctx.db.get(untouched.id));
     expect(profile?.status).toBe('active');
     expect(profile?.displayName).toBe('never_asked');
@@ -484,7 +484,7 @@ describe('the grace window', () => {
     await t.run((ctx) => ctx.db.patch(user.id, { deletionRequestedAt: undefined }));
     const result = await t.mutation(internal.accountDeletion.finalizeAccount, { userId: user.id });
 
-    expect(result).toEqual({ stopped: 'cancelled' });
+    expect(result).toEqual({ stopped: 'canceled' });
     const profile = await t.run((ctx) => ctx.db.get(user.id));
     expect(profile?.status).toBe('active');
     expect(profile?.displayName).toBe('waverer');
@@ -578,7 +578,7 @@ describe('read-only while a deletion is pending', () => {
     ).resolves.toBeDefined();
     await expect(user.as.mutation(api.dataExport.requestExport, {})).resolves.toBeDefined();
     await expect(user.as.mutation(api.accountDeletion.cancelDeletion, {})).resolves.toEqual({
-      cancelled: true,
+      canceled: true,
     });
   });
 

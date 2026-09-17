@@ -751,7 +751,7 @@ describe('bounties.cancel', () => {
     );
 
     await requester.as.mutation(api.bounties.cancel, { bountyId });
-    expect((await t.run((ctx) => ctx.db.get(bountyId)))?.status).toBe('cancelled');
+    expect((await t.run((ctx) => ctx.db.get(bountyId)))?.status).toBe('canceled');
 
     // Canceling a non-open bounty is rejected.
     await expect(requester.as.mutation(api.bounties.cancel, { bountyId })).rejects.toThrow(

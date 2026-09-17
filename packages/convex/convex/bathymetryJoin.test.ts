@@ -53,32 +53,32 @@ describe('waterBodies.matchBathymetryLakes', () => {
     half: number,
     areaSqM: number,
     name = 'Test Lake',
-    centre = { lat: 44, lng: -72 },
+    center = { lat: 44, lng: -72 },
   ) {
     const externalId = `way/${name.replace(/\s+/g, '-')}`;
     const polygon = {
       type: 'Polygon' as const,
       coordinates: [
         [
-          [centre.lng - half, centre.lat - half],
-          [centre.lng + half, centre.lat - half],
-          [centre.lng + half, centre.lat + half],
-          [centre.lng - half, centre.lat + half],
-          [centre.lng - half, centre.lat - half],
+          [center.lng - half, center.lat - half],
+          [center.lng + half, center.lat - half],
+          [center.lng + half, center.lat + half],
+          [center.lng - half, center.lat + half],
+          [center.lng - half, center.lat - half],
         ],
       ],
     };
     const bbox = {
-      minLat: centre.lat - half,
-      minLng: centre.lng - half,
-      maxLat: centre.lat + half,
-      maxLng: centre.lng + half,
+      minLat: center.lat - half,
+      minLng: center.lng - half,
+      maxLat: center.lat + half,
+      maxLng: center.lng + half,
     };
     const id = await insertBody(t, externalId, {
       name,
       polygon,
       bbox,
-      centroid: centre,
+      centroid: center,
       surfaceAreaSqM: areaSqM,
     });
     await t.mutation(internal.waterBodies.importCanonical, {
@@ -91,7 +91,7 @@ describe('waterBodies.matchBathymetryLakes', () => {
           osmId: externalId,
           polygon,
           bbox,
-          centroid: centre,
+          centroid: center,
           surfaceAreaSqM: areaSqM,
         },
       ],
@@ -105,11 +105,11 @@ describe('waterBodies.matchBathymetryLakes', () => {
    * Spread to 80% of the half-width so every point is comfortably inside a body of the same extent:
    * the gate is being tested, not our floating-point boundary handling.
    */
-  function survey(half: number, centre = { lat: 44, lng: -72 }, n = 16) {
+  function survey(half: number, center = { lat: 44, lng: -72 }, n = 16) {
     return Array.from({ length: n }, (_, i) => {
       const t = ((i + 0.5) / n) * 2 - 1;
       const u = (((i * 5) % n) / n) * 2 - 1;
-      return { lat: centre.lat + t * half * 0.8, lng: centre.lng + u * half * 0.8 };
+      return { lat: center.lat + t * half * 0.8, lng: center.lng + u * half * 0.8 };
     });
   }
 
@@ -377,32 +377,32 @@ describe('matchBathymetryLakes — the MIDAS crosswalk', () => {
     half: number,
     areaSqM: number,
     nhdId?: string,
-    centre = { lat: 44, lng: -72 },
+    center = { lat: 44, lng: -72 },
   ) {
     const externalId = `way/${name.replace(/\s+/g, '-')}`;
     const polygon = {
       type: 'Polygon' as const,
       coordinates: [
         [
-          [centre.lng - half, centre.lat - half],
-          [centre.lng + half, centre.lat - half],
-          [centre.lng + half, centre.lat + half],
-          [centre.lng - half, centre.lat + half],
-          [centre.lng - half, centre.lat - half],
+          [center.lng - half, center.lat - half],
+          [center.lng + half, center.lat - half],
+          [center.lng + half, center.lat + half],
+          [center.lng - half, center.lat + half],
+          [center.lng - half, center.lat - half],
         ],
       ],
     };
     const bbox = {
-      minLat: centre.lat - half,
-      minLng: centre.lng - half,
-      maxLat: centre.lat + half,
-      maxLng: centre.lng + half,
+      minLat: center.lat - half,
+      minLng: center.lng - half,
+      maxLat: center.lat + half,
+      maxLng: center.lng + half,
     };
     const id = await insertBody(t, externalId, {
       name,
       polygon,
       bbox,
-      centroid: centre,
+      centroid: center,
       surfaceAreaSqM: areaSqM,
       ...(nhdId ? { nhdId } : {}),
     });
@@ -417,7 +417,7 @@ describe('matchBathymetryLakes — the MIDAS crosswalk', () => {
           ...(nhdId ? { nhdId } : {}),
           polygon,
           bbox,
-          centroid: centre,
+          centroid: center,
           surfaceAreaSqM: areaSqM,
         },
       ],
@@ -426,11 +426,11 @@ describe('matchBathymetryLakes — the MIDAS crosswalk', () => {
   }
 
   /** A survey confined to the SMALL lake, so both bodies cover it and only one is right. */
-  function smallSurvey(half: number, centre = { lat: 44, lng: -72 }, n = 16) {
+  function smallSurvey(half: number, center = { lat: 44, lng: -72 }, n = 16) {
     return Array.from({ length: n }, (_, i) => {
       const a = ((i + 0.5) / n) * 2 - 1;
       const b = (((i * 5) % n) / n) * 2 - 1;
-      return { lat: centre.lat + a * half * 0.8, lng: centre.lng + b * half * 0.8 };
+      return { lat: center.lat + a * half * 0.8, lng: center.lng + b * half * 0.8 };
     });
   }
 

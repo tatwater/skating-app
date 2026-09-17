@@ -218,14 +218,14 @@ manual step.
      --file=~/Downloads/data_dictionary_depth.csv \
      --file=~/Downloads/<metadata-file> \
      --file=~/Downloads/<guide>.pdf \
-     --licence="<paste the Intellectual Rights statement>" \
+     --license="<paste the Intellectual Rights statement>" \
      --url="https://portal.edirepository.org/nis/mapbrowse?packageid=edi.1043.1"
    ```
 
    `--file` repeats. Every file is hashed and listed in the manifest; the ETL reads only
    `lake_depth`, and the companions ride along because they are what make it legible.
 
-   `--licence` is **enforced, not decorative**: `isRunnable()` refuses an archive with no license
+   `--license` is **enforced, not decorative**: `isRunnable()` refuses an archive with no license
    recorded, so the ETL cannot quietly run from LAGOS-US while nobody has read its terms. That would
    close the open question by forgetting it.
 

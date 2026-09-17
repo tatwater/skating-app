@@ -1417,9 +1417,9 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
     // is fine: NAIP photographs land and water alike, and a quarter-quad scene is far larger than
     // the error. It is emphatically **not** fine for Workstream 4's Copernicus link, which opens a
     // browser centered on the point — hence the stored `interiorPoint` there and this one here.
-    const centre = representativePoint(open.mask.polygon);
+    const center = representativePoint(open.mask.polygon);
     const controller = new AbortController();
-    fetch(aerialIdentifyUrl(centre), { signal: controller.signal })
+    fetch(aerialIdentifyUrl(center), { signal: controller.signal })
       .then((response) => (response.ok ? response.json() : null))
       .then((body) => {
         const scene = parseAerialScene(body);
@@ -1466,7 +1466,7 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !loaded || !polygonArmed) return;
-    let cancelled = false;
+    let canceled = false;
     setDrawUnavailable(false);
     void (async () => {
       try {
@@ -1480,7 +1480,7 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
           // wants is to nudge a corner that landed in the wrong place.
           onFinish: () => polygonDrawRef.current?.startEditing(),
         });
-        if (cancelled) {
+        if (canceled) {
           control.destroy();
           return;
         }
@@ -1501,11 +1501,11 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
       } catch {
         // The chunk didn't load. Say so rather than leaving a dead "draw" mode on screen — the other
         // two primitives still work, and for a safety report that beats nothing being postable.
-        if (!cancelled) setDrawUnavailable(true);
+        if (!canceled) setDrawUnavailable(true);
       }
     })();
     return () => {
-      cancelled = true;
+      canceled = true;
       polygonDrawRef.current?.destroy();
       polygonDrawRef.current = null;
     };
@@ -1574,18 +1574,18 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
   // drawer, which frames on its own target instead (see `geolocateOnMount`).
   useEffect(() => {
     if (!geolocateOnMount || typeof navigator === 'undefined' || !navigator.geolocation) return;
-    let cancelled = false;
+    let canceled = false;
     navigator.geolocation.getCurrentPosition(
       (pos) => {
         const map = mapRef.current;
         const frame = frameForCoord({ lat: pos.coords.latitude, lng: pos.coords.longitude });
-        if (!cancelled && map && frame) map.jumpTo({ center: frame.center, zoom: frame.zoom });
+        if (!canceled && map && frame) map.jumpTo({ center: frame.center, zoom: frame.zoom });
       },
       () => {}, // denied/unavailable ⇒ keep the default framing
       { timeout: 8000, maximumAge: 60_000 },
     );
     return () => {
-      cancelled = true;
+      canceled = true;
     };
   }, [geolocateOnMount, mapRef.current]);
 

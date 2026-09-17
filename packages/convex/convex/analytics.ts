@@ -181,7 +181,7 @@ export const latest = query({
  * Idempotent per `date` — `writeMetricSnapshot` replaces. Re-measuring the same release overwrites
  * rather than accumulating, so a corrected run is just a re-run.
  */
-export const recordCatalogueSnapshot = internalMutation({
+export const recordCatalogSnapshot = internalMutation({
   args: {
     metric: v.string(),
     date: v.string(),
@@ -206,13 +206,56 @@ export const recordCatalogueSnapshot = internalMutation({
 });
 
 /**
- * Hard ceiling on a `catalogueHistory` read.
+ * Hard ceiling on a `catalogHistory` read.
  *
  * An `external` metric gets one row per third-party release — 3DHP publishes annually — so 200 rows is
  * two centuries of a yearly cadence, or a decade if something starts publishing monthly. It is a
  * backstop against a mis-scoped writer, not a real limit anyone will reach.
  */
-const MAX_CATALOGUE_HISTORY = 200;
+const MAX_CATALOG_HISTORY = 200;
+
+/**
+ * Re-key every snapshot of one metric — the US-spellings sweep (D185) renamed the stored key
+ * `catalogue_edh_coverage` to `catalog_edh_coverage`, and the old rows have to follow or the chart
+ * reads an empty series.
+ *
+ * `to` must be a metric the catalog knows, so a typo cannot strand a series under a name nothing
+ * reads. `from` deliberately need not be: by the time this runs, the old key is gone from `METRICS`.
+ * Bounded by the same ceiling as the read; a metric with more rows than that is not an `external`
+ * one and should not be re-keyed with this.
+ */
+export const renameMetricKey = internalMutation({
+  args: { from: v.string(), to: v.string() },
+  handler: async (ctx, { from, to }) => {
+    if (!(to in METRICS)) throw new Error(`unknown target metric "${to}"`);
+    if (from === to) return { moved: 0 };
+    const rows = await ctx.db
+      .query('metricSnapshots')
+      .withIndex('by_metric_date', (q) => q.eq('metric', from))
+      .take(MAX_CATALOG_HISTORY + 1);
+    if (rows.length > MAX_CATALOG_HISTORY) {
+      throw new Error(`"${from}" has more than ${MAX_CATALOG_HISTORY} rows — not an external metric`);
+    }
+    let moved = 0;
+    let dropped = 0;
+    for (const row of rows) {
+      // A row already filed under the new key for the same date was written by the renamed code
+      // after the deploy — it is the newer measurement, and `(metric, date)` must stay unique.
+      const existing = await ctx.db
+        .query('metricSnapshots')
+        .withIndex('by_metric_date', (q) => q.eq('metric', to).eq('date', row.date))
+        .unique();
+      if (existing) {
+        await ctx.db.delete(row._id);
+        dropped += 1;
+      } else {
+        await ctx.db.patch(row._id, { metric: to });
+        moved += 1;
+      }
+    }
+    return { moved, dropped };
+  },
+});
 
 /**
  * The full history of an `external` metric — every snapshot, oldest first, with no day-range
@@ -228,7 +271,7 @@ const MAX_CATALOGUE_HISTORY = 200;
  * Returns the rows as measured. The chart plots the points and connects them; it does not pretend to
  * know what the value was in between.
  */
-export const catalogueHistory = query({
+export const catalogHistory = query({
   args: { metric: v.string() },
   handler: async (ctx, { metric }) => {
     await requireRole(ctx, 'admin');
@@ -236,7 +279,7 @@ export const catalogueHistory = query({
     const rows = await ctx.db
       .query('metricSnapshots')
       .withIndex('by_metric_date', (q) => q.eq('metric', metric))
-      .take(MAX_CATALOGUE_HISTORY);
+      .take(MAX_CATALOG_HISTORY);
     // The index orders by date ascending, and dates are `YYYY-MM-DD`, so this is chronological.
     return rows.map((row) => ({
       date: row.date,
@@ -251,7 +294,7 @@ export const catalogueHistory = query({
  * the bucket edges. Served rather than imported directly by the web app so a chart's axis can never
  * drift from the edges the rollup actually bucketed against.
  */
-export const catalogue = query({
+export const catalog = query({
   args: {},
   handler: async (ctx) => {
     await requireRole(ctx, 'admin');

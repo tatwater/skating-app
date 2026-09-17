@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
-  catalogueQueryUrl,
+  catalogQueryUrl,
   describeRequestOutcome,
-  parseCatalogueResponse,
+  parseCatalogResponse,
   requestKindLabel,
   requestKindsFor,
   requestKindTitle,
@@ -75,7 +75,7 @@ describe('describeRequestOutcome', () => {
 
 describe('the catalog point query', () => {
   it('asks the 3DHP waterbody layer for GeoJSON at the point, lng first', () => {
-    const url = new URL(catalogueQueryUrl(POINT));
+    const url = new URL(catalogQueryUrl(POINT));
     expect(url.pathname).toContain('/3DHP_all/MapServer/60/query');
     expect(url.searchParams.get('geometry')).toBe('-72.5,44.5');
     expect(url.searchParams.get('geometryType')).toBe('esriGeometryPoint');
@@ -84,7 +84,7 @@ describe('the catalog point query', () => {
   });
 });
 
-describe('parseCatalogueResponse', () => {
+describe('parseCatalogResponse', () => {
   const lake = (id: string, half: number, extra: Record<string, unknown> = {}) => ({
     type: 'Feature',
     geometry: square(POINT.lat, POINT.lng, half),
@@ -92,7 +92,7 @@ describe('parseCatalogueResponse', () => {
   });
 
   it('returns the smallest polygon containing the point, classified', () => {
-    const res = parseCatalogueResponse(
+    const res = parseCatalogResponse(
       { type: 'FeatureCollection', features: [lake('big', 0.1), lake('small', 0.01)] },
       POINT,
       NOW,
@@ -108,19 +108,19 @@ describe('parseCatalogueResponse', () => {
   });
 
   it('ignores a feature that does not contain the point, and says none when nothing does', () => {
-    const res = parseCatalogueResponse(
+    const res = parseCatalogResponse(
       { type: 'FeatureCollection', features: [lake('far', 0.01)] },
       { lat: 40, lng: -70 },
       NOW,
     );
     expect(res).toEqual({ kind: 'none' });
-    expect(parseCatalogueResponse({ type: 'FeatureCollection', features: [] }, POINT, NOW)).toEqual(
+    expect(parseCatalogResponse({ type: 'FeatureCollection', features: [] }, POINT, NOW)).toEqual(
       { kind: 'none' },
     );
   });
 
   it('keeps a refused class as a candidate with no cls, so the moderator sees why', () => {
-    const res = parseCatalogueResponse(
+    const res = parseCatalogResponse(
       { type: 'FeatureCollection', features: [lake('river', 0.01, { featuretype: 1 })] },
       POINT,
       NOW,
@@ -131,13 +131,13 @@ describe('parseCatalogueResponse', () => {
   });
 
   it('surfaces a service error and a malformed body as errors, never as none', () => {
-    expect(parseCatalogueResponse({ error: { message: 'Invalid token' } }, POINT, NOW)).toEqual({
+    expect(parseCatalogResponse({ error: { message: 'Invalid token' } }, POINT, NOW)).toEqual({
       kind: 'error',
       message: 'Invalid token',
     });
-    expect(parseCatalogueResponse('<html>', POINT, NOW)).toMatchObject({ kind: 'error' });
+    expect(parseCatalogResponse('<html>', POINT, NOW)).toMatchObject({ kind: 'error' });
     expect(
-      parseCatalogueResponse(
+      parseCatalogResponse(
         { features: [{ geometry: square(POINT.lat, POINT.lng, 0.01), properties: {} }] },
         POINT,
         NOW,
@@ -146,7 +146,7 @@ describe('parseCatalogueResponse', () => {
   });
 
   it('a numeric id and gnisid are stringified; a blank name stays blank', () => {
-    const res = parseCatalogueResponse(
+    const res = parseCatalogResponse(
       {
         features: [lake('x', 0.01, { id3dhp: 12345, gnisid: 987, gnisidlabel: '  ' })],
       },

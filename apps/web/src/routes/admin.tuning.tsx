@@ -55,7 +55,7 @@ import {
   MetricComposition,
   MetricHistogram,
   ScalarTrend,
-  useCatalogue,
+  useCatalog,
 } from '../components/admin/MetricCharts';
 
 /**
@@ -87,7 +87,7 @@ const MONTH_ABBR = [
 ];
 
 function AdminTuning() {
-  const catalogue = useCatalogue();
+  const catalog = useCatalog();
 
   return (
     <div className="flex flex-col gap-10">
@@ -161,7 +161,7 @@ function AdminTuning() {
         </div>
         <div className="grid gap-3 lg:grid-cols-2">
           <GateScatterCard />
-          <MetricComposition metricKey="bounty_outcomes" catalogue={catalogue} semantic />
+          <MetricComposition metricKey="bounty_outcomes" catalog={catalog} semantic />
         </div>
         <div className="grid gap-3 lg:grid-cols-2">
           <ScalarTrend
@@ -179,7 +179,7 @@ function AdminTuning() {
             height={160}
           />
         </div>
-        <MetricHistogram metricKey="bounty_time_to_fulfillment_h" catalogue={catalogue} />
+        <MetricHistogram metricKey="bounty_time_to_fulfillment_h" catalog={catalog} />
       </TuningSection>
 
       {/* ── Trust & points ───────────────────────────────────────────────── */}
@@ -230,14 +230,14 @@ function AdminTuning() {
         <div className="grid gap-3 lg:grid-cols-2">
           <MetricHistogram
             metricKey="reputation_points_hist"
-            catalogue={catalogue}
+            catalog={catalog}
             markers={[
               { atLabel: '15–29', label: 'trusted' },
               { atLabel: '60–99', label: 'expert' },
               { atLabel: '150–249', label: 'leader' },
             ]}
           />
-          <MetricComposition metricKey="point_source_composition" catalogue={catalogue} />
+          <MetricComposition metricKey="point_source_composition" catalog={catalog} />
         </div>
       </TuningSection>
 
@@ -296,12 +296,12 @@ function AdminTuning() {
           />
           <MetricHistogram
             metricKey="contradiction_count_hist"
-            catalogue={catalogue}
+            catalog={catalog}
             markers={[{ atLabel: '3–4', label: 'flag' }]}
             color="warning"
           />
         </div>
-        <MetricComposition metricKey="flag_dispositions" catalogue={catalogue} semantic />
+        <MetricComposition metricKey="flag_dispositions" catalog={catalog} semantic />
       </TuningSection>
 
       {/* ── Hazards ──────────────────────────────────────────────────────── */}
@@ -310,8 +310,8 @@ function AdminTuning() {
         blurb="Per-type decay durations live in hazardDecay.ts (one row per type — too many to list here). These two charts are the empirical check on that whole table: a type that keeps getting confirmed 'still here' past its stale line is decaying too fast."
       >
         <div className="grid gap-3 lg:grid-cols-2">
-          <MetricComposition metricKey="hazard_confirm_outcomes" catalogue={catalogue} semantic />
-          <MetricHistogram metricKey="hazard_age_at_confirm_h" catalogue={catalogue} />
+          <MetricComposition metricKey="hazard_confirm_outcomes" catalog={catalog} semantic />
+          <MetricHistogram metricKey="hazard_age_at_confirm_h" catalog={catalog} />
         </div>
         <div className="grid gap-3 sm:grid-cols-3">
           <ConstantCard
@@ -386,7 +386,7 @@ function AdminTuning() {
             read, not flipped.
           </ConstantCard>
         </div>
-        <MetricComposition metricKey="hazard_merges" catalogue={catalogue} semantic />
+        <MetricComposition metricKey="hazard_merges" catalog={catalog} semantic />
       </TuningSection>
 
       {/* ── Cross-season recurrence ──────────────────────────────────────── */}
@@ -394,7 +394,7 @@ function AdminTuning() {
         title="Cross-season recurrence"
         blurb="What several winters said about one spot (A05c / D78). Everything here ships dark: until the master switch is on, the whole engine feeds this dashboard and nothing a skater can see. Flip it when the queue has been read across two rollovers and the patterns at the current bar look real — a judgement from the chart below, not a date."
       >
-        <MetricComposition metricKey="recurrence_clusters_by_seasons" catalogue={catalogue} />
+        <MetricComposition metricKey="recurrence_clusters_by_seasons" catalog={catalog} />
         <div className="grid gap-3 sm:grid-cols-2">
           <ConstantCard
             name="RECURRENCE_ADVISORIES_PUBLIC"
@@ -521,7 +521,7 @@ function AdminTuning() {
             score.
           </ConstantCard>
         </div>
-        <MetricComposition metricKey="zoom_band_distribution" catalogue={catalogue} />
+        <MetricComposition metricKey="zoom_band_distribution" catalog={catalog} />
       </TuningSection>
 
       {/* ── Winter wind (D90) ────────────────────────────────────────────── */}
@@ -622,14 +622,14 @@ function AdminTuning() {
         blurb="Not tied to a constant — how the operator (you) is keeping up. Long resolution times or a growing backlog are the signal to add hands, not to move a number."
       >
         <div className="grid gap-3 lg:grid-cols-2">
-          <MetricHistogram metricKey="flag_time_to_resolution_h" catalogue={catalogue} />
-          <MetricHistogram metricKey="support_time_to_resolution_h" catalogue={catalogue} />
+          <MetricHistogram metricKey="flag_time_to_resolution_h" catalog={catalog} />
+          <MetricHistogram metricKey="support_time_to_resolution_h" catalog={catalog} />
         </div>
         <div className="grid gap-3 lg:grid-cols-2">
-          <MetricComposition metricKey="support_volume" catalogue={catalogue} />
-          <MetricComposition metricKey="weather_strip_coverage" catalogue={catalogue} semantic />
+          <MetricComposition metricKey="support_volume" catalog={catalog} />
+          <MetricComposition metricKey="weather_strip_coverage" catalog={catalog} semantic />
         </div>
-        <MetricComposition metricKey="state_coverage" catalogue={catalogue} />
+        <MetricComposition metricKey="state_coverage" catalog={catalog} />
       </TuningSection>
     </div>
   );

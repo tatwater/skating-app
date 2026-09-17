@@ -172,7 +172,7 @@ Phase 07 admin UI can bind controls to them and the founder can retune without a
     (the same "agrees" test as corroboration, minimum bar TBD-simple: any new visible report on the
     body) appends to `bounties.fulfillingReportIds`. The **requester** then rates a fulfilling report:
     a **helpful** rating flips the bounty to `fulfilled` and awards the reward; an **unhelpful** rating
-    does nothing to the bounty (it stays `open`). The requester may also **cancel** (→ `cancelled`).
+    does nothing to the bounty (it stays `open`). The requester may also **cancel** (→ `canceled`).
 
 11. **Bounty reward is a *separate currency* from trust (founder call).** Fulfilling a bounty awards
     `bounty_fulfilled` points to a **new `bountyPoints` counter**, **never** `reputationPoints`. This

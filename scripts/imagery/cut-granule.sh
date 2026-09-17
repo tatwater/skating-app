@@ -392,7 +392,7 @@ project_ground_m() {
   }'
 }
 
-centre_lat_of() {
+center_lat_of() {
   awk -v miny="$1" -v maxy="$2" 'BEGIN{
     pi=3.14159265358979; mw=20037508.342789244; cy=(miny+maxy)/2;
     printf "%.6f", (2*atan2(exp((cy/mw)*pi),1)-pi/2)*180/pi
@@ -412,10 +412,10 @@ centre_lat_of() {
 # edge rather than like a units bug. Hence `project_ground_m`.
 build_alpha() {
   local MINX="$1" MINY="$2" MAXX="$3" MAXY="$4"
-  local centre_lat feather_projected
-  centre_lat="$(centre_lat_of "$MINY" "$MAXY")"
+  local center_lat feather_projected
+  center_lat="$(center_lat_of "$MINY" "$MAXY")"
   feather_projected="$(project_ground_m "$FEATHER_M" "$MINY" "$MAXY")"
-  log "feather ${FEATHER_M} ground m -> ${feather_projected} projected m at ${centre_lat}°N"
+  log "feather ${FEATHER_M} ground m -> ${feather_projected} projected m at ${center_lat}°N"
 
   # 1. Burn the reveal shapes into a byte mask on exactly that grid.
   stage rasterize_mask gdal_rasterize -q -burn 255 -init 0 -ot Byte \
@@ -662,16 +662,16 @@ deshift_band() {
 # the difference between a few voting pixels and none.
 build_interior() {
   local MINY="$1" MAXY="$2"
-  local centre_lat erode_projected far
+  local center_lat erode_projected far
 
-  centre_lat="$(centre_lat_of "$MINY" "$MAXY")"
+  center_lat="$(center_lat_of "$MINY" "$MAXY")"
   erode_projected="$(project_ground_m "$EROSION_M" "$MINY" "$MAXY")"
   # Compute out to twice the threshold so a deep-interior pixel lands on the fill value strictly
   # ABOVE it. Filling at exactly the threshold would make the comparison a float-equality coin toss
   # on every pixel in the middle of every lake — i.e. it would be wrong on the largest bodies only.
   far="$(awk -v e="$erode_projected" 'BEGIN{printf "%.1f", e*2}')"
   EROSION_PROJECTED_M="$erode_projected"
-  log "eroding ${EROSION_M} ground m -> ${erode_projected} projected m at ${centre_lat}°N"
+  log "eroding ${EROSION_M} ground m -> ${erode_projected} projected m at ${center_lat}°N"
 
   # Distance from each pixel to the nearest pixel OUTSIDE any zone, so a lake's own interior measures
   # its distance to the bank. `-use_input_nodata NO` is explicit rather than relied upon: `zones.tif`

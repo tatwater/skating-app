@@ -28,7 +28,7 @@ import {
 } from './access';
 import { bearingDegrees, destinationPoint, haversineMeters } from './geometry';
 
-const CENTRE = { lat: 44.5, lng: -72.5 };
+const CENTER = { lat: 44.5, lng: -72.5 };
 
 describe('approachKindFor', () => {
   test('classifies at the D144 boundaries, inclusive of the lower kind', () => {
@@ -113,40 +113,40 @@ describe('compassSideLabel', () => {
     [270, 'W launch'],
     [315, 'NW launch'],
   ])('a launch %i° off the interior point reads as %s', (bearing, expected) => {
-    const point = destinationPoint(CENTRE, bearing, 600);
-    expect(compassSideLabel(point, CENTRE)).toBe(expected);
+    const point = destinationPoint(CENTER, bearing, 600);
+    expect(compassSideLabel(point, CENTER)).toBe(expected);
   });
 
   /** Re-derivable on every import is the entire reason this exists rather than a stored string. */
   test('is deterministic — the same inputs always produce the same label', () => {
-    const point = destinationPoint(CENTRE, 112, 900);
-    expect(compassSideLabel(point, CENTRE)).toBe(compassSideLabel(point, CENTRE));
+    const point = destinationPoint(CENTER, 112, 900);
+    expect(compassSideLabel(point, CENTER)).toBe(compassSideLabel(point, CENTER));
   });
 
   test('a coincident point still yields a label rather than NaN', () => {
-    expect(compassSideLabel(CENTRE, CENTRE)).toBe('N launch');
+    expect(compassSideLabel(CENTER, CENTER)).toBe('N launch');
   });
 
   /** 16 points, not 4: long narrow bodies would collide constantly on a coarser rose. */
   test('two launches on the same side of a narrow lake get distinguishable labels', () => {
-    const north = destinationPoint(CENTRE, 5, 1_000);
-    const northNorthEast = destinationPoint(CENTRE, 30, 1_000);
-    expect(compassSideLabel(north, CENTRE)).not.toBe(compassSideLabel(northNorthEast, CENTRE));
+    const north = destinationPoint(CENTER, 5, 1_000);
+    const northNorthEast = destinationPoint(CENTER, 30, 1_000);
+    expect(compassSideLabel(north, CENTER)).not.toBe(compassSideLabel(northNorthEast, CENTER));
   });
 });
 
 describe('resolvePutInName', () => {
   test("OSM's name wins when it has one", () => {
-    const point = destinationPoint(CENTRE, 0, 500);
-    expect(resolvePutInName('Lake Fairlee Boat Ramp', point, CENTRE)).toBe(
+    const point = destinationPoint(CENTER, 0, 500);
+    expect(resolvePutInName('Lake Fairlee Boat Ramp', point, CENTER)).toBe(
       'Lake Fairlee Boat Ramp',
     );
   });
 
   test('a blank or whitespace name falls through to the compass label', () => {
-    const point = destinationPoint(CENTRE, 180, 500);
-    expect(resolvePutInName('   ', point, CENTRE)).toBe('S launch');
-    expect(resolvePutInName(undefined, point, CENTRE)).toBe('S launch');
+    const point = destinationPoint(CENTER, 180, 500);
+    expect(resolvePutInName('   ', point, CENTER)).toBe('S launch');
+    expect(resolvePutInName(undefined, point, CENTER)).toBe('S launch');
   });
 
   /**
@@ -154,7 +154,7 @@ describe('resolvePutInName', () => {
    * confident label pointing in an arbitrary direction.
    */
   test('with no interior point it returns nothing rather than inventing a direction', () => {
-    const point = destinationPoint(CENTRE, 180, 500);
+    const point = destinationPoint(CENTER, 180, 500);
     expect(resolvePutInName(undefined, point, undefined)).toBeUndefined();
     expect(resolvePutInName('Town Beach', point, undefined)).toBe('Town Beach');
   });
@@ -163,16 +163,16 @@ describe('resolvePutInName', () => {
 describe('bearingDegrees', () => {
   test('round-trips against destinationPoint at lake scale', () => {
     for (const bearing of [0, 30, 95, 180, 271, 359]) {
-      const target = destinationPoint(CENTRE, bearing, 1_200);
-      expect(bearingDegrees(CENTRE, target)).toBeCloseTo(bearing, 1);
+      const target = destinationPoint(CENTER, bearing, 1_200);
+      expect(bearingDegrees(CENTER, target)).toBeCloseTo(bearing, 1);
     }
   });
 
   test('normalizes into [0, 360) and never returns NaN for coincident points', () => {
-    const west = destinationPoint(CENTRE, 270, 400);
-    expect(bearingDegrees(CENTRE, west)).toBeGreaterThanOrEqual(0);
-    expect(bearingDegrees(CENTRE, west)).toBeLessThan(360);
-    expect(bearingDegrees(CENTRE, CENTRE)).toBe(0);
+    const west = destinationPoint(CENTER, 270, 400);
+    expect(bearingDegrees(CENTER, west)).toBeGreaterThanOrEqual(0);
+    expect(bearingDegrees(CENTER, west)).toBeLessThan(360);
+    expect(bearingDegrees(CENTER, CENTER)).toBe(0);
   });
 });
 
@@ -192,10 +192,10 @@ describe('the association radii', () => {
   });
 
   test('a point just inside the shore radius is nearer than one just outside', () => {
-    const near = destinationPoint(CENTRE, 90, PUTIN_SHORE_RADIUS_M - 5);
-    const far = destinationPoint(CENTRE, 90, PUTIN_SHORE_RADIUS_M + 5);
-    expect(haversineMeters(CENTRE, near)).toBeLessThan(PUTIN_SHORE_RADIUS_M);
-    expect(haversineMeters(CENTRE, far)).toBeGreaterThan(PUTIN_SHORE_RADIUS_M);
+    const near = destinationPoint(CENTER, 90, PUTIN_SHORE_RADIUS_M - 5);
+    const far = destinationPoint(CENTER, 90, PUTIN_SHORE_RADIUS_M + 5);
+    expect(haversineMeters(CENTER, near)).toBeLessThan(PUTIN_SHORE_RADIUS_M);
+    expect(haversineMeters(CENTER, far)).toBeGreaterThan(PUTIN_SHORE_RADIUS_M);
   });
 });
 

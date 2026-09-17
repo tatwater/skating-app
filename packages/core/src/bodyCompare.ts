@@ -131,7 +131,7 @@ export function bodyLabel(body: Pick<ComparableBody, 'name'>): string {
   return body.name.trim() === '' ? UNNAMED : body.name;
 }
 
-function metres(value: number | undefined): string | null {
+function meters(value: number | undefined): string | null {
   return value === undefined ? null : `${Math.round(value).toLocaleString('en-US')} m`;
 }
 
@@ -226,13 +226,13 @@ const FIELDS: readonly FieldSpec[] = [
     section: 'geometry',
     read: (b) => acres(b.sourceAreaSqM),
   },
-  { key: 'shorelineM', label: 'Shoreline', section: 'geometry', read: (b) => metres(b.shorelineM) },
-  { key: 'longAxisM', label: 'Long axis', section: 'geometry', read: (b) => metres(b.longAxisM) },
+  { key: 'shorelineM', label: 'Shoreline', section: 'geometry', read: (b) => meters(b.shorelineM) },
+  { key: 'longAxisM', label: 'Long axis', section: 'geometry', read: (b) => meters(b.longAxisM) },
   {
     key: 'shortAxisM',
     label: 'Short axis',
     section: 'geometry',
-    read: (b) => metres(b.shortAxisM),
+    read: (b) => meters(b.shortAxisM),
   },
   {
     key: 'bearing',

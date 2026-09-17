@@ -408,7 +408,7 @@ export const SUPPORT_STATUSES = ['open', 'in_progress', 'resolved'] as const;
 export const DATA_EXPORT_STATUSES = ['building', 'ready', 'failed'] as const;
 
 /** Bounty lifecycle (D17). */
-export const BOUNTY_STATUSES = ['open', 'fulfilled', 'expired', 'cancelled'] as const;
+export const BOUNTY_STATUSES = ['open', 'fulfilled', 'expired', 'canceled'] as const;
 
 /**
  * What the bounty-create gate decided (Phase 07-2 analytics). One row per *attempt* — including the two

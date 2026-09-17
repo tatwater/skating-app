@@ -41,7 +41,7 @@ import type { ArchivedLake, Lane } from './lakes';
 import { maxDepthFt, representativePoint } from './lakes';
 
 /** Feet per meter. Restated from `normalize.ts`, which keeps it private and emits feet. */
-const FEET_PER_METRE = 3.28084;
+const FEET_PER_METER = 3.28084;
 
 /**
  * Deepest reading we will accept, in meters.
@@ -145,7 +145,7 @@ export function agencyDepthFor(
   const depthFt = maxDepthFt(lake);
   if (!(depthFt > 0)) return { ok: false, reason: 'no-positive-depth' };
 
-  const maxDepthM = depthFt / FEET_PER_METRE;
+  const maxDepthM = depthFt / FEET_PER_METER;
   if (maxDepthM > MAX_PLAUSIBLE_AGENCY_DEPTH_M) return { ok: false, reason: 'implausible' };
 
   // The deepest sounding, or a mid-vertex of the deepest contour — guaranteed on water, and the

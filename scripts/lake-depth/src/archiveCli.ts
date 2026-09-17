@@ -41,7 +41,7 @@ import {
   type DepthManifest,
   type DepthSource,
   isRunnable,
-  shortLicence,
+  shortLicense,
   totalBytes,
 } from './depthSources';
 
@@ -119,7 +119,7 @@ async function download(
 async function figshareFile(
   articleId: number,
   filename: string,
-): Promise<{ url: string; md5?: string; licence?: string }> {
+): Promise<{ url: string; md5?: string; license?: string }> {
   const response = await fetch(`https://api.figshare.com/v2/articles/${articleId}`, {
     headers: { 'User-Agent': USER_AGENT },
   });
@@ -133,7 +133,7 @@ async function figshareFile(
   return {
     url: file.download_url,
     md5: file.computed_md5,
-    licence: article.license?.name
+    license: article.license?.name
       ? `${article.license.name}${article.license.url ? ` (${article.license.url})` : ''}`
       : undefined,
   };
@@ -159,7 +159,7 @@ async function archiveOne(source: DepthSource, refresh: boolean): Promise<DepthM
   let url: string;
   let filename: string;
   let publishedMd5: string | undefined;
-  let licence: string | undefined = source.expectedLicence;
+  let license: string | undefined = source.expectedLicense;
 
   if (source.fetch.kind === 'figshare') {
     const resolved = await figshareFile(source.fetch.articleId, source.fetch.filename);
@@ -167,7 +167,7 @@ async function archiveOne(source: DepthSource, refresh: boolean): Promise<DepthM
     filename = source.fetch.filename;
     publishedMd5 = resolved.md5;
     // The publisher's own statement beats our expectation — the point of recording it at fetch time.
-    licence = resolved.licence ?? licence;
+    license = resolved.license ?? license;
   } else {
     url = source.fetch.url;
     filename = source.fetch.filename;
@@ -183,7 +183,7 @@ async function archiveOne(source: DepthSource, refresh: boolean): Promise<DepthM
     fetchedAt: new Date().toISOString(),
     source: { url, kind: source.fetch.kind },
     files: [{ name: filename, bytes, sha256 }],
-    licence,
+    license,
     publishedMd5,
     // Omitted entirely when there is nothing to compare against, rather than written as `false`.
     // HydroLAKES publishes no checksum, and a stored `md5Verified: false` reads as "the check
@@ -212,7 +212,7 @@ async function archiveOne(source: DepthSource, refresh: boolean): Promise<DepthM
 function adopt(
   key: string,
   filePaths: string[],
-  licence: string | undefined,
+  license: string | undefined,
   url: string | undefined,
 ): DepthManifest {
   const source = DEPTH_SOURCES.find((s) => s.key === key);
@@ -250,14 +250,14 @@ function adopt(
       kind: 'manual',
     },
     files,
-    licence,
+    license,
     adopted: true,
     notes: source.notes,
   };
   writeFileSync(manifestPath(key), `${JSON.stringify(manifest, null, 2)}\n`);
   const bytes = files.reduce((sum, f) => sum + f.bytes, 0);
   log(`✓ adopted ${key}: ${files.length} file(s), ${(bytes / 1_000_000).toFixed(1)} MB`);
-  if (!licence?.trim()) {
+  if (!license?.trim()) {
     log(
       `⚠ no --license recorded for ${key}. The ETL will refuse to run from it — that is the point:\n` +
         "  this source's rights statement has been an open question since the phase was scoped.",
@@ -281,7 +281,7 @@ function status(): void {
     const runnable = isRunnable(manifest);
     log(
       `${runnable.ok ? '✓' : '⚠'} ${source.key.padEnd(16)} ${(totalBytes(manifest) / 1_000_000).toFixed(1)} MB · ` +
-        `${checksumState(manifest)} · license: ${shortLicence(manifest.licence)}` +
+        `${checksumState(manifest)} · license: ${shortLicense(manifest.license)}` +
         `${runnable.ok ? '' : ` — NOT RUNNABLE: ${runnable.reason}`}`,
     );
   }
@@ -364,7 +364,7 @@ function recordRun(key: string, manifest: DepthManifest | undefined, error?: str
     logger.count('bytes', totalBytes(manifest));
     const runnable = isRunnable(manifest);
     logger.succeed([
-      `license: ${manifest.licence ?? 'UNRECORDED — the ETL will refuse to run from this archive'}`,
+      `license: ${manifest.license ?? 'UNRECORDED — the ETL will refuse to run from this archive'}`,
       `checksum: ${checksumState(manifest)}`,
       ...(manifest.adopted
         ? ['Adopted from a manual download — this source cannot be fetched by a script.']

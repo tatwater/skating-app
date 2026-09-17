@@ -57,7 +57,7 @@ def lonlat_to_3857(lon, lat):
     return R * math.radians(lon), R * math.log(math.tan(math.pi / 4 + math.radians(lat) / 2))
 
 
-def deg_per_metre(lat):
+def deg_per_meter(lat):
     p = math.radians(lat)
     return (111132.92 - 559.82 * math.cos(2 * p) + 1.175 * math.cos(4 * p),
             111412.84 * math.cos(p) - 93.5 * math.cos(3 * p))
@@ -67,7 +67,7 @@ def deg_per_metre(lat):
 body = json.load(open(BODY))["body"]
 bb = body["bbox"]
 mid_lat = (bb["minLat"] + bb["maxLat"]) / 2
-mlat, mlon = deg_per_metre(mid_lat)
+mlat, mlon = deg_per_meter(mid_lat)
 pad = BUFFER_MILES * 1609.344
 
 MIN_LNG, MAX_LNG = bb["minLng"] - pad / mlon, bb["maxLng"] + pad / mlon

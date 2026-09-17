@@ -68,7 +68,7 @@ import type { Feature, FeatureCollection, MultiPolygon, Polygon } from 'geojson'
 import {
   bleedBoxRing,
   DOWNSTATE_NY_COUNTIES,
-  NEIGHBOUR_FIPS,
+  NEIGHBOR_FIPS,
   nearRegion as nearRegionBox,
   needsClipping as needsClippingBox,
   roundCoords,
@@ -129,7 +129,7 @@ const NATURAL_EARTH = {
   },
 } as const;
 
-// `DOWNSTATE_NY_COUNTIES`, `NEIGHBOUR_FIPS`, `BLEED_BOX`, `nearRegion`, `needsClipping` and
+// `DOWNSTATE_NY_COUNTIES`, `NEIGHBOR_FIPS`, `BLEED_BOX`, `nearRegion`, `needsClipping` and
 // `roundCoords` now live in `./regionRules`, where they can be tested — see that file's header.
 
 /**
@@ -147,7 +147,7 @@ const NATURAL_EARTH = {
  * edge, so this number decides how many TIGER vertices come along for the ride.
  */
 const TOLERANCE = {
-  neighbour: 0.0005,
+  neighbor: 0.0005,
   usFar: 0.02,
   canada: 0.02,
   lake: 0.01,
@@ -521,8 +521,8 @@ function main(): void {
       continue;
     }
     const fips = String(state.properties.STATEFP ?? '');
-    const near = NEIGHBOUR_FIPS.has(fips);
-    const trimmed = maskFeature(state, near ? TOLERANCE.neighbour : TOLERANCE.usFar, 'land', {
+    const near = NEIGHBOR_FIPS.has(fips);
+    const trimmed = maskFeature(state, near ? TOLERANCE.neighbor : TOLERANCE.usFar, 'land', {
       clipToBleedBox: needsClipping(state),
       cutSea: sea,
     });

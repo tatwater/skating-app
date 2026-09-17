@@ -107,7 +107,7 @@ function MapLayoutInner() {
   // foreground (iOS suspends the subscription while backgrounded), and takes its permission through
   // the shared prompt so it can't race `MapView`'s framing request.
   useEffect(() => {
-    let cancelled = false;
+    let canceled = false;
     let subscription: Location.LocationSubscription | null = null;
     // Synchronous re-entrancy guard. `subscription` is only assigned *after* two awaits, so a bare
     // `if (subscription) return` doesn't stop a second `start()` (mount + an AppState 'active') from
@@ -117,7 +117,7 @@ function MapLayoutInner() {
     let starting = false;
 
     const publish = (pos: Location.LocationObject) => {
-      if (cancelled) return;
+      if (canceled) return;
       setOnIceCoord({ lat: pos.coords.latitude, lng: pos.coords.longitude });
       // Feed the shared on-ice session (D54). Proximity always; the directional "hazard ahead"
       // projection only when on-ice mode is armed. Heading/speed are `-1` when the OS can't fill them
@@ -134,14 +134,14 @@ function MapLayoutInner() {
       starting = true;
       try {
         const granted = await ensureForegroundPermission();
-        if (!granted || cancelled) return;
+        if (!granted || canceled) return;
         const last = await Location.getLastKnownPositionAsync();
         if (last) publish(last);
         const sub = await Location.watchPositionAsync(
           { accuracy: Location.Accuracy.Balanced, distanceInterval: 20 },
           publish,
         );
-        if (cancelled) {
+        if (canceled) {
           sub.remove();
           return;
         }
@@ -162,7 +162,7 @@ function MapLayoutInner() {
     });
 
     return () => {
-      cancelled = true;
+      canceled = true;
       subscription?.remove();
       appStateSub.remove();
     };

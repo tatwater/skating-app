@@ -42,7 +42,7 @@ const SQ_KM_TO_SQ_M = 1_000_000;
 const HA_TO_SQ_M = 10_000;
 
 /** Feet → meters, and acres → m². NH publishes its bathymetry in both imperial units. */
-const FEET_PER_METRE = 3.28084;
+const FEET_PER_METER = 3.28084;
 const SQ_M_PER_ACRE = 4046.8564224;
 
 // --- CSV ---
@@ -664,8 +664,8 @@ export function transformDepths(input: TransformInput): TransformResult {
   const nh = nhLakeDepths(input.nhBands ?? []);
   for (const lake of nh.lakes) {
     const key = `nh-bands/${lake.auId}`;
-    const maxDepthM = lake.maxDepthFt / FEET_PER_METRE;
-    const meanDepthM = lake.meanDepthFt / FEET_PER_METRE;
+    const maxDepthM = lake.maxDepthFt / FEET_PER_METER;
+    const meanDepthM = lake.meanDepthFt / FEET_PER_METER;
     records.push({
       key,
       point: { lat: lake.lat, lng: lake.lng },

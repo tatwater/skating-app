@@ -444,16 +444,16 @@ export function clipPathEnds(
   };
 
   let start = 0;
-  let travelled = 0;
-  while (start < coords.length - 1 && travelled < clipMeters) {
-    travelled += haversineMeters(at(start), at(start + 1));
+  let traveled = 0;
+  while (start < coords.length - 1 && traveled < clipMeters) {
+    traveled += haversineMeters(at(start), at(start + 1));
     start++;
   }
 
   let end = coords.length - 1;
-  travelled = 0;
-  while (end > 0 && travelled < clipMeters) {
-    travelled += haversineMeters(at(end), at(end - 1));
+  traveled = 0;
+  while (end > 0 && traveled < clipMeters) {
+    traveled += haversineMeters(at(end), at(end - 1));
     end--;
   }
 

@@ -209,6 +209,6 @@ export function compressedCloud(
 }
 
 /** Degrees of longitude per meter at a latitude — for sizing a shoreline resample in degrees. */
-export function metresPerLngDegree(lat: number): number {
+export function metersPerLngDegree(lat: number): number {
   return M_PER_DEG_LAT * Math.cos((lat * Math.PI) / 180);
 }

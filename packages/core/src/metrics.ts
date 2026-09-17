@@ -128,7 +128,7 @@ export interface MetricSpec {
    * - `external` — measured against a **third-party catalog** by an ETL pass, on that catalog's
    *   own release cadence. The cron must not try to compute these and will find nothing to sweep;
    *   the series is sparse by design (one row per release, not one per day) and is read through
-   *   `analytics.catalogueHistory` rather than the dense day-range `analytics.series`.
+   *   `analytics.catalogHistory` rather than the dense day-range `analytics.series`.
    */
   kind: 'counter' | 'rollup' | 'external';
   shape: MetricShape;
@@ -383,7 +383,7 @@ export const METRICS = {
    * are elevation-derived. Nationally it is 14,024 of 7,158,943 — 0.196%. Watching this climb is
    * watching the base map under the whole product get re-surveyed.
    */
-  catalogue_edh_coverage: {
+  catalog_edh_coverage: {
     label: 'Elevation-derived hydrography',
     description:
       'Share of 3DHP water bodies in our five states traced from LiDAR rather than inherited from the retired NHD. USGS labels this per feature in `workunitid`, so it is their claim, not our inference. Expected to sit near zero for years and then step up a work unit at a time.',

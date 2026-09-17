@@ -93,20 +93,20 @@ export function useFreezeUpTimeline({
   // lake reuses it.
   useEffect(() => {
     if (!enabled || !baseUrl) return;
-    let cancelled = false;
+    let canceled = false;
 
     void (async () => {
       setLoading(true);
       setError(false);
       const resolved = await loadArchiveSeason(baseUrl);
-      if (cancelled) return;
+      if (canceled) return;
       if (!resolved) {
         setError(true);
         setLoading(false);
         return;
       }
       const loaded = await loadSeasonIndex(baseUrl, resolved);
-      if (cancelled) return;
+      if (canceled) return;
       setSeason(resolved);
       setIndex(loaded);
       setError(loaded === null);
@@ -114,7 +114,7 @@ export function useFreezeUpTimeline({
     })();
 
     return () => {
-      cancelled = true;
+      canceled = true;
     };
     // `baseUrl` is not a dependency: Metro inlines `process.env.EXPO_PUBLIC_*` at build, so it
     // cannot change within a session. Listing it would only assert otherwise.
@@ -124,7 +124,7 @@ export function useFreezeUpTimeline({
   // from being 4,884 fetches: over a five-state region a given lake sits under a few dozen passes.
   useEffect(() => {
     if (!enabled || !baseUrl || !index || !season || !body) return;
-    let cancelled = false;
+    let canceled = false;
 
     const candidates = candidateFramesFor(index, body, { band });
     // ⚠ **Clear it, never just skip.** A previous lake's manifest loop is canceled mid-flight by
@@ -145,16 +145,16 @@ export function useFreezeUpTimeline({
       // that decides what opens. Sequential rather than a flood either way: firing them all at once
       // buys nothing on one connection and makes the progressive upgrade jumpy.
       for (const frame of [...candidates].reverse()) {
-        if (cancelled) return;
+        if (canceled) return;
         await loadFrameStats(baseUrl, season, frame.granuleId);
-        if (cancelled) return;
+        if (canceled) return;
         setStatsVersion((v) => v + 1);
       }
-      if (!cancelled) setLoading(false);
+      if (!canceled) setLoading(false);
     })();
 
     return () => {
-      cancelled = true;
+      canceled = true;
     };
   }, [enabled, index, season, body, band]);
 

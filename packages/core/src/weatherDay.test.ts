@@ -361,14 +361,14 @@ describe('solar weighting (the melt side)', () => {
 
   it('separates a sunny thaw from a gray one, which hoursAboveFreezing cannot', () => {
     const [sunny] = summarizeWeatherDays(sunArc('2026-01-15', 2, 400));
-    const [grey] = summarizeWeatherDays(sunArc('2026-01-15', 2, 60));
-    if (!sunny || !grey) throw new Error('expected one day each');
+    const [gray] = summarizeWeatherDays(sunArc('2026-01-15', 2, 60));
+    if (!sunny || !gray) throw new Error('expected one day each');
 
     // The measure that misses it, and the measure that catches it.
-    expect(sunny.hoursAboveFreezing).toBe(grey.hoursAboveFreezing);
+    expect(sunny.hoursAboveFreezing).toBe(gray.hoursAboveFreezing);
     expect(sunny.sunlitThawHours).toBeGreaterThan(0);
-    expect(grey.sunlitThawHours).toBe(0);
-    expect(sunny.meltIndexMm).toBeGreaterThan(grey.meltIndexMm);
+    expect(gray.sunlitThawHours).toBe(0);
+    expect(sunny.meltIndexMm).toBeGreaterThan(gray.meltIndexMm);
   });
 
   it('counts no sunlit thaw hours while the air stays below freezing', () => {

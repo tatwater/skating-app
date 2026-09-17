@@ -2911,7 +2911,7 @@ describe('waterBodies catalog identity', () => {
       ctx.db.patch(id, { osmId: undefined, geometrySource: undefined, nhdId: 'already-known' }),
     );
 
-    const first = await t.mutation(internal.waterBodies.backfillCatalogueIds, {});
+    const first = await t.mutation(internal.waterBodies.backfillCatalogIds, {});
     expect(first.patched).toBe(1);
     const body = await t.run(async (ctx) => ctx.db.get(id));
     expect(body?.osmId).toBe('osm/way/1');
@@ -2920,7 +2920,7 @@ describe('waterBodies catalog identity', () => {
 
     // Idempotent: a second pass over a corpus that is still changing must be a no-op, because it
     // will be re-run alongside the depth, elevation and wind passes rather than instead of them.
-    const second = await t.mutation(internal.waterBodies.backfillCatalogueIds, {});
+    const second = await t.mutation(internal.waterBodies.backfillCatalogIds, {});
     expect(second.patched).toBe(0);
     expect(second.alreadySet).toBe(1);
   });

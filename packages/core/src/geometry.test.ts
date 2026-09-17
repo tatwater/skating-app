@@ -577,9 +577,9 @@ describe('destinationPoint (Phase 09b directional projection)', () => {
       fc.property(
         fc.integer({ min: 0, max: 359 }),
         fc.integer({ min: 10, max: 1500 }),
-        (bearing, metres) => {
-          const measured = haversineMeters(origin, destinationPoint(origin, bearing, metres));
-          expect(Math.abs(measured - metres) / metres).toBeLessThan(0.01);
+        (bearing, meters) => {
+          const measured = haversineMeters(origin, destinationPoint(origin, bearing, meters));
+          expect(Math.abs(measured - meters) / meters).toBeLessThan(0.01);
         },
       ),
     );

@@ -350,7 +350,7 @@ async function readNeverExisted(
 }
 
 /** The bbox center of a hazard's stored footprint — what the medoid is measured on. */
-function centreOf(hazard: Doc<'hazards'>) {
+function centerOf(hazard: Doc<'hazards'>) {
   return {
     lat: (hazard.bbox.minLat + hazard.bbox.maxLat) / 2,
     lng: (hazard.bbox.minLng + hazard.bbox.maxLng) / 2,
@@ -398,7 +398,7 @@ function describeCluster(
     medoidOf(
       members.map((m) => ({
         id: m._id as string,
-        centre: centreOf(m),
+        center: centerOf(m),
         firstReportedAt: m.firstReportedAt,
       })),
     ) ?? null;

@@ -103,7 +103,7 @@ def main() -> int:
         dn = dn_band.ReadAsArray(0, y, width, rows).astype(np.float32)
         gain = gain_band.ReadAsArray(0, y, width, rows).astype(np.float32)
         usable = (dn > 0) & (gain > 0)
-        grey = np.zeros(dn.shape, np.uint8)
+        gray = np.zeros(dn.shape, np.uint8)
         if usable.any():
             power = dn[usable].astype(np.float64) ** 2
             if noise_band is not None:
@@ -121,8 +121,8 @@ def main() -> int:
             # 1..255, reserving 0 for "no data". Otherwise the darkest genuine water is
             # indistinguishable from outside the swath, and the alpha channel is the only thing left
             # saying which — a distinction the black-lake bug already cost us once on the optical side.
-            grey[usable] = (1 + scaled * 254).astype(np.uint8)
-        out_band.WriteArray(grey, 0, y)
+            gray[usable] = (1 + scaled * 254).astype(np.uint8)
+        out_band.WriteArray(gray, 0, y)
 
     out_band.SetNoDataValue(0)
     out_band.FlushCache()

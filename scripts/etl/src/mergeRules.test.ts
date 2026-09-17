@@ -21,7 +21,7 @@ import {
   type Boundary,
   bayParent,
   CELL_DEG,
-  catalogueIdsOf,
+  catalogIdsOf,
   cellsFor,
   chooseClass,
   chooseGeometry,
@@ -902,7 +902,7 @@ describe('polygon confidence claims', () => {
 
 describe('the emit stage', () => {
   it('takes one id per catalog, and the gazetteer id from whoever has it', () => {
-    const ids = catalogueIdsOf([
+    const ids = catalogIdsOf([
       feature('osm', 'way/1'),
       feature('nhd', '141034078', { gnisId: '00869848' }),
       feature('3dhp', 'MLBCG'),
@@ -920,7 +920,7 @@ describe('the emit stage', () => {
     // chained together. `sameSourceDuplicate` flags it for a human; this just must not throw or
     // invent a third id. Equal areas, so the tie-break is what is being pinned.
     const members = [feature('osm', 'way/1'), feature('osm', 'relation/2')];
-    expect(catalogueIdsOf(members).osmId).toBe('way/1');
+    expect(catalogIdsOf(members).osmId).toBe('way/1');
     expect(mergeGroup(members)?.sameSourceDuplicate).toBe(true);
   });
 
@@ -936,7 +936,7 @@ describe('the emit stage', () => {
       feature('nhd', 'n1', { areaSqM: 4296 * SQ_M_PER_ACRE }),
     ];
     expect(chooseGeometry(members)?.id).toBe('relation/whole');
-    expect(catalogueIdsOf(members).osmId).toBe('relation/whole');
+    expect(catalogIdsOf(members).osmId).toBe('relation/whole');
     // …and the id it did NOT take is named rather than vanishing.
     expect(mergeGroup(members)?.absorbedIds).toEqual(['osm:way/fragment']);
   });
@@ -953,7 +953,7 @@ describe('the emit stage', () => {
   });
 
   it('omits an id no member carries', () => {
-    expect(catalogueIdsOf([feature('nhd', 'n1')])).toEqual({ nhdId: 'n1' });
+    expect(catalogIdsOf([feature('nhd', 'n1')])).toEqual({ nhdId: 'n1' });
   });
 
   it('gives a border-spanning body every state it touches, not the first', () => {
@@ -1367,15 +1367,15 @@ describe('the GNIS lane, extended', () => {
 
 describe('the gazetteer’s own id', () => {
   it('fills gnisId when no catalog asserted one', () => {
-    expect(catalogueIdsOf([feature('osm', 'way/1')], '966086').gnisId).toBe('966086');
+    expect(catalogIdsOf([feature('osm', 'way/1')], '966086').gnisId).toBe('966086');
   });
 
   it('never overrules a catalog — a catalog names THIS feature, the gazetteer names a place', () => {
     // The ordering matters because `gnisId` is documented as a candidate generator rather than an
     // identity: 92 GNIS ids resolve to more than one NHD body. A geometric location must not get to
     // overwrite a publisher's own assertion about which feature this is.
-    const withCatalogueId = [feature('nhd', 'n1', { gnisId: '869848' })];
-    expect(catalogueIdsOf(withCatalogueId, '966086').gnisId).toBe('869848');
+    const withCatalogId = [feature('nhd', 'n1', { gnisId: '869848' })];
+    expect(catalogIdsOf(withCatalogId, '966086').gnisId).toBe('869848');
   });
 });
 
@@ -1656,7 +1656,7 @@ describe('what a merge absorbs is named', () => {
     expect(body?.absorbedIds).toEqual([]);
   });
 
-  it('names the same member `catalogueIdsOf` drops, so the two cannot disagree', () => {
+  it('names the same member `catalogIdsOf` drops, so the two cannot disagree', () => {
     const members = [
       feature('osm', 'way/1'),
       feature('osm', 'relation/2'),
@@ -1664,7 +1664,7 @@ describe('what a merge absorbs is named', () => {
       feature('nhd', 'n2'),
     ];
     const { body } = mergeGroupWithReason(members);
-    const ids = catalogueIdsOf(members);
+    const ids = catalogIdsOf(members);
     expect(ids.osmId).toBe('way/1');
     expect(ids.nhdId).toBe('n1');
     expect(body?.absorbedIds).toEqual(['osm:relation/2', 'nhd:n2']);

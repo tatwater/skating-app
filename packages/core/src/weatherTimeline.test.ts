@@ -729,8 +729,8 @@ describe('scrollPxAtTrackX', () => {
     // scroll back. An off-by-half-a-thumb here makes every click jump slightly.
     for (let scrollPx = 0; scrollPx <= maxScrollPx; scrollPx += 71) {
       const bar = timelineScrollbar({ ...geom, maxScrollPx, scrollPx });
-      const centre = (bar?.x ?? 0) + (bar?.width ?? 0) / 2;
-      expect(scrollPxAtTrackX(centre, { ...geom, maxScrollPx })).toBeCloseTo(scrollPx, 4);
+      const center = (bar?.x ?? 0) + (bar?.width ?? 0) / 2;
+      expect(scrollPxAtTrackX(center, { ...geom, maxScrollPx })).toBeCloseTo(scrollPx, 4);
     }
   });
 

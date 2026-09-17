@@ -1624,7 +1624,7 @@ export const importBaySubAreas = internalMutation({
         results.push({ name: bay.name, ok: false, reason: 'unnamed' });
         continue;
       }
-      const parent = await resolveParentByCatalogueIds(ctx, bay.parentIds);
+      const parent = await resolveParentByCatalogIds(ctx, bay.parentIds);
       if (!parent || !isListed(parent) || standingOf(parent).standing === 'removed') {
         // The ETL only emits a sub-area whose parent is in the same master list, so this means the
         // load order was wrong (bodies first, then bays) — worth naming rather than counting.
@@ -1707,7 +1707,7 @@ export const importBaySubAreas = internalMutation({
  * an NHD-keyed one because the OSM lane has been the corpus since Phase 01 and its rows are the ones
  * carrying user content.
  */
-async function resolveParentByCatalogueIds(
+async function resolveParentByCatalogIds(
   ctx: MutationCtx,
   ids: { osmId?: string; nhdId?: string; threeDhpId?: string },
 ): Promise<Doc<'waterBodies'> | null> {

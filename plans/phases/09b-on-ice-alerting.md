@@ -136,7 +136,7 @@ export function evaluateDirectionalAlert(
 1. **Guard.** If `speedMps < minSpeedMps` or `headingDeg < 0` → return `[]`. Standing still or unknown
    heading means no honest forward path; Layer-1 proximity covers the "you're right on it" case.
 2. **Project the forward path.** From `coord`, walk along `headingDeg` out to `speedMps * leadMaxSec`
-   meters, **sampling every `sampleStepMeters`** (using `toLocalMetres` / the existing local-metric
+   meters, **sampling every `sampleStepMeters`** (using `toLocalMeters` / the existing local-metric
    projection in `geometry.ts`).
 3. **First contact per hazard.** For each hazard, the first sample with `distanceToHazard(sample, shape)
    === 0` (inside the footprint) is the encounter point; encounter distance → **TTE = distance /

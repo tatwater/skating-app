@@ -10,11 +10,11 @@ import {
 } from './hazardProximity';
 import { HAZARD_TYPES, type HazardType } from './types';
 
-const CENTRE: LatLng = { lat: 44.4759, lng: -73.2121 };
+const CENTER: LatLng = { lat: 44.4759, lng: -73.2121 };
 
 /** ~111 m per 0.001° of latitude at this latitude — handy for placing hazards a known distance away. */
-function north(from: LatLng, metres: number): LatLng {
-  return { lat: from.lat + metres / 111_320, lng: from.lng };
+function north(from: LatLng, meters: number): LatLng {
+  return { lat: from.lat + meters / 111_320, lng: from.lng };
 }
 
 function hazard(id: string, at: LatLng, overrides: Partial<ProximityHazard> = {}): ProximityHazard {
@@ -31,23 +31,23 @@ const NONE: ReadonlySet<string> = new Set();
 
 describe('evaluateOnIceAlert — the confirm gate (D54)', () => {
   it('surfaces an unconfirmed hazard as a soft confirm request, never a warning', () => {
-    const alerts = evaluateOnIceAlert(CENTRE, [hazard('h1', CENTRE, { confirmCount: 0 })], NONE);
+    const alerts = evaluateOnIceAlert(CENTER, [hazard('h1', CENTER, { confirmCount: 0 })], NONE);
     expect(alerts).toHaveLength(1);
     expect(alerts[0]?.kind).toBe('confirm_request');
   });
 
   it('promotes to a warning once independently confirmed', () => {
-    const alerts = evaluateOnIceAlert(CENTRE, [hazard('h1', CENTRE, { confirmCount: 1 })], NONE);
+    const alerts = evaluateOnIceAlert(CENTER, [hazard('h1', CENTER, { confirmCount: 1 })], NONE);
     expect(alerts[0]?.kind).toBe('warning');
   });
 
   // The blast radius of a fake pin: only people physically on that ice, and only as a soft question.
   it('never lets an unconfirmed hazard produce a warning, at any distance (property)', () => {
     fc.assert(
-      fc.property(fc.integer({ min: 0, max: 300 }), (metres) => {
+      fc.property(fc.integer({ min: 0, max: 300 }), (meters) => {
         const alerts = evaluateOnIceAlert(
-          CENTRE,
-          [hazard('h1', north(CENTRE, metres), { confirmCount: 0 })],
+          CENTER,
+          [hazard('h1', north(CENTER, meters), { confirmCount: 0 })],
           NONE,
         );
         for (const alert of alerts) expect(alert.kind).toBe('confirm_request');
@@ -56,29 +56,29 @@ describe('evaluateOnIceAlert — the confirm gate (D54)', () => {
   });
 
   it('honors a tuned confirm threshold', () => {
-    const h = [hazard('h1', CENTRE, { confirmCount: 2 })];
-    expect(evaluateOnIceAlert(CENTRE, h, NONE, { confirmThreshold: 3 })[0]?.kind).toBe(
+    const h = [hazard('h1', CENTER, { confirmCount: 2 })];
+    expect(evaluateOnIceAlert(CENTER, h, NONE, { confirmThreshold: 3 })[0]?.kind).toBe(
       'confirm_request',
     );
-    expect(evaluateOnIceAlert(CENTRE, h, NONE, { confirmThreshold: 2 })[0]?.kind).toBe('warning');
+    expect(evaluateOnIceAlert(CENTER, h, NONE, { confirmThreshold: 2 })[0]?.kind).toBe('warning');
   });
 });
 
 describe('evaluateOnIceAlert — distance', () => {
   it('alerts inside the buffer and stays silent outside it', () => {
-    const near = hazard('near', north(CENTRE, 50));
-    const far = hazard('far', north(CENTRE, 5_000));
-    const alerts = evaluateOnIceAlert(CENTRE, [near, far], NONE);
+    const near = hazard('near', north(CENTER, 50));
+    const far = hazard('far', north(CENTER, 5_000));
+    const alerts = evaluateOnIceAlert(CENTER, [near, far], NONE);
     expect(alerts.map((a) => a.hazardId)).toEqual(['near']);
   });
 
   it('returns nearest first, so a single-banner UI shows the most urgent', () => {
     const alerts = evaluateOnIceAlert(
-      CENTRE,
+      CENTER,
       [
-        hazard('mid', north(CENTRE, 90)),
-        hazard('close', CENTRE),
-        hazard('edge', north(CENTRE, 140)),
+        hazard('mid', north(CENTER, 90)),
+        hazard('close', CENTER),
+        hazard('edge', north(CENTER, 140)),
       ],
       NONE,
     );
@@ -86,22 +86,22 @@ describe('evaluateOnIceAlert — distance', () => {
   });
 
   it('reports 0 distance when the skater is inside the footprint', () => {
-    const alerts = evaluateOnIceAlert(CENTRE, [hazard('h1', CENTRE)], NONE);
+    const alerts = evaluateOnIceAlert(CENTER, [hazard('h1', CENTER)], NONE);
     expect(alerts[0]?.distanceMeters).toBe(0);
   });
 
   it('respects a tuned alert buffer', () => {
-    const h = [hazard('h1', north(CENTRE, 400))];
-    expect(evaluateOnIceAlert(CENTRE, h, NONE)).toHaveLength(0);
-    expect(evaluateOnIceAlert(CENTRE, h, NONE, { alertBufferMeters: 600 })).toHaveLength(1);
+    const h = [hazard('h1', north(CENTER, 400))];
+    expect(evaluateOnIceAlert(CENTER, h, NONE)).toHaveLength(0);
+    expect(evaluateOnIceAlert(CENTER, h, NONE, { alertBufferMeters: 600 })).toHaveLength(1);
   });
 
   it('never reports a distance beyond the buffer (property)', () => {
     fc.assert(
-      fc.property(fc.integer({ min: 0, max: 2_000 }), (metres) => {
+      fc.property(fc.integer({ min: 0, max: 2_000 }), (meters) => {
         for (const alert of evaluateOnIceAlert(
-          CENTRE,
-          [hazard('h', north(CENTRE, metres))],
+          CENTER,
+          [hazard('h', north(CENTER, meters))],
           NONE,
         )) {
           expect(alert.distanceMeters).toBeLessThanOrEqual(DEFAULT_ALERT_BUFFER_M);
@@ -115,18 +115,18 @@ describe('evaluateOnIceAlert — per-session dedup', () => {
   // Without this, skating laps on a pond re-fires the same alert every circuit and trains the skater
   // to ignore it — worse than not alerting at all.
   it('suppresses hazards already alerted this session', () => {
-    const hazards = [hazard('h1', CENTRE), hazard('h2', north(CENTRE, 60))];
-    expect(evaluateOnIceAlert(CENTRE, hazards, new Set(['h1'])).map((a) => a.hazardId)).toEqual([
+    const hazards = [hazard('h1', CENTER), hazard('h2', north(CENTER, 60))];
+    expect(evaluateOnIceAlert(CENTER, hazards, new Set(['h1'])).map((a) => a.hazardId)).toEqual([
       'h2',
     ]);
-    expect(evaluateOnIceAlert(CENTRE, hazards, new Set(['h1', 'h2']))).toHaveLength(0);
+    expect(evaluateOnIceAlert(CENTER, hazards, new Set(['h1', 'h2']))).toHaveLength(0);
   });
 
   it('never returns an already-alerted id (property)', () => {
     fc.assert(
       fc.property(fc.subarray(['h1', 'h2', 'h3']), (alerted) => {
-        const hazards = ['h1', 'h2', 'h3'].map((id) => hazard(id, CENTRE));
-        const ids = evaluateOnIceAlert(CENTRE, hazards, new Set(alerted)).map((a) => a.hazardId);
+        const hazards = ['h1', 'h2', 'h3'].map((id) => hazard(id, CENTER));
+        const ids = evaluateOnIceAlert(CENTER, hazards, new Set(alerted)).map((a) => a.hazardId);
         for (const id of alerted) expect(ids).not.toContain(id);
       }),
     );
@@ -140,11 +140,11 @@ describe('evaluateOnIceAlert — ridge_crossing is a passage marker (research §
       fc.property(
         fc.integer({ min: 0, max: 200 }),
         fc.integer({ min: 0, max: 5 }),
-        (metres, confirmCount) => {
+        (meters, confirmCount) => {
           const alerts = evaluateOnIceAlert(
-            CENTRE,
+            CENTER,
             [
-              hazard('rc', north(CENTRE, metres), {
+              hazard('rc', north(CENTER, meters), {
                 type: 'ridge_crossing',
                 confirmCount,
               }),
@@ -159,10 +159,10 @@ describe('evaluateOnIceAlert — ridge_crossing is a passage marker (research §
 
   it('does not suppress a real hazard sitting next to it', () => {
     const alerts = evaluateOnIceAlert(
-      CENTRE,
+      CENTER,
       [
-        hazard('rc', CENTRE, { type: 'ridge_crossing', confirmCount: 3 }),
-        hazard('ridge', north(CENTRE, 30), { type: 'pressure_ridge', confirmCount: 3 }),
+        hazard('rc', CENTER, { type: 'ridge_crossing', confirmCount: 3 }),
+        hazard('ridge', north(CENTER, 30), { type: 'pressure_ridge', confirmCount: 3 }),
       ],
       NONE,
     );
@@ -172,8 +172,8 @@ describe('evaluateOnIceAlert — ridge_crossing is a passage marker (research §
   it('is the only type excluded from alerting', () => {
     for (const type of HAZARD_TYPES) {
       const alerts = evaluateOnIceAlert(
-        CENTRE,
-        [hazard('h', CENTRE, { type: type as HazardType, confirmCount: 1 })],
+        CENTER,
+        [hazard('h', CENTER, { type: type as HazardType, confirmCount: 1 })],
         NONE,
       );
       expect(alerts.length === 0, type).toBe(type === 'ridge_crossing');
@@ -183,12 +183,12 @@ describe('evaluateOnIceAlert — ridge_crossing is a passage marker (research §
 
 describe('evaluateOnIceAlert — degenerate inputs', () => {
   it('returns nothing for an empty hazard set (and that is not an all-clear)', () => {
-    expect(evaluateOnIceAlert(CENTRE, [], NONE)).toEqual([]);
+    expect(evaluateOnIceAlert(CENTER, [], NONE)).toEqual([]);
   });
 
   it('is pure — it never mutates the alerted set it is given', () => {
     const alerted = new Set(['h1']);
-    evaluateOnIceAlert(CENTRE, [hazard('h2', CENTRE)], alerted);
+    evaluateOnIceAlert(CENTER, [hazard('h2', CENTER)], alerted);
     expect([...alerted]).toEqual(['h1']);
   });
 
@@ -202,20 +202,20 @@ describe('evaluateOnIceAlert — degenerate inputs', () => {
       type: 'pressure_ridge',
       shape: {
         geometryKind: 'line',
-        geometry: { type: 'LineString', coordinates: [[CENTRE.lng, CENTRE.lat]] },
+        geometry: { type: 'LineString', coordinates: [[CENTER.lng, CENTER.lat]] },
         bufferMeters: 10,
       },
       confirmCount: 1,
     };
-    const good = hazard('good', CENTRE, { confirmCount: 1 });
-    const alerts = evaluateOnIceAlert(CENTRE, [malformed, good], NONE);
+    const good = hazard('good', CENTER, { confirmCount: 1 });
+    const alerts = evaluateOnIceAlert(CENTER, [malformed, good], NONE);
     expect(alerts.map((a) => a.hazardId)).toEqual(['good']);
   });
 });
 
 describe('isInsideHazard', () => {
   it('is true at the center and false well outside', () => {
-    expect(isInsideHazard(CENTRE, pointRadiusShape(CENTRE, 50))).toBe(true);
-    expect(isInsideHazard(north(CENTRE, 500), pointRadiusShape(CENTRE, 50))).toBe(false);
+    expect(isInsideHazard(CENTER, pointRadiusShape(CENTER, 50))).toBe(true);
+    expect(isInsideHazard(north(CENTER, 500), pointRadiusShape(CENTER, 50))).toBe(false);
   });
 });

@@ -220,7 +220,7 @@ profile in the table. The schema comment claiming the index was "sparse in pract
 carry the field" was the assumption, written down and never checked, which is the part worth carrying
 forward: it read as documentation and was actually a guess.
 
-**Nothing was lost.** `finalizeAccount` re-reads the stamp and returns `stopped: 'cancelled'` before any
+**Nothing was lost.** `finalizeAccount` re-reads the stamp and returns `stopped: 'canceled'` before any
 stage runs. That guard was written for a user changing their mind mid-flight, and it turned out to be
 the only thing between a query bug and every account in the app. Both dev profiles, the one report and
 A02's nine sub-areas were verified intact afterwards. Two independent guards is now the deliberate

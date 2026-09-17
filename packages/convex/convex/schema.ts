@@ -572,7 +572,7 @@ export default defineSchema({
     /**
      * 3DHP's `id3dhp` — **the third upsert key, and the one D93 named but nothing created.**
      *
-     * `resolveUpsert`'s `CATALOGUE_ID_FIELDS` has always been `['osmId', 'nhdId', 'threeDhpId']`, so
+     * `resolveUpsert`'s `CATALOG_ID_FIELDS` has always been `['osmId', 'nhdId', 'threeDhpId']`, so
      * without this field a third of the upsert lookup could not be performed and a 3DHP-only feature
      * had no way to find the row it already was.
      *
