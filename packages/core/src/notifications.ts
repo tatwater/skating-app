@@ -27,13 +27,13 @@ import { formatSkateTime } from './reportView';
  * hope.
  */
 export const NOTIFICATION_TYPES = [
-  'activity_detected', // a recorded skate nobody was asked about (A08/B4) — our recorder only
+  'activity_detected', // a recorded skate nobody was asked about (A08 §2.4) — our recorder only
   'bounty_request', // a bounty opened on a lake you recently reported (Phase 06)
-  'hazard_confirmation', // your hazard's lifecycle moved: confirmed, disputed, healed (A08/B2)
+  'hazard_confirmation', // your hazard's lifecycle moved: confirmed, disputed, healed (A08 §2.2)
   'bounty_answered', // a report landed on your open bounty (A08; replaces `bounty_fulfilled`)
   'report_rated', // someone found your report/hazard helpful, or corroborated your report (Phase 06)
-  'report_commented', // someone commented on your report or replied to your comment (D21; A08/B1)
-  'content_flag_resolved', // a moderator ruled on a flag you filed (A08/B3)
+  'report_commented', // someone commented on your report or replied to your comment (D21; A08 §2.1)
+  'content_flag_resolved', // a moderator ruled on a flag you filed (A08 §2.3)
   'favorite_report', // a report on a body you favorited (Phase 04, decision #4)
   'nearby_report_digest', // daily 8pm digest of all reports within X₁ (Phase 04)
   'great_report_nearby', // a `great` report within X₂ (Phase 04)
@@ -229,7 +229,7 @@ export type NotificationView = { id: string; createdAt: number; readAt?: number 
       target: NotificationContentRef;
       body: NotificationBodyRef | null;
       /**
-       * The lifecycle transition this reports (A08/B2) — `hazardLifecyclePhase` in `hazardLifecycle.ts`.
+       * The lifecycle transition this reports (A08 §2.2) — `hazardLifecyclePhase` in `hazardLifecycle.ts`.
        * The re-check at flush is an equality on this value: if the pin has moved on again, the older
        * transition is no longer news.
        */
@@ -414,7 +414,7 @@ export function describeNotification(
       return { title, target: contentTarget('hazard', view.target) };
     }
     case 'content_flag_resolved':
-      // Deliberately verdict-only (A08/B3): not what was done, not to whom, not by which moderator.
+      // Deliberately verdict-only (A08 §2.3): not what was done, not to whom, not by which moderator.
       return view.resolution === 'actioned'
         ? { title: 'A moderator reviewed something you flagged and took action', target: null }
         : { title: 'A moderator reviewed something you flagged and left it up', target: null };
@@ -504,7 +504,7 @@ export function describeNotification(
   }
 }
 
-// ── Timezone sync (A08/C) ─────────────────────────────────────────────────────────────────────────
+// ── Timezone sync (A08 §3) ─────────────────────────────────────────────────────────────────────────
 
 /**
  * The device's IANA zone, or `null` where the runtime can't say (an old WebView, a test). Both

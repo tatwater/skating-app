@@ -4,7 +4,7 @@
  *
  * Two callers file system-generated flags: `ratings.maybeAutoFlag` (a target crossed the
  * net-unhelpful threshold, D50) and `contradictions.flagContradictionPattern` (a contributor crossed
- * the weather-unexplained contradiction threshold, D56 §07-2). Both had the identical dedup — *one open
+ * the weather-unexplained contradiction threshold, D56 §7b). Both had the identical dedup — *one open
  * flag per (target, reason)* — written out twice, with `contradictions.ts` saying so in its own
  * comment. So the mechanism belongs on `contentFlags`, not in either caller.
  *
@@ -173,7 +173,7 @@ export async function fileOrBumpAutoFlag(
     status: 'open',
     // `flaggerId` names a real person who did NOT file a report — the rater whose thumb crossed the
     // line. `origin` is what keeps `content_flag_resolved` from telling them "the report you filed
-    // was actioned" about a report they never filed (A08/B3).
+    // was actioned" about a report they never filed (A08 §2.3).
     origin: 'auto',
     occurrences,
     lastOccurrenceAt: now,

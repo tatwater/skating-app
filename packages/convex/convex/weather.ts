@@ -561,7 +561,7 @@ export const writeForecastCache = internalMutation({
 });
 
 /**
- * Resolve the forward forecast for a point, cache-first (A06c §2.5b; seven days since A06h D).
+ * Resolve the forward forecast for a point, cache-first (A06c §2.5b; seven days since A06h §4).
  *
  * **The window it asks for is one hour of past, and that is not waste.** Open-Meteo's `past_days`
  * has a floor of 1, so the smallest honest request already spans today; asking for a one-hour window

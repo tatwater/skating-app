@@ -70,5 +70,5 @@ what D49 wants from it. Those are recorded as itemized failures on the run row.
 
 `/admin/imports`, as kind `seed_destinations`, with counts, coverage and the itemized declines.
 Boosts are applied through `waterBodies:setCuratedBoost` — the existing Phase 07 admin path — so a
-seeded boost is indistinguishable from a hand-set one and lands in the same audit log the F1
+seeded boost is indistinguishable from a hand-set one and lands in the same audit log the A06c §6.1
 per-lake timeline renders.

@@ -214,7 +214,7 @@ export const notificationTrigger = v.union(
 );
 
 /**
- * The `ForecastHour` shape from `@skating/core` (A06c §2.5b; the planner's fields since A06h D), for the
+ * The `ForecastHour` shape from `@skating/core` (A06c §2.5b; the planner's fields since A06h §4), for the
  * `weatherForecastCache` table and `writeForecastCache`'s args — one validator, so the row a
  * mutation accepts and the row the table accepts cannot drift. **Keep in sync with the core
  * interface** — a compile-time `Infer` check in `weather.ts` catches drift. The optional fields are

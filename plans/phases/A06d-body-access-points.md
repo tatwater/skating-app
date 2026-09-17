@@ -157,9 +157,9 @@ read-cost decision, not a call-site tweak.
   silently, by a cron, a month later. `photoReconcile` has the same shape. Extending both is
   unbudgeted work inside D, and it is the one finding here that would have shipped as data loss.
 - **Flags:** `FLAG_TARGET_TYPES` is `['report','comment','photo','user','hazard']` and
-  `MODERATION_TARGET_TYPES` likewise. Photos ride it as C2 claims; an access **alert** has no slot yet.
+  `MODERATION_TARGET_TYPES` likewise. Photos ride it as §3.2 claims; an access **alert** has no slot yet.
 
-**9. Extracting trails may be redundant, and dropping them removes a geometry class.** B1 extracts
+**9. Extracting trails may be redundant, and dropping them removes a geometry class.** §2.1 extracts
 `highway=path|footway|track` + `route=hiking` for a `trail` amenity. But ORS `foot-hiking` (D87) routes
 over *exactly those ways* — so **"a route was found" is the trail signal**, already paid for, with no
 line geometry in the extract at all. The only residue is a trail beside a put-in that has no parking to
@@ -182,7 +182,7 @@ five other systems for no user-visible gain. So:
 |---|---|
 | `waterBodyIds` | **plural** — a trailhead lot can serve several ponds, and a mile-away lot often does (open question 4). Many-to-many from the start; retrofitting a single id is the annoying version of this. |
 | `coord` | where the car goes |
-| `name` | from OSM where available, else derived (A3) |
+| `name` | from OSM where available, else derived (§1.3) |
 | `source` | same ladder discipline as `putIns` — `official` beats `osm` |
 | `status` | `visible` / `hidden` (moderator-suppressed), mirroring `putIns` |
 | `amenities` | `('toilets' \| 'trail' \| 'boat_ramp')[]` |
@@ -358,7 +358,7 @@ to no privacy benefit; there is no personal information in a photograph of a gra
 - **Hand-written access descriptions** of any kind (D70/P1) — Workstream 3 replaces the one case that
   mattered.
 - **Food amenities** (founder call).
-- **Renaming `putIns` to `accessPoints`** — additive only (A1), for blast-radius reasons.
+- **Renaming `putIns` to `accessPoints`** — additive only (§1.1), for blast-radius reasons.
 - **Routing *along* the approach path** — we report `approachMeters` and a kind; we don't navigate the
   walk. That's a maps-app job.
 - **Rivers** — still deferred (D4); shoreline-proximity association assumes a still-water polygon.
@@ -367,10 +367,10 @@ to no privacy benefit; there is no personal information in a photograph of a gra
 
 ## Sequencing
 
-1. **A1** — schema: `parkingAreas` + the `putIns` additions. Additive and migration-free.
-2. **B1–B3** — the OSM pass. The bulk of the work, and independently testable against a single state's
+1. **§1.1** — schema: `parkingAreas` + the `putIns` additions. Additive and migration-free.
+2. **§2.1–§2.3** — the OSM pass. The bulk of the work, and independently testable against a single state's
    extract before it touches the corpus.
-3. **A3 + the routing rule** — names and directions-target-parking. This is the first user-visible win
+3. **§1.3 + the routing rule** — names and directions-target-parking. This is the first user-visible win
    and it is small once the data exists.
 4. **C** — the alert lifecycle. New table, new decay, reuses Phase 09a's confirm/deny UI.
 5. **D** — photos, and the purge carve-out.
@@ -446,7 +446,7 @@ deserve.
 ## What the first real run found — 2026-08-11
 
 *Three corrections, all from running the thing rather than reading it. The first is the eyeballing
-pass B2 asked for, and it earned its keep on the first state.*
+pass §2.2 asked for, and it earned its keep on the first state.*
 
 **1. `amenity=parking` is one of OSM's most common tags, and the plan had no gate for it.** Vermont
 alone yields **4,656 parking areas, 202 of which pair with a launch**; across five states it is
@@ -485,7 +485,7 @@ the number improves.
 
 ## The 250 m radius, eyeballed — 2026-08-12
 
-*B2 asks for this explicitly and it had only been checked in aggregate. Two measurements, and the
+*§2.2 asks for this explicitly and it had only been checked in aggregate. Two measurements, and the
 second dissolves a worry rather than answering it.*
 
 ### Pairing rate by state, at 250 m
@@ -569,7 +569,7 @@ already found, so perhaps +11–22%, and only for lots that a walk actually conn
 **Cost:** ~600–900k line geometries across five states (VT alone is 40,840 ways / 642k vertices, so
 memory wants streaming rather than a naïve load), a coordinate-hashed connectivity graph, a
 budget-bounded BFS with property tests for cycles and disconnection, plus a handful of extra ORS legs.
-Comparable in size to Workstream B1/B2 — call it a small phase, not an afternoon.
+Comparable in size to §2.1/§2.2 — call it a small phase, not an afternoon.
 
 **Recommendation: don't, yet.** The case it targets is already served twice over — `setOfficialParking`
 takes a human's association at any distance (D72 amendment), and 840 lots already survived the gate on
@@ -1019,7 +1019,7 @@ this from a request path**, which is the one rule worth writing at the call site
 
 1. **Routed `foot-hiking` distance + ascent** — when ORS finds a path between parking and put-in.
 2. **Straight-line, flagged** — when it can't. OSM's rural trail coverage is real but patchy (the same
-   B4 caveat), and an unmapped herd path routes to nothing. Straight-line **under-reports**, so the
+   §2.4 caveat), and an unmapped herd path routes to nothing. Straight-line **under-reports**, so the
    flag matters: it is the difference between *"about 900 m on foot"* and *"at least 900 m on foot."*
 3. **Nothing** — when there's no parking area to route from, which is most of the 116k.
 
@@ -1037,7 +1037,7 @@ that nobody should discover this at the trailhead:
   minutes" is filtering on *drive* time, and a hike-in water body inside that band is not the trip they think
   they're being offered.
 
-**The chip is derived, not entered** — `approachKind === 'hike_in'`, which A1 already derives from
+**The chip is derived, not entered** — `approachKind === 'hike_in'`, which §1.1 already derives from
 `approachMeters` with an operator override. So it costs a component and a threshold, and it inherits the
 override for the cases where a number lies.
 
@@ -1063,7 +1063,7 @@ reason: a water body with three launches and one blocked gate is still a water b
 
 **The second guess is right, and the doc was ambiguous about it.** The ~250 m figure is a threshold for
 the **automatic OSM pass** — how far the ETL will reach to guess that a lot serves a put-in with no human
-saying so. It was never meant to constrain what a person can assert, and B2 didn't say so.
+saying so. It was never meant to constrain what a person can assert, and §2.2 didn't say so.
 
 > **D72 amendment — the association radius governs inference only. An operator- or author-set parking
 > association has no distance limit.**
@@ -1138,7 +1138,7 @@ a new lifecycle. Independent of A06c; either order.
 > one notifies nobody.
 >
 > **The first real run found three things** — see the doc's *§What the first real run found*. The
-> eyeballing pass B2 asked for paid off immediately: `amenity=parking` yields **95,294 lots across
+> eyeballing pass §2.2 asked for paid off immediately: `amenity=parking` yields **95,294 lots across
 > five states, 92,384 unpaired** (fire departments, ski clubs, supermarkets), so the loader gained a
 > water-relevance gate. ORS's free tier caps directions at **40/minute**, not the ~85 the gap assumed
 > — and worse, a `429` fallback was being **cached as an answer**, which would have made 2,173 legs

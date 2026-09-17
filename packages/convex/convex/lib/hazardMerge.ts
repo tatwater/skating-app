@@ -181,7 +181,7 @@ export async function mergeHazards(
   { actorId, reason }: { actorId?: Id<'profiles'>; reason: string },
 ): Promise<void> {
   await ctx.db.patch(loser._id, { mergedIntoHazardId: survivor._id });
-  // **The map card counts un-merged hazards only (A06c/E), so writing this field changes it.**
+  // **The map card counts un-merged hazards only (A06c §5), so writing this field changes it.**
   // Recomputed *here*, beside the write, rather than in each caller — every previous round of this
   // review found a caller that forgot, and `mergedIntoHazardId` now has exactly two writers. Callers
   // may recompute again afterwards; the recompute short-circuits when nothing changed.

@@ -1,5 +1,5 @@
 /**
- * Corroboration **contradiction signal** (Phase 10 / D56 §07-2) — the inverse seam of `runCorroboration`.
+ * Corroboration **contradiction signal** (Phase 10 / D56 §7b) — the inverse seam of `runCorroboration`.
  * When recent reports on the same body strongly disagree AND the weather-since between them doesn't explain
  * the change, it's a contradiction. This does **three** things, none of which subtracts trust (D50 stays
  * boost-only; honest "the ice changed" reports are never punished — D3):
@@ -7,7 +7,7 @@
  *   2. **Disclose** the conflict — every disagreeing report gets a soft, **symmetric** `conflicting` flag
  *      skaters can see, so the human judges the disagreement rather than us secretly deciding who's wrong.
  *   3. **Escalate on pattern — the un-corroborated minority, not the later poster.** This is consensus-based
- *      and **order-independent** (D56 §07-2, decided in the 2026-07-23 review): a report is a *contradiction*
+ *      and **order-independent** (D56 §7b, decided in the 2026-07-23 review): a report is a *contradiction*
  *      only when a report it disagrees with (weather-unexplained) has **strictly more corroboration** while
  *      it itself has **none**. So a lone false read — whether it was posted first or last — accrues the
  *      author's private, non-scoring `contradictionCount`, while the corroborated majority never does. It's
@@ -79,7 +79,7 @@ interface ClusterReport {
  * that report's OWN ±window neighborhood — which reaches up to 2×window from the anchor. Loading the wider
  * band makes each reconciled report's verdict a pure function of its true neighborhood, so escalation is
  * order-independent and a valid contradiction can't be spuriously cleared by an unrelated later report
- * whose narrow window happens to exclude the corroborated opponent (the §07-2 consensus guarantee).
+ * whose narrow window happens to exclude the corroborated opponent (the §7b consensus guarantee).
  */
 export const contradictionCluster = internalQuery({
   args: { reportId: v.id('reports') },
@@ -137,7 +137,7 @@ export const contradictionCluster = internalQuery({
 });
 
 /**
- * Record a contributor's contradiction pattern (D56 §07-2), bundled (A02).
+ * Record a contributor's contradiction pattern (D56 §7b), bundled (A02).
  *
  * This used to carry its own copy of "one open flag per (target, reason)" and said so in its comment
  * — the duplication is what moved the mechanism into `lib/autoFlag.ts`. The behavioural change is

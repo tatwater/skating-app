@@ -83,7 +83,7 @@ crons.interval(
   {},
 );
 
-// The inbox's season purge (A08/A5): every notification created before this season's July 1 goes,
+// The inbox's season purge (A08 §1.5): every notification created before this season's July 1 goes,
 // read or not. Daily, bounded, and a no-op for eleven months — the day after the boundary is the one
 // that matters, and a bounded pass means it clears over a few ticks rather than one huge transaction.
 crons.interval(
@@ -93,7 +93,7 @@ crons.interval(
   {},
 );
 
-// The `activity_detected` producer (A08/B4): skates our recorder captured that sat `pending` past the
+// The `activity_detected` producer (A08 §2.4): skates our recorder captured that sat `pending` past the
 // prompt delay get one "add a report?" notification, after a per-user dedup pass. Hourly is plenty —
 // the delay is hours, and the notification then rides the once-a-minute flush like every other.
 crons.interval(
@@ -107,7 +107,7 @@ crons.interval(
 // contains it), so yesterday's rows are unreachable rather than merely stale — this is reclaiming
 // dead weight, and A02's per-sample-point weather grid multiplied how fast it accrues.
 crons.interval('prune weather cache', { hours: 6 }, internal.storageHygiene.pruneWeatherCache, {});
-// The forward-forecast cache (A06c/B5b), same cadence and the same argument: its rows become
+// The forward-forecast cache (A06c §2.5b), same cadence and the same argument: its rows become
 // unaddressable the moment their hour bucket passes, so this is reclaiming space rather than
 // invalidating anything.
 crons.interval(
@@ -276,7 +276,7 @@ crons.interval(
 crons.interval('refresh nws alerts', { minutes: 15 }, internal.weatherAlerts.refreshAlerts, {});
 
 /**
- * Map summary cards (A06c/E). Six-hourly because the only thing this catches is *time* — a report
+ * Map summary cards (A06c §5). Six-hourly because the only thing this catches is *time* — a report
  * ageing out of the 14-day window, or a season boundary — and neither is urgent to the hour. Every
  * event-driven change to a card already happens synchronously on the write that caused it.
  */

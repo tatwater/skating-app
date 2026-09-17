@@ -1,7 +1,7 @@
 /**
  * The offline hazard queue (Phase 09a offline) — the pure half of "flag it now, send it later".
  *
- * Reuses the F2 report-queue contract rather than inventing a second one: same `DraftStatus`
+ * Reuses the Phase 02a §6.2 report-queue contract rather than inventing a second one: same `DraftStatus`
  * machine, same transient-vs-permanent classification, same "persist after every advance" rule, so
  * one flush loop drains all three kinds and there's a single definition of what a retry does.
  *

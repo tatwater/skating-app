@@ -247,7 +247,7 @@ export const FLAG_REASONS = [
 ] as const;
 export const FLAG_STATUSES = ['open', 'reviewing', 'actioned', 'dismissed'] as const;
 /**
- * Who filed a flag (A08/B3): a person who pressed "report", or the system crossing a threshold.
+ * Who filed a flag (A08 §2.3): a person who pressed "report", or the system crossing a threshold.
  *
  * Needed because a system flag still names a **real person** in `flaggerId` — the rater whose thumb
  * crossed the line, the corroborated opponent, the Nth "never existed" voter — and until this field
@@ -514,7 +514,7 @@ export const NOTIFICATION_QUEUE_KINDS = [
   'flag_resolved', // `content_flag_resolved`
   'bounty_request', // `bounty_request` — a bounty opened where you reported
   'bounty_answered', // `bounty_answered` — a report landed on your bounty
-  'activity', // `activity_detected` — an unreported skate (A08/B4)
+  'activity', // `activity_detected` — an unreported skate (A08 §2.4)
 ] as const;
 
 /** Reputation/trust ledger reasons (D17/D50). Boost-only in practice; no public penalties. */

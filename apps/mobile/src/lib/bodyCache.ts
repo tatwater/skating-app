@@ -1,5 +1,5 @@
 /**
- * On-device cache of recently-viewed water-body reference data (F2 Layer 2) — the `expo-sqlite`
+ * On-device cache of recently-viewed water-body reference data (Phase 02a §6.2 Layer 2) — the `expo-sqlite`
  * glue behind the pure resolver in `offlineBody.ts`. Every time a lake's detail loads
  * (`waterBodies.get`), we upsert its polygon + centroid + name here (LRU-capped); offline, a device
  * GPS fix resolves the lake against this cache so a report can be captured with no signal. Polygons

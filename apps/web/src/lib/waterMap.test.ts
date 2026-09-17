@@ -441,7 +441,7 @@ describe('subAreasToFeatureCollection', () => {
   });
 });
 
-describe('summary cards (A06c/E)', () => {
+describe('summary cards (A06c §5)', () => {
   const base = {
     _id: 'body1',
     name: 'Beaver Pond',
@@ -454,7 +454,7 @@ describe('summary cards (A06c/E)', () => {
     expect(summaryCardsToFeatureCollection([{ ...base }]).features).toHaveLength(0);
   });
 
-  /** E3: no activity ⇒ no card at all, not an empty one. */
+  /** A06c §5.3: no activity ⇒ no card at all, not an empty one. */
   it('draws no card for a body with a summary but no activity', () => {
     expect(
       summaryCardText({ ...base, summary: { recentReportCount: 0, topHazardTypes: [] } }),
@@ -520,7 +520,7 @@ describe('summary cards (A06c/E)', () => {
   });
 
   /**
-   * E3 governs whether there is a card at all, and it is deliberately *not* relaxed for access: a
+   * A06c §5.3 governs whether there is a card at all, and it is deliberately *not* relaxed for access: a
    * hike-in pond nobody has reported still draws nothing here. The chip is not lost — the body's own
    * drawer carries it regardless — and this is the seam that keeps the map from filling up with cards
    * for lakes nothing has happened on.
@@ -557,7 +557,7 @@ describe('summary cards (A06c/E)', () => {
     ]);
   });
 
-  it('carries minVisibleZoom so the layer cannot reintroduce a suppressed body (E4)', () => {
+  it('carries minVisibleZoom so the layer cannot reintroduce a suppressed body (A06c §5.4)', () => {
     const [feature] = summaryCardsToFeatureCollection([
       { ...base, minVisibleZoom: 12, summary: { recentReportCount: 1, topHazardTypes: [] } },
     ]).features;
@@ -640,7 +640,7 @@ describe('summary cards under the reveal flag (A06c-2)', () => {
 describe('summaryCardLayer', () => {
   /**
    * An invalid layer fails **silently**: MapLibre logs and declines to draw, so the symptom is "no
-   * cards appeared" — indistinguishable from E3 correctly finding nothing to say. This is the only
+   * cards appeared" — indistinguishable from A06c §5.3 correctly finding nothing to say. This is the only
    * loud check available.
    */
   it('is a valid MapLibre layer', () => {

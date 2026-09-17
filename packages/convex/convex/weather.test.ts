@@ -319,7 +319,7 @@ describe('weather.getWeatherSinceForBody', () => {
 });
 
 /**
- * A response carrying both past and forward hours, for the B5b split.
+ * A response carrying both past and forward hours, for the A06c §2.5b split.
  *
  * The forward half deliberately includes a snow onset, because "when does it start snowing" is the
  * whole question the feature exists to answer.
@@ -370,7 +370,7 @@ describe('weather.getForecastForBody (A06c §2.5b)', () => {
     // Every hour is in the future relative to the request.
     for (const h of forecast?.hours ?? []) expect(h.startMs).toBeGreaterThan(now - 18_000_000);
     expect(forecast?.utcOffsetMs).toBe(-18_000_000);
-    // The planner's inputs ride through the same row (A06h D) — the code is what draws the symbol.
+    // The planner's inputs ride through the same row (A06h §4) — the code is what draws the symbol.
     expect(forecast?.hours.at(-1)?.weatherCode).toBe(75);
     expect(forecast?.hours.at(-1)?.windDirectionDeg).toBe(310);
     // The strip is now a client-side derivation over the same hours, at its own 12-hour horizon.

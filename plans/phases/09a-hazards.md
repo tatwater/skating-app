@@ -26,14 +26,14 @@
 > ✅ **complete 2026-07-22** (branch `phase-09b-on-ice-alerting`; pending PR + dev deploy). The deferred
 > items below are annotated inline with what 9.5 delivered; **silent-push stays deferred** even so.
 >
-> **Prerequisites already in place.** The F2 offline substrate hazards depend on is **built**: the
+> **Prerequisites already in place.** The Phase 02a §6.2 offline substrate hazards depend on is **built**: the
 > "Layer 2" body-reference cache (`apps/mobile/src/lib/offlineBody.ts` pure resolver +
 > `bodyCache.ts` sqlite glue) is factored as a reusable module *explicitly for Phase 09a hazard capture*,
 > and `bodyCache.ts` is already "designed to gain a tile-pack column later." `adminAreas`
 > (place labels, Phase 05) and the spatial-index machinery (Phase 01/5 — then `@convex-dev/geospatial`,
 > since A01 the ladder-grid cell tables) are live. The
 > **Layer 3 offline basemap tile-pack** was the one genuinely-unbuilt piece — a native spike — and it
-> was **timeboxed and dropped from this phase** (findings below); the online-first degrade mirrors F2
+> was **timeboxed and dropped from this phase** (findings below); the online-first degrade mirrors Phase 02a §6.2
 > report capture, and on-ice capture never depended on the basemap in the first place.
 
 Decisions referenced as D#; see [`01-decisions.md`](../01-decisions.md).
@@ -409,7 +409,7 @@ focusing the three-tier confirm control) — **shipped in Phase 09b (2026-07-22)
 gated behind its own second tap even when deep-linked (D3).
 
 ### Offline
-Hazards and confirmations queue through the existing F2 draft/flush substrate (`draftStore` gains a
+Hazards and confirmations queue through the existing Phase 02a §6.2 draft/flush substrate (`draftStore` gains a
 `kind` discriminator; `draftQueue.ts` already anticipates this). The pin degrades to "drop at my GPS"
 when there's no basemap, until Layer 3 tiles land.
 
@@ -475,7 +475,7 @@ Per the founder's call (2026-07-18): **all in one PR**, online-first commits fir
    water body to query candidates for, so bundling a *drafted* report belongs with the offline commit.
 7. **Offline** — ✅ hazard draft/flush reuse (`draftStore` `kind` discriminator);
    ⛔ **Layer-3 offline basemap tile-pack — dropped for this phase** (see the spike findings below).
-   - Queue logic in **`@skating/core/hazardQueue.ts`**, reusing the F2 contract (same `DraftStatus`
+   - Queue logic in **`@skating/core/hazardQueue.ts`**, reusing the Phase 02a §6.2 contract (same `DraftStatus`
      machine, same transient-vs-permanent classification, same persist-after-every-advance rule) so
      one flush loop drains reports, hazards and confirmations. `draftQueue`'s `PermanentFlushError`
      is now **exported and shared** — a parallel marker class would have been classified `transient`
@@ -668,9 +668,9 @@ Still no code assertion of safety (D3) — the harvested lakeice vocabulary powe
   a client-local alert (offline-capable) gated behind one confirmation.
 - **Offline hazard capture — inherited from Phase 02a §6.2 (decided 2026-07-15).** Hazards are drawn
   **on the ice, often offline**, so Phase 09a reuses the Phase 02a §6.2 offline substrate:
-  - **The offline body-reference cache** (F2 "Layer 2" — `@skating/core` buffered
+  - **The offline body-reference cache** (Phase 02a §6.2 "Layer 2" — `@skating/core` buffered
     `pointInPolygon` auto-select + an on-device LRU cache of recently-viewed body polygons)
-    is built in F2 as a **standalone, reusable module** *specifically so hazard capture reuses
+    is built in Phase 02a §6.2 as a **standalone, reusable module** *specifically so hazard capture reuses
     it* — GPS + cached polygon tells the offline app which water body the skater is on without a
     network round-trip.
   - **Offline basemap tiles (§6.2 "Layer 3") were deferred here from Phase 02a §6.2 (decided
@@ -685,7 +685,7 @@ Still no code assertion of safety (D3) — the harvested lakeice vocabulary powe
     correctly regardless (the pin drops at GPS, sizing/Done/queue all work — only *tapping the map*
     to Move/Trace needs tiles). Findings + the three candidate routes are recorded in
     `phases/09a-hazards.md` → *Layer-3 offline basemap tile-pack — spike findings*; revisit alongside
-    the device-build pass. The F2 body-cache module was already designed to accept a tile-pack field,
+    the device-build pass. The Phase 02a §6.2 body-cache module was already designed to accept a tile-pack field,
     so slotting it in later needs no rearchitecture.
   - The buffered auto-select (a tunable ~parking/approach radius so opening from the car still
     resolves the water body) is the same primitive hazard capture uses to bind a hazard to its body.

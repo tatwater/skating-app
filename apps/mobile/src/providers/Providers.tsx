@@ -56,7 +56,7 @@ function ThemedApp({ children }: { children: ReactNode }) {
 /**
  * Composes the app-wide providers (D26/D2/D7/D34):
  * Clerk (auth) → Convex-with-Clerk (authed reactive data) → theme preference → Tamagui (themed UI)
- * → SafeArea → OfflineDrafts (F2: the offline report queue + its reconnect/foreground flush
+ * → SafeArea → OfflineDrafts (Phase 02a §6.2: the offline report queue + its reconnect/foreground flush
  * triggers, under Convex+auth so a flush has an authed client).
  *
  * The theme preference sits *under* Convex rather than at the very top: it's device-local today, but

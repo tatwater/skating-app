@@ -166,7 +166,7 @@ export function WaterBodyDetail({
     setContourBodyKey(contourBodyKey(body.externalId, body._id));
   }, [focusKey, setFocus, setHighlightWaterBodyId, setContourBodyKey]);
 
-  // Cache this viewed lake's reference data on-device (F2 Layer 2) so it can be GPS-resolved
+  // Cache this viewed lake's reference data on-device (Phase 02a §6.2 Layer 2) so it can be GPS-resolved
   // offline for a no-signal report. Best-effort; the sqlite write never blocks viewing. Its own
   // effect, on the body itself, so an edit to the lake re-caches without re-flying the camera.
   useEffect(() => {
@@ -287,7 +287,7 @@ export function WaterBodyDetail({
                 the asks its standing admits (A07b PR 2). Closed while a deletion is pending. */}
             <StandingNotice body={result.body} />
             {leaving ? null : <RequestButtons body={result.body} />}
-            {/* The derived profile (A06c/C), assembled by the same @skating/core function web calls so
+            {/* The derived profile (A06c §3), assembled by the same @skating/core function web calls so
                 the two surfaces cannot drift. Nothing renders when there is nothing to say. */}
             {/* The lake's caption is the lake's (its depth, its fetch); under a bay header it would
                 contradict the bay's own depth line, so the bay view omits it — same as web. */}
@@ -321,9 +321,9 @@ export function WaterBodyDetail({
                   ) : null}
                 </>
               )}
-              {/* Official NWS alerts (A06c/B5) ABOVE the tab strip, always visible — a warning from the
+              {/* Official NWS alerts (A06c §2.5) ABOVE the tab strip, always visible — a warning from the
                   local forecast office outranks both our observations and anybody's forecast, and a
-                  tabbed alert is an alert you can be one tap away from not seeing (A06h/H). */}
+                  tabbed alert is an alert you can be one tap away from not seeing (A06h §8). */}
               <AlertStrip waterBodyId={result.body._id} reveal={reveal} />
             </>
           )}
@@ -336,7 +336,7 @@ export function WaterBodyDetail({
       {formShowing ? null : (
         <DrawerPinned>
           <YStack paddingHorizontal={16} paddingBottom="$2">
-            {/* The three sub-tabs (A06h/H), the same groups as web over the same core vocabulary:
+            {/* The three sub-tabs (A06h §8), the same groups as web over the same core vocabulary:
                 Overview = machine-compiled facts about the body, Reporting = user-supplied this
                 season, Planning = the trip decision. Nothing in the tab content is new — the sections
                 that used to stack flat are grouped, in their old relative order, so every "above X
@@ -393,7 +393,7 @@ export function WaterBodyDetail({
             ) : (
               <WindExposure body={result.body} />
             )}
-            {/* Reference links (A06c/B), below our own content and above the credits. Every one
+            {/* Reference links (A06c §2), below our own content and above the credits. Every one
                       opens in-app via `openBrowserAsync` (D76), never by ejecting the skater into
                       Safari. */}
             <ReferenceLinks body={result.body} reveal={reveal} />
@@ -454,7 +454,7 @@ export function WaterBodyDetail({
               pending={weatherBay === undefined}
               {...(weatherBay ? { subAreaId: weatherBay._id } : {})}
             />
-            {/* The forward forecast (A06c/B5b; the seven-day planner since A06h D) — the other half
+            {/* The forward forecast (A06c §2.5b; the seven-day planner since A06h §4) — the other half
                 of the weather-since timeline. */}
             <ForecastPanel
               waterBodyId={result.body._id}

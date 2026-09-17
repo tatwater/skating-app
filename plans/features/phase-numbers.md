@@ -349,6 +349,24 @@ didn't say: `Phases 0–2.5` ranges, `Phase-2.5` hyphenated, bare `PR 7b` / `2.5
 workstream letters in PR text with two meanings (`F2` = 02a's offline queue in #14/#16/#20, A06c's
 run history in #42) — each mapped by hand from context, like the tree's own hand-checked shapes.*
 
+*What the 2b tree pass found that PR #64 had left (all fixed in the 2b PR, ~400 sites, comments and
+test names only, every suite green): the token pass only renamed a workstream letter **beside** a
+phase token, so bare refs survived everywhere else — `E3`, `B4a`, `F2` (~240), the slash forms
+`A08/B4`, `A06c/E`, `D84/C4`, `§2.1/B2` (~150, the lookbehind excluded `/`), a bare letter after a
+token (`since A06h D`), and 02a's own `### A.`–`### H.` headings. Each bare ref was resolved to its
+phase by file (the same letter means different things: `F2` is 02a's offline queue under
+`apps/mobile/` and A06c's run history in `WaterBodyTimeline.tsx`), spelled `§5.3` inside its own
+phase doc and `A06c §5.3` anywhere else. One collateral of the token pass itself: Phase 10's
+workstreams `§7a`/`§7b` had been caught by the `7a → 07-1` rule and read `§07-1`; restored.*
+
+*⚠ Open founder call — `D2` is two things.* Decision D2 is "Convex as the app database"; A06c's
+*workstream* D2 (profile richness feeds prominence) is cited as `D2` in ~50 places across code and
+docs (`display.ts`, `scoring.ts`, `enums.ts`, the A06c/A06d/A06f/A09 docs), and `01-decisions.md`
+carries a "D2 amendment" entry (line ~2096) that amends the *workstream's* weights table, not the
+decision. The sweep left every `D2` alone — under the scheme those should read `A06c §4.2`, and the
+amendment wants re-homing (as its own `D#`, or under D49/D70), but that is a register edit, not a
+rename.
+
 1. **Scheme + crosswalk** — `plans/README.md` rewritten: the *target* directory layout (with a ⏳
    line saying the move lands in the next PR), the phase-vs-feat test, the conventions (token
    shape, `§3.2`, `D#`/`Q#`), and "Reading old history" — the crosswalk, whose rows link to each

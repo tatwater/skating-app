@@ -383,7 +383,7 @@ export function FreezeUpScrubber({
         ) : null}
       </div>
 
-      {/* The date is content, not furniture (D84/C4) — so it renders as text under the track, at the
+      {/* The date is content, not furniture (D84, A06e §3.4) — so it renders as text under the track, at the
           same weight as anything else a skater reads, and it changes with the thumb. */}
       {caption ? (
         <p aria-live="polite" className="text-sm">

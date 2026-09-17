@@ -1,5 +1,5 @@
 /**
- * Map a single hour of Open-Meteo data to the report's **observed `conditions`** (Phase 10 / §07-1). This
+ * Map a single hour of Open-Meteo data to the report's **observed `conditions`** (Phase 10 / §7a). This
  * is *point-in-time* weather at the skate time — distinct from the "since" summary (`weather.ts`) that
  * feeds the strip + decay. Pure + tested; the Convex `conditions` action does the fetch and calls these.
  *

@@ -2776,7 +2776,7 @@ founder's answer removes the words rather than the feature. **A word has a refer
 *about the ice*, asserted by the app, on the surface where someone decides whether to drive. **A mark's
 referent is whatever the legend says**, and we control the legend: *how recent reporters rated it*. Dots
 render our users' ratings, which is a fact about the reports — the same class of content as the count
-beside them, which E1 already permits.
+beside them, which A06c §5.1 already permits.
 
 **Why dots and not a fill bar:** a continuous bar reads as a gauge, a gauge reads as an instrument
 reading. Discrete dots read as a tally, which is what this is.
@@ -4374,7 +4374,7 @@ the second pass re-derives what the first learned and the deep link spends a pha
 imagery surface in the product — which is exactly the "a toggle appears later and works differently"
 seam A06e exists to avoid.
 
-**What this does NOT defer:** Workstream **D**'s curated boosts, which were bundled with B3a because
+**What this does NOT defer:** Workstream **4**'s curated boosts, which were bundled with A06c §2.3a because
 they share a matcher. They ship in A06c-2 — see [D139](#d139--the-seed-script-is-named-for-the-job-it-does-today-a06c-2).
 
 `referenceLinks.ts` carries a test asserting no Copernicus URL is emitted, so the link cannot creep
@@ -4407,7 +4407,7 @@ was the durable half of the original argument all along.
 **2026-08-09.** `fetchOpenMeteoHourly` returns `{ past, forecast, utcOffsetMs }`. Every calculation —
 the D56 decay multiplier, the bounty gate, the contradiction settle — reads `.past` and only `.past`.
 
-**Why the type rather than a filter.** B5b is described in the plan as nearly free, because
+**Why the type rather than a filter.** A06c §2.5b is described in the plan as nearly free, because
 `weather.ts` already sent `forecast_days: '1'` and threw the forward hours away. That is accurate,
 and it is the trap: the filter discarding them is the *same* filter that feeds
 `summarizeWeatherSince`, so the cheap version of the change — widen the window — puts predictions
@@ -4515,7 +4515,7 @@ build. There is no incumbent scoring to compare against and no gradual rollout �
 for choosing the conservative rung rather than the flattering one.
 
 The ladder still does its job on top: an operator who pins an `official` marker at an OSM-derived
-coordinate promotes it, and a re-import never overwrites them (B3).
+coordinate promotes it, and a re-import never overwrites them (A06d §2.3).
 
 **Related:** [D2](#d2--display-prominence-is-computed), [D49](#d49--display-prominence), [D70](#d70--water-body-profile-content-is-derived-or-third-party-never-hand-maintained-a06ca06d), [D72](#d72--parking-is-modelled-apart-from-put-ins-and-directions-route-to-the-car-a06d), [`phase-A06d`](./phases/A06d-body-access-points.md).
 
@@ -5320,7 +5320,7 @@ not the moment the feature starts existing.
 
 **Two consequences worth stating.** A notification whose target has since been hidden or removed is
 **shown, degraded, and untappable** — never silently dropped, because a disappearing inbox row reads
-like a bug. And the inbox is **not an archive**: it empties at the season boundary (A08/A5); the record
+like a bug. And the inbox is **not an archive**: it empties at the season boundary (A08 §1.5); the record
 of what happened to your contributions is the data export (A03).
 
 **Related:** D16, D167–D172, [`phase-A08`](./phases/A08-notification-pipeline.md).
@@ -5340,7 +5340,7 @@ author + a reply's parent author); `hazard_confirmation` fires on a hazard's **l
 transition**, never per vote — per-vote would turn a confirmation loop into a scoreboard, and D65's
 "never existed" verdict also files a moderation flag, so it would forward an accusation one voter at a
 time; `content_flag_resolved` fires from `moderation.resolveFlag`, verdict only; `activity_detected` is
-re-derived from the one source that exists (our own recorder's `pending` activities, A08/B4).
+re-derived from the one source that exists (our own recorder's `pending` activities, A08 §2.4).
 
 **The auto-flag gate needed a field.** There is no system account: `fileOrBumpAutoFlag` names a **real
 person** in `flaggerId` — the rater whose thumb crossed a threshold — who filed nothing. Notifying them

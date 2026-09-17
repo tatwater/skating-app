@@ -1,7 +1,7 @@
 # A08 — The notification pipeline: the inbox, the missing producers, and the reverse reach index
 
 > **Status:** ✅ **COMPLETE (2026-09-15)** — four PRs off `phase-n8-notification-pipeline`, all on
-> dev: **PR 1** (inbox + settled queue + producers B1–B3) #52; **PR 2** (B4/B4a, A5 purge, C
+> dev: **PR 1** (inbox + settled queue + producers §2.1–§2.3) #52; **PR 2** (§2.4/§2.4a, §1.5 purge, §3
 > timezone) #53; **PR 3** (transports: push, email, offline inbox cache) #55; **PR 4** (the coverage
 > audit's findings: the Clerk mirror refresh, change-email on both clients + the Clerk webhook, the
 > Android small icon, the pipeline to 100% lines) — branch `phase-n8-notification-pipeline-4`. Push credentials
@@ -117,7 +117,7 @@ fired while you're on the ice, deliberately local and offline-capable. Founder c
 **keep it that way** (D79). A push about a hazard on a water body you are not standing on is a different
 product decision, and not this phase's.
 
-The distinction that survives: **author-directed** hazard notifications are in scope (B2 — someone
+The distinction that survives: **author-directed** hazard notifications are in scope (§2.2 — someone
 confirmed or disputed *your* hazard), because that's feedback on your own contribution, not a broadcast.
 
 ---
@@ -137,7 +137,7 @@ second transport over the same rows — not the moment the feature starts existi
 ### D78 — Every declared type has a producer, or it isn't a type
 
 Four inert toggles are worse than four missing ones: they tell a user they've configured something.
-Founder call — **generate them** (B1–B4) rather than strike them. Where a producer genuinely cannot
+Founder call — **generate them** (§2.1–§2.4) rather than strike them. Where a producer genuinely cannot
 exist yet, the type and its toggle come *out* until it can, so the settings page never advertises a
 channel that can't fire.
 
@@ -148,7 +148,7 @@ which is exactly what Phase 09b built, offline and without a server round trip. 
 near you" push would put safety content on the least reliable transport we have (deferred, throttled by
 iOS at its discretion, D54) for a skater who by definition isn't there.
 
-**In scope regardless:** `hazard_confirmation` to the hazard's **author** (B2). Feedback on your own
+**In scope regardless:** `hazard_confirmation` to the hazard's **author** (§2.2). Feedback on your own
 contribution is not a broadcast.
 
 ### D80 — The reverse reach index filters candidates; it never replaces the eligibility test
@@ -238,7 +238,7 @@ Batch-load per page. One notification page must not become N round trips — the
   profile page → the list**, and the unread signal is a **dot on the avatar** in the You tab, so the
   badge is visible from anywhere in the app without spending a tab on it.
 
-  Worth naming because it constrains A1: the avatar dot is rendered on *every* screen with the tab bar,
+  Worth naming because it constrains §1.1: the avatar dot is rendered on *every* screen with the tab bar,
   so `unreadCount` is effectively a subscription running app-wide. It has to stay a single indexed
   count — a boolean "any unread" would be cheaper still, and is the fallback if the count is ever hot.
 
@@ -285,7 +285,7 @@ live tables — not the inbox.
 a reply, also the **parent comment's author**.
 
 **Gates:** never self; `canReceiveNotifications` (`lib/auth.ts:171`); `prefs.reportCommented`; skip if
-the recipient blocks the commenter (block == mute — and the A2 read-time filter is a backstop, not a
+the recipient blocks the commenter (block == mute — and the §1.2 read-time filter is a backstop, not a
 substitute).
 
 **Coalesce it.** A busy report gets a burst of comments, and the `notificationQueue` already solves
@@ -295,7 +295,7 @@ machinery — the queue was designed generically and has only ever had report bu
 
 **Already handled elsewhere:** a departed author. `setNotificationPrefs` carries a note about a ghost's
 kept reports still drawing comments while the mute switch is closed (A05a review, item 3); the answer
-landed in `canReceiveNotifications` at both enqueue *and* flush (`notifications.ts:261–279`). B1 inherits
+landed in `canReceiveNotifications` at both enqueue *and* flush (`notifications.ts:261–279`). §2.1 inherits
 both gates by using the same path.
 
 ### §2.2 — `hazard_confirmation`
@@ -397,7 +397,7 @@ when this lands rather than left to imply a capability we cut.
 
 Someone can connect two things that both saw the same session — most plausibly a watch **and** an
 aggregator, e.g. Garmin plus Apple HealthKit, where HealthKit is re-exporting the Garmin recording. One
-skate, two rows, and — once B4 exists — **two "add a report?" prompts for the same afternoon**, which is
+skate, two rows, and — once §2.4 exists — **two "add a report?" prompts for the same afternoon**, which is
 where the user notices a data problem we could have caught.
 
 **What exists today:** `by_provider_activity` makes ingest idempotent on `(provider,
@@ -469,7 +469,7 @@ The flush loads the trigger and drops the row if it no longer holds:
 | `report_rated` (thumb) | the rating row still exists **with the same verdict** |
 | `report_rated` (corroboration) | the corroborating report is still `visible` |
 | `report_commented` | the comment still exists and is `visible` |
-| `hazard_confirmation` | the lifecycle state is still the one that triggered it (B2) |
+| `hazard_confirmation` | the lifecycle state is still the one that triggered it (§2.2) |
 | `bounty_request` / `bounty_fulfilled` | the bounty is still in the state that triggered it |
 
 A dropped row is deleted, not retried: the thing that would have made it true again is a *new* action,
@@ -493,7 +493,7 @@ Today: `DIGEST_HOUR = 20`, `DIGEST_TIMEZONE = 'America/New_York'` (`notification
 identically to everyone.
 
 **Scoped down by the founder, 2026-07-30: the hour stays 20:00 for everybody. What becomes per-user is
-only the *zone*.** No sunset (C2), and no user-set hour — 8pm local is the whole feature, and a setting
+only the *zone*.** No sunset (§3.2), and no user-set hour — 8pm local is the whole feature, and a setting
 for it would be a preference nobody asked for on a settings page that already has ten toggles. That
 also keeps this workstream a data change plus one argument, rather than a new pref.
 
@@ -599,12 +599,12 @@ output nobody can see.
 What shipped, and where it departed from the sections above. The sections are left as written; this
 is the diff.
 
-**Shipped:** A1 (`list` paginated + resolved, `unreadCount` on a new `by_user_read` index capped at
-99, `markRead` one-or-all-before), A2 (`lib/notificationResolve.ts` — degraded targets, tombstone
+**Shipped:** §1.1 (`list` paginated + resolved, `unreadCount` on a new `by_user_read` index capped at
+99, `markRead` one-or-all-before), §1.2 (`lib/notificationResolve.ts` — degraded targets, tombstone
 names via `publicAuthor`, read-time block filtering, an `unknown` variant for unparseable payloads,
-one memoized loader per page), A3 (web `/notifications` + bell in `AppShell`; mobile `You → bell →
-modal list` with a dot on the You tab icon), E1/E2 (`lib/notificationQueue.ts` — every actor
-producer enqueues with `SETTLE_MS = 60 s` and a typed `trigger` the flush re-reads), B1, B2, B3.
+one memoized loader per page), §1.3 (web `/notifications` + bell in `AppShell`; mobile `You → bell →
+modal list` with a dot on the You tab icon), §5.1/§5.2 (`lib/notificationQueue.ts` — every actor
+producer enqueues with `SETTLE_MS = 60 s` and a typed `trigger` the flush re-reads), §2.1, §2.2, B3.
 
 **Departures worth knowing:**
 
@@ -650,14 +650,14 @@ producer enqueues with `SETTLE_MS = 60 s` and a typed `trigger` the flush re-rea
    `profiles:backfillNotificationPrefs`, revert the local edit, push again. Recorded here rather than
    committed because the transitional shape is one deploy long and would otherwise look like the
    schema.
-3. **The queue-kind rename had stored state.** B2 said "no database rows, no wire format" — but
+3. **The queue-kind rename had stored state.** §2.2 said "no database rows, no wire format" — but
    `draftStore` persists the `kind` in a SQLite column *and* inside the JSON blob. Renamed anyway
    (founder: "now is the time"), with a one-shot `UPDATE … json_set` in `ensureSchema`, tested against
    a real SQLite engine like the existing column migration.
 4. **`hazard_confirmation` fires on a *phase* transition** — `hazardLifecyclePhase()` in core:
    `archived > disputed > healing_unsafe > confirmed > provisional` — and a slide *back to provisional*
    stays quiet (a confirmer changing their mind is not news the author can act on). Archive is sticky in
-   `deriveHazardLifecycle`, so the flip-flop case in E2 resolves to `archived`, not back to active.
+   `deriveHazardLifecycle`, so the flip-flop case in §5.2 resolves to `archived`, not back to active.
 5. **The "still true?" table gained a column.** Coalesced triggers accumulate ids (`actorIds`,
    `commentIds`, `byReportIds`, `reportIds`) and each is re-verified individually at flush, so a
    retracted thumb drops out of the *count* rather than dropping the row. The recipient's own toggle
@@ -672,10 +672,10 @@ producer enqueues with `SETTLE_MS = 60 s` and a typed `trigger` the flush re-rea
 
 ## Built record — PR 2 (2026-09-11)
 
-**Shipped:** B4 (`gpsActivities.sweepUnpromptedActivities`, hourly; `by_prompt_state_detected` index;
+**Shipped:** §2.4 (`gpsActivities.sweepUnpromptedActivities`, hourly; `by_prompt_state_detected` index;
 `ACTIVITY_PROMPT_DELAY_MS = 3 h`), §2.4a (`core/activityDedup.ts` — overlap + 10-minute start window +
 compatible body, the four-rung ladder, `supersededByActivityId`, the link moves to the winner; the
-sweep runs it per user over that user's recent rows, not only the due ones), A5
+sweep runs it per user over that user's recent rows, not only the due ones), §1.5
 (`storageHygiene.purgeLastSeasonNotifications`, daily, `notifications.by_created_at`), C
 (`profiles.timezone`, `profiles.setTimezone` validated through `Intl`, both shells write it on app
 open via core's `deviceTimeZone`/`timezoneNeedsSync`; the fan-out stamps `nextZonedHourMs(now, 20,
@@ -919,17 +919,17 @@ exclusions are struck rather than deleted, so the reasoning survives.*
 
 ## Sequencing
 
-1. **A1 + A2 + A3 — the inbox.** The deliverable. Nothing else in this phase is visible without it.
-2. **E1 + E2 — route the existing producers through the queue.** Before the new producers, not after:
-   B1–B4 should be written against the settled shape rather than converted to it a week later.
-3. **B1 (`report_commented`)** — the highest-volume missing producer and the one that makes the inbox
+1. **§1.1 + §1.2 + §1.3 — the inbox.** The deliverable. Nothing else in this phase is visible without it.
+2. **§5.1 + §5.2 — route the existing producers through the queue.** Before the new producers, not after:
+   §2.1–§2.4 should be written against the settled shape rather than converted to it a week later.
+3. **§2.1 (`report_commented`)** — the highest-volume missing producer and the one that makes the inbox
    feel alive.
-4. **B2 / B3 (`hazard_confirmation`, `content_flag_resolved`)** — B3 needs the `origin` field first;
-   B2 carries the queue-kind rename.
-5. **B4 + B4a (`activity_detected`)** — the `promptState` index and one sweep. **B4a's dedup ladder is
+4. **§2.2 / §2.3 (`hazard_confirmation`, `content_flag_resolved`)** — §2.3 needs the `origin` field first;
+   §2.2 carries the queue-kind rename.
+5. **§2.4 + §2.4a (`activity_detected`)** — the `promptState` index and one sweep. **B4a's dedup ladder is
    design-only until a second provider exists** — write the rule and its tests, and note in the sweep
    that it currently has one source to choose between.
-6. **A5 — the July purge.** One cron in the `storageHygiene` family. Deliberately *after* the producers,
+6. **§1.5 — the July purge.** One cron in the `storageHygiene` family. Deliberately *after* the producers,
    so it's written against the full set of types rather than half of them.
 7. **C — per-user digest zone.** Needs a `timezone` field and a client that writes it; the server half
    is a one-line change.
@@ -946,24 +946,24 @@ The five questions this document opened with, and their answers — recorded her
 because the *reasoning* is what a later reader needs:
 
 1. **Where the inbox lives on mobile** → **You tab → bell at the top of the profile page → the list**,
-   with an unread **dot on the avatar** in the tab bar. No sixth tab; D28's five stand (A3).
-2. **`hazard_confirmation` cadence** → **lifecycle transitions, never per vote** (B2).
+   with an unread **dot on the avatar** in the tab bar. No sixth tab; D28's five stand (§1.3).
+2. **`hazard_confirmation` cadence** → **lifecycle transitions, never per vote** (§2.2).
 3. **Retention** → **purge every July**, on A05a's season boundary. Not a TTL — the same clock D66
-   already uses for condition photos (A5).
-4. **Sunset-timed digests** → **no**. 8pm local stays; only the *zone* becomes per-user (C2).
+   already uses for condition photos (§1.5).
+4. **Sunset-timed digests** → **no**. 8pm local stays; only the *zone* becomes per-user (§3.2).
 5. **Notifications whose target was hidden or removed** → **shown, degraded, untappable**. A row that
-   silently vanishes reads as a bug (A2).
+   silently vanishes reads as a bug (§1.2).
 
 ## Settled in the second pass (founder, 2026-07-30)
 
-6. **Auto-filed flags never notify** (B3). Not because there's no human — there always is, the field is
+6. **Auto-filed flags never notify** (§2.3). Not because there's no human — there always is, the field is
    required — but because it's the **wrong** human: the rater whose thumb crossed a threshold, not
    someone who filed a report. Needs a new `origin: 'user' | 'auto'` on `contentFlags`, defaulting to
    silence when absent.
-7. **The `hazard_confirmation` collision resolves by renaming the outbox** (B2): the offline queue's
+7. **The `hazard_confirmation` collision resolves by renaming the outbox** (§2.2): the offline queue's
    `kind` becomes `confirmation_vote`. Local to mobile, no stored rows, no wire format — a
    find-and-replace, against a migration on the notification type.
-8. **One skate from several sources dedups before it prompts** (B4a). Overlap-based matching plus a
+8. **One skate from several sources dedups before it prompts** (§2.4a). Overlap-based matching plus a
    four-rung precedence ladder that sorts on fidelity **and** displayability — D24's Strava
    cross-user restriction is why the second axis exists. Loser rows are superseded, never deleted.
 9. **Notifications settle before they send** (D81 / Workstream 5). 60-second window, and the trigger is
@@ -999,7 +999,7 @@ declared type gets a producer, then the transports, and the two original bullets
   (user-origin flags only, new `contentFlags.origin`), and `bounty_answered` to the requester (D170,
   replacing the misdirected `bounty_fulfilled`). Both settings pages render all ten toggles.
 - **PR 2 ✅ built:** `activity_detected` from the recorder's un-prompted skates (hourly sweep, 3 h
-  delay) + the B4a dedup ladder (`supersededByActivityId`, the link moves to the winner; one provider
+  delay) + the §2.4a dedup ladder (`supersededByActivityId`, the link moves to the winner; one provider
   today, so exercised only in tests); the **season-boundary inbox purge** (daily); **per-user digest
   zone** (`profiles.timezone` from the device; the hour stays 20:00 — true-sunset dropped, D173).
 - **PR 3 ✅ built (D174):** the transports — Expo Push (server posts to `exp.host`; dead tokens

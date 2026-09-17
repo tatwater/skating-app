@@ -334,7 +334,7 @@ export function orsFootHikingBody(from: LatLng, to: LatLng): Record<string, unkn
  *
  * Reads `summary.distance` — the total for the *requested* route — rather than summing `segments`,
  * which is the shape that produces a doubled figure the moment anything adds a via-point. Returns
- * `null` when ORS found no path (an unmapped herd path routes to nothing, which is the B4 caveat
+ * `null` when ORS found no path (an unmapped herd path routes to nothing, which is the A06d §2.4 caveat
  * arriving in a different form), so the caller can fall back rather than record a zero.
  */
 export function parseOrsFootHikingRoute(response: OrsRouteResponse): ApproachLeg | null {

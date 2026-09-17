@@ -324,7 +324,7 @@ export function isProvisional(
 }
 
 /**
- * The one-word summary of where a hazard is in its life (A08/B2) — what the author is told about,
+ * The one-word summary of where a hazard is in its life (A08 §2.2) — what the author is told about,
  * and **only** when it changes. Derived from the stored state, never stored itself, for the same
  * reason `isProvisional` isn't: a threshold change reclassifies without a migration.
  *

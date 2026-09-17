@@ -173,7 +173,7 @@ export interface SelectionResult {
  *
  * ESA reprocesses. The same tile on the same day appears as `..._0_L2A` and `..._1_L2A`, and the
  * higher number is the newer processing baseline. Cutting both would put **two frames on the same
- * date** into the scrubber — which is not a rendering glitch but a correctness one, because C4 makes
+ * date** into the scrubber — which is not a rendering glitch but a correctness one, because A06e §3.4 makes
  * the date the content: a skater scrubbing to 15 February would see two different pictures of that
  * day with nothing to say which is current.
  *

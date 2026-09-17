@@ -474,7 +474,7 @@ describe('notifications — nearby digest (X₁)', () => {
     expect(await t.run((ctx) => ctx.db.query('notificationQueue').collect())).toEqual([]);
   });
 
-  test('the digest lands at 8pm in the recipient’s own zone, defaulting to the pilot zone (A08/C)', async () => {
+  test('the digest lands at 8pm in the recipient’s own zone, defaulting to the pilot zone (A08 §3)', async () => {
     const t = convexTestWithGeo();
     const id = await seedBody(t);
     const author = await seedProfile(t, 'author');

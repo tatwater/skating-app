@@ -48,7 +48,7 @@ export async function closeFlag(
   // what's still open.
   await bumpMetricMetaCounter(ctx, 'flag_dispositions', `${flag.reason}:${resolution}`, 1, now);
 
-  // `content_flag_resolved` (A08/B3): tell the person who filed it that a moderator ruled. Verdict
+  // `content_flag_resolved` (A08 §2.3): tell the person who filed it that a moderator ruled. Verdict
   // only — not what was done, not to whom, not by which moderator. **`origin === 'user'` only**:
   // an auto-filed flag names a real person in `flaggerId` who never filed anything (the rater whose
   // thumb crossed a threshold), and telling them "the report you filed was actioned" would both

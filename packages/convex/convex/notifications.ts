@@ -63,7 +63,7 @@ import { subAreaDriveCoordFor } from './subAreas';
 
 /**
  * The digest rolls up to 8pm **local** — the hour is the same for everyone, the zone is each
- * recipient's own (`profiles.timezone`, written by the clients on app open; A08/C). True-sunset timing
+ * recipient's own (`profiles.timezone`, written by the clients on app open; A08 §3). True-sunset timing
  * was considered and dropped: sunset in Vermont is ~16:20 in early January and ~20:30 in late June,
  * so a digest that tracked it would arrive mid-workday at exactly the point in the season when
  * skating happens. A user with no stored zone gets the pilot default (`DIGEST_TIMEZONE`).

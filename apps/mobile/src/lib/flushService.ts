@@ -1,5 +1,5 @@
 /**
- * Reconnect flush for the offline draft queue (F2) — wires the pure `@skating/core` `flushDraft`
+ * Reconnect flush for the offline draft queue (Phase 02a §6.2) — wires the pure `@skating/core` `flushDraft`
  * orchestration to the real effects (Convex mutations/queries + the storage upload + the sqlite
  * store). The hard logic (checkpointing, idempotency, transient-vs-permanent) lives in core; this is
  * the thin adapter. Untested native glue.

@@ -52,7 +52,7 @@ describe('buildSeasonIndex', () => {
 
   it('keeps one entry per granule id', () => {
     // Two identical dates in a scrubber is the same correctness problem the superseded-reprocessing
-    // rule exists to prevent: C4 makes the date the content.
+    // rule exists to prevent: A06e §3.4 makes the date the content.
     const index = buildSeasonIndex('winter-2025-26', [manifest(), manifest()]);
     expect(index.frames).toHaveLength(1);
   });

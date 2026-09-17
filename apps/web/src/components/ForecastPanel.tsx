@@ -39,7 +39,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 /**
  * The forward forecast on a lake drawer (A06c §2.5b, grown into the planner by A06h Workstream 4).
  *
- * Three things, one fetch: the one-line strip that has been here since B5b (*"Next 12 hours: 22–31°F,
+ * Three things, one fetch: the one-line strip that has been here since A06c §2.5b (*"Next 12 hours: 22–31°F,
  * snow starting 8 PM"*), a row of hourly cards for the whole week that opens at *now*, and a row of
  * day cards underneath it whose tap scrolls the hours to that morning. The day card is the selector
  * D155 asked for; the hours are the run-up it insisted on drawing. Everything printable is computed

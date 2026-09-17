@@ -280,7 +280,7 @@ export const create = mutation({
     // **survivor**, so a client that navigates to what it just created lands on the live pin rather
     // than on a tombstone.
     const { survivorId } = await tryAutoMerge(ctx, hazardId);
-    // The map card learns about the new pin (A06c/E). Two things about *which* card:
+    // The map card learns about the new pin (A06c §5). Two things about *which* card:
     //
     // **After the auto-merge, not before** — a hazard just folded into an existing one must not make
     // the card claim two.

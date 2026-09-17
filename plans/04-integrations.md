@@ -232,7 +232,7 @@ a **build-time acceptance criterion**, the same class of obligation as "Powered 
 - **Also Open-Meteo, no account:** the **elevation endpoint** (`/v1/elevation`, Copernicus GLO-90 DEM,
   batched coordinates) — A06c's body-elevation pass, ~1,200 requests for all 116,070 centroids.
 
-### The short forward forecast — same call, same quota (A06c/B5b, D140) ✅ **BUILT 2026-08-09**
+### The short forward forecast — same call, same quota (A06c §2.5b, D140) ✅ **BUILT 2026-08-09**
 
 - **No new provider and no new quota.** `weather.ts` already sent `forecast_days: '1'` so the series
   covered today's elapsed hours; the forward hours arrived in that same response and were discarded.

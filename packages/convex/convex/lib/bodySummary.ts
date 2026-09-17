@@ -25,7 +25,7 @@
  * Review found this violated twice, in the two places it was easiest to violate. `reports.create`
  * and `hazards.create` both run their requested `waterBodyId` through `resolveSurvivor` before
  * storing — an offline draft can carry a body id that was merged away before the queue flushed
- * (D36/F2) — so the content lands on the canonical survivor while `args.waterBodyId` still names the
+ * (D36, Phase 02a §6.2) — so the content lands on the canonical survivor while `args.waterBodyId` still names the
  * loser. Recomputing the argument refreshes a row nothing renders, because a merged body is
  * unlisted, and leaves the card a skater is actually looking at stale until the sweep.
  *
@@ -96,7 +96,7 @@ const MAX_SUMMARY_ROWS = 200;
 /**
  * Recompute and store one body's summary.
  *
- * **Season-scoped, and this is the line that gets forgotten** (E4). The count is a *current-season*
+ * **Season-scoped, and this is the line that gets forgotten** (A06c §5.4). The count is a *current-season*
  * count: a card must never carry last winter's numbers into November, when the lake is open water
  * and the number is a lie that looks like news. The window and the season are both applied, and the
  * season is the stricter of the two every autumn.

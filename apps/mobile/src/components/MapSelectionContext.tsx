@@ -240,7 +240,7 @@ export function useMapSelection(): MapSelectionValue {
 
 /**
  * Like `useMapSelection` but returns `null` outside a provider instead of throwing — for the report
- * form when it's rendered **off the map** (the F2 offline draft capture/edit routes, which live
+ * form when it's rendered **off the map** (the Phase 02a §6.2 offline draft capture/edit routes, which live
  * outside the `(map)` layout). There the map-tap put-in isn't available; the form falls back to
  * "use my current location" (§6.2/D42).
  */

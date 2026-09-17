@@ -341,7 +341,7 @@ const TREND_REACTION_READ_BUDGET = 12_000;
  * single score: the judgment stays human, and the chart's job is to make the two cases impossible to
  * mistake for each other at a glance.
  *
- * - **bad** = reports settled as weather-unexplained contradictions (D56 §07-2), plus `unsafe_false_report`
+ * - **bad** = reports settled as weather-unexplained contradictions (D56 §7b), plus `unsafe_false_report`
  *   flags a moderator actually **upheld**. An open or dismissed flag is an accusation, not a finding, and
  *   counting it would let anyone darken someone's record by flagging them.
  * - **good** = reports the community corroborated or thumbed net-helpful. Volume alone is not good; this

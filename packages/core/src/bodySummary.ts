@@ -5,7 +5,7 @@
  * that sits over the ones where something is happening, so a browsing skater can see *where people
  * are actually skating* without opening anything.
  *
- * ## The rule that makes it shippable into a sparse corpus (E3)
+ * ## The rule that makes it shippable into a sparse corpus (A06c §5.3)
  *
  * **A body with no recent activity gets no card at all** — not an empty one. The old deferral
  * trigger for this feature was "wait until report density is high enough that a summary is non-empty
@@ -153,7 +153,7 @@ export function topHazardTypes(
 }
 
 /**
- * Whether a summary is worth drawing a card for (E3).
+ * Whether a summary is worth drawing a card for (A06c §5.3).
  *
  * Activity — a recent report or an active hazard — and nothing else. A name is not a reason.
  */

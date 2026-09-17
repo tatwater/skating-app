@@ -2,7 +2,7 @@ import { createDetailTabStore, type DetailTab } from '@skating/core';
 import { useSyncExternalStore } from 'react';
 
 /**
- * The one session-scoped tab store for the water-body sheet (A06h/H) — the mobile twin of web's
+ * The one session-scoped tab store for the water-body sheet (A06h §8) — the mobile twin of web's
  * `lib/detailTabs.ts`, over the same core store. Module-level on purpose: the selection outlives
  * any single sheet, so comparing five lakes on *Planning* costs no re-selection. In memory only; a
  * cold start is a new session.

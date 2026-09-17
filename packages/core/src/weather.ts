@@ -35,7 +35,7 @@ export interface HourlyWeather {
    * The same hour as an absolute UTC instant. Carried beside `startMs` because two local-shifted
    * timestamps cannot say whether their hours were consecutive across a DST transition — a
    * spring-forward night reads as a two-hour gap and a fall-back night as a repeated hour. Anything
-   * judging *contiguity* reads this; anything printing a *clock* reads `startMs` (A06h D).
+   * judging *contiguity* reads this; anything printing a *clock* reads `startMs` (A06h §4).
    */
   utcMs?: number;
   temperatureC: number;
@@ -145,7 +145,7 @@ export interface IceChangeThresholds {
 }
 
 /**
- * Did the weather over a window plausibly **change the ice** (Phase 10 / §07-2)? True when a meaningful
+ * Did the weather over a window plausibly **change the ice** (Phase 10 / §7b)? True when a meaningful
  * freeze *or* thaw occurred. The corroboration contradiction check uses this to tell an honest "the ice
  * changed" report from a real contradiction: if the weather-since between two disagreeing reports explains
  * the change, it is **not** a contradiction (D3/D50). An empty summary (`hours === 0`, e.g. a failed

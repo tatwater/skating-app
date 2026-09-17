@@ -41,11 +41,11 @@ export function AppShell({ children }: { children: ReactNode }) {
   const { signOut } = useAuth();
   const profile = useQuery(api.profiles.current, {});
   const pathname = useRouterState({ select: (s) => s.location.pathname });
-  // The bell's dot (A08/A3). `unreadCount` is a capped indexed read, so subscribing to it from the
+  // The bell's dot (A08 §1.3). `unreadCount` is a capped indexed read, so subscribing to it from the
   // shell — every page — is one small query, not a scan.
   const unread = useQuery(api.notifications.unreadCount, profile ? {} : 'skip') ?? 0;
 
-  // The 8pm digest's zone (A08/C): the device's, refreshed on app open, written only when it differs.
+  // The 8pm digest's zone (A08 §3): the device's, refreshed on app open, written only when it differs.
   // The shell is the one component every signed-in page renders, which makes it "app open".
   const setTimezone = useMutation(api.profiles.setTimezone);
   const hasProfile = !!profile;

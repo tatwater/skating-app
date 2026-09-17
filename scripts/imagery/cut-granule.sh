@@ -160,7 +160,7 @@ EOF
 
 # --- Resolve the granule ---------------------------------------------------------------------------
 # STAC turns an id into signed-free COG hrefs plus the metadata the product actually needs: the
-# capture datetime (D84/C4 — the date is content, not a caption) and the cloud fraction that decides
+# capture datetime (D84, A06e §3.4 — the date is content, not a caption) and the cloud fraction that decides
 # whether this pass is worth cutting at all.
 resolve_granule() {
   local url="${STAC_URL}/collections/${STAC_COLLECTION}/items/${GRANULE_ID}"
@@ -1039,7 +1039,7 @@ transform_granule() {
     BANDS='["visual","scl"]'
   fi
 
-  # The manifest, because a raster cannot say when it was taken or how cloudy it was — and D84/C4
+  # The manifest, because a raster cannot say when it was taken or how cloudy it was — and D84, A06e §3.4
   # make the date content rather than a caption. Whatever reads this archive reads dates from here.
   #
   # `footprint` is the STAC item's own `geometry` — the acquisition polygon, which is where this frame

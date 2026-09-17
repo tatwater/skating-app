@@ -92,7 +92,7 @@ describe('selectGranules', () => {
 
   it('keeps only the newest reprocessing of a tile-day', () => {
     // ESA reprocesses; the higher version is the newer baseline. Cutting both would put two different
-    // pictures on the same date in the scrubber, and C4 makes the date the content.
+    // pictures on the same date in the scrubber, and A06e §3.4 makes the date the content.
     const result = selectGranules([
       at('S2B_18TXP_20260220_0_L2A', 10),
       at('S2B_18TXP_20260220_1_L2A', 10),

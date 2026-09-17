@@ -57,7 +57,7 @@ excludeTracksFromAggregate?: boolean  // Phase 08 / D58: keep my recorded paths 
                              // retroactively drops every track they've contributed, not just future
                              // ones. Recording + Strava push are unaffected; this governs only whether
                              // their line draws on a water body's map for other people.
-timezone?: string            // A08/C, D173 — the DEVICE's IANA zone, refreshed on app open; the 8pm digest's
+timezone?: string            // A08 §3, D173 — the DEVICE's IANA zone, refreshed on app open; the 8pm digest's
                              // only per-user input (the hour is 20:00 for everyone). Never public.
 email?: string               // A08 PR 3 / D174 — PRIVATE mirror of the Clerk `email` claim (like
                              // profileImageUrl); both refreshed on every app open by `syncFromClerk`
@@ -70,7 +70,7 @@ clerkUpdatedAt?: number      // Clerk's `updated_at` (ms) as of the last mirror 
 channelPrefs?: { push, email } // D174 — the two transports over the inbox; absent ⇒ both on
 emailUnsubscribeSecret?: string // D174 — authorizes the one-click unsubscribe link, and nothing else
 notificationPrefs: {         // per-type toggles — EVERY type is toggleable (D16); vocabulary in @skating/core (A08)
-  activityDetected,          // a skate OUR recorder captured that was never reported (A08/B4) — NOT "any
+  activityDetected,          // a skate OUR recorder captured that was never reported (A08 §2.4) — NOT "any
                              // linked provider" as D24 said; that premise was retired with Phase 08's push pivot
   bountyRequest,
   hazardConfirmation,        // your hazard's lifecycle phase moved: confirmed / disputed / healing / healed (A08)
@@ -194,12 +194,12 @@ path?: geojson               // TRUSTED GPS track = skated extent (+ hazard prox
 waterBodyId?: ref(waterBodies)   // resolved at ingest from path (D44) — the water body this skate was on
 waterBodyIds?: ref(waterBodies)[] // when a skate spans connected bodies; waterBodyId = primary
 photoUrls?: string[]         // provider-dependent + subject to provider ToS
-promptState: enum(pending, prompted, converted, dismissed)  // A08/B4: an hourly sweep flips a skate
+promptState: enum(pending, prompted, converted, dismissed)  // A08 §2.4: an hourly sweep flips a skate
                              // still `pending` 3 h after `detectedAt` to `prompted` and files ONE
                              // `activity_detected` notification (index `by_prompt_state_detected`)
 linkedReportId?: ref(reports)
 detectedAt: timestamp
-supersededByActivityId?: ref(gpsActivities)  // A08/B4a — the better copy of this same skate (core
+supersededByActivityId?: ref(gpsActivities)  // A08 §2.4a — the better copy of this same skate (core
                              // `activityDedup` ladder: native > watch > aggregator > strava). Never
                              // deleted; a loser's `linkedReportId` moves to the winner. Unreachable
                              // today (one provider) — the rule exists before the second source does
@@ -250,7 +250,7 @@ satelliteImagery?: enum(auto, on, off)  // ✅ BUILT in A06e (Workstream 4, D138
                                         // operator DISAGREEING with satelliteImageryAvailable() is stored,
                                         // and `auto` clears rather than writes. Survives re-import.
 referenceLinks?: { label, url }[]       // the ONE non-derivable link class: water body associations (D71)
-// ── The map summary card (A06c/E, D141). Absent ⇒ no card at all, which is §5.3's whole rule.
+// ── The map summary card (A06c §5, D141). Absent ⇒ no card at all, which is §5.3's whole rule.
 //    Recomputed from a bounded window on every write that could change it, never incremented:
 //    the counts are window- AND season-scoped, so a report ageing out has no event to decrement
 //    on, and the D86 mean cannot be maintained incrementally at all.
@@ -383,7 +383,7 @@ createdAt: timestamp
 > D5/D36 machinery) returns the most-specific match; stamped onto `reports.place` at create (no
 > per-read geocode). Reused by GPS ingest (Phase 08) + hazards (Phase 09a).
 
-### `weatherAlerts`  (NWS active alerts — A06c/B5, D74)
+### `weatherAlerts`  (NWS active alerts — A06c §2.5, D74)
 ```
 _id
 state: string                  // the state this row was polled under — the per-state replace key
@@ -411,7 +411,7 @@ fetchedAt: number
 > indistinguishable from no warning. Unused until a body carries `nwsZoneIds` (rung 1 of the ladder,
 > unbuilt); every match today falls to the `states` rung, which over-shows, which is the safe direction.
 
-### `weatherForecastCache`  (the short forward forecast — A06c/B5b, D140)
+### `weatherForecastCache`  (the short forward forecast — A06c §2.5b, D140)
 ```
 _id
 samplePointKey: string         // rounded "lat,lng" — the same ~110 m key `weatherCache` uses
@@ -723,7 +723,7 @@ resolvedByUserId?: ref(profiles)   // a moderator or admin (users.role in {moder
 occurrences?: number               // A02 bundling — how many times this problem has been recorded
 lastOccurrenceAt?: timestamp       // absent ⇒ reads as 1, so pre-bundling rows need no migration
 supersedesFlagId?: ref(contentFlags)  // this row carries a resolved predecessor's count forward
-origin?: enum(user, auto)          // A08/B3 — who filed it; absent reads as `auto`. The one reader is
+origin?: enum(user, auto)          // A08 §2.3 — who filed it; absent reads as `auto`. The one reader is
                                    // `content_flag_resolved`, which notifies `user` flaggers only
 createdAt, resolvedAt?: timestamp
 ```
@@ -857,7 +857,7 @@ pushedAt?, emailedAt?: timestamp  // A08 PR 3 — transport stamps; the delivery
 > `by_created_at` (the season purge).
 > **Only `flushNotificationQueue` inserts here** (D169) — every producer enqueues first.
 > Read by `notifications.list` (paginated, resolved), `unreadCount` (capped at 99), `markRead`.
-> **Retention is the season boundary** (A08/A5): a daily sweep deletes rows created before the current
+> **Retention is the season boundary** (A08 §1.5): a daily sweep deletes rows created before the current
 > season's start, read or not. The inbox is not an archive — the data export is.
 > Only sent if the recipient's `notificationPrefs[type]` is on (D16), re-checked at flush.
 

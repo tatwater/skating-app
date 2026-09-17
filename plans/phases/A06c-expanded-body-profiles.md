@@ -25,13 +25,13 @@
 > | Sequencing: elevation must precede an **unrun** A06a loader | Both ran, in the A07a-2/A07a-3 campaign. The whole section is history |
 > | *(this branch previously said `regionStats` was empty)* | ✅ **Populated** — 5 states × 5 metrics over 24,953 bodies, recomputed as A07a-3's last pass (PR #41, merged after this branch was cut). §1.5's decile clauses are **live** |
 >
-> **Workstream 6 is split, not whole:** F2 was pulled forward into the data campaign and shipped
+> **Workstream 6 is split, not whole:** §6.2 was pulled forward into the data campaign and shipped
 > months of runs ago; only §6.1 was A06c-2's.
 
 
 > ### ⚠ The elevation source changed (A07a-2, 2026-08-08)
 >
-> Workstream A1 is described throughout this document against **Open-Meteo / Copernicus GLO-90**.
+> §1.1 is described throughout this document against **Open-Meteo / Copernicus GLO-90**.
 > That lane is retired. Elevation now comes from USGS **3DEP** via `epqs.nationalmap.gov` — see
 > **D127** — at **98.2% 1 m LiDAR** across the corpus, with no key and no quota shared with the
 > product's own weather crons.
@@ -101,7 +101,7 @@
 > D72/D73 are A06d's; D81–D84 are A06b's and A06e's, plus **D89** (A06b's fixed contour ladder).
 > **All five open questions were answered 2026-07-31**, plus §1.3, §2.3, §2.3a, §2.5 and §5.3 — see the marked
 > sections. Two answers changed the build: **shoreline is measured on the source geometry** (D85, and it
-> moves A2–A4 onto the *canonical water re-import* rather than the depth run), and **the summary card
+> moves §1.2–§1.4 onto the *canonical water re-import* rather than the depth run), and **the summary card
 > carries a consensus quality mark after all** (D86, reversing this doc's own recommendation).
 
 ---
@@ -117,7 +117,7 @@ memory of them. **Two specified items had been missed** and are now done; both a
 | **§1.2** long/short axis + undirected bearing | ✅ *(method corrected — see finding 1)* | `core/lakeGeometry.ts` |
 | **§1.3** shoreline measured pre-`simplify()` (D85) | ✅ | `core/lakeGeometry.ts`, `scripts/etl/transform.ts` |
 | **§1.3** HydroLAKES `Shore_len` cross-check — *"log the comparison; store ours"* | ✅ **was missed, now done** | `waterBodies.matchAndImportDepths` |
-| **A4** 16-bearing fetch profile, contiguous-run rule, stated limitations | ✅ *(origin corrected — see finding 2)* | `core/lakeGeometry.ts` |
+| **§1.4** 16-bearing fetch profile, contiguous-run rule, stated limitations | ✅ *(origin corrected — see finding 2)* | `core/lakeGeometry.ts` |
 | **§1.4b** winter wind rose — **not in the original plan**, added by founder call | ✅ | `core/windRose.ts`, `scripts/wind-climate/` |
 | **§1.5** `regionStats` per-state deciles | ✅ *(one deviation — see below)* | `convex/regionStats.ts` |
 | **§3** derived caption, all four rules, rendered on both clients | ✅ | `core/lakeCaption.ts`, `core/lakeProfile.ts` |
@@ -127,7 +127,7 @@ memory of them. **Two specified items had been missed** and are now done; both a
 | `centroid` → `representativePoint` rename | ◐ **stage 1 of 2** | blocked on the backfill running |
 | **§6.2** run history + full-path import observability — *pulled forward from A06c-2* | ✅ | `importRuns` table, `convex/importRuns.ts`, `scripts/run-log`, `/admin/imports` |
 
-**One deliberate deviation from the text.** A5 says the deciles are *"recomputed at the end of each
+**One deliberate deviation from the text.** §1.5 says the deciles are *"recomputed at the end of each
 state's import"*. `regionStats:recompute` instead recomputes **every state in one pass**, because it
 is an action that pages the whole corpus and splitting it per state would mean five passes over
 116,070 rows to produce five small rows. The output is identical; only the trigger differs.
@@ -147,7 +147,7 @@ is the finding underneath the findings: every one of these passed its unit tests
 
 ### 1. The dimension-line method reported 2× the true width
 
-A2 specified *"the hull diameter (longest chord between hull vertices), giving `longAxisM`… The
+§1.2 specified *"the hull diameter (longest chord between hull vertices), giving `longAxisM`… The
 perpendicular hull width gives `shortAxisM`."* **That pair does not produce a dimension line.** For a
 rectangle `w × h` with `h ≫ w`, the hull diameter is the *diagonal*, and the hull's extent measured
 perpendicular to that diagonal is `2wh/L ≈ 2w` — because the two extreme corners sit on opposite sides
@@ -162,7 +162,7 @@ still feeds the wind clause, the D2 prominence terms and A5's deciles, so the fi
 
 ### 2. `waterBodies.centroid` is not a centroid, and the fetch profile was cast from the shore
 
-A4 says *"cast a ray through the centroid"*. **That cannot be taken literally.** `centroid` comes from
+§1.4 says *"cast a ray through the centroid"*. **That cannot be taken literally.** `centroid` comes from
 `representativePoint` → Turf's `pointOnFeature`, which returns the bbox centre only when it lands
 inside the polygon and a point on the **boundary** when it does not — true of any curved or narrow
 water body. Measured: **Lake Willoughby's stored centroid is ring vertex 199**, and Lake Champlain's sits
@@ -242,7 +242,7 @@ never automatic, because a check that removes itself is not a check.
 ### 5. The caption's units contradicted D25
 
 This doc's illustrative caption reads *"1,688 acres, about 5 × 1 miles… a measured 91 m maximum
-depth… Its 8 km axis"*, and A3 says *"Metric per D25: nearest kilometre"*. **D25 says store metric,
+depth… Its 8 km axis"*, and §1.3 says *"Metric per D25: nearest kilometre"*. **D25 says store metric,
 *display imperial*, and there is no metric display mode in this product.** The caption is imperial
 throughout.
 
@@ -274,7 +274,7 @@ and an empty tileset look the same, and only one of them should cost 2,022 rows.
 `importCanonical`, which already does the heaviest work in the app. A canonical re-import therefore
 *resets* the score to area + boost until the re-score runs. The order is:
 
-1. **canonical water re-import** — geometry + the A2/A3/A4 stats + `interiorPoint`
+1. **canonical water re-import** — geometry + the §1.2/§1.3/§1.4 stats + `interiorPoint`
 2. **depth + elevation run** — the A06a loader, now carrying `elevationM`
 3. **`regionStats:recompute`** — deciles derived *from* what the first two loaded
 4. **`wind-climate load`** — needs `fetchProfileM` from step 1 to know which bodies qualify
@@ -298,10 +298,10 @@ A test fails if step 1 stops clobbering richness, so the constraint cannot drift
 >   while A06c-1 is fresh rather than tangled with A06c-2's changes; none of these loaders has ever run
 >   against the corpus.
 > - **A06c-2 adds essentially no corpus-wide pass.** Checked rather than assumed: B's links are
->   generated at render time and stored nowhere (D71), B7 is operator-entered on tens of bodies,
+>   generated at render time and stored nowhere (D71), §2.7 is operator-entered on tens of bodies,
 >   `satelliteImagery` defaults to `auto` resolved from surface area so absent *is* the default,
->   B3a/D touches ~40 bodies, B5 polls per state on a cron by design, E's counters are
->   write-maintained, and F writes one row per run. **No A06c-2 field wants to ride the water
+>   §2.3a/§4 touches ~40 bodies, §2.5 polls per state on a cron by design, §5's counters are
+>   write-maintained, and §6 writes one row per run. **No A06c-2 field wants to ride the water
 >   transform** — the specific check A06a's ordering gate got incomplete.
 > - **A06d reuses the archived extract.** Its Workstream §2.1 is a second `osmium tags-filter` pass over
 >   *the same* Geofabrik file, and `scripts/etl`'s `fetchExtract` keeps each state's `.pbf` in a
@@ -372,7 +372,7 @@ exact field has produced it.
 same fix applies to the E card's placement, which would otherwise have hung the card off the edge of
 the water it describes.
 
-### 2. B5b is cheap, and the cheap way to build it is wrong — **D140**
+### 2. §2.5b is cheap, and the cheap way to build it is wrong — **D140**
 
 The plan's argument is exactly right: `weather.ts:112` sent `forecast_days: '1'` and the window
 filter threw the forward hours away, so a forecast costs one changed parameter.
@@ -624,7 +624,7 @@ call. Runs in the ETL transform alongside `surfaceAreaSqM`, already computed the
 geometry (`scripts/etl/src/transform.ts`).
 
 **Value on its own is modest** — we already show surface area, and this is the least important item in
-Workstream 1. It earns its place because **A4 needs the axis anyway**, so the dimension line is a free
+Workstream 1. It earns its place because **§1.4 needs the axis anyway**, so the dimension line is a free
 by-product.
 
 ### §1.3 — Shoreline length: measure the source geometry, not our copy of it (D85)
@@ -653,7 +653,7 @@ as geometry*, not what we can *measure in flight*.
 > Applies to `shorelineM` and to A2's long/short axis. The stored polygon exists for *drawing*; the
 > stats exist for *describing*, and the tolerance that makes the first cheap corrupts the second.
 
-**This changes the sequencing.** A2–A4 now ride the **canonical water re-import** (`scripts/etl`), not the
+**This changes the sequencing.** §1.2–§1.4 now ride the **canonical water re-import** (`scripts/etl`), not the
 A06a depth run — two different passes with different cargo. Recorded in
 [A06a's ordering gate](./A06a-body-depth.md#before-the-etl-runs--the-ordering-gate) so nobody expects
 one run to deliver both.
@@ -746,7 +746,7 @@ Generating them in a `referenceLinks.ts` module in `@skating/core` means:
 - **No storage, no migration.**
 
 Storing 116,070 copies of a derivable string would be the expensive way to get a worse result. The
-*only* thing that needs storage is the one link that genuinely isn't derivable (B7).
+*only* thing that needs storage is the one link that genuinely isn't derivable (§2.7).
 
 ### §2.1 — Every external link opens **in-app** on mobile (D76)
 
@@ -776,7 +776,7 @@ embed widget). Everything else goes through the in-app browser. Web stays a plai
 elsewhere, wired into `apps/web/src/components/DirectionsButton.tsx` and
 `apps/mobile/src/components/FavoriteButton.tsx`. **No work here** — A06d re-targets it at parking areas.
 
-*(Directions are the one deliberate exception to B1: a maps deep link should hand off to the real maps
+*(Directions are the one deliberate exception to §2.1: a maps deep link should hand off to the real maps
 app, which is where navigation belongs.)*
 
 ### §2.3 — Copernicus Browser — and the satellite blocker it retires
@@ -819,7 +819,7 @@ Phase 07 admin surface and takes effect immediately. Both halves of the founder'
 same way: the dashboard toggle works, *and* the threshold driving `auto` is a code constant that would
 need a deploy to change.
 
-**The proving run (B3a).** Founder ask: prove the pipeline now against the water bodies that already surfaced in
+**The proving run (§2.3a).** Founder ask: prove the pipeline now against the water bodies that already surfaced in
 research, rather than waiting for general traffic.
 
 - Assemble a seed list of the regional Nordic-skating destinations already identified — the
@@ -845,7 +845,7 @@ research, rather than waiting for general traffic.
 **Imagery *in* the app → [A06e](./A06e-satellite-imagery.md), specced 2026-07-31 at the founder's
 ask** (*"I don't want to lose track of this, because I want to do it ASAP"*).
 
-**Does it fit inside B3?** No — and the reason is worth one paragraph, because "it's just a raster layer"
+**Does it fit inside §2.3?** No — and the reason is worth one paragraph, because "it's just a raster layer"
 is a very reasonable thing to think. In-app imagery is a **basemap swap**: a second style branch on both
 clients, a toggle whose state has to persist, an offline story, a tile-caching service, an attribution
 change, and an interaction with every layer already on the map. B3's deep link is a URL. Bundling them
@@ -874,7 +874,7 @@ Full cost/benefit for Copernicus and Planet lives in
 
 ### §2.4 — Weather links: Windy
 
-**Windy is a link, not an integration — but on mobile it's an in-app link (B1).** Confirmed against their
+**Windy is a link, not an integration — but on mobile it's an in-app link (§2.1).** Confirmed against their
 docs: the Map Forecast API is *"a simple-to-use library based on Leaflet 1.4.x"* and tightly coupled to
 it. We render **MapLibre**. There is no way to add Windy's animated layers to our map — using their
 product means embedding *their map* wholesale, not extending ours.
@@ -962,7 +962,7 @@ We show snow starting at 3pm and their drive time; the inference is theirs, and 
 - **Variables:** the ones that change whether you go — temperature, snowfall, precipitation, wind. Not the
   full `HOURLY_VARS` set; the decay math's inputs and the skater's inputs are different lists that happen
   to overlap.
-- **Ordering:** it renders *below* the NWS alert strip (B5), because an official warning outranks an
+- **Ordering:** it renders *below* the NWS alert strip (§2.5), because an official warning outranks an
   hourly forecast, and *below* the weather-since strip, because observed beats predicted.
 - **It never feeds a calculation.** Same rule as NWS alerts under D74, for a different reason: decay math
   runs on what happened, and a hazard whose confidence decayed on a forecast that didn't come true would
@@ -1138,7 +1138,7 @@ at-a-glance basics, so the map stops being a field of anonymous polygons you mus
 | On the card | |
 |---|---|
 | Water body name | already available |
-| Recent report count | within a "recent" window (E4) |
+| Recent report count | within a "recent" window (§5.4) |
 | Active hazard types | the top few, as icons or short labels |
 
 **Explicitly *not* on the card:** recurring / "potential hazard" advisories from
@@ -1210,7 +1210,7 @@ just **Pond** is worse than no title at all — it looks like a bug and it's amb
 >   already applies server-side. Belt and braces on purpose — a quiet water body acquiring prominence by
 >   having been skated once would be reported as "the map is broken" rather than diagnosed.
 > - **Season scoping:** applied in `lib/bodySummary.ts` alongside the window. This *is* the one line
->   E4 predicted would be forgotten, and a convex test pins it.
+>   §5.4 predicted would be forgotten, and a convex test pins it.
 
 
 - **What "recent" means.** Probably the same freshness window the feed and the report list already use,
@@ -1230,14 +1230,14 @@ just **Pond** is worse than no title at all — it looks like a bug and it's amb
 Both halves answer the same question — **what happened to this water body, and who or what did it** — and both
 are cheap because the data already exists and is simply never read.*
 
-**F1 — A per-body activity timeline on `/admin/water/$id`.** Linear-style: a tight, blame-attributed
+**§6.1 — A per-body activity timeline on `/admin/water/$id`.** Linear-style: a tight, blame-attributed
 list at the bottom of the editor. **This is a UI component and no backend at all** —
 `moderation.listActions` already takes `targetType: 'waterbody'` + `targetId`, reads `by_target` newest
 first, and resolves the actor. Every human write to a body already lands there: depth, curated boost,
 sample points, sub-area create/redraw/rename, put-ins, features. Nobody has ever been able to look at it,
 which is why five mis-matched bodies from the Phase-02b seed stayed invisible until A02 built a screen.
 
-Two gaps to close as part of F1, neither large:
+Two gaps to close as part of §6.1, neither large:
 
 - **Before *and* after.** An audit row records what a field *became*, so the log can answer "who changed
   this" and never "changed it from what". `setDepth` / `clearDepthOverride` already write a `prev` object
@@ -1246,7 +1246,7 @@ Two gaps to close as part of F1, neither large:
   old value and re-enter it, which is one click short and zero new invariants.
 - **ETL writes are unaudited**, so the timeline is human-only until F2.
 
-**F2 — Store an ETL run summary instead of printing it.** Every loader we have (`etl`, `admin-areas`,
+**§6.2 — Store an ETL run summary instead of printing it.** Every loader we have (`etl`, `admin-areas`,
 `lake-depth`) computes a genuinely useful summary — match rate, rejects by reason, un-gated matches,
 overrides held, contested merges — and writes it to a terminal that scrolls. There is no way to answer
 "how did the last import go", "is coverage better or worse than last time", or "which water bodies did it
@@ -1264,7 +1264,7 @@ a durable home.
 
 ---
 
-## F2 as built — the run history
+## §6.2 as built — the run history
 
 *Built 2026-08-02, immediately before the A06c data campaign's first pass, on the founder's ask to
 document failures and show the campaign's stats on the admin dashboard. Three deltas from the text
@@ -1289,7 +1289,7 @@ recent campaign and — deliberately — never shows it as clean while any membe
 `running`.
 
 **Coverage as a rate with a ledger, added on the founder's second ask.** Every loader already
-computed a coverage percentage and printed it; none of them stored it, and the first cut of F2 kept
+computed a coverage percentage and printed it; none of them stored it, and the first cut of §6.2 kept
 only free-form counts. `coverage` is now structured — `{ unit, eligible, covered, omissions[] }` —
 because **a count cannot be wrong**: "9,981 stamped" reads as complete whether the corpus is 10,000
 or 116,070. The load-bearing part is the ledger: `eligible − covered` minus the stated omissions is
@@ -1374,9 +1374,9 @@ replaces.
 - **Per-body archival photos** (founder call) — the photos that matter come from reports and hazards.
   Access-point photos are A06d's business: infrastructure, not conditions.
 - **Blending weather providers** (D74) — one physics source, deliberately.
-- **In-app satellite imagery** — deferred with a stated trigger (B3), no longer *blocked*.
+- **In-app satellite imagery** — deferred with a stated trigger (§2.3), no longer *blocked*.
 - **MerrySky** — a frontend over data we already have.
-- **Rivers** — still deferred (D4). A2/A4 assume a still-water polygon and would produce meaningless
+- **Rivers** — still deferred (D4). §1.2/§1.4 assume a still-water polygon and would produce meaningless
   output on a reach; the function contracts must say so.
 
 ---
@@ -1393,18 +1393,18 @@ someone runs that loader.
 
 Everything after is preference:
 
-1. **A1** — before the depth run. ⏰
-2. **A2–A4** — pure geometry, no external dependency, testable in isolation. **These ride a different
+1. **§1.1** — before the depth run. ⏰
+2. **§1.2–§1.4** — pure geometry, no external dependency, testable in isolation. **These ride a different
    pass** (D85): they're computed in `scripts/etl`'s transform from the pre-simplification geometry, so
    they need a **canonical water re-import**, not the depth run. Two passes, different cargo — the
    inventory is in [A06a's ordering gate](./A06a-body-depth.md#before-the-etl-runs--the-ordering-gate).
-3. **A5 + C** — captions need the deciles; both are small once A is in.
-4. **B** — link generation. Only B7 touches the schema. Fast, visible, high value-to-effort.
-5. **B3a + D** — the proving run and the boosts, one script.
-6. **B5 + B5b** — NWS alerts (the one genuinely new external integration here, separable from everything
-   above) and the short forward forecast. **Do B5b first**: it is a parameter change and a slice on a
+3. **§1.5 + §3** — captions need the deciles; both are small once §1 is in.
+4. **§2** — link generation. Only §2.7 touches the schema. Fast, visible, high value-to-effort.
+5. **§2.3a + §4** — the proving run and the boosts, one script.
+6. **§2.5 + §2.5b** — NWS alerts (the one genuinely new external integration here, separable from everything
+   above) and the short forward forecast. **Do §2.5b first**: it is a parameter change and a slice on a
    call we already make, so it ships in an afternoon and it is the half a skater notices. The zone-stamp
-   import (open question 2) is the long pole in B5 and shouldn't hold either back — the state rung
+   import (open question 2) is the long pole in §2.5 and shouldn't hold either back — the state rung
    covers v1 while it lands.
 7. **E** — the summary cards. Independent of A–D (it reads our own reports, not derived geometry or
    third-party data), so it can run first, last or in parallel. The only ordering note is that its
@@ -1519,7 +1519,7 @@ removes the words:
 **Why the mark is safer than the word, precisely.** A word has a referent — "Great" is a claim *about the
 ice*. A mark's referent is whatever the legend says it is, and we control the legend: **"how recent
 reporters rated it."** The dots are a rendering of our own users' ratings, which is a fact about the
-reports, and facts about reports are what E1 already established the card may carry. Same class of
+reports, and facts about reports are what §5.1 already established the card may carry. Same class of
 content as the count next to it.
 
 **The shape to build (first stab — finesse expected):**
@@ -1535,10 +1535,10 @@ content as the count next to it.
   mode here, and it fails silently — the mark looks identical whether it summarises 1 report or 40. This
   is the same denominator discipline **D78** applied to recurrence claims, and it applies for the same
   reason.
-- **Season-scoped and window-scoped** like the counts beside it (E4) — a mark that carries last winter's
+- **Season-scoped and window-scoped** like the counts beside it (§5.4) — a mark that carries last winter's
   consensus into November is worse than no mark.
 - **Never a fifth-dot ceiling effect.** If everyone loves everything, the mark stops discriminating.
-  Watch this once there's real data; it may want to be relative to the corpus (the A5 `regionStats`
+  Watch this once there's real data; it may want to be relative to the corpus (the §1.5 `regionStats`
   pattern) rather than absolute.
 - **Accessibility is not optional here.** Dots must carry a text alternative — *"rated 3 of 4 by 12
   recent reports"* — which is also, usefully, the honest long form: it names the denominator that the
@@ -1629,7 +1629,7 @@ users. A skater who pushes a session into a regional club is doing our marketing
 | New York | ADKNordicSkating | Google Groups | Adirondacks |
 | Vermont | VTNordicskating | Google Groups | Very active — **our existing scraped corpus** |
 | Vermont | Vermont Nordic Skating | Facebook | Companion to the above |
-| Québec | Patinage sur Glace Sauvage / Nordic Skating Québec | Facebook | Montréal; relevant only if we cross the border (note the NWS gap, B5) |
+| Québec | Patinage sur Glace Sauvage / Nordic Skating Québec | Facebook | Montréal; relevant only if we cross the border (note the NWS gap, §2.5) |
 
 **B6's mapping uses this table:** VT → VTNordicskating, NH → NHNordicSkating, NY → ADKNordicSkating,
 ME → the Maine/NH Facebook group. The Google Groups have searchable public archives, so they get a

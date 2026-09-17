@@ -78,7 +78,7 @@ function TabIcon({ icon, color, size }: { icon: IconDefinition; color: ColorValu
  */
 export default function TabsLayout() {
   const theme = useTheme();
-  // The unread signal (A08/A3): a dot on the You icon, visible from every screen with the tab bar,
+  // The unread signal (A08 §1.3): a dot on the You icon, visible from every screen with the tab bar,
   // so the badge costs no tab. `unreadCount` is one capped indexed read, so subscribing to it from
   // the tab layout — effectively app-wide — is cheap by construction.
   // Offline, the dot reads the cached page through the local read overlay (A08 PR 3) rather than
@@ -88,7 +88,7 @@ export default function TabsLayout() {
   );
   const unread = useQuery(api.notifications.unreadCount, {}) ?? offlineUnread;
 
-  // The 8pm digest's zone (A08/C): the device's, refreshed on app open, written only when it differs.
+  // The 8pm digest's zone (A08 §3): the device's, refreshed on app open, written only when it differs.
   // The tab layout mounts once per signed-in session, which makes it "app open".
   const profile = useQuery(api.profiles.current, {});
   const setTimezone = useMutation(api.profiles.setTimezone);

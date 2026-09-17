@@ -470,7 +470,7 @@ right. Three tests, verified to fail first.
 *Left as a founder call:* the A08 copy is verdict-only and target-less — *"A moderator reviewed
 something you flagged and left it up"* — because the flagged party is usually a person. Here it is a
 water body, so a reason-aware line (*"…your access report on Tomhannock — public access confirmed"*) would
-extend B3 rather than break it. Not done.
+extend A08 §2.3 rather than break it. Not done.
 
 **6. The ordinary verdict reads as a plain fact (founder call, 2026-09-16, from the first live look
 at the drawer).** *"A moderator reviewed this on August 25, 2026 and found public access"* dressed

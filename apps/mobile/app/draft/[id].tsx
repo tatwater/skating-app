@@ -7,7 +7,7 @@ import { ReportForm } from '../../src/components/ReportForm';
 import { getDraft } from '../../src/lib/draftStore';
 
 /**
- * Edit a queued offline draft (F2). Hydrates the `ReportForm` from the stored draft (fields, photos,
+ * Edit a queued offline draft (Phase 02a §6.2). Hydrates the `ReportForm` from the stored draft (fields, photos,
  * put-in); saving re-upserts it under the same id + idempotencyKey, so a later flush stays deduped.
  * Rendered off the map (no-map put-in fallback). Fully offline-capable.
  */

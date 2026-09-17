@@ -1,5 +1,5 @@
 /**
- * The access transform (A06d §2.1/B2): OSM features → put-in candidates and parking areas.
+ * The access transform (A06d §2.1/§2.2): OSM features → put-in candidates and parking areas.
  *
  * ## What this does and, more importantly, what it cannot
  *
@@ -20,7 +20,7 @@
  *
  * ## Why there are no trails in here
  *
- * The plan's B1 table extracts `highway=path` / `route=hiking` for a `trail` amenity. ORS
+ * The plan's A06d §2.1 table extracts `highway=path` / `route=hiking` for a `trail` amenity. ORS
  * `foot-hiking` routes over exactly those ways, so a successful approach route **is** the evidence a
  * trail exists (correction 9) — and dropping them removed the only line geometry this pipeline would
  * have had to handle. The `trail` amenity is therefore stamped by the routing stage, not the parser.
@@ -363,7 +363,7 @@ export function pairAccessFeatures(
     point: lot.point,
     name: lot.name,
     // Sorted so the emitted NDJSON is byte-stable across runs — a diffable artifact is how the
-    // eyeballing pass B2 asks for actually gets done.
+    // eyeballing pass A06d §2.2 asks for actually gets done.
     amenities: [...(amenitiesByParking.get(lot.externalId) ?? [])].sort(),
     capacity: lot.capacity,
     fee: lot.fee,

@@ -94,7 +94,7 @@ const DAY_MS = 24 * 60 * 60 * 1000;
  * Thirty days is the plan's figure and it is the right order of magnitude for the thing being
  * described: gates, plowing and road work change on a scale of weeks, not hours. Shorter would expire
  * true closures between visits to an out-of-the-way pond; longer would outlive a spring reopening,
- * which is the exact rot C1 exists to prevent.
+ * which is the exact rot A06d §3.1 exists to prevent.
  */
 export const ACCESS_ALERT_TTL_MS = 30 * DAY_MS;
 

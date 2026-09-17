@@ -713,7 +713,7 @@ export function ReportForm({
     }
   }
 
-  // Save the form + photos as an offline draft (F2): copy each captured photo out of the evictable
+  // Save the form + photos as an offline draft (Phase 02a §6.2): copy each captured photo out of the evictable
   // picker cache into the persistent drafts dir, then upsert the draft (it flushes on reconnect).
   // Editing an existing draft reuses its id + idempotencyKey so a later retry stays deduped.
   async function handleSaveDraft() {

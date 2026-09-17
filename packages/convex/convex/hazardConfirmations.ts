@@ -245,7 +245,7 @@ async function findUserVote(
  * Re-derive the hazard's lifecycle from every vote and patch the stored counts/status.
  *
  * `voterId` is the skater whose vote triggered this recompute — the actor for the author's
- * `hazard_confirmation` notification (A08/B2), which fires **on a phase transition, never per vote**
+ * `hazard_confirmation` notification (A08 §2.2), which fires **on a phase transition, never per vote**
  * (founder call). Per-vote notifications would turn a confirmation loop into a scoreboard, and D65's
  * "never existed" verdict makes it worse: that verdict also files a moderation flag, so a per-vote
  * notice would forward what is effectively an accusation, one voter at a time. The lifecycle change
@@ -293,7 +293,7 @@ async function recomputeLifecycle(
       ? { decayMultiplier: undefined, snowHidden: undefined, weatherAdjustedAt: undefined }
       : {}),
   });
-  // A vote that archived the pin takes it off the map card too (A06c/E). Only a `status` change can
+  // A vote that archived the pin takes it off the map card too (A06c §5). Only a `status` change can
   // do that, so this is cheap in the common case: the recompute short-circuits on an unchanged
   // summary rather than writing the body again.
   await recomputeBodySummary(ctx, hazard.waterBodyId);

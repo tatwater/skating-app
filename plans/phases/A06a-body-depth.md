@@ -584,10 +584,10 @@ exists to prevent. The current inventory of what wants to ride a pass:
 
 | A06c item | Which pass | Why it rides |
 |---|---|---|
-| **A1 elevation** | **this one** — the depth run | Per-centroid third-party lookup; identical shape to the depth join, and it writes to the same rows. |
+| **A06c §1.1 elevation** | **this one** — the depth run | Per-centroid third-party lookup; identical shape to the depth join, and it writes to the same rows. |
 | **§1.3 shoreline length** | the **canonical water re-import** (`scripts/etl`), not this one | It must be measured on the *pre-simplification* geometry, which only the water ETL holds (see A06c §1.3). |
-| **A2 long axis / A4 fetch profile** | the canonical water re-import | Pure geometry, computed in `transform.ts` alongside `surfaceAreaSqM`. |
-| **A5 `regionStats`** | after both | Deciles are computed *from* the loaded values, so it is a consequence of the runs, not a rider on one. |
+| **A06c §1.2 long axis / A06c §1.4 fetch profile** | the canonical water re-import | Pure geometry, computed in `transform.ts` alongside `surfaceAreaSqM`. |
+| **A06c §1.5 `regionStats`** | after both | Deciles are computed *from* the loaded values, so it is a consequence of the runs, not a rider on one. |
 
 So there are **two** passes in flight, not one, and they carry different cargo. This gate covers the
 depth pass; the geometry stats ride the other and are not blocked by it.
@@ -595,9 +595,9 @@ depth pass; the geometry stats ride the other and are not blocked by it.
 > **✅ GATE CLEARED 2026-08-02.** A06c-1 is built: `elevationM` / `elevationSource` are on the schema,
 > and `scripts/lake-depth`'s `load-elevation` writes them in the same pass as the depth join. The
 > founder's conservative phrasing (*"until A06c is complete"*) was honoured by building all of A06c-1
-> before the run rather than only A1 — and it earned its keep, because **A4b (the winter wind rose)
+> before the run rather than only A06c §1.1 — and it earned its keep, because **A06c §1.4b (the winter wind rose)
 > and `interiorPoint` both turned out to want a pass too**, neither of which existed when the gate
-> was written. The inventory table below was right that A1 would not be the only rider; it was
+> was written. The inventory table below was right that A06c §1.1 would not be the only rider; it was
 > incomplete about which.
 >
 > **The run order that replaced it** — see A06c's *§What the A06c-1 build found*: canonical re-import

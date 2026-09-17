@@ -76,7 +76,7 @@ export const setModerationStatus = mutation({
       );
     }
 
-    // A hidden report or hazard must leave the map card too (A06c/E) — otherwise moderating content
+    // A hidden report or hazard must leave the map card too (A06c §5) — otherwise moderating content
     // away would still leave its count on the map, which is the one surface where a stale number
     // reads as a live condition.
     if (args.targetType === 'report' || args.targetType === 'hazard') {

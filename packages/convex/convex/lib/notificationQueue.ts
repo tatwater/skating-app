@@ -308,7 +308,7 @@ export type ActorPayload =
     };
 
 /**
- * Re-read a settled trigger and return the payload to deliver, or `null` to drop the row (E2). The
+ * Re-read a settled trigger and return the payload to deliver, or `null` to drop the row (A08 §5.2). The
  * table of "deliver only if" per kind is the whole contract:
  *
  * | kind | still true when |

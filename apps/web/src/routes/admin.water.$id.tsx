@@ -268,7 +268,7 @@ function LakeEditor() {
           {/* The one lever here that removes rather than refines, so it sits below all of them and
               above only the log that records it. */}
           <RemovalTool body={body} onResult={setBanner} />
-          {/* Last in the column (A06c/F1): the log answers "what happened to this lake", which is a
+          {/* Last in the column (A06c §6.1): the log answers "what happened to this lake", which is a
               question you ask after looking at the levers, not before. */}
           <ToolCard title="History">
             <WaterBodyTimeline waterBodyId={waterBodyId} />

@@ -408,7 +408,7 @@ export function favoriteFeatureIds(
 export interface MappablePutIn {
   coord: { lat: number; lng: number };
   source: 'derived' | 'osm' | 'official';
-  /** OSM's name for the launch (A06d/A3), where it has one — what makes a pin worth tapping. */
+  /** OSM's name for the launch (A06d §1.3), where it has one — what makes a pin worth tapping. */
   name?: string;
 }
 
@@ -541,7 +541,7 @@ export function qualityDotString(dots: number, total = 4): string {
 }
 
 /**
- * The card's text block, or `null` when there is nothing to say (E3).
+ * The card's text block, or `null` when there is nothing to say (A06c §5.3).
  *
  * Two or three short lines: the title, the activity, and the hazards. Kept this terse because a card
  * is read at a glance from a moving map — anything longer and MapLibre's collision detection starts
@@ -590,7 +590,7 @@ export function summaryCardText(body: MappableSummaryBody, reveal = false): stri
   //
   // **Only `hike_in` prints.** `drive_up` and `short_walk` are the unremarkable cases, and a card
   // that announced them would spend its two legible lines saying nothing — the same reasoning that
-  // keeps `describeApproach` silent for a pull-off. E3 still governs whether there is a card at all:
+  // keeps `describeApproach` silent for a pull-off. A06c §5.3 still governs whether there is a card at all:
   // a hike-in pond nobody has reported draws nothing, which is correct, and the body's own drawer
   // carries the chip regardless.
   if (body.accessKind === 'hike_in') lines.push('Hike-in');
@@ -606,7 +606,7 @@ export function summaryCardText(body: MappableSummaryBody, reveal = false): stri
  * and lands on the shoreline for any curved lake, which would hang the card off the edge of the
  * water it describes (the same measurement that moved the fetch profile and the reference links).
  *
- * `minVisibleZoom` rides along as a property so the layer can filter on it: E4 requires that a card
+ * `minVisibleZoom` rides along as a property so the layer can filter on it: A06c §5.4 requires that a card
  * never reintroduce a body the prominence scoring suppressed at this zoom. `listInViewport` already
  * applies that filter server-side, so this is a second belt on the same trousers — cheap, and the
  * failure it prevents (a quiet lake acquiring prominence by having been skated once) is exactly the
@@ -636,7 +636,7 @@ export function summaryCardsToFeatureCollection(
 }
 
 /**
- * The `summary-card` symbol layer (A06c/E).
+ * The `summary-card` symbol layer (A06c §5).
  *
  * Lives here rather than inline in `MapView` so it can be run through the style-spec validator in a
  * test — which is the point, because **an invalid layer fails silently**: MapLibre logs and declines
@@ -655,7 +655,7 @@ export function summaryCardLayer(
     id: 'summary-card',
     type: 'symbol',
     source: 'summary-cards',
-    // E4: a card must never reintroduce a body the prominence scoring suppressed at this zoom.
+    // A06c §5.4: a card must never reintroduce a body the prominence scoring suppressed at this zoom.
     // `listInViewport` already applies this server-side; restated here where the drawing happens,
     // because the failure it prevents would be read as "the map is broken" rather than diagnosed.
     filter: ['<=', ['get', 'minVisibleZoom'], ['zoom']],

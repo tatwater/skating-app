@@ -7,7 +7,7 @@
  * 24,953 stored strings to migrate. Storing a derivable string 24,953 times would be the expensive
  * way to get a worse result.
  *
- * The one exception is B7 — a lake association's URL, which no algorithm produces from a lake's
+ * The one exception is A06c §2.7 — a lake association's URL, which no algorithm produces from a lake's
  * name. That is stored on the row as `referenceLinks` and merged in by {@link allReferenceLinks}.
  *
  * **Satellite imagery arrives here in A06e**, with the in-app reveal rather than a phase ahead of it
@@ -45,7 +45,7 @@ export interface ReferenceLinkBody {
   representativePoint?: LatLng;
   /** Pre-rename alias for `representativePoint`, still on every row until the stage-2 sweep. */
   centroid?: LatLng;
-  /** Operator-entered links (B7), preserved across re-import like `curatedBoost`. */
+  /** Operator-entered links (A06c §2.7), preserved across re-import like `curatedBoost`. */
   referenceLinks?: readonly { label: string; url: string }[];
   /**
    * Geodesic surface area, which decides whether a 10 m pixel can resolve this body at all.
@@ -186,7 +186,7 @@ interface Community {
 }
 
 /**
- * State → regional skating community (B6, from the plan's Appendix B).
+ * State → regional skating community (A06c §2.6, from the plan's Appendix B).
  *
  * **Google Groups get a *search* URL carrying the body name; Facebook groups get a plain group
  * link.** The archives are public and their search is a stable query param, so a skater lands on
@@ -256,7 +256,7 @@ export function communityUrl(body: ReferenceLinkBody): string | undefined {
 
 /** How long an operator-entered label may be. Long enough for an association's real name. */
 export const MAX_REFERENCE_LINK_LABEL = 80;
-/** How many operator-entered links a body may carry. B7 expects one or two, never a directory. */
+/** How many operator-entered links a body may carry. A06c §2.7 expects one or two, never a directory. */
 export const MAX_REFERENCE_LINKS = 8;
 
 /**
@@ -291,7 +291,7 @@ export function referenceLinkError(link: { label: string; url: string }): string
 }
 
 /**
- * Every link for a body — derived first, then the operator-entered ones (B7).
+ * Every link for a body — derived first, then the operator-entered ones (A06c §2.7).
  *
  * **Stored links go last and are never deduplicated against the derived set.** An operator who
  * pasted a second Windy link meant to; silently dropping it would be us overruling the one part of

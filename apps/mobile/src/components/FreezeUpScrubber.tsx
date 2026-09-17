@@ -306,7 +306,7 @@ export function FreezeUpScrubber({
         </XStack>
       </GestureDetector>
 
-      {/* The date is content, not furniture (D84/C4). */}
+      {/* The date is content, not furniture (D84, A06e §3.4). */}
       {caption ? (
         <Text fontSize="$2" accessibilityLiveRegion="polite">
           <Text fontWeight="600">{caption.date}</Text>

@@ -2,7 +2,7 @@ import { createDetailTabStore, type DetailTab } from '@skating/core';
 import { useSyncExternalStore } from 'react';
 
 /**
- * The one session-scoped tab store for the water-body drawer (A06h/H). Module-level on purpose:
+ * The one session-scoped tab store for the water-body drawer (A06h §8). Module-level on purpose:
  * the selection outlives any single drawer — close Champlain on *Planning*, open Willoughby, and
  * it is still *Planning*. See `detailTabs.ts` in core for the vocabulary and the reasoning.
  */
