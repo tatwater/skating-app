@@ -15,8 +15,8 @@
  * - `A08/B4`, `D84/C4` — the slash forms the first pass missed.
  *
  * Inline code and fenced blocks are stripped first: a doc may quote an old name in backticks
- * (`plans/README.md` and `features/phase-numbers.md` are the record of the mapping and are exempt
- * outright). Anchors (`#d2--…`) and paths (`A06c/lake-depth`) are excluded by the lookbehinds.
+ * (`plans/README.md` is the record of the mapping and is exempt outright; the plan that ran the
+ * pass, `features/phase-numbers.md`, was deleted when it shipped). Anchors (`#d2--…`) and paths (`A06c/lake-depth`) are excluded by the lookbehinds.
  */
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative, resolve } from 'node:path';
@@ -24,7 +24,7 @@ import { describe, expect, test } from 'vitest';
 
 const REPO = resolve(__dirname, '../../..');
 const ROOTS = ['plans', 'docs'].map((d) => join(REPO, d));
-const EXEMPT = new Set(['plans/README.md', 'plans/features/phase-numbers.md']);
+const EXEMPT = new Set(['plans/README.md']);
 
 function markdownFiles(dir: string): string[] {
   return readdirSync(dir).flatMap((name) => {

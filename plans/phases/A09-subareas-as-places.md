@@ -198,9 +198,9 @@ Plus three things that came up alongside:
 - **The shelter index and the station-bias study are post-alpha**, scoped in
   [`backlog/weather-shelter-index.md`](../backlog/weather-shelter-index.md) and
   [`backlog/weather-stations.md`](../backlog/weather-stations.md). Not built here.
-- **US spellings everywhere**, as a separate mechanical PR *after* this phase lands — findings in
-  [`features/us-spellings.md`](../features/us-spellings.md). New text written for this phase uses US
-  spellings; the existing prose in this doc is left for that sweep.
+- **US spellings everywhere**, as a separate mechanical PR *after* this phase lands — ✅ done
+  2026-09-17 (D185; the allowlist is in [`README.md` § Words](../README.md#words)). New text written
+  for this phase used US spellings; the sweep took the rest.
 
 ### The rule, settled — to be written as **D175** in `01-decisions.md` by PR 1
 
@@ -653,7 +653,6 @@ written down.
 
 [`backlog/weather-shelter-index.md`](../backlog/weather-shelter-index.md) ·
 [`backlog/weather-stations.md`](../backlog/weather-stations.md) ·
-[`features/us-spellings.md`](../features/us-spellings.md) ·
 [`phases/A02-body-editor-and-subareas.md`](./A02-body-editor-and-subareas.md) ·
 [`phases/A06b-bathymetry-layer.md`](./A06b-bathymetry-layer.md) ·
 [`phases/A06d-body-access-points.md`](./A06d-body-access-points.md) ·

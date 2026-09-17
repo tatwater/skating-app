@@ -5727,5 +5727,5 @@ stored — it is exempt only while its migration costs more than the exception i
 Third-party values (`water=harbour`, agency `copyrightText`) are a different category: they are not
 ours to spell, and never move.
 
-**Related:** D40, [`features/us-spellings.md`](./features/us-spellings.md),
-[`convex-schema-migration-order`](../CLAUDE.md).
+**Related:** D40, [`README.md` § Words](./README.md#words) (the stays-UK allowlist), `CLAUDE.md` § Things
+that bite (the schema migration order). The feat doc was deleted when it shipped; git history has it.

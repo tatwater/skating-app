@@ -32,7 +32,10 @@ in weeks, and not how mature the product is:
 - a **feat** is one doc, one-to-few PRs, and few or no new decisions.
 
 A doc moves through the directories as it matures: `backlog/x.md` (an idea) → `features/x.md` (scoped
-and scheduled) → done. That's a `git mv`. Phases are numbered; feats are named by slug.
+and scheduled) → **deleted when it ships** (founder call, 2026-09-17). A phase doc is the record of its
+phase and stays; a feat doc is a plan, and its record after shipping is the roadmap register row,
+any `D#` it minted, and whatever convention it settled here — git history keeps the rest. Phases are
+numbered; feats are named by slug.
 
 ### Phase names
 
@@ -83,19 +86,28 @@ a phase doc fails the build.
   reaches too (founder call, 2026-09-16). *Lake* stays in proper nouns, dataset names and terms of
   art (lake-effect, lake-skating). `plans/` follows this; `docs/`, code comments and UI copy are
   still to be swept (see the deferred register).
-- US spellings in all new text. The tree was swept 2026-09-17
-  ([`features/us-spellings.md`](./features/us-spellings.md), D185); what stays UK on purpose is
-  listed there.
+- **US spellings** in all new text. The tree was swept 2026-09-17 (D185 — stored keys migrated,
+  not grandfathered). What stays UK on purpose, and is the allowlist for any future sweep: OSM tag
+  values (`water=harbour`, the key of `OSM_WATER` in `waterClass.ts`); the place-name regex in
+  `scripts/etl/src/tidalBand.ts`; the OSM depth-unit parser's `metre|metres` and its `'2 metres'`
+  fixture in `scripts/etl/src/transform.ts`; "Burlington Harbour" as a name alias in A02; the VCGI
+  credit *"Soundings digitised from NOAA nautical charts…"* (an agreed attribution, in code, tests
+  and prose); and lowercase literals that name things that existed (branch names, campaign ids,
+  commit scopes). Two lessons from the sweep: the next one starts from **stems, not words**
+  (`unrecognised` hides past `recognise`; `judgement`, `artefact`, `ageing`, `centimetre` were never
+  on the list), and a regex literal is code to a tokenizer — check by hand any regex that parses
+  third-party text.
 
 Nothing here is final code; the data model in `06` is schema-flavored pseudocode meant to be
 reacted to.
 
 The renumbering pass (2026-09-17) swapped tokens **everywhere** text is read — including text quoted
 or relocated from before it, and the archived register — so a document that says `A06e` may be
-quoting something that originally said `N6e`. Only three things kept the old spellings on purpose:
-this table's *Old* column, [`features/phase-numbers.md`](./features/phase-numbers.md), and lowercase
-literals (`feat(n6e):` scopes, branch names, campaign ids), which name things that existed under
-those names.
+quoting something that originally said `N6e`. Only two things kept the old spellings on purpose:
+this table's *Old* column and lowercase literals (`feat(n6e):` scopes, branch names, campaign ids),
+which name things that existed under those names. (The plan that ran the pass,
+`features/phase-numbers.md`, was deleted when it shipped; its traps and sign-off checks are in the
+git history of PRs #60, #62, #64 and #65.)
 
 ## Read in this order
 

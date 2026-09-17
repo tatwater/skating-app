@@ -666,7 +666,7 @@ launches.*
 
 #### Deferred
 - ⚪ **Weather shelter index and station-bias study** — scoped at kickoff, post-alpha → [`backlog/weather-shelter-index.md`](./backlog/weather-shelter-index.md), [`backlog/weather-stations.md`](./backlog/weather-stations.md)
-- 🟢 **US spellings sweep** — done 2026-09-17 (D185) → [`features/us-spellings.md`](./features/us-spellings.md)
+- 🟢 **US spellings sweep** — done 2026-09-17 (D185, [`README.md` § Words](./README.md#words))
 
 ## Deferred register
 
@@ -691,8 +691,8 @@ long-form register this table replaced is archived verbatim in
 | A06h Workstream 6 — radar | ⚪ | nothing; next in A06h | A06h |
 | Multi-season weather climatology · paying Open-Meteo (D158) | ⚪ | D153 unlocked it; season two | A06h |
 | `centroid` → `representativePoint` stage 2 — the ~100-site code sweep | ⚪ | nothing, and it shouldn't linger | [`features/representative-point-rename.md`](./features/representative-point-rename.md) |
-| Phase renumbering — the PR-title/body pass with the banner (the tree is done) | ⚪ | the rename PR merging | [`features/phase-numbers.md`](./features/phase-numbers.md) |
-| US spellings sweep | 🟢 | done 2026-09-17, one PR (D185) | [`features/us-spellings.md`](./features/us-spellings.md) |
+| Phase renumbering — scheme, tree, PR-title/body pass with the banner | 🟢 | done 2026-09-17 (#60, #62, #64, #65 + `gh pr edit`); A06h's own lettered definitions followed in the spellings PR | [`README.md` § Reading old history](./README.md#reading-old-history) |
+| US spellings sweep | 🟢 | done 2026-09-17, one PR (D185); owed: the preview APK predates the `canceled` status rename — rebuild before any bounty is canceled | [`README.md` § Words](./README.md#words) |
 | "Water body", not "lake" — in `docs/`, code comments and UI copy (`plans/` is done) | ⚪ | a founder call on the user-visible strings ("Lake editor", route names) | `README.md` § Words |
 | Reverse spatial index for notification fan-out (D172) | ⚪ | ~1,000 profiles | A08 |
 | Web push | ⚪ | a service worker | A08 |

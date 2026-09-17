@@ -1526,14 +1526,14 @@ to say while the spread does not exist, and it is the same sentence that argues 
 
 ## Workstreams
 
-**A — Re-key (blocks everything).** Measure Tier-A cardinality with real elevations; implement the
+**§1 — Re-key (blocks everything).** Measure Tier-A cardinality with real elevations; implement the
 two-tier key; migrate `weatherCache` and `weatherForecastCache`. Both are ephemeral and prunable, so
 the migration is *delete and let it refill* — no backfill, no widen→deploy→narrow dance.
 
-**B — `weatherDays` + the season archive.** New table, 92-day first-touch backfill, daily append cron
+**§2 — `weatherDays` + the season archive.** New table, 92-day first-touch backfill, daily append cron
 at Tier B, season rollup on the A05a boundary, off-season idle. Add the request counter here.
 
-**C — The past panel.** The headline. Per-day summaries with the freeze/thaw/snow story, leading with
+**§3 — The past panel.** The headline. Per-day summaries with the freeze/thaw/snow story, leading with
 the two things no general weather app shows: **wind at the moment of freezing** (calm night → black
 ice; blowing night → rough ice) and **snow since the ice formed, and whether wind cleared it.** The
 wind-rose × fetch-profile multiply already exists in `windRose.ts`; this is largely wiring.
@@ -1544,11 +1544,11 @@ that.** The FDD integrals are right there and the ~1″/15-FDD backbone is writt
 Observations only — *"four nights below 20°F, calm; no snow since Feb 2"* — never derived ice. This is
 D3 and D150, and it is not negotiable in a safety app.
 
-**D — The forecast panel.** ✅ **Shipped as PR 4 (2026-09-11)** — see *§What PR 4 shipped*. Per D155
+**§4 — The forecast panel.** ✅ **Shipped as PR 4 (2026-09-11)** — see *§What PR 4 shipped*. Per D155
 in principle, per founder call 14 in shape: day cards as the selector, an hourly card row as the
 view (all seven days, opens at now), run-up always a drag away, drive time as an "≈ arrival" band.
 
-**E — Weather-first discovery (D159).** ✅ **Shipped as PR 5 (2026-09-12)** — see *§What PR 5
+**§5 — Weather-first discovery (D159).** ✅ **Shipped as PR 5 (2026-09-12)** — see *§What PR 5
 shipped*. Reads Tier B. The founder's target query: *"bodies within two
 hours' drive that got at least three nights below 20°F and no snow since."* This is the reason Tier B
 exists and the reason a cron exists at all — on-demand fetching cannot answer a question about water bodies
@@ -1558,7 +1558,7 @@ cells and Convex has no array index), the shared discovery-filter store across m
 body-result card. ~~**⚠ Answer the feed-shape question (bodies vs reports) before building the card,
 not after.**~~ ✅ Answered by founder call 20: interleaved by event time (D165).
 
-**H — The three-tab drawer IA (open question 4).** ⚠ **PR 2 addition: this was resolved as an open
+**§8 — The three-tab drawer IA (open question 4).** ⚠ **PR 2 addition: this was resolved as an open
 question and then never listed as work, which is how it got skipped.** PR 1 stacked
 `PastWeatherPanel` flat into `WaterBodyDetail` on both clients, adding to exactly the pile the tabs
 exist to relieve — the web sidebar now runs alert → access → forecast → wind exposure → bathymetry →
@@ -1586,7 +1586,7 @@ Ships as:
   machine-compiled facts about the body; Reporting = user-supplied, this season; Planning = weather,
   put-ins, directions, derived season trends.
 
-**F — Radar.** RainViewer proxied server-side as v1; MRMS-with-RQI as the honest version. Pay for the
+**§6 — Radar.** RainViewer proxied server-side as v1; MRMS-with-RQI as the honest version. Pay for the
 layer-registry refactor. Extract the lane pool from `useFreezeUpFrame.ts` first.
 
 ⚠ **PR 2 founder call: F stays in, and it runs season-gated.** The review recommended deferring it
@@ -1605,7 +1605,7 @@ the *operational* burden was. So two conditions ride along:
    deploying a modified LibreWXR as a network service obliges us to offer that modified source to
    its users. They sell commercial licenses, which implies they expect this to bite.
 
-**G — The admin thickness instrument (D160).** Small: a Stefan estimator over the Tier-A/B degree-hour
+**§7 — The admin thickness instrument (D160).** Small: a Stefan estimator over the Tier-A/B degree-hour
 integrals, a role-gated `/admin` view, and a computed-vs-`measured` comparison table that accumulates
 across the season. Ship it **early in the phase, not late** — its entire value is the season of paired
 observations it collects, and every week it is not running is a week of data that cannot be recovered.
