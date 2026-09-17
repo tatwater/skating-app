@@ -381,6 +381,20 @@ those docs was the real decision — the collision was one workstream, not a cla
 way is `packages/core/src/planConventions.test.ts`: lettered workstreams, bare items, slash forms
 and single-digit `D` headings in phase docs fail the build.
 
+*Sign-off checks (2026-09-17), beyond the sweeps: old tokens in the file types the sweeps skipped
+(`.json`/`.yml`/`.github`/env) — zero; false `§` conversions where the letter was an Option, Tier,
+Plan or Appendix — zero; the original letter set of every lettered doc against its `§` headings —
+all contiguous from A, so position = number held; a relative-link + anchor checker (GitHub slug
+rules) on `main` vs the branch — net −1 (the phantom `#d2--display-prominence` link), one anchor the
+sweep had broken fixed, and the 84 that remain are pre-existing: 80 are the `[D3](#d3)` short-form
+anchors inside `01-decisions.md`, which never resolved (the slug is `#d3--safety-first…`), plus D90's
+`×` and three emoji-led headings in `scripts/imagery/README.md`; every `§N.M` reference resolved
+against its target doc's headings — the misses were all `§` meaning "section" (`research §4`,
+`AGPL §13`, `README §10`) in docs that never had `§` workstream headings, plus A06e's `Workstream 0`
+heading, now `§0`. Not done, and noted for whoever wants it: the phase docs' H1s vary in style
+(`# Phase 01 build plan —`, `# A01 —`, `# Phase A06e —`) though every token is right, and the 80
+short anchors want either full slugs or `<a id>` targets.*
+
 1. **Scheme + crosswalk** — `plans/README.md` rewritten: the *target* directory layout (with a ⏳
    line saying the move lands in the next PR), the phase-vs-feat test, the conventions (token
    shape, `§3.2`, `D#`/`Q#`), and "Reading old history" — the crosswalk, whose rows link to each
