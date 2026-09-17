@@ -53,7 +53,7 @@ function FlagRow({ flag }: { flag: FlagView }) {
           {flag.target.moderationStatus && flag.target.moderationStatus !== 'visible' ? (
             <Badge variant="outline">{flag.target.moderationStatus}</Badge>
           ) : null}
-          {/* Bundled occurrence count (N2). One row per recurring problem, so this number is the
+          {/* Bundled occurrence count (A02). One row per recurring problem, so this number is the
               thing a stream of identical rows was hiding — and it's the input to the D57 lever. */}
           {flag.occurrences > 1 ? (
             <Badge variant="outline">{ordinal(flag.occurrences)} occurrence</Badge>
@@ -193,7 +193,7 @@ function FlagRow({ flag }: { flag: FlagView }) {
 }
 
 /**
- * One lake's "no public access" reports, collapsed (N6f).
+ * One lake's "no public access" reports, collapsed (A06f).
  *
  * **Grouped, unlike every other row on this page**, because it is the only claim many people can
  * independently make about the same target: five reports on one lake is one job whose count is the

@@ -6,7 +6,7 @@ what the machine is actually measuring, and the several things it confidently ge
 > **Who this is for.** Anyone touching the imagery pipeline; anyone looking at a date on the freeze-up
 > scrubber and wondering how much to trust it; and any skater curious why the app says what it says.
 > **No remote-sensing knowledge assumed.** Build notes:
-> [`plans/phase-N6e-satellite-imagery.md`](../plans/phase-N6e-satellite-imagery.md).
+> [`plans/phases/A06e-satellite-imagery.md`](../plans/phases/A06e-satellite-imagery.md).
 
 **The one-sentence version:** two European satellites fly over every few days — one carries a camera,
 one carries radar — and between them we can usually tell whether a lake is open or frozen, except in
@@ -633,6 +633,6 @@ corpus follows is a product question — see the build notes.*
 - [`docs/on-ice-alerts.md`](./on-ice-alerts.md) — what happens once you're actually out there
 - [`docs/water-body-data.md`](./water-body-data.md) — where the lake outlines come from
 - [`docs/weather-since.md`](./weather-since.md) — how observed weather ages a report
-- [`plans/phase-N6e-satellite-imagery.md`](../plans/phase-N6e-satellite-imagery.md) — build notes
+- [`plans/phases/A06e-satellite-imagery.md`](../plans/phases/A06e-satellite-imagery.md) — build notes
 - [`scripts/imagery/README.md`](../scripts/imagery/README.md) — how the measurements were produced,
   and the traps that make a pipeline lie about them

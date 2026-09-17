@@ -22,7 +22,7 @@ import { useMapSelection } from './MapSelectionContext';
  * Going on the ice, as one control (founder, 2026-08-26).
  *
  * This was two permanent buttons stacked in the bottom-left corner — "Start on-ice mode" (D54 Layer 2:
- * keep warning me about hazards ahead) and "Record my skate" (Phase 8: keep the track) — floating over
+ * keep warning me about hazards ahead) and "Record my skate" (Phase 08: keep the track) — floating over
  * the sheet, the search bar and each other on every route, reserving space for a drawer position they
  * then ignored. They are not two decisions a skater makes. They are one thing — *I'm going out on the
  * ice* — and then a second, smaller thing they may or may not also want, which is a recording of it.

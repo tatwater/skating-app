@@ -87,7 +87,7 @@ describe('deriveShoreBand', () => {
     expect(long.band.arcLengthMeters).toBeGreaterThan(short.band.arcLengthMeters);
   });
 
-  // The N2 clip-refusal spirit: there is no arc along "the boundary" between an island's shore and
+  // The A02 clip-refusal spirit: there is no arc along "the boundary" between an island's shore and
   // the mainland's, only a shape we would have to invent.
   it('refuses two taps that land on different rings of one polygon', () => {
     const result = deriveShoreBand(LAKE_WITH_ISLAND, ringPoint(OUTER, 4), ringPoint(ISLAND, 2), {

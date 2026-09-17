@@ -1,5 +1,5 @@
 /**
- * The analytics-query → chart bridge (Phase 7b). What matters is that a not-yet-collected metric shows
+ * The analytics-query → chart bridge (Phase 07-2). What matters is that a not-yet-collected metric shows
  * a friendly empty state instead of a broken chart (these series are forward-only, so "empty" is the
  * common early case), and that every card carries its table fallback (D34). Recharts itself needs
  * layout jsdom doesn't provide, so these assert the scaffolding around the SVG, not the plot.

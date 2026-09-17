@@ -12,10 +12,10 @@
  * The second half is enforced in `hazardCopy.ts`, which is the only place allowed to turn a freshness
  * into words.
  *
- * Constants are **hours** (admin-tunable integers, Phase 7 / D49), converted to ms only at the
+ * Constants are **hours** (admin-tunable integers, Phase 07 / D49), converted to ms only at the
  * comparison boundary — so tuning stays human-legible and the math stays trivial.
  *
- * Calibration evidence for every row: `plans/phase-9-hazard-research.md` §1–§2 (lakeice.info +
+ * Calibration evidence for every row: `plans/research/hazard-decay-calibration-and-behavior.md` §1–§2 (lakeice.info +
  * a 1,197-post regional corpus). These are literature+community defaults, explicitly refittable once
  * real hazard rows exist.
  */
@@ -27,7 +27,7 @@ export type HazardFreshness = 'fresh' | 'aging' | 'stale';
 
 /**
  * Decay tier. A/B/C/D are the research's behavioral groupings, kept on the row so the admin surface
- * (Phase 7) and the copy layer can reason about *why* a type decays as it does:
+ * (Phase 07) and the copy layer can reason about *why* a type decays as it does:
  *   A — volatile (refreeze/re-open within a day)      C — structural (persist, often grow)
  *   B — semi-persistent (re-skins, weak spot lingers) D — effectively permanent (bodyFeature candidates)
  * Tier A also carries a "very volatile" sub-case (A*) expressed purely as shorter hours, not a 5th tier.
@@ -50,7 +50,7 @@ export function hoursToMs(hours: number): number {
 }
 
 /**
- * TUNABLE DEFAULTS — admin-editable in Phase 7 (D49). Durations in HOURS.
+ * TUNABLE DEFAULTS — admin-editable in Phase 07 (D49). Durations in HOURS.
  *
  * Keyed by every `HazardType`, so adding a type is a compile error until its decay is decided. That is
  * deliberate: a hazard type with no considered decay rate is a safety gap, not a default.
@@ -160,7 +160,7 @@ export function isPassageExpired(type: HazardType, lastConfirmedAt: number, now:
   return now - lastConfirmedAt >= hoursToMs(PASSAGE_EXPIRY_H);
 }
 
-/** All hazard types in a decay tier — for the Phase 7 admin surface and for grouped UI. */
+/** All hazard types in a decay tier — for the Phase 07 admin surface and for grouped UI. */
 export function hazardTypesInTier(tier: HazardDecayTier): HazardType[] {
   return HAZARD_TYPES.filter((t) => HAZARD_DECAY[t].tier === tier);
 }

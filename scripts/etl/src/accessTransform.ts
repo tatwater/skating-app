@@ -1,5 +1,5 @@
 /**
- * The access transform (N6d B1/B2): OSM features → put-in candidates and parking areas.
+ * The access transform (A06d §2.1/B2): OSM features → put-in candidates and parking areas.
  *
  * ## What this does and, more importantly, what it cannot
  *
@@ -7,10 +7,10 @@
  * which lot. All of it needs the extract and nothing else, so it runs locally, in this file, tested.
  *
  * The other association — *which body does this launch belong to* — **cannot** run here, and that is
- * the N6d kickoff's third correction. The transform has no polygons: post-N7 the merge output is not
+ * the A06d kickoff's third correction. The transform has no polygons: post-A07a the merge output is not
  * the loaded corpus (bodies are pruned, deduped, re-keyed and retired after it), so measuring against
  * anything local would be measuring against a snapshot that has already moved. That join runs
- * server-side in `waterBodies.matchAndImportAccessPoints`, against the N1 cell index, exactly as N6a's
+ * server-side in `waterBodies.matchAndImportAccessPoints`, against the A01 cell index, exactly as A06a's
  * depth join does — and it inherits the same benefit: an access point and the app's own "you're at
  * Lake X" resolution agree by construction, because both go through `listedBodiesNearCoord`.
  *
@@ -225,7 +225,7 @@ export interface PutInRecord {
   approachAscentM?: number;
   approachRouted?: boolean;
   /**
-   * The routed line from the lot to the launch, simplified (N6e Workstream 0).
+   * The routed line from the lot to the launch, simplified (A06e Workstream 0).
    *
    * Only ever set on a routed hike-in leg — see `ApproachLeg.path`. The loader stores it verbatim;
    * nothing between here and the row re-simplifies it, because the tolerance is a property of what
@@ -248,7 +248,7 @@ export interface AccessPairing {
 }
 
 /**
- * Fold the trail network's pairings into a proximity pairing (N6e Workstream 0).
+ * Fold the trail network's pairings into a proximity pairing (A06e Workstream 0).
  *
  * Two effects, and the second is the one that would be easy to miss: the launch gains its lot, **and
  * the lot becomes `paired`** — which is what carries it through the loader's water-relevance gate.

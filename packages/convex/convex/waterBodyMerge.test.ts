@@ -1,5 +1,5 @@
 /**
- * Phase 7 dedup merge (D36) + user-body reject (D37). Verifies the merge re-points every child to the
+ * Phase 07 dedup merge (D36) + user-body reject (D37). Verifies the merge re-points every child to the
  * survivor, soft-tombstones the loser, and audits; and that reject flips a pending user body unlisted.
  */
 import { convexTest } from 'convex-test';
@@ -332,7 +332,7 @@ describe('waterBodies.reject (D37)', () => {
   });
 });
 
-describe('waterBodies.retireAbsorbedBodies — the half of the merge the upsert never did (N7-3)', () => {
+describe('waterBodies.retireAbsorbedBodies — the half of the merge the upsert never did (A07a-3)', () => {
   /** A body with the catalogue identity the ETL keys on. */
   function seedKeyed(
     t: ReturnType<typeof convexTest>,
@@ -595,7 +595,7 @@ describe('waterBodies.retireAbsorbedBodies — the half of the merge the upsert 
   });
 
   test('audits with no actor, because the system acted and no human did', async () => {
-    // Precedent: N5c/D80's auto-merge. Naming a moderator who never clicked would be worse than an
+    // Precedent: A05c/D80's auto-merge. Naming a moderator who never clicked would be worse than an
     // honest absence, and "no actor" already renders as "automatic".
     const t = harness();
     await seedKeyed(t, 'Survivor', 'way/1');
@@ -617,7 +617,7 @@ describe('waterBodies.retireAbsorbedBodies — the half of the merge the upsert 
   });
 });
 
-describe('a merge moves both map cards (N6c/E, self-review 2026-08-10)', () => {
+describe('a merge moves both map cards (A06c/E, self-review 2026-08-10)', () => {
   /**
    * A merge re-points the loser's reports and hazards onto the survivor. That changes the survivor's
    * counts with **no report or hazard mutation to hang a recompute on** — the one shape

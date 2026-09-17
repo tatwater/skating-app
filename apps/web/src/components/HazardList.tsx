@@ -133,7 +133,7 @@ export function HazardList({
   subAreaId,
 }: {
   waterBodyId: Id<'waterBodies'>;
-  /** The bay view (N9): only the hazards and known features whose footprint centre falls in this bay. */
+  /** The bay view (A09): only the hazards and known features whose footprint centre falls in this bay. */
   subAreaId?: Id<'waterBodySubAreas'>;
 }) {
   const { browseSeason } = useMapSelection();

@@ -1,5 +1,5 @@
 /**
- * Compositing aerial cells onto one canvas and clipping them to water (N6e / D146, third attempt).
+ * Compositing aerial cells onto one canvas and clipping them to water (A06e / D146, third attempt).
  *
  * ## Three architectures, and what each render falsified
  *

@@ -3,7 +3,7 @@
  *
  * Two questions run on this machine, selected by `mode` — see {@link MODES}. `orphan` asks "is this
  * referenced by anything?"; `season_expiry` asks "is this departed skater's photo referenced by a
- * *hazard*?" (D66/N5a). Everything below describes the shared mechanism; the difference between them
+ * *hazard*?" (D66/A05a). Everything below describes the shared mechanism; the difference between them
  * is one declarative table.
  *
  * **The hole this fills.** `lib/photoOrphans.referencedPhotoIds` answers "which of this person's photos
@@ -69,7 +69,7 @@ const PHASES = ['mark', 'reports', 'hazards', 'access', 'sweep'] as const;
 type Phase = (typeof PHASES)[number];
 
 /**
- * **Two questions, one machine** (D66/N5a).
+ * **Two questions, one machine** (D66/A05a).
  *
  * `orphan` asks *"is this photo referenced by anything?"* — the original job. `season_expiry` asks
  * *"is this departed skater's photo referenced by a **hazard**?"*, because D66 keeps hazard photos
@@ -95,7 +95,7 @@ const MODES = {
   },
   season_expiry: {
     // `access` runs here as well as in `orphan`, and it is the **only** clearing phase besides
-    // `hazards` that does. That is N6d's carve-out from D66 stated as a list entry: an access-point
+    // `hazards` that does. That is A06d's carve-out from D66 stated as a list entry: an access-point
     // photo documents infrastructure rather than conditions, so the argument that expires a report
     // photo at the season boundary does not reach it — a parking lot looks the same next November.
     phases: ['mark', 'hazards', 'access', 'sweep'],
@@ -277,7 +277,7 @@ function clamp(requested: number | undefined, ceiling: number): number {
 }
 
 /**
- * Phase 1 — flag every candidate.
+ * Phase 01 — flag every candidate.
  *
  * Photos the mode calls too new are deliberately **not** marked: in `orphan` mode one uploaded minutes
  * ago is mid-submission rather than abandoned (the form uploads before `reports.create`, and an offline
@@ -308,7 +308,7 @@ async function markCandidates(
 }
 
 /**
- * Phase 2 — anything a report names is referenced, so its mark comes off.
+ * Phase 02a — anything a report names is referenced, so its mark comes off.
  *
  * **`orphan` mode only.** `season_expiry` deliberately omits this phase: under D66 a surviving report
  * does *not* protect a departed skater's photo, which is the whole content of the rule.
@@ -334,7 +334,7 @@ async function clearFromReports(
   return { ...continuation(page), touched };
 }
 
-/** Phase 3 — the same, for hazards. `season_expiry` runs this one and `access`, never `reports`. */
+/** Phase 03 — the same, for hazards. `season_expiry` runs this one and `access`, never `reports`. */
 async function clearFromHazards(
   ctx: MutationCtx,
   uploaderId: Id<'profiles'>,
@@ -357,7 +357,7 @@ async function clearFromHazards(
 }
 
 /**
- * Phase 4 — the same, for access-point attachments (N6d Workstream D).
+ * Phase 04 — the same, for access-point attachments (A06d Workstream 4).
  *
  * **Runs in both modes**, which no other clearing phase does, and the asymmetry is the policy rather
  * than an oversight. `reports` is `orphan`-only because a surviving report must not protect a departed
@@ -409,7 +409,7 @@ async function clearMark(
 }
 
 /**
- * Phase 5 — whatever is still marked was named by nothing, across a complete pass over every row that
+ * Phase 05 — whatever is still marked was named by nothing, across a complete pass over every row that
  * could have named it. That is the guarantee the one-shot scan can't make, and it's what earns the
  * delete.
  *

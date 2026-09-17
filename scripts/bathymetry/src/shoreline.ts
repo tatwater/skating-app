@@ -1,5 +1,5 @@
 /**
- * The shoreline as a depth-zero boundary constraint (N6b).
+ * The shoreline as a depth-zero boundary constraint (A06b).
  *
  * This is the piece §Maine step 3 specified and the first build skipped, and skipping it is why the
  * early samples looked wrong in a way that was structural rather than cosmetic:

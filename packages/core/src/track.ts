@@ -1,5 +1,5 @@
 /**
- * GPS **track** recording + post-processing (Phase 8, the A-input) — pure, so the same filtering,
+ * GPS **track** recording + post-processing (Phase 08, the A-input) — pure, so the same filtering,
  * smoothing and encoding run on the phone, on the server, and in tests without a GPS radio.
  *
  * This is the front half of the A→B→C pipeline: the native recorder feeds raw OS fixes through

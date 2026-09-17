@@ -1,5 +1,5 @@
 /**
- * **Fetch once, archive forever** — the expensive half of the wind lane (N7-3).
+ * **Fetch once, archive forever** — the expensive half of the wind lane (A07a-3).
  *
  *   pnpm --filter @skating/wind-climate snapshot --dry-run     # scope only, no requests
  *   pnpm --filter @skating/wind-climate snapshot [--import-floor] [--limit=N] [--campaign=<id>]

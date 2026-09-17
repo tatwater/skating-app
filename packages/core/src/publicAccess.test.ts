@@ -18,7 +18,7 @@ const RULED_AT = Date.parse('2026-03-04T15:00:00Z');
 const NONE: PublicAccess = { verdict: 'none', decidedAt: RULED_AT, decidedByUserId: 'u1' };
 const OPEN: PublicAccess = { verdict: 'open', decidedAt: RULED_AT, decidedByUserId: 'u1' };
 
-describe('the zoom rung (N7b — a `none` body is dormant, not demoted)', () => {
+describe('the zoom rung (A07b — a `none` body is dormant, not demoted)', () => {
   test('a `none` body draws at the dormant rung, past the D49 floor', () => {
     const area = 5_000_000;
     const plain = minVisibleZoomFor(displayScore({ surfaceAreaSqM: area }), true);

@@ -1,6 +1,6 @@
 /**
  * One lake's freeze-up timeline: which frames the scrubber offers, and why it withholds the rest
- * (N6e §C1/§C4, D84, D150).
+ * (A06e §3.1/§3.4, D84, D150).
  *
  * ## The scrubber is this lake's observation record, not a regional calendar
  *
@@ -64,7 +64,7 @@ import {
  * The granule-wide cloud fraction above which a frame is in the archive but not worth landing on.
  *
  * ⚠ **A display gate, and deliberately not the ingest gate.** `DEFAULT_MAX_CLOUD_PCT = 60` in
- * `@skating/imagery` decides what we *cut*, and §C3 argues at length that it should be generous:
+ * `@skating/imagery` decides what we *cut*, and §3.3 argues at length that it should be generous:
  * an over-eager ingest gate wastes a few dollars of granule reads, while a strict one silently drops
  * the frame that showed freeze-up. That asymmetry does not survive the trip to a scrubber, where the
  * cost of an over-eager gate is a skater landing on a white rectangle and concluding the feature is
@@ -102,7 +102,7 @@ export const MIN_BODY_CLEAR_FRACTION = 0.6;
 export const MIN_BODY_COVERAGE = 0.5;
 
 /**
- * How far apart two frames may be and still be shown side by side (§C4's seam).
+ * How far apart two frames may be and still be shown side by side (§3.4's seam).
  *
  * > **Founder, 2026-08-24:** *"If a single body is split across two images from different dates, we
  * > should provide a hairline border between the two images, with their respective dates on either
@@ -162,7 +162,7 @@ export interface TimelineStop {
    * **Both halves render, with a hairline between them and each date on its own side.** A granule
    * edge can bisect a lake, and when it does neither frame is wrong: they are two photographs of two
    * halves. Cropping to one would present a single date over ground observed twice, weeks apart,
-   * with nothing on screen to say so — the inference §C4 exists to prevent.
+   * with nothing on screen to say so — the inference §3.4 exists to prevent.
    *
    * Set only where a companion genuinely helps: {@link SEAM_MIN_ADDED_COVERAGE} of new lake, within
    * {@link SEAM_MAX_GAP_DAYS}. A stop blocked on coverage can become landable through one.
@@ -245,7 +245,7 @@ export interface BodyTimelineOptions {
 }
 
 /**
- * Pair each partial stop with the nearest frame that fills what it missed — §C4's seam.
+ * Pair each partial stop with the nearest frame that fills what it missed — §3.4's seam.
  *
  * ## The overlap we cannot measure, and the direction we err in
  *
@@ -435,7 +435,7 @@ export function candidateFramesFor(
  * that fails this has no scrubber, not an empty one.
  *
  * **Do we know where it is?** `linkCoordinate` resolves `interiorPoint → representativePoint →
- * centroid`, in that order and for the reason N6c-1 measured: `centroid` is Turf's `pointOnFeature`
+ * centroid`, in that order and for the reason A06c-1 measured: `centroid` is Turf's `pointOnFeature`
  * and lands on the *shoreline*, 30.7 km from mid-lake on Champlain. A shoreline point is a fine place
  * to open a link from and a poor place to test granule coverage from, since it is the one point on the
  * body most likely to fall the wrong side of a boundary.

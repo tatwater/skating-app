@@ -1,9 +1,9 @@
 /**
- * Named sub-areas (N2 / D60) — "Malletts Bay" as a region *of* Lake Champlain rather than a lake
+ * Named sub-areas (A02 / D60) — "Malletts Bay" as a region *of* Lake Champlain rather than a lake
  * beside it.
  *
  * Reports, hazards and bounties keep belonging to the parent body; the sub-area is the finer name
- * they carry, denormalized onto each row at create. This is the **D4 model**, deferred since Phase 1
+ * they carry, denormalized onto each row at create. This is the **D4 model**, deferred since Phase 01
  * for rivers-as-named-reaches and instantiated here for lakes, where the corpus evidence is
  * overwhelming: every name the community seed failed to match — Malletts, Northwest, Dillenbeck,
  * Burlington, Shelburne, Outer, Appletree, South, Arnold, Carry, Little Eagle, Half Moon, Broad, and
@@ -77,7 +77,7 @@ const RESTAMP_BATCH = 200;
 const SEED_MIN_RETAINED_FRACTION = 0.35;
 
 /**
- * The tables carrying a denormalized sub-area stamp, re-stamped in this order (N2, widened in N9).
+ * The tables carrying a denormalized sub-area stamp, re-stamped in this order (A02, widened in A09).
  *
  * **Tracks go first, and the order is load-bearing.** An activity-sourced report's membership is
  * the *track's* list (D175 / the two-bay skate), so the report pass reads the path the track pass
@@ -88,7 +88,7 @@ const RESTAMP_TABLES = ['gpsActivities', 'reports', 'hazards', 'putIns', 'bodyFe
 type RestampTable = (typeof RESTAMP_TABLES)[number];
 
 /**
- * How many points along a track the bay stamp tests (N9). More than `resolveTrackToBodies`'s 24:
+ * How many points along a track the bay stamp tests (A09). More than `resolveTrackToBodies`'s 24:
  * that number bounds *reads* (each sample can cost a cell lookup), where this is pure CPU against
  * a handful of bays already in hand — and a bay is a finer place than a lake, so a coarser sample
  * would miss the ten minutes spent in a cove on the way past.
@@ -98,7 +98,7 @@ export const SUB_AREA_TRACK_SAMPLE_POINTS = 64;
 /**
  * `[name, ...aliases]` as the one searchable string — Convex search indexes a single field.
  *
- * **Now `@skating/core`'s `searchTextFor`, because `waterBodies` needs the same join** (N7). Kept as
+ * **Now `@skating/core`'s `searchTextFor`, because `waterBodies` needs the same join** (A07a). Kept as
  * a named re-export rather than replaced at four call sites: the name says which table it is for,
  * and two tables silently sharing a rule is worth one line to make visible.
  */
@@ -127,7 +127,7 @@ function scoreFields(input: { surfaceAreaSqM: number; curatedBoost?: number }) {
 
 /**
  * A sub-area is reachable only while it is un-delisted **and** its parent is *active* (Decision 11,
- * extended by N7b). Active rather than listed, because a removed or dormant lake is listed too now —
+ * extended by A07b). Active rather than listed, because a removed or dormant lake is listed too now —
  * it draws at the dormant rung, dimmed — and a bay outlined and labelled at z10 over a lake that
  * only appears at z16 would be the exact "Malletts Bay on a map with no Champlain" Decision 11
  * exists to prevent.
@@ -195,7 +195,7 @@ function toCandidates(
 }
 
 /**
- * The bay a put-in belongs to (N9 kickoff call 3) — by **distance to the outline**, not
+ * The bay a put-in belongs to (A09 kickoff call 3) — by **distance to the outline**, not
  * containment, because the launch was snapped to the shoreline the bay's clip traces. Called from
  * every `putIns` writer; `null` on the ~99% of bodies with no bays and on open-lake access.
  */
@@ -209,7 +209,7 @@ export async function resolveSubAreaForPutIn(
   return subAreaForPutIn(coord, candidates)?._id;
 }
 
-/** What a recorded track's stamp resolves to, in the stored shape (N9 kickoff Q4). */
+/** What a recorded track's stamp resolves to, in the stored shape (A09 kickoff Q4). */
 export interface TrackSubAreaStamp {
   subAreaId: Id<'waterBodySubAreas'> | undefined;
   subAreaIds: Id<'waterBodySubAreas'>[] | undefined;
@@ -239,7 +239,7 @@ export function trackSubAreaStamp(
 }
 
 /**
- * The coordinate a bay's drive-time is judged from (N9 kickoff call 2): its best put-in, else its
+ * The coordinate a bay's drive-time is judged from (A09 kickoff call 2): its best put-in, else its
  * own representative point — the rule is `@skating/core`'s `subAreaDriveCoord`; this is the read
  * around it. `null` when the bay is gone or delisted, so the caller falls back to the parent's
  * coordinate rather than banding a place that is no longer a place.
@@ -274,7 +274,7 @@ export async function subAreaDriveCoordFor(
   );
 }
 
-/** A report's membership in the stored shape: the label pair plus the list pair (N9 / D175). */
+/** A report's membership in the stored shape: the label pair plus the list pair (A09 / D175). */
 export interface ReportSubAreaStamp {
   subAreaId: Id<'waterBodySubAreas'> | undefined;
   subAreaName: string | undefined;
@@ -391,7 +391,7 @@ export async function reclipSubAreasToParent(
     );
     if (!result.ok) {
       const why = `No longer fits ${parent.name} after its outline changed (${result.reason}). Redraw it.`;
-      console.warn(`subAreas: "${subArea.name}" (${subArea._id}) — ${why} (N2/D60)`);
+      console.warn(`subAreas: "${subArea.name}" (${subArea._id}) — ${why} (A02/D60)`);
       await systemDelist(ctx, subArea, why, actorId);
       delisted++;
       continue;
@@ -417,11 +417,11 @@ export async function reclipSubAreasToParent(
 }
 
 /**
- * Everything a sub-area stores that follows from its clipped outline (N9): the geometry-derived
+ * Everything a sub-area stores that follows from its clipped outline (A09): the geometry-derived
  * fields the row has always carried, the D49 prominence pair, and the bay's own fetch profile.
  *
- * **One function, every writer.** `create`, `redraw`, `restore`, the re-clip, the seed and the N7
- * bay import all used to recompute the same five fields inline, and the N9 fields (fetch, depth
+ * **One function, every writer.** `create`, `redraw`, `restore`, the re-clip, the seed and the A07a
+ * bay import all used to recompute the same five fields inline, and the A09 fields (fetch, depth
  * invalidation) would have made it seven copies to keep in step. Two places that recompute a bay's
  * derived state is how a bay ends up with last week's depth under this week's outline — the class
  * of drift `extract.ts` was created to end.
@@ -500,7 +500,7 @@ async function insertSubArea(
 }
 
 /**
- * Apply a (possibly new) clipped outline to an existing sub-area — **the re-derivation** (N9).
+ * Apply a (possibly new) clipped outline to an existing sub-area — **the re-derivation** (A09).
  *
  * Owns, in order: the derived fields, the depth invalidation, the cell rows. The `subAreaKey` is
  * deliberately *not* here: it is minted once at insert and survives every redraw, which is the
@@ -639,7 +639,7 @@ export async function repointSubAreasOnMerge(
     if (subArea.removedAt !== undefined) continue;
     if (existingNames.has(subArea.name.toLowerCase())) {
       const why = `${survivor.name} already has a bay called "${subArea.name}". The merged copy was delisted rather than left to compete for the stamp.`;
-      console.warn(`subAreas: ${why} (N2/D60)`);
+      console.warn(`subAreas: ${why} (A02/D60)`);
       await systemDelist(ctx, subArea, why, actorId);
       delisted++;
       continue;
@@ -691,7 +691,7 @@ async function requireParent(
   if (!parent) throw new ConvexError('Water body not found');
   // Drawing a bay on a body that isn't on the map produces a row nothing can reach — the cascade
   // would give it no cell rows anyway. Say so rather than accepting the work silently. A dormant
-  // lake is fine (N7b): curation precedes activity, and the bay lists the day the lake does.
+  // lake is fine (A07b): curation precedes activity, and the bay lists the day the lake does.
   if (!isListed(parent) || standingOf(parent).standing === 'removed') {
     throw new ConvexError('That water body is not on the map');
   }
@@ -741,7 +741,7 @@ async function audit(
 /**
  * Schedule the re-stamp of a parent's reports and hazards.
  *
- * **It pages to completion; it is never a capped scan.** N1's round-2 correction is the reason: the
+ * **It pages to completion; it is never a capped scan.** A01's round-2 correction is the reason: the
  * hazard-weather sweep capped an index whose order never changes, so every tick re-read the same
  * prefix and everything behind it starved forever. A re-stamp capped at N over
  * `by_water_body_skate_end_time` would permanently strand the oldest reports on a busy body — and
@@ -818,7 +818,7 @@ export const redraw = mutation({
       waterBodyId: subArea.waterBodyId,
       clipped: geometry.clipped,
       retainedFraction: geometry.retainedFraction,
-      // Whether the outline actually moved — and so whether a derived depth was cleared (N9).
+      // Whether the outline actually moved — and so whether a derived depth was cleared (A09).
       geometryChanged,
     });
     // Membership changed, so the stamps did too — in *both* directions. A shrunk bay releases reports
@@ -1144,16 +1144,16 @@ export const restampParent = internalMutation({
       });
       return { done: false as const, stamped: changed };
     }
-    console.log(`subAreas.restampParent(${waterBodyId}): re-stamped ${changed} rows (N2).`);
+    console.log(`subAreas.restampParent(${waterBodyId}): re-stamped ${changed} rows (A02).`);
     return { done: true as const, stamped: changed };
   },
 });
 
 /**
- * Sub-area render budgets (N2). **Product numbers, chosen and then measured** — not arithmetic
- * inherited from N1's table.
+ * Sub-area render budgets (A02). **Product numbers, chosen and then measured** — not arithmetic
+ * inherited from A01's table.
  *
- * The plan sized these against the headroom N1's viewport read leaves under Convex's 4,096-read cap,
+ * The plan sized these against the headroom A01's viewport read leaves under Convex's 4,096-read cap,
  * which assumes the two queries share a budget. They don't: the cap is per *function execution*
  * (`lib/scan.ts` opens by saying so), and `listInViewport` on each table is its own execution with
  * its own 4,096. What survives that correction is the product argument, which was always the real
@@ -1171,7 +1171,7 @@ const SUB_AREA_CELL_SCAN_BUDGET = 512;
 const SUB_AREA_MIN_ROWS_PER_CELL = 4;
 
 /**
- * Total polygon vertices one sub-area read may return (N2).
+ * Total polygon vertices one sub-area read may return (A02).
  *
  * The render budget above counts *rows*, and rows are not the thing a phone downloads. A clipped bay
  * inherits its parent's shoreline detail — measured on the dev corpus, Champlain's nine bays carry
@@ -1257,13 +1257,13 @@ async function subAreasCoveringBox(
 }
 
 /**
- * Public: named sub-areas whose bbox intersects the viewport (N2 / D60) — the map's bay-label layer,
- * served off `waterBodySubAreaCells` on N1's shared ladder grid.
+ * Public: named sub-areas whose bbox intersects the viewport (A02 / D60) — the map's bay-label layer,
+ * served off `waterBodySubAreaCells` on A01's shared ladder grid.
  *
  * **Why this isn't a fan-out over the bodies already on screen.** The plan's first cut called
  * `listForBodies(waterBodyIds[])` with the ids `waterBodies.listInViewport` returned — a read whose
  * input is the *render budget*, now 1,000. "Sub-areas only exist on a handful of giants" is a fact
- * about today's data, not a bound, and reasoning from today's data is exactly what N1 exists to
+ * about today's data, not a bound, and reasoning from today's data is exactly what A01 exists to
  * retire: `MAX_VIEWPORT_LIMIT = 256` was also fine, against a corpus 11.6× smaller than the one it
  * was still guarding.
  *
@@ -1285,7 +1285,7 @@ export const listInViewport = query({
     });
     if (truncated) {
       console.warn(
-        `subAreas.listInViewport stopped early at zoom ${z} with ${rows.length} sub-areas (render budget ${effectiveLimit}, vertex budget ${SUB_AREA_RENDER_VERTEX_BUDGET}, ${rowsRead} cell rows read, ${vertices} vertices returned); the least prominent were omitted (D5/D49/N1).`,
+        `subAreas.listInViewport stopped early at zoom ${z} with ${rows.length} sub-areas (render budget ${effectiveLimit}, vertex budget ${SUB_AREA_RENDER_VERTEX_BUDGET}, ${rowsRead} cell rows read, ${vertices} vertices returned); the least prominent were omitted (D5/D49/A01).`,
       );
     }
     return rows.map((row) => ({
@@ -1380,7 +1380,7 @@ export const importSeed = internalMutation({
     dryRun: v.optional(v.boolean()),
     /**
      * The clip-retention bar for this batch, **looser than the interactive default and
-     * deliberately so** (measured in the N2 curation session, 2026-07-26).
+     * deliberately so** (measured in the A02 curation session, 2026-07-26).
      *
      * `SUB_AREA_MIN_RETAINED_FRACTION` = 0.6 is calibrated for a *traced* outline, where most of
      * what you drew should be water. A seed row is a bounding box, which is coarse by construction:
@@ -1463,7 +1463,7 @@ export const importSeed = internalMutation({
         action: 'create_sub_area',
         targetType: 'waterBodySubArea',
         targetId: subAreaId,
-        reason: `Seeded "${row.name.trim()}" on ${parent.name} (N2 curation session)`,
+        reason: `Seeded "${row.name.trim()}" on ${parent.name} (A02 curation session)`,
         metadata: { waterBodyId: row.waterBodyId, retainedFraction: clip.retainedFraction },
         createdAt: now,
       });
@@ -1542,12 +1542,12 @@ export const listForBody = query({
         bbox: row.bbox,
         centroid: row.centroid,
         surfaceAreaSqM: row.surfaceAreaSqM,
-        // The weather panel's default bay on a giant (N6h open question 5, `resolveWeatherSubArea`):
+        // The weather panel's default bay on a giant (A06h open question 5, `resolveWeatherSubArea`):
         // the most prominent place, which is this D49 curve over area plus curation, not raw area.
         displayScore: row.displayScore,
         minVisibleZoom: row.minVisibleZoom,
         ...(row.curatedBoost !== undefined ? { curatedBoost: row.curatedBoost } : {}),
-        // The bay-as-a-place fields (N9 / D175): its own fetch and its own max depth, for the bay
+        // The bay-as-a-place fields (A09 / D175): its own fetch and its own max depth, for the bay
         // header and the wind section. Elevation is deliberately *not* here — a bay inherits its
         // parent's, and the drawer already holds the parent.
         ...(row.fetchProfileM !== undefined ? { fetchProfileM: row.fetchProfileM } : {}),
@@ -1562,7 +1562,7 @@ export const listForBody = query({
           : {}),
         removed: row.removedAt !== undefined,
         // Why the *system* retired it, if it did — the editor renders this next to the row, which is
-        // the whole point of storing it rather than logging it (N2).
+        // the whole point of storing it rather than logging it (A02).
         ...(row.systemDelistReason !== undefined
           ? { systemDelistReason: row.systemDelistReason }
           : {}),
@@ -1571,7 +1571,7 @@ export const listForBody = query({
 });
 
 /**
- * **Bays from the master list** — the N7 campaign's sub-area lane (second intake audit, 2026-08-06).
+ * **Bays from the master list** — the A07a campaign's sub-area lane (second intake audit, 2026-08-06).
  *
  * ## Why the ETL now produces these at all
  *
@@ -1679,7 +1679,7 @@ export const importBaySubAreas = internalMutation({
         action: 'create_sub_area',
         targetType: 'waterBodySubArea',
         targetId: subAreaId,
-        reason: `N7 campaign: "${name}" is an arm of ${parent.name}, not a lake beside it`,
+        reason: `A07a campaign: "${name}" is an arm of ${parent.name}, not a lake beside it`,
         metadata: { waterBodyId: parent._id, retainedFraction: clip.retainedFraction },
         createdAt: now,
       });
@@ -1704,7 +1704,7 @@ export const importBaySubAreas = internalMutation({
  * The same three indexes `waterBodies.importCanonical` upserts through, and the same reason: a
  * catalogue id is what an ETL record can assert about itself, where a Convex `_id` is something only
  * the database knows. **First id that resolves wins**, in the fixed order — an OSM-keyed row outranks
- * an NHD-keyed one because the OSM lane has been the corpus since Phase 1 and its rows are the ones
+ * an NHD-keyed one because the OSM lane has been the corpus since Phase 01 and its rows are the ones
  * carrying user content.
  */
 async function resolveParentByCatalogueIds(
@@ -1736,12 +1736,12 @@ async function resolveParentByCatalogueIds(
 }
 
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
-// N9 backfills — run once on a deployment with rows from before the phase
+// A09 backfills — run once on a deployment with rows from before the phase
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
 
 /**
  * Mint a `subAreaKey` for every sub-area that lacks one, and a `fetchProfileM` for every one that
- * has none (N9 / D93). Every insert path since N9 writes both; this is for the 128 rows that
+ * has none (A09 / D93). Every insert path since A09 writes both; this is for the 128 rows that
  * predate it. Idempotent — a keyed row is untouched, so a re-run mints nothing.
  * `pnpm exec convex run subAreas:mintSubAreaKeys`.
  */
@@ -1778,10 +1778,10 @@ export const mintSubAreaKeys = internalMutation({
 });
 
 /**
- * Seed the `reportSubAreas` join from the stamps reports already carry (N9). Pages the report table
+ * Seed the `reportSubAreas` join from the stamps reports already carry (A09). Pages the report table
  * once; a report with no bay writes nothing, and one that already has its rows is a no-op through
  * `syncReportSubAreas`, so the pass is idempotent. The stamps themselves are trusted as they stand
- * — Champlain's restamp already ran under N2 — and the next redraw on any lake recomputes them.
+ * — Champlain's restamp already ran under A02 — and the next redraw on any lake recomputes them.
  * `pnpm exec convex run subAreas:backfillReportSubAreas`.
  */
 export const backfillReportSubAreas = internalMutation({
@@ -1809,14 +1809,14 @@ export const backfillReportSubAreas = internalMutation({
 });
 
 /**
- * Skates read per bay for the admin card's mouth-line count (N9). A bound on the read, not on the
+ * Skates read per bay for the admin card's mouth-line count (A09). A bound on the read, not on the
  * answer: a bay with more than this many skates in one season reads as "200+", which is the honest
  * shape of a take-bounded count (D5) and far past the point where the count changes a decision.
  */
 const MOUTH_LINE_SCAN_CAP = 200;
 
 /**
- * **The admin card, per bay** (N9): this season's skates that ran past the mouth line, the derived
+ * **The admin card, per bay** (A09): this season's skates that ran past the mouth line, the derived
  * depth and when it was derived against when the outline last moved, and the stored fetch profile.
  * Beside the redraw control in `/admin/water/$id`, because a bay's seaward edge is a judgement a
  * skater can prove wrong by skating past it, and this is where the evidence collects. Nothing here
@@ -1876,9 +1876,9 @@ export const adminStatsForBody = query({
 });
 
 /**
- * Schedule a re-stamp for every parent that has a sub-area (N9) — the one-off that tags the rows
- * from before the phase. Every writer stamps at write from N9 on, and a redraw re-stamps its lake,
- * but nothing else ever would: the put-ins, tracks and features on the 22 parents that predate N9
+ * Schedule a re-stamp for every parent that has a sub-area (A09) — the one-off that tags the rows
+ * from before the phase. Every writer stamps at write from A09 on, and a redraw re-stamps its lake,
+ * but nothing else ever would: the put-ins, tracks and features on the 22 parents that predate A09
  * would sit untagged until each lake happened to be edited, and until then the bay view's access
  * list would be empty, a bay report would be banded from its shoreline point instead of its launch,
  * and the admin card would count no skates. Distinct parents are collected from the sub-area table
@@ -1898,7 +1898,7 @@ export const restampAllParents = internalMutation({
 });
 
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
-// N9 PR 2 — the depth lane's two ends: what the export reads, what the load writes
+// A09 PR 2 — the depth lane's two ends: what the export reads, what the load writes
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
 
 /**
@@ -1949,7 +1949,7 @@ export const exportForDepths = internalQuery({
 });
 
 /**
- * Load derived bay depths (N9 PR 2) — the only writer of `waterBodySubAreas.maxDepthM`.
+ * Load derived bay depths (A09 PR 2) — the only writer of `waterBodySubAreas.maxDepthM`.
  *
  * Each row is matched on **our own key**, not the Convex id: the id is what the export read a
  * moment ago, the key is what survives everything. Three refusals, all named on the result rather

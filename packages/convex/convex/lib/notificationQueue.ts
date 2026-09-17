@@ -1,10 +1,10 @@
 /**
- * The actor-triggered half of the notification queue (N8 / D169): enqueue with a settle window,
+ * The actor-triggered half of the notification queue (A08 / D169): enqueue with a settle window,
  * re-read the trigger at flush, and only then build the payload the inbox stores.
  *
  * ## Why every producer goes through here
  *
- * A misclick is a normal thing to do — thumb the wrong hazard, notice, click again to undo. Until N8
+ * A misclick is a normal thing to do — thumb the wrong hazard, notice, click again to undo. Until A08
  * the thumb inserted a `notifications` row on the spot and the undo could not recall it, so the
  * author was told someone found their report helpful, by someone who no longer does. Now every
  * actor-triggered notification sits in `notificationQueue` for `SETTLE_MS` and the flush asks *"is
@@ -83,7 +83,7 @@ export const SETTLE_MS = 60 * 1000;
 export const DIGEST_TIMEZONE = 'America/New_York';
 
 /**
- * Rows per delivery action (N8 PR 3): the flush chunks the ids it hands to `deliverBatch` to this,
+ * Rows per delivery action (A08 PR 3): the flush chunks the ids it hands to `deliverBatch` to this,
  * so one action's reads and sends stay bounded. Here for the same reason as `DIGEST_TIMEZONE` — the
  * flush (a mutation) and the transports (an action) both read it, and neither should import the
  * other for a number.
@@ -184,7 +184,7 @@ export function settleReadCost(trigger: NotificationTrigger): number {
 /**
  * Queue an actor-triggered notification for `recipientId`, applying every enqueue-time gate in one
  * place: never self, recipient exists and can receive, the type's toggle is on, and the actor isn't
- * blocked either way (block == mute, Phase 3 — the inbox's read-time filter is a backstop for old
+ * blocked either way (block == mute, Phase 03 — the inbox's read-time filter is a backstop for old
  * rows, not a substitute for this).
  *
  * Returns whether a row was written or bumped. The gates are re-applied at flush — a person can

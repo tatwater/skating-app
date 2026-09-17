@@ -1,5 +1,5 @@
 /**
- * Corpus standing (N7b) — the campaign walk, the transitions, the evidence hooks, the push surfaces,
+ * Corpus standing (A07b) — the campaign walk, the transitions, the evidence hooks, the push surfaces,
  * the seed and the rollover.
  *
  * The first block is the regression net the plan asked for before anything else was changed: one

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { describeSubAreaHeader, windRoseCaption } from './subAreaPlace';
 
-describe('describeSubAreaHeader (N9)', () => {
+describe('describeSubAreaHeader (A09)', () => {
   const parent = { name: 'Lake Champlain', elevationM: 29 };
 
   it('names the parent, reports its own area, inherits elevation and says so', () => {
@@ -40,7 +40,7 @@ describe('describeSubAreaHeader (N9)', () => {
   });
 });
 
-describe('windRoseCaption (N9 call 6)', () => {
+describe('windRoseCaption (A09 call 6)', () => {
   it('says the rose is the cell’s on every body, and adds the fetch clause for a bay', () => {
     expect(windRoseCaption('body')).toBe(
       'Wind climate is the 2 km grid cell’s, not this water’s own.',

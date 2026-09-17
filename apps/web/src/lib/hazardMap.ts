@@ -1,5 +1,5 @@
 /**
- * The web hazard layer's palette (Phase 9).
+ * The web hazard layer's palette (Phase 09a).
  *
  * Everything else — the GeoJSON transforms, the freshness→opacity mapping, the MapLibre expressions
  * — lives in `@skating/core/hazardLayer`, shared with mobile. These are the app's *safety* layers, so

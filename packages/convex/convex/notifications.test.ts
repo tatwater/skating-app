@@ -120,7 +120,7 @@ async function seedBody(t: ReturnType<typeof convexTest>, externalId = 'osm/1') 
 
 const SKATE_TIME = Date.UTC(2026, 0, 10);
 
-/** A bay covering the west half of the fixture lake (N9), drawn straight into the table. */
+/** A bay covering the west half of the fixture lake (A09), drawn straight into the table. */
 async function seedBay(t: ReturnType<typeof convexTest>, waterBodyId: Id<'waterBodies'>) {
   const author = await t.run(async (ctx) => {
     const profile = await ctx.db.query('profiles').first();
@@ -188,7 +188,7 @@ async function cancelScheduledFlushes(t: ReturnType<typeof convexTest>): Promise
 }
 
 /**
- * Create a report and run its distance fan-out, the way the scheduler does in production (N1).
+ * Create a report and run its distance fan-out, the way the scheduler does in production (A01).
  * `reports.create` schedules `fanOutNearbyNotifications` rather than walking every profile inline;
  * convex-test won't drive a `runAfter(0)` job without fake timers, so drive it explicitly here.
  * (That the scheduling *happens* is asserted separately, off `_scheduled_functions`.)
@@ -222,7 +222,7 @@ describe('notifications — favorites', () => {
     expect(queue[0]?.count).toBe(2);
   });
 
-  test('a lake favorite plus a bay favorite is ONE queue row with count 1, not "2 new reports" (N9)', async () => {
+  test('a lake favorite plus a bay favorite is ONE queue row with count 1, not "2 new reports" (A09)', async () => {
     const t = convexTestWithGeo();
     const id = await seedBody(t);
     const author = await seedProfile(t, 'author');
@@ -242,7 +242,7 @@ describe('notifications — favorites', () => {
     expect(queue[0]).toMatchObject({ userId: fan.id, kind: 'favorite', count: 1 });
   });
 
-  test('a bay favorite hears about reports in the bay and not the rest of the lake (N9)', async () => {
+  test('a bay favorite hears about reports in the bay and not the rest of the lake (A09)', async () => {
     const t = convexTestWithGeo();
     const id = await seedBody(t);
     const author = await seedProfile(t, 'author');
@@ -331,7 +331,7 @@ describe('notifications — nearby digest (X₁)', () => {
     expect(await t.run((ctx) => ctx.db.query('notifications').collect())).toEqual([]);
   });
 
-  test('a bay report is banded from the bay’s own put-in, not the lake’s representative point (N9)', async () => {
+  test('a bay report is banded from the bay’s own put-in, not the lake’s representative point (A09)', async () => {
     const t = convexTestWithGeo();
     const id = await seedBody(t);
     const author = await seedProfile(t, 'author');
@@ -388,7 +388,7 @@ describe('notifications — nearby digest (X₁)', () => {
   // ⚠ The review found this one. A moderator's hide is a separate `hidden` row, not a status on the
   // launch, so the bay's drive coordinate was still the hidden launch — and the fan-out judged from
   // an access point a moderator had said not to use.
-  test('a bay whose only launch a moderator hid is banded from the bay itself, not the hidden launch (N9)', async () => {
+  test('a bay whose only launch a moderator hid is banded from the bay itself, not the hidden launch (A09)', async () => {
     const t = convexTestWithGeo();
     const id = await seedBody(t);
     const author = await seedProfile(t, 'author');
@@ -474,7 +474,7 @@ describe('notifications — nearby digest (X₁)', () => {
     expect(await t.run((ctx) => ctx.db.query('notificationQueue').collect())).toEqual([]);
   });
 
-  test('the digest lands at 8pm in the recipient’s own zone, defaulting to the pilot zone (N8/C)', async () => {
+  test('the digest lands at 8pm in the recipient’s own zone, defaulting to the pilot zone (A08/C)', async () => {
     const t = convexTestWithGeo();
     const id = await seedBody(t);
     const author = await seedProfile(t, 'author');
@@ -707,7 +707,7 @@ describe('notifications — great nearby (X₂)', () => {
   });
 });
 
-describe('notifications — the fan-out is scheduled, not inline (N1)', () => {
+describe('notifications — the fan-out is scheduled, not inline (A01)', () => {
   test('reports.create schedules the fan-out instead of walking every profile in the transaction', async () => {
     // The write path used to `collect()` the whole profiles table on every report — an unbounded
     // read inside the app's most important mutation. Now create schedules a paged job.
@@ -799,7 +799,7 @@ describe('notifications — the fan-out is scheduled, not inline (N1)', () => {
   });
 });
 
-// ── The inbox (N8 / A1 + A2) ─────────────────────────────────────────────────────────────────────
+// ── The inbox (A08 / §1.1 + §1.2) ─────────────────────────────────────────────────────────────────────
 
 describe('notifications — the inbox read path', () => {
   async function inbox(as: ReturnType<ReturnType<typeof convexTest>['withIdentity']>) {
@@ -931,7 +931,7 @@ describe('notifications — the inbox read path', () => {
     await t.run((ctx) =>
       ctx.db.patch(rater.id, { displayName: 'Deleted skater', status: 'deleted' as const }),
     );
-    // …and a pre-N8 row whose payload nothing writes any more.
+    // …and a pre-A08 row whose payload nothing writes any more.
     await t.run((ctx) =>
       ctx.db.insert('notifications', {
         userId: author.id,

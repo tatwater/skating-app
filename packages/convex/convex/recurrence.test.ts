@@ -434,7 +434,7 @@ describe('the recurrence pass', () => {
   });
 });
 
-describe('the volatile family and the depth cross-check (§C7)', () => {
+describe('the volatile family and the depth cross-check (§3.7)', () => {
   async function volatilePass(depth: Record<string, unknown>) {
     const t = harness();
     const author = await seedUser(t, 'author');

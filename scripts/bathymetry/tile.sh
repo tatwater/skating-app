@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Tile the built contour set into a `.pmtiles` overlay and (optionally) upload it (N6b).
+# Tile the built contour set into a `.pmtiles` overlay and (optionally) upload it (A06b).
 #
 #   scripts/bathymetry/tile.sh                      # tile only
 #   scripts/bathymetry/tile.sh --upload dev/bathymetry-20260801.pmtiles
@@ -43,7 +43,7 @@ rm -f "$MBTILES" "$OUT"
 tippecanoe \
   --output="$MBTILES" \
   --layer=bathymetry \
-  --name="Skating bathymetry (N6b)" \
+  --name="Skating bathymetry (A06b)" \
   --attribution="State agency bathymetry — see the lake drawer for the surveying agency" \
   --minimum-zoom=9 \
   --maximum-zoom=14 \

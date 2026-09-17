@@ -1,5 +1,5 @@
 /**
- * What the freeze-up archive publishes, and which season an app should be showing (N6e §C2, D149).
+ * What the freeze-up archive publishes, and which season an app should be showing (A06e §3.2, D149).
  *
  * ## Why the producer's output type lives in core
  *
@@ -50,7 +50,7 @@ export function archiveSeasonAt(ms: number): string {
 /**
  * One frame in a season's scrubber.
  *
- * `capturedAt` and `cloudCoverPct` are **content, not metadata** (D84, §C4): a timeline invites
+ * `capturedAt` and `cloudCoverPct` are **content, not metadata** (D84, §3.4): a timeline invites
  * inference far harder than a still image does, so every frame carries its own date and its own cloud
  * caveat, and they travel with the frame rather than sitting as furniture around the control.
  */
@@ -236,7 +236,7 @@ export interface FrameBodyStats {
   /**
    * The same pixels with the shoreline eroded off — one ring on optical, two on radar.
    *
-   * ⚠ **The count matters more than the cleaner percentage.** N6g Lane 2 eliminates bodies on "never
+   * ⚠ **The count matters more than the cleaner percentage.** A06g Lane 2 eliminates bodies on "never
    * observed frozen", and a body too small to classify reads exactly like a body that never froze. A
    * 1-acre pond keeps under ten voting pixels; measured on a synthetic 3×3-pixel pond, exactly one.
    */
@@ -276,7 +276,7 @@ export interface FrameBodyStats {
    *
    * **A mean cannot answer the question the archive was built for.** It cannot distinguish a
    * uniformly medium-rough lake from one half glassy and half ridged, which is the entire premise of
-   * N6g Lane 1: *"40% of this lake sat below −22 dB"* is a claim about smoothness that *"this lake
+   * A06g Lane 1: *"40% of this lake sat below −22 dB"* is a claim about smoothness that *"this lake
    * averaged −20 dB"* cannot make. Measured on a test fixture, the mean read −15.5 dB — a value that
    * occurred nowhere on the lake.
    */
@@ -307,7 +307,7 @@ export interface FrameBodyStats {
    * in the bottom bins looking like exceptionally smooth ice. NESZ varies by several dB across a
    * swath and by nearly three between platforms, so no constant substitutes for it.
    *
-   * **This is what makes an N6g Lane 1 claim checkable**: *"40% of this lake sat below −22 dB"* means
+   * **This is what makes an A06g Lane 1 claim checkable**: *"40% of this lake sat below −22 dB"* means
    * nothing until you know the lake's floor is −25.2 dB. Measured on a real pass, **14% of bodies sit
    * within 3 dB of their own floor** — for those, smoothness is not a claim the data can support.
    */
@@ -321,7 +321,7 @@ export interface FrameBodyStats {
    * change. Measured across one region, local incidence spanned 30.9°–44.8° while the scene mean sat
    * at 38.6° — and `1/tan` moves 60% across that span, so the scene figure was never a stand-in.
    *
-   * This is the field N6e open question 7 names as missing when it asks why S1C disagrees with itself.
+   * This is the field A06e open question 7 names as missing when it asks why S1C disagrees with itself.
    */
   incidenceDeg?: number | null;
   /** The local terrain height the product geocoded this body at — never a scene average. */
@@ -525,7 +525,7 @@ export function bodyStatsIn(
  * > **D149 — the archive turns over on the first frame of the new season, never on a date.**
  *
  * **The most recent season that has frames.** Not the current calendar season, and not the newest
- * directory: ingest starts *looking* in September on the summit trigger (§C3), so an empty
+ * directory: ingest starts *looking* in September on the summit trigger (§3.3), so an empty
  * `winter-2027-28` exists for weeks before its first frame lands. Turning over on the directory would
  * take away a scrubber that has been serving last winter perfectly well since April and replace it
  * with nothing.

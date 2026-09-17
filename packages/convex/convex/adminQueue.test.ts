@@ -1,5 +1,5 @@
 /**
- * Phase 7 admin queue queries (D37) — role gates, the flag priority lane, the raw-number admin gate,
+ * Phase 07 admin queue queries (D37) — role gates, the flag priority lane, the raw-number admin gate,
  * and that reads resolve their context. Seeds profiles directly so role/status can be set precisely.
  */
 import { convexTest } from 'convex-test';
@@ -211,7 +211,7 @@ describe('support.list (admin-only inbox, D37 PII)', () => {
 });
 
 /**
- * The dedup queue (D36, regrouped for the N7 corpus).
+ * The dedup queue (D36, regrouped for the A07a corpus).
  *
  * Every test here is about the queue being **one card per decision**. The reconciliation pass flags
  * both ends of a duplicate group, so a queue that counts rows shows a moderator twice as much work

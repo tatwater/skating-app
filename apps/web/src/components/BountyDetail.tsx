@@ -84,7 +84,7 @@ export function BountyDetail({ bountyId }: { bountyId: string }) {
           <div className="flex-1 text-sm">
             {/* No link for a requester there's nothing to link to. Two distinct cases: an
                 *unresolvable* one has no username at all, and a **deleted** one now has a synthetic
-                sentinel handle (N3) — which passes an emptiness check while still routing nowhere,
+                sentinel handle (A03) — which passes an emptiness check while still routing nowhere,
                 so `deleted` has to be checked explicitly. */}
             {detail.requester.username && !detail.requester.deleted ? (
               <Link

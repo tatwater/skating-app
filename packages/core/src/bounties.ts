@@ -20,7 +20,7 @@ export interface FreshnessReport {
 
 /**
  * How much longer (as a multiple of the base window) a report from each trust class suppresses bounties —
- * a well-trusted local's read stays "fresh eyes" longer; a brand-new account's less. Tunable (Phase 7).
+ * a well-trusted local's read stays "fresh eyes" longer; a brand-new account's less. Tunable (Phase 07).
  */
 const TRUST_WINDOW_BOOST: Record<TrustClass, number> = {
   new: -0.5,
@@ -80,7 +80,7 @@ export function reportSuppressesBounty(
  * offline report still counts by when the skater was actually on the ice.
  *
  * Phase-10 upgrade: replace this hard cutoff with a decay-based freshness score (recency × thumbs ×
- * trust × weather-since); that needs weather data to be honest, so Phase 6 uses the hard window.
+ * trust × weather-since); that needs weather data to be honest, so Phase 06 uses the hard window.
  */
 export function isBodyFreshForBounty(
   reports: readonly FreshnessReport[],

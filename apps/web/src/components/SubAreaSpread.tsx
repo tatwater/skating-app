@@ -5,7 +5,7 @@ import { Link } from '@tanstack/react-router';
 import { useQuery } from 'convex/react';
 
 /**
- * How a giant describes itself: the spread across its named bays, with the ends named (N6h /
+ * How a giant describes itself: the spread across its named bays, with the ends named (A06h /
  * open question 5). *"Lows 0°F to 12°F — coldest at Missisquoi Bay, mildest at Burlington Bay."*
  *
  * Every sentence comes from `buildSubAreaSpread` in core, where the trap it refuses — a composite
@@ -38,7 +38,7 @@ export function SubAreaSpread({ waterBodyId }: { waterBodyId: Id<'waterBodies'> 
           ))}
         </ul>
       )}
-      {/* The sorted bay lists (Workstream E, founder call 9) — the honest form of "which bay is
+      {/* The sorted bay lists (Workstream 5, founder call 9) — the honest form of "which bay is
           your best bet": the user picks the criterion and the app counts (D150). Each bay is the
           same `?sub=` link the extremes are. */}
       {[spread.rankings?.coldestNights, spread.rankings?.leastSnow]

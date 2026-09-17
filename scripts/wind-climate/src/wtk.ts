@@ -1,5 +1,5 @@
 /**
- * NREL WIND Toolkit client + rose accumulation (N6c A4b) — the tested half.
+ * NREL WIND Toolkit client + rose accumulation (A06c §1.4b) — the tested half.
  *
  * The WIND Toolkit is WRF run on a **2 km grid** over the contiguous US, hourly, with wind speed
  * and direction at 10 m. Free with an API key; see `.env.example` for where to get one and why the
@@ -51,7 +51,7 @@ export const WTK_YEARS = [2010, 2011, 2012, 2013, 2014] as const;
  * At 1100 ms plus the ~4 s measured latency the run paced ~700/hr — 16,800/day, or 1.7× the cap.
  * So it spent a full day's quota in ~14 hours and the rest of the day collecting 429s, each of
  * which costs the whole `WTK_RATE_LIMIT_RETRIES` budget (~17 min) before it counts as failed. The
- * N7-3 campaign ran clean to 84% and then crawled at ~40/hr; `x-ratelimit-remaining: 0` with a
+ * A07a-3 campaign ran clean to 84% and then crawled at ~40/hr; `x-ratelimit-remaining: 0` with a
  * `retry-after` of an hour is what it looks like from the outside.
  *
  * 5000 ms plus latency is ~400/hr (~9,600/day), which lands under the cap rather than into it.
@@ -100,7 +100,7 @@ export function emptyCounts(): SectorCounts {
 /**
  * Everything one cell's winters accumulate into — **direction and speed, not just direction**.
  *
- * `counts` was the whole accumulator until N7-3, and `cells[6]` was fetched on every request and
+ * `counts` was the whole accumulator until A07a-3, and `cells[6]` was fetched on every request and
  * never read. That is what turned "could we also derive strong-wind hours?" into a 7.7-hour
  * re-fetch, and it is the reason this package now archives responses. See `archive.ts`.
  */
@@ -252,7 +252,7 @@ export function sleep(ms: number): Promise<void> {
 }
 
 /**
- * Attempts for a **429 specifically**, which is a different failure from a 500 (N7-3).
+ * Attempts for a **429 specifically**, which is a different failure from a 500 (A07a-3).
  *
  * A 5xx is the service being broken and retrying hard is rude; a 429 is the service telling us to
  * slow down, and the correct response is to wait longer and try again. Four attempts spanning ~92

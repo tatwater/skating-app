@@ -1,5 +1,5 @@
 /**
- * The rules the master list is built from — extracted from `merge.ts` so they can be tested (N7).
+ * The rules the master list is built from — extracted from `merge.ts` so they can be tested (A07a).
  *
  * ## Why this file exists
  *
@@ -90,7 +90,7 @@ export interface Merged {
   sameSourceDuplicate: boolean;
   /**
    * The members a `sameSourceDuplicate` group absorbed — **named, because they leave no other trace**
-   * (N7 second audit).
+   * (A07a second audit).
    *
    * A group holding two features from one catalogue merges into one body: `chooseGeometry` keeps one
    * outline and `catalogueIdsOf` keeps one id per catalogue, so the other feature's polygon *and* its
@@ -245,7 +245,7 @@ export function saltMask(features: readonly Feature[]): Feature[] {
  *
  * The asymmetry is deliberate and is the opposite of `NAME_DROP`'s: keeping a tidal body is a claim
  * about ice on water that goes out twice a day, which is a safety statement we do not want to make;
- * dropping a coastal freshwater pond costs one row and N7b can put it back. Every refusal is named
+ * dropping a coastal freshwater pond costs one row and A07b can put it back. Every refusal is named
  * in `dropped.ndjson`, so this is reviewable rather than merely asserted.
  */
 export const SALT_MIN_CONTAINMENT = 0.05;
@@ -320,7 +320,7 @@ export const SALT_SAMPLE_POINTS = 64;
  * of them already refused, which is 96 independent confirmations rather than a rule we need.
  *
  * **Matched on the folded name, like `AREA_CEILING_ALLOW_LIST`, and kept small on purpose.** Every
- * entry costs a review; the general escape hatch for anything this rule takes wrongly is N7b's
+ * entry costs a review; the general escape hatch for anything this rule takes wrongly is A07b's
  * `includedByRequest`, one body at a time with a human looking.
  */
 export const FRESHWATER_ALLOW_LIST: ReadonlySet<string> = new Set([
@@ -340,7 +340,7 @@ export function isFreshwaterException(name: string): boolean {
 /**
  * A catalogue **explicitly calling this salt**, where our classifier then let another one overrule it.
  *
- * Surfaced by the `classDissent` split (N7-2): 92 kept bodies carry one of these tags. `chooseClass`
+ * Surfaced by the `classDissent` split (A07a-2): 92 kept bodies carry one of these tags. `chooseClass`
  * lets a real class beat a drop — that rule is load-bearing, it is the 123-body wetland rescue — but
  * it means an OSM mapper writing `wetland=saltmarsh` is silently outvoted by a federal `LakePond`,
  * under a founder rule of *no salt water*.
@@ -544,7 +544,7 @@ export function chooseName(members: readonly Feature[]): string {
 }
 
 /**
- * Every publisher's name for a group, **in authority order** — the winner and the losers alike (N7).
+ * Every publisher's name for a group, **in authority order** — the winner and the losers alike (A07a).
  *
  * `chooseName` returns one string and the rest used to be dropped on the floor. That cost 463 bodies
  * their local name and made them unfindable under it: Auburn's water supply is stored as NHD's
@@ -626,7 +626,7 @@ export function chooseClass(members: readonly Feature[]): WaterBodyClass | null 
   const classes = members.map((m) => m.cls).filter((c): c is WaterBodyClass => c !== null);
   if (classes.length === 0) return null;
 
-  // **An explicit refusal beats another source's silence** (N7 audit, founder call 2026-08-06).
+  // **An explicit refusal beats another source's silence** (A07a audit, founder call 2026-08-06).
   //
   // `unclassified` is what a source says when it drew water and never said what kind — 3DHP has no
   // wetland class at all, and `natural=water` with no subtag is 96% of OSM's silence. It is not a
@@ -816,7 +816,7 @@ export function mergeGroupWithReason(members: Feature[]): {
     // Two different findings, and the report must not add them together. `no-class` is every
     // catalogue independently declining to call this water — the classifier may have a hole.
     // `refused-over-silence` is a catalogue explicitly refusing it while another said nothing, which
-    // is a rule working correctly and is new as of the N7 audit; watching it separately is how we
+    // is a rule working correctly and is new as of the A07a audit; watching it separately is how we
     // learn whether it removed 12 rivers or 1,200.
     const refusedExplicitly = members.some((m) => m.cls === null);
     const anySilence = members.some((m) => m.cls === 'unclassified');
@@ -1042,7 +1042,7 @@ export function nameMatchPairs(
 export const DUPLICATE_SWEEP_MIN_IOU = 0.3;
 
 /**
- * One flagged pair, **with the score that flagged it** — the referee's input (N7-2).
+ * One flagged pair, **with the score that flagged it** — the referee's input (A07a-2).
  *
  * The sweep used to return only "who overlaps whom", which is all a review queue needs and is not
  * enough to answer the open question about `RECONCILE_MIN_IOU`: 287 of the surviving pairs sit at
@@ -1198,7 +1198,7 @@ export function overlapDuplicates(
  *
  * A bay is an arm OF something, and what we do about that is now split (founder call, 2026-08-06):
  *
- * - **A bay with a parent is a sub-area, not a body.** N2 built `waterBodySubAreas` for exactly this
+ * - **A bay with a parent is a sub-area, not a body.** A02 built `waterBodySubAreas` for exactly this
  *   shape — Malletts Bay is part of Champlain, not a lake beside it — and emitting it as a body
  *   instead double-counts the water: the corpus held `West Branch Keuka Lake` (2,707 ac), `Spencer
  *   Bay` (4,742 ac, on Moosehead) and Winnipesaukee's `Alton`, `Paugus` and `Meredith` bays as rows
@@ -1211,7 +1211,7 @@ export function overlapDuplicates(
  * Returning the parent rather than a boolean is what makes the first outcome expressible; see
  * `hasBayParent` for the predicate the second one still wants.
  *
- * ## The test is now geometric, in both directions (N7 audit, 2026-08-06)
+ * ## The test is now geometric, in both directions (A07a audit, 2026-08-06)
  *
  * It used to be `covers()` on **bounding boxes alone**, which was wrong twice over:
  *
@@ -1383,7 +1383,7 @@ export function overrideGeometryForContainedBays(
         // Already contains it — nothing to correct, and `bayParent` will find it unaided.
         if (held(candidate.polygon) >= BAY_PARENT_MIN_CONTAINMENT) continue;
         // **The largest qualifying member, never the first** — `representativeOf`'s rule, and the
-        // reason it exists (N7-2 audit, 2026-08-08). This shipped as `.find()`, which is precisely
+        // reason it exists (A07a-2 audit, 2026-08-08). This shipped as `.find()`, which is precisely
         // the pattern D125 removed from `chooseGeometry` after `Indian Lake` was stored at 534 acres
         // with a 3,743-acre member in the same group. A catalogue can put several features in one
         // group, more than one of them can contain the bay, and array order is the order the
@@ -1606,7 +1606,7 @@ function anyPointInRegion(
 }
 
 /**
- * What share of this body's outline lies inside our five states — **in `[0, 1]`** (N7 audit).
+ * What share of this body's outline lies inside our five states — **in `[0, 1]`** (A07a audit).
  *
  * `inRegion` is deliberately generous: one in-region vertex admits the whole polygon, which is what
  * keeps Beau Lake, whose Québec half is most of it. The cost of that generosity is that the corpus
@@ -1778,7 +1778,7 @@ export function resolveGnisNames<
 
 /**
  * Give every feature its GNIS id **before the lanes run**, so `RECONCILE_MIN_IOU_WITH_GNIS` can fire
- * (N7, 2026-08-07).
+ * (A07a, 2026-08-07).
  *
  * ## The bar that had never once been reachable
  *
@@ -1787,7 +1787,7 @@ export function resolveGnisNames<
  * evidence"*. `reconcile.ts` even records that the rule appeared dead — *"this fired zero times
  * across 21,665 bodies… the precondition was missing, not the rule"* — and expected
  * source-to-source matching to fix it. It did not, and the reason is **ordering**: the gazetteer lane
- * runs in phase 2 of `buildMasterList`, long after the lanes have matched in stage 1.
+ * runs in phase 02a of `buildMasterList`, long after the lanes have matched in stage 1.
  *
  * Reproduced against the archives, for `Kelly Bog`:
  *
@@ -1884,7 +1884,7 @@ export function gnisPointFor(
 /**
  * Why a raw source record never became a `Feature`.
  *
- * **Every one of these used to be a bare `continue`** in `merge.ts`, and that is the finding the N7
+ * **Every one of these used to be a bare `continue`** in `merge.ts`, and that is the finding the A07a
  * audit turned up: the plan's proudest claim is that its numbers balance — *"178,690 groups = 11,631
  * refused + 35,637 out of region + 104,348 filtered + 27,074 kept"* — and they balance only from the
  * grouping stage onward. Upstream of it, the **largest single filter in the whole pipeline** (the

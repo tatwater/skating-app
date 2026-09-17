@@ -12,7 +12,7 @@ import { deleteTrack, getTrack, listDrafts, listTracks, saveTrack } from '../lib
 import { flushDrafts } from '../lib/flushService';
 
 /**
- * Your recorded skates on this device, and what became of each one's Strava copy (Phase 8).
+ * Your recorded skates on this device, and what became of each one's Strava copy (Phase 08).
  *
  * **This exists to be the manual retry path.** The queue retries a temporary push failure a bounded
  * number of times (`MAX_STRAVA_PUSH_ATTEMPTS`) and then stops — it has to, because drains fire on

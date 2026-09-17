@@ -172,7 +172,7 @@ describe('precipitationKind', () => {
     expect(precipitationKind(hour(3, { weatherCode: 73, precipitationMm: 1 }))?.fill).toBe('snow');
   });
 
-  it('derives freezing rain without a weather code — the pre-N6h archive rows', () => {
+  it('derives freezing rain without a weather code — the pre-A06h archive rows', () => {
     // Rows written before `weather_code` was requested must still draw the hatch: liquid arriving at
     // or below freezing is the one precipitation fact that changes a skating surface, and it was
     // always derivable.

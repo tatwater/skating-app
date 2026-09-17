@@ -1,5 +1,5 @@
 /**
- * Per-state provenance records (N6b) — the committed half of the archive.
+ * Per-state provenance records (A06b) — the committed half of the archive.
  *
  * `.raw/` is gitignored, so on a fresh clone the repo knows nothing about what we hold, when we got
  * it, or under what terms. This renders that into `PROVENANCE.md`, which **is** committed: where each
@@ -169,7 +169,7 @@ export function renderProvenance(entries: readonly ProvenanceEntry[], generatedA
     '## New York',
     '',
     '**No statewide lake bathymetry exists to archive.** This is a checked finding, not a gap — see',
-    '`plans/phase-N6b-bathymetry-layer.md` §New York for the search that established it and for the',
+    '`plans/phases/A06b-bathymetry-layer.md` §New York for the search that established it and for the',
     'costed digitisation path if we ever fund it.',
     '',
     'New York is nonetheless covered where it matters most: the VCGI/NOAA Champlain source above spans',

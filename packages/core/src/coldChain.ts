@@ -1,5 +1,5 @@
 /**
- * The cold chain — D159's headline predicate, as the founder defined it (N6h / **D164**).
+ * The cold chain — D159's headline predicate, as the founder defined it (A06h / **D164**).
  *
  * > *"The nights-below are intended to be a chain of nights in a row (seeing temps below 20°F within
  * > 48 h of each other counts as consecutive)… 'No snow since' is since the last <20°F."*

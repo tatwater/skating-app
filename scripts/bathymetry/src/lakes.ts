@@ -1,5 +1,5 @@
 /**
- * Every archived lake, from every source, in one shape — plus how a sample set is chosen (N6b).
+ * Every archived lake, from every source, in one shape — plus how a sample set is chosen (A06b).
  *
  * The sample renderer began as a Maine-only tool because Maine was where the density gate needed
  * looking at. Widening it to all five sources is what turns it from *"does the gate keep the right

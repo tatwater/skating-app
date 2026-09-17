@@ -1,15 +1,15 @@
 /**
- * Auto-flag bundling (N2) — one row per recurring problem, carrying a count, instead of a stream of
+ * Auto-flag bundling (A02) — one row per recurring problem, carrying a count, instead of a stream of
  * identical rows.
  *
  * Two callers file system-generated flags: `ratings.maybeAutoFlag` (a target crossed the
  * net-unhelpful threshold, D50) and `contradictions.flagContradictionPattern` (a contributor crossed
- * the weather-unexplained contradiction threshold, D56 §7b). Both had the identical dedup — *one open
+ * the weather-unexplained contradiction threshold, D56 §07-2). Both had the identical dedup — *one open
  * flag per (target, reason)* — written out twice, with `contradictions.ts` saying so in its own
  * comment. So the mechanism belongs on `contentFlags`, not in either caller.
  *
  * **The trap this had to avoid.** The obvious implementation is to reopen the resolved flag: flip
- * `status` back to `open` and bump a counter. That would corrupt a Phase-7b rollup.
+ * `status` back to `open` and bump a counter. That would corrupt a Phase-07-2 rollup.
  * `contentFlags.by_status_resolved_at` was built on the stated premise that *"`actioned`/`dismissed`
  * accumulate forever"* — the day-sliced flag-resolution chart reads terminal rows in a date range, so
  * flipping one back out of `actioned` retroactively changes a past day's count. A number that was
@@ -173,7 +173,7 @@ export async function fileOrBumpAutoFlag(
     status: 'open',
     // `flaggerId` names a real person who did NOT file a report — the rater whose thumb crossed the
     // line. `origin` is what keeps `content_flag_resolved` from telling them "the report you filed
-    // was actioned" about a report they never filed (N8/B3).
+    // was actioned" about a report they never filed (A08/B3).
     origin: 'auto',
     occurrences,
     lastOccurrenceAt: now,

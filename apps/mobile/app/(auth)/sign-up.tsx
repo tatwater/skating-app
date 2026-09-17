@@ -8,7 +8,7 @@ import { Input } from '../../src/components/ThemedInputs';
 
 /**
  * Clerk account creation (D26): email + password + email-code verification. The profile
- * fields and the blocking Phase 0 gates (16+ age gate D41, assumption-of-risk ack D45)
+ * fields and the blocking Phase 00 gates (16+ age gate D41, assumption-of-risk ack D45)
  * are collected right after, on the onboarding screen, where they're passed to the
  * enforced `upsertFromClerk` mutation — never staged in Clerk `unsafeMetadata`. Once the
  * session is active the root gate routes an unprovisioned user to onboarding, so no

@@ -31,14 +31,14 @@ username: string            // unique, for search (searchable by name, D13)
 homeCoord: { lat, lng }     // PRIVATE — filter input only (D11)
 homeTownLabel?: string      // optional PUBLIC label on profile (D11)
 bio?: string                 // optional PUBLIC blurb, shown only on a public profile (D13)
-cachedIsochrones?: {         // Phase 4: nested drive-time bands, derived from homeCoord (D18).
+cachedIsochrones?: {         // Phase 04: nested drive-time bands, derived from homeCoord (D18).
   band30?: geojson           // ORS driving-car isochrone, 1800s
   band60?: geojson           // ORS driving-car isochrone, 3600s (hosted ORS max range)
 }                            // band membership derived at read time (Turf pointInPolygon) — NOT a
 outerRadiusMeters?: number   // materialized userId×waterBodyId table (balloons + goes stale). The 90-min
                              // band is a uniform crow-flies radius (hosted ORS caps at 60; self-host later).
 cachedIsochronesAt?: timestamp  // recomputed on home/pref change (D18)
-feedFilterPrefs?: {          // Phase 4: server-sync copy of the newsfeed filter row (local-first + LWW).
+feedFilterPrefs?: {          // Phase 04: server-sync copy of the newsfeed filter row (local-first + LWW).
   radiusMinutes?: 30 | 60 | 90     // drive-radius filter (null/absent = off = show all)
   qualityFloor?: enum(good, great) // skateQuality floor; INCLUDE-UNKNOWN (never drops reports w/o quality)
   thicknessFloorCm?: number        // thickness floor; INCLUDE-UNKNOWN (only ~16% of reports carry it)
@@ -47,19 +47,19 @@ feedFilterPrefs?: {          // Phase 4: server-sync copy of the newsfeed filter
   surfaceTags?: string[]           // "ideal surface" checkboxes (e.g. glass/smooth)
   recencyHours?: number            // hard recency floor (e.g. 24/48/168); null = off
 }                            // NOTE: driveTimePrefMinutes (old single D18 pref) folds into the notification
-                             // radii + this filter; kept/dropped at the Phase-4 migration.
+                             // radii + this filter; kept/dropped at the Phase-04 migration.
 profileVisibility: enum(public, private)  // THE ONLY privacy switch for the PERSON (reports are always
                              // public, D13). public = searchable + browsable (name, photo, town, bio,
                              // counts, trust score, report history); private = name + photo only, not
                              // searchable. Minors forced private; adults default public (D13/D41).
-excludeTracksFromAggregate?: boolean  // Phase 8 / D58: keep my recorded paths out of the community
+excludeTracksFromAggregate?: boolean  // Phase 08 / D58: keep my recorded paths out of the community
                              // aggregate tracks layer. PERSON-level on purpose — flipping it
                              // retroactively drops every track they've contributed, not just future
                              // ones. Recording + Strava push are unaffected; this governs only whether
-                             // their line draws on a lake's map for other people.
-timezone?: string            // N8/C, D173 — the DEVICE's IANA zone, refreshed on app open; the 8pm digest's
+                             // their line draws on a water body's map for other people.
+timezone?: string            // A08/C, D173 — the DEVICE's IANA zone, refreshed on app open; the 8pm digest's
                              // only per-user input (the hour is 20:00 for everyone). Never public.
-email?: string               // N8 PR 3 / D174 — PRIVATE mirror of the Clerk `email` claim (like
+email?: string               // A08 PR 3 / D174 — PRIVATE mirror of the Clerk `email` claim (like
                              // profileImageUrl); both refreshed on every app open by `syncFromClerk`
                              // (`upsertFromClerk` is onboarding-only) AND the moment Clerk says so
                              // (`user.updated` webhook → `applyClerkMirrors`); scrubbed at the
@@ -69,21 +69,21 @@ clerkUpdatedAt?: number      // Clerk's `updated_at` (ms) as of the last mirror 
                              // a cached pre-change token). Absent ⇒ no ordering, apply as before
 channelPrefs?: { push, email } // D174 — the two transports over the inbox; absent ⇒ both on
 emailUnsubscribeSecret?: string // D174 — authorizes the one-click unsubscribe link, and nothing else
-notificationPrefs: {         // per-type toggles — EVERY type is toggleable (D16); vocabulary in @skating/core (N8)
-  activityDetected,          // a skate OUR recorder captured that was never reported (N8/B4) — NOT "any
-                             // linked provider" as D24 said; that premise was retired with Phase 8's push pivot
+notificationPrefs: {         // per-type toggles — EVERY type is toggleable (D16); vocabulary in @skating/core (A08)
+  activityDetected,          // a skate OUR recorder captured that was never reported (A08/B4) — NOT "any
+                             // linked provider" as D24 said; that premise was retired with Phase 08's push pivot
   bountyRequest,
-  hazardConfirmation,        // your hazard's lifecycle phase moved: confirmed / disputed / healing / healed (N8)
-  bountyAnswered,            // a report landed on your open bounty (N8 / D170; was bountyFulfilled)
+  hazardConfirmation,        // your hazard's lifecycle phase moved: confirmed / disputed / healing / healed (A08)
+  bountyAnswered,            // a report landed on your open bounty (A08 / D170; was bountyFulfilled)
   reportRated,               // someone found your report/hazard helpful, or corroborated your report (D17)
-  reportCommented,           // someone commented on your report, or replied to your comment (D21; N8)
-  favoriteReport,            // Phase 4: report on a favorited body (DEFAULT ON), any distance
-  nearbyReportDigest,        // Phase 4: "all reports within X₁" — delivered as the 8pm-ET daily digest
-  greatReportNearby,         // Phase 4: "great reports within X₂" — fires ~individually (coalesced)
+  reportCommented,           // someone commented on your report, or replied to your comment (D21; A08)
+  favoriteReport,            // Phase 04: report on a favorited body (DEFAULT ON), any distance
+  nearbyReportDigest,        // Phase 04: "all reports within X₁" — delivered as the 8pm-ET daily digest
+  greatReportNearby,         // Phase 04: "great reports within X₂" — fires ~individually (coalesced)
   contentFlagResolved: boolean
 }                            // keys mirror notifications.type 1:1 (D16 invariant)
-allRadiusMinutes?: 30 | 60 | 90     // Phase 4: X₁ for nearbyReportDigest
-greatRadiusMinutes?: 30 | 60 | 90   // Phase 4: X₂ for greatReportNearby — enforce X₂ ≥ X₁ (drive
+allRadiusMinutes?: 30 | 60 | 90     // Phase 04: X₁ for nearbyReportDigest
+greatRadiusMinutes?: 30 | 60 | 90   // Phase 04: X₂ for greatReportNearby — enforce X₂ ≥ X₁ (drive
                                     // farther for better ice)
 dateOfBirth: timestamp       // collected at signup (D41); age gate (≥16) + minor status
                              // (<18, protective defaults) are DERIVED from it, recomputed
@@ -102,9 +102,9 @@ canPostHazards?: boolean        // moderation lever finer than a whole-app ban �
                                 // reports.create / hazards.create gate on these server-side (like `status`).
 contradictionCount?: number     // D56/D57: private, non-scoring tally of weather-unexplained, never-
                                 // corroborated contradictions. NOT trust (D50 stays boost-only) — a
-                                // moderation input; the Phase-7 panel charts it tenure-aware. Absent ⇒ 0.
+                                // moderation input; the Phase-07 panel charts it tenure-aware. Absent ⇒ 0.
 deletedAt?: timestamp
-photosExpiredForSeason?: number  // N5a/D66: the season a tombstone's photo expiry last completed
+photosExpiredForSeason?: number  // A05a/D66: the season a tombstone's photo expiry last completed
                                  // through. A completion marker, not a clock — without it the daily
                                  // sweep re-walked every departure the app had ever had, forever.
                                  // Absent = never swept, which is exactly the queue: an index on an
@@ -147,7 +147,7 @@ connectedAt: timestamp
 > Strava + Apple HealthKit first, Garmin next, then COROS / Polar / Google Health
 > Connect — so every skater's device can contribute a **trusted** GPS path.
 >
-> **Amended by Phase 8 (2026-07-24, L7/D58).** Two changes the build made real:
+> **Amended by Phase 08 (2026-07-24, L7/D58).** Two changes the build made real:
 > **(a)** `provider` gained **`native`** — our own in-app recorder, and the only A-input wired today.
 > It's a first-class provider value rather than a special case because the *legal* status of a track
 > follows its source: a `native` track is our first-party data (free to aggregate and draw on public
@@ -156,7 +156,7 @@ connectedAt: timestamp
 > remaining providers are the deferred watch adapters, kept in the enum so adding one later is an
 > adapter, not a migration.
 
-### `oauthStates`  (short-lived OAuth `state` nonces — Phase 8, Strava)
+### `oauthStates`  (short-lived OAuth `state` nonces — Phase 08, Strava)
 ```
 _id
 state: string                 // the opaque nonce echoed back by the provider
@@ -167,7 +167,7 @@ expiresAt: timestamp
 createdAt: timestamp
 indexes: by_state, by_expires_at
 ```
-> **Why this table exists (a Phase-8 discovery, not in the original plan):** an OAuth callback lands on
+> **Why this table exists (a Phase-08 discovery, not in the original plan):** an OAuth callback lands on
 > an **unauthenticated** HTTP endpoint — a browser redirect from Strava carries no Clerk identity — so
 > without a nonce bound to the user there is no way to know *whose* account is being connected, and a
 > replayed callback URL could bind a Strava account to the wrong profile. An authenticated mutation
@@ -180,41 +180,41 @@ indexes: by_state, by_expires_at
 _id
 userId: ref(profiles)
 provider: enum(native, strava, garmin, coros, polar, apple_health, google_health_connect, other)
-                             // Phase 8: `native` (our own recorder) is the only one wired.
+                             // Phase 08: `native` (our own recorder) is the only one wired.
 providerActivityId: string   // unique per provider — dedup webhook re-deliveries. For `native`
                              // it's the recorder session's client-generated idempotency key, which
                              // is what makes an offline re-flush return the original row.
 sportType: string            // provider's ice-skate type (e.g. Strava "IceSkate")
 startTime: timestamp         // GPS start → report.skateStartTime on convert
-endTime?: timestamp          // Phase 5 prep (wired Phase 8): GPS end → report.skateEndTime
-elapsedSeconds?: number      // Phase 5 prep: provider moving/elapsed time — NON-redundant with
-                             // (end − start) because it excludes pauses/stops. Phase 8: trim a
+endTime?: timestamp          // Phase 05 prep (wired Phase 08): GPS end → report.skateEndTime
+elapsedSeconds?: number      // Phase 05 prep: provider moving/elapsed time — NON-redundant with
+                             // (end − start) because it excludes pauses/stops. Phase 08: trim a
                              // watch-left-recording tail to the on-water path before deriving end.
 path?: geojson               // TRUSTED GPS track = skated extent (+ hazard proximity, Q11)
-waterBodyId?: ref(waterBodies)   // resolved at ingest from path (D44) — the lake this skate was on
+waterBodyId?: ref(waterBodies)   // resolved at ingest from path (D44) — the water body this skate was on
 waterBodyIds?: ref(waterBodies)[] // when a skate spans connected bodies; waterBodyId = primary
 photoUrls?: string[]         // provider-dependent + subject to provider ToS
-promptState: enum(pending, prompted, converted, dismissed)  // N8/B4: an hourly sweep flips a skate
+promptState: enum(pending, prompted, converted, dismissed)  // A08/B4: an hourly sweep flips a skate
                              // still `pending` 3 h after `detectedAt` to `prompted` and files ONE
                              // `activity_detected` notification (index `by_prompt_state_detected`)
 linkedReportId?: ref(reports)
 detectedAt: timestamp
-supersededByActivityId?: ref(gpsActivities)  // N8/B4a — the better copy of this same skate (core
+supersededByActivityId?: ref(gpsActivities)  // A08/B4a — the better copy of this same skate (core
                              // `activityDedup` ladder: native > watch > aggregator > strava). Never
                              // deleted; a loser's `linkedReportId` moves to the winner. Unreachable
                              // today (one provider) — the rule exists before the second source does
 ```
 > **Water-body resolution (D44):** at ingest, spatially match `path` against
 > `waterBodies` (bbox prefilter → Turf.js, the D5/D36 machinery) and store the
-> resolved `waterBodyId` so skates are findable **by lake identity/name**, not by
+> resolved `waterBodyId` so skates are findable **by water body identity/name**, not by
 > drawing a geospatial box ("5 miles on *Lake Morey*", not "5 miles somewhere here").
 > If the path matches no known body, fall back to the D14/D36 create-or-attach flow.
-> **Wired in Phase 8 (2026-07-24).** `gpsActivities.ingestTrack` fills this table from the native
+> **Wired in Phase 08 (2026-07-24).** `gpsActivities.ingestTrack` fills this table from the native
 > recorder; a device-supplied `waterBodyId` is treated as a **hint only** and re-resolved unless it
 > still checks out (the offline body cache goes stale, and the body may have been merged away since).
 > `linkedReportId` is written in the **same transaction** as `reports.create` — a half-linked pair
 > can't exist, which matters because the *activity* side is what the D58 aggregate layer's
-> publish-is-consent predicate reads. The table needed **no schema change**: the Phase-5 stub already
+> publish-is-consent predicate reads. The table needed **no schema change**: the Phase-05 stub already
 > had the right shape and indexes. `path` is the substrate for the **aggregate tracks layer** —
 > see D58 for the four structural privacy gates that decide which rows in this table ever draw for
 > anyone but their owner.
@@ -223,21 +223,21 @@ supersededByActivityId?: ref(gpsActivities)  // N8/B4a — the better copy of th
 ```
 _id
 name: string
-type: enum(lake, pond, river, stream, reservoir, bay, marsh, other)
+type: enum(water body, pond, river, stream, reservoir, bay, marsh, other)
 source: enum(osm, nhd, user)
 externalId?: string          // OSM/NHD id when source != user
 polygon: geojson             // Polygon / MultiPolygon (rivers: the reach/segment)
 bbox: { minLat, minLng, maxLat, maxLng }  // prefilter index
 centroid: { lat, lng }       // geospatial point index
 surfaceAreaSqM?: number      // from NHD/OSM, or estimated for user shapes
-// ── Depth (N6a / D68). Provenance is per *measurement*: mean and max routinely come from
+// ── Depth (A06a / D68). Provenance is per *measurement*: mean and max routinely come from
 //    different rungs, so one shared source field could not be honest.
 meanDepthM?: number
 maxDepthM?: number
 meanDepthSource?: enum(operator, state_agency, lagos_us, hydrolakes, globathy, osm_tag)
 maxDepthSource?: enum(operator, state_agency, lagos_us, hydrolakes, globathy, osm_tag)
 depthSourceNote?: string     // public evidence behind an `operator` depth (D68 amendment)
-// ── Derived profile stats (N6c / D70). All computed at ETL from the stored polygon or one
+// ── Derived profile stats (A06c / D70). All computed at ETL from the stored polygon or one
 //    free lookup — nothing here is ever typed by a human.
 elevationM?: number
 elevationSource?: enum(operator, dem_glo90)
@@ -246,11 +246,11 @@ shortAxisM?: number          // perpendicular hull width — gives the "5 × 1 m
 longAxisBearingDeg?: number  // 0–180, undirected: an axis has no head
 shorelineM?: number          // perimeter at ~5 m simplification fidelity — NOT survey-comparable
 fetchProfileM?: number[]     // 16 bearings @ 22.5°: contiguous over-water run through the centroid
-satelliteImagery?: enum(auto, on, off)  // ✅ BUILT in N6e (Workstream D, D138). Absent ⇒ auto: only an
+satelliteImagery?: enum(auto, on, off)  // ✅ BUILT in A06e (Workstream 4, D138). Absent ⇒ auto: only an
                                         // operator DISAGREEING with satelliteImageryAvailable() is stored,
                                         // and `auto` clears rather than writes. Survives re-import.
-referenceLinks?: { label, url }[]       // the ONE non-derivable link class: lake associations (D71)
-// ── The map summary card (N6c/E, D141). Absent ⇒ no card at all, which is E3's whole rule.
+referenceLinks?: { label, url }[]       // the ONE non-derivable link class: water body associations (D71)
+// ── The map summary card (A06c/E, D141). Absent ⇒ no card at all, which is §5.3's whole rule.
 //    Recomputed from a bounded window on every write that could change it, never incremented:
 //    the counts are window- AND season-scoped, so a report ageing out has no event to decrement
 //    on, and the D86 mean cannot be maintained incrementally at all.
@@ -274,15 +274,15 @@ createdAt: timestamp
 ```
 > **Listing (`listed`, D48/D5).** Whether a body shows on the public map is a **derived
 > boolean**: **`true`** for canonical (`osm`/`nhd`) bodies and auto-visible/approved user bodies;
-> **`false`** when `rejected`, `merged`, or **removed** (`removedAt` set). Since N1 it decides
+> **`false`** when `rejected`, `merged`, or **removed** (`removedAt` set). Since A01 it decides
 > whether the body is in the spatial index at all — an unlisted body has no `waterBodyCells` rows,
 > so `waterBodies.listInViewport` can't reach it. Removal (D48) is a **reversible soft-delist** (never a hard delete):
 > flip `listed` off, stamp `removed*`, write a `moderationActions` audit row, and — because
 > the OSM import re-runs — the idempotent `importCanonical` upsert **must preserve** a
 > removed state so a re-import never resurrects it.
 > **`centroid` is a guaranteed on-water representative point** (Turf `pointOnFeature`), not
-> a raw area centroid — the area centroid of a crescent/horseshoe lake can land on shore,
-> which would break both the geospatial point index and D20's "fit the map to this lake."
+> a raw area centroid — the area centroid of a crescent/horseshoe water body can land on shore,
+> which would break both the geospatial point index and D20's "fit the map to this water body."
 > Rivers: model as **segments/reaches** (D4). A long river = multiple `waterBodies`
 > rows (or one row per named reach), so reports/hazards attach to the right stretch.
 > **Dedup (D36):** match on create (bbox prefilter → Turf IoU / point-in-polygon +
@@ -291,7 +291,7 @@ createdAt: timestamp
 > child reports/hazards/bounties** to the survivor and soft-tombstones the loser
 > (`merged` + `mergedIntoId`) — never hard-deleted, so bad merges reverse. Rivers
 > compared by buffered-line overlap, not IoU.
-> **Built in Phase 8 (2026-07-24), with two amendments.** **(a)** `dedupStatus` gained
+> **Built in Phase 08 (2026-07-24), with two amendments.** **(a)** `dedupStatus` gained
 > **`near_certain`** — D36 always described three match tiers but the schema had two, so the top tier
 > had nowhere to go; `listDedupCandidates` now surfaces both, near-certain first. A flagged body stays
 > **listed**: hiding it would take every report and hazard filed against it off the map on a machine's
@@ -299,8 +299,8 @@ createdAt: timestamp
 > `gpsActivities` **`activityId`, not a polygon**, and derives the geometry server-side from the
 > recorded track (`core/pathToBody.ts`: buffer the LineString, fill interior rings, refuse a track with
 > no extent). "No freehand drawing, ever" (D14) is therefore a server contract, not a UI convention.
-> **Depth + derived stats (N6a/N6c).** *(The depth block was shipped in N6a but never reached this doc —
-> caught and added during the N6c doc pass, 2026-07-30.)* Everything in both blocks is **optional ⇒
+> **Depth + derived stats (A06a/A06c).** *(The depth block was shipped in A06a but never reached this doc —
+> caught and added during the A06c doc pass, 2026-07-30.)* Everything in both blocks is **optional ⇒
 > migration-free**, and because `importCanonical` patches an **explicit field list**, all of it survives a
 > canonical re-import untouched — the same property that protects `curatedBoost`.
 > **No index on any of it:** depth and the profile stats are only ever read with a body already in hand
@@ -312,18 +312,18 @@ createdAt: timestamp
 > makes it more dangerous, not less.
 > **Reference links are generated, not stored (D71)** — every other outbound link is a pure function of
 > **`(interiorPoint, name, states)`** computed in `@skating/core`, which is what gives all 24,953 bodies
-> coverage with no migration and no stale URLs. `referenceLinks` exists only for lake associations, which
+> coverage with no migration and no stale URLs. `referenceLinks` exists only for water body associations, which
 > no algorithm can derive; expect tens of rows, not thousands.
-> ⚠ **`interiorPoint`, not `centroid`** — this doc and N6c's Workstream B both said `centroid` until
+> ⚠ **`interiorPoint`, not `centroid`** — this doc and A06c's Workstream 2 both said `centroid` until
 > 2026-08-09, and both were wrong for the reason the block above already states: `centroid` is
-> `pointOnFeature` and lands **on the shoreline** for any curved lake. Champlain's is 30.7 km from
-> mid-lake, so a Windy or Copernicus link built from it opens 30 km off the water. Caught at the N6c-2
+> `pointOnFeature` and lands **on the shoreline** for any curved water body. Champlain's is 30.7 km from
+> mid-lake, so a Windy or Copernicus link built from it opens 30 km off the water. Caught at the A06c-2
 > build; a test pins it.
 > **`summary` is written only by `lib/bodySummary.ts`** (D141) and swept six-hourly for the time decay
 > no write can catch. Nothing indexes it: the map reads it off rows `listInViewport` already returned,
 > which is the entire argument for denormalizing it — a card costs no read at all.
 
-### `waterBodySubAreas`  (named regions inside one body — N2 / D60)
+### `waterBodySubAreas`  (named regions inside one body — A02 / D60)
 ```
 _id
 waterBodyId: ref(waterBodies)  // parent — required, always an existing body
@@ -342,7 +342,7 @@ createdAt / updatedAt: timestamp
 removedAt? / removedByUserId?  // soft-delist, reversible — never a hard delete
 systemDelistReason?: string    // why the SYSTEM retired it; cleared by a restore or redraw
 ```
-> **A bay is a name on a lake, not a lake.** Reports, hazards and bounties keep belonging to the
+> **A bay is a name on a water body, not a water body.** Reports, hazards and bounties keep belonging to the
 > **parent**; the sub-area is the finer name they carry, denormalized flat (`subAreaId` /
 > `subAreaName`) at create and re-stamped by a self-rescheduling cursor when a bay is redrawn, renamed
 > or delisted. Minting bays as bodies would split one sheet of ice's reports, hazards, bounties,
@@ -359,11 +359,11 @@ systemDelistReason?: string    // why the SYSTEM retired it; cleared by a restor
 > `moderationActions` row names them. A server log is not a surface (D5).
 > **Visible only while its parent is** — cell rows in `waterBodySubAreaCells` exist on the
 > conjunction, so a landowner takedown takes the bays with it and a merge repoints them to the
-> survivor. Same "unlisted means absent" rule N1 established for bodies.
+> survivor. Same "unlisted means absent" rule A01 established for bodies.
 > **Overlap is fine; the stamp isn't ambiguous.** A point in two bays takes the **smallest containing**
 > one — most specific name wins, and the answer is order-independent.
 
-### `adminAreas`  (administrative boundaries for point→place labels — Phase 5)
+### `adminAreas`  (administrative boundaries for point→place labels — Phase 05)
 ```
 _id
 name: string                 // "Burlington", "Chittenden County"
@@ -374,16 +374,16 @@ bbox: { minLat, minLng, maxLat, maxLng }  // prefilter index
 centroid: { lat, lng }       // geospatial point index
 createdAt: timestamp
 ```
-> **Purpose (Phase 5, decided 2026-07-16):** resolve a report's `point` (put-in pin / GPS start) →
-> `{ town?, county?, state? }` so the newsfeed/lake cards show *which town/side* a skater put in from —
+> **Purpose (Phase 05, decided 2026-07-16):** resolve a report's `point` (put-in pin / GPS start) →
+> `{ town?, county?, state? }` so the newsfeed/water body cards show *which town/side* a skater put in from —
 > correct even for a body spanning multiple towns or states (Lake Champlain = NY|VT). Imported from the
 > **same per-state OSM extracts** the water ETL uses (`boundary=administrative`, `admin_level` 4/6/7–8;
 > same ODbL attribution, **no new dataset**). New England (VT/NH/ME/MA) is fully tiled by towns; county
 > is the fallback for any gap. `resolvePlaceForCoord` (bbox prefilter → Turf `pointInPolygon`, the
 > D5/D36 machinery) returns the most-specific match; stamped onto `reports.place` at create (no
-> per-read geocode). Reused by GPS ingest (Phase 8) + hazards (Phase 9).
+> per-read geocode). Reused by GPS ingest (Phase 08) + hazards (Phase 09a).
 
-### `weatherAlerts`  (NWS active alerts — N6c/B5, D74)
+### `weatherAlerts`  (NWS active alerts — A06c/B5, D74)
 ```
 _id
 state: string                  // the state this row was polled under — the per-state replace key
@@ -411,7 +411,7 @@ fetchedAt: number
 > indistinguishable from no warning. Unused until a body carries `nwsZoneIds` (rung 1 of the ladder,
 > unbuilt); every match today falls to the `states` rung, which over-shows, which is the safe direction.
 
-### `weatherForecastCache`  (the short forward forecast — N6c/B5b, D140)
+### `weatherForecastCache`  (the short forward forecast — A06c/B5b, D140)
 ```
 _id
 samplePointKey: string         // rounded "lat,lng" — the same ~110 m key `weatherCache` uses
@@ -439,14 +439,14 @@ authorId: ref(profiles)
 waterBodyId: ref(waterBodies)
 point: { lat, lng }          // where the reporter was / representative point (geo index)
 skateTime: timestamp         // WHEN THEY SKATED — primary sort key everywhere
-                             // ⚠️ Phase 5 (decided 2026-07-16): RENAMED → `skateEndTime`, redefined
+                             // ⚠️ Phase 05 (decided 2026-07-16): RENAMED → `skateEndTime`, redefined
                              // as "when the skater left the ice" (the freshest read wins the sort).
-                             // Manual form asks "When did you get off the ice?"; GPS (Phase 8) maps
+                             // Manual form asks "When did you get off the ice?"; GPS (Phase 08) maps
                              // the path's END time.
-skateStartTime?: timestamp   // Phase 5: optional — when they got ON the ice. Duration is DERIVED
+skateStartTime?: timestamp   // Phase 05: optional — when they got ON the ice. Duration is DERIVED
                              // (end − start), never stored. Manual form accepts start OR a duration
                              // (back-computes start); GPS supplies both.
-place?: {                    // Phase 5: point-derived location label, stamped at create from `point`
+place?: {                    // Phase 05: point-derived location label, stamped at create from `point`
   town?: string              // (the put-in pin / GPS start) via the `adminAreas` resolver — so a
   county?: string            // multi-town/-state body shows WHICH side the skater put in from.
   state?: string             // Card reads "{body} · {town or county}, {state}". No per-read geocode.
@@ -487,7 +487,7 @@ conditions?: {
 
 photoIds: ref(photos)[]
 notes?: string               // free text
-showPutIn?: boolean          // Phase 4: default true. The private-property opt-out — false hides this
+showPutIn?: boolean          // Phase 04: default true. The private-property opt-out — false hides this
                              // report's derived put-in PIN on the map but KEEPS the coarse `place`
                              // label (we suppress a marker, we don't scrub location).
 // No `visibility` field — every report is PUBLIC (D13). Minors can't create reports at all (D41).
@@ -496,19 +496,19 @@ hazardIdsCreated: ref(hazards)[]  // hazards drawn as part of this report
 createdAt, updatedAt: timestamp
 ```
 
-### `waterBodyFavorites`  (place-based curation — Phase 4, the D13 follow-graph stand-in)
+### `waterBodyFavorites`  (place-based curation — Phase 04, the D13 follow-graph stand-in)
 ```
 _id
 userId: ref(profiles)
 waterBodyId: ref(waterBodies)
 createdAt: timestamp
 ```
-> **Purpose (Phase 4):** you subscribe to *lakes you care about*, not to people (D13). A favorite
+> **Purpose (Phase 04):** you subscribe to *water bodies you care about*, not to people (D13). A favorite
 > **notifies by default** (`favoriteReport`), gets a **feed prominence boost** (exempt from the distance
 > filter, but still obeys quality/snow/recency filters), and is **highlighted on the map**. Indexed
 > `by_user` (my favorites) **and** `by_water_body` (the notification fan-out: who favorited this body?).
 
-### `putIns`  (access-point markers on a water body's shore — Phase 4)
+### `putIns`  (access-point markers on a water body's shore — Phase 04)
 ```
 _id
 waterBodyId: ref(waterBodies)
@@ -517,21 +517,21 @@ source: enum(derived, osm, official)  // official > osm > derived; a derived/osm
 originReportId?: ref(reports)     // for a derived marker, a representative source report
 status: enum(visible, hidden)     // hidden = moderator-suppressed (per-coord, outlives re-clustering)
 createdByUserId?: ref(profiles)   // the admin, when source == official
-// ── N6d / D72
+// ── A06d / D72
 name?: string                     // from the OSM `name` tag, else a derived compass-side label
 parkingAreaId?: ref(parkingAreas) // where the car actually goes
 approachMeters?: number           // parking → put-in; path distance where one exists, else straight-line
 approachKind?: enum(drive_up, short_walk, hike_in)  // derived from approachMeters, operator-overridable
 createdAt: timestamp
 ```
-> **Derived vs. official (Phase 4).** `derived` markers are materialized by **clustering visible report
+> **Derived vs. official (Phase 04).** `derived` markers are materialized by **clustering visible report
 > `point`s** (respecting each report's `showPutIn` opt-out) and **snapping to shore/road** — a report
 > point can be mid-lake/on-ice, so derived markers are *approximate*. `official` markers are **admin-set**
-> from the Phase-7 operator surface (accurate; priority styling). A **moderator hide is per-coord**
+> from the Phase-07 operator surface (accurate; priority styling). A **moderator hide is per-coord**
 > (a `hidden` row / suppression entry) so one action kills the marker regardless of how many reports feed
-> it, plus a `moderationActions` audit row. **Directions** deep-link (Apple/Google) from the lake detail
+> it, plus a `moderationActions` audit row. **Directions** deep-link (Apple/Google) from the water body detail
 > **drawer button** target a put-in `coord`, **never** the on-water `waterBodies.centroid`.
-> **Amended by N6d (D72): directions target the `parkingAreas` row when one exists, else the put-in.**
+> **Amended by A06d (D72): directions target the `parkingAreas` row when one exists, else the put-in.**
 > The old rule was right about what to avoid (the on-water centroid) and wrong about what to aim at — for
 > a hike-in body, the put-in coordinate is a destination a maps app cannot route to, and the skater finds
 > that out at the trailhead. `directionsUrl` itself is unchanged; only its call sites got smarter.
@@ -540,7 +540,7 @@ createdAt: timestamp
 > (~30 m) and **keyed on OSM id so a re-run updates in place rather than duplicating**. Names come free
 > from OSM's own `name` tags — which is what makes named put-ins a 116k feature rather than a curated one.
 
-### `parkingAreas`  (where the car goes — N6d / D72)
+### `parkingAreas`  (where the car goes — A06d / D72)
 ```
 _id
 waterBodyId: ref(waterBodies)
@@ -555,13 +555,13 @@ createdByUserId?: ref(profiles)
 createdAt: timestamp
 ```
 > **Why a sibling table and not a generalized `accessPoints` with a `kind`** (D72): `putIns` is
-> load-bearing across drive-time bands, the notification fan-out, N3 deletion and the Phase 5 feed. A
+> load-bearing across drive-time bands, the notification fan-out, A03 deletion and the Phase 05 feed. A
 > metadata phase should not put five other systems on its critical path for a modelling nicety, so this
 > is purely additive. **Food is deliberately absent** from `amenities` — everyone has a maps app for
 > restaurants, and it's the amenity most likely to be wrong. **Boat ramp is kept** for the ice-fishing
 > crossover, and costs nothing: it's the same OSM tag already read to find put-ins.
 
-### `accessAlerts`  (temporarily inaccessible — N6d / D73)
+### `accessAlerts`  (temporarily inaccessible — A06d / D73)
 ```
 _id
 putInId?: ref(putIns)             // exactly one of putInId / parkingAreaId
@@ -575,13 +575,13 @@ createdAt: timestamp
 ```
 > **A note would have been the obvious design and it rots** (D73). *"Road closed until repairs are done"*
 > is correct the day it's written and stale by spring, and nothing in the system knows the difference. So
-> an access blocker is modelled like a hazard: confirmed/refuted through the **Phase 9 machinery**
-> (`pointEvents`, `by_ref`), including N5b's **"never existed"** retraction (D65).
+> an access blocker is modelled like a hazard: confirmed/refuted through the **Phase 09a machinery**
+> (`pointEvents`, `by_ref`), including A05b's **"never existed"** retraction (D65).
 > **Decay is weather-INsensitive, and this is the trap.** The instinct is to reuse `HAZARD_DECAY`
 > wholesale. **A locked gate does not thaw** — applying the D56 weather multiplier would let a warm week
 > silently expire a road closure, a failure that looks exactly like normal decay. Plain TTL + confirmation
 > extension, **no weather term at all**.
-> **Hard-expires at the N5a season boundary**, so the map starts each winter clean and the community
+> **Hard-expires at the A05a season boundary**, so the map starts each winter clean and the community
 > re-establishes what's true (the cheapest possible re-survey). **Never hides the put-in** — the hazards
 > never-hide invariant applies: it annotates and de-prioritizes for directions, nothing more.
 
@@ -649,7 +649,7 @@ createdAt: timestamp
 > on-ice, surface as the "can you confirm?" prompt rather than a hard alert (D54 Layer 1).
 > **Lifecycle — per-type decay (D52, extends D15), derived from `type` + `lastConfirmedAt`** via a
 > tunable `HAZARD_DECAY` table in `@skating/core` (Tier A volatile 24/72h … Tier D permanent 14d/45d;
-> admin-editable Phase 7 / D49). Freshness tiers: fresh (full strength) · aging (lighter) · stale
+> admin-editable Phase 07 / D49). Freshness tiers: fresh (full strength) · aging (lighter) · stale
 > (faded, hidden by default). A **"still here"** confirmation resets `lastConfirmedAt`. `goneCount`
 > (fully-healed verdicts only) past the removal threshold (**2**, tunable, no reputation yet — D54) →
 > `status: archived`. A **"healing but unsafe"** verdict sets `healingState` and does **not** archive —
@@ -676,7 +676,7 @@ _id
 waterBodyId: ref(waterBodies)
 type: enum(spring_current, constriction, bridge_narrows, recurring_pressure_ridge,
            gas_hole, reef_hole, delta, shallow_early_thaw, other)  // last four added 2026-07-21
-                                                                       // (Phase 9 research): persistent
+                                                                       // (Phase 09a research): persistent
                                                                        // natural sources that recur every
                                                                        // season regardless of cold
 geometry: geojson            // Point | LineString | Polygon (same primitives as hazards, D51)
@@ -692,7 +692,7 @@ createdAt: timestamp
 > bridges is weaker *every season regardless of cold*, and some pressure ridges reform in the same
 > place annually — modeling them as durable body attributes avoids busywork re-marking and the
 > false-negative of an un-re-marked spring looking "gone." Rendered with distinct "known seasonal
-> hazard" styling. **Promotion/demotion are admin actions** (Phase 7 surface, D49-style tuning). v1
+> hazard" styling. **Promotion/demotion are admin actions** (Phase 07 surface, D49-style tuning). v1
 > ships schema + rendering; population is admin/seed-driven.
 
 > **No `follows` table (D13).** The social graph was removed, so there is no follow/friend edge.
@@ -714,16 +714,16 @@ createdAt: timestamp
 ```
 _id
 flaggerId: ref(profiles)
-targetType: enum(report, comment, photo, user, hazard)  // hazard added Phase 9 (D51) — mods can hide a bad pin
+targetType: enum(report, comment, photo, user, hazard)  // hazard added Phase 09a (D51) — mods can hide a bad pin
 targetId: string             // ref into the matching table
 reason: enum(unsafe_false_report, spam, harassment, inappropriate, other)
 note?: string
 status: enum(open, reviewing, actioned, dismissed)
 resolvedByUserId?: ref(profiles)   // a moderator or admin (users.role in {moderator, admin} — D37)
-occurrences?: number               // N2 bundling — how many times this problem has been recorded
+occurrences?: number               // A02 bundling — how many times this problem has been recorded
 lastOccurrenceAt?: timestamp       // absent ⇒ reads as 1, so pre-bundling rows need no migration
 supersedesFlagId?: ref(contentFlags)  // this row carries a resolved predecessor's count forward
-origin?: enum(user, auto)          // N8/B3 — who filed it; absent reads as `auto`. The one reader is
+origin?: enum(user, auto)          // A08/B3 — who filed it; absent reads as `auto`. The one reader is
                                    // `content_flag_resolved`, which notifies `user` flaggers only
 createdAt, resolvedAt?: timestamp
 ```
@@ -731,10 +731,10 @@ createdAt, resolvedAt?: timestamp
 > a **safety** issue (D3), not mere spam. Moderator action sets the target's
 > `moderationStatus` to `hidden`/`removed`. In the admin flag queue (D37) it sits in a
 > **pinned priority lane**, not the FIFO — it's a safety incident, not spam.
-> **Auto-flag bundling (N2):** a recurring *system-generated* problem bumps `occurrences` on its open
+> **Auto-flag bundling (A02):** a recurring *system-generated* problem bumps `occurrences` on its open
 > row instead of filing an identical one. A recurrence after a resolution files a **new** row pointing
 > back via `supersedesFlagId` — a terminal row is never patched, because `by_status_resolved_at` feeds
-> a day-sliced 7b rollup and reopening one would retroactively change a past day's count. Read through
+> a day-sliced 07-2 rollup and reopening one would retroactively change a past day's count. Read through
 > `by_target_status_reason`: the open-row lookup **decides** whether to bump or file, and any capped
 > scan of a target's history gets it wrong in both directions (terminal rows pile up on both sides of
 > the open row), which would silently restart the count on the chronic contributor it exists to track.
@@ -747,7 +747,7 @@ action: enum(hide, remove, restore, ban, suspend, unban,
              merge_waterbody, approve_waterbody, reject_waterbody, set_curated_boost,
              resolve_flag, dismiss_flag, grant_role, revoke_role,
              set_posting_permission, promote_body_feature, demote_body_feature,   // D57 / D53
-             create_sub_area, redraw_sub_area, rename_sub_area,                   // N2 / D60
+             create_sub_area, redraw_sub_area, rename_sub_area,                   // A02 / D60
              set_weather_sample_points)                                           // D56 §5
 targetType: enum(report, comment, photo, user, waterbody, contentFlag, hazard, bodyFeature,
                  waterBodySubArea)
@@ -820,48 +820,48 @@ uploaderId: ref(profiles)
 caption?: string
 takenAt?: timestamp          // preserved from EXIF only if user opts in (D42)
 coord?: { lat, lng }         // preserved from EXIF only if placeOnMap == true (D42)
-placeOnMap: boolean          // opt-in: pin at coord on the lake map vs. report-only (D42)
+placeOnMap: boolean          // opt-in: pin at coord on the water body map vs. report-only (D42)
 createdAt: timestamp
 ```
 > **EXIF (D42):** all EXIF is stripped client-side during the D31 optimize pass. Only
 > **timestamp** and **GPS coord** may be preserved, and only on opt-in. If `placeOnMap`
 > is false we **don't retain `coord`** at all — the photo attaches to the report only.
-> **Access-point photos are exempt from the seasonal purge (N6d, amending D66).** A photo can now hang off
+> **Access-point photos are exempt from the seasonal purge (A06d, amending D66).** A photo can now hang off
 > a `putIns` / `parkingAreas` row (cap ~3 each), and it needs a different lifecycle from the rest:
 > report and hazard photos expire at the season boundary because they document **conditions**, which go
 > stale; a photo of a pull-off documents **infrastructure**, and the parking lot looks the same next
-> November. So they survive the purge — while staying inside N3 deletion under the **D62 second
+> November. So they survive the purge — while staying inside A03 deletion under the **D62 second
 > amendment's redact-don't-erase** rule, since erasing a departing user's photo of a gravel lot degrades
 > the map for everyone else to no privacy benefit. There is no person in it.
 
-### `notifications`  (the inbox — N8 / D167)
+### `notifications`  (the inbox — A08 / D167)
 ```
 _id
 userId: ref(profiles)           // recipient
 type: enum(activity_detected, bounty_request,
            hazard_confirmation, bounty_answered, report_rated,
-           report_commented,          // someone commented on your report / replied to your comment (D21; N8)
-           favorite_report,           // Phase 4: report on a favorited body (fires ~individually)
-           nearby_report_digest,      // Phase 4: the 8pm daily "all within X₁" digest, grouped by body
-           great_report_nearby,       // Phase 4: great report within X₂ (fires ~individually)
+           report_commented,          // someone commented on your report / replied to your comment (D21; A08)
+           favorite_report,           // Phase 04: report on a favorited body (fires ~individually)
+           nearby_report_digest,      // Phase 04: the 8pm daily "all within X₁" digest, grouped by body
+           great_report_nearby,       // Phase 04: great report within X₂ (fires ~individually)
            content_flag_resolved)
-payload: any                 // typed at the BOUNDARY, not the schema (N8): `lib/notificationQueue.ts`
+payload: any                 // typed at the BOUNDARY, not the schema (A08): `lib/notificationQueue.ts`
                              // builds it from a settled trigger, `lib/notificationResolve.ts` parses it
                              // and renders anything unrecognised as a degraded "unknown" row
 readAt?: timestamp
 createdAt: timestamp
-pushedAt?, emailedAt?: timestamp  // N8 PR 3 — transport stamps; the delivery action reads before / writes after
+pushedAt?, emailedAt?: timestamp  // A08 PR 3 — transport stamps; the delivery action reads before / writes after
 ```
 > Indexes: `by_user`, `by_user_read` (`userId, readAt` — the unread badge is an *equality* on
 > `readAt = undefined`, which is the one shape the non-sparse-optional-index trap doesn't bite),
 > `by_created_at` (the season purge).
 > **Only `flushNotificationQueue` inserts here** (D169) — every producer enqueues first.
 > Read by `notifications.list` (paginated, resolved), `unreadCount` (capped at 99), `markRead`.
-> **Retention is the season boundary** (N8/A5): a daily sweep deletes rows created before the current
+> **Retention is the season boundary** (A08/A5): a daily sweep deletes rows created before the current
 > season's start, read or not. The inbox is not an archive — the data export is.
 > Only sent if the recipient's `notificationPrefs[type]` is on (D16), re-checked at flush.
 
-### `pushTokens`  (device addresses for Expo push — N8 PR 3 / D174)
+### `pushTokens`  (device addresses for Expo push — A08 PR 3 / D174)
 ```
 _id
 userId: ref(profiles)
@@ -873,12 +873,12 @@ disabledAt?: timestamp       // Expo reported DeviceNotRegistered; a re-register
 ```
 > Indexes: `by_user`, `by_token`. Rows die with the account (`accountDeletion` drains them).
 
-### `notificationQueue`  (the coalescing + settle queue — Phase 4 decision #4; widened N8 / D169)
+### `notificationQueue`  (the coalescing + settle queue — Phase 04 decision #4; widened A08 / D169)
 ```
 _id
 userId: ref(profiles)
-kind: enum(digest, favorite, great,             // report-audience buckets (Phase 4)
-           thumb, corroboration, comment, reply, // actor-triggered kinds (N8) — each settles 60 s and
+kind: enum(digest, favorite, great,             // report-audience buckets (Phase 04)
+           thumb, corroboration, comment, reply, // actor-triggered kinds (A08) — each settles 60 s and
            hazard_lifecycle, flag_resolved,      // carries a `trigger` the flush re-reads
            bounty_request, bounty_answered, activity)
 type: notifications.type      // what this flushes to
@@ -892,7 +892,7 @@ createdAt: timestamp
 ```
 > Indexes: `by_flush`, `by_coalesce`, `by_user` (deletion drains a departing user's pending rows).
 > The flush re-applies recipient eligibility, the type's toggle, and the block set before delivering.
-> **On-ice hazard alerts are NOT rows here (D54).** The Phase 9 Layer-1 "reported hazard nearby —
+> **On-ice hazard alerts are NOT rows here (D54).** The Phase 09a Layer-1 "reported hazard nearby —
 > confirm?" / "⚠ hazard ahead" alerts are **client-local** (each phone evaluates its own GPS against
 > cached hazards, D12), not server pushes — so they need no new `type`. `hazard_confirmation` already
 > covers the confirm-ask surface. A server push to a *sleeping* on-ice phone is deferred (D54 Layer 2).
@@ -912,7 +912,7 @@ createdAt: timestamp
 > `report_corroborated` is the D50 corroboration signal; it is **boost-only** and window-bounded,
 > so a later report of *changed* conditions never penalizes an earlier honest one (D3).
 
-### `regionStats`  (per-state deciles — the comparison basis for generated captions; N6c / D70)
+### `regionStats`  (per-state deciles — the comparison basis for generated captions; A06c / D70)
 ```
 _id
 state: string                // 2-letter code, unique
@@ -923,7 +923,7 @@ longAxisDeciles: number[]
 bodyCount: number            // how many bodies the deciles were computed over
 computedAt: timestamp
 ```
-> **One row per state, not a percentile per body.** The generated lake caption wants to say *"among the
+> **One row per state, not a percentile per body.** The generated water body caption wants to say *"among the
 > deepest in Vermont"*, which needs a corpus-relative basis — but storing a percentile on each body would
 > mean **116,070 rewrites every import**, since every percentile shifts when the corpus does. Deciles
 > invert that: recompute ~5 rows at the end of each state's import, and every caption reads them at render
@@ -936,7 +936,7 @@ computedAt: timestamp
 
 ## Vocabulary  (✅ confirmed — community/official terms)
 
-**Water body `type`:** lake · pond · river · stream · reservoir · bay · marsh · other
+**Water body `type`:** water body · pond · river · stream · reservoir · bay · marsh · other
 
 **`iceTypes`** (what the ice *is*):
 - `black_ice` — clear, new, strong (the good stuff)
@@ -957,7 +957,7 @@ computedAt: timestamp
 **`hazards.type`** (localized dangers — drive the lifecycle; per-type decay in `HAZARD_DECAY`,
 [`research/hazard-decay-calibration-and-behavior.md`](./research/hazard-decay-calibration-and-behavior.md)). **Exactly one per hazard.**
 
-> **Canonicalized 2026-07-21 (Phase 9 kickoff).** The pre-Phase-9 enum stored slash-pairs as *separate*
+> **Canonicalized 2026-07-21 (Phase 09a kickoff).** The pre-Phase-09a enum stored slash-pairs as *separate*
 > keys (`open_water` **and** `lead`; `ice_heave` **and** `buckling`; `inlet_outlet_current` **and**
 > `spring`), which meant `Record<HazardType, HazardDecay>` could not typecheck against the research
 > table and two keys could disagree about their own decay tier. Each pair collapses to **one canonical
@@ -989,7 +989,7 @@ Notes on the individual terms:
 - `drilled_hole` — **man-made only** (ice-fishing / auger holes; re-skin overnight, weak spot lingers days).
 - `spring_current` — moving water = weak. Replaces the former `inlet_outlet_current` + `spring` pair.
 - `shell_area` — air-pocket zone.
-- **Added 2026-07-21 (Phase 9 hazard research — lakeice.info + corpus):**
+- **Added 2026-07-21 (Phase 09a hazard research — lakeice.info + corpus):**
 - `thawed_rotten` — a thawed/rotten/candled *zone* (the #1 fatality cause per lakeice: "~half of ice
   fatalities involve thaw"). ⚠ **Cold weather must NOT auto-heal this** — a thawed sheet grows a
   deceptive cold skin overnight and collapses midday (the "overnight-ice trap"). Very short decay.
@@ -1018,7 +1018,7 @@ every term appears, in the expected frequency order:
   `shell_area` (44), `inlet/outlet/current/spring` (35) follow. The `dry` vs `wet` crack distinction
   is corroborated — skaters explicitly call out "dry cracks" as normal.
 
-**Refinement candidates — RESOLVED for Phase 2 (2026-07-13), applied to `@skating/core` `SURFACE_TAGS`.**
+**Refinement candidates — RESOLVED for Phase 02a (2026-07-13), applied to `@skating/core` `SURFACE_TAGS`.**
 Decision: **keep a superset** — add clearly-useful terms, don't strip low-usage ones that still have
 real meaning (cheap to keep; a missing tag can't be picked, a rare tag just sits unused):
 - **Added:** `orange_peel` (49 occ) — a vivid, frequently-used dimpled/textured surface, finer-grained
@@ -1052,8 +1052,8 @@ reports 1─* photos
 reports 1─* hazards (created)      hazards *─1 waterBodies
 hazards 1─* hazardConfirmations *─1 profiles
 profiles *─* profiles  (blocks — no follow graph, D13)
-profiles *─* waterBodies  (waterBodyFavorites — place-based curation, D13; Phase 4)
-waterBodies 1─* putIns  (derived from reports.point + admin-set + OSM; Phase 4 / N6d)
+profiles *─* waterBodies  (waterBodyFavorites — place-based curation, D13; Phase 04)
+waterBodies 1─* putIns  (derived from reports.point + admin-set + OSM; Phase 04 / A06d)
 waterBodies 1─* parkingAreas ; putIns *─0/1 parkingAreas  (directions target the parking row, D72)
 putIns|parkingAreas 1─* accessAlerts  (decaying community blockers, D73)
 profiles 1─* contentFlags ─1 (report | comment | photo | user)
@@ -1072,20 +1072,20 @@ profiles 1─* pointEvents
   signup gate and the under-18 protective defaults (`@skating/core` age math). Computed
   at read time, so the minor→adult transition needs no birthdate re-attestation or
   scheduled job; protections persist past 18 until the user widens them.
-- **Drive-time band (Phase 4):** `profiles.cachedIsochrones.band30/band60` (ORS) + `outerRadiusMeters`
+- **Drive-time band (Phase 04):** `profiles.cachedIsochrones.band30/band60` (ORS) + `outerRadiusMeters`
   (90-min crow-flies fallback) → point-in-polygon / radius test against `waterBodies.centroid` /
   `reports.point`, yielding `30 | 60 | 90 | null` **at read time** (D18). Deliberately not materialized
   per-user (staleness + scale). **Notification fan-out is the reverse lookup** — a per-user polygon scan,
-  moved out of `reports.create` into a scheduled paged job by N1 so the write path doesn't scale with user
+  moved out of `reports.create` into a scheduled paged job by A01 so the write path doesn't scale with user
   count; a reverse spatial index (making the walk unnecessary rather than merely bounded) is still a
   documented future seam.
-- **Derived put-in markers (Phase 4):** cluster `reports.point` (visible + `showPutIn != false`) per body,
+- **Derived put-in markers (Phase 04):** cluster `reports.point` (visible + `showPutIn != false`) per body,
   snap to shore, merge with `putIns` (`official`) minus `hidden`/suppressed.
 - **Weather-since-report strip:** computed from Open-Meteo over [skateTime → now]
   (D19; spec in `04-integrations.md`); cache per (waterBody, window).
 - **Hazard freshness state:** derived from `lastConfirmedAt` at read time (D15).
-- **Newsfeed:** global by default (Phase 5), sorted by `skateEndTime` desc, minus moderation-hidden
-  (a block never hides a report, D3 — it de-emphasizes). **Phase 4** layers the `feedFilterPrefs` as an
+- **Newsfeed:** global by default (Phase 05), sorted by `skateEndTime` desc, minus moderation-hidden
+  (a block never hides a report, D3 — it de-emphasizes). **Phase 04** layers the `feedFilterPrefs` as an
   *additive* narrow (drive band + quality/thickness/no-snow/type/recency, **include-unknown** for optional
   fields) and **boosts favorites** (favorites exempt from the distance narrow, not the rest).
 - **Trust score (D50):** `profiles.reputationPoints` aggregated from `pointEvents`
@@ -1096,17 +1096,17 @@ profiles 1─* pointEvents
 ---
 
 ## Convex notes
-- **Spatial index (D5, rebuilt as N1 2026-07-26): the ladder grid.** An object gets one row per
+- **Spatial index (D5, rebuilt as A01 2026-07-26): the ladder grid.** An object gets one row per
   grid cell its **bbox** covers, in a plain Convex table — `waterBodyCells`, `adminAreaCells` and
-  (N2) `waterBodySubAreaCells`, all keyed `by_cell = [z, x, y, …]`. A viewport read scans the cells covering the viewport at every
+  (A02) `waterBodySubAreaCells`, all keyed `by_cell = [z, x, y, …]`. A viewport read scans the cells covering the viewport at every
   rung up to the current zoom; a containment lookup scans one cell per rung. See
-  [`phase-N1-read-path-durability.md`](./phase-N1-read-path-durability.md) and
+  [`phases/A01-read-path-durability.md`](./phases/A01-read-path-durability.md) and
   `packages/core/src/spatialCells.ts`.
   - **Which rung:** the coarser of *how big the object is* and (for water bodies) *the zoom it first
     draws at* (D49 `minVisibleZoom`). That ceiling is what makes a zoom-filtered query provably
     complete — an object is never indexed finer than the zoom it appears at.
   - **Viewport semantic (unchanged, now exact): a body is "in view" when its `bbox` intersects the
-    viewport**, not when its centroid is inside it — a large lake can fill the screen with its
+    viewport**, not when its centroid is inside it — a large water body can fill the screen with its
     centroid off-screen. Because a body is in *every* cell it covers, this needs no margin and no
     large-body special case; candidates are refined with `bboxIntersects` from `@skating/core`.
   - **`listed` (D48) decides whether a body is indexed at all.** A removed / rejected / merged body
@@ -1117,7 +1117,7 @@ profiles 1─* pointEvents
     Convex components. Its reads scaled with `maxResults` rather than with results returned, which
     crashed a wide viewport against the 4,096-read cap twice (PRs #10/#11), and its one-point-per-key
     write API couldn't express bbox coverage at all.
-  - **The read walk is shared** (`convex/lib/cellScan.ts`, extracted in N2 when the sub-area layer
+  - **The read walk is shared** (`convex/lib/cellScan.ts`, extracted in A02 when the sub-area layer
     needed the same one): whole-rung admission, the fair-share row budget, and the probe-one-past
     truncation flag are stated once. Copying them would have drifted from four PR-#27 corrections,
     each of which fixed a *silent wrong answer* rather than a crash. Ranking and hydration stay with
@@ -1125,9 +1125,9 @@ profiles 1─* pointEvents
   - **Budgets are per query, not per screen.** Convex's 4,096-read cap is per *function execution*, so
     the body layer and the bay layer each get their own. The sub-area budgets (200 scanned / 250
     rendered) are a **product** ceiling on payload, not crash arithmetic — measured at 24–36 document
-    reads against the body layer's 157–261 on the same viewports (see the N2 doc).
+    reads against the body layer's 157–261 on the same viewports (see the A02 doc).
   - **Still not spatially indexed, deliberately:** `reports.point` and hazard centers. Hazards are
-    only ever read per body (Phase 9 call 6); a reports index waits for a near-me query that needs it.
+    only ever read per body (Phase 09a call 6); a reports index waits for a near-me query that needs it.
 - **Polygon tests** (in-isochrone, in-water-body, hazard proximity) = bbox prefilter
   via indexed `bbox` fields + precise **Turf.js** in a Convex query/action. The pure
   Turf-backed primitives live in `@skating/core` (`bboxIntersects`, `pointInPolygon`,
@@ -1136,23 +1136,23 @@ profiles 1─* pointEvents
 - **Suggested indexes:** `reports` by `waterBodyId + skateTime`, by `authorId`;
   `hazards` by `waterBodyId + status`;
   `gpsActivities` by `provider + providerActivityId` (unique, dedup), by
-  `waterBodyId` (per-lake skate history + bounty eligibility, D44) and by
-  `waterBodyId + startTime` (the season-scoped aggregate-tracks layer, N5a — `by_water_body` orders
+  `waterBodyId` (per-body skate history + bounty eligibility, D44) and by
+  `waterBodyId + startTime` (the season-scoped aggregate-tracks layer, A05a — `by_water_body` orders
   by creation, so a season filter after a `.take()` would be a filter over the newest *rows* and last
   season's would fill the window while this season's silently didn't draw); `comments`
   by `reportId`; `activityConnections` by `userId`; `bounties` by
   `waterBodyId + status`; `blocks` by `blockerId` and by `blockedId`;
-  `waterBodyFavorites` by `userId` (my favorites) and by `waterBodyId` (notification fan-out — Phase 4);
-  `putIns` by `waterBodyId` (Phase 4);
+  `waterBodyFavorites` by `userId` (my favorites) and by `waterBodyId` (notification fan-out — Phase 04);
+  `putIns` by `waterBodyId` (Phase 04);
   `waterBodySubAreas` by `waterBodyId` (`by_parent` — every non-map sub-area read is scoped to a
   parent already in hand) plus a `search_subarea` index over a denormalized `searchText` carrying the
-  aliases (N2/D60); `waterBodies` by `curatedBoost` (the curation list, N2 — a `> 0` range read costs
+  aliases (A02/D60); `waterBodies` by `curatedBoost` (the curation list, A02 — a `> 0` range read costs
   the boosted rows and nothing else); `reports` by `subAreaId + moderationStatus + skateEndTime` (the
-  sub-area-scoped bounty freshness gate **and** the lake page's report filter — moderation *in* the
+  sub-area-scoped bounty freshness gate **and** the water body page's report filter — moderation *in* the
   index, so hidden reports can't eat the cap, and a bay filter is a narrower read rather than the
-  whole lake paged and then thrown away);
+  whole water body paged and then thrown away);
   `contentFlags` by `status`, by `targetType + targetId`, and by
-  `targetType + targetId + status + reason` (auto-flag bundling's open-row lookup, N2 — see the table
+  `targetType + targetId + status + reason` (auto-flag bundling's open-row lookup, A02 — see the table
   note for why a capped scan of the history is wrong in both directions); `reportRatings` by
   `reportId` and a unique `raterId + reportId` (one rating per rater/report, D50); `waterBodies` by
   `dedupStatus` (review queue), by `reviewStatus` (user-body approval queue, D37), and by
@@ -1180,7 +1180,7 @@ profiles 1─* pointEvents
 - **User-created location dedup** → match-on-create + soft-tombstone merge, v1
   moderator queue (D36); fields `dedupStatus` / `mergedIntoId` / `duplicateCandidateIds`.
 - **GPS activity → water body** → resolved `waterBodyId` on `gpsActivities` at ingest
-  (D44) so skates are findable by lake identity, not by geospatial area.
+  (D44) so skates are findable by water body identity, not by geospatial area.
 - **Photo EXIF / geotag** → strip all EXIF on upload; preserve timestamp + coord only
   on opt-in; `placeOnMap` gates spatial pinning and coord retention (D42).
 - **Age gate & report/profile privacy** → 16+ minimum (DOB stored, age/minor status derived, D41);

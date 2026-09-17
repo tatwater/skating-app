@@ -10,7 +10,7 @@ import {
 import { AdminEmpty, StatTile } from './adminUi';
 
 /**
- * The long-horizon watch on the base map under the whole product (N7).
+ * The long-horizon watch on the base map under the whole product (A07a).
  *
  * USGS retired the National Hydrography Dataset in 2023 and replaced it with the 3D Hydrography
  * Program, whose promise is hydrography traced from LiDAR rather than compiled at 1:24,000. Where

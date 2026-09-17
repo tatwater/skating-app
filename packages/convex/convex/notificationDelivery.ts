@@ -1,5 +1,5 @@
 /**
- * The transports (N8 PR 3 / D167, D174): after the flush lands `notifications` rows, this sends each
+ * The transports (A08 PR 3 / D167, D174): after the flush lands `notifications` rows, this sends each
  * one onward — a push to every registered device, and an email for the types worth one — and stamps
  * the row so a retried batch never sends twice.
  *

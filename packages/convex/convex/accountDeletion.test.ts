@@ -492,7 +492,7 @@ describe('the grace window', () => {
 });
 
 /**
- * Read-only while a deletion is pending (D62 amendment, N5a).
+ * Read-only while a deletion is pending (D62 amendment, A05a).
  *
  * The window exists to keep *useful* content around while its author reconsiders, so accepting new
  * content into it is self-defeating: a report posted in hour 719 is erased hours later while it's
@@ -598,7 +598,7 @@ describe('read-only while a deletion is pending', () => {
    * The reason the gate exists, stated as a property rather than a message check: with contributions
    * closed, a departed user's newest `skateEndTime` can never be later than their request — so
    * everything they hold is already past the 30-day relevance window when finalization runs, and the
-   * N5a purge needs no deferred second sweep.
+   * A05a purge needs no deferred second sweep.
    */
   test('a pending account cannot produce content newer than its own request', async () => {
     const t = harness();
@@ -1149,7 +1149,7 @@ describe('flags: the row is about content and survives, the note is prose and do
 });
 
 /**
- * Access alerts (N6d / D73) — the same seam, on a table added long after this file was written.
+ * Access alerts (A06d / D73) — the same seam, on a table added long after this file was written.
  *
  * The gap this closes is the ordinary one: a phase introduces a user-authored free-text surface and
  * nothing in the deletion sweep knows it exists, so the D62 promise quietly stops covering it. Nothing

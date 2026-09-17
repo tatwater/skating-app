@@ -20,7 +20,7 @@ describe('EXTRACT_SOURCES', () => {
 
   it('clips New York and nothing else', () => {
     // The downstate metro is a third of the extract and none of it is skated; the 41.3°N cut is
-    // inherited from the Phase 2.5 runbook rather than reinvented here.
+    // inherited from the Phase 02b runbook rather than reinvented here.
     const clipped = EXTRACT_SOURCES.filter((s) => s.clipBBox);
     expect(clipped.map((s) => s.state)).toEqual(['NY']);
     expect(clipped[0]?.clipBBox?.[1]).toBe(41.3);

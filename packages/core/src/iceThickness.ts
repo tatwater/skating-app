@@ -1,6 +1,6 @@
 /**
  * The Stefan ice-thickness estimator — **an admin calibration instrument, and it ships dark**
- * (N6h / **D160**).
+ * (A06h / **D160**).
  *
  * ## Read this before wiring it to anything
  *

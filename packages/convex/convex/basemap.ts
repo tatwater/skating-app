@@ -1,5 +1,5 @@
 /**
- * Basemap hosting (Phase 1, PR#5 — D6). The self-built Vermont `.pmtiles` vector basemap is
+ * Basemap hosting (Phase 01, PR#5 — D6). The self-built Vermont `.pmtiles` vector basemap is
  * stored in **Convex file storage**, colocated with the app: its serving URL honors HTTP
  * `Range` requests *and* reflects CORS, the two hard requirements for the browser `pmtiles://`
  * protocol (both verified before choosing this host).
@@ -13,7 +13,7 @@
  * viewed tiles per map view (KBs), so pilot bandwidth is negligible and the ~280 MB Vermont
  * file sits well under the free-tier storage cap. If per-tile egress grows as regions expand,
  * Cloudflare R2 (zero egress) is the documented scale-out host — swapping is a `VITE_PMTILES_URL`
- * change, nothing here (see `plans/phase-1-water-bodies.md` open items + `04-integrations.md`).
+ * change, nothing here (see `plans/phases/01-water-bodies.md` open items + `04-integrations.md`).
  */
 
 import { v } from 'convex/values';

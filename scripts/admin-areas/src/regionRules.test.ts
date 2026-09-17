@@ -1,5 +1,5 @@
 /**
- * The region builder's decisions, against named answers (N7 audit).
+ * The region builder's decisions, against named answers (A07a audit).
  *
  * These were untested while they lived inside a file excluded as `ogr2ogr` glue — and one of them
  * decides which **water bodies** exist: `merge.ts` reads `downstate-ny.geojson` as the D111 corpus

@@ -1,5 +1,5 @@
 /**
- * Pure feed-filter logic (Phase 4, decision #3) — the single source of truth both clients and the
+ * Pure feed-filter logic (Phase 04, decision #3) — the single source of truth both clients and the
  * `reports.listFeed` query narrate, so a report is included/excluded identically everywhere (D7/D40).
  * The feed is permissive by default (browse = pull): an empty filter set matches every report; each
  * field only *narrows*.
@@ -61,7 +61,7 @@ export interface FeedFilters {
   /** Only reports whose skate-end is within the last N hours. Applies to favorites too. */
   recencyHours?: number;
   /**
-   * Weather-first discovery (N6h / D159, D166): *"at least N nights below T, no snow since"*. Read by
+   * Weather-first discovery (A06h / D159, D166): *"at least N nights below T, no snow since"*. Read by
    * the feed, which then also lists matching **bodies** as their own cards (D165), and by the map,
    * which dims everything that does not match. Applies to reports as a hard narrow on the report's
    * body — favorites included, since the question is about the lake and not the person.

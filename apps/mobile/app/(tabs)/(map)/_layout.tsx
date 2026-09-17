@@ -22,12 +22,12 @@ import { type HazardNotificationData, ingestOnIceFix } from '../../../src/lib/on
 import { adoptUnfinishedRecording } from '../../../src/lib/recorder';
 
 /**
- * Persistent-map layout (§F, D47) — the mobile mirror of web's `_map` layout. Keeps ONE `<MapView>`
+ * Persistent-map layout (§6, D47) — the mobile mirror of web's `_map` layout. Keeps ONE `<MapView>`
  * mounted beside a bottom-sheet `<Slot />` across the map routes — `/` (map), `/water/[id]`,
  * `/report/[id]` — so panning/zoom survive opening a detail drawer. The drawers render into the slot
  * as siblings of the map and push what to highlight/frame up through `MapSelectionContext`; this
  * layout owns the highlight-clear on navigation. The map stays behind the (non-modal, backdrop-less)
- * sheet, so it's tappable while a drawer is open — the put-in-pin flow (§E) depends on it.
+ * sheet, so it's tappable while a drawer is open — the put-in-pin flow (§5) depends on it.
  */
 /**
  * Grid cell (degrees) the on-ice coord is snapped to before it keys the lake-resolve query. ~0.003° ≈
@@ -68,7 +68,7 @@ function MapLayoutInner() {
 
   // A detail route (`/water/…`, `/report/…`) opens the drawer; the bare map (`/`) closes it. While a
   // put-in pin is being placed the drawer drops to a peek so the map above is tappable (the report
-  // form stays mounted behind it, D47/§E).
+  // form stays mounted behind it, D47/§5).
   const isDetail = pathname !== '/';
   const snapIndex = !isDetail ? -1 : pinDropMode || hazardDropMode ? DRAWER_PEEK : DRAWER_NORMAL;
 
@@ -86,13 +86,13 @@ function MapLayoutInner() {
     setHighlightWaterBodyId(null);
     setPhotoPins([]);
     setFocus(null);
-    // The contour source unmounts with the sheet it belongs to (N6b/D81). Cleared here rather than
+    // The contour source unmounts with the sheet it belongs to (A06b/D81). Cleared here rather than
     // in the sheet's own unmount so navigating lake → lake tears it down and rebuilds it for the new
     // body, instead of leaving one lake's isobaths filtered to another's id.
     setContourBodyKey(null);
   }, [pathname, setHighlightWaterBodyId, setPhotoPins, setFocus, setContourBodyKey]);
 
-  // Adopt a recording the app was killed in the middle of (Phase 8). A skate is unrepeatable, so a
+  // Adopt a recording the app was killed in the middle of (Phase 08). A skate is unrepeatable, so a
   // crash on the ice must surface the session again — paused, with everything captured so far — not
   // silently lose it or start a second one. Runs once at mount; it never resumes GPS on its own,
   // because the app may be launching hours later from the car.
@@ -100,7 +100,7 @@ function MapLayoutInner() {
     void adoptUnfinishedRecording();
   }, []);
 
-  // The "on-ice" state (Phase 9 §Mobile), part 1: ONE GPS watcher, owned here, publishes each fix as
+  // The "on-ice" state (Phase 09a §Mobile), part 1: ONE GPS watcher, owned here, publishes each fix as
   // `onIceCoord`. The proximity banner reads that shared coord instead of running a second watcher
   // (two GPS subscriptions on a cold phone is the battery cost this feature can't afford). It seeds
   // from the last known fix so the affordances don't wait on a cold receiver, re-arms on return to
@@ -205,7 +205,7 @@ function MapLayoutInner() {
       resolveCachedBody(onIceCoord)?.waterBodyId ?? null,
     );
     setOnIceWaterBodyId(resolved);
-    // Record the dwell (Phase 9.5) so the report form can later prefill the skate window from when the
+    // Record the dwell (Phase 09b) so the report form can later prefill the skate window from when the
     // device was actually on this lake. On-device only (D12); best-effort while unarmed (foreground-only).
     // INVARIANT: `resolved` is the *survivor* body id — `resolveBodyForCoord` returns only listed bodies
     // and the offline cache stores the resolved `_id` — which is the exact id `WaterBodyDetail` hands the

@@ -1,5 +1,5 @@
 /**
- * Per-body reference links (N6c Workstream B) — derived, never stored.
+ * Per-body reference links (A06c Workstream 2) — derived, never stored.
  *
  * **P2 (D71): a link is not an integration.** Every link here is a pure function of
  * `(coordinate, name, states[])`, all already on the row, so the whole corpus is covered the day
@@ -10,7 +10,7 @@
  * The one exception is B7 — a lake association's URL, which no algorithm produces from a lake's
  * name. That is stored on the row as `referenceLinks` and merged in by {@link allReferenceLinks}.
  *
- * **Satellite imagery arrives here in N6e**, with the in-app reveal rather than a phase ahead of it
+ * **Satellite imagery arrives here in A06e**, with the in-app reveal rather than a phase ahead of it
  * (D138). The deep link is the honest escape hatch the reveal cannot be: our own archive stops at
  * the season boundary, and the Copernicus Browser has every pass back to 2015, a date slider, and
  * band switching, in a purpose-built tool, at zero cost to us (D75 — a link is not an integration).
@@ -38,7 +38,7 @@ export interface ReferenceLinkBody {
   name?: string;
   states?: string[];
   /**
-   * The on-water sample point (N6c-1 finding 2). **Prefer this over `representativePoint`** — see
+   * The on-water sample point (A06c-1 finding 2). **Prefer this over `representativePoint`** — see
    * {@link linkCoordinate}.
    */
   interiorPoint?: LatLng;
@@ -76,9 +76,9 @@ export type SatelliteImageryMode = (typeof SATELLITE_IMAGERY_MODES)[number];
  * legible and an ice/open-water distinction is something a person can actually see. Comfortably above
  * the corpus's own 1-acre admission floor (`HARD_MIN_SURFACE_AREA_ACRES`), so this genuinely filters.
  *
- * ⚠ **Per-tier, and this one is Sentinel's.** N6e's aerial reveal runs at 0.3 m, where a 1-acre pond
+ * ⚠ **Per-tier, and this one is Sentinel's.** A06e's aerial reveal runs at 0.3 m, where a 1-acre pond
  * is ~45,000 pixels — legible by a factor of forty. One constant cannot govern both tiers, which the
- * original N6c scoping could not have known because it only had one.
+ * original A06c scoping could not have known because it only had one.
  */
 export const SATELLITE_MIN_AREA_SQM = 100_000;
 
@@ -86,7 +86,7 @@ export const SATELLITE_MIN_AREA_SQM = 100_000;
  * Should this body offer a Copernicus link?
  *
  * `on`/`off` are an operator's word and win outright — **per-row data, so an operator's correction
- * takes effect immediately with no redeploy** (D75, and the Phase 7 posture: "constants stay in code"
+ * takes effect immediately with no redeploy** (D75, and the Phase 07 posture: "constants stay in code"
  * governs the *threshold*, not the exception to it).
  *
  * `auto` resolves against area. A body with no stored area gets the link: the corpus floor already
@@ -155,16 +155,16 @@ export const WINDY_ZOOM = 9;
 /**
  * The coordinate every link is built from.
  *
- * **`interiorPoint` first, and this is a correction rather than a preference.** The Workstream B
+ * **`interiorPoint` first, and this is a correction rather than a preference.** The Workstream 2
  * text specified these links as "a pure function of `(centroid, name, states[])`", which was written
- * before N6c-1 measured what `centroid` actually is: Turf's `pointOnFeature`, which returns a point
+ * before A06c-1 measured what `centroid` actually is: Turf's `pointOnFeature`, which returns a point
  * on the **shoreline** whenever the bbox centre falls outside the polygon. Lake Willoughby's is ring
  * vertex 199; Lake Champlain's sits 30.7 km from mid-lake. A Windy link centred on that is 30 km
  * from the lake it claims to describe, and — exactly like the fetch profile before it — nothing
  * would have caught it, because a shoreline coordinate is a perfectly valid coordinate.
  *
  * The fallback chain still ends at `centroid` because a shoreline point is far better than no link,
- * and it is what pre-N6c-1 rows carry.
+ * and it is what pre-A06c-1 rows carry.
  */
 export function linkCoordinate(body: ReferenceLinkBody): LatLng | undefined {
   return body.interiorPoint ?? body.representativePoint ?? body.centroid;

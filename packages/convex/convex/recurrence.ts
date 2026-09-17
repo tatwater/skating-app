@@ -1,5 +1,5 @@
 /**
- * The season-rollover recurrence pass (N5c / §C4) — once a year, plus a button.
+ * The season-rollover recurrence pass (A05c / §3.4) — once a year, plus a button.
  *
  * **Why a job rather than a query.** `hazards` never ages out, so "every hazard on this lake across
  * four winters" is a read that grows forever; the within-season half can cluster at read time precisely
@@ -58,11 +58,11 @@ const DISCOVERY_PAGE = 200;
 /**
  * How much of two clusters' membership must coincide for a recompute to call them the same cluster.
  *
- * **Overlap, not identity** (§C4.3). A cluster that grew by one member is the same cluster — and if the
+ * **Overlap, not identity** (§3.4.3). A cluster that grew by one member is the same cluster — and if the
  * match were by identity, every new winter's sighting would mint a fresh row and silently drop the
  * suppression or the promotion a human had attached to the old one.
  *
- * ⚠ **Measured as the overlap coefficient, not Jaccard, and the plan's own sentence is why.** §C4 says
+ * ⚠ **Measured as the overlap coefficient, not Jaccard, and the plan's own sentence is why.** §3.4 says
  * *"Jaccard > 0.5"* and *"a cluster that grew by one member is the same cluster"*, and those two
  * disagree in exactly the case that matters: one member growing to two is a Jaccard of 0.5 — not
  * greater than — so the row a human had suppressed would be abandoned the first winter anyone added a
@@ -243,7 +243,7 @@ export const recomputeQueuedBody = internalMutation({
 });
 
 /**
- * Recompute one body's stored recurrence — **diffing, never replacing** (§C4.3).
+ * Recompute one body's stored recurrence — **diffing, never replacing** (§3.4.3).
  *
  * Delete-and-reinsert would be simpler and would throw away every human decision attached to these
  * rows: a suppression is a moderator saying *this is not a pattern*, and a promotion is one saying
@@ -566,7 +566,7 @@ export const listForBodyAdmin = query({
  *
  * **Bounded by construction.** It reads the precomputed table off
  * `by_computed_season_and_priority` and never touches `hazards` or `waterBodies` in bulk, which is the
- * Phase 7b rule. This is where an operator spends an hour in October and covers the whole corpus,
+ * Phase 07-2 rule. This is where an operator spends an hour in October and covers the whole corpus,
  * which is the difference between the feature existing and the feature working.
  *
  * ⚠ **Genuinely paginated, not capped, and the distinction is one this repo has already paid for.**
@@ -746,7 +746,7 @@ export const promoteFromRecurrence = mutation({
 });
 
 /**
- * Recompute one lake now (§C4) — the button beside the card's provenance line.
+ * Recompute one lake now (§3.4) — the button beside the card's provenance line.
  *
  * An operator who has just merged two lakes or hidden three bogus pins should not wait a year to see
  * what that did, and a stale answer that looks live is the failure mode of every precomputed surface.

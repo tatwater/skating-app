@@ -2,7 +2,7 @@ import type { ReactNode } from 'react';
 import { Card, CardContent } from '../ui/card';
 
 /**
- * A single tuning constant, rendered **read-only** (Phase 7b settled decision #1). The founder tunes by
+ * A single tuning constant, rendered **read-only** (Phase 07-2 settled decision #1). The founder tunes by
  * editing the constant in `@skating/core` and redeploying — that's the workflow, preferred over a
  * dashboard field — so this surfaces the live value, a plain-language explanation, and where to change
  * it, with the deliberate "requires a redeploy" note. The value is imported straight from `@skating/core`

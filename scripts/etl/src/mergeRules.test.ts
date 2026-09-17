@@ -1,5 +1,5 @@
 /**
- * The master list's decision rules, against named answers (N7).
+ * The master list's decision rules, against named answers (A07a).
  *
  * Written to the plan's verification discipline — *"named fixtures, not coverage percentages"*. Every
  * case below is either a body we can name or a failure the campaign actually met, and several of them
@@ -170,7 +170,7 @@ describe('the veto', () => {
   });
 
   it('catches a Great Lake that only NHD published, though NHD calls it FTYPE 390', () => {
-    // **This used to be a pinned gap and is now closed** (N7 audit, founder call 2026-08-06). The
+    // **This used to be a pinned gap and is now closed** (A07a audit, founder call 2026-08-06). The
     // token veto holds `3dhp:featuretype=4`, `nhd:ftype=445` and `nhd:ftype=493` — but NHD files
     // **Lake Erie as FTYPE 390, an ordinary LakePond**, and New York borders both Erie and Ontario,
     // so `inRegion` passes them: TIGER's state outline includes New York's share of both. The old
@@ -538,7 +538,7 @@ describe('the bay rule', () => {
   });
 
   it('refuses a parent that only shares a bounding box, never a shoreline', () => {
-    // **This used to be a pinned false positive and is now closed** (N7 audit). `covers()` compared
+    // **This used to be a pinned false positive and is now closed** (A07a audit). `covers()` compared
     // bounding boxes, so an L-shaped or crescent body adopted bays sitting in the empty corner of
     // its box — water it does not touch. The box test is now only a prefilter, and the answer comes
     // from `BAY_PARENT_MIN_CONTAINMENT` of the bay's own outline.
@@ -661,7 +661,7 @@ describe('the region clip', () => {
   });
 
   it('escalates to every vertex rather than dropping a body the 8 samples missed', () => {
-    // **This used to be a pinned false negative and is now closed** (N7 audit), and it is the one
+    // **This used to be a pinned false negative and is now closed** (A07a audit), and it is the one
     // that mattered: 35,637 bodies were excluded on this test with nothing recording which. This
     // body's outline DOES cross the mask — the spike at index 5 reaches lat 44.5, well inside — but
     // with 16 vertices `sampleOutline` steps by 2 and samples only even indices, so the fast path
@@ -1581,7 +1581,7 @@ describe('the duplicate sweep', () => {
   });
 
   it('carries the score that flagged each pair, which is what a threshold can be tuned on', () => {
-    // **The sweep already computed this and threw it away** (N7-2). 287 surviving pairs sit at IoU
+    // **The sweep already computed this and threw it away** (A07a-2). 287 surviving pairs sit at IoU
     // 0.30–0.49, and whether that band is one lake drawn twice or a bay beside its parent cannot be
     // decided from a count — only from where in the band each pair sits.
     const a = merged({
@@ -1761,7 +1761,7 @@ describe('the tidal referee — elevation, where the federal polygons say nothin
 describe("D92's override picks the largest qualifying member, not the first", () => {
   it('takes the bigger of two same-source outlines that both contain the bay', () => {
     // **The same latent bug D125 removed from `chooseGeometry`, sitting in the file written to fix
-    // it** (N7-2 audit, 2026-08-08). This was `.find()`, so when one catalogue puts several features
+    // it** (A07a-2 audit, 2026-08-08). This was `.find()`, so when one catalogue puts several features
     // in a group and more than one of them contains the bay, the stored outline was decided by the
     // order the extracts happened to stream in. That is exactly how `Indian Lake` came to be stored
     // at 534 acres with a 3,743-acre member beside it.
@@ -1898,7 +1898,7 @@ describe('statesFor escalates the way inRegion does', () => {
   });
 
   it('finds the SECOND state a body reaches on one vertex, not just the first', () => {
-    // **The half the first escalation missed** (N7-2 audit, 2026-08-08). It triggered on an *empty*
+    // **The half the first escalation missed** (A07a-2 audit, 2026-08-08). It triggered on an *empty*
     // answer, which covers "belongs to no state" and not "belongs to one state and also another".
     // A sparse `[NH]` is exactly as unproven as a sparse `[]`.
     //
@@ -2015,7 +2015,7 @@ describe('the salt veto has a freshwater allow-list', () => {
   });
 
   it('stays small — every entry is a body somebody reviewed', () => {
-    // The general escape hatch is N7b's `includedByRequest`, one body at a time with a human
+    // The general escape hatch is A07b's `includedByRequest`, one body at a time with a human
     // looking. A list that needed twenty entries would mean the rule was measuring the wrong thing.
     expect(FRESHWATER_ALLOW_LIST.size).toBeLessThanOrEqual(5);
   });

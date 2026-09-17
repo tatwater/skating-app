@@ -1,5 +1,5 @@
 /**
- * The corpus read behind the imagery reveal mask (N6e PR 2a, D148).
+ * The corpus read behind the imagery reveal mask (A06e PR 2a, D148).
  *
  * The load-bearing properties here are the ones that fail *quietly*. This query runs once a season
  * and its output is a binary artifact nobody reads by eye, so a body wrongly omitted does not raise an

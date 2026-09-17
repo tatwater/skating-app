@@ -1,5 +1,5 @@
 /**
- * Shared shapes for the N6b bathymetry ETL. Type-only — no logic, so excluded from coverage.
+ * Shared shapes for the A06b bathymetry ETL. Type-only — no logic, so excluded from coverage.
  */
 
 /** Which of the two lanes a source feeds. The distinction is a provenance claim, not a file format. */

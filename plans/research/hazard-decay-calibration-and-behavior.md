@@ -1,7 +1,7 @@
-# Phase 9 — Hazard decay calibration & behavior research
+# Phase 09a — Hazard decay calibration & behavior research
 
 > **What this is.** The evidence-backed calibration promised in
-> [`phase-9-hazards.md`](../phase-9-hazards.md) → "Research follow-up." A separate session
+> [`phases/09a-hazards.md`](../phases/09a-hazards.md) → "Research follow-up." A separate session
 > (2026-07-21) mined two sources for **how each ice hazard behaves over time and weather**, then fed the
 > results back into **D52** ([`01-decisions.md`](../01-decisions.md)) and the schema
 > ([`06-data-model.md`](../06-data-model.md)). This doc is the durable record: the calibrated
@@ -16,7 +16,7 @@
 >    2026), mined for per-type persistence/healing language. Private design input (L5a); only derived
 >    tallies + anonymized fragments are recorded here, never republished verbatim.
 >
-> **Headline.** The Phase 9 architecture (per-type decay, three-tier healing verdict, `bodyFeatures`,
+> **Headline.** The Phase 09a architecture (per-type decay, three-tier healing verdict, `bodyFeatures`,
 > geometry-per-type, client-side alerts) held up — the research **calibrates** it rather than
 > redesigning it. Six concrete changes resulted, all applied 2026-07-21: (1) the calibrated table below,
 > (2) an expanded type taxonomy, (3) `bufferMeters` on line/polygon hazards, (4) optional hazard photo,
@@ -27,11 +27,11 @@
 
 ## 1. The calibrated `HAZARD_DECAY` table (the deliverable)
 
-**Units: hours.** Admin-tunable integers (Phase 7), converted to ms only at comparison time via a
+**Units: hours.** Admin-tunable integers (Phase 07), converted to ms only at comparison time via a
 `hoursToMs` helper — so tuning is human-legible and `deriveHazardFreshness` stays a two-line compare.
 
 ```ts
-// @skating/core/hazardDecay.ts — TUNABLE DEFAULTS (admin-editable, Phase 7 / D49).
+// @skating/core/hazardDecay.ts — TUNABLE DEFAULTS (admin-editable, Phase 07 / D49).
 // Durations in HOURS. fresh: elapsed < freshH · aging: freshH ≤ elapsed < agingH · stale: ≥ agingH.
 export const HAZARD_DECAY: Record<HazardType, { tier: 'A'|'B'|'C'|'D'; freshH: number; agingH: number }> = {
   // Tier A — Volatile: refreeze/re-open within a day; cold snap or thaw flips them fast.
@@ -136,7 +136,7 @@ pole in one stab"). See §5 sign-flip 1 for why cold must not heal it.
 ("from water draining through an ice sheet, most common in ice <few inches after a wet thaw"), **reef
 hole**, **current hole**, **wind hole** ("warm windy conditions, especially at points"), weed hole,
 mush/slush hole. Corpus corroborates: "massive drain holes have opened up," "refrozen drain holes,"
-"~100 healed wind holes… beautiful black ice," "a wind hole in the southern part of the lake."
+"~100 healed wind holes… beautiful black ice," "a wind hole in the southern part of the water body."
 
 ---
 
@@ -211,7 +211,7 @@ Also for Phase 10:
 - **Depth / shallow.** Shallow ponds & bays melt from the bottom and go out first — a body-level
   shallow/pond signal sharpens decay (see `shallow_bay_early_thaw` bodyFeature). **No depth data source
   exists in OSM;** v1 ships this as a manual bodyFeature, with a HydroLAKES + GLOBathy backfill deferred
-  (see `phase-10-weather.md` → Later/deferred).
+  (see `phases/10-weather.md` → Later/deferred).
 
 **The Phase-10 variable set (expanded 2026-07-22 scoping — supersedes the original strip's five vars).**
 The original `WeatherSinceSummary` (peak temp · hours near/above freezing · sun-hours · precip · max wind)
@@ -229,7 +229,7 @@ is a fine *descriptive* strip but misses what the *decay model* needs. Two kinds
   wind holes; during freeze = faster growth). Open-Meteo raw fields to fetch:
   `temperature_2m, precipitation, rain, snowfall, snow_depth, wind_speed_10m, wind_gusts_10m, cloud_cover,
   sunshine_duration, shortwave_radiation`. **Out of scope:** dew point / humidity / freezing-rain glaze
-  (below our usable resolution). Full build plan: `phase-10-weather.md`.
+  (below our usable resolution). Full build plan: `phases/10-weather.md`.
 
 ---
 
@@ -239,7 +239,7 @@ is a fine *descriptive* strip but misses what the *decay model* needs. Two kinds
   ~1,197 posts/season, so a specific hazard rarely gets 2 independent `fully_healed` votes within its
   life. That's fine — it means **getting the decay constants right matters more than the confirm loop**,
   and it strengthens the value of the persistent `healing_unsafe` pin. Revisit `removalThreshold = 2`
-  once reputation (D50) lets one trusted local carry more weight (Phase 6).
+  once reputation (D50) lets one trusted local carry more weight (Phase 06).
 - **Reporting is lopsided.** `open_water` (218 occ) + `pressure_ridge` (116) + `thin_ice` (49) ≈ 80% of
   hazard mentions → surface those three as one-tap presets; tuck the rest behind "more" (UX).
 - **Photos are load-bearing.** ~40% of corpus posts carry photos; ice hazards are hard to describe
@@ -257,7 +257,7 @@ Use these for freshness/verdict labels so "healed" **never** reads as "safe."
 
 ---
 
-## 8. Open follow-ups (not blocking Phase 9)
+## 8. Open follow-ups (not blocking Phase 09a)
 
 - **Ridge-crossing "switch sides" hinting** — the richer v2 of the passage marker (suggest crossing
   spots where overlap switches). Deferred.

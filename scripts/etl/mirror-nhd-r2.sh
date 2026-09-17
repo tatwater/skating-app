@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Mirror the NHD geodatabase archive to a PRIVATE R2 bucket (water ETL, N7).
+# Mirror the NHD geodatabase archive to a PRIVATE R2 bucket (water ETL, A07a).
 #
 #   scripts/etl/mirror-nhd-r2.sh push [<state>]
 #   scripts/etl/mirror-nhd-r2.sh pull [<state>]

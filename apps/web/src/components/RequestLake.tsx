@@ -27,7 +27,7 @@ import {
 import { Textarea } from './ui/textarea';
 
 /**
- * Asking for a lake (N7b PR 2 / D106–D108) — the drawer's buttons and the map's prompt.
+ * Asking for a lake (A07b PR 2 / D106–D108) — the drawer's buttons and the map's prompt.
  *
  * **`RequestButtons`** sits under the standing notice on any lake and offers exactly the kinds the
  * lake's standing admits (`requestKindsFor`): bring a dormant lake back, contest a no-access

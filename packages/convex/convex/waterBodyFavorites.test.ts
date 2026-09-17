@@ -169,7 +169,7 @@ describe('waterBodyFavorites.isFavorite / listForUser', () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
-// N9 (D175): a favorite can name a bay
+// A09 (D175): a favorite can name a bay
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
 
 /** A bay covering the west half of the fixture lake, drawn straight into the table. */
@@ -212,7 +212,7 @@ async function seedBay(
   );
 }
 
-describe('bay favorites (N9)', () => {
+describe('bay favorites (A09)', () => {
   test('the lake and a bay of it are separate favorites, each with its own heart', async () => {
     const t = convexTestWithGeo();
     const asUser = await seedUser(t, 'clerk_a');

@@ -1,5 +1,5 @@
 /**
- * Weather-first discovery — the per-cell digest and the filter that reads it (N6h Workstream E /
+ * Weather-first discovery — the per-cell digest and the filter that reads it (A06h Workstream 5 /
  * **D159**, **D164**, **D165**).
  *
  * ## Why a digest exists

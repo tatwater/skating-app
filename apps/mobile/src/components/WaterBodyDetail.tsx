@@ -49,7 +49,7 @@ import { WeatherPlacePicker } from './WeatherPlacePicker';
 import { WindExposure } from './WindExposure';
 
 /**
- * Water-body detail drawer (§F, D47) for `/water/[id]`, the mobile mirror of web's `WaterBodyDetail`.
+ * Water-body detail drawer (§6, D47) for `/water/[id]`, the mobile mirror of web's `WaterBodyDetail`.
  * Reads `waterBodies.get`, which **follows a merge to the survivor** (a stale/merged deep link
  * silently lands on the canonical lake) and distinguishes not-found (`null`) from removed/unlisted
  * (`{ available: false }`) so each gets its own friendly state. Shows name, type, imperial area
@@ -64,15 +64,15 @@ export function WaterBodyDetail({
   focusSubAreaId,
 }: {
   waterBodyId: string;
-  /** A named bay to frame instead of the whole lake (N2/D60) — set by a sub-area search hit. */
+  /** A named bay to frame instead of the whole lake (A02/D60) — set by a sub-area search hit. */
   focusSubAreaId?: string;
   /**
-   * A just-finished recording to file this report against (Phase 8). When present the form opens
+   * A just-finished recording to file this report against (Phase 08). When present the form opens
    * straight away — the skater tapped "Report this skate", and making them find the button again
    * would be the moment the whole record→report loop leaks people.
    */
   trackDraftId?: string;
-  /** A synced skate to attach (N6f) — the server id, from the You tab's unreported list. */
+  /** A synced skate to attach (A06f) — the server id, from the You tab's unreported list. */
   activityId?: string;
 }) {
   const router = useRouter();
@@ -82,7 +82,7 @@ export function WaterBodyDetail({
   const body = result?.available ? result.body : null;
   // Always fetched once the lake is known — a `by_parent` read that returns nothing on the ~99% of
   // bodies with no bays. The Planning tab needs it on every giant to pick the bay its weather is
-  // about (N6h open question 5); the report feed subscribes to the same query, so it is deduped.
+  // about (A06h open question 5); the report feed subscribes to the same query, so it is deduped.
   const subAreas = useQuery(api.subAreas.listForBody, body ? { waterBodyId: body._id } : 'skip');
   const focusSubArea = focusSubAreaId
     ? subAreas?.find((s) => s._id === focusSubAreaId && !s.removed)
@@ -159,7 +159,7 @@ export function WaterBodyDetail({
         : { lat: body.centroid.lat, lng: body.centroid.lng, bounds: body.bbox },
     );
     setHighlightWaterBodyId(body._id);
-    // And mount the bathymetry layer for this lake (N6b/D81). Keyed by the OSM id the contour
+    // And mount the bathymetry layer for this lake (A06b/D81). Keyed by the OSM id the contour
     // tiles carry, not by the Convex `_id` the highlight uses — a re-import that churned ids would
     // otherwise silently blank the layer on every lake at once. Only the *lake* sheet does this:
     // D81 makes contours a property of this view, not of every view that selects a body.
@@ -201,11 +201,11 @@ export function WaterBodyDetail({
 
   const depth = describeLakeDepth(result.body);
   const caption = buildLakeCaption(result.body, regionStats);
-  // The bay view (N9 / D175), the same reframing as web: a live `?sub=` puts the bay's own name,
+  // The bay view (A09 / D175), the same reframing as web: a live `?sub=` puts the bay's own name,
   // heart, area, depth and fetch in the header, inherits the lake's elevation and rose and says so,
   // and narrows the lists below to the bay.
   const bayHeader = focusSubArea ? describeSubAreaHeader(focusSubArea, result.body) : null;
-  // N6c-2's reveal flag — see `profileReveal` in @skating/core. Forced off against production
+  // A06c-2's reveal flag — see `profileReveal` in @skating/core. Forced off against production
   // regardless of the constant, so the device build (a release build pointing at dev) still shows
   // every slot while a real skater never can.
   const reveal = revealEmptySections(profileRevealEnabled(env.convexUrl));
@@ -283,11 +283,11 @@ export function WaterBodyDetail({
                 ) : null}
               </>
             )}
-            {/* Why this lake is not on the active map (N7b) — nothing on the active majority — and
-                the asks its standing admits (N7b PR 2). Closed while a deletion is pending. */}
+            {/* Why this lake is not on the active map (A07b) — nothing on the active majority — and
+                the asks its standing admits (A07b PR 2). Closed while a deletion is pending. */}
             <StandingNotice body={result.body} />
             {leaving ? null : <RequestButtons body={result.body} />}
-            {/* The derived profile (N6c/C), assembled by the same @skating/core function web calls so
+            {/* The derived profile (A06c/C), assembled by the same @skating/core function web calls so
                 the two surfaces cannot drift. Nothing renders when there is nothing to say. */}
             {/* The lake's caption is the lake's (its depth, its fetch); under a bay header it would
                 contradict the bay's own depth line, so the bay view omits it — same as web. */}
@@ -313,7 +313,7 @@ export function WaterBodyDetail({
                   >
                     Add a report
                   </Button>
-                  {/* A bounty asks other people to go there — only on a lake we push (N7b). */}
+                  {/* A bounty asks other people to go there — only on a lake we push (A07b). */}
                   {isActive(result.body) ? (
                     <Button variant="outlined" onPress={() => setBountyFormOpen(true)}>
                       Post a bounty
@@ -321,9 +321,9 @@ export function WaterBodyDetail({
                   ) : null}
                 </>
               )}
-              {/* Official NWS alerts (N6c/B5) ABOVE the tab strip, always visible — a warning from the
+              {/* Official NWS alerts (A06c/B5) ABOVE the tab strip, always visible — a warning from the
                   local forecast office outranks both our observations and anybody's forecast, and a
-                  tabbed alert is an alert you can be one tap away from not seeing (N6h/H). */}
+                  tabbed alert is an alert you can be one tap away from not seeing (A06h/H). */}
               <AlertStrip waterBodyId={result.body._id} reveal={reveal} />
             </>
           )}
@@ -336,7 +336,7 @@ export function WaterBodyDetail({
       {formShowing ? null : (
         <DrawerPinned>
           <YStack paddingHorizontal={16} paddingBottom="$2">
-            {/* The three sub-tabs (N6h/H), the same groups as web over the same core vocabulary:
+            {/* The three sub-tabs (A06h/H), the same groups as web over the same core vocabulary:
                 Overview = machine-compiled facts about the body, Reporting = user-supplied this
                 season, Planning = the trip decision. Nothing in the tab content is new — the sections
                 that used to stack flat are grouped, in their old relative order, so every "above X
@@ -364,7 +364,7 @@ export function WaterBodyDetail({
           />
         ) : tab === 'overview' ? (
           <>
-            {/* What the sign says (N6e). Its own section rather than a row inside AccessSection,
+            {/* What the sign says (A06e). Its own section rather than a row inside AccessSection,
                       which renders nothing when a body has no mapped put-ins and would swallow the rule
                       on exactly the remote reservoir that posts one. ⚠ The put-ins are on Planning: the
                       taxonomy puts permission with the body and the route with the trip, which
@@ -374,11 +374,11 @@ export function WaterBodyDetail({
               coord={result.body.interiorPoint ?? result.body.centroid}
               reveal={reveal}
             />
-            {/* Whether you may be here at all (N6f) — next to what the sign says, because both are
+            {/* Whether you may be here at all (A06f) — next to what the sign says, because both are
                       facts about permission rather than about the trip. Renders nothing on the unruled,
                       unreported majority; the web drawer has the same placement. */}
             <PublicAccessSection body={result.body} />
-            {/* Winter wind (N7-3 / D90) — a climatology, what the last five winters did, which is
+            {/* Winter wind (A07a-3 / D90) — a climatology, what the last five winters did, which is
                       exactly why it is a fact about the body rather than a planning input. Renders
                       nothing without a rose, and says nothing about safety (D145). */}
             {focusSubArea ? (
@@ -393,11 +393,11 @@ export function WaterBodyDetail({
             ) : (
               <WindExposure body={result.body} />
             )}
-            {/* Reference links (N6c/B), below our own content and above the credits. Every one
+            {/* Reference links (A06c/B), below our own content and above the credits. Every one
                       opens in-app via `openBrowserAsync` (D76), never by ejecting the skater into
                       Safari. */}
             <ReferenceLinks body={result.body} reveal={reveal} />
-            {/* The bathymetry credit (N6b §5), last and absent on the great majority of lakes no
+            {/* The bathymetry credit (A06b §5), last and absent on the great majority of lakes no
                       agency ever surveyed. "How far away can we put it" resolved to *here*, and that is
                       not a compromise: nothing requires a contour credit on the map surface, and this
                       is where the depth provenance above and the Open-Meteo credit already live.
@@ -427,7 +427,7 @@ export function WaterBodyDetail({
           </>
         ) : (
           <>
-            {/* How you get onto the ice (N6d) — above the weather, because it decides whether the
+            {/* How you get onto the ice (A06d) — above the weather, because it decides whether the
                       trip is possible at all, where the weather decides whether it is worth making.
                       Absent on the great majority of bodies OSM has never mapped access for. */}
             <AccessSection
@@ -445,7 +445,7 @@ export function WaterBodyDetail({
               bays={liveBays}
               selectedId={weatherBay?._id ?? null}
             />
-            {/* What the ice has been through (N6h / D153) — ABOVE the forecast, matching the web
+            {/* What the ice has been through (A06h / D153) — ABOVE the forecast, matching the web
                       column and the same authority ordering: alert > observation > prediction. It draws
                       the same timeline the web app does: the geometry and the sentences both live in
                       core. */}
@@ -454,7 +454,7 @@ export function WaterBodyDetail({
               pending={weatherBay === undefined}
               {...(weatherBay ? { subAreaId: weatherBay._id } : {})}
             />
-            {/* The forward forecast (N6c/B5b; the seven-day planner since N6h D) — the other half
+            {/* The forward forecast (A06c/B5b; the seven-day planner since A06h D) — the other half
                 of the weather-since timeline. */}
             <ForecastPanel
               waterBodyId={result.body._id}
@@ -489,7 +489,7 @@ function ReportFeed({
   onSubAreaIdChange: (subAreaId: string) => void;
 }) {
   const router = useRouter();
-  // The named bays on this lake (N2/D60). Most lakes have none, and then the control is absent
+  // The named bays on this lake (A02/D60). Most lakes have none, and then the control is absent
   // rather than an empty chip row asking "which part?" of a pond.
   const subAreas = useQuery(api.subAreas.listForBody, { waterBodyId });
   const bays = (subAreas ?? []).filter((s) => !s.removed);

@@ -348,7 +348,7 @@ describe('contradictions.settleContradictions', () => {
 });
 
 /**
- * The enforcement funnel (Phase 7b). These three counters are the *only* record that a disagreement
+ * The enforcement funnel (Phase 07-2). These three counters are the *only* record that a disagreement
  * was ever considered: a pair the weather gate explains away is a `continue`, and afterwards it's
  * indistinguishable from two reports that never disagreed. Without them, a permissive weather gate and
  * a quiet season look identical — which is precisely the question the 48 FDH / 36 TDH numbers need

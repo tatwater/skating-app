@@ -132,7 +132,7 @@ Both surfaces feed off the same reducer; they differ only in what window they as
 
 ## Constants at a glance
 
-All defaults, all admin-tunable in Phase 7 (D49):
+All defaults, all admin-tunable in Phase 07 (D49):
 
 | Constant | Value | File | Controls |
 |---|---|---|---|
@@ -158,7 +158,7 @@ All defaults, all admin-tunable in Phase 7 (D49):
 ## One provider, and a second one that never touches this layer (D74)
 
 Every number on this page comes from **Open-Meteo**, and that is a decision rather than a default.
-N6c adds **NWS (`api.weather.gov`)** for official winter-storm, ice-storm and wind-chill **alerts** — and
+A06c adds **NWS (`api.weather.gov`)** for official winter-storm, ice-storm and wind-chill **alerts** — and
 those alerts are deliberately walled off from everything described above.
 
 **They are never blended.** Two providers disagreeing produces a worse number, not a better one, and

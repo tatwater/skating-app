@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Mirror the depth-source archive to a PRIVATE R2 bucket (N6a).
+# Mirror the depth-source archive to a PRIVATE R2 bucket (A06a).
 #
 #   scripts/lake-depth/mirror-r2.sh push [<key>]
 #   scripts/lake-depth/mirror-r2.sh pull [<key>]

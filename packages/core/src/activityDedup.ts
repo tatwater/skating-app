@@ -1,5 +1,5 @@
 /**
- * One skate, several sources: which recording is *the* recording (N8/B4a; D68's precedence
+ * One skate, several sources: which recording is *the* recording (A08/B4a; D68's precedence
  * discipline, second application).
  *
  * Someone can connect two things that both saw the same session — most plausibly a watch **and** an

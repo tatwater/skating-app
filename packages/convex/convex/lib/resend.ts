@@ -1,7 +1,7 @@
 /**
  * The Resend transport, shared by the operator alerts (D38) and the data-export email (D33/D62).
  *
- * Extracted when the second caller appeared rather than copied, which is the N2 lesson applied to a
+ * Extracted when the second caller appeared rather than copied, which is the A02 lesson applied to a
  * much smaller surface: the log-and-skip posture, the never-throw contract and the HTML escaping are
  * the parts that matter, and two copies would eventually disagree about one of them.
  *
@@ -53,7 +53,7 @@ export async function sendEmail(opts: {
   context: string;
   /**
    * Extra message headers. Skater-facing mail sets `List-Unsubscribe` (+ `-Post`) here so a mail
-   * client can offer its own one-click unsubscribe — the same link the footer carries (N8 PR 3).
+   * client can offer its own one-click unsubscribe — the same link the footer carries (A08 PR 3).
    */
   headers?: Record<string, string>;
 }): Promise<boolean> {

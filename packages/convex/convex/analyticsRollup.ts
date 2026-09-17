@@ -1,5 +1,5 @@
 /**
- * The analytics rollups (Phase 7b / D37) — the **sweep-by-cron** half of the metric pipeline.
+ * The analytics rollups (Phase 07-2 / D37) — the **sweep-by-cron** half of the metric pipeline.
  *
  * Every number here is derivable from rows that are still on disk, so it's computed on a schedule
  * instead of maintained on write. That split is the whole design: charts read `metricSnapshots`, never
@@ -181,7 +181,7 @@ async function rollupDay(ctx: MutationCtx, date: string): Promise<void> {
     buckets: histogram(confirmAges, HOUR_BUCKETS),
   });
 
-  // --- Hazard merges (N5c / D80) -------------------------------------------
+  // --- Hazard merges (A05c / D80) -------------------------------------------
   // Auto-merge is the one mechanism in the phase that changes a row without a human, and the unmerge
   // rate is the only empirical check on its bar. Read off the audit table's day slice — every merge
   // writes a row precisely so this can be counted rather than guessed.
@@ -210,7 +210,7 @@ async function rollupDay(ctx: MutationCtx, date: string): Promise<void> {
   }
   await writeMetricSnapshot(ctx, 'hazard_merges', date, { meta: merges });
 
-  // --- Cross-season recurrence (N5c / D78) --------------------------------
+  // --- Cross-season recurrence (A05c / D78) --------------------------------
   // A distribution rather than a count, because the number an operator actually needs is "how many
   // patterns would go public if I moved the bar", and that is only answerable as a histogram. Read off
   // the precomputed table for the current season — bounded by clusters, never by the hazard corpus.
@@ -671,7 +671,7 @@ export const sweepCorpus = internalMutation({
       .paginate({ cursor: args.cursor ?? null, numItems: SWEEP_PAGE_SIZE });
 
     for (const body of result.page) {
-      // Rejected / merged bodies aren't coverage, and neither is a removed one (N7b: reachable, but
+      // Rejected / merged bodies aren't coverage, and neither is a removed one (A07b: reachable, but
       // a takedown is not a lake we cover). A dormant body IS counted — it lands in the z16 band,
       // which is how the chart shows the active/dormant split without a second sweep.
       if (!isListed(body) || standingOf(body).standing === 'removed') continue;

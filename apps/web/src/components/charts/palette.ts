@@ -1,5 +1,5 @@
 /**
- * The operator-chart palette (Phase 7b). Categorical hues drawn from `@skating/design`'s ramps and
+ * The operator-chart palette (Phase 07-2). Categorical hues drawn from `@skating/design`'s ramps and
  * **validated with the dataviz skill's checker** — not eyeballed. Both orders pass the lightness band,
  * the chroma floor, adjacent-pair CVD separation (deutan/protan/tritan), the normal-vision floor, and
  * surface contrast for their mode; green is placed away from red so no colorblind-adjacent pair is a

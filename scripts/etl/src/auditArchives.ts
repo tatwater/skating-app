@@ -1,5 +1,5 @@
 /**
- * Audit the acquired archives before anything is built on them (N7).
+ * Audit the acquired archives before anything is built on them (A07a).
  *
  *   pnpm --filter @skating/etl audit-archives [--campaign=<id>]
  *

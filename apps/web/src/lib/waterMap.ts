@@ -1,11 +1,11 @@
 /**
- * Pure helpers for the water-body map (Phase 1 read-only; Phase 2 §D adds tap-to-detail +
+ * Pure helpers for the water-body map (Phase 01 read-only; Phase 02a §4 adds tap-to-detail +
  * geolocation framing). Kept out of the imperative MapLibre component (`../components/MapView`)
  * so the data transforms, feature-state lookup, basemap style, and framing math are unit-testable
  * without a DOM/WebGL context.
  *
  * Basemap is Protomaps (D6) over hosted demo `.pmtiles` first, swapped to a self-built regional
- * extract later (Vermont in Phase 1, the Northeast in Phase 2.5) — the tile URL is injected so that
+ * extract later (Vermont in Phase 01, the Northeast in Phase 02b) — the tile URL is injected so that
  * swap is a config change.
  */
 
@@ -33,8 +33,8 @@ export const OSM_ATTRIBUTION = '© OpenStreetMap contributors';
 
 /**
  * A Protomaps hosted **build** `.pmtiles` (whole-planet, for prototyping) + its static font/sprite
- * assets. Phase 1 renders against these to confirm the data; PR#5 swaps `DEMO_PMTILES_URL` for a
- * self-built extract (set `VITE_PMTILES_URL`) — Vermont in Phase 1, the Northeast region in Phase
+ * assets. Phase 01 renders against these to confirm the data; PR#5 swaps `DEMO_PMTILES_URL` for a
+ * self-built extract (set `VITE_PMTILES_URL`) — Vermont in Phase 01, the Northeast region in Phase
  * 2.5. The asset URLs stay hosted.
  *
  * NB: Protomaps prunes dated builds, so this URL rotates and will eventually 404 (the old
@@ -54,7 +54,7 @@ export const MAP_FLAVORS = { light: 'white', dark: 'dark' } as const;
 export type MapFlavor = (typeof MAP_FLAVORS)[keyof typeof MAP_FLAVORS];
 
 /**
- * The shoreline's color, which depends on what is inside it (N6e).
+ * The shoreline's color, which depends on what is inside it (A06e).
  *
  * Normally: favorited reads gold (D#1), everything else takes the theme outline, and a
  * favorited-and-selected body stays gold because the favorite is the more persistent signal.
@@ -112,7 +112,7 @@ export const PIN_HALO_COLOR: Record<MapFlavor, string> = {
 };
 
 /**
- * The recorded-GPS-track line (Phase 8). Deliberately a warm accent, not part of the water ramp and
+ * The recorded-GPS-track line (Phase 08). Deliberately a warm accent, not part of the water ramp and
  * not part of the hazard danger ramp: a skated path is neither water nor a warning, and it must stay
  * legible against both the ice fill and a hazard footprint drawn over it.
  */
@@ -264,7 +264,7 @@ export interface MappableBody {
   type: string;
   polygon: GeoJSON.Geometry;
   /**
-   * The standing fields (N7b): `removedAt`, `publicAccess`, `dormant`, `reviewStatus`, `dedupStatus`.
+   * The standing fields (A07b): `removedAt`, `publicAccess`, `dormant`, `reviewStatus`, `dedupStatus`.
    * Any body that is not `active` draws dimmed — `isActiveRow` reads them all, so the map cannot
    * show a dormant lake at full opacity by forgetting a case.
    */
@@ -283,7 +283,7 @@ export interface MappableBody {
  * tap reads `_id` to navigate; `featureIdForBody` maps a selected `_id` back to the numeric id so
  * a deep-linked selection can be highlighted without a click).
  *
- * `selfFlaggedIds` are the bodies **this viewer** has reported as having no public access (N6f).
+ * `selfFlaggedIds` are the bodies **this viewer** has reported as having no public access (A06f).
  * They draw dimmed for that person alone — an unconfirmed report must not change anyone else's map,
  * or one account could dim any lake in the corpus. It rides the properties bag rather than
  * feature-state (which is how favourites do it) so that the mobile client, whose binding has no
@@ -292,7 +292,7 @@ export interface MappableBody {
 export function waterBodiesToFeatureCollection(
   bodies: readonly MappableBody[],
   selfFlaggedIds: ReadonlySet<string> = new Set(),
-  /** Bodies the active weather filter did not match (N6h / D166) — drawn dimmed, never hidden. */
+  /** Bodies the active weather filter did not match (A06h / D166) — drawn dimmed, never hidden. */
   weatherDimmedIds: ReadonlySet<string> = new Set(),
 ): GeoJSON.FeatureCollection {
   return {
@@ -314,7 +314,7 @@ export function waterBodiesToFeatureCollection(
 }
 
 /**
- * Named sub-area outlines + labels (N2 / D60), a **second** source over the water layer.
+ * Named sub-area outlines + labels (A02 / D60), a **second** source over the water layer.
  *
  * Deliberately not folded into the water source: a bay is drawn inside its parent, so the two
  * collections overlap by construction, and MapLibre resolves a tap by layer order. Keeping them
@@ -387,7 +387,7 @@ export function featureIdForBody(
 
 /**
  * The numeric feature ids of every body in the current collection that the viewer has favorited
- * (Phase 4, decision #1) — used to paint the `favorite` feature-state so favorited lakes read with a
+ * (Phase 04, decision #1) — used to paint the `favorite` feature-state so favorited lakes read with a
  * distinct outline on the map. Bodies not currently in view (not in `fc`) are simply skipped.
  */
 export function favoriteFeatureIds(
@@ -408,12 +408,12 @@ export function favoriteFeatureIds(
 export interface MappablePutIn {
   coord: { lat: number; lng: number };
   source: 'derived' | 'osm' | 'official';
-  /** OSM's name for the launch (N6d/A3), where it has one — what makes a pin worth tapping. */
+  /** OSM's name for the launch (A06d/A3), where it has one — what makes a pin worth tapping. */
   name?: string;
 }
 
 /**
- * Put-in markers → a GeoJSON `FeatureCollection` for the map's `put-in-markers` source (Phase 4,
+ * Put-in markers → a GeoJSON `FeatureCollection` for the map's `put-in-markers` source (Phase 04,
  * decision #7). Each point carries its `source` so the layer can style `official` (accurate) markers
  * distinctly from `derived` (approximate) clusters.
  */
@@ -497,7 +497,7 @@ export function boundsForBody(
 }
 
 /**
- * Per-body summary cards (N6c Workstream E).
+ * Per-body summary cards (A06c Workstream 5).
  *
  * **A MapLibre `symbol` layer, not HTML overlays.** Symbol layers keep the cards inside the style,
  * so they scale to a viewport full of bodies, and — the load-bearing reason — MapLibre's own collision
@@ -526,7 +526,7 @@ export interface MappableSummaryBody {
     qualityCount?: number;
   };
   /**
-   * The easiest known way onto this body (N6d / D144), denormalized onto the row by the access join.
+   * The easiest known way onto this body (A06d / D144), denormalized onto the row by the access join.
    *
    * Read off `listInViewport`'s own rows — **no extra query**, the same property that makes the cards
    * affordable at all. It is deliberately *not* inside `summary`: that object is activity-scoped, and
@@ -614,7 +614,7 @@ export function summaryCardText(body: MappableSummaryBody, reveal = false): stri
  */
 export function summaryCardsToFeatureCollection(
   bodies: readonly MappableSummaryBody[],
-  /** The N6c-2 reveal flag — draws a card for every body carrying a summary, empty ones included. */
+  /** The A06c-2 reveal flag — draws a card for every body carrying a summary, empty ones included. */
   reveal = false,
 ): GeoJSON.FeatureCollection {
   const features: GeoJSON.Feature[] = [];
@@ -636,7 +636,7 @@ export function summaryCardsToFeatureCollection(
 }
 
 /**
- * The `summary-card` symbol layer (N6c/E).
+ * The `summary-card` symbol layer (A06c/E).
  *
  * Lives here rather than inline in `MapView` so it can be run through the style-spec validator in a
  * test — which is the point, because **an invalid layer fails silently**: MapLibre logs and declines

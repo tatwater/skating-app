@@ -1,5 +1,5 @@
 /**
- * The density gate (N6b §Maine step 2) — does this lake have enough soundings to interpolate?
+ * The density gate (A06b §Maine step 2) — does this lake have enough soundings to interpolate?
  *
  * This is the integrity of the whole sounding lane. Vermont and Maine publish measured points, not
  * isobaths, so **we** fit the surface — and an interpolator will happily draw smooth, confident,

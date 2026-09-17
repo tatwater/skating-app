@@ -1,5 +1,5 @@
 /**
- * Feed-filter persistence (Phase 4, decision #6) — local-first with a `profiles.feedFilterPrefs`
+ * Feed-filter persistence (Phase 04, decision #6) — local-first with a `profiles.feedFilterPrefs`
  * server-sync copy. Local storage is the **working copy** (the UI always reads it → instant,
  * offline-safe); the server blob is the durable/cross-device copy. Reconciliation is last-write-wins:
  * a non-empty local copy wins (it's what the user last touched here); an empty local copy adopts the

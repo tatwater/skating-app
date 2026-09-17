@@ -1,5 +1,5 @@
 /**
- * Known seasonal body features — persistent, non-decaying water-body hazards (D53, Phase 9).
+ * Known seasonal body features — persistent, non-decaying water-body hazards (D53, Phase 09a).
  *
  * Some "hazards" are really permanent properties of a lake: springs and inlet/outlet current,
  * constrictions, bridges and narrows, gas holes over a delta, a reef that ices thin every year, and
@@ -30,7 +30,7 @@ export const listForBody = query({
   args: {
     waterBodyId: v.id('waterBodies'),
     /**
-     * Narrow to one named bay (N9) — the bay view's list, the same scope `hazards.listForBody`
+     * Narrow to one named bay (A09) — the bay view's list, the same scope `hazards.listForBody`
      * takes. Filtered in memory off the row's stamp, like the hazards: the read is already bounded
      * by body, and a feature's bay is its footprint centre's. A spring in the next bay over is a
      * standing fact about *that* bay, and listing it under this one would be the map's "known
@@ -122,7 +122,7 @@ export const create = mutation({
  * Graduate a recurring hazard into a permanent body feature (D53).
  *
  * **The source hazard is left alone.** `promotedToFeatureId` is set as a backlink and that is all it
- * does (D53 amendment, N5c): the pin goes on rendering, goes on taking confirmations, and goes on
+ * does (D53 amendment, A05c): the pin goes on rendering, goes on taking confirmations, and goes on
  * resolving by permalink, because a feature is a *pattern* and a hazard is a *sighting*, and users
  * keep filing sightings of a thing the map already knows about. Its lifecycle `status` is likewise
  * untouched — setting `status: archived` here would make a moderator's promotion indistinguishable
@@ -199,7 +199,7 @@ export const demote = mutation({
       }
     }
     // **A cluster promotion set the backlink on every member, so a demotion has to clear every one**
-    // (N5c / §8.2). Clearing only `promotedFromHazardId` would leave the rest of the cluster pointing
+    // (A05c / §8.2). Clearing only `promotedFromHazardId` would leave the rest of the cluster pointing
     // at a feature nobody can see any more — a provenance line in the drawer naming a standing
     // statement about the lake that has been withdrawn, which is worse than no line at all.
     //
@@ -264,7 +264,7 @@ export async function insertBodyFeature(
   if (!isValidHazardShape(shape)) throw new ConvexError('Invalid body-feature geometry');
 
   const bbox = hazardBbox(shape);
-  // The bay the feature sits in (N9) — the hazard rule, by the footprint's centre. Re-stamped by
+  // The bay the feature sits in (A09) — the hazard rule, by the footprint's centre. Re-stamped by
   // `subAreas.restampParent` on a redraw, like the hazard it may have been promoted from.
   const subArea = await resolveSubAreaForPoint(ctx, args.waterBodyId, hazardCenter({ bbox }));
   return ctx.db.insert('bodyFeatures', {

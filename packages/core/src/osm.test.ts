@@ -94,7 +94,7 @@ describe('belongsInCorpus', () => {
   });
 
   it('admits a body a skater asked for, however small', () => {
-    // The whole point of N7b: someone long-pressed a pond the floor deleted. Sub-acre is exactly
+    // The whole point of A07b: someone long-pressed a pond the floor deleted. Sub-acre is exactly
     // where D91 says nothing survives on any other evidence, which is why the flag has to be
     // independent of size rather than a lower threshold.
     expect(belongsInCorpus({ ...tiny, includedByRequest: true })).toBe(true);
@@ -128,7 +128,7 @@ describe('the five admission rules (D91 + D96)', () => {
       expect(belongsInCorpus({ type, name: 'Named', surfaceAreaSqM: tiny })).toBe(false);
       expect(belongsInCorpus({ type, name: '', surfaceAreaSqM: tiny })).toBe(false);
     }
-    // N7b's includedByRequest is the only way in below an acre.
+    // A07b's includedByRequest is the only way in below an acre.
     expect(
       belongsInCorpus({ type: 'marsh', name: '', surfaceAreaSqM: tiny, includedByRequest: true }),
     ).toBe(true);
@@ -155,7 +155,7 @@ describe('the five admission rules (D91 + D96)', () => {
 
   it('5. holds unnamed wetland to fifty acres, not five', () => {
     // Measured over the whole corpus: 3,659 unnamed wetlands above five acres, of which 415 clear
-    // fifty. A 30-acre bar would have kept 733; the founder took the stricter one and N7b as the
+    // fifty. A 30-acre bar would have kept 733; the founder took the stricter one and A07b as the
     // backstop for anything it cuts wrongly.
     const marsh = { type: 'marsh' as const, name: '' };
     expect(belongsInCorpus({ ...marsh, surfaceAreaSqM: UNNAMED_WETLAND_MIN_SQM })).toBe(true);
@@ -190,7 +190,7 @@ describe('the five admission rules (D91 + D96)', () => {
   });
 });
 
-describe('belongsInCorpus across the enum rename (N7/D109)', () => {
+describe('belongsInCorpus across the enum rename (A07a/D109)', () => {
   const acres = (n: number) => n * 4046.8564224;
 
   // The rename's one dangerous branch. `type === 'marsh'` against a body carrying `'wetland'` returns
@@ -229,7 +229,7 @@ describe('belongsInCorpus across the enum rename (N7/D109)', () => {
   });
 });
 
-describe('exceedsAreaCeiling (N7 audit)', () => {
+describe('exceedsAreaCeiling (A07a audit)', () => {
   const acres = (n: number) => n * 4046.8564224;
 
   it('lets an ordinary lake through', () => {

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# One canonical water re-import across every archived state extract (N6c pass 1).
+# One canonical water re-import across every archived state extract (A06c pass 1).
 #
 # Exists because the pass is five near-identical invocations of three tools, and the interesting
 # arguments are the ones that are easy to forget: the manifest that carries the extract's checksum,

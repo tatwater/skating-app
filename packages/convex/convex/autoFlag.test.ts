@@ -155,7 +155,7 @@ describe('fileOrBumpAutoFlag', () => {
     const terminal = rows.find((r) => r._id === first.flagId) as Doc<'contentFlags'>;
     expect(terminal.status).toBe('dismissed');
     expect(terminal.resolvedAt).toBe(resolvedAt);
-    // Untouched, exactly: the 7b rollup's past days keep meaning what they said.
+    // Untouched, exactly: the 07-2 rollup's past days keep meaning what they said.
     expect(terminal.occurrences).toBe(2);
   });
 
@@ -295,7 +295,7 @@ describe('shouldAlertAt', () => {
 });
 
 /**
- * `activeBountyPostLimit` (N2) — D57's deferred bounty lever. A number rather than a boolean,
+ * `activeBountyPostLimit` (A02) — D57's deferred bounty lever. A number rather than a boolean,
  * because bounties are requests rather than content: the proportionate answer to someone spamming
  * them is fewer, not none.
  */

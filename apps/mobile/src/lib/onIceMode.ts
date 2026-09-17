@@ -126,7 +126,7 @@ export function ingestOnIceFix(fix: DirectionalFix): void {
  * just finished syncing, or near whom a hazard was freshly posted, still gets the alert without waiting
  * for a new GPS fix.
  *
- * **The only caller is `HazardBanner`, and that matters** (N5a/D63). Its `hazards.listForBody` call is
+ * **The only caller is `HazardBanner`, and that matters** (A05a/D63). Its `hazards.listForBody` call is
  * textually the map's minus one argument: the map passes the season the sheet is browsing, the banner
  * passes none and takes the server default. Feeding this from the map instead would let a sheet someone
  * opened an hour ago decide which winter's ridges they get warned about while standing on the ice —

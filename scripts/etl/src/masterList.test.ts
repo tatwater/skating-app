@@ -1,5 +1,5 @@
 /**
- * **The whole pipeline, end to end, against named answers** (N7 second intake audit).
+ * **The whole pipeline, end to end, against named answers** (A07a second intake audit).
  *
  * `mergeRules.test.ts` covers each rule in isolation and every one of them passed while the pipeline
  * still admitted the ocean, deleted two real New York lakes and inserted duplicate rows — because
@@ -655,7 +655,7 @@ describe('a bay is an arm, not a lake', () => {
     expect(result.bodies[0]?.reviewReasons).toContain('bay-without-parent');
     // **Named, so it keeps `bay`** — the same answer a bay whose parent was never *found* gets.
     //
-    // ⚠ This asserted `unclassified` until the N7-2 audit, and that was the rule twenty lines up
+    // ⚠ This asserted `unclassified` until the A07a-2 audit, and that was the rule twenty lines up
     // inverted: `Paugus Bay` keeps its class because no catalogue draws it inside anything, while a
     // bay whose parent was found and then refused — for region, salt or the floor — was relabelled.
     // Same epistemic position, and the answer was decided by which way the parent happened to die.
@@ -1085,7 +1085,7 @@ describe('the still-water rescue leaves a number behind (founder, 2026-08-09)', 
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// The same-source lane (N7-3)
+// The same-source lane (A07a-3)
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe('osm → osm: the lane the other three could not cover', () => {

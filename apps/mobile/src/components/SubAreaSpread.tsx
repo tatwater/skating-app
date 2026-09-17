@@ -7,7 +7,7 @@ import { Paragraph, Text, YStack } from 'tamagui';
 import { Section } from './detailUi';
 
 /**
- * The spread across a giant's named bays (N6h / open question 5) — the mobile twin of web's
+ * The spread across a giant's named bays (A06h / open question 5) — the mobile twin of web's
  * `SubAreaSpread`, over the same core sentences. The named extremes are pressable and navigate to
  * `sub=`, the same route the chips and a search hit use, so pressing *Missisquoi Bay* frames it and
  * scopes both weather panels to it. Nothing renders until the filter tier has rows for two of the
@@ -34,7 +34,7 @@ export function SubAreaSpread({ waterBodyId }: { waterBodyId: Id<'waterBodies'> 
                 ))}
               </Paragraph>
             ))}
-        {/* The sorted bay lists (Workstream E, founder call 9): the user picks the criterion, the
+        {/* The sorted bay lists (Workstream 5, founder call 9): the user picks the criterion, the
             app counts (D150). Each bay is the same `sub=` navigation the extremes are. */}
         {[spread.rankings?.coldestNights, spread.rankings?.leastSnow]
           .filter((r): r is NonNullable<typeof r> => !!r)

@@ -29,7 +29,7 @@ export const USER_STATUSES = ['active', 'suspended', 'banned', 'deleting', 'dele
 export type UserStatus = (typeof USER_STATUSES)[number];
 
 /**
- * Water body kinds (D4/D14) — **retired as the stored vocabulary by N7's D109 amendment.**
+ * Water body kinds (D4/D14) — **retired as the stored vocabulary by A07a's D109 amendment.**
  *
  * `waterBodies.type` now stores `WATER_BODY_CLASSES`. This list survives for exactly one job: the
  * backfill that rewrites the rows written before the migration needs to name what it is reading.
@@ -70,7 +70,7 @@ export const LEGACY_TYPE_TO_CLASS: Readonly<Record<LegacyWaterBodyType, WaterBod
 };
 
 /**
- * What kind of water this is — **the vocabulary the three catalogues get mapped into** (N7, D109).
+ * What kind of water this is — **the vocabulary the three catalogues get mapped into** (A07a, D109).
  *
  * Five values, and each one earned its place by being a distinction some source actually draws and
  * some consumer actually needs:
@@ -164,7 +164,7 @@ export function waterBodyClassLabel(value: string): string {
 }
 
 /**
- * The classes a person may choose when they draw a body themselves (D37 / Phase 8).
+ * The classes a person may choose when they draw a body themselves (D37 / Phase 08).
  *
  * **`unclassified` is deliberately absent.** It is the honest answer when *the catalogues* said
  * nothing, and offering it in a picker would invite a skater to select "we don't know" about water
@@ -223,7 +223,7 @@ export const SURFACE_TAGS = [
 export type SurfaceTag = (typeof SURFACE_TAGS)[number];
 
 /**
- * Conditions AT skate time (D19). Phase 2 stores these as optional **manual** entry
+ * Conditions AT skate time (D19). Phase 02a stores these as optional **manual** entry
  * (`source: 'user'`); Open-Meteo auto-fill (`source: 'openmeteo'`) arrives in Phase 10.
  */
 export const SKY_CONDITIONS = ['clear', 'partly_cloudy', 'overcast', 'precip'] as const;
@@ -237,14 +237,14 @@ export type ConditionSource = (typeof CONDITION_SOURCES)[number];
  * Localized hazards that drive the lifecycle (D15/D52). **Exactly one per hazard** — per-type decay,
  * geometry-per-type (D51) and the `ridge_crossing` verdict relabeling all need an unambiguous type.
  *
- * Canonicalized 2026-07-21 (Phase 9 kickoff): the slash-pairs that used to be *separate* keys collapse
+ * Canonicalized 2026-07-21 (Phase 09a kickoff): the slash-pairs that used to be *separate* keys collapse
  * to one key each, with the alias living in the display label (`HAZARD_TYPE_LABELS`) rather than in the
  * data — `open_water` absorbs `lead`, `ice_heave` absorbs `buckling`, and `spring_current` replaces
  * both `inlet_outlet_current` and `spring`. Two keys for one hazard could disagree about their own
  * decay tier, and `Record<HazardType, HazardDecay>` could not typecheck against the research table.
  *
  * Ordered by decay tier (A → D) so the table below reads top-to-bottom as volatile → permanent.
- * Evidence for every entry: `plans/phase-9-hazard-research.md`.
+ * Evidence for every entry: `plans/research/hazard-decay-calibration-and-behavior.md`.
  */
 export const HAZARD_TYPES = [
   // Tier A — volatile: refreeze/re-open within a day.
@@ -330,7 +330,7 @@ export const BODY_FEATURE_TYPES = [
   'gas_hole',
   'reef_hole',
   'delta',
-  // Renamed from `shallow_bay_early_thaw` (D53 amendment, N5c): there is no guarantee the spot is a
+  // Renamed from `shallow_bay_early_thaw` (D53 amendment, A05c): there is no guarantee the spot is a
   // bay — it may be an island's lee, a sandbar, a reef or a shallow delta.
   'shallow_early_thaw',
   'other',

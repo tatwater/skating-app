@@ -1,5 +1,5 @@
 /**
- * Posted access rules — the moderator writer and the composition rule (N6e).
+ * Posted access rules — the moderator writer and the composition rule (A06e).
  *
  * The load-bearing property is the last describe block: a rule on one parking lot must not become a
  * claim about the lake, or about the lot next to it. Everything else here is the `setDepth` discipline

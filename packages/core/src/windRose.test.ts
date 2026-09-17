@@ -173,7 +173,7 @@ describe('mostExposedSector', () => {
   });
 });
 
-describe('sustained wind (N7-3)', () => {
+describe('sustained wind (A07a-3)', () => {
   /** Five winters of Dec–Mar, which is what `WTK_YEARS` fetches. */
   const FIVE_WINTERS = 5 * 24 * (31 + 31 + 28 + 31);
 

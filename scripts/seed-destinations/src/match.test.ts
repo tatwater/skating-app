@@ -92,8 +92,8 @@ describe('matchDestination', () => {
   });
 
   /**
-   * The failure this script exists to prevent. The Phase-2.5 seed put five curated boosts on
-   * same-named lakes in the wrong towns, and nobody could see it until N2 built a screen.
+   * The failure this script exists to prevent. The Phase-02b seed put five curated boosts on
+   * same-named lakes in the wrong towns, and nobody could see it until A02 built a screen.
    */
   it('reports ambiguity rather than guessing between same-named bodies', () => {
     const result = matchDestination(destination({ name: 'Mill Pond' }), [
@@ -173,7 +173,7 @@ describe('corroboration', () => {
 describe('DESTINATION_BOOST', () => {
   /**
    * `displayScore` is `normalize(log area) ∈ [0,1] + curatedBoost`, clamped by `minVisibleZoom`.
-   * N6c-1 found the D2 table's proposed weights were ~13× that whole range.
+   * A06c-1 found the D2 table's proposed weights were ~13× that whole range.
    */
   it('sits inside the score’s real dynamic range', () => {
     expect(DESTINATION_BOOST).toBeGreaterThan(0);

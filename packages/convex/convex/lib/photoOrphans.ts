@@ -1,7 +1,7 @@
 /**
- * Deciding whether a photo is an orphan (N3).
+ * Deciding whether a photo is an orphan (A03).
  *
- * Extracted rather than copied, for the reason N2 recorded when it lifted the cell walk out of
+ * Extracted rather than copied, for the reason A02 recorded when it lifted the cell walk out of
  * `waterBodies`: two destructive callers — the orphan-GC cron and account deletion — must agree
  * exactly on what "unreferenced" means, and a copy would drift. Deleting a *referenced* photo puts a
  * permanent hole in a public report, so this is the one place that answer is derived.
@@ -9,7 +9,7 @@
  * **The soundness argument is about who can attach a photo, not about when.**
  *
  * The obvious implementation gathers references from reports and hazards created near the photo's own
- * creation time — which is what the Phase 7b `photo_orphans` metric does, and is fine for a metric that
+ * creation time — which is what the Phase 07-2 `photo_orphans` metric does, and is fine for a metric that
  * only has to be approximately right. It is **not** sound for a delete, because `reports.update` can
  * change `photoIds`: an old report edited today can newly reference a photo, and a creation-time window
  * would never see it.
@@ -19,7 +19,7 @@
  * reports, hazards and access-point attachments**, whenever they were written. Scanning by author is
  * therefore both sound and bounded by one person's contribution count rather than by the corpus.
  *
- * ⚠ **N6d nearly broke that identity, and the fix is in the schema rather than here.** An access-point
+ * ⚠ **A06d nearly broke that identity, and the fix is in the schema rather than here.** An access-point
  * photo hangs off a `putIns` row the *ETL* created, so "the uploader's own access points" is empty and
  * a photo attached to one would have looked abandoned and been swept thirty days later — silently, by
  * a cron, a month after upload. `accessPhotos` therefore carries its own `uploaderId` and is indexed
@@ -83,7 +83,7 @@ export async function referencedPhotoIds(
     .take(REFERENCE_SCAN_CAP);
   if (hazards.length >= REFERENCE_SCAN_CAP) return null;
 
-  // The third arm, added by N6d. Not optional and not a nicety: without it every access-point photo
+  // The third arm, added by A06d. Not optional and not a nicety: without it every access-point photo
   // is an orphan by construction, because the put-in it hangs off was created by the ETL and so is
   // invisible to any scan keyed on this uploader.
   const access = await ctx.db
@@ -100,7 +100,7 @@ export async function referencedPhotoIds(
 }
 
 /**
- * The subset of an uploader's photos that **outlive their season** (D66, extended by N6d).
+ * The subset of an uploader's photos that **outlive their season** (D66, extended by A06d).
  *
  * The seam the seasonal photo expiry rests on. Two kinds qualify, for two different reasons:
  *
@@ -108,7 +108,7 @@ export async function referencedPhotoIds(
  *   it is exactly what the next skater on that shore needs.
  * - **Access-point photos.** They document **infrastructure, not conditions** — a parking lot looks
  *   the same next November — so the argument that retires a report photo does not reach them. This is
- *   the N6d carve-out from D66, and it is a carve-out from the *seasonal* rule only: N3 deletion still
+ *   the A06d carve-out from D66, and it is a carve-out from the *seasonal* rule only: A03 deletion still
  *   applies, under the D62 second amendment's redact-don't-erase.
  *
  * `null` means the scan hit its cap, which is "couldn't determine" and never "nothing is attached":
@@ -119,7 +119,7 @@ export async function referencedPhotoIds(
  * that references a photo at all, and the whole point of this one is that those answers differ — a
  * report photo is referenced and still expires.
  *
- * *(Named `hazardPhotoIds` until N6d gave it a second member. Renamed rather than extended silently,
+ * *(Named `hazardPhotoIds` until A06d gave it a second member. Renamed rather than extended silently,
  * so a caller reasoning about "hazards" has to notice that it now says something broader.)*
  */
 export async function durablePhotoIds(

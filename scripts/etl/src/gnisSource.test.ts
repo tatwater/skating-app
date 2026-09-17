@@ -1,5 +1,5 @@
 /**
- * The gazetteer's constants and header rules (N7 audit).
+ * The gazetteer's constants and header rules (A07a audit).
  *
  * These were untestable while they lived in `gnisArchive.ts`, because importing that module runs a
  * five-state download. That is the whole reason `gnisSource.ts` exists, and this file is the proof

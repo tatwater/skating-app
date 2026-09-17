@@ -108,7 +108,7 @@ export function DataExportView({
                     ) : null}
                     <span className="text-foreground-muted">expires {formatDate(e.expiresAt)}</span>
                     {/* Never a silent cap: a bundle someone treats as their complete record has to
-                        say when it isn't (the Phase 7 rule). */}
+                        say when it isn't (the Phase 07 rule). */}
                     {e.omittedPhotoCount ? (
                       <span className="text-foreground-muted">
                         ({e.omittedPhotoCount} photo{e.omittedPhotoCount === 1 ? '' : 's'} too large

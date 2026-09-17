@@ -16,7 +16,7 @@ function detectPlatform(): DirectionsPlatform {
 }
 
 /**
- * Directions button on the lake detail drawer (Phase 4 decision #7; re-targeted by N6d / D72).
+ * Directions button on the lake detail drawer (Phase 04 decision #7; re-targeted by A06d / D72).
  *
  * **What changed, and why it is the whole point of the phase.** This used to route a car to a *put-in*
  * coord. For a drive-up launch that is right; for a hike-in pond it is a destination a maps app cannot

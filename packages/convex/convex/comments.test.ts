@@ -166,7 +166,7 @@ describe('comments.create', () => {
   });
 });
 
-/** Make every queued notification due and flush it — the settle window (N8 / D169), fast-forwarded. */
+/** Make every queued notification due and flush it — the settle window (A08 / D169), fast-forwarded. */
 async function flushAllDue(t: ReturnType<typeof convexTest>) {
   await t.run(async (ctx) => {
     for (const row of await ctx.db.query('notificationQueue').collect()) {
@@ -177,7 +177,7 @@ async function flushAllDue(t: ReturnType<typeof convexTest>) {
   return t.run((ctx) => ctx.db.query('notifications').collect());
 }
 
-describe('comments — report_commented (N8/B1)', () => {
+describe('comments — report_commented (A08/B1)', () => {
   test('notifies the report author, never the commenter, and coalesces a burst into one', async () => {
     const t = convexTest(schema, modules);
     const author = await seedUser(t, 'author');

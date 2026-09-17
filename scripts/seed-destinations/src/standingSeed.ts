@@ -1,5 +1,5 @@
 /**
- * The pure half of `seed-standing` (N7b): the gazetteer parser and the keep-list dedupe. Kept apart
+ * The pure half of `seed-standing` (A07b): the gazetteer parser and the keep-list dedupe. Kept apart
  * from the CLI so the rules are covered and the subprocess glue is excluded, like `cli.ts`.
  */
 

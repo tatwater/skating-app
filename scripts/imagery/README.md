@@ -1,10 +1,10 @@
-# `scripts/imagery` — the granule cutter and its box (N6e PR 2)
+# `scripts/imagery` — the granule cutter and its box (A06e PR 2)
 
 Cuts Sentinel granules down to the corpus and publishes masked raster PMTiles to R2, so the freeze-up
 scrubber is an archive URL swap rather than a metered API call per lake.
 
-Phase doc: [`plans/phase-N6e-satellite-imagery.md`](../../plans/phase-N6e-satellite-imagery.md) —
-**§C2 (D148)** is the decision this directory implements, and the *Settled 2026-08-21* section is
+Phase doc: [`plans/phases/A06e-satellite-imagery.md`](../../plans/phases/A06e-satellite-imagery.md) —
+**§3.2 (D148)** is the decision this directory implements, and the *Settled 2026-08-21* section is
 where the hosting call and its one condition live.
 
 > **Working end to end as of 2026-08-23.** A granule id in, a masked PMTiles archive and its manifest
@@ -348,7 +348,7 @@ Worst case in that sample is Skylight Pond, 1.3 acres, at **86% land** — which
 for a circular 1-acre pond exactly. Seymour Lake at 1,747 acres is 13%. Two consequences worth stating
 plainly:
 
-- **N6g Lane 2** eliminates bodies on *"never observed frozen"*, and the size class it targets is the
+- **A06g Lane 2** eliminates bodies on *"never observed frozen"*, and the size class it targets is the
   one where the surrounding woods were casting the vote.
 - **Radar is worse.** Forest is the classic bright `VH` target at ~−13 dB against smooth ice near −22,
   a ~10 dB contaminant on the ~2 dB separation the archive exists to detect. The 2 dB was measured
@@ -367,7 +367,7 @@ a synthetic 20×20 lake — at 20 m (≈2 grid pixels) the interior came out **1
 uses 20 m (one ring, the mixed-pixel fix); radar uses 60 m (two rings, because a bank pixel there is a
 10 dB target whose energy spreads further than one pixel).
 
-**The point is the denominator, not the cleaner number.** N6g Lane 2 warns that a body too small to
+**The point is the denominator, not the cleaner number.** A06g Lane 2 warns that a body too small to
 classify reads exactly like a body that never froze. On the same fixture a **3×3-pixel pond comes out
 with exactly one interior pixel** — so `interiorPixels` and `interiorTotalPixels` put that caution in
 the manifest, where an operator confirming a removal can see it, instead of in a footnote.
@@ -569,7 +569,7 @@ fly secrets list --app skating-imagery
 
 > **`skating-imagery` is its own bucket, not a prefix in `skating-basemap`.** Retention differs: D149
 > turns the archive over on the first frame of a new season, and you do not want that lifecycle rule
-> anywhere near the basemap. Budget ~1.2 GB per season (§C2) — nine seasons of backfill is ~11 GB.
+> anywhere near the basemap. Budget ~1.2 GB per season (§3.2) — nine seasons of backfill is ~11 GB.
 
 ### 4. Mint a scoped token for anything non-interactive
 
@@ -668,7 +668,7 @@ If that ever stops working, the host-neutrality claim has quietly stopped being 
 
 - **Granule source.** `cut-granule.sh` defaults to AWS Earth Search (`sentinel-2-l2a`, anonymous, no
   credentials) because it needs none and `sjc` is the closest live Fly region to it. Copernicus CDSE serves both S2 and
-  S1 from one place but needs an account and sits in Europe. Sentinel-1 SAR is in scope (§C1) and is
+  S1 from one place but needs an account and sits in Europe. Sentinel-1 SAR is in scope (§3.1) and is
   *not* free on AWS in the same shape, so this may end up split by band — which the per-job `--region`
   flag already accommodates.
 - ~~**VM sizing.** `shared-cpu-4x` / 8 GB is a guess, not a measurement.~~ **Settled 2026-08-24:**

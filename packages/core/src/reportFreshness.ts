@@ -1,5 +1,5 @@
 /**
- * The shared report-freshness primitive (D59, Phase 8) — **the report is the unit of decay**.
+ * The shared report-freshness primitive (D59, Phase 08) — **the report is the unit of decay**.
  *
  * A GPS path has no freshness of its own: it is a report's trusted extent
  * (`reports.activityId → gpsActivities.path`), so how faded it draws must be a pure function of how
@@ -17,7 +17,7 @@
  *    path" — but they no longer carry a private copy of the thumbs math (D59).
  *
  * Every tunable lives in `reputationConfig.ts` and is surfaced read-only in `/admin/tuning`
- * (edit-and-redeploy, the Phase 7 posture — no runtime `appConfig` table).
+ * (edit-and-redeploy, the Phase 07 posture — no runtime `appConfig` table).
  */
 
 import {

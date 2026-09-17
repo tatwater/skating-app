@@ -1,5 +1,5 @@
 /**
- * Deciding which granules are worth booting a Machine for (N6e PR 2, §C1/§C3).
+ * Deciding which granules are worth booting a Machine for (A06e PR 2, §3.1/§3.3).
  *
  * ## ⚠ The cloud gate is OFF by default — founder override, 2026-08-24
  *
@@ -9,7 +9,7 @@
  * The reasoning below is kept as history rather than deleted, because it is still *true* — the gate
  * really does refuse ~70% of a window for the price of a query parameter. It is simply no longer what
  * we want. Owning the pixels means every later re-derivation (SCL thresholds, a better per-lake cloud
- * statistic, N6g's research) is free, where a gated archive would send us back to Copernicus for
+ * statistic, A06g's research) is free, where a gated archive would send us back to Copernicus for
  * frames we chose not to keep.
  *
  * `maxCloudPct` remains an option and still works; it just no longer has a default. **Measured cost of
@@ -36,7 +36,7 @@
  *
  * ## The gate is deliberately generous
  *
- * §C3's asymmetry, one level up: an over-eager gate wastes a few dollars of granule reads, while a
+ * §3.3's asymmetry, one level up: an over-eager gate wastes a few dollars of granule reads, while a
  * strict one **silently drops the frame that showed freeze-up** — the single most valuable frame in
  * the season, gone with nothing to say it was ever there. So the default threshold is loose, and
  * every drop is counted and reported rather than filtered away in silence.
@@ -141,7 +141,7 @@ export interface SelectionOptions {
    * nothing in it, and the cutter proves that by booting a Machine, reading a mask file and exiting 0.
    * Measured across one season: **44.3% of granules sit in tiles with zero bodies.**
    *
-   * Unlike a cloud threshold this discards no data, so it does not have to be argued against §C3's
+   * Unlike a cloud threshold this discards no data, so it does not have to be argued against §3.3's
    * asymmetry — there is no frame here that could have shown freeze-up.
    */
   emptyTiles?: ReadonlySet<string>;

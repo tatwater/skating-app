@@ -13,7 +13,7 @@ forums** (plus some per-state Facebook groups). Email is a poor fit for this:
 
 - Time-sensitive, location-specific info is buried in and around unrelated email.
 - Easy to miss; hard to search.
-- Overwhelming — threads about far-away lakes flood inboxes with irrelevant info.
+- Overwhelming — threads about far-away water bodies flood inboxes with irrelevant info.
 - No structure: no map, no filtering by distance, no freshness signal.
 
 ## The product
@@ -93,7 +93,7 @@ Reports are seeded and kept fresh via:
   of who made it, and any private coordination belongs off-platform.
 - **GPS tracks — recorded here, pushed out** *(reframed 2026-07-24, D24 amendment / L7)*. A native
   in-app **recorder** produces the trusted path; a track that's ours is legal to draw on a public
-  report and aggregate into a lake's community map (a Strava-sourced one never would be). It
+  report and aggregate into a water body's community map (a Strava-sourced one never would be). It
   **pushes** to Strava (`activity:write`) so you keep your stats — record once, get both. Garmin /
   COROS / Polar / Apple Health / Google Health Connect stay planned **input adapters** into the same
   store, deferred. Each skate is **resolved to the water body it was on** (D44), so you can find

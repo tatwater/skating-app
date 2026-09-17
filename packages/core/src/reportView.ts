@@ -1,5 +1,5 @@
 /**
- * Pure presentation helpers for rendering a report (Phase 2 §D, D22–D25). Turns the metric,
+ * Pure presentation helpers for rendering a report (Phase 02a §4, D22–D25). Turns the metric,
  * enum-coded report the server stores into the **imperial**, human-readable strings the UI shows
  * (D25) — kept framework-free in `@skating/core` so **both** the web and mobile apps draw from one
  * source (D7/D40) and the formatting is unit-testable without a DOM.
@@ -127,7 +127,7 @@ export function formatConditions(conditions: ReportConditions): { label: string;
 }
 
 /**
- * Skate-end time (the primary sort key everywhere, D28; Phase 5 rename) as a readable local
+ * Skate-end time (the primary sort key everywhere, D28; Phase 05 rename) as a readable local
  * timestamp, e.g. `Jan 5, 2026, 2:30 PM`. `timeZone` is injectable so the format is testable
  * deterministically; the UI omits it to render in the viewer's local zone.
  */
@@ -153,7 +153,7 @@ export function formatDurationLabel(minutes: number): string {
 }
 
 /**
- * Format the skate window's *duration* for display (Phase 5) — the derived `end − start`, never a
+ * Format the skate window's *duration* for display (Phase 05) — the derived `end − start`, never a
  * stored field. Returns `null` when there's no start (an end-only report), so the UI can omit the
  * duration chip. A zero/negative span (should not occur post-validation) also yields `null`.
  */

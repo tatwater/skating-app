@@ -1,5 +1,5 @@
 /**
- * ETL transform (Phase 1) — the tested heart of the OSM water-body pipeline.
+ * ETL transform (Phase 01) — the tested heart of the OSM water-body pipeline.
  *
  * Turns raw `osmium export` water features into canonical bodies for
  * `waterBodies.importCanonical`: classify OSM tags → our `type` (dropping non-still-water), drop
@@ -39,7 +39,7 @@ import type { CanonicalBody, OsmDepthRecord, OsmWaterFeature, OsmWaterProperties
  * past this only to satisfy a Convex hard limit — the 1 MiB/doc size and the 8192-element array
  * cap (see `simplifyForStorage` / `CONVEX_ARRAY_LIMIT`), which realistically only Lake Champlain
  * hits. Tunable: eyeball Champlain + a small pond on the map once it renders and adjust (open
- * item in the phase-1 plan).
+ * item in the phase-01 plan).
  */
 export const SIMPLIFY_TOLERANCE_DEG = 0.00005;
 
@@ -163,7 +163,7 @@ export function simplifyForStorage(geom: Polygon | MultiPolygon): Polygon | Mult
  * geometry, a degenerate polygon `representativePoint` can't place a point on, or a geometry
  * that still breaches Convex's 8192-element array cap after coarsening. Batching raw OSM must
  * catch per feature (see `transformFeatures`) — raw data carries enough junk geometry that a
- * single throw must not kill the import (phase-1 plan / PR#1 review P2).
+ * single throw must not kill the import (phase-01 plan / PR#1 review P2).
  */
 /**
  * Keep only the string-valued tags, because `osmium export -a type,id` does not emit only strings.
@@ -182,7 +182,7 @@ function stringTags(props: OsmWaterProperties): OsmTagBag {
 
 /**
  * Turn a **classified, admitted** body into the record `importCanonical` stores — source-agnostic
- * (N7 step 5).
+ * (A07a step 5).
  *
  * ## Why this had to be lifted out of `featureToCanonicalBody`
  *
@@ -284,7 +284,7 @@ export function featureToCanonicalBody(
 ): CanonicalBody | null | typeof BELOW_AREA_FLOOR {
   const props: OsmWaterProperties = feature.properties ?? {};
   const rawName = typeof props.name === 'string' ? props.name : '';
-  // **One classifier, shared with the merge** (N7, D109 amendment). This used to call an OSM-only
+  // **One classifier, shared with the merge** (A07a, D109 amendment). This used to call an OSM-only
   // mapper into the retired vocabulary; `classifyWaterBody` reads the same tags into the stored one
   // and additionally lets a name overrule a tag — which is what keeps Higley Flow out of the drop
   // list and Debsconeag Deadwater in the `river` class.
@@ -344,10 +344,10 @@ export function featureToCanonicalBody(
   });
 }
 
-// ── OSM depth tags (N6a rung 7) ──────────────────────────────────────────────────────────────
+// ── OSM depth tags (A06a rung 7) ──────────────────────────────────────────────────────────────
 //
 // The roadmap filed this as "the ETL update carrying OSM `depth`/`maxdepth` tags where they exist",
-// folded into N6a — and the N6a review found it had never been written, leaving `osm_tag` an enum value
+// folded into A06a — and the A06a review found it had never been written, leaving `osm_tag` an enum value
 // with no producer. It rides *this* pass rather than the depth ETL's, because the tags arrive with the
 // OSM export and the depth pipeline never sees an OSM feature.
 
@@ -423,7 +423,7 @@ export interface TransformSummary {
   droppedByAreaFloor: number;
   /** Skipped because the feature threw (bad geometry / missing id) — see `errors`. */
   skipped: number;
-  /** Bodies carrying a usable OSM depth tag (N6a rung 7). Expect a handful: inland coverage is ~nil. */
+  /** Bodies carrying a usable OSM depth tag (A06a rung 7). Expect a handful: inland coverage is ~nil. */
   depthsTagged: number;
 }
 
@@ -435,7 +435,7 @@ export interface TransformError {
 
 export interface TransformOutput {
   bodies: CanonicalBody[];
-  /** Depths tagged on the bodies above — a separate stream for a separate mutation (N6a rung 7). */
+  /** Depths tagged on the bodies above — a separate stream for a separate mutation (A06a rung 7). */
   depths: OsmDepthRecord[];
   summary: TransformSummary;
   errors: TransformError[];
@@ -443,7 +443,7 @@ export interface TransformOutput {
 
 /**
  * Transform a batch of features, isolating each failure (skip + tally) so one bad polygon
- * never aborts the import (phase-1 plan / PR#1 review P2). `droppedByType` is intentional
+ * never aborts the import (phase-01 plan / PR#1 review P2). `droppedByType` is intentional
  * classification skips and `droppedByAreaFloor` is the intentional size floor; `skipped` (with
  * `errors`) is features that threw.
  */

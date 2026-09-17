@@ -174,7 +174,7 @@ describe('ingestWindow — closing', () => {
     // `fetchLows` drops null readings per site, so a series going dark is what a real Open-Meteo gap
     // looks like. Testing `.every()` against only the sites that reported treats the missing one as
     // thawed — four of five dropping out for a fortnight would then let the one warm survivor end the
-    // season and truncate the melt-out record §C5's metrics are computed from.
+    // season and truncate the melt-out record §3.5's metrics are computed from.
     const warm = Array<number>(DEFAULT_THAW_RUN_DAYS + 2).fill(12);
     const sites = [
       series('valley-a', '2026-12-01', [-5, ...warm]),

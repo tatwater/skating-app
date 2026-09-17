@@ -1,11 +1,11 @@
-# @skating/bathymetry — state-agency bathymetry ETL (N6b)
+# @skating/bathymetry — state-agency bathymetry ETL (A06b)
 
 Turns five states' published bathymetry into (a) an isobath **PMTiles** overlay drawn inside an open
 lake's drawer, and (b) measured **rung-1 depths** for the D68 ladder. Manual and run-on-demand, like
 [`scripts/etl`](../etl/README.md) and [`scripts/lake-depth`](../lake-depth/README.md) — **not** built
 or deployed with the apps.
 
-Phase doc: [`plans/phase-N6b-bathymetry-layer.md`](../../plans/phase-N6b-bathymetry-layer.md).
+Phase doc: [`plans/phases/A06b-bathymetry-layer.md`](../../plans/phases/A06b-bathymetry-layer.md).
 **Read first if you are about to change an interpolator or a gate:**
 [`docs/bathymetry-challenges.md`](../../docs/bathymetry-challenges.md) — the five interpolation
 methods and five gates that were tried and abandoned, and what each one actually drew.
@@ -50,7 +50,7 @@ pnpm --filter @skating/bathymetry verify        # two cheap requests per source,
 - **cosmetic** — a field was added, or an HTTP validator moved with nothing else to corroborate it.
 
 The severity split exists because these failures are silent by nature: a renamed column reads zero
-contours and reports success. N6a's transform already fails loudly on a header rename; this is that
+contours and reports success. A06a's transform already fails loudly on a header rename; this is that
 discipline moved one stage earlier, to where the change is observable.
 
 ### The committed record: `PROVENANCE.md`
@@ -206,7 +206,7 @@ Only step 5 answers that.
 pnpm --filter @skating/bathymetry join [--states=VT,NH] [--refresh]
 ```
 
-Calls `waterBodies:matchBathymetryLakes` — the same geometric join N6a's depth ETL uses, running
+Calls `waterBodies:matchBathymetryLakes` — the same geometric join A06a's depth ETL uses, running
 server-side because that is where the cell index lives. Writes `.scratch/join/<key>.json`: the matched
 body's `externalId` (what tiles are stamped with) and its polygon (the shoreline constraint).
 
@@ -256,7 +256,7 @@ it declines, so a threshold can be judged by looking rather than by argument.
 asks how much of the fit is measurement at all (a lake fitted mostly to its own outline is
 approximately a distance transform, which this phase opens by refusing) and *fragments per level*
 asks whether a depth traced as one ring or as eight. Both were tried as gates and both were falsified
-by a render within hours — see `plans/phase-N6b-bathymetry-layer.md` §*The gate that measured the
+by a render within hours — see `plans/phases/A06b-bathymetry-layer.md` §*The gate that measured the
 wrong thing*. **Read them before changing anything about the interpolation; do not re-add either as a
 gate without rendering the lakes either side of the threshold first.**
 
@@ -296,7 +296,7 @@ camera is zoomed out, and a whole state's isobaths at z5 is a lot of tile for a 
 read. `--drop-densest-as-needed` rather than `--drop-fraction-as-needed`, so a sparse lake keeps every
 line it has instead of being thinned alongside a dense one.
 
-Uploads go to the **public** basemap bucket via the Phase 2.5 lane — browsers range-read the overlay
+Uploads go to the **public** basemap bucket via the Phase 02b lane — browsers range-read the overlay
 exactly like the basemap. That is the opposite of `.raw/`, which is third-party source data and is
 mirrored privately.
 
@@ -327,7 +327,7 @@ The date suffix exists for that, and a second build the same day takes `-2`.
 
 ---
 
-## 10. Bay depths — a max depth per named bay, out of the same archive (N9)
+## 10. Bay depths — a max depth per named bay, out of the same archive (A09)
 
 ```bash
 pnpm --filter @skating/bathymetry export-bay-depths --dry            # derive, report, write nothing
@@ -351,9 +351,9 @@ both correctly nothing.
 
 ## Not built yet
 
-**The rung-1 depth write** for the D68 ladder, which is gated behind N6a's ordering gate — hold the
-corpus pass until N6c can ride it. That is the only outstanding piece; the clients render the layer
-(N6b's render half, 2026-08-01) and the NOAA notice is settled — Champlain's credit reads *"Soundings
+**The rung-1 depth write** for the D68 ladder, which is gated behind A06a's ordering gate — hold the
+corpus pass until A06c can ride it. That is the only outstanding piece; the clients render the layer
+(A06b's render half, 2026-08-01) and the NOAA notice is settled — Champlain's credit reads *"Soundings
 digitised from NOAA nautical charts by University of Vermont and VCGI"* with the notice *"Not for
 navigation."*, carried to the drawer by `CONTOUR_SOURCE_TERMS` in `@skating/core` and pinned against
 `sources.ts` by a test here.

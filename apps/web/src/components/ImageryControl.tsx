@@ -10,7 +10,7 @@ import { cn } from '../lib/utils';
 import { Button } from './ui/button';
 
 /**
- * The map's one imagery control (N6e / D146, D81's surviving one-toggle rule).
+ * The map's one imagery control (A06e / D146, D81's surviving one-toggle rule).
  *
  * **Present only where a single lake is selected and the map is visible** — the founder's call, and
  * the reason there is no control on the browse map and no settings row anywhere. Imagery is content

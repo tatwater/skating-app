@@ -1,12 +1,12 @@
-# N5b — Hazard authoring UX
+# A05b — Hazard authoring UX
 
 *Two affordances that make drawing a hazard match how skaters actually describe one. All client work;
 no lifecycle, no schema, no decay.*
 
 > **Status: ✅ COMPLETE 2026-07-29** — built, **deployed to dev** (`agile-bee-397`), every suite green
 > (core 984 · convex 787 · web 221 · mobile 79). **Still not device-tested**; prod deferred, as every
-> phase since 2.5. Decision **D67** is written into [`01-decisions.md`](./01-decisions.md). Split from
-> the roadmap's old N5 when the seasonal work ([N5a](./phase-N5a-seasons.md)) took over that entry's
+> phase since 2.5. Decision **D67** is written into [`01-decisions.md`](../01-decisions.md). Split from
+> the roadmap's old A05 when the seasonal work ([A05a](./A05a-seasons.md)) took over that entry's
 > lifecycle half.
 >
 > Four of this doc's premises were checked against code at kickoff and **two of them were false** —
@@ -16,26 +16,26 @@ no lifecycle, no schema, no decay.*
 
 ## Why this is its own pass
 
-The old N5 bundled five things under "hazard authoring & confirmation polish". Two of them —
+The old A05 bundled five things under "hazard authoring & confirmation polish". Two of them —
 the "this never existed" verdict and naming confirmers — touch `deriveHazardLifecycle` and the
-confirmation loop, which is the same code a seasonal reset touches, so they went with N5a.
+confirmation loop, which is the same code a seasonal reset touches, so they went with A05a.
 
 What remains shares nothing with that: **geometry and input**, entirely on the client, with no server
-behavior change at all. Keeping them separate isn't tidiness. N5a's risky half is a visibility change to
+behavior change at all. Keeping them separate isn't tidiness. A05a's risky half is a visibility change to
 safety content, and the review attention that deserves shouldn't be split with a vertex-dragging editor.
 
 They belong together because they're one pass over the same surface — the hazard draw flow on web and
 mobile — and because each is small enough that visiting that surface twice would cost more than the work.
 
 *A third item started here and left:* ridge-crossing hinting turned out to be a lifecycle change, not an
-authoring one, and moved to N5a. See below — it's recorded rather than deleted because the reason it
+authoring one, and moved to A05a. See below — it's recorded rather than deleted because the reason it
 moved is the same rule that keeps this pass small.
 
 ---
 
 ## What the build found in the plan
 
-Checked against code at kickoff (2026-07-28), same discipline N1/N2/N3 applied to their roadmap
+Checked against code at kickoff (2026-07-28), same discipline A01/A02/A03 applied to their roadmap
 entries. Four corrections, each verified against a file.
 
 1. **`thin_ice_shore` and `ice_edge` are not hazard types.** Item 2 opens by naming them.
@@ -56,7 +56,7 @@ entries. Four corrections, each verified against a file.
 
 3. **The "lighter mobile-only path" this doc lists as a *fallback* already ships, on both clients.**
    *"Tap-to-place vertices without the full engine"* is a precise description of the polyline trace
-   built in Phase 9: `hazardDropMode` + `applyDraftMapClick` + an Undo/Done bar
+   built in Phase 09a: `hazardDropMode` + `applyDraftMapClick` + an Undo/Done bar
    (`MapView.tsx:503` web, `MapView.tsx:367` mobile). Polygon authoring on that path is the same
    flow plus a close-the-ring step. So the fallback was never a fallback — it's the mobile plan of
    record, and the only thing terra-draw adds over it is vertex *dragging*, which is the specific
@@ -78,7 +78,7 @@ entries. Four corrections, each verified against a file.
      Hardening it belongs in the same commit that makes polygons reachable.
 
 *Two things this doc got right that are worth recording as confirmed rather than assumed:* snap
-does **not** need the N1 cell index (`waterBodies.get` returns the full doc including `polygon`, and
+does **not** need the A01 cell index (`waterBodies.get` returns the full doc including `polygon`, and
 both clients' viewport sources already ship polygons), and there is **no hazard edit mutation** —
 `hazards.ts` exposes `create`, `listForBody`, `get`, `listPromotionCandidates`, `listBundleCandidates`
 and nothing that mutates geometry. So *"how is a snapped shore band edited afterwards?"* was only ever
@@ -114,7 +114,7 @@ all polygons, no special case downstream — which is what *"snapping is an inpu
 stored relationship"* has to mean if it means anything.
 
 The obvious objection — a halo around a shore band spills onto land — **is already solved and needed
-no new code.** Phase 9.5's `clipFootprintToBody` runs at insert (`hazards.ts:181`), intersects the
+no new code.** Phase 09b's `clipFootprintToBody` runs at insert (`hazards.ts:181`), intersects the
 buffered footprint with the body polygon, and stores the clipped result; the map layer draws it and
 `distanceToHazard` measures against it. A shore band is the exact case that clip was written for, so
 the landward half of the band and the landward half of its halo are both confined to the ice
@@ -133,7 +133,7 @@ Two taps on a ring define two arcs, and "shorter" is right almost always and sil
 small pond or a narrow bay where the band a skater means is most of the perimeter. One explicit
 control beats inferring intent — and inferring it from the map centre, the tempting alternative, is
 unpredictable in precisely the cases that need predicting. **Taps landing on different rings are
-refused rather than guessed** (islands, MultiPolygon bodies), in the same spirit as N2's
+refused rather than guessed** (islands, MultiPolygon bodies), in the same spirit as A02's
 clip-refusal threshold.
 
 **Decision 5 — Polygon stays opt-in and no type defaults to it.**
@@ -147,14 +147,14 @@ still starts as a circle at the skater's GPS.
 
 ## The items
 
-### 1. Freeform polygon authoring (Phase 9, founder call 5)
+### 1. Freeform polygon authoring (Phase 09a, founder call 5)
 
 **Schema and render already ship.** `hazards.geometryKind` includes `polygon`, `geometry` accepts one,
-`hazardLayer` draws it, `bufferMeters` sizes its uncertainty band, and Phase 9.5's
+`hazardLayer` draws it, `bufferMeters` sizes its uncertainty band, and Phase 09b's
 `clipFootprintToBody` clips it. The only missing piece is the **vertex-dragging editor** — today a
 polygon can exist but a skater can't draw one.
 
-- **terra-draw is already in the tree** (N2/D61) — MIT, first-class MapLibre adapter, lazy-loaded in
+- **terra-draw is already in the tree** (A02/D61) — MIT, first-class MapLibre adapter, lazy-loaded in
   its own ~270 kB chunk, currently admin-only for sub-area drawing. This extends it to a skater-facing
   surface, which is the first time a non-admin loads that chunk. **Accepted at kickoff** (Decision 2),
   *web only* — the chunk cannot reach mobile at all, because terra-draw has no React Native adapter
@@ -177,12 +177,12 @@ means tracing a shoreline that the app already knows exactly — `waterBodies.po
   tap, take the shorter arc between them, with an explicit **"go the other way"** control for when
   shorter is the wrong answer (Decision 4). Turf has the pieces; the fiddly part is multi-ring
   polygons (islands) and MultiPolygon bodies, where "the boundary" is several rings and the two taps
-  might land on different ones. **Refuse rather than guess** when they do, in the same spirit as N2's
+  might land on different ones. **Refuse rather than guess** when they do, in the same spirit as A02's
   clip-refusal threshold.
-- Deferred from Phase 9 (*"log, don't build in v1"*) and again from Phase 10 (*"it's a geometry/UX
+- Deferred from Phase 09a (*"log, don't build in v1"*) and again from Phase 10 (*"it's a geometry/UX
   feature, not a weather one"*). This is the pass it was being deferred to.
 
-### ~~3. Ridge-crossing "switch sides" hinting~~ → moved to N5a (2026-07-27)
+### ~~3. Ridge-crossing "switch sides" hinting~~ → moved to A05a (2026-07-27)
 
 This was the weakest item here, and the founder's answer dissolved it rather than sharpening it.
 
@@ -195,7 +195,7 @@ survive.
 That's not an authoring affordance. It's a lifecycle inversion — a passage marker where absence of
 evidence must **kill** the pin rather than keep it alive — and it lands in `deriveHazardLifecycle`,
 `HAZARD_DECAY` and the confirm loop. This doc's own rule says anything touching those is in the wrong
-phase, so it goes to [N5a](./phase-N5a-seasons.md) as **D64**.
+phase, so it goes to [A05a](./A05a-seasons.md) as **D64**.
 
 What's left here is two items, which is a better-shaped pass: both are pure geometry, both are
 finishable, and neither needs a research answer first.
@@ -203,11 +203,11 @@ finishable, and neither needs a research answer first.
 ## What this pass must not do
 
 - **No lifecycle changes.** Decay, archival, confirmation verdicts and the `bodyFeatures` promotion
-  path all belong to N5a. If something here wants to touch `deriveHazardLifecycle`, it's in the wrong
+  path all belong to A05a. If something here wants to touch `deriveHazardLifecycle`, it's in the wrong
   phase.
 - **No new hazard types.** The vocabulary is settled (D51/D52); this is about drawing the ones we have.
 - **No safety copy changes.** D3's never-assert-safety framing is already written and tested, and the
-  `ridge_crossing` verdict copy is being revised by N5a (D64) — touching it here would collide.
+  `ridge_crossing` verdict copy is being revised by A05a (D64) — touching it here would collide.
 
 ## Work breakdown
 
@@ -224,11 +224,11 @@ Committed in this order; one PR at the end (per the phase convention).
    MultiPolygon — not against corpus polygons, which this doc originally claimed. The properties under
    test are about walking a ring, and a circle exercises those exactly as well; what a real shoreline
    adds is vertex density, which the dense-ring simplification test covers directly.
-4. **Web — polygon authoring.** terra-draw on the skater hazard form, lazily, reusing the N2 control
+4. **Web — polygon authoring.** terra-draw on the skater hazard form, lazily, reusing the A02 control
    shape rather than a second wrapper.
 5. **Web — snap-to-shoreline**, the two-tap affordance plus the "go the other way" control.
 6. **Mobile — polygon authoring and snap**, both on the existing tap-to-place flow.
-7. **Docs** — roadmap N5b struck with a pointer; the decision-log entry; `06-data-model.md` if
+7. **Docs** — roadmap A05b struck with a pointer; the decision-log entry; `06-data-model.md` if
    anything about the stored shape needs saying.
 
 ## Open questions
@@ -237,7 +237,7 @@ Committed in this order; one PR at the end (per the phase convention).
   answer: terra-draw has no React Native adapter, so the chunk cannot reach a phone at all
   (*§What the build found* item 2). What was really being asked — which mechanism on which client —
   is Decision 2: terra-draw on web (chunk accepted, still lazy), tap-to-place on mobile.
-- ~~**Does snap-to-shoreline need the N1 cell index?**~~ **No, confirmed at kickoff.**
+- ~~**Does snap-to-shoreline need the A01 cell index?**~~ **No, confirmed at kickoff.**
   `waterBodies.get` returns the full document including `polygon`, and both clients' viewport sources
   already carry polygons for rendering. The ring comes straight off the body the form already knows.
 - ~~**How is a snapped shore band edited afterwards?**~~ **Answered by Decision 3, and the question
@@ -271,7 +271,7 @@ The fix is different per client, and the difference is the honest one:
   other thing.
 
 **Two smaller calls worth recording.** A snapped band's polygon comes from the **offline body cache**
-on mobile, not `waterBodies.get` — the skater this is for is standing on the lake, and on the lake
+on mobile, not `waterBodies.get` — the skater this is for is standing on the water body, and on the water body
 there is frequently no signal; the cache already writes every viewed body's polygon, which on arrival
 is the one under their feet. And the shore arc is **simplified** before buffering, with a tolerance
 starting at half the band's own half-width: a real shoreline is arbitrarily detailed, and detail
@@ -280,21 +280,21 @@ finer than the uncertainty a hazard has already declared is precision it doesn't
 
 ## Two fixes this pass made outside its own scope (2026-07-29)
 
-Both were found while wiring N5b, both were pre-existing, and both are the kind of bug that is
+Both were found while wiring A05b, both were pre-existing, and both are the kind of bug that is
 invisible until someone reports the symptom rather than the cause. Recorded here because they shipped
 in this branch and belong to no other phase's doc.
 
 - **Every admin detail page was a dead link.** TanStack derives nesting from filenames, so
   `admin.water.$id.tsx` was silently a *child* of `admin.water.tsx` — a leaf page with no `<Outlet/>`.
   The router matched, the params resolved, and React rendered the parent's queue table instead, so
-  `/admin/water/:id` and `/admin/users/:id` (the whole ban / suspend / grant-role surface from Phase 7)
+  `/admin/water/:id` and `/admin/users/:id` (the whole ban / suspend / grant-role surface from Phase 07)
   looked exactly like broken links while every one of their tests passed in isolation. Both parents were
   renamed to `.index.tsx` to make them siblings, and the guard is a test on the **file layout** rather
   than on any component, because that is where the bug lives: `routeNesting.test.ts` fails if any parent
   route gains a child without rendering an outlet.
-- **Favourite paint drifted onto the wrong lakes.** `setData` does *not* clear MapLibre feature-state,
+- **Favourite paint drifted onto the wrong water bodies.** `setData` does *not* clear MapLibre feature-state,
   and our feature ids are array indices — so panning rebound every painted id to whatever body now sat
-  at that index, and unrelated lakes came back gold while their own sheets correctly said they weren't
+  at that index, and unrelated water bodies came back gold while their own sheets correctly said they weren't
   favorited. Fixed by clearing the whole source's state on every data change rather than tracking which
   ids to un-paint, because the bookkeeping version re-breaks the moment a third paint is added.
 
@@ -403,7 +403,7 @@ re-litigated.
   25 m is the right default half-width for a pond, or whether the derivation should try narrowing on the
   skater's behalf before refusing. Worth a look once a real snap has been made on real ice.
 - **The chunk cost is asserted, not measured in situ.** 218 kB is the built asset on disk; what a
-  phone on lake ice actually pays for it over a marginal connection is the thing the founder call
+  phone on water body ice actually pays for it over a marginal connection is the thing the founder call
   accepted on reasoning, and it is worth measuring once there's a real session to measure.
 
 
@@ -411,10 +411,10 @@ re-litigated.
 
 ## Relocated from the roadmap (2026-09-16)
 
-*The roadmap entry for N5b as it stood before the 2026-09-16 rewrite, kept verbatim so nothing it said is lost. The roadmap now carries a one-paragraph summary; this is the long form.*
+*The roadmap entry for A05b as it stood before the 2026-09-16 rewrite, kept verbatim so nothing it said is lost. The roadmap now carries a one-paragraph summary; this is the long form.*
 
-~~**N5b — Hazard authoring UX.**~~ **✅ COMPLETE 2026-07-29** (built, deployed to dev, all suites green;
-**not device-tested**) — see [`phase-N5b-hazard-authoring.md`](./phase-N5b-hazard-authoring.md)
+~~**A05b — Hazard authoring UX.**~~ **✅ COMPLETE 2026-07-29** (built, deployed to dev, all suites green;
+**not device-tested**) — see [`phases/A05b-hazard-authoring.md`](./A05b-hazard-authoring.md)
 for the design, the four corrections to what this entry and its own plan claimed, and decision
 **D67**.
 
@@ -430,7 +430,7 @@ a phone?* — **had no answer**: terra-draw ships no React Native adapter, so th
 phone at all, and "web + mobile behind the same lazy chunk boundary" was unbuildable as written.
 
 Two more that changed the shape of the work. The *"lighter mobile-only path"* the plan offered as a
-fallback **already shipped** — it is the Phase 9 polyline trace, so mobile needed no engine, no chunk
+fallback **already shipped** — it is the Phase 09a polyline trace, so mobile needed no engine, no chunk
 and no second state machine. And "all client work" understated it: `HazardDraft` was a two-variant
 union whose every transition assumed exactly two, and `isValidHazardShape`'s polygon branch validated
 only the first ring of the first part, capped vertices per-ring, and never checked closure or
@@ -455,9 +455,9 @@ type selection rather than on arming the snap.
 
 **Two pre-existing bugs also got fixed here, outside this pass's scope.** Every admin *detail* page was a
 dead link — TanStack made `admin.water.$id.tsx` a child of an outlet-less leaf, so `/admin/water/:id` and
-`/admin/users/:id` (Phase 7's whole ban / suspend / grant-role surface) matched the URL and rendered the
+`/admin/users/:id` (Phase 07's whole ban / suspend / grant-role surface) matched the URL and rendered the
 parent's queue table instead, with every test passing in isolation. Guarded now by a test on the route
-*file layout*. And favourite paint drifted onto the wrong lakes, because `setData` doesn't clear MapLibre
+*file layout*. And favourite paint drifted onto the wrong water bodies, because `setData` doesn't clear MapLibre
 feature-state and our ids are array indices, so panning rebound them.
 
 *Left for later:* nothing from this pass. Paste-GeoJSON stays admin-only, as scoped. The one thing the

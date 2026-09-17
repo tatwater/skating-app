@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Turn calibrated radar backscatter into a picture (N6e PR 2, §C1).
+"""Turn calibrated radar backscatter into a picture (A06e PR 2, §3.1).
 
     sar-render.py <dn.tif> <a.tif> <out.tif> [--noise <noise.tif>] [--min-db -30] [--max-db 0]
 

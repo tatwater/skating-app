@@ -1,7 +1,7 @@
-# Phase 6 — Bounties + trust score
+# Phase 06 — Bounties + trust score
 
-> **Roadmap:** [`07-roadmap.md`](./07-roadmap.md) → Phase 6. This is the detailed build plan,
-> in the style of the Phase 1/2/2.5/3/4/5 docs.
+> **Roadmap:** [`07-roadmap.md`](../07-roadmap.md) → Phase 06. This is the detailed build plan,
+> in the style of the Phase 01/2/2.5/3/4/5 docs.
 >
 > **What this phase is.** Three deliverables that turn the app from a report firehose into a
 > *reputation-aware* community, without ever adding a social graph (D13) or letting status touch
@@ -29,20 +29,20 @@
 >   `by_status_expires` index and filters/sorts in JS (viewport / client-GPS `near` / privacy-safe
 >   server-side `sortByHome`), deliberately sidestepping the read-cap-fragile `listInViewport` path
 >   (that hardening is logged in the roadmap → Later/deferred).
-> - **Recommended-feed caps are stateless** for Phase 6 (`selectRecommended` caps ≤2 bodies per fetch); a
+> - **Recommended-feed caps are stateless** for Phase 06 (`selectRecommended` caps ≤2 bodies per fetch); a
 >   qualifying report is vanishingly rare at alpha volume, so the server-tracked cross-fetch/day dedup +
 >   hard per-day cap (a per-user impressions store + ack mutation) is a **logged fast-follow**.
 > - **Corroboration count per report** is tallied from `report_corroborated` ledger rows via a new
 >   `pointEvents.by_ref` index (no denormalized counter).
 > - Wiring the hazard reporter's `TrustAvatar` also **fixed the previously-dead `reporterName`** on the
 >   hazard detail (both platforms).
-> - **prod cutover** outstanding (with the rest of phases 3–5).
+> - **prod cutover** outstanding (with the rest of Phases 03–05).
 >
-> **Build order (per-workstream, web-first on shared surfaces):** **A** `@skating/core` pure logic →
-> **B** Convex trust primitives → **C** Convex bounties → **D** Web + Mobile UI → **E** recommended
+> **Build order (per-workstream, web-first on shared surfaces):** **§1** `@skating/core` pure logic →
+> **§2** Convex trust primitives → **§3** Convex bounties → **D** Web + Mobile UI → **§5** recommended
 > feed (last — it *consumes* the trust primitives). See the PR / commit breakdown below.
 
-Decisions referenced as D#; see [`01-decisions.md`](./01-decisions.md). This phase is the build-out of
+Decisions referenced as D#; see [`01-decisions.md`](../01-decisions.md). This phase is the build-out of
 **D50** (trust score), **D10/D17** (bounties + cosmetic reward), **D44** (bounty eligibility), and the
 D3/D13 hard constraints they all inherit.
 
@@ -52,8 +52,8 @@ D3/D13 hard constraints they all inherit.
 
 Everything below was settled with the founder on 2026-07-21. Point weights, windows, and thresholds
 ship as **tunable constants in one file** (single-sourced the way D49's display curve is), so the
-Phase 7 admin UI can bind controls to them and the founder can retune without an engineer. The
-**backfill script (§B)** recomputes every derived value from the ledger, so retuning mid-alpha is safe.
+Phase 07 admin UI can bind controls to them and the founder can retune without an engineer. The
+**backfill script (§2)** recomputes every derived value from the ledger, so retuning mid-alpha is safe.
 
 ### Trust score (D50) — reputation model
 
@@ -90,11 +90,11 @@ Phase 7 admin UI can bind controls to them and the founder can retune without an
      ledger row + `reputationPoints` bump + a `report_rated`-style in-app notice to the prior author).
    - **Self-corroboration excluded** (same author's second report on a body never counts).
    - **Capped at `CORROBORATION_MAX_PER_REPORT = 3`** corroborators counted per report, so a popular
-     lake can't inflate one reporter.
+     water body can't inflate one reporter.
    - **Taking trust *away* is deferred to Phase 10.** Per the founder's rule, a *contradicting* report
      only ever counts against someone if it's **same-day (≤24 h) AND the weather held or got
      colder/less-windy** — which needs the Phase 10 weather-since strips (D19) to evaluate honestly.
-     So **Phase 6 corroboration is purely additive**; the penalty path lights up with Phase 10.
+     So **Phase 06 corroboration is purely additive**; the penalty path lights up with Phase 10.
 
 4. **Helpful/unhelpful thumbs are the manual, human-in-the-loop trust lever — and now cover hazards.**
    `reportRatings` becomes **polymorphic** (`targetType: report | hazard`) so the *same* thumbs UI and
@@ -108,7 +108,7 @@ Phase 7 admin UI can bind controls to them and the founder can retune without an
    - **`unhelpful`** → **never a public penalty** (D50). It accumulates; when a target crosses a
      net-unhelpful threshold it is routed to the mod queue (new `auto_low_quality` `contentFlags`
      reason) but **is not hidden from the UI** (founder call — visibility of safety content is never
-     gated by score, D3). The mod queue itself is Phase 7; Phase 6 just writes the flag.
+     gated by score, D3). The mod queue itself is Phase 07; Phase 06 just writes the flag.
    - **One rating per `(rater, target)`**; a rater **cannot** rate their own content.
    - **Block-aware asymmetry (founder call):** a **thumbs-down** from a user in a block relationship
      (either direction) is **discarded** as a signal (possible grudge); a **thumbs-up** still counts.
@@ -117,7 +117,7 @@ Phase 7 admin UI can bind controls to them and the founder can retune without an
 5. **Trust is displayed as a class *chip*, never a raw number** (except admins can see the real score).
    - **Profile page:** a color-coded class chip (`New` / `Trusted` / `Expert` / `Leader`). We **never**
      render "Not trusted": a user below the `Trusted` threshold and **past** the New window simply gets
-     **no chip**. Since the model is boost-only, scores don't go negative in Phase 6.
+     **no chip**. Since the model is boost-only, scores don't go negative in Phase 06.
    - **Everywhere else** (feed cards, comments, report/hazard authors, bounties): **no chip** — instead
      a **color-coded ring around the avatar** and an optional small **corner badge icon**, matching the
      class color. One shared `TrustAvatar` component.
@@ -153,7 +153,7 @@ Phase 7 admin UI can bind controls to them and the founder can retune without an
 
 7. **Anyone can post a bounty on any body, but limited to 3 open in a rolling 24 h** (server-enforced
    via the requester's recent `createdAt`s). Reputation does **not** gate who may post; the cap is the
-   only junk control, and it nudges users toward lakes they actually care about.
+   only junk control, and it nudges users toward water bodies they actually care about.
 
 8. **A bounty is blocked on a body that already has a *fresh* report.** A bounty means "no fresh eyes
    lately," so we block creation if there's a **visible report within `FRESH_REPORT_HOURS` = 48 h**
@@ -164,7 +164,7 @@ Phase 7 admin UI can bind controls to them and the founder can retune without an
 
 9. **Eligibility fan-out on create** = authors with a **report** on this body within `windowHours`
    (indexed `reports.by_water_body_skate_end_time` → distinct authors). The D44 **GPS-skate** half of
-   eligibility stays dark until **Phase 8**. Notifications are **per-actor `bounty_request` rows
+   eligibility stays dark until **Phase 08**. Notifications are **per-actor `bounty_request` rows
    inserted directly** (not through the body-keyed coalescing queue, which doesn't fit), respecting
    `notificationPrefs.bountyRequest` + `status === 'active'`, never notifying the requester.
 
@@ -181,10 +181,10 @@ Phase 7 admin UI can bind controls to them and the founder can retune without an
     delta written to the fulfilling report's author — reconciled, so nobody is double-counted.
 
 12. **Expiry cron.** A new `internal.bounties.expireBounties` sweep flips `open → expired` past
-    `expiresAt`. Default lifetime **~30 days** (tunable; a Phase 7 admin field). Needs a **new index**
+    `expiresAt`. Default lifetime **~30 days** (tunable; a Phase 07 admin field). Needs a **new index**
     `bounties.by_status_expires` (the existing index is body-keyed, so a global sweep would full-scan).
 
-### Recommended feed (moved here from Phase 4)
+### Recommended feed (moved here from Phase 04)
 
 13. **A separate query the client interleaves — *not* spliced into the paginated `listFeed`.** Injecting
     an off-chronological row into a cursor-paginated stream fights the cursor; `FeedCardData` has no
@@ -200,7 +200,7 @@ Phase 7 admin UI can bind controls to them and the founder can retune without an
     distance / quality / thickness** filters but **never recency, blocks, or moderation**.
 
 15. **Frequency caps + dedup (server-tracked).** ≤2 **unique bodies per user per day**; if multiple
-    reports qualify for the same lake, **bundle the top-2** into one recommended card. State lives in a
+    reports qualify for the same water body, **bundle the top-2** into one recommended card. State lives in a
     per-user `lastRecommendedAt` + a recently-recommended body set (server-side, more reliable than
     client session state). *(Per-day is cleanly enforceable; the "1–2 per hour of browsing" pacing is
     deferred — start per-day and add session pacing only if it feels too sparse.)*
@@ -232,11 +232,11 @@ additions**, all optional-or-defaulted so existing dev rows migrate free.
 - **`bounties`** — add index **`by_status_expires` (`['status','expiresAt']`)** for the expiry sweep
   (decision 12). Fields already exist.
 - **`contentFlags`** — add reason **`auto_low_quality`** for the net-unhelpful mod-routing path
-  (decision 4). Written by the ratings mutation; consumed by the Phase 7 queue.
+  (decision 4). Written by the ratings mutation; consumed by the Phase 07 queue.
 - **New enums (`lib/enums.ts`):** `RATING_TARGET_TYPES`, `BADGE_TYPES`, `TRUST_CLASSES`
   (`['new','trusted','expert','leader']`). `POINT_EVENT_REASONS` gains `hazard_corroborated` +
   `measured_thickness`; `FLAG_REASONS` gains `auto_low_quality`.
-- **New constants module** (single-sourced, Phase-7-tunable): point weights, `CORROBORATION_WINDOW`,
+- **New constants module** (single-sourced, Phase-07-tunable): point weights, `CORROBORATION_WINDOW`,
   `CORROBORATION_MAX_PER_REPORT`, class thresholds + colors, badge thresholds, `FRESH_REPORT_HOURS`,
   bounty lifetime, `MAX_OPEN_BOUNTIES_PER_DAY`, recommended-feed thresholds + caps.
 
@@ -295,7 +295,7 @@ Safety-adjacent reputation math is pure and heavily tested before any Convex wir
 Per **D47**: **web folds bounties into Map** (no top-level route — a create affordance on a body,
 bounty markers/list on the map, `/bounties/:id` detail child route); **mobile gets the Bounties tab**
 (currently a placeholder → real create + browse + detail). Build web-first on shared surfaces, mirror on
-mobile (Phase 2/3/5 pattern).
+mobile (Phase 02a/3/5 pattern).
 
 - **Thumbs** — helpful/unhelpful control on report **and** hazard detail + cards (both platforms), one
   shared component driving the polymorphic `rate` mutation.
@@ -303,7 +303,7 @@ mobile (Phase 2/3/5 pattern).
   placeholder widget; mobile's plain "Trust score" stat); a shared **`TrustAvatar`** (colored ring +
   optional corner badge icon by class) used **everywhere else** an author avatar appears (feed cards,
   comments, report/hazard authors, bounties). Admin-only: the raw number stays visible in the
-  operator/profile-admin view (Phase 7 surfaces it fully).
+  operator/profile-admin view (Phase 07 surfaces it fully).
 - **Badges** — a badge row on the profile.
 - **Bounties** — create/browse/detail per platform (above), with the eligibility notification landing as
   an in-app row.
@@ -349,17 +349,17 @@ their consumers:
 ## Out of scope / deferred (logged so it isn't lost)
 
 - **Contradiction penalty** on the trust score — Phase 10 (needs weather-since to gate honestly).
-- **Decay-based bounty freshness** (recency × thumbs × trust × weather) — Phase 10; Phase 6 uses the
+- **Decay-based bounty freshness** (recency × thumbs × trust × weather) — Phase 10; Phase 06 uses the
   hard `FRESH_REPORT_HOURS` gate.
-- **GPS-skate bounty eligibility** (the D44 second half) — Phase 8.
-- **Admin tuning UI** for weights/windows/thresholds/bounty-lifetime — Phase 7; Phase 6 ships them as
+- **GPS-skate bounty eligibility** (the D44 second half) — Phase 08.
+- **Admin tuning UI** for weights/windows/thresholds/bounty-lifetime — Phase 07; Phase 06 ships them as
   single-sourced constants + the backfill replay.
 - **"This never existed" hazard confirmation verdict** — deferred (would touch `deriveHazardLifecycle`);
   polymorphic thumbs cover the thumbs-down need for now.
 - **Per-hour-of-browsing recommended pacing** — start per-day; add session pacing only if too sparse.
-- **Server-tracked recommended caps/dedup (decision 15 stateful half)** — Phase 6 ships `feed.recommended`
+- **Server-tracked recommended caps/dedup (decision 15 stateful half)** — Phase 06 ships `feed.recommended`
   **stateless** (`selectRecommended` caps ≤2 bodies per fetch). The per-user impressions store +
-  `acknowledgeRecommended` mutation (for the hard per-day cap + cross-fetch/day "don't repeat this lake"
+  `acknowledgeRecommended` mutation (for the hard per-day cap + cross-fetch/day "don't repeat this water body"
   dedup) is a **fast-follow**: qualifying reports are vanishingly rare at alpha volume, so a flood can't
   occur yet — build it when the feature proves it fires often enough to need pacing.
   - **Why it's not premature-built (2026-07-22 design call):** it guards a flood the alpha gate can't
@@ -367,30 +367,30 @@ their consumers:
     would rot. The right trigger is real data showing the feature feels spammy, not spare time.
   - **Shape when we do build it.** A query can't write, so it's the **read-query + ack-mutation split**:
     `feed.recommended` reads a per-user impressions store (recent `{userId, waterBodyId, at}` rows) to
-    subtract the day's shown bodies from the budget and exclude recently-shown lakes; the client calls
+    subtract the day's shown bodies from the budget and exclude recently-shown water bodies; the client calls
     `acknowledgeRecommended` once it renders the cards to record them.
   - **Build it FAIL-OPEN (non-negotiable design guardrail).** If the impression state is missing/uncertain
     (double-render, StrictMode double-effect, offline, a second device, the card scrolled off below the
     fold, a dropped ack), **show the card** — never suppress. The failure we're avoiding is the accounting
     wrongly concluding "budget spent" and silently killing the whole feature, which is strictly worse than
-    occasionally re-showing one genuinely exceptional lake. Decide up front what "shown" means (rendered vs.
+    occasionally re-showing one genuinely exceptional water body. Decide up front what "shown" means (rendered vs.
     actually seen) and when the daily budget decrements, and bias every ambiguous case toward showing.
 - **Bounty map/browse at scale** — `bounties.listOpen` scans the bounded `by_status_expires` index and
   filters in JS (fine at alpha). A dedicated bounties **geospatial** instance is only needed if the live
   open-bounty set ever grows past the `OPEN_BOUNTY_SCAN_CAP` (200) — and unlike `listInViewport` it would
   degrade gracefully (logged truncation) long before crashing.
-- **Push delivery** — deferred repo-wide; Phase 6 bounty/rating notices are in-app rows.
-- **Prod cutover** — deferred with the rest of phases 3–5.
+- **Push delivery** — deferred repo-wide; Phase 06 bounty/rating notices are in-app rows.
+- **Prod cutover** — deferred with the rest of Phases 03–05.
 
 
 ---
 
 ## Relocated from the roadmap (2026-09-16)
 
-*The roadmap entry for Phase 6 as it stood before the 2026-09-16 rewrite, kept verbatim so nothing it said is lost. The roadmap now carries a one-paragraph summary; this is the long form.*
+*The roadmap entry for Phase 06 as it stood before the 2026-09-16 rewrite, kept verbatim so nothing it said is lost. The roadmap now carries a one-paragraph summary; this is the long form.*
 
-### Phase 6 — Bounties + trust score ✅ Complete (dev; prod deferred) (2026-07-22)
-> **Detailed build plan:** [`phase-6-bounties-and-trust.md`](./phase-6-bounties-and-trust.md) (decisions
+### Phase 06 — Bounties + trust score ✅ Complete (dev; prod deferred) (2026-07-22)
+> **Detailed build plan:** [`phases/06-bounties-and-trust.md`](./06-bounties-and-trust.md) (decisions
 > settled 2026-07-21). All six workstreams shipped on **web + mobile**, green (core/convex/web/mobile
 > suites). Trust class is derived server-side + rendered as a cosmetic chip/ring (never a raw number, D50);
 > bounty browse rides the bounded `by_status_expires` index (no viewport geospatial); recommended-feed
@@ -398,9 +398,9 @@ their consumers:
 - **Bounties:** request a report for a water body; notify eligible recent skaters (report
   *or* resolved GPS skate on that body, D44); fulfill; helpful/unhelpful thumbs →
   cosmetic points/badges (D10/D17).
-  - *(Ordering note: this phase now precedes **GPS providers (Phase 8)**, so the "resolved GPS
-    skate" half of eligibility (D44) lights up only once Phase 8 lands. Native **reports** are the
-    eligibility signal at Phase 6 — enough for a working bounty loop; GPS widens it later.)*
+  - *(Ordering note: this phase now precedes **GPS providers (Phase 08)**, so the "resolved GPS
+    skate" half of eligibility (D44) lights up only once Phase 08 lands. Native **reports** are the
+    eligibility signal at Phase 06 — enough for a working bounty loop; GPS widens it later.)*
 - **Trust score (D50) — the asymmetric reputation signal that stands in for the removed
   social graph (D13).** A reporter's public trust score rises from two signals:
   - **(a) Corroboration within a similar timeframe.** An independent report on the **same
@@ -414,13 +414,13 @@ their consumers:
     public penalty.
   - **Constraints (D17/D3):** reputational/**cosmetic only** — never weights safety, never
     gates visibility/ranking of safety content, never makes the app assert ice is safe.
-- **"Recommended" filter-breaking feed posts (moved here from Phase 4, 2026-07-17).** Occasionally
+- **"Recommended" filter-breaking feed posts (moved here from Phase 04, 2026-07-17).** Occasionally
   inject into a user's feed an *exceptional* report that breaks their own **distance / quality / thickness**
-  filters — so someone who never touches the filters still gets a shot at seeing a lake in rare condition.
+  filters — so someone who never touches the filters still gets a shot at seeing a water body in rare condition.
   **Deliberately gated on this phase:** the "exceptional" bar must be **corroboration/trust (D50)**, not a
   lone `skateQuality == great`, or we'd build a machine for wasted trips (and implicitly amplify one
   unverified claim — a D3 concern). Mechanics: a relaxed complement query, ranked, **frequency-capped**
-  (≤1–2 per session/day), **per-lake de-duped**, visually distinct ("Recommended — exceptional ice outside
+  (≤1–2 per session/day), **per-body de-duped**, visually distinct ("Recommended — exceptional ice outside
   your usual range"); breaks distance/quality/thickness but **never recency, blocks, or moderation**.
 - **Done:** end-to-end bounty loop; reporters accrue a public, boost-only trust score from
   corroboration + helpful marks; the feed can occasionally recommend corroborated exceptional ice

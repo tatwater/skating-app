@@ -69,7 +69,7 @@ const BADGE_STAT: Record<BadgeType, keyof BadgeStats> = {
  * How many tiers of a "first, then every `step`" badge a count has reached: `0` if below `first`, else
  * `1 + floor((count − first) / step)`. So `{ first: 10, step: 15 }` gives tier 1 at 10, tier 2 at 25,
  * tier 3 at 40. A non-positive `step` collapses to a single tier at `first` (defensive against a bad
- * Phase-7 config value).
+ * Phase-07 config value).
  */
 export function badgeTierCount(count: number, threshold: { first: number; step: number }): number {
   if (count < threshold.first) return 0;

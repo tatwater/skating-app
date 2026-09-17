@@ -1,5 +1,5 @@
 /**
- * Tier 1 of N6e's reveal: 0.3 m public-domain aerial orthoimagery, and the date it was taken.
+ * Tier 1 of A06e's reveal: 0.3 m public-domain aerial orthoimagery, and the date it was taken.
  *
  * ## The source, and the one this replaced
  *
@@ -9,7 +9,7 @@
  * load-bearing: that service's `maxScale` is 9027.977411 — **ArcGIS level 16**, ~1.7 m/px at our
  * latitude — and z17+ returns a hard 404 rather than upsampling. At 1.7 m you can see that a clearing
  * is a parking lot; you cannot count spaces, and a footpath under canopy is invisible. Which is the
- * entire job this tier has (D147, and N6e §A2's pairing with N6d).
+ * entire job this tier has (D147, and A06e §1.2's pairing with A06d).
  *
  * ## It is an ImageServer, not a tile cache, and that shapes everything downstream
  *

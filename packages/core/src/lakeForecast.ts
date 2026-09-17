@@ -1,5 +1,5 @@
 /**
- * The short forward forecast for the drive decision (N6c Workstream B5b).
+ * The short forward forecast for the drive decision (A06c Workstream §2.5b).
  *
  * The weather-since strip answers *what has happened to this ice since the report*. This is the same
  * question pointed the other way in time: **what will happen to it before I arrive.** A skater
@@ -41,7 +41,7 @@ export const FORECAST_NOTABLE_RAIN_MM = 0.5;
 
 /**
  * One hour of the forward forecast. The five required fields are what the strip line has always
- * read; the optional ones arrived with the planner (N6h Workstream D) and are carried rather than
+ * read; the optional ones arrived with the planner (A06h Workstream 4) and are carried rather than
  * re-fetched, because they were already in the response and it is the same 1.2 weighted calls
  * either way. A row cached before they existed simply lacks them, and the planner degrades to the
  * amount-based derivations rather than refusing to draw.
@@ -68,7 +68,7 @@ export interface ForecastHour {
 }
 
 /**
- * What the drawer's forecast action returns (N6h Workstream D).
+ * What the drawer's forecast action returns (A06h Workstream 4).
  *
  * `hours` is the hour in progress plus the full forward series — seven days, ascending,
  * local-shifted like every `HourlyWeather.startMs` — and **both surfaces derive from it on the
@@ -84,7 +84,7 @@ export interface ForecastPayload {
   hours: ForecastHour[];
   utcOffsetMs: number;
   /**
-   * The viewer's Phase 4 drive-time band to this place — 30 / 60 / 90 — or `null` when they have no
+   * The viewer's Phase 04 drive-time band to this place — 30 / 60 / 90 — or `null` when they have no
    * home, no cached bands, or the place is past the outer radius. **A band, never minutes**: it is
    * the only drive-time fact the app holds about a body, and the planner marks it as "≈ arrival"
    * rather than as a time.
@@ -196,7 +196,7 @@ function clockHour(localMs: number): string {
 
 /**
  * The strip's one line, in imperial (D25: store metric, display imperial — there is no metric
- * display mode in this product, and N6c-1 already had to fix this exact contradiction once).
+ * display mode in this product, and A06c-1 already had to fix this exact contradiction once).
  *
  * **Descriptive, never predictive about ice (D3).** The strongest sentence permitted here is "snow
  * starting around 3pm" — a third-party meteorological forecast, attributed. What it must never grow

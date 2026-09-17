@@ -1,5 +1,5 @@
 /**
- * **Every catalogue's vocabulary, mapped into ours** (N7, D109).
+ * **Every catalogue's vocabulary, mapped into ours** (A07a, D109).
  *
  * Three publishers describe the same water in three languages, and until this file existed we spoke
  * only one of them — the OSM classifier in `./osm` — while silently dropping the rest into `other`.
@@ -114,7 +114,7 @@ const OSM_WATER: Readonly<Record<string, SourceClaim>> = {
   sound: claim('bay', 'osm:water=sound'),
   wetland: claim('wetland', 'osm:water=wetland'),
 
-  // Flowing water — deferred since Phase 1, and `rapids` was never in the list.
+  // Flowing water — deferred since Phase 01, and `rapids` was never in the list.
   river: drop('osm:water=river'),
   stream: drop('osm:water=stream'),
   creek: drop('osm:water=creek'),
@@ -383,7 +383,7 @@ export function classifyThreeDhp(featureType: number): SourceClaim {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Name keywords, **English and French** (N7; Québec is a planned region, founder 2026-08-04).
+ * Name keywords, **English and French** (A07a; Québec is a planned region, founder 2026-08-04).
  *
  * Order is precedence and the first match wins, so `reservoir` is checked before everything and
  * `lakePond` before `wetland` — Bog Pond is a pond, and Sugar Hill Reservoir is a reservoir whatever
@@ -624,7 +624,7 @@ export function classifyWaterBody(input: { name: string; claim: SourceClaim }): 
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Water we refuse **by name**, whatever any catalogue calls it (N7 audit, founder call 2026-08-06).
+ * Water we refuse **by name**, whatever any catalogue calls it (A07a audit, founder call 2026-08-06).
  *
  * ## Why a name list, when there is already a token veto
  *
@@ -653,7 +653,7 @@ const VETOED_NAME_PATTERN =
   /\blake (?:erie|ontario|huron|michigan|superior)\b|\bgreat lakes?\b|\blong island sound\b|\batlantic ocean\b|\bgulf of (?:maine|st\.? lawrence)\b/;
 
 /**
- * How big a body has to be before its *name* is allowed to condemn it (N7 second audit, 2026-08-06).
+ * How big a body has to be before its *name* is allowed to condemn it (A07a second audit, 2026-08-06).
  *
  * **The list above is a substring rule, and the second audit measured what that costs.** Run against
  * the master list as it stood, `VETOED_NAME_PATTERN` matched two real inland bodies:

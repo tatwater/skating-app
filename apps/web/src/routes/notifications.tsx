@@ -11,13 +11,13 @@ import { notificationHref } from '../lib/notificationTargets';
 const PAGE_SIZE = 30;
 
 /**
- * The inbox (N8/A3) — *what happened to you and your contributions*, as opposed to the newsfeed's
+ * The inbox (A08/A3) — *what happened to you and your contributions*, as opposed to the newsfeed's
  * *what happened on the ice*. A route rather than a popover so it's linkable and testable.
  *
  * Opening the page marks everything that exists at that moment as read (the server bounds it by its
  * own clock), so a notification that lands mid-visit stays unread until it's actually been seen.
  * Rows are never hidden for being stale: a target that's been removed renders degraded and
- * untappable (N8 #5).
+ * untappable (A08 #5).
  */
 export const Route = createFileRoute('/notifications')({ component: NotificationsPage });
 
@@ -143,7 +143,7 @@ function NotificationRow({
           {body}
         </Link>
       ) : (
-        // Degraded (target gone) or a type with nowhere to go: shown, not a link (N8 #5).
+        // Degraded (target gone) or a type with nowhere to go: shown, not a link (A08 #5).
         <div className="opacity-80">{body}</div>
       )}
     </li>

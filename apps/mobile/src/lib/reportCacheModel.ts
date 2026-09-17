@@ -1,5 +1,5 @@
 /**
- * Pure model for the offline report read-cache (Phase 4, decision #8) — the framework-free serialize/
+ * Pure model for the offline report read-cache (Phase 04, decision #8) — the framework-free serialize/
  * parse + prune logic behind the `expo-sqlite` glue in `reportCache.ts`, factored out so it's
  * unit-testable without a native db (same split as `offlineBody` ↔ `bodyCache`).
  *

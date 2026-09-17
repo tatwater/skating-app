@@ -1,7 +1,7 @@
 /**
- * Lake access: how you get onto the ice, as a set of pure rules (N6d / D72, D87, D143, D144).
+ * Lake access: how you get onto the ice, as a set of pure rules (A06d / D72, D87, D143, D144).
  *
- * `putIns` has been a bare coordinate since Phase 4, and `directionsUrl` routes a car to it. For a
+ * `putIns` has been a bare coordinate since Phase 04, and `directionsUrl` routes a car to it. For a
  * drive-up launch that is right; for a hike-in pond it hands a maps app a destination it cannot route
  * to, and the skater finds that out at the trailhead, in winter, an hour from home. This module holds
  * the vocabulary that fixes it — the approach classification, the association radii the OSM pass is
@@ -12,7 +12,7 @@
  * Every number below is a **product line**, not a measurement (D144). There is no dataset of where a
  * walk stops being a walk, so none of these can be fitted, and a database row would invite them to be
  * changed by whoever is annoyed by one this week. They live in code, move by founder call, and surface
- * read-only on the Phase 7b tuning page like every other constant in that family.
+ * read-only on the Phase 07-2 tuning page like every other constant in that family.
  *
  * The one exception is `PARKING_INFER_RADIUS_M`, which *is* a guess about geometry and *will* be
  * falsified by a dense state — see its own note.
@@ -77,10 +77,10 @@ export const HIKE_IN_ASSERT_M = 1600;
 export const PARKING_INFER_RADIUS_M = 250;
 
 /**
- * How many photos one access point carries (N6d Workstream D).
+ * How many photos one access point carries (A06d Workstream 4).
  *
  * Three, so it answers *"is this the right dirt road"* and does not become a gallery. The cap is also
- * the abuse surface: combined with minors being read-only (Phase 3), it bounds what any single point
+ * the abuse surface: combined with minors being read-only (Phase 03), it bounds what any single point
  * can be turned into, which is half of why D88 could decline to invent a new posting permission.
  */
 export const MAX_ACCESS_PHOTOS = 3;
@@ -101,14 +101,14 @@ export const AMENITY_NEAR_PARKING_M = 150;
  *
  * Tight on purpose, and it can afford to be: a slipway, beach or pier is *on* the water by
  * definition, so the only slack needed is the disagreement between OSM's shoreline and ours (we
- * simplify to ~5 m, and post-N7 a body's outline may come from NHD rather than OSM at all). A loose
+ * simplify to ~5 m, and post-A07a a body's outline may come from NHD rather than OSM at all). A loose
  * radius here does not find more launches, it finds the *wrong lake* — which is the one failure mode
  * that produces a wrong answer instead of no answer.
  */
 export const PUTIN_SHORE_RADIUS_M = 30;
 
 /**
- * How far *outside* a body an operator's put-in click may land before the write is refused (N6f).
+ * How far *outside* a body an operator's put-in click may land before the write is refused (A06f).
  *
  * **Not `PUTIN_SHORE_RADIUS_M`, and the difference is the whole point.** That one is the ETL's
  * tolerance for deciding whether an OSM slipway belongs to *this lake or the next one over* — a
@@ -228,7 +228,7 @@ export function resolvePutInName(
  * The GeoJSON variant rather than the default, deliberately: the plain endpoint returns an encoded
  * polyline and puts the summary somewhere subtly different per version, while this one puts
  * `summary.distance` and `ascent` in a documented place on `features[0].properties`. Same key, same
- * account, same free tier as Phase 4's `driving-car` isochrones (D87).
+ * account, same free tier as Phase 04's `driving-car` isochrones (D87).
  */
 export const ORS_FOOT_HIKING_URL =
   'https://api.openrouteservice.org/v2/directions/foot-hiking/geojson';
@@ -276,7 +276,7 @@ export interface ApproachLeg {
   /** `false` ⇒ straight-line. The number is a **floor**, not an estimate — say "at least". */
   routed: boolean;
   /**
-   * The line the walk actually follows, parking → put-in, simplified (N6e Workstream 0).
+   * The line the walk actually follows, parking → put-in, simplified (A06e Workstream 0).
    *
    * **Absent on a straight-line leg**, deliberately: drawing a crow-flies segment between a lot and a
    * launch would render a trail that does not exist, straight through whatever lies between them,
@@ -292,7 +292,7 @@ export interface ApproachLeg {
 /**
  * Should this leg's line be kept?
  *
- * The line exists to be drawn and to be buffered into N6e's mask, and both of those want the walk a
+ * The line exists to be drawn and to be buffered into A06e's mask, and both of those want the walk a
  * skater has to think about. Below the hike-in line a path is a few metres of tarmac between a car
  * and a bank — invisible at any zoom the drawer uses, invisible inside a 30 m mask buffer, and paid
  * for on every read of the row.
@@ -404,10 +404,10 @@ function approachPathFrom(coordinates: number[][] | undefined): LatLng[] | undef
 export const MAX_PLAUSIBLE_APPROACH_M = 5_000;
 
 /**
- * Demote a routed leg that is not a walk to the ice (N6e Workstream 0).
+ * Demote a routed leg that is not a walk to the ice (A06e Workstream 0).
  *
  * Applied to cached legs as well as fresh ones, deliberately: 30 of these were already stored by
- * N6d's routing pass, so a rule that only ran on new requests would leave *"about 99 km on foot"* on
+ * A06d's routing pass, so a rule that only ran on new requests would leave *"about 99 km on foot"* on
  * the surfaces that already render it — and, once the line is drawn, a dashed trail crossing three
  * counties from a lake's parking marker.
  *
@@ -451,13 +451,13 @@ export interface AccessPutIn {
   approachAscentM?: number;
   approachRouted?: boolean;
   /**
-   * The walk, as a line to draw (N6e Workstream 0). Only ever present on a routed hike-in leg —
+   * The walk, as a line to draw (A06e Workstream 0). Only ever present on a routed hike-in leg —
    * see `ApproachLeg.path` for why a straight-line approach deliberately carries none.
    */
   approachPath?: LatLng[];
   approachKindOverride?: ApproachKind;
   /**
-   * What the sign on *this launch* says (N6e).
+   * What the sign on *this launch* says (A06e).
    *
    * Carried here so the drawer can render it beside the launch it governs, and read by nothing in the
    * resolver: `chooseAccessTarget` must not prefer an open launch over a shut one. A posted rule
@@ -473,7 +473,7 @@ export interface AccessParking {
   coord: LatLng;
   name?: string;
   source: 'osm' | 'official';
-  /** What the sign on *this lot* says (N6e). Not read by the resolver — see `AccessPutIn`. */
+  /** What the sign on *this lot* says (A06e). Not read by the resolver — see `AccessPutIn`. */
   postedAccess?: PostedAccess;
 }
 
@@ -615,14 +615,14 @@ export function bodyAccessKind(
 }
 
 /**
- * Where a bay's drive-time is measured from (N9 kickoff call 2): its **best put-in** — `official`
+ * Where a bay's drive-time is measured from (A09 kickoff call 2): its **best put-in** — `official`
  * over `osm` over `derived`, the same ladder as `chooseAccessTarget` — else the bay's own
  * `representativePoint`, and **never the parent's**. The parent's representative point is Turf's
  * `pointOnFeature`, which lands on the shoreline wherever the ray-cast happens to hit it: Champlain's
  * sits 30.7 km off mid-lake, and a bay banded from there is banded for a place nobody launches from.
  *
  * Bands are per-viewer polygon tests against a coordinate, so choosing a different coordinate per
- * bay costs no extra cache — N2's "multiplied cache" objection was mistaken about the mechanism.
+ * bay costs no extra cache — A02's "multiplied cache" objection was mistaken about the mechanism.
  */
 export function subAreaDriveCoord(
   bay: { representativePoint?: LatLng; centroid: LatLng },

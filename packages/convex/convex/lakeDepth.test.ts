@@ -1,5 +1,5 @@
 /**
- * Lake depth: the operator override and the ETL loader (N6a / D68).
+ * Lake depth: the operator override and the ETL loader (A06a / D68).
  *
  * The load-bearing property here is the one the roadmap's "own data PR" framing would have missed —
  * a re-runnable global join must never silently undo a moderator's survey reading.
@@ -427,7 +427,7 @@ describe('waterBodies.matchAndImportDepths (the geometric join)', () => {
   /**
    * A body at (44, -72) spanning `half` degrees. Inserted, then run **through `importCanonical`** on the
    * same `externalId` — the insert is what gives us a typed id to assert on, and the import is what
-   * builds the N1 cell rows. Those rows are what `listedBodiesNearCoord` reads, so a body without them
+   * builds the A01 cell rows. Those rows are what `listedBodiesNearCoord` reads, so a body without them
    * is unreachable from any spatial lookup (the same property that keeps an unlisted body invisible);
    * hand-inserting one guesses at the ladder rung and gets it wrong.
    */
@@ -893,7 +893,7 @@ describe("waterBodies.matchAndImportDepths — D85's shoreline cross-check", () 
     ],
   };
 
-  /** Seeded through `importCanonical`, so the N1 cell rows exist and the point lookup can match. */
+  /** Seeded through `importCanonical`, so the A01 cell rows exist and the point lookup can match. */
   async function seed(t: ReturnType<typeof convexTest>, shorelineM?: number) {
     const bbox = { minLat: 44, minLng: -73, maxLat: 44.1, maxLng: -72.9 };
     await t.mutation(internal.waterBodies.importCanonical, {

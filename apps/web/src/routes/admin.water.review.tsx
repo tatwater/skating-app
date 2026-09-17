@@ -8,7 +8,7 @@ import { Button } from '../components/ui/button';
 import { Card, CardContent } from '../components/ui/card';
 
 /**
- * The intake review queue — **rows that were computed, stored, and shown to nobody** (N7).
+ * The intake review queue — **rows that were computed, stored, and shown to nobody** (A07a).
  *
  * `confidence.ts` scored every body in the corpus, `merge.ts` wrote the reasons onto the rows, and
  * the trail ended there: the first intake audit found the queue computed and *discarded*, and fixing

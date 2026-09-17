@@ -122,7 +122,7 @@ import { ReturnToRegion } from './ReturnToRegion';
 import { useFreezeUpTimeline } from './useFreezeUpTimeline';
 
 /**
- * Interactive native MapLibre map — the read side of the Phase 2 loop (§F, D5/D6/D47/D49), the
+ * Interactive native MapLibre map — the read side of the Phase 02a loop (§6, D5/D6/D47/D49), the
  * mobile mirror of web's `MapView`. This is the imperative native shell (excluded from unit tests
  * like web's WebGL shell); all pure logic (style, feature/viewport transforms, framing) lives in
  * `../lib/waterMap`. It stays mounted in the `(map)` layout beside a bottom-sheet `<Slot />`, so
@@ -148,7 +148,7 @@ const RAIL_GAP = 8;
 
 // The initial query covers the whole pilot region at the state zoom, so the map shows the prominent
 // bodies (Champlain, boosted Morey) immediately — before the first `onRegionDidChange` — then each
-// pan/zoom refines it. Mirrors web's regional framing (Burlington, z6.5, Phase 2.5).
+// pan/zoom refines it. Mirrors web's regional framing (Burlington, z6.5, Phase 02b).
 const INITIAL_QUERY: { viewport: BBox; zoom: number } = {
   viewport: {
     minLng: NORTHEAST_REGION_BOUNDS[0][0],
@@ -224,7 +224,7 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
   // pass exists to remove. The window is only the seed, for the frames before the first layout.
   const { height: windowHeight } = useWindowDimensions();
   const [mapHeight, setMapHeight] = useState(windowHeight);
-  // "This is skateable" — the long-press ask (N7b PR 2). Set by `onMapLongPress`, cleared by the prompt.
+  // "This is skateable" — the long-press ask (A07b PR 2). Set by `onMapLongPress`, cleared by the prompt.
   const [admitCoord, setAdmitCoord] = useState<{ lat: number; lng: number } | null>(null);
   const onMapLayout = useCallback((event: LayoutChangeEvent) => {
     const { height } = event.nativeEvent.layout;
@@ -251,7 +251,7 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
   // screen below), turning the misconfiguration into an immediate, obvious failure.
   const pmtilesUrl = env.pmtilesUrl || (__DEV__ ? DEMO_PMTILES_URL : '');
 
-  // Layer-3 offline-basemap spike, route (1) (Phase 9.5) — flag-gated, off by default. When on, download
+  // Layer-3 offline-basemap spike, route (1) (Phase 09b) — flag-gated, off by default. When on, download
   // the regional archive once and render from the local `file://` copy so the map survives no signal.
   // Falls back to the remote URL on any failure, so this can never blank the map.
   const [localBasemapUri, setLocalBasemapUri] = useState<string | null>(null);
@@ -298,8 +298,8 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
   // `subAreaArgs` applies below its zoom floor.
   const regionOffscreen = isRegionOffscreen(queryArgs.viewport);
   const bodies = useQuery(api.waterBodies.listInViewport, regionOffscreen ? 'skip' : queryArgs);
-  // Named bays (N2/D60) — its own ladder-grid query. Rendering is not an operator affordance: mobile
-  // draws the label, it just can't edit it (the Phase 7 rule).
+  // Named bays (A02/D60) — its own ladder-grid query. Rendering is not an operator affordance: mobile
+  // draws the label, it just can't edit it (the Phase 07 rule).
   //
   // **Not subscribed below the zoom floor**: the server answers `[]` there, but that is still a
   // query execution and a subscription per viewport key, which on a phone is a round trip for an
@@ -307,10 +307,10 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
   const subAreaArgs = queryArgs.zoom >= SUB_AREA_MIN_RENDER_ZOOM ? queryArgs : ('skip' as const);
   const subAreas = useQuery(api.subAreas.listInViewport, subAreaArgs);
 
-  // The lakes *this viewer* has reported as having no public access (N6f) — dimmed for them alone.
+  // The lakes *this viewer* has reported as having no public access (A06f) — dimmed for them alone.
   const selfFlagged = useQuery(api.contentFlags.myAccessFlags, {});
 
-  // Weather-first discovery on the map (N6h / D166): the shared filter row's weather + radius, the
+  // Weather-first discovery on the map (A06h / D166): the shared filter row's weather + radius, the
   // matched cells from the server, and the dim set computed per body in view — the same
   // `weatherDimmedBodyIds` web uses. Only the weather filter engages this.
   const { value: feedFilters, set: setFeedFilters } = useFeedFilters();
@@ -356,7 +356,7 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
     else if (subAreas !== undefined) setSubAreaFeatures(subAreasToFeatureCollection(subAreas));
   }, [subAreas, subAreaArgs]);
 
-  // Seed the offline body cache from what's on screen when zoomed in (Phase 9 §Mobile). Until now the
+  // Seed the offline body cache from what's on screen when zoomed in (Phase 09a §Mobile). Until now the
   // cache filled only when a lake's *drawer* was opened, so on-ice detection missed a lake you were
   // standing on but had never tapped. Seeding here means simply looking at your lake caches it for
   // later no-signal capture. Online, the server resolver covers this already; this is the offline
@@ -407,11 +407,11 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
     [putInPin],
   );
 
-  // The viewer's favorited bodies (Phase 4, decision #1) — the highlight is a data-driven `in` filter
+  // The viewer's favorited bodies (Phase 04, decision #1) — the highlight is a data-driven `in` filter
   // on a dedicated outline layer (RN has no feature-state). Empty when signed out.
   const favorites = useQuery(api.waterBodyFavorites.listForUser, {});
 
-  // ## The freeze-up timeline (N6e §C, D148)
+  // ## The freeze-up timeline (A06e §3, D148)
   //
   // Mobile has no Tier 1 aerial — that one needs a canvas React Native does not have — so here
   // "imagery" means the archive and nothing else. One toggle per lake, per D146, and it lives on the
@@ -571,9 +571,9 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
   const putInsFC = useMemo(() => putInsToFeatureCollection(putIns ?? []), [putIns]);
   const approachesFC = useMemo(() => approachesToFeatureCollection(putIns ?? []), [putIns]);
 
-  // Hazards + known features for the focused lake (Phase 9, D54 Layer 0). Scoped to the open body,
+  // Hazards + known features for the focused lake (Phase 09a, D54 Layer 0). Scoped to the open body,
   // not the viewport — hazards are only ever queried per body, which is what keeps this off the
-  // path `listInViewport` needed two PRs to fix before N1 bounded it. A subscribed client gets new
+  // path `listInViewport` needed two PRs to fix before A01 bounded it. A subscribed client gets new
   // hazards live; that reactive query *is* the sync layer.
   // `browseSeason` is how the sheet's season selector reaches the layers behind it (D63): the list
   // and the pins have to belong to the same winter. Put-ins above are exempt from the reset entirely,
@@ -622,7 +622,7 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
     [hazardDraft, hazardDraftType],
   );
 
-  // ── Bathymetric contours for the open lake (N6b / D81 / D82).
+  // ── Bathymetric contours for the open lake (A06b / D81 / D82).
   //
   // **The one source in this file that is not always mounted**, and that is the decision rather than
   // an optimisation: contours are a property of the detail view, so the source exists while a lake's
@@ -787,7 +787,7 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
     };
   }, [geolocateOnMount]);
 
-  // In pin-drop mode (§E) the next map tap sets the put-in pin; otherwise a tap on a water body
+  // In pin-drop mode (§5) the next map tap sets the put-in pin; otherwise a tap on a water body
   // (handled by the source's onPress below) opens its drawer. Handlers are recreated each render, so
   // they read the current `pinDropMode` directly (no ref needed, unlike web's once-bound handler).
   function onMapPress(e: NativeSyntheticEvent<PressEvent | PressEventWithFeatures>) {
@@ -797,7 +797,7 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
       setPinDropMode(false);
       return;
     }
-    // Snap-to-shoreline (N5b) takes the tap first: it's a two-tap affordance and the adjust bar
+    // Snap-to-shoreline (A05b) takes the tap first: it's a two-tap affordance and the adjust bar
     // can't count them, so the map does. It never touches the draft — capture owns the body polygon
     // and turns the pair into geometry.
     //
@@ -812,7 +812,7 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
       if (next.length === 2) setHazardDropMode(false);
       return;
     }
-    // Hazard placement (Phase 9). A circle disarms on the tap that moves it; a polyline and an area
+    // Hazard placement (Phase 09a). A circle disarms on the tap that moves it; a polyline and an area
     // stay armed and take one vertex per tap, so tracing a ridge or walking the edge of a rotten
     // patch doesn't require re-arming between points.
     if (hazardDropMode && hazardDraft) {
@@ -821,7 +821,7 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
     }
   }
 
-  // Long-press on water with no body (N7b PR 2 / D106): "this is skateable." The prompt resolves
+  // Long-press on water with no body (A07b PR 2 / D106): "this is skateable." The prompt resolves
   // the coordinate itself — a dormant or removed lake under the press is reachable now and is what
   // the press was about — so this only records where.
   function onMapLongPress(e: NativeSyntheticEvent<PressEvent>) {
@@ -934,7 +934,7 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
         />
 
         <GeoJSONSource id="water" data={features} onPress={onWaterPress}>
-          {/* The N6f access dim wraps each base opacity rather than replacing it, so the
+          {/* The A06f access dim wraps each base opacity rather than replacing it, so the
             selected/unselected distinction survives on a dimmed lake. Shared with web through
             `withAccessDim`, which is why both signals ride the feature properties. */}
           <Layer
@@ -967,7 +967,7 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
               'line-opacity': withAccessDim(1) as never,
             }}
           />
-          {/* Favorited bodies read gold (Phase 4, decision #1) — a data-driven `in` filter over the
+          {/* Favorited bodies read gold (Phase 04, decision #1) — a data-driven `in` filter over the
             viewer's favorite id set (matches nothing when empty / signed out). */}
           <Layer
             id="water-outline-favorite"
@@ -1002,7 +1002,7 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
               // ⚠ Required, and the same face web uses. Without it MapLibre Native asks the glyph host
               // for its built-in default stack ("Open Sans Regular, Arial Unicode MS Regular"), which
               // the Protomaps assets do not serve — a 404 per glyph range, and since the label is
-              // `text-optional` the name simply never drew. It went unnoticed from N2 until the
+              // `text-optional` the name simply never drew. It went unnoticed from A02 until the
               // weather picker started framing bays.
               'text-font': ['Noto Sans Italic'],
               // A bay name may never displace a hazard or put-in marker; if it doesn't fit, it doesn't draw.
@@ -1017,7 +1017,7 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
           />
         </GeoJSONSource>
 
-        {/* ── Bathymetric contours for the open lake (N6b/D81), mounted only while its sheet is open.
+        {/* ── Bathymetric contours for the open lake (A06b/D81), mounted only while its sheet is open.
           `beforeId` puts them under every pin, track and hazard that follows: contours are
           decoration and hazards are the product, so if the two ever compete for legibility the
           contour is the one that loses (D82). Hairline, and a single hue varying only in lightness —
@@ -1077,7 +1077,7 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
           />
         </GeoJSONSource>
 
-        {/* The walk from the car to the ice (N6e Workstream 0), drawn under the pins at its two
+        {/* The walk from the car to the ice (A06e Workstream 0), drawn under the pins at its two
           ends. Built from the same markers, so a launch and its walk can never disagree about
           whether the launch is there — including when a moderator's `hide` removes it. */}
         <GeoJSONSource id={APPROACH_SOURCE_ID} data={approachesFC}>
@@ -1089,7 +1089,7 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
           />
         </GeoJSONSource>
 
-        {/* Put-in markers for the focused lake (Phase 4, decision #7; N6d/D143 added the middle
+        {/* Put-in markers for the focused lake (Phase 04, decision #7; A06d/D143 added the middle
           rung): official = accurate cyan, osm = a mapped slipway, derived = approximate muted blue.
           Three colors for three rungs of `PUTIN_SOURCES`. Distinct from the amber report-photo pins. */}
         <GeoJSONSource id="put-in-markers" data={putInsFC}>
@@ -1112,7 +1112,7 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
           />
         </GeoJSONSource>
 
-        {/* ── Recorded GPS tracks (Phase 8). The path someone actually skated, under the hazard layers
+        {/* ── Recorded GPS tracks (Phase 08). The path someone actually skated, under the hazard layers
           so a warning is never hidden by a line. Display-only — a path can only come from a recorded
           track, so there is no draw interaction. Opacity is data-driven off the linked report's D59
           freshness, floored so an old path fades but never vanishes (a blank lake would read as
@@ -1149,7 +1149,7 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
           />
         </GeoJSONSource>
 
-        {/* ── Hazards (Phase 9). Drawn as buffered *footprint* polygons, not markers, so the shape on
+        {/* ── Hazards (Phase 09a). Drawn as buffered *footprint* polygons, not markers, so the shape on
           screen is literally the shape the proximity evaluator measures against. Soft fill + a dashed
           outline while provisional: a hazard is "reported around here", never a surveyed boundary. */}
         <GeoJSONSource id="hazards" data={hazardsFC} onPress={onHazardPress}>

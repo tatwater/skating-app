@@ -190,7 +190,7 @@ describe('hazardWeather.refreshHazardWeather', () => {
     expect(h?.decayMultiplier).toBe(1.5); // untouched
   });
 
-  test('scans stalest-first, so the per-tick cap rotates through the backlog (N1)', async () => {
+  test('scans stalest-first, so the per-tick cap rotates through the backlog (A01)', async () => {
     // Greptile PR #27: the sweep used to read `by_status`, whose order never changes — so once the
     // active set passed ACTIVE_HAZARD_SCAN_CAP, every hourly tick re-read the same prefix and the
     // hazards behind it kept absent decay and snow-hidden state forever. The cadence gate can't
@@ -213,7 +213,7 @@ describe('hazardWeather.refreshHazardWeather', () => {
     expect(jobs.map((j) => j.hazardId)).toEqual([neverRefreshed, longStale, justRefreshed]);
   });
 
-  test('a hazard the sweep skips is rotated out of the queue, not left at its head (N1)', async () => {
+  test('a hazard the sweep skips is rotated out of the queue, not left at its head (A01)', async () => {
     // Greptile PR #27 round 5: stalest-first only rotates what actually gets stamped. A hazard the
     // sweep declines to refresh is never stamped, so on an `undefined`-first index it sorts to the
     // front FOREVER and holds a slot in the cap against everything behind it — the same starvation
@@ -239,7 +239,7 @@ describe('hazardWeather.refreshHazardWeather', () => {
     // Two ineligible-but-active hazards, both never refreshed, so both ahead of the real one.
     const hidden = await seedHazard(t, waterBodyId, authorId, { moderationStatus: 'hidden' });
     const onRemovedBody = await seedHazard(t, removedBodyId, authorId);
-    // A promoted pin is **eligible** since the D53 amendment (N5c): supersession is provenance, not a
+    // A promoted pin is **eligible** since the D53 amendment (A05c): supersession is provenance, not a
     // hiding mechanism, so the pin still renders and still needs its decay window kept current.
     // Deferring it would leave a visible hazard reading freshness off a stale window.
     const promoted = await seedHazard(t, waterBodyId, authorId, {
@@ -403,7 +403,7 @@ async function multiplierFor(bodyExtra: Record<string, unknown>, response: 'warm
   return { t, waterBodyId, multiplier: h?.decayMultiplier };
 }
 
-describe('hazardWeather — shallow bodies (N6a / D69)', () => {
+describe('hazardWeather — shallow bodies (A06a / D69)', () => {
   test('a shallow lake persists an open-water warning longer than a deep one', async () => {
     const deep = await multiplierFor({ meanDepthM: 25, meanDepthSource: 'lagos_us' }, 'warm');
     const shallow = await multiplierFor({ meanDepthM: 2, meanDepthSource: 'lagos_us' }, 'warm');
@@ -419,7 +419,7 @@ describe('hazardWeather — shallow bodies (N6a / D69)', () => {
 
   test('a `shallow_early_thaw` bodyFeature counts even with no depth at all', async () => {
     // The path for the 73% of the corpus below every global source's area floor — and the whole reason
-    // shallowness is a boolean rather than a curve. Before N6a this feature was wired to nothing.
+    // shallowness is a boolean rather than a curve. Before A06a this feature was wired to nothing.
     const plain = await multiplierFor({}, 'warm');
 
     const t = convexTestWithGeo();

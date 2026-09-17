@@ -1,6 +1,6 @@
 /**
  * Lake-depth loader (glue). Chunks depth NDJSON into the internal `waterBodies.matchAndImportDepths`
- * mutation via the Convex CLI, which is where the geometric join happens (the N1 cell index lives
+ * mutation via the Convex CLI, which is where the geometric join happens (the A01 cell index lives
  * there). Loads the **dev** deployment by default; refuses a non-dev target unless `--prod` is passed.
  * Thin subprocess + file I/O — excluded from coverage; all real work is in the tested transform and the
  * tested mutation.

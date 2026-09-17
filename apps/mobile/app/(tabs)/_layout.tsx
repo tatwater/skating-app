@@ -78,17 +78,17 @@ function TabIcon({ icon, color, size }: { icon: IconDefinition; color: ColorValu
  */
 export default function TabsLayout() {
   const theme = useTheme();
-  // The unread signal (N8/A3): a dot on the You icon, visible from every screen with the tab bar,
+  // The unread signal (A08/A3): a dot on the You icon, visible from every screen with the tab bar,
   // so the badge costs no tab. `unreadCount` is one capped indexed read, so subscribing to it from
   // the tab layout — effectively app-wide — is cheap by construction.
-  // Offline, the dot reads the cached page through the local read overlay (N8 PR 3) rather than
+  // Offline, the dot reads the cached page through the local read overlay (A08 PR 3) rather than
   // going dark — the live count wins the moment it answers.
   const [offlineUnread, setOfflineUnread] = useState(() =>
     unreadAfterOverlay(loadCachedNotifications(), loadPendingReads()),
   );
   const unread = useQuery(api.notifications.unreadCount, {}) ?? offlineUnread;
 
-  // The 8pm digest's zone (N8/C): the device's, refreshed on app open, written only when it differs.
+  // The 8pm digest's zone (A08/C): the device's, refreshed on app open, written only when it differs.
   // The tab layout mounts once per signed-in session, which makes it "app open".
   const profile = useQuery(api.profiles.current, {});
   const setTimezone = useMutation(api.profiles.setTimezone);
@@ -112,7 +112,7 @@ export default function TabsLayout() {
   }, [hasProfile, syncFromClerk]);
 
   // The offline inbox is per device; bind it to whoever is signed in, so a previous account's page
-  // never reads back to the next (N8 PR 3). Sign-out clears it too; this catches every other path —
+  // never reads back to the next (A08 PR 3). Sign-out clears it too; this catches every other path —
   // and when it clears, the dot derived from the old page above goes with it, or a session that
   // arrived here without the You-tab sign-out would wear the last account's count until online.
   useEffect(() => {
@@ -120,7 +120,7 @@ export default function TabsLayout() {
     if (!claimNotificationCache(profileId)) setOfflineUnread(0);
   }, [profileId]);
 
-  // Push registration on app open (N8 PR 3) — only when permission is already granted and this
+  // Push registration on app open (A08 PR 3) — only when permission is already granted and this
   // device hasn't been switched off; never a prompt. Refreshes `lastSeenAt` and re-homes the token
   // to whoever is signed in.
   const registerToken = useMutation(api.pushTokens.register);
@@ -135,7 +135,7 @@ export default function TabsLayout() {
     });
   }, [hasProfile, registerToken, unregisterToken, releaseToken]);
 
-  // Tapping a remote notification lands where the inbox row would (N8 PR 3). The payload carries
+  // Tapping a remote notification lands where the inbox row would (A08 PR 3). The payload carries
   // the platform-neutral target `describeNotification` produced server-side; the same mapper the
   // inbox uses turns it into a route. The on-ice local alert has its own listener in the map layout
   // keyed on `hazardId`, so a payload without `target` is left to it.

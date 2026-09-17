@@ -1,11 +1,11 @@
 /**
- * Pure form-state ⇆ domain logic for the report create form (§E, D22–D25/D41), shared by **both**
+ * Pure form-state ⇆ domain logic for the report create form (§5, D22–D25/D41), shared by **both**
  * apps (D7/D40). Each surface's form holds the imperial strings the skater types; these helpers turn
  * that into the metric `ReportInput` the shared validator + `reports.create` consume (D25 — store
  * metric, enter/display imperial). Kept pure so the conversions and the thickness value-XOR-range
  * assembly are unit-tested without a DOM. (Reports have no visibility — all public, D13.)
  *
- * `skateEndTime` ("when the skater left the ice", Phase 5) is carried as **epoch ms** (canonical,
+ * `skateEndTime` ("when the skater left the ice", Phase 05) is carried as **epoch ms** (canonical,
  * platform-neutral). Each surface adapts at its own input boundary: web's
  * `<input type="datetime-local">` round-trip lives in `apps/web`, mobile's date picker yields ms
  * directly. An optional `skateStartTime` captures when they got on; the UI may collect it as a start
@@ -140,7 +140,7 @@ export function buildReportInput(
 }
 
 /**
- * A stored report, as much of it as the form needs to be seeded from (N6f).
+ * A stored report, as much of it as the form needs to be seeded from (A06f).
  *
  * Structural rather than `Doc<'reports'>`, so `@skating/core` stays free of the Convex data model
  * and both clients can pass the row they already hold.
@@ -217,7 +217,7 @@ const CONDITION_FIELD = {
 
 /**
  * Is `next` **exactly** what the edit form would have re-emitted for a stored `stored`, i.e. did the
- * author leave this field alone? (N6f)
+ * author leave this field alone? (A06f)
  *
  * The conditions fields are whole degrees F and whole mph, and the stored numbers are neither: a
  * report's weather is usually written by `conditions.autofillConditions` from Open-Meteo in precise
@@ -250,7 +250,7 @@ export function isFormRoundTripOf(
 }
 
 /**
- * Seed the form from a stored report — the inverse of `buildReportInput`, for the edit path (N6f).
+ * Seed the form from a stored report — the inverse of `buildReportInput`, for the edit path (A06f).
  *
  * `reports.update` is **last-write-wins over the whole content block**, not a patch: an omitted
  * optional field is cleared. So an edit form that started empty would silently delete every field the
@@ -309,7 +309,7 @@ export type SkateWindowResult =
   | { ok: false; error: string };
 
 /**
- * Resolve the optional start/duration entry into the two stored timestamps (Phase 5). This is the
+ * Resolve the optional start/duration entry into the two stored timestamps (Phase 05). This is the
  * **input-boundary** helper: a duration back-computes `start = end − duration` here so the rest of
  * the system only ever sees `{ skateStartTime?, skateEndTime }` — duration is never a stored field.
  * Validates that the end is a real instant and that any resolved start falls at/​before it (an

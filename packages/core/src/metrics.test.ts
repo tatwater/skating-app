@@ -145,7 +145,7 @@ describe('the metric vocabulary', () => {
 
   it('splits the keys into exactly three families, so every metric has exactly one writer', () => {
     // The real invariant is not "there are two families" but "no key is left without a writer, and
-    // no key has two". A third family (N7's external catalogue measurements) is admitted by naming
+    // no key has two". A third family (A07a's external catalogue measurements) is admitted by naming
     // it here; a key that belonged to none would still fail, which is the point.
     expect(COUNTER_METRIC_KEYS.length).toBeGreaterThan(0);
     expect(ROLLUP_METRIC_KEYS.length).toBeGreaterThan(0);

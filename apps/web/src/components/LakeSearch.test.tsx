@@ -25,7 +25,7 @@ const HITS: LakeHit[] = [
   },
 ];
 
-/** A named bay (N2/D60) — the row that has to say which lake it belongs to. */
+/** A named bay (A02/D60) — the row that has to say which lake it belongs to. */
 const BAY_HIT: LakeHit = {
   kind: 'subArea',
   _id: 'sa1',
@@ -65,7 +65,7 @@ describe('LakeSearchBox', () => {
     expect(screen.getByText('Reservoir · ME')).toBeInTheDocument();
   });
 
-  it('badges a dormant body as Inactive ahead of its meta (N7b)', () => {
+  it('badges a dormant body as Inactive ahead of its meta (A07b)', () => {
     renderBox({ items: [{ ...(HITS[0] as LakeHit), inactive: true }] });
     expect(screen.getByText('Inactive · Lake or pond · NY')).toBeInTheDocument();
   });

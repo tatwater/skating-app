@@ -1,5 +1,5 @@
 /**
- * Storage hygiene (N3). The interesting assertions aren't "it deletes things" — they're the two places
+ * Storage hygiene (A03). The interesting assertions aren't "it deletes things" — they're the two places
  * where the sweep must decline to act: a photo it can't prove is unreferenced, and a photo still inside
  * its grace window.
  */
@@ -177,7 +177,7 @@ describe('pruneWeatherCache', () => {
   });
 });
 
-describe('purgeLastSeasonNotifications (N8/A5)', () => {
+describe('purgeLastSeasonNotifications (A08/A5)', () => {
   test('deletes every row from before the current season’s start, read or not, and nothing newer', async () => {
     const t = harness();
     const userId = await seedUser(t, 'u');
@@ -469,11 +469,11 @@ describe('expireDepartedPhotos (D66)', () => {
   });
 
   /**
-   * The N6d carve-out from D66, and the reason it is a carve-out rather than an exception.
+   * The A06d carve-out from D66, and the reason it is a carve-out rather than an exception.
    *
    * A report photo documents **conditions**, which expire with their season. An access photo
    * documents **infrastructure** — a parking lot looks the same next November — so the argument that
-   * retires the first does not reach the second. It stays under N3 deletion the whole time, by the
+   * retires the first does not reach the second. It stays under A03 deletion the whole time, by the
    * D62 second amendment's redact-don't-erase: the departed skater's photo of a gravel pull-off is
    * reassigned to anonymous, not destroyed, because there is no person in a picture of a pull-off.
    *
@@ -605,7 +605,7 @@ describe('expireDepartedPhotos (D66)', () => {
   });
 });
 
-describe('pruneForecastCache (N6c/B5b, self-review 2026-08-10)', () => {
+describe('pruneForecastCache (A06c/B5b, self-review 2026-08-10)', () => {
   const HOUR = 3_600_000;
   function row(forecastBucketMs: number) {
     return {

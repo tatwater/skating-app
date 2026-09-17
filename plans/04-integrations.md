@@ -14,9 +14,9 @@
 
 ## GPS activity providers — all six v1-scoped, shipped fast-follow (D24)
 
-> **⚠️ Superseded for Phase 8 (2026-07-24) — read [`phase-8-native-capture.md`](./phase-8-native-capture.md).**
+> **⚠️ Superseded for Phase 08 (2026-07-24) — read [`phases/08-native-capture.md`](./phases/08-native-capture.md).**
 > The Strava *pull/ingest* model described below is **dead** (L7: Strava forbids cross-user display of its
-> data + bans AI/ML). Phase 8 inverted to **native capture + Strava push**: we **record the track
+> data + bans AI/ML). Phase 08 inverted to **native capture + Strava push**: we **record the track
 > ourselves** (first-party data we own → legal to aggregate/draw on reports) and **push** it to Strava
 > (`activity:write`). The **native recorder** is now A-input #1; the other five providers
 > (Garmin/HealthKit/HC/COROS/Polar) are **deferred**, each integrated individually later. Only the **free
@@ -25,7 +25,7 @@
 
 All six providers are v1-scoped and the architecture is **provider-agnostic**, so
 any skater's device can contribute a **trusted** GPS path. **Apply for every
-approval in Phase 0** (Garmin/COROS/Polar reviews take weeks). They then **ship in
+approval in Phase 00** (Garmin/COROS/Polar reviews take weeks). They then **ship in
 a fast-follow order**, not simultaneously:
 
 1. **Strava + Apple HealthKit** — first. Covers most of the US alpha; Strava also
@@ -49,7 +49,7 @@ Two ingestion patterns:
 
 All normalize to our canonical "ice skate" concept + `gpsActivities` (D24). At ingest,
 each activity's trusted path is **spatially resolved to the water body it was on** and
-that `waterBodyId` is stored (D44) — so a skate is findable by **lake name/ID**, not by
+that `waterBodyId` is stored (D44) — so a skate is findable by **water body name/ID**, not by
 geospatial area ("5 miles on Lake Morey", not "5 miles somewhere near here").
 
 **Canonical activity-type mapping** (verify each against current provider docs):
@@ -202,7 +202,7 @@ but the ingestion + AI use must still clear the source's own ToS + consent (Q8).
 
 ## OpenStreetMap data (ODbL) — attribution + compliance
 
-Water-body polygons (Phase 1 ETL, D5/D14) and the Protomaps basemap (D6) both derive from
+Water-body polygons (Phase 01 ETL, D5/D14) and the Protomaps basemap (D6) both derive from
 **OpenStreetMap**, licensed under the **Open Database License (ODbL)**. Treat attribution as
 a **build-time acceptance criterion**, the same class of obligation as "Powered by Strava":
 
@@ -220,19 +220,19 @@ a **build-time acceptance criterion**, the same class of obligation as "Powered 
 
 - Provider: **Open-Meteo** — the **forecast API with `past_days`** (up to 92 days back), free, no API key.
   **Not the historical archive** (ERA5-backed, ~5-day lag) — our windows are all recent, and `past_days`
-  covers both the strip and the longest decay window (≤45 days); see `phase-10-weather.md` §2.
+  covers both the strip and the longest decay window (≤45 days); see `phases/10-weather.md` §2.
 - Use: annotate aging **reports** (window = since the skate time) **and hazards** (window = a rolling
   recent ~5–7 days, since "first reported" is meaningless for a season-long ridge) with what the weather
   has *done*, to support the skater's own judgment. **Never** used to assert ice safety.
 - **Attribution:** show a small "Weather: Open-Meteo" credit wherever the strip appears (legal checklist
   **L13** — same class as "Powered by Strava" / "© OpenStreetMap contributors").
-- ⚠️ **STALE (D127, N7-2):** elevation no longer comes from Open-Meteo. It is USGS **3DEP** via
+- ⚠️ **STALE (D127, A07a-2):** elevation no longer comes from Open-Meteo. It is USGS **3DEP** via
   `epqs.nationalmap.gov` — no key, no quota shared with the product's weather crons, and **98.2% of the
   corpus at 1 m LiDAR** against Copernicus GLO-90's 90 m. Kept below as the reasoning for why we left.
 - **Also Open-Meteo, no account:** the **elevation endpoint** (`/v1/elevation`, Copernicus GLO-90 DEM,
-  batched coordinates) — N6c's lake-elevation pass, ~1,200 requests for all 116,070 centroids.
+  batched coordinates) — A06c's body-elevation pass, ~1,200 requests for all 116,070 centroids.
 
-### The short forward forecast — same call, same quota (N6c/B5b, D140) ✅ **BUILT 2026-08-09**
+### The short forward forecast — same call, same quota (A06c/B5b, D140) ✅ **BUILT 2026-08-09**
 
 - **No new provider and no new quota.** `weather.ts` already sent `forecast_days: '1'` so the series
   covered today's elapsed hours; the forward hours arrived in that same response and were discarded.
@@ -247,13 +247,13 @@ a **build-time acceptance criterion**, the same class of obligation as "Powered 
 - **D3 holds at the copy:** the strip names weather and a clock — *"snow starting around 3pm"* — and
   never the ice. A test greps the rendered line for ice/skate/safe/condition.
 
-### NWS alerts — a second provider that never touches a calculation (D74, N6c) ✅ **BUILT 2026-08-09**
+### NWS alerts — a second provider that never touches a calculation (D74, A06c) ✅ **BUILT 2026-08-09**
 
 - Provider: **`api.weather.gov`** — free, **no account and no API key**, US-only. Requires a `User-Agent`
   header identifying the app; rate limits are unpublished (retry a 429 after ~5 s), and their docs warn a
   key **may** be required in future.
 - Use: **official alerts only** — winter-storm, ice-storm and wind-chill warnings from the local forecast
-  office, rendered as a labelled, attributed advisory strip on the lake drawer.
+  office, rendered as a labelled, attributed advisory strip on the water body drawer.
 - **The boundary is the decision (D74): Open-Meteo computes, NWS informs.** Open-Meteo stays the single
   source for anything feeding a calculation, because the D56 decay math depends on one deterministic,
   re-fetchable input — a multiplier you cannot reproduce is one you cannot debug or refit. **Never blend
@@ -265,16 +265,16 @@ a **build-time acceptance criterion**, the same class of obligation as "Powered 
 - *Considered and rejected:* **MerrySky**, a frontend over Pirate Weather and Open-Meteo — the same data
   we already pull, with no API to buy. Recorded because it looks like a third source and isn't one.
 
-## Satellite imagery — Copernicus (D75, N6c)
+## Satellite imagery — Copernicus (D75, A06c)
 
 - Provider: **Copernicus Data Space Ecosystem**. **Copernicus Sentinel data is under the free, full and
   open Copernicus licence** — reproduce, distribute and adapt, **with attribution**. That licence is what
   retired the long-deferred satellite-layer blocker; the open question was never a missing source.
-- **Ships in N6c: a deep link** to `browser.dataspace.copernicus.eu` per body (centroid, zoom, Sentinel-2
+- **Ships in A06c: a deep link** to `browser.dataspace.copernicus.eu` per body (centroid, zoom, Sentinel-2
   L2A true color, ~14-day window). **No account, no quota, no key.** ⚠ The query-param shape is the one
   URL format we don't control — verify against the live browser and keep it behind a single tested
   function.
-- **Imagery rendered in-app → [N6e](./phase-N6e-satellite-imagery.md) (D84, 2026-07-31)**, and the quota
+- **Imagery rendered in-app → [A06e](./phases/A06e-satellite-imagery.md) (D84, 2026-07-31)**, and the quota
   binds only *one* of two tiers. Sentinel-2 via their Sentinel Hub–compatible OGC/Process APIs is
   **10,000 requests + 10,000 processing units/month, 300/min**; a tile view is ~10–20 requests, so it only
   works with **server-side tile caching** (which the open licence permits — a body needs re-fetching once
@@ -285,7 +285,7 @@ a **build-time acceptance criterion**, the same class of obligation as "Powered 
   and only **PlanetScope** (~3 m, near-daily) is genuinely new. Same Sentinel Hub API surface, so choosing
   Copernicus now is not a lock-out. Numbers + triggers in `05-accounts-and-credentials.md`.
 
-## Aerial imagery — USGS / NAIP (D84, N6e)
+## Aerial imagery — USGS / NAIP (D84, A06e)
 
 The other half of D84's two-tier split, and **the one that ships the satellite toggle**.
 
@@ -302,7 +302,7 @@ The other half of D84's two-tier split, and **the one that ships the satellite t
 - **What it's for, and what it isn't.** Leaf-on summer imagery refreshed every ~2–3 years: **useless for
   reading ice, ideal for reading access** — roads, lots, trailheads and shorelines don't change between
   July and January. It answers *where's the pull-off*, which pairs directly with
-  [N6d](./phase-N6d-lake-access-points.md)'s parking and approach data. Recent-ice questions stay with
+  [A06d](./phases/A06d-body-access-points.md)'s parking and approach data. Recent-ice questions stay with
   Sentinel-2 above.
 - **Caching:** none in v1 — point MapLibre at it and measure. Public-domain imagery may be freely cached,
   so a proxy is available whenever load or latency justifies it, and **it's the same caching layer
@@ -312,14 +312,14 @@ The other half of D84's two-tier split, and **the one that ships the satellite t
   resolution, but five integrations with five sets of terms for a marginal gain over 0.6 m. Revisit state
   imagery only if NAIP proves inadequate for the access use case.)*
 
-## Trail routing — OpenRouteService `foot-hiking` (D87, N6d)
+## Trail routing — OpenRouteService `foot-hiking` (D87, A06d)
 
-**Not a new provider.** Phase 4's drive-time isochrones already run on OpenRouteService (§6 of
+**Not a new provider.** Phase 04's drive-time isochrones already run on OpenRouteService (§6 of
 [`05-accounts-and-credentials.md`](./05-accounts-and-credentials.md)); the `foot-hiking` profile is the
 **same account, key and client**.
 
 - **What it answers:** the founder's *"it could be 800 m as the crow flies but a full kilometer of weaving
-  trail."* ORS routes over the OSM `highway=path` / `route=hiking` ways N6d's second `osmium` pass is
+  trail."* ORS routes over the OSM `highway=path` / `route=hiking` ways A06d's second `osmium` pass is
   already extracting, so the routed distance and the trail data agree by construction.
 - **Elevation gain comes with it.** With `elevation: true` the Directions response carries **`ascent` /
   `descent` in metres** — the second half of the ask, delivered by a request parameter rather than a
@@ -335,7 +335,7 @@ The other half of D84's two-tier split, and **the one that ships the satellite t
   only, tuned for sidewalks; **AllTrails / Gaia / Strava** — trail *content* products with licensed
   geometry and no general point-to-point routing API.)*
 
-## Windy — a link, not an integration (D75/D76, N6c)
+## Windy — a link, not an integration (D75/D76, A06c)
 
 - **No API purchase.** Windy's Map Forecast API is *"a library based on Leaflet 1.4.x"* and tightly coupled
   to it; **we render MapLibre**, so their animated layers cannot be overlaid on our map — €990/year would
@@ -368,7 +368,7 @@ for the water body's coordinates:
   wind_speed_10m, wind_gusts_10m, cloud_cover, sunshine_duration, shortwave_radiation`.
 - **Two consumers, one fetch (Phase 10):** the **descriptive strip** (D19) reads the human
   subset; the **hazard decay model** (D52/D56) reads the degree-hour integrals + freeze-run
-  counts. See `phase-10-weather.md` for the full variable rationale.
+  counts. See `phases/10-weather.md` for the full variable rationale.
 - Present the strip as a compact **plain-text, verdict-free** factual line (e.g. "since this
   report: peak 41°F · low 22°F · 3 nights below freezing · 6h strong sun · ½″ rain"). No
   verdict, no color-coded "safe/unsafe"; degree-hour integrals stay model-internal.

@@ -170,7 +170,7 @@ describe('buildReportInput', () => {
     expect(input.point).toEqual({ lat: 44.4, lng: -73.2 });
   });
 
-  it('carries an optional skate start time when the form holds one (Phase 5)', () => {
+  it('carries an optional skate start time when the form holds one (Phase 05)', () => {
     const start = NOW - 90 * 60 * 1000;
     const input = buildReportInput({ ...BASE, skateStartTime: start }, 'wb1');
     expect(input.skateStartTime).toBe(start);
@@ -238,7 +238,7 @@ describe('resolveSkateWindow', () => {
 });
 
 /**
- * The edit path's load-bearing property (N6f).
+ * The edit path's load-bearing property (A06f).
  *
  * `reports.update` is last-write-wins over the whole content block, so a form seeded with anything
  * less than the stored report **deletes** whatever the author didn't retype. That makes

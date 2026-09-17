@@ -1,5 +1,5 @@
 /**
- * `pnpm --filter @skating/seed-destinations seed [--apply] [--verify-imagery]` (N6c B3a / N6e D).
+ * `pnpm --filter @skating/seed-destinations seed [--apply] [--verify-imagery]` (A06c §2.3a / A06e D).
  *
  * **Two commands, and the default is the safe one.** Without `--apply` this writes a reviewable
  * report and touches nothing — the founder asked to see the seed list before boosts go in, and the
@@ -7,7 +7,7 @@
  * scrolls past.
  *
  * Reads the corpus through `waterBodies:listNamedForSeeding`, applies through
- * `waterBodies:setCuratedBoost` — the existing Phase 7 admin path, so a seeded boost is
+ * `waterBodies:setCuratedBoost` — the existing Phase 07 admin path, so a seeded boost is
  * indistinguishable from a hand-set one and lands in the same audit log the F1 timeline renders.
  */
 
@@ -48,7 +48,7 @@ const IMAGERY_REPORT = fileURLToPath(new URL('../.imagery-report.json', import.m
  *    because people travel to skate them — comes back gated *off*, the constant is wrong, and that
  *    is the finding this run exists to surface.
  * 2. **Is the link built from a point on the water?** `linkCoordinate` prefers `interiorPoint` over
- *    the shoreline `centroid` (N6c-1), and a body still missing one opens the browser on its bank.
+ *    the shoreline `centroid` (A06c-1), and a body still missing one opens the browser on its bank.
  * 3. **Is the host reachable at all**, checked once rather than per body — a rate-limit or an outage
  *    is a fact about the service, not about a lake.
  *
@@ -203,7 +203,7 @@ async function main() {
 
   const logger = new RunLogger({
     kind: 'seed_destinations',
-    label: 'curated destination boosts (N6c B3a/D)',
+    label: 'curated destination boosts (A06c §2.3a/D)',
     ...(campaignId ? { campaignId } : {}),
     target: resolveDeployment(),
     call: convexRun,

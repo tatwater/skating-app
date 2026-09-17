@@ -7,11 +7,11 @@ import schema from './schema';
 const modules = import.meta.glob('./**/*.*s');
 
 /**
- * `waterBodies.matchBathymetryLakes` — the N6b join.
+ * `waterBodies.matchBathymetryLakes` — the A06b join.
  *
- * Shares N6a's seeding and its corpus, and deliberately **not** its resolver. That was the original
+ * Shares A06a's seeding and its corpus, and deliberately **not** its resolver. That was the original
  * design — one notion of "these are the same lake" — and it was wrong in a way only the first real
- * run could show: N6a places a single depth *reading*, where the most specific body containing the
+ * run could show: A06a places a single depth *reading*, where the most specific body containing the
  * point is the answer, and this places a whole *survey*, where it is very often that lake's bay.
  *
  * So the three tests that matter most here are regressions against what shipped, not proofs that a
@@ -30,11 +30,11 @@ describe('waterBodies.matchBathymetryLakes', () => {
         type: 'lakePond' as const,
         source: 'osm' as const,
         externalId,
-        // Required, so no row can exist that search is structurally unable to reach (N7).
+        // Required, so no row can exist that search is structurally unable to reach (A07a).
         searchText: String(extra.name ?? ''),
         // The hand-inserted row has to look like an imported one, or the `importCanonical` call
         // below inserts a SECOND body instead of patching this one — the upsert keys on the
-        // catalogue id now, and a row without one matches nothing (N7 / D93).
+        // catalogue id now, and a row without one matches nothing (A07a / D93).
         osmId: externalId,
         dedupStatus: 'clean' as const,
         createdAt: Date.now(),
@@ -45,7 +45,7 @@ describe('waterBodies.matchBathymetryLakes', () => {
 
   /**
    * A square body centred on `centre`. Inserted for a typed id, then run through `importCanonical`
-   * to build the N1 cell rows — `listedBodiesNearCoord` reads those, so a hand-inserted body is
+   * to build the A01 cell rows — `listedBodiesNearCoord` reads those, so a hand-inserted body is
    * unreachable from any spatial lookup.
    */
   async function seedSquareBody(
@@ -341,7 +341,7 @@ describe('waterBodies.matchBathymetryLakes', () => {
 });
 
 /**
- * **The publisher's crosswalk, as evidence rather than as gospel** (N7-3).
+ * **The publisher's crosswalk, as evidence rather than as gospel** (A07a-3).
  *
  * Maine publishes a MIDAS → NHD crosswalk resolving 5,611 of 5,803 keys, and it settles the question
  * geometry has to guess at: which of several adjacent bodies the state meant. Caribou Lake arriving

@@ -1,5 +1,5 @@
 /**
- * Corpus standing (N7b) — **is this lake one we push at people, or one we merely know about?**
+ * Corpus standing (A07b) — **is this lake one we push at people, or one we merely know about?**
  *
  * ## Why a third tier exists
  *
@@ -30,7 +30,7 @@
  * **Standing is derived, never stored as a whole.** Three of the four tiers already had a field
  * (`reviewStatus` / `dedupStatus`, `removedAt`, `publicAccess.verdict`); this phase adds one more,
  * `dormant`, for the reasons no existing field expresses. One function here reads all of them in one
- * precedence order, so no two fields can disagree about what a body is — the N6f lesson, where a
+ * precedence order, so no two fields can disagree about what a body is — the A06f lesson, where a
  * *derived* demotion had to be re-derived at six scoring sites and every omission un-demoted a lake.
  *
  * ## The retention rule
@@ -205,7 +205,7 @@ export function reactivatesOnEvidence(body: StandingInput): boolean {
  * lookups scan every rung with no zoom cutoff, so a dormant body is found by a track or a tap
  * regardless.
  *
- * This retires N6f's `NO_PUBLIC_ACCESS_DEMOTION` (−2 zoom levels): a `none` body is dormant, and
+ * This retires A06f's `NO_PUBLIC_ACCESS_DEMOTION` (−2 zoom levels): a `none` body is dormant, and
  * dormant is a rung, not a subtraction.
  */
 export const DORMANT_MIN_VISIBLE_ZOOM = 16;

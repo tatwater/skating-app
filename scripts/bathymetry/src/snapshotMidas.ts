@@ -1,5 +1,5 @@
 /**
- * Archive Maine's MIDAS → NHD crosswalk into `.raw/me-midas-crosswalk/` (N7-3).
+ * Archive Maine's MIDAS → NHD crosswalk into `.raw/me-midas-crosswalk/` (A07a-3).
  *
  *   pnpm --filter @skating/bathymetry snapshot-midas [--campaign=<id>] [--refresh]
  *

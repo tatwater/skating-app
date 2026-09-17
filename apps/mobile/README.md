@@ -2,8 +2,8 @@
 
 The **Expo / React Native** app — the primary surface for field ice-reporting (D1/D8).
 Auth-gated tab navigation, themed via shared design tokens, wired to Clerk + Convex + Sentry.
-**Phase 2 F1** built the online map + report loop (native MapLibre map, tap→detail→feed, report
-create with photos); **Phase 2 F2** added the offline draft queue (capture with no signal → flush on
+**Phase 02a §6.1** built the online map + report loop (native MapLibre map, tap→detail→feed, report
+create with photos); **Phase 02a §6.2** added the offline draft queue (capture with no signal → flush on
 reconnect). Newsfeed / Bounties / You stay placeholders for their later phases.
 
 ## Stack
@@ -11,7 +11,7 @@ reconnect). Newsfeed / Bounties / You stay placeholders for their later phases.
 - **Expo SDK 57** (new architecture), **Expo Router** tab navigation (D28), EAS
   dev-client workflow with Continuous Native Generation — no committed `ios/`/`android/`.
 - **Tamagui** for UI, projecting `@skating/design` tokens (D7) — see `tamagui.config.ts`.
-- **`@maplibre/maplibre-react-native`** map (Phase 2 §F): reads the same Protomaps `.pmtiles`
+- **`@maplibre/maplibre-react-native`** map (Phase 02a §6): reads the same Protomaps `.pmtiles`
   basemap as web via the native `pmtiles://` scheme (no Mapbox token), and reuses the web basemap
   style/palette (`src/lib/waterMap.ts`). Detail + report create render in a `@gorhom/bottom-sheet`
   drawer over a persistent map (`app/(tabs)/(map)/`), URL-backed + deep-linkable (`/water/[id]`,
@@ -59,7 +59,7 @@ The Sentry **org and project** are no longer variables: both are committed in
 | `EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY` | client | Clerk client key (`pk_…`) | Clerk dashboard → API keys |
 | `EXPO_PUBLIC_CONVEX_URL` | client | Convex deployment URL | `pnpm convex-dev` / Convex dashboard |
 | `EXPO_PUBLIC_PMTILES_URL` | client | Basemap `.pmtiles` URL (public; **blank ⇒ the Protomaps demo, which is dev-only and expires — it will 404**) | The self-hosted extract's serving URL — the **same value as web's `VITE_PMTILES_URL`**; see [`scripts/basemap`](../../scripts/basemap/README.md) |
-| `EXPO_PUBLIC_BATHYMETRY_PMTILES_URL` | client | Bathymetric-contour `.pmtiles` (N6b) — a *second* archive, added to the style only while a lake drawer is open. **Blank ⇒ the layer never mounts** | Same R2 bucket as the basemap; see [`scripts/bathymetry`](../../scripts/bathymetry/README.md) |
+| `EXPO_PUBLIC_BATHYMETRY_PMTILES_URL` | client | Bathymetric-contour `.pmtiles` (A06b) — a *second* archive, added to the style only while a lake drawer is open. **Blank ⇒ the layer never mounts** | Same R2 bucket as the basemap; see [`scripts/bathymetry`](../../scripts/bathymetry/README.md) |
 | `EXPO_PUBLIC_SENTRY_DSN` | client | Sentry client DSN | Sentry project settings |
 | `EXPO_PUBLIC_OFFLINE_BASEMAP` | client | **Optional, off by default.** `1` enables the unverified Layer-3 offline-basemap spike (`src/lib/offlineBasemap.ts`). Leave blank unless you're actively testing it | n/a — a local flag |
 | `SENTRY_AUTH_TOKEN` | build | Uploads source maps so stack traces symbolicate. **Secret — never commit; store in EAS only** | Sentry → auth tokens |
@@ -131,7 +131,7 @@ setup, from `apps/mobile/`:
    the only value that is actually a secret.
 
 Prerequisites to have ready: an **Expo account**, and (for iOS device builds) **Apple
-Developer** enrollment — both are on the Phase 0 lead-time list.
+Developer** enrollment — both are on the Phase 00 lead-time list.
 
 ## Test / typecheck
 
@@ -141,7 +141,7 @@ pnpm --filter @skating/mobile check-types   # tsc --noEmit
 npx expo-doctor                             # project health
 ```
 
-## Offline draft queue (Phase 2 F2, D30)
+## Offline draft queue (Phase 02a §6.2, D30)
 
 Capture a report with no signal; it flushes on reconnect. The pure heart lives in `@skating/core`
 (a buffered `pointInPolygon` GPS→lake resolver + a checkpointed, idempotent flush state machine),
@@ -149,7 +149,7 @@ so this app is the native adapter:
 
 - **`lib/bodyCache.ts` (Layer 2):** an `expo-sqlite` LRU of recently-viewed body polygons (cached on
   every `waterBodies.get`), so a device GPS fix resolves *which* lake you're on offline via the
-  shared buffered ranker (a ~300 m parking/approach buffer). Reused by Phase 9 hazard capture.
+  shared buffered ranker (a ~300 m parking/approach buffer). Reused by Phase 09a hazard capture.
 - **`lib/draftStore.ts` + `lib/draftPhotos.ts`:** the draft list (`expo-sqlite`) + captured photos
   copied into the document dir (`expo-file-system`, safe from cache eviction).
 - **`lib/flushService.ts` + `OfflineDraftsContext`:** wires the core flush to Convex (idempotent
@@ -160,7 +160,7 @@ so this app is the native adapter:
   (GPS auto-select) and `draft/[id]` (edit) modal routes; the put-in degrades to "use my current
   location" off-map.
 
-**Offline basemap tiles ("Layer 3") are deferred to Phase 9** — report capture needs only *which
+**Offline basemap tiles ("Layer 3") are deferred to Phase 09a** — report capture needs only *which
 lake* + GPS, not a visible basemap; accurate hazard pins will need it. The body cache is designed to
 gain a tile-pack column then.
 

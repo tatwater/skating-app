@@ -2,7 +2,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { H1, Paragraph, YStack } from 'tamagui';
 
 /**
- * Barebones themed placeholder for a Phase 0 route. Each real screen (map, feed,
+ * Barebones themed placeholder for a Phase 00 route. Each real screen (map, feed,
  * report, …) gets deep-dived in its own later-phase PR; for now we just prove the
  * route renders, is themed (D34), and reads safe-area insets.
  */

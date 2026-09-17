@@ -1,5 +1,5 @@
 /**
- * Drift check (N6b) — has an agency republished under our archive?
+ * Drift check (A06b) — has an agency republished under our archive?
  *
  *   pnpm --filter @skating/bathymetry verify [<key>…] [--state=NH]
  *

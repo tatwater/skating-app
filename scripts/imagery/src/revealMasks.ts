@@ -1,5 +1,5 @@
 /**
- * Turning a corpus row into the shape imagery is allowed to show through (N6e PR 2a, D148).
+ * Turning a corpus row into the shape imagery is allowed to show through (A06e PR 2a, D148).
  *
  * ## What this produces, and what it deliberately does not
  *
@@ -38,7 +38,7 @@
  * **The error is not uniform, which is what makes it dangerous.** The ring is a fixed width, so its
  * share of the zone scales with perimeter over area: negligible on Champlain, and on a circular
  * 1-acre pond (r ≈ 36 m) a 60 m buffer is **7× the pond's own area — 86% of that "lake" is land**.
- * That is precisely the size class [N6g](../../../plans/phase-N6g-imagery-research.md) Lane 2 wants to
+ * That is precisely the size class [A06g](../../../plans/phases/A06g-imagery-research.md) Lane 2 wants to
  * eliminate on "never observed frozen", where the surrounding woods would have cast the vote. And for
  * radar it is worse still: forest is the classic bright `VH` target at ~−13 dB against smooth ice near
  * −22 dB, a ~10 dB contaminant sitting on the ~2 dB separation the archive exists to detect.

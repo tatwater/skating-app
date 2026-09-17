@@ -1,5 +1,5 @@
 /**
- * Build the archive's table of contents from what is actually in the bucket (N6e §C2, D149).
+ * Build the archive's table of contents from what is actually in the bucket (A06e §3.2, D149).
  *
  *   pnpm --filter @skating/imagery build-index [--bucket=skating-imagery] [--dry-run]
  *

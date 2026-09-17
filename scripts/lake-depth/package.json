@@ -3,7 +3,7 @@
   "version": "0.0.1",
   "private": true,
   "type": "module",
-  "description": "Manual lake-depth ETL (N6a): LAGOS-US DEPTH + HydroLAKES + GLOBathy \u2192 Convex. Not built or deployed.",
+  "description": "Manual lake-depth ETL (A06a): LAGOS-US DEPTH + HydroLAKES + GLOBathy \u2192 Convex. Not built or deployed.",
   "scripts": {
     "check-types": "tsc --noEmit",
     "test": "vitest run --coverage",

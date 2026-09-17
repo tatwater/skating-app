@@ -1,9 +1,9 @@
-# @skating/etl — OSM water-body ETL (Phase 1)
+# @skating/etl — OSM water-body ETL (Phase 01)
 
 A manual, run-on-demand pipeline that turns a regional **OpenStreetMap** extract into the
 canonical water bodies stored in Convex (`waterBodies`, `source: 'osm'`). This is **not**
 built or deployed with the apps — you run it by hand when seeding or refreshing a region
-(D5 / D14 / D48; see [`plans/phase-1-water-bodies.md`](../../plans/phase-1-water-bodies.md)).
+(D5 / D14 / D48; see [`plans/phases/01-water-bodies.md`](../../plans/phases/01-water-bodies.md)).
 
 Pipeline stages:
 
@@ -61,7 +61,7 @@ pnpm install
 
 ## Data source
 
-The Phase 1 pilot region is **Vermont**, from a single Geofabrik extract (rebuilt daily):
+The Phase 01 pilot region is **Vermont**, from a single Geofabrik extract (rebuilt daily):
 
 - **Extract:** `https://download.geofabrik.de/north-america/us/vermont-latest.osm.pbf`
 - **Checksum:** `https://download.geofabrik.de/north-america/us/vermont-latest.osm.pbf.md5`
@@ -82,7 +82,7 @@ run notes / the PR description so the import is reproducible. A small committed 
 > **This ETL's provenance discipline failed once already, and the failure is recorded below in its
 > own run table: five states, all reading `_(not captured)_`.** Geofabrik rebuilds `-latest` daily,
 > so the exact snapshot behind our 116,070 bodies is gone and cannot be recovered. The instruction to
-> capture it existed since Phase 1; it just wasn't a command anybody ran.
+> capture it existed since Phase 01; it just wasn't a command anybody ran.
 
 ```bash
 pnpm --filter @skating/etl archive              # all five states
@@ -109,7 +109,7 @@ someone runs the transform and loader against a new extract.
 
 ---
 
-## Pinning the NHD snapshot (N7)
+## Pinning the NHD snapshot (A07a)
 
 The second canonical-water catalogue. Same discipline, opposite provenance problem.
 
@@ -185,7 +185,7 @@ manifest each). Every state verified on both checks: exact byte count, and the f
 
 ---
 
-## Pinning the 3DHP snapshot (N7)
+## Pinning the 3DHP snapshot (A07a)
 
 The third canonical-water catalogue, and **the only one of the three with a future**. NHD was retired;
 3DHP is its successor — elevation-derived hydrography where LiDAR exists, NHD elsewhere — published as
@@ -229,7 +229,7 @@ have to infer that.
 ### What 3DHP can and cannot be
 
 **It cannot be the identity spine.** Its waterbody layer carries `id3dhp`, `mainstemid` and `gnisid` —
-and **no `Permanent_Identifier`, no `ReachCode`**. Every reconciliation measurement in the N7 plan
+and **no `Permanent_Identifier`, no `ReachCode`**. Every reconciliation measurement in the A07a plan
 keys on `Permanent_Identifier`, including the five OSM duplicate pairs and the Maine MIDAS linkage. If
 3DHP wins D92 on geometry, it wins as a `geometrySource` value on a record whose identity is still
 OSM ↔ NHD.
@@ -294,7 +294,7 @@ about 2023 with a shelf life; one about OSM or 3DHP is not.
    is only legible if somebody recorded the zeroes.
 4. `pnpm --filter @skating/etl archive --refresh` — a fresh OSM extract for the same run.
 5. `scripts/etl/mirror-3dhp-r2.sh push` and `scripts/etl/mirror-r2.sh push`.
-6. Re-run the campaign from step 2 of the N7 order (reconcile → bake-off → import → prune → the
+6. Re-run the campaign from step 2 of the A07a order (reconcile → bake-off → import → prune → the
    downstream passes). **Nothing metered runs before the prune** — D100.
 7. Append to the run tables below, and re-record the D92 bake-off result. If the geometry winner
    changed, that is a `geometrySource` update per lake, not a re-key: D93 exists so this is a field
@@ -313,7 +313,7 @@ re-derivable, and they are kilobytes.
 > the *corpus* or re-importing one *state's OSM extract*.
 >
 > ```bash
-> ./run-corpus.sh n7-20260807            # N7: three catalogues → the master list → the corpus
+> ./run-corpus.sh n7-20260807            # A07a: three catalogues → the master list → the corpus
 > ./run-canonical.sh n6c-20260802        # OSM-only, per state, from the archived .raw/ extracts
 > ./run-canonical.sh n6c-20260802 vt nh  # …or just some
 > ```
@@ -422,18 +422,18 @@ bodies that knowingly drops.
 
 See [D91](../../plans/01-decisions.md) for why five and not the 25/30/50 that were also on the table,
 why three was rejected, and why a *higher* floor would need a `longAxisM` clause to be safe. Bodies a
-skater creates from a recorded track (Phase 8) never pass through here and are exempt.
+skater creates from a recorded track (Phase 08) never pass through here and are exempt.
 
 The rule itself lives in `@skating/core` (`meetsAreaFloor`), not here, because the ETL is not the
 only thing that applies it — see **[Pruning an already-loaded corpus](#pruning-an-already-loaded-corpus)**.
 
-**`--summary` — the durable copy of what you just watched scroll past (N6c F2).** The same counts,
+**`--summary` — the durable copy of what you just watched scroll past (A06c §6.2).** The same counts,
 plus **every** skipped feature itemized rather than only tallied, as JSON. The loader folds it into
 the `importRuns` row as the `transform` stage, which is what lets `/admin/imports` answer *which
 features did it decline, and why* without re-running the pass. `"3 skipped"` is a number an operator
 can do nothing with.
 
-**`--depths` — OSM depth tags (N6a rung 7).** A second, much smaller NDJSON: the bodies carrying a
+**`--depths` — OSM depth tags (A06a rung 7).** A second, much smaller NDJSON: the bodies carrying a
 `depth` / `maxdepth` / `depth:mean` tag we can read. The parse is deliberately strict — a bare value is
 metres, an explicit `m`/`ft`/`'` converts, and a range (`2-3`), an approximation (`~5`) or anything else
 is refused rather than guessed at, because this is the bottom rung of the D68 ladder and a wrong number
@@ -472,7 +472,7 @@ failures abort, because a streak is a schema mismatch or a dead deployment rathe
 600 more doomed batches would turn a clear error into a slow one. A load that skipped any batch
 closes its run row as `failed` and exits non-zero: reaching the end is not the same as succeeding.
 
-**Run history flags (N6c F2).** Pass these and the load writes one `importRuns` row carrying the
+**Run history flags (A06c §6.2).** Pass these and the load writes one `importRuns` row carrying the
 whole path, readable at `/admin/imports`:
 
 | flag | what it adds to the row |
@@ -482,14 +482,14 @@ whole path, readable at `/admin/imports`:
 | `--manifest=.raw/<state>/manifest.json` | the `extract` stage — resolved Geofabrik URL, build date, size, sha256, whether the published md5 verified |
 | `--transform-summary=<transform.json>` | the `filter` + `transform` stages, including every itemized skip |
 | `--filter-command=<text>` | the exact `osmium` invocation, so the path is reproducible rather than merely described |
-| `--merge-manifest=<path>` | the N7 path's whole upstream — **discovered automatically** when a `merge-manifest.json` sits beside the input, so this flag is only for a relocated artifact |
+| `--merge-manifest=<path>` | the A07a path's whole upstream — **discovered automatically** when a `merge-manifest.json` sits beside the input, so this flag is only for a relocated artifact |
 | `--no-run-log` | opt out; nothing else about the load changes |
 
 `run-canonical.sh` passes the OSM ones; `run-corpus.sh` needs none of them, because the merge writes
 its path and the loader finds it. Bookkeeping is best-effort throughout — a run-history write that
 fails warns and is ignored, never taking the import down with it.
 
-`importCanonical` also **cell-indexes each body** (N1) — one `waterBodyCells` row per grid cell its
+`importCanonical` also **cell-indexes each body** (A01) — one `waterBodyCells` row per grid cell its
 bbox covers, at a rung no finer than the zoom it first draws at — which is what `listInViewport`
 reads. Cells are reconciled, not appended, so a re-import of a redrawn lake moves its rows rather
 than leaving stale ones behind, and re-running the loader is a safe way to repair a body's index.
@@ -501,13 +501,13 @@ Batches are bounded by two limits (see `src/load.ts`):
 - **Reads/mutation:** Convex caps a mutation at 4,096 document reads. This *used* to be the binding
   constraint — each body's geospatial index insert read ~15–20 S2-cell docs, a cost that grew with
   the index size, so a batch fine against an empty index blew the cap once tens of thousands of
-  bodies were loaded. **Since N1 a body costs one `by_body` lookup plus ≤ 4 cell writes, flat
+  bodies were loaded. **Since A01 a body costs one `by_body` lookup plus ≤ 4 cell writes, flat
   regardless of corpus size**, so the ~150-body count cap now has enormous headroom here.
 - **ARG_MAX (now the binding one):** `convex run` takes args only as an inline JSON string, so each
   batch's serialized args are kept under a byte budget (Champlain, ~0.3 MiB, is the only near-solo
   batch).
 
-### 5. Load the OSM depth tags (optional, N6a)
+### 5. Load the OSM depth tags (optional, A06a)
 
 ```bash
 pnpm --filter @skating/etl load-depths .scratch/depths.ndjson
@@ -527,7 +527,7 @@ the rule refuses, applying the same `belongsInCorpus` from `@skating/core` that 
 (which is why the rule lives there and not in `transform.ts` — two copies would drift into a prune
 that shelves rows the next import puts straight back).
 
-> ⚠ **Since N7b every prune *demotes* rather than deletes** (founder call, 2026-09-16: a body the
+> ⚠ **Since A07b every prune *demotes* rather than deletes** (founder call, 2026-09-16: a body the
 > rules refuse *"shouldn't leave our database entirely"*). A refused body becomes **dormant** with
 > reason `not_in_campaign`: on no push surface, drawn only when zoomed right in, still reachable — and
 > back on the active map, flagged `includedByRequest`, the moment somebody reports on it. The 2026-08-02
@@ -551,7 +551,7 @@ so the summary shows why:
 | --- | --- |
 | `clearsFloor` | ≥ 5 ac, or named ≥ 1 ac — the rule itself |
 | `areaUnknown` | `surfaceAreaSqM` is absent; "we can't measure it" is not "it's small" |
-| `userCreated` | `source: 'user'` — a skater drew it from a track they recorded (Phase 8) |
+| `userCreated` | `source: 'user'` — a skater drew it from a track they recorded (Phase 08) |
 | `curated` | an admin set a `curatedBoost` by hand (D49) |
 | `dedupOrMerged` | a merge pointer or non-`clean` dedup status; reads follow the survivor (D36) |
 | `delisted` | `removedAt` is set — a soft-delist carries a reason, sometimes a takedown (D48) |
@@ -588,7 +588,7 @@ pnpm --filter @skating/etl transform fixtures/vermont-sample.geojsonseq .scratch
 
 ---
 
-## The access pass (N6d) — parking, put-ins, and the walk between them
+## The access pass (A06d) — parking, put-ins, and the walk between them
 
 A **second `osmium tags-filter` pass over the same archived extracts** the water pass already pinned.
 No new source, no new download, no new account — and because `.raw/<state>/` is never deleted, its
@@ -624,12 +624,12 @@ as a data-quality finding.
 **2. Half the join is local and half is not, and the split is load-bearing.** Parking↔put-in and
 toilets↔parking are OSM-to-OSM, so they run in the transform where the features are — which is also
 what lets the ORS `foot-hiking` leg be computed there. *Which body* a launch belongs to cannot: the
-transform has no polygons, and post-N7 the merge output is not the loaded corpus. That runs
-server-side in `accessPoints:matchAndImportPutIns` against the N1 cell index, the same shape N6a's
+transform has no polygons, and post-A07a the merge output is not the loaded corpus. That runs
+server-side in `accessPoints:matchAndImportPutIns` against the A01 cell index, the same shape A06a's
 depth join settled on.
 
 **3. ORS is optional but the flag it sets is not.** Set `ORS_API_KEY` in `scripts/etl/.env.local`
-(the same key Phase 4's isochrones use — D87). Without it every approach falls back to straight-line
+(the same key Phase 04's isochrones use — D87). Without it every approach falls back to straight-line
 and is stored `approachRouted: false`, which the drawer renders as *"at least 900 m on foot"* rather
 than *"about"*. Responses are cached in `.scratch/access/ors-cache.json` and written after **every**
 request, so a crash 3,000 requests into a pass does not re-spend the first 2,999.
@@ -652,7 +652,7 @@ and 40/minute; `429` means slow down, `403 {"error":"Quota exceeded"}` means com
 consecutive 403s now trip a circuit breaker — before it existed, one run sent **2,978 requests to an
 endpoint that had already said no**. Fallbacks from a 403/429 are deliberately **not cached**, so a
 later run resumes; only real routes and genuine `404`s ("no path", a stable answer) are archived.
-Quotas are **per-endpoint**, so this cannot starve Phase 4's isochrones. Dashboard:
+Quotas are **per-endpoint**, so this cannot starve Phase 04's isochrones. Dashboard:
 <https://account.heigit.org>.
 
 **2. Pass `marginMeters` to `listedBodiesNearCoord`, always.** The first parking load spent
@@ -661,7 +661,7 @@ defaulted to ~1,113 m for every caller; the parking gate tests 250 m (**20×** t
 gate 30 m (**1,377×**). Convex has no projection, so each candidate read is a whole document with its
 polygon: Champlain's ~300 KB outline was re-read for every lot within a kilometre, 95,294 times.
 
-> The same lesson is in `git log 53a952f` from five days earlier — the N7-3 sounding re-key deleted a
+> The same lesson is in `git log 53a952f` from five days earlier — the A07a-3 sounding re-key deleted a
 > per-point server lookup for exactly this reason and went from 4+ hours to seconds. **If a pass does a
 > spatial lookup per record, check its box before running it at scale.**
 
@@ -682,11 +682,11 @@ let the patchiness argue for hand-entering the rest; that is the trap D70 exists
 
 ---
 
-## Regional expansion (Phase 2.5)
+## Regional expansion (Phase 02b)
 
 To widen the corpus beyond Vermont, run the same pipeline **once per state** — no code change; the
 transform/load already handle multiple states. Full runbook + rationale:
-[`plans/phase-2.5-regional-expansion.md`](../../plans/phase-2.5-regional-expansion.md).
+[`plans/phases/02b-regional-expansion.md`](../../plans/phases/02b-regional-expansion.md).
 
 - **States (per-state Geofabrik extracts, not `us/northeast`):** `new-york`, `vermont`,
   `new-hampshire`, `maine`, `massachusetts`.
@@ -702,7 +702,7 @@ transform/load already handle multiple states. Full runbook + rationale:
   ```bash
   pnpm --filter @skating/etl load .scratch/new-york/bodies.ndjson --state=NY
   ```
-  This powers the map search-result location label + `curatedBoost` disambiguation (Phase 2.5).
+  This powers the map search-result location label + `curatedBoost` disambiguation (Phase 02b).
 - **Border-spanning bodies dedupe automatically** *and* accumulate states. `importCanonical` upserts
   on `source+externalId`, so a lake in two extracts (Lake Champlain in VT *and* NY; Connecticut River
   bays in VT *and* NH) lands as one row and its `states` unions to e.g. `["NY","VT"]` — run order
@@ -713,7 +713,7 @@ transform/load already handle multiple states. Full runbook + rationale:
   and the byte count, and prints the run-table rows already filled in. The manual version of this
   instruction was followed zero times out of five (below), which is why it is now code.
 - **Executed 2026-07-15 (dev):** NH 15,458 · ME 25,541 · MA 30,219 · NY 34,885 inserted (+ VT ~9,970)
-  ≈ 116k bodies, zero read-cap errors. *(Exact count confirmed 2026-07-26 by N1's cell backfill:
+  ≈ 116k bodies, zero read-cap errors. *(Exact count confirmed 2026-07-26 by A01's cell backfill:
   **116,070** bodies.)* Extract builds dated 2026-07-14. **md5s not captured this run**
   — record them per state on the next re-run (dated build no longer retrievable to hash retroactively):
 
@@ -727,7 +727,7 @@ transform/load already handle multiple states. Full runbook + rationale:
 
   **The row above is kept as the record of the failure, not tidied away.** The five `_(not
   captured)_` cells are why `pnpm --filter @skating/etl archive` exists — the instruction was there
-  from Phase 1 and the capture was manual, so it didn't happen. The corpus currently on dev came from
+  from Phase 01 and the capture was manual, so it didn't happen. The corpus currently on dev came from
   these extracts and its exact snapshot is unrecoverable.
 
 **Archived extracts (2026-08-01)** — captured mechanically, all five md5-verified against Geofabrik's
@@ -754,7 +754,7 @@ Two caveats on that number. It counts **additions only** — a name correction o
 on an existing body is invisible to an id diff, and those are plausibly more common than new ponds.
 And it is one state; VT is not obviously representative of NY.
 
-**The practical conclusion is to wait**, for the same reason N6a's depth ETL waits: a canonical
-re-import is the pass that N6c's geometry stats ride (shoreline length, long axis, wind fetch — all
+**The practical conclusion is to wait**, for the same reason A06a's depth ETL waits: a canonical
+re-import is the pass that A06c's geometry stats ride (shoreline length, long axis, wind fetch — all
 of which must be measured on the *pre-simplification* geometry that only this ETL holds). Re-importing
 now for 0.33% would mean a second full pass later for the fields that actually needed one.

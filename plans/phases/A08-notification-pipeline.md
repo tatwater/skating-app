@@ -1,4 +1,4 @@
-# N8 — The notification pipeline: the inbox, the missing producers, and the reverse reach index
+# A08 — The notification pipeline: the inbox, the missing producers, and the reverse reach index
 
 > **Status:** ✅ **COMPLETE (2026-09-15)** — four PRs off `phase-n8-notification-pipeline`, all on
 > dev: **PR 1** (inbox + settled queue + producers B1–B3) #52; **PR 2** (B4/B4a, A5 purge, C
@@ -8,31 +8,31 @@
 > are in for both platforms; the Clerk webhook endpoint + secret are registered on dev. What is
 > still owed is listed under [Deferred](#deferred), and none of it is code this phase left unwritten.
 > Prod deferred with everything else. Scoped 2026-07-30 with a
-> founder call of **no N8 code until every N6 phase has shipped**; N6 closed 2026-09-10.
+> founder call of **no A08 code until every A06 phase has shipped**; A06 closed 2026-09-10.
 > **Scope grew at kickoff (founder, 2026-09-11):** push (Android via FCM now; iOS APNs key once
 > enrolled) and **email** (Resend is live on dev) come *in*, as transports over the same rows — see
 > [What this phase does not cover](#what-this-phase-does-not-cover) for what that changed.
-> **Depends on:** nothing. It touches no water-body data and no N6 surface.
-> **Touches:** `notifications` / `notificationQueue`, `profiles.notificationPrefs`, the Phase 3 comment
-> path, the Phase 7 moderation queue, the Phase 9 hazard-confirmation loop, the Phase 8 recorder, and
+> **Depends on:** nothing. It touches no water-body data and no A06 surface.
+> **Touches:** `notifications` / `notificationQueue`, `profiles.notificationPrefs`, the Phase 03 comment
+> path, the Phase 07 moderation queue, the Phase 09a hazard-confirmation loop, the Phase 08 recorder, and
 > both clients' shells.
-> **Decisions:** logged as **D170–D174** in [`01-decisions.md`](./01-decisions.md) — the numbers this
-> document proposed (D77–D81) were taken by N5c and N6b before it was built. The mapping: D77→**D167**
+> **Decisions:** logged as **D170–D174** in [`01-decisions.md`](../01-decisions.md) — the numbers this
+> document proposed (D77–D81) were taken by A05c and A06b before it was built. The mapping: D77→**D167**
 > (inbox first), D78→**D168** (producer + renderer or no type), D79→**D171** (hazards don't broadcast),
 > D80→**D172** (reverse index filters candidates; deferred), D81→**D169** (settle + re-check).
-> **D173** (`bounty_answered`) was found at kickoff; **D173** is Workstream C's call; **D174** is the
+> **D173** (`bounty_answered`) was found at kickoff; **D173** is Workstream 3's call; **D174** is the
 > transports — see the built records below.
 
 ---
 
 ## Why this is its own pass
 
-The roadmap's N8 entry is two bullets — per-user digest timing and a reverse spatial index — grouped
+The roadmap's A08 entry is two bullets — per-user digest timing and a reverse spatial index — grouped
 because neither needs push credentials. Both are real, both are correctly described, and **neither is
 the thing wrong with the notification pipeline.**
 
-Every phase since Phase 3 has said some version of *"push delivery is deferred; this lands an in-app
-`notifications` row."* Phases 3, 4 and 6 all say it. It is the sentence that made deferring push
+Every phase since Phase 03 has said some version of *"push delivery is deferred; this lands an in-app
+`notifications` row."* Phases 03, 04 and 06 all say it. It is the sentence that made deferring push
 acceptable — the value was supposed to survive the deferral, just quieter.
 
 It didn't. **Nothing in the app can read a notification.** The rows are written and never seen.
@@ -59,13 +59,13 @@ Six notification types are being generated today and have never been visible to 
 
 | Type | Producer | Since |
 |---|---|---|
-| `report_rated` | `ratings.ts:140` (a thumb on your report **or hazard**) | Phase 6 |
-| `report_rated` | `reports.ts:448` (your report was corroborated) | Phase 6 |
-| `bounty_request` | `bounties.ts:662` (a bounty on a lake you recently reported) | Phase 6 |
-| `bounty_fulfilled` | `bounties.ts:760` (your bounty was answered) | Phase 6 |
-| `favorite_report` | `notifications.ts` flush | Phase 4 |
-| `nearby_report_digest` | `notifications.ts` flush | Phase 4 |
-| `great_report_nearby` | `notifications.ts` flush | Phase 4 |
+| `report_rated` | `ratings.ts:140` (a thumb on your report **or hazard**) | Phase 06 |
+| `report_rated` | `reports.ts:448` (your report was corroborated) | Phase 06 |
+| `bounty_request` | `bounties.ts:662` (a bounty on a water body you recently reported) | Phase 06 |
+| `bounty_fulfilled` | `bounties.ts:760` (your bounty was answered) | Phase 06 |
+| `favorite_report` | `notifications.ts` flush | Phase 04 |
+| `nearby_report_digest` | `notifications.ts` flush | Phase 04 |
+| `great_report_nearby` | `notifications.ts` flush | Phase 04 |
 
 That is the phase. Everything else here is smaller.
 
@@ -74,14 +74,14 @@ That is the phase. Everything else here is smaller.
 `NOTIFICATION_TYPES` and `NOTIFICATION_PREF_KEYS` (`lib/enums.ts`) are ten long and kept in lockstep, so
 `/settings` renders ten toggles. Four of them cannot fire:
 
-- **`report_commented`** — deliberate and documented (`comments.ts:8,40`, D21/Phase 3).
+- **`report_commented`** — deliberate and documented (`comments.ts:8,40`, D21/Phase 03).
 - **`hazard_confirmation`** — never produced. The string is *also* used by
-  `packages/core/src/hazardQueue.ts:95,161` for the Phase 9.5 on-ice **local** alert queue, which never
+  `packages/core/src/hazardQueue.ts:95,161` for the Phase 09b on-ice **local** alert queue, which never
   touches this table. One name, two mechanisms, no connection between them.
 - **`content_flag_resolved`** — never produced. `moderation.resolveFlag` (`moderation.ts:95`) writes the
   terminal status and an audit row, and tells the flagger nothing.
 - **`activity_detected`** — never produced, and *its source was cut*: D24 framed it as "an ice-skate
-  detected on any linked provider", and Phase 8 replaced provider **pull** ingest with our own recorder
+  detected on any linked provider", and Phase 08 replaced provider **pull** ingest with our own recorder
   plus a Strava **push** (L7). What remains is a narrower and better-defined case — see B4.
 
 D16 says every type is toggleable. It is satisfied on paper while **four of the ten toggles are inert
@@ -101,7 +101,7 @@ exists.
 
 - The **reverse index** is a cost optimization with no user-visible effect until the app has enough
   profiles for the walk to cost real money. Today the fan-out pages 200 profiles at a time
-  (`FANOUT_PAGE_SIZE`), self-continuing, off the write path since N1. With dozens of users it is one
+  (`FANOUT_PAGE_SIZE`), self-continuing, off the write path since A01. With dozens of users it is one
   page.
 - **Per-user digest timing** has nothing to derive a timezone from. `profiles` stores `homeCoord`
   (optional, private) and no timezone field. `nextZonedHourMs` (`core/schedule.ts`) is already per-call
@@ -112,9 +112,9 @@ Neither is wrong. Both are behind the inbox in every ordering that a user would 
 ### Correction 5: the hazard channel is already decided, and it isn't this one
 
 Hazards generate **no** `notifications` rows at all — `hazards.ts` contains no notification code. That
-looks like an omission and isn't: Phase 9.5 made the hazard channel a client-side **proximity** alert
+looks like an omission and isn't: Phase 09b made the hazard channel a client-side **proximity** alert
 fired while you're on the ice, deliberately local and offline-capable. Founder call, 2026-07-30:
-**keep it that way** (D79). A push about a hazard on a lake you are not standing on is a different
+**keep it that way** (D79). A push about a hazard on a water body you are not standing on is a different
 product decision, and not this phase's.
 
 The distinction that survives: **author-directed** hazard notifications are in scope (B2 — someone
@@ -127,7 +127,7 @@ confirmed or disputed *your* hazard), because that's feedback on your own contri
 ### D77 — A notification nobody can read is not deferred delivery, it's a dropped feature
 
 Push is a **transport**. The in-app row was always meant to be the product, and every "delivery
-deferred" note since Phase 3 assumed a surface that reads the table. Until that surface exists, six
+deferred" note since Phase 03 assumed a surface that reads the table. Until that surface exists, six
 notification types are dead code with a settings page in front of them.
 
 **So the inbox ships first**, and from here on the rule is: *a notification type may not be added
@@ -144,7 +144,7 @@ channel that can't fire.
 ### D79 — Hazards do not broadcast; on-ice proximity remains the hazard channel
 
 Founder call, 2026-07-30. A hazard alert is a *presence* signal — it matters when you're on that ice,
-which is exactly what Phase 9.5 built, offline and without a server round trip. Adding a "new hazard
+which is exactly what Phase 09b built, offline and without a server round trip. Adding a "new hazard
 near you" push would put safety content on the least reliable transport we have (deferred, throttled by
 iOS at its discretion, D54) for a skater who by definition isn't there.
 
@@ -155,11 +155,11 @@ contribution is not a broadcast.
 
 The fan-out's cost is that it *examines* every profile. It is not that it examines them wrongly: each
 check is a real polygon test (`bandForCoord`, `core/driveTime.ts:50`) against that viewer's own cached
-isochrones. A cell index can cheaply say *"these profiles could plausibly reach this lake"* — it cannot
+isochrones. A cell index can cheaply say *"these profiles could plausibly reach this water body"* — it cannot
 say who qualifies, because a bbox is not a band.
 
 So the index returns **candidates**, and the exact test still runs per candidate — the same discipline
-N1 established for `waterBodyCells`, where cells cover a bbox and the caller still filters. And because
+A01 established for `waterBodyCells`, where cells cover a bbox and the caller still filters. And because
 a missing index row is a **silent** non-delivery (D5: a silent wrong answer is worse than a slow one),
 the index ships with a reconciliation path and a measured comparison against the walk before the walk
 is retired.
@@ -189,27 +189,27 @@ the *trigger* that the flush already applies to the *recipient*.
 **One consequence worth stating:** the queue becomes the only path into `notifications`. That is also
 what a push sender needs later — one place to add a transport, rather than six insert sites.
 
-## Workstream A — The inbox (the deliverable)
+## §1 — The inbox (the deliverable)
 
-### A1 — The read path
+### §1.1 — The read path
 
 Three functions in `notifications.ts`, all public:
 
 - **`list`** — paginated over `by_user`, newest first, for the signed-in user only. Paginated rather
   than capped: a year-old notification history is unbounded, and `.collect()` on a per-user table is
-  the pattern N1 spent a phase removing.
+  the pattern A01 spent a phase removing.
 - **`unreadCount`** — for the badge. Add an index on `['userId', 'readAt']` and query
   `eq('userId', me).eq('readAt', undefined)`. Worth being explicit, because this repo has been bitten
   here: an index on an optional field is **not sparse**, and `undefined` sorts before every number — but
   that trap is about **range** bounds (`lte`), and this is an **equality**, which is exactly the shape
-  that behaves. (See the N3 finalize-cron bug in [`phase-N3-N4-account-lifecycle.md`](./phase-N3-N4-account-lifecycle.md).)
-  If the count proves hot, the fallback is a denormalized counter on `profiles` in the Phase 4
+  that behaves. (See the A03 finalize-cron bug in [`phases/A03-A04-account-lifecycle.md`](./A03-A04-account-lifecycle.md).)
+  If the count proves hot, the fallback is a denormalized counter on `profiles` in the Phase 04
   contribution-counter pattern — but measure first.
 - **`markRead`** — stamp `readAt` on one row or on everything up to a timestamp. Owner-only.
 
 Rows already die with the account (`accountDeletion.ts:537`); their *own* retention is A5.
 
-### A2 — The resolver, and why it's the actual work
+### §1.2 — The resolver, and why it's the actual work
 
 A notification row is ids in a `v.any()` payload. Rendering "Ellie found your report on Lake Morey
 helpful" means resolving those ids, and the resolution has to survive the content having changed since:
@@ -220,16 +220,16 @@ helpful" means resolving those ids, and the resolution has to survive the conten
 - **The actor may have departed.** Under the D62 second amendment they're anonymized, not erased, so
   the existing `{ displayName: 'Unknown', … }` shape from `reports`/`comments`/`bounties` is reused —
   not reinvented.
-- **The actor may be blocked.** Block == mute (Phase 3): a block doesn't hide content, but it must not
+- **The actor may be blocked.** Block == mute (Phase 03): a block doesn't hide content, but it must not
   ring your phone. The inbox filters actor-keyed notifications through `loadBlockedAuthorIds`
   (`lib/reportVisibility.ts`) at **read** time, so an old block applies to old rows too.
 - **`report_rated` needs discriminating** (Correction 3) — one type, two shapes, and hazards riding the
   report-shaped channel. The resolver is where that gets typed; the alternative is two clients guessing.
 
 Batch-load per page. One notification page must not become N round trips — the N+1 shape that
-`contradictionCluster` hid inside N1's read path.
+`contradictionCluster` hid inside A01's read path.
 
-### A3 — Where it renders
+### §1.3 — Where it renders
 
 - **Web:** a bell in `AppShell.tsx` (:41 is the existing nav row) with an unread dot, opening
   `/notifications`. A route, not a popover-only surface, so it's linkable and testable.
@@ -245,18 +245,18 @@ Batch-load per page. One notification page must not become N round trips — the
 Both surfaces read the same three functions and the same resolver output, so "web and mobile agree" is
 structural rather than a review checklist item.
 
-### A4 — What the inbox must not become
+### §1.4 — What the inbox must not become
 
-Not a feed. The newsfeed (Phase 5) is the place for *what happened on the ice*; the inbox is *what
+Not a feed. The newsfeed (Phase 05) is the place for *what happened on the ice*; the inbox is *what
 happened to you and your contributions*. If a notification type would be equally at home in the feed, it
 probably belongs there instead — which is most of the argument for D79.
 
-### A5 — Retention: the inbox empties at the season boundary
+### §1.5 — Retention: the inbox empties at the season boundary
 
-Founder call, 2026-07-30: **purge notifications each July**, on N5a's season rollover (July 1, D63).
+Founder call, 2026-07-30: **purge notifications each July**, on A05a's season rollover (July 1, D63).
 
 It's the right clock rather than a convenient one. Every notification we generate is about a *moment* —
-someone thumbed your report, a bounty opened on a lake, three lakes near you had new ice. None of that
+someone thumbed your report, a bounty opened on a water body, three water bodies near you had new ice. None of that
 survives a summer, and a July inbox holding February's ice reports is landfill with a badge on it.
 Reusing the season boundary also means no new concept: D66 already expires a departed skater's
 condition photos on exactly this line, for exactly this reason.
@@ -272,14 +272,14 @@ read one, not more — keeping it would be the only mechanism in the app that tr
 more durable than an opened one. Delete both.
 
 **One consequence to state rather than discover:** this makes the inbox non-archival. If someone wants
-the record of what happened to their contributions, that's the **data export** (N3), which reads the
+the record of what happened to their contributions, that's the **data export** (A03), which reads the
 live tables — not the inbox.
 
 ---
 
-## Workstream B — The four missing producers (D78)
+## §2 — The four missing producers (D78)
 
-### B1 — `report_commented`
+### §2.1 — `report_commented`
 
 **Trigger:** `comments.create` (`comments.ts`), after the insert. Notify the **report author**, and for
 a reply, also the **parent comment's author**.
@@ -294,11 +294,11 @@ gives *"3 new comments on your report"* instead of three rows. This is reuse of 
 machinery — the queue was designed generically and has only ever had report buckets in it.
 
 **Already handled elsewhere:** a departed author. `setNotificationPrefs` carries a note about a ghost's
-kept reports still drawing comments while the mute switch is closed (N5a review, item 3); the answer
+kept reports still drawing comments while the mute switch is closed (A05a review, item 3); the answer
 landed in `canReceiveNotifications` at both enqueue *and* flush (`notifications.ts:261–279`). B1 inherits
 both gates by using the same path.
 
-### B2 — `hazard_confirmation`
+### §2.2 — `hazard_confirmation`
 
 **Trigger:** `hazardConfirmations.confirm` (`hazardConfirmations.ts:56`) → notify
 `hazard.createdByUserId`.
@@ -331,7 +331,7 @@ history, so it costs a find-and-replace plus its tests. `confirmation_vote` says
 outbound. The notification type stays, because renaming it means touching `NOTIFICATION_TYPES`, the
 `notificationPrefs` object on every profile, and any stored row.
 
-### B3 — `content_flag_resolved`
+### §2.3 — `content_flag_resolved`
 
 **Trigger:** `moderation.resolveFlag` (`moderation.ts:95`) → notify `flag.flaggerId` that their report
 was actioned or dismissed.
@@ -371,9 +371,9 @@ only when `origin === 'user'`* — absent reads as auto. That is the fail-quiet 
 notification is invisible, an unexpected one about a report you never filed is alarming, and the
 un-notified backlog is finite and historical either way.
 
-### B4 — `activity_detected`, re-derived from a source that exists
+### §2.4 — `activity_detected`, re-derived from a source that exists
 
-D24's premise — "detected on any linked provider" — was retired with the Phase 8 pivot to push (L7), and
+D24's premise — "detected on any linked provider" — was retired with the Phase 08 pivot to push (L7), and
 the remaining watch adapters are stuck behind approval queues (L8). Building the type against that
 premise means building nothing.
 
@@ -393,7 +393,7 @@ sparse-index trap here.
 L8, and the type's description in `06-data-model.md:61` ("on ANY linked provider") should be corrected
 when this lands rather than left to imply a capability we cut.
 
-#### B4a — One skate, several sources: dedup before the prompt (founder ask, 2026-07-30)
+#### §2.4a — One skate, several sources: dedup before the prompt (founder ask, 2026-07-30)
 
 Someone can connect two things that both saw the same session — most plausibly a watch **and** an
 aggregator, e.g. Garmin plus Apple HealthKit, where HealthKit is re-exporting the Garmin recording. One
@@ -411,7 +411,7 @@ double notification.
 (equal, or one unresolved). Two recordings of one skate rarely share timestamps — a watch trims
 differently, a phone starts in the parking lot — so a start-time equality test would miss most real
 duplicates. Overlap plus a start within ~10 minutes is the shape; both constants are tunable with tests,
-and both want one round of eyeballing against real dual-source data, the way N6d's 250 m parking radius
+and both want one round of eyeballing against real dual-source data, the way A06d's 250 m parking radius
 does.
 
 **The precedence ladder (D68's discipline, second application).** Keep the best copy, and keep it *as*
@@ -439,12 +439,12 @@ first, then notifies **once, on the winner**. That's the same idea as D81 below,
 
 ---
 
-## Workstream E — Settle before you send (D81)
+## §5 — Settle before you send (D81)
 
 *Lettered E because it arrived after the first pass; it **sequences with B**, since it changes the shape
 every producer is written to.*
 
-### E1 — Route every producer through the queue
+### §5.1 — Route every producer through the queue
 
 Six insert sites write `notifications` directly today — `ratings.ts:140`, `reports.ts:448`,
 `bounties.ts:662` and `:760`, plus the two in the flush. Under D81 the first four become `enqueue`
@@ -460,7 +460,7 @@ Coalescing keys on `(recipient, target, kind)`, so five thumbs inside a minute b
 found this helpful"* rather than five rows. That is the same `coalesceKey` shape the report buckets
 already use.
 
-### E2 — What "still true?" means, per type
+### §5.2 — What "still true?" means, per type
 
 The flush loads the trigger and drops the row if it no longer holds:
 
@@ -479,7 +479,7 @@ which enqueues its own row.
 queue row (coalesced) whose trigger re-reads as `helpful` at flush ⇒ exactly one notification. Helpful →
 unhelpful ⇒ the row is dropped, and the author is never told about a thumb that isn't there.
 
-### E3 — Where it doesn't apply
+### §5.3 — Where it doesn't apply
 
 The digest and `activity_detected` already wait far longer than any settle window — to 8pm and to the
 pending sweep respectively — so they inherit the re-check (B4a's dedup is the same idea at hours rather
@@ -487,7 +487,7 @@ than seconds) and need no debounce of their own.
 
 ---
 
-## Workstream C — Per-user digest timing
+## §3 — Per-user digest timing
 
 Today: `DIGEST_HOUR = 20`, `DIGEST_TIMEZONE = 'America/New_York'` (`notifications.ts:36–37`), applied
 identically to everyone.
@@ -501,7 +501,7 @@ also keeps this workstream a data change plus one argument, rather than a new pr
 fan-out has the recipient's profile in hand when it computes `flushAfter` — so it becomes
 `nextZonedHourMs(now, hour, profile.timezone ?? DIGEST_TIMEZONE)`. The work is the data.
 
-### C1 — Where a timezone comes from
+### §3.1 — Where a timezone comes from
 
 | Option | Cost | Problem |
 |---|---|---|
@@ -517,7 +517,7 @@ web-only user turns out to matter.
 **Privacy note:** a coarse timezone is a much weaker signal than `homeCoord`, which we already hold and
 treat as private. It carries no new exposure, and it doesn't go on a public profile.
 
-### C2 — True sunset: **dropped** (founder call, 2026-07-30), and the reason is the season
+### §3.2 — True sunset: **dropped** (founder call, 2026-07-30), and the reason is the season
 
 The roadmap named "true-sunset" timing as the deferred idea, so it gets a recorded answer rather than a
 quiet disappearance. Sunset in Vermont is **~16:20 in early January** and ~20:30 in late June. A digest
@@ -528,7 +528,7 @@ the one we want.
 A fixed 20:00 needs no astronomical calculation, no per-body sunrise/sunset fetch, and no explanation to
 a user about why their digest moved. **8pm local, everywhere.**
 
-### C3 — The edge worth writing down
+### §3.3 — The edge worth writing down
 
 `flushAfter` is stamped at **enqueue**, so a user who changes timezone between enqueue and 8pm gets one
 digest at the old target. That's acceptable and should be a comment, not a mechanism: the alternative is
@@ -538,17 +538,17 @@ failure direction is "slightly early", not "never".
 
 ---
 
-## Workstream D — The reverse reach index
+## §4 — The reverse reach index
 
 ### D1 — What it replaces, precisely
 
 `fanOutNearbyNotifications` paginates **the entire `profiles` table** per report and runs `bandForCoord`
-on each row. Cost is `users × reports`. It is bounded, self-continuing and off the write path (N1) —
+on each row. Cost is `users × reports`. It is bounded, self-continuing and off the write path (A01) —
 it is not a crash risk, it is a bill.
 
-### D2 — The shape, using machinery N1 already built
+### D2 — The shape, using machinery A01 already built
 
-N1 left a general ladder-grid toolkit: `core/spatialCells.ts` (`cellForPoint`, `indexLevelFor`,
+A01 left a general ladder-grid toolkit: `core/spatialCells.ts` (`cellForPoint`, `indexLevelFor`,
 `scanLevels`), `lib/cellIndex.ts` (`diffCells`, the three `sync*Cells` writers) and `lib/cellScan.ts`
 (`scanCells`). A fourth index is the same pattern pointed at users instead of water:
 
@@ -579,10 +579,10 @@ Three guards, all cheap:
    makes a pref toggle a *reindex trigger*. Get that wrong and turning notifications on silently does
    nothing.
 2. **A reindex stamp with a required field.** `reachIndexedAt` as an **optional** field read with a
-   range bound is the exact N3 trap (`undefined` sorts first ⇒ `lte(cutoff)` matches everything). Use a
+   range bound is the exact A03 trap (`undefined` sorts first ⇒ `lte(cutoff)` matches everything). Use a
    required field with a sentinel, or an equality on a version literal.
 3. **Prove it before retiring the walk.** Run both paths and compare recipient sets on real reports —
-   the `waterBodies:viewportReadStats` posture from N1, where the claim stays checkable instead of
+   the `waterBodies:viewportReadStats` posture from A01, where the claim stays checkable instead of
    trusted. Keep the walk as a flagged fallback until the comparison is clean.
 
 ### D4 — Do this when
@@ -636,7 +636,7 @@ producer enqueues with `SETTLE_MS = 60 s` and a typed `trigger` the flush re-rea
    "straddles the cap ⇒ two digests" edge is gone, with nothing re-run. The founder's first
    framing ("drop the user, reset the pointer to the start of them, re-run in full") assumed a
    contiguity the scan doesn't have; the per-user index gives the same guarantee without it.
-1. **The plan miscounted the toggles.** Both settings pages rendered *three* (the Phase-4 set), not
+1. **The plan miscounted the toggles.** Both settings pages rendered *three* (the Phase-04 set), not
    ten. They now iterate `NOTIFICATION_PREF_ORDER` from `@skating/core`, where the vocabulary, the
    labels and `describeNotification` (the sentence both clients render) now live.
 2. **`bounty_fulfilled` was misdescribed** — it went to the fulfiller, and nobody told the requester a
@@ -666,14 +666,14 @@ producer enqueues with `SETTLE_MS = 60 s` and a typed `trigger` the flush re-rea
    never-seen rows; the resolver types it at the boundary and the season purge retires the old shapes.
 7. **`unreadCount` answers 0 without a profile** rather than throwing — both shells subscribe from a
    layout that can render a frame before the row exists.
-8. **Workstream D is deliberately unbuilt** (D172). Dev has three profiles.
+8. **Workstream 4 is deliberately unbuilt** (D172). Dev has three profiles.
 9. **`bounties.answeredByMyReport`** backs the post-submit "at least N skaters were looking forward to
    it" line on both report-detail views; it answers 0 to anyone but the author.
 
 ## Built record — PR 2 (2026-09-11)
 
 **Shipped:** B4 (`gpsActivities.sweepUnpromptedActivities`, hourly; `by_prompt_state_detected` index;
-`ACTIVITY_PROMPT_DELAY_MS = 3 h`), B4a (`core/activityDedup.ts` — overlap + 10-minute start window +
+`ACTIVITY_PROMPT_DELAY_MS = 3 h`), §2.4a (`core/activityDedup.ts` — overlap + 10-minute start window +
 compatible body, the four-rung ladder, `supersededByActivityId`, the link moves to the winner; the
 sweep runs it per user over that user's recent rows, not only the due ones), A5
 (`storageHygiene.purgeLastSeasonNotifications`, daily, `notifications.by_created_at`), C
@@ -727,8 +727,8 @@ p.timezone ?? DIGEST_TIMEZONE)`). Logged as **D173**.
    already in from pass 5. *Second pass (xhigh):* a late `linkActivityToReport` follows the dedup
    chain to the winner, stopping short of a path-less one or one already reported (it links the copy
    it was filed from — the sweep's own can't-move state); the sweep's move refuses a path-less winner
-   and carries the loser's lake onto an unresolved one; dedup body-matching considers every body a
-   spanning skate touched. Also: `PastWeatherPanel.test.tsx` (N6h) waited on a heading that renders
+   and carries the loser's water body onto an unresolved one; dedup body-matching considers every body a
+   spanning skate touched. Also: `PastWeatherPanel.test.tsx` (A06h) waited on a heading that renders
    in the loading state too, then asserted synchronously — a race a slow CI runner lost; it now
    waits for the loading line to clear.
 
@@ -752,7 +752,7 @@ Web: the two channel checkboxes. `app.config.ts` picks up `google-services.json`
 **Founder tasks to make it live** (none block the merge; the code is credential-blind):
 1. Firebase project → `google-services.json` → EAS file env `GOOGLE_SERVICES_JSON` + FCM V1 key via
    `eas credentials`; new Android build. Recipe in
-   [`05-accounts-and-credentials.md`](./05-accounts-and-credentials.md) §11.
+   [`05-accounts-and-credentials.md`](../05-accounts-and-credentials.md) §11.
 2. `eas credentials` → iOS → push key (Apple Developer account is enrolled). Untestable without an
    iPhone; the code path is identical.
 3. Confirm the Clerk `convex` JWT template maps `email` (the default does). If not, the sender's
@@ -781,7 +781,7 @@ same afternoon — and the JWT template was never the problem (it maps `email`; 
 Clerk fallback hid it (one lookup per person, cached onto the row), but a cached address is exactly
 what goes stale when someone changes it. `profiles.syncFromClerk` — claims only, no identity args,
 fail-soft, the same never-un-scrub guard — now fires beside `setTimezone` in both shells, and picks
-up the avatar mirror (`profileImageUrl`), which had had the same hole since Phase 3. Founder task #3
+up the avatar mirror (`profileImageUrl`), which had had the same hole since Phase 03. Founder task #3
 above is therefore closed in the other direction: the template was right, the caller was missing.
 
 **Built — change-email on both clients, and the Clerk `user.updated` webhook that goes with it.**
@@ -823,14 +823,14 @@ neither is complete without the other:
   or nothing — the first address on an account mid-change is the unverified one it just added.
 
 **Founder task, per Clerk instance:** register the endpoint and set `CLERK_WEBHOOK_SIGNING_SECRET`
-— recipe in [`05-accounts-and-credentials.md`](./05-accounts-and-credentials.md) §11b. Until then
+— recipe in [`05-accounts-and-credentials.md`](../05-accounts-and-credentials.md) §11b. Until then
 the route answers 500 and the launch-time sync is the only refresh.
 
 **Not yet exercised.** No `notifications` row on dev carries `pushedAt` or `emailedAt` — the rows
 that exist predate PR 3 — and no profile has an `emailUnsubscribeSecret`, which is minted on the
 first mail. So the 2026-09-14 Android push proved the credentials, not `flush → deliverBatch`; the
 `/unsubscribe` route has never been hit outside tests. One deliberate trigger from a second account
-(a thumb for the push-only path, a bounty on a lake the founder reported for the email path) is the
+(a thumb for the push-only path, a bounty on a water body the founder reported for the email path) is the
 outstanding smoke.
 
 **Credentials are complete on both platforms** — FCM V1 key, `google-services.json` and the APNs
@@ -843,12 +843,12 @@ background is all opaque. Now `['expo-notifications', { icon, color }]` with a w
 96 px wordmark tinted in the ice accent (`ice[500]`); native config, so it rode a preview rebuild
 that also carried the post-Greptile JS and `syncFromClerk` to the phone.
 
-**Coverage.** Every N8 file is at 100% lines except two dead-by-construction spots left dark on
+**Coverage.** Every A08 file is at 100% lines except two dead-by-construction spots left dark on
 purpose (`notifications.ts:452`, a digest row with no body the enqueue never writes; the five
 TypeScript-narrowing fallbacks in `mergeTriggers`). `lib/clerkEmail.ts` had had no test file at all.
 Branch coverage was deliberately *not* chased past that: the remaining partials are `??` and spread
 fallbacks whose other side can't happen, and pinning them would mean writing rows the code can't
-produce. The one reachable case — a skate the recorder couldn't place on a lake — was added.
+produce. The one reachable case — a skate the recorder couldn't place on a water body — was added.
 
 **Founder tasks closed this PR:** Android small icon (needed an asset — arrived inverted the first
 time, wordmark transparent and surround white, flipped in place; then re-cut heavier), preview
@@ -856,14 +856,14 @@ build `a09708e6`, the Clerk webhook endpoint + `CLERK_WEBHOOK_SIGNING_SECRET` on
 
 ## Deferred
 
-Everything N8 still owes, in the order it should happen. None of it is unwritten code; each is a
+Everything A08 still owes, in the order it should happen. None of it is unwritten code; each is a
 run, an install, a decision, or a scale trigger.
 
 1. **The end-to-end smoke of `flush → deliverBatch` on dev.** No `notifications` row on dev has
    ever carried `pushedAt` or `emailedAt`, and no profile has an `emailUnsubscribeSecret` (minted
    on the first mail) — the 2026-09-14 Android push proved the credentials with a direct call, not
    the pipeline. One deliberate trigger from a second account: a thumb on a founder report (the
-   push-only path) and a bounty on a lake the founder has reported (the email path, and the first
+   push-only path) and a bounty on a water body the founder has reported (the email path, and the first
    real `/unsubscribe` link). Then check the stamps, the secret, and the inbox at `updates@…`.
 2. **Install preview build `a09708e6`** on the Pixel — it carries the small icon, `syncFromClerk`
    and the post-Greptile JS. The first push after install is what shows the icon.
@@ -873,16 +873,16 @@ run, an install, a decision, or a scale trigger.
    fixtures.
 4. **iOS** is untested end to end for want of an iPhone; the code path is the Android one and the
    APNs key is on EAS. The first iOS build needs `eas device:create` + a distribution cert.
-5. **Prod cutover items that are N8's:** a webhook endpoint in the *prod* Clerk instance pointing
+5. **Prod cutover items that are A08's:** a webhook endpoint in the *prod* Clerk instance pointing
    at `diligent-guanaco-965.convex.site` and its own `CLERK_WEBHOOK_SIGNING_SECRET`;
    `EXPO_ACCESS_TOKEN`, `RESEND_API_KEY` / `RESEND_FROM_EMAIL` and `WEB_APP_URL` on prod Convex;
    the `production` EAS environment populated. Per-instance, nothing carries over from dev
-   (`docs/deployment-and-release.md`, cutover list 6–7b).
+   (`docs/deployment-and-release.md`, cutover list 6–07-2).
 6. **A `user.deleted` policy for a live account.** The webhook acknowledges and logs it; our own
    finalization deletes the Clerk user *after* the tombstone, so the ordinary arrival is a no-op.
    A founder deleting a live user from the Clerk dashboard leaves a profile the D62 lifecycle never
    started on. Founder call whether that should begin the deletion request automatically.
-7. **The reverse reach index** (Workstream D / D172) — build at ~1,000 profiles, or the first
+7. **The reverse reach index** (Workstream 4 / D172) — build at ~1,000 profiles, or the first
    report whose fan-out spans more than a handful of pages. Design is complete above.
 8. **Web push** — service worker, VAPID keys, a second token type. Web = inbox + email until then.
 9. **Silent background-refresh push to a closed app** (D54) — a privacy decision (the biggest
@@ -911,7 +911,7 @@ exclusions are struck rather than deleted, so the reasoning survives.*
   email.
 - **Offline.** Mobile only, and for the inbox only *reading*: the last page and the unread count are
   cached in SQLite (the `reportCache` pattern), mark-as-read applies locally and replays. The hazard
-  channel is already offline by construction (Phase 9.5), which is the offline case that matters.
+  channel is already offline by construction (Phase 09b), which is the offline case that matters.
 - **Notification grouping across types.** One digest already groups bodies within itself
   (`flushNotificationQueue`); grouping *across* types is a UI question that needs a real inbox to answer.
 
@@ -936,7 +936,7 @@ exclusions are struck rather than deleted, so the reasoning survives.*
 8. **D — the reverse reach index.** Last, and only past its trigger (D4). It changes no behavior when
    it works, which is precisely why it goes after everything that does.
 
-Steps 1–3 are a shippable phase on their own. If N8 has to be cut short, cut from the bottom.
+Steps 1–3 are a shippable phase on their own. If A08 has to be cut short, cut from the bottom.
 
 ---
 
@@ -948,7 +948,7 @@ because the *reasoning* is what a later reader needs:
 1. **Where the inbox lives on mobile** → **You tab → bell at the top of the profile page → the list**,
    with an unread **dot on the avatar** in the tab bar. No sixth tab; D28's five stand (A3).
 2. **`hazard_confirmation` cadence** → **lifecycle transitions, never per vote** (B2).
-3. **Retention** → **purge every July**, on N5a's season boundary. Not a TTL — the same clock D66
+3. **Retention** → **purge every July**, on A05a's season boundary. Not a TTL — the same clock D66
    already uses for condition photos (A5).
 4. **Sunset-timed digests** → **no**. 8pm local stays; only the *zone* becomes per-user (C2).
 5. **Notifications whose target was hidden or removed** → **shown, degraded, untappable**. A row that
@@ -966,7 +966,7 @@ because the *reasoning* is what a later reader needs:
 8. **One skate from several sources dedups before it prompts** (B4a). Overlap-based matching plus a
    four-rung precedence ladder that sorts on fidelity **and** displayability — D24's Strava
    cross-user restriction is why the second axis exists. Loser rows are superseded, never deleted.
-9. **Notifications settle before they send** (D81 / Workstream E). 60-second window, and the trigger is
+9. **Notifications settle before they send** (D81 / Workstream 5). 60-second window, and the trigger is
    **re-read at flush** rather than cancelled at undo — one place to get right instead of every undo
    path in the app.
 
@@ -981,10 +981,10 @@ B4a's overlap/start-time thresholds (needs an actual dual-source user) and D4's 
 
 ## Relocated from the roadmap (2026-09-16)
 
-*The roadmap entry for N8 as it stood before the 2026-09-16 rewrite, kept verbatim so nothing it said is lost. The roadmap now carries a one-paragraph summary; this is the long form.*
+*The roadmap entry for A08 as it stood before the 2026-09-16 rewrite, kept verbatim so nothing it said is lost. The roadmap now carries a one-paragraph summary; this is the long form.*
 
-**N8 — The notification pipeline.** ✅ **COMPLETE 2026-09-15** (PRs #52/#53/#55 + PR 4 on
-`phase-n8-notification-pipeline-4`, [`phase-N8-notification-pipeline.md`](./phase-N8-notification-pipeline.md),
+**A08 — The notification pipeline.** ✅ **COMPLETE 2026-09-15** (PRs #52/#53/#55 + PR 4 on
+`phase-n8-notification-pipeline-4`, [`phases/A08-notification-pipeline.md`](./A08-notification-pipeline.md),
 D167–D174). Push credentials in on both platforms, the Android small icon shipped, the Clerk
 webhook registered on dev; what's still owed — the end-to-end smoke, an install, a change-email
 run, the prod-cutover items, the scale-triggered reverse index — is the plan's **Deferred** list,

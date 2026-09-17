@@ -129,7 +129,7 @@ describe('isTopDecile / isBottomDecile', () => {
   });
 });
 
-describe('corpus count lines (N7b)', () => {
+describe('corpus count lines (A07b)', () => {
   it('pairs known with active, names the state, and ranks by known', async () => {
     const { corpusCountLines, formatCorpusCount } = await import('./regionStats');
     const lines = corpusCountLines([

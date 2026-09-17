@@ -41,7 +41,7 @@ describe('clampedNetThumbs / netThumbsBoost (the primitives bounties share)', ()
   });
 
   it('the bounty window still computes from the shared primitive (D59 refactor gate)', () => {
-    // The exact identity the untouched Phase 6 suite asserts, restated against the primitive so a
+    // The exact identity the untouched Phase 06 suite asserts, restated against the primitive so a
     // change to the shared clamp/weight can never silently move the bounty window.
     for (const netThumbs of [-10, -2, 0, 1, 4, 40]) {
       const expected =

@@ -1,5 +1,5 @@
 /**
- * Daily weather observations — the durable half of the weather panel (N6h / **D153**).
+ * Daily weather observations — the durable half of the weather panel (A06h / **D153**).
  *
  * ## Why this is a separate reducer from `summarizeWeatherSince`
  *
@@ -175,7 +175,7 @@ function offsetFormatterFor(timeZone: string): Intl.DateTimeFormat | null {
  * ⚠ **A week of forecast hours cannot share one offset.** Open-Meteo stamps a single
  * `utc_offset_seconds` on a response, and both DST transitions fall inside a skating season; a
  * seven-day window shifted by one offset puts every hour after the change an hour off — labels,
- * day cuts, episode clocks, day/night symbols, all plausibly wrong (N6h Workstream D, Greptile on
+ * day cuts, episode clocks, day/night symbols, all plausibly wrong (A06h Workstream 4, Greptile on
  * #51). Shifting each hour by the offset *at that hour* is what a clock on the wall would do.
  *
  * Returns `null` for an unknown zone or a runtime without timezone data, like its sibling.

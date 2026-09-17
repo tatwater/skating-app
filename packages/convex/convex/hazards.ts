@@ -1,5 +1,5 @@
 /**
- * Hazards — localized dangers on a water body (D51/D52/D54, Phase 9).
+ * Hazards — localized dangers on a water body (D51/D52/D54, Phase 09a).
  *
  * Two authoring paths, both landing here: a **standalone** quick-flag (the on-ice path — two taps, no
  * report) and **in-report** creation. Both are GPS-anchored on mobile and map-drawn on web.
@@ -95,7 +95,7 @@ export const HAZARD_MAX_PER_REPORT = 25;
 export const hazardCreateArgs = {
   waterBodyId: v.id('waterBodies'),
   /**
-   * Offline-flush dedup (Phase 9 offline / F2/D30). A hazard captured on the ice is queued with one
+   * Offline-flush dedup (Phase 09a offline / §6.2/D30). A hazard captured on the ice is queued with one
    * client-generated key and keeps it across every retry, so a create whose ack was lost returns the
    * same hazard instead of dropping a second pin a few metres from the first. Duplicate pins are
    * worse here than duplicate reports: two overlapping footprints read as two hazards, and the
@@ -103,7 +103,7 @@ export const hazardCreateArgs = {
    */
   idempotencyKey: v.optional(v.string()),
   /**
-   * On-ice capture time (Phase 9 offline / D55). A hazard flagged from the ice is stamped when it was
+   * On-ice capture time (Phase 09a offline / D55). A hazard flagged from the ice is stamped when it was
    * *captured*, not when its offline draft finally flushes — otherwise a hazard captured mid-skate but
    * flushed after the skater leaves the ice reads as "reported after the skate ended" and the D55
    * auto-bundle (`listBundleCandidates`, keyed on `firstReportedAt`) silently drops it. Clamped to the
@@ -182,7 +182,7 @@ export async function insertHazard(
   const photoIds = args.photoIds ?? [];
   await assertOwnedPhotos(ctx, photoIds, authorId);
 
-  // Clip the footprint to the body once, at create (Phase 9.5). `clipFootprintToBody` returns null when
+  // Clip the footprint to the body once, at create (Phase 09b). `clipFootprintToBody` returns null when
   // the footprint is already inside the body or the clip can't be done safely, so the common case stores
   // nothing and reads fall back to the live footprint. The bbox is derived from the *same* polygon that
   // gets stored, so the prefilter box, the drawn halo and the measured distance are one shape.
@@ -191,7 +191,7 @@ export async function insertHazard(
 
   const lifecycle = initialLifecycleState(now);
   const bbox = hazardBbox(shape, clippedFootprint);
-  // The named sub-area the footprint sits in (N2/D60), measured at the footprint's bbox centre — the
+  // The named sub-area the footprint sits in (A02/D60), measured at the footprint's bbox centre — the
   // same representative point `hazardCenter` gives the weather sampler, so "which bay is this hazard
   // in" and "which weather cell is it in" can't disagree about where the hazard is.
   const subArea = await resolveSubAreaForPoint(ctx, body._id, {
@@ -228,7 +228,7 @@ export async function insertHazard(
     goneCount: lifecycle.goneCount,
     createdAt: now,
   });
-  // Standing (N7b): someone stood on this ice and marked something — a dormant body yields to it.
+  // Standing (A07b): someone stood on this ice and marked something — a dormant body yields to it.
   await activateOnEvidence(ctx, body._id, 'hazard');
   return hazardId;
 }
@@ -280,7 +280,7 @@ export const create = mutation({
     // **survivor**, so a client that navigates to what it just created lands on the live pin rather
     // than on a tombstone.
     const { survivorId } = await tryAutoMerge(ctx, hazardId);
-    // The map card learns about the new pin (N6c/E). Two things about *which* card:
+    // The map card learns about the new pin (A06c/E). Two things about *which* card:
     //
     // **After the auto-merge, not before** — a hazard just folded into an existing one must not make
     // the card claim two.
@@ -501,7 +501,7 @@ export async function poolConsensus(
  * older" toggle. Dropping them here would make "nobody has confirmed this lately" indistinguishable
  * from "this is gone" at the API boundary, which is the exact confusion D3 forbids.
  *
- * Scoped per body by design (Phase 9 call 6) — there is no cross-viewport hazard query, so this can
+ * Scoped per body by design (Phase 09a call 6) — there is no cross-viewport hazard query, so this can
  * never grow into a read-cap problem the way `listInViewport` did.
  */
 export const listForBody = query({
@@ -523,7 +523,7 @@ export const listForBody = query({
      */
     season: v.optional(v.number()),
     /**
-     * Narrow to one named bay (N9) — the bay view's hazard list. Filtered in memory off the row's
+     * Narrow to one named bay (A09) — the bay view's hazard list. Filtered in memory off the row's
      * stamp: the read is already bounded by body, and a hazard's bay is its footprint centre's, so
      * a ridge that straddles the mouth line is listed under the bay its middle is in.
      */
@@ -550,16 +550,16 @@ export const listForBody = query({
           .collect();
     // Filtered in memory rather than in the index: the two hazard indexes are keyed by body and status,
     // and `firstReportedAt` isn't in either. That costs nothing here and is worth being explicit about,
-    // because it's the opposite of the report path — this query is already bounded by *body* (Phase 9
+    // because it's the opposite of the report path — this query is already bounded by *body* (Phase 09a
     // call 6, deliberately never a viewport scan), so the read it would narrow is bounded already.
     const target: Season = resolveSeason(season, seasonOf(now));
-    // **No supersession filter** (D53 amendment, N5c). A `bodyFeature` is a standing statement about
+    // **No supersession filter** (D53 amendment, A05c). A `bodyFeature` is a standing statement about
     // the lake; a hazard is a sighting by a person on a date. Promotion adds the first and must not
     // delete the second — filtering here rewrote February 2027 as a month in which nobody reported a
     // ridge, and under cluster promotion it would erase the whole evidence trail the pattern rests on,
     // one click after an operator agreed the pattern was real. The feature and the pin never race:
     // after the season boundary the sighting is hidden by the **season** axis (D63) and the feature
-    // remains, which is the desired end state reached by machinery N5a already built.
+    // remains, which is the desired end state reached by machinery A05a already built.
     const inScope = rows
       .filter((h) => h.moderationStatus === 'visible')
       .filter((h) => isInSeason(h.firstReportedAt, target))
@@ -594,7 +594,7 @@ export const listForBody = query({
 const PROMOTION_SCAN_CAP = 500;
 
 /**
- * **The pre-first-ice safety pass** (N5a): last season's hazards on one lake, ranked by how likely
+ * **The pre-first-ice safety pass** (A05a): last season's hazards on one lake, ranked by how likely
  * they are to be back, for the operator surface at `/admin/water/$id`.
  *
  * This is the cover for the seasonal reset, and the reason it is a safety task rather than
@@ -667,7 +667,7 @@ export const listPromotionCandidates = query({
  * A hazard is visible to ordinary users when a moderator hasn't hidden it. `null`/missing rows are
  * not visible.
  *
- * **Supersession used to be a second condition here, and its removal is the D53 amendment** (N5c). A
+ * **Supersession used to be a second condition here, and its removal is the D53 amendment** (A05c). A
  * promoted hazard was unreachable by permalink and unconfirmable, which said the wrong thing twice:
  * confirming *"the ridge is here right now"* is a different statement from *"ridges form here"*, and
  * only the first is confirmable at all — so the pin is exactly the thing that should still take votes
@@ -724,7 +724,7 @@ export const get = query({
 });
 
 /**
- * Every pin behind a consensus outline, earliest first (N5c / D80).
+ * Every pin behind a consensus outline, earliest first (A05c / D80).
  *
  * When duplicates render as one footprint, the drawer has to be able to say **who** — otherwise
  * collapsing pins would lose exactly the thing that makes a cluster more convincing than a single
@@ -801,8 +801,8 @@ const MERGE_AUDIT_WINDOW_DAYS = 120;
  * **Bounded by a time window, not by `take`.** A `filter` before a `take` reads rows until it has
  * collected enough *matches*, so on a corpus with few merges — which is every corpus at the moment —
  * "the newest 50" walks the entire audit log to find them, and that log only ever grows. `by_created_at`
- * (added for the 7b rollup, and earning its keep twice) turns the read into "this season's moderation
- * actions", which is the Phase 7b shape: a scan bounded by a window nobody can outgrow by waiting.
+ * (added for the 07-2 rollup, and earning its keep twice) turns the read into "this season's moderation
+ * actions", which is the Phase 07-2 shape: a scan bounded by a window nobody can outgrow by waiting.
  */
 export const listRecentMerges = query({
   args: { limit: v.optional(v.number()) },
@@ -911,7 +911,7 @@ export const listBundleCandidates = query({
   },
 });
 
-/** Default auto-bundle lookback when a report gives no start time (D55) — tunable in Phase 7. */
+/** Default auto-bundle lookback when a report gives no start time (D55) — tunable in Phase 07. */
 export const DEFAULT_BUNDLE_LOOKBACK_MS = 24 * 60 * 60 * 1000;
 
 /**
@@ -950,7 +950,7 @@ export async function attachHazardsToReport(
 
 /**
  * Moderator hide/restore for a bad hazard pin goes through the shared `moderation.setModerationStatus`
- * (`targetType: 'hazard'`) — one takedown surface for reports, comments and hazards, so the Phase 7
+ * (`targetType: 'hazard'`) — one takedown surface for reports, comments and hazards, so the Phase 07
  * queue has a single entry point. That mutation touches only `moderationStatus` and never the lifecycle
  * `status`, keeping a moderator hide distinct from a community all-clear (D3).
  */

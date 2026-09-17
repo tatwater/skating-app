@@ -1,5 +1,5 @@
 /**
- * Computing one body's cross-season recurrence (N5c / §C4) — the part that is about *this lake*, split
+ * Computing one body's cross-season recurrence (A05c / §3.4) — the part that is about *this lake*, split
  * out from the staged job that decides *which lake*.
  *
  * **This pass reads a body's window in full, and says so when it can't.** Its job is completeness, and
@@ -156,7 +156,7 @@ export function windowStartMs(currentSeason: Season): number {
 /**
  * Compute every cluster for one body across the window.
  *
- * **What is excluded, and why each one is a judgement rather than a filter** (§C2):
+ * **What is excluded, and why each one is a judgement rather than a filter** (§3.2):
  *
  * - **Moderator-hidden pins.** A moderator judged the pin bad; it is not evidence.
  * - **Merge tombstones**, which are represented by the pin they were folded into (D80) — counting both
@@ -301,7 +301,7 @@ export async function computeClustersForBody(
  * stores it straight off `deriveHazardLifecycle`, which counts **distinct non-author users whose latest
  * vote** is `fully_healed` **or** `never_existed` — pooled because those two agree about the present
  * (D65). The pooling is exactly what makes the column useless for *splitting* the two verdicts, which
- * is why §C2 says the job must read `hazardConfirmations` for the split and why the schema comment had
+ * is why §3.2 says the job must read `hazardConfirmations` for the split and why the schema comment had
  * to be corrected. But it is decisive in one direction: **`goneCount === 0` means no distinct
  * non-author user's current verdict is `fully_healed` or `never_existed`, so none of them is
  * `never_existed`.** No read can change that answer.
@@ -451,7 +451,7 @@ function describeCluster(
       : {}),
     priority,
     // The place phrase comes from the representative, so "which bay is this pattern in" is answered by
-    // the same pin whose shape a promotion would inherit (N2/D60).
+    // the same pin whose shape a promotion would inherit (A02/D60).
     ...(representative.subAreaId !== undefined ? { subAreaId: representative.subAreaId } : {}),
     ...(representative.subAreaName !== undefined
       ? { subAreaName: representative.subAreaName }
@@ -464,7 +464,7 @@ function describeCluster(
 }
 
 /**
- * What this family proposes on this body — with §C7's depth cross-check for the volatile one.
+ * What this family proposes on this body — with §3.7's depth cross-check for the volatile one.
  *
  * **Depth is how the proposal gets checked** (D68/D69). A recurring thin-ice cluster proposing
  * `shallow_early_thaw` is a claim about the lake *bed*: shallow water over a sandbar or a reef goes out

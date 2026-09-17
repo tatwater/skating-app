@@ -85,7 +85,7 @@ function effects(): DraftFlushEffects {
         coord,
       }),
     createReport: async (input) => convex.mutation(api.reports.create, toCreateArgs(input)),
-    // Phase 8: resolve a report draft's LOCAL track id to a server activity id, flushing the track
+    // Phase 08: resolve a report draft's LOCAL track id to a server activity id, flushing the track
     // first if it hasn't landed. Best-effort — see `flushOneTrack`: a track that can't be sent must
     // never hold back the report it belongs to (D24).
     resolveActivityId: async (trackDraftId) => {
@@ -120,7 +120,7 @@ const PUSH_NOT_ATTEMPTED = new Set(['not_configured', 'not_connected', 'too_shor
  */
 const PUSH_TERMINAL = new Set(['not_found', 'not_owner', 'no_path']);
 
-/** The recorded-track adapter (Phase 8) — ingest, then the optional Strava courtesy copy. */
+/** The recorded-track adapter (Phase 08) — ingest, then the optional Strava courtesy copy. */
 function trackEffects(): TrackFlushEffects {
   const shared = effects();
   return {
@@ -172,7 +172,7 @@ async function flushOneTrack(id: string, now: number): Promise<{ activityId: str
 }
 
 /**
- * The hazard-queue adapter (Phase 9 offline). Shares the photo/body effects with the report queue —
+ * The hazard-queue adapter (Phase 09a offline). Shares the photo/body effects with the report queue —
  * an uploaded photo is an uploaded photo — and adds the two hazard mutations.
  */
 function hazardEffects(): HazardFlushEffects {
@@ -289,7 +289,7 @@ async function drainOnce(now: number): Promise<void> {
 }
 
 /**
- * Apply the retention policy to the recorded-track rows (Phase 8).
+ * Apply the retention policy to the recorded-track rows (Phase 08).
  *
  * Runs after every drain rather than on a timer: a flush is exactly when rows change state, it's
  * already off the render path, and a device that never syncs has nothing worth sweeping. The policy

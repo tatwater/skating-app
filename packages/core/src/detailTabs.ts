@@ -1,5 +1,5 @@
 /**
- * The water-body drawer's three sub-tabs (N6h Workstream H, open question 4).
+ * The water-body drawer's three sub-tabs (A06h Workstream 8, open question 4).
  *
  * ## Why the vocabulary lives in core
  *
@@ -8,7 +8,7 @@
  *
  * - **Overview** — machine-compiled facts about the body: access ruling, posted rules, wind
  *   climatology, reference links, provenance credits. The place multi-season climatology (D153,
- *   deferred) and N6e's phenology brackets will land.
+ *   deferred) and A06e's phenology brackets will land.
  * - **Reporting** — user-supplied, this season: the season filter, bounties, ice history, hazards,
  *   reports.
  * - **Planning** — the trip decision: the weather timeline, the forecast, put-ins, directions.

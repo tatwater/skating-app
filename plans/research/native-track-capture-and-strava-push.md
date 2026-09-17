@@ -1,4 +1,4 @@
-# Phase 8 — Native Track Capture + Strava Push
+# Phase 08 — Native Track Capture + Strava Push
 
 *Scoping doc — 2026-07-24. Extends [`04-integrations.md`](../04-integrations.md) (esp.
 "Cross-user map display — our stance") and [`08-legal-feasibility-checklist.md`](../08-legal-feasibility-checklist.md)
@@ -12,7 +12,7 @@ Two questions forced a rethink of the Strava plan:
    other user — "Strava Data provided by a specific user can only be displayed or
    disclosed in your Developer Application to that user" — *even if publicly viewable*,
    plus a blanket **AI/ML ban**. That kills every cross-user use we actually want off
-   Strava-sourced data: the lake **heatmap**, crowd **pressure-ridge / clearest-side**
+   Strava-sourced data: the water body **heatmap**, crowd **pressure-ridge / clearest-side**
    intelligence, and drawing a **path on a public report**. (Full read in the
    2026-07-24 thread; corroborated by Strava's own press release + DCRainmaker/road.cc.)
 2. **Adoption:** skaters will prioritize their Strava (fitness stats + kudos) over a
@@ -46,7 +46,7 @@ have to choose between us and Strava — record once, get both.**
 
 ## Piece 1 — the native recorder (the hard part)
 
-We already have **most of the primitive**: Phase 9.5 on-ice mode ships session-scoped
+We already have **most of the primitive**: Phase 09b on-ice mode ships session-scoped
 **background location** (`expo-location`), course-over-ground math, and the
 `hazardProjection.ts` track-processing plumbing. Track *recording* is the same GPS
 stream, retained instead of consumed-and-discarded.
@@ -54,7 +54,7 @@ stream, retained instead of consumed-and-discarded.
 What's net-new:
 
 - **A recording session** (start/pause/resume/stop) with a durable local buffer —
-  reuse the Phase 2 **expo-sqlite** offline-queue pattern so a crash/kill never loses a
+  reuse the Phase 02a **expo-sqlite** offline-queue pattern so a crash/kill never loses a
   skate. Points: `{lat, lon, elevation?, timestamp, accuracy, speed?}`.
 - **Foreground-service notification (Android)** + **iOS background-location mode** —
   mandatory for sustained background GPS; also the honest "we're recording" signal.
@@ -101,7 +101,7 @@ finer stream, but you can't refine a coarse one after the fact. Three GPS profil
 Your nervousness is correct and worth designing around, not hand-waving. Continuous
 high-accuracy GPS is the single biggest drain a phone app can cause — a realistic
 budget is **~5–12%/hr** depending on device, screen state, and fix cadence. A long
-lake day (3–4 hrs) is a real dent. Mitigations, roughly in ROI order:
+water body day (3–4 hrs) is a real dent. Mitigations, roughly in ROI order:
 
 - **Record mode (b) costs more than hazard mode (a)** — export fidelity
   (`High`/`BestForNavigation`, ~5 m) keeps the GPS radio on more than `Balanced`/20 m, so
@@ -179,7 +179,7 @@ connected watch provider, on for phone-only) until auto-detect is solid.
 
 Because the track is **ours**, all the originally-blocked features become legal:
 
-- **Lake heatmaps** aggregating recent skaters' chosen lines.
+- **Water body heatmaps** aggregating recent skaters' chosen lines.
 - **Pressure-ridge / obstacle intelligence** — crowd-sourced "where people actually
   crossed / which side was clear."
 - **Path drawn on a public report** — no cross-user-display problem, because it's not
@@ -211,7 +211,7 @@ always own; A and C are pluggable provider sets on either side:**
 ```
   A · capture (inputs)         B · our track store (hub)          C · push (outputs)
   ────────────────────         ─────────────────────────         ──────────────────
-  native recorder  ─┐          ┌ normalize → resolve-to-lake ┐    ┌ Strava (activity:write)
+  native recorder  ─┐          ┌ normalize → resolve-to-body ┐    ┌ Strava (activity:write)
   Garmin           ─┤          │  (gpsActivities, D44)       │    │
   HealthKit / HC   ─┼────────► │  aggregate + heatmap        ├──► ┤ (future: Whoop, …)
   COROS · Polar    ─┘          │  privacy: minors-out,       │    │
@@ -223,7 +223,7 @@ always own; A and C are pluggable provider sets on either side:**
   first and most important A-input (phone-only skaters, and the source we fully control).
   **Garmin / HealthKit / Health Connect / COROS / Polar** augment A later — each an
   incremental adapter into the same normalized shape (reusing the provider-agnostic
-  ingest core already scoped in Phase 8). The watch-user case (above) enters here.
+  ingest core already scoped in Phase 08). The watch-user case (above) enters here.
 - **B — our track store + aggregate (the hub, always covered).** Normalize any input to
   `gpsActivities`, resolve to `waterBodyId` (D44), and — because this data is **ours,
   not Strava's** — build the heatmap / crowd intelligence / path-on-public-report, gated
@@ -241,7 +241,7 @@ adding provider adapters, while **B — our benefit — is covered from day one 
 ### Suggested build order (within "all three")
 
 1. **B's spine + the native A-input** — recorder → normalized `gpsActivities` →
-   resolve-to-lake → render your *own* path on your *own* report. No provider risk; the
+   resolve-to-body → render your *own* path on your *own* report. No provider risk; the
    bulk of the effort (battery + background-mode hardening).
 2. **C's first output — Strava push** — small once B produces a clean track; ship early
    as the adoption hook.
@@ -269,7 +269,7 @@ gives us the gravity; our own recorder gives us the data we're legally free to b
   sub-Q: the *auto-detect* of "user has a watch" vs. the v1 per-session toggle default.
 - **Q (fidelity/battery):** default fix cadence per mode is settled in principle
   (Balanced/20 m for hazards, High–BestForNav/~5 m for record); still needs on-ice
-  device tuning + the auto-stop-on-stationary threshold (the Phase 9.5 GPX route-playback
+  device tuning + the auto-stop-on-stationary threshold (the Phase 09b GPX route-playback
   rig helps).
 - **Q (privacy):** k-anonymity threshold + minors handling for aggregate layers — this
   is a **decision-grade** call (new D-number), not an implementation detail.

@@ -1,5 +1,5 @@
 /**
- * Push contour coverage into Convex (N6c-1 / D2) — which bodies the tileset actually draws.
+ * Push contour coverage into Convex (A06c-1 / D2) — which bodies the tileset actually draws.
  *
  *   pnpm --filter @skating/bathymetry coverage [--prod] [--dry-run] [--allow-empty]
  *
@@ -12,7 +12,7 @@
  * blow the heap and `JSON.parse` per line is wasted work when the field is a fixed string key.
  *
  * **Replaces the set rather than adding to it**, so a re-tile that drops a lake drops its coverage.
- * Run this after every `build-contours` + `tile`, and before the N6c re-score.
+ * Run this after every `build-contours` + `tile`, and before the A06c re-score.
  *
  * A build that yields *zero* bodies refuses rather than replacing, because at that point the two
  * readings — "the tileset genuinely draws nothing" and "the build truncated" — are indistinguishable
@@ -99,7 +99,7 @@ async function main(): Promise<void> {
   for (let i = 0; i < ids.length; i += BATCH) batches.push(ids.slice(i, i + BATCH));
   if (batches.length === 0) batches.push([]);
 
-  // Run history (N6c F2). This run is a *replacement* — the first batch clears the old set — so a
+  // Run history (A06c §6.2). This run is a *replacement* — the first batch clears the old set — so a
   // pass that dies halfway leaves coverage genuinely truncated, and a row saying so is the only
   // thing standing between that and a silently smaller `hasContours` population.
   const logger = new RunLogger({
@@ -153,7 +153,7 @@ async function main(): Promise<void> {
 
   process.stderr.write(
     `[coverage] complete: ${inserted} bodies stamped, ${cleared} stale rows cleared\n` +
-      '[coverage] re-run the N6c re-score (waterBodies:backfillCells) for this to reach the map.\n',
+      '[coverage] re-run the A06c re-score (waterBodies:backfillCells) for this to reach the map.\n',
   );
 
   logger.count('contouredBodies', ids.length);
@@ -183,7 +183,7 @@ async function main(): Promise<void> {
     ].filter((o) => o.count > 0),
   });
   logger.succeed([
-    'hasContours does not reach the map until the N6c re-score (waterBodies:backfillCells) runs.',
+    'hasContours does not reach the map until the A06c re-score (waterBodies:backfillCells) runs.',
   ]);
 }
 

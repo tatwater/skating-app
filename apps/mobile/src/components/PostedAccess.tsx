@@ -11,7 +11,7 @@ import { Paragraph, Text, YStack } from 'tamagui';
 import { Section } from './detailUi';
 
 /**
- * What the sign says, and what it means right now (N6e) — the mobile half of web's `PostedAccess`.
+ * What the sign says, and what it means right now (A06e) — the mobile half of web's `PostedAccess`.
  *
  * **Two lines, and neither replaces the other.** `January 1 – March 15 · sunrise to sunset` is the
  * durable, checkable fact you plan tomorrow against; `Closed now · opens 6:42 AM` is that rule's
@@ -28,7 +28,7 @@ export function PostedAccess({
   rule?: PostedAccessRule;
   /** The lake's `interiorPoint` (never `centroid` — it sits on the shoreline), or the point's `coord`. */
   coord?: { lat: number; lng: number };
-  /** N6c-2's reveal flag — states the absence instead of hiding the section. */
+  /** A06c-2's reveal flag — states the absence instead of hiding the section. */
   reveal?: boolean;
 }) {
   const { described, nowLine, closed } = usePostedAccessLines(rule, coord);

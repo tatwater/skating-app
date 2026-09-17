@@ -1,7 +1,7 @@
 import { isHeic } from '../lib/photo';
 
 /**
- * Browser-only photo pipeline glue (§E, D31/D42). Untestable in jsdom (canvas/WASM/network), so it
+ * Browser-only photo pipeline glue (§5, D31/D42). Untestable in jsdom (canvas/WASM/network), so it
  * lives outside `src/lib` (coverage collects only pure `lib` code); the pure decisions it leans on
  * (`isHeic`, `photoUploadCoord`) are in `../lib/photo` and unit-tested. The privacy invariant: EXIF
  * GPS/timestamp are read from the ORIGINAL, then the re-encode strips ALL metadata, so the only

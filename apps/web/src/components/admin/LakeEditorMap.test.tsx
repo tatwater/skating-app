@@ -1,5 +1,5 @@
 /**
- * The lake editor's canvas (N2 / D61) — the camera lock and the layer data flow.
+ * The lake editor's canvas (A02 / D61) — the camera lock and the layer data flow.
  *
  * The lock is the feature rather than a guard rail (Decision 5): every tool on this canvas acts on
  * one body, and an operator who has been drawing bays for twenty minutes should not be able to save
@@ -196,7 +196,7 @@ describe('LakeEditorMap — what gets drawn', () => {
   });
 
   /**
-   * Parking (N6f) — drawn so the operator placing a lot can see the ones already there. Its own
+   * Parking (A06f) — drawn so the operator placing a lot can see the ones already there. Its own
    * source rather than sharing the put-in layer: the two are placed by two different tools and are
    * the pair most easily confused on this canvas.
    */

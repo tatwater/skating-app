@@ -1,5 +1,5 @@
 /**
- * Weather-first discovery (N6h Workstream E / D159, D164, D165, D166): the join the registry walk
+ * Weather-first discovery (A06h Workstream 5 / D159, D164, D165, D166): the join the registry walk
  * writes, the digest the sweep rebuilds, and the two reads over them.
  */
 
@@ -601,11 +601,11 @@ describe('listBodyResults — the feed read (D165)', () => {
   });
 
   /**
-   * N6h's call 22 marked a `none` lake rather than dropping it, deliberately deferring the
-   * corpus-lifecycle answer. N7b is that answer: a `none` body is dormant, and a discovery card
+   * A06h's call 22 marked a `none` lake rather than dropping it, deliberately deferring the
+   * corpus-lifecycle answer. A07b is that answer: a `none` body is dormant, and a discovery card
    * *recommends* a lake — so it is neither registered by the walk nor surfaced by the read.
    */
-  test('drops a no-public-access lake — it is dormant, and discovery only pushes active bodies (N7b)', async () => {
+  test('drops a no-public-access lake — it is dormant, and discovery only pushes active bodies (A07b)', async () => {
     const t = convexTest(schema, modules);
     const mod = await seedUser(t, 'mod', 'moderator');
     await seedBody(t, 'Posted', A, {

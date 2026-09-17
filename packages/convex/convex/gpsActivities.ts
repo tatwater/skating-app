@@ -1,5 +1,5 @@
 /**
- * **B — our own track store** (Phase 8, D44/D58/D59): the invariant hub of the A→B→C pipeline.
+ * **B — our own track store** (Phase 08, D44/D58/D59): the invariant hub of the A→B→C pipeline.
  *
  * Every recorded skate lands here, whatever captured it (today: the native recorder; later: the
  * deferred watch adapters) and whatever it's pushed to afterwards (today: Strava). The store is the
@@ -74,7 +74,7 @@ const TRACK_RESOLVE_BUFFER_M = 120;
  * How many points along a track we test when looking for the bodies it spans. A skate can cross from
  * a lake into its channel and back; sampling a bounded number of points catches that without walking
  * a 3,000-point path against every candidate polygon (which is the read/CPU trap). The sampler
- * itself is `@skating/core`'s `samplePath`, shared with the bay stamp (N9).
+ * itself is `@skating/core`'s `samplePath`, shared with the bay stamp (A09).
  */
 const SPAN_SAMPLE_POINTS = 24;
 
@@ -128,7 +128,7 @@ export async function resolveTrackToBodies(
  * Bodies worth testing a set of sampled track points against.
  *
  * Delegates each sample to `waterBodies.listedBodiesNearCoord` — the shared containment lookup, which
- * is one cell per ladder rung around the point and so bounded regardless of body size (N1).
+ * is one cell per ladder rung around the point and so bounded regardless of body size (A01).
  * Sampling caps how many of those lookups run, so the read cost is bounded by `SPAN_SAMPLE_POINTS`
  * rather than by track length; and consecutive samples on one lake are deduped to a coarse grid cell
  * so a 3,000-point path on one pond costs one lookup, not twenty-four.
@@ -208,7 +208,7 @@ export const ingestTrack = mutation({
       resolved = await resolveTrackToBodies(ctx, path);
     }
 
-    // And the bays of that body the track ran through (N9 / D175): majority-of-samples primary,
+    // And the bays of that body the track ran through (A09 / D175): majority-of-samples primary,
     // every bay touched, and whether it ran past a bay's drawn mouth. One `by_parent` read on the
     // body just resolved, returning nothing on the ~99% with no bays.
     const bays = await bayStampFor(ctx, resolved.primary, path);
@@ -234,7 +234,7 @@ export const ingestTrack = mutation({
       promptState: 'pending',
       detectedAt: now,
     });
-    // Standing (N7b): a recorded skate is the strongest evidence there is — someone *was* here — so
+    // Standing (A07b): a recorded skate is the strongest evidence there is — someone *was* here — so
     // every body the track resolved to yields if the machine had shelved it.
     for (const bodyId of resolved.all) await activateOnEvidence(ctx, bodyId, 'track');
     return activityId;
@@ -242,7 +242,7 @@ export const ingestTrack = mutation({
 });
 
 /**
- * The bay stamp for a track on a resolved body (N9) — the read around `trackSubAreaStamp`, which is
+ * The bay stamp for a track on a resolved body (A09) — the read around `trackSubAreaStamp`, which is
  * the rule. Empty when the track resolved to nothing or the body has no bays.
  */
 async function bayStampFor(
@@ -278,7 +278,7 @@ export const setPromptState = mutation({
 });
 
 /**
- * How long a recorded skate sits `pending` before the sweep asks about it (N8/B4). Long enough that
+ * How long a recorded skate sits `pending` before the sweep asks about it (A08/B4). Long enough that
  * the recorder's own stop-prompt and a same-day flush from the offline queue get first go, and that
  * a second source of the same skate (a watch syncing when it feels like it) has usually arrived —
  * the dedup below needs both copies in the table before it can pick one. Same idea as the D169 settle
@@ -301,17 +301,17 @@ const PROMPT_SWEEP_CAP = 50;
 const CANDIDATE_WINDOW_CAP = 50;
 
 /**
- * The `activity_detected` producer (N8/B4): find skates still `pending` after the delay, dedup each
+ * The `activity_detected` producer (A08/B4): find skates still `pending` after the delay, dedup each
  * user's batch first (B4a), and file one notification per winner — "You skated on Lake Morey on
  * Tuesday. Add a report?" — flipping the row to `prompted` so it fires once.
  *
  * **Why this exists.** `ingestTrack` inserts every recorded track as `pending`, and the recorder
  * prompts on stop. When the app dies before prompting, or the track flushes from the offline queue
  * hours later on a different screen, that prompt never happens — a completed skate sits in the table
- * that nobody was ever asked about. N6f's `UnreportedSkates` list on the You tab is where the skate
+ * that nobody was ever asked about. A06f's `UnreportedSkates` list on the You tab is where the skate
  * *lives*; this is the nudge that says it's there.
  *
- * **Our recorder only.** D24's "detected on any linked provider" premise was retired with Phase 8's
+ * **Our recorder only.** D24's "detected on any linked provider" premise was retired with Phase 08's
  * pivot to push, and the watch adapters sit behind approval queues (L8). The dedup ladder runs anyway
  * — on one provider it has nothing to choose between, and that is the point of settling it now.
  *
@@ -419,7 +419,7 @@ export const sweepUnpromptedActivities = internalMutation({
                     ...(loserRow.waterBodyIds !== undefined
                       ? { waterBodyIds: loserRow.waterBodyIds }
                       : {}),
-                    // And the lake's bays with it (N9): the stamp is a fact about the same skate.
+                    // And the lake's bays with it (A09): the stamp is a fact about the same skate.
                     ...(loserRow.subAreaId !== undefined ? { subAreaId: loserRow.subAreaId } : {}),
                     ...(loserRow.subAreaIds !== undefined
                       ? { subAreaIds: loserRow.subAreaIds }
@@ -553,7 +553,7 @@ const MAX_SUPERSESSION_HOPS = 8;
  * activity doesn't point back to, and the aggregate layer's privacy predicate reads the *activity*
  * side (`linkedReportId`), so a missing back-link would silently drop a track from the map.
  *
- * **A superseded copy hands the link to its winner** (N8/B4a), the same move `sweepUnpromptedActivities`
+ * **A superseded copy hands the link to its winner** (A08/B4a), the same move `sweepUnpromptedActivities`
  * makes when it finds a linked loser — only here the order is reversed: the sweep ran first and the
  * link arrives after. The report form can hold an activity id for hours (drive home, fill it in), and
  * the hourly sweep may have picked a better copy of that skate in between. Linking the loser would
@@ -627,7 +627,7 @@ export interface ActivityPathView {
  * Returns `null` when the report has no track, which is the common case (D24 — a report never
  * requires a path).
  *
- * **Put-in clipping applies here too (N3, 2026-07-27).** It didn't, and the gap was the kind that hides
+ * **Put-in clipping applies here too (A03, 2026-07-27).** It didn't, and the gap was the kind that hides
  * in plain sight: `showPutIn === false` was honored by `listTracksForBody` 60 lines below (clipping
  * `PUT_IN_CLIP_M` off both ends) and by `putIns.listForBody` (hiding the pin), while this query — the
  * simpler one, sitting right next to them — returned the raw path to *every* viewer. The doc comment on
@@ -722,7 +722,7 @@ export const listMine = query({
  * thing with 200 lines as with 2,000. Newest first, so the cap drops the faintest, not the freshest.
  *
  * The count of what was dropped is returned alongside — a silently truncated map reads as "this is
- * everything", which is exactly the sort of quiet lie the Phase 7 "no silent caps" rule exists to stop.
+ * everything", which is exactly the sort of quiet lie the Phase 07 "no silent caps" rule exists to stop.
  */
 const MAX_TRACKS_PER_BODY = 200;
 /**
@@ -766,7 +766,7 @@ export interface AggregateTrackView {
  * report is meant to be shared, the path is already on it, and a contributor-count gate would render
  * an empty map for the entire alpha while protecting nothing that publishing hadn't already decided.
  *
- * Scoped **per body**, like Phase 9 hazards — never a cross-viewport spatial scan, which is the
+ * Scoped **per body**, like Phase 09a hazards — never a cross-viewport spatial scan, which is the
  * read-cap-fragile path `listInViewport` has already had to be fixed for twice.
  */
 export const listTracksForBody = query({
@@ -778,7 +778,7 @@ export const listTracksForBody = query({
   },
   handler: async (ctx, args): Promise<{ tracks: AggregateTrackView[]; truncated: number }> => {
     const body = await resolveSurvivor(ctx, args.waterBodyId);
-    // Reachable and not removed (N7b): a dormant lake's tracks are its history and the reason it may
+    // Reachable and not removed (A07b): a dormant lake's tracks are its history and the reason it may
     // come back; a taken-down pond's would publish exactly the ground somebody asked us to stop
     // showing.
     if (!body || !isListed(body) || standingOf(body).standing === 'removed') {

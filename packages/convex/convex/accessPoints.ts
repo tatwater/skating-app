@@ -1,15 +1,15 @@
 /**
- * The access layer's server side (N6d / D72, D143) — the geometric join, and the reads that serve it.
+ * The access layer's server side (A06d / D72, D143) — the geometric join, and the reads that serve it.
  *
  * ## Why the join is here and not in the ETL
  *
- * The N6d plan's B2 says put-in candidates within ~30 m of a body's polygon boundary attach to that
- * body, which reads as transform work. It cannot be: the transform has no polygons, and post-N7 the
+ * The A06d plan's §2.2 says put-in candidates within ~30 m of a body's polygon boundary attach to that
+ * body, which reads as transform work. It cannot be: the transform has no polygons, and post-A07a the
  * merge output is **not** the loaded corpus — bodies are pruned, deduped, re-keyed and retired after
  * it, so measuring locally would measure against a snapshot that has already moved.
  *
- * This is exactly what N6a discovered mid-build about the depth join, and it takes the same fix:
- * resolve against the N1 cell index through `listedBodiesNearCoord`, which costs one small indexed
+ * This is exactly what A06a discovered mid-build about the depth join, and it takes the same fix:
+ * resolve against the A01 cell index through `listedBodiesNearCoord`, which costs one small indexed
  * lookup per access point. The benefit is the same too — an access point and the app's own "you're at
  * Lake X" resolution agree by construction, because both go through the same lookup.
  *
@@ -24,7 +24,7 @@
  * ## What the ladder protects
  *
  * `official` beats `osm` beats `derived`. A re-import updates its own rung and refuses to touch a
- * higher one, so an operator's correction survives every future run — the same discipline as the N6a
+ * higher one, so an operator's correction survives every future run — the same discipline as the A06a
  * depth ladder, and for the same reason: a correction that a re-import can erase is not worth making.
  * A moderator-hidden coordinate is likewise never resurrected by an import.
  */
@@ -197,7 +197,7 @@ export async function recomputeAccessKind(
 }
 
 /**
- * Load a batch of parking areas and attach them to every body they plausibly serve (N6d B3).
+ * Load a batch of parking areas and attach them to every body they plausibly serve (A06d §2.3).
  *
  * Runs **before** the put-in lane, because a put-in references its lot by OSM id and cannot be
  * resolved until the lot is a row. That ordering is why the transform emits two files rather than one
@@ -320,12 +320,12 @@ export const matchAndImportParking = internalMutation({
 });
 
 /**
- * Load a batch of put-in candidates, attach each to its body, and link its lot (N6d B3).
+ * Load a batch of put-in candidates, attach each to its body, and link its lot (A06d §2.3).
  *
- * **Every rejection is counted and named**, on the N6a rule that an ETL matching 60% of its input
+ * **Every rejection is counted and named**, on the A06a rule that an ETL matching 60% of its input
  * looks exactly like one that matched all of it. The two failure classes are kept apart on purpose:
  * `noBodyNearby` means the corpus has nothing here — a coastal slipway, a river landing, a pond below
- * the N7 admission floor — and is a scope boundary rather than a fault. `moderatorSuppressed` means we
+ * the A07a admission floor — and is a scope boundary rather than a fault. `moderatorSuppressed` means we
  * found the body and declined to write, which is the only one worth a human's attention.
  */
 export const matchAndImportPutIns = internalMutation({
@@ -414,7 +414,7 @@ export const matchAndImportPutIns = internalMutation({
         approachAscentM: candidate.approachAscentM,
         approachRouted: candidate.approachRouted,
         approachPath: candidate.approachPath,
-        // The bay this launch serves (N9), by distance to the outline. Written on insert and on
+        // The bay this launch serves (A09), by distance to the outline. Written on insert and on
         // the ordinary update alike, so a re-import after a bay was drawn tags the launch too.
         subAreaId: await resolveSubAreaForPutIn(ctx, waterBodyId, candidate.point),
       };
@@ -454,7 +454,7 @@ export const matchAndImportPutIns = internalMutation({
     // One recompute per distinct body rather than one per put-in: a lake with six launches would
     // otherwise re-read and re-derive the same set six times inside one batch.
     for (const waterBodyId of touchedBodies) await recomputeAccessKind(ctx, waterBodyId);
-    // Standing (N7b): a body the access pass just found a way onto qualifies for the active map —
+    // Standing (A07b): a body the access pass just found a way onto qualifies for the active map —
     // the same rule the seed applies. Only on a *new* launch, so a re-run of the pass over bodies the
     // rollover has since shelved does not un-shelve them by re-stamping the same OSM slipway.
     for (const waterBodyId of newlyAccessible) await activateOnEvidence(ctx, waterBodyId, 'put_in');
@@ -482,7 +482,7 @@ export interface ParkingMarker {
   capacity?: number;
   fee?: boolean;
   /**
-   * What the sign on *this lot* says (N6e) — hours posted on the gate, not on the lake.
+   * What the sign on *this lot* says (A06e) — hours posted on the gate, not on the lake.
    *
    * Carried on the marker rather than fetched separately because the lot document is already in hand
    * here: a rule costs zero extra reads on the read path, which is most of why it is a field on three
@@ -550,7 +550,7 @@ export const listParkingForBody = query({
 });
 
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
-// Photos (Workstream D / D88) — infrastructure, not conditions
+// Photos (Workstream 4 / D88) — infrastructure, not conditions
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
 
 /**
@@ -562,7 +562,7 @@ export const listParkingForBody = query({
  * to another permission is one that drifts out of sync and confuses somebody in a year.
  *
  * Two inherited constraints do the protective work instead — the `MAX_ACCESS_PHOTOS` cap bounds any
- * single point's abuse surface, and minors are read-only (Phase 3), so the population that can upload
+ * single point's abuse surface, and minors are read-only (Phase 03), so the population that can upload
  * is already the population trusted with reports.
  */
 export const attachPhoto = mutation({
@@ -717,7 +717,7 @@ export const accessForBody = query({
   args: {
     waterBodyId: v.id('waterBodies'),
     /**
-     * Narrow to one named bay (N9 kickoff call 3): the launches tagged with it, the lots those
+     * Narrow to one named bay (A09 kickoff call 3): the launches tagged with it, the lots those
      * launches serve, and any other lot within `PARKING_INFER_RADIUS_M` of the bay's outline. Parking
      * carries no stored bay tag — a lot belongs to a bay through the put-in it serves, else by
      * proximity, derived here from the parent's already-bounded set (Champlain's 160 lots is the
@@ -755,7 +755,7 @@ export const accessForBody = query({
     // *choosing*. The first full load put 160 lots on Lake Champlain, 97 on Winnipesaukee and 64 on
     // Seneca; on those bodies the lot a chosen put-in points at can sit outside the window, and
     // `chooseAccessTarget` would then silently fall back to routing a car at the launch — exactly the
-    // pre-N6d behaviour this phase exists to fix, on the four lakes that matter most.
+    // pre-A06d behaviour this phase exists to fix, on the four lakes that matter most.
     //
     // Bounded by construction: put-ins are themselves capped, so this adds at most that many gets.
     const referenced = new Map<string, Awaited<ReturnType<typeof loadParkingForBody>>[number]>();
@@ -810,12 +810,12 @@ export const accessForBody = query({
       approachMeters: r.approachMeters,
       approachAscentM: r.approachAscentM,
       approachRouted: r.approachRouted,
-      // The line to draw (N6e Workstream 0). Sent whole rather than as a count, because the drawer
+      // The line to draw (A06e Workstream 0). Sent whole rather than as a count, because the drawer
       // and the map read the same document — a second query for a few dozen points a body already
       // has in hand would be a read to save a read.
       approachPath: r.approachPath,
       approachKindOverride: r.approachKindOverride,
-      // The rule posted on *this launch* (N6e). Never merged with the body's — a reservoir open around
+      // The rule posted on *this launch* (A06e). Never merged with the body's — a reservoir open around
       // the clock with one launch shut at dusk is not a reservoir shut at dusk.
       postedAccess: r.postedAccess,
     }));
@@ -952,7 +952,7 @@ export const setPutInAccess = mutation({
     let approachAscentM = putIn.approachAscentM;
     let parkingAreaId = putIn.parkingAreaId;
     /**
-     * The stored line describes a walk **from a particular lot** (N6e Workstream 0), so it is retracted
+     * The stored line describes a walk **from a particular lot** (A06e Workstream 0), so it is retracted
      * by both branches below and never carried across a re-association.
      *
      * The distance failing this way is recoverable — a wrong number reads as a wrong number. A line is
@@ -965,7 +965,7 @@ export const setPutInAccess = mutation({
     if (args.clearParking) {
       parkingAreaId = undefined;
       // The measurements described a walk from a lot that is no longer associated. Keeping them would
-      // leave a distance with nothing to walk from — the same reasoning N6a used for retracting the
+      // leave a distance with nothing to walk from — the same reasoning A06a used for retracting the
       // losing half of a contradictory depth pair.
       approachMeters = undefined;
       approachAscentM = undefined;

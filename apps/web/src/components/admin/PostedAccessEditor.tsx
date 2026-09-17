@@ -58,7 +58,7 @@ type Target =
     };
 
 /**
- * Type in what a posted sign says (N6e) — for the lake, or for any one of its launches or lots.
+ * Type in what a posted sign says (A06e) — for the lake, or for any one of its launches or lots.
  *
  * **One card with a target selector, rather than a form inlined into each access row.** Champlain
  * carries 160 parking areas; a per-row editor would render that form 160 times for a field expected on

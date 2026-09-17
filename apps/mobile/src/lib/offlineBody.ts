@@ -1,6 +1,6 @@
 /**
  * Pure offline body-resolution logic (F2 Layer 2) — kept free of the `expo-sqlite` glue (see
- * `bodyCache.ts`) so it's unit-testable, and reusable by the eventual Phase 9 hazard capture.
+ * `bodyCache.ts`) so it's unit-testable, and reusable by the eventual Phase 09a hazard capture.
  *
  * The app caches the reference data of recently-viewed lakes on-device; offline, a device GPS fix
  * resolves *which* lake the skater is on/near via the shared `@skating/core` buffered ranker — so a
@@ -13,7 +13,7 @@ import type { MultiPolygon, Polygon } from 'geojson';
 /**
  * Parking/approach buffer (metres) for GPS→lake auto-select — so opening the app offline from the
  * car still resolves the lake (S1: access/put-ins are a dominant concern). Mirrors the server-side
- * `AUTOSELECT_BUFFER_M` in `waterBodies.resolveBodyForCoord`; tunable (Phase 7 admin controls, D37).
+ * `AUTOSELECT_BUFFER_M` in `waterBodies.resolveBodyForCoord`; tunable (Phase 07 admin controls, D37).
  */
 export const AUTOSELECT_BUFFER_M = 300;
 

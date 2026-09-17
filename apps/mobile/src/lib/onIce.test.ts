@@ -48,7 +48,7 @@ describe('toProximityHazards', () => {
     expect(line?.shape.radiusMeters).toBeUndefined();
   });
 
-  // The gate N5c §1.2 opens with. Three skaters mark one ridge, nobody taps confirm: every row's own
+  // The gate A05c §1.2 opens with. Three skaters mark one ridge, nobody taps confirm: every row's own
   // `confirmCount` is 0, and reading it would leave every phone on the lake at the soft prompt for a
   // hazard the community has plainly corroborated.
   it('escalates on what the cluster knows, not on what one row does', () => {
@@ -79,7 +79,7 @@ describe('advanceOnIceSession — proximity (Layer 1)', () => {
   });
 
   // …and the whole point of pooling: the same unconfirmed row, once the server has judged it one
-  // hazard with pins other people drew, warns properly (N5c / D80).
+  // hazard with pins other people drew, warns properly (A05c / D80).
   it('warns for a pin no one confirmed whose cluster other skaters independently drew', () => {
     const next = advanceOnIceSession(
       emptyAlertSession(),

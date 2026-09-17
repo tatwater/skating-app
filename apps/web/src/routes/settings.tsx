@@ -104,7 +104,7 @@ function SettingsPage() {
 }
 
 /**
- * Home location (Phase 4, D11/D18) — the PRIVATE anchor for drive-time bands. Only the derived
+ * Home location (Phase 04, D11/D18) — the PRIVATE anchor for drive-time bands. Only the derived
  * isochrones + radius are stored server-side; the coordinate itself never leaves your device beyond
  * this set. Uses the browser's geolocation so there's no manual coordinate entry; setting it triggers
  * the isochrone recompute that powers the drive-time feed filter + nearby notifications.
@@ -198,8 +198,8 @@ function RadiusSelect({
 
 /**
  * Notification preferences — **every** type, iterated from the vocabulary in `@skating/core` (D16;
- * N8). This page used to hand-pick three of ten toggles, and the other seven were switches on the
- * server nobody could reach. The two radius-bearing Phase-4 buckets sit last, each with its "within"
+ * A08). This page used to hand-pick three of ten toggles, and the other seven were switches on the
+ * server nobody could reach. The two radius-bearing Phase-04 buckets sit last, each with its "within"
  * row (X₂ ≥ X₁, clamped here and re-enforced server-side); the radii need a home set above.
  */
 function NotificationSettings() {
@@ -297,7 +297,7 @@ function NotificationSettings() {
             return <div key={key}>{toggle(key)}</div>;
           })}
 
-          {/* The two transports (N8 PR 3 / D174): what the toggles above pick, these carry — push
+          {/* The two transports (A08 PR 3 / D174): what the toggles above pick, these carry — push
               goes to the phones this account is signed in on; email only for the digest-class types. */}
           <div className="flex flex-col gap-3 border-border border-t pt-4">
             <h3 className="font-mono text-foreground-muted text-xs uppercase tracking-widest">

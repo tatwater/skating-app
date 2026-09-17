@@ -20,12 +20,12 @@ const TARGET_TABLE: Record<(typeof FLAG_TARGET_TYPES)[number], TableNames> = {
   comment: 'comments',
   photo: 'photos',
   user: 'profiles',
-  hazard: 'hazards', // Phase 9 (D51) — mods can hide a bad pin
-  // N6d (D73). The one user-supplied free-text surface in the access layer, and the only part of it a
+  hazard: 'hazards', // Phase 09a (D51) — mods can hide a bad pin
+  // A06d (D73). The one user-supplied free-text surface in the access layer, and the only part of it a
   // flag can reach: a bogus "gate locked" on a lake somebody wants to themselves is exactly the abuse
   // this queue exists for. Access **photos** flag as `photo` like every other image, unchanged.
   accessAlert: 'accessAlerts',
-  // N6f — the first target that is a *place*. "There is no lawful way onto this water" is a claim
+  // A06f — the first target that is a *place*. "There is no lawful way onto this water" is a claim
   // many people can independently make about the same lake, and the per-(flagger, target) dedup below
   // turns that into a free corroboration count: N open rows is N distinct people.
   waterbody: 'waterBodies',
@@ -53,7 +53,7 @@ export const flag = mutation({
     const target = await ctx.db.get(targetId as Id<TableNames>);
     if (!target) throw new ConvexError('Target not found');
 
-    // ── The N6f re-reporting gate ────────────────────────────────────────────────────────────────
+    // ── The A06f re-reporting gate ────────────────────────────────────────────────────────────────
     //
     // Once a moderator has ruled that a body *does* have public access, reporting it again takes a
     // note saying what changed. Not a block: land is sold and gates go up, and a body public in 2026
@@ -108,7 +108,7 @@ export const flag = mutation({
 });
 
 /**
- * The bodies *this viewer* has an open `no_public_access` report on (N6f).
+ * The bodies *this viewer* has an open `no_public_access` report on (A06f).
  *
  * **What it powers: you see your own claim.** An unconfirmed report changes nothing on anyone else's
  * map — otherwise one account could dim any lake in the corpus until a human got to it — but the

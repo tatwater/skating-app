@@ -17,7 +17,7 @@ import { Button } from '../components/ui/button';
 import { Card, CardContent } from '../components/ui/card';
 
 /**
- * The request queue (N7b PR 2 / D107) — **a skater asked; a moderator answers.**
+ * The request queue (A07b PR 2 / D107) — **a skater asked; a moderator answers.**
  *
  * One card per open request, **oldest first, whatever the kind** — a request nobody answered is the
  * worst row, and grouping by kind would bury an old restore under every new tap.

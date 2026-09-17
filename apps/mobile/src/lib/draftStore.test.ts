@@ -16,7 +16,7 @@ import { ensureSchema, readHazardItems, readReportDrafts, type SqliteLike } from
 /**
  * Covers the one part of `draftStore` that touches *existing on-device user data*: the `kind`
  * migration (`ALTER TABLE … ADD COLUMN kind NOT NULL DEFAULT 'report'`) that runs the first time a
- * pre-Phase-9 install opens the app. A bug there would strand or drop real queued drafts, so it gets
+ * pre-Phase-09a install opens the app. A bug there would strand or drop real queued drafts, so it gets
  * coverage even though the rest of this file is untestable native glue.
  *
  * The store is written against a small `SqliteLike` interface; here we back it with Node's built-in
@@ -59,7 +59,7 @@ function insertLegacyRow(db: DatabaseSync, draft: ReportDraft): void {
 describe('draftStore kind migration', () => {
   it('backfills existing report drafts and still lists them after the migration', () => {
     const raw = new DatabaseSync(':memory:');
-    // The exact schema a pre-Phase-9 device carries — no `kind` column.
+    // The exact schema a pre-Phase-09a device carries — no `kind` column.
     raw.exec(
       `CREATE TABLE report_drafts (
         id TEXT PRIMARY KEY,
@@ -86,7 +86,7 @@ describe('draftStore kind migration', () => {
     raw.close();
   });
 
-  it('renames a queued confirmation from the pre-N8 kind, in the column and the blob alike', () => {
+  it('renames a queued confirmation from the pre-A08 kind, in the column and the blob alike', () => {
     const raw = new DatabaseSync(':memory:');
     const db = adapt(raw);
     ensureSchema(db);

@@ -1,5 +1,5 @@
 /**
- * Pure put-in helpers (Phase 4, decision #7). Put-in markers give a lake a *routable* access point —
+ * Pure put-in helpers (Phase 04, decision #7). Put-in markers give a lake a *routable* access point —
  * a report `point` can be dropped mid-lake / on the ice, so it is NOT itself a put-in. These helpers
  * (1) cluster nearby report points into candidate access markers, (2) snap a coord to the nearest
  * shore/road edge, and (3) build a platform directions deep link. Kept framework-free in

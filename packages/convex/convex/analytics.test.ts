@@ -1,5 +1,5 @@
 /**
- * The analytics read side (Phase 7b). Two things matter most here and neither is about arithmetic:
+ * The analytics read side (Phase 07-2). Two things matter most here and neither is about arithmetic:
  *
  *  - **The role split holds.** Charts and constants are admin-only (PII + tuning, D37); the
  *    contributor-trend panel is moderator-visible because it's *their* D57 lever's input — but the raw

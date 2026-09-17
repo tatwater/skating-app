@@ -1,5 +1,5 @@
 /**
- * Foreground-location permission, requested through a single shared promise (Phase 9 §Mobile).
+ * Foreground-location permission, requested through a single shared promise (Phase 09a §Mobile).
  *
  * The map framing (`MapView`) and the on-ice watcher (`_layout`) both need location and mount at the
  * same time. If one *checks* the permission while the other is still *prompting*, the checker sees

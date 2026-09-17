@@ -5,8 +5,8 @@
  * **re-enforced here** at the trust boundary (D37) — the client runs the same check before submit,
  * but the server never trusts it. **All reports are public (D13)** — there is no visibility field;
  * minors can't post at all (D41). Reads gate on **moderation only** — a block never hides a report
- * (D3, safety-first); the block set instead annotates a blocked author's line (a Phase-3 "Blocked"
- * chip, Workstream B/C) and hides comments/profiles, never a report.
+ * (D3, safety-first); the block set instead annotates a blocked author's line (a Phase-03 "Blocked"
+ * chip, Workstream 2/C) and hides comments/profiles, never a report.
  */
 
 import {
@@ -98,9 +98,9 @@ import { loadFavorites, type ViewerFavorites } from './waterBodyFavorites';
 
 /** Editable report content, shared by `create` and `update` args (the schema mirrors these). */
 const reportContent = {
-  // When the skater left the ice — the primary sort key everywhere (D28; Phase 5 rename).
+  // When the skater left the ice — the primary sort key everywhere (D28; Phase 05 rename).
   skateEndTime: v.number(),
-  // Optional — when they got on the ice. Duration is derived (end − start), never stored (Phase 5).
+  // Optional — when they got on the ice. Duration is derived (end − start), never stored (Phase 05).
   skateStartTime: v.optional(v.number()),
   iceTypes: v.optional(v.array(literals(ICE_TYPES))),
   surfaceTags: v.optional(v.array(literals(SURFACE_TAGS))),
@@ -133,7 +133,7 @@ const reportContent = {
   notes: v.optional(v.string()),
   point: v.optional(latLng), // optional put-in pin; falls back to the body centroid
   photoIds: v.optional(v.array(v.id('photos'))),
-  // Private-property opt-out (Phase 4, decision #7): false suppresses this report's derived put-in
+  // Private-property opt-out (Phase 04, decision #7): false suppresses this report's derived put-in
   // marker (keeps the coarse `place` label). Default (undefined) shows it.
   showPutIn: v.optional(v.boolean()),
 };
@@ -189,7 +189,7 @@ export const create = mutation({
     // The author's own standalone hazards to bundle into this report (D55). Ownership, body and
     // not-already-attached are all re-checked server-side.
     attachHazardIds: v.optional(v.array(v.id('hazards'))),
-    // The recorded skate this report describes (Phase 8). Optional by design: a report NEVER requires
+    // The recorded skate this report describes (Phase 08). Optional by design: a report NEVER requires
     // a path (D24) — the path is enrichment, the observation is the safety artifact. When present it
     // flips `source` to `activity` and back-links the activity, in this transaction.
     activityId: v.optional(v.id('gpsActivities')),
@@ -248,12 +248,12 @@ export const create = mutation({
     const photoIds = args.photoIds ?? [];
     await assertOwnedPhotos(ctx, photoIds, profile._id);
 
-    // Stamp the point-derived location label (Phase 5) from the resolved put-in point (else the
+    // Stamp the point-derived location label (Phase 05) from the resolved put-in point (else the
     // body centroid) against the `adminAreas` boundaries — so the feed reads `{town/county, state}`
     // directly with no per-read geocode. Absent when the point is outside the imported region.
     const point = n.point ?? body.centroid;
     const place = await resolvePlaceForCoord(ctx, point);
-    // And the named bays, if this lake has any (N2/D60, widened in N9/D175) — the same
+    // And the named bays, if this lake has any (A02/D60, widened in A09/D175) — the same
     // maintain-on-write shape as `place`. A pin-only report takes the smallest bay containing its
     // point; an activity-sourced one takes **every bay its track crossed**, majority first, because
     // its `point` is the GPS start (the put-in) and stamping it with the bay you launched from,
@@ -301,12 +301,12 @@ export const create = mutation({
       updatedAt: now,
     });
 
-    // Hazards (Phase 9). Two sources, both landing in `hazardIdsCreated`:
+    // Hazards (Phase 09a). Two sources, both landing in `hazardIdsCreated`:
     //  - `hazards`: drawn as part of this report (the in-report authoring path, D51).
     //  - `attachHazardIds`: the author's own standalone on-ice pins, bundled in after the fact (D55).
     // Created after the report so each hazard carries `originReportId` from birth — one write order,
     // no back-patching, and the two collections stay consistent inside a single transaction.
-    // Auto-merge runs here too (N5c / D80), for the same reason it runs inside `hazards.create`: a
+    // Auto-merge runs here too (A05c / D80), for the same reason it runs inside `hazards.create`: a
     // hazard drawn in a report is a sighting like any other, and the state this mechanism exists to
     // remove — two pins on the map for one ridge — does not care which form produced them. Leaving it
     // out would have made the *report* path the way to file a duplicate that never collapses.
@@ -336,7 +336,7 @@ export const create = mutation({
     const hazardIdsCreated = [...createdHazardIds, ...bundledHazardIds];
     if (hazardIdsCreated.length > 0) await ctx.db.patch(reportId, { hazardIdsCreated });
 
-    // The membership's indexable copy (N9) — one join row per bay, so the bay feed and the bay
+    // The membership's indexable copy (A09) — one join row per bay, so the bay feed and the bay
     // bounty gate can find a spanning report under its second bay too.
     await syncReportSubAreas(
       ctx,
@@ -349,7 +349,7 @@ export const create = mutation({
       memberSubAreaIds(subAreas),
     );
 
-    // Back-link the recorded skate (Phase 8). Both sides are written in this one transaction so a
+    // Back-link the recorded skate (Phase 08). Both sides are written in this one transaction so a
     // half-linked pair can't exist: the report side drives the detail-view render, and the *activity*
     // side (`linkedReportId`) is what the D58 aggregate layer's publish-is-consent predicate reads —
     // a missing back-link would silently drop the track from the lake map. Ownership is re-checked
@@ -362,7 +362,7 @@ export const create = mutation({
     // without scanning their history (D13). Moderation transitions adjust it symmetrically.
     await bumpContributionCount(ctx, profile._id, 'reportCount', 1);
 
-    // And the body's map summary card (N6c/E). Recomputed rather than incremented — see
+    // And the body's map summary card (A06c/E). Recomputed rather than incremented — see
     // `lib/bodySummary.ts`: the count is window- and season-scoped, so a ±1 would drift the moment a
     // report aged out, and the D86 quality mean cannot be maintained incrementally at all.
     // **`body._id`, not `args.waterBodyId`** — the same distinction the insert above already makes,
@@ -373,7 +373,7 @@ export const create = mutation({
     // stale until the six-hourly sweep.
     await recomputeBodySummary(ctx, body._id);
 
-    // Standing (N7b): a report is evidence of use, and a dormant body yields to it — before the
+    // Standing (A07b): a report is evidence of use, and a dormant body yields to it — before the
     // notification fan-out below, which only pushes an *active* body. A `none` ruling or a removal
     // does not yield (the resident of a private lake skating it is not evidence the public may).
     await activateOnEvidence(ctx, body._id, 'report');
@@ -388,23 +388,23 @@ export const create = mutation({
       await checkAndAwardBadges(ctx, inserted.authorId);
       for (const authorId of corroboratedAuthorIds) await checkAndAwardBadges(ctx, authorId);
 
-      // Auto-attach to any open bounty on this body (Phase 6, decision 10) — the requester's helpful
+      // Auto-attach to any open bounty on this body (Phase 06, decision 10) — the requester's helpful
       // thumb later flips it to fulfilled.
       await attachReportToOpenBounties(ctx, inserted);
 
-      // Fan out Phase-4 notification candidates (favorites / nearby digest / great nearby) into the
+      // Fan out Phase-04 notification candidates (favorites / nearby digest / great nearby) into the
       // coalescing queue — the cron flushes them (decision #4).
       await enqueueReportNotifications(ctx, inserted);
     }
 
-    // Conditions auto-fill (Phase 10 / §7a): when the reporter left conditions blank, schedule a
+    // Conditions auto-fill (Phase 10 / §07-1): when the reporter left conditions blank, schedule a
     // post-insert action to pull the weather AT the skate time (a mutation can't fetch). A user-entered
     // value always wins, so we only schedule when none was provided. Eventually-consistent by design.
     if (n.conditions === undefined) {
       await ctx.scheduler.runAfter(0, internal.conditions.autofillConditions, { reportId });
     }
 
-    // Contradiction signal (Phase 10 / §7b): a report can only contradict on `skateQuality`, so only
+    // Contradiction signal (Phase 10 / §07-2): a report can only contradict on `skateQuality`, so only
     // schedule the (weather-fetching) settle when one is present. Runs after this mutation commits, so
     // `runCorroboration`'s awards are already in the ledger and the settle sees current corroboration. It
     // discloses conflicts + escalates the un-corroborated minority to moderation — never a trust penalty
@@ -453,10 +453,10 @@ async function awardReportCreationPoints(ctx: MutationCtx, report: Doc<'reports'
  *
  * **Self-corroboration is excluded** (same author never corroborates themselves), and the count is
  * **capped at `CORROBORATION_MAX_PER_REPORT`** so a popular lake can't inflate one reporter (D50).
- * Purely additive in Phase 6 — the contradiction penalty needs weather-since and lands in Phase 10.
+ * Purely additive in Phase 06 — the contradiction penalty needs weather-since and lands in Phase 10.
  *
  * Returns the distinct prior-author ids awarded, so the caller recomputes their badges once.
- * Alpha-scale scan (a lake gets a handful of reports per window); Phase 7 can cap/paginate if needed.
+ * Alpha-scale scan (a lake gets a handful of reports per window); Phase 07 can cap/paginate if needed.
  */
 async function runCorroboration(
   ctx: MutationCtx,
@@ -506,7 +506,7 @@ async function runCorroboration(
 
 /**
  * Tell a prior report's author their report was independently corroborated by a fresh one — reuses the
- * `report_rated` channel (a "report_rated-style" notice, decision 3), via the settle queue (N8 / D169):
+ * `report_rated` channel (a "report_rated-style" notice, decision 3), via the settle queue (A08 / D169):
  * the flush re-checks that the corroborating report is still visible, and several inside one window
  * become one "N other skaters backed up your report".
  */
@@ -530,7 +530,7 @@ async function notifyCorroboration(
  * hidden/removed, D32) — applied *in* the index (`moderationStatus: 'visible'`) so a page is never
  * emptied by the gate. The blocked-author "Blocked"-chip annotation is layered on in the client.
  *
- * **Scoped to one season (D63/N5a), defaulting to this one.** The bound rides the index's own range
+ * **Scoped to one season (D63/A05a), defaulting to this one.** The bound rides the index's own range
  * field, so this is a *narrower* read than it used to be rather than the same read with rows dropped —
  * seasonal visibility costs nothing and refunds something. Hiding is not unreachability: a report from
  * a past season still resolves by permalink through `get`, labelled with the season it belongs to.
@@ -539,7 +539,7 @@ export const listByWaterBody = query({
   args: {
     waterBodyId: v.id('waterBodies'),
     /**
-     * Narrow to one named bay (N2 / D60) — the lake page's sub-area filter.
+     * Narrow to one named bay (A02 / D60) — the lake page's sub-area filter.
      *
      * Served by `by_sub_area_moderation_and_skate_end_time`, the same index the bounty gate uses, so
      * this is a *narrower* read rather than the same read with rows dropped after: on Champlain,
@@ -588,7 +588,7 @@ export const listByWaterBody = query({
       if (!survivor || !subArea || subArea.waterBodyId !== survivor._id) {
         throw new ConvexError('That sub-area is not on this water body');
       }
-      // Off the `reportSubAreas` join since N9: a report can be a member of two bays (the two-bay
+      // Off the `reportSubAreas` join since A09: a report can be a member of two bays (the two-bay
       // skate), and a per-report index could only ever find it under one. The join carries the
       // moderation gate and the skate time as mirrors precisely so this read stays *in* the index;
       // the page is then hydrated one `get` per row, bounded by the page size.
@@ -629,7 +629,7 @@ export const listByWaterBody = query({
 /**
  * A single report for its detail view — moderation-checked (hidden/removed excluded, D32).
  *
- * **Deliberately not season-scoped** (N5a design review). Hiding governs the default view, not
+ * **Deliberately not season-scoped** (A05a design review). Hiding governs the default view, not
  * reachability: someone may hold a link, a bookmark or an old notification, and a 404 on a URL that
  * used to work is a worse lie than an old report clearly marked old. The client derives the label from
  * `skateEndTime` with `seasonOf`, so there is nothing to keep in sync here.
@@ -678,16 +678,16 @@ interface BodyInfo {
   name: string;
   centroid: LatLng;
   /**
-   * The body's standing (N7b). The global feed shows a report on a *dormant* body (a report there is
+   * The body's standing (A07b). The global feed shows a report on a *dormant* body (a report there is
    * what brought it back, and the drawer explains the rest) but not on a *removed* one — a
    * landowner's own skate on a taken-down pond is theirs and the pond's, not the feed's. The
    * recommended strip, which *pushes*, wants `active` only.
    */
   standing: 'active' | 'dormant' | 'removed' | 'unlisted';
-  /** The body's easiest known approach (N6d/D144) — drives the feed card's Hike-In chip. */
+  /** The body's easiest known approach (A06d/D144) — drives the feed card's Hike-In chip. */
   accessKind?: string;
   /**
-   * The body's `filter`-tier weather cell (N6h / D165), for the weather narrow. Absent for a
+   * The body's `filter`-tier weather cell (A06h / D165), for the weather narrow. Absent for a
    * dangling ref. Read off the body doc the cache already loaded, so the narrow costs no extra read
    * beyond one digest per distinct cell on the page.
    */
@@ -713,7 +713,7 @@ async function bodyInfoFor(
     standing: body ? standingOf(body).standing : 'unlisted',
     // A resolvable body always has a centroid; the fallback keeps the type total for a dangling ref.
     centroid: body?.centroid ?? { lat: 0, lng: 0 },
-    // The Hike-In chip (N6d/D87). Free here — the body doc is already loaded and cached per query, so
+    // The Hike-In chip (A06d/D87). Free here — the body doc is already loaded and cached per query, so
     // a page of thirty reports over five lakes costs five reads either way.
     ...(body?.accessKind !== undefined ? { accessKind: body.accessKind } : {}),
     ...(body ? { filterCellKey: bodyWeatherCell(body, 'filter').key } : {}),
@@ -748,7 +748,7 @@ interface FeedCardCaches {
 }
 
 /**
- * Does this report's lake satisfy the weather filter (N6h / D165, D166)?
+ * Does this report's lake satisfy the weather filter (A06h / D165, D166)?
  *
  * The report's own bay when it has one — a report from Malletts Bay is about Malletts Bay's cell,
  * which is not Champlain's — else the body's anchor cell, then one digest read per distinct cell on
@@ -810,10 +810,10 @@ async function toFeedCard(
     reportId: r._id,
     waterBodyId: r.waterBodyId,
     bodyName: body.name,
-    // The bay name, when the lake has one (N2/D60) — `buildFeedCardView` composes it ahead of the
+    // The bay name, when the lake has one (A02/D60) — `buildFeedCardView` composes it ahead of the
     // body and the town through `formatLocationLine`, so the card can't disagree with report detail.
     ...(r.subAreaName !== undefined ? { subAreaName: r.subAreaName } : {}),
-    // The list form for a two-bay skate (N9) — the names travel with the report, so this costs no
+    // The list form for a two-bay skate (A09) — the names travel with the report, so this costs no
     // read; `formatLocationLine` prefers the list when it is present.
     ...(r.subAreaNames !== undefined ? { subAreaNames: r.subAreaNames } : {}),
     ...(r.place !== undefined ? { place: r.place } : {}),
@@ -825,7 +825,7 @@ async function toFeedCard(
     photoThumbUrls: await thumbUrlsFor(ctx, r.photoIds),
     author: await authorFor(ctx, r.authorId, caches.authors, now),
     blocked: sets.blocked.has(r.authorId),
-    // A lake favorite takes the whole lake; a bay favorite takes only the reports in the bay (N9).
+    // A lake favorite takes the whole lake; a bay favorite takes only the reports in the bay (A09).
     isFavorite: isFavoriteReport(sets.favorites, r),
     ...(body.accessKind !== undefined ? { accessKind: body.accessKind } : {}),
   };
@@ -849,19 +849,19 @@ async function thumbUrlsFor(
 }
 
 /**
- * The global cross-body **newsfeed** (Phase 5, D28) — every visible report, newest **skate-end
+ * The global cross-body **newsfeed** (Phase 05, D28) — every visible report, newest **skate-end
  * time** first, paginated (`usePaginatedQuery`). All reports are public (D13) and a **block never
  * hides a report** (D3, safety-first), so the filter is moderation-only; a blocked author's report
  * is still returned, carrying `blocked: true` for author de-emphasis + the "Blocked" chip. Each page
  * item is enriched into a `FeedCardData` (survivor body name + point-derived place, author, photo
- * thumbnails) — bounded by page size. The feed ships global; Phase 4 layers an additive drive-time /
+ * thumbnails) — bounded by page size. The feed ships global; Phase 04 layers an additive drive-time /
  * favorites narrow onto this same query.
  *
- * **Phase 4 (additive).** An optional `filters` blob narrows the page via the shared
+ * **Phase 04 (additive).** An optional `filters` blob narrows the page via the shared
  * `@skating/core` `matchesFilters` (include-unknown for optional attributes; distance is hard and
  * favorites are exempt), using the viewer's cached isochrone bands + favorite set. Favorites are
  * **boosted to the top of the page** (a stable per-page reorder) and carry `isFavorite: true` for the
- * badge. With no filters + no favorites the result is exactly the Phase 5 feed. Note: narrowing runs
+ * badge. With no filters + no favorites the result is exactly the Phase 05 feed. Note: narrowing runs
  * *after* `paginate`, so a heavily filtered page can come back short (even empty) with `isDone: false`
  * — `usePaginatedQuery` keeps loading; the client requests the next page. (The moderation gate stays
  * in-index precisely because *it* could empty every page; user filters can't strand the same way since
@@ -920,13 +920,13 @@ export const listFeed = query({
       bayCells: new Map<string, string | null>(),
       digests: new Map<string, boolean>(),
     };
-    // The bay's own drive-time coordinate (N9 kickoff call 2), one read per distinct bay on the
+    // The bay's own drive-time coordinate (A09 kickoff call 2), one read per distinct bay on the
     // page beside `bodyInfo`. `null` caches a bay that is gone, which bands on the lake instead.
     const bayCoords = new Map<string, LatLng | null>();
     const page: FeedCardData[] = [];
     for (const r of result.page) {
       const body = await bodyInfoFor(ctx, r.waterBodyId, caches.bodyInfo);
-      // A takedown reaches the feed (N7b) — see `BodyInfo.standing`.
+      // A takedown reaches the feed (A07b) — see `BodyInfo.standing`.
       if (body.standing === 'removed') continue;
       const isFavorite = isFavoriteReport(favorites, r);
       let coord: LatLng = body.centroid;
@@ -944,7 +944,7 @@ export const listFeed = query({
         filters.weather === undefined
           ? undefined
           : await weatherMatchedFor(ctx, r, body, filters.weather, weatherCaches);
-      // The additive narrow — an empty `filters` matches everything (Phase 5 behavior preserved).
+      // The additive narrow — an empty `filters` matches everything (Phase 05 behavior preserved).
       if (
         !matchesFilters(
           {
@@ -1004,7 +1004,7 @@ const OFFLINE_CACHE_MAX_PER_BODY = 5;
 const OFFLINE_CACHE_WINDOW_MS = 72 * 60 * 60 * 1000; // 72h
 
 /**
- * Recent reports for a set of bodies as ready-to-cache `FeedCardData` (Phase 4, decision #8) — the
+ * Recent reports for a set of bodies as ready-to-cache `FeedCardData` (Phase 04, decision #8) — the
  * data the mobile offline read-cache stores so an **opened lake** and the viewer's **favorites** read
  * back on the ice with no signal. Per body: the freshest ≤5 visible reports within the last 72h
  * (whichever bound is smaller), enriched identically to the feed via `toFeedCard`. Empty ids → empty.
@@ -1065,7 +1065,7 @@ const RECOMMENDED_SCAN_CAP = 500;
  * corroboration tally (`report_corroborated` rows on the `by_ref` index). Blocks + moderation are honored
  * (never broken): non-visible reports are excluded in-index and a blocked author's report is dropped here.
  *
- * **Caps (decision 15):** stateless for Phase 6 — `selectRecommended` bundles the top reports per body and
+ * **Caps (decision 15):** stateless for Phase 06 — `selectRecommended` bundles the top reports per body and
  * caps at `RECOMMENDED_MAX_BODIES_PER_DAY` unique bodies *per fetch*. A qualifying report is vanishingly
  * rare (all gates at once), so a flood can't occur at alpha volume. The server-tracked cross-fetch/day
  * dedup + hard per-day cap (a per-user impressions store + an ack mutation) is a logged fast-follow —
@@ -1110,7 +1110,7 @@ export const recommended = query({
       if (r.skateQuality !== 'great') continue;
       if (!r.iceTypes.includes('black_ice')) continue;
       if (r.photoIds.length < RECOMMENDED_MIN_PHOTOS) continue;
-      // The strip *recommends* a lake, so the lake has to be one we push (N7b). Cached per body
+      // The strip *recommends* a lake, so the lake has to be one we push (A07b). Cached per body
       // for the page, like the feed's own lookup.
       const bodyInfo = await bodyInfoFor(ctx, r.waterBodyId, recommendedBodies);
       if (bodyInfo.standing !== 'active') continue;
@@ -1194,7 +1194,7 @@ export const update = mutation({
     const photoIds = args.photoIds ?? existing.photoIds;
     await assertOwnedPhotos(ctx, photoIds, profile._id);
 
-    // Re-resolve the point-derived place (Phase 5) from the final point — an edited put-in pin moves
+    // Re-resolve the point-derived place (Phase 05) from the final point — an edited put-in pin moves
     // the location label with it. `place` is cleared to undefined when the new point resolves nowhere.
     const point = n.point ?? existing.point;
     const place = await resolvePlaceForCoord(ctx, point);
@@ -1232,13 +1232,13 @@ export const update = mutation({
       notes: n.notes,
       ...(args.showPutIn !== undefined ? { showPutIn: args.showPutIn } : {}),
       photoIds,
-      // Distinct from `updatedAt` on purpose (N6f). `updatedAt` moves for reasons the author had
+      // Distinct from `updatedAt` on purpose (A06f). `updatedAt` moves for reasons the author had
       // nothing to do with — the conditions autofill backfills the weather hours later — so a byline
       // reading "edited" off it would accuse people of edits they never made. This moves only here.
       editedAt: now,
       updatedAt: now,
     });
-    // The join mirrors both things this edit can move — the membership and the skate time (N9).
+    // The join mirrors both things this edit can move — the membership and the skate time (A09).
     await syncReportSubAreas(
       ctx,
       {
@@ -1250,7 +1250,7 @@ export const update = mutation({
       memberSubAreaIds(subAreas),
     );
 
-    // **An edit changes the card's inputs, so the card is recomputed (N6c/E).** `skateEndTime` and
+    // **An edit changes the card's inputs, so the card is recomputed (A06c/E).** `skateEndTime` and
     // `skateQuality` are both patched above and both feed the summary directly: re-dating a report
     // can move it in or out of the 14-day window, and re-rating it moves the D86 mean. Without this
     // the card would be wrong until the six-hourly sweep — and the module doc for
@@ -1314,9 +1314,9 @@ function mergeEditedConditions(
 }
 
 /**
- * One-time migration (Phase 5): copy each report's legacy `skateTime` → `skateEndTime`, drop the old
+ * One-time migration (Phase 05): copy each report's legacy `skateTime` → `skateEndTime`, drop the old
  * field, and stamp the point-derived `place` (against the imported `adminAreas`). A field **rename**
- * isn't migration-free, so run this via the Phase-3 strict-schema dance on a deployment with data:
+ * isn't migration-free, so run this via the Phase-03 strict-schema dance on a deployment with data:
  * temporarily `schemaValidation: false` → push → `pnpm exec convex run reports:renameSkateTimeToSkateEndTime`
  * → revert → redeploy strict. Run it **after** the `adminAreas` import so `place` resolves. Idempotent:
  * a report already carrying `skateEndTime` keeps it, and re-running only backfills a still-missing

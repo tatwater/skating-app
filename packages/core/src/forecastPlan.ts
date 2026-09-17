@@ -1,5 +1,5 @@
 /**
- * The seven-day planner (N6h Workstream D, D155) — hours as cards, days as cards, episodes as
+ * The seven-day planner (A06h Workstream 4, D155) — hours as cards, days as cards, episodes as
  * sentences.
  *
  * ## What it is
@@ -230,7 +230,7 @@ export interface ForecastPlanHour extends ForecastHour {
   rainIn: number;
   windMph: number;
   gustMph: number | null;
-  /** True on the one card where the viewer would arrive if they left now (Phase 4 band, ≈). */
+  /** True on the one card where the viewer would arrive if they left now (Phase 04 band, ≈). */
   arrival: boolean;
 }
 

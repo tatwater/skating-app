@@ -44,7 +44,7 @@ describe('latestSeasonWithFrames — D149 turnover', () => {
   });
 
   it('⚠ an empty new season does not blank out the one still being served', () => {
-    // Ingest starts *looking* in September on the summit trigger (§C3), so an empty winter-2026-27
+    // Ingest starts *looking* in September on the summit trigger (§3.3), so an empty winter-2026-27
     // exists for weeks before its first frame lands. Turning over on the directory rather than on the
     // frames would take last winter's working scrubber away and replace it with nothing.
     expect(

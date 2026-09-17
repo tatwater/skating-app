@@ -29,12 +29,12 @@ export type OsmWaterFeature = Feature<Geometry, OsmWaterProperties>;
  */
 export interface CanonicalBody {
   /**
-   * Which catalogue this record arrived from. **No longer half the upsert key** (N7 / D93) — the
+   * Which catalogue this record arrived from. **No longer half the upsert key** (A07a / D93) — the
    * ids below are — but still stored, because "where did this row come from" is a real question.
    */
   source: 'osm' | 'nhd' | '3dhp';
   /**
-   * The arrival key, retained through one full campaign because the N6b contour tiles are stamped
+   * The arrival key, retained through one full campaign because the A06b contour tiles are stamped
    * with it and D93 retires it only once every consumer reads `waterBodyKey`.
    */
   externalId: string;
@@ -73,7 +73,7 @@ export interface CanonicalBody {
    */
   sourceAreaSqM?: number;
   /**
-   * What share of the outline lies inside our five states, in `[0, 1]` (N7 audit).
+   * What share of the outline lies inside our five states, in `[0, 1]` (A07a audit).
    *
    * The region clip admits on a **single** in-region vertex, which is what keeps Beau Lake — most of
    * which is in Québec. The cost is that the corpus holds bodies that are mostly somewhere else and
@@ -83,7 +83,7 @@ export interface CanonicalBody {
   /**
    * How well corroborated each attribute is (D110) — `high` / `medium` / `low` / `none`.
    *
-   * Computed by `@skating/core`'s `scoreBody` and, until the N7 audit, **discarded**: the merge
+   * Computed by `@skating/core`'s `scoreBody` and, until the A07a audit, **discarded**: the merge
    * tallied the distribution into three lines of terminal output and stored nothing, so a fully
    * tested core module had no consumer and the review queue it feeds could never be opened.
    */
@@ -94,7 +94,7 @@ export interface CanonicalBody {
    */
   reviewReasons?: string[];
   /**
-   * **Every publisher's name for this water, the losers included** (N7).
+   * **Every publisher's name for this water, the losers included** (A07a).
    *
    * `chooseName` stores one by authority (`gnis > nhd > 3dhp > osm`) and, until now, the merge threw
    * the rest away — which cost 463 bodies their local name and left them unsearchable under it, the
@@ -104,12 +104,12 @@ export interface CanonicalBody {
    */
   nameClaims?: { source: string; value: string }[];
   /**
-   * A point genuinely inside the water (N6c) — see `waterBodies.interiorPoint`. Absent only when
+   * A point genuinely inside the water (A06c) — see `waterBodies.interiorPoint`. Absent only when
    * the geometry has no locatable interior, which is a body the transform is about to skip anyway.
    */
   interiorPoint?: LatLng;
   /**
-   * Derived shape stats (N6c Workstream A), measured on the **pre-simplification** geometry per
+   * Derived shape stats (A06c Workstream 1), measured on the **pre-simplification** geometry per
    * D85. Each is independently optional: a degenerate ring costs one field, not the feature.
    */
   shorelineM?: number;
@@ -120,7 +120,7 @@ export interface CanonicalBody {
 }
 
 /**
- * A depth carried opportunistically off an OSM `depth` / `maxdepth` tag (N6a rung 7), shaped for
+ * A depth carried opportunistically off an OSM `depth` / `maxdepth` tag (A06a rung 7), shaped for
  * `waterBodies.importDepths` — which keys on `source` + `externalId`, exactly what we have here.
  *
  * Kept **separate from `CanonicalBody`** rather than folded into it, because the two have different

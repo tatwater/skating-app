@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Mirror the WIND Toolkit response archive to a PRIVATE R2 bucket (N7 prep).
+# Mirror the WIND Toolkit response archive to a PRIVATE R2 bucket (A07a prep).
 #
 #   scripts/wind-climate/mirror-r2.sh push|pull|status
 #

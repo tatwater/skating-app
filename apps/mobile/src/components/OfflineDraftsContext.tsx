@@ -39,7 +39,7 @@ import { flushDrafts, isDraftFlushing } from '../lib/flushService';
 interface OfflineDraftsValue {
   drafts: ReportDraft[];
   /**
-   * Queued on-ice hazards + confirmations (Phase 9). Surfaced alongside report drafts so one that
+   * Queued on-ice hazards + confirmations (Phase 09a). Surfaced alongside report drafts so one that
    * hits a permanent rejection on flush is *visible and dismissible* rather than parked in `error`
    * forever, invisible, after the skater was told "it'll post when you're back in signal".
    */

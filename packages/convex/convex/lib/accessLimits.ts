@@ -1,5 +1,5 @@
 /**
- * Read ceilings for the access layer (N6d).
+ * Read ceilings for the access layer (A06d).
  *
  * Its own module for a boring but real reason: `accessPoints` and `accessAlerts` each need this, and
  * each already imports from the other (`accessPoints` reads alerts for the drawer; `accessAlerts`

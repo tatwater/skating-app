@@ -5,7 +5,7 @@
  * the water layer — the map hands them up through `MapSelectionContext` and this module turns them
  * into a list. A second subscription on the same viewport key would double the read cost of every
  * pan for an answer the map is already holding, and `listInViewport` is the one read path in this
- * app with a history of read-cap failures (PRs #10/#11, then N1); it does not need a second caller.
+ * app with a history of read-cap failures (PRs #10/#11, then A01); it does not need a second caller.
  *
  * Ordering is the whole design here. The map draws prominence spatially — a big lake is big — but a
  * list has one dimension, so it has to spend it on the same thing the map does: what is worth
@@ -21,7 +21,7 @@ export interface ViewportLake {
   surfaceAreaSqM?: number;
   states?: string[];
   summary?: { recentReportCount: number };
-  /** A moderator's access ruling (N6f) — `verdict: 'none'` sinks the row and prints a chip. */
+  /** A moderator's access ruling (A06f) — `verdict: 'none'` sinks the row and prints a chip. */
   publicAccess?: { verdict: string };
 }
 
@@ -61,7 +61,7 @@ export const VIEWPORT_LIST_LIMIT = 50;
  *  1. **Favorites first.** The map already outlines them; the list is the surface where "my lakes"
  *     is a useful sort, and a favorite that fell to row 40 behind bigger water you've never skated
  *     is the list failing at the one thing it knows about you.
- *  2. **Bodies with no public access last** (N6f) — the list's half of the map's dim. A lake you
+ *  2. **Bodies with no public access last** (A06f) — the list's half of the map's dim. A lake you
  *     cannot lawfully reach should not take one of fifty rows from one you can. It still *has* a row,
  *     which is the same restraint the zoom demotion keeps: harder to find, never hidden.
  *     Below the favorite check on purpose — if you favorited it, you know something we don't.

@@ -24,7 +24,7 @@ web-build/
 .env.*
 !.env.example
 !.env.*.example
-# Firebase's Android config (FCM behind Expo push, N8) — per-project secret; EAS gets it as a file env var
+# Firebase's Android config (FCM behind Expo push, A08) — per-project secret; EAS gets it as a file env var
 google-services.json
 
 # Logs

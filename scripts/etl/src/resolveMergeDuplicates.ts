@@ -1,5 +1,5 @@
 /**
- * Resolve the `merge` verdicts a canonical load declined (N7).
+ * Resolve the `merge` verdicts a canonical load declined (A07a).
  *
  *   pnpm --filter @skating/etl resolve-merge-duplicates            # dry — names every deletion
  *   pnpm --filter @skating/etl resolve-merge-duplicates --apply
@@ -88,7 +88,7 @@ async function main(): Promise<void> {
 
   const logger = new RunLogger({
     kind: 'dedup_resolve',
-    label: 'N7 — merge verdicts the load declined',
+    label: 'A07a — merge verdicts the load declined',
     campaignId,
     target,
     call: convexRun,

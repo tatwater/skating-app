@@ -1,6 +1,6 @@
-# Phase 0 build record — Foundations
+# Phase 00 build record — Foundations
 
-> **Status:** ✅ Complete (2026-07-12), PRs #1–#6. Phase 0 never had a plan doc of its own — the roadmap entry was its only record. This file is that entry, moved here verbatim in the 2026-09-16 roadmap rewrite so the roadmap can carry a summary and the detail has a home.
+> **Status:** ✅ Complete (2026-07-12), PRs #1–#6. Phase 00 never had a plan doc of its own — the roadmap entry was its only record. This file is that entry, moved here verbatim in the 2026-09-16 roadmap rewrite so the roadmap can carry a summary and the detail has a home.
 
 > **Status:** shipped and verified. Both apps sign in (age-gated, risk ack recorded); the
 > web app is **deployed to Vercel** (TanStack Start via the Nitro Vite plugin → a real SSR

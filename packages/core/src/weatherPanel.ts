@@ -1,5 +1,5 @@
 /**
- * The past-weather panel's copy (N6h Workstream C).
+ * The past-weather panel's copy (A06h Workstream 3).
  *
  * ## Why the formatting lives in core rather than in each client
  *
@@ -13,7 +13,7 @@
  * **Practical:** both clients render these sentences verbatim and neither owns the reasoning.
  *
  * ⚠ This paragraph used to justify that split by saying `apps/mobile` had **no charting library**, so
- * mobile got text where web got a chart. Workstream D retired the claim: the missing piece was never
+ * mobile got text where web got a chart. Workstream 4 retired the claim: the missing piece was never
  * a library but shared *geometry*, `react-native-svg` was already a dependency, and both clients now
  * draw the identical timeline from `weatherTimeline.ts`. The sentences still live here — a chart and
  * a sentence answer different questions, and only one of them is a place a safety verdict can hide.
@@ -199,7 +199,7 @@ export function shortDayLabel(localDate: string): string {
  * So the shift is read back out with **UTC getters**, which is correct precisely because the value is
  * already local. Same rule as `shortDayLabel` and `monthDayLabel` above, for the same reason.
  *
- * This exists ahead of the hourly panel that will need it (N6h Workstream D) so the obvious function
+ * This exists ahead of the hourly panel that will need it (A06h Workstream 4) so the obvious function
  * is also the right one — a note in a docblock is not protection when the code is written weeks later.
  */
 export function formatLocalHourLabel(startMs: number): string {

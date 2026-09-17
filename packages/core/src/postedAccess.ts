@@ -1,5 +1,5 @@
 /**
- * What the sign says — a posted seasonal window and daily hours (N6e).
+ * What the sign says — a posted seasonal window and daily hours (A06e).
  *
  * ## Why this is not an `accessAlert`
  *

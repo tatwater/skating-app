@@ -14,7 +14,7 @@ import { Input } from './ui/input';
 import { Label } from './ui/label';
 
 /**
- * Change the email on the account (N8 post-merge). Clerk owns the address (D26); the sequence is
+ * Change the email on the account (A08 post-merge). Clerk owns the address (D26); the sequence is
  * `@skating/core`'s `changeEmail` — add, code, verify, make primary, release the old one — and this
  * is the form around it. The server learns through Clerk's webhook, not from us.
  *

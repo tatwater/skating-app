@@ -2,7 +2,7 @@
  * Notification-permission request, serialized through a single shared promise — the on-ice-mode sibling
  * of `location.ts`'s `ensureForegroundPermission` (D54 Layer 2).
  *
- * The Phase 9.5 on-ice directional alert (`hazardProjection`) is delivered as a **local** notification
+ * The Phase 09b on-ice directional alert (`hazardProjection`) is delivered as a **local** notification
  * (no push token, no server — computed and fired on-device, so D12 holds). Permission is asked for
  * **lazily, the first time the skater arms on-ice mode** — never on cold launch — because a permission
  * prompt the moment the app opens is exactly the friction that gets it denied. Arming the map watcher and

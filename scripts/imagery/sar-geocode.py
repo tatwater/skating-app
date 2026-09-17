@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Re-place a GRD's ground-control points for a surface at a known height (N6e open question 8).
+"""Re-place a GRD's ground-control points for a surface at a known height (A06e open question 8).
 
     sar-geocode.py <annotation.xml> <target-height-m> [--look-right]
 

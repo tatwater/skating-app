@@ -112,7 +112,7 @@ describe('ratings.rate — helpful', () => {
     });
 
     expect(await points(t, author.id)).toBe(before + 5);
-    // The notice settles in the queue first (N8 / D169) — nothing lands in the inbox until the flush
+    // The notice settles in the queue first (A08 / D169) — nothing lands in the inbox until the flush
     // re-reads the thumb and finds it still helpful.
     expect(await t.run((ctx) => ctx.db.query('notifications').collect())).toHaveLength(0);
     const notes = (await flushAllDue(t)).filter((n) => n.userId === author.id);

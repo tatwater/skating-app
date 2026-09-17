@@ -1,11 +1,11 @@
 /**
  * Support tickets (D35/D37/D38). A lightweight in-app inbox — NOT Zendesk (D35) — that auto-captures
  * context (app version, platform, device, a recent Sentry event id) an email can't. `create` is open to
- * any signed-in user on **web and mobile** (the one Expo-touching Phase-7 bit — a submission path, not
+ * any signed-in user on **web and mobile** (the one Expo-touching Phase-07 bit — a submission path, not
  * the operator surface); appeals/reinstatement reuse this table via `category: 'account'` rather than a
  * new table. Reading/triaging the inbox is **admin-only** (PII — D37's admin line).
  *
- * `assign`/`resolve` land in a later Phase-7 commit alongside `create`; this file starts with the
+ * `assign`/`resolve` land in a later Phase-07 commit alongside `create`; this file starts with the
  * admin-only `list` query the inbox reads.
  */
 
@@ -101,7 +101,7 @@ export const list = query({
 });
 
 /**
- * File a support ticket / bug report (D35) — the one Phase-7 path that ships on **web and mobile**.
+ * File a support ticket / bug report (D35) — the one Phase-07 path that ships on **web and mobile**.
  *
  * Two gates, deliberately split (2026-07-24 review):
  *  - **Authentication is required** — a Clerk identity must be present. Without it, an anonymous client

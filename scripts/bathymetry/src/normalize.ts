@@ -1,5 +1,5 @@
 /**
- * Per-source feature normalization (N6b) — five agencies' schemas → two common shapes.
+ * Per-source feature normalization (A06b) — five agencies' schemas → two common shapes.
  *
  * This is where the phase's real complexity lives. The five datasets agree on nothing: not the depth
  * column's name, not its sign, not its unit, not whether a lake has an id, not whether the shoreline is
@@ -388,7 +388,7 @@ export function normalizeVtSoundingLine(
  *
  * The file is republished (its `last-modified` moved to 2026-06-01 under a 2020 filename), and a
  * column reorder is exactly the kind of change that keeps parsing and silently swaps latitude for
- * depth. Throws with the headers it actually found — the same discipline N6a's transform uses.
+ * depth. Throws with the headers it actually found — the same discipline A06a's transform uses.
  */
 export function vtSoundingColumns(headerLine: string): {
   lng: number;

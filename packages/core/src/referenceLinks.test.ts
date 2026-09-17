@@ -15,7 +15,7 @@ import {
 /** A fixed clock, so the Copernicus window's shape can be asserted without re-dating the test. */
 const NOW = Date.parse('2026-01-15T12:00:00.000Z');
 
-/** Lake Champlain's two points, measured in N6c-1: they are 30.7 km apart. */
+/** Lake Champlain's two points, measured in A06c-1: they are 30.7 km apart. */
 const CHAMPLAIN_INTERIOR = { lat: 44.5325, lng: -73.3251 };
 const CHAMPLAIN_SHORELINE = { lat: 44.2757, lng: -73.3894 };
 
@@ -30,7 +30,7 @@ describe('linkCoordinate', () => {
     ).toEqual(CHAMPLAIN_INTERIOR);
   });
 
-  it('falls back to representativePoint, then centroid, for pre-N6c-1 rows', () => {
+  it('falls back to representativePoint, then centroid, for pre-A06c-1 rows', () => {
     expect(
       linkCoordinate({ representativePoint: CHAMPLAIN_SHORELINE, centroid: undefined }),
     ).toEqual(CHAMPLAIN_SHORELINE);
@@ -176,7 +176,7 @@ describe('allReferenceLinks', () => {
 
   /**
    * The guard that held the Copernicus link out until the reveal shipped (D138) is retired here —
-   * N6e is the phase that owns both, so the link is now expected rather than forbidden.
+   * A06e is the phase that owns both, so the link is now expected rather than forbidden.
    */
   it('emits the Copernicus link beside Windy, for a body big enough to resolve', () => {
     const links = allReferenceLinks(

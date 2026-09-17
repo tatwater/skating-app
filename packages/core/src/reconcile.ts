@@ -1,5 +1,5 @@
 /**
- * Reconciling one lake across two catalogues — the decision, without the I/O (N7 step 2, D93).
+ * Reconciling one lake across two catalogues — the decision, without the I/O (A07a step 2, D93).
  *
  * ## What this is for, and what it must not become
  *

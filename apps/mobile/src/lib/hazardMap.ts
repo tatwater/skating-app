@@ -1,5 +1,5 @@
 /**
- * The native hazard layer's palette (Phase 9) — the mobile mirror of web's `lib/hazardMap.ts`.
+ * The native hazard layer's palette (Phase 09a) — the mobile mirror of web's `lib/hazardMap.ts`.
  *
  * Unlike the water-body layers (which are mirrored wholesale per platform), the hazard *transforms*
  * are not duplicated here: they live in `@skating/core/hazardLayer` and are imported by both apps.

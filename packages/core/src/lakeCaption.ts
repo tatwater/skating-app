@@ -1,5 +1,5 @@
 /**
- * The derived lake caption (N6c Workstream C) — one or two sentences per body, generated from our
+ * The derived lake caption (A06c Workstream 3) — one or two sentences per body, generated from our
  * own numbers, telling a skater what the stats *mean*.
  *
  * ## The four rules, all load-bearing
@@ -21,14 +21,14 @@
  * clause. Most of the 116,070 will render one clause or none, and that is the correct outcome
  * rather than a coverage failure to paper over with hedged filler.
  *
- * **4. Provenance discipline carries through from N6a (D68).** A modelled depth's clause must read
+ * **4. Provenance discipline carries through from A06a (D68).** A modelled depth's clause must read
  * as an estimate. If the number is a 90 m-DEM guess, the sentence built on it cannot sound like a
  * depth-sounder transect.
  *
  * ## Units
  *
  * Imperial throughout, per **D25** — *store metric internally, display imperial*. There is no
- * metric display mode in this product. (The N6c plan's illustrative caption mixes acres and miles
+ * metric display mode in this product. (The A06c plan's illustrative caption mixes acres and miles
  * with "91 m" and "8 km"; that was a drafting slip, not a second convention.)
  */
 

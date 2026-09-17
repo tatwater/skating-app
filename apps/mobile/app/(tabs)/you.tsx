@@ -51,10 +51,10 @@ export default function YouScreen() {
   const profile = useQuery(api.profiles.current, {});
   const router = useRouter();
   const theme = useTheme();
-  // The bell's dot (N8/A3). The tab bar shows the same signal on the You icon from every screen.
+  // The bell's dot (A08/A3). The tab bar shows the same signal on the You icon from every screen.
   const unread = useQuery(api.notifications.unreadCount, profile ? {} : 'skip') ?? 0;
 
-  // Sign-out takes this phone's push address with it and drops the offline inbox (N8 PR 3): a phone
+  // Sign-out takes this phone's push address with it and drops the offline inbox (A08 PR 3): a phone
   // nobody is signed in on must not keep ringing — or reading back — for the account that left.
   // Both best-effort and *before* the Clerk sign-out. The release itself needs no session (it's
   // keyed by the token), so one that's still queued when the session ends still lands; the tabs
@@ -156,12 +156,12 @@ export default function YouScreen() {
           <BlockedUsers />
 
           <Separator borderColor="$border" />
-          {/* Strava push (Phase 8). Sits with the account settings because it IS an account link —
+          {/* Strava push (Phase 08). Sits with the account settings because it IS an account link —
               your skates going to your Strava — not a map or safety feature. The recorded-skate list
               sits directly under it because that's where a push that didn't land is retried by hand,
               and because connecting an account here is the thing that makes those retries work. */}
           <StravaConnect />
-          {/* Server-backed, above the device-local `TrackHistory` (N6f): "which skates still owe a
+          {/* Server-backed, above the device-local `TrackHistory` (A06f): "which skates still owe a
               report" is the actionable question, and it is the one this phone alone can't answer. */}
           <UnreportedSkates />
           <TrackHistory />
@@ -185,7 +185,7 @@ export default function YouScreen() {
 }
 
 /**
- * Home location (Phase 4, D11/D18) — the PRIVATE anchor for drive-time bands. Only the derived
+ * Home location (Phase 04, D11/D18) — the PRIVATE anchor for drive-time bands. Only the derived
  * isochrones + radius are stored server-side; the coordinate never leaves the device beyond this set.
  * Uses `expo-location` (foreground permission) so there's no manual coordinate entry; setting it
  * triggers the isochrone recompute powering the drive-time filter + nearby notifications.
@@ -395,7 +395,7 @@ function RadiusRow({
 }
 
 /**
- * Notification preferences (Phase 4, decision #4) — favorites (default on, any distance), a daily
+ * Notification preferences (Phase 04, decision #4) — favorites (default on, any distance), a daily
  * "all reports nearby" digest within X₁, and "great reports nearby" within X₂ (X₂ ≥ X₁, clamped here
  * and re-enforced server-side). The radii need a home set above to take effect.
  */
@@ -430,7 +430,7 @@ function AggregateTracksSetting() {
 
 /**
  * Notification preferences — **every** type, iterated from the vocabulary in `@skating/core` (D16;
- * N8), so this list and the web's can't drift. The two radius-bearing Phase-4 buckets sit last with
+ * A08), so this list and the web's can't drift. The two radius-bearing Phase-04 buckets sit last with
  * their "within" rows (X₂ ≥ X₁, clamped here and re-enforced server-side).
  */
 function NotificationSettings() {
@@ -507,7 +507,7 @@ function NotificationSettings() {
 }
 
 /**
- * The two transports (N8 PR 3 / D174) — the per-type toggles above say *what*, these say *how far*:
+ * The two transports (A08 PR 3 / D174) — the per-type toggles above say *what*, these say *how far*:
  * a push to your phones, an email for the types worth one. Plus the one device-level switch, "this
  * phone", which is where notification permission is actually asked for (never on cold launch).
  */

@@ -3,7 +3,7 @@
  *
  * The merge queue used to render a name and a button. That is enough when a duplicate is a
  * user-drawn pond over an OSM lake (D36's original case, where "which is official" answers it), and
- * it is useless for what the queue actually holds after N7: pairs of **OSM features that OSM cannot
+ * it is useless for what the queue actually holds after A07a: pairs of **OSM features that OSM cannot
  * see are the same lake** — 37 of the first 100 with no name at all, so the card read as a blank box
  * above a button labelled `Merge →`. Nothing on screen distinguished one pair from the next, and a
  * merge is not reversible in the way a rejection is.

@@ -1,5 +1,5 @@
 /**
- * Pure drive-time band classification (Phase 4). Turns a viewer's cached isochrone polygons + outer
+ * Pure drive-time band classification (Phase 04). Turns a viewer's cached isochrone polygons + outer
  * radius (all derived from their PRIVATE `homeCoord`, D11) into a coarse `30 | 60 | 90 | null` band
  * for any lake point — the soft, quality-weighted distance signal that narrows the feed and gates
  * notifications. Kept framework-free in `@skating/core` so the Convex query and both clients classify

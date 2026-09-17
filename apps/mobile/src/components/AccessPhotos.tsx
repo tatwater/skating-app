@@ -7,7 +7,7 @@ import { Button, Image, Text, XStack, YStack } from 'tamagui';
 import { pickPhotos, processPhoto, uploadToStorage } from './photoPipeline';
 
 /**
- * Photos of an access point — the mobile half of web's `AccessPhotos` (N6d Workstream D / D88).
+ * Photos of an access point — the mobile half of web's `AccessPhotos` (A06d Workstream 4 / D88).
  *
  * *"Is this the right dirt road?"* is the question, and the phone is where it gets asked: you are in
  * the car, at a junction, in the dark. So this is arguably the more important of the two surfaces.

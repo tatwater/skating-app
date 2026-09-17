@@ -9,7 +9,7 @@
  *   pnpm --filter @skating/admin-areas load <areas.ndjson> --state=VT [--prod]
  *     [--campaign=<id>] [--no-run-log]
  *
- * Writes one `importRuns` row (N6c F2) with its coverage and any failed batches, readable at
+ * Writes one `importRuns` row (A06c §6.2) with its coverage and any failed batches, readable at
  * `/admin/imports`. `--no-run-log` opts out; nothing else about the load changes.
  */
 
@@ -21,7 +21,7 @@ import { convexRun, RunLogger, resolveDeployment } from '@skating/run-log';
 
 /**
  * Batches bounded like the water ETL: Convex caps a mutation at 4096 document reads, so cap by
- * count (since N1 a row costs one `by_area` lookup plus ≤ 4 cell writes — flat, not growing with
+ * count (since A01 a row costs one `by_area` lookup plus ≤ 4 cell writes — flat, not growing with
  * the index — so this cap has plenty of headroom); `convex run` also takes args only as an inline
  * JSON string (ARG_MAX), so cap by bytes — a state/county boundary can be large (~hundreds of KB
  * simplified), so the byte budget is what actually binds here.
@@ -122,7 +122,7 @@ function main(): void {
       {
         name: 'load',
         detail:
-          'adminAreas:importCanonical — idempotent upsert, cell-indexed (N1); the loader stamps `state` the transform leaves off',
+          'adminAreas:importCanonical — idempotent upsert, cell-indexed (A01); the loader stamps `state` the transform leaves off',
         input: inputPath,
         output: target.label,
       },
@@ -193,7 +193,7 @@ function main(): void {
   logger.stage({
     name: 'load',
     detail:
-      'adminAreas:importCanonical — idempotent upsert, cell-indexed (N1); the loader stamps `state` the transform leaves off',
+      'adminAreas:importCanonical — idempotent upsert, cell-indexed (A01); the loader stamps `state` the transform leaves off',
     input: inputPath,
     output: target.label,
     counts: [

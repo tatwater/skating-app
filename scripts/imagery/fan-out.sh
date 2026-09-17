@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Spawn one throwaway Fly Machine per granule (N6e PR 2, D148).
+# Spawn one throwaway Fly Machine per granule (A06e PR 2, D148).
 #
 #   scripts/imagery/fan-out.sh granules.txt              # one granule id per line
 #   scripts/imagery/fan-out.sh granules.txt --smoke      # plumbing only, no masking
@@ -20,7 +20,7 @@
 #
 # Per-second billing with no barrier between jobs means 25 Machines for an hour costs what one Machine
 # costs for 25 hours. A season's ~750 granules is five days serial and a few hours fanned out, at the
-# same total spend (§C2). A pool would add scheduling, idle time, and a reason to care which host a job
+# same total spend (§3.2). A pool would add scheduling, idle time, and a reason to care which host a job
 # lands on --- all of which we get to not have.
 set -euo pipefail
 

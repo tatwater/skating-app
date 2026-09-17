@@ -1,5 +1,5 @@
 /**
- * Framing a lake for the sample cards (N6b) — the projection, and nothing that draws.
+ * Framing a lake for the sample cards (A06b) — the projection, and nothing that draws.
  *
  * Two bugs live in this arithmetic and both were shipped by the first version of the sample renderer,
  * which is why it is a tested module rather than a helper inside the CLI:

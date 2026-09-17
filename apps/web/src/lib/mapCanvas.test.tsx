@@ -1,5 +1,5 @@
 /**
- * The shared MapLibre shell (N2, Decision 12).
+ * The shared MapLibre shell (A02, Decision 12).
  *
  * `MapView` was the most load-bearing untested-by-design file in the web app, and the refactor that
  * split its canvas out for the lake editor made that a two-surface problem: a bug here is a bug on

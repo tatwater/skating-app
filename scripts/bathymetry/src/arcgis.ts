@@ -1,5 +1,5 @@
 /**
- * Pure ArcGIS REST helpers — URL construction and response parsing (N6b).
+ * Pure ArcGIS REST helpers — URL construction and response parsing (A06b).
  *
  * Five state agencies publish through four different ArcGIS generations, so the only thing we can
  * assume is the REST shape. Everything variable — page size, whether `f=geojson` exists, whether

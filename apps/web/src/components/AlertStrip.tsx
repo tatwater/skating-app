@@ -4,7 +4,7 @@ import { formatAlertLine, revealPlaceholder } from '@skating/core';
 import { useQuery } from 'convex/react';
 
 /**
- * The NWS advisory strip on a lake drawer (N6c B5, D74).
+ * The NWS advisory strip on a lake drawer (A06c §2.5, D74).
  *
  * **Visually distinct from our own content, and attributed.** Everything else in this drawer is
  * ours — our reports, our derived caption, our decay model. This is the National Weather Service
@@ -22,7 +22,7 @@ export function AlertStrip({
   reveal = false,
 }: {
   waterBodyId: Id<'waterBodies'>;
-  /** N6c-2's reveal flag — states the absence instead of hiding the strip. */
+  /** A06c-2's reveal flag — states the absence instead of hiding the strip. */
   reveal?: boolean;
 }) {
   const alerts = useQuery(api.weatherAlerts.listForBody, { waterBodyId });

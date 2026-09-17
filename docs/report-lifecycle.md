@@ -21,7 +21,7 @@ accurate a record of that day as it was the day it was posted. So reports are:
 - **Always public** — there is no visibility field (D13).
 - **Never archived, and never hidden by age, score or anything else *within a season*** — the
   one exception is the seasonal boundary, which is a change of *default view* rather than of
-  the report, and which is described [below](#age-framing-3--the-season-boundary-n5ad63). Contrast a
+  the report, and which is described [below](#age-framing-3--the-season-boundary-a05ad63). Contrast a
   hazard, which genuinely fades and can be archived.
 - **Sorted, not decayed** — everything orders by `skateEndTime`, "when the skater left the ice,"
   the freshest read of the ice.
@@ -83,7 +83,7 @@ stage. The strip is descriptive only; it never asserts the ice is safe (D3). See
 
 ---
 
-## Age framing #3 — the season boundary (N5a/D63)
+## Age framing #3 — the season boundary (A05a/D63)
 
 The one place a report *does* leave a default view. **A season runs July 1 → June 30**, labelled
 by the two calendar years it spans (`'24/'25`), and the lake's report list and the global feed
@@ -122,7 +122,7 @@ Three reads are deliberately **exempt**, each for its own reason:
 
 ---
 
-## Conditions auto-fill (Phase 10 §7a)
+## Conditions auto-fill (Phase 10 §07-1)
 
 A report's observed `conditions` (air temp, wind, sky, precip) can be **pre-filled** from
 Open-Meteo at the skate time and location (`packages/core/src/weatherConditions.ts`), so a
@@ -176,7 +176,7 @@ A report is an input to two other lifecycles, documented elsewhere:
 
 ## The one number that *is* a freshness curve (and why it isn't report decay)
 
-Phase 8 added `packages/core/src/reportFreshness.ts`: a 0–1 value that blends recency off
+Phase 08 added `packages/core/src/reportFreshness.ts`: a 0–1 value that blends recency off
 `skateEndTime` with net helpful thumbs and corroboration count. Read that and the "reports don't
 decay" claim above can look false. It isn't, and the distinction is the whole design:
 
@@ -194,7 +194,7 @@ doesn't gate visibility, and doesn't weight trust. It has exactly two consumers:
 
 So: the *path* fades, the *report* doesn't. A faded line means "this is old," never "this is wrong,"
 and the report behind it is as readable on day 30 as on day 1. Adding a visible freshness meter to a
-report was considered and rejected at Phase 8 kickoff — it's the closest thing in the app to an
+report was considered and rejected at Phase 08 kickoff — it's the closest thing in the app to an
 authoritative safety verdict. Details: `plans/01-decisions.md` → **D59**, and the aggregate layer's
 privacy gates in **D58**.
 
@@ -203,7 +203,7 @@ privacy gates in **D58**.
 ## What's deliberately absent
 
 - **No report decay curve.** No half-life, no confidence erosion, no age-based opacity — a
-  report's map pin looks the same on day 1 and day 30. *(The Phase-8 `reportFreshness` curve is
+  report's map pin looks the same on day 1 and day 30. *(The Phase-08 `reportFreshness` curve is
   internal and fades only the recorded GPS **path**, never the report — see the section above.)*
 - **No hiding or archiving by age or score.** Old and low-rated reports stay fully visible;
   quality signals only *reorder* and *route to moderators*, never hide (safety content isn't

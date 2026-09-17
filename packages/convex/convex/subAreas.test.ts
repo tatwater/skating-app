@@ -353,7 +353,7 @@ describe('the membership stamp', () => {
     expect(cells).toHaveLength(0);
   });
 
-  test('the re-stamp pages past a single batch rather than capping (N1 round 2)', async () => {
+  test('the re-stamp pages past a single batch rather than capping (A01 round 2)', async () => {
     const t = harness();
     const body = await seedBody(t);
     const mod = await seedUser(t, 'mod', 'moderator');
@@ -1247,7 +1247,7 @@ describe('the merged search box', () => {
 });
 
 describe('subAreas.setCuratedBoost', () => {
-  test('a boost restamps the cell rows, not just the sub-area (the N1 by_cell-range trap)', async () => {
+  test('a boost restamps the cell rows, not just the sub-area (the A01 by_cell-range trap)', async () => {
     const t = harness();
     const body = await seedBody(t);
     const mod = await seedUser(t, 'mod', 'moderator');
@@ -1349,13 +1349,13 @@ describe('waterBodies.setWeatherSamplePoints', () => {
 });
 
 /**
- * **`importBaySubAreas` — the campaign's bay loader, and the one that actually broke** (N7-3).
+ * **`importBaySubAreas` — the campaign's bay loader, and the one that actually broke** (A07a-3).
  *
  * `load-sub-areas` calls this, and on the 2026-08-07 campaign it aborted the whole pass on one bad
  * batch and left three `sub_area_seed` rows stuck in `running` — the exact D99 signature, produced
  * by the loader written to honour D99. It had no tests at all until this block.
  */
-describe('subAreas.importBaySubAreas (the N7 bay lane)', () => {
+describe('subAreas.importBaySubAreas (the A07a bay lane)', () => {
   /** A bay inside `LAKE`, which is what the merge emits after clipping to the parent. */
   const BAY = rect(-73.4, 44.1, -73.2, 44.3);
 
@@ -1418,12 +1418,12 @@ describe('subAreas.importBaySubAreas (the N7 bay lane)', () => {
     const rows = await t.run((ctx) => ctx.db.query('waterBodySubAreas').collect());
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({ name: 'Missisquoi Bay', waterBodyId: parent });
-    // Every N2 sub-area is a rendered, searchable place, so it needs all three.
+    // Every A02 sub-area is a rendered, searchable place, so it needs all three.
     expect(rows[0]?.searchText).toContain('Missisquoi');
     expect(rows[0]?.representativePoint).toBeDefined();
     expect(rows[0]?.minVisibleZoom).toBeDefined();
 
-    // **Audited, per N2/D60.** A campaign that creates places without naming who ran it is the
+    // **Audited, per A02/D60.** A campaign that creates places without naming who ran it is the
     // thing the `--actor` flag exists to prevent.
     const actions = await t.run((ctx) => ctx.db.query('moderationActions').collect());
     expect(actions).toHaveLength(1);
@@ -1602,7 +1602,7 @@ describe('subAreas.importBaySubAreas (the N7 bay lane)', () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
-// N9 (D175): a bay is a place — the re-derivation, the join, and the wider re-stamp
+// A09 (D175): a bay is a place — the re-derivation, the join, and the wider re-stamp
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
 
 /** A recorded track for `author` on `body`, straight along the given points (lng/lat pairs). */
@@ -1647,7 +1647,7 @@ function byBay<T extends readonly [string, ...unknown[]]>(rows: T[]): T[] {
   return [...rows].sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0));
 }
 
-describe('the re-derivation (N9)', () => {
+describe('the re-derivation (A09)', () => {
   test('create mints a subAreaKey and a fetch profile; redraw keeps the key and recomputes the fetch', async () => {
     const t = harness();
     const body = await seedBody(t);
@@ -1764,7 +1764,7 @@ describe('the re-derivation (N9)', () => {
   });
 });
 
-describe('the two-bay skate and the reportSubAreas join (N9 / D175)', () => {
+describe('the two-bay skate and the reportSubAreas join (A09 / D175)', () => {
   /** Two bays on the west and east shores; open water between them. */
   async function setup() {
     const t = harness();
@@ -1805,7 +1805,7 @@ describe('the two-bay skate and the reportSubAreas join (N9 / D175)', () => {
       waterBodyId: body,
       skateEndTime: Date.now(),
       activityId,
-      // The put-in — in the west bay. Before N9 this alone decided the stamp.
+      // The put-in — in the west bay. Before A09 this alone decided the stamp.
       point: { lat: 44.4, lng: -73.45 },
     });
     const report = await t.run((ctx) => ctx.db.get(reportId));
@@ -1927,7 +1927,7 @@ describe('the two-bay skate and the reportSubAreas join (N9 / D175)', () => {
       skateEndTime: Date.now(),
       point: { lat: 44.3, lng: -73.4 },
     });
-    // Simulate a pre-N9 row: stamped, but with no join.
+    // Simulate a pre-A09 row: stamped, but with no join.
     await t.run(async (ctx) => {
       for (const row of await ctx.db
         .query('reportSubAreas')
@@ -1945,7 +1945,7 @@ describe('the two-bay skate and the reportSubAreas join (N9 / D175)', () => {
   });
 });
 
-describe('the wider re-stamp (N9)', () => {
+describe('the wider re-stamp (A09)', () => {
   test('a redraw re-tags put-ins by distance, tracks by majority, and features by centre', async () => {
     const t = harness();
     const body = await seedBody(t);
@@ -2019,7 +2019,7 @@ describe('the wider re-stamp (N9)', () => {
   });
 });
 
-describe('the stamps at write (N9)', () => {
+describe('the stamps at write (A09)', () => {
   async function setup() {
     const t = harness();
     const body = await seedBody(t);
@@ -2101,7 +2101,7 @@ describe('the stamps at write (N9)', () => {
   });
 });
 
-describe('the bay view reads (N9)', () => {
+describe('the bay view reads (A09)', () => {
   async function setup() {
     const t = harness();
     const body = await seedBody(t);
@@ -2287,7 +2287,7 @@ describe('the bay view reads (N9)', () => {
   });
 });
 
-describe('restampAllParents — the one-off for rows that predate N9', () => {
+describe('restampAllParents — the one-off for rows that predate A09', () => {
   test('schedules one sweep per parent, and the sweep tags the untagged rows', async () => {
     const t = harness();
     const body = await seedBody(t);
@@ -2303,7 +2303,7 @@ describe('restampAllParents — the one-off for rows that predate N9', () => {
       polygon: rect(-72.8, 44.2, -72.5, 44.6),
     });
     await settle(t);
-    // A pre-N9 launch: on the bay's shore, never tagged.
+    // A pre-A09 launch: on the bay's shore, never tagged.
     const putIn = await t.run((ctx) =>
       ctx.db.insert('putIns', {
         waterBodyId: body,
@@ -2319,7 +2319,7 @@ describe('restampAllParents — the one-off for rows that predate N9', () => {
   });
 });
 
-describe('the depth lane’s two ends (N9 PR 2)', () => {
+describe('the depth lane’s two ends (A09 PR 2)', () => {
   test('setDerivedDepth writes by key, refuses a bay whose outline is not the one exported, and dryRun writes nothing', async () => {
     const t = harness();
     const body = await seedBody(t);

@@ -1,12 +1,12 @@
 # On-ice alerting
 
-How the app warns a skater about a reported hazard *while they're on the ice* — the Phase 9.5
+How the app warns a skater about a reported hazard *while they're on the ice* — the Phase 09b
 "on-ice mode" (D54). This is the most safety-sensitive surface in the app, so almost every
 constant here is set the way it is for a safety reason. Full build notes:
-[`plans/phase-9.5-on-ice-alerting.md`](../plans/phase-9.5-on-ice-alerting.md).
+[`plans/phases/09b-on-ice-alerting.md`](../plans/phases/09b-on-ice-alerting.md).
 
 > **Who this is for.** Anyone touching the alerting geometry, the background location watcher, or
-> the "which lake am I on?" resolution. The numbers are **admin-tunable defaults** (Phase 7 /
+> the "which lake am I on?" resolution. The numbers are **admin-tunable defaults** (Phase 07 /
 > D49), but the *directions* (generous buffers, fail-loud, silence-is-not-safety) are load-bearing.
 
 ---

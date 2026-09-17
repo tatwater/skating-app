@@ -1,5 +1,5 @@
 /**
- * "No public access" — a corroborated community claim, and the moderator verdict that settles it (N6f).
+ * "No public access" — a corroborated community claim, and the moderator verdict that settles it (A06f).
  *
  * ## The claim, stated precisely
  *
@@ -14,7 +14,7 @@
  * An access alert is a decaying claim about a *launch or lot* — 30-day TTL, hard-expired at the season
  * boundary. Private land does not thaw, so that lifecycle would delete the fact every July.
  * `waterBodies.remove` (D48) is a human act with a reason, for a body that should go. Neither
- * expresses *on the map, and marked*, which is the state this adds — and which N7b generalised into
+ * expresses *on the map, and marked*, which is the state this adds — and which A07b generalised into
  * **standing**: a `none` body is *dormant* (`standing.ts`), drawn only when you zoom in on it and
  * pushed at nobody, exactly like a lake nobody has skated in three seasons.
  *
@@ -37,7 +37,7 @@
 /**
  * A moderator's ruling. Absence is the third state and means nobody has ruled.
  *
- * - `none` — no lawful way in. The body is dormant (N7b): dimmed, drawn only at the dormant rung, on
+ * - `none` — no lawful way in. The body is dormant (A07b): dimmed, drawn only at the dormant rung, on
  *   no push surface.
  * - `open` — reviewed, there **is** public access. Renders nothing on the map; its job is to stop the
  *   body being reported again, which is why it is a stored verdict rather than just a dismissed flag.
@@ -75,7 +75,7 @@ export const NO_PUBLIC_ACCESS_OPACITY_SCALE = 0.5;
 
 /**
  * True when a feature should draw dimmed — either the body is not active (a `none` ruling, a
- * dormancy, a removal — anything `standingOf` says is not `active`, N7b), or *this viewer* has
+ * dormancy, a removal — anything `standingOf` says is not `active`, A07b), or *this viewer* has
  * reported it and is seeing their own claim reflected back.
  *
  * Both signals ride the GeoJSON `properties` bag rather than one being feature-state. Favourites use
@@ -84,7 +84,7 @@ export const NO_PUBLIC_ACCESS_OPACITY_SCALE = 0.5;
  * for one visual effect is how the two platforms drift.
  *
  * The property is `inactive`, set by each client's `waterBodiesToFeatureCollection` from
- * `isActive(body)`. It was `noPublicAccess` under N6f; one flag for every non-active standing means
+ * `isActive(body)`. It was `noPublicAccess` under A06f; one flag for every non-active standing means
  * the map cannot show a dormant lake at full opacity by forgetting a case.
  *
  * `['==', …, true]` rather than a bare `['get', …]`: a missing property reads as `null`, and `any`
@@ -95,7 +95,7 @@ export function dimmedForAccessExpression(): unknown[] {
 }
 
 /**
- * The access dim **or** the discovery dim (N6h / D166): a body that does not match the active
+ * The access dim **or** the discovery dim (A06h / D166): a body that does not match the active
  * weather filter rides the same properties-bag mechanism (`weatherDimmed`) and the same scale, so
  * both platforms get one visual effect from one expression. The founder chose dim-only over a
  * match highlight — *"I don't think we should confuse things by using the favorites colors just

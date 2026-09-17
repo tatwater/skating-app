@@ -1,5 +1,5 @@
 /**
- * The commands that turn an archive into something we can read — **stated once** (N7 audit).
+ * The commands that turn an archive into something we can read — **stated once** (A07a audit).
  *
  * ## Why this file exists
  *
@@ -75,7 +75,7 @@ export function osmExportArgs(filtered: string, out: string): string[] {
 }
 
 /**
- * The OSM tags the **access** pass keeps (N6d B1) — a second filter over the same state extract.
+ * The OSM tags the **access** pass keeps (A06d §2.1) — a second filter over the same state extract.
  *
  * A superset again, and for the same reason: `parseAccessFeature` makes the final call, so this only
  * has to be wide enough not to lose anything. What it must *not* do is overlap the water pass — these
@@ -89,7 +89,7 @@ export function osmExportArgs(filtered: string, out: string): string[] {
  *
  * ⚠ **No trail tags.** `highway=path` / `route=hiking` were in the plan and are deliberately absent:
  * ORS `foot-hiking` routes over exactly those ways, so a successful approach route *is* the evidence a
- * trail exists (N6d correction 9). Extracting them would be a second, larger geometry class parsed to
+ * trail exists (A06d correction 9). Extracting them would be a second, larger geometry class parsed to
  * answer a question the routing step already answers — and it is the one class that would have forced
  * line handling into this pipeline.
  */
@@ -103,7 +103,7 @@ export const OSM_ACCESS_TAGS = [
   'man_made=pier',
 ] as const;
 
-/** `osmium tags-filter` argv — the access subset of a state extract (N6d B1). */
+/** `osmium tags-filter` argv — the access subset of a state extract (A06d §2.1). */
 export function osmAccessFilterArgs(pbf: string, out: string): string[] {
   return ['tags-filter', '-t', pbf, ...OSM_ACCESS_TAGS, '-o', out, '--overwrite'];
 }
@@ -143,9 +143,9 @@ export function osmAccessExportArgs(filtered: string, out: string): string[] {
 }
 
 /**
- * The OSM tags the **trail** pass keeps (N6e Workstream 0).
+ * The OSM tags the **trail** pass keeps (A06e Workstream 0).
  *
- * ⚠ **This is the class N6d correction 9 dropped, admitted back for a different question.** That
+ * ⚠ **This is the class A06d correction 9 dropped, admitted back for a different question.** That
  * correction was right about what it was answering: ORS `foot-hiking` routes over these ways, so a
  * successful approach route is the evidence a trail exists, and extracting lines to re-derive that
  * would have been work for an answer already paid for.
@@ -170,7 +170,7 @@ export const OSM_TRAIL_TAGS = [
   'route=hiking',
 ] as const;
 
-/** `osmium tags-filter` argv — the trail subset of a state extract (N6e Workstream 0). */
+/** `osmium tags-filter` argv — the trail subset of a state extract (A06e Workstream 0). */
 export function osmTrailFilterArgs(pbf: string, out: string): string[] {
   return ['tags-filter', '-t', pbf, ...OSM_TRAIL_TAGS, '-o', out, '--overwrite'];
 }

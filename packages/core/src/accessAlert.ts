@@ -1,5 +1,5 @@
 /**
- * "Temporarily inaccessible" as a decaying community claim, not a note (N6d Workstream C / D73).
+ * "Temporarily inaccessible" as a decaying community claim, not a note (A06d Workstream 3 / D73).
  *
  * ## Why this isn't a text field
  *
@@ -20,7 +20,7 @@
  *
  * ## The seasonal rule, and the exception the founder took
  *
- * Community alerts hard-expire at the N5a season boundary: the map starts each winter clean and the
+ * Community alerts hard-expire at the A05a season boundary: the map starts each winter clean and the
  * community re-establishes what is actually true, which is also the cheapest possible re-survey.
  * **A moderator-pinned `official` alert is exempt** (founder call, 2026-08-10) — it is the analogue of
  * an `official` put-in, it carries a name and an audit row, and it stays until a moderator clears it.

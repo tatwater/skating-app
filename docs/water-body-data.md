@@ -12,7 +12,7 @@ about your lake and what we're only guessing at**.
 > isn't listed, or why the depth reads "estimated", the answers are here. If you're a developer
 > meeting this repo, this is the map; the decision log is
 > [`plans/01-decisions.md`](../plans/01-decisions.md) and the full engineering record is
-> [`plans/phase-N7-unified-corpus.md`](../plans/phase-N7-unified-corpus.md).
+> [`plans/phases/A07a-unified-corpus.md`](../plans/phases/A07a-unified-corpus.md).
 
 **The corpus today: 24,953 water bodies across Vermont, New Hampshire, Maine, Massachusetts and
 New York** (north of I-84).
@@ -343,6 +343,6 @@ on it describes the *ice*.
 [Report lifecycle](./report-lifecycle.md) · [Hazard decay](./hazard-decay-and-lifecycle.md) ·
 [Adding a region](./adding-a-region.md)
 
-For the engineering record: [`plans/phase-N7-unified-corpus.md`](../plans/phase-N7-unified-corpus.md)
+For the engineering record: [`plans/phases/A07a-unified-corpus.md`](../plans/phases/A07a-unified-corpus.md)
 (the full phase, with the operator's runbook at the bottom) and
 [`plans/01-decisions.md`](../plans/01-decisions.md) (**D92–D105**, **D109–D137**).

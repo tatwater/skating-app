@@ -11,11 +11,11 @@ export type FlagResolution = 'actioned' | 'dismissed';
  *
  * **Why a helper and not just `moderation.resolveFlag`.** A flag is resolved from two places: the
  * queue, one at a time with a reason, and `waterBodies.setPublicAccess`, which closes every open
- * `no_public_access` report on a lake as a side effect of ruling on the lake (N6f). The second path
- * predates both the Phase 7b `flag_dispositions` counter and the N8 `content_flag_resolved`
+ * `no_public_access` report on a lake as a side effect of ruling on the lake (A06f). The second path
+ * predates both the Phase 07-2 `flag_dispositions` counter and the A08 `content_flag_resolved`
  * notification, and it patched the rows directly — so a reporter the drawer had told *"it's with the
  * moderators"* never heard the verdict, and the control-room chart read zero upheld and zero
- * dismissed for that reason forever. The N6d shape again: a new surface added to a system that
+ * dismissed for that reason forever. The A06d shape again: a new surface added to a system that
  * enumerates its inputs, failing silently.
  *
  * **What stays with the caller: the audit row.** The queue writes one `resolve_flag` /
@@ -40,7 +40,7 @@ export async function closeFlag(
     resolvedAt: now,
   });
 
-  // The enforcement funnel's last stage (Phase 7b): upheld vs dismissed, **keyed by flag reason**.
+  // The enforcement funnel's last stage (Phase 07-2): upheld vs dismissed, **keyed by flag reason**.
   // The reason is what makes it a tuning signal rather than a workload stat — mostly-dismissed
   // `auto_low_quality` says AUTO_LOW_QUALITY_NET_UNHELPFUL is too low, and mostly-dismissed
   // `unsafe_false_report` says CONTRADICTION_FLAG_THRESHOLD is. Counted on write because the
@@ -48,7 +48,7 @@ export async function closeFlag(
   // what's still open.
   await bumpMetricMetaCounter(ctx, 'flag_dispositions', `${flag.reason}:${resolution}`, 1, now);
 
-  // `content_flag_resolved` (N8/B3): tell the person who filed it that a moderator ruled. Verdict
+  // `content_flag_resolved` (A08/B3): tell the person who filed it that a moderator ruled. Verdict
   // only — not what was done, not to whom, not by which moderator. **`origin === 'user'` only**:
   // an auto-filed flag names a real person in `flaggerId` who never filed anything (the rater whose
   // thumb crossed a threshold), and telling them "the report you filed was actioned" would both

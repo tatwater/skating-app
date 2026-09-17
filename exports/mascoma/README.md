@@ -103,7 +103,7 @@ the drawer open (D81), so 2.5 is the state that pairs with them.
 `build_imagery.py` writes `mascoma-ice-20251222-{mobile,desktop}.png`: transparent canvases on the
 **same frame and the same pixel dimensions** as the SVGs, so they drop straight underneath.
 
-Source is the N6e freeze-up archive (`VITE_IMAGERY_ARCHIVE_URL`), season `winter-2025-26`, granule
+Source is the A06e freeze-up archive (`VITE_IMAGERY_ARCHIVE_URL`), season `winter-2025-26`, granule
 **`S2B_18TYP_20251222_0_L2A`** — Sentinel-2B, 2025-12-22T15:50:59Z, 2.9% granule cloud.
 
 **Not NAIP.** The aerial tier is 0.3 m and far sharper, but NAIP is flown mid-summer on a 2–3 year

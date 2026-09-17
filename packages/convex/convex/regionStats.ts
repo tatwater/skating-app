@@ -1,5 +1,5 @@
 /**
- * Per-state distribution basis for the derived caption (N6c Workstream A5).
+ * Per-state distribution basis for the derived caption (A06c Workstream §1.5).
  *
  * One row per state holding the 10th–90th percentiles of depth, elevation, surface area and long
  * axis. See the `regionStats` table comment for why this is deciles-per-state rather than a stored
@@ -45,7 +45,7 @@ export const pageMetricValues = internalQuery({
     const page = await ctx.db.query('waterBodies').paginate({ cursor: cursor ?? null, numItems });
     const rows = page.page
       // Listed and not removed: a taken-down pond is still not part of the population a skater
-      // compares against, even though it is reachable now (N7b). A dormant body *is* — "deeper than
+      // compares against, even though it is reachable now (A07b). A dormant body *is* — "deeper than
       // 80% of Vermont's lakes" is a statement about the lakes, not about which ones we push — and
       // the row carries `active` so the same walk can count both numbers.
       .filter((body) => isListed(body) && standingOf(body).standing !== 'removed')
@@ -87,7 +87,7 @@ export const upsertState = internalMutation({
  * Run after a pass: `pnpm exec convex run regionStats:recompute`.
  *
  * An **action** rather than a mutation because deciles need every value at once to sort, and
- * 116,070 bodies cannot be read inside one transaction (Convex's 4,096-read cap, the N1 lesson).
+ * 116,070 bodies cannot be read inside one transaction (Convex's 4,096-read cap, the A01 lesson).
  * The action pages through `pageMetricValues`, accumulates in memory, and writes one small mutation
  * per state — so the only unbounded thing is the action's own heap, which a few million doubles
  * sits comfortably inside.
@@ -95,7 +95,7 @@ export const upsertState = internalMutation({
 export const recompute = internalAction({
   args: { batchSize: v.optional(v.number()), campaignId: v.optional(v.string()) },
   handler: async (ctx, { batchSize, campaignId }) => {
-    // Run history (N6c F2). This is the one pass that isn't a script, and it earns a row for the
+    // Run history (A06c §6.2). This is the one pass that isn't a script, and it earns a row for the
     // same reason the loaders do: it walks 116,070 bodies, it can die halfway, and the deciles it
     // leaves behind after a partial pass describe a corpus that never existed.
     const runId = await ctx.runMutation(internal.importRuns.start, {

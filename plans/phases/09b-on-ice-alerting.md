@@ -1,14 +1,14 @@
-# Phase 9.5 build plan — On-ice live alerting (D54 Layer 2) + deferred hazard threads
+# Phase 09b build plan — On-ice live alerting (D54 Layer 2) + deferred hazard threads
 
-> **Roadmap / parent:** the fast-follow to [`phase-9-hazards.md`](./phase-9-hazards.md). Phase 9 shipped
+> **Roadmap / parent:** the fast-follow to [`phases/09a-hazards.md`](./09a-hazards.md). Phase 09a shipped
 > Layers 0–1 (silent sync + foreground-only proximity banners); this is the deferred **D54 Layer 2** —
 > the opt-in **"on-ice mode"** that keeps warning you *while you skate with the phone in your pocket* —
-> bundled with the several smaller hazard threads Phase 9 logged as deferred.
+> bundled with the several smaller hazard threads Phase 09a logged as deferred.
 >
-> **Naming.** `9.5` mirrors `2.5` (the Phase 2 offline fast-follow): a same-phase follow-on, not a new
+> **Naming.** `9.5` mirrors `2.5` (the Phase 02a offline fast-follow): a same-phase follow-on, not a new
 > roadmap phase.
 >
-> **Status:** ✅ **Complete (2026-07-22)** on branch `phase-9.5-on-ice-alerting` — all nine build items
+> **Status:** ✅ **Complete (2026-07-22)** on branch `phase-09b-on-ice-alerting` — all nine build items
 > landed, full test suite green (core / mobile / backend), code-reviewed. Pending PR + Greptile review,
 > then dev deploy; prod deferred (never deployed). One code-review fix folded in: the every-approach
 > directional re-alert used a distance-only hysteresis that machine-gunned notifications while a skater
@@ -16,14 +16,14 @@
 > re-armed, once its vicinity has been *entered*). The `file://` pmtiles offline-basemap path is built
 > flag-off and still awaits its one on-device confirmation (route (1) in the smaller-threads section).
 >
-> **Prerequisites — all in place.** Phase 9 is **merged (PR #20), on dev, Android-emulator smoke-tested**.
+> **Prerequisites — all in place.** Phase 09a is **merged (PR #20), on dev, Android-emulator smoke-tested**.
 > The pure proximity evaluator (`hazardProximity.evaluateOnIceAlert`), the per-session `alerted` set
 > (`onIce.ts` `AlertSession`), the on-device hazard cache, and the `skating://hazard/<id>` route all
 > exist and were built *specifically* so this layer is additive. What's genuinely new: one pure core
 > module (directional projection), a fresh native-dep set (`expo-notifications`, `expo-task-manager`,
 > background location), and the wiring.
 
-Decisions referenced as D#; see [`01-decisions.md`](./01-decisions.md).
+Decisions referenced as D#; see [`01-decisions.md`](../01-decisions.md).
 
 ---
 
@@ -67,7 +67,7 @@ promoted to `01-decisions.md` as a *D54 Layer-2 amendment* alongside the existin
    - `expo-notifications` for **local** notifications (no push token, no server, no credentials — the
      alert is computed and fired entirely on-device, so D12 still holds).
    - **Session-scoped background location** via `expo-task-manager` (`startLocationUpdatesAsync`), armed
-     when the skater taps "start on-ice mode," auto-stopped when they leave the lake footprint / tap off.
+     when the skater taps "start on-ice mode," auto-stopped when they leave the water body footprint / tap off.
      No keep-awake.
    - **Directional projection** — new pure core module: project the path forward from course + speed,
      intersect cached hazard footprints, fire at **time-to-encounter ∈ [30 s, 60 s]**, per-session dedup.
@@ -76,13 +76,13 @@ promoted to `01-decisions.md` as a *D54 Layer-2 amendment* alongside the existin
 3. **Hazard reporter/author line** — `hazards.get` / its view returns a block-respecting author, so the
    detail drawer can show "reported by <name>" (the component already supports the prop).
 4. **Clip-footprint-to-body** — precompute + store the hazard footprint clipped to the water-body polygon
-   so a big circle can't imply danger across land / a neighboring lake. Its own commit (it touches the
+   so a big circle can't imply danger across land / a neighboring water body. Its own commit (it touches the
    draw-==-measure invariant, so it clips **render, bbox, and the proximity distance** or none).
 5. **Auto-suggest skate start/end times** — the on-ice watcher already knows when the device entered and
-   left a lake footprint; prefill the report form's skate window from that dwell interval.
-6. **"Back to the lake you're on" button** (founder call) — a recenter affordance that appears whenever
+   left a water body footprint; prefill the report form's skate window from that dwell interval.
+6. **"Back to the water body you're on" button** (founder call) — a recenter affordance that appears whenever
    GPS resolves to a body **and** the skater has navigated/panned away from it, tapping which re-selects +
-   frames the lake under their feet. Like a map app's "jump to me," but lake-scoped and only while you've
+   frames the water body under their feet. Like a map app's "jump to me," but body-scoped and only while you've
    wandered off. Independent of on-ice mode being armed, and doubles as the way back during an armed
    session.
 7. **Layer-3 offline basemap tile-pack — retry** on this same dev-client build (the spike's blocker was
@@ -98,7 +98,7 @@ promoted to `01-decisions.md` as a *D54 Layer-2 amendment* alongside the existin
   background syncing reactively. Local notifications (in scope) need none of that stack. Revisit as its
   own focused decision.
 - **Per-body summary cards** and **freeform polygon authoring** — explicitly not needed yet (founder).
-- Everything Phase 9 already deferred to Phase 7/8/10 (admin tuning UI, consensus render, GPS
+- Everything Phase 09a already deferred to Phase 07/8/10 (admin tuning UI, consensus render, GPS
   negative-evidence, weather-driven decay, shore-band snap) stays where it is.
 
 ---
@@ -197,7 +197,7 @@ added (course-over-ground decision).
 - **Arm/disarm.** A control on the map (near the ⚠ flag FAB) toggles on-ice mode. Arming: request
   notification permission → start the background location task → show a "on-ice mode on" state; the OS
   foreground-service notification / blue pill is the persistent indicator, and it (plus an in-app toggle)
-  is the one-tap off. Auto-disarm when the watcher reports the device has left the lake footprint for a
+  is the one-tap off. Auto-disarm when the watcher reports the device has left the water body footprint for a
   debounced interval, or on explicit off.
 - **Delivery.** While armed, each fix (foreground **or** background) folds into the shared `AlertSession`:
   - Foreground → the existing top **banner** (Layer 1, unchanged).
@@ -214,10 +214,10 @@ added (course-over-ground decision).
 - **Battery honesty.** Continuous background GPS in cold drains battery; session-scoped + auto-disarm +
   the visible indicator keep it honest. `Accuracy.Balanced` (not `BestForNavigation`) unless projection
   accuracy in emulator testing demands more.
-- **"Back to the lake you're on" button.** Shows when `onIceWaterBodyId !== null` **and** the current
-  route isn't already that body (you've navigated/panned to a different lake or the bare map). Tapping it
+- **"Back to the water body you're on" button.** Shows when `onIceWaterBodyId !== null` **and** the current
+  route isn't already that body (you've navigated/panned to a different water body or the bare map). Tapping it
   `router.navigate`s to `/water/[onIceWaterBodyId]` — reusing the exact select-and-frame path the
-  once-per-open auto-select already uses, so the hazard layer follows and the lake frames into the
+  once-per-open auto-select already uses, so the hazard layer follows and the water body frames into the
   drawer's uncovered space. It's the manual sibling of `shouldAutoSelectOnIce`: auto-select fires *once*
   on open, this button is how you get back any time after. Gated on GPS-resolves-to-a-body, **not** on
   on-ice mode being armed (useful while just exploring), and it sits where the on-ice controls cluster so
@@ -254,16 +254,16 @@ added (course-over-ground decision).
   about — but with one important rule. The watcher records enter/leave timestamps **per body**, debounced
   against brief GPS excursions (a lap that clips the shoreline isn't a "left"). When the report form opens
   for body X, it prefills the skate window from **`min(start)` and `max(end)` across *all* of today's
-  intervals on body X** — so exiting/re-entering on-ice mode to peek at a neighbouring lake and coming
+  intervals on body X** — so exiting/re-entering on-ice mode to peek at a neighbouring water body and coming
   back, or a snack break off the ice, collapses to one suggested window (earliest start, latest end), and
-  excursions to *other* lakes never fragment X's suggestion (aggregation is per-body). Editable, never
+  excursions to *other* water bodies never fragment X's suggestion (aggregation is per-body). Editable, never
   authoritative.
   - **Accuracy caveat worth stating:** the dwell data is *complete* only when on-ice mode was armed
     (background fixes keep flowing with the screen off); unarmed, the watcher is foreground-only, so a
     pocketed-phone stretch leaves gaps and the suggestion is best-effort. Earliest/latest aggregation is
     the same either way — arming just fills it in. Intervals are on-device only (D12), pruned to the day.
   - Overlaps the D24 activity-detection path; keep the bookkeeping small and local to the watcher.
-- **Layer-3 offline basemap tile-pack — retry.** From the Phase 9 spike, the blocker is our `pmtiles://`
+- **Layer-3 offline basemap tile-pack — retry.** From the Phase 09a spike, the blocker is our `pmtiles://`
   object-built style has no crawlable URL for `OfflineManager.createPack`. On this build, test the three
   logged routes in order of cheapness: (1) confirm whether native pmtiles reads a `file://` archive
   (ship a mini regional `.pmtiles`, point the style at a local URI); (2) `mergeOfflineRegions` with a
@@ -295,7 +295,7 @@ added (course-over-ground decision).
   bookkeeping.
 - **Emulator functional test (this is how we "fake live skating"):** the Android emulator's
   *Extended Controls → Location* plays back a **GPX route**, moving the simulated GPS over time. Drop the
-  location inside a real dev lake that has a hazard to fire the Layer-1 banner; load a GPX track that
+  location inside a real dev water body that has a hazard to fire the Layer-1 banner; load a GPX track that
   skates *across* a hazard, background the app + lock the screen, and verify the directional **local
   notification** fires ~30–60 s out and its tap deep-links into the pre-focused confirm control.
 - **Deferred to the real-device QA pass:** true cold-weather battery draw, real compass/course noise,
@@ -311,7 +311,7 @@ added (course-over-ground decision).
 3. **On-ice mode (mobile)** — arm/disarm, background task, shared-`AlertSession` fold, the re-alert-cadence
    toggle (once-per-session / every-approach + hysteresis), banner + local-notification delivery, the D3
    copy. The Layer-2 headline.
-4. **"Back to the lake you're on" button** — recenter affordance reusing the auto-select path; small, and
+4. **"Back to the water body you're on" button** — recenter affordance reusing the auto-select path; small, and
    independent enough to land early.
 5. **`?action=confirm`** — both routes read `action`, pre-focus confirm.
 6. **Reporter/author line + "confirmed by N"** — backend `hazards.get`/view + block-respecting author

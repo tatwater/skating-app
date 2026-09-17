@@ -149,7 +149,7 @@ export function seasonsBetween(fromMs: number, toMs: number): Season[] {
 }
 
 /**
- * How many whole days into its season a moment falls — 0 on July 1 (N5c / §C6).
+ * How many whole days into its season a moment falls — 0 on July 1 (A05c / §3.6).
  *
  * The unit the timing window is computed in, and it has to be *relative to the season* rather than a
  * calendar day-of-year: a window that straddles the new year is the normal case here, and day-of-year

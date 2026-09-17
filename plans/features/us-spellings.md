@@ -1,10 +1,10 @@
 # Next-gen — US spellings everywhere: what a sweep found, and the traps in it
 
-> **Scoped 2026-09-16 (N9 kickoff), deliberately deferred until N9 lands.** Founder: *"let's not use
+> **Scoped 2026-09-16 (A09 kickoff), deliberately deferred until A09 lands.** Founder: *"let's not use
 > the UK spelling of words like 'favourites' or 'colours' etc anywhere in our app. If you spot
 > non-US spellings in our planning docs, let's do a codebase-wide find/replace for them."* Sized at
 > the kickoff and parked, because a ~300-file mechanical diff bundled into a real phase would drown
-> its review. **Its own PR, after N9.** New text written from 2026-09-16 on uses US spellings.
+> its review. **Its own PR, after A09.** New text written from 2026-09-16 on uses US spellings.
 
 ---
 
@@ -74,4 +74,4 @@ prose; a minority in UI copy (the part that matters to a user) and README text.
 
 ## Related
 
-[`phase-N9-subareas-as-places.md`](../phase-N9-subareas-as-places.md) (where this was found)
+[`phases/A09-subareas-as-places.md`](../phases/A09-subareas-as-places.md) (where this was found)

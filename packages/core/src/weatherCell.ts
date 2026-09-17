@@ -1,5 +1,5 @@
 /**
- * The weather grid cell — the two-tier cache key (N6h / **D152**).
+ * The weather grid cell — the two-tier cache key (A06h / **D152**).
  *
  * ## Why this replaced a rounded coordinate
  *
@@ -27,7 +27,7 @@
  * ## The elevation band is load-bearing, and so is snapping the *request*
  *
  * Open-Meteo lapse-rate-downscales temperature to whatever `elevation` you pass. The corpus is at
- * ~99.5% elevation coverage after N7-3, and in the Greens, the Adirondacks and the Whites a valley
+ * ~99.5% elevation coverage after A07a-3, and in the Greens, the Adirondacks and the Whites a valley
  * lake can sit 400 m below its grid cell's mean elevation — an error of several degrees, *across
  * freezing*, which is the only threshold this app cares about. Passing the real elevation fixes it;
  * banding the key is what stops that fix from fragmenting the cache back to one-key-per-lake.

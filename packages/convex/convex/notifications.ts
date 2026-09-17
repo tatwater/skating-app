@@ -1,8 +1,8 @@
 /**
- * The notification pipeline: the coalescing queue, its flush, and — since N8 — the inbox that reads
+ * The notification pipeline: the coalescing queue, its flush, and — since A08 — the inbox that reads
  * the result.
  *
- * ## The queue (Phase 4, decision #4; widened in N8 / D169)
+ * ## The queue (Phase 04, decision #4; widened in A08 / D169)
  *
  * Every notification the app sends is first a `notificationQueue` row, and `flushNotificationQueue`
  * is the **only** thing that writes `notifications`. Two families of rows:
@@ -18,18 +18,18 @@
  *
  * `coalesceKey` seeds the eventual push collapse-id / tag.
  *
- * ## The inbox (N8 / D167)
+ * ## The inbox (A08 / D167)
  *
- * `list`, `unreadCount` and `markRead` are the read path both clients share. Before N8 nothing in the
+ * `list`, `unreadCount` and `markRead` are the read path both clients share. Before A08 nothing in the
  * app could read a notification: six types were being generated and had never been seen — "push
  * delivery deferred, lands an in-app row" was true and the row was landfill. The rule from here on
  * is that a type may not exist without a producer *and* a place it renders (D168).
  *
  * **Scaling seam (decision #2):** digest/great eligibility is a per-user polygon test against that
  * viewer's cached drive-time bands, so there's no index to look recipients up by — it means walking
- * profiles. N1 moved that walk out of `reports.create` and into a **scheduled, self-continuing paged
+ * profiles. A01 moved that walk out of `reports.create` and into a **scheduled, self-continuing paged
  * job** (`fanOutNearbyNotifications`), so the write path no longer scales with user count. Making the
- * walk itself unnecessary — a reverse reach index — is designed in the N8 plan (Workstream D) and
+ * walk itself unnecessary — a reverse reach index — is designed in the A08 plan (Workstream 4) and
  * deliberately unbuilt until ~1,000 profiles make it worth a second writer to keep in sync.
  */
 
@@ -63,7 +63,7 @@ import { subAreaDriveCoordFor } from './subAreas';
 
 /**
  * The digest rolls up to 8pm **local** — the hour is the same for everyone, the zone is each
- * recipient's own (`profiles.timezone`, written by the clients on app open; N8/C). True-sunset timing
+ * recipient's own (`profiles.timezone`, written by the clients on app open; A08/C). True-sunset timing
  * was considered and dropped: sunset in Vermont is ~16:20 in early January and ~20:30 in late June,
  * so a digest that tracked it would arrive mid-workday at exactly the point in the season when
  * skating happens. A user with no stored zone gets the pilot default (`DIGEST_TIMEZONE`).
@@ -140,7 +140,7 @@ const FANOUT_PAGE_SIZE = 200;
 
 /**
  * Enqueue the notifications that belong to the report's *own* audience — the people who favorited
- * this lake — and hand the distance-based fan-out to a scheduled job (N1).
+ * this lake — and hand the distance-based fan-out to a scheduled job (A01).
  *
  * Called from `reports.create` after insert. Favorites are keyed by
  * `waterBodyFavorites.by_water_body`, so this scans only the handful of people who care about this
@@ -162,10 +162,10 @@ export async function enqueueReportNotifications(
   if (!body) return;
 
   // 1. Favorites — notify anyone who favorited this body (any distance), default on. A removed body
-  // is the one exception (N7b): a takedown must not keep paging the people who favourited it.
+  // is the one exception (A07b): a takedown must not keep paging the people who favourited it.
   if (standingOf(body).standing === 'removed') return;
   //
-  // **The recipient set is built first, then enqueued once per person** (N9 / D175). A bay favorite
+  // **The recipient set is built first, then enqueued once per person** (A09 / D175). A bay favorite
   // shares the parent's `waterBodyId`, so this one scan finds the lake's favoriters *and* every
   // bay's; a row is kept only when it names the lake or a bay the report is a member of. Somebody
   // who favorited both Champlain and Malletts Bay — a real case, since the bay fan very plausibly
@@ -203,7 +203,7 @@ export async function enqueueReportNotifications(
 }
 
 /**
- * One page of the distance-based fan-out (N1): classify up to `FANOUT_PAGE_SIZE` profiles against
+ * One page of the distance-based fan-out (A01): classify up to `FANOUT_PAGE_SIZE` profiles against
  * the report's body, enqueue the digest/great rows they qualify for, and schedule the next page.
  *
  * Self-continuing rather than capped, because a cap here would mean quietly not telling someone
@@ -221,13 +221,13 @@ export const fanOutNearbyNotifications = internalMutation({
     if (report?.moderationStatus !== 'visible') return { stopped: 'report_gone' as const };
     const body = await ctx.db.get(report.waterBodyId);
     if (!body) return { stopped: 'body_gone' as const };
-    // Only an active body is pushed at people (N7b). A report on a machine-shelved body activated it
+    // Only an active body is pushed at people (A07b). A report on a machine-shelved body activated it
     // before this ran; what is left here is a `none` ruling, a moderator's dormancy or a removal —
     // none of which "ice near you" should send anyone to. Favourites were already told above: that
     // is a reference surface, and they asked.
     if (!isActive(body)) return { stopped: 'body_not_active' as const };
     // A bay report is banded from the bay's own drive-time coordinate — its best put-in, else its
-    // representative point (N9 kickoff call 2) — never from the lake's, whose representative point
+    // representative point (A09 kickoff call 2) — never from the lake's, whose representative point
     // can sit 30 km from where anyone launches. Resolved once per page, not once per profile.
     const centroid =
       (report.subAreaId === undefined ? null : await subAreaDriveCoordFor(ctx, report.subAreaId)) ??
@@ -336,7 +336,7 @@ export const fanOutNearbyNotifications = internalMutation({
  * `nearby_report_digest` notification whose payload enumerates the bodies ("3 lakes near you have new
  * reports"), instead of one row per lake. Grouping happens *inside* the single digest, not across N of them.
  *
- * ## Batching (N1, reshaped in N8 after the PR #52 review)
+ * ## Batching (A01, reshaped in A08 after the PR #52 review)
  *
  * One transaction scans at most `FLUSH_BATCH_CAP` due rows and spends at most `FLUSH_READ_BUDGET`
  * reads; if either stops it short, it schedules itself again at once, so the cap costs nothing in
@@ -433,7 +433,7 @@ export const flushNotificationQueue = internalMutation({
     }
 
     // Every row this tick inserts, handed to the transports in bounded batches once the writes are
-    // committed (N8 PR 3). The inbox row is the product; the push and the email are what follow it.
+    // committed (A08 PR 3). The inbox row is the product; the push and the email are what follow it.
     const inserted: Id<'notifications'>[] = [];
 
     /**
@@ -533,7 +533,7 @@ export const flushNotificationQueue = internalMutation({
       delivered++;
     }
 
-    // The transports (N8 PR 3): scheduled after every write above, in bounded batches, so a push or
+    // The transports (A08 PR 3): scheduled after every write above, in bounded batches, so a push or
     // an email only ever follows a row that exists.
     for (let i = 0; i < inserted.length; i += DELIVERY_BATCH) {
       await ctx.scheduler.runAfter(0, internal.notificationDelivery.deliverBatch, {
@@ -552,11 +552,11 @@ export const flushNotificationQueue = internalMutation({
   },
 });
 
-// ── The inbox read path (N8 / A1) ────────────────────────────────────────────────────────────────
+// ── The inbox read path (A08 / §1.1) ────────────────────────────────────────────────────────────────
 
 /**
  * The signed-in user's notifications, newest first, **paginated** — a season of notification history
- * is unbounded, and `.collect()` on a per-user table is the pattern N1 spent a phase removing. Each
+ * is unbounded, and `.collect()` on a per-user table is the pattern A01 spent a phase removing. Each
  * page is resolved into renderable views (`lib/notificationResolve.ts`); rows whose actors are all
  * blocked are omitted, so a page can come back slightly short.
  */

@@ -19,12 +19,12 @@ import { notificationRoute } from '../src/lib/notificationRoutes';
 const PAGE_SIZE = 30;
 
 /**
- * The inbox (N8/A3) — reached from the bell on the You tab, never a tab of its own (D28's five
+ * The inbox (A08/A3) — reached from the bell on the You tab, never a tab of its own (D28's five
  * stand). Mirrors the web route: newest first, infinite scroll, everything shown marks itself read
  * once it has actually been on screen, and a row whose target is gone renders degraded and
- * untappable rather than vanishing (N8 #5).
+ * untappable rather than vanishing (A08 #5).
  *
- * **Offline (N8 PR 3):** the last page is cached on device, so on the ice with no signal the list
+ * **Offline (A08 PR 3):** the last page is cached on device, so on the ice with no signal the list
  * still reads back; opening it there marks the rows read locally and the mark is replayed the next
  * time the live query answers. A tap on a cached row navigates like normal — the lake screen does
  * everything it can from its own offline cache.

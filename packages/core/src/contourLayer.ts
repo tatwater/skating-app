@@ -1,5 +1,5 @@
 /**
- * How bathymetric contours are drawn, and what the drawer says about them (N6b).
+ * How bathymetric contours are drawn, and what the drawer says about them (A06b).
  *
  * Shared by web and mobile for the same reason `hazardLayer` is: *what gets drawn* is decided once,
  * and only the colors are per-app. But the reason is different here, and it is worth naming, because
@@ -167,7 +167,7 @@ export const CONTOUR_FADE_MS = 220;
  * The deepest contour among the lines actually drawn.
  *
  * Feeds `contourColorExpression`, which scales the ramp to the lake on screen. Read off the tile
- * rather than from the body's N6a `maxDepthM` on purpose: the ramp has to span *the rings that are
+ * rather than from the body's A06a `maxDepthM` on purpose: the ramp has to span *the rings that are
  * drawn*, and the two numbers are from different sources — a lake whose deepest sounding is 42 ft
  * can carry a GLOBathy-derived `maxDepthM` of 60, which would leave every drawn ring in the pale
  * two-thirds of the ramp and flatten exactly the contrast the ramp exists to give.
@@ -234,7 +234,7 @@ export const CONTOUR_SOURCE_TERMS: Readonly<Record<string, ContourSourceTerms>> 
  * **Scoped to the body, not a standing list of all five states** — which is only possible *because*
  * contours are detail-view-only (D81), so we always know whose data is drawn. §5's finding was that
  * the minimum is smaller than it looks and belongs at the bottom of the drawer, next to the depth
- * provenance N6a already renders and the Open-Meteo credit the weather strip already carries.
+ * provenance A06a already renders and the Open-Meteo credit the weather strip already carries.
  *
  * The lane is carried separately from the agency because they are **different claims**: a state's own
  * isobaths and a surface we fitted through its soundings must never render as the same thing (§Maine

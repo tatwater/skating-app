@@ -1,5 +1,5 @@
 /**
- * ETL run history (N6c F2). Three things matter here, and none of them is arithmetic for its own
+ * ETL run history (A06c §6.2). Three things matter here, and none of them is arithmetic for its own
  * sake:
  *
  *  - **A truncated failure list must say it was truncated.** The pair `failures` /

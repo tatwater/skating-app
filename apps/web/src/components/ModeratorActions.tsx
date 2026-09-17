@@ -27,7 +27,7 @@ export function useIsModerator(): boolean {
 /**
  * Role-gated inline moderator takedown (D32/D37) — hide or remove a **visible** report/comment, each
  * requiring a reason (written to the `moderationActions` audit log). This is the minimal founder
- * takedown path; the full queue + restore-of-hidden-content lives in the Phase 7 `/admin` surface.
+ * takedown path; the full queue + restore-of-hidden-content lives in the Phase 07 `/admin` surface.
  * Renders nothing for non-moderators, so callers can drop it in unconditionally.
  */
 export function ModeratorActions({

@@ -1,5 +1,5 @@
 /**
- * USGS **3DEP** elevation, via `epqs.nationalmap.gov` — the pure half (D101/D104, N7-2).
+ * USGS **3DEP** elevation, via `epqs.nationalmap.gov` — the pure half (D101/D104, A07a-2).
  *
  * ## Why this replaces the endpoint that was already working
  *

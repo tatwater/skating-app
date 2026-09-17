@@ -372,7 +372,7 @@ describe('stepSize / resizeDraft', () => {
   });
 });
 
-describe('polygon drafts (N5b)', () => {
+describe('polygon drafts (A05b)', () => {
   /** A polygon draft with `n` corners tapped, reached the only way one can be: by switching. */
   function polygonDraft(n: number, type: HazardType = 'thawed_rotten'): HazardDraft {
     let draft = switchDraftKind(draftForType(type), 'polygon', type);
@@ -380,7 +380,7 @@ describe('polygon drafts (N5b)', () => {
     return draft;
   }
 
-  it('is never a type’s default primitive — it is only ever opted into (D51/N5b Decision 5)', () => {
+  it('is never a type’s default primitive — it is only ever opted into (D51/A05b Decision 5)', () => {
     for (const type of HAZARD_TYPES) {
       expect(HAZARD_DEFAULT_GEOMETRY_KIND[type]).not.toBe('polygon');
       expect(draftForType(type).geometryKind).not.toBe('polygon');

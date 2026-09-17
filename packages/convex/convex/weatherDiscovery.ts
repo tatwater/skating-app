@@ -1,5 +1,5 @@
 /**
- * Weather-first discovery — the reads (N6h Workstream E / **D159**, **D164**, **D165**, **D166**).
+ * Weather-first discovery — the reads (A06h Workstream 5 / **D159**, **D164**, **D165**, **D166**).
  *
  * ## The pipeline, and why each stage is where it is
  *
@@ -214,7 +214,7 @@ export const matchedCells = query({
  *
  * `exhausted` is false when the cap stopped the walk with matched cells still unread — the client
  * then knows the list is a page, not the answer. Favorites are exempt from the radius, as they are
- * for reports (Phase 4 decision #1); nothing is exempt from the weather.
+ * for reports (Phase 04 decision #1); nothing is exempt from the weather.
  */
 export const listBodyResults = query({
   args: { filters: v.any(), limit: v.optional(v.number()) },
@@ -285,7 +285,7 @@ export const listBodyResults = query({
           body = await ctx.db.get(m.waterBodyId);
           bodyCache.set(m.waterBodyId, body);
         }
-        // Active, not merely listed (N7b): a discovery card *recommends* a lake. N6h deliberately
+        // Active, not merely listed (A07b): a discovery card *recommends* a lake. A06h deliberately
         // left `none` bodies in, pending the corpus-lifecycle answer; this is that answer.
         if (!body || !isActive(body)) continue;
         // Unnamed water is left out of the *list*, as `viewportLakes` leaves it out of the sidebar:

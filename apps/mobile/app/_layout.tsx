@@ -38,7 +38,7 @@ function RootNavigator() {
 
   // A push-token release the last sign-out couldn't finish (offline, or past its bound) is retried
   // here, at the root, so it runs whether or not anyone is signed in — and is queued before the tabs
-  // layout, further down the tree, can register a token for whoever signs in next (N8 PR 3).
+  // layout, further down the tree, can register a token for whoever signs in next (A08 PR 3).
   const releaseToken = useMutation(api.pushTokens.release);
   useEffect(() => {
     retryPendingRelease({ release: releaseToken });
@@ -74,7 +74,7 @@ function RootNavigator() {
           name="about"
           options={{ presentation: 'modal', headerShown: true, title: 'About' }}
         />
-        {/* The inbox (N8/A3) — pushed from the bell on the You tab; not a sixth tab (D28). */}
+        {/* The inbox (A08/A3) — pushed from the bell on the You tab; not a sixth tab (D28). */}
         <Stack.Screen
           name="notifications"
           options={{ presentation: 'modal', headerShown: true, title: 'Notifications' }}

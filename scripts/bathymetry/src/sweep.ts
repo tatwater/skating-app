@@ -1,9 +1,9 @@
 /**
- * Density-gate sweep (N6b) — run the gate over the real archive at a range of thresholds.
+ * Density-gate sweep (A06b) — run the gate over the real archive at a range of thresholds.
  *
  *   pnpm --filter @skating/bathymetry sweep [--ratios=0.10,0.15,0.20]
  *
- * §Maine says to *"pick the threshold from the real distribution"*, and N6a's lesson was that an
+ * §Maine says to *"pick the threshold from the real distribution"*, and A06a's lesson was that an
  * evidence gate nobody points at is not a gate. This is the thing to point at: it turns the choice
  * from an argument into a table, and it re-runs for free because the archive is permanent.
  *

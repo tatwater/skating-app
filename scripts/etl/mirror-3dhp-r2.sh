@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Mirror the 3DHP waterbody clip to a PRIVATE R2 bucket (water ETL, N7).
+# Mirror the 3DHP waterbody clip to a PRIVATE R2 bucket (water ETL, A07a).
 #
 #   scripts/etl/mirror-3dhp-r2.sh push
 #   scripts/etl/mirror-3dhp-r2.sh pull

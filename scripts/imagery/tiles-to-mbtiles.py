@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Pack a tile directory into an MBTiles file (N6e PR 2, §4).
+"""Pack a tile directory into an MBTiles file (A06e PR 2, §4).
 
     tiles-to-mbtiles.py <tile-dir> <out.mbtiles> [--format webp] [--name <str>]
 
@@ -141,7 +141,7 @@ def main() -> int:
         "name": args.name or os.path.splitext(os.path.basename(args.out))[0],
         "type": "overlay",
         "version": "1",
-        "description": "N6e freeze-up archive frame",
+        "description": "A06e freeze-up archive frame",
         "format": args.format,
         "minzoom": str(min_zoom),
         "maxzoom": str(max_zoom),

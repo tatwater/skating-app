@@ -5,8 +5,8 @@
  * `@mapbox/mapbox-gl-draw`, which needs a compat shim and drags Mapbox styling assumptions with it;
  * its MapLibre adapter peers on `maplibre-gl >= 4` and we're on 5.24.
  *
- * **Two callers, deliberately one module** (N5b Decision 2). N2 built this for the admin sub-area
- * editor and its doc comment said "admin-only", which stopped being true when N5b gave skaters
+ * **Two callers, deliberately one module** (A05b Decision 2). A02 built this for the admin sub-area
+ * editor and its doc comment said "admin-only", which stopped being true when A05b gave skaters
  * freeform hazard polygons — the primitive D51 always described as the opt-in/advanced one. A second
  * wrapper around the same engine would be two places for a draw bug to live; sharing it also means
  * Vite emits **one** ~218 kB chunk for both routes rather than one each, since both dynamic imports
@@ -37,7 +37,7 @@ export interface PolygonDrawControl {
   /** Disarm, leaving anything already drawn on screen. */
   stopDrawing: () => void;
   /**
-   * Replace the tracked ring with this one. What makes a snapped shore band editable: N5b Decision 3
+   * Replace the tracked ring with this one. What makes a snapped shore band editable: A05b Decision 3
    * says a band is an ordinary polygon draft the moment it's derived, and that is only true if the
    * vertex editor can be handed one it didn't draw.
    */
@@ -73,7 +73,7 @@ export interface PolygonDrawOptions {
  *
  * This control never writes anything. The hazard form previews what it emits and the skater decides
  * whether to post; the sub-area editor previews it as its yellow draft layer, and the server clips
- * whatever gets saved to the parent regardless (N2 Decision 10).
+ * whatever gets saved to the parent regardless (A02 Decision 10).
  */
 export async function createPolygonDraw(
   map: maplibregl.Map,

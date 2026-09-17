@@ -4,7 +4,7 @@
  * (100%, D40) before any Convex wiring, because this is safety-adjacent: a corroboration rule that's too
  * loose inflates trust off coincidence, and trust drives what the recommended feed amplifies (D3).
  *
- * All tunable numbers live in `reputationConfig.ts` (the Phase-7 admin surface); this module is only the
+ * All tunable numbers live in `reputationConfig.ts` (the Phase-07 admin surface); this module is only the
  * logic that reads them.
  */
 
@@ -20,7 +20,7 @@ const QUALITY_RANK: Record<SkateQuality, number> = { poor: 0, fair: 1, good: 2, 
  * Point thresholds are checked **first, top-down**, so points always beat age — a fast earner is
  * `expert` even inside the New window. Only if the total is below `trusted` does age decide: inside the
  * New window → `new` (a welcome, even with zero signals); past it → `null` (no chip — we never render
- * "Not trusted"). Since the model is boost-only, `points` is never negative in Phase 6.
+ * "Not trusted"). Since the model is boost-only, `points` is never negative in Phase 06.
  */
 export function deriveTrustClass(points: number, accountAgeMs: number): TrustClass | null {
   if (points >= TRUST_CLASS_THRESHOLDS.leader) return 'leader';
@@ -70,14 +70,14 @@ export function reportsContradict(a: AgreeableReport, b: AgreeableReport): boole
   return !shareIceType(a.iceTypes, b.iceTypes);
 }
 
-/** The hazard field the agreement test reads — a hazard carries exactly one `type` (Phase 9). */
+/** The hazard field the agreement test reads — a hazard carries exactly one `type` (Phase 09a). */
 export interface AgreeableHazard {
   type: string;
 }
 
 /**
  * Two hazards agree when they are the **same type** (decision 3). A hazard carries exactly one type
- * (Phase 9), so "type overlap" is type equality — a pressure ridge doesn't corroborate open water.
+ * (Phase 09a), so "type overlap" is type equality — a pressure ridge doesn't corroborate open water.
  */
 export function hazardsAgree(a: AgreeableHazard, b: AgreeableHazard): boolean {
   return a.type === b.type;

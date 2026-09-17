@@ -14,7 +14,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { WeatherTimeline } from './WeatherTimeline';
 
 /**
- * What the ice has been through — the past-weather panel (N6h Workstream C / **D153**).
+ * What the ice has been through — the past-weather panel (A06h Workstream 3 / **D153**).
  *
  * **The differentiated half of the weather block, and the reason the phase exists.** Every general
  * weather app tells you the high and the low; none of them tells you what happened to *this lake*.
@@ -79,7 +79,7 @@ export function PastWeatherPanel({
 }: {
   waterBodyId: Id<'waterBodies'>;
   /**
-   * The bay this panel is about (N6h / open question 5), resolved by the caller with
+   * The bay this panel is about (A06h / open question 5), resolved by the caller with
    * `resolveWeatherSubArea`. Absent on the lake itself and on every body with no bays.
    */
   subAreaId?: string | undefined;
@@ -196,7 +196,7 @@ export function PastWeatherPanel({
   );
 
   // At least one day with real hours. A cell can legitimately have thirty daily summaries and no
-  // hourly rows — every lake opened before N6h Workstream D is in that state until its next visit.
+  // hourly rows — every lake opened before A06h Workstream 4 is in that state until its next visit.
   const hasHourly = state.timeline.some((d) => (d.hours?.length ?? 0) > 0);
 
   return (

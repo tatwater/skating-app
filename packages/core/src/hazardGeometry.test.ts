@@ -433,7 +433,7 @@ describe('hazardFootprint never yields a non-areal geometry', () => {
   });
 });
 
-describe('clipFootprintToBody (Phase 9.5)', () => {
+describe('clipFootprintToBody (Phase 09b)', () => {
   // A body occupying the western half-plane: water is west of the shoreline at lng 0, land is east.
   const WEST_BODY: Polygon = {
     type: 'Polygon',
@@ -514,7 +514,7 @@ describe('clipFootprintToBody (Phase 9.5)', () => {
   });
 });
 
-describe('polygonShape + the hardened polygon gate (N5b)', () => {
+describe('polygonShape + the hardened polygon gate (A05b)', () => {
   /** Four corners of a small square near Burlington, as draft vertices. */
   const SQUARE: LatLng[] = [
     { lat: 44.47, lng: -73.22 },
@@ -564,7 +564,7 @@ describe('polygonShape + the hardened polygon gate (N5b)', () => {
     ).toBe(false);
   });
 
-  // The four cases the pre-N5b gate let through: it read `coordinates[0]` and nothing else, so
+  // The four cases the pre-A05b gate let through: it read `coordinates[0]` and nothing else, so
   // anything past the first ring of the first part was unvalidated. Unreachable until a client could
   // author a polygon, which is what this phase changed.
   it('validates every ring, not just the first', () => {

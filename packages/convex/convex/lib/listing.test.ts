@@ -2,7 +2,7 @@ import { isActive } from '@skating/core';
 import { describe, expect, it } from 'vitest';
 import { isListed } from './listing';
 
-describe('isListed (D48, re-scoped by N7b — reachable, not pushed)', () => {
+describe('isListed (D48, re-scoped by A07b — reachable, not pushed)', () => {
   it('lists canonical bodies (no reviewStatus) and auto-visible/approved user bodies', () => {
     // Canonical OSM/NHD import — no reviewStatus at all.
     expect(isListed({ dedupStatus: 'clean' })).toBe(true);
@@ -21,7 +21,7 @@ describe('isListed (D48, re-scoped by N7b — reachable, not pushed)', () => {
   });
 
   /**
-   * The N7b change. A removed body keeps its cell rows so a track over it resolves to *it* — the
+   * The A07b change. A removed body keeps its cell rows so a track over it resolves to *it* — the
    * landowner skating their own taken-down pond must not mint a fresh public body. What removal
    * takes away is standing: it is on no push surface and not in search.
    */

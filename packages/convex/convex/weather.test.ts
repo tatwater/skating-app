@@ -353,7 +353,7 @@ function openMeteoWithForecast(nowMs: number) {
   };
 }
 
-describe('weather.getForecastForBody (N6c B5b)', () => {
+describe('weather.getForecastForBody (A06c §2.5b)', () => {
   test('returns the forward hours, and the strip line derived from them still names when snow starts', async () => {
     const t = convexTestWithGeo();
     const waterBodyId = await seedBody(t);
@@ -370,7 +370,7 @@ describe('weather.getForecastForBody (N6c B5b)', () => {
     // Every hour is in the future relative to the request.
     for (const h of forecast?.hours ?? []) expect(h.startMs).toBeGreaterThan(now - 18_000_000);
     expect(forecast?.utcOffsetMs).toBe(-18_000_000);
-    // The planner's inputs ride through the same row (N6h D) — the code is what draws the symbol.
+    // The planner's inputs ride through the same row (A06h D) — the code is what draws the symbol.
     expect(forecast?.hours.at(-1)?.weatherCode).toBe(75);
     expect(forecast?.hours.at(-1)?.windDirectionDeg).toBe(310);
     // The strip is now a client-side derivation over the same hours, at its own 12-hour horizon.
@@ -570,7 +570,7 @@ describe('weather.getForecastForBody (N6c B5b)', () => {
   });
 
   test('forecasts the named bay when asked, and the lake when the bay is not one of its own', async () => {
-    // N6h open question 5: the Planning tab reads past and future for ONE place, so the forecast
+    // A06h open question 5: the Planning tab reads past and future for ONE place, so the forecast
     // scopes to the same bay the archive panel does — and refuses a foreign bay the same way.
     const t = convexTestWithGeo();
     const lake = await seedBody(t, { lat: 44.25, lng: -73.35 });
@@ -677,7 +677,7 @@ describe('weather.getForecastForBody (N6c B5b)', () => {
   });
 });
 
-describe('the weather cell key (D152 / N6h)', () => {
+describe('the weather cell key (D152 / A06h)', () => {
   test("sends the cell centre and the band elevation, not the body's own coordinates", async () => {
     const t = convexTestWithGeo();
     // 44.0163 / 0.05 = 880.33 → 880 → 44.0;  -72.0331 / 0.05 = -1440.66 → -1441 → -72.05
@@ -697,7 +697,7 @@ describe('the weather cell key (D152 / N6h)', () => {
     // 338 m → band 3 → the band CENTRE, 300, is what the key was built from and so what we send.
     // Sending 338 while keying on band 3 would mean two lakes sharing an entry that describes one.
     expect(params.get('elevation')).toBe('300');
-    // The direction variable that crosses the 10-var billing threshold on purpose (N6h Workstream C).
+    // The direction variable that crosses the 10-var billing threshold on purpose (A06h Workstream 3).
     expect(params.get('hourly')).toContain('wind_direction_10m');
   });
 
@@ -800,7 +800,7 @@ describe('the weather cell key (D152 / N6h)', () => {
     expect(rows[0]?.calls).toBe(1);
     // 12 variables over a 1+2 day span: ceil(3/14)=1 × 12/10 = 1.2 billed calls.
     //
-    // Was 1.1 until `weather_code` joined `HOURLY_VARS` (N6h Workstream D). Both fetch builders share
+    // Was 1.1 until `weather_code` joined `HOURLY_VARS` (A06h Workstream 4). Both fetch builders share
     // that list on purpose — the strip and the archive must not diverge on what they ask for — so the
     // 9% lands here as well as on the archive path. See `HOURLY_VARS` for what it buys.
     expect(rows[0]?.weightedCalls).toBeCloseTo(1.2, 6);

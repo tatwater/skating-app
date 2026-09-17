@@ -1,5 +1,5 @@
 /**
- * The extraction argv, pinned (N7 audit).
+ * The extraction argv, pinned (A07a audit).
  *
  * These are the commands that decide **which features exist at all**, and every one of their failure
  * modes is silent: a narrowed `-select` produces a column of `undefined` that classifies as silence,
@@ -56,7 +56,7 @@ describe('the OSM filter', () => {
   });
 });
 
-describe('the access extract (N6d B1)', () => {
+describe('the access extract (A06d §2.1)', () => {
   it('keeps the four access tag families and nothing from the water pass', () => {
     expect([...OSM_ACCESS_TAGS]).toEqual([
       'leisure=slipway',

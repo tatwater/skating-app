@@ -1,5 +1,5 @@
 /**
- * Turning a scrubber's width into notch positions, and a drag into a selection (N6e §C4).
+ * Turning a scrubber's width into notch positions, and a drag into a selection (A06e §3.4).
  *
  * ## Why the whole season has to fit
  *

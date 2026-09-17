@@ -3,9 +3,9 @@
  *
  * ## Why this exists
  *
- * This ETL's README has said, since Phase 1, to *"record the md5 + Geofabrik replication timestamp
+ * This ETL's README has said, since Phase 01, to *"record the md5 + Geofabrik replication timestamp
  * in the run table"* — because Geofabrik rebuilds its `-latest` extracts **daily**, so a download
- * date alone pins nothing. The Phase 2.5 run then recorded, for all five states:
+ * date alone pins nothing. The Phase 02b run then recorded, for all five states:
  *
  * > *"md5s not captured this run — record them per state on the next re-run (dated build no longer
  * > retrievable to hash retroactively)."*
@@ -13,7 +13,7 @@
  * So the exact OSM snapshot behind our 116,070 bodies is unrecoverable. That is provenance by human
  * memory failing exactly the way it fails, on the corpus the entire product sits on.
  *
- * The fix is the one N6b's bathymetry archive already uses: capture it mechanically at fetch time,
+ * The fix is the one A06b's bathymetry archive already uses: capture it mechanically at fetch time,
  * into a `.raw/` that is never deleted, with a manifest recording what a filename cannot.
  *
  * **This does not recover the current corpus's provenance** — nothing can. It makes the *next*
@@ -48,7 +48,7 @@ export const GEOFABRIK_BASE = 'https://download.geofabrik.de/north-america/us';
 /**
  * The five states the corpus covers.
  *
- * NY's clip is inherited from the Phase 2.5 runbook rather than reinvented: 41.3°N sits well south
+ * NY's clip is inherited from the Phase 02b runbook rather than reinvented: 41.3°N sits well south
  * of Lake George (~43.4) and Saranac/Placid (~44.3), and keeping the downstate metro out is what
  * stops a third of the corpus being water nobody skates.
  */

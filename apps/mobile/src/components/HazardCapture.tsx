@@ -46,7 +46,7 @@ import { useMapSelection } from './MapSelectionContext';
 import { pickPhotos, processPhoto, uploadToStorage } from './photoPipeline';
 
 /**
- * On-ice hazard capture (Phase 9, D51 §Mobile) — the FAB, the type sheet, and the adjust bar.
+ * On-ice hazard capture (Phase 09a, D51 §Mobile) — the FAB, the type sheet, and the adjust bar.
  *
  * Designed against one governing constraint: **cold hands, gloves, bright sun, one hand, possibly
  * moving, no signal, phone in a pocket.** Two rules fall out and drive every decision here:
@@ -123,7 +123,7 @@ export function HazardCapture() {
    * feeds both paths: upload these uris now, or hand the same records to the queue.
    */
   /**
-   * Snap-to-shoreline state (N5b), held here rather than on the draft: Decision 3 stores a snapped
+   * Snap-to-shoreline state (A05b), held here rather than on the draft: Decision 3 stores a snapped
    * band as an **ordinary polygon**, so the band half-width is an input to deriving that ring, not a
    * property of it. Putting it on the draft would give one shape two widths that could disagree.
    */
@@ -441,7 +441,7 @@ export function HazardCapture() {
 
   /**
    * `dismissed` is an argument rather than a state read so *"no, this is a different hazard"* files the
-   * pin in the same tap that dismisses the nudge — §B1 promises one tap and no argument, and a second
+   * pin in the same tap that dismisses the nudge — §2.1 promises one tap and no argument, and a second
    * Done press is the argument, just quieter. It also avoids the real bug in the alternative: a
    * `setState` isn't visible to the call that follows it, so re-posting from the handler would re-raise
    * the nudge it just answered. On mobile that matters twice over, since this fires with a cold phone
@@ -811,7 +811,7 @@ export function HazardCapture() {
             </Paragraph>
           )}
 
-          {/* One stepper, two meanings, never both on screen (N5b Decision 3): on a snapped band it
+          {/* One stepper, two meanings, never both on screen (A05b Decision 3): on a snapped band it
               tunes the band half-width and the ring re-derives; otherwise it steps the draft's own
               size. Steppers, not a slider — sliders are miserable with gloves on. */}
           <XStack gap="$2" alignItems="center" flexWrap="wrap">

@@ -1,5 +1,5 @@
 /**
- * Admin-surface user lookup (Phase 7 / D37). Distinct from the member-facing `profiles.searchProfiles`
+ * Admin-surface user lookup (Phase 07 / D37). Distinct from the member-facing `profiles.searchProfiles`
  * (D13): that one is filtered to **public** profiles and excludes blocked/deleted accounts because it
  * powers ordinary user browsing. Operators need the opposite — find **any** account (private,
  * suspended, banned, or deleted) by name or exact handle to act on it — so this query drops the

@@ -159,7 +159,7 @@ function DraftRow({
 }
 
 /**
- * A queued on-ice hazard or confirmation (Phase 9). No edit affordance — a hazard is immutable once
+ * A queued on-ice hazard or confirmation (Phase 09a). No edit affordance — a hazard is immutable once
  * captured — but it must be *visible and deletable*, so a permanent rejection on flush (a removed
  * lake, a minor, an unresolvable location) is something the skater can see and clear rather than a
  * silent, unrecoverable row that also never frees its photo files.

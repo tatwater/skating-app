@@ -1,5 +1,5 @@
 /**
- * The rules `buildRegion` decides with — extracted so they can be tested (N7 audit).
+ * The rules `buildRegion` decides with — extracted so they can be tested (A07a audit).
  *
  * ## Why this file exists
  *

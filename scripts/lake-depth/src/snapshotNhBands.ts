@@ -1,9 +1,9 @@
 /**
- * Archive NH GRANIT's bathymetry **band polygons** into `.raw/nh-bathy-bands/` (N7-3).
+ * Archive NH GRANIT's bathymetry **band polygons** into `.raw/nh-bathy-bands/` (A07a-3).
  *
  *   pnpm --filter @skating/lake-depth snapshot-nh-bands [--campaign=<id>] [--refresh]
  *
- * Layer 1 of the same service N6b read layer 0 of. See `nhBands.ts` for what it is and why the lines
+ * Layer 1 of the same service A06b read layer 0 of. See `nhBands.ts` for what it is and why the lines
  * layer could never have given a mean. Centroids rather than rings, so the archive is a few hundred
  * kilobytes rather than a second copy of the contour geometry.
  */
@@ -72,7 +72,7 @@ async function main(): Promise<void> {
         name: 'nh-bands · query',
         detail:
           `paged at ${NH_BANDS_PAGE_SIZE}; ${NH_BANDS_FIELDS.length} named fields plus the band ` +
-          'centroid, never the rings — N6b already holds this survey’s geometry as contour lines.',
+          'centroid, never the rings — A06b already holds this survey’s geometry as contour lines.',
         sourceUrl: `${NH_BANDS_SERVICE_URL}/query`,
       },
       { name: 'archive', detail: '.raw/nh-bathy-bands/bands.ndjson', output: ARCHIVE_DIR },
@@ -120,7 +120,7 @@ async function main(): Promise<void> {
           unit: 'feet (depthmin/depthmax), acres (area)',
           datum: 'depth below surface at survey time',
           note:
-            'Layer 1 of EDP_Bathymetry_Lakes; N6b reads layer 0 (contour LINES) for the render. ' +
+            'Layer 1 of EDP_Bathymetry_Lakes; A06b reads layer 0 (contour LINES) for the render. ' +
             'These polygons carry the band AREAS, which is what makes a hypsographic mean depth ' +
             'possible — see nhBands.ts. Centroids only: the rings are the render payload and are ' +
             'already archived as lines. The layer also includes Maine-filed assessment units for ' +

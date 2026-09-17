@@ -1,5 +1,5 @@
 /**
- * The one subprocess that talks to the deployment (N6b).
+ * The one subprocess that talks to the deployment (A06b).
  *
  * Split from `joinQuery.ts` so the batching logic — the part that decides whether a failure means
  * "split" or "give up" — stays pure and fully tested, while this stays untestable glue.

@@ -16,7 +16,7 @@ const view = (id: string, createdAt: number, readAt?: number): NotificationView 
   resolution: 'actioned',
 });
 
-describe('notificationCacheModel (N8 PR 3)', () => {
+describe('notificationCacheModel (A08 PR 3)', () => {
   it('round-trips a view and drops a corrupt row', () => {
     const v = view('n1', 100);
     expect(fromCachedRow(toCachedRow(v))).toEqual(v);

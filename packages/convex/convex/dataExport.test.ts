@@ -170,7 +170,7 @@ describe('collect — what a bundle carries', () => {
   });
 
   /**
-   * The access layer (N6d), which landed after this bundle's shape was settled — and that is the
+   * The access layer (A06d), which landed after this bundle's shape was settled — and that is the
    * failure mode worth a test: an export is only ever wrong by *omission*, and an omission looks
    * exactly like a person who never used the feature. Nothing errors, nothing is empty-looking, and
    * the promise of "everything about you" quietly stops being true one phase at a time.

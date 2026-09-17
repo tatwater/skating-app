@@ -1,5 +1,5 @@
 /**
- * Which place a body's weather panel is about (N6h / open question 5).
+ * Which place a body's weather panel is about (A06h / open question 5).
  *
  * ## The problem this solves
  *
@@ -21,7 +21,7 @@
  *    default back to the URL, or opening a lake would be a navigation;
  * 3. else `null`: a body with no bays is its own place, and the panel reads its anchor.
  *
- * `displayScore` rather than area: it is N2's D49 curve over area *plus* curation, so a curated
+ * `displayScore` rather than area: it is A02's D49 curve over area *plus* curation, so a curated
  * Malletts Bay beats a larger, unloved reach — which is the point of having curated at all.
  *
  * ## Why this is one function in core
@@ -80,7 +80,7 @@ export function bodyWeatherAnchor(body: {
 /**
  * The point a sub-area's weather is sampled at.
  *
- * `representativePoint` when N2 stored one, else the deprecated `centroid` — both are the same
+ * `representativePoint` when A02 stored one, else the deprecated `centroid` — both are the same
  * on-water `pointOnFeature` basis (D48), and a sub-area has no `interiorPoint` because the polygon
  * is a bay rather than a whole lake and the shoreline failure that forced `interiorPoint` onto bodies
  * (a crescent's bbox centre landing on land) is far rarer on a compact bay. Deliberately one chain,

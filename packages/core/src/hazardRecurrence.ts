@@ -1,5 +1,5 @@
 /**
- * Cross-season recurrence — the second window on D77's one clustering primitive (N5c / D78).
+ * Cross-season recurrence — the second window on D77's one clustering primitive (A05c / D78).
  *
  * Within a winter the question is *"is this the same ridge you already marked?"*. Across winters it is
  * *"is this the ridge that forms here every winter?"* — the same geometric judgement at a looser
@@ -59,7 +59,7 @@ export const RECURRENCE_PUBLIC_MIN_SEASONS = 2;
 export const RECURRENCE_ADVISORIES_PUBLIC = false;
 
 /**
- * The raised bar for the `volatile` family (D78 / §C7) — **three winters minimum, regardless of
+ * The raised bar for the `volatile` family (D78 / §3.7) — **three winters minimum, regardless of
  * `RECURRENCE_PUBLIC_MIN_SEASONS`**.
  *
  * Volatile types are volatile. Two ridges in a row is a pattern; two thin patches in a row is a
@@ -74,7 +74,7 @@ export const VOLATILE_MIN_SEASONS = 3;
  *
  * The first four mirror `promotionTargetFor` exactly — same types, same reasoning, one window out.
  * `volatile` is the one that only exists here, and it is the strongest case in the phase for why
- * recurrence is worth building: a single winter's thin patch is weather, and N5a scored tier-A types
+ * recurrence is worth building: a single winter's thin patch is weather, and A05a scored tier-A types
  * at zero promotability and was right to. A spot that goes out early *every* March is not weather. It
  * is a property of the lake bed — shallow water over a sandbar, a reef, a delta, the lee of an island —
  * and `shallow_early_thaw` is unreachable from any hazard without this.
@@ -147,7 +147,7 @@ export interface RecurrenceScoreInput {
 }
 
 /**
- * How much of the score each input may move, in the weight order §C5 sets out.
+ * How much of the score each input may move, in the weight order §3.5 sets out.
  *
  * **Seasons dominate by design.** It is the only input that is about *recurrence* rather than about a
  * row; everything else is a fact the single-season list already had. If these are ever retuned, that

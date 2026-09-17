@@ -1,5 +1,5 @@
 /**
- * Weather sample-point suggestion (N2, the deferred half of D56 §5).
+ * Weather sample-point suggestion (A02, the deferred half of D56 §5).
  *
  * Weather doesn't vary below Open-Meteo's grid, so **every body samples at its centroid by default**
  * and only the genuinely multi-cell giants need more — Champlain is ~200 km end to end, and a single
@@ -27,7 +27,7 @@ import {
  *
  * Open-Meteo's high-resolution models run at roughly 2–11 km depending on region and variable, so
  * sampling finer than ~11 km buys distinct cache keys for identical forecasts — pure cost, on a free
- * tier the whole app shares. Tunable, and surfaced in the Phase-7b control room next to the other
+ * tier the whole app shares. Tunable, and surfaced in the Phase-07-2 control room next to the other
  * weather constants.
  */
 export const DEFAULT_SAMPLE_SPACING_KM = 11;

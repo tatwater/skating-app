@@ -1,4 +1,4 @@
-# SCL class labels -> the four questions a skater actually has (N6e, 2026-08-26).
+# SCL class labels -> the four questions a skater actually has (A06e, 2026-08-26).
 #
 # `gdaldem color-relief` format: <class> <R> <G> <B> <A>. Fed with `-nearest_color_entry`, which
 # picks an entry outright instead of interpolating between two — the same rule every other resample

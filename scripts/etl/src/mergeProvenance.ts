@@ -1,5 +1,5 @@
 /**
- * The merge's **path**: every archived file that decided the corpus, as run stages (N7 provenance).
+ * The merge's **path**: every archived file that decided the corpus, as run stages (A07a provenance).
  *
  * ## Why this file exists
  *
@@ -214,7 +214,7 @@ export const MERGE_MANIFEST_FILENAME = 'merge-manifest.json';
  *
  * **Discovery rather than a flag, because a flag is exactly what gets forgotten.**
  * `run-canonical.sh` exists because the interesting arguments are the easy-to-drop ones — and the
- * N7 path had no wrapper at all, so the pass that loaded the entire corpus was invoked with
+ * A07a path had no wrapper at all, so the pass that loaded the entire corpus was invoked with
  * `--campaign=` and nothing else, producing a run row labelled "unscoped canonical water" with an
  * empty Path. The complete record has to be what happens when nobody types anything.
  *

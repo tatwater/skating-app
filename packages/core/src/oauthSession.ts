@@ -1,5 +1,5 @@
 /**
- * **Browser-session binding for the OAuth connect flow** (Phase 8) — the cookie half of the state check.
+ * **Browser-session binding for the OAuth connect flow** (Phase 08) — the cookie half of the state check.
  *
  * The `oauthStates` nonce answers *"has this callback been used before, and whose flow was it?"*. It
  * does **not** answer *"is the person who just approved on Strava the same person who started this?"*,

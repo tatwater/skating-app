@@ -1,7 +1,7 @@
 /**
- * Phase-6 reputation / bounty / recommended-feed tuning surface (D50/D10/D17/D44) — **one file**.
+ * Phase-06 reputation / bounty / recommended-feed tuning surface (D50/D10/D17/D44) — **one file**.
  *
- * Everything a non-engineer might retune lives here so the Phase-7 admin UI can bind controls to a
+ * Everything a non-engineer might retune lives here so the Phase-07 admin UI can bind controls to a
  * single module (the way D49's display curve is single-sourced in `display.ts`). The pure logic in
  * `reputation.ts` / `badges.ts` / `bounties.ts` / `recommended.ts` reads these constants; the Convex
  * layer takes them as the defaults for the ledger writes and gates. The **backfill script** recomputes
@@ -115,7 +115,7 @@ export const HAZARD_CORROBORATION_MIN_CONFIRMS = 2;
 /**
  * Weather-unexplained contradictions (D56 §7) at/above which an author is auto-flagged for moderator
  * review (targeting the *pattern*, not one incident — a moderator judges the tenure-aware good-vs-bad
- * chart in Phase 7). NOT a trust penalty: trust stays boost-only (D50); this only routes a persistent
+ * chart in Phase 07). NOT a trust penalty: trust stays boost-only (D50); this only routes a persistent
  * pattern to a human, whose lever is the D57 posting restriction.
  */
 export const CONTRADICTION_FLAG_THRESHOLD = 3;
@@ -131,7 +131,7 @@ export type RatingTargetType = (typeof RATING_TARGET_TYPES)[number];
 /**
  * Net-unhelpful (unhelpful − helpful) at or beyond which a target is routed to the mod queue via an
  * `auto_low_quality` content flag. It is **never hidden** — visibility of safety content is not gated by
- * score (D3); the flag just surfaces it for a human (Phase 7 queue).
+ * score (D3); the flag just surfaces it for a human (Phase 07 queue).
  */
 export const AUTO_LOW_QUALITY_NET_UNHELPFUL = 3;
 
@@ -203,7 +203,7 @@ export const BOUNTY_FRESH_MAX_REPORTS = 10;
  * well-corroborated report's bounty early?", and one ordinary sub-freezing night (~48 FDH) must NOT — else
  * the trust/thumbs window weighting collapses for most of the skating season. ~1.5× a "full" cold signal
  * (`fdhScaleHours` 120) / ~1.3× a full thaw (`tdhScaleHours` 90): a solid multi-day hard freeze or a real
- * thaw, not a routine night. **Admin-tunable in Phase 7** (see `07-roadmap.md` — the same lever + the
+ * thaw, not a routine night. **Admin-tunable in Phase 07** (see `07-roadmap.md` — the same lever + the
  * bounty-suppression chart that shows an admin the effect of moving it).
  */
 export const BOUNTY_REOPEN_FREEZING_DEGREE_HOURS = 180;
@@ -215,14 +215,14 @@ export const MAX_OPEN_BOUNTIES_PER_DAY = 3;
 /** The rolling window the daily-open cap is measured over. */
 export const BOUNTY_DAILY_WINDOW_MS = DAY_MS;
 
-/** Default bounty lifetime before the expiry sweep flips `open → expired` (decision 12; Phase-7 field). */
+/** Default bounty lifetime before the expiry sweep flips `open → expired` (decision 12; Phase-07 field). */
 export const DEFAULT_BOUNTY_LIFETIME_MS = 30 * DAY_MS;
 
 /** Eligibility fan-out looks back this far for "skated here recently" authors on create (decision 9). */
 export const BOUNTY_ELIGIBILITY_WINDOW_HOURS = 72;
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Report freshness — the shared unit of decay (D59, Phase 8)
+// Report freshness — the shared unit of decay (D59, Phase 08)
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**

@@ -7,7 +7,7 @@ import { useTheme } from 'tamagui';
 import { DrawerScrollContext } from './DrawerScrollContext';
 
 /**
- * The drawer's two out-of-flow slots, and why a screen needs them (N6h/H).
+ * The drawer's two out-of-flow slots, and why a screen needs them (A06h/H).
  *
  * React Native can only pin a **direct child** of a scroll view (`stickyHeaderIndices`), and this
  * scroll view's one child is Expo Router's `<Slot />` — the whole detail screen. A tab strip nested
@@ -71,11 +71,11 @@ export function coveredFractionForIndex(index: number): number {
 const DRAWER_Z_INDEX = 25;
 
 /**
- * The bottom-sheet drawer that hosts a water-body / report detail over the persistent map (§F, D47)
+ * The bottom-sheet drawer that hosts a water-body / report detail over the persistent map (§6, D47)
  * — the mobile mirror of web's `DetailSheet`. Selection is URL-backed (`/water/[id]`, `/report/[id]`)
  * so it's deep-linkable off-platform; the sheet is **non-modal with no backdrop**, so the map behind
  * stays pannable and tappable while the drawer is open — which the report form's put-in-pin placement
- * (§E) relies on. Swiping the sheet fully down (its own gesture) navigates back to the bare map (`/`).
+ * (§5) relies on. Swiping the sheet fully down (its own gesture) navigates back to the bare map (`/`).
  *
  * `snapIndex` is route-driven: `-1` closed, `DRAWER_PEEK` while a put-in pin is being placed (so the
  * map above is tappable without unmounting the half-filled form), `DRAWER_NORMAL` otherwise. We drive

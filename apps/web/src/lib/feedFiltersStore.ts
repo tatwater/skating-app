@@ -1,7 +1,7 @@
 /**
- * The one filter row, shared by the feed and the map (N6h / **D166**).
+ * The one filter row, shared by the feed and the map (A06h / **D166**).
  *
- * Phase 4 kept the row's working copy inside the feed page's own hook, which was fine while the feed
+ * Phase 04 kept the row's working copy inside the feed page's own hook, which was fine while the feed
  * was its only reader. Weather-first discovery makes the map a second reader — narrow on the feed,
  * switch to the map, and the same dozen lakes are what is drawn — so the working copy moves out of
  * the page into a module store both subscribe to through `useSyncExternalStore`. Persistence is

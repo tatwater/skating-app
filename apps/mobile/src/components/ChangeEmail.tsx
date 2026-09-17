@@ -13,7 +13,7 @@ import { Button, Paragraph, Text, XStack, YStack } from 'tamagui';
 import { Input } from './ThemedInputs';
 
 /**
- * Change the email on the account (N8 post-merge) — the You tab's email line, opened up. Clerk owns
+ * Change the email on the account (A08 post-merge) — the You tab's email line, opened up. Clerk owns
  * the address (D26); the sequence is `@skating/core`'s `changeEmail`, the same one the web settings
  * page runs, and the code entry mirrors the sign-in screen's. The server learns through Clerk's
  * webhook, not from us: a client never sends the server an address it merely claims.

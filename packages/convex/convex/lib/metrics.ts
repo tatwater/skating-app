@@ -1,5 +1,5 @@
 /**
- * `metricSnapshots` write helpers (Phase 7b / D37) — the only sanctioned way a number enters the
+ * `metricSnapshots` write helpers (Phase 07-2 / D37) — the only sanctioned way a number enters the
  * operator surface.
  *
  * Two writers, deliberately kept apart:
@@ -10,7 +10,7 @@
  *     source rows are still on disk and can be re-derived (and therefore backfilled).
  *
  * Both upsert on `(metric, date)`, so a re-run of the daily job is idempotent and a counter bump is
- * additive. This is the Phase-4 contribution-counter pattern (`bumpContributionCount`) generalized:
+ * additive. This is the Phase-04 contribution-counter pattern (`bumpContributionCount`) generalized:
  * maintain the aggregate as it happens rather than reconstructing it from the corpus at read time.
  *
  * **Never throw.** Analytics is instrumentation hung off real user-facing paths, and a metric write

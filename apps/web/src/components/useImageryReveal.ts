@@ -1,5 +1,5 @@
 /**
- * The aerial reveal — **every body in the viewport, from one fetch** (N6e / D146).
+ * The aerial reveal — **every body in the viewport, from one fetch** (A06e / D146).
  *
  * ## What changed, and the measurement that forced it
  *
@@ -168,7 +168,7 @@ export interface ImageryRevealOptions {
    */
   onPaintedChange?: (ids: readonly string[]) => void;
   /**
-   * Skip the clip and show the photograph across the whole view (Workstream E).
+   * Skip the clip and show the photograph across the whole view (Workstream 5).
    *
    * **The admin lake editor's mode, and the reason is the opposite of the skater's.** A skater is
    * looking *at* a lake, so the reveal stops where the lake does. An operator is correcting the
@@ -514,7 +514,7 @@ export const IMAGERY_REPLACED_LAYERS: readonly ReplacedLayer[] = [
  * drawn for the lake whose drawer is open, and that lake is in the reveal set by construction, so
  * "any body revealed ⇒ hide" is the same answer a per-feature filter would give.
  *
- * D81 has said since N6b that contours go with the base map. Omitting this id in the first build did
+ * D81 has said since A06b that contours go with the base map. Omitting this id in the first build did
  * not disable the rule, it just stopped implementing it — the isobaths kept drawing over the
  * photograph and read as nested rings in every shallow bay.
  */

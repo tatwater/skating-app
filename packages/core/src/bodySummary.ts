@@ -1,5 +1,5 @@
 /**
- * Per-body map summary cards (N6c Workstream E).
+ * Per-body map summary cards (A06c Workstream 5).
  *
  * The map is a field of anonymous polygons you must click one at a time. This is the compact card
  * that sits over the ones where something is happening, so a browsing skater can see *where people
@@ -25,7 +25,7 @@
  * mark's referent is whatever the legend says it is, and the legend here is "how recent reporters
  * rated it". That is a fact about reports, which is the same class of content as the count beside it.
  *
- * **The dots read `reports.skateQuality`, not the Phase 6 thumbs.** The thumbs measure whether a
+ * **The dots read `reports.skateQuality`, not the Phase 06 thumbs.** The thumbs measure whether a
  * *report* was helpful — a well-written report of terrible ice earns them. Rendering that as an ice
  * quality mark would be a category error that gets more wrong the better the reporting is.
  */
@@ -117,7 +117,7 @@ export function summarizeQuality(
 }
 
 /**
- * The same summary, with the quorum bypassed for the reveal flag (N6c-2).
+ * The same summary, with the quorum bypassed for the reveal flag (A06c-2).
  *
  * **A separate function rather than a parameter on {@link summarizeQuality}**, and the separation is
  * the safety argument: the stored summary is written by the server, which has no business knowing
@@ -164,7 +164,7 @@ export function summaryHasCard(
    */
   summary: Pick<BodySummary, 'recentReportCount' | 'topHazardTypes'> | null | undefined,
   /**
-   * The reveal flag (N6c-2). When on, **every body with a summary row draws a card**, including the
+   * The reveal flag (A06c-2). When on, **every body with a summary row draws a card**, including the
    * ones with nothing to report — so a walk-through can see where cards land, how they collide and
    * what they look like empty, none of which is observable on a corpus holding one report.
    *
@@ -181,7 +181,7 @@ export function summaryHasCard(
 /**
  * The card's title.
  *
- * **Name plus town, reusing the Phase 5 feed card's rule**, because "Pond" is not hypothetical:
+ * **Name plus town, reusing the Phase 05 feed card's rule**, because "Pond" is not hypothetical:
  * OSM's Northeast water layer is full of bodies literally named `Pond`, `Mill Pond` and `Beaver
  * Pond`, several within a few miles of each other. A card reading just **Pond** looks like a bug and
  * is ambiguous even to a local. *"Beaver Pond · Marshfield"* is useful.

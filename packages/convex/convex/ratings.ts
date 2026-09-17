@@ -9,7 +9,7 @@
  *                     notice). A boost.
  *   - **unhelpful** → **never a public penalty, never hides the target** (visibility of safety content is
  *                     not score-gated, D3). It only accumulates; once a target crosses a net-unhelpful
- *                     threshold it's routed to the Phase-7 mod queue via an `auto_low_quality` content
+ *                     threshold it's routed to the Phase-07 mod queue via an `auto_low_quality` content
  *                     flag — surfaced for a human, not auto-actioned.
  *
  * **Block-aware (founder call):** a thumbs-**down** from a user in a block relationship (either
@@ -89,7 +89,7 @@ async function findExistingRating(
 }
 
 /**
- * Route a target to the Phase-7 mod queue once its net-unhelpful (unhelpful − helpful) reaches the
+ * Route a target to the Phase-07 mod queue once its net-unhelpful (unhelpful − helpful) reaches the
  * threshold — a single `auto_low_quality` content flag, deduped per target (never one-per-downvoter),
  * attributed to the vote that crossed the line. **Never hides** the target (D3). No-op below threshold
  * or if the flag already exists.
@@ -107,7 +107,7 @@ async function maybeAutoFlag(
 ): Promise<void> {
   const { helpful, unhelpful } = await tallyThumbs(ctx, targetType, targetId);
   if (unhelpful - helpful < AUTO_LOW_QUALITY_NET_UNHELPFUL) return;
-  // Bundled (N2): a target that keeps crossing the threshold bumps one row's count rather than
+  // Bundled (A02): a target that keeps crossing the threshold bumps one row's count rather than
   // filing an identical flag each time. The dedup used to live here, spelled out a second time in
   // `contradictions.ts` — see `lib/autoFlag.ts` for why the shared version never reopens a resolved
   // row.
@@ -128,7 +128,7 @@ async function maybeAutoFlag(
 }
 
 /**
- * Tell a target's author their content was thumbed helpful — via the settle queue (N8 / D169), so a
+ * Tell a target's author their content was thumbed helpful — via the settle queue (A08 / D169), so a
  * thumb retracted inside the window never sends, and five thumbs inside it become one row. The flush
  * re-reads each rater's verdict before delivering.
  */
@@ -222,7 +222,7 @@ export const rate = mutation({
         refId: targetId,
       });
       await notifyHelpful(ctx, target.authorId, targetType, targetId, rater._id);
-      // A requester thumbing a fulfilling report helpful fulfills the bounty (Phase 6, decisions 10–11).
+      // A requester thumbing a fulfilling report helpful fulfills the bounty (Phase 06, decisions 10–11).
       if (bountyId !== undefined && targetType === 'report') {
         const reportId = ctx.db.normalizeId('reports', targetId);
         if (reportId) {

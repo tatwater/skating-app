@@ -1,5 +1,5 @@
 /**
- * The daily weather archive (N6h Workstream B / **D153**, **D161**).
+ * The daily weather archive (A06h Workstream 2 / **D153**, **D161**).
  *
  * ## An archive, not a cache
  *
@@ -20,7 +20,7 @@
  * happens anywhere in this file. That is the only way to be DST-correct without shipping a timezone
  * database.
  *
- * ⚠ **This is not a second cache key, and the distinction matters.** N6h's readiness pass flagged
+ * ⚠ **This is not a second cache key, and the distinction matters.** A06h's readiness pass flagged
  * that forking the *fetch* is fine while forking the *key* is not: the strip and the decay must agree
  * on one `weatherCache` entry or Phase 10 §5 breaks silently. Both builders take the same
  * `WeatherCell` from `bodyWeatherCell`, so the keys can't diverge; only the request shape does, and
@@ -138,7 +138,7 @@ export const CELL_BACKFILL_BATCH = 500;
 export const GAP_SWEEP_DAYS = 30;
 
 /**
- * The window a cell's discovery digest is rebuilt over (N6h Workstream E / D165).
+ * The window a cell's discovery digest is rebuilt over (A06h Workstream 5 / D165).
  *
  * The digest is **recomputed from the rows, not kept incrementally**: the gap sweep can rewrite a
  * past day, and incremental state would then describe a history that no longer exists. Recomputing
@@ -573,7 +573,7 @@ export const backfillWeatherCells = internalAction({
     // could end up emptier the more often it was reconciled. Ownership is a single `runId` and the
     // newest claim wins; the loser abandons its remaining pages, whose work the winner is redoing.
     if (superseded) return { done: true, scanned: page.scanned, pruned: 0, superseded: true };
-    // The discovery join rides the same walk (Workstream E): the page already resolved every body's
+    // The discovery join rides the same walk (Workstream 5): the page already resolved every body's
     // filter cell, so writing `bodyWeatherCells` here costs nothing it was not already paying.
     if (page.members.length > 0) {
       const joined = await ctx.runMutation(internal.weatherArchive.upsertBodyWeatherCells, {
@@ -807,7 +807,7 @@ export function reconcileSatisfiedBy(
 /**
  * How long an import waits before its reconcile fires.
  *
- * A campaign is several loaders, not one — N7-3 ran five passes — and each `finish` would otherwise
+ * A campaign is several loaders, not one — A07a-3 ran five passes — and each `finish` would otherwise
  * request its own ~170 MB corpus walk. The delay lets a burst collapse: the first request through
  * does the work, and the rest find the registry already newer than their own `requestedAt` and stand
  * down. Ten minutes is comfortably longer than the gap between loaders in a campaign and far shorter
@@ -936,7 +936,7 @@ export const pageBodyCells = internalQuery({
     const byKey = new Map<string, CellPageEntry>();
     const members: MemberEntry[] = [];
     for (const body of page.page) {
-      // Active bodies only (N7b): the registry is what the daily sweep pays Open-Meteo for, and a
+      // Active bodies only (A07b): the registry is what the daily sweep pays Open-Meteo for, and a
       // dormant or removed body is one nobody is shown weather for. This is the cron saving the
       // founder asked trimming to deliver — cells occupied only by shelved bodies are pruned on the
       // next completed walk.
@@ -991,7 +991,7 @@ export const pageSubAreaCells = internalQuery({
       let parent = parents.get(subArea.waterBodyId);
       if (parent === undefined) {
         const row = await ctx.db.get(subArea.waterBodyId);
-        // Active, not merely un-removed (N7b): a bay follows its lake's standing, and registering
+        // Active, not merely un-removed (A07b): a bay follows its lake's standing, and registering
         // a shelved lake's bays would put its cells straight back after `dropWeatherMembership`.
         parent = row && isActive(row) ? { elevationM: row.elevationM } : null;
         parents.set(subArea.waterBodyId, parent);
@@ -1395,7 +1395,7 @@ export const readCellHourRange = internalQuery({
  * rescheduling itself until the tier is done.
  *
  * ⚠ **Batched because neither a Convex action's time limit nor Open-Meteo's daily budget survives
- * 3,043 sequential fetches in one call.** The batch-and-reschedule shape is N6d's `backfillCells`
+ * 3,043 sequential fetches in one call.** The batch-and-reschedule shape is A06d's `backfillCells`
  * pattern (24,961 bodies in 84 batches) rather than a new invention.
  *
  * ⚠ **Season-gated by its caller, not here (D161).** The cheap 25-site checker decides when a season
@@ -1431,7 +1431,7 @@ export const refreshTierDays = internalAction({
       } catch (err) {
         console.warn(`weatherArchive: cell ${cell.cellKey} failed`, err);
       }
-      // The discovery digest follows the rows it summarises (Workstream E). Rebuilt even when the
+      // The discovery digest follows the rows it summarises (Workstream 5). Rebuilt even when the
       // fetch failed: the cell's newest complete day has still moved on, and a digest that keeps
       // describing a chain as of last week is a stale match rather than an honest gap.
       if (tier === 'filter') await rebuildDigestFor(ctx, cell);
@@ -1826,7 +1826,7 @@ export const maybeSweepGaps = internalAction({
 });
 
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
-// The discovery digest (Workstream E / D165)
+// The discovery digest (Workstream 5 / D165)
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
 
 /** A stored day row as the chain reads it: unknowns stay unknown, never zero. */
@@ -1937,7 +1937,7 @@ export const rebuildFilterDigests = internalAction({
 });
 
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
-// The public read (Workstream C's data path)
+// The public read (Workstream 3's data path)
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
 
 /** Days the past-weather panel shows by default. */
@@ -1955,7 +1955,7 @@ export interface WeatherDaysResult {
   /**
    * Raw hours for the timeline chart, one entry per day that has them.
    *
-   * **Empty is a normal state, not an error.** A cell whose daily rows predate Workstream D serves
+   * **Empty is a normal state, not an error.** A cell whose daily rows predate Workstream 4 serves
    * its hours from the next drawer-open onward; until then the panel falls back to the day summaries
    * it already has. Clients must therefore render the timeline from `hours` and the sentences from
    * `days`, never assume the two cover the same window.
@@ -1978,9 +1978,9 @@ export interface WeatherDaysResult {
    * taken.
    *
    * **Lake Champlain is 170 km end to end and carries zero `weatherSamplePoints` on dev** — so every
-   * reading in its panel comes from one point near the middle, and nothing said so. N2 shipped the
+   * reading in its panel comes from one point near the middle, and nothing said so. A02 shipped the
    * suggester and the moderator writer for exactly this and nobody has run it, which is the same
-   * reader-with-no-producer shape N6b's `hasContours` had.
+   * reader-with-no-producer shape A06b's `hasContours` had.
    *
    * Until an operator places a grid, the honest move is to **say which claim we are making** — D151's
    * grammar, one sensor over: the subject of the sentence is us, not the lake. Threshold is
@@ -2037,7 +2037,7 @@ export const getWeatherDaysForBody = action({
     waterBodyId: v.id('waterBodies'),
     days: v.optional(v.number()),
     /**
-     * The bay this panel is about (N6h / open question 5). Resolved on the client with
+     * The bay this panel is about (A06h / open question 5). Resolved on the client with
      * `resolveWeatherSubArea`; validated here and silently dropped if it is not a live bay of this
      * lake. Absent on the ~99% of bodies that have no bays.
      */
@@ -2072,7 +2072,7 @@ export const getWeatherDaysForBody = action({
     const realDays = held.filter((r) => r.missing !== true && inWindow(r));
 
     // ⚠ **The hourly rows have to be tested for separately, or they are never written at all.**
-    // Before N6h Workstream D this branch keyed only on daily rows, so any cell somebody had already
+    // Before A06h Workstream 4 this branch keyed only on daily rows, so any cell somebody had already
     // opened satisfied it for ever — the archive was complete, so nothing refetched, so no hourly row
     // was ever created. The timeline would have been permanently blank on exactly the popular lakes,
     // with nothing logged and nothing thrown. It is invisible precisely because the daily half is
@@ -2365,7 +2365,7 @@ export const getSubAreaSpread = query({
     const spread = buildSubAreaSpread(inputs);
     if (!spread) return null;
 
-    // The sorted bay lists (Workstream E, call 9), off the discovery digest: one small read per
+    // The sorted bay lists (Workstream 5, call 9), off the discovery digest: one small read per
     // distinct bay cell, and the snow figure comes from the spread's own shared window so the two
     // halves of the panel describe the same days.
     const nightsByCell = new Map<string, number | null>();
@@ -2463,7 +2463,7 @@ export const subAreaFilterCells = internalQuery({
 });
 
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
-// Workstream G (N9): every bay's weather, every day of the season
+// Workstream 7 (A09): every bay's weather, every day of the season
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
 
 /**
@@ -2473,7 +2473,7 @@ export const subAreaFilterCells = internalQuery({
 export const BAY_BATCH_SIZE = 40;
 
 /**
- * One page of live bays with the `browse` cell each resolves to (N9 / Workstream G). Paged on the
+ * One page of live bays with the `browse` cell each resolves to (A09 / Workstream 7). Paged on the
  * `by_bay` membership index rather than `waterBodySubAreas` directly, because that index *is* the
  * registry's list of live bays — a delisted bay has no row, and a bay on a delisted lake has none.
  * The bay and its parent are then read to key the cell the way the drawer keys it
@@ -2512,13 +2512,13 @@ export const pageBayBrowseCells = internalQuery({
 
 /**
  * Append `pastDays` of Tier-A weather — days **and** hours, the drawer's own path — to every live
- * bay's cell, in batches that reschedule themselves (N9 / Workstream G).
+ * bay's cell, in batches that reschedule themselves (A09 / Workstream 7).
  *
  * **Coverage was the gap, never retention.** `weatherDays` is kept for ever (D153), but a bay's
  * browse cell was only ever fetched lazily, on the drawer-open of somebody who picked that bay — so
  * the season's record existed for the bays people looked at and not for the rest, which is
  * precisely the selection bias a post-season station study cannot work around
- * (`plans/backlog/weather-stations.md`, the consumer this exists for; nothing renders it in N9). ~128
+ * (`plans/backlog/weather-stations.md`, the consumer this exists for; nothing renders it in A09). ~128
  * calls a day in season, against a budget with two million spare.
  *
  * Season-gated by its caller like the filter tier; this function does what it is told, so an
@@ -2565,7 +2565,7 @@ export const refreshBayDays = internalAction({
 });
 
 /**
- * The daily bay tick (N9 / Workstream G): gate on the same season-open signal as Tier B (D161),
+ * The daily bay tick (A09 / Workstream 7): gate on the same season-open signal as Tier B (D161),
  * then start the batched bay append. Cold-start reaches back a fortnight, judged by whether the
  * *browse* tier holds yesterday at all — the same test `maybeRefreshFilterTier` makes on its tier.
  */

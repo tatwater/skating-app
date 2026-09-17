@@ -20,7 +20,7 @@ import { Button, H4, Paragraph, Text, XStack, YStack } from 'tamagui';
 import { TextArea } from './ThemedInputs';
 
 /**
- * Asking for a lake (N7b PR 2) — the mobile half of web's `RequestLake`: the drawer's buttons
+ * Asking for a lake (A07b PR 2) — the mobile half of web's `RequestLake`: the drawer's buttons
  * (`RequestButtons`, exactly the kinds the standing admits) and the long-press prompt
  * (`AdmitPrompt`, which resolves the coordinate first and hands off to a lake we already hold).
  * Copy comes from `requestPrompt` in core, so the two clients ask the same question.

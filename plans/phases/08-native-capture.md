@@ -1,16 +1,16 @@
-# Phase 8 — Native track capture + Strava push (the A→B→C pipeline)
+# Phase 08 — Native track capture + Strava push (the A→B→C pipeline)
 
-> **✅ COMPLETE on dev (2026-07-24); prod deferred.** All five workstreams (8a–8e) shipped; suites
+> **✅ COMPLETE on dev (2026-07-24); prod deferred.** All five workstreams (08-1–08-5) shipped; suites
 > green (core 752 / convex 540 / web 157 / mobile 76), lint + typecheck clean. **Still
 > device-unverified** — see "Build outcome" below. This was the last unbuilt phase in the roadmap.
 
 *Detailed build plan — scoped 2026-07-24. Supersedes the original "GPS providers (pull/ingest)"
-framing of Phase 8 in [`07-roadmap.md`](./07-roadmap.md). Built on the reframe in
-[`research/native-track-capture-and-strava-push.md`](./research/native-track-capture-and-strava-push.md)
-and the Strava legal read ([`08-legal-feasibility-checklist.md`](./08-legal-feasibility-checklist.md) L7).
+framing of Phase 08 in [`07-roadmap.md`](../07-roadmap.md). Built on the reframe in
+[`research/native-track-capture-and-strava-push.md`](../research/native-track-capture-and-strava-push.md)
+and the Strava legal read ([`08-legal-feasibility-checklist.md`](../08-legal-feasibility-checklist.md) L7).
 New decisions this phase: **D58** (aggregate-track privacy) and **D59** (unified report freshness).*
 
-## The reframe (why this phase looks nothing like the old Phase 8)
+## The reframe (why this phase looks nothing like the old Phase 08)
 
 The old plan **pulled** GPS tracks *from* Strava and showed them on the shared map. Strava's
 Nov-2024 API terms kill that outright: **cross-user display of Strava data is flatly forbidden**
@@ -34,7 +34,7 @@ sets:**
 ```
   A · capture (inputs)        B · our track store (hub)         C · push (outputs)
   ───────────────────         ─────────────────────────        ──────────────────
-  native recorder  ─┐         ┌ normalize → resolve-to-lake ┐   ┌ Strava (activity:write)
+  native recorder  ─┐         ┌ normalize → resolve-to-body ┐   ┌ Strava (activity:write)
   (Garmin/HealthKit │         │  (gpsActivities, D44)        │   │
    /HC/COROS/Polar) ─┼───────►│  aggregate tracks layer      ├──►┤  (future: Whoop, …)
    — deferred        │        │  privacy: minors-out,        │   │
@@ -49,7 +49,7 @@ sets:**
 - **Paths are a trust signal from legitimate sources only.** The recorded GPS path is the *only*
   way a path enters the system. **No freehand path drawing, ever, anywhere.** (Later provider
   adapters are the only other legitimate source, and they're deferred.)
-- **The recorded path renders on the individual report detail view** (a lake map showing the track,
+- **The recorded path renders on the individual report detail view** (a water body map showing the track,
   display-only — no user "draw" action) **and** on the aggregate tracks layer.
 - **Body creation is path-only gated (D14/D36).** A skate that resolves to no known body can create
   or attach one **only from a trusted GPS path** — no path ⇒ no proof of presence and no
@@ -80,10 +80,10 @@ sets:**
 
 ### In
 - A native GPS **track recorder** (session start/pause/resume/stop, durable buffer, background,
-  a Record-grade GPS profile) reusing the Phase 9.5 on-ice primitives.
+  a Record-grade GPS profile) reusing the Phase 09b on-ice primitives.
 - Track **post-processing in `core`** (smoothing / accuracy-gating / stationary-culling) + **GPX**
   and **encoded-polyline** emitters.
-- **B**: normalize a recorded track → `gpsActivities`, **resolve-to-lake** (D44), link to a report.
+- **B**: normalize a recorded track → `gpsActivities`, **resolve-to-body** (D44), link to a report.
 - **Report-detail path render** (own path on own report) on web + mobile.
 - **User-created bodies + match-on-create dedup (D14/D36)**, path-only.
 - **Strava push (C)**: OAuth `activity:write`, `convex/http.ts` router, token exchange/refresh,
@@ -97,10 +97,10 @@ sets:**
 - Third-party capture adapters (Garmin/HealthKit/HC/COROS/Polar) + the watch-wins ingest path.
 - k-anonymity contributor-count gating (dropped by D58; publish-is-consent instead).
 - Crowd-intelligence derivations over tracks (pressure-ridge/clearest-side, L9 deduction).
-- A code-level GPS **replay rig** for CI (Phase 9.5 uses the Android emulator's GPX playback; a
+- A code-level GPS **replay rig** for CI (Phase 09b uses the Android emulator's GPX playback; a
   fixture-driven replay module remains a nice-to-have, not scoped).
 - Runtime-editable tuning constants (the `appConfig` seam is still deferred — the D59 decay rate is
-  an edit-and-redeploy `ConstantCard`, matching Phase 7).
+  an edit-and-redeploy `ConstantCard`, matching Phase 07).
 
 ## `@skating/core` — new pure modules (pure-logic first, high coverage — D40)
 
@@ -153,12 +153,12 @@ sets:**
    - **Bounty refactor:** `bountyFreshWindowHours` keeps its own formula (trust-window boost up to
      `BOUNTY_FRESH_MAX_MULTIPLIER = 3`, no corroboration, `weatherExplainsIceChange` hard-collapse,
      D56 reopen thresholds) but now calls the **shared primitives** instead of a private copy.
-     **Acceptance gate: every existing Phase 6 bounty test stays green, untouched.** Bounty and
+     **Acceptance gate: every existing Phase 06 bounty test stays green, untouched.** Bounty and
      path/report are *not* the same final formula (that's correct — different questions); they share
      the primitives that would otherwise drift.
    - New tunable decay-rate constant in `reputationConfig.ts`, surfaced as a **read-only
      `ConstantCard`** in `admin.tuning.tsx` (Display & map section), paired with a metric chart —
-     the Phase 7 pattern. (Edit-and-redeploy; no runtime `appConfig` table.)
+     the Phase 07 pattern. (Edit-and-redeploy; no runtime `appConfig` table.)
 
 ## Schema changes (all migration-aware — see `06-data-model.md`)
 
@@ -192,11 +192,11 @@ New/added fields (all optional ⇒ migration-free):
   D14/D36 create-or-attach flow), `promptState` lifecycle (`pending → prompted → converted /
   dismissed`), `linkForReport` (wire `activityId ↔ linkedReportId` at report create).
 - **`waterBodies.ts` (extend).** Teach the **existing** `create` (line ~269, currently hardcodes
-  `dedupStatus: 'clean'` with a "Phase 8 TODO") to run **match-on-create**: call a new
+  `dedupStatus: 'clean'` with a "Phase 08 TODO") to run **match-on-create**: call a new
   **`findMatchCandidates`** query (bbox + geospatial-nearest prefilter → score with `core/dedup.ts`),
   stamp `dedupStatus` / `duplicateCandidateIds`, and require an explicit `confirmedNew` when strong
-  matches exist. This is the **producer** the Phase 7 dedup queue has been waiting for
-  (`listDedupCandidates` today "expects ~zero rows until Phase 8"). The **merge mutation, moderator
+  matches exist. This is the **producer** the Phase 07 dedup queue has been waiting for
+  (`listDedupCandidates` today "expects ~zero rows until Phase 08"). The **merge mutation, moderator
   queue, and `admin.water.tsx` UI already exist** — this just feeds them.
 - **`strava.ts` + `http.ts` (net-new — the whole HTTP layer is greenfield).**
   - `convex/http.ts`: `httpRouter()` with the Strava **OAuth callback** and (future) webhook routes.
@@ -212,7 +212,7 @@ New/added fields (all optional ⇒ migration-free):
   `gpsActivities` by `by_water_body`, keep only those `linkedReportId`-ed to a **visible, non-minor**
   report, **clip endpoints** unless the report's `showPutIn !== false` (put-in-gated), drop tracks
   from opted-out users, and stamp each with its `pathOpacity` (from D59's `reportFreshness` of the
-  linked report). Scoped **per selected body** (like Phase 9 hazards) — **not** a cross-viewport
+  linked report). Scoped **per selected body** (like Phase 09a hazards) — **not** a cross-viewport
   geospatial scan — to sidestep the `listInViewport` read-cap fragility (roadmap "Later/deferred").
 
 ## Native deps + config (the dev-client rebuild)
@@ -229,7 +229,7 @@ New/added fields (all optional ⇒ migration-free):
   dev build, tested on the **Android emulator** (primary) and a **friend's iPhone** for iOS
   background/battery parity.
 
-## Mobile — the recorder (reusing Phase 9.5 on-ice primitives)
+## Mobile — the recorder (reusing Phase 09b on-ice primitives)
 
 - **Extend the GPS profiles.** Today `onIceTask.ts` `startOnIceLocationUpdates` uses
   `Accuracy.Balanced` + `distanceInterval: 20` (a deliberate cold-weather battery choice for fuzzy
@@ -269,20 +269,20 @@ New/added fields (all optional ⇒ migration-free):
 - **Connect with Strava + "also upload?" toggle.** Official **"Connect with Strava"** button asset +
   **"Powered by Strava"** attribution wherever the connection surfaces (L7 / brand kit; the
   attribution helper already noted in `apps/web/src/lib/waterMap.ts`). Per-session upload toggle.
-- **Aggregate opt-out** in profile settings ("Don't use my paths in community lake maps").
+- **Aggregate opt-out** in profile settings ("Don't use my paths in community water body maps").
 
 ## Testing (lands with the feature — D40)
 
 - **`core` pure logic** (high coverage): `track.ts` (accuracy-gate/cull/smooth/stats/GPX/GeoJSON),
   `pathToBody.ts`, `dedup.ts` (D36 threshold table — property tests over synthetic polygons),
   `reportFreshness.ts` (decay monotonicity, opacity floor, signal blending).
-- **The D59 refactor gate:** run the **existing Phase 6 bounty suite unchanged** and require green;
+- **The D59 refactor gate:** run the **existing Phase 06 bounty suite unchanged** and require green;
   add tests that report-aging and path-opacity read the *same* freshness for the same report.
 - **`convex-test`:** `gpsActivities` ingest idempotency (`by_provider_activity`), D44 resolution +
   create-or-attach fallback, `findMatchCandidates` scoring + `dedupStatus` stamping (feeds the Phase
   7 merge queue), `listTracksForBody` privacy (minor-excluded, put-in clip, opt-out), Strava upload
   action against a mocked `fetch` (upload → poll → activity_id / error / duplicate).
-- **Device/manual:** Android-emulator **GPX route-playback** (the Phase 9.5 rig) to exercise
+- **Device/manual:** Android-emulator **GPX route-playback** (the Phase 09b rig) to exercise
   record → buffer → stop → resolve → render; a friend's iPhone for iOS background + battery parity;
   a real Strava sandbox upload on the founder's own account.
 
@@ -294,23 +294,23 @@ external OAuth + a new map layer) — a deliberate exception to the usual one-PR
 metered, but device testing and the bounty-refactor gate want isolation). Sub-workstreams are commits
 within each PR.
 
-1. **PR 8a — Unified report freshness (D59).** Extract shared primitives → `core/reportFreshness.ts`;
+1. **PR 08-1 — Unified report freshness (D59).** Extract shared primitives → `core/reportFreshness.ts`;
    adopt in report-aging display; **refactor `bounties.ts` onto it (existing tests green, untouched)**;
    add the decay-rate `ConstantCard`. *De-risks the shipped-code refactor first, standalone.*
-2. **PR 8b — Native recorder + B spine.** `core/track.ts` (+ GPX), Record GPS profile, recording
+2. **PR 08-2 — Native recorder + B spine.** `core/track.ts` (+ GPX), Record GPS profile, recording
    session + sqlite `track` kind, foreground service / background, `gpsActivities.ingestTrack` +
    `resolveToBody` (D44), report-detail path render. *Device-tested; produces the tracks everything
    downstream needs.*
-3. **PR 8c — User bodies + dedup (D14/D36).** `core/dedup.ts` + `core/pathToBody.ts`,
-   `findMatchCandidates`, `create` match-on-create, create/attach UX. *Feeds the Phase 7 merge queue.*
-4. **PR 8d — Strava push (C).** `convex/http.ts` + OAuth `activity:write` + token refresh +
+3. **PR 08-3 — User bodies + dedup (D14/D36).** `core/dedup.ts` + `core/pathToBody.ts`,
+   `findMatchCandidates`, `create` match-on-create, create/attach UX. *Feeds the Phase 07 merge queue.*
+4. **PR 08-4 — Strava push (C).** `convex/http.ts` + OAuth `activity:write` + token refresh +
    `uploadActivity` (upload/poll) + watch-wins toggle + brand kit. *Needs the free Strava app
    registered.*
-5. **PR 8e — Aggregate tracks layer + privacy (D58).** `listTracksForBody`, the decaying tracks
-   overlay (opacity from 8a), put-in-gated clipping, minors-out, profile opt-out. *Depends on 8a+8b.*
+5. **PR 08-5 — Aggregate tracks layer + privacy (D58).** `listTracksForBody`, the decaying tracks
+   overlay (opacity from 08-1), put-in-gated clipping, minors-out, profile opt-out. *Depends on 08-1+8b.*
 
-**Order:** 8a → 8b → (8c ∥ 8d) → 8e. 8a and 8b are the backbone; 8c/8d are independent adapters off
-B; 8e needs B producing tracks + 8a's opacity.
+**Order:** 08-1 → 08-2 → (08-3 ∥ 08-4) → 8e. 08-1 and 08-2 are the backbone; 08-3/8d are independent adapters off
+B; 08-5 needs B producing tracks + 08-1's opacity.
 
 ## Out of scope / deferred (logged so it isn't lost)
 
@@ -324,13 +324,13 @@ B; 8e needs B producing tracks + 8a's opacity.
   deduction** (L9/Q11). Now legal (our own data) but needs real volume + calibration; L14/D58
   privacy pass already covers the aggregate substrate.
 - **Additional C-outputs** (Whoop, etc.) — adapters off the same normalized track.
-- **`appConfig` runtime-tuning seam** — the D59 decay rate stays edit-and-redeploy (Phase 7 posture).
+- **`appConfig` runtime-tuning seam** — the D59 decay rate stays edit-and-redeploy (Phase 07 posture).
 - **Encoded-polyline transport** — only if a client render path needs it; default is GeoJSON.
 - **Code-level GPS replay rig for CI** — the emulator GPX playback covers manual QA today.
 
 ## Build outcome (2026-07-24) — ✅ complete; what shipped, and where it differs from this plan
 
-All five PR slices are built on `phase-8-native-capture` (unmerged, not yet deployed or
+All five PR slices are built on `phase-08-native-capture` (unmerged, not yet deployed or
 device-tested). Suites green: core 752 / convex 540 / web 152 / mobile 76.
 
 **Founder calls taken at kickoff:**
@@ -347,7 +347,7 @@ device-tested). Suites green: core 752 / convex 540 / web 152 / mobile 76.
 - **§`reportFreshness` — D59's premise was partly wrong.** `bounties.ts` has **no recency-decay curve**
   to extract; it computes a window in hours and compares. The shared surface is the netThumbs clamp
   (`clampedNetThumbs` / `netThumbsBoost`); the decay curve is net-new. The refactor is therefore
-  smaller and far safer than the plan implied — **every Phase 6 bounty test passes untouched.**
+  smaller and far safer than the plan implied — **every Phase 06 bounty test passes untouched.**
 - **Two bounty↔report divergences are now explicit, not accidental.** Net-unhelpful thumbs *shorten* a
   bounty window (safety-positive: it summons fresh eyes sooner) but are **boost-only** for report
   freshness, where they would let downvotes fade a person's path off the map. Weather collapses a
@@ -356,7 +356,7 @@ device-tested). Suites green: core 752 / convex 540 / web 152 / mobile 76.
   never-hide guarantee lives in `pathOpacity`'s floor, which holds at any age.
 - **§`pathToBody` — buffer, don't hull.** A hull swallows land, islands and the next bay over on any
   track that doesn't circumnavigate. It **does** fill interior rings (a lap around a pond otherwise
-  stores a donut, and a hole at the lake's centre is where later reports fail to resolve) and refuses
+  stores a donut, and a hole at the water body's centre is where later reports fail to resolve) and refuses
   a track with no real extent (turf buffers a motionless phone into a perfect circular "pond"). No
   `@turf/convex`/`@turf/concave` dependency was added. Accepted cost: an out-and-back yields a
   corridor, so a later report from the far shore may create a near-certain duplicate — which is
@@ -407,7 +407,7 @@ Both came out of a full read of `plans/` against the code after the phase was ca
 
 - **Bounty-refactor behavior preservation.** If extracting the shared primitives can't reproduce
   `bountyFreshWindowHours` exactly (float ordering/rounding), **stop and reassess** — do not edit the
-  Phase 6 tests to fit. Fallback: keep bounties on their private copy and unify only report+path
+  Phase 06 tests to fit. Fallback: keep bounties on their private copy and unify only report+path
   (still solves the stated report↔path divergence worry).
 - **iOS background/battery parity** without an owned device — friends'-iPhone testing is real but
   intermittent; budget for a QA gap and be conservative on the iOS background-mode copy.
@@ -425,19 +425,19 @@ Both came out of a full read of `plans/` against the code after the phase was ca
 
 ## Relocated from the roadmap (2026-09-16)
 
-*The roadmap entry for Phase 8 as it stood before the 2026-09-16 rewrite, kept verbatim so nothing it said is lost. The roadmap now carries a one-paragraph summary; this is the long form.*
+*The roadmap entry for Phase 08 as it stood before the 2026-09-16 rewrite, kept verbatim so nothing it said is lost. The roadmap now carries a one-paragraph summary; this is the long form.*
 
-### Phase 8 — Native track capture + Strava push (the A→B→C pipeline) ✅ Complete (dev; prod deferred) (2026-07-24)
+### Phase 08 — Native track capture + Strava push (the A→B→C pipeline) ✅ Complete (dev; prod deferred) (2026-07-24)
 > **Status: ✅ complete — all five workstreams shipped.** Suites green: core 752 / convex 540 /
 > web 157 / mobile 76. **Still device-unverified** (Android-emulator GPX playback + a friend's iPhone
 > for iOS background/battery parity) — the one outstanding item that isn't the prod cutover.
-> 8a unified freshness (D59) → 8b recorder + B spine → 8c user bodies + dedup (D14/D36) →
-> 8d Strava push (C) → 8e aggregate layer + privacy (D58).
+> 08-1 unified freshness (D59) → 08-2 recorder + B spine → 08-3 user bodies + dedup (D14/D36) →
+> 08-4 Strava push (C) → 08-5 aggregate layer + privacy (D58).
 >
 > **Key build deltas vs this plan** (the phase doc's "Open questions" resolved, plus what the code found):
 > - **D59's premise was partly wrong.** `bounties.ts` had **no recency-decay curve to extract** — it
 >   computes a *window in hours* and compares. The genuinely shared surface is the netThumbs clamp; the
->   decay curve is **net-new**. Every Phase 6 bounty test passes untouched (the D59 acceptance gate).
+>   decay curve is **net-new**. Every Phase 06 bounty test passes untouched (the D59 acceptance gate).
 > - **Two deliberate bounty↔report divergences, now documented rather than accidental:** net-unhelpful
 >   thumbs *shorten* a bounty window (shortening summons fresh eyes — safety-positive) but are
 >   **boost-only** for report freshness, where they'd let downvotes fade someone's path off the map;
@@ -446,7 +446,7 @@ Both came out of a full read of `plans/` against the code after the phase was ca
 >   the shared bounty primitives; report cards keep their relative-time labels. Least D3 risk.
 > - **`pathToBody` buffers but does NOT hull** — a hull swallows land/islands on any non-circumnavigating
 >   track. It *does* fill interior rings (a lap around a pond would otherwise store a donut with a hole
->   at the lake's centre where reports fail to resolve) and refuses a track with no extent (turf happily
+>   at the water body's centre where reports fail to resolve) and refuses a track with no extent (turf happily
 >   buffers a motionless phone into a perfect circular "pond"). No `@turf/convex` dep added.
 > - **`waterBodies.create` is now path-only at the trust boundary** — it takes an `activityId`, **not a
 >   polygon**, so "no freehand drawing, ever" is a server contract rather than a UI convention. Existing
@@ -468,9 +468,9 @@ Both came out of a full read of `plans/` against the code after the phase was ca
 > background/battery parity), a real Strava sandbox upload (callback domain now set), and the prod
 > cutover.
 
-> **Detailed build plan:** [`phase-8-native-capture.md`](./phase-8-native-capture.md) (scoped
+> **Detailed build plan:** [`phases/08-native-capture.md`](./08-native-capture.md) (scoped
 > 2026-07-24). Reframe write-up:
-> [`research/native-track-capture-and-strava-push.md`](./research/native-track-capture-and-strava-push.md)
+> [`research/native-track-capture-and-strava-push.md`](../research/native-track-capture-and-strava-push.md)
 > + Strava legal read (`08-legal-feasibility-checklist.md` L7). New decisions: **D58** (aggregate-track
 > privacy), **D59** (unified report freshness).
 
@@ -480,23 +480,23 @@ Both came out of a full read of `plans/` against the code after the phase was ca
 > in-app recorder** (first-party data we own → legal to aggregate + draw on public reports) and **push** it
 > to Strava (`activity:write`, the Garmin model — clearly allowed, the adoption lever: *record once, keep
 > your Strava stats*). Modeled as **A → B → C**: A = capture inputs (**native recorder** first;
-> Garmin/HealthKit/COROS/Polar deferred), **B = our own track store + resolve-to-lake + aggregate, the
+> Garmin/HealthKit/COROS/Polar deferred), **B = our own track store + resolve-to-body + aggregate, the
 > always-owned hub**, C = push outputs (**Strava** first). No provider keys exist yet; only the **free
 > Strava app** (instant, no review) is needed, and only for the push slice.
 
 - **Native recorder (A-input #1)** — session record/pause/resume/stop over a durable expo-sqlite buffer,
-  a Record-grade GPS profile, background/foreground-service, reusing the **Phase 9.5 on-ice primitives**.
+  a Record-grade GPS profile, background/foreground-service, reusing the **Phase 09b on-ice primitives**.
   Track post-processing (smooth/gate/cull → GPX + GeoJSON) in `@skating/core`. Phone-only skater's source;
   battery is an honest, opt-in trade (D3 copy). **Paths only ever come from legitimate recorded sources —
   no freehand drawing, ever.**
-- **B — our track store + resolve-to-lake (D44)** — normalize any track → `gpsActivities`, resolve to its
+- **B — our track store + resolve-to-body (D44)** — normalize any track → `gpsActivities`, resolve to its
   `waterBodyId`, link to a report. **The recorded path renders on the report detail view** (display-only)
   **and** on the aggregate tracks layer.
-- **User-created water bodies (D14) + match-on-create dedup (D36)** *(moved here from Phase 2 — needs a
+- **User-created water bodies (D14) + match-on-create dedup (D36)** *(moved here from Phase 02a — needs a
   trusted path)*. A skate resolving to **no** known body creates/attaches one **from the trusted path only**
   (buffer + hull → polygon; new `core/dedup.ts` + `pathToBody.ts`; `findMatchCandidates` steer; stamp
   `dedupStatus`/`duplicateCandidateIds`; auto-visible then review-after, D37). **Path-only gated — no manual
-  draw** (no path ⇒ no proof of presence, no scale/shape reference). **Feeds the already-built Phase 7 merge
+  draw** (no path ⇒ no proof of presence, no scale/shape reference). **Feeds the already-built Phase 07 merge
   queue** (which has had nothing flowing into it).
 - **Strava push (C-output #1)** — new `convex/http.ts` router (first in the repo), OAuth `activity:write` +
   per-user token refresh, `POST /uploads` + poll, per-session "also upload?" toggle (watch-wins deferred),
@@ -509,8 +509,8 @@ Both came out of a full read of `plans/` against the code after the phase was ca
   clearest-side, L9 deduction) are **deferred** — need volume + calibration.
 - **Unified report freshness (D59)** — one `core/reportFreshness` primitive; report-aging and path-opacity
   consume the *identical* value (the path is the report's extent — can't diverge); **bounties refactor onto
-  the shared primitives** (keeping their own window/trust/reopen policy; existing Phase 6 tests stay green).
-- **Done:** a phone-only skater records a skate in-app, sees the real path on their report and on the lake
+  the shared primitives** (keeping their own window/trust/reopen policy; existing Phase 06 tests stay green).
+- **Done:** a phone-only skater records a skate in-app, sees the real path on their report and on the water body
   map (fading as it ages), can push it to their Strava, and a skate on **new** water creates/attaches a body
   from the trusted path (dedup-steered).
 - **Deferred:** third-party capture adapters (Garmin/HealthKit/HC/COROS/Polar) + the watch-wins ingest path

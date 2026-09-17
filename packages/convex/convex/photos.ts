@@ -139,7 +139,7 @@ export const getUrls = query({
 });
 
 /**
- * Serving URLs for a **hazard's** photos (Phase 9).
+ * Serving URLs for a **hazard's** photos (Phase 09a).
  *
  * A standalone on-ice hazard has no report to inherit a gate from, so it carries its own: the hazard
  * must exist and be moderation-`visible`. Note it does **not** require `status: 'active'` — an

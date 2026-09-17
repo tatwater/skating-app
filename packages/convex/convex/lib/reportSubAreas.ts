@@ -1,5 +1,5 @@
 /**
- * The `reportSubAreas` join — a report's bay memberships as rows an index can see (N9 / D175).
+ * The `reportSubAreas` join — a report's bay memberships as rows an index can see (A09 / D175).
  *
  * `reports.subAreaIds` is the membership; this is its indexable copy, because Convex cannot index
  * an array and two readers need to find a spanning report under its *second* bay: the bay-scoped

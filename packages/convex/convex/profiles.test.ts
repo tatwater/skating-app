@@ -361,7 +361,7 @@ describe('profiles.syncFromClerk', () => {
 
   test('backfills the email and avatar mirrors a profile onboarded without them', async () => {
     const t = convexTest(schema, modules);
-    // Onboarded from a token that carried neither claim — every pre-N8 profile on dev.
+    // Onboarded from a token that carried neither claim — every pre-A08 profile on dev.
     const id = await onboard(t, 'clerk_ada');
     expect((await t.run((ctx) => ctx.db.get(id)))?.email).toBeUndefined();
 
@@ -824,13 +824,13 @@ describe('profiles.backfillNotificationPrefs', () => {
     await provision(t, 'clerk_a', 'ada');
     await provision(t, 'clerk_b', 'bob');
     const res = await t.mutation(internal.profiles.backfillNotificationPrefs, {});
-    expect(res).toMatchObject({ patched: 0, total: 2, isDone: true }); // paginated (N1)
+    expect(res).toMatchObject({ patched: 0, total: 2, isDone: true }); // paginated (A01)
     const p = await t.withIdentity({ subject: 'clerk_a' }).query(api.profiles.current, {});
     expect(p?.notificationPrefs.reportCommented).toBe(true); // default-on (D16)
   });
 });
 
-// --- Phase 4: drive-time home, feed-filter prefs, notification prefs ---
+// --- Phase 04: drive-time home, feed-filter prefs, notification prefs ---
 
 /** Provision an adult profile and return an identity-bound test client. */
 async function provisionAdult(t: ReturnType<typeof convexTest>, subject = 'clerk_p4') {

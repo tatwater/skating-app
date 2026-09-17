@@ -1,10 +1,10 @@
 /**
- * Matching a curated destination shortlist to corpus bodies (N6c Workstream B3a/D).
+ * Matching a curated destination shortlist to corpus bodies (A06c Workstream §2.3a/D).
  *
  * **Renamed from `seed-satellite` (founder call, 2026-08-09).** That name was chosen to name the
  * *job* rather than the input list — provision and prove the imagery path. With B3's Copernicus deep
- * link deferred to N6e so the whole imagery story lands together, the job this script actually does
- * today is the other half: match a shortlist to rows and set `curatedBoost`. N6e adds the URL
+ * link deferred to A06e so the whole imagery story lands together, the job this script actually does
+ * today is the other half: match a shortlist to rows and set `curatedBoost`. A06e adds the URL
  * verification back on top when it needs it.
  *
  * ## Two commands, never one
@@ -45,7 +45,7 @@ export interface CandidateBody {
   states?: string[];
   surfaceAreaSqM?: number;
   curatedBoost?: number;
-  /** The operator's satellite-link override (N6e Workstream D) — read by the `--verify-imagery` run. */
+  /** The operator's satellite-link override (A06e Workstream 4) — read by the `--verify-imagery` run. */
   satelliteImagery?: 'auto' | 'on' | 'off';
   interiorPoint?: { lat: number; lng: number };
   representativePoint?: { lat: number; lng: number };
@@ -60,7 +60,7 @@ export const MATCH_RADIUS_KM = 25;
  *
  * **0.3, matching every existing curated boost on dev**, and deliberately not more. `displayScore`
  * is `normalize(log area) ∈ [0,1] + curatedBoost` and `minVisibleZoom` clamps the total, so the
- * usable range is small — the N6c-1 build found the D2 table's proposed weights were ~13× the whole
+ * usable range is small — the A06c-1 build found the D2 table's proposed weights were ~13× the whole
  * dynamic range, which would have pushed every named body to the widest zoom bucket with all tests
  * still green. A seed is a cold-start hack with a retirement path (D49), not a permanent registry;
  * profile richness is the durable mechanism meant to take over.
@@ -124,8 +124,8 @@ export type MatchOutcome =
  *
  * **Reports ambiguity rather than guessing, and that is the whole design.** OSM's Northeast water
  * layer is full of bodies named `Mill Pond` and `Beaver Pond`, several within a few miles of each
- * other, and the Phase-2.5 seed already put five curated boosts on same-named lakes in the wrong
- * towns — invisible until N2 built a screen to look at them. A script that picks the largest
+ * other, and the Phase-02b seed already put five curated boosts on same-named lakes in the wrong
+ * towns — invisible until A02 built a screen to look at them. A script that picks the largest
  * candidate would reproduce exactly that, silently.
  *
  * Where a coordinate is supplied, it narrows first: same name *and* within {@link MATCH_RADIUS_KM}
@@ -191,7 +191,7 @@ export function matchAll(
 }
 
 /**
- * Where the two source lists agree, and where they don't (Workstream D's cross-check).
+ * Where the two source lists agree, and where they don't (Workstream 4's cross-check).
  *
  * **The disagreement is the interesting part.** A spot the community talks about constantly that no
  * atlas lists is a discovery signal; a listed spot nobody discusses may be listed for scenery rather

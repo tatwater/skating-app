@@ -139,7 +139,7 @@ describe('suggestSamplePoints', () => {
     );
     // 100 runs of grid generation plus an O(n²) pairwise distance check. Comfortably under a second on
     // its own, but it shares a machine with every other workspace's suite under `turbo run test`, and
-    // N5c's geometry property tests made that contention enough to push it past vitest's 5 s default.
+    // A05c's geometry property tests made that contention enough to push it past vitest's 5 s default.
     // Explicit, per the convention the convex suites already follow (see `ci-test-timeout-5s`).
   }, 20_000);
 
@@ -164,7 +164,7 @@ describe('suggestSamplePoints', () => {
   });
 });
 
-describe('spansMultipleSampleCells (N6h — the "too big for one reading" test)', () => {
+describe('spansMultipleSampleCells (A06h — the "too big for one reading" test)', () => {
   const at = (minLat: number, minLng: number, maxLat: number, maxLng: number) => ({
     minLat,
     minLng,

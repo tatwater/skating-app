@@ -1,5 +1,5 @@
 /**
- * Which sources a command should act on (N6b).
+ * Which sources a command should act on (A06b).
  *
  * Shared by `snapshot` and `verify` so the two can't drift about what `--state=NH` means — a
  * divergence there would be quietly awful: verifying one set and refreshing another is how a state

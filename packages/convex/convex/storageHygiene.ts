@@ -1,12 +1,12 @@
 /**
- * Storage hygiene (N3) — the three sweeps that keep the app from accreting things nobody can reach.
+ * Storage hygiene (A03) — the three sweeps that keep the app from accreting things nobody can reach.
  *
  * Same shape as the retention crons already shipped (`pruneGateEvents`, `pruneClientSignals`,
  * `pruneOAuthStates`): a bounded index read, a delete loop, a count returned. They live together
  * because they answer one question — *what did we write that nothing will ever read again?* — and
  * because account deletion (D62) is what finally made two of them load-bearing rather than tidy.
  *
- * Worth recording, since the roadmap's own entry didn't know it: Phase 7b built the `photo_orphans`
+ * Worth recording, since the roadmap's own entry didn't know it: Phase 07-2 built the `photo_orphans`
  * metric **and** `photos.by_created_at` expressly to decide whether the GC cron was worth building.
  * It reads 0 on dev because dev holds zero photos, so the gate it was supposed to be never had data to
  * decide with. These are built on first principles instead — and deletion now creates its own orphans,
@@ -32,7 +32,7 @@ const SWEEP_LIMIT = 500;
 const HOUR_MS = 60 * 60 * 1000;
 
 /**
- * ⚠ **`weatherDays` and `weatherCells` are deliberately absent from this file (N6h / D153).**
+ * ⚠ **`weatherDays` and `weatherCells` are deliberately absent from this file (A06h / D153).**
  *
  * Every other weather table swept here expires because its rows are only *addressable* for a window —
  * a `weatherCache` row's key contains its hour bucket, so yesterday's rows are unreachable rather
@@ -43,7 +43,7 @@ const HOUR_MS = 60 * 60 * 1000;
  *
  * A season of Tier-B rows is ~548 MB against Convex Pro's included 50 GB, so there is no pressure to
  * reclaim. If retention is ever wanted it belongs as a **season rollup** (150 daily rows compacted
- * into one columnar document at the N5a boundary), not as a sweep.
+ * into one columnar document at the A05a boundary), not as a sweep.
  */
 /**
  * How long a `weatherCache` row is kept past the hour it belongs to.
@@ -63,7 +63,7 @@ const WEATHER_CACHE_RETENTION_MS = 24 * HOUR_MS;
 /**
  * Delete `weatherCache` rows whose hour bucket has passed.
  *
- * Safe by construction (a miss just refetches), and now more than a disk-space chore: **N2 multiplied
+ * Safe by construction (a miss just refetches), and now more than a disk-space chore: **A02 multiplied
  * the growth rate**. It shipped the `weatherSamplePoints` writer, so a large lake samples at several
  * points and rows accrue per hour *per point*, not per hour per lake.
  */
@@ -81,7 +81,7 @@ export const pruneWeatherCache = internalMutation({
 });
 
 /**
- * The inbox empties at the season boundary (N8/A5) — delete every `notifications` row created before
+ * The inbox empties at the season boundary (A08/A5) — delete every `notifications` row created before
  * the current season's start (July 1, D63), **read or not**.
  *
  * It's the right clock rather than a convenient one. Every notification is about a *moment* —
@@ -100,7 +100,7 @@ export const pruneWeatherCache = internalMutation({
  * **Read state doesn't matter.** An *unread* notification about last season's ice is worth less than a
  * read one, not more — keeping it would be the only mechanism in the app that treats an unopened row
  * as more durable than an opened one. This makes the inbox non-archival: the record of what happened
- * to your contributions is the data export (N3), which reads the live tables.
+ * to your contributions is the data export (A03), which reads the live tables.
  */
 export const purgeLastSeasonNotifications = internalMutation({
   args: { now: v.optional(v.number()) },
@@ -126,7 +126,7 @@ export const purgeLastSeasonNotifications = internalMutation({
 });
 
 /**
- * Delete `weatherForecastCache` rows whose hour bucket has passed (N6c/B5b).
+ * Delete `weatherForecastCache` rows whose hour bucket has passed (A06c/B5b).
  *
  * **The same unaddressable-by-construction argument as `pruneWeatherCache` above**, and it applies
  * more forcefully: a forecast row is keyed on `(samplePointKey, forecastBucketMs)`, so the instant
@@ -137,7 +137,7 @@ export const purgeLastSeasonNotifications = internalMutation({
  * **This existed as an index with no sweep behind it until a self-review caught it.** The table would
  * have grown by one row per sample point per hour, for ever — roughly 24 rows a day for every lake
  * anyone opened, with nothing to reclaim them. The `by_forecast_bucket` index was added *for* this
- * pruner and then the pruner was never written, which is the same shape as N6b's `hasContours`
+ * pruner and then the pruner was never written, which is the same shape as A06b's `hasContours`
  * shipping with no producer.
  */
 export const pruneForecastCache = internalMutation({
@@ -289,7 +289,7 @@ const DEPARTED_PAGE = 25;
  *
  * **Why this is a cron and not a finalize stage.** Finalization lands 30 days after the request, which
  * is mid-season by construction, so the season this person left in has not ended yet. The clock is
- * N5a's season boundary rather than a fourth deletion timer — that is the argument for building it
+ * A05a's season boundary rather than a fourth deletion timer — that is the argument for building it
  * here at all — and it therefore has to outlive the tombstone. `writeTombstone` clears
  * `deletionRequestedAt`, dropping the row out of the pending index no cron can reach again, so this
  * one reads `by_status` instead.
@@ -398,7 +398,7 @@ export const expireDepartedPhotos = internalMutation({
     // were retained forever with no automated path, which is exactly the problem `photoReconcile` was
     // built to end; and because a retried account is never marked, it sat at the front of the
     // sweeper's range permanently occupying a slot in a bounded page. Enough of them and no other
-    // tombstone is ever reached — the same starvation N3/N4's pending sweep shipped and had to fix.
+    // tombstone is ever reached — the same starvation A03/A04's pending sweep shipped and had to fix.
     //
     // So: hand it to the determinate pass, and mark it, because that job now owns the account.
     if (keep === null) {

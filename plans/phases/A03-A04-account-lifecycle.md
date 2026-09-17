@@ -1,15 +1,15 @@
-# N3/N4 — Account lifecycle + storage hygiene
+# A03/A04 — Account lifecycle + storage hygiene
 
 *The D33 phase: delete, export, anonymize — plus the two storage-hygiene crons that used to be their
-own entry (the old N4 and N3 respectively), bundled because **N4 creates exactly the storage problems
-N3 exists to solve**.*
+own entry (the old A04 and A03 respectively), bundled because **A04 creates exactly the storage problems
+A03 exists to solve**.*
 
-> **Status:** in build (2026-07-27). Kickoff decisions below are settled; the roadmap's N3/N4 entries
+> **Status:** in build (2026-07-27). Kickoff decisions below are settled; the roadmap's A03/A04 entries
 > are merged into this one.
 
 ## Why these two are one phase
 
-The roadmap listed storage-hygiene crons (old N3, "tiny — a half-day") and account lifecycle (old N4)
+The roadmap listed storage-hygiene crons (old A03, "tiny — a half-day") and account lifecycle (old A04)
 as separate chunks. They aren't, once you look at what the lifecycle work actually emits:
 
 - An **export bundle** is a generated blob in Convex storage. It needs a TTL sweep — the same cron
@@ -22,18 +22,18 @@ as separate chunks. They aren't, once you look at what the lifecycle work actual
 So the crons aren't filler bundled to save a Greptile run; they're the phase's own cleanup path. One
 phase doc, one PR, commits split by workstream.
 
-## What the roadmap's N3 and N4 entries got wrong
+## What the roadmap's A03 and A04 entries got wrong
 
 **1. D33's central premise is now false.** It reads: *"Since all reports are public (D13), there's no
 private content to selectively remove — every report is anonymized-not-erased uniformly."* True when
-written. Not true now: **Phase 4** added `homeCoord` + `cachedIsochrones` (a home address and three
-polygons derived from it), and **Phase 8** added `gpsActivities.path` (raw GPS traces) plus
+written. Not true now: **Phase 04** added `homeCoord` + `cachedIsochrones` (a home address and three
+polygons derived from it), and **Phase 08** added `gpsActivities.path` (raw GPS traces) plus
 `activityConnections` (live OAuth tokens). D33 predates both. "Anonymize, don't erase" is the right
 rule for the *community ice record* and the wrong rule for a private location trace. Amended as **D62**.
 
-**2. N3's photo-orphan entry doesn't know its own evidence gate exists.** Phase 7b built the
+**2. A03's photo-orphan entry doesn't know its own evidence gate exists.** Phase 07-2 built the
 `photo_orphans` metric *and* the `photos.by_created_at` index expressly "to decide whether the deferred
-GC cron is worth building" (`analyticsRollup.countOrphanPhotos`). Neither the N3 entry nor the design
+GC cron is worth building" (`analyticsRollup.countOrphanPhotos`). Neither the A03 entry nor the design
 sketch at the bottom of the roadmap mentions it. Measured on dev 2026-07-27: **0 photos, 0 orphans, 0
 `weatherCache` rows, 1 report, 2 profiles.** The metric reads zero because there is no data at all, not
 because orphans don't happen — so both crons are built on first principles, and the roadmap should stop
@@ -45,7 +45,7 @@ delivery needs the Resend key + a verified sending domain, which the roadmap its
 prod-cutover blockers. See *Export delivery* below for how that's handled without leaving the phase
 unverifiable.
 
-**4. N4 undersells the schema landmines and oversells the UI sprawl.**
+**4. A04 undersells the schema landmines and oversells the UI sprawl.**
 - *Undersells:* `profiles.by_clerk_user_id` is read with `.unique()`. Scrub `clerkUserId` to a shared
   constant and the **second** deleted account makes every auth lookup in the app throw. Same trap on
   `by_username`. Both need per-row-unique sentinels, not a shared `'deleted'`.
@@ -54,13 +54,13 @@ unverifiable.
   `{ displayName: 'Unknown', username: '', trustClass: null }`. The work is making that shape mean
   "deleted skater" and honoring it, not 24 bespoke fixes.
 
-**5. What N4 didn't say at all:** `weatherCache` growth is now **multiplied by N2**. The cache key is
-`(samplePointKey, windowStartMs, windowEndBucketMs)`, and N2 shipped the `weatherSamplePoints` writer —
-so a big lake samples at several points, and rows accrue per hour *per point*, not per hour per lake.
+**5. What A04 didn't say at all:** `weatherCache` growth is now **multiplied by A02**. The cache key is
+`(samplePointKey, windowStartMs, windowEndBucketMs)`, and A02 shipped the `weatherSamplePoints` writer —
+so a big water body samples at several points, and rows accrue per hour *per point*, not per hour per water body.
 
 ## Decisions taken at kickoff (2026-07-27)
 
-**1. Bundle old-N3 into old-N4.** One phase, one PR. See above — the coupling is real, not budgetary.
+**1. Bundle old-A03 into old-A04.** One phase, one PR. See above — the coupling is real, not budgetary.
 
 **2. Deletion gets a 30-day grace window, finalized by cron.** Not immediate. Reversible-by-default
 matches the ethos every other destructive path in this app already has (hazard archive D15, merge
@@ -74,11 +74,11 @@ tombstone D36, demotion D53) and protects against the rage-quit and the misclick
 > button**, never an implicit side effect of signing in; silently cancelling on sign-in would mean a
 > user who logs in once to save a photo has quietly un-deleted themselves.
 >
-> **A second correction, to the correction** (founder, 2026-07-27, built with N5a). "Fully functional"
+> **A second correction, to the correction** (founder, 2026-07-27, built with A05a). "Fully functional"
 > overshot in both directions, and the sign-in argument only ever justified not banning the *login*.
 >
 > It was too permissive about **content**: a report posted in hour 719 is erased hours later while
-> it's still the freshest thing on the lake. So a pending deletion is **read-only** —
+> it's still the freshest thing on the water body. So a pending deletion is **read-only** —
 > `requireContributor`, with flagging, blocking, support, export and private preferences deliberately
 > still open.
 >
@@ -106,7 +106,7 @@ what we want from GPS tracks, so there's a third:
 That is not a new rule invented for deletion — it is literally gate (1) of `listTracksForBody`,
 *publish-is-consent* (D58). An **unlinked** activity is a private recording the person never published:
 raw movement data, no community value, so it goes with the rest of the private bucket. A **linked** one
-was already public, is already drawn on the lake, and is part of the ice record the whole
+was already public, is already drawn on the water body, and is part of the ice record the whole
 anonymize-don't-erase posture exists to preserve.
 
 The consequence worth stating plainly rather than burying: because each deleted user keeps their **own**
@@ -153,7 +153,7 @@ settings screen also lists a completed export with its download link. Same log-a
 photo files". Linking would have been easier, but it fails at the one moment the export exists for: a
 URL into our storage **dies when the account is deleted**, so a link-based export is worthless precisely
 when someone exports-then-deletes. Photos are base64-embedded under a total size budget, with anything
-beyond the budget listed explicitly rather than silently dropped (the Phase 7 "no silent caps" rule).
+beyond the budget listed explicitly rather than silently dropped (the Phase 07 "no silent caps" rule).
 
 ## The design
 
@@ -223,7 +223,7 @@ forward: it read as documentation and was actually a guess.
 **Nothing was lost.** `finalizeAccount` re-reads the stamp and returns `stopped: 'cancelled'` before any
 stage runs. That guard was written for a user changing their mind mid-flight, and it turned out to be
 the only thing between a query bug and every account in the app. Both dev profiles, the one report and
-N2's nine sub-areas were verified intact afterwards. Two independent guards is now the deliberate
+A02's nine sub-areas were verified intact afterwards. Two independent guards is now the deliberate
 posture for this job rather than a happy accident.
 
 The regression test was checked the only way worth checking one: revert the fix, confirm it fails with
@@ -445,12 +445,12 @@ disposable account before the alpha.
 
 ## Relocated from the roadmap (2026-09-16)
 
-*The roadmap entry for N3 / N4 as it stood before the 2026-09-16 rewrite, kept verbatim so nothing it said is lost. The roadmap now carries a one-paragraph summary; this is the long form.*
+*The roadmap entry for A03 / A04 as it stood before the 2026-09-16 rewrite, kept verbatim so nothing it said is lost. The roadmap now carries a one-paragraph summary; this is the long form.*
 
-~~**N3 / N4 — Account lifecycle + storage hygiene (D33/D62).**~~ **✅ COMPLETE on dev (2026-07-27)** —
-see [`phase-N3-N4-account-lifecycle.md`](./phase-N3-N4-account-lifecycle.md) for the design, the
+~~**A03 / A04 — Account lifecycle + storage hygiene (D33/D62).**~~ **✅ COMPLETE on dev (2026-07-27)** —
+see [`phases/A03-A04-account-lifecycle.md`](./A03-A04-account-lifecycle.md) for the design, the
 corrections to what these entries used to say, and the measured results. **The two entries are one
-phase**; the old N3 (two storage-hygiene crons, "tiny — a half-day") is a workstream inside it,
+phase**; the old A03 (two storage-hygiene crons, "tiny — a half-day") is a workstream inside it,
 because the lifecycle work *creates* the storage problems the crons exist to solve: an export bundle is
 a stored blob needing a TTL sweep, deletion strands a departing user's unattached photo blobs, and the
 grace window needs a finalize cron in the same family. One phase, one review surface, one test pattern.
@@ -459,13 +459,13 @@ Deletion/export is a trust-and-launch requirement that touches every surface sho
 **mechanism is unblocked**; only the *policy wording* is legal-gated (L3), so build the machinery and
 leave the copy to the Q10 pass. Public content **anonymizes rather than erases** (D33/D13) — but that
 rule is no longer uniform, and **D62** says why: D33's premise ("all reports are public, so there's no
-private content to selectively remove") predates Phase 4's `homeCoord`/isochrones and Phase 8's raw GPS
+private content to selectively remove") predates Phase 04's `homeCoord`/isochrones and Phase 08's raw GPS
 paths + OAuth tokens. Three buckets now — erase the private, anonymize the public record, and
 **keep-but-sever** published GPS tracks (kept iff linked to a visible report, which is D58's own
 publish-is-consent predicate reused).
 
 Two things this pair of entries had wrong, both corrected in the phase doc: the photo-orphan GC's
-**evidence gate already exists and has produced nothing** — Phase 7b built the `photo_orphans` metric
+**evidence gate already exists and has produced nothing** — Phase 07-2 built the `photo_orphans` metric
 *and* the `photos.by_created_at` index expressly to decide whether the cron was worth building, and it
 reads 0 on dev because dev holds **0 photos** (and 0 `weatherCache` rows, 1 report, 2 profiles); and
 the anonymized-author work is **smaller** than "everywhere" implies, since `reports`/`bounties`/
@@ -477,8 +477,8 @@ Two things came out that weren't scoped: **`showPutIn` was bypassed on the repor
 `gpsActivities.getForReport` returned the raw path to every viewer, so a skater who withheld their
 put-in had their first/last 150 m drawn publicly, despite the aggregate layer 60 lines below carefully
 clipping it (fixed here, since deletion can't respect a rule the live product doesn't); and
-**`weatherCache` growth is multiplied by N2**, which shipped the `weatherSamplePoints` writer — rows
-accrue per hour *per sample point*, not per hour per lake. Its retention argument also turned out
+**`weatherCache` growth is multiplied by A02**, which shipped the `weatherSamplePoints` writer — rows
+accrue per hour *per sample point*, not per hour per water body. Its retention argument also turned out
 stronger than "disk growth": the cache key contains the current hour bucket, so yesterday's rows are
 *unaddressable* rather than merely stale.
 

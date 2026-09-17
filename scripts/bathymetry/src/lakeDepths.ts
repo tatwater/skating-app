@@ -1,11 +1,11 @@
 /**
- * **A depth per lake, out of the archives we already hold** (N7-3).
+ * **A depth per lake, out of the archives we already hold** (A07a-3).
  *
  * ## Why this exists
  *
  * `state_agency` is rung 1 of D68's depth ladder — above LAGOS-US, above everything modelled — and
  * on 2026-08-09 it had **zero rows in the corpus**. Its own docstring said the rung was *"deferred to
- * N6b, where those datasets are fetched for their contours anyway"*. N6b fetched them and never came
+ * A06b, where those datasets are fetched for their contours anyway"*. A06b fetched them and never came
  * back. So 298 MB and ~2,400 lakes of measured depth have been on disk, feeding a contour layer and
  * nothing else, while three global models supplied the numbers a skater actually reads.
  *
@@ -91,7 +91,7 @@ export interface AgencyDepthDetail {
 /**
  * Archives whose **depth** is produced by a better lane elsewhere, so this one must not also write it.
  *
- * `nh-granit-contours` is layer 0 of `EDP_Bathymetry_Lakes` — the contour lines, which N6b fetched
+ * `nh-granit-contours` is layer 0 of `EDP_Bathymetry_Lakes` — the contour lines, which A06b fetched
  * for the render. Layer 1 of the same service publishes the same survey as depth-**band polygons**
  * carrying `acres`, and `scripts/lake-depth`'s `nhBands.ts` reads those into a max *and* an
  * integrated mean (D133). Two producers writing one ladder rung for one lake is an ambiguity rather

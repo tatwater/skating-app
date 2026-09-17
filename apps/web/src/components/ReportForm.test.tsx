@@ -57,7 +57,7 @@ describe('ReportFormFields', () => {
    * existing photos posts an empty list and detaches every one of them. Rendering them is what makes
    * the submitted array mean "this report's photos" rather than "what was picked in this session".
    */
-  describe('photos already on the report (edit path, N6f)', () => {
+  describe('photos already on the report (edit path, A06f)', () => {
     const ATTACHED = [{ photoId: 'p1', thumbUrl: 'https://example.test/p1.jpg' }];
 
     it('shows nothing extra when creating a new report', () => {

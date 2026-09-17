@@ -1,5 +1,5 @@
 /**
- * NWS active alerts — the advisory layer (N6c Workstream B5, D74).
+ * NWS active alerts — the advisory layer (A06c Workstream §2.5, D74).
  *
  * `api.weather.gov` is free, needs no key, and is US-only. It does **not** replace Open-Meteo:
  * Open-Meteo's `past_days` history is the input to the D56 decay math and NWS has no comparable
@@ -17,7 +17,7 @@
  *
  * ## The zone ladder
  *
- * Alerts are matched to bodies by a two-rung ladder, exactly like N6a's depth sources:
+ * Alerts are matched to bodies by a two-rung ladder, exactly like A06a's depth sources:
  *
  * | Rung | Basis | When it applies |
  * |---|---|---|

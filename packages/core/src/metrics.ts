@@ -1,5 +1,5 @@
 /**
- * The in-house analytics vocabulary (Phase 7b / D37) — **one file**, the same way `reputationConfig.ts`
+ * The in-house analytics vocabulary (Phase 07-2 / D37) — **one file**, the same way `reputationConfig.ts`
  * single-sources the tuning constants.
  *
  * Every number the operator surface charts is stored as a **`metricSnapshots` row**, never computed by
@@ -282,14 +282,14 @@ export const METRICS = {
   recurrence_clusters_by_seasons: {
     label: 'Patterns by winters observed',
     description:
-      'Stored cross-season clusters by how many distinct winters each was reported in (N5c / D78). This is what turns "how many patterns go public if I raise RECURRENCE_PUBLIC_MIN_SEASONS" from a guess into a number — the bar is the one constant a skater ever feels, and it should be moved against a distribution rather than a hunch. A pile at 1 is a young corpus, not a broken engine.',
+      'Stored cross-season clusters by how many distinct winters each was reported in (A05c / D78). This is what turns "how many patterns go public if I raise RECURRENCE_PUBLIC_MIN_SEASONS" from a guess into a number — the bar is the one constant a skater ever feels, and it should be moved against a distribution rather than a hunch. A pile at 1 is a young corpus, not a broken engine.',
     kind: 'rollup',
     shape: 'meta',
   },
   hazard_merges: {
     label: 'Automatic merges and unmerges',
     description:
-      'Duplicate pins folded into one row automatically this day, against the ones a moderator pulled back apart (N5c / D80). The unmerge rate is the only empirical evidence AUTOMERGE_MIN_FOOTPRINT_IOU is set right: a rising one means the bar is too low and the machine is collapsing pins that were not the same hazard. Watch it through the first winter.',
+      'Duplicate pins folded into one row automatically this day, against the ones a moderator pulled back apart (A05c / D80). The unmerge rate is the only empirical evidence AUTOMERGE_MIN_FOOTPRINT_IOU is set right: a rising one means the bar is too low and the machine is collapsing pins that were not the same hazard. Watch it through the first winter.',
     kind: 'rollup',
     shape: 'meta',
   },
@@ -364,12 +364,12 @@ export const METRICS = {
   state_coverage: {
     label: 'Coverage by state',
     description:
-      'Listed water bodies and trailing-30-day reports per state — which of the Phase-2.5 regions actually took, and where expansion should go next.',
+      'Listed water bodies and trailing-30-day reports per state — which of the Phase-02b regions actually took, and where expansion should go next.',
     kind: 'rollup',
     shape: 'meta',
   },
 
-  // ── External catalogues (N7) ───────────────────────────────────────────────
+  // ── External catalogues (A07a) ───────────────────────────────────────────────
   /**
    * **This one is expected to read zero for a while, and that is the point.**
    *
@@ -409,7 +409,7 @@ export const METRIC_KEYS = Object.keys(METRICS) as MetricKey[];
 export const COUNTER_METRIC_KEYS = METRIC_KEYS.filter((k) => METRICS[k].kind === 'counter');
 
 /**
- * The keys measured against a third-party catalogue by an ETL pass (N7).
+ * The keys measured against a third-party catalogue by an ETL pass (A07a).
  *
  * Split out for the same reason `COUNTER_METRIC_KEYS` is: **every key must have exactly one writer**,
  * and the three families together have to account for the whole catalogue. That invariant used to be

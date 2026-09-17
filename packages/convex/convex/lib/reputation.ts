@@ -1,5 +1,5 @@
 /**
- * Reputation ledger + denormalized counters + badge awarding (D50, Phase 6).
+ * Reputation ledger + denormalized counters + badge awarding (D50, Phase 06).
  *
  * `pointEvents` is the **audit ledger** (append-only, one row per earning event); `profiles`
  * `reputationPoints` / `bountyPoints` are the **denormalized running totals**, bumped in lockstep the
@@ -10,7 +10,7 @@
  *
  * Because the ledger is the source of truth, `backfillReputation` (see `reputation.ts`) can recompute
  * every counter + badge from it — so a mid-alpha weight change in `reputationConfig` is a replay, not a
- * migration (D40). The point weights live in `@skating/core` (the single Phase-7 tuning surface).
+ * migration (D40). The point weights live in `@skating/core` (the single Phase-07 tuning surface).
  */
 
 import {
@@ -29,7 +29,7 @@ const THUMB_TALLY_CAP = 500;
 /**
  * Rows read from one user's *lifetime* history per badge family. These sets never stop growing for a
  * prolific contributor, so they need a bound; badges are cosmetic (D17), so a capped count can only
- * withhold a badge, never invent one — and the log names whose history outgrew it (N1).
+ * withhold a badge, never invent one — and the log names whose history outgrew it (A01).
  */
 const USER_HISTORY_CAP = 1000;
 
@@ -42,7 +42,7 @@ type PointReason = Doc<'pointEvents'>['reason'];
  * holds without every author payload shipping `reputationPoints` + a creation time. The single-author
  * profile read still returns raw points alongside this (the admin-visible number). `now` is threaded so
  * one query stamps every author against a single clock. `null` ⇒ no ring (below `trusted`, past the New
- * window). Boost-only ⇒ points never negative in Phase 6.
+ * window). Boost-only ⇒ points never negative in Phase 06.
  */
 export function trustClassFor(profile: Doc<'profiles'>, now: number): TrustClass | null {
   return deriveTrustClass(profile.reputationPoints, now - profile.createdAt);
@@ -136,10 +136,10 @@ export async function tallyThumbs(
  *
  * **Scan cost.** This reads the user's whole ledger + their reports + their hazards (each with a thumb
  * tally) + their confirmations + their hazard thumbs — five *lifetime* histories, so it grows forever
- * for a prolific contributor rather than settling. N1 caps each at `USER_HISTORY_CAP` with a log; the
+ * for a prolific contributor rather than settling. A01 caps each at `USER_HISTORY_CAP` with a log; the
  * degradation is benign because badges are cosmetic (D17) — a capped count can only *withhold* a badge,
  * never invent one, and the log says whose history outgrew the cap. The real fix is incremental
- * counters or a scheduled recompute (the Phase 4 `contributionCounts` pattern), still deferred.
+ * counters or a scheduled recompute (the Phase 04 `contributionCounts` pattern), still deferred.
  * Kept a pure read so `backfillReputation` and the live paths share it.
  */
 export async function computeBadgeStats(
@@ -240,7 +240,7 @@ export async function computeBadgeStats(
 /**
  * Recompute a user's earned badges from live stats and patch `profiles.badges` if the set changed.
  * Idempotent + backfillable — the stored set is always exactly `deriveEarnedBadges(stats)` in the stable
- * `BADGE_TYPES` order, so re-running never duplicates and a Phase-7 threshold change replays cleanly.
+ * `BADGE_TYPES` order, so re-running never duplicates and a Phase-07 threshold change replays cleanly.
  */
 export async function checkAndAwardBadges(ctx: MutationCtx, userId: Id<'profiles'>): Promise<void> {
   const profile = await ctx.db.get(userId);

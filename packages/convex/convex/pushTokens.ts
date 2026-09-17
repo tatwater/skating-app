@@ -1,5 +1,5 @@
 /**
- * Push-token registration (N8 PR 3). A device that has granted notification permission calls
+ * Push-token registration (A08 PR 3). A device that has granted notification permission calls
  * `register` on app open with its `ExponentPushToken[…]`; the row is the address `notificationDelivery`
  * sends to. Owner-scoped: a token is a private capability to ring one person's phone, and the only
  * thing anyone can do with someone else's is nothing.

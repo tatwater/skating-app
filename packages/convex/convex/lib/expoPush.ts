@@ -1,5 +1,5 @@
 /**
- * The Expo push transport (N8 PR 3) — the HTTP half of "push is a transport over the inbox" (D167).
+ * The Expo push transport (A08 PR 3) — the HTTP half of "push is a transport over the inbox" (D167).
  *
  * Expo's push service fronts APNs and FCM behind one endpoint, so the server never holds an Apple
  * key or a Firebase credential: those live in EAS and are used at build time to mint the device's

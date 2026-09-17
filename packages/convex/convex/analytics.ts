@@ -1,5 +1,5 @@
 /**
- * Operator analytics (Phase 7b / D37) — the client-reported signals and, alongside them, the read side
+ * Operator analytics (Phase 07-2 / D37) — the client-reported signals and, alongside them, the read side
  * the `/admin` charts consume.
  *
  * Most metrics are written server-side (see `lib/metrics.ts`): a counter at the event site, or a bounded
@@ -165,7 +165,7 @@ export const latest = query({
 });
 
 /**
- * Record one measurement of a third-party catalogue (N7).
+ * Record one measurement of a third-party catalogue (A07a).
  *
  * **`internalMutation`, so it is reachable only from `convex run` with an admin key** — the same
  * channel `@skating/run-log` already uses. The measurement is taken by an ETL pass against an archive
@@ -341,7 +341,7 @@ const TREND_REACTION_READ_BUDGET = 12_000;
  * single score: the judgment stays human, and the chart's job is to make the two cases impossible to
  * mistake for each other at a glance.
  *
- * - **bad** = reports settled as weather-unexplained contradictions (D56 §7b), plus `unsafe_false_report`
+ * - **bad** = reports settled as weather-unexplained contradictions (D56 §07-2), plus `unsafe_false_report`
  *   flags a moderator actually **upheld**. An open or dismissed flag is an accusation, not a finding, and
  *   counting it would let anyone darken someone's record by flagging them.
  * - **good** = reports the community corroborated or thumbed net-helpful. Volume alone is not good; this

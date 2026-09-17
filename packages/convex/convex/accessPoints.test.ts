@@ -1,5 +1,5 @@
 /**
- * The access join (N6d B3 / D72, D143).
+ * The access join (A06d §2.3 / D72, D143).
  *
  * The load-bearing properties here are the two an ETL gets wrong quietly: a re-run must never undo an
  * operator's work (the source ladder, and a moderator's `hide`), and a launch must never attach to the
@@ -28,7 +28,7 @@ const DEG_PER_M = 1 / 111_320;
 
 /**
  * A square body centred on (44, −72). Inserted and then run through `importCanonical`, because the
- * N1 cell rows that import builds are what `listedBodiesNearCoord` reads — a hand-inserted body is
+ * A01 cell rows that import builds are what `listedBodiesNearCoord` reads — a hand-inserted body is
  * unreachable from any spatial lookup, which is the same property that keeps an unlisted body
  * invisible.
  */
@@ -223,7 +223,7 @@ describe('accessPoints.matchAndImportParking', () => {
   });
 
   /**
-   * The ladder. A correction a re-import can erase is not worth making — the same argument the N6a
+   * The ladder. A correction a re-import can erase is not worth making — the same argument the A06a
    * depth ladder rests on.
    */
   test("an operator's lot keeps its fields, and still gets its associations refreshed", async () => {
@@ -305,9 +305,9 @@ describe('accessPoints.matchAndImportPutIns', () => {
   });
 
   /**
-   * The N6e prerequisite, end to end: ORS hands us the line, the ETL carries it, the row keeps it and
+   * The A06e prerequisite, end to end: ORS hands us the line, the ETL carries it, the row keeps it and
    * the drawer's own query returns it. Pinned as a round trip rather than a field assertion because
-   * every one of those four hops is somewhere it was dropped before — N6d's parser discarded it at
+   * every one of those four hops is somewhere it was dropped before — A06d's parser discarded it at
    * the first, and recovering it cost a re-route of every hike-in leg against a 2,000/day quota.
    */
   test('carries the routed line through to the surface that draws it', async () => {
@@ -545,7 +545,7 @@ describe('accessPoints.listParkingForBody', () => {
   });
 });
 
-describe('access-point photos (Workstream D / D88)', () => {
+describe('access-point photos (Workstream 4 / D88)', () => {
   async function seedUploader(
     t: ReturnType<typeof convexTest>,
     subject: string,
@@ -715,7 +715,7 @@ describe('access-point photos (Workstream D / D88)', () => {
   });
 
   /**
-   * ⚠ The N6d kickoff's data-loss finding, pinned.
+   * ⚠ The A06d kickoff's data-loss finding, pinned.
    *
    * `referencedPhotoIds` decides whether a photo may be destroyed by scanning the uploader's own
    * reports and hazards. An access photo hangs off a put-in the *ETL* created, so before `accessPhotos`
@@ -897,7 +897,7 @@ describe('the operator write path (D72 amendment / D144)', () => {
   });
 
   /**
-   * The line is retracted by **every** path that re-points the association (N6e Workstream 0).
+   * The line is retracted by **every** path that re-points the association (A06e Workstream 0).
    *
    * A wrong distance reads as a wrong distance. A wrong line is drawn on the map from the new lot's
    * marker, tracing a trail that starts somewhere else, and it looks exactly as authoritative as the
@@ -1123,7 +1123,7 @@ describe('the lot a chosen put-in points at is always resolvable', () => {
    * ⚠ Found by the first full load, not by reasoning. It put **160 lots on Lake Champlain**, 97 on
    * Winnipesaukee and 64 on Seneca — all legitimate for lakes that size. `loadParkingForBody` reads a
    * capped window in *index* order, so on those bodies the lot a put-in references can sit outside it,
-   * and `chooseAccessTarget` would fall back to routing a car at the launch: precisely the pre-N6d
+   * and `chooseAccessTarget` would fall back to routing a car at the launch: precisely the pre-A06d
    * behaviour this phase exists to fix, on the four lakes that matter most.
    */
   test('a referenced lot is returned even when it sits past the read cap', async () => {
@@ -1193,7 +1193,7 @@ describe('the lot a chosen put-in points at is always resolvable', () => {
 
 describe('the candidate box is sized to the radius (the 105 GB lesson)', () => {
   /**
-   * ⚠ N6d's parking pass ran 95,294 lookups on `listedBodiesNearCoord`'s default ~1,113 m net and
+   * ⚠ A06d's parking pass ran 95,294 lookups on `listedBodiesNearCoord`'s default ~1,113 m net and
    * spent **104.95 GB of database I/O — 1.1 MB per lot** — enough to disable the deployment. Convex
    * has no projection, so reading a candidate reads its whole document, `polygon` included, and
    * Champlain's ~300 KB outline was re-read for every lot within a kilometre of it.
@@ -1247,7 +1247,7 @@ describe('the candidate box is sized to the radius (the 105 GB lesson)', () => {
  *
  * `putIns.hide` does not flip a row's status — it inserts a `hidden` suppression row at a coord, so
  * one action outlives however many imports later land near it. `listForBody` has always honoured
- * that; the two read paths N6d added did not. Hiding a lake's only launch removed its marker from the
+ * that; the two read paths A06d added did not. Hiding a lake's only launch removed its marker from the
  * map while the drawer went on naming it, the directions button went on routing to it, and the body
  * kept its Hike-In chip.
  *

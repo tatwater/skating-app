@@ -1,5 +1,5 @@
 /**
- * The **Adirondack Lakes Survey** (1984–87) — New York's only large measured-depth source (N7-2).
+ * The **Adirondack Lakes Survey** (1984–87) — New York's only large measured-depth source (A07a-2).
  *
  * ## Why this exists, and why it is a scraper
  *
@@ -63,7 +63,7 @@
  *
  * The 2 km name join remains the upgrade worth making, and it wants two things this one does not
  * have: a distance bound passed per source rather than per deployment, and `nameClaims` rather than
- * the stored name, because N7 keeps every publisher's name and ALSC's spelling may agree with OSM's
+ * the stored name, because A07a keeps every publisher's name and ALSC's spelling may agree with OSM's
  * where the stored one is NHD's. Until then the shortfall is visible in the run row instead of
  * assumed away.
  *

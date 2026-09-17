@@ -49,7 +49,7 @@ describe('the case the campaign ordering exists to make rare', () => {
 
   it('merges into the OSM-keyed row by default, because that is where user content lives', () => {
     // Not a claim about geometry quality — D92 decides that per lake via `geometrySource`. A claim
-    // about attachment: the OSM lane has been the corpus since Phase 1.
+    // about attachment: the OSM lane has been the corpus since Phase 01.
     const verdict = resolveUpsert({ nhdId: 'n1', osmId: 'way/1' }, [
       hit('nhdId', 'n1', 'k-nhd'),
       hit('osmId', 'way/1', 'k-osm'),

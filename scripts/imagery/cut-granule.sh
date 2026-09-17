@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Cut one Sentinel granule down to the corpus and push the result to R2 (N6e PR 2, D148).
+# Cut one Sentinel granule down to the corpus and push the result to R2 (A06e PR 2, D148).
 #
 #   cut-granule <granule-id> [--smoke]
 #
@@ -12,7 +12,7 @@
 # Action, or a person with Docker, and none of them are a migration.
 #
 # It also makes the parallel story trivial. One season is ~750 granules; because no job can observe
-# another, 25 at once is the same total spend as 25 in a row (§C2), and a crash takes exactly one
+# another, 25 at once is the same total spend as 25 in a row (§3.2), and a crash takes exactly one
 # granule with it.
 #
 # ## Two seasons, and they are not the same season
@@ -206,17 +206,17 @@ resolve_granule() {
   log "captured $CAPTURED_AT, cloud ${CLOUD_PCT:-unknown}%, season $FRAME_SEASON"
 }
 
-# Assets we care about, and why each one (§C1). True color is what PR 2 ships; the rest are the
-# bands N6g is built on and they cost nothing extra to note while we are already holding the granule.
+# Assets we care about, and why each one (§3.1). True color is what PR 2 ships; the rest are the
+# bands A06g is built on and they cost nothing extra to note while we are already holding the granule.
 #   visual — the RGB composite, the frame a skater actually looks at
 #   scl    — ESA's per-pixel scene classification: snow/ice AND cloud mask in one band. The single
-#            most valuable asset here, per §C1.
+#            most valuable asset here, per §3.1.
 #   green, swir16 — the NDSI pair, the only way to tell snow/ice from cloud (true color cannot).
 asset_href() { jq -r --arg k "$1" '.assets[$k].href // empty' granule.json; }
 
 # What a body looks like in `bodies[]` when it is in the frame but was not measured — see
 # `reconcile_bodies`. Every statistic is `null` ("unmeasured"); only the counts are 0, because "no
-# pixels" is itself a measurement and the thing N6g Lane 2 has to be able to read.
+# pixels" is itself a measurement and the thing A06g Lane 2 has to be able to read.
 OPTICAL_NULL_BODY='{"clearPct":null,"coveragePct":null,"snowIcePct":null,"waterPct":null,
   "ndsiMean":null,"pixels":0,"interiorPixels":0,"classHist":null,"interiorClassHist":null}'
 SAR_NULL_BODY='{"vvDb":null,"vhDb":null,"coveragePct":null,"pixels":0,"interiorPixels":0,
@@ -644,7 +644,7 @@ deshift_band() {
 # ## `interior.tif` — the shoreline eroded off, because an edge pixel is not a lake pixel
 #
 # A pixel straddling the shoreline mixes water with bank, and standard practice in the lake-ice
-# literature is to erode 1–2 pixels before classifying. N6g Lane 2 is the reason it is worth the extra
+# literature is to erode 1–2 pixels before classifying. A06g Lane 2 is the reason it is worth the extra
 # proximity pass: its elimination rule turns on *"never observed frozen"*, and **a body too small to
 # classify reads exactly like a body that never froze**. After erosion a 1-acre pond has under ten
 # pixels left to vote with — so the honest artifact is not a cleaner percentage, it is a **stated
@@ -704,7 +704,7 @@ reconcile_bodies() {
 # `(green − swir16) / (green + swir16)`. Snow and ice are bright in the visible and very dark in the
 # shortwave infrared; **cloud is bright in both.** That difference is the only thing that separates
 # them, and true color cannot do it — which is why a 22 Nov Morey frame read 99% clear through
-# visible haze. This is the independent check on SCL's snow/cloud confusion (§C1).
+# visible haze. This is the independent check on SCL's snow/cloud confusion (§3.1).
 #
 # ⚠ **It will not find black ice, and should never be sold as though it might.** NDSI is a *snow*
 # index built on the same brightness that misleads SCL: transparent ice over a dark bottom is dark in
@@ -713,7 +713,7 @@ reconcile_bodies() {
 #
 # **A statistic, not a frame.** No tiling, no PMTiles, no upload — two band warps and one windowed
 # sweep. Tiling is 63% of a job and there is no product surface asking to look at an NDSI raster; the
-# per-body number is what PR 4 and N6g want.
+# per-body number is what PR 4 and A06g want.
 #
 # ## ⚠⚠ The offset, which is the thing that would quietly ruin a nine-season backfill
 #
@@ -922,7 +922,7 @@ transform_granule() {
   # a corner the swath misses got `gdalwarp`'s nodata black under an alpha saying **fully opaque**.
   # On this granule that was **843 of 3,213 tiles** — 26% of the output — including the whole northern
   # third of Lake Champlain as a black lake-shaped blob. It read as "this lake is black" rather than
-  # "this lake was not photographed", the exact confusion `footprint` and §C4 exist to prevent.
+  # "this lake was not photographed", the exact confusion `footprint` and §3.4 exist to prevent.
   #
   # `gdal raster tile` honours the source's per-band nodata — which `scene.tif` inherits from Sentinel's
   # TCI (`NoData Value=0`) — and applies it **per pixel**, not merely per tile. So out-of-swath pixels
@@ -963,7 +963,7 @@ transform_granule() {
 
   # SCL as its own *frame* is ON by default — founder call, 2026-08-25, reversing the 08-24 default.
   #
-  # PR 3's band selector shows the classification alongside true color, which is what §C1 argues makes
+  # PR 3's band selector shows the classification alongside true color, which is what §3.1 argues makes
   # a band selector honest rather than decorative: a skater who wants to know what a claim was derived
   # *from* can look at it. That is a product reason, and it outranks the cost reason the flag was
   # originally set for. Set `EMIT_SCL_FRAME=0` to go back to statistics-only.
@@ -1124,7 +1124,7 @@ transform_granule() {
 #     east as the scrubber advanced through alternating passes. "Over a lake it is flat" is true and
 #     insufficient — what matters is the lake's height above the GCP reference, not its own flatness.
 #     PR 3 mitigates by holding one orbit direction per timeline; the fix is a DEM-corrected geocode.
-#     See the N6e plan's open question 8, and note it may share a cause with question 7.
+#     See the A06e plan's open question 8, and note it may share a cause with question 7.
 #   * **The pixels are not the measurement.** They are detector counts; the calibration annotation is
 #     what turns them into `sigma0`. See `sar-cal-lut.py` for why skipping it is a 1.5 dB error inside
 #     a single scene, against a ~2 dB signal.

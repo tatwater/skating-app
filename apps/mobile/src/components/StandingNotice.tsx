@@ -9,7 +9,7 @@ import { Paragraph, XStack, YStack } from 'tamagui';
 import { Badge } from './detailUi';
 
 /**
- * Why this lake is not on the active map (N7b) — the mobile half of web's `StandingNotice`, same
+ * Why this lake is not on the active map (A07b) — the mobile half of web's `StandingNotice`, same
  * sentence from `describeStanding`, rendered under the title on any body that is not `active`.
  */
 export function StandingNotice({ body }: { body: StandingInput }) {

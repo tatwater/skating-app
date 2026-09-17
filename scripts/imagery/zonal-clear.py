@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Per-body scene classification from Sentinel-2's SCL band (N6e PR 2, §3).
+"""Per-body scene classification from Sentinel-2's SCL band (A06e PR 2, §3).
 
     zonal-clear.py <zones.tif> <scl.tif> <zone-to-id.json>
                    [--interior <interior.tif> --erode-projected-m <m>] > bodies.json
@@ -278,7 +278,7 @@ def main() -> int:
         }
 
         if interior_band is not None:
-            # ⚠ **The count is the point, not the cleaner percentage.** N6g Lane 2 eliminates bodies
+            # ⚠ **The count is the point, not the cleaner percentage.** A06g Lane 2 eliminates bodies
             # on "never observed frozen", and a body too small to classify reads exactly like a body
             # that never froze — so the rule needs to know how many pixels actually voted. After
             # eroding the bank a 1-acre pond has under ten; a 50-acre lake has around a hundred.

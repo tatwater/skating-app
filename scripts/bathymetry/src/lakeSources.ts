@@ -1,5 +1,5 @@
 /**
- * Reading every archived source into `ArchivedLake` (N6b).
+ * Reading every archived source into `ArchivedLake` (A06b).
  *
  * The I/O half of `lakes.ts`, split out for the same reason `cache.ts` is split from `manifest.ts`:
  * file and subprocess glue is not the part that can be wrong in a way that still looks right, and

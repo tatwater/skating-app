@@ -27,7 +27,7 @@ export function BountyList({
   subAreaId,
 }: {
   waterBodyId: Id<'waterBodies'>;
-  /** The bay view (N9): this bay's bounties plus the lake-wide ones, which a bay report answers. */
+  /** The bay view (A09): this bay's bounties plus the lake-wide ones, which a bay report answers. */
   subAreaId?: Id<'waterBodySubAreas'>;
 }) {
   const router = useRouter();

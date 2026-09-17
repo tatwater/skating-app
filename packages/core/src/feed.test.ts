@@ -91,7 +91,7 @@ describe('formatPlaceLabel', () => {
 describe('formatLocationLine', () => {
   const place = { town: 'Colchester', county: 'Chittenden County', state: 'VT' };
 
-  it('puts the sub-area ahead of the body and the town — the N2 headline case', () => {
+  it('puts the sub-area ahead of the body and the town — the A02 headline case', () => {
     expect(
       formatLocationLine({ subAreaName: 'Malletts Bay', bodyName: 'Lake Champlain', place }),
     ).toBe('Malletts Bay · Lake Champlain · Colchester, VT');
@@ -116,7 +116,7 @@ describe('formatLocationLine', () => {
     );
   });
 
-  it('lists every member bay of a two-bay skate, and the list outranks the single stamp (N9)', () => {
+  it('lists every member bay of a two-bay skate, and the list outranks the single stamp (A09)', () => {
     expect(
       formatLocationLine({
         subAreaName: 'Malletts Bay',
@@ -219,11 +219,11 @@ describe('buildFeedCardView', () => {
     expect(view.isFavorite).toBe(false); // defaults false when the server omits it
   });
 
-  it('carries the favorite flag through to the view (Phase 4)', () => {
+  it('carries the favorite flag through to the view (Phase 04)', () => {
     expect(buildFeedCardView({ ...CARD, isFavorite: true }, now).isFavorite).toBe(true);
   });
 
-  it('splits the location into card rows, with and without a sub-area (N2)', () => {
+  it('splits the location into card rows, with and without a sub-area (A02)', () => {
     const plain = buildFeedCardView(CARD, now);
     expect(plain.locationPrimary).toBe('Lake Champlain');
     expect(plain.locationSecondary).toBe('Burlington, VT');
@@ -258,7 +258,7 @@ describe('buildFeedCardView', () => {
   });
 });
 
-describe('the Hike-In chip on the feed card (N6d / D87)', () => {
+describe('the Hike-In chip on the feed card (A06d / D87)', () => {
   const base = {
     reportId: 'r1',
     waterBodyId: 'w1',

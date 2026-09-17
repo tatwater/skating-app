@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Is the backfill working, draining, finished, or stuck? (N6e PR 2)
+# Is the backfill working, draining, finished, or stuck? (A06e PR 2)
 #
 #   scripts/imagery/status.sh [season] [sample-seconds]
 #

@@ -2,8 +2,8 @@
 
 The **TanStack Start** web app — the secondary surface, for keyboard/big-screen planning
 and longer reports (D1/D27). Auth-gated routing, themed via shared design tokens, wired to
-Clerk + Convex + Sentry. The **Map** (`/`) is the MVP surface: Phase 2 makes it interactive —
-tap a lake → read its report feed → post your own (see [Map + reports](#map--reports-phase-2)).
+Clerk + Convex + Sentry. The **Map** (`/`) is the MVP surface: Phase 02a makes it interactive —
+tap a lake → read its report feed → post your own (see [Map + reports](#map--reports-phase-02a)).
 Newsfeed/profile remain placeholders deep-dived in their own later-phase PRs.
 
 ## Stack
@@ -71,7 +71,7 @@ Auth-route resolution (`resolveAuthRoute`) and DOB parsing (`parseDateOfBirth`) 
 with mobile via `@skating/core` (D7) — this app only adds the web-specific redirect mapping
 (`src/lib/authZone.ts`).
 
-## Map + reports (Phase 2)
+## Map + reports (Phase 02a)
 
 The Map page (`/`) is an **interactive** MapLibre GL map (D5/D6/D47/D48/D49). One `MapView` stays
 mounted under a pathless `_map` layout so pan/zoom survive opening a drawer; the map's viewport bbox
@@ -90,7 +90,7 @@ deep-linkable** — `/water/$id` (detail: area, report feed by skate time, "Add 
 its survivor and show a friendly "not available" panel for a removed/unlisted target. The drawers
 push highlight / fly-to / photo pins up to the map via `MapSelectionContext`.
 
-**Report create (§E).** "Add a report" opens a form (`Dialog`) — ice types / surface tags / quality /
+**Report create (§5).** "Add a report" opens a form (`Dialog`) — ice types / surface tags / quality /
 sky / precip on toggle groups, multi-reading thickness (value ⇄ range, measured/estimated), manual
 conditions, notes, skate time, and an optional **put-in pin** the skater drops on the map (arms a
 pin-drop mode; sets `reports.point`). Reports are **always public** (D13 — no visibility control);
@@ -105,7 +105,7 @@ form is ephemeral (no drafts — that's the mobile offline queue, D30).
 **Basemap.** `VITE_PMTILES_URL` picks the Protomaps `.pmtiles` vector source; blank falls back to a
 live `build.protomaps.com/<date>` dated build (fine for local dev, but must be set for prod — the old
 demo bucket is dead). PR#5 first self-hosted a **Vermont** extract (z0–14, ~280 MB) on Convex file
-storage; **Phase 2.5** widened it to the **5-state Northeast** (~948 MB) on **Cloudflare R2** (zero
+storage; **Phase 02b** widened it to the **5-state Northeast** (~948 MB) on **Cloudflare R2** (zero
 egress; overflows the Convex free tier) — a `VITE_PMTILES_URL` swap, no code change. Build/host/wire
 steps live in [`scripts/basemap`](../../scripts/basemap/README.md); the URL is deployment-specific
 (dev vs prod), so set it per environment (local `.env` + Vercel). Font/sprite assets stay on Protomaps' hosted CDN.
@@ -125,7 +125,7 @@ cp .env.example .env     # then fill in real keys (see below)
 | `CLERK_PUBLISHABLE_KEY` | Clerk client key (`pk_…`) — read server-side by the SDK | Clerk dashboard → API keys |
 | `CLERK_SECRET_KEY` | Clerk secret (`sk_…`) — **server-only** | Clerk dashboard → API keys |
 | `VITE_CONVEX_URL` | Convex deployment URL (public, client) | `pnpm convex-dev` / Convex dashboard |
-| `VITE_PMTILES_URL` | Basemap `.pmtiles` URL (public; blank ⇒ a live Protomaps dated build, dev only) | The self-hosted Northeast extract's Cloudflare R2 URL (Phase 2.5) — see [`scripts/basemap`](../../scripts/basemap/README.md) |
+| `VITE_PMTILES_URL` | Basemap `.pmtiles` URL (public; blank ⇒ a live Protomaps dated build, dev only) | The self-hosted Northeast extract's Cloudflare R2 URL (Phase 02b) — see [`scripts/basemap`](../../scripts/basemap/README.md) |
 | `VITE_BATHYMETRY_PMTILES_URL` | Contour `.pmtiles` URL (public; blank ⇒ the layer never mounts) | The bathymetry archive alongside the basemap — see [`scripts/bathymetry`](../../scripts/bathymetry/README.md) |
 | `VITE_SENTRY_DSN` | Sentry DSN — drives client **and** server (optional) | A **separate** `skating-web` Sentry project (same org as mobile) → project settings |
 | `SENTRY_ORG` / `SENTRY_PROJECT` | Source-map upload target (build-time; set on Vercel) | Sentry org slug + the `skating-web` project slug |
@@ -161,7 +161,7 @@ Vercel is the target (D27). On first deploy: create a project from this repo, se
 **Root Directory** to `apps/web`, add the env vars above as project env, and let Vercel
 detect TanStack Start. If the auto-detected build target needs pinning, set it on the
 `tanstackStart({ target: 'vercel' })` plugin option in `vite.config.ts` — confirm on the
-first deploy. (Prereq: a Vercel account, on the Phase 0 lead-time list.)
+first deploy. (Prereq: a Vercel account, on the Phase 00 lead-time list.)
 
 ## Test / typecheck
 
@@ -173,12 +173,12 @@ pnpm --filter @skating/web build         # production build (regenerates routeTr
 
 ## Deferred (later phases, intentionally not here)
 
-- Low-detail outlines + lazy-load full geometry on tap (a query-payload lever, Phase 2+).
-- Report **comments** (Phase 3); **bounties** on the map (D47, later); real **Newsfeed** (Phase 6).
+- Low-detail outlines + lazy-load full geometry on tap (a query-payload lever, Phase 02a+).
+- Report **comments** (Phase 03); **bounties** on the map (D47, later); real **Newsfeed** (Phase 06).
 - **Block filter** — reports are always public (D13, no follow graph), so reads gate on moderation
-  only for now; the viewer↔author **block** subtraction lands in Phase 3 through `@skating/core`'s
+  only for now; the viewer↔author **block** subtraction lands in Phase 03 through `@skating/core`'s
   `canViewReport` (already the read seam), so it flips on with no report re-write.
-- **Offline draft queue** + native map — the mobile follow-on (§F, D9/D30; F2 shipped on mobile).
+- **Offline draft queue** + native map — the mobile follow-on (§6, D9/D30; §6.2 shipped on mobile).
   The web form is ephemeral by design.
 - Signed-out viewing of public bodies/reports (deep links are auth-gated for the alpha).
 - PostHog analytics/session replay (D29, "later").

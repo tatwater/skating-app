@@ -1,5 +1,5 @@
 /**
- * The `classDissent` triage — which refusals our rules deliberately overrule (N7-2, 2026-08-08).
+ * The `classDissent` triage — which refusals our rules deliberately overrule (A07a-2, 2026-08-08).
  *
  * Every token below appeared in the measured run's split, with the count it appeared at. The point
  * of the table is that a moderator opening the queue sees contradictions nobody has ruled on, rather

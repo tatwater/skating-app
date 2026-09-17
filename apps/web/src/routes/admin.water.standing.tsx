@@ -8,7 +8,7 @@ import { Button } from '../components/ui/button';
 import { Card, CardContent } from '../components/ui/card';
 
 /**
- * Corpus standing — **what is off the active map, and why; and what just came back** (N7b).
+ * Corpus standing — **what is off the active map, and why; and what just came back** (A07b).
  *
  * The founder's trajectory is a corpus of a few hundred actually-skated lakes out of 25,000 known,
  * reached by machines (the seed, the July rollover, the campaign prunes) that shelve rather than

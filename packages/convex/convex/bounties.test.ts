@@ -108,7 +108,7 @@ async function seedBody(t: ReturnType<typeof harness>) {
 
 type Actor = Awaited<ReturnType<typeof seedUser>>;
 
-/** Make every queued notification due and flush it — the settle window (N8 / D169), fast-forwarded. */
+/** Make every queued notification due and flush it — the settle window (A08 / D169), fast-forwarded. */
 async function flushAllDue(t: ReturnType<typeof harness>) {
   await t.run(async (ctx) => {
     for (const row of await ctx.db.query('notificationQueue').collect()) {
@@ -217,7 +217,7 @@ describe('bounties.create', () => {
     // fresh report has landed. The transactional re-check inside the mutation must catch it rather than
     // trusting the action's stale snapshot and persisting an ineligible bounty (+ fanning out notices).
     await seedReport(reporter, waterBodyId, Date.now() - 1 * HOUR);
-    // The gate returns its rejection rather than throwing (Phase 7b) so the decision commits alongside
+    // The gate returns its rejection rather than throwing (Phase 07-2) so the decision commits alongside
     // the `bountyGateEvents` row recording it; `bounties.create` re-raises it to the caller.
     const outcome = await requester.as.mutation(internal.bounties.createChecked, {
       waterBodyId,
@@ -369,7 +369,7 @@ describe('bounties.create', () => {
 });
 
 /**
- * The gate log (Phase 7b). The reason this table exists is that a rejected attempt is invisible: you
+ * The gate log (Phase 07-2). The reason this table exists is that a rejected attempt is invisible: you
  * cannot tell whether FRESH_REPORT_HOURS or MAX_OPEN_BOUNTIES_PER_DAY is set right by looking only at
  * the bounties that got through. So the invariant under test is that **every** attempt lands a row —
  * including the two that end in a thrown error for the caller — with the (age, window) pair the
@@ -473,7 +473,7 @@ describe('bountyGateEvents', () => {
     expect(event).toMatchObject({ decision: 'allowed', weatherReopened: true });
   });
 
-  test('the freshness scan reads newest-first, so the gate weighs the freshest report (N1)', async () => {
+  test('the freshness scan reads newest-first, so the gate weighs the freshest report (A01)', async () => {
     // Greptile PR #27: the index runs *ascending* on `skateEndTime`, so the scan needed `.order('desc')`
     // — without it the gate weighed the oldest rows in the window and the fan-out notified whoever
     // reported longest ago. Observable here with no truncation at all: `decidingReport` falls back to
@@ -581,7 +581,7 @@ describe('bountyGateEvents', () => {
     expect(outcome.ok).toBe(true);
   });
 
-  test('a truncated scan blocks even when every suppressor it found was weather-reopened (N1)', async () => {
+  test('a truncated scan blocks even when every suppressor it found was weather-reopened (A01)', async () => {
     // Greptile PR #27 round 5: the first saturation rule was "truncated AND no suppressors", which
     // left the hole exactly where the logic gets interesting. A truncated scan whose suppressors were
     // all weather-reopened has no blocker either — and a freeze clearing the reports we *did* read
@@ -640,7 +640,7 @@ describe('bountyGateEvents', () => {
     expect(outcome).toMatchObject({ ok: false, decision: 'suppressed' });
   }, 30_000);
 
-  test('a saturated freshness scan blocks rather than guessing (N1)', async () => {
+  test('a saturated freshness scan blocks rather than guessing (A01)', async () => {
     // Greptile PR #27, round 2: newest-first is only a *heuristic* for "most likely to suppress".
     // A report's window stretches with author trust and thumbs (to 3× base) and shrinks to as little
     // as zero, so a trusted read from four days ago can outlast 200 newer throwaway ones — and the
@@ -689,7 +689,7 @@ describe('bountyGateEvents', () => {
     expect(inputs.status).toBe('suppressed');
   }, 30_000);
 
-  test('a body with EXACTLY the scan cap is a complete scan, not a saturated one (N1)', async () => {
+  test('a body with EXACTLY the scan cap is a complete scan, not a saturated one (A01)', async () => {
     // The boundary the saturation rule turns on. `take(cap)` returning `cap` rows is ambiguous —
     // exactly that many, or more behind them — and calling it a truncation would reject a bounty on
     // a body whose every report was read and none of which suppresses. The scan asks for `cap + 1`

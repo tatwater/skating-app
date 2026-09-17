@@ -33,7 +33,7 @@ describe('HAZARD_DECAY table', () => {
     }
   });
 
-  // This table IS the deliverable of the research pass (`phase-9-hazard-research.md` §1) — the invariant
+  // This table IS the deliverable of the research pass (`plans/research/hazard-decay-calibration-and-behavior.md` §1) — the invariant
   // tests above would all pass with different numbers (`thin_ice: 24→48` breaks nothing structural), so
   // they can't protect the actual calibration. This locks every row to the researched value; changing a
   // duration is then a deliberate edit to a named safety constant, reviewed against the evidence, not a

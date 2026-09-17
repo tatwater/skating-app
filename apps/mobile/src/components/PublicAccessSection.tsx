@@ -9,7 +9,7 @@ import { Section } from './detailUi';
 import { TextArea } from './ThemedInputs';
 
 /**
- * "No public access" — the report control and the ruling it leads to (N6f), the mobile half of web's
+ * "No public access" — the report control and the ruling it leads to (A06f), the mobile half of web's
  * `PublicAccessSection`.
  *
  * **The member's half only.** A moderator rules from the web queue (`/admin/flags`), where the

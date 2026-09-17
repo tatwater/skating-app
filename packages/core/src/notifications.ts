@@ -1,10 +1,10 @@
 /**
- * The notification vocabulary and the inbox's rendering model (N8 / D167).
+ * The notification vocabulary and the inbox's rendering model (A08 / D167).
  *
  * Two things live here, and both are here because **web and mobile must agree**:
  *
  * 1. **The type list and its preference keys.** D16 says every type is toggleable, and the D78-style
- *    rule N8 adds is that a type may not exist without a producer *and* a place it renders. The list
+ *    rule A08 adds is that a type may not exist without a producer *and* a place it renders. The list
  *    used to live only in the backend's `lib/enums.ts`, which meant the two settings pages each carried
  *    their own hand-picked subset of toggles — three of ten — and nobody could tell from either page
  *    which types the other one had. The list moves here, with a label per key, so a settings page
@@ -22,21 +22,21 @@ import { formatSkateTime } from './reportView';
 // ── Types and preferences ────────────────────────────────────────────────────────────────────────
 
 /**
- * Notification types (snake_case). Every one has a producer and renders in the inbox — see the N8
+ * Notification types (snake_case). Every one has a producer and renders in the inbox — see the A08
  * plan's Correction 2 for the four that didn't, and D168 for why that's now a rule rather than a
  * hope.
  */
 export const NOTIFICATION_TYPES = [
-  'activity_detected', // a recorded skate nobody was asked about (N8/B4) — our recorder only
-  'bounty_request', // a bounty opened on a lake you recently reported (Phase 6)
-  'hazard_confirmation', // your hazard's lifecycle moved: confirmed, disputed, healed (N8/B2)
-  'bounty_answered', // a report landed on your open bounty (N8; replaces `bounty_fulfilled`)
-  'report_rated', // someone found your report/hazard helpful, or corroborated your report (Phase 6)
-  'report_commented', // someone commented on your report or replied to your comment (D21; N8/B1)
-  'content_flag_resolved', // a moderator ruled on a flag you filed (N8/B3)
-  'favorite_report', // a report on a body you favorited (Phase 4, decision #4)
-  'nearby_report_digest', // daily 8pm digest of all reports within X₁ (Phase 4)
-  'great_report_nearby', // a `great` report within X₂ (Phase 4)
+  'activity_detected', // a recorded skate nobody was asked about (A08/B4) — our recorder only
+  'bounty_request', // a bounty opened on a lake you recently reported (Phase 06)
+  'hazard_confirmation', // your hazard's lifecycle moved: confirmed, disputed, healed (A08/B2)
+  'bounty_answered', // a report landed on your open bounty (A08; replaces `bounty_fulfilled`)
+  'report_rated', // someone found your report/hazard helpful, or corroborated your report (Phase 06)
+  'report_commented', // someone commented on your report or replied to your comment (D21; A08/B1)
+  'content_flag_resolved', // a moderator ruled on a flag you filed (A08/B3)
+  'favorite_report', // a report on a body you favorited (Phase 04, decision #4)
+  'nearby_report_digest', // daily 8pm digest of all reports within X₁ (Phase 04)
+  'great_report_nearby', // a `great` report within X₂ (Phase 04)
 ] as const;
 export type NotificationType = (typeof NOTIFICATION_TYPES)[number];
 
@@ -70,7 +70,7 @@ export const NOTIFICATION_PREF_KEY_FOR: Record<NotificationType, NotificationPre
 };
 
 /**
- * Per-key default for a fresh profile (D16). Everything defaults ON *except* the two opt-in Phase-4
+ * Per-key default for a fresh profile (D16). Everything defaults ON *except* the two opt-in Phase-04
  * drive-time buckets (decision #4): favorites notify by default, but "all reports nearby" and "great
  * reports nearby" are the surfaces a user must opt into.
  */
@@ -89,7 +89,7 @@ export const NOTIFICATION_PREF_DEFAULTS: Record<NotificationPrefKey, boolean> = 
 
 /**
  * The settings-page label for each toggle, in the order the page shows them. Grouped so the two
- * radius-bearing Phase-4 buckets sit together at the end where their "within" rows hang off them.
+ * radius-bearing Phase-04 buckets sit together at the end where their "within" rows hang off them.
  */
 export const NOTIFICATION_PREF_LABELS: Record<NotificationPrefKey, string> = {
   favoriteReport: "New reports on lakes I've favorited",
@@ -118,7 +118,7 @@ export const NOTIFICATION_PREF_ORDER: readonly NotificationPrefKey[] = [
   'greatReportNearby',
 ];
 
-// ── Channels (N8 PR 3 / D174) ────────────────────────────────────────────────────────────────────
+// ── Channels (A08 PR 3 / D174) ────────────────────────────────────────────────────────────────────
 
 /**
  * The two transports over the inbox. Not a per-type × per-channel matrix (founder call): the
@@ -176,7 +176,7 @@ export interface NotificationBodyRef {
 
 /**
  * A reference to a piece of content — a report, hazard, bounty, or comment — the notification is
- * about. `available: false` is the degraded case the founder settled at scoping (N8 #5): the target
+ * about. `available: false` is the degraded case the founder settled at scoping (A08 #5): the target
  * was hidden, removed, or never resolved, so the row is **shown, described, and not tappable**. A row
  * that silently vanished would read as a bug; a tap that lands on "not found" would read as one too.
  */
@@ -189,7 +189,7 @@ export interface NotificationContentRef {
  * The people behind an actor-keyed notification, already reduced to what a sentence needs: the
  * first couple of display names and the total. Names come through `publicAuthor`, so a departed
  * skater reads as their tombstone name rather than as a hole. Blocked actors are filtered *before*
- * this is built (block == mute, Phase 3), and a notification with no unblocked actors left is
+ * this is built (block == mute, Phase 03), and a notification with no unblocked actors left is
  * dropped from the list rather than rendered as "0 people".
  */
 export interface NotificationActors {
@@ -229,7 +229,7 @@ export type NotificationView = { id: string; createdAt: number; readAt?: number 
       target: NotificationContentRef;
       body: NotificationBodyRef | null;
       /**
-       * The lifecycle transition this reports (N8/B2) — `hazardLifecyclePhase` in `hazardLifecycle.ts`.
+       * The lifecycle transition this reports (A08/B2) — `hazardLifecyclePhase` in `hazardLifecycle.ts`.
        * The re-check at flush is an equality on this value: if the pin has moved on again, the older
        * transition is no longer news.
        */
@@ -256,7 +256,7 @@ export type NotificationView = { id: string; createdAt: number; readAt?: number 
       body: NotificationBodyRef | null;
       count: number;
       /**
-       * The bay the report was stamped with (N9), when the bucket holds exactly one report — so a
+       * The bay the report was stamped with (A09), when the bucket holds exactly one report — so a
        * favorite of Malletts Bay reads *"New report in Malletts Bay (Lake Champlain)"* rather than
        * naming the whole lake. Absent on a bucket of several, which may span bays.
        */
@@ -277,7 +277,7 @@ export type NotificationView = { id: string; createdAt: number; readAt?: number 
       /**
        * A stored row whose payload the resolver didn't recognise — a shape from before the payloads
        * were typed, or a type retired after the row was written. Rendered as a plain line rather than
-       * hidden, for the same reason a removed target is (N8 #5). The season purge retires these.
+       * hidden, for the same reason a removed target is (A08 #5). The season purge retires these.
        */
       type: 'unknown';
     }
@@ -414,7 +414,7 @@ export function describeNotification(
       return { title, target: contentTarget('hazard', view.target) };
     }
     case 'content_flag_resolved':
-      // Deliberately verdict-only (N8/B3): not what was done, not to whom, not by which moderator.
+      // Deliberately verdict-only (A08/B3): not what was done, not to whom, not by which moderator.
       return view.resolution === 'actioned'
         ? { title: 'A moderator reviewed something you flagged and took action', target: null }
         : { title: 'A moderator reviewed something you flagged and left it up', target: null };
@@ -447,7 +447,7 @@ export function describeNotification(
     case 'great_report_nearby': {
       const n = view.count;
       const lake = view.body ? view.body.name : 'a lake';
-      // A single report in a named bay says the bay, with the lake in parentheses (N9) — the label
+      // A single report in a named bay says the bay, with the lake in parentheses (A09) — the label
       // carries specificity, and a bay fan asked about the bay.
       const place =
         n === 1 && view.subAreaName !== undefined
@@ -504,7 +504,7 @@ export function describeNotification(
   }
 }
 
-// ── Timezone sync (N8/C) ─────────────────────────────────────────────────────────────────────────
+// ── Timezone sync (A08/C) ─────────────────────────────────────────────────────────────────────────
 
 /**
  * The device's IANA zone, or `null` where the runtime can't say (an old WebView, a test). Both

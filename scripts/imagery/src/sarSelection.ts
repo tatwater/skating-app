@@ -1,5 +1,5 @@
 /**
- * Deciding which Sentinel-1 granules are worth booting a Machine for (N6e PR 2, §C1).
+ * Deciding which Sentinel-1 granules are worth booting a Machine for (A06e PR 2, §3.1).
  *
  * The radar sibling of `granuleSelection`. Separate file rather than a second branch in that one,
  * because almost nothing is shared: S1 ids carry no MGRS tile, there is no cloud figure to gate on,

@@ -67,7 +67,7 @@ MSG
 }
 
 #
-# Write one `importRuns` row for a push, via the run-log CLI (N6c F2).
+# Write one `importRuns` row for a push, via the run-log CLI (A06c §6.2).
 #
 # Everything here is best-effort and swallowed: a mirror push that succeeded must not report failure
 # because its receipt could not be filed. `rclone size` is asked *after* the push, so the counts
@@ -128,7 +128,7 @@ mirror_main() {
         echo "→ pushing the $ARCHIVE_LABEL archive to $REMOTE"
         rclone copy "${RCLONE_FLAGS[@]}" "$ARCHIVE_DIR" "$REMOTE" --progress || rc=$?
       fi
-      # File the receipt (N6c F2). The push is the step that makes an archive durable, and "when did
+      # File the receipt (A06c §6.2). The push is the step that makes an archive durable, and "when did
       # we last mirror this, and did it work" had no answer outside whoever ran it. `|| rc=$?` above
       # rather than letting `set -e` kill us, so a FAILED push is recorded as failed rather than
       # vanishing — the outcome most worth knowing is the one that used to leave no trace.

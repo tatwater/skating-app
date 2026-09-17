@@ -15,13 +15,13 @@ edits immediately undone here — where no fallback is needed at all.
 **Why it should not linger.** Three fields currently describe two points, and one pair is a rename:
 `representativePoint` *is* `centroid` (byte-identical — 126 of 126 sub-areas match exactly), while
 `interiorPoint` is the genuinely different, strictly-interior one. That is a live trap rather than
-cosmetic debt: **N6c's Workstream B was written against `centroid` and would have opened Windy 30 km
+cosmetic debt: **A06c's Workstream 2 was written against `centroid` and would have opened Windy 30 km
 off Lake Champlain**, because a shoreline coordinate is a perfectly valid coordinate and nothing
 downstream can tell. Every extra week the three names coexist is another chance to reach for the wrong
-one — and the fallback chains N6c-2 wrote (`interiorPoint ?? representativePoint ?? centroid`) exist
+one — and the fallback chains A06c-2 wrote (`interiorPoint ?? representativePoint ?? centroid`) exist
 only to be deleted by this.
 
 ⚠️ **Never make it a true centroid.** The name was the bug, not the maths — the area centroid of a
-crescent lake is on land, and drive-time bands plus the pin-less report's town stamp deliberately want
-a shoreline-ish point. See [`phase-N6c`](../phase-N6c-expanded-lake-profiles.md) *§The three point
+crescent water body is on land, and drive-time bands plus the pin-less report's town stamp deliberately want
+a shoreline-ish point. See [`phase-A06c`](../phases/A06c-expanded-body-profiles.md) *§The three point
 fields*.

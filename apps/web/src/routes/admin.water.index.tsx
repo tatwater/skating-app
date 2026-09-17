@@ -11,12 +11,12 @@ import { Card, CardContent } from '../components/ui/card';
 import { Input } from '../components/ui/input';
 
 /**
- * Water-body review (D37) + dedup merge (D36) + the **curation list** (N2), and a search that routes
+ * Water-body review (D37) + dedup merge (D36) + the **curation list** (A02), and a search that routes
  * into the per-lake editor.
  *
  * The two queues are unchanged. What's new is the third section, which exists because nothing in the
  * app previously answered "which bodies have I curated?": `curatedBoost` was editable per body with
- * no index and no list, so the five Phase-2.5 seed mis-matches — four Champlain bays whose boost
+ * no index and no list, so the five Phase-02b seed mis-matches — four Champlain bays whose boost
  * landed on same-named lakes elsewhere — were invisible until someone happened to remember them.
  */
 export const Route = createFileRoute('/admin/water/')({ component: AdminWater });

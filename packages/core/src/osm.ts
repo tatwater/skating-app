@@ -4,7 +4,7 @@
  * Pure and framework-free so it's property-testable in `@skating/core` and reusable from the ETL
  * transform (and any future server-side OSM ingestion).
  *
- * **The OSM classifier that used to live here is gone** (N7, D109 amendment). `waterBodyTypeFromOsmTags`
+ * **The OSM classifier that used to live here is gone** (A07a, D109 amendment). `waterBodyTypeFromOsmTags`
  * mapped tags into the retired eight-value vocabulary, and `waterClass.ts` already did the same job
  * into the stored one — across all three catalogues rather than just OSM, with a bilingual
  * name-keyword table and a veto path this never had. Two classifiers for one feed is how a body ends
@@ -45,7 +45,7 @@ const SQ_M_PER_ACRE = 4046.8564224;
  * lakes. Checked against the Google-Group gazetteer (`training_data/google_group`, the only demand
  * signal we have): a 50-acre floor would have deleted **Keiser Pond** (36 ac, on our own VT curation
  * seed), Boston Lot Lake, Drew Lake, Ewell Pond and Oliverian Pond, all of them discussed skating
- * destinations, and 41% of the lakes a *state agency* thought worth a bathymetric survey (N6b).
+ * destinations, and 41% of the lakes a *state agency* thought worth a bathymetric survey (A06b).
  * Nothing anyone has been recorded skating is under five acres.
  *
  * **Area is the wrong axis and five acres is low enough that it doesn't matter yet.** The test being
@@ -85,7 +85,7 @@ export const MIN_SURFACE_AREA_SQM = MIN_SURFACE_AREA_ACRES * SQ_M_PER_ACRE;
  * Google-Group gazetteer that match the corpus at all, this drops every match of exactly one —
  * "Button Bay", whose only match is an unrelated 0.62-acre bay in *Maine*. The real Button Bay is on
  * Lake Champlain and is not a body in the corpus under any rule (OSM models it as part of the lake;
- * it belongs to the N2 sub-area layer, like Malletts Bay and Dillenbeck Bay). Removing it fixes a
+ * it belongs to the A02 sub-area layer, like Malletts Bay and Dillenbeck Bay). Removing it fixes a
  * search that currently returns the wrong lake.
  */
 export const HARD_MIN_SURFACE_AREA_ACRES = 1;
@@ -93,7 +93,7 @@ export const HARD_MIN_SURFACE_AREA_ACRES = 1;
 /** `HARD_MIN_SURFACE_AREA_ACRES` in square metres. */
 export const HARD_MIN_SURFACE_AREA_SQM = HARD_MIN_SURFACE_AREA_ACRES * SQ_M_PER_ACRE;
 
-// ── The corpus-admission CEILING (N7 audit, founder call 2026-08-06) ─────────────────────────────
+// ── The corpus-admission CEILING (A07a audit, founder call 2026-08-06) ─────────────────────────────
 
 /**
  * Above this, a body needs an explicit allow-list entry — **the veto that needs no match**.
@@ -176,7 +176,7 @@ export function exceedsAreaCeiling(candidate: { name: string; surfaceAreaSqM: nu
  * bodies: three in Maine, two in New Hampshire, all unnamed, 3.6–4.6 acres. They are knowingly
  * dropped. See D91.
  *
- * **Canonical bodies only.** A body a skater creates from a recorded track (Phase 8,
+ * **Canonical bodies only.** A body a skater creates from a recorded track (Phase 08,
  * `waterBodies.create`) never passes through the transform, and the prune skips `source: 'user'`
  * for the same reason: someone skated it, which outranks any threshold.
  */
@@ -188,7 +188,7 @@ export function meetsAreaFloor(candidate: { name: string; surfaceAreaSqM: number
 
 /**
  * Does this body belong in the corpus at all? — **the question four passes were each answering
- * separately, and one of them differently** (N7).
+ * separately, and one of them differently** (A07a).
  *
  * `meetsAreaFloor` answers *"is it big enough"*. That is not the same question, and treating it as
  * though it were is a live inconsistency: `pruneBelowAreaFloor` keeps a below-floor body that carries
@@ -197,7 +197,7 @@ export function meetsAreaFloor(candidate: { name: string; surfaceAreaSqM: number
  * rose, and nothing would ever say so.
  *
  * Measured 2026-08-03: **zero such bodies exist today**, because the D91 prune was thorough. The
- * inconsistency is latent — and N7b's promotion path is precisely what creates the class for the
+ * inconsistency is latent — and A07b's promotion path is precisely what creates the class for the
  * first time, which is why this lands before that feature rather than after it.
  *
  * **`includedByRequest` is a statement about membership, not about prominence.** It is deliberately
@@ -219,7 +219,7 @@ export function belongsInCorpus(candidate: {
   includedByRequest?: boolean | undefined;
 }): boolean {
   // A request outranks every rule below it. Someone asking for a specific bog beats any classifier
-  // (N7b) — this is the escape hatch that makes the rest of these rules safe to be strict.
+  // (A07b) — this is the escape hatch that makes the rest of these rules safe to be strict.
   if (candidate.includedByRequest === true) return true;
 
   // 1. Nothing under an acre, on any automatic evidence (D91).
@@ -240,7 +240,7 @@ export function belongsInCorpus(candidate: {
 }
 
 /**
- * Is this the wetland class — **in either vocabulary**? (N7, D109 migration.)
+ * Is this the wetland class — **in either vocabulary**? (A07a, D109 migration.)
  *
  * The one branch in `belongsInCorpus` that reads the class at all, so it is the one place the
  * old→new enum rename could go wrong, and getting it wrong is invisible: `type === 'marsh'` against a
@@ -284,9 +284,9 @@ export function isWetlandClass(type: LegacyWaterBodyType | WaterBodyClass | unde
  *
  * **Area is knowingly the weaker proxy.** A 60-acre round bog gets in where a 12-acre channel does
  * not, and that is the wrong answer on the merits. It is accepted because the rule stays cheap and
- * total, and because **N7b is the real backstop**: `includedByRequest` overrides every rule here, so
+ * total, and because **A07b is the real backstop**: `includedByRequest` overrides every rule here, so
  * anything this cuts that someone actually skates comes back one body at a time, with a human
- * looking. The founder's framing: *"rely on N7b to repopulate anything we rip out now."*
+ * looking. The founder's framing: *"rely on A07b to repopulate anything we rip out now."*
  */
 export const UNNAMED_WETLAND_MIN_ACRES = 50;
 

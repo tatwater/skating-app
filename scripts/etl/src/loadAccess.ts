@@ -1,6 +1,6 @@
 /**
  * The access loader (glue) — chunks the transform's two NDJSON streams into the internal
- * `accessPoints` mutations, which do the geometric join (N6d B3).
+ * `accessPoints` mutations, which do the geometric join (A06d §2.3).
  *
  *   pnpm --filter @skating/etl load-access parking  .scratch/access/parking.ndjson [--prod]
  *   pnpm --filter @skating/etl load-access put-ins  .scratch/access/put-ins.ndjson [--prod]
@@ -13,15 +13,15 @@
  *
  * ## Batch size, and the lesson it inherits
  *
- * N6a's first real run blew Convex's **16 MB transaction read cap** at batch 8 of 1,611 with
- * `MAX_BATCH_COUNT = 25`, because what the mutation reads is the *corpus*, not the input — the N1
+ * A06a's first real run blew Convex's **16 MB transaction read cap** at batch 8 of 1,611 with
+ * `MAX_BATCH_COUNT = 25`, because what the mutation reads is the *corpus*, not the input — the A01
  * cell index files large bodies at coarse rungs, so one lookup near Champlain drags a ~300 KB polygon
  * in. This join has exactly the same shape, so it starts where that one ended up: **8**, tunable with
  * `--batch=N`.
  *
  * ## Failures are isolated, not fatal
  *
- * Also inherited from N6a: one dense neighbourhood must not kill a run with 1,600 loadable batches
+ * Also inherited from A06a: one dense neighbourhood must not kill a run with 1,600 loadable batches
  * behind it. Isolated failures are recorded and skipped, five consecutive aborts, and skipped batches
  * are itemized **by OSM key** — a batch index is meaningless once the scratch file is gone, and the
  * named features are exactly what a `--batch=1` retry needs.
@@ -47,7 +47,7 @@ const STAGES: Record<
     kind: 'access_parking',
     fn: 'accessPoints:matchAndImportParking',
     arg: 'lots',
-    label: 'OSM parking areas (N6d B3)',
+    label: 'OSM parking areas (A06d §2.3)',
     detail:
       'accessPoints:matchAndImportParking — attaches each lot to every body within PARKING_INFER_RADIUS_M (inference only; a human may associate at any distance, D72 amendment)',
   },
@@ -55,7 +55,7 @@ const STAGES: Record<
     kind: 'access_put_ins',
     fn: 'accessPoints:matchAndImportPutIns',
     arg: 'putIns',
-    label: 'OSM put-in candidates (N6d B3)',
+    label: 'OSM put-in candidates (A06d §2.3)',
     detail:
       'accessPoints:matchAndImportPutIns — attaches each launch to the nearest body within PUTIN_SHORE_RADIUS_M and links its lot',
   },
@@ -155,9 +155,9 @@ function main(): void {
   logger.count('read', rows.length);
   if (skippedKeys.length) logger.count('skippedRows', skippedKeys.length);
 
-  // `covered / inScope`, and name what the pass walked past — the N7-3 rule (D137). The put-in
+  // `covered / inScope`, and name what the pass walked past — the A07a-3 rule (D137). The put-in
   // stage's denominator honestly excludes nothing: every candidate was eligible, and the ones with no
-  // body near them are a scope boundary (coastal slipways, river landings, ponds below the N7 floor)
+  // body near them are a scope boundary (coastal slipways, river landings, ponds below the A07a floor)
   // rather than a failure, so they are named as an omission instead of hidden in the ratio.
   const landed = (totals.created ?? 0) + (totals.updated ?? 0);
   logger.coverage({

@@ -325,7 +325,7 @@ describe('describeLakeDepth — the operator source note (D68 amendment)', () =>
 });
 
 /**
- * Licence obligations (N6a, closed 2026-08-02).
+ * Licence obligations (A06a, closed 2026-08-02).
  *
  * Two of the three bulk depth sources are CC BY, which means displaying their numbers without a
  * credit is a breach — and a silent one: nothing misbehaves, the depth just renders. So the gap is

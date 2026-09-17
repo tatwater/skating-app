@@ -20,23 +20,23 @@ missing" is now the question that gates several deferred items, and the list bel
 | Convex (dev) | ✅ in use | **Prod deployment never initialized** — the prod cutover's first blocker |
 | Clerk (dev) | ✅ in use | Prod instance env vars are what unblock `convex deploy` to prod |
 | Vercel | ✅ in use | `SENTRY_AUTH_TOKEN` set (confirmed 2026-09-16) ⇒ build-time source-map upload works |
-| Expo / EAS | ✅ in use | Dev builds; a **new dev-client build** is needed for the Phase 8 recorder |
+| Expo / EAS | ✅ in use | Dev builds; a **new dev-client build** is needed for the Phase 08 recorder |
 | Sentry | ✅ in use | Both surfaces |
-| OpenRouteService (hosted) | ✅ in use | 60-min isochrone ceiling ⇒ the 90-min band is a radius fallback. **Also N6d's `foot-hiking` approach routing (D87)** — same key, and `elevation: true` returns ascent. ⚠ Dashboard moved to <https://account.heigit.org>; **directions ≈2,000/day & 40/min, quota-exceeded is a `403`**, and quotas are **per-endpoint** (§6) |
+| OpenRouteService (hosted) | ✅ in use | 60-min isochrone ceiling ⇒ the 90-min band is a radius fallback. **Also A06d's `foot-hiking` approach routing (D87)** — same key, and `elevation: true` returns ascent. ⚠ Dashboard moved to <https://account.heigit.org>; **directions ≈2,000/day & 40/min, quota-exceeded is a `403`**, and quotas are **per-endpoint** (§6) |
 | Cloudflare R2 | ✅ in use | 948 MB 5-state basemap |
-| Open-Meteo | ✅ no account | Phase 10 forecast/history; also the **elevation** endpoint (N6c A1) |
-| NWS `api.weather.gov` | ⬜ not set up | 🆓 **no account, no key.** N6c B5 alerts. Needs only a `User-Agent` header (D74) |
-| Copernicus Data Space | ⬜ **needed for N6e** | 🆓 registration. **Now on the critical path** — N6e's freeze-up timeline reads Sentinel-2 + Sentinel-1 (D148). ⚠ We read the **open COGs via STAC**, not the metered Process API, so the 10,000-req/month quota is not the ceiling; AWS Earth Search is the anonymous alternative if registration bites |
-| USGS / The National Map (NAIP) | ⬜ nothing to set up | 🆓 **no account, no key, no quota** — public-domain aerial. Ships N6e's aerial reveal. ⚠ Use **`USGSNAIPPlus`** (0.3 m), **not** `USGSImageryOnly` (caps at z16) — §14b |
-| Fly.io | ⬜ **needed for N6e** | 💰 First infrastructure we operate. Granule pipeline ≈ **$4/mo** (per-job Machines, seasonal); self-hosted ORS later ≈ **$46/mo** always-warm at 8 GB. Chosen over Railway (~$81/mo for the same ORS) — D148 |
+| Open-Meteo | ✅ no account | Phase 10 forecast/history; also the **elevation** endpoint (A06c §1.1) |
+| NWS `api.weather.gov` | ⬜ not set up | 🆓 **no account, no key.** A06c §2.5 alerts. Needs only a `User-Agent` header (D74) |
+| Copernicus Data Space | ⬜ **needed for A06e** | 🆓 registration. **Now on the critical path** — A06e's freeze-up timeline reads Sentinel-2 + Sentinel-1 (D148). ⚠ We read the **open COGs via STAC**, not the metered Process API, so the 10,000-req/month quota is not the ceiling; AWS Earth Search is the anonymous alternative if registration bites |
+| USGS / The National Map (NAIP) | ⬜ nothing to set up | 🆓 **no account, no key, no quota** — public-domain aerial. Ships A06e's aerial reveal. ⚠ Use **`USGSNAIPPlus`** (0.3 m), **not** `USGSImageryOnly` (caps at z16) — §14b |
+| Fly.io | ⬜ **needed for A06e** | 💰 First infrastructure we operate. Granule pipeline ≈ **$4/mo** (per-job Machines, seasonal); self-hosted ORS later ≈ **$46/mo** always-warm at 8 GB. Chosen over Railway (~$81/mo for the same ORS) — D148 |
 | Windy API | ⬜ deliberately not set up | €990/yr, and there is **no MapLibre overlay path** — we link out instead (D75, §15) |
 | Planet | ⬜ deliberately not set up | Quote-based. Their free catalogue duplicates Copernicus; only PlanetScope is new (§16) |
-| Apple Developer | ✅ enrolled | Per the Phase 8 doc. TestFlight distribution to the alpha crew still pending |
+| Apple Developer | ✅ enrolled | Per the Phase 08 doc. TestFlight distribution to the alpha crew still pending |
 | Strava API app | ✅ registered | **Callback domain not yet set** to the Convex `.site` host ⇒ no real OAuth round-trip yet |
-| Resend | ✅ dev, 2026-09-16 | Key + verified sending domain on dev Convex; operator alerts and N8 email send. Prod needs its own key at the cutover (D38) |
+| Resend | ✅ dev, 2026-09-16 | Key + verified sending domain on dev Convex; operator alerts and A08 email send. Prod needs its own key at the cutover (D38) |
 | Google Play | ❔ unknown | $25 one-time; needed for Android distribution **and** any Health Connect review |
 | PostHog | ⬜ not set up | Deliberate (D29) — add when there's usage to measure; replay is L12-gated |
-| Garmin / COROS / Polar | ❔ unknown whether applied | **Weeks of review.** These gate the deferred watch adapters — the roadmap has said "apply now" since Phase 0 |
+| Garmin / COROS / Polar | ❔ unknown whether applied | **Weeks of review.** These gate the deferred watch adapters — the roadmap has said "apply now" since Phase 00 |
 | Expo Push / APNs / FCM | ✅ dev, 2026-09-14 | FCM V1 key + APNs key on EAS, `google-services.json` in `development`/`preview`, `EXPO_ACCESS_TOKEN` on dev Convex; first Android push delivered (Expo receipt `ok`). Prod = the `production` EAS environment + the prod Convex env var; release mechanics in `docs/deployment-and-release.md` |
 
 ---
@@ -116,7 +116,7 @@ See `04-integrations.md` for per-provider integration detail.
 > per-endpoint quotas (the former is a JS app; the latter documents *request size* limits, which are a
 > different thing entirely and easy to mistake for rate limits).
 >
-> **What N6d's routing pass measured**, since the documentation would not tell us:
+> **What A06d's routing pass measured**, since the documentation would not tell us:
 >
 > | | observed |
 > |---|---|
@@ -126,7 +126,7 @@ See `04-integrations.md` for per-provider integration detail.
 > | quota exhausted signal | **`403 {"error":"Quota exceeded"}`**, *not* 429, and with **no rate-limit headers** |
 > | `isochrones` while `directions` was exhausted | **HTTP 200** — the pools are **per-endpoint** |
 >
-> **The last row is the one that matters for the app.** D87 has N6d's approach routing sharing Phase 4's
+> **The last row is the one that matters for the app.** D87 has A06d's approach routing sharing Phase 04's
 > key, and the obvious worry is an ETL starving the drive-time bands a user waits on. It cannot: the
 > quotas are separate, verified while directions was refusing.
 >
@@ -137,11 +137,11 @@ See `04-integrations.md` for per-provider integration detail.
 > **The operational rule this bought** (`scripts/etl/src/accessCli.ts`): three consecutive 403s trip a
 > circuit breaker and the pass stops calling. Before that existed, one run sent **2,978 requests to an
 > endpoint that had already said no**.
-- **Second use, same key (D87, N6d):** the **`foot-hiking`** profile for parking → put-in approach
+- **Second use, same key (D87, A06d):** the **`foot-hiking`** profile for parking → put-in approach
   distance, with `elevation: true` for **ascent in metres**. Called at **ETL time, once per put-in** and
   cached on the row — never from a request path — so it adds no per-user quota pressure. This is why
-  N6d's trail-routing question needed no new vendor: *"do you know of a service with an API"* was already
-  answered by an account we've had since Phase 4.
+  A06d's trail-routing question needed no new vendor: *"do you know of a service with an API"* was already
+  answered by an account we've had since Phase 04.
 
 ### 7. Map tiles — pick one (renderer = MapLibre, no account)
 - **Protomaps** — 🆓, no account: build a regional `.pmtiles` and host on a CDN/S3.
@@ -155,13 +155,13 @@ See `04-integrations.md` for per-provider integration detail.
 ### 9. Weather — 🆓 no account
 - **Open-Meteo** <https://open-meteo.com> — no key. Nothing to set up. **The single source for
   anything that feeds a calculation** (D74): forecast + `past_days` history for the D56 decay math.
-  **Also N6c B5b's short forward forecast**, at no additional cost: `weather.ts:112` already sends
+  **Also A06c §2.5b's short forward forecast**, at no additional cost: `weather.ts:112` already sends
   `forecast_days: '1'` and the window filter discards the forward hours, so a drawer-side "will it be
   snowing when I get there" strip is a parameter change and a slice, not a new call.
 - **Also Open-Meteo:** the **elevation endpoint** (`/v1/elevation`, Copernicus GLO-90 DEM, batched
-  coordinates) — N6c's lake-elevation pass. Same vendor, same no-key posture, ~1,200 requests to
+  coordinates) — A06c's body-elevation pass. Same vendor, same no-key posture, ~1,200 requests to
   cover all 116,070 centroids.
-- **NWS `api.weather.gov`** — 🆓, **no account and no API key**, US-only. Added for N6c B5 (official
+- **NWS `api.weather.gov`** — 🆓, **no account and no API key**, US-only. Added for A06c §2.5 (official
   winter-storm / ice-storm / wind-chill **alerts**, `/alerts/active?area={state}`).
   - **Setup is one header:** a `User-Agent` identifying the app (contact info encouraged). Their docs
     note a key **may be required in future** — leave a comment at the call site so that isn't a surprise.
@@ -181,7 +181,7 @@ See `04-integrations.md` for per-provider integration detail.
 ### 11. Push (mobile) — 🆓 — ✅ done for dev 2026-09-14
 - **Expo Push** handles APNs/FCM. For iOS you still need #1 (Apple). Create a
   **Firebase** project for **FCM** (Android) — free.
-- **Built (N8 PR 3).** The code is credential-blind: `pushRegistration.ts` mints an Expo token on the
+- **Built (A08 PR 3).** The code is credential-blind: `pushRegistration.ts` mints an Expo token on the
   device and `notificationDelivery.ts` posts to `exp.host`. What the founder does, once (the steps
   below), plus what the first run through them actually hit — recorded so prod cutover doesn't
   re-derive it:
@@ -207,7 +207,7 @@ See `04-integrations.md` for per-provider integration detail.
   3. Optional: an **Expo access token** (expo.dev → Access tokens) in Convex env `EXPO_ACCESS_TOKEN`
      turns on Expo's "enhanced push security"; the sender adds it as a bearer when present.
 
-### 11b. Clerk webhook — 🆓 — ✅ done for dev 2026-09-15; per Clerk instance, so prod needs its own (N8 PR 4)
+### 11b. Clerk webhook — 🆓 — ✅ done for dev 2026-09-15; per Clerk instance, so prod needs its own (A08 PR 4)
 - **What it's for.** Clerk posts `user.updated` to the Convex HTTP router so the `profiles.email` /
   `profileImageUrl` mirrors follow a change *the moment it happens* — the launch-time
   `syncFromClerk` only catches up on the next app open, and the person the email channel serves
@@ -244,9 +244,9 @@ See `04-integrations.md` for per-provider integration detail.
 
 ---
 
-## External data providers — the numbers behind the calls (added 2026-07-30, N6c)
+## External data providers — the numbers behind the calls (added 2026-07-30, A06c)
 
-Founder ask: record cost, benefit and setup for the providers we evaluated during N6c scoping, so the
+Founder ask: record cost, benefit and setup for the providers we evaluated during A06c scoping, so the
 "why not" is checkable and the "when" has a trigger. All three decisions are D75 unless noted.
 
 ### 14. Satellite imagery — **Copernicus Data Space** 🆓 (D75)
@@ -257,22 +257,22 @@ Founder ask: record cost, benefit and setup for the providers we evaluated durin
   under the **free, full and open Copernicus licence**: reproduce, distribute and adapt, with
   attribution. The roadmap parked the satellite-imagery layer for want of *"an imagery source whose
   terms permit the use"* — that question is now answered, and what remains is cost, not permission.
-- **Tier 1 — the deep link (N6c, ships now): 🆓, no account, no quota.**
+- **Tier 1 — the deep link (A06c, ships now): 🆓, no account, no quota.**
   <https://browser.dataspace.copernicus.eu/> with lat/lng/zoom + a ~14-day Sentinel-2 L2A window.
   Nothing to set up. ⚠️ Verify the query-param shape against the live browser at build time — it's the
   one URL format we don't control.
 - **Tier 2 — imagery in the app (deferred): 🆓 registration**, Sentinel Hub–compatible OGC/Process APIs.
   - **Free-tier quota: 10,000 requests + 10,000 processing units per month; 300/min.**
-  - A full-screen tile view is ~10–20 requests ⇒ only **~500–1,000 lake views/month** raw. Not enough
+  - A full-screen tile view is ~10–20 requests ⇒ only **~500–1,000 water body views/month** raw. Not enough
     for general use.
   - **Server-side tile caching is what makes it viable**, and the open licence permits it: a popular
     body is viewed many times but only needs fetching once per **~5-day** satellite revisit. That turns
-    the quota from per-view into per-lake-per-week, which fits comfortably.
+    the quota from per-view into per-body-per-week, which fits comfortably.
   - **Benefit:** 10 m resolution is enough that open water vs. black ice vs. snow-covered ice is
     visually obvious. Cloud cover is the real limiter, not resolution.
   - **Do this when** we know which handful of bodies get real traffic — caching only wins if reads
-    concentrate. N6c's proving run (B3a) is what starts producing that evidence.
-  - **→ Now scoped as [N6e](./phase-N6e-satellite-imagery.md) Workstream C (D84, 2026-07-31)**, where it
+    concentrate. A06c's proving run (§2.3a) is what starts producing that evidence.
+  - **→ Now scoped as [A06e](./phases/A06e-satellite-imagery.md) Workstream 3 (D84, 2026-07-31)**, where it
     is **Tier 2** of a two-tier split. Everything above still holds — but it is no longer what gates the
     satellite toggle, because Tier 1 doesn't need an account at all:
 
@@ -282,7 +282,7 @@ Founder ask: record cost, benefit and setup for the providers we evaluated durin
 
 > ⚠ **Corrected 2026-08-21, against the live services.** This entry previously named the
 > `USGSImageryOnly` tile service at "~0.6 m". Both halves were wrong, and the error was load-bearing —
-> it is what let N6e's original scoping promise a skater the gap in the trees and the path to the shore.
+> it is what let A06e's original scoping promise a skater the gap in the trees and the path to the shore.
 
 - **Use `imagery.nationalmap.gov`'s `USGSNAIPPlus` ImageServer** — `pixelSizeX: 0.3`, CORS `*`, no key.
   It is an **ImageServer, not a tile cache**, so there is no `/tile/` endpoint; MapLibre's
@@ -297,12 +297,12 @@ Founder ask: record cost, benefit and setup for the providers we evaluated durin
   **2–3 year per-state cycle, deliberately in mid-summer** for the USDA's crop program. **No NAIP frame
   will ever show ice.** Burlington's current scene is `m_4407339_ne_18_030_20230621` — the summer
   solstice, 2023.
-- **The acquisition date is queryable per lake**, which is what makes an honest date stamp possible:
+- **The acquisition date is queryable per water body**, which is what makes an honest date stamp possible:
   `USGSNAIPPlus/ImageServer/identify?…&returnCatalogItems=true` returns the source scene with
   `acquisition_date` in epoch ms. One cached call per body.
 - **Public domain.** USDA/USGS federal imagery: **no account, no key, no quota, no licence review.**
 - **Cost: €0**, with no tier to outgrow.
-- **What it's for:** reading *access*, not ice — which is why it pairs with N6d rather than the weather
+- **What it's for:** reading *access*, not ice — which is why it pairs with A06d rather than the weather
   work.
 - **The thing to watch is courtesy, and it's sharper than it was:** `USGSNAIPPlus` renders every request
   dynamically with no CDN in front. v1 points at it and measures; the caching proxy is **the same
@@ -348,7 +348,7 @@ Founder ask: record cost, benefit and setup for the providers we evaluated durin
   Landsat 4–9, HLS, Copernicus DEM — is **the same free data we can get directly from Copernicus**.
   Paying does not unlock it.
 - **What money *does* buy: PlanetScope — ~3 m, near-daily revisit.** For ice this is a genuine product
-  difference, not a vanity upgrade: a lake can go from open water to skateable in 48 hours, and a 5-day
+  difference, not a vanity upgrade: a water body can go from open water to skateable in 48 hours, and a 5-day
   revisit can miss the entire onset. Worth being honest that the case here is real.
 - **Why not yet:** it's a commercial imagery subscription against a pilot with no revenue, and **we do not
   yet know whether anyone opens the imagery link at all.**

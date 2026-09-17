@@ -1,5 +1,5 @@
 /**
- * Writing down what a posted sign says (N6e).
+ * Writing down what a posted sign says (A06e).
  *
  * One mutation for all three targets — water body, put-in, parking area — because it is one claim
  * wearing three hats. Three near-identical copies split across `waterBodies.ts` and `accessPoints.ts`

@@ -39,9 +39,9 @@ import { WeatherStrip } from './WeatherStrip';
 export interface ReportViewData {
   waterBodyId: string;
   bodyName?: string;
-  /** The named sub-area the report sits in (N2/D60) — composed ahead of the lake, never beside it. */
+  /** The named sub-area the report sits in (A02/D60) — composed ahead of the lake, never beside it. */
   subAreaName?: string;
-  /** Every member bay of a two-bay skate (N9) — the list form, so this and the feed card agree. */
+  /** Every member bay of a two-bay skate (A09) — the list form, so this and the feed card agree. */
   subAreaNames?: string[];
   authorName?: string;
   authorImageUrl?: string;
@@ -49,9 +49,9 @@ export interface ReportViewData {
   authorTrustClass?: TrustClass | null;
   /** The author is in the viewer's block set — de-emphasize the line + show a "Blocked" chip (D3). */
   authorBlocked?: boolean;
-  /** When the skater left the ice — the primary timestamp shown (D28; Phase 5). */
+  /** When the skater left the ice — the primary timestamp shown (D28; Phase 05). */
   skateEndTime: number;
-  /** Optional — when they got on; renders the derived duration alongside the end (Phase 5). */
+  /** Optional — when they got on; renders the derived duration alongside the end (Phase 05). */
   skateStartTime?: number;
   skateQuality?: SkateQuality;
   iceTypes: string[];
@@ -66,7 +66,7 @@ export interface ReportViewData {
    */
   conflicting?: boolean;
   /**
-   * When the author last edited this (N6f) — the `comments.editedAt` convention.
+   * When the author last edited this (A06f) — the `comments.editedAt` convention.
    *
    * Deliberately not `updatedAt`: the conditions autofill moves that on nearly every report hours
    * after posting, so a byline off it would mark the whole corpus as edited by people who never
@@ -77,7 +77,7 @@ export interface ReportViewData {
 }
 
 /**
- * Presentational report renderer (§D) — every stored value shown **imperial** (D25) via the pure
+ * Presentational report renderer (§4) — every stored value shown **imperial** (D25) via the pure
  * `reportDisplay` helpers, so the formatting is unit-testable without Convex or a map. The container
  * `ReportDetail` below feeds it live data; a test can feed it a fixture.
  */
@@ -273,7 +273,7 @@ export function ReportDetail({ reportId }: { reportId: string }) {
   // (D3). Skipped when signed out (the query requires a profile). A block never hides the report.
   const me = useQuery(api.profiles.current, {});
   const blockedIds = useQuery(api.blocks.blockedUserIds, me ? {} : 'skip');
-  // The author's "people were waiting for this" line (N8 / D170). The query answers 0 for anyone
+  // The author's "people were waiting for this" line (A08 / D170). The query answers 0 for anyone
   // but the author (the server re-checks), so it's only *subscribed* when the viewer is the author —
   // every other reader of every report would otherwise hold a live query that can only ever say 0.
   const bountiesAnswered = useQuery(
@@ -282,13 +282,13 @@ export function ReportDetail({ reportId }: { reportId: string }) {
   );
   const { setHighlightWaterBodyId, setFocus, setPhotoPins, setTrackPath } = useMapSelection();
 
-  // The recorded GPS path behind this report (Phase 8), when there is one — most reports have none
+  // The recorded GPS path behind this report (Phase 08), when there is one — most reports have none
   // (D24), so this resolves to null and the layer stays empty.
   const track = useQuery(api.gpsActivities.getForReport, {
     reportId: reportId as Id<'reports'>,
   });
 
-  // The author's own edit dialog (N6f). Declared with the other hooks, above the loading/unavailable
+  // The author's own edit dialog (A06f). Declared with the other hooks, above the loading/unavailable
   // early returns, so the hook order is stable across a report that arrives late.
   const [editing, setEditing] = useState(false);
 
@@ -405,7 +405,7 @@ export function ReportDetail({ reportId }: { reportId: string }) {
           <ModeratorActions targetType="report" targetId={report._id} />
         </div>
       ) : null}
-      {/* The author's own control (N6f), mirroring the comment thread's Edit. `reports.update` has
+      {/* The author's own control (A06f), mirroring the comment thread's Edit. `reports.update` has
           existed since D25 with nothing calling it, so posting a report was a one-way door — a
           mistyped thickness could only be corrected by asking a moderator to remove the whole thing.
           A moderated report is refused server-side, so the button is hidden rather than left to fail. */}

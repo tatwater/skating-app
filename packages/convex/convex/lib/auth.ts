@@ -64,7 +64,7 @@ export const DELETION_PENDING_MESSAGE =
   'Your account is scheduled for deletion — cancel the deletion to post again';
 
 /**
- * The caller's profile, or throw if they've asked to be deleted (D62 amendment, N5a).
+ * The caller's profile, or throw if they've asked to be deleted (D62 amendment, A05a).
  *
  * **Why a pending request is read-only, when the whole point of the 30 days is that the account still
  * works.** The window exists to keep *useful* content around while its author reconsiders — but a

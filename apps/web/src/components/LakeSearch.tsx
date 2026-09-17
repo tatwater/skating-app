@@ -32,7 +32,7 @@ export type LakeHit = {
   centroid: { lat: number; lng: number };
   bbox: { minLat: number; minLng: number; maxLat: number; maxLng: number };
   states: string[];
-  /** The body is dormant (N7b): the row wears the "Inactive" badge. Removed bodies never appear. */
+  /** The body is dormant (A07b): the row wears the "Inactive" badge. Removed bodies never appear. */
   inactive?: boolean;
 };
 
@@ -111,7 +111,7 @@ export function LakeSearchBox({
 }
 
 /**
- * Map search box (Phase 2.5). Full-text lake lookup over the regional corpus via
+ * Map search box (Phase 02b). Full-text lake lookup over the regional corpus via
  * `waterBodies.searchByName` (server-side, typo-tolerant); the query is debounced and skipped
  * under 2 chars. Selecting a result navigates to `/water/$id` — the detail drawer opens and flies
  * the map to the lake (reusing the existing fly-to), so search needs no map wiring of its own.

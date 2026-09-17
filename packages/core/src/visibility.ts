@@ -1,10 +1,10 @@
 /**
  * Report / comment read-access (D3/D13/D32).
  *
- * The load-bearing Phase-3 change (2026-07-16): a **block never hides a report** (D3, safety-first).
+ * The load-bearing Phase-03 change (2026-07-16): a **block never hides a report** (D3, safety-first).
  * Report reads gate on **moderation status only**. The block set instead (a) hides **comments** by a
  * blocked author, (b) hides **profiles** both ways, and (c) de-emphasizes a blocked author's report
- * line with a "Blocked" chip. This reverses the Phase-2 stub, where a block hid the report itself —
+ * line with a "Blocked" chip. This reverses the Phase-02a stub, where a block hid the report itself —
  * an interpersonal block must never pull a safety observation off the shared map/feed.
  *
  * Safety-sensitive (a bug could remove a safety observation from the commons, or leak blocked

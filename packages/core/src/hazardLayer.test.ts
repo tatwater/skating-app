@@ -128,7 +128,7 @@ describe('hazardsToFeatureCollection', () => {
   });
 
   // The body-clip drives the same shape into render that the distance math measures — otherwise the
-  // drawn halo and the warned-about footprint would drift (Phase 9.5).
+  // drawn halo and the warned-about footprint would drift (Phase 09b).
   it('draws the stored clipped footprint instead of re-buffering the raw shape', () => {
     const clipped = {
       type: 'Polygon' as const,
@@ -312,11 +312,11 @@ describe('hazardDraftToFeatureCollection', () => {
   });
 
   /**
-   * Vertex dots are feedback for taps a person made. A snapped shore band (N5b) is a buffered,
+   * Vertex dots are feedback for taps a person made. A snapped shore band (A05b) is a buffered,
    * simplified shoreline arc — routinely 130+ corners nobody placed — and a dot on each one covers the
    * band it is supposed to be clarifying.
    */
-  describe(`the ${DRAFT_VERTEX_DOT_LIMIT}-corner dot limit (N5b)`, () => {
+  describe(`the ${DRAFT_VERTEX_DOT_LIMIT}-corner dot limit (A05b)`, () => {
     /** A ring of `n` corners around A, as a polygon draft. */
     function ringDraft(n: number): HazardDraft {
       return {

@@ -1,5 +1,5 @@
 /**
- * Bake the season's reveal masks into one spatially-indexed file (N6e PR 2a, D148).
+ * Bake the season's reveal masks into one spatially-indexed file (A06e PR 2a, D148).
  *
  *   pnpm --filter @skating/imagery bake-masks [--batch=25] [--season=2026]
  *     [--out=<path>] [--upload] [--bucket=skating-imagery]

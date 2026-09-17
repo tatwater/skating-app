@@ -1,5 +1,5 @@
 /**
- * What every contour line carries into the tile (N6b).
+ * What every contour line carries into the tile (A06b).
  *
  * Split out of the builder and tested, because these five properties are the entire contract between
  * the ETL and the two clients, and **every one of them fails silently if it is wrong**:

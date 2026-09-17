@@ -1,5 +1,5 @@
 /**
- * The 3DEP lane's pure half, against readings the live service actually returned (N7-2).
+ * The 3DEP lane's pure half, against readings the live service actually returned (A07a-2).
  *
  * Every fixture below is a real EPQS response body captured on 2026-08-08, not an invented one —
  * including the resolution quirk, which no amount of reading the docs would have predicted.

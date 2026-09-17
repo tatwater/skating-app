@@ -261,7 +261,7 @@ describe('bodyFeatures.promote', () => {
     expect(hazard?.status).toBe('active');
     expect(hazard?.promotedToFeatureId).toBe(featureId);
 
-    // **And it stays on the map** (D53 amendment, N5c). A `bodyFeature` is a standing statement about
+    // **And it stays on the map** (D53 amendment, A05c). A `bodyFeature` is a standing statement about
     // the lake; this row is a sighting a person made on a date. Dropping it here rewrote that date as
     // one on which nobody reported anything — and under cluster promotion it would erase the whole
     // evidence trail the pattern rests on, one click after an operator agreed the pattern was real.
@@ -321,7 +321,7 @@ describe('bodyFeatures.promote', () => {
     expect(feature?.bbox).toEqual(hazard?.bbox);
   });
 
-  // The D53 amendment (N5c), stated as the behaviour it replaced: a promoted hazard used to be
+  // The D53 amendment (A05c), stated as the behaviour it replaced: a promoted hazard used to be
   // unreachable by permalink and unconfirmable. Both were wrong, and for the same reason — confirming
   // "the ridge is here right now" is a different statement from "ridges form here", and only the first
   // is confirmable at all. The pin is exactly the thing that should still take votes.

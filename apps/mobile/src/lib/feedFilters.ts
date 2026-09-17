@@ -1,5 +1,5 @@
 /**
- * Feed-filter persistence — pure logic (Phase 4, decision #6), the mobile mirror of web's
+ * Feed-filter persistence — pure logic (Phase 04, decision #6), the mobile mirror of web's
  * `lib/feedFilters`. Device storage is the working copy; `profiles.feedFilterPrefs` is the durable
  * server-sync copy; reconciliation is last-write-wins. Everything runs through `@skating/core`
  * `sanitizeFeedFilters` so a corrupt blob / stale server shape can't crash the feed. The `expo-sqlite`

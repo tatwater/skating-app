@@ -25,7 +25,7 @@ const AMENITY_LABELS: Record<string, string> = {
 };
 
 /**
- * How you get onto this lake — the mobile half of web's `AccessSection` (N6d / D72, D73, D87).
+ * How you get onto this lake — the mobile half of web's `AccessSection` (A06d / D72, D73, D87).
  *
  * Deliberately the same shape as the web one, down to the copy: the two surfaces answer the same
  * question and a skater who checks at home and again in the car should read the same sentence. What
@@ -39,7 +39,7 @@ export function AccessSection({
   subAreaId,
 }: {
   waterBodyId: Id<'waterBodies'>;
-  /** The bay view (N9): the bay's own launches, the lots they serve, and lots within reach of its shore. */
+  /** The bay view (A09): the bay's own launches, the lots they serve, and lots within reach of its shore. */
   subAreaId?: Id<'waterBodySubAreas'>;
 }) {
   const access = useQuery(api.accessPoints.accessForBody, {
@@ -84,7 +84,7 @@ export function AccessSection({
           so it is a floor rather than an estimate (D87). */}
       {approach ? <Paragraph color="$foregroundMuted">{approach}</Paragraph> : null}
 
-      {/* Rules posted on *these* access points (N6e), against the point each governs. The body's own
+      {/* Rules posted on *these* access points (A06e), against the point each governs. The body's own
           rule is a separate section above and is never folded in here: a lot shut during a shop's
           business hours says nothing about the launch beside it, or about the ice. */}
       {target ? (

@@ -1,5 +1,5 @@
 /**
- * Corroboration **contradiction signal** (Phase 10 / D56 §7b) — the inverse seam of `runCorroboration`.
+ * Corroboration **contradiction signal** (Phase 10 / D56 §07-2) — the inverse seam of `runCorroboration`.
  * When recent reports on the same body strongly disagree AND the weather-since between them doesn't explain
  * the change, it's a contradiction. This does **three** things, none of which subtracts trust (D50 stays
  * boost-only; honest "the ice changed" reports are never punished — D3):
@@ -7,7 +7,7 @@
  *   2. **Disclose** the conflict — every disagreeing report gets a soft, **symmetric** `conflicting` flag
  *      skaters can see, so the human judges the disagreement rather than us secretly deciding who's wrong.
  *   3. **Escalate on pattern — the un-corroborated minority, not the later poster.** This is consensus-based
- *      and **order-independent** (D56 §7b, decided in the 2026-07-23 review): a report is a *contradiction*
+ *      and **order-independent** (D56 §07-2, decided in the 2026-07-23 review): a report is a *contradiction*
  *      only when a report it disagrees with (weather-unexplained) has **strictly more corroboration** while
  *      it itself has **none**. So a lone false read — whether it was posted first or last — accrues the
  *      author's private, non-scoring `contradictionCount`, while the corroborated majority never does. It's
@@ -79,7 +79,7 @@ interface ClusterReport {
  * that report's OWN ±window neighborhood — which reaches up to 2×window from the anchor. Loading the wider
  * band makes each reconciled report's verdict a pure function of its true neighborhood, so escalation is
  * order-independent and a valid contradiction can't be spuriously cleared by an unrelated later report
- * whose narrow window happens to exclude the corroborated opponent (the §7b consensus guarantee).
+ * whose narrow window happens to exclude the corroborated opponent (the §07-2 consensus guarantee).
  */
 export const contradictionCluster = internalQuery({
   args: { reportId: v.id('reports') },
@@ -91,7 +91,7 @@ export const contradictionCluster = internalQuery({
     const upper = anchor.skateEndTime + 2 * CORROBORATION_WINDOW_MS;
     // Two reads scale here, and the roadmap only named one of them (under a function name that no
     // longer exists). Both are bounded now: the window scan, and the per-report corroboration tally
-    // below — an N+1 that multiplied the first one (N1).
+    // below — an N+1 that multiplied the first one (A01).
     const inWindow = await takeCapped(
       ctx.db
         .query('reports')
@@ -137,7 +137,7 @@ export const contradictionCluster = internalQuery({
 });
 
 /**
- * Record a contributor's contradiction pattern (D56 §7b), bundled (N2).
+ * Record a contributor's contradiction pattern (D56 §07-2), bundled (A02).
  *
  * This used to carry its own copy of "one open flag per (target, reason)" and said so in its comment
  * — the duplication is what moved the mechanism into `lib/autoFlag.ts`. The behavioural change is
@@ -174,7 +174,7 @@ async function flagContradictionPattern(
 }
 
 /**
- * The enforcement funnel's first two stages (Phase 7b). They're counted here rather than derived later
+ * The enforcement funnel's first two stages (Phase 07-2). They're counted here rather than derived later
  * because **they leave nothing behind to derive from**: a disagreement the weather gate explains away is
  * a `continue` in the settle loop, and the pair that produced it is indistinguishable afterwards from two
  * reports that never disagreed. Without these two numbers there is no way to tell whether the 48 FDH /
@@ -265,7 +265,7 @@ export const settleContradictions = internalAction({
     const conflicting = new Set<Id<'reports'>>();
     const contradiction = new Set<Id<'reports'>>();
     const flaggerFor = new Map<Id<'reports'>, Id<'profiles'>>();
-    // Funnel instrumentation (Phase 7b) — see `funnelCounts`. Tallied per settle and handed to the
+    // Funnel instrumentation (Phase 07-2) — see `funnelCounts`. Tallied per settle and handed to the
     // mutation, since only a mutation can write.
     let detected = 0;
     let weatherExplained = 0;

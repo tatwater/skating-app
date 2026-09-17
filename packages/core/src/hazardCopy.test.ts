@@ -292,7 +292,7 @@ const HOUR = 60 * 60 * 1000;
  * precision the observation never had (D3).
  */
 describe('relativeWhen', () => {
-  // `now` is passed rather than read, per the clock-pinning convention N5a's season work established —
+  // `now` is passed rather than read, per the clock-pinning convention A05a's season work established —
   // a fixture that reads the wall clock is a fixture that changes meaning overnight.
   const NOW = Date.UTC(2027, 0, 15, 12);
 

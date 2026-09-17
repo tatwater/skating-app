@@ -125,7 +125,7 @@ describe('stopCaption', () => {
 
   it('⚠ never says anything about ice, in any branch', () => {
     // D150's gap is short and tempting — "82% water" to "not frozen" to "not skateable" — and the
-    // last two are claims nothing in this pipeline can support. Phrasing a classification is N6g's.
+    // last two are claims nothing in this pipeline can support. Phrasing a classification is A06g's.
     const captions = [
       stopCaption(stop()),
       stopCaption(stop({ frame: frame({ band: 'vh', cloudCoverPct: null }) })),

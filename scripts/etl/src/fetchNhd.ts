@@ -1,5 +1,5 @@
 /**
- * Archive the NHD High Resolution state geodatabases with their provenance (N7).
+ * Archive the NHD High Resolution state geodatabases with their provenance (A07a).
  *
  *   pnpm --filter @skating/etl archive-nhd [<state>…] [--refresh] [--campaign=<id>]
  *

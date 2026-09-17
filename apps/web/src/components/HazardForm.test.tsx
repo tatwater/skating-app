@@ -120,7 +120,7 @@ describe('primitive selection (D51)', () => {
     expect(get().draft?.geometryKind).toBe('point_radius');
   });
 
-  // N5b: the primitive D51 always called opt-in and advanced. No type starts as one — reaching it is
+  // A05b: the primitive D51 always called opt-in and advanced. No type starts as one — reaching it is
   // always a deliberate choice, which is why `retypeDraft` refuses to take it away again.
   it('never starts a type as an area, and lets one be chosen', () => {
     const { get } = renderFields();
@@ -255,7 +255,7 @@ describe('photos', () => {
   });
 });
 
-describe('freeform area authoring (N5b)', () => {
+describe('freeform area authoring (A05b)', () => {
   function areaFields(corners: (typeof A)[]) {
     let draft = switchDraftKind(draftForType('thawed_rotten'), 'polygon', 'thawed_rotten');
     for (const c of corners) draft = applyDraftMapClick(draft, c);
@@ -290,7 +290,7 @@ describe('freeform area authoring (N5b)', () => {
   });
 });
 
-describe('snap to shoreline (N5b)', () => {
+describe('snap to shoreline (A05b)', () => {
   it('is offered for a shore-shaped type', () => {
     renderFields({
       type: 'thin_ice',

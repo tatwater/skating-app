@@ -99,7 +99,7 @@ function AdminDashboard() {
         </section>
       ) : null}
 
-      {/* The base map's own provenance (N7). Admin-only for the same reason as the health strip: it
+      {/* The base map's own provenance (A07a). Admin-only for the same reason as the health strip: it
           reads a metric snapshot. Sits below app health because it moves once a year, not once a day —
           it is the slowest number on this page and the one with the longest horizon. */}
       {isAdmin ? (

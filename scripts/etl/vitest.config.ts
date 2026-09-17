@@ -24,7 +24,7 @@ export default defineConfig({
       //
       // **Only files whose every remaining line is `spawnSync`, file I/O or a CLI shell.** That was
       // an accurate description of `merge.ts` the day it was written and stopped being one the moment
-      // it grew a merge rule — by the time the N7 audit reached it, an excluded file held the veto
+      // it grew a merge rule — by the time the A07a audit reached it, an excluded file held the veto
       // set, the class precedence, the name union, a union-find, the region clip, the GNIS lane and
       // the bay rule, and decided all 27,074 rows untested.
       //
@@ -54,7 +54,7 @@ export default defineConfig({
         // `waterBodies.retireAbsorbedBodies` and is tested there against those four cases.
         'src/retireAbsorbed.ts',
         // `main()` + `spawnSync` + the report. **The orchestration is no longer in here either**:
-        // the second N7 audit found that the extraction to `mergeRules.ts` had stopped at the
+        // the second A07a audit found that the extraction to `mergeRules.ts` had stopped at the
         // *rules*, leaving the ORDER they run in — which is where every ordering bug in this phase
         // has lived — inside an excluded file. `masterList.ts` is that second extraction and is
         // covered end to end by `masterList.test.ts`. What is left here is archives in, artifacts

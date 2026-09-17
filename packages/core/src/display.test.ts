@@ -138,7 +138,7 @@ describe('displayScore → minVisibleZoom (D49 end-to-end)', () => {
   });
 });
 
-describe('profile richness (N6c / D2)', () => {
+describe('profile richness (A06c / D2)', () => {
   it('is a boost and never a penalty — an empty body scores exactly as before', () => {
     // The founder's stated worry: "I'd hate to not have a body someone cares about". Implementing
     // this as a subtraction would push already-obscure ponds below the discoverability floor.

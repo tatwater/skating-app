@@ -1,5 +1,5 @@
 /**
- * Clerk's webhook, verified (N8 post-merge / D174 amendment).
+ * Clerk's webhook, verified (A08 post-merge / D174 amendment).
  *
  * Clerk posts a signed event to `POST /clerk-webhook` (`http.ts`) whenever a user record changes.
  * This module is the trust boundary for it: the signature is checked against

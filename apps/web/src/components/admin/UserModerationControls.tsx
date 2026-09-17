@@ -19,7 +19,7 @@ export interface ModeratableUser {
   canPostReports: boolean;
   canPostHazards: boolean;
   canPostComments: boolean;
-  /** Per-user open-bounty cap (N2 / D57). Absent ⇒ the global cap; `0` ⇒ can't post bounties. */
+  /** Per-user open-bounty cap (A02 / D57). Absent ⇒ the global cap; `0` ⇒ can't post bounties. */
   activeBountyPostLimit?: number;
 }
 
@@ -32,7 +32,7 @@ const SUSPEND_OPTIONS = [
 ];
 
 /**
- * The bounty lever is a **number**, not a switch (N2 / D57).
+ * The bounty lever is a **number**, not a switch (A02 / D57).
  *
  * Bounties aren't content — they're requests — so the proportionate answer to someone spamming them
  * is fewer rather than none, and a boolean couldn't express that. `0` is still available and still

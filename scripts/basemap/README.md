@@ -1,7 +1,7 @@
 # basemap — the two self-built `.pmtiles` archives the map draws from
 
 The map (`apps/web` and `apps/mobile`) renders our water bodies over a **Protomaps** vector basemap
-(D6). Phase 1 shipped against Protomaps' **hosted demo** tiles to confirm the data rendered;
+(D6). Phase 01 shipped against Protomaps' **hosted demo** tiles to confirm the data rendered;
 Protomaps asks that the demo bucket not be used in production. This directory is the manual,
 run-on-demand pipeline that builds our own and self-hosts it.
 
@@ -112,15 +112,15 @@ the end, the `VITE_PMTILES_URL` value to wire in step 3.
 > viewed tiles per map view (KBs), so pilot bandwidth is negligible and 280 MB sits well under
 > the free-tier storage cap. If per-tile egress grows as regions expand, **Cloudflare R2**
 > (zero egress, the standard pmtiles host) is the documented scale-out target — a
-> `VITE_PMTILES_URL` swap, nothing in the app. See `plans/phase-1-water-bodies.md` open items.
+> `VITE_PMTILES_URL` swap, nothing in the app. See `plans/phases/01-water-bodies.md` open items.
 
-## 2b. Host on Cloudflare R2 (Phase 2.5+ — the scale-out host)
+## 2b. Host on Cloudflare R2 (Phase 02b+ — the scale-out host)
 
-Convex file storage (§2) is fine for the ~280 MB Vermont file, but the multi-state **Phase 2.5**
+Convex file storage (§2) is fine for the ~280 MB Vermont file, but the multi-state **Phase 02b**
 extract (~1.3–2 GB) overflows the Convex free tier, so the regional basemap hosts on **Cloudflare
 R2** (zero egress; the standard pmtiles host). R2 is the primary host going forward; `upload.sh`
 (Convex storage) stays for the Vermont-only/legacy path. Full context: the
-[Phase 2.5 runbook](../../plans/phase-2.5-regional-expansion.md).
+[Phase 02b runbook](../../plans/phases/02b-regional-expansion.md).
 
 ### One-time setup
 
@@ -225,7 +225,7 @@ sources and the always-on `AttributionControl`, independent of the tile host.
 | Hosted | R2 `skating-basemap/dev/northeast-20260805.pmtiles` + `dev/world-z6-20260805.pmtiles` (dev) — prod pending |
 | Verified | `pmtiles verify` clean on both; z12 probes return 61 KB over Burlington and **0 bytes** over Hartford, Philadelphia and Montréal |
 
-**Single bbox extract (Phase 2.5) — superseded, and the reason the above exists:**
+**Single bbox extract (Phase 02b) — superseded, and the reason the above exists:**
 
 | Field | Value |
 | ----- | ----- |
@@ -234,7 +234,7 @@ sources and the always-on `AttributionControl`, independent of the tile host.
 | Size | ≈ 948 MB, 275,750 tiles, z0–14 |
 | Why replaced | a rectangle rendered Ontario and Connecticut in full, and ended the world at 41.2°N |
 
-**Vermont-only (Phase 1) — superseded:**
+**Vermont-only (Phase 01) — superseded:**
 
 | Field | Value |
 | ----- | ----- |

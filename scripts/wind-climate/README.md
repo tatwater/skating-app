@@ -1,4 +1,4 @@
-# @skating/wind-climate — winter wind roses (N6c-1 / A4b)
+# @skating/wind-climate — winter wind roses (A06c-1 / §1.4b)
 
 A manual, run-on-demand ETL that gives each qualifying water body a **winter wind rose**: how often
 wind blows from each of 16 compass sectors between December and March. Like the other `scripts/`
@@ -128,7 +128,7 @@ re-running it afterwards is a cheap no-op. If it dies, just run it again.
 
 ---
 
-## Where this sits in the N6c run order
+## Where this sits in the A06c run order
 
 It is **step 4 of 5**, and the order is load-bearing:
 
@@ -136,7 +136,7 @@ It is **step 4 of 5**, and the order is load-bearing:
 2. depth + elevation — `pnpm --filter @skating/lake-depth load-elevation`
 3. `convex run regionStats:recompute`
 4. **this** — needs `fetchProfileM` from step 1 to know which bodies qualify
-5. *(N6c-2's data, then)* `convex run waterBodies:backfillCells` — **one** re-score at the very end
+5. *(A06c-2's data, then)* `convex run waterBodies:backfillCells` — **one** re-score at the very end
 
 Running this before step 1 finds nothing to do, because no body has a fetch profile yet.
 

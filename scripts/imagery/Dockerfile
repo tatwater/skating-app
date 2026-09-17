@@ -1,4 +1,4 @@
-# The granule cutter (N6e PR 2, D148).
+# The granule cutter (A06e PR 2, D148).
 #
 # One container, one job: read a single Sentinel granule, cut every corpus body out of it, write a
 # masked raster PMTiles to R2, exit. It is deliberately a *batch* image with no server in it — see

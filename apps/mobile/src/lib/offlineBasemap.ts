@@ -1,7 +1,7 @@
 /**
- * Offline basemap tiles — Layer-3 spike, route (1) (Phase 9.5).
+ * Offline basemap tiles — Layer-3 spike, route (1) (Phase 09b).
  *
- * Phase 9 logged that MapLibre's `OfflineManager.createOfflineRegion`/`createPack` downloader crawls a
+ * Phase 09a logged that MapLibre's `OfflineManager.createOfflineRegion`/`createPack` downloader crawls a
  * **style URL** for individual `{z}/{x}/{y}` tile resources — which a single `pmtiles://` archive can't
  * offer (it's one file read via HTTP range requests, nothing to enumerate). Rather than abandon pmtiles
  * for the offline path, route (1) sidesteps the downloader entirely: **fetch the regional `.pmtiles`

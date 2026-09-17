@@ -1,5 +1,5 @@
 /**
- * Winter wind climatology (N6c A4b) — how often wind actually blows from each compass sector at a
+ * Winter wind climatology (A06c §1.4b) — how often wind actually blows from each compass sector at a
  * lake, and what that means when combined with the fetch profile.
  *
  * ## Why this exists: fetch alone names the wrong direction
@@ -158,7 +158,7 @@ export function mostExposedSector(
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Sustained wind — the speed question a rose cannot answer (N7-3)
+// Sustained wind — the speed question a rose cannot answer (A07a-3)
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**

@@ -1,5 +1,5 @@
 /**
- * The dedup merge card (D36 queue, rebuilt for the N7 corpus).
+ * The dedup merge card (D36 queue, rebuilt for the A07a corpus).
  *
  * What these pin is that the card cannot be *mistaken for another card*, which is the failure it
  * exists to fix: the queue arrived holding pairs of unnamed OSM features, both ends of every pair,

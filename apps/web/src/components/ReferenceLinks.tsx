@@ -1,7 +1,7 @@
 import { allReferenceLinks, type ReferenceLinkBody, revealPlaceholder } from '@skating/core';
 
 /**
- * The lake drawer's reference-link list (N6c Workstream B).
+ * The lake drawer's reference-link list (A06c Workstream 2).
  *
  * Every link is derived from the row at render time (P2/D71) except the operator-entered ones, so
  * this component takes a body rather than fetching anything — there is no query behind it and no
@@ -19,7 +19,7 @@ export function ReferenceLinks({
   reveal = false,
 }: {
   body: ReferenceLinkBody | null | undefined;
-  /** N6c-2's reveal flag — states the absence instead of hiding the section. */
+  /** A06c-2's reveal flag — states the absence instead of hiding the section. */
   reveal?: boolean;
 }) {
   const links = allReferenceLinks(body);

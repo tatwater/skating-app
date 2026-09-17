@@ -1,5 +1,5 @@
 /**
- * **How much the catalogues agree, per attribute** (N7, D110).
+ * **How much the catalogues agree, per attribute** (A07a, D110).
  *
  * A merged body is assembled field by field from up to three publishers, and by the time it reaches
  * a row every trace of *how sure we were* is gone. One number per body would be useless — a lake can
@@ -20,7 +20,7 @@
  * `unclassified` row into review — on today's corpus that is thousands of rows, which is a backlog
  * wearing a queue's clothes, and the honest consequence is that nobody opens it. A genuine conflict
  * between two publishers is rare, specific, and something a human can actually adjudicate in seconds.
- * Absence of evidence is a browsable list ranked by size, and N7b's request path is what pulls an
+ * Absence of evidence is a browsable list ranked by size, and A07b's request path is what pulls an
  * individual row out of it.
  *
  * ## NHD and 3DHP are ONE independent source, not two
@@ -408,7 +408,7 @@ export const REVIEW_REASONS = [
   'bay-without-parent',
   'same-source-duplicate',
   /**
-   * Two **separate** bodies in the master list whose outlines overlap — the failure the second N7
+   * Two **separate** bodies in the master list whose outlines overlap — the failure the second A07a
    * audit measured and nothing could previously see. See `overlapDuplicate` in `mergeRules.ts`.
    */
   'duplicate-candidate',
@@ -431,7 +431,7 @@ export type ReviewReason = (typeof REVIEW_REASONS)[number];
 
 /**
  * The order a moderator should meet these in — **worst first, and "worst" means visible to a user**
- * (N7, 2026-08-07).
+ * (A07a, 2026-08-07).
  *
  * | | | |
  * | --- | --- | --- |
@@ -477,7 +477,7 @@ export function isAdvisoryReviewReason(reason: ReviewReason): boolean {
  *
  * `reviewReasons` is what a moderator reads; this is what the queue query ranges over. Convex has no
  * index over array membership, and the alternative — scanning 25,136 rows to find 2,010 — is the
- * read-cap failure N1 exists to have ended. Highest-priority reason wins, so a body that is both a
+ * read-cap failure A01 exists to have ended. Highest-priority reason wins, so a body that is both a
  * duplicate and a name conflict is filed as the duplicate, which is the one that renders wrong.
  *
  * `undefined` for a body with nothing to review, which is most of them, and which is what keeps the
@@ -530,7 +530,7 @@ export function mergeReviewReasons(input: {
  * Is this body merely **unresolved** rather than contested?
  *
  * The backlog, not the queue — an unnamed `unclassified` pond nobody has ever described. It ships,
- * it is browsable in the admin water list ranked by area, and a community flag or an N7b request is
+ * it is browsable in the admin water list ranked by area, and a community flag or an A07b request is
  * what promotes an individual one into a moderator's hands. Kept as a named predicate so the
  * distinction is enforced by a function rather than remembered by whoever writes the next query.
  */

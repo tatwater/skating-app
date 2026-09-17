@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Mirror the state-agency bathymetry archive to a PRIVATE R2 bucket (N6b).
+# Mirror the state-agency bathymetry archive to a PRIVATE R2 bucket (A06b).
 #
 #   scripts/bathymetry/mirror-r2.sh push [<source-key>]
 #   scripts/bathymetry/mirror-r2.sh pull [<source-key>]

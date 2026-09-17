@@ -1,5 +1,5 @@
 /**
- * The `/admin` gate (D37) — the tree the lake editor lives in (N2 / D61).
+ * The `/admin` gate (D37) — the tree the lake editor lives in (A02 / D61).
  *
  * This is a **UX** boundary, not a security one, and the distinction is the reason the test says what
  * it says: every Convex function under here hard-gates on `role` server-side, so a member who forces

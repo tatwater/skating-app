@@ -1,5 +1,5 @@
 /**
- * Retire the corpus rows the merge absorbed — **the destructive half of D136** (N7-3).
+ * Retire the corpus rows the merge absorbed — **the destructive half of D136** (A07a-3).
  *
  *   pnpm --filter @skating/etl retire-absorbed [--campaign=<id>] [--apply] [--batch=N]
  *

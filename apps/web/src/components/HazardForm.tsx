@@ -56,12 +56,12 @@ type HazardDraftGeometry = HazardShape['geometry'];
  * hole or a zone, which a circle describes at least as well as a hand-drawn shape would. Any
  * primitive can be swapped for any other — you might only know the one spot on a ridge you crossed.
  *
- * **Freeform areas landed in N5b**, the primitive D51 always called opt-in and advanced. No type
+ * **Freeform areas landed in A05b**, the primitive D51 always called opt-in and advanced. No type
  * *starts* as one; you reach it by choosing "an area", which lazily loads terra-draw on the map and
  * gives you real vertex dragging. That chunk is fetched by the person who asked for the tool and
  * nobody else, which was the founder call on whether a skater-facing route may load it at all.
  *
- * **Snap-to-shoreline** (N5b, `thin_ice` and `open_water`) is the same primitive reached differently:
+ * **Snap-to-shoreline** (A05b, `thin_ice` and `open_water`) is the same primitive reached differently:
  * two clicks near the shore, and the band comes off the lake's own boundary. It produces an ordinary
  * polygon draft — nothing downstream knows it was snapped — which is the whole reason it can share
  * every control below.
@@ -81,7 +81,7 @@ const KIND_LABELS: { kind: HazardAuthorableKind; label: string }[] = [
 
 /** What the hazard form needs to know about an in-progress snap. */
 export interface ShoreBandState {
-  /** Does this type offer snapping at all? (`thin_ice` / `open_water` — N5b Decision 1.) */
+  /** Does this type offer snapping at all? (`thin_ice` / `open_water` — A05b Decision 1.) */
   offered: boolean;
   /**
    * Are two shore clicks in hand, so the ± stepper is tuning the **band half-width**?
@@ -693,7 +693,7 @@ export function HazardForm({
 
   /**
    * `dismissed` is threaded as an argument rather than read off state so *"no, this is a different
-   * hazard"* can file the pin in the same tap that dismisses the nudge. §B1's promise is one tap and no
+   * hazard"* can file the pin in the same tap that dismisses the nudge. §2.1's promise is one tap and no
    * argument; making the skater press Report a second time is the argument, just quieter. Passing it in
    * also sidesteps the real bug in the alternative — a `setState` isn't visible to the call that
    * follows it, so re-submitting from the handler would re-raise the nudge it just answered.

@@ -2,7 +2,7 @@ import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { RequestButtonsView } from './RequestLake';
 
-describe('RequestButtonsView (N7b PR 2)', () => {
+describe('RequestButtonsView (A07b PR 2)', () => {
   it('offers exactly the kinds it is given, with the asker count beside a button', () => {
     const onAsk = vi.fn();
     render(

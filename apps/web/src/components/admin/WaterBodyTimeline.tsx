@@ -3,14 +3,14 @@ import { humanizeEnum } from '@skating/core';
 import { useQuery } from 'convex/react';
 
 /**
- * The per-lake activity timeline on `/admin/water/$id` (N6c Workstream F1).
+ * The per-lake activity timeline on `/admin/water/$id` (A06c Workstream §6.1).
  *
  * **This is a UI component and no backend at all**, which is the finding that made F1 worth doing:
  * `moderation.listActions` has always accepted `targetType: 'waterbody'` + `targetId`, read
  * `by_target` newest-first and resolved the actor. Every human write to a body already landed there —
  * depth, curated boost, sample points, sub-area create/redraw/rename, put-ins, features — and nobody
- * has ever been able to look at it. That is why five mis-matched bodies from the Phase-2.5 seed
- * stayed invisible until N2 built a screen.
+ * has ever been able to look at it. That is why five mis-matched bodies from the Phase-02b seed
+ * stayed invisible until A02 built a screen.
  *
  * **Human writes only.** ETL runs are audited separately, on `/admin/imports` (F2), because one row
  * per body per import is a different feature with a different cost — an 8k-row audit trail per run —

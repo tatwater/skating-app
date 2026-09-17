@@ -1,6 +1,6 @@
 # Low-urgency items — do opportunistically or when a trigger fires
 
-> **Backlog — moved out of `07-roadmap.md` in the 2026-09-16 rewrite, verbatim.** The old 'N8 — the unbundled remainder' list. Genuinely independent, genuinely low-urgency; none is a phase.
+> **Backlog — moved out of `07-roadmap.md` in the 2026-09-16 rewrite, verbatim.** The old 'A08 — the unbundled remainder' list. Genuinely independent, genuinely low-urgency; none is a phase.
 
 - **Apple HealthKit capture adapter** — notable as **the one watch adapter needing no partner
   approval** (entitlement + dev build only), so it's unblocked while Garmin/COROS/Polar wait on review.
