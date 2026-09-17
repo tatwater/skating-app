@@ -30,7 +30,7 @@ describe('linkCoordinate', () => {
     ).toEqual(CHAMPLAIN_INTERIOR);
   });
 
-  it('falls back to representativePoint, then centroid, for pre-N6c-1 rows', () => {
+  it('falls back to representativePoint, then centroid, for pre-A06c-1 rows', () => {
     expect(
       linkCoordinate({ representativePoint: CHAMPLAIN_SHORELINE, centroid: undefined }),
     ).toEqual(CHAMPLAIN_SHORELINE);

@@ -204,7 +204,7 @@ async function actorsFor(
   now: number,
 ): Promise<NotificationActors | null> {
   const kept = actorIds.filter((id) => !blocked.has(id));
-  // An old row with no actor list at all (pre-N8 shape) still describes something that happened;
+  // An old row with no actor list at all (pre-A08 shape) still describes something that happened;
   // "Someone" is the honest attribution rather than dropping it.
   if (actorIds.length > 0 && kept.length === 0) return null;
   const names: string[] = [];

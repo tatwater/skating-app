@@ -998,7 +998,7 @@ describe('waterBodies profile-richness prominence (A06c / D2)', () => {
   });
 });
 
-describe('waterBodies wind rose (A06c A4b)', () => {
+describe('waterBodies wind rose (A06c §1.4b)', () => {
   const FETCH = [
     1900, 500, 300, 200, 200, 200, 400, 4500, 1900, 1300, 1100, 1000, 1200, 1100, 1300, 3000,
   ];
@@ -1096,7 +1096,7 @@ describe('waterBodies wind rose (A06c A4b)', () => {
   });
 });
 
-describe('waterBodies elevation (A06c A1)', () => {
+describe('waterBodies elevation (A06c §1.1)', () => {
   const AT = { lat: 44.5, lng: -73.3 };
 
   async function seedBody(

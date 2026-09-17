@@ -23,5 +23,5 @@ only to be deleted by this.
 
 ⚠️ **Never make it a true centroid.** The name was the bug, not the maths — the area centroid of a
 crescent water body is on land, and drive-time bands plus the pin-less report's town stamp deliberately want
-a shoreline-ish point. See [`phase-N6c`](../phases/A06c-expanded-body-profiles.md) *§The three point
+a shoreline-ish point. See [`phase-A06c`](../phases/A06c-expanded-body-profiles.md) *§The three point
 fields*.

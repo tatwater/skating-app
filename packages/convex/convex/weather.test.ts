@@ -353,7 +353,7 @@ function openMeteoWithForecast(nowMs: number) {
   };
 }
 
-describe('weather.getForecastForBody (A06c B5b)', () => {
+describe('weather.getForecastForBody (A06c §2.5b)', () => {
   test('returns the forward hours, and the strip line derived from them still names when snow starts', async () => {
     const t = convexTestWithGeo();
     const waterBodyId = await seedBody(t);

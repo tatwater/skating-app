@@ -4,7 +4,7 @@
  * ## Why the join is here and not in the ETL
  *
  * The A06d plan's §2.2 says put-in candidates within ~30 m of a body's polygon boundary attach to that
- * body, which reads as transform work. It cannot be: the transform has no polygons, and post-N7 the
+ * body, which reads as transform work. It cannot be: the transform has no polygons, and post-A07a the
  * merge output is **not** the loaded corpus — bodies are pruned, deduped, re-keyed and retired after
  * it, so measuring locally would measure against a snapshot that has already moved.
  *
@@ -755,7 +755,7 @@ export const accessForBody = query({
     // *choosing*. The first full load put 160 lots on Lake Champlain, 97 on Winnipesaukee and 64 on
     // Seneca; on those bodies the lot a chosen put-in points at can sit outside the window, and
     // `chooseAccessTarget` would then silently fall back to routing a car at the launch — exactly the
-    // pre-N6d behaviour this phase exists to fix, on the four lakes that matter most.
+    // pre-A06d behaviour this phase exists to fix, on the four lakes that matter most.
     //
     // Bounded by construction: put-ins are themselves capped, so this adds at most that many gets.
     const referenced = new Map<string, Awaited<ReturnType<typeof loadParkingForBody>>[number]>();

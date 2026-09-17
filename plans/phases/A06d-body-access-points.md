@@ -4,7 +4,7 @@
 > run end to end (3,588 put-ins · 11,375 parking areas · 4,209 bodies with access; routing 99.4%).
 > Unpushed; prod deferred as every phase since 2.5. **`backfillCells` ran 2026-08-14** — 24,961 bodies
 > re-scored in 84 batches, closing the pass A06c had held since 2026-08-02. —
-> scoped 2026-07-30, kickoff re-read against the post-N7 codebase 2026-08-10. Founder ask, same day as
+> scoped 2026-07-30, kickoff re-read against the post-A07a codebase 2026-08-10. Founder ask, same day as
 > the scoping. **Pre-PR review 2026-08-14** — four defects fixed, a red build made green, and the
 > client surfaces covered. **Greptile round 1 (PR #43)** — three P1s, one of them a security hole,
 > **rounds 2–4** four more cap defects, plus five the self-review found first — all fixed with tests
@@ -91,7 +91,7 @@ inputs are byte-identical to the ones behind the current corpus.
 
 **3. ⚠ B2's association rule cannot be implemented as written — the join has to run server-side.**
 *"Put-in candidates within ~30 m of a body's polygon boundary attach to that body"* reads as something
-the transform does. It can't: the transform has no access to our polygons, and post-N7 the merge output
+the transform does. It can't: the transform has no access to our polygons, and post-A07a the merge output
 is **not** the loaded corpus (bodies are pruned, deduped, re-keyed and retired after it). This is
 precisely what [A06a](./A06a-body-depth.md) discovered mid-build and it has the same fix —
 `waterBodies.matchAndImportDepths` does the geometric join in Convex against the A01 cell index, and
@@ -207,7 +207,7 @@ the remaining approach — *"park here, then about 400 m on foot."*
 ### §1.3 — Names come from OSM, and fall back to a derived label
 
 This is what makes the phase work at corpus scale rather than for the 36 water bodies someone would hand-type.
-*(Written as "116k scale"; the corpus is ~25.2k post-N7 — see correction 1, which makes the argument
+*(Written as "116k scale"; the corpus is ~25.2k post-A07a — see correction 1, which makes the argument
 stronger rather than weaker.)*
 
 **OSM already names these features.** "Lake Fairlee Boat Ramp" *is* an OSM `leisure=slipway` with a
@@ -266,7 +266,7 @@ OSM's coverage of parking and slipways in the rural Northeast is real but patchy
 well-known bodies and nothing on most of the corpus.
 
 > **Re-read against A07a (correction 1).** This was written against 116,070 bodies, ~90k of which were
-> under an acre and had no chance of a mapped lot. The post-N7 corpus is ~25.2k at a ≥ 5 acre floor
+> under an acre and had no chance of a mapped lot. The post-A07a corpus is ~25.2k at a ≥ 5 acre floor
 > (≥ 1 acre if named), so the denominator this pessimism divides by is four times smaller and made of
 > exactly the bodies OSM bothers to map access for. **The rate will be better than this paragraph
 > expects — and it is still a rate to measure rather than assume.** Report `matched / inScope` and name
@@ -671,7 +671,7 @@ water-relevance gate**, which is the finding that gate exists for.
 Seneca — all real for water bodies that size. The cap docstring had claimed no real body would reach 64; it
 was wrong within two hours. The cap stays (it is a read bound), but `accessForBody` now resolves the
 lots its put-ins *reference* by id before filling the rest from the index — otherwise the directions
-target on our four biggest water bodies depended on index order, silently reinstating the pre-N6d bug on the
+target on our four biggest water bodies depended on index order, silently reinstating the pre-A06d bug on the
 water bodies that matter most.
 
 **2. The 250 m radius over-includes in towns, and the shape of it is now visible.** An 11-acre urban
@@ -1125,7 +1125,7 @@ scoped 2026-07-30; see [`phases/A06d-body-access-points.md`](./A06d-body-access-
 scoping** — it was roughly the size of everything else there combined, and it's the only part introducing
 a new lifecycle. Independent of A06c; either order.
 
-> **The kickoff re-read this entry against the post-N7 codebase and found seven corrections** — see the
+> **The kickoff re-read this entry against the post-A07a codebase and found seven corrections** — see the
 > doc's *§What the kickoff found in the plan*. The one that changes the build: **the body association
 > has to run server-side**, exactly as A06a discovered mid-build, because the transform has no polygons
 > and the merge output is no longer the loaded corpus. The one that would have shipped as data loss:

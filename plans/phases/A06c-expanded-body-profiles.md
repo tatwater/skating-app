@@ -10,7 +10,7 @@
 > [*§What the A06c-2 build found*](#what-the-a06c-2-build-found).
 >
 > Shipped: **§2** (reference links), **§2.5** (NWS alerts), **§2.5b** (the forward forecast), **§2.7** (the
-> stored link + its editor), **B3a/D** (`scripts/seed-destinations`), **§5** (map summary cards),
+> stored link + its editor), **§2.3a/D** (`scripts/seed-destinations`), **§5** (map summary cards),
 > **§6.1** (the per-body timeline), and mobile parity for all three drawer strips.
 >
 > **Deferred by founder call: everything satellite** (**D138**) — B3's Copernicus deep link, the
@@ -75,10 +75,10 @@
 > - **A06c-1 — derived numbers.** Workstreams **§1** (geometry stats, elevation), **§1.5**
 >   (`regionStats`), **§3** (the caption) and **D2** (profile richness → prominence), plus **§1.4b**,
 >   the winter wind rose that came out of the build. ✅ **BUILT 2026-08-02** on branch
->   `phase-N6c-1-lake-profiles` — unpushed, undeployed, ETL passes **not yet run**. See
+>   `phase-A06c-1-lake-profiles` — unpushed, undeployed, ETL passes **not yet run**. See
 >   [*§What the A06c-1 build found*](#what-the-a06c-1-build-found).
 > - **A06c-2 — links, cards and observability.** Workstreams **§2** (reference links, NWS alerts, the
->   short forecast), **B3a/D** (the seed script), **§5** (per-body summary cards) and **§6.1** (the
+>   short forecast), **§2.3a/D** (the seed script), **§5** (per-body summary cards) and **§6.1** (the
 >   per-body activity timeline). **Not built.** Everything below those headings stands as written
 >   except where *§What the A06c-1 build found* corrects it.
 >   — **except §6.2, which was pulled forward into the data campaign** (founder ask, 2026-08-02) and
@@ -133,7 +133,7 @@ is an action that pages the whole corpus and splitting it per state would mean f
 116,070 rows to produce five small rows. The output is identical; only the trigger differs.
 
 **Out of scope here by the split, not by omission:** Workstreams **§2** (reference links, NWS alerts,
-the short forecast), **B3a/D** (the seed script), **§5** (summary cards) and **§6** (record history and
+the short forecast), **§2.3a/D** (the seed script), **§5** (summary cards) and **§6** (record history and
 import observability) are A06c-2. That matches this doc's own sequencing, where items 1–3 are the
 derived numbers and 4–7 are everything else.
 
@@ -1659,7 +1659,7 @@ for all of it.)*
 > See [`phases/A07a-unified-corpus.md`](./A07a-unified-corpus.md) for the campaign's final state.
 
 **A06c-1 — geometry stats, elevation, the caption, and profile-richness prominence.** ✅ **BUILT
-2026-08-02** (branch `phase-N6c-1-lake-profiles`; **unpushed, undeployed, ETL passes not yet run**)
+2026-08-02** (branch `phase-A06c-1-lake-profiles`; **unpushed, undeployed, ETL passes not yet run**)
 — see [`phases/A06c-expanded-body-profiles.md`](./A06c-expanded-body-profiles.md) *§What the
 A06c-1 build found*. New decision **D90** (wind exposure) plus **D85**, **D86** and **D2** amendments.
 
@@ -1701,7 +1701,7 @@ core 1,738+ · convex 1,141 · web 291+ · mobile 95 · seed-destinations 15. Ne
 
 Shipped: **§2** (Windy + the regional community archive, derived and stored nowhere), **§2.5** (NWS
 alerts on a 15-minute cron, state rung of the zone ladder), **§2.5b** (the forward forecast), **§2.7**
-(the one stored link, with its editor), **B3a/D** (`scripts/seed-destinations`), **§5** (map summary
+(the one stored link, with its editor), **§2.3a/D** (`scripts/seed-destinations`), **§5** (map summary
 cards with D86's dots), **§6.1** (the per-body activity timeline), and mobile parity for all three
 drawer strips through `openBrowserAsync` (D76).
 

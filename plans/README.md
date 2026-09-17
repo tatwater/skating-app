@@ -86,7 +86,7 @@ reacted to.
 
 The renumbering pass (2026-09-17) swapped tokens **everywhere** text is read — including text quoted
 or relocated from before it, and the archived register — so a document that says `A06e` may be
-quoting something that originally said `N6e`. Only three things kept the old spellings on purpose:
+quoting something that originally said `A06e`. Only three things kept the old spellings on purpose:
 this table's *Old* column, [`features/phase-numbers.md`](./features/phase-numbers.md), and lowercase
 literals (`feat(n6e):` scopes, branch names, campaign ids), which name things that existed under
 those names.

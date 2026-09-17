@@ -47,7 +47,7 @@ const STAGES: Record<
     kind: 'access_parking',
     fn: 'accessPoints:matchAndImportParking',
     arg: 'lots',
-    label: 'OSM parking areas (A06d B3)',
+    label: 'OSM parking areas (A06d §2.3)',
     detail:
       'accessPoints:matchAndImportParking — attaches each lot to every body within PARKING_INFER_RADIUS_M (inference only; a human may associate at any distance, D72 amendment)',
   },
@@ -55,7 +55,7 @@ const STAGES: Record<
     kind: 'access_put_ins',
     fn: 'accessPoints:matchAndImportPutIns',
     arg: 'putIns',
-    label: 'OSM put-in candidates (A06d B3)',
+    label: 'OSM put-in candidates (A06d §2.3)',
     detail:
       'accessPoints:matchAndImportPutIns — attaches each launch to the nearest body within PUTIN_SHORE_RADIUS_M and links its lot',
   },

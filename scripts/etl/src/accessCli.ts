@@ -1,5 +1,5 @@
 /**
- * The access ETL's transform stage (A06d B1/B2) — glue, so it is excluded from coverage; every rule it
+ * The access ETL's transform stage (A06d §2.1/B2) — glue, so it is excluded from coverage; every rule it
  * applies lives in `./accessTransform` and `@skating/core`.
  *
  *   pnpm --filter @skating/etl access-transform                       # all five states

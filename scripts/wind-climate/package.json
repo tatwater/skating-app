@@ -3,7 +3,7 @@
   "version": "0.0.1",
   "private": true,
   "type": "module",
-  "description": "Manual winter wind-rose ETL (A06c A4b): NREL WIND Toolkit 2km -> Convex. Not built or deployed.",
+  "description": "Manual winter wind-rose ETL (A06c §1.4b): NREL WIND Toolkit 2km -> Convex. Not built or deployed.",
   "scripts": {
     "check-types": "tsc --noEmit",
     "test": "vitest run --coverage",

@@ -86,7 +86,7 @@ describe('draftStore kind migration', () => {
     raw.close();
   });
 
-  it('renames a queued confirmation from the pre-N8 kind, in the column and the blob alike', () => {
+  it('renames a queued confirmation from the pre-A08 kind, in the column and the blob alike', () => {
     const raw = new DatabaseSync(':memory:');
     const db = adapt(raw);
     ensureSchema(db);

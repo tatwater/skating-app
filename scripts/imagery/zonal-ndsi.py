@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Per-body NDSI from Sentinel-2's green and SWIR bands (A06e PR 2, §C1).
+"""Per-body NDSI from Sentinel-2's green and SWIR bands (A06e PR 2, §3.1).
 
     zonal-ndsi.py <zones.tif> <green.tif> <swir16.tif> <zone-to-id.json>
                   --green-scale S --green-offset O --swir16-scale S --swir16-offset O

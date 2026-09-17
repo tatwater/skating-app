@@ -1,6 +1,6 @@
 # The deferred register as it stood on 2026-09-16 — archived verbatim
 
-> **Archive.** Phase tokens and workstream letters in this text were rewritten by the 2026-09-17 renumbering pass (`N6e` → `A06e`, `§B4` → `§2.4`); otherwise this is the long-form "Later / deferred" half of `07-roadmap.md` (~1,200 lines: the register intro, *Waiting on a blocker*, and *Design sketches for deferred items*) as it stood before the 2026-09-16 rewrite, kept verbatim. The roadmap now carries a table with one row per item; the items that are still live also have their own `backlog/` docs. Struck-through entries here were already shipped when this was archived.
+> **Archive.** Phase tokens and workstream letters in this text were rewritten by the 2026-09-17 renumbering pass (`A06e` → `A06e`, `§2.4` → `§2.4`); otherwise this is the long-form "Later / deferred" half of `07-roadmap.md` (~1,200 lines: the register intro, *Waiting on a blocker*, and *Design sketches for deferred items*) as it stood before the 2026-09-16 rewrite, kept verbatim. The roadmap now carries a table with one row per item; the items that are still live also have their own `backlog/` docs. Struck-through entries here were already shipped when this was archived.
 
 *Rebuilt 2026-07-25, after a full read of `plans/` against the code with every phase built. Everything
 below is deliberately-deferred work, split by **whether we could start it tomorrow**. Two rules for

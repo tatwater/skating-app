@@ -564,7 +564,7 @@ describe('polygonShape + the hardened polygon gate (A05b)', () => {
     ).toBe(false);
   });
 
-  // The four cases the pre-N5b gate let through: it read `coordinates[0]` and nothing else, so
+  // The four cases the pre-A05b gate let through: it read `coordinates[0]` and nothing else, so
   // anything past the first ring of the first part was unvalidated. Unreachable until a client could
   // author a polygon, which is what this phase changed.
   it('validates every ring, not just the first', () => {

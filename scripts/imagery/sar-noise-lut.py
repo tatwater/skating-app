@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Turn Sentinel-1's noise annotation into a raster that can be warped (A06e PR 2, §C1).
+"""Turn Sentinel-1's noise annotation into a raster that can be warped (A06e PR 2, §3.1).
 
     sar-noise-lut.py <noise.xml> <grd-url-or-path> <out.tif> [--calibration cal.xml]
 
@@ -27,7 +27,7 @@ signal is darkest:
     true -26 dB  ->  measured -22.55   (+3.45)
 
 Which is precisely backwards for this archive. Smooth, specular ice — the dark tail, the entire premise
-of [A06g](../../plans/phase-N6g-imagery-research.md)'s black-ice lane — is the part the noise floor
+of [A06g](../../plans/backlog/A06g-imagery-research.md)'s black-ice lane — is the part the noise floor
 corrupts most. Without this correction, `sigma0Hist`'s dark bins hold instrument noise rather than
 smooth ice, and "40% of this lake sat below −22 dB" is a statement about the sensor.
 

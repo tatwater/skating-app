@@ -2166,7 +2166,7 @@ export default defineSchema({
     subAreaId: v.optional(v.id('waterBodySubAreas')),
     subAreaName: v.optional(v.string()),
     createdByUserId: v.id('profiles'),
-    // Mobile offline queue (Phase 09a offline / F2/D30): one client-generated key carried across every
+    // Mobile offline queue (Phase 09a offline / §6.2/D30): one client-generated key carried across every
     // flush retry, so a create whose ack was lost returns the same hazard instead of dropping a
     // second pin on the same spot. Omitted by web/online callers.
     idempotencyKey: v.optional(v.string()),

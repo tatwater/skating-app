@@ -95,7 +95,7 @@ export const HAZARD_MAX_PER_REPORT = 25;
 export const hazardCreateArgs = {
   waterBodyId: v.id('waterBodies'),
   /**
-   * Offline-flush dedup (Phase 09a offline / F2/D30). A hazard captured on the ice is queued with one
+   * Offline-flush dedup (Phase 09a offline / §6.2/D30). A hazard captured on the ice is queued with one
    * client-generated key and keeps it across every retry, so a create whose ack was lost returns the
    * same hazard instead of dropping a second pin a few metres from the first. Duplicate pins are
    * worse here than duplicate reports: two overlapping footprints read as two hazards, and the

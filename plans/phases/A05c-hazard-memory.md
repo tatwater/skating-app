@@ -1440,14 +1440,14 @@ the card says so" and "no water body is recomputed this year", the plan picked t
   most freely. `describeCluster` is now pure and takes the counts in.
 - **A ceiling, said out loud.** `MAX_BODY_HAZARDS = 4000`, read **newest first** so what it drops is
   the oldest end of the window. Every affected row carries `computedFromPartialHistory`, the operator
-  card prints *"computed from this water body's most recent sightings only — the winter count may be low"*,
+  card prints *"computed from this lake's most recent sightings only — the winter count may be low"*,
   and the job logs it. That is §11's no-silent-caps rule doing exactly the job it exists for.
 - **Claiming and computing are now two transactions**, which is the structural half. The attempt
   counter has to commit *before* the work is attempted or a rollback erases the evidence that anything
   was tried — a counter incremented inside the failing transaction is not a counter. After
   `MAX_BODY_ATTEMPTS = 3` the body is marked `skippedAt` and the queue drains past it. The row is kept,
   never deleted: a water body the pass cannot compute should be findable, and a silently dropped one presents
-  as *"this water body has no patterns"*.
+  as *"this lake has no patterns"*.
 - `maybeRunRollover` treats only **unskipped** rows as work left, so one stepped-over body cannot make
   every remaining July tick restart a run with nothing to do.
 

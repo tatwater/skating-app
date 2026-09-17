@@ -56,7 +56,7 @@ describe('the OSM filter', () => {
   });
 });
 
-describe('the access extract (A06d B1)', () => {
+describe('the access extract (A06d §2.1)', () => {
   it('keeps the four access tag families and nothing from the water pass', () => {
     expect([...OSM_ACCESS_TAGS]).toEqual([
       'leisure=slipway',

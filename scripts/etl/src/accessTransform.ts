@@ -1,5 +1,5 @@
 /**
- * The access transform (A06d B1/B2): OSM features → put-in candidates and parking areas.
+ * The access transform (A06d §2.1/B2): OSM features → put-in candidates and parking areas.
  *
  * ## What this does and, more importantly, what it cannot
  *
@@ -7,7 +7,7 @@
  * which lot. All of it needs the extract and nothing else, so it runs locally, in this file, tested.
  *
  * The other association — *which body does this launch belong to* — **cannot** run here, and that is
- * the A06d kickoff's third correction. The transform has no polygons: post-N7 the merge output is not
+ * the A06d kickoff's third correction. The transform has no polygons: post-A07a the merge output is not
  * the loaded corpus (bodies are pruned, deduped, re-keyed and retired after it), so measuring against
  * anything local would be measuring against a snapshot that has already moved. That join runs
  * server-side in `waterBodies.matchAndImportAccessPoints`, against the A01 cell index, exactly as A06a's

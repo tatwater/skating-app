@@ -554,7 +554,7 @@ export const IMPORT_RUN_KINDS = [
   'elevation', // scripts/lake-depth load-elevation — Open-Meteo
   'wind_climate', // scripts/wind-climate — NREL WIND Toolkit winter roses
   'bathymetry_coverage', // scripts/bathymetry coverage — D2's hasContours
-  // scripts/seed-destinations — the curated shortlist → `curatedBoost` (A06c B3a/D). A pass rather
+  // scripts/seed-destinations — the curated shortlist → `curatedBoost` (A06c §2.3a/D). A pass rather
   // than a one-off because the shortlist grows and the interesting output is what it *declined* to
   // match: an ambiguous name, or a well-known lake absent from the corpus entirely.
   'seed_destinations',

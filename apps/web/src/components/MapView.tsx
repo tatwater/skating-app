@@ -1397,7 +1397,7 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
     };
   }, [imageryLoading, pendingIds, loaded, mapRef.current]);
 
-  // When was this lake last photographed? (A06e B2.)
+  // When was this lake last photographed? (A06e §2.2.)
   //
   // One `identify` per reveal, straight from the client — the service is keyless and CORS-open, so a
   // round trip through Convex would buy nothing but a hop. **Deliberately not a stored field yet:**

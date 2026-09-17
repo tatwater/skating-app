@@ -361,7 +361,7 @@ describe('profiles.syncFromClerk', () => {
 
   test('backfills the email and avatar mirrors a profile onboarded without them', async () => {
     const t = convexTest(schema, modules);
-    // Onboarded from a token that carried neither claim — every pre-N8 profile on dev.
+    // Onboarded from a token that carried neither claim — every pre-A08 profile on dev.
     const id = await onboard(t, 'clerk_ada');
     expect((await t.run((ctx) => ctx.db.get(id)))?.email).toBeUndefined();
 

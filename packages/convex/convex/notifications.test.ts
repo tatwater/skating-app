@@ -931,7 +931,7 @@ describe('notifications — the inbox read path', () => {
     await t.run((ctx) =>
       ctx.db.patch(rater.id, { displayName: 'Deleted skater', status: 'deleted' as const }),
     );
-    // …and a pre-N8 row whose payload nothing writes any more.
+    // …and a pre-A08 row whose payload nothing writes any more.
     await t.run((ctx) =>
       ctx.db.insert('notifications', {
         userId: author.id,

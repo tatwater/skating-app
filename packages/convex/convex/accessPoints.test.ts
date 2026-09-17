@@ -1123,7 +1123,7 @@ describe('the lot a chosen put-in points at is always resolvable', () => {
    * ⚠ Found by the first full load, not by reasoning. It put **160 lots on Lake Champlain**, 97 on
    * Winnipesaukee and 64 on Seneca — all legitimate for lakes that size. `loadParkingForBody` reads a
    * capped window in *index* order, so on those bodies the lot a put-in references can sit outside it,
-   * and `chooseAccessTarget` would fall back to routing a car at the launch: precisely the pre-N6d
+   * and `chooseAccessTarget` would fall back to routing a car at the launch: precisely the pre-A06d
    * behaviour this phase exists to fix, on the four lakes that matter most.
    */
   test('a referenced lot is returned even when it sits past the read cap', async () => {

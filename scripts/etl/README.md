@@ -624,7 +624,7 @@ as a data-quality finding.
 **2. Half the join is local and half is not, and the split is load-bearing.** Parking↔put-in and
 toilets↔parking are OSM-to-OSM, so they run in the transform where the features are — which is also
 what lets the ORS `foot-hiking` leg be computed there. *Which body* a launch belongs to cannot: the
-transform has no polygons, and post-N7 the merge output is not the loaded corpus. That runs
+transform has no polygons, and post-A07a the merge output is not the loaded corpus. That runs
 server-side in `accessPoints:matchAndImportPutIns` against the A01 cell index, the same shape A06a's
 depth join settled on.
 

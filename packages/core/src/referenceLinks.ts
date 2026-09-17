@@ -164,7 +164,7 @@ export const WINDY_ZOOM = 9;
  * would have caught it, because a shoreline coordinate is a perfectly valid coordinate.
  *
  * The fallback chain still ends at `centroid` because a shoreline point is far better than no link,
- * and it is what pre-N6c-1 rows carry.
+ * and it is what pre-A06c-1 rows carry.
  */
 export function linkCoordinate(body: ReferenceLinkBody): LatLng | undefined {
   return body.interiorPoint ?? body.representativePoint ?? body.centroid;

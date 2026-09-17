@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Per-body radar brightness from a calibrated Sentinel-1 pass (A06e PR 2, §C1).
+"""Per-body radar brightness from a calibrated Sentinel-1 pass (A06e PR 2, §3.1).
 
     sar-zonal.py <zones.tif> <zone-to-id.json> <pol>:<dn.tif>:<a.tif>[:<noise.tif>] […]
                  [--interior <interior.tif> --erode-projected-m <m>]

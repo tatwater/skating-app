@@ -6252,7 +6252,7 @@ export const sweepAllBodySummaries = internalAction({
 });
 
 /**
- * Named bodies, paged, for the destination seeding script (A06c B3a/D).
+ * Named bodies, paged, for the destination seeding script (A06c §2.3a/D).
  *
  * **Named only.** A curated destination has a name by definition, so the unnamed ~92% of the corpus
  * can never match one — and filtering here rather than in the script is the difference between the

@@ -3,7 +3,7 @@
   "version": "0.0.1",
   "private": true,
   "type": "module",
-  "description": "Shared ETL run-history writer (A06c F2): every loader records one `importRuns` row instead of printing a summary to a terminal that scrolls.",
+  "description": "Shared ETL run-history writer (A06c §6.2): every loader records one `importRuns` row instead of printing a summary to a terminal that scrolls.",
   "main": "src/index.ts",
   "exports": {
     ".": "./src/index.ts"

@@ -2216,19 +2216,19 @@ reading did.
 **This is the only A07a document.** `HANDOFF-n7-classification.md` and
 `HANDOFF-n7-2-data-campaign.md` were folded in above and deleted (2026-08-10);
 `HANDOFF-n6c-data-campaign.md` was audited against the deployment, folded into
-[`phase-N6c`](./A06c-expanded-body-profiles.md) and [`phase-N6a`](./A06a-body-depth.md), and
+[`phase-A06c`](./A06c-expanded-body-profiles.md) and [`phase-A06a`](./A06a-body-depth.md), and
 deleted (2026-08-10) — its one still-live item was `backfillRepresentativePoint`, since **run**: all
 three tables clean, 9 sub-areas filled, 24,961 bodies and 2,546 admin areas already complete.
 `HANDOFF-wind-climate-archive.md` went the same way on **2026-08-15**, once the wind lane finished:
-audited, its findings folded into [`phase-N6c`](./A06c-expanded-body-profiles.md),
+audited, its findings folded into [`phase-A06c`](./A06c-expanded-body-profiles.md),
 [`scripts/wind-climate/README.md`](../../scripts/wind-climate/README.md) and D134/D135/**D145**, and
 deleted. **No `HANDOFF-*` documents remain.**
 
 [`01-decisions.md`](../01-decisions.md) — **D92–D105**, **D109–D137** ·
 [`docs/water-body-data.md`](../../docs/water-body-data.md) — the same story for humans ·
-[`phase-01`](./01-water-bodies.md) · [`phase-N6a`](./A06a-body-depth.md) ·
-[`phase-N6b`](./A06b-bathymetry-layer.md) ·
-[`phase-N6c`](./A06c-expanded-body-profiles.md) · [`phase-N7b`](./A07b-corpus-by-request.md).
+[`phase-01`](./01-water-bodies.md) · [`phase-A06a`](./A06a-body-depth.md) ·
+[`phase-A06b`](./A06b-bathymetry-layer.md) ·
+[`phase-A06c`](./A06c-expanded-body-profiles.md) · [`phase-A07b`](./A07b-corpus-by-request.md).
 
 
 ---

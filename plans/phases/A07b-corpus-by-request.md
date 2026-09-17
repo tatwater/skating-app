@@ -131,7 +131,7 @@ holds a *local* draft id (the track often hasn't flushed yet). Its "add it from 
 **A06f removed that blocker.** `UnreportedSkates` in the You tab is `listMine`-backed, so every row
 carries a server `activityId`, and an unmatched skate now renders this line instead of a dead button:
 
-> *"We couldn't match this to a water body we know, so there's nothing to report it against yet."*
+> *"We couldn't match this to a lake we know, so there's nothing to report it against yet."*
 
 **That sentence is this phase's to delete.** Replacing it with `<NewWaterPrompt activityId={…} />` is
 the smallest honest version of D108 — the resolver and the admission flow are still the real work, but
@@ -411,4 +411,4 @@ them nothing costs more. Not decided.
 ## Related
 
 [D91](../01-decisions.md), [D62](../01-decisions.md), [`A07a`](./A07a-unified-corpus.md),
-[`phase-N2`](./A02-body-editor-and-subareas.md), [`phase-08`](./08-native-capture.md)
+[`phase-A02`](./A02-body-editor-and-subareas.md), [`phase-08`](./08-native-capture.md)

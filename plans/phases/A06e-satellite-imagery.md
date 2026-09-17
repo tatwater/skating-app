@@ -336,7 +336,7 @@ and it turns out to be both cheaper and simpler:
 - **Read the open COGs directly** (Copernicus S3 / AWS Earth Search STAC) instead of Sentinel Hub's
   metered Process API. The five states are **~20–25 granules**; at ~6 passes/month that's ~150 granule
   reads a month, and we cut *every body in the corpus* out of them. **The 10,000-request/month quota
-  stops being the ceiling at all** — which retires the entire C2/C3 quota argument from the 07-31 doc.
+  stops being the ceiling at all** — which retires the entire §3.2/C3 quota argument from the 07-31 doc.
 - **Mask first, then store.** Water plus buffers is roughly 5% of the region's area, so masking shrinks
   each pass ~20× — on the order of **40 MB per pass, ~1.2 GB per season**. Pennies in R2.
 - **PMTiles, because we already have the whole pipeline**: `scripts/basemap/upload-r2.sh`, the

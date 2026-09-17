@@ -1927,7 +1927,7 @@ describe('the two-bay skate and the reportSubAreas join (A09 / D175)', () => {
       skateEndTime: Date.now(),
       point: { lat: 44.3, lng: -73.4 },
     });
-    // Simulate a pre-N9 row: stamped, but with no join.
+    // Simulate a pre-A09 row: stamped, but with no join.
     await t.run(async (ctx) => {
       for (const row of await ctx.db
         .query('reportSubAreas')
@@ -2303,7 +2303,7 @@ describe('restampAllParents — the one-off for rows that predate A09', () => {
       polygon: rect(-72.8, 44.2, -72.5, 44.6),
     });
     await settle(t);
-    // A pre-N9 launch: on the bay's shore, never tagged.
+    // A pre-A09 launch: on the bay's shore, never tagged.
     const putIn = await t.run((ctx) =>
       ctx.db.insert('putIns', {
         waterBodyId: body,

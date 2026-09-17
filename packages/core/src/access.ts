@@ -101,7 +101,7 @@ export const AMENITY_NEAR_PARKING_M = 150;
  *
  * Tight on purpose, and it can afford to be: a slipway, beach or pier is *on* the water by
  * definition, so the only slack needed is the disagreement between OSM's shoreline and ours (we
- * simplify to ~5 m, and post-N7 a body's outline may come from NHD rather than OSM at all). A loose
+ * simplify to ~5 m, and post-A07a a body's outline may come from NHD rather than OSM at all). A loose
  * radius here does not find more launches, it finds the *wrong lake* — which is the one failure mode
  * that produces a wrong answer instead of no answer.
  */

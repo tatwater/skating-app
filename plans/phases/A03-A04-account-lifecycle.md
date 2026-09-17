@@ -60,7 +60,7 @@ so a big water body samples at several points, and rows accrue per hour *per poi
 
 ## Decisions taken at kickoff (2026-07-27)
 
-**1. Bundle old-N3 into old-N4.** One phase, one PR. See above — the coupling is real, not budgetary.
+**1. Bundle old-A03 into old-A04.** One phase, one PR. See above — the coupling is real, not budgetary.
 
 **2. Deletion gets a 30-day grace window, finalized by cron.** Not immediate. Reversible-by-default
 matches the ethos every other destructive path in this app already has (hazard archive D15, merge

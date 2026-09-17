@@ -175,7 +175,7 @@ and **D61** (the per-body operator canvas). Written when the code lands, not bef
 
 ## What the build found in the plan
 
-Reviewed against the landed post-N1 code at build kickoff (2026-07-26), same discipline the plan
+Reviewed against the landed post-A01 code at build kickoff (2026-07-26), same discipline the plan
 applied to the roadmap entry. Seven corrections, each verified against a file:
 
 1. **Nothing cascaded parent unlisting to sub-areas — the A01 invariant was leaking.** A01's load-bearing

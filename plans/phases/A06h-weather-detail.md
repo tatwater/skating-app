@@ -60,7 +60,7 @@
 >    (`focusSubAreaId`), so camera, report-feed filter and weather follow one selection concept
 >    rather than a third one.
 > 9. **Spread lines only in H** — named extremes for lows and snow-since over the 7-day headline
->    window, collapsing to *"Similar across the water body"* inside a pinned threshold. The sorted bay lists
+>    window, collapsing to *"Similar across the lake"* inside a pinned threshold. The sorted bay lists
 >    wait for E, where the per-cell digest gives them their inputs for free.
 > 10. **IA mapping.** Action buttons (report / hazard / bounty / directions) and the NWS alert stay
 >     **above the tabs, always visible**. *Overview:* public-access ruling, posted rules, wind
@@ -612,7 +612,7 @@ had no headless path — by making one cell cold for the check and restoring its
    already emitted. So the card's reading is the bay it prints (*"at Malletts Bay"*), the others are
    listed, and the sentence is true of somewhere real — the spread's grammar, one surface over.
 2. **Unnamed water is left out of the list, as `viewportLakes` leaves it out of the sidebar.** The
-   first render showed three cards reading only *"Water body or pond · NH"*. On the map an unnamed pond is
+   first render showed three cards reading only *"Lake or pond · NH"*. On the map an unnamed pond is
    a shape in a place and still draws undimmed; in a list it is not a destination.
 3. **Open-ended is "the walk ran out with the last night cold", not "inside a bridgeable gap".** The
    night beyond the window is unknown either way, and a "+" on every chain near an edge would mean

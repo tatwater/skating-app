@@ -16,4 +16,4 @@ signal rather than a radius, and it would find the mile-in case the 250 m infere
   coordinate-hashed graph, a budget-bounded BFS with property tests for cycles and disconnection.
 - **Why not yet:** the case is already served twice — `setOfficialParking` accepts a human's
   association at any distance (D72 amendment), and 840 lots already survived the gate on the pairing
-  bypass. See [`phase-N6d`](../phases/A06d-body-access-points.md) *§Sized 2026-08-14*.
+  bypass. See [`phase-A06d`](../phases/A06d-body-access-points.md) *§Sized 2026-08-14*.

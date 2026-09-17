@@ -36,7 +36,7 @@
 >   `pointEvents.by_ref` index (no denormalized counter).
 > - Wiring the hazard reporter's `TrustAvatar` also **fixed the previously-dead `reporterName`** on the
 >   hazard detail (both platforms).
-> - **prod cutover** outstanding (with the rest of phases 3–5).
+> - **prod cutover** outstanding (with the rest of Phases 03–05).
 >
 > **Build order (per-workstream, web-first on shared surfaces):** **§1** `@skating/core` pure logic →
 > **§2** Convex trust primitives → **§3** Convex bounties → **D** Web + Mobile UI → **§5** recommended
@@ -380,7 +380,7 @@ their consumers:
   open-bounty set ever grows past the `OPEN_BOUNTY_SCAN_CAP` (200) — and unlike `listInViewport` it would
   degrade gracefully (logged truncation) long before crashing.
 - **Push delivery** — deferred repo-wide; Phase 06 bounty/rating notices are in-app rows.
-- **Prod cutover** — deferred with the rest of phases 3–5.
+- **Prod cutover** — deferred with the rest of Phases 03–05.
 
 
 ---
