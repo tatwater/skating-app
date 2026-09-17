@@ -60,7 +60,7 @@
 >    (`focusSubAreaId`), so camera, report-feed filter and weather follow one selection concept
 >    rather than a third one.
 > 9. **Spread lines only in H** — named extremes for lows and snow-since over the 7-day headline
->    window, collapsing to *"Similar across the lake"* inside a pinned threshold. The sorted bay lists
+>    window, collapsing to *"Similar across the water body"* inside a pinned threshold. The sorted bay lists
 >    wait for E, where the per-cell digest gives them their inputs for free.
 > 10. **IA mapping.** Action buttons (report / hazard / bounty / directions) and the NWS alert stay
 >     **above the tabs, always visible**. *Overview:* public-access ruling, posted rules, wind
@@ -126,7 +126,7 @@
 >     a filter reads; D159's longer list (thaw hours, `sunlitThawHours`…) is *"a field and a sweep"*
 >     when a filter asks for it, as D159 promised.
 > 20. **"Latest" orders body results by an event time and interleaves them with reports** — option
->     (b): the event is *the day the chain reached the requested length*, so a lake that just crossed
+>     (b): the event is *the day the chain reached the requested length*, so a water body that just crossed
 >     three nights sits above one that crossed it a fortnight ago. Body cards appear **only while a
 >     weather filter is active**; with none the feed is today's, renamed. *"Only show reports"* with a
 >     weather filter narrows reports to matching bodies. *"For now and see if we need to tweak."*
@@ -135,7 +135,7 @@
 >     only** — quality floors are report attributes and mean nothing for a body.
 > 22. **No-public-access bodies are not filtered out of discovery.** Founder: the moderator-confirmed
 >     `none` verdict should eventually **trim the corpus** — *"the ideal situation eventually would be
->     managing 5,000 lakes that actually get skated on, not 20,000 nobody ever touches"* — so the query
+>     managing 5,000 water bodies that actually get skated on, not 20,000 nobody ever touches"* — so the query
 >     does nothing special and the deferment is written down (see *Later / deferred*).
 > 23. **Giants: one card per body, matching bays named, tap → that bay focused** (`focusSubAreaId`,
 >     from H). A giant with no bays keeps the honest "checked at one point" line.
@@ -211,7 +211,7 @@
 > | share from the top 50 | 79.2% |
 >
 > **The founder's hunch was right, and the numbers are almost exactly the guess:** *"my hunch is that
-> the unique count will be closer to 50-75; the popular lakes are really popular."* The ≥3-mention band
+> the unique count will be closer to 50-75; the popular water bodies are really popular."* The ≥3-mention band
 > is 75 bodies and the ≥5 band is 49. The head is steep — Champlain (60) and Morey (57) alone are 14%
 > of all mentions.
 >
@@ -256,7 +256,7 @@ branch gained, in order:
    *browse* tier only (grows with attention, not with the corpus) and never on `weatherDays`, whose
    rows are range-scanned corpus-wide. Rows carry `HOURLY_ROW_VERSION`; adding a field without
    bumping it is now the bug, because a cell already holding complete rows is otherwise satisfied for
-   ever and the new field never appears on exactly the popular lakes.
+   ever and the new field never appears on exactly the popular water bodies.
 3. **`weather_code` as the twelfth hourly variable** (~9% on every call; founder call, made with the
    number stated). `HOURLY_VARS` is 12, not the 14 the cost model below assumes — `dew_point_2m` was
    never added and `precipitation_probability` is still owed by D.
@@ -268,7 +268,7 @@ branch gained, in order:
    a July backfill gave every January row EDT and no arithmetic on it could recover the date.
    `localDateInZone` asks the zone (the Convex runtime has full ICU) and returns null rather than
    answering in UTC.
-6. **`isCompleteDay` takes the lake's current local day**, because Open-Meteo returns whole calendar
+6. **`isCompleteDay` takes the water body's current local day**, because Open-Meteo returns whole calendar
    days and today's row holds forecast values for its un-elapsed hours — today was "complete" from the
    first fetch of the morning, on every surface.
 7. **Staff email on season open and close** (`broadcastToStaff`, one message per active moderator or
@@ -372,7 +372,7 @@ the sheet by hand.
 1. **The mobile strip pins through two portal slots, not by being "outside the scroll view".**
    React Native can only stick a *direct* child of a scroll view, and `MapDrawer`'s
    `BottomSheetScrollView` wraps a single Expo Router `<Slot />` — so the plan's *"outside the scroll
-   view"* would have put the tabs above the lake's own name and the NWS alert. The first cut let the
+   view"* would have put the tabs above the water body's own name and the NWS alert. The first cut let the
    strip scroll; the founder overruled that on the first device pass (*"(b), and in this PR"*), so
    the scroll view is now exactly three children — a **head** slot, a **pinned** slot
    (`stickyHeaderIndices={[1]}`), and the routed screen — and `WaterBodyDetail` teleports its
@@ -389,10 +389,10 @@ the sheet by hand.
    change if usage says people go straight to *Planning*.
 4. **Scope resolution is client-side, validation is server-side.** `resolveWeatherSubArea` (core)
    picks the bay — route `?sub=`, else top `displayScore`, never written back — and the server
-   refuses a delisted or foreign id by answering for the lake and serving `scope` back, so the
+   refuses a delisted or foreign id by answering for the water body and serving `scope` back, so the
    panel labels what it was *given*. Both `getWeatherDaysForBody` and `getForecastForBody` take
    the bay, so the Planning tab describes one place.
-5. **A bay carries no fetch profile.** The profile is the lake's; Malletts Bay is sheltered where
+5. **A bay carries no fetch profile.** The profile is the water body's; Malletts Bay is sheltered where
    Champlain's eleven miles of fetch is not. The wind lane draws flat on a bay until a per-bay
    profile exists.
 6. **The spread's collapse thresholds:** 3 °C on lows (lapse-rate and lake-effect noise between two
@@ -404,14 +404,14 @@ the sheet by hand.
 
 | hole | status |
 |---|---|
-| 2 · multi-cell giants | ✅ **closed for any body with sub-areas.** The reading is for a named bay, the caveat line is gone there, and the spread says what the rest of the lake did. Memphremagog and Connecticut River Reservoir have no bays and keep the interim caveat until one is drawn (or a sample grid placed — still an operator call). |
+| 2 · multi-cell giants | ✅ **closed for any body with sub-areas.** The reading is for a named bay, the caveat line is gone there, and the spread says what the rest of the water body did. Memphremagog and Connecticut River Reservoir have no bays and keep the interim caveat until one is drawn (or a sample grid placed — still an operator call). |
 | Open question 5 | ✅ Sub-areas first, as recommended. Champlain measured **10 live bays in 10 distinct Tier-B cells** on dev (the plan's 7 was an earlier count). The registry walk gains a sub-area pass, inline on the last body page, so bay cells are swept and gap-repaired like any other. |
 
 ### Two things worth remembering
 
 - **The Tier-B empty-until-November problem has an operator tool now:** `primeSubAreaWeather`
   (`internalAction`, `convex run weatherArchive:primeSubAreaWeather '{"waterBodyId":…,"pastDays":8}'`)
-  fills one lake's bay cells at the filter tier. Run on Champlain 2026-09-11, ~12 weighted calls.
+  fills one water body's bay cells at the filter tier. Run on Champlain 2026-09-11, ~12 weighted calls.
 - **The circular-type landmine bit again**, in a new place: an action that reaches
   `internal.weatherArchive.*` from inside its own module with an *inferred* return type makes
   TypeScript give up on the whole `api` type, and the first symptom was an unrelated test file
@@ -424,7 +424,7 @@ content child (never clamps; short tabs scroll into blank space), or animating t
 on a tab change (predictable; loses position both ways). Decide once the tabs have their real content.
 
 **Sequencing note for D.** `PastWeatherPanel` and `ForecastStrip` now take `subAreaId` + a
-load-bearing `pending` flag (hold while the bays load, or a giant pays for the lake's cell and then
+load-bearing `pending` flag (hold while the bays load, or a giant pays for the water body's cell and then
 the bay's). D's forecast panel inherits both; the Planning tab already has the picker it wanted.
 
 ### ⚠ Readiness pass for PR 4, 2026-09-11 — four things the plan had wrong or stale
@@ -483,7 +483,7 @@ sheet by hand, since sign-in is email-code and there is no headless path.
 ### Five things the build decided that the plan did not
 
 1. **The cache row records `forecastDays`, and a shorter row is a miss.** The key is the hour
-   bucket, so in the hour after the deploy every popular lake would otherwise have answered a 7-day
+   bucket, so in the hour after the deploy every popular water body would otherwise have answered a 7-day
    request with the strip's 2-day row — five empty day cards, no error anywhere. Pre-planner rows
    also lack `utcOffsetMs`, which is the second reason they read as a miss. `writeForecastCache`
    uses `replace`, not `patch`, so the strip's old derived fields cannot survive beside a longer
@@ -598,21 +598,21 @@ had no headless path — by making one cell cold for the check and restoring its
 - **`weatherDiscovery.listBodyResults`** — index walk → in-memory predicate → band on cell centres →
   bodies newest-event-first to a cap. `matchedCells` is the map's read; `status` the knobs' gate.
 - **`FeedFilters.weather` + `onlyReports`**, persisted like the rest; a shared store per client that
-  the map now reads (D166). `listFeed` narrows reports by their lake's (or bay's) digest.
+  the map now reads (D166). `listFeed` narrows reports by their water body's (or bay's) digest.
 - **"Latest"**, heterogeneous: `interleaveLatest` slots `BodyResultCard`s among reports by event
-  time, holding back a lake older than the oldest loaded report until the pages catch up.
+  time, holding back a water body older than the oldest loaded report until the pages catch up.
 - **The map dims non-matches** through the same properties-bag expression A06f built, with a chip
   naming the filter and clearing it. **Sorted bay lists** on the spread (call 9).
 
 ### Seven things the build decided that the plan did not
 
 1. **The event day is the *newest* matched bay's, and the card names that bay.** A giant matched
-   through three bays on three days could have taken the earliest crossing as "the lake reached 3
+   through three bays on three days could have taken the earliest crossing as "the water body reached 3
    nights", but the walk is newest-first to a cap and a later, older cell could not reorder a card
    already emitted. So the card's reading is the bay it prints (*"at Malletts Bay"*), the others are
    listed, and the sentence is true of somewhere real — the spread's grammar, one surface over.
 2. **Unnamed water is left out of the list, as `viewportLakes` leaves it out of the sidebar.** The
-   first render showed three cards reading only *"Lake or pond · NH"*. On the map an unnamed pond is
+   first render showed three cards reading only *"Water body or pond · NH"*. On the map an unnamed pond is
    a shape in a place and still draws undimmed; in a list it is not a destination.
 3. **Open-ended is "the walk ran out with the last night cold", not "inside a bridgeable gap".** The
    night beyond the window is unknown either way, and a "+" on every chain near an edge would mean
@@ -622,8 +622,8 @@ had no headless path — by making one cell cold for the check and restoring its
    touch already pulled; the panel falls back to its own days when none is served.
 5. **The map dims by cell, on the client.** The filter tier does not band by elevation, so a body's
    key is purely positional and `weatherCellFor('filter', anchor)` runs from the `listInViewport` row;
-   the server sends matched keys plus the lakes matched through a bay, and the radius is tested on
-   the client from the viewer's own cached bands. One small read, independent of how many lakes are
+   the server sends matched keys plus the water bodies matched through a bay, and the radius is tested on
+   the client from the viewer's own cached bands. One small read, independent of how many water bodies are
    on screen. `bodyWeatherAnchor` moved to core so the server's `defaultSampleAnchor` and the map
    cannot pick two points.
 6. **No cron change.** The plan listed one; the digest rides `refreshTierDays`, the gap sweep and
@@ -678,7 +678,7 @@ The `/code-review` skill hit a session limit before running, so the pass was by 
   the winner's prune, stamping rows with a dead run id and patching a body's cell to a stale key.
   Same check, same transaction; the action stops on `superseded`.
 
-**Deferred, with reasons:** a favorited lake outside the viewer's outer band box under a radius
+**Deferred, with reasons:** a favorited water body outside the viewer's outer band box under a radius
 filter is unreachable (the cell pre-test drops it before the exemption can apply — the same trade
 `listFeed` makes when it paginates by time); and `status.asOfDayMs` is one fresh digest's, a caption
 not a claim.
@@ -699,7 +699,7 @@ plus the plan corrections marked ⚠ **PR 2** in D159, F and the workstream list
 **The three bugs worth remembering**, all of the same family: two true numbers making one false
 sentence.
 
-1. `getWeatherDaysForBody` anchored its window on the **UTC** day while rows are keyed by the lake's
+1. `getWeatherDaysForBody` anchored its window on the **UTC** day while rows are keyed by the water body's
    **local** date, so between UTC midnight and local midnight — all evening, prime browsing — the
    newest day looked permanently missing. Every drawer-open refetched, and the panel printed *"1 day
    of weather unavailable"* nightly. The test harness hid it by minting local dates off the UTC clock.
@@ -715,7 +715,7 @@ sentence.
 deployed to `agile-bee-397` — the branch is unpushed and undeployed, so the action throws, the
 component's deliberate fail-open-and-quiet `catch` swallows it, and `rows.length === 0` renders
 `null`. `pnpm convex-dev --once` from `packages/convex` fixes it. Worth knowing that **a missing
-deployment and a lake with no weather are indistinguishable on screen** by design.
+deployment and a water body with no weather are indistinguishable on screen** by design.
 
 **One finding left unfixed and unchanged:** `wind_direction_10m` in the shared `HOURLY_VARS` takes
 every weather call to 1.1× billing weight for a variable only the archive parses. Documented as
@@ -739,8 +739,8 @@ already in `HOURLY_VARS` and already summed into `insolationWhM2`; irradiance ha
 inside it by construction, so the correct measure was one field away and simply unused.
 
 **⚠ And the larger term was missing entirely: albedo.** Fresh snow reflects 0.8–0.9 of incoming
-shortwave; bare clear ice reflects ~0.1, with observed lake values as low as 0.075. An identical
-3 kWh/m² day therefore deposits roughly **9× more energy into black ice than into the same lake under
+shortwave; bare clear ice reflects ~0.1, with observed water body values as low as 0.075. An identical
+3 kWh/m² day therefore deposits roughly **9× more energy into black ice than into the same water body under
 5 cm of snow**. Any sun term that ignores the surface is wrong by more than it is right. Three fields
 land:
 
@@ -814,8 +814,8 @@ a skater most wants to know what the weather has done to it. Against a budget wi
 buying that reluctance costs nothing worth counting.
 
 **⚠ What the close is NOT, and must not become.** It is a coarse region-wide *ice-out* signal for
-gating spend. It is **not** a per-lake claim that skating is over, and D162's melt fields must not be
-promoted into one. A lake is not a region, and the whole argument of D161 — that a gate and a
+gating spend. It is **not** a per-body claim that skating is over, and D162's melt fields must not be
+promoted into one. A water body is not a region, and the whole argument of D161 — that a gate and a
 discovery predicate should not share a threshold, a code path, or a bug — applies here unchanged.
 The founder's *"several days like that ruins it"* is a real signal and its home is the **panel**, as
 observations about weather, not a switch that turns anything off.
@@ -831,7 +831,7 @@ The question a skater actually has is not a weather question. It is: **do I get 
 decision is made against a body of ice whose history is invisible — how many nights it held below
 freezing, whether the night it froze was calm or blowing, whether the two inches that fell on Tuesday
 are still sitting on it. A general weather app cannot answer it, because a general weather app is
-about a town and this is about a lake. And the part of it that matters most is the part no weather app
+about a town and this is about a water body. And the part of it that matters most is the part no weather app
 shows at all: **the past.**
 
 So this phase is a weather app, deliberately, but a narrow one. No pollen, no air quality, no UV
@@ -853,7 +853,7 @@ surfaces.
 | Seam | Where | What it gives us |
 |---|---|---|
 | Open-Meteo fetch, split past/forecast | `packages/convex/convex/weather.ts:121-234` | `forecast_days`/`past_days` handling, unixtime + offset arithmetic, the D74 past/forecast wall |
-| Hour-bucketed shared cache | `weather.ts:63`, `weatherCache` / `weatherForecastCache` | concurrent viewers of one lake already collapse to one fetch |
+| Hour-bucketed shared cache | `weather.ts:63`, `weatherCache` / `weatherForecastCache` | concurrent viewers of one water body already collapse to one fetch |
 | Sample-point resolution | `packages/convex/convex/lib/sampling.ts` | `nearestSamplePoint`, multi-point giants, one point for all four consumers |
 | The reducer | `packages/core/src/weather.ts:139-253` | freezing/thaw degree-hours, longest freeze run, freeze-thaw cycles |
 | Wind climatology × fetch | `packages/core/src/windRose.ts`, `fetchProfileM` in the corpus | `exposure[k] = winterFrequency[k] × fetchM[k]` over 16 sectors, per body |
@@ -869,10 +869,10 @@ surfaces.
 ```
 
 Run against the merged corpus (`scripts/etl/.scratch/merge/bodies.ndjson`, 24,948 bodies with an
-interior point) that key produces **24,832 distinct values.** One per lake. The cache shares nothing.
+interior point) that key produces **24,832 distinct values.** One per water body. The cache shares nothing.
 
 It is invisible today because both weather actions are drawer-open-only, so the hour bucket collapses
-concurrent viewers of the *same* lake and nothing ever asks for two. Every feature in this phase makes
+concurrent viewers of the *same* water body and nothing ever asks for two. Every feature in this phase makes
 it visible at once.
 
 | rounding | ≈ cell (at 44°N) | distinct keys | bodies/cell |
@@ -945,26 +945,26 @@ user opens. 0.05° is ~2× HRRR's native cell and loses nothing the model resolv
 **The elevation band is not optional, and it is why this isn't simply "round coarser."** Open-Meteo
 lapse-rate-downscales temperature to whatever `elevation` you pass, and the corpus is at 99.5%
 elevation coverage after the A07a-3 campaign. In the Greens, the Adirondacks and the Whites a valley
-lake can sit 400 m below its grid cell's mean elevation, and the default answer is then wrong by
-several degrees — across freezing, which is the only threshold we care about. Passing the lake's real
+water body can sit 400 m below its grid cell's mean elevation, and the default answer is then wrong by
+several degrees — across freezing, which is the only threshold we care about. Passing the water body's real
 elevation fixes it; including a coarse band in the key is what keeps the fix from fragmenting the
-cache back to one-key-per-lake.
+cache back to one-key-per-body.
 
 ✅ **Measured 2026-09-02 — 100 m bands, and the cost is ~1.16×** (see the header block for the three
 samples and the method's limits). Tier A is **~9,500–10,500 keys**, cache sharing ~2.6 bodies/cell.
-The worry that banding would fragment the cache back toward one-key-per-lake was wrong: in this
+The worry that banding would fragment the cache back toward one-key-per-body was wrong: in this
 terrain, 200 m bands are already within ~1% of 300 m bands, so the elevation axis is coarse-grained by
 nature and 100 m buys real fidelity for almost nothing.
 
 **Tier B — the filter tier: `0.1°`, no elevation.** Corpus-wide, cron-populated, powers cross-body
 queries only. 11 km and no lapse-rate correction is genuinely coarser weather, and that is the
-accepted trade: it is a *filter*, and a filter's job is to narrow 25,000 lakes to a dozen worth
+accepted trade: it is a *filter*, and a filter's job is to narrow 25,000 water bodies to a dozen worth
 opening. The dozen then get Tier A on open.
 
 **Why two tiers rather than one compromise.** A single key fine enough for the detail panel cannot be
 afforded corpus-wide; a single key cheap enough corpus-wide is too coarse for the panel. The two
 answer different questions and the cheaper one is allowed to be wrong in ways that only change *which
-lakes you look at*, never what the panel then tells you about them.
+water bodies you look at*, never what the panel then tells you about them.
 
 ---
 
@@ -980,7 +980,7 @@ New table, `weatherDays`, keyed `(cellKey, tier, dayMs)`. Never pruned on the hy
 
 **The finding that resolves the founder's worry.** The concern was that on-demand fetching gives *"a
 specific window of days, not a full timeline."* It does not: **Open-Meteo's `past_days` reaches 92
-days on the same forecast endpoint we already use.** The first person to open a lake in February
+days on the same forecast endpoint we already use.** The first person to open a water body in February
 backfills the entire season to date in one request — ~9 weighted calls — not just the week before
 their visit. Lazy backfill is not lossy. The rule is: **92-day backfill on first touch of a cell in a
 season, then one appended day per day.**
@@ -990,7 +990,7 @@ because its ~5-day lag made it wrong for recent windows. That reasoning does not
 where the forecast endpoint simply has no data and the archive is the only source — and a five-day lag
 is meaningless when the question is about last February. **The boundary is 92 days: forecast+`past_days`
 inside it, archive outside it.** This unlocks prior-season history and a per-cell climatology baseline
-(*"this lake has 40% more freezing degree-days than a normal February 1"*), which is arguably the most
+(*"this water body has 40% more freezing degree-days than a normal February 1"*), which is arguably the most
 compelling thing in this document and is deliberately **deferred** — see the register.
 
 **Shape, and the write-cost tension.** One document per cell-day is cheap to append and more expensive
@@ -1040,7 +1040,7 @@ budget**, which is worth knowing up front so the job is built for correctness ra
 The first draft of this idea was *"show the forecast at now + drive time."* The founder corrected it,
 and the correction is the feature:
 
-> *"If I'm checking before bedtime for a lake I plan to wake up early and skate, or midday at work
+> *"If I'm checking before bedtime for a water body I plan to wake up early and skate, or midday at work
 > thinking about where I'll go at 5pm, the start time I care about isn't just now + drive. But also,
 > the weather leading up to when I'd get there still matters! If it's going to snow for hours
 > overnight, I want to see that instead of skipping it."*
@@ -1146,8 +1146,8 @@ blocked stops, cloud fraction, SCL bands and granule seams, none of which a regu
 timeline has, and it is **drag-only with no play/pause** — an animation loop is new work. Two
 structural mismatches to budget for:
 
-- The imagery control is **gated on a single lake being selected** (`ImageryControl.tsx:12-36`,
-  `MapView.tsx:1578`), per D146's one-control-per-lake rule. Radar is **viewport-scoped**. The
+- The imagery control is **gated on a single water body being selected** (`ImageryControl.tsx:12-36`,
+  `MapView.tsx:1578`), per D146's one-control-per-body rule. Radar is **viewport-scoped**. The
   placement argument does not transfer.
 - **There is no layer registry.** Today's toggle is one boolean plus a hazard checkbox. A second
   overlay means either a third prop pair or a real refactor, and this phase should pay for the
@@ -1195,9 +1195,9 @@ haven't been written about them in the specified window… I don't want to limit
 filtering on reports that exist."*
 
 This is the most consequential thing in the phase, because it inverts what the corpus is *for*. Today
-discovery is report-shaped: you find lakes because somebody wrote about them, which means 25,000 bodies
+discovery is report-shaped: you find water bodies because somebody wrote about them, which means 25,000 bodies
 are functionally invisible and the handful with reports get all the attention — a rich-get-richer loop
-that a new lake can never break into. **Weather is the first signal we have about a lake that requires
+that a new water body can never break into. **Weather is the first signal we have about a water body that requires
 no human to have visited it.** Filtering on it makes the whole corpus discoverable for the first time.
 
 **The read-path danger is the one this repo has already been burned by twice.** A predicate like
@@ -1240,9 +1240,9 @@ options, and it is a schema decision that hole 7's migration should settle rathe
 
 - **Anchor cell only.** Cheapest; a giant is findable through the cell holding its interior point and
   invisible through the others. Then the result card must say so, or the filter promises a claim
-  about a lake it checked in one spot.
+  about a water body it checked in one spot.
 - **A `bodyWeatherCells` join table** (`cellKeyB` → `bodyId`, indexed both ways). One more small
-  table, and it makes *"which part of the lake matched"* answerable — which is what the card needs
+  table, and it makes *"which part of the water body matched"* answerable — which is what the card needs
   anyway, and what the sub-area question below is really asking for.
 
 **⚠ A spec gap worth catching now: "no snow *since*" has no anchor without a report.** Every
@@ -1258,10 +1258,10 @@ carry over between the two until you clear your filters"* — is right, and it i
 discovery-filter store that the map and the feed both read, rather than the map's
 `MapSelectionContext` and the feed's existing filter row each keeping their own. Carrying the filter
 across a navigation is the entire point: you narrow on the feed, switch to the map, and the same dozen
-lakes are what is drawn.
+water bodies are what is drawn.
 
 **And it changes what the feed *is* — deliberately.** Today the feed lists reports. A weather filter
-that matches lakes nobody has written about produces a list of **bodies**. **Founder call: the feed
+that matches water bodies nobody has written about produces a list of **bodies**. **Founder call: the feed
 becomes heterogeneous, and it gets renamed from "Newsfeed" to "Latest"** — *"it allows us to get more
 creative in the future, too."* The rename is doing real work: *Newsfeed* names a source (posts),
 *Latest* names an ordering, and an ordering can admit new card types — a body that just froze, a
@@ -1338,8 +1338,8 @@ November–March, so gating costs nothing real and saves nearly half the annual 
 
 - *"Has winter started anywhere in the region?"* is coarse and region-wide. 25 sites is plenty; more
   resolution would not make the answer better.
-- *"Which specific lakes look frozen?"* needs per-cell fidelity, because the whole point is
-  distinguishing one lake from its neighbour.
+- *"Which specific water bodies look frozen?"* needs per-cell fidelity, because the whole point is
+  distinguishing one water body from its neighbour.
 
 **Their failure modes differ too, which is the stronger argument.** A season gate that fires two days
 late costs a couple of satellite passes. A discovery scanner that is wrong sends somebody driving two
@@ -1366,10 +1366,10 @@ The gate wants the coarse, boring, region-wide signal precisely because it is ha
 
 **Founder, 2026-09-03:** *"I think we should be trying to get the best, most localized weather data we
 can for large bodies, probably based on their sub-area bays? Rather than one weather report based on
-the center point of the lake which most skaters might not even reach."*
+the center point of the water body which most skaters might not even reach."*
 
 **These are two different fixes to two different halves of hole 2, and an earlier thread offered only
-the first.** The sample grid answers *"the panel has one reading for a 170 km lake."* Sub-areas answer
+the first.** The sample grid answers *"the panel has one reading for a 170 km water body."* Sub-areas answer
 *"the one reading is for a place nobody skates."* They compose; they do not compete.
 
 ### Measured on dev, 2026-09-03 — and the numbers settle it
@@ -1389,13 +1389,13 @@ the first.** The sample grid answers *"the panel has one reading for a 170 km la
 **⚠ Champlain's ten named bays land in ten distinct weather cells, and not one of them is the cell the
 panel currently reads.** Malletts Bay, Burlington Bay, Shelburne Bay, Broad Lake — the places people
 actually skate and actually talk about (Malletts Bay is 26 mentions in the Google Group corpus,
-Button Bay 32, both out-ranking most whole lakes) — are all described today by a reading taken
-somewhere none of them are. That is worse than the "one reading for a big lake" framing suggested:
-it is one reading for a spot on the lake that is not any of the destinations.
+Button Bay 32, both out-ranking most whole water bodies) — are all described today by a reading taken
+somewhere none of them are. That is worse than the "one reading for a big water body" framing suggested:
+it is one reading for a spot on the water body that is not any of the destinations.
 
 **And the shape is self-limiting, which is what makes it affordable.** On Pine River Pond seven of
 eight sub-areas share the anchor cell; on Stillwater Reservoir all three do. Below roughly a cell's
-width the sub-areas collapse onto the same key and fetch nothing extra. Cost scales with a lake's
+width the sub-areas collapse onto the same key and fetch nothing extra. Cost scales with a water body's
 actual geographic spread rather than with a spacing constant — **~60 additional Tier-A cells for the
 whole corpus**, against a free tier of 10,000 calls/day.
 
@@ -1408,7 +1408,7 @@ whole corpus**, against a free tier of 10,000 calls/day.
 | **Which one does the panel show?** | ⚠ **Unanswered** — a grid has no target, so the panel must pick, and "point 7 of 18" is not a claim | Falls out: the sub-area the user selected, else the body anchor, and the label names it |
 | **Operator work** | One action per body, three bodies owed, judgement on spacing | **None — 128 already placed** |
 | **Coverage** | Any body, on demand | Only the 22 bodies that have them |
-| **Cost on small lakes** | A grid is placed regardless | Collapses to the anchor cell; free |
+| **Cost on small water bodies** | A grid is placed regardless | Collapses to the anchor cell; free |
 | **Serves D159's "where matched?"** | No — a grid index is not a place name | Yes, directly |
 | **⚠ Resolution mismatch** | 11 km spacing is **coarser than Tier A's 5.6 × 4.0 km cell**, so adjacent grid points can share a key and buy nothing | Bays are naturally spaced by geography, and the table above shows they separate |
 
@@ -1424,7 +1424,7 @@ whole corpus**, against a free tier of 10,000 calls/day.
    that by construction, so let them.
 4. This also picks the `bodyWeatherCells` option in D159's second PR 2 correction: the join becomes
    *cell → sub-area → body*, and the result card can say **which bay** matched instead of asserting
-   something about 170 km of lake.
+   something about 170 km of water body.
 
 ### How the parent body describes itself — the spread, not the envelope
 
@@ -1436,7 +1436,7 @@ a good day tomorrow'."*
 **The instinct is right and one of the three mechanisms is a trap.** Taking the union of extremes —
 max high, min low, max precip, max wind — builds a **day that happened nowhere.** On Champlain the
 highest high might be Burlington Bay and the lowest low Missisquoi, 60 km apart; printed as one row
-it describes a lake that was simultaneously the warmest and the coldest place on itself. Every number
+it describes a water body that was simultaneously the warmest and the coldest place on itself. Every number
 true, the row false. That is the same failure the review just caught three times in one PR (the
 `since`-vs-total snow line, the UTC-vs-local day anchor, the borrowed-days count) and it is worth
 naming as a class rather than re-deriving each time.
@@ -1444,7 +1444,7 @@ naming as a class rather than re-deriving each time.
 **⚠ It is also not even consistently conservative, which is the subtler problem.** A worst-case
 envelope assumes every axis points the same way, and for ice they do not: *lowest low* reads as
 **reassuring** (colder → better ice) while *most wind* and *most snow* read as **discouraging**. So
-the composite is a lake that froze harder than any part of it did *and* got more snow than any part
+the composite is a water body that froze harder than any part of it did *and* got more snow than any part
 of it did. It is not pessimistic or optimistic; it is incoherent.
 
 **What replaces it: report the spread, and name its ends.** The honest aggregate of ten places is a
@@ -1459,7 +1459,7 @@ collapsed, and — the useful part — **the named extremes are the tap targets.
 needing to be explained, because the data does the pointing.
 
 **And when the bays agree, collapse it.** If the cells fall inside a threshold, one line: *"Similar
-across the lake."* That is the common case in a cold snap, and printing ten rows of the same weather
+across the water body."* That is the common case in a cold snap, and printing ten rows of the same weather
 is how a panel teaches people to skip it.
 
 **⚠ On *"___ Bay is your best bet"* — no, and this is the clearest D3/D150 line in the phase.** It is
@@ -1484,10 +1484,10 @@ not apply, because **the spread should read Tier B.** Those rows are cron-popula
 through the season and cost nothing at read time, and Champlain's ten bays still resolve to seven
 distinct Tier-B cells (measured above), which is ample to rank bays against each other. Then:
 
-- **Tier B answers *"which part of the lake"*** — the spread, the sort, the extremes. Free.
+- **Tier B answers *"which part of the water body"*** — the spread, the sort, the extremes. Free.
 - **Tier A answers *"what is it like there"*** — one fetch, for the sub-area actually selected.
 
-That is D152's two tiers applied to one lake instead of to the corpus, which is a good sign the
+That is D152's two tiers applied to one water body instead of to the corpus, which is a good sign the
 original split was cut in the right place. It also means the parent-body panel needs **no fetch at
 all** to draw its spread, and the drawer stays fast.
 
@@ -1518,7 +1518,7 @@ the spread is what makes a giant's panel honest, and Champlain is the most-discu
 corpus.
 
 **Nothing is owed by PR 1 to keep this open.** `getWeatherDaysForBody` grows a field rather than
-changing shape, and no migration is prejudiced. The interim line — *"this lake is large enough that
+changing shape, and no migration is prejudiced. The interim line — *"this water body is large enough that
 weather differs across it — these readings are from one point near the middle"* — is the right thing
 to say while the spread does not exist, and it is the same sentence that argues for building it.
 
@@ -1551,7 +1551,7 @@ view (all seven days, opens at now), run-up always a drag away, drive time as an
 **E — Weather-first discovery (D159).** ✅ **Shipped as PR 5 (2026-09-12)** — see *§What PR 5
 shipped*. Reads Tier B. The founder's target query: *"bodies within two
 hours' drive that got at least three nights below 20°F and no snow since."* This is the reason Tier B
-exists and the reason a cron exists at all — on-demand fetching cannot answer a question about lakes
+exists and the reason a cron exists at all — on-demand fetching cannot answer a question about water bodies
 nobody opened. Ships as: the per-cell predicate digest, ~~the `weatherCellKeyB` index on
 `waterBodies`~~ the **`bodyWeatherCells` join** (readiness note 1 for PR 4 — a giant spans many
 cells and Convex has no array index), the shared discovery-filter store across map and feed, and the
@@ -1577,7 +1577,7 @@ Ships as:
   three-segment control over the same three content groups, with the tab list pinned outside the
   scroll view so it survives the 16% snap point.
 - **One shared tab-selection store, session-scoped and body-independent**, per the founder's
-  *"preserve tab selection and see how it feels"*. Comparing five lakes on *Planning* should not
+  *"preserve tab selection and see how it feels"*. Comparing five water bodies on *Planning* should not
   cost four re-selections.
 - **⚠ The NWS alert stays above the tab strip on both clients.** A tabbed alert is an alert you can
   be one tap away from not seeing, and it is what preserves the authority ordering at
@@ -1624,7 +1624,7 @@ diff. Then D+E. F is last and depends on neither.
   (D153). *"40% more freezing degree-days than a normal February 1"* is probably the strongest single
   sentence this data could produce. Deferred because it needs a second endpoint, a second call-cost
   model, and a decision about how many seasons deep to go. **Lands in the Overview tab** (open
-  question 4), next to A06e's phenology brackets — the two are the same kind of claim about a lake and
+  question 4), next to A06e's phenology brackets — the two are the same kind of claim about a water body and
   should be read together.
 - **Paying Open-Meteo** (D158) — season two, against a written trigger.
 - **`weatherDays.rainMm` / `HourlyWeather.rainMm` exclude convective showers.** Open-Meteo's `rain`
@@ -1640,7 +1640,7 @@ diff. Then D+E. F is last and depends on neither.
   does *not* filter no-public-access bodies out of weather discovery, on purpose: the founder's read
   is that a moderator-confirmed `none` should eventually **remove a body from the corpus** rather
   than have every query learn to skip it — *"the ideal situation eventually (way down the line)
-  would be managing 5,000 lakes that actually get skated on, not 20,000 nobody ever touches."*
+  would be managing 5,000 water bodies that actually get skated on, not 20,000 nobody ever touches."*
   That is a corpus-lifecycle decision (A06f's third map state, A07a's purge lane, the weather registry's
   prune) and it wants its own scoping, not a `where` clause in one query.
 - **MRMS RQI blindness mask** — if radar v1 ships on RainViewer, the mask arrives with the MRMS
@@ -1692,11 +1692,11 @@ Three sub-questions, all needing answers before Workstream 3:
 - **Does `weatherDays` store one row per sample point** for multi-point bodies? (It should — the key is
   the cell, and a giant legitimately occupies several.)
 - **Does D159 match a body if *any* of its cells match?** Almost certainly yes, but then the result
-  card must name *where* on the lake matched, or the filter promises something it did not check.
+  card must name *where* on the water body matched, or the filter promises something it did not check.
 
 ⚠ **A02 sub-areas are probably the right unit here** and already exist. A bay is the thing people
 actually skate and talk about ("Button Bay" is 32 mentions, "Malletts Bay" 26 — both *sub-areas of
-Champlain*, both ranking above most whole lakes). Worth deciding whether a giant's weather is
+Champlain*, both ranking above most whole water bodies). Worth deciding whether a giant's weather is
 sub-area-scoped rather than body-scoped.
 
 ### 3. "Nights" are undefined, and it is D159's headline predicate
@@ -1706,7 +1706,7 @@ two calendar days. If `weatherDays` rows are local-calendar-day, then "nights" i
 t
 hem and **the boundary must be defined exactly once** (6 PM → 9 AM local, or whatever the ice
 physics argues for) in `@skating/core`, shared by the filter and the panel. Two definitions means the
-feed and the drawer disagree about the same lake, which is the worst kind of bug: both surfaces look
+feed and the drawer disagree about the same water body, which is the worst kind of bug: both surfaces look
 right in isolation.
 
 ### 4. DST makes two days of every skating season 23 or 25 hours long
@@ -1753,7 +1753,7 @@ much logic as possible in `@skating/core` where it can actually be tested.
 
 ### 9. Offline
 
-On-ice mode already has background location, and the drive to a remote lake is exactly where signal
+On-ice mode already has background location, and the drive to a remote water body is exactly where signal
 dies. The selected forecast window and the past-week summary should ride along in the offline body
 payload — the data is small and it is needed precisely when the network is not there.
 
@@ -1785,7 +1785,7 @@ payload — the data is small and it is needed precisely when the network is not
       the archive ban had to go: it is also the deep-gap repair path.
    4. **Only then record an explicit gap.** ⚠ A missing day must be *stored as missing*, never as a
       zero — a silently-absent day reads as "no snow fell" to every predicate in D159, which is the
-      most dangerous possible failure mode for a filter whose whole job is finding lakes with no snow
+      most dangerous possible failure mode for a filter whose whole job is finding water bodies with no snow
       on them.
 
 4. ✅ **Three sub-tabs in the drawer/sidebar**, per the founder's taxonomy: **Overview/Details**
@@ -1797,7 +1797,7 @@ payload — the data is small and it is needed precisely when the network is not
    - **This season's past-weather → Planning.** It exists to answer *"is there ice right now"*, which
      is a planning question even though the data is historical.
    - **Multi-season climatology → Overview.** *"Usually freezes in early January"* is a fact about the
-     lake, in the same family as depth, elevation and the wind rose. This is where the deferred ERA5
+     water body, in the same family as depth, elevation and the wind rose. This is where the deferred ERA5
      baselines (D153) and A06e's phenology brackets (D151) land, and it is a good sign that two
      deferred items find an obvious home in the taxonomy.
    - **The forecast panels → Planning**, alongside drive-time and put-ins, which is exactly the
@@ -1808,7 +1808,7 @@ payload — the data is small and it is needed precisely when the network is not
      authority ordering at `apps/web/src/components/WaterBodyDetail.tsx:215-216` under the new IA.
 
    ✅ **Tab selection persists across bodies.** Founder call: *"Let's preserve tab selection and see
-   how it feels."* Comparing five lakes on *Planning* without re-selecting it four times is the
+   how it feels."* Comparing five water bodies on *Planning* without re-selecting it four times is the
    common case. Persist for the session; revisit if it turns out people expect a fresh body to open on
    *Overview*.
 
@@ -1832,21 +1832,21 @@ nothing; every seam it needs is already built.
 
 *Today the weather block is two lines: an NWS alert when one is active, and a 12-hour temperature
 range. That answers "is a storm coming" and nothing else. The question a skater actually has is
-**do I get in the car**, and it is asked against a lake whose history is invisible.*
+**do I get in the car**, and it is asked against a water body whose history is invisible.*
 
 - **The cache key was the finding (D152).** `samplePointKeyFor` rounds to ~110 m, which produces
-  **24,832 distinct keys for 24,948 bodies** — one fetch per lake, no sharing — while Open-Meteo's US
+  **24,832 distinct keys for 24,948 bodies** — one fetch per water body, no sharing — while Open-Meteo's US
   models resolve at 3–13 km. Invisible today only because both weather actions are drawer-open-only.
   Replaced by two keys: **Tier A `0.05° + 100 m elevation band`** (browse, on demand, ~9,500–10,500
   keys) and **Tier B `0.1°`** (filter, corpus-wide, cron, 3,043 cells). Elevation banding measured at
   **~1.16×**, far from the blow-up that would have forced a rethink.
 - **Past weather is a durable archive, not a cache (D153)**, and **`past_days` reaches 92 days**, so
-  the first person to open a lake in February backfills the whole season in one request — **lazy
+  the first person to open a water body in February backfills the whole season in one request — **lazy
   backfill is not lossy.** ⚠ This **supersedes Phase 10's "never the archive API"** past the 92-day
   horizon, which also unlocks multi-season climatology (deferred). Storage was never the constraint:
   a Tier-B season is ~548 MB against Convex Pro's included 50 GB.
 - **Weather-first discovery is the most consequential piece (D159).** Filtering on weather makes the
-  whole corpus discoverable for the first time — today you find lakes only because somebody wrote
+  whole corpus discoverable for the first time — today you find water bodies only because somebody wrote
   about them, so 25,000 bodies are invisible and the few with reports take all the attention. ⚠ It
   **filters cells, then bodies**, because the naive shape is exactly what made `listInViewport`
   read-cap-fragile at A01 and cost the A06d load 105 GB. **The feed becomes heterogeneous and is

@@ -159,7 +159,7 @@ See `04-integrations.md` for per-provider integration detail.
   `forecast_days: '1'` and the window filter discards the forward hours, so a drawer-side "will it be
   snowing when I get there" strip is a parameter change and a slice, not a new call.
 - **Also Open-Meteo:** the **elevation endpoint** (`/v1/elevation`, Copernicus GLO-90 DEM, batched
-  coordinates) — A06c's lake-elevation pass. Same vendor, same no-key posture, ~1,200 requests to
+  coordinates) — A06c's body-elevation pass. Same vendor, same no-key posture, ~1,200 requests to
   cover all 116,070 centroids.
 - **NWS `api.weather.gov`** — 🆓, **no account and no API key**, US-only. Added for A06c §2.5 (official
   winter-storm / ice-storm / wind-chill **alerts**, `/alerts/active?area={state}`).
@@ -263,11 +263,11 @@ Founder ask: record cost, benefit and setup for the providers we evaluated durin
   one URL format we don't control.
 - **Tier 2 — imagery in the app (deferred): 🆓 registration**, Sentinel Hub–compatible OGC/Process APIs.
   - **Free-tier quota: 10,000 requests + 10,000 processing units per month; 300/min.**
-  - A full-screen tile view is ~10–20 requests ⇒ only **~500–1,000 lake views/month** raw. Not enough
+  - A full-screen tile view is ~10–20 requests ⇒ only **~500–1,000 water body views/month** raw. Not enough
     for general use.
   - **Server-side tile caching is what makes it viable**, and the open licence permits it: a popular
     body is viewed many times but only needs fetching once per **~5-day** satellite revisit. That turns
-    the quota from per-view into per-lake-per-week, which fits comfortably.
+    the quota from per-view into per-body-per-week, which fits comfortably.
   - **Benefit:** 10 m resolution is enough that open water vs. black ice vs. snow-covered ice is
     visually obvious. Cloud cover is the real limiter, not resolution.
   - **Do this when** we know which handful of bodies get real traffic — caching only wins if reads
@@ -297,7 +297,7 @@ Founder ask: record cost, benefit and setup for the providers we evaluated durin
   **2–3 year per-state cycle, deliberately in mid-summer** for the USDA's crop program. **No NAIP frame
   will ever show ice.** Burlington's current scene is `m_4407339_ne_18_030_20230621` — the summer
   solstice, 2023.
-- **The acquisition date is queryable per lake**, which is what makes an honest date stamp possible:
+- **The acquisition date is queryable per water body**, which is what makes an honest date stamp possible:
   `USGSNAIPPlus/ImageServer/identify?…&returnCatalogItems=true` returns the source scene with
   `acquisition_date` in epoch ms. One cached call per body.
 - **Public domain.** USDA/USGS federal imagery: **no account, no key, no quota, no licence review.**
@@ -348,7 +348,7 @@ Founder ask: record cost, benefit and setup for the providers we evaluated durin
   Landsat 4–9, HLS, Copernicus DEM — is **the same free data we can get directly from Copernicus**.
   Paying does not unlock it.
 - **What money *does* buy: PlanetScope — ~3 m, near-daily revisit.** For ice this is a genuine product
-  difference, not a vanity upgrade: a lake can go from open water to skateable in 48 hours, and a 5-day
+  difference, not a vanity upgrade: a water body can go from open water to skateable in 48 hours, and a 5-day
   revisit can miss the entire onset. Worth being honest that the case here is real.
 - **Why not yet:** it's a commercial imagery subscription against a pilot with no revenue, and **we do not
   yet know whether anyone opens the imagery link at all.**

@@ -136,7 +136,7 @@ pole in one stab"). See §5 sign-flip 1 for why cold must not heal it.
 ("from water draining through an ice sheet, most common in ice <few inches after a wet thaw"), **reef
 hole**, **current hole**, **wind hole** ("warm windy conditions, especially at points"), weed hole,
 mush/slush hole. Corpus corroborates: "massive drain holes have opened up," "refrozen drain holes,"
-"~100 healed wind holes… beautiful black ice," "a wind hole in the southern part of the lake."
+"~100 healed wind holes… beautiful black ice," "a wind hole in the southern part of the water body."
 
 ---
 

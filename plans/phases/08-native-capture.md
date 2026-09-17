@@ -34,7 +34,7 @@ sets:**
 ```
   A · capture (inputs)        B · our track store (hub)         C · push (outputs)
   ───────────────────         ─────────────────────────        ──────────────────
-  native recorder  ─┐         ┌ normalize → resolve-to-lake ┐   ┌ Strava (activity:write)
+  native recorder  ─┐         ┌ normalize → resolve-to-body ┐   ┌ Strava (activity:write)
   (Garmin/HealthKit │         │  (gpsActivities, D44)        │   │
    /HC/COROS/Polar) ─┼───────►│  aggregate tracks layer      ├──►┤  (future: Whoop, …)
    — deferred        │        │  privacy: minors-out,        │   │
@@ -49,7 +49,7 @@ sets:**
 - **Paths are a trust signal from legitimate sources only.** The recorded GPS path is the *only*
   way a path enters the system. **No freehand path drawing, ever, anywhere.** (Later provider
   adapters are the only other legitimate source, and they're deferred.)
-- **The recorded path renders on the individual report detail view** (a lake map showing the track,
+- **The recorded path renders on the individual report detail view** (a water body map showing the track,
   display-only — no user "draw" action) **and** on the aggregate tracks layer.
 - **Body creation is path-only gated (D14/D36).** A skate that resolves to no known body can create
   or attach one **only from a trusted GPS path** — no path ⇒ no proof of presence and no
@@ -83,7 +83,7 @@ sets:**
   a Record-grade GPS profile) reusing the Phase 09b on-ice primitives.
 - Track **post-processing in `core`** (smoothing / accuracy-gating / stationary-culling) + **GPX**
   and **encoded-polyline** emitters.
-- **B**: normalize a recorded track → `gpsActivities`, **resolve-to-lake** (D44), link to a report.
+- **B**: normalize a recorded track → `gpsActivities`, **resolve-to-body** (D44), link to a report.
 - **Report-detail path render** (own path on own report) on web + mobile.
 - **User-created bodies + match-on-create dedup (D14/D36)**, path-only.
 - **Strava push (C)**: OAuth `activity:write`, `convex/http.ts` router, token exchange/refresh,
@@ -269,7 +269,7 @@ New/added fields (all optional ⇒ migration-free):
 - **Connect with Strava + "also upload?" toggle.** Official **"Connect with Strava"** button asset +
   **"Powered by Strava"** attribution wherever the connection surfaces (L7 / brand kit; the
   attribution helper already noted in `apps/web/src/lib/waterMap.ts`). Per-session upload toggle.
-- **Aggregate opt-out** in profile settings ("Don't use my paths in community lake maps").
+- **Aggregate opt-out** in profile settings ("Don't use my paths in community water body maps").
 
 ## Testing (lands with the feature — D40)
 
@@ -356,7 +356,7 @@ device-tested). Suites green: core 752 / convex 540 / web 152 / mobile 76.
   never-hide guarantee lives in `pathOpacity`'s floor, which holds at any age.
 - **§`pathToBody` — buffer, don't hull.** A hull swallows land, islands and the next bay over on any
   track that doesn't circumnavigate. It **does** fill interior rings (a lap around a pond otherwise
-  stores a donut, and a hole at the lake's centre is where later reports fail to resolve) and refuses
+  stores a donut, and a hole at the water body's centre is where later reports fail to resolve) and refuses
   a track with no real extent (turf buffers a motionless phone into a perfect circular "pond"). No
   `@turf/convex`/`@turf/concave` dependency was added. Accepted cost: an out-and-back yields a
   corridor, so a later report from the far shore may create a near-certain duplicate — which is
@@ -446,7 +446,7 @@ Both came out of a full read of `plans/` against the code after the phase was ca
 >   the shared bounty primitives; report cards keep their relative-time labels. Least D3 risk.
 > - **`pathToBody` buffers but does NOT hull** — a hull swallows land/islands on any non-circumnavigating
 >   track. It *does* fill interior rings (a lap around a pond would otherwise store a donut with a hole
->   at the lake's centre where reports fail to resolve) and refuses a track with no extent (turf happily
+>   at the water body's centre where reports fail to resolve) and refuses a track with no extent (turf happily
 >   buffers a motionless phone into a perfect circular "pond"). No `@turf/convex` dep added.
 > - **`waterBodies.create` is now path-only at the trust boundary** — it takes an `activityId`, **not a
 >   polygon**, so "no freehand drawing, ever" is a server contract rather than a UI convention. Existing
@@ -480,7 +480,7 @@ Both came out of a full read of `plans/` against the code after the phase was ca
 > in-app recorder** (first-party data we own → legal to aggregate + draw on public reports) and **push** it
 > to Strava (`activity:write`, the Garmin model — clearly allowed, the adoption lever: *record once, keep
 > your Strava stats*). Modeled as **A → B → C**: A = capture inputs (**native recorder** first;
-> Garmin/HealthKit/COROS/Polar deferred), **B = our own track store + resolve-to-lake + aggregate, the
+> Garmin/HealthKit/COROS/Polar deferred), **B = our own track store + resolve-to-body + aggregate, the
 > always-owned hub**, C = push outputs (**Strava** first). No provider keys exist yet; only the **free
 > Strava app** (instant, no review) is needed, and only for the push slice.
 
@@ -489,7 +489,7 @@ Both came out of a full read of `plans/` against the code after the phase was ca
   Track post-processing (smooth/gate/cull → GPX + GeoJSON) in `@skating/core`. Phone-only skater's source;
   battery is an honest, opt-in trade (D3 copy). **Paths only ever come from legitimate recorded sources —
   no freehand drawing, ever.**
-- **B — our track store + resolve-to-lake (D44)** — normalize any track → `gpsActivities`, resolve to its
+- **B — our track store + resolve-to-body (D44)** — normalize any track → `gpsActivities`, resolve to its
   `waterBodyId`, link to a report. **The recorded path renders on the report detail view** (display-only)
   **and** on the aggregate tracks layer.
 - **User-created water bodies (D14) + match-on-create dedup (D36)** *(moved here from Phase 02a — needs a
@@ -510,7 +510,7 @@ Both came out of a full read of `plans/` against the code after the phase was ca
 - **Unified report freshness (D59)** — one `core/reportFreshness` primitive; report-aging and path-opacity
   consume the *identical* value (the path is the report's extent — can't diverge); **bounties refactor onto
   the shared primitives** (keeping their own window/trust/reopen policy; existing Phase 06 tests stay green).
-- **Done:** a phone-only skater records a skate in-app, sees the real path on their report and on the lake
+- **Done:** a phone-only skater records a skate in-app, sees the real path on their report and on the water body
   map (fading as it ages), can push it to their Strava, and a skate on **new** water creates/attaches a body
   from the trusted path (dedup-steered).
 - **Deferred:** third-party capture adapters (Garmin/HealthKit/HC/COROS/Polar) + the watch-wins ingest path

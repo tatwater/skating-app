@@ -14,7 +14,7 @@
 
 ## Why
 
-A cove ringed by 25 m pines with 300 m of fetch does not feel the open lake's wind, and nothing in a
+A cove ringed by 25 m pines with 300 m of fetch does not feel the open water body's wind, and nothing in a
 2 km reanalysis cell (WTK), a 3 km forecast (HRRR) or a 25 km archive (ERA5) can see the pines. The
 corpus median body is **12 acres** — a 220 m square — so the over-claim is corpus-wide, not a bay
 problem. `fetchProfileM` already answers *how far the wind runs over water before it reaches you*;
@@ -45,7 +45,7 @@ already casts** from `fetchOrigin`, so everything is about one point and one dir
    cover`. Classic windbreak behavior: wind speed is reduced ~30–50% out to ~10 h downwind, tapering
    to nothing by ~25 h. So the canopy shelter felt *at the origin* depends on the fetch distance in
    tree-heights — a 300 m cove whose origin sits ~150 m (≈7 h) off its pines is strongly sheltered,
-   and Champlain's broad lake, 7 km from any shore, is not. **No special-casing: fetch and canopy
+   and Champlain's broad water body, 7 km from any shore, is not. **No special-casing: fetch and canopy
    interact through the geometry.**
 
 `exposure = (1 − f_terrain(θ)) × (1 − f_canopy(fetch / h))`, both monotone, both documented in the
@@ -83,7 +83,7 @@ records the D104 split. Compute is minutes to a few hours locally, once, in a ne
 `scripts/wind-shelter` ETL beside `scripts/wind-climate`, writing through the same `importRuns`
 provenance path and a `waterBodies.setWindShelter` / `subAreas.setWindShelter` internal mutation.
 
-**Price it on 20 lakes first** (Willoughby, Malletts Bay, a 12-acre Vermont pond, a Winnipesaukee
+**Price it on 20 water bodies first** (Willoughby, Malletts Bay, a 12-acre Vermont pond, a Winnipesaukee
 cove, a Moosehead bay, a flat-country reservoir…) and record the numbers in this doc before running
 the corpus — the plan's own rule from A09.
 
@@ -102,30 +102,30 @@ Never a safety claim: no copy ever says a sheltered sector is *safe*, only that 
 
 ---
 
-## The heatmap — "which of these three lakes will be harshest tomorrow morning?"
+## The heatmap — "which of these three water bodies will be harshest tomorrow morning?"
 
 Founder, 2026-09-16: *"Could we show a skater, based on today's weather forecast, where they will
 be most sheltered from the wind on a given body? Some sort of wind heatmap kind of thing so they
-could compare how harsh three different lakes in their area will be tomorrow morning."*
+could compare how harsh three different water bodies in their area will be tomorrow morning."*
 
 Two products fall out of the index, and they differ in how much new machinery they need:
 
-### 1. A per-lake "harshness" number for a forecast hour — cheap, and comparable across lakes
+### 1. A per-body "harshness" number for a forecast hour — cheap, and comparable across water bodies
 
 For a chosen hour (tomorrow 8 am), the forecast gives a wind **from**-direction and speed at the
-lake's browse cell (`weatherForecastCache`, already fetched and already bay-resolved since A06h).
+water body's browse cell (`weatherForecastCache`, already fetched and already bay-resolved since A06h).
 Look up the sector, and `harshness = speed × exposure[sector] × g(fetch[sector])` — the same three
 numbers `mostExposedSector` multiplies, with today's wind in place of the climatological frequency.
 That is a **per-body scalar per forecast hour**, computed at render from data both clients already
-hold, so a *"compare three lakes"* view is a sort. It is also the first honest input to the *"is it
+hold, so a *"compare three water bodies"* view is a sort. It is also the first honest input to the *"is it
 worth driving"* question that is about the skater's comfort rather than the ice.
 
 **Copy discipline:** *"likely exposed / sheltered"*, never a wind speed on the ice — the model is a
 sector average at one point, and the forecast is a 3 km cell.
 
-### 2. A within-lake sheltered-vs-exposed map for that hour — needs a per-point index
+### 2. A within-body sheltered-vs-exposed map for that hour — needs a per-point index
 
-The index above is one point per body (the fetch origin). A heatmap *across* a lake — *the north
+The index above is one point per body (the fetch origin). A heatmap *across* a water body — *the north
 shore will be rough, the lee of the point will be glass* — needs the same two terms evaluated at
 many points, which is a raster job: sample the water polygon on a grid (say 100 m for a giant, 25 m
 for a pond), compute fetch + terrain + canopy per sample per sector, store one sector array per
@@ -133,7 +133,7 @@ sample. That is `16 × samples` numbers per body — Champlain at 100 m is ~120k
 **tile, not a row**: build offline like the contour layer, stamp with `waterBodyKey` /
 `subAreaKey`, serve as a raster-DEM or vector-tile source per sector, and let the client pick the
 sector from the forecast hour and shade. The "compare tomorrow morning" view then reads as a small
-multiple: three lakes, each shaded for the same hour.
+multiple: three water bodies, each shaded for the same hour.
 
 Sequence **1 before 2**: the scalar version validates the index on real winters for nearly nothing,
 and the tile version is a rendering phase in its own right (A06b-shaped: build, tile, R2, coverage
@@ -143,7 +143,7 @@ table, reveal gate). Neither is scoped further here.
 
 ## Validation — before anything ships
 
-1. **Local knowledge**, on the 20-lake pricing sample: does the sheltered quadrant match where
+1. **Local knowledge**, on the 20-water body pricing sample: does the sheltered quadrant match where
    people actually set up?
 2. **The rose itself**: Willoughby's terrain-blocked E/NE should show low exposure there; a
    flat-country reservoir should show ~1 everywhere but its treeline.

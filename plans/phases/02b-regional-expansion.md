@@ -13,7 +13,7 @@ code changes, and the tuning knobs.
 > **lake-skating** states — **NY (north of the NYC/Long Island metro), VT, NH, ME, MA** — with **no
 > new app features**. Pure data + infra: re-run the Phase 01 ETL per state, build one multi-state
 > `.pmtiles` and host it on **Cloudflare R2**, then (last) widen the map bounds so a skater anywhere
-> in the region opens the app onto their lakes.
+> in the region opens the app onto their water bodies.
 
 ## Progress — executed 2026-07-15
 
@@ -23,7 +23,7 @@ code changes, and the tuning knobs.
   ~9,970 from Phase 01) ≈ **116k bodies**, ~452 border-dedup updates (Champlain etc., idempotent on
   `source+externalId`). **Zero read-cap errors** across the whole import. *(Redownload note: the
   `-latest` URLs now 302-redirect to dated builds — fetch needs `curl -L`.)*
-- **Lake search box — ✅ DONE (decided 2026-07-15, folded into 2.5).** The 116k corpus made
+- **Water body search box — ✅ DONE (decided 2026-07-15, folded into 2.5).** The 116k corpus made
   name-search near-essential. Backend: a `search_name` search index + `waterBodies.searchByName`
   query (typo-tolerant; JS-refines out unlisted; 4 convex-tests) — deployed to dev, verified live
   (George/Winnipesaukee/Sebago/Champlain). Web: shadcn/Base-UI `Combobox` primitive + `LakeSearch`
@@ -76,8 +76,8 @@ code changes, and the tuning knobs.
 - **NY clip = rectangular `osmium extract --bbox`, cut at lat ≈ 41.3°N.** Verified safe against the
   community seed: every skated NY body — Lake George (~43.4), Saranac/Placid (~44.3), Dillenbeck Bay
   (~43.1), the Champlain bays (~43.5–44.9) — sits *far* north of the cut, so a straight line sheds
-  only NYC/Long Island/lower-Hudson and can't bisect a destination lake. A polygon clip was rejected
-  as not worth the upkeep for the pilot; revisit only if a wanted lake turns up near the line.
+  only NYC/Long Island/lower-Hudson and can't bisect a destination water body. A polygon clip was rejected
+  as not worth the upkeep for the pilot; revisit only if a wanted water body turns up near the line.
 - **Basemap tiles → Cloudflare R2**, uploaded via **`rclone`** (Cloudflare's `wrangler r2 object put`
   caps ~300 MiB; the multi-state `.pmtiles` blows past that — rclone does resumable multipart to R2's
   S3 endpoint). **Public URL starts on the zero-config `*.r2.dev` bucket** to unblock the pilot;
@@ -112,8 +112,8 @@ osmium extract --bbox=-79.9,41.3,-71.8,45.1 new-york-latest.osm.pbf \
   -o new-york-upstate.osm.pbf --overwrite --strategy=complete_ways
 # then run the normal tags-filter → export → transform → load on new-york-upstate.osm.pbf
 ```
-- `--strategy=complete_ways` keeps border-spanning features whole (so a lake straddling the cut
-  isn't torn — though the 41.3 line was chosen to avoid skated lakes entirely).
+- `--strategy=complete_ways` keeps border-spanning features whole (so a water body straddling the cut
+  isn't torn — though the 41.3 line was chosen to avoid skated water bodies entirely).
 - VT/NH/ME/MA skip the clip — filter/transform/load their `*-latest.osm.pbf` directly.
 
 **Load order & border dedup.** `waterBodies.importCanonical` upserts on `source + externalId`
@@ -214,7 +214,7 @@ Only after §1 confirms the wider corpus renders. Edit **both** `apps/web/src/li
 
 **These constants are starting values, tuned during the run** (same approach as the displayScore
 curve): confirm the extract `--bbox`, the NY clip lat, and `NORTHEAST_MAX_BOUNDS` all agree, and eyeball
-that no wanted lake falls outside the box or south of the clip.
+that no wanted water body falls outside the box or south of the clip.
 
 ---
 
@@ -255,7 +255,7 @@ that no wanted lake falls outside the box or south of the clip.
 - **Read-cap at scale (D49).** ⚠️ **This risk landed, and the validation it asks for never happened**
   — caught 2026-07-26 by A01. The 116k corpus did stress `listInViewport`, but nobody re-measured
   wide-zoom read counts after the load, so the `MAX_VIEWPORT_LIMIT = 256` clamp (tuned against VT's
-  9,967 bodies) silently stayed put — dropping 257 real lakes from a dense eastern-Maine viewport that
+  9,967 bodies) silently stayed put — dropping 257 real water bodies from a dense eastern-Maine viewport that
   holds 513. Fixed by the A01 cell index; the read counts this bullet asked for are now recorded in
   [`phases/A01-read-path-durability.md`](./A01-read-path-durability.md) and re-checkable via
   `waterBodies:viewportReadStats`.
@@ -283,7 +283,7 @@ that no wanted lake falls outside the box or south of the clip.
 >
 > **Status: ✅ mostly shipped on dev (2026-07-15)** — ~116k bodies across NY/VT/NH/ME/MA imported
 > (NY clipped downstate), a 948 MB multi-state basemap on Cloudflare R2, map bounds widened to the
-> region, a **lake name-search box** (added when the big corpus made it near-essential) in both apps,
+> region, a **water body name-search box** (added when the big corpus made it near-essential) in both apps,
 > and the **`curatedBoost` re-seed** (mechanism `applyCuratedBoostSeed` shipped + VT seed applied at
 > flat +0.3 — 21 bodies boosted). **Remaining:** clean per-body curation (a few bay mis-matches; add
 > the Champlain/Lake George bays OSM lacks) via the **Phase 07 admin UI**, and the prod cutover
@@ -305,8 +305,8 @@ Widen the pilot's **single-state Vermont** corpus + basemap to the Northeast **l
 - **Map bounds + framing:** widen `VERMONT_MAX_BOUNDS` / `INITIAL_CENTER` + the geolocation in-region
   gate (web + mobile, kept in sync with the tile bbox) — **only after** the water data lands, so we
   never expose pan area with no data.
-- **`curatedBoost` re-seed:** the VT seed CSV already lists NY/NH lakes (Lake George, Dillenbeck Bay)
+- **`curatedBoost` re-seed:** the VT seed CSV already lists NY/NH water bodies (Lake George, Dillenbeck Bay)
   skipped for not being in the VT import — apply them once those states are in.
 - **Done:** a skater anywhere in NY (north of the metro) / VT / NH / ME / MA opens the app and sees
-  their lakes with a real basemap, served from R2.
+  their water bodies with a real basemap, served from R2.
 

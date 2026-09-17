@@ -29,7 +29,7 @@ Decisions referenced as D#; see [`01-decisions.md`](../01-decisions.md).
 
 ## The core reframe (founder discussion, 2026-07-17)
 
-Drive-time is **not** a binary "is this lake in range?" gate. Real behavior is quality-weighted:
+Drive-time is **not** a binary "is this water body in range?" gate. Real behavior is quality-weighted:
 *"On a normal day I won't drive more than ~30–45 min; but for perfect ice I'll do 90; 3 hours is too
 far for anything short of a favorite."* So acceptable distance **rises with ice quality**, and the
 right scoping differs by surface:
@@ -57,7 +57,7 @@ the feed, and highlighted on the map.
    - Schema: a small `waterBodyFavorites` join (`userId × waterBodyId`), indexed both directions.
 
 2. **Three drive-time bands (30 / 60 / 90 min) stored as isochrone *polygons*, NOT membership rows.**
-   - Store the bands as **nested isochrone polygons on `profiles`** and derive a lake's band at read
+   - Store the bands as **nested isochrone polygons on `profiles`** and derive a water body's band at read
      time (bbox prefilter → Turf `pointInPolygon`, the existing D5/D36 machinery). **Do not** materialize
      a `userId × waterBodyId × band` membership table: within 90 min of a NE home there can be hundreds–
      thousands of bodies, it balloons per-user, and it **goes stale every time the corpus changes**
@@ -72,10 +72,10 @@ the feed, and highlighted on the map.
    - `homeCoord` stays **PRIVATE** (D11): only the derived polygons + the outer radius are stored, never
      exposed. Recompute on home/pref change (D18), stamping `cachedIsochronesAt`.
    - **Known scaling seam (documented, not built): notification fan-out is the *reverse* lookup.** Browse
-     asks "given my polygons, is this lake in-band?" (cheap, per-user, fresh). Notifications ask, per new
-     report, "which users have *this lake* in their X-band?" With only polygons that's a scan over users'
+     asks "given my polygons, is this water body in-band?" (cheap, per-user, fresh). Notifications ask, per new
+     report, "which users have *this water body* in their X-band?" With only polygons that's a scan over users'
      polygons per report — **fine at alpha scale** (dozens–hundreds of users). A reverse spatial index
-     (index user home-points, or per-lake precomputed notify sets) is the future optimization; **not now.**
+     (index user home-points, or per-body precomputed notify sets) is the future optimization; **not now.**
      *(Amended by A01, 2026-07-26: that scan was inline in `reports.create`, i.e. an unbounded read inside
      the app's most important write. It's now a **scheduled, self-continuing paged job** — bounded per
      invocation, and nobody gets dropped. The reverse index is still the real fix, still deferred: A01
@@ -111,7 +111,7 @@ the feed, and highlighted on the map.
      construction, the lowest-priority slice (non-favorite, non-great). *(Per-user local-time / true-sunset
      offset is deferred — matters once we serve more than one timezone.)*
    - **Favorites + Great → fire ~individually**, even after 8pm, but with a **short debounce/coalesce
-     window on `(user, waterBody)`** so two reports on the same lake in quick succession become **one**
+     window on `(user, waterBody)`** so two reports on the same water body in quick succession become **one**
      push.
    - **Coalescing mechanism:** send with a stable key — APNs **`apns-collapse-id`** / Android notification
      **`tag`** — so a second push **replaces** the first on-screen ("2 new reports on Lake Morey"). You
@@ -148,16 +148,16 @@ the feed, and highlighted on the map.
      scrub location.
    - **Moderator hide = per-coord suppression** (one action kills the marker regardless of how many
      reports feed it) + a `moderationActions` audit row.
-   - **Directions deep-link from the lake detail drawer/page button** (never a map tap — a map tap opens
+   - **Directions deep-link from the water body detail drawer/page button** (never a map tap — a map tap opens
      the detail drawer). Platform-aware: `maps.apple.com/?daddr=…` on iOS, Google Maps on Android/web.
      **Destination = a put-in coord, never the on-water `centroid`** (the centroid is a guaranteed
-     on-water point, so routing there drives you into the middle of the lake).
+     on-water point, so routing there drives you into the middle of the water body).
 
 8. **Offline read-cache of recent reports (mobile).**
    Reuse the **expo-sqlite** infra from the Phase 02a §6.2 offline write-queue. Cache, for on-ice-without-
    service recall:
    - feed reports the user **read recently**,
-   - reports for any lake whose **detail/drawer the user opened** (from feed or map) — a strong "might go
+   - reports for any water body whose **detail/drawer the user opened** (from feed or map) — a strong "might go
      there" signal,
    - **proactively pre-cache favorites'** recent reports on the last good connection (most likely to be
      standing on with no signal).
@@ -238,8 +238,8 @@ Applied in `packages/convex/convex/schema.ts`.
 - **Feed filter row** above the Phase 05 feed (both clients), reading **local storage first** then
   reconciling `feedFilterPrefs` (LWW). Recency **section-divider headers** in the infinite scroll.
   Favorites badged/boosted.
-- **Favorite toggle** on the lake detail drawer/page + a heart on feed cards/map.
-- **Map:** highlight favorited bodies; render **put-in markers**; **Directions button in the lake detail
+- **Favorite toggle** on the water body detail drawer/page + a heart on feed cards/map.
+- **Map:** highlight favorited bodies; render **put-in markers**; **Directions button in the water body detail
   drawer** (not on map tap) → platform deep link to a put-in coord.
 - **Mobile offline read-cache** (expo-sqlite): cache read/opened/favorite reports (thumbnails only);
   serve from cache when offline.
@@ -280,7 +280,7 @@ Push to the dev deployment (`convex dev --once`) + run any migration before veri
 
 - **Self-hosted ORS** for a true 90-min (and beyond) isochrone band + higher rate limits + profile
   tuning → `07-roadmap.md` → Later/deferred. Until then the 90 band is a uniform crow-flies radius.
-- **Reverse spatial index for notification fan-out** (per-lake notify sets / indexed home-points) →
+- **Reverse spatial index for notification fan-out** (per-body notify sets / indexed home-points) →
   future scaling; the per-report user-polygon scan is fine at alpha scale (decision #2).
 - **"Recommended" filter-breaking feed posts** → **Phase 06** (needs corroboration/trust, D50).
 - **Per-user local-time / true-sunset digest timing** → later (fixed 8pm ET for the single-timezone
@@ -307,7 +307,7 @@ Push to the dev deployment (`convex dev --once`) + run any migration before veri
 > queue** (favorites / all-within-X₁ digest / great-within-X₂, X₂ ≥ X₁ enforced) drained by a
 > DST-correct **8pm-ET digest** that rolls up per user into one notification grouped by body; **put-ins +
 > directions** (derived from report points, drawer-only deep-link to a put-in coord); and the **mobile
-> offline read-cache** (recently-read feed + opened lakes + favorites' recent reports). **Review
+> offline read-cache** (recently-read feed + opened water bodies + favorites' recent reports). **Review
 > follow-ups (2026-07-18):** consolidated per-user digest, denormalized profile `reportCount`/
 > `commentCount` (true totals, not a windowed cap), paginated per-body report lists, recency scroll
 > headers, minor photo-upload gate, and coverage/cleanup. **Push delivery is deferred** (flush lands an
@@ -320,7 +320,7 @@ Push to the dev deployment (`convex dev --once`) + run any migration before veri
 - **Favorites (`waterBodyFavorites`) — the strongest signal + the D13 place-based curation stand-in.**
   Mark specific bodies as favorites: **notify by default**, **feed prominence boost** (exempt from the
   distance filter, but still subject to quality/snow/recency filters), and **map highlight**. You
-  subscribe to *lakes*, not people.
+  subscribe to *water bodies*, not people.
 - **Three drive-time bands (30/60/90) as isochrone *polygons* on `profiles`** (derive band at read time;
   **not** a per-user membership table — it balloons + goes stale). Hosted ORS caps at **60 min**, so 30/60
   come from ORS and the **90 band is a uniform crow-flies radius fallback** (self-hosted ORS deferred —
@@ -337,9 +337,9 @@ Push to the dev deployment (`convex dev --once`) + run any migration before veri
   `collapse-id` / Android `tag` (replace, never un-send).
 - **Map put-ins + directions:** put-in markers **derived from report points** (+ admin-set official ones,
   Phase 07 UI), snapped to shore; per-report `showPutIn` opt-out (private property) + moderator hide.
-  **Directions deep-link from the lake detail drawer button** (never a map tap), targeting a **put-in
+  **Directions deep-link from the water body detail drawer button** (never a map tap), targeting a **put-in
   coord, not the on-water centroid**.
-- **Mobile offline read-cache** (reuse expo-sqlite): recently-read + opened-lake + favorites' reports
+- **Mobile offline read-cache** (reuse expo-sqlite): recently-read + opened-body + favorites' reports
   (thumbnails only) for on-ice-without-service recall (D9).
 - **Done:** feed/map/notifications scope by favorites + quality-weighted drive-time; put-ins + directions
   on the map; filters persist; recent reports readable offline.

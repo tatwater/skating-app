@@ -4,7 +4,7 @@
 > in the style of the Phase 01/2/2.5/3 docs.
 >
 > **What this phase is.** The chronological, **cross-water-body** feed (D28) — the co-primary page
-> alongside the map. Browse recent community activity without going lake-by-lake. It reuses the whole
+> alongside the map. Browse recent community activity without going body-by-body. It reuses the whole
 > Phase 03 read stack (moderation gate, block set, `ReportDetail`, batch author/photo queries).
 >
 > **Status:** ✅ **Complete (dev; prod deferred) — 2026-07-17.** Merged as PR #18, deployed to the
@@ -30,7 +30,7 @@
 > the founder. Prod stays uninitialized.
 >
 > **⚠️ Brought forward, ahead of Phase 04 (drive-time), by decision (2026-07-16).** The feed ships
-> **global** — *all* reports from *all* lakes across the whole imported region, newest skate-end time
+> **global** — *all* reports from *all* water bodies across the whole imported region, newest skate-end time
 > first. The roadmap's two drive-time bullets — *"within range"* and *"temporarily expand radius"* —
 > are **definitionally Phase 04** and are deferred there: Phase 04 later injects an in-range / favorites
 > predicate as an **additive filter** on the same feed query, which is near-zero rework (the page and
@@ -66,7 +66,7 @@ Decisions referenced as D#; see [`01-decisions.md`](../01-decisions.md).
    - **Semantics worth stating:** an all-day skate (ended 6pm) outranks a later short skate that ended
      3pm — correct; the 6pm observer holds the fresher read.
 
-2. **The feed is global for now** (all lakes, all regions). No drive-time or favorites scoping in this
+2. **The feed is global for now** (all water bodies, all regions). No drive-time or favorites scoping in this
    phase — that is **Phase 04**, applied later as an additive filter (see status note above). Accepted
    trade-off: as real usage spreads across NY/VT/NH/ME/MA the unscoped feed gets noisy, but at alpha
    scale it's fine and Phase 04 fixes it before it matters.
@@ -94,7 +94,7 @@ Decisions referenced as D#; see [`01-decisions.md`](../01-decisions.md).
 
 5. **Photo thumbnail carousel** in feed cards **and** the drawer, for reports with photos.
 
-6. **Lake map** in feed cards **and** the drawer, for reports with GPS paths (Phase 08), showing the
+6. **Water body map** in feed cards **and** the drawer, for reports with GPS paths (Phase 08), showing the
    skater's put-in, path, and any hazards they reported or confirmed along the way (Phase 09a).
 
 7. **Empty state** on both surfaces; **pull-to-refresh** on mobile. Web relies on Convex live
@@ -284,7 +284,7 @@ Push to the dev deployment (`convex dev --once`) + run the migration before app 
 
 ### Phase 05 — Newsfeed page ✅ Complete (dev; prod deferred) (2026-07-17)  *(brought forward ahead of Phase 04 — see doc)*
 > **Detailed build plan:** [`phases/05-newsfeed.md`](./05-newsfeed.md) (decisions settled 2026-07-16).
-> **Reordered ahead of Phase 04 (2026-07-16):** the feed ships **global** (all lakes, all regions); the
+> **Reordered ahead of Phase 04 (2026-07-16):** the feed ships **global** (all water bodies, all regions); the
 > two drive-time bullets below — *"within range"* and *"temporarily expand radius"* — are definitionally
 > Phase 04 and move there as an **additive filter** on the same `listFeed` query (near-zero rework).
 - Cross-water-body feed, newest **skate-*end* time** first (D28) — **sort key redefined 2026-07-16:**
@@ -294,11 +294,11 @@ Push to the dev deployment (`convex dev --once`) + run the migration before app 
   start-or-duration; `gpsActivities` gets `endTime`/`elapsedSeconds` prep (wired Phase 08). Shows
   **`public`** reports minus **blocks** (D13) — the block filter landed in Phase 03.
 - Feed card carries the water body **name + a point-derived town/county + state label** (from the report's
-  put-in pin / GPS start — shows which town/side, correct for multi-town/-state lakes; disambiguates
-  same-name lakes). Backed by a new **`adminAreas`** boundary table (OSM, same ODbL) resolved at report
+  put-in pin / GPS start — shows which town/side, correct for multi-town/-state water bodies; disambiguates
+  same-name water bodies). Backed by a new **`adminAreas`** boundary table (OSM, same ODbL) resolved at report
   create — no per-read geocode, no 116k-body backfill. Reused by GPS (Phase 08) + hazards (Phase 09a).
 - Tap a card → **report drawer/sheet** (no full navigation — preserves scroll); **photo carousel** in
   cards + drawer; empty state; pull-to-refresh (mobile).
 - ~~**Temporarily expand radius** (session-only) to browse wider.~~ → **Phase 04** (needs drive-time).
-- **Done:** browse recent community activity without going lake-by-lake.
+- **Done:** browse recent community activity without going body-by-body.
 

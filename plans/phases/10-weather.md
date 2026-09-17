@@ -277,7 +277,7 @@ The **strip fetches on drawer-open** (§2), so it needs no cron. Only **hazard d
 because it must be ready for the **offline on-ice alert** (a phone on the ice can't fetch Open-Meteo) and
 must affect the **map without a viewer present**.
 
-- **Sweep only bodies with ≥1 active (non-archived) hazard** — *not* all 116k lakes. Cost ∝
+- **Sweep only bodies with ≥1 active (non-archived) hazard** — *not* all 116k water bodies. Cost ∝
   hazard-carrying bodies (tens, maybe low hundreds at peak season per the corpus), not corpus size.
 - **Batch:** Open-Meteo takes comma-separated multi-point requests, so many bodies fold into one HTTP
   call.
@@ -397,20 +397,20 @@ No backfill needed anywhere.
 
 ## Later / deferred
 
-- ~~**Lake depth / bathymetry data source (the shallow-water decay signal).**~~ **→ scoped as
+- ~~**Water body depth / bathymetry data source (the shallow-water decay signal).**~~ **→ scoped as
   [A06a](./A06a-body-depth.md) + [A06b](./A06b-bathymetry-layer.md) (2026-07-29).** Kept in full
   below because two of its claims are load-bearing and **wrong**, and someone reading this entry would act
   on them: (a) *"v1 ships the signal without the data, manually"* — **it didn't.** The `bodyFeature` was
   added to the enum and the admin dropdown and wired to no decay at all, so there is no `isShallow` scalar
   and nothing reads shallowness anywhere. A06a builds the signal for the first time. (b) *"the decay model
   reads a simple `isShallow` scalar and doesn't care where it came from"* describes an intention, not code.
-  Also superseded: **LAGOS-US DEPTH** (observed depths, lakes > 1 ha) is a better first source than either
+  Also superseded: **LAGOS-US DEPTH** (observed depths, water bodies > 1 ha) is a better first source than either
   named here, and the manual flag is **permanent** rather than a stand-in — 73% of the corpus sits below
   every global source's area floor, and small ponds are where the shallow signal matters most.
-- **Lake depth / bathymetry data source (the shallow-water decay signal).** The research (§5, §8) wants a
+- **Water body depth / bathymetry data source (the shallow-water decay signal).** The research (§5, §8) wants a
   body-level **shallow/pond** signal — shallow water melts from the bottom first and goes out early — but
   we have **no depth data source today**. What we learned scoping this (2026-07-22):
-  - **OSM won't give it to us.** `depth`/`maxdepth` tags exist but coverage on inland lakes is near-zero
+  - **OSM won't give it to us.** `depth`/`maxdepth` tags exist but coverage on inland water bodies is near-zero
     (they're mostly nautical). Our existing OSM ETL can't backfill depth.
   - **v1 ships the signal *without* the data, manually.** Model "shallow" as a **`shallow_bay_early_thaw`
     `bodyFeature`** (the Phase 09a mechanism + Phase 07 admin surface) that mods/locals set on known-shallow
@@ -418,10 +418,10 @@ No backfill needed anywhere.
     zero new data source. The decay model reads a simple `isShallow` scalar and doesn't care where it came
     from.
   - **Backfill (a separate data PR, not blocking the decay math): HydroLAKES + GLOBathy.** GLOBathy is a
-    modeled global lake-bathymetry dataset (~1.4M lakes) giving mean/max depth, joinable to our OSM bodies
+    modeled global body-bathymetry dataset (~1.4M water bodies) giving mean/max depth, joinable to our OSM bodies
     by spatial match. A one-time backfill stamps `meanDepthM`/`maxDepthM`/`depthSource` on water bodies.
     Our five states (VT, NH, NY, ME, MA) *also* publish good state-agency bathymetry (NH Fish & Game and
-    VT DEC especially) to refine specific lakes later.
+    VT DEC especially) to refine specific water bodies later.
   - **ETL update (opportunistic, future imports):** carry OSM depth tags where present (rare) and fall
     back to the GLOBathy match on import.
   - **Do this when** the decay model is proven and we want to sharpen it — the manual bodyFeature is the
@@ -544,10 +544,10 @@ strip, single-sourced 7-day lookback, and the bounty-suppressor-selection fix �
   ahead of schedule: `apps/mobile/src/lib/dwell.ts` (`suggestedSkateWindow`) + `dwellTracker.ts`, wired
   into `ReportForm.tsx` (earliest-in/latest-out across today's dwells, grace-debounced). **No Phase 10
   work.** *(Original note, kept for history:* the on-ice GPS watcher knows when a device entered/left a
-  lake footprint; that interval is a strong prior for the report form's skate window. Needs enter/leave
+  water body footprint; that interval is a strong prior for the report form's skate window. Needs enter/leave
   bookkeeping (debounced against brief GPS excursions) + a form pre-fill, and overlaps the D24
   activity-detection path — so it lands with the report-form / activity work, not the hazard feature.)*
-- **Deferred to this phase's Later/deferred (see the phase doc):** the **lake-depth / shallow-water decay
+- **Deferred to this phase's Later/deferred (see the phase doc):** the **body-depth / shallow-water decay
   signal** ships v1 as a manual `shallow_early_thaw` `bodyFeature` (no depth data source exists in
   OSM); the real fix is a **HydroLAKES + GLOBathy** backfill of `meanDepthM`/`maxDepthM`, a separate data
   PR. Full write-up (sources, state bathymetry, ETL update) in `phases/10-weather.md` → Later/deferred.

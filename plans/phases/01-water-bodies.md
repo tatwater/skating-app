@@ -5,7 +5,7 @@ Design rationale lives in the decisions log (D5, D6, D14, D36, D37, **D48**); th
 the *how* — ordered workstreams, file-level changes, and the test plan.
 
 > **Goal.** Seed the map with real water bodies so a skater can open the map, pan their
-> drive-time, and tap candidate lakes — *before* anyone has reported on them. Storage is the
+> drive-time, and tap candidate water bodies — *before* anyone has reported on them. Storage is the
 > substrate for discovery (D14/D28); display is curated separately (D48).
 
 > **⚠️ The spatial mechanism described below was replaced by A01 (2026-07-26).** Everything about
@@ -20,7 +20,7 @@ the *how* — ordered workstreams, file-level changes, and the test plan.
 
 - **Pilot region: Vermont.** Compact, the Nordic-skating heartland (Lake Morey, Lake
   Champlain, Joe's Pond, …), one Geofabrik extract.
-- **Lakes / ponds / reservoirs only. Rivers deferred** — modeling rivers as named *reaches*
+- **Water bodies / ponds / reservoirs only. Rivers deferred** — modeling rivers as named *reaches*
   (D4/D36) is a later release once still-water is validated with users.
 - **Read-only web map** to *confirm* the data renders. Interactive map, tap-to-detail, and
   report creation are **Phase 02a**. Mobile's full map is also Phase 02a (bigger native lift);
@@ -111,7 +111,7 @@ Not a workspace app — a manual `tsx` script directory. Pipeline stages:
   limit**; `< ~100 KB/doc` is a **loose expectation** (nearly every body lands far under it),
   **not** a budget that overrides fidelity. Coarsen below 5 m **only** for a body that would
   otherwise breach 1 MiB with a safety margin — realistically Champlain is the sole
-  candidate, and even at 5 m it should fit. No vertex cap. If a large lake's *query payload*
+  candidate, and even at 5 m it should fit. No vertex cap. If a large water body's *query payload*
   (not its storage) becomes the problem, the fix is a coarse map-outline for the list layer +
   lazy-load full detail on tap (a Phase 02a+ lever), **not** a degraded stored geometry.
   Vermont total ≈ 10–20 MB.
@@ -273,7 +273,7 @@ everything (it can't, and shouldn't — that's clutter).
 > **Detailed build plan:** [`phases/01-water-bodies.md`](./01-water-bodies.md).
 > **Pilot region: Vermont** (compact; the Nordic-skating heartland — Lake Morey et al.).
 > **Rivers deferred** to a later release (reaches are hard; pilot skating is still-water) —
-> import lakes/ponds/reservoirs only.
+> import water bodies/ponds/reservoirs only.
 >
 > **Status:** shipped across PRs #7–#11. `@skating/core` OSM tag mapping + on-water point (#7);
 > Convex `listed` refactor + `by_external_id` + `importCanonical` + admin remove/restore (#8);

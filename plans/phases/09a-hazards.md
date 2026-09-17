@@ -8,7 +8,7 @@
 > hazards **age per type** and can be **confirmed/cleared** by later skaters, permanent risks become
 > durable **body features**, and skaters actually on that ice get a **client-local alert** — all
 > honoring "no live GPS server-side" (D12) and "never assert ice is safe" (D3). It completes what a
-> report/lake *looks like* before Phase 06 layers reputation on top (sequencing call, 2026-07-18).
+> report/water body *looks like* before Phase 06 layers reputation on top (sequencing call, 2026-07-18).
 >
 > **Status:** ✅ **Merged to `main` (PR #20, 2026-07-21), deployed to the dev Convex deployment, and
 > smoke-tested on the Android emulator.** Tests green. Live-skating features (the on-ice watcher, Layer-1
@@ -112,10 +112,10 @@ into the skater's later report**.
   `reef_hole` / `delta` / `shallow_bay_early_thaw` — persistent natural sources, research), `geometry`,
   `radiusMeters?`, `bbox`, `note?`, `addedByUserId`, `promotedFromHazardId?`, `active`.
 - **`contentFlags.targetType`** — add `hazard` (mods can hide a bad pin).
-- **Indexes:** `hazards` by `waterBodyId + status` (list active per lake); `bodyFeatures` by
+- **Indexes:** `hazards` by `waterBodyId + status` (list active per water body); `bodyFeatures` by
   `waterBodyId + active`. **No geospatial instance for hazards (call 6)** — the originally-planned
   bbox-center geospatial index is dropped, because hazards are only ever queried *per body* (the map
-  renders them for the selected/focused lake, the mobile cache stores them per cached body, and the
+  renders them for the selected/focused water body, the mobile cache stores them per cached body, and the
   proximity evaluator runs against that same cached set). *(A01 removed the read-cap fragility this
   reasoned from, but the call stands on its own: hazards are only ever asked for per body.)* A third
   `@convex-dev/geospatial` instance
@@ -192,7 +192,7 @@ The modules:
   *lot* of ice) — stepped by `stepSize` / `resizeDraft`. **This is a real design decision, not an
   implementation detail:** a short discrete ladder is what makes the size control a pair of **−/+
   buttons rather than a slider** — sliders are miserable with gloves on — and it matches the honesty of
-  the estimate (an eyeball guess on a lake, not a survey; D3). The rule currently lives only in the code
+  the estimate (an eyeball guess on a water body, not a survey; D3). The rule currently lives only in the code
   comments, so it's recorded here.
 - **`hazardProximity.ts`** (Layer 1, client-consumed) — `evaluateOnIceAlert(coord, hazards, alerted)` →
   the set of hazards within alert buffer, split provisional (→ "confirm?") vs confirmed (→ "ahead"),
@@ -273,7 +273,7 @@ The modules:
 - **`photos.ts`** — gained **`getHazardUrls`**, the hazard-scoped sibling of `getUrls`: it resolves a
   hazard's photo serving URLs but gates them on the *hazard's* visibility, so a URL (and any coord on it)
   never outlives the viewer's access to the thing that references it.
-- **Shared `lib/` extractions (Phase 09a became the second photo-bearing, lake-attached entity, so two
+- **Shared `lib/` extractions (Phase 09a became the second photo-bearing, body-attached entity, so two
   helpers were lifted out of `reports.ts`/`photos.ts` rather than duplicated):**
   - **`lib/photoAccess.ts`** — `assertOwnedPhotos` (no attaching someone else's photo) +
     `resolvePhotoUrls`. Every photo-bearing entity now shares the *resolver* while keeping its **own**
@@ -281,7 +281,7 @@ The modules:
     get right and to audit.
   - **`lib/bodies.ts`** — `resolveSurvivor` (follow a D36 dedup-merged body to its surviving row,
     hop-capped against cyclic merge chains), so a hazard and the report it was drawn in can never land on
-    two different rows for the same lake.
+    two different rows for the same water body.
 - **Data-sync for Layer 0 (D54):** `listForBody` is an ordinary reactive query — a subscribed client
   gets new hazards live; the mobile cache upserts them alongside the body polygon it already caches. No
   push infra in v1. *(There is no `getInViewport` — see above; the sync is strictly per-body.)*
@@ -292,7 +292,7 @@ The modules:
 
 ## Web UI (`apps/web`)
 
-- **Map hazard layer** — render active hazards on the lake map with **fuzzy** styling by freshness
+- **Map hazard layer** — render active hazards on the water body map with **fuzzy** styling by freshness
   (fresh full / aging lighter / stale faded) and by `geometryKind` (circle for point+radius, line uses
   `bufferMeters` as its rendered half-width, polygon). **Deliberate deviation from the plan:** stale
   hazards render **unconditionally on the map, at the `FRESHNESS_FILL_OPACITY.stale` floor** — there is
@@ -333,29 +333,29 @@ mitten-fumble that hits Done early must still produce a useful pin.
 ### The "on-ice" state
 The `(map)` layout owns **one** GPS watcher (Phase 09a review fix — three separate bugs left the original
 version essentially never activating: a permission race with the map's framing request, a one-shot check
-that never re-ran, and a body cache only ever populated by opening a lake's drawer). The single watcher
-publishes each fix as `onIceCoord` and resolves it to a lake two ways: the **server** `resolveBodyForCoord`
-query (read-cap-safe, covers *any* listed lake including one never opened on this device), falling back to
+that never re-ran, and a body cache only ever populated by opening a water body's drawer). The single watcher
+publishes each fix as `onIceCoord` and resolves it to a water body two ways: the **server** `resolveBodyForCoord`
+query (read-cap-safe, covers *any* listed water body including one never opened on this device), falling back to
 the offline `resolveCachedBody` when the query hasn't answered (offline / first paint). Permission is taken
 through a shared `ensureForegroundPermission()` singleton so the watcher and the map's framing request
 can't race onto two prompts. It seeds from the last known fix, re-arms on `AppState` `active`, and
 `MapView` now also seeds the offline body cache from on-screen bodies when zoomed in — so on-ice detection
-no longer depends on having previously tapped that lake.
+no longer depends on having previously tapped that water body.
 
-**On app-open, the resolved lake is auto-selected** (founder call, 2026-07-21): the layout navigates to
+**On app-open, the resolved water body is auto-selected** (founder call, 2026-07-21): the layout navigates to
 its detail, which frames it into the space the half-height drawer doesn't cover — you land looking at the
-lake you're standing on, can flick the drawer down for more, and **closing the sheet to pan away lets the
-hazards fall off naturally** (the hazard *layer* follows the *selected* lake, `highlightWaterBodyId`, not
+water body you're standing on, can flick the drawer down for more, and **closing the sheet to pan away lets the
+hazards fall off naturally** (the hazard *layer* follows the *selected* water body, `highlightWaterBodyId`, not
 the on-ice body). Auto-select fires **at most once per open** and only while still on the bare map, so it
 never yanks someone out of somewhere they deliberately navigated. The pure decision (`shouldAutoSelectOnIce`,
 `resolveOnIceBody`) lives in `onIce.ts`, unit-tested. This supersedes the interim "no camera movement"
-call — moving the camera *once, on open, to the lake under your feet* is exactly what you want; the failure
+call — moving the camera *once, on open, to the water body under your feet* is exactly what you want; the failure
 mode we avoid is re-framing you on every fix or mid-interaction, which the once-per-open guard prevents.
 
 The resolved body drives the **⚠ Flag a hazard** FAB (bottom-right thumb zone, above the drawer peek) and
 the proximity banner. Off-ice the FAB doesn't exist and the flag action lives as an ordinary button in the
-lake drawer. Founder call: **no auto-opening capture sheets, no modal "you're on the ice!" state** — the
-auto-*selection* is just a normal lake drawer, nothing you can be confused about being *in*.
+water body drawer. Founder call: **no auto-opening capture sheets, no modal "you're on the ice!" state** — the
+auto-*selection* is just a normal water body drawer, nothing you can be confused about being *in*.
 
 ### Flagging — three taps, offline, no typing
 1. **FAB** → sheet of big tiles: **Open water · Pressure ridge · Thin ice** (≈80% of real reports —
@@ -393,7 +393,7 @@ modals** — blocking the map of someone moving on ice is unacceptable.
 
 ### Confirming
 Two entry points: the banner above, or tapping the pin → a hazard drawer (the same bottom sheet as
-lake/report detail) with type, freshness copy, photos (no reporter line yet — `hazards.get` returns no
+water body/report detail) with type, freshness copy, photos (no reporter line yet — `hazards.get` returns no
 reporter; see the web detail note above), and three stacked full-width buttons —
 **Still here** / **Healing — still unsafe** / *Fully healed & safe*. The third is deliberately
 de-emphasized and gets a confirmation step: it is the only destructive verdict (2 votes archive the pin),
@@ -472,7 +472,7 @@ Per the founder's call (2026-07-18): **all in one PR**, online-first commits fir
    **`@skating/core/hazardBundle.ts`**. The rule is stored as the author's **opt-outs**, not their
    selections: the candidate list is a live query, so an opt-in set would silently drop a hazard that
    finished syncing after the form opened. Online-only — a coord-only offline capture has no resolved
-   lake to query candidates for, so bundling a *drafted* report belongs with the offline commit.
+   water body to query candidates for, so bundling a *drafted* report belongs with the offline commit.
 7. **Offline** — ✅ hazard draft/flush reuse (`draftStore` `kind` discriminator);
    ⛔ **Layer-3 offline basemap tile-pack — dropped for this phase** (see the spike findings below).
    - Queue logic in **`@skating/core/hazardQueue.ts`**, reusing the F2 contract (same `DraftStatus`
@@ -566,7 +566,7 @@ evidence rather than re-deriving it:
   handler — plus iOS throttles silent pushes at its own discretion, so the resulting refresh is
   best-effort by design and can't be relied on for safety content. **Recommendation: build it with
   the push layer (D54 Layer 2, which needs `expo-notifications` anyway), not as an offline tweak.**
-  Nothing in Phase 09a depends on it: hazards for a lake sync reactively whenever the app is open, and
+  Nothing in Phase 09a depends on it: hazards for a water body sync reactively whenever the app is open, and
   the offline queue covers the capture direction.
 - ~~On-ice hazard photos~~ — ✅ **BUILT 2026-07-21** (see the commit below); no longer deferred.
 - **Layer-3 offline basemap tile-pack** — dropped from Phase 09a with findings recorded above; **retried in
@@ -574,7 +574,7 @@ evidence rather than re-deriving it:
   (`EXPO_PUBLIC_OFFLINE_BASEMAP`) and awaiting its one on-device confirmation.
 - ✅ **SHIPPED in Phase 09b (2026-07-22). Clip a hazard footprint to the water body boundary (founder idea, 2026-07-21).** A large point+radius
   centred in a small bay currently renders as a circle that can spill across land onto a peninsula or a
-  neighbouring lake. The ask: intersect the footprint with the body polygon so a hazard can never imply
+  neighbouring water body. The ask: intersect the footprint with the body polygon so a hazard can never imply
   danger on water it isn't on. **Deferred deliberately, not dismissed** — it's a genuine safety-*visual*
   improvement, but it touches the one invariant the layer is built around ("what's drawn IS what the
   proximity evaluator measures," `hazardLayer.ts`), so it must clip **both** the render and the alert or
@@ -585,7 +585,7 @@ evidence rather than re-deriving it:
   so it wants its own focused commit and device verification rather than riding in the review-remediation
   PR. The `HAZARD_MAX_SIZE_M` ceiling shipped now is the crude backstop against the absurd case until then.
 - ✅ **SHIPPED in Phase 09b (2026-07-22). Auto-suggest skate start/end times from the on-ice watcher (founder idea, 2026-07-21).** The single
-  GPS watcher now knows when a device entered and left a lake's footprint; that dwell interval is a strong
+  GPS watcher now knows when a device entered and left a water body's footprint; that dwell interval is a strong
   prior for the report form's skate window, which today is manual entry. Natural fit, but it needs a small
   amount of session bookkeeping (enter/leave timestamps, debounced against brief GPS excursions) and a
   form pre-fill, and it overlaps the D24 activity-detection path — so it belongs with the report-form /
@@ -654,7 +654,7 @@ Still no code assertion of safety (D3) — the harvested lakeice vocabulary powe
   ridges that reform annually graduate into a persistent **`bodyFeatures`** entity — always-shown, no
   decay, no re-marking. v1 ships schema + rendering; promotion/demotion is an **admin action** (Phase 07).
 - **On-ice alerts — client-side, D12-clean (D54).** The server only **syncs hazard data** to devices
-  that care about a lake; each phone evaluates its **own** GPS against cached hazards. **Layer 0** silent
+  that care about a water body; each phone evaluates its **own** GPS against cached hazards. **Layer 0** silent
   cache sync + **Layer 1** on-ice proximity alert where the confirm-gate *is* the confirmation mechanism
   (unconfirmed → soft "can you confirm?"; ≥1 independent confirm → "⚠ hazard ahead") ship in v1. Because
   hazards are cached on-device, alerts fire **with no cell signal**. **Layer 2** (directional
@@ -671,13 +671,13 @@ Still no code assertion of safety (D3) — the harvested lakeice vocabulary powe
   - **The offline body-reference cache** (F2 "Layer 2" — `@skating/core` buffered
     `pointInPolygon` auto-select + an on-device LRU cache of recently-viewed body polygons)
     is built in F2 as a **standalone, reusable module** *specifically so hazard capture reuses
-    it* — GPS + cached polygon tells the offline app which lake the skater is on without a
+    it* — GPS + cached polygon tells the offline app which water body the skater is on without a
     network round-trip.
   - **Offline basemap tiles (§6.2 "Layer 3") were deferred here from Phase 02a §6.2 (decided
     2026-07-15) — then dropped from Phase 09a at build time (2026-07-21).** §6.2's report capture
-    needs only *which lake* (the body cache) + GPS, so it ships with **no offline basemap** and
+    needs only *which water body* (the body cache) + GPS, so it ships with **no offline basemap** and
     degrades the put-in pin to "drop at my current GPS location." Hazards want the same offline
-    basemap *ideally* — dropping an accurate pin is easier with the lake polygon as reference — but
+    basemap *ideally* — dropping an accurate pin is easier with the water body polygon as reference — but
     the tile-pack turned out to be a real native spike (does `@maplibre/maplibre-react-native`'s
     offline-pack API crawl our `pmtiles://` range source, or must we ship an on-device
     mini-`.pmtiles`?) that **can't be resolved without a device build**, which the rest of the native
@@ -688,5 +688,5 @@ Still no code assertion of safety (D3) — the harvested lakeice vocabulary powe
     the device-build pass. The F2 body-cache module was already designed to accept a tile-pack field,
     so slotting it in later needs no rearchitecture.
   - The buffered auto-select (a tunable ~parking/approach radius so opening from the car still
-    resolves the lake) is the same primitive hazard capture uses to bind a hazard to its body.
+    resolves the water body) is the same primitive hazard capture uses to bind a hazard to its body.
 

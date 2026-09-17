@@ -45,7 +45,7 @@ files. **Prod is deferred, as for every phase since A01.**
   millimetre); features by footprint centre; tracks by majority of 64 samples with `leftSubArea`;
   activity reports from their track.
 - **Favorites** with `subAreaId` (triple uniqueness), split reads (`loadFavorites` for the feed's
-  per-report test, `loadFavoriteBodyIds` for the map/discovery's per-lake test), the recipient-set
+  per-report test, `loadFavoriteBodyIds` for the map/discovery's per-body test), the recipient-set
   de-dup in `enqueueReportNotifications`, and the copy *"New report in Malletts Bay (Lake Champlain)"*.
 - **Drive-time** from the bay's best put-in (`subAreaDriveCoord`), in the feed and the fan-out.
 - **The bay view** on both clients (`describeSubAreaHeader`, `windRoseCaption` on every body),
@@ -61,7 +61,7 @@ files. **Prod is deferred, as for every phase since A01.**
    `waterBodyIds` convention). The list-form location line on the feed card and both report-detail
    screens therefore costs no reads. `memberSubAreaIds` in core is the one reader of the pair.
 3. **A membership floor** (`SUB_AREA_MEMBERSHIP_MIN_SHARE` = 10% of samples, ~6 minutes of an hour).
-   Found by the review: with plurality alone, a lake-wide skate that crossed Malletts' mouth for
+   Found by the review: with plurality alone, a body-wide skate that crossed Malletts' mouth for
    one sample would be labelled, banded, fed and notified as a Malletts Bay report — and before A09 it
    carried no bay at all. Below the floor the samples are open water for everything but the
    mouth-line flag. The primary is a plurality among *members*, the body rule.
@@ -70,10 +70,10 @@ files. **Prod is deferred, as for every phase since A01.**
    number, its source and its caveat go and the date stays. Readers key on `maxDepthM`.
 5. **`notificationResolve` had no `subAreaName` path** — the kickoff's "via the existing path" was
    wrong. One was added: a bucket of exactly one report names its bay; a bucket of several names the
-   lake, since it may span bays.
-6. **The bay bounty list keeps lake-wide bounties**: a lake-wide ask is satisfiable from this bay
+   water body, since it may span bays.
+6. **The bay bounty list keeps body-wide bounties**: a body-wide ask is satisfiable from this bay
    (D175), so it is an ask the bay's skaters can answer. A bounty on a *different* bay is dropped.
-7. **The bay view omits the lake's profile caption** (smoke finding): it carried the lake's 399 ft
+7. **The bay view omits the water body's profile caption** (smoke finding): it carried the water body's 399 ft
    and 11-mile fetch one line under "no depth inside this bay".
 8. **`restampAllParents`** is a third one-off the kickoff did not list: nothing else would ever have
    tagged the put-ins, tracks and features from before the phase.
@@ -84,9 +84,9 @@ files. **Prod is deferred, as for every phase since A01.**
 
 Signed in by Clerk sign-in token (the A06h recipe; Chrome needs `--use-angle=swiftshader` or MapLibre
 throws into the error boundary). Header: *Malletts Bay* + own heart · *Part of Lake Champlain* +
-lake's heart · *1585.1 acres* · *No depth inside this bay recorded* (reveal) · *Elevation 97 ft —
-the lake's*. Overview: the wind caption's bay form. Reporting: bay filter seeded to Malletts.
-Planning: *Put in at ESE launch* (a bay launch, chosen over the lake's 172), the spread, the bay's
+water body's heart · *1585.1 acres* · *No depth inside this bay recorded* (reveal) · *Elevation 97 ft —
+the water body's*. Overview: the wind caption's bay form. Reporting: bay filter seeded to Malletts.
+Planning: *Put in at ESE launch* (a bay launch, chosen over the water body's 172), the spread, the bay's
 weather. Camera framed the bay with the parent's contours drawing under it. Console clean apart from
 a pre-existing `<div>`-in-`<p>` warning in `DetailSkeleton` (not this phase's).
 
@@ -101,9 +101,9 @@ their outline and 24 sit on an uncovered parent (Placid, Belleau, Pine River Pon
 nothing. Refused 0. *Greptile pass:* the loader's guard became a **version check** — a row echoes
 the `geometryUpdatedAt` it was derived against and the loader demands equality, so the CLI host's
 clock is not in it; the persistence boundary enforces `MAX_PLAUSIBLE_DEPTH_M` itself; omissions are
-counted once per bay (63 + 41 + 24 = 128); written/refused land on the run row after every batch. Sanity: Champlain's *Broad Lake* bay takes the lake's 121.6 m — the deepest
+counted once per bay (63 + 41 + 24 = 128); written/refused land on the run row after every batch. Sanity: Champlain's *Broad Lake* bay takes the water body's 121.6 m — the deepest
 point is in it — and *Malletts Bay* reads 24.7 m measured. Delta from the kickoff: contour lanes are
-**not** superseded here (that list governs lake depth, where NH's band polygons win; nothing clips
+**not** superseded here (that list governs water body depth, where NH's band polygons win; nothing clips
 bands per bay), and the isobath test is *any vertex inside*, not *fully inside* — a vertex of the
 60 ft line inside the bay is water at least 60 ft deep inside the bay, and the tighter rule threw
 away exactly the crossing contours a bay mouth has most of.
@@ -146,11 +146,11 @@ The scoping doc's list of "what a sub-area cannot do" is right; its account of �
 
 | rule clause | state on `main` |
 | --- | --- |
-| feed: one row, under both the lake and the bay | ✅ `reports.listByWaterBody` takes an optional `subAreaId` served off `by_sub_area_moderation_and_skate_end_time`; the global feed is one row per report by construction |
-| bounties: bay ⊂ lake, not symmetric | ✅ `bounties.attachReportToOpenBounties` line 715: a bay bounty skips reports whose `subAreaId` differs; a lake bounty takes any |
+| feed: one row, under both the water body and the bay | ✅ `reports.listByWaterBody` takes an optional `subAreaId` served off `by_sub_area_moderation_and_skate_end_time`; the global feed is one row per report by construction |
+| bounties: bay ⊂ water body, not symmetric | ✅ `bounties.attachReportToOpenBounties` line 715: a bay bounty skips reports whose `subAreaId` differs; a water body bounty takes any |
 | prominence / corroboration / conditions roll up | ✅ nothing to do — reports never leave the parent, so `bodySummary`, `pointEvents.by_ref` and `richness.hasActivity` already count them |
 | **notifications de-dup** | ❌ **the one new surface.** `enqueueReportNotifications` scans `waterBodyFavorites.by_water_body`; once a favorite can name a bay, a person who favorited both would be enqueued twice under the same coalesce key and get *"2 new reports"* for one |
-| drive-time band for a bay | partly — `weather.resolveForecastPlace` already judges the band on the bay's own weather point (`arrivalBandMinutes`); the feed, the digest/great fan-out and the lake list still use the parent's `centroid` |
+| drive-time band for a bay | partly — `weather.resolveForecastPlace` already judges the band on the bay's own weather point (`arrivalBandMinutes`); the feed, the digest/great fan-out and the water body list still use the parent's `centroid` |
 
 Two premises of the scoping doc that do not survive contact with the code:
 
@@ -245,19 +245,19 @@ information we hold to dodge a hard question.
 
 - `waterBodyFavorites.subAreaId?` — a bay favorite still carries the parent's `waterBodyId`, so one
   `by_water_body` scan finds both audiences. Uniqueness index becomes
-  `by_user_water_body_sub_area: ['userId', 'waterBodyId', 'subAreaId']` and the lake row is looked
+  `by_user_water_body_sub_area: ['userId', 'waterBodyId', 'subAreaId']` and the water body row is looked
   up with `.eq('subAreaId', undefined)` — the pattern `bodyWeatherCells.by_body` and
   `recurrenceQueue.by_season_skipped_claimed` already rely on (an optional-field index is not
   sparse; `undefined` is a real key).
 - **Drawer:** when `?sub=` names a live bay, the header shows the bay's name with its **own heart**;
-  the lake's heart stays. `toggle` / `isFavorite` take an optional `subAreaId`.
+  the water body's heart stays. `toggle` / `isFavorite` take an optional `subAreaId`.
 - **List** (`listForUser`): *"Malletts Bay · Lake Champlain"*, navigates to `?sub=`; follows a merge
   to the survivor as today; a favorite of a delisted bay is skipped, not surfaced.
 - **Map highlight** pins the **parent** (a bay only draws at z ≥ 10 anyway).
 - **Feed boost / badge** only on reports whose membership includes the favorited bay.
-- **Notifications:** `enqueueReportNotifications` builds the recipient set once — lake favoriters ∪
+- **Notifications:** `enqueueReportNotifications` builds the recipient set once — water body favoriters ∪
   favoriters of any member bay — then enqueues once per person; the coalesce key stays
-  `${userId}:${waterBodyId}:favorite`, so lake + bay collapse by construction. Copy: *"New report in
+  `${userId}:${waterBodyId}:favorite`, so water body + bay collapse by construction. Copy: *"New report in
   Malletts Bay (Lake Champlain)"* via the existing `subAreaName` path in `notificationResolve`.
 - Merge (`waterBodies.merge`) repoints the row's `waterBodyId` and dedups on the **triple**;
   `dataExport` and `accountDeletion` need only carry the new field.
@@ -397,7 +397,7 @@ internal query, clip each archived parent's soundings / isobaths to each bay pol
 
 - core: `subAreaDriveCoord` ladder; `formatLocationLine` list form; put-in tolerance rule; track
   primary/list/`leftSubArea` on a fixture crossing two bays and open water.
-- convex (convex-test): favorites uniqueness on the triple; lake+bay favorite ⇒ **one** queue row
+- convex (convex-test): favorites uniqueness on the triple; water body+bay favorite ⇒ **one** queue row
   with `count: 1`; `reportSubAreas` mirrors on `moderation.setStatus` and on `reports.update`;
   `listByWaterBody(subAreaId)` returns a spanning report under both bays; bay bounty satisfied by a
   spanning report; `rederiveSubArea` clears depth on redraw and not on rename; `restampParent`
@@ -459,9 +459,9 @@ that resolves into three different answers, and the differences are the interest
 | **favourites** | its own `subAreaId` on `waterBodyFavorites` | A favourite is not derived from anything: wanting alerts about Malletts Bay is a *different* statement from wanting alerts about all of Champlain, and only the user can make it. |
 | **elevation** | **inherit, never fetch** | It is the same water surface. Fetching it would spend quota to reproduce a number by definition equal to one we hold. |
 | **wind rose** | **inherit the parent's rose, and say that is what it is**; compute the bay's **own `fetchProfileM`** from its own polygon | ⚠ **Inherited because our data has no finer answer, NOT because the wind is the same.** See §Wind in a cove — the honest statement is a limitation, and it must not be written down as a fact. Fetch is the one bay-specific signal we can compute for free, and it is real. |
-| **max depth** (⚠ *max only* — mean was ruled out 2026-08-09, see §Kickoff pass) | **derive** by clipping the parent's soundings to the bay polygon, then **store** | ⚠ **Inheriting would be a safety-relevant lie.** Malletts Bay is not as deep as Champlain's broad lake, and a bay page reading "max depth 122 m" is worse than one reading nothing (D3). Expensive to recompute per read, so it is stored — which makes it a derived-and-cached value with an invalidation rule, see §The redraw problem. |
+| **max depth** (⚠ *max only* — mean was ruled out 2026-08-09, see §Kickoff pass) | **derive** by clipping the parent's soundings to the bay polygon, then **store** | ⚠ **Inheriting would be a safety-relevant lie.** Malletts Bay is not as deep as Champlain's broad water body, and a bay page reading "max depth 122 m" is worse than one reading nothing (D3). Expensive to recompute per read, so it is stored — which makes it a derived-and-cached value with an invalidation rule, see §The redraw problem. |
 | **contours** | ⚠ *superseded (kickoff call 1): no crop, no re-tile — the parent's layer already draws under a focused bay; only `subAreaKey` is minted* | `clipDrawnToBody` already does exactly this for the 9 nested bodies `alsoCovers` found. |
-| **drive-time** | from the bay's **own** put-ins where it has any, else ⚠ *the bay's own `representativePoint` — never the parent's bands (kickoff call 2)* | This is the point of the ask: the bay's parking is closer than the lake's nominal representative point, and a drive-time computed from the lake under-serves the bay. |
+| **drive-time** | from the bay's **own** put-ins where it has any, else ⚠ *the bay's own `representativePoint` — never the parent's bands (kickoff call 2)* | This is the point of the ask: the bay's parking is closer than the water body's nominal representative point, and a drive-time computed from the water body under-serves the bay. |
 
 **The through-line worth stating once:** a sub-area's own *geometry* is the only new information it
 brings. Everything that follows from geometry (fetch, depth-within-the-outline, contour crop, which
@@ -473,12 +473,12 @@ and the one thing that is neither (a favourite) is stored.
 ## Wind in a cove — the inheritance is a limitation, not a finding
 
 **Founder correction, 2026-08-07:** *"In a bay/cove, wind will almost certainly behave differently
-than out in the middle of a large lake, because of the relative position of trees & terrain. But if
+than out in the middle of a large water body, because of the relative position of trees & terrain. But if
 we don't have a way to get bay-location-specific data, then we only have the wind data we have!"*
 
 **That is right, and the first draft of the table above had it backwards.** It said a bay and its
-lake are "genuinely" the same cell, which reads as a claim about the wind. It is a claim about
-**WTK's grid**. A cove ringed by 25 m pines with 300 m of fetch does not experience the open lake's
+water body are "genuinely" the same cell, which reads as a claim about the wind. It is a claim about
+**WTK's grid**. A cove ringed by 25 m pines with 300 m of fetch does not experience the open water body's
 wind, and nothing in a 2 km reanalysis cell can see that.
 
 **And the problem is much bigger than bays.** The corpus is 25,136 bodies with a **median of 12
@@ -497,7 +497,7 @@ So there are exactly three honest moves, and the first two are free:
    as to an ice condition, and this is the first place in the phase where the copy has to carry a
    caveat the data cannot remove.
 2. **Fetch is genuinely local, and we already compute it.** `fetchProfileM` is 16 sectors measured
-   off the body's own outline, so a cove's 300 m and the broad lake's 15 km are already distinguished
+   off the body's own outline, so a cove's 300 m and the broad water body's 15 km are already distinguished
    per body and per sub-area, at zero cost. It is a real answer to *part* of the question — the part
    about how far the wind runs before it reaches you.
 3. 📌 **A terrain-and-canopy shelter index is the part fetch cannot answer, and it is buildable.**
@@ -532,11 +532,11 @@ Which means concretely:
   Not two rows. The label carries the specificity, the membership carries the reach.
 - **Notifications:** de-duplicated at the delivery layer. Favouriting *both* Champlain and Malletts
   Bay must yield **one** notification, not two — and that is a real case, because a user who cares
-  about the bay very plausibly favourited the lake first.
-- **Bounties:** a bounty on the bay is satisfied by a report in the bay; a bounty on the lake is
-  satisfied by any report in the lake, **including** one in the bay. Not symmetric, and the
+  about the bay very plausibly favourited the water body first.
+- **Bounties:** a bounty on the bay is satisfied by a report in the bay; a bounty on the water body is
+  satisfied by any report in the water body, **including** one in the bay. Not symmetric, and the
   asymmetry is correct.
-- **Prominence / corroboration / conditions:** roll up to the parent. A lake is not less prominent
+- **Prominence / corroboration / conditions:** roll up to the parent. A water body is not less prominent
   because its reports were precise about where they were.
 
 **The failure mode to design against is double-counting, and it is silent in every one of those six
@@ -568,7 +568,7 @@ consumer — the A07a audit's own recurring lesson.
 
 ## The redraw problem, which is new
 
-A lake's outline changes when a catalogue re-publishes it — rarely, and the loader already gates the
+A water body's outline changes when a catalogue re-publishes it — rarely, and the loader already gates the
 expensive work on `footprintMoved`. **A bay's outline changes whenever a moderator decides it
 should**, and the founder has explicitly signed up for that: *"If we learn that skaters venture past
 our mid-lake straight-line edge that defines the mouth of the bay, we can always adjust our geometry
@@ -615,7 +615,7 @@ of the above (founder, 2026-08-07):
 
 **A bay whose only candidate parent is a Great Lake stays a body, classed `bay`.** Chaumont Bay
 (9,169 ac), Black River Bay (4,455), Braddock, Little Sodus, Blind Sodus, Three Mile, Muskellunge,
-Sherwin, East Bay and Long Bay become first-class bodies rather than sub-areas of a lake we do not
+Sherwin, East Bay and Long Bay become first-class bodies rather than sub-areas of a water body we do not
 carry. Lake Erie and Lake Ontario are **not** added to the corpus: they already draw (the region mask
 layers Natural Earth `ne_10m_lakes`, and the Protomaps world basemap has water everywhere), and
 adding a 4.7M-acre polygon would put a Great Lake into every viewport query along 300 miles of

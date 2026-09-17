@@ -12,7 +12,7 @@ Two questions forced a rethink of the Strava plan:
    other user — "Strava Data provided by a specific user can only be displayed or
    disclosed in your Developer Application to that user" — *even if publicly viewable*,
    plus a blanket **AI/ML ban**. That kills every cross-user use we actually want off
-   Strava-sourced data: the lake **heatmap**, crowd **pressure-ridge / clearest-side**
+   Strava-sourced data: the water body **heatmap**, crowd **pressure-ridge / clearest-side**
    intelligence, and drawing a **path on a public report**. (Full read in the
    2026-07-24 thread; corroborated by Strava's own press release + DCRainmaker/road.cc.)
 2. **Adoption:** skaters will prioritize their Strava (fitness stats + kudos) over a
@@ -101,7 +101,7 @@ finer stream, but you can't refine a coarse one after the fact. Three GPS profil
 Your nervousness is correct and worth designing around, not hand-waving. Continuous
 high-accuracy GPS is the single biggest drain a phone app can cause — a realistic
 budget is **~5–12%/hr** depending on device, screen state, and fix cadence. A long
-lake day (3–4 hrs) is a real dent. Mitigations, roughly in ROI order:
+water body day (3–4 hrs) is a real dent. Mitigations, roughly in ROI order:
 
 - **Record mode (b) costs more than hazard mode (a)** — export fidelity
   (`High`/`BestForNavigation`, ~5 m) keeps the GPS radio on more than `Balanced`/20 m, so
@@ -179,7 +179,7 @@ connected watch provider, on for phone-only) until auto-detect is solid.
 
 Because the track is **ours**, all the originally-blocked features become legal:
 
-- **Lake heatmaps** aggregating recent skaters' chosen lines.
+- **Water body heatmaps** aggregating recent skaters' chosen lines.
 - **Pressure-ridge / obstacle intelligence** — crowd-sourced "where people actually
   crossed / which side was clear."
 - **Path drawn on a public report** — no cross-user-display problem, because it's not
@@ -211,7 +211,7 @@ always own; A and C are pluggable provider sets on either side:**
 ```
   A · capture (inputs)         B · our track store (hub)          C · push (outputs)
   ────────────────────         ─────────────────────────         ──────────────────
-  native recorder  ─┐          ┌ normalize → resolve-to-lake ┐    ┌ Strava (activity:write)
+  native recorder  ─┐          ┌ normalize → resolve-to-body ┐    ┌ Strava (activity:write)
   Garmin           ─┤          │  (gpsActivities, D44)       │    │
   HealthKit / HC   ─┼────────► │  aggregate + heatmap        ├──► ┤ (future: Whoop, …)
   COROS · Polar    ─┘          │  privacy: minors-out,       │    │
@@ -241,7 +241,7 @@ adding provider adapters, while **B — our benefit — is covered from day one 
 ### Suggested build order (within "all three")
 
 1. **B's spine + the native A-input** — recorder → normalized `gpsActivities` →
-   resolve-to-lake → render your *own* path on your *own* report. No provider risk; the
+   resolve-to-body → render your *own* path on your *own* report. No provider risk; the
    bulk of the effort (battery + background-mode hardening).
 2. **C's first output — Strava push** — small once B produces a clean track; ship early
    as the adoption hook.

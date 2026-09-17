@@ -1,15 +1,15 @@
-# A02 — The lake editor + named sub-areas
+# A02 — The water body editor + named sub-areas
 
 > **Status: ✅ COMPLETE on dev (2026-07-26; prod deferred, as every phase since 2.5).** Decisions
-> **D60** (named sub-areas) and **D61** (the per-lake operator canvas) are written into
+> **D60** (named sub-areas) and **D61** (the per-body operator canvas) are written into
 > [`01-decisions.md`](../01-decisions.md). The second item in the roadmap's *Next-phase candidates*
 > register ([`07-roadmap.md`](../07-roadmap.md) → *Later / deferred* → A02), picked second because the
 > founder **is** the operator, and because the corpus models its most-skated destinations worst.
 
 **Goal.** Give one sheet of ice the names skaters actually use for it, and give the operator one place
 to say so. Two halves that only look separate: a **named sub-area** model (Malletts Bay is a region
-*of* Lake Champlain, not a lake beside it) and a **per-lake editor** — look up a lake, get one canvas
-locked to that lake carrying every per-body lever there is.
+*of* Lake Champlain, not a water body beside it) and a **per-body editor** — look up a water body, get one canvas
+locked to that water body carrying every per-body lever there is.
 
 A skater sees their bay's name on the map, in search, on their reports, and on a bounty. The operator
 stops doing curation through a CSV and an internal mutation.
@@ -44,13 +44,13 @@ The entry was written before Phase 08 shipped and had drifted. Corrections found
    and **Mill Pond** (a NY namesake) — are invisible until someone remembers them.
 
    And they aren't five separate bugs: four of the five are Champlain bays whose boost landed on a
-   same-named lake elsewhere. The fix is one motion — **strip the wrong boost, draw the right
+   same-named water body elsewhere. The fix is one motion — **strip the wrong boost, draw the right
    sub-area** — which only exists once (1) is settled.
 
 3. **"One map, one session, two jobs" understates the job, and `/admin` has no map at all.** Every
    admin route is a table; `MapView` lives only in the `_map` tree with its own selection context and
-   query wiring. The founder's actual ask (2026-07-26) is bigger than a shared map: a **per-lake
-   editor** — look up a lake, get a single editing canvas scoped to it, **not pannable away** but
+   query wiring. The founder's actual ask (2026-07-26) is bigger than a shared map: a **per-body
+   editor** — look up a water body, get a single editing canvas scoped to it, **not pannable away** but
    zoomable, carrying drawing, pin-dropping, hazard moderation and track review together.
 
 4. **Contradiction re-flag bundling is not contradiction-specific, and the obvious fix would corrupt a
@@ -83,7 +83,7 @@ The entry was written before Phase 08 shipped and had drifted. Corrections found
 **Decision 1 — A bay is a named sub-area of one polygon, not a water body.**
 New table `waterBodySubAreas`, each row a named region *inside* an existing parent body. Reports,
 hazards and bounties keep belonging to the parent; the sub-area is the finer name they carry. This is
-the **D4 model** (deferred since Phase 01 for rivers-as-named-reaches) finally instantiated — for lakes
+the **D4 model** (deferred since Phase 01 for rivers-as-named-reaches) finally instantiated — for water bodies
 first, where the corpus evidence is overwhelming. *Considered and rejected:* separate overlapping
 bodies (fragments every per-body aggregate and poisons the dedup queue); doing nothing (leaves the
 top-3 most-mentioned destinations in the corpus unnameable).
@@ -108,8 +108,8 @@ in the app.
 **Decision 4 — Sub-areas are full citizens: label, search, map, targeting.** All four capabilities land
 in A02 (founder call). See *The design* for what each means and where the line falls inside "targeting."
 
-**Decision 5 — The operator surface is a per-lake editor at `/admin/water/$id`.**
-Look up a lake → one canvas whose camera is **locked to that body's bbox** (zoom freely, pan only
+**Decision 5 — The operator surface is a per-body editor at `/admin/water/$id`.**
+Look up a water body → one canvas whose camera is **locked to that body's bbox** (zoom freely, pan only
 within it), carrying every per-body lever: prominence, sub-areas, put-ins, weather sample points,
 hazards and crossings, aggregate tracks, and this body's review/dedup actions. The existing
 `/admin/water` queue becomes the index that routes into it.
@@ -137,7 +137,7 @@ first, and "smallest containing" is order-independent where "first match" is not
 
 **Decision 10 — A drawn shape is clipped to its parent, not rejected by it.** The write intersects the
 drawn polygon with the parent and stores the *clipped* result; it refuses only when the clip removes
-more than a threshold share of what was drawn (⇒ the shape is mostly off the lake, i.e. a misplaced
+more than a threshold share of what was drawn (⇒ the shape is mostly off the water body, i.e. a misplaced
 draw rather than a sloppy edge). Hand-tracing a bay along a real shoreline cuts across land on almost
 every vertex, so reject-by-default means fighting the tool on every bay — and clipping makes the
 stored geometry valid *by construction* rather than valid-because-validated. This is the Phase-09b
@@ -168,8 +168,8 @@ correct them in the editor after. The alternative — hand the empty canvas over
 own acceptance test unrun. The tradeoff is explicit: some of these boundaries are inference, and the
 doc says which.
 
-**These add two entries to the decision log** — **D60** (named sub-areas; the lake instantiation of D4)
-and **D61** (the per-lake operator canvas). Written when the code lands, not before.
+**These add two entries to the decision log** — **D60** (named sub-areas; the water body instantiation of D4)
+and **D61** (the per-body operator canvas). Written when the code lands, not before.
 
 ---
 
@@ -182,7 +182,7 @@ applied to the roadmap entry. Seven corrections, each verified against a file:
    rule is *unlisted means absent from the cell table*; that is what makes the listing filter free
    (`lib/cellIndex.ts`). This plan gave `waterBodySubAreas` its own `removedAt` and its own cell table
    keyed on that, and never connected the two. A landowner takedown on Lake Champlain drops the body's
-   cell rows and would have left "Malletts Bay" outlined and labelled on a map where the lake no longer
+   cell rows and would have left "Malletts Bay" outlined and labelled on a map where the water body no longer
    exists — the same for `reject`, and `merge` would have left the loser's bays pointing at a
    merged-away parent. Closed by **Decision 11**.
 
@@ -313,8 +313,8 @@ at a regional zoom while a small cove waits for z13. No second curve to tune.
 
 **Two read paths, each bounded by the mechanism that fits it.** Most sub-area reads are resolved
 *within a parent that is already loaded* — the report being created knows its `waterBodyId`, the
-search hit carries its parent, the lake page is one body. Those cost a `by_parent` read on a body you
-already have: bounded by the handful of sub-areas one lake has, not by the corpus.
+search hit carries its parent, the water body page is one body. Those cost a `by_parent` read on a body you
+already have: bounded by the handful of sub-areas one water body has, not by the corpus.
 
 The **map render** is the exception, because a viewport is not a parent — and it gets A01's ladder grid
 rather than a fan-out. See *§What A01 changed about this plan*.
@@ -332,11 +332,11 @@ site, which is only true once they all use it.
 
 **Search + aliases.** `waterBodies.searchByName` gains a sibling over `search_subarea`; results merge,
 with a sub-area hit rendering as *"Malletts Bay — in Lake Champlain"* and flying to the **sub-area's**
-bbox rather than the parent's (the whole point: searching a bay shouldn't frame you on 200 km of lake).
+bbox rather than the parent's (the whole point: searching a bay shouldn't frame you on 200 km of water body).
 Aliases are what make this work at all — S2 found Malletts under ten spellings and the northeast arm
 under a name that shares no token with anything ("Inland Sea"). The sibling refines on the *parent's*
 listing as well as the sub-area's own (Decision 11) — `searchByName` already refines `isListed` in JS
-because it's a derived predicate, and a bay whose lake was taken down must not survive that refine.
+because it's a derived predicate, and a bay whose water body was taken down must not survive that refine.
 
 **Map render.** A second GeoJSON source draws sub-area outlines and labels inside the parent, fed by
 `subAreas.listInViewport` off its **own ladder-grid cell table** (below), with its own render and row
@@ -375,9 +375,9 @@ reason, so it isn't rediscovered as an oversight.
 
 ---
 
-## The design — the lake editor
+## The design — the water body editor
 
-**Route.** `/admin/water/$id`, reached from a lake search on `/admin/water` (which keeps its two
+**Route.** `/admin/water/$id`, reached from a water body search on `/admin/water` (which keeps its two
 existing queues) and from the curation list below. Moderator-gated like the rest of the tree; the
 server hard-gates every underlying mutation regardless.
 
@@ -392,8 +392,8 @@ behaviourally identical**, which is a testing obligation, not an aspiration: the
 green unchanged before anything editor-shaped is added.
 
 **The camera is locked to the body.** `maxBounds` = the body's bbox plus a small margin, `minZoom` =
-the zoom that fits that bbox. You can zoom into a cove; you cannot wander to the next lake. The lock is
-the feature — it makes "which lake am I editing" unambiguous for every tool on the canvas.
+the zoom that fits that bbox. You can zoom into a cove; you cannot wander to the next water body. The lock is
+the feature — it makes "which water body am I editing" unambiguous for every tool on the canvas.
 
 **The tools, one canvas, one session:**
 
@@ -438,7 +438,7 @@ The mechanism is worthless without the session that uses it. After the editor la
    states, area and resulting `minVisibleZoom`. This is the surface that makes a mis-match *visible*.
 2. **Re-partition the seed.** `training_data/google_group/curated_boost_seed_vt.csv` (34 rows) splits
    into *bodies to boost* and *sub-areas to draw*. The five known mis-matches get their boost stripped
-   from the namesake and their name redrawn as a sub-area on the right lake.
+   from the namesake and their name redrawn as a sub-area on the right water body.
 3. **Draw the Champlain and Lake George sub-areas** in one editing session — the thirteen above plus
    "Inland Sea," each with its alias set from the corpus spelling variants.
 4. **Place sample points** on Champlain and Winnipesaukee while the canvas is already open. This is the
@@ -512,9 +512,9 @@ merged.
 8. **Map render** — the sub-area source/layers on both clients, the zoom threshold.
 9. **Targeting** — `bounties.subAreaId`, the narrowed `attachReportToOpenBounties`, the
    `['subAreaId','moderationStatus','skateEndTime']` gate scoping with the saturation rule intact; the
-   lake-page report filter.
+   body-page report filter.
 10. **`setWeatherSamplePoints`** + the `set_weather_sample_points` audit action + the suggest-grid flow.
-11. **The lake editor** — the `MapView` shared-shell refactor (skater path green first), then
+11. **The water body editor** — the `MapView` shared-shell refactor (skater path green first), then
     `/admin/water/$id`, camera lock, the draw control (lazy), and the seven tools wired; `listCurated`
     + the curation panel on `/admin/water`.
 12. **Auto-flag bundling** — `lib/autoFlag.ts`, the `contentFlags` fields, both callers, queue UI.
@@ -557,7 +557,7 @@ boundary below is inference and should be read as one.**
 
 ### What got drawn — nine bays on Lake Champlain
 
-Each row is a bounding box clipped to the lake's own polygon (see `subAreas.importSeed`), so the
+Each row is a bounding box clipped to the water body's own polygon (see `subAreas.importSeed`), so the
 *shoreline* is OSM's and only the *naming* is inference. `retained` is the fraction of the box that
 was water — the calibration figure the plan asked this session to produce.
 
@@ -620,7 +620,7 @@ Both in the merged search, both invisible to a two-row test:
 2. **Then they ranked eighth.** Convex scores each search index independently, so a merged list
    ordered by table puts every *fuzzy* body match ahead of an *exact* bay match. The merged set is
    now tiered by match quality first — exact name or alias, then substring, then fuzzy — with bodies
-   still winning inside a tier, so "Champlain" lands on the lake and "Inland Sea" lands on the bay.
+   still winning inside a tier, so "Champlain" lands on the water body and "Inland Sea" lands on the bay.
 
 Both are pinned by regression tests that seed a full page of fuzzy bodies, since that's the condition
 a small fixture can't reproduce.
@@ -647,7 +647,7 @@ share a shape — **the thing that was measured was not the thing that could go 
 
 ### The three that were real bugs
 
-1. **The lake editor re-created its canvas on every render, so you could draw exactly one bay per
+1. **The water body editor re-created its canvas on every render, so you could draw exactly one bay per
    page load.** `initialCenter` is an array literal and it sat in `useMapCanvas`'s dependency list —
    `maxBounds` and `fitBounds` had been carefully serialized into comparison keys, and this one was
    missed. `LakeEditorMap` derives it from the body's bbox inline, so every parent state change (a
@@ -681,7 +681,7 @@ share a shape — **the thing that was measured was not the thing that could go 
    resurrect geometry the operator put away) — which means a bay delisted *before* a shoreline
    refinement was never held to the new outline, and restoring it put a shape back on the map that
    was no longer inside its parent. Restore now derives its geometry like any other write, and
-   refuses with the redraw message when the lake has moved out from under it.
+   refuses with the redraw message when the water body has moved out from under it.
 
 5. **A system delist was a `console.warn` and nothing else.** The two paths that retire a bay without
    anyone clicking — a re-import that guts it, a merge name collision — left no audit row, no
@@ -694,7 +694,7 @@ share a shape — **the thing that was measured was not the thing that could go 
 
 6. **`importCanonical` re-clipped every sub-area on every run, changed or not.** A clip against
    Champlain's 10,755-vertex polygon is comfortable once and blows a mutation's 1s budget at a dozen
-   (measured above), the lake carries nine bays with fourteen planned, and the ETL loads it as a
+   (measured above), the water body carries nine bays with fourteen planned, and the ETL loads it as a
    near-solo batch precisely because it is already the heaviest row in the feed. So a documented
    "re-running on unchanged data is a no-op" was becoming an increasingly expensive one, on a
    trajectory to failing the batch outright. Now gated on `footprintMoved` — identical bbox, area and
@@ -703,10 +703,10 @@ share a shape — **the thing that was measured was not the thing that could go 
 
 ### What was promised and hadn't shipped
 
-7. **The lake page's sub-area report filter** (§Targeting, step 9) was missing on both clients, and
+7. **The water body page's sub-area report filter** (§Targeting, step 9) was missing on both clients, and
    wasn't in *Left undone* either — so this doc read as though it had shipped. Built: a
    `subAreaId` argument on `reports.listByWaterBody` served off the sub-area index (a narrower read,
-   not the same read filtered afterwards, which on Champlain would page the whole lake to show one
+   not the same read filtered afterwards, which on Champlain would page the whole water body to show one
    bay), a select on web and filter chips on mobile, pre-selected when you arrive from a bay search.
 
 8. **Mobile report detail never moved onto `formatLocationLine`.** The feed card said "Malletts Bay"
@@ -717,7 +717,7 @@ share a shape — **the thing that was measured was not the thing that could go 
 
 9. **The render budget counted rows, and rows are not what a phone downloads.** A clipped bay inherits
    its parent's shoreline: measured on dev, Champlain's nine bays run 60–1,108 vertices each (Broad
-   Lake alone is 27 KB of the 56 KB total). 250 rows at that density is megabytes in one response,
+   Water body alone is 27 KB of the 56 KB total). 250 rows at that density is megabytes in one response,
    and no read-count measurement would ever have shown it. `listInViewport` now spends a **vertex**
    budget alongside the row budget, in the same prominence order, logged when it binds — and
    `subAreaReadStats` reports vertices next to reads, so the pair can be measured the way the read
@@ -726,8 +726,8 @@ share a shape — **the thing that was measured was not the thing that could go 
     (the constant moved to `@skating/core` so both ends read one copy, rather than paying a round trip
     to be told `[]`); `listCurated` trims to its cap *after* the listing filter, so removed bodies
     can't take a live one's slot in the list whose whole job is showing every live boost;
-    `searchByName` takes `bodiesOnly`, because `/admin/water`'s "open a lake" box was filtering bay
-    rows out client-side *after* they had claimed their reserved slots and so returned fewer lakes
+    `searchByName` takes `bodiesOnly`, because `/admin/water`'s "open a water body" box was filtering bay
+    rows out client-side *after* they had claimed their reserved slots and so returned fewer water bodies
     than it asked for; and the editor's map handle is a component ref rather than a module-level
     singleton that outlived the route holding a removed map. `pmtiles` protocol registration is
     refcounted, since `addProtocol` is global to maplibre-gl rather than per-map.
@@ -738,7 +738,7 @@ rendered `MapView` or the shell. See *Testing* for the three files that now do.
 
 ### The PR review (Greptile, PR #28)
 
-11. **The sub-area report filter trusted the client to pair the bay with its lake.** Finding 7's whole
+11. **The sub-area report filter trusted the client to pair the bay with its water body.** Finding 7's whole
     point was that the bay feed reads an index keyed by `subAreaId` alone — which is also what made
     the argument pair unvalidated-by-construction: `waterBodyId` does no work in that read, so a
     request naming Lake Morey and a Champlain bay returned **Champlain's reports under Morey's
@@ -748,10 +748,10 @@ rendered `MapView` or the shell. See *Testing* for the three files that now do.
 
     Two judgement calls in the check, both different from `bounties.create`'s superficially identical
     one. It compares against the **survivor** (D36), because a merge repoints the loser's bays onto
-    the survivor — a link still naming the merged-away body is a legitimate pair, not a cross-lake
+    the survivor — a link still naming the merged-away body is a legitimate pair, not a cross-body
     one, and 400ing someone's bookmark would be the fix inventing a second bug. And a **delisted bay
     stays filterable**, where a bounty on one is refused: a bounty nobody can see the bay to fulfill is
-    dead, whereas a bay's reports are the lake's reports either way — narrowing to them exposes
+    dead, whereas a bay's reports are the water body's reports either way — narrowing to them exposes
     nothing, and erroring a feed out from under someone mid-scroll because a moderator retired the bay
     is worse than serving it until the client's own bay list catches up and drops the filter.
 
@@ -765,7 +765,7 @@ rendered `MapView` or the shell. See *Testing* for the three files that now do.
   parent is stored clipped and one mostly outside is refused; a redraw re-stamps affected reports and
   *only* affected reports; **delisting a parent hides its sub-areas, and a merge repoints them**; a
   report elsewhere on the parent neither attaches to nor fulfills a sub-area bounty; **a bay feed
-  refuses a bay belonging to another lake and accepts one on the requested body's merge survivor**;
+  refuses a bay belonging to another water body and accepts one on the requested body's merge survivor**;
   bundling bumps an
   open flag, supersedes a resolved one, and never patches a terminal row; `activeBountyPostLimit`
   overrides the global cap in both directions and `0` blocks. Explicit longer timeouts on the heavy
@@ -793,11 +793,11 @@ rendered `MapView` or the shell. See *Testing* for the three files that now do.
 - **~~Bodies need aliases~~ — no, they don't, and the Saranac case says why.** Checked against the
   corpus after the fact: searching **"Saranac Lake" already returns Lower, Middle and Upper as the
   top three hits**, and "Saranac" or "saranac lk" returns exactly those three. There was no broken
-  search. An alias would have been an active mistake — the three are genuinely distinct lakes (three
+  search. An alias would have been an active mistake — the three are genuinely distinct water bodies (three
   rows, three single-component polygons, ~900 m of unmodelled water between Middle and Lower), so
   binding "Saranac Lake" to one of them would silently send a skater to a body the corpus never
   specified. "Saranac Lake" is also the Adirondack **village**, so some of those four mentions may
-  not be about a lake at all. Body aliases may earn their place some day; this isn't the evidence.
+  not be about a water body at all. Body aliases may earn their place some day; this isn't the evidence.
 - **Two bays and one Lake George bay are unplaced** (Dillenbeck, Carry, Northwest) — see the session
   notes. They need local knowledge, not another inference pass.
 - **Weather sample points aren't saved on Champlain** — the grid is computed and recorded, but dev
@@ -838,11 +838,11 @@ rendered `MapView` or the shell. See *Testing* for the three files that now do.
 [`phases/A02-body-editor-and-subareas.md`](./A02-body-editor-and-subareas.md) for the design, the
 seven corrections to what this entry and its own plan claimed, and the measured results.
 
-Shipped: **named sub-areas** (D60) — a bay is a region *inside* one polygon, not a lake beside it, so
+Shipped: **named sub-areas** (D60) — a bay is a region *inside* one polygon, not a water body beside it, so
 one sheet of ice keeps one set of reports, hazards, bounties, favorites and tracks while carrying the
 name skaters actually use. Full citizens: labelled on the feed card and both detail surfaces, searchable
 by alias, drawn on both clients off a third ladder-grid cell table, and targetable by a bounty. Plus the
-**per-lake editor** (D61) at `/admin/water/$id` with the camera locked to the body, the `weatherSamplePoints`
+**per-body editor** (D61) at `/admin/water/$id` with the camera locked to the body, the `weatherSamplePoints`
 writer that Phase 10 shipped a reader for and never a mutation, auto-flag bundling, and
 `activeBountyPostLimit`.
 
@@ -859,4 +859,4 @@ PR-#27 corrections that a copy would drift from; and **`MapView` became a shared
 and the skater map are one canvas (founder call, with the skater suite green unchanged as the price).
 
 *A worry that bodies need aliases the way sub-areas do was checked and dismissed:
-"Saranac Lake" already returns Upper, Middle and Lower, and they're genuinely three lakes.*
+"Saranac Lake" already returns Upper, Middle and Lower, and they're genuinely three water bodies.*

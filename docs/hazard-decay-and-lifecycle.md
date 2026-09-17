@@ -81,7 +81,7 @@ Two nuances baked into the tiers:
   A\* because a crossable spot at dawn can be a mess by mid-morning. It's the one type that
   never triggers an [on-ice alert](./on-ice-alerts.md) — and, since A05a/D64, the one type whose
   **lifecycle is inverted at every point**. See
-  [Passage markers decay the other way](#passage-markers-decay-the-other-way-n5ad64) below; the
+  [Passage markers decay the other way](#passage-markers-decay-the-other-way-a05ad64) below; the
   short version is that everything on this page about absence of evidence keeping a pin alive is
   reversed for this one type, deliberately.
 

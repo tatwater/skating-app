@@ -21,7 +21,7 @@ designed, not a gap.
 
 **The 1,376 unmatched slipways are the signal.** A boat ramp implies real inland water somebody
 launches a boat onto, so each one is a corpus body below the A07a admission floor, a river landing
-(D4), or a lake we are genuinely missing. **That third case is the one worth knowing about**, because
+(D4), or a water body we are genuinely missing. **That third case is the one worth knowing about**, because
 it is the only one of the three that says the corpus is wrong rather than bounded — and it is a much
 larger population than the trail work above would ever reach. A sample of a few dozen against the map
 would settle which it mostly is; that is an afternoon, not a phase.

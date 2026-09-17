@@ -1,9 +1,9 @@
-# Phase A06e — Imagery, scoped to a lake: the aerial reveal and the freeze-up timeline
+# Phase A06e — Imagery, scoped to a water body: the aerial reveal and the freeze-up timeline
 
-*Not a base map you switch to. A photograph of **this lake**, clipped to its own shape and the way in,
+*Not a base map you switch to. A photograph of **this water body**, clipped to its own shape and the way in,
 with a date on it — and behind it, a season of passes you can scrub through and watch the ice arrive.*
 
-> **Status:** ✅ **Built through PR 3 — 2026-08-26.** The feature is on both clients: a lake can be
+> **Status:** ✅ **Built through PR 3 — 2026-08-26.** The feature is on both clients: a water body can be
 > revealed as a photograph and its freeze-up scrubbed, on web and on mobile. Re-scoped 2026-08-21 after
 > a founder review of the original scoping; see [Sequencing](#sequencing--six-prs-settled-2026-08-21-resplit-2026-08-23)
 > for what each PR carried.
@@ -20,7 +20,7 @@ with a date on it — and behind it, a season of passes you can scrub through an
 > ⚠ **PR 3's branch is not only client work.** Scrubbing a real season put a skater in front of the
 > producer's output for the first time, and that falsified four producer assumptions the artifact
 > review had passed: the radar was never denoised, every per-body statistic was measuring a 60 m ring
-> of shoreline, the geocode reference was an average of the pass rather than local to the lake, and the
+> of shoreline, the geocode reference was an average of the pass rather than local to the water body, and the
 > SCL band would have shipped as a black rectangle. Those fixes live here rather than in PR 2 because
 > nothing before a scrubber could have found them — see [the batched re-run queue](#the-batched-re-run-queue-established-2026-08-25),
 > which is what they feed.
@@ -31,7 +31,7 @@ with a date on it — and behind it, a season of passes you can scrub through an
 > **base-map toggle**: satellite replaces the vector basemap across the whole map, everywhere, and the
 > phase's risk lived in the style branch. Three things falsified that shape:
 >
-> 1. **The founder wants imagery scoped to a selected lake, not to the map** *(2026-08-21)* — a reveal
+> 1. **The founder wants imagery scoped to a selected water body, not to the map** *(2026-08-21)* — a reveal
 >    inside the detail view, bounded to the body and its access, ideally feathered at the edge. That is
 >    **content**, not a base map, which contradicts D81's second half. See **D146**.
 > 2. **The source the plan named cannot do the job the founder wants.** `USGSImageryOnly` caps at
@@ -72,7 +72,7 @@ datasheet:
 
 **Priced region-wide, 2026-08-21, because "run the region through our masking pipeline" sounds like it
 should help and does not.** You pay for **the AOI you request**, and the minimum AOI is larger than most
-of our lakes — a typical 2 km² Vermont pond bills as SkySat's 25 km² floor. Masking saves storage, not
+of our water bodies — a typical 2 km² Vermont pond bills as SkySat's 25 km² floor. Masking saves storage, not
 money.
 
 | | Rate | Water + buffer (~15,000 km²) | Whole region (~310,000 km²) |
@@ -85,15 +85,15 @@ money.
 **And that is one pass.** The entire point of paying is cadence, so a season multiplies by 30 (Sentinel-
 like) to 150 (near-daily). Three to four orders of magnitude outside a pilot.
 
-*Correcting the earlier "~$200–400 per lake per capture": right per lake (25 km² × $12 ≈ $300), wrong in
-practice — **SkySat carries a $15,000 minimum order**, so a single lake cannot be bought. Even the
-40-lake destination shortlist is ~$12–15k per pass.* **The realistic paid future is a shortlist tasked a
+*Correcting the earlier "~$200–400 per water body per capture": right per water body (25 km² × $12 ≈ $300), wrong in
+practice — **SkySat carries a $15,000 minimum order**, so a single water body cannot be bought. Even the
+40-water body destination shortlist is ~$12–15k per pass.* **The realistic paid future is a shortlist tasked a
 handful of times a season at ~$15k an order** — a feature paying users fund, not a general layer.
 
 > **D147 — We buy neither end of the trade. Free only, and we say plainly what free cannot do.**
 > A pressure ridge is 1–3 m wide: legible at 0.3 m, a smudge at 3 m, **nonexistent at 10 m**. The only
 > imagery that would answer *"where can I cross?"* is tasked commercial, at a few hundred dollars per
-> lake per pass, against a pilot with no revenue. So the honest scope is: **0.3 m for the landscape,
+> water body per pass, against a pilot with no revenue. So the honest scope is: **0.3 m for the landscape,
 > 10 m for the ice, and no promise about the surface.** Founder, 2026-08-21: *"Let's see how far we can
 > get with free imaging layers, build out a working feature set, and then launch… Even though it's only
 > 10 m now, which isn't good enough, it'll at least prove we can do it."* Revisit when there are users
@@ -102,7 +102,7 @@ handful of times a season at ~$15k an order** — a feature paying users fund, n
 
 **The consolation worth remembering:** we already operate a 0.3 m winter sensor, and it is the
 skaters. A06d access photos, hazard reports and Phase 08 tracks are the "what does it look like today"
-channel. Imagery's job is the part a person standing on the shore cannot photograph — the whole lake
+channel. Imagery's job is the part a person standing on the shore cannot photograph — the whole water body
 at once, and the landscape around it.
 
 ---
@@ -110,8 +110,8 @@ at once, and the landscape around it.
 ## D146 — Imagery is content scoped to a body, not a base-map swap
 
 > **Founder, 2026-08-21:** *"I'm actually tempted to only allow satellite imagery to be turned on for a
-> particular lake in the lake detail view… toggling satellite imagery on might somehow bound the image
-> to the confines of a single lake body somehow."*
+> particular water body in the water body detail view… toggling satellite imagery on might somehow bound the image
+> to the confines of a single water body body somehow."*
 
 **D81's second half is replaced.** It said satellite *replaces the base map, not the content*. It now
 says: **satellite *is* content, revealed for one body at a time, and the base map never changes.**
@@ -137,7 +137,7 @@ imagery control on the browse map.
 
 ## §1 — The reveal: masking, feathering, and what else changes
 
-### §1.1 — The mask is a union of the lake and the way in
+### §1.1 — The mask is a union of the water body and the way in
 
 > **Founder, 2026-08-21:** *"the same standard buffer distance (10 m maybe) from the polygon's edges
 > AND on both sides of the hiking trail for its whole length AND around the parking lot, all feathering
@@ -147,7 +147,7 @@ Weird is fine — it is baked offline and it is exactly the effect the inspirati
 algebra is cheap:
 
 ```
-solid  = union( buffer(lake, r), buffer(trail, r), buffer(parking, r) )
+solid  = union( buffer(water body, r), buffer(trail, r), buffer(parking, r) )
 feather = buffer(solid, r₁ … rₙ) at stepped opacity, or a true alpha ramp when we own the raster
 ```
 
@@ -172,7 +172,7 @@ MapLibre cannot blur a fill or vary `raster-opacity` spatially, so a soft edge h
 
 **We have already shipped the inverse-mask trick.** `maskLayers` in both apps' `waterMap.ts` plus
 `REGION_FILTER` in `packages/core/src/basemapLayers.ts` is the "everywhere-but-here is nowhere" pattern,
-retargeted from five states to one buffered lake — **including the `fill-opacity: 0.999` gotcha**,
+retargeted from five states to one buffered water body — **including the `fill-opacity: 0.999` gotcha**,
 which is documented, load-bearing, and will bite again here if anyone rounds it to 1.
 
 **The split is not arbitrary.** NAIP is a live tile server we don't control, so the mask must be
@@ -184,8 +184,8 @@ and makes the client nearly free — at the cost of needing an ETL re-run to cha
 | Layer | Imagery off | Imagery on | Why |
 |---|---|---|---|
 | Base map | Protomaps vector | **unchanged** | D146 — this is the whole point |
-| Water-body **fill** | drawn | **suppressed** | The photograph is the lake |
-| Water-body **outline** | drawn | **kept, and it matters more** | It's what makes the masked patch read as *this lake* instead of a hole in the map. The founder's first inspiration image is precisely a bright outline containing dark imagery. |
+| Water-body **fill** | drawn | **suppressed** | The photograph is the water body |
+| Water-body **outline** | drawn | **kept, and it matters more** | It's what makes the masked patch read as *this water body* instead of a hole in the map. The founder's first inspiration image is precisely a bright outline containing dark imagery. |
 | **Bathymetric contours** | drawn in detail view | **not drawn** | D81's surviving half; unreadable over a photograph |
 | **Sub-area outlines + labels** | drawn | **drawn, behind a flag** | Founder call reversed 2026-08-21b — *"I'm open to keeping [them] drawn… let's make that easy to turn on and off so we can play around with it."* |
 | **Hazards** | drawn | **user's choice, default ON** | Founder call, 2026-08-21c — a toggle inside the reveal. See below. |
@@ -271,7 +271,7 @@ service, which is why §2.3 exists. Keep `USGSImageryOnly` as the low-zoom floor
 404'd in testing, but that is luck of the coordinate; elsewhere it returns tiles, just the wrong ones.
 Put the URL behind one function with a test.
 
-### §2.2 — The date stamp is queryable, per lake
+### §2.2 — The date stamp is queryable, per water body
 
 `USGSNAIPPlus/ImageServer/identify?…&returnCatalogItems=true` returns the **source scene** for a point.
 For Burlington: `m_4407339_ne_18_030_20230621` — a NAIP quarter-quad, `030` = 0.3 m, acquired
@@ -298,7 +298,7 @@ shouldn't push our PR until it's all in."*
 
 ### §3.1 — What the timeline honestly is
 
-**~2–4 usable optical frames per month per lake.** Sentinel-2's revisit at 44°N is ~2–3 days (better
+**~2–4 usable optical frames per month per water body.** Sentinel-2's revisit at 44°N is ~2–3 days (better
 than the advertised 5, because adjacent orbital swaths overlap at latitude), but Burlington averages
 60–70% cloud cover December–February. That is a scrubber with real content and it is not an animation.
 
@@ -365,13 +365,13 @@ Per-body would be ~24,831 bodies × ~90 passes ≈ **2.2 million artifacts a sea
 Better pixel efficiency, catastrophically worse file count.
 
 **And it answers a question that sounds like it needs a redesign** — *what if imagery should reveal
-every body in the viewport, not just the selected lake?* **The current design already does that; the
+every body in the viewport, not just the selected water body?* **The current design already does that; the
 per-body design would fight it.** The archive is region-wide and pre-masked, so every body a granule
 touches is already in that granule's PMTiles with its alpha baked in. Revealing a viewport is rendering
 the archive over that area — no per-body fetch, no tile math, which is what D148 chose this shape for.
-Under a per-body design, fifty lakes on screen would mean fifty fetches.
+Under a per-body design, fifty water bodies on screen would mean fifty fetches.
 
-**So the per-lake restriction is D146 — a product decision about where the control lives — and not an
+**So the per-body restriction is D146 — a product decision about where the control lives — and not an
 architectural limit.** Lifting it is a client change. The one thing to watch is that a viewport
 spanning several granules needs several sources, which MapLibre handles.
 
@@ -433,7 +433,7 @@ cousin `Lake Tear of the Clouds`, NY, 1.8 acres at 1,318 m, is in there too.)
 **And the founder's answer was to make it the trigger rather than the noise:**
 
 > **Founder, 2026-08-21c:** *"I'd actually be totally happy to start a season once Lake of the Clouds
-> registers freezing temps. That lake is an early-season favorite in the community, which signals the
+> registers freezing temps. That water body is an early-season favorite in the community, which signals the
 > new season has arrived!"*
 
 Which is better than the guard I was going to build, because it is *true* — the community already
@@ -465,7 +465,7 @@ its own cloud caveat — they travel with the frame, they are not furniture arou
 > **Founder:** *"If a single body is split across two images from different dates, we should provide a
 > hairline border between the two images, with their respective dates on either side."*
 
-**A granule edge can bisect a lake**, and when it does neither frame is wrong — they are two
+**A granule edge can bisect a water body**, and when it does neither frame is wrong — they are two
 photographs of two halves, taken on different days. The tempting fix is to pick one and crop, which
 would present a single date over ground that was observed twice, weeks apart. That is precisely the
 inference C4 exists to prevent, and it fails silently: nothing on screen would say the eastern half is
@@ -518,7 +518,7 @@ compute. Keeping the pixels as well as the derived series stays cheap insurance 
 re-derive with a better algorithm.
 
 > **D151 — A phenology date is a bracket between two passes, never a point, and the claim is about our
-> observation rather than the lake.**
+> observation rather than the water body.**
 >
 > **Founder, 2026-08-21:** *"we could say something along the lines of 'satellite/radar observed 100%
 > ice coverage on X date' instead of '100% ice coverage on X date' so that it's about the **observed**
@@ -543,10 +543,10 @@ observation frequency rather than climate. **Central tendency yes; trend claims 
 What exists is more useful than a dataset anyway:
 
 - **[NSIDC's Global Lake and River Ice Phenology Database](https://nsidc.org/data/g01377/versions/1)** —
-  865 lakes and rivers, mostly human-observed, some records centuries long. Far too sparse for us, but
+  865 water bodies and rivers, mostly human-observed, some records centuries long. Far too sparse for us, but
   it is the **variable definitions** everyone else uses, and borrowing them costs nothing.
-- **[Remote sensing of lake ice phenology across a range of lake sizes, Maine](https://doi.org/10.3390/rs11141718)** —
-  a published algorithm for **small lakes**, validated on **296 lakes in Maine**, one of our five
+- **[Remote sensing of water body ice phenology across a range of water body sizes, Maine](https://doi.org/10.3390/rs11141718)** —
+  a published algorithm for **small water bodies**, validated on **296 water bodies in Maine**, one of our five
   states. Fuses Landsat's resolution with MODIS's cadence, which is structurally the same move we make
   with Sentinel-2 + Sentinel-1. **This is the closest thing to a reference implementation we will find**,
   and it says cadence matters at least as much as resolution.
@@ -559,7 +559,7 @@ What exists is more useful than a dataset anyway:
 - **[Lake Stewards of Maine's ice-in / ice-out tracking map](https://www.lakestewardsofmaine.org/volunteer-programs-tools/ice-in-ice-out-tracking/ice-in-ice-out-tracking-map/)**
   *(founder find, 2026-08-21b)* — **volunteer-submitted ice-in/ice-out with a downloadable JSON behind
   an ArcGIS FeatureServer query endpoint.** Machine-readable ground truth, in one of our five states,
-  from people who watch these lakes. **This is the validation set**, and it is better than anything the
+  from people who watch these water bodies. **This is the validation set**, and it is better than anything the
   literature search turned up. ⚠ Two cautions: the site asserts *"©2026 Lake Stewards of Maine"* with no
   stated licence, so **validating against it and republishing it are different acts** — ask before the
   second. And citizen-science definitions drift between observers (first skim vs. full cover), which is
@@ -585,11 +585,11 @@ imagery-derived ice-in date. Neither lane could produce this sentence alone.
 
 That is the right division of labour, and it answers a question neither source can answer alone.
 **Snowfall is an event; snow *cover* is a state**, and in a Northeast winter the two come apart
-constantly — wind strips a lake bare while the gauge records six inches, or drifts pile into dunes and
+constantly — wind strips a water body bare while the gauge records six inches, or drifts pile into dunes and
 leave black ice between them. The weather lane knows what fell; **only the imagery knows what stayed**.
 
 Both halves stay observations (D140's `.past`, D151's framing), so nothing here needs a prediction to
-be useful: *"6″ fell Jan 12 · lake read bare again by Jan 15"* is two measurements and a date, and it is
+be useful: *"6″ fell Jan 12 · water body read bare again by Jan 15"* is two measurements and a date, and it is
 exactly the fact a skater is trying to reconstruct by reading reports.
 
 **Phrasing stays inside D151 and D3** — these are observed medians across nine seasons, and each clause
@@ -602,10 +602,10 @@ Split into their own doc at the founder's ask (2026-08-21c), because both read t
 start before it exists, and both are easy to ship and hard to ship *correctly*:
 
 - **Black ice from SAR + freeze rate.** The most-wanted thing a skater could be told and the most
-  dangerous to get wrong — a false positive sends someone to a lake *because* we implied the good ice
+  dangerous to get wrong — a false positive sends someone to a water body *because* we implied the good ice
   was there. Validation-gated against our own reports; capped at *"smooth ice observed on \[date]"*
   forever.
-- **Bodies that never freeze.** Nine dry seasons is strong evidence for a 50-acre lake and weak evidence
+- **Bodies that never freeze.** Nine dry seasons is strong evidence for a 50-acre water body and weak evidence
   for a 1-acre pond, because after shoreline erosion a 1-acre body has under ten pixels to vote with.
   The founder's A07b recoverability argument holds **if** we archive the enriched row before removing it
   — the expensive part of a corpus row is the A07a-3 enrichment, not the row.
@@ -618,7 +618,7 @@ These were specced in A06c's §2.3, deferred wholesale, and never given a workst
 
 1. **The Copernicus Browser deep link** (D75), built from **`interiorPoint`** — *not* `centroid`, which
    is a `pointOnFeature` result that lands **on the shoreline** and would open the browser off the edge
-   of the lake. See the memory note; Willoughby lands on ring vertex 199, Champlain 30.7 km off.
+   of the water body. See the memory note; Willoughby lands on ring vertex 199, Champlain 30.7 km off.
    **It ships in the drawer's reference links, beside Windy** *(founder, 2026-08-21)* — it stays worth
    keeping precisely *because* our own archive stops at the season boundary, and someone will want 2019.
 2. **`satelliteImagery: 'auto' | 'on' | 'off'`** per row, resolved by `auto` against
@@ -637,7 +637,7 @@ here.**
 
 ---
 
-## §5 — The admin lake editor gets imagery, unmasked
+## §5 — The admin water body editor gets imagery, unmasked
 
 `LakeEditorMap.tsx:301` already re-exports `buildMapStyle`, and tracing a shoreline over a photograph is
 the obvious operator win. **Unmasked there** *(founder call, 2026-08-21)* — an operator correcting a
@@ -675,7 +675,7 @@ the OSM extract on the reasoning that a successful `foot-hiking` route *is* the 
 > A06e's mask, and below 800 m it is a few metres of tarmac between a car and a bank — invisible at
 > the drawer's zoom, invisible inside a 30 m buffer, and paid for on every read of the row. The
 > residue, stated: the 2,087 legs between 150 m and 800 m keep their distance and their chip and
-> render no line, so A06e's mask on a short-walk body buffers the lake and the parking alone.
+> render no line, so A06e's mask on a short-walk body buffers the water body and the parking alone.
 
 **What shipped.** `approachPathWanted` is one predicate shared by the parser and the ETL, so a leg can
 never be re-routed against the quota and then have its geometry thrown away. The path is stripped to
@@ -769,7 +769,7 @@ routed legs run continuously to 4,061 m and then jump to 4.9 km, 8 km, 17 km, 26
 99 km** — every one of them a lot within 250 m of its launch that ORS could only reach by going
 around the water. A06d has been storing those since August: the drawer says *"about 99 km on foot"* and
 the body wears a Hike-In chip. As a number it is absurd and easy to miss; as a **dashed line crossing
-three counties out of a lake's parking marker**, it is unmissable, which is why this fell out of the
+three counties out of a water body's parking marker**, it is unmissable, which is why this fell out of the
 render work rather than the data work.
 
 `MAX_PLAUSIBLE_APPROACH_M` (5 km) demotes them to the straight-line rung — *"at least 250 m on foot"*
@@ -778,7 +778,7 @@ rule is applied where the leg is **used** rather than where it is requested, so 
 cache were fixed by a re-run that spent no quota at all. Dev now carries **zero** put-ins claiming an
 approach over 5 km.
 
-**Where it landed:** 3,589 put-ins · 1,363 with a lot · **30 launches across 22 lakes draw a walk**.
+**Where it landed:** 3,589 put-ins · 1,363 with a lot · **30 launches across 22 water bodies draw a walk**.
 That last number is small for the same reason as the trail yield: of 266 launches whose line was
 recovered, **288 of the 331 changed rows matched no corpus body**, so the lines mostly belong to
 coastal launches we do not carry.
@@ -876,7 +876,7 @@ pipeline**. Ended by running the **single-season** backfill, so it was verified 
 open rather than by a screenshot.
 
 > ⚠ **And that verification had a ceiling PR 3 found.** An artifact review confirms a frame is
-> *well-formed*; it cannot confirm the frame is *of the lake*. Four defects survived it and were caught
+> *well-formed*; it cannot confirm the frame is *of the water body*. Four defects survived it and were caught
 > within days of a scrubber existing — see the note under PR 3.
 
 *Two changes from how this was originally written.* **The cloud gate is gone** — the founder's
@@ -903,13 +903,13 @@ projection-and-feather logic, no native dependency.** The fallback was never nee
 - **The scrubber moved onto the map**, because it is a control for the map, and then became a real
   drag rather than a stepper. It ends as the **imagery dock**: one box that grows from the "Show
   imagery" button into the timeline card, at the founder's ask (**D146**'s UI corollary, 2026-08-25).
-- **A lake split across a granule edge shows both halves and both dates** — a case the archive's
+- **A water body split across a granule edge shows both halves and both dates** — a case the archive's
   one-frame-per-pass shape did not anticipate, and which is a *seam*, not a picture (founder call,
   2026-08-24). See [§3.4](#a-split-body-shows-a-seam-not-one-picture-founder-call-2026-08-24--built-in-pr-3).
-- **A radar timeline holds one orbit direction**, which stops the lake bouncing between dates. That is
+- **A radar timeline holds one orbit direction**, which stops the water body bouncing between dates. That is
   a mitigation of open question 8, not a fix.
 - **Four producer defects, found by looking rather than by review.** The radar was never denoised;
-  every per-body statistic was measuring the shoreline rather than the lake; the geocode reference was
+  every per-body statistic was measuring the shoreline rather than the water body; the geocode reference was
   an average of the pass rather than local to the body; the SCL band would have shipped as a black
   rectangle. All four feed the re-run queue.
 - **Mobile framing, 2026-08-26.** The search bar scoots off the top when a body is selected, and the
@@ -1000,8 +1000,8 @@ frames to discard did not.
 > **The founder overrode the gate (2026-08-24):** *"Let's always cut & store all imagery regardless of
 > cloud cover. Then we know we have everything from Copernicus and we can rerun whatever we want on it
 > without hitting them again."* Cloud is a property of a *granule*, but usability is a property of a
-> *lake* — a pass 70% clouded over the White Mountains can be perfectly clear over Champlain, so a
-> granule-wide gate throws away the good lake with the bad one. Hitting the archive once and owning the
+> *water body* — a pass 70% clouded over the White Mountains can be perfectly clear over Champlain, so a
+> granule-wide gate throws away the good water body with the bad one. Hitting the archive once and owning the
 > pixels makes every future re-derivation free.
 >
 > **And the ratio never held.** The "3 frames under 15% cloud in ten weeks" measurement was
@@ -1018,7 +1018,7 @@ queries against the mask file remove ~51% of the Machines a backfill would other
 That lever is strictly better than the cloud gate on both counts. It is **free** (the survey is cached
 and keyed to the corpus, so extending the corpus invalidates it by construction) and it is **lossless** —
 it discards only granules that contain nothing of ours, where the cloud gate discarded pictures of
-lakes we care about.
+water bodies we care about.
 
 **The real cost lever turned out to be neither.** RAM was 82% of everything the project had spent, and
 `FLY_VM_MEMORY` was set to 8192 while the largest granule in the corpus completes in 1024. See §3.5.
@@ -1027,7 +1027,7 @@ D149's freeze-to-thaw window still rides along, skipping half the year. **The "~
 to `shared-cpu-4x`→`1x`" note was wrong** — that reading came from a smoke test that fetched one band
 and did no masking. A real job is compute-bound in tiling, and CPU is the cheap half of the bill anyway.
 
-**Per-lake cloud beat `eo:cloud_cover` in the end, but as a recorded statistic rather than a gate.**
+**Per-water body cloud beat `eo:cloud_cover` in the end, but as a recorded statistic rather than a gate.**
 Every frame's manifest now carries per-body `clearPct`, `coveragePct`, `icePct` and `waterPct` from
 ESA's scene classification — the "SCL may beat `eo:cloud_cover` later" refinement this section
 anticipated, arriving as data the consumer filters on instead of a decision the producer makes
@@ -1044,8 +1044,8 @@ irreversibly.
   it's too blurry to read. That's up to them."* Free to honour: the archive's own tiling decides what
   renders, and it matches the phase's posture — we show the picture, the skater reads it. (Client-side
   restraint on *firing* NAIP requests at absurd zooms is courtesy, not a product rule.)
-- **Parent bodies only.** Search a bay, jump to it, turn imagery on, and **the whole lake reveals** —
-  not the bay. Consistent with D60: a bay is a name on a lake, not a thing you select.
+- **Parent bodies only.** Search a bay, jump to it, turn imagery on, and **the whole water body reveals** —
+  not the bay. Consistent with D60: a bay is a name on a water body, not a thing you select.
 - **The Copernicus deep link stays**, in the drawer beside Windy (Workstream 4).
 - **Dev-only; prod deferred**, like every phase since 2.5. This is the first phase with a *recurring
   bill*, and paying it to serve a deployment with no users is a different proposition. Founder: *"Fewer
@@ -1151,16 +1151,16 @@ proper calibration, and **three of the things it found were not what the queue e
 **1. The correction moves the pixels, not the masks** *(founder call)*. The first build shifted the
 zone geometry onto the displaced pixels — which fixes the statistics and leaves the picture displaced,
 so the frame disagrees with the basemap and the islands still move. Moving the *pixels* was ruled out
-as impossible for one raster and it is not: the frame is already masked into disjoint per-lake patches
+as impossible for one raster and it is not: the frame is already masked into disjoint per-body patches
 (D146), so each carries its own whole-pixel block copy. `sar-deshift.py` runs before anything else
 reads the raster, and afterwards the alpha, the zones, the statistics and the tiles all work at true
 positions with no offset threaded through them.
 
-**2. The reference height is local to the lake, and the scene average was worse than no correction.**
+**2. The reference height is local to the water body, and the scene average was worse than no correction.**
 A GRD is geocoded against its geolocation grid, whose points *each* carry a terrain height and
 incidence angle. Averaging that grid describes what the pass flew over: across five real tracks over
 one region it ranged **7.9 m** (mostly Gulf of Maine) to **369.6 m** (the White Mountains). Measured
-against 21 lake-passes — 19 lakes, 5 tracks, −1 m to 710 m of elevation:
+against 21 body-passes — 19 water bodies, 5 tracks, −1 m to 710 m of elevation:
 
 | | RMS residual | correlation |
 | --- | --- | --- |
@@ -1174,11 +1174,11 @@ displacement is along range as the geometry claims rather than the model happeni
 **3. It is now good enough to mix orbit directions, which is the point.** On the Mascoma
 ascending/descending pair the per-pass error went **150 m → 30 m (1.1 px)** and the disagreement
 *between* the passes **291 m → 39 m (1.4 px)**. PR 3 holds one orbit direction per timeline precisely
-because the two disagreed about where a lake was; they now agree, and **the usable radar cadence
+because the two disagreed about where a water body was; they now agree, and **the usable radar cadence
 doubles.** *(Founder: "that cut our read-frequency in half so I'd rather be able to take both.")*
 
 ⚠ **~40 m is the floor and it is ours, not the radar's.** Sentinel-2 needs no geometric correction and
-its lake masks still sit **31–71 m** off the imagery — that is how accurate our OSM/NHD shorelines are.
+its water body masks still sit **31–71 m** off the imagery — that is how accurate our OSM/NHD shorelines are.
 Refining the radar model further would be fitting our own polygon error. **Optical needs no correction
 at all**, which was checked rather than assumed.
 
@@ -1197,7 +1197,7 @@ nine-season run would have baked in irreversibly. Both are now fixed.
 **1. Thermal noise was never removed.** `sar-cal-lut.py` reads the calibration annotation; the *noise*
 annotation sits beside it in the same bucket directory and nothing had ever opened it. Measured NESZ
 for VH: **S1A median −25.15 dB, S1C median −27.96 dB**, worst-across-swath −21.84 dB on S1A — against
-lakes that measure −20 to −22 dB. The bias is compressive and worst where the signal is darkest, which
+water bodies that measure −20 to −22 dB. The bias is compressive and worst where the signal is darkest, which
 is exactly where A06g Lane 1's smooth ice lives. Applied to 3,276 real bodies:
 
 | | raw | denoised |
@@ -1211,9 +1211,9 @@ The differential is the point: ~**0.5 dB of the ~2 dB ice/water separation was b
 > ### 🔬 And it is a testable suspect for open question 7
 >
 > S1C's noise floor is **2.80 dB quieter** than S1A's. Left in, that is a *platform-dependent* bias on
-> dark targets: on a −22 dB lake it predicts **−0.73 dB**, against the **−0.52 dB** the archive measures
+> dark targets: on a −22 dB water body it predicts **−0.73 dB**, against the **−0.52 dB** the archive measures
 > ascending. **After the radar season lands, re-measure the S1A−S1C offset.** If it collapses, platforms
-> pool and a lake gets a 6-day look instead of a 12-day one. If it does not, one suspect is eliminated
+> pool and a water body gets a 6-day look instead of a 12-day one. If it does not, one suspect is eliminated
 > for the price of a query.
 
 **2. The season list was optical-only** — 4,485 granules, zero S1 — so the run would have produced no
@@ -1222,20 +1222,20 @@ built: **753 granules**, S1A 558 / S1C 187 / S1D 8, ascending 657 / descending 9
 
 **3. Per-body viewing geometry is now recorded** — `incidenceDeg`, `geocodeReferenceHeightM`, and the
 whole-pixel `geocodeShiftM` applied. This is the field open question 7 calls out as missing. Local
-incidence spanned **30.9°–44.8°** across the calibration lakes against a scene mean of 38.6°, and
+incidence spanned **30.9°–44.8°** across the calibration water bodies against a scene mean of 38.6°, and
 `1/tan` moves 60% across that span, so the scene figure was never a stand-in for it.
 
 **4. Deferred question 7's first sub-areas exist.** Mascoma is split at the bridge — **Mascoma North**
 1.20 km² and **Mascoma South** 3.43 km², on a line the founder gave (43.630971, −72.15751 →
 43.633797, −72.155795, bearing 23.7°), landing on the 90 m neck between the peninsula's southern
-corner and the south shore. All three islands fall south; the halves sum to 100% of the lake. The lake
+corner and the south shore. All three islands fall south; the halves sum to 100% of the water body. The water body
 that produced the `27% ice / 65% water` reading can now answer the question that number could not.
 
 > ### ⚠ Two rules this queue exists to enforce
 >
 > **Write the code before the re-run, not with it.** Verified-but-unapplied is a safe state — the tiler
 > swap was prototyped on one granule before it touched a season, and that is what caught the archive
-> rendering lakes as solid black. *Unwritten-and-remembered* is not a safe state.
+> rendering water bodies as solid black. *Unwritten-and-remembered* is not a safe state.
 >
 > **Contract changes do not belong in this queue.** Their cost *grows* with every consumer line written
 > against the old shape, while an additive field's cost stays flat. That asymmetry is why
@@ -1277,14 +1277,14 @@ that produced the `27% ice / 65% water` reading can now answer the question that
 
 **Deferred with a decision attached *(founder, 2026-08-25 — "wait, address later")*:**
 
-7. **Sub-area freeze-up, so a lake stops being one number.** Every statistic the archive produces is
-   one figure for a whole body, and winter 2025-26 showed that failing on a lake the founder skates:
+7. **Sub-area freeze-up, so a water body stops being one number.** Every statistic the archive produces is
+   one figure for a whole body, and winter 2025-26 showed that failing on a water body the founder skates:
    Mascoma read `27% ice / 65% water` on 11 January, which cannot distinguish *"patchy everywhere"*
    from *"the north half is ready"* — and the skate log says it was the second, with the bridge at the
    narrows as the divide for two weeks.
 
    **The mechanism already exists.** A02's sub-areas (bays, arms, basins) were built for *naming*, and
-   narrows and bridges are precisely where a lake stops behaving as one surface — where flow
+   narrows and bridges are precisely where a water body stops behaving as one surface — where flow
    concentrates and ice forms last. Zoning the raster by sub-area rather than by body is a change to
    `zonal-clear.py`'s zone raster, not a new pipeline.
 
@@ -1295,7 +1295,7 @@ that produced the `27% ice / 65% water` reading can now answer the question that
 
 8. **⚠ Radar is not terrain-corrected, and it is visible — new, 2026-08-25.** `cut-granule.sh`
    geocodes a GRD with `gdalwarp -tps` from its ground-control points, on the stated assumption that
-   *"over a lake — flat, at a known elevation — that is accurate enough without terrain correction."*
+   *"over a water body — flat, at a known elevation — that is accurate enough without terrain correction."*
    **A skater falsified that in the first session with the scrubber**: a pair of islands in the
    north-west of Mascoma visibly jumped east, then west, then east again as the timeline advanced.
 
@@ -1313,8 +1313,8 @@ that produced the `27% ice / 65% water` reading can now answer the question that
    > **Founder, 2026-08-25:** *"Should we find a way to use the radar information from both
    > directions by calculating their respective offsets? Then we get double the frequency."*
    >
-   > **Geometrically, yes — and analytically rather than empirically.** A lake is a constant-elevation
-   > surface, so over *the lake* the displacement is a near-constant translation rather than a
+   > **Geometrically, yes — and analytically rather than empirically.** A water body is a constant-elevation
+   > surface, so over *the water body* the displacement is a near-constant translation rather than a
    > per-pixel warp: `(h_lake − h_ref) / tan(θ)` along range. Every term is already in hand — the
    > corpus carries elevation at 99.5%, and `θ` and the reference height live in the same product
    > annotation `sar-cal-lut.py` already opens for calibration. Correcting each pass to truth removes
@@ -1336,7 +1336,7 @@ that produced the `27% ice / 65% water` reading can now answer the question that
    > angle. Recording it costs nothing at cut time and is the finer comparability filter both this and
    > question 7 will want.
 
-   **PR 3 mitigates rather than fixes**: a radar timeline now holds one orbit direction, so the lake
+   **PR 3 mitigates rather than fixes**: a radar timeline now holds one orbit direction, so the water body
    stops moving between dates. That is also what the `vhDb` comparability note was already asking
    for. The real fix is a terrain-corrected geocode against a DEM, which is producer work and should
    ride the re-run queue rather than a pass of its own. The corpus already carries elevation at 99.5%
@@ -1370,7 +1370,7 @@ that produced the `27% ice / 65% water` reading can now answer the question that
    enforces — that conservative note turns out to have been right for a reason nobody had measured.
 
    Worth attacking because the prize is real: pooling platforms is the difference between a 12-day and
-   a 6-day look at a lake, and freeze-up happens on a timescale where that matters. Prime suspects are
+   a 6-day look at a water body, and freeze-up happens on a timescale where that matters. Prime suspects are
    S1C-specific calibration-annotation handling and incidence-angle differences the manifest does not
    currently record. ⚠ **A fourth platform, S1D, is already appearing in the data** (4 passes, late
    April 2026) — the id grammar accepts it, so this question will only get more crowded.
@@ -1382,8 +1382,8 @@ that produced the `27% ice / 65% water` reading can now answer the question that
 
 *The roadmap entry for A06e as it stood before the 2026-09-16 rewrite, kept verbatim so nothing it said is lost. The roadmap now carries a one-paragraph summary; this is the long form.*
 
-**A06e — Imagery, scoped to a lake: the aerial reveal and the freeze-up timeline.** ✅ **Built through
-PR 3, 2026-08-26** — a lake can be revealed as a photograph and its freeze-up scrubbed, on **both**
+**A06e — Imagery, scoped to a water body: the aerial reveal and the freeze-up timeline.** ✅ **Built through
+PR 3, 2026-08-26** — a water body can be revealed as a photograph and its freeze-up scrubbed, on **both**
 clients. Re-scoped 2026-08-21; see [`phases/A06e-satellite-imagery.md`](./A06e-satellite-imagery.md);
 decisions **D146**–**D151**, plus **D84** (two tiers) and **D75** (the licence question is answered).
 Gated behind A06d, which is complete on dev.
@@ -1399,7 +1399,7 @@ spend. Only the **single season** (winter 2025-26) is in R2 today.
 three ways, so the doc was rewritten rather than patched.*
 
 - **Imagery is content scoped to a body, not a base map (D146).** One reveal, in the detail view,
-  clipped to the lake **and its way in** — a union of buffered lake, trail and parking, feathered
+  clipped to the water body **and its way in** — a union of buffered water body, trail and parking, feathered
   outward. This **replaces D81's second half** and deletes most of the original phase's risk with it:
   no style branch, no label filtering, no region-mask question, no attribution swap. Smaller *and* the
   thing the founder wanted. The cost, accepted: no panning the region in aerial.
@@ -1409,7 +1409,7 @@ three ways, so the doc was rewritten rather than patched.*
   **z16 (~1.7 m/px here)**, not the "~0.6 m" it and `05-accounts-and-credentials` both claimed.
   **`USGSNAIPPlus` does serve 0.3 m**, keyless, via `exportImage` + MapLibre's `{bbox-epsg-3857}`.
 - **A pressure ridge is 1–3 m wide** — legible at 0.3 m, nonexistent at 10 m. The imagery that would
-  answer *"where can I cross?"* is **tasked commercial at ~$200–400 per lake per capture**. We buy
+  answer *"where can I cross?"* is **tasked commercial at ~$200–400 per water body per capture**. We buy
   neither end: 0.3 m for the landscape, 10 m for the ice, no promise about the surface.
 - **The freeze-up timeline ships in the same PR (D148),** region-wide rather than a shortlist. Reading
   the open COGs directly instead of Sentinel Hub's metered API means **~20–25 granules covers five
@@ -1438,7 +1438,7 @@ three ways, so the doc was rewritten rather than patched.*
   hashed into a graph by byte-identical endpoints, never stored, budget capped at `HIKE_IN_ASSERT_M`
   because D144 already said an association at that range must be asserted rather than derived. And the
   approach is **drawn** on both clients, from the marker query so a moderator's `hide` takes the line
-  with it. **254 of 262 lines recovered; 30 launches across 22 lakes now draw a walk.** The trail pass
+  with it. **254 of 262 lines recovered; 30 launches across 22 water bodies now draw a walk.** The trail pass
   found **69 pairings against the 150–300 it was sized at** (+12 launches that gained a lot once
   loaded) — A06d's *"don't, yet"* was right about the yield, and the launch side was always the
   ceiling. ⚠ **And drawing the lines exposed 30 approaches that were never walks**: legs ORS routed
@@ -1448,7 +1448,7 @@ three ways, so the doc was rewritten rather than patched.*
 
 **Three things building it taught, all of them about verification.**
 
-- **An artifact review cannot tell you the frame is of the lake.** PR 2 shipped verified by files you
+- **An artifact review cannot tell you the frame is of the water body.** PR 2 shipped verified by files you
   could open, which is a real standard and a higher one than a screenshot — and four defects still
   survived it, each caught within days of a scrubber existing. The radar was never denoised; every
   per-body statistic was measuring a 60 m ring of shoreline; the geocode reference was an average of

@@ -1,4 +1,4 @@
-# A06a — Lake depth: the precedence ladder and the shallow signal
+# A06a — Water body depth: the precedence ladder and the shallow signal
 
 > ### ⚠ Two corrections from A07a-2 (2026-08-08)
 >
@@ -12,9 +12,9 @@
 >
 > **`state_agency` is a rung with no producer.** *(As of 2026-08-08 — resolved above.)* Confirmed
 > against the loaded corpus at the time: **0 rows carry it.** Its own docstring says it was *"deferred to A06b, where those datasets are fetched for their
-> contours anyway"* — A06b fetched them and never came back for the depth. **298 MB and ~2,400 lakes
+> contours anyway"* — A06b fetched them and never came back for the depth. **298 MB and ~2,400 water bodies
 > are on disk** at `scripts/bathymetry/.raw/` (ME 1,528 sounding sets, NH 558 contour sets, MA
-> contours, VT 66 lakes at 2.4M points). This is the largest depth win available and it needs no new
+> contours, VT 66 water bodies at 2.4M points). This is the largest depth win available and it needs no new
 > source. Exactly the shape of the `osm_tag` no-producer finding this phase's own review caught, one
 > rung up.
 >
@@ -29,7 +29,7 @@
 consumer that makes it mean something. One ETL, one core change, one display surface.*
 
 > **Status: ✅ BUILT 2026-07-30 · reviewed 2026-07-31** — every suite green (core 1,029 · convex 826 ·
-> web 222 · mobile 79 · etl 33 · lake-depth 29 · admin-areas 14 · design 61). The review pass found one
+> web 222 · mobile 79 · etl 33 · body-depth 29 · admin-areas 14 · design 61). The review pass found one
 > real defect and five smaller ones, and Greptile's pass on PR #33 found a seventh — all fixed on the
 > branch. See *§What the review found in the build*, which is where the D68 amendment 2 (the three-state
 > operator override) and the pair invariant are written up.
@@ -43,7 +43,7 @@ consumer that makes it mean something. One ETL, one core change, one display sur
 > full pass over 116,070 bodies. See *§Before the ETL runs — the ordering gate*.
 >
 > Split from the register's single **§1.06** entry at kickoff: the founder's ask for **real bathymetric
-> contour lines inside the lake polygons** turned out to be both feasible and phase-sized, so it became
+> contour lines inside the water body polygons** turned out to be both feasible and phase-sized, so it became
 > [**A06b**](./A06b-bathymetry-layer.md) and this doc keeps the scalar depth attribute + its decay
 > consumer. New decisions **D68** (the precedence ladder) and **D69** (shallow amplifies thaw only).
 >
@@ -98,7 +98,7 @@ sources (LAGOS-US has 17,675 max depths and only 6,137 means), so one scalar can
 both. Provenance is **per measurement**. See D68.
 
 **3. "Replacing the manual stand-in *for most bodies*" is off by an order of magnitude — and the
-correction is better news than the claim.** HydroLAKES only includes lakes ≥ **10 ha**. Sampling 4,000
+correction is better news than the claim.** HydroLAKES only includes water bodies ≥ **10 ha**. Sampling 4,000
 of the dev corpus's 116,070 bodies (`waterBodies`, `mcp__convex__runOneoffQuery`, 2026-07-29):
 
 | band | count | share |
@@ -118,7 +118,7 @@ statement matter: coverage of the prominent bodies is essentially total, and cov
 essentially nil. The second half is §*What this does not cover*.
 
 **4. "Real data instead of a manual flag" overstates every global source.** HydroLAKES' `Depth_avg` is
-`Vol_total / Lake_area` where `Vol_total` is itself geostatistically modelled for most lakes; GLOBathy's
+`Vol_total / Lake_area` where `Vol_total` is itself geostatistically modelled for most water bodies; GLOBathy's
 `Dmax` is a random-forest estimate over shoreline length, area, volume, elevation and watershed area,
 validated at 1,503 waterbodies **globally** (NSE 0.97, PBIAS −1.08%, NRMSE 0.17, ρ 0.94). Neither is
 measured bathymetry. That is not a reason to skip them — a modelled depth beats no depth for a
@@ -138,21 +138,21 @@ Research at kickoff turned up a **better first source than the one the register 
 the shape of the join: [LAGOS-US DEPTH](https://portal.edirepository.org/nis/mapbrowse?packageid=edi.1043.1)
 is *observed* depth, compiled from ~65 agency / university / monitoring-program / academic sources, with
 per-record source attribution and quality flags — 17,675 maximum depths and 6,137 mean depths for CONUS
-lakes larger than **1 ha**. Measured, and a floor an order of magnitude below HydroLAKES'.
+water bodies larger than **1 ha**. Measured, and a floor an order of magnitude below HydroLAKES'.
 
 So no single source is "the" source. Four rungs, best-available wins, and the row records which rung it
 landed on (**D68**):
 
 | # | Source | Basis | Floor | Gives | License |
 | --- | --- | --- | --- | --- | --- |
-| 1 | State-agency bathymetry / operator override | **measured**, per-lake | — | mean + max | per state (see A06b) |
+| 1 | State-agency bathymetry / operator override | **measured**, per-body | — | mean + max | per state (see A06b) |
 | 2 | **LAGOS-US DEPTH** v1.0 | **measured**, ~65 compiled sources | ~1 ha | max (17,675) · mean (6,137) | confirm at download |
 | 3 | **HydroLAKES** v1.0 `Depth_avg` | `Vol_total / Lake_area`; `Vol_src` says whether the volume was *reported* or *modelled* | 10 ha | mean | CC-BY 4.0 |
 | 4 | **GLOBathy** `Dmax` | random forest over P/A/V/Elev/WA | 10 ha (HydroLAKES-keyed) | max | CC0 1.0 |
 
 Two details that fall out of the table and matter to the transform:
 
-- **HydroLAKES' `Vol_src` is a free promotion.** `Vol_src = 1` (reported lake volume) or `2` (reported
+- **HydroLAKES' `Vol_src` is a free promotion.** `Vol_src = 1` (reported water body volume) or `2` (reported
   reservoir volume) means `Depth_avg` derives from a *measured* volume rather than the geostatistical
   model — so those rows are measured-ish and rank above `Vol_src = 3`. Cheap to honour, and it means we
   aren't throwing away real data by treating all of HydroLAKES as one rung.
@@ -205,7 +205,7 @@ and D56's never-hide bound continues to do its job unmodified.
 *This doc first claimed the stronger form — "always moves the multiplier further from 1" — and the
 property test refuted it during the build. In mixed weather where cold wins narrowly, a deep body reads
 just above 1 and a shallow one just below; the crossing is the correct answer rather than a bug, since the
-same period nets "refreezing" for a deep lake and "thawing" for a shallow one. See the correction appended
+same period nets "refreezing" for a deep water body and "thawing" for a shallow one. See the correction appended
 to D69.*
 
 **Shallowness is a boolean, not a curve.** It has to be, because the manual
@@ -231,7 +231,7 @@ maxDepthSource: v.optional(literals(DEPTH_SOURCES)),
 `DEPTH_SOURCES` (backend enum, `lib/enums.ts`): `operator` · `state_agency` · `lagos_us` ·
 `hydrolakes_reported` · `hydrolakes_modeled` · `globathy` · `osm_tag`. The split HydroLAKES values are
 what make `Vol_src` legible downstream, and `osm_tag` exists for the register's opportunistic-ETL bullet
-(`depth`/`maxdepth` tags, near-zero coverage on inland lakes, carried when present).
+(`depth`/`maxdepth` tags, near-zero coverage on inland water bodies, carried when present).
 
 No index. Depth is read with a body already in hand — the decay cron has the row, the drawer has the
 row, the editor has the row — so there is no query that selects *by* depth. (If a "shallow bodies"
@@ -259,17 +259,17 @@ the same property that made D56's offline story work.
 
 **C — ETL: `scripts/lake-depth`.** A third sibling to `scripts/etl` and `scripts/admin-areas`, same
 four-stage shape (fetch → convert → tested TS transform → chunked idempotent load), same `--prod` guard,
-same README discipline. The join is a spatial match of source lake → our body, reusing the geodesic
+same README discipline. The join is a spatial match of source water body → our body, reusing the geodesic
 helpers and the `@skating/core` matching shape `dedup.ts` already established rather than inventing a
-second notion of "these are the same lake"; the transform resolves the ladder per body and emits
+second notion of "these are the same water body"; the transform resolves the ladder per body and emits
 NDJSON of `{ externalId, meanDepthM?, maxDepthM?, meanDepthSource?, maxDepthSource? }`. Loader
 `importDepths` upserts by `by_external_id` and **refuses to overwrite an `operator` rung**.
 
-**D — Clients: source-aware display.** Mean + max on the lake drawer / detail sheet on both clients,
+**D — Clients: source-aware display.** Mean + max on the water body drawer / detail sheet on both clients,
 metric-or-imperial per D25, with framing driven by the source enum: a measured depth reads plainly and
 names its source, a modelled one reads as an estimate. The `~` and the word *estimated* are the whole
 mechanism — cheap, and it keeps a DEM-derived guess from looking like a survey. Plus the depth fields in
-the A02 per-lake editor (`/admin/water/$id`), which is where rung 1 gets entered.
+the A02 per-body editor (`/admin/water/$id`), which is where rung 1 gets entered.
 
 ---
 
@@ -319,30 +319,30 @@ the same class of finding as A01's original geospatial blowout, arrived at from 
 **2. The loader rethrew on the first failed batch**, so one dense neighbourhood killed a run with
 1,603 loadable batches behind it. The water ETL and admin-areas loaders had already learned this
 today; this one hadn't been updated to match. Isolated failures are now recorded and skipped, five
-consecutive aborts, and skipped batches are itemized **by lake key** — a batch index is meaningless
-once the scratch file is gone, and the named lakes are exactly what a `--batch=1` retry needs.
+consecutive aborts, and skipped batches are itemized **by water body key** — a batch index is meaningless
+once the scratch file is gone, and the named water bodies are exactly what a `--batch=1` retry needs.
 
-**3. GLOBathy is not "the basic-parameters CSV".** The zip holds 17 files: fifteen 100K-lake splits,
+**3. GLOBathy is not "the basic-parameters CSV".** The zip holds 17 files: fifteen 100K-water body splits,
 a README, and `GLOBathy_basic_parameters(ALL_LAKES).csv` with all 1,427,688 rows. Globbing `*.csv`
-double-counts every lake.
+double-counts every water body.
 
 **4. The `Dmax` column, and what it actually is.** The parser's candidate list led with `Dmax_use`;
 the published column is `Dmax_use_m`, so it refused the file — the fail-loud design working as
 designed. Checking *why* was the valuable part: measured over a 200k-row sample, `Dmax_use_m` equals
-`Dmax_est_PAVEW_m` (the shoreline/area/volume/elevation/watershed fit) for **99.5%** of lakes and
+`Dmax_est_PAVEW_m` (the shoreline/area/volume/elevation/watershed fit) for **99.5%** of water bodies and
 carries a round, plainly *reported* figure for the rest. So it is the model **with known depths
 substituted in** — better than either pure column, and not simply "the random-forest column" as the
 docstring claimed. One consequence, left alone deliberately: for that 0.5% a `globathy` rung is a
 reported depth wearing a modelled label, so D68 under-rates it. The substitutions are the world's
-largest lakes, our region has almost none, and correcting it would mean carrying a second column to
+largest water bodies, our region has almost none, and correcting it would mean carrying a second column to
 re-rank the ladder's floor.
 
 **5. `SHALLOW_MAX_DEPTH_M = 7` is right — the settlement plan ran, and the guess held.**
 
 This doc set 7 m provisionally and said so loudly: *"explicitly not because 7 is right"*, the middle of
 an honest 5–9 m band, with a named way to settle it — fit the max cutoff that best reproduces the
-`mean ≤ 3 m` classification against LAGOS-US' lakes carrying **both** a measured mean and max. That set
-now exists: **3,139 lakes in our five states**, 6,137 nationwide.
+`mean ≤ 3 m` classification against LAGOS-US' water bodies carrying **both** a measured mean and max. That set
+now exists: **3,139 water bodies in our five states**, 6,137 nationwide.
 
 | cutoff | accuracy (our 5 states) | over-classified (FP) | **missed (FN)** |
 | ---: | ---: | ---: | ---: |
@@ -357,13 +357,13 @@ different populations, same answer, arrived at without reference to the reasonin
 
 **But accuracy is the wrong objective here, and the doc already says why.** Under D69 the errors are
 asymmetric: a false positive makes a thaw warning linger (bounded by the never-hide rule), a false
-negative loses the signal on a lake that deserved it. At 7 m the two are nearly balanced — 177 against
+negative loses the signal on a water body that deserved it. At 7 m the two are nearly balanced — 177 against
 196 — which is *not* the "lean generous" this doc argues for. **8 m cuts misses from 196 to 106 for
 0.9 points of accuracy.** That is the real trade, and it is a founder call rather than an arithmetic
 one: the table above is what the settlement plan promised, not a recommendation to move the constant.
 
-Caveat worth keeping with the number: LAGOS-US lakes are > 1 ha, and 73% of our corpus is below every
-global source's area floor. This calibrates the rung that reaches the lakes we have data for; the
+Caveat worth keeping with the number: LAGOS-US water bodies are > 1 ha, and 73% of our corpus is below every
+global source's area floor. This calibrates the rung that reaches the water bodies we have data for; the
 `shallow_early_thaw` `bodyFeature` remains the only signal for the rest, as designed.
 
 **6. The match rate was measured against a denominator three quarters of which was never eligible.**
@@ -426,7 +426,7 @@ The plan said shallowness "always moves the multiplier further from 1 in whateve
 already went." False in **mixed** weather: with cold and thaw both present and cold winning narrowly, a
 deep body reads just above 1 while a shallow one reads just below — closer to 1, and on the other side of
 it. The crossing is **correct** rather than a bug, because the same period genuinely nets "refreezing" for
-a deep lake and "thawing" for a shallow one, which is the entire content of D69. What holds absolutely is
+a deep water body and "thawing" for a shallow one, which is the entire content of D69. What holds absolutely is
 directional per response class: shallow `structural` ≥ deep, shallow `refreeze_healed`/`rotten` ≤ deep,
 `weather_insensitive` identical, and with no thaw nothing changes for any type. Corrected in D69, in the
 module doc, and above. Worth recording because a test asserting the plan's version would have been a test
@@ -440,19 +440,19 @@ That is the intended behavior, so it is pinned by a test rather than tuned away.
 
 **The plan under-specified the ETL's join, and the honest shape is different from the other two ETLs.**
 "A one-time spatial join" reads as something the transform does. It can't: every source is keyed to its
-own lake ids (`Hylak_id`, `lagoslakeid`) and none knows anything about OSM, so there is no join key, and
+own water body ids (`Hylak_id`, `lagoslakeid`) and none knows anything about OSM, so there is no join key, and
 matching locally would mean exporting all 116,070 bodies **with their polygons** first. The join therefore
-runs **server-side** (`waterBodies.matchAndImportDepths`), where ~8k source lakes cost ~8k small indexed
+runs **server-side** (`waterBodies.matchAndImportDepths`), where ~8k source water bodies cost ~8k small indexed
 lookups against the A01 cell index. A side benefit worth having: it reuses `listedBodiesNearCoord`, so the
 depth join and the app's own "you're at Lake X" resolution agree by construction about which body a point
 is on.
 
 **One guard the plan didn't ask for and the work demanded.** A geometric join has exactly one failure mode
-that produces a *wrong* answer instead of no answer: a big lake's representative point landing inside the
+that produces a *wrong* answer instead of no answer: a big water body's representative point landing inside the
 small pond next door, stamping 40 m of depth onto it and quietly telling the decay model that pond is deep.
 So the match carries an **area gate** — reject if the two areas disagree by more than 4×, and name the body
 it declined. Deliberately loose, because the three sources each draw a shoreline from a different water
-mask at a different date: a false reject costs one lake its depth, a false accept corrupts a safety input.
+mask at a different date: a false reject costs one water body its depth, a false accept corrupts a safety input.
 
 ## Verified against dev
 
@@ -480,7 +480,7 @@ that mattered.
 
 **1. The operator editor laundered modelled depths into rung 1, and the mutation let it.** `setDepth`
 took a plain number per field and stamped `operator` on everything it received, while the editor
-pre-filled both fields from whatever the row held. So a moderator who opened a lake carrying a
+pre-filled both fields from whatever the row held. So a moderator who opened a water body carrying a
 HydroLAKES mean and typed the max they *did* know silently relabelled a 90 m-DEM estimate as a survey
 reading: the public caption lost its `~`, and `winsLadder` then locked the value against every future
 import. **Provenance you can launder by accident is not provenance** — and this was D68's own display
@@ -504,7 +504,7 @@ runs once, so an ETL run mid-session left you editing a number that was no longe
 number* was protecting the caption, not the row: `describeLakeDepth` renders nothing without a number, so
 an operator rung with no value is invisible to skaters and legible to the ladder. That is exactly the
 split we want, because "a human read HydroLAKES' 14 m and says it's wrong" is a durable claim about the
-lake and has to outlive the next run or it isn't worth making. The loader now reports those separately
+water body and has to outlive the next run or it isn't worth making. The loader now reports those separately
 (`operatorHeld`) instead of folding them into "already had a better source", so the person running the
 ETL sees the collision and can release it deliberately.
 
@@ -513,8 +513,8 @@ since day one; `applyDepthLadder` — the path that writes ~8k rows nobody reads
 provenance. The transform's `-9999` filter is one third-party column rename away from missing a `-999`.
 Same positivity and `MAX_PLAUSIBLE_DEPTH_M` guard now runs at the write boundary, counted and named.
 
-**4. LAGOS-US rows are merged per lake, and the merge rules are asymmetric.** The transform emitted one
-record per CSV row; several rows for one lake all land on the same body at the same rung, and `winsLadder`
+**4. LAGOS-US rows are merged per water body, and the merge rules are asymmetric.** The transform emitted one
+record per CSV row; several rows for one water body all land on the same body at the same rung, and `winsLadder`
 accepts an equal rank — so the stored value was whichever row the file listed last. Arbitrary, and
 invisible. Now: **a max takes the deepest reading** (an extremum is the union of what surveys found), a
 **mean takes the median** (a mean has no combining rule; the median resists one bad record and is always
@@ -540,13 +540,13 @@ only pass that sees an OSM feature: `--depths` writes a second NDJSON stream, `l
 caller). The parse is deliberately strict, and one mapping is safety-relevant: **a bare `depth` tag
 becomes a `max`, never a mean.** OSM documents `depth` loosely enough that mappers use it for all three,
 and the mean is the field that *wins* the shallow classification — read as a max it enters through the
-generous 7 m fallback instead, which is the direction that keeps a shallow lake shallow. Only the
+generous 7 m fallback instead, which is the direction that keeps a shallow water body shallow. Only the
 explicit `depth:mean` is trusted as a mean.
 
 **7. Greptile (PR #33) found the sibling of 3: the guard was on the value, not on the pair.** The ladder
 resolves each measurement independently, which is D68 working as intended — mean and max routinely come
 from different rungs. But *independently resolved* is not *jointly valid*: two sources that matched
-slightly different lakes, or two models that disagree, can each win their own slot and leave `mean 30 m`
+slightly different water bodies, or two models that disagree, can each win their own slot and leave `mean 30 m`
 beside `max 6 m`. `setDepth` had refused a transposed pair from day one; the automated path had no such
 check, so an inverted pair could be persisted, displayed as `mean 98 ft · max 20 ft`, **and** used to
 classify the body — the contradicted mean being the half that wins the classification.
@@ -557,11 +557,11 @@ numbers describes something else. The ladder therefore settles it the way it set
 in place, because leaving it keeps the impossible pair live; clearing its rung means a later run refills
 it once the sources agree, and `winsLadder` guarantees the loser is never an operator's number. **On a
 tie the mean goes**, which is the conservative half rather than an arbitrary one: dropping it routes the
-body through the generous `SHALLOW_MAX_DEPTH_M` fallback, the direction that keeps a shallow lake
-classified shallow when we are least sure (D69's asymmetry). Counted and named per lake, since a cluster
+body through the generous `SHALLOW_MAX_DEPTH_M` fallback, the direction that keeps a shallow water body
+classified shallow when we are least sure (D69's asymmetry). Counted and named per water body, since a cluster
 of inversions in one area is a *join* problem wearing a depth problem's clothes.
 
-*Deferred out of the review, folded into A06c:* the per-lake **record timeline** (`moderation.listActions`
+*Deferred out of the review, folded into A06c:* the per-body **record timeline** (`moderation.listActions`
 already answers the query — this is a UI component) and **per-run ETL summaries** stored rather than
 printed to a terminal that scrolls. `setDepth` and `clearDepthOverride` already write `prev` into their
 audit metadata, so the timeline will have before/after from the day it renders.
@@ -658,15 +658,15 @@ be chosen out loud rather than arrived at by someone running the script because 
    - *"All data are made available 'as is'"* + no liability for misinterpretation — sits comfortably
      with D3 and D68, which already frame a modelled depth as an estimate rather than a survey.
 
-   ✅ **The coverage half is answered too, 2026-08-02, by counting the archived file: 4,747 lakes
+   ✅ **The coverage half is answered too, 2026-08-02, by counting the archived file: 4,747 water bodies
    across our five states** — VT 282 · NH 780 · ME 1,717 · MA 319 · NY 1,649. All 4,747 carry a max
    depth; 3,139 carry a mean. That is **27% of a national dataset sitting in five states**, which
    confirms the guess that New England is LAGOS' home region. Nationwide totals (17,675 max, 6,137
    mean) match this doc's figures exactly.
 
-   ⚠ **And one of this doc's premises was wrong.** The file is **one row per lake**, not per
+   ⚠ **And one of this doc's premises was wrong.** The file is **one row per water body**, not per
    observation: 17,675 rows, 17,675 distinct `lagoslakeid`, **zero to merge**. §5b of the runbook and
-   `mergeLagosRows` were both built expecting many rows per lake, since the module is *compiled* from
+   `mergeLagosRows` were both built expecting many rows per water body, since the module is *compiled* from
    ~65 sources. The merge survives as a no-op that is now a **version check** rather than dead code —
    it prints what it merged either way, so a future revision that does ship per-observation rows is
    handled silently and visibly at once.
@@ -703,16 +703,16 @@ be chosen out loud rather than arrived at by someone running the script because 
    by the never-hide rule and the map's opacity floor. A false negative loses the signal outright. Cheap
    error, expensive error ⇒ lean generous, which turns the over-inclusiveness objection into the argument
    *for* 7 m. (Founder confirmed the cheap-false-positive premise, which is the load-bearing half: it rests
-   on `structural`'s faster fade being acceptable on a shallow lake.)
+   on `structural`'s faster fade being acceptable on a shallow water body.)
 
    The false negative keeps its named shape: a broad shallow sheet with one deep hole — mean 2 m, max 9 m —
    reads as not shallow, and that is the class where a sheet goes out earliest. Mitigated, not solved, by
    two existing rules: a mean **always wins** when present, and the `shallow_bay_early_thaw` flag overrides
    the number entirely.
 
-   **Settlement: LAGOS-US DEPTH carries ~6,137 lakes with both a mean and a max — a labelled validation
+   **Settlement: LAGOS-US DEPTH carries ~6,137 water bodies with both a mean and a max — a labelled validation
    set.** `mean ≤ 3 m` is ground truth, `max ≤ X` is the prediction. **Step 6 of the ETL runbook** sweeps X
-   over 4–10 m against our region's own matched lakes, minimizing false negatives first, and tests
+   over 4–10 m against our region's own matched water bodies, minimizing false negatives first, and tests
    *relative depth* (max as a fraction of basin width, from the area every source carries) on the same set
    to see whether it separates "broad shallow sheet" from "small deep hole" well enough to earn a two-input
    rule. That check lives in the runbook rather than here **on purpose** — Phase 07-2 built the
@@ -737,13 +737,13 @@ be chosen out loud rather than arrived at by someone running the script because 
 
 *The roadmap entry for A06 / A06a as it stood before the 2026-09-16 rewrite, kept verbatim so nothing it said is lost. The roadmap now carries a one-paragraph summary; this is the long form.*
 
-**A06 — Lake depth.** *(Split at kickoff 2026-07-29 into **A06a** — the depth attribute and its decay
+**A06 — Water body depth.** *(Split at kickoff 2026-07-29 into **A06a** — the depth attribute and its decay
 consumer — and **A06b** — the bathymetric contour layer — after the founder asked whether we could draw
-real topographic lines inside the lake polygons. The answer is yes, from measured state-agency surveys,
+real topographic lines inside the water body polygons. The answer is yes, from measured state-agency surveys,
 and that turned out to be phase-sized on its own. Was sequenced after A01 so the two shared one reindex;
 **A01 has now shipped and its backfill is run**, so both are unblocked.)*
 
-**A06a — Lake depth: the precedence ladder and the shallow signal.** ✅ **BUILT + on dev 2026-07-30** (ETL written and tested but **not yet run** — it needs three third-party downloads plus a licence/column confirmation; not device-tested; prod deferred) — see
+**A06a — Water body depth: the precedence ladder and the shallow signal.** ✅ **BUILT + on dev 2026-07-30** (ETL written and tested but **not yet run** — it needs three third-party downloads plus a licence/column confirmation; not device-tested; prod deferred) — see
 [`phases/A06a-body-depth.md`](./A06a-body-depth.md); decisions **D68** (provenance-carrying depth) and
 **D69** (shallow amplifies thaw only). **Four of this entry's own premises were false**, all corrected in
 the phase doc, and the first one reshaped the work:
@@ -763,10 +763,10 @@ the phase doc, and the first one reshaped the work:
   zoom. The inverse is the honest half: the shallow signal is most predictive for the ponds no global
   source reaches, so the manual `bodyFeature` is **permanent infrastructure, not a stand-in**.
 - **"Real data instead of a manual flag" overstates both named sources** — HydroLAKES' `Depth_avg` is
-  modelled from a 90 m DEM, GLOBathy's `Dmax` is a random forest validated at 1,503 lakes *globally*.
+  modelled from a 90 m DEM, GLOBathy's `Dmax` is a random forest validated at 1,503 water bodies *globally*.
   Neither is measured bathymetry, which is why provenance is a field and why D3 governs the display.
 - **A better first source than either:** **LAGOS-US DEPTH** — *observed* depths compiled from ~65 agency /
-  university / monitoring sources, lakes > 1 ha, an order of magnitude below HydroLAKES' floor. It becomes
+  university / monitoring sources, water bodies > 1 ha, an order of magnitude below HydroLAKES' floor. It becomes
   rung 2 of the D68 ladder, above both modelled sources.
 
 

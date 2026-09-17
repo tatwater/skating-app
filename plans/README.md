@@ -48,7 +48,7 @@ prose `Phase A06e`, branch `phase-a06e-<slug>`, commit scope `feat(a06e):`.
 | Era | Prefix | Range | What it was |
 | --- | --- | --- | --- |
 | the roadmap | *(none)* | `00` – `10` | the scaffold: every feature the product needed to exist |
-| enrichment | `A` | `A01` – `A09` | data, depth, imagery, access, weather, notifications — the app knowing its lakes |
+| enrichment | `A` | `A01` – `A09` | data, depth, imagery, access, weather, notifications — the app knowing its water bodies |
 | launch readiness | `B` | `B01` – … | the current era |
 
 Rules that fell out of the history and are worth keeping:

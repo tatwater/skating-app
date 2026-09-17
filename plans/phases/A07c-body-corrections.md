@@ -1,4 +1,4 @@
-# A07c — Lake corrections: the skater says "this is wrong", and a moderator fixes it
+# A07c — Water body corrections: the skater says "this is wrong", and a moderator fixes it
 
 > **Status:** ⚪ **Scoped 2026-09-16.** Not built. First phase named under the new scheme
 > ([`README.md`](../README.md#phase-names)); the era stays `A` because this is the last of the
@@ -27,7 +27,7 @@ The corpus is 25,197 bodies derived from OSM, NHD and 3DHP by a pipeline nobody 
 row is a claim — this outline, this name, this launch, this lot with toilets — and on a corpus that
 size some thousands of those claims are wrong. Today a skater who knows one is wrong can do exactly
 one thing about it: report that there is no public access (A06f). Everything else they know — the
-lake is two polygons, the boat ramp is a private driveway, the aerial is 40 m off, the lot has no
+water body is two polygons, the boat ramp is a private driveway, the aerial is 40 m off, the lot has no
 toilets, it is called Lake Auburn and not The Basin — has nowhere to go.
 
 The founder's framing, 2026-09-10: *"a way for users to report/flag bodies with different issues.
@@ -47,7 +47,7 @@ A07b built them as requests, with their own dedup, per-person cap, drawer button
 | Category as first scoped | What it is now |
 | --- | --- |
 | "This shouldn't be on the map at all" | `takedown` → `standing: removed` (D179) |
-| "There's a lake here you don't have" | `admit` → the 3DHP resolver attaches the polygon (D106/D179) |
+| "There's a water body here you don't have" | `admit` → the 3DHP resolver attaches the polygon (D106/D179) |
 | "No public access" re-disputed after a ruling | `contest_access` under a `dormant · no_public_access` standing |
 
 And one was already solved before it was scoped: "the name is wrong" has `setWaterBodyName`, which
@@ -62,18 +62,18 @@ Ranked by expected volume × value on this corpus. The right-hand column is the 
 
 | # | Report | Target | Lever today |
 | --- | --- | --- | --- |
-| 1 | Polygon: these N bodies are one lake | body + body | ⚠️ `merge` exists but **keeps one outline and tombstones the other** — a causeway-split lake loses half of itself |
-| 2 | Polygon: wrong shape — includes land, offset, missing a bay | body | ❌ nothing edits a body's outline; A02's lake editor draws *bays* on a locked canvas |
+| 1 | Polygon: these N bodies are one water body | body + body | ⚠️ `merge` exists but **keeps one outline and tombstones the other** — a causeway-split water body loses half of itself |
+| 2 | Polygon: wrong shape — includes land, offset, missing a bay | body | ❌ nothing edits a body's outline; A02's water body editor draws *bays* on a locked canvas |
 | 3 | Polygon: this should be split | body | ❌ new — and usually the honest answer is *name the bay* (A09), not split |
 | 4 | Name is wrong / locally called something else | body | ✅ `setWaterBodyName` (A07a) — survives re-import |
-| 5 | Duplicate of another lake on the map | body + body | ✅ the dedup queue (`listDedupCandidates`, `merge`) — a report is a hand-flagged pair |
-| 6 | Pin sits on the shoreline or off the lake | body | ⚠️ known — `centroid` is Turf `pointOnFeature`; `interiorPoint` is the fix, and [`features/representative-point-rename.md`](../features/representative-point-rename.md) is the plan |
+| 5 | Duplicate of another water body on the map | body + body | ✅ the dedup queue (`listDedupCandidates`, `merge`) — a report is a hand-flagged pair |
+| 6 | Pin sits on the shoreline or off the water body | body | ⚠️ known — `centroid` is Turf `pointOnFeature`; `interiorPoint` is the fix, and [`features/representative-point-rename.md`](../features/representative-point-rename.md) is the plan |
 | 7 | Imagery broken — misaligned, cropped, wrong season | body (+ viewport) | ❌ no per-body suppression; no way to say *which* layer, *at what zoom* |
 | 8 | Put-in wrong — bad coordinates, doesn't exist, private | put-in | ⚠️ `putIns.hide` (A09 coordinate row) and `setOfficial`; no move |
 | 9 | Put-in missing — there's a launch here you don't have | body + coordinate | ⚠️ `setOfficial` places one; no skater path to propose it |
-| 10 | Lot wrong — amenities, capacity, fee, serves the wrong lake | lot | ⚠️ `setOfficialParking` takes all of it; wired only on `/admin/water/$id` |
+| 10 | Lot wrong — amenities, capacity, fee, serves the wrong water body | lot | ⚠️ `setOfficialParking` takes all of it; wired only on `/admin/water/$id` |
 | 11 | Posted hours wrong (A06e) | body / put-in / lot | ✅ `PostedAccessEditor` |
-| 12 | Depth / contours wrong — belongs to a different lake | body | ❌ A06b matched by containment; a mismatch has no lever beyond the depth override |
+| 12 | Depth / contours wrong — belongs to a different water body | body | ❌ A06b matched by containment; a mismatch has no lever beyond the depth override |
 | 13 | Sub-area wrong — bay misnamed, misplaced, shouldn't exist | sub-area | ✅ `subAreas.rename` / `redraw` / `remove` |
 | 14 | Reference link dead or wrong (A06c) | body | ✅ `set_reference_links` |
 | 15 | Never safely skateable — bubbler, year-round current, drawdown | body | → a `bodyFeature` (D53); today only a moderator promoting a recurring hazard can create one |
@@ -88,7 +88,7 @@ workstream order below.
 
 ## The four doors (§2's routing rule)
 
-A skater with something to say about a lake has, after this phase, four places to say it, and the
+A skater with something to say about a water body has, after this phase, four places to say it, and the
 sheet's first job is to open the right one. Getting this wrong is worse than not building the sheet:
 a correction filed as an access alert **expires in 30 days and comes back next winter**, and a
 permanent hazard filed as a correction is a queue row that a moderator dismisses because nothing about
@@ -96,13 +96,13 @@ the row is wrong.
 
 | The skater is saying | Door | Table | Lifetime |
 | --- | --- | --- | --- |
-| *"Our data about this lake is wrong"* | **correction** — this phase | `contentFlags` | until a moderator acts |
-| *"This lake should / shouldn't be in the corpus"* | **request** — A07b | `waterBodyRequests` | until a moderator answers |
+| *"Our data about this water body is wrong"* | **correction** — this phase | `contentFlags` | until a moderator acts |
+| *"This water body should / shouldn't be in the corpus"* | **request** — A07b | `waterBodyRequests` | until a moderator answers |
 | *"The gate is locked today"* | **access alert** — A06d | `accessAlerts` | 30 days, seasonal reset |
-| *"This lake has a bubbler every winter"* | **body feature** — A05c | `bodyFeatures` | until demoted |
+| *"This water body has a bubbler every winter"* | **body feature** — A05c | `bodyFeatures` | until demoted |
 
 The sheet lists the correction categories and, at the bottom, three links worded as the skater would
-think them — *Is the gate locked or the road closed? · Should this lake be on the map at all? ·
+think them — *Is the gate locked or the road closed? · Should this water body be on the map at all? ·
 Is there a permanent hazard here?* — each opening the existing control. It never files into another
 table itself.
 
@@ -201,9 +201,9 @@ that both writers set one field and the import honours one predicate.
 
 **Proposed.** The founder's ask: *"consolidate two bodies into one, and denote the original two as
 sub-areas (or not)."* `merge` (D36) is the wrong primitive: it was built for *duplicates* — two rows,
-one lake, near-identical outlines — and it keeps one outline because for a duplicate the other one is
-the same shape. For a lake OSM split at a causeway, the loser's outline is the *other half of the
-lake*, and tombstoning it deletes that half from the map.
+one water body, near-identical outlines — and it keeps one outline because for a duplicate the other one is
+the same shape. For a water body OSM split at a causeway, the loser's outline is the *other half of the
+water body*, and tombstoning it deletes that half from the map.
 
 **Union is merge plus geometry.** It takes a survivor and a loser like `merge` does, and calls
 `mergeBodyInto` for everything that already works — reports, hazards, bounties, features, put-ins,
@@ -239,7 +239,7 @@ split" reports are a bay that wants a name, and the sheet says so before the cat
 
 - **§1.1 D180 in `contentFlags.flag`.** `isPlaceTarget(targetType)` in `lib/enums` beside
   `FLAG_TARGET_TYPES`; the dedup query takes the `by_target_status_reason` index for a place and the
-  existing `by_target` filter for content. A regression test that files two reasons on one lake from
+  existing `by_target` filter for content. A regression test that files two reasons on one water body from
   one person and expects two rows — the test that would have caught this the day A06f shipped.
 - **§1.2 D182 in `importCanonical`.** The predicate and the skipped field list, with the campaign-walk
   test `standing.test.ts` already runs extended by one body: a `geometrySource: 'user'` row through a
@@ -259,7 +259,7 @@ split" reports are a bay that wants a name, and the sheet says so before the cat
 - **§2.2 `context` (D181)** on the schema, the validator union in `lib/validators`, and `flag`
   refusing a context whose arm does not match the reason.
 - **§2.3 `ReportProblem` sheet (web).** One control under the drawer's action row — *Report a
-  problem* — opening a sheet: the category list grouped as *the lake · getting there · the map*, a
+  problem* — opening a sheet: the category list grouped as *the water body · getting there · the map*, a
   note, and the four-doors footer. **Launched with context** from wherever it was opened: the
   `AccessSection` put-in row pre-selects `access_point_wrong` with that put-in; the amenity line
   pre-selects `amenity_wrong` with that lot and a checkbox diff; `ImageryControl` pre-selects
@@ -315,11 +315,11 @@ split" reports are a bay that wants a name, and the sheet says so before the cat
 - **§5.2 Lots:** `setOfficialParking` applied with the amenity diff from D181; the reason carries the
   reporter count.
 - **§5.3 Imagery:** a per-body `imagerySuppressed: { layer, reason, by, at }` that the reveal reads
-  and skips — the only new field in §5 — because a broken frame over one lake is fixed by not
+  and skips — the only new field in §5 — because a broken frame over one water body is fixed by not
   showing it, not by a moderator re-rendering NAIP. The row on the queue shows the viewport from the
   context arm so the moderator sees what the reporter saw before deciding.
 - **§5.4 Depth:** the existing depth override released or set from the row; a contour mismatch
-  (wrong lake's survey) has no lever and is recorded as such — the fix is in the A06b matcher, and the
+  (wrong water body's survey) has no lever and is recorded as such — the fix is in the A06b matcher, and the
   report is its input.
 
 ### §6 — Mobile parity
@@ -353,7 +353,7 @@ outline writer in the app.
 
 ## Tests (D40)
 
-- **`contentFlags.test.ts`:** two reasons, one lake, one person ⇒ two rows (§1.1); two reasons, one
+- **`contentFlags.test.ts`:** two reasons, one water body, one person ⇒ two rows (§1.1); two reasons, one
   comment, one person ⇒ one row; context arm mismatch refused; every arm accepted with its reason.
 - **`moderation.test.ts`:** every target type resolves (§1.3); the corrections lane groups and ranks
   by distinct reporters; a lever closes the whole group and each reporter is notified once.
@@ -384,7 +384,7 @@ outline writer in the app.
    or a read-only account can report. Proposal: keep it; a correction is not a contribution, and the
    person turned away at a private driveway is worth hearing from regardless.
 5. **Should `imagery_broken` reports show on the reporter's map** the way an access report fades
-   their lake? Proposal: no — the aerial is viewport-wide and one report should not suppress it for
+   their water body? Proposal: no — the aerial is viewport-wide and one report should not suppress it for
    one person; the notification is the read-back.
 
 ---

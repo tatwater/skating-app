@@ -22,6 +22,6 @@ one — and the fallback chains A06c-2 wrote (`interiorPoint ?? representativePo
 only to be deleted by this.
 
 ⚠️ **Never make it a true centroid.** The name was the bug, not the maths — the area centroid of a
-crescent lake is on land, and drive-time bands plus the pin-less report's town stamp deliberately want
+crescent water body is on land, and drive-time bands plus the pin-less report's town stamp deliberately want
 a shoreline-ish point. See [`phase-N6c`](../phases/A06c-expanded-body-profiles.md) *§The three point
 fields*.

@@ -90,7 +90,7 @@ Phase 07 admin UI can bind controls to them and the founder can retune without a
      ledger row + `reputationPoints` bump + a `report_rated`-style in-app notice to the prior author).
    - **Self-corroboration excluded** (same author's second report on a body never counts).
    - **Capped at `CORROBORATION_MAX_PER_REPORT = 3`** corroborators counted per report, so a popular
-     lake can't inflate one reporter.
+     water body can't inflate one reporter.
    - **Taking trust *away* is deferred to Phase 10.** Per the founder's rule, a *contradicting* report
      only ever counts against someone if it's **same-day (≤24 h) AND the weather held or got
      colder/less-windy** — which needs the Phase 10 weather-since strips (D19) to evaluate honestly.
@@ -153,7 +153,7 @@ Phase 07 admin UI can bind controls to them and the founder can retune without a
 
 7. **Anyone can post a bounty on any body, but limited to 3 open in a rolling 24 h** (server-enforced
    via the requester's recent `createdAt`s). Reputation does **not** gate who may post; the cap is the
-   only junk control, and it nudges users toward lakes they actually care about.
+   only junk control, and it nudges users toward water bodies they actually care about.
 
 8. **A bounty is blocked on a body that already has a *fresh* report.** A bounty means "no fresh eyes
    lately," so we block creation if there's a **visible report within `FRESH_REPORT_HOURS` = 48 h**
@@ -200,7 +200,7 @@ Phase 07 admin UI can bind controls to them and the founder can retune without a
     distance / quality / thickness** filters but **never recency, blocks, or moderation**.
 
 15. **Frequency caps + dedup (server-tracked).** ≤2 **unique bodies per user per day**; if multiple
-    reports qualify for the same lake, **bundle the top-2** into one recommended card. State lives in a
+    reports qualify for the same water body, **bundle the top-2** into one recommended card. State lives in a
     per-user `lastRecommendedAt` + a recently-recommended body set (server-side, more reliable than
     client session state). *(Per-day is cleanly enforceable; the "1–2 per hour of browsing" pacing is
     deferred — start per-day and add session pacing only if it feels too sparse.)*
@@ -359,7 +359,7 @@ their consumers:
 - **Per-hour-of-browsing recommended pacing** — start per-day; add session pacing only if too sparse.
 - **Server-tracked recommended caps/dedup (decision 15 stateful half)** — Phase 06 ships `feed.recommended`
   **stateless** (`selectRecommended` caps ≤2 bodies per fetch). The per-user impressions store +
-  `acknowledgeRecommended` mutation (for the hard per-day cap + cross-fetch/day "don't repeat this lake"
+  `acknowledgeRecommended` mutation (for the hard per-day cap + cross-fetch/day "don't repeat this water body"
   dedup) is a **fast-follow**: qualifying reports are vanishingly rare at alpha volume, so a flood can't
   occur yet — build it when the feature proves it fires often enough to need pacing.
   - **Why it's not premature-built (2026-07-22 design call):** it guards a flood the alpha gate can't
@@ -367,13 +367,13 @@ their consumers:
     would rot. The right trigger is real data showing the feature feels spammy, not spare time.
   - **Shape when we do build it.** A query can't write, so it's the **read-query + ack-mutation split**:
     `feed.recommended` reads a per-user impressions store (recent `{userId, waterBodyId, at}` rows) to
-    subtract the day's shown bodies from the budget and exclude recently-shown lakes; the client calls
+    subtract the day's shown bodies from the budget and exclude recently-shown water bodies; the client calls
     `acknowledgeRecommended` once it renders the cards to record them.
   - **Build it FAIL-OPEN (non-negotiable design guardrail).** If the impression state is missing/uncertain
     (double-render, StrictMode double-effect, offline, a second device, the card scrolled off below the
     fold, a dropped ack), **show the card** — never suppress. The failure we're avoiding is the accounting
     wrongly concluding "budget spent" and silently killing the whole feature, which is strictly worse than
-    occasionally re-showing one genuinely exceptional lake. Decide up front what "shown" means (rendered vs.
+    occasionally re-showing one genuinely exceptional water body. Decide up front what "shown" means (rendered vs.
     actually seen) and when the daily budget decrements, and bias every ambiguous case toward showing.
 - **Bounty map/browse at scale** — `bounties.listOpen` scans the bounded `by_status_expires` index and
   filters in JS (fine at alpha). A dedicated bounties **geospatial** instance is only needed if the live
@@ -416,11 +416,11 @@ their consumers:
     gates visibility/ranking of safety content, never makes the app assert ice is safe.
 - **"Recommended" filter-breaking feed posts (moved here from Phase 04, 2026-07-17).** Occasionally
   inject into a user's feed an *exceptional* report that breaks their own **distance / quality / thickness**
-  filters — so someone who never touches the filters still gets a shot at seeing a lake in rare condition.
+  filters — so someone who never touches the filters still gets a shot at seeing a water body in rare condition.
   **Deliberately gated on this phase:** the "exceptional" bar must be **corroboration/trust (D50)**, not a
   lone `skateQuality == great`, or we'd build a machine for wasted trips (and implicitly amplify one
   unverified claim — a D3 concern). Mechanics: a relaxed complement query, ranked, **frequency-capped**
-  (≤1–2 per session/day), **per-lake de-duped**, visually distinct ("Recommended — exceptional ice outside
+  (≤1–2 per session/day), **per-body de-duped**, visually distinct ("Recommended — exceptional ice outside
   your usual range"); breaks distance/quality/thickness but **never recency, blocks, or moderation**.
 - **Done:** end-to-end bounty loop; reporters accrue a public, boost-only trust score from
   corroboration + helpful marks; the feed can occasionally recommend corroborated exceptional ice

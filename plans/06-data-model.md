@@ -56,7 +56,7 @@ excludeTracksFromAggregate?: boolean  // Phase 08 / D58: keep my recorded paths 
                              // aggregate tracks layer. PERSON-level on purpose — flipping it
                              // retroactively drops every track they've contributed, not just future
                              // ones. Recording + Strava push are unaffected; this governs only whether
-                             // their line draws on a lake's map for other people.
+                             // their line draws on a water body's map for other people.
 timezone?: string            // A08/C, D173 — the DEVICE's IANA zone, refreshed on app open; the 8pm digest's
                              // only per-user input (the hour is 20:00 for everyone). Never public.
 email?: string               // A08 PR 3 / D174 — PRIVATE mirror of the Clerk `email` claim (like
@@ -191,7 +191,7 @@ elapsedSeconds?: number      // Phase 05 prep: provider moving/elapsed time — 
                              // (end − start) because it excludes pauses/stops. Phase 08: trim a
                              // watch-left-recording tail to the on-water path before deriving end.
 path?: geojson               // TRUSTED GPS track = skated extent (+ hazard proximity, Q11)
-waterBodyId?: ref(waterBodies)   // resolved at ingest from path (D44) — the lake this skate was on
+waterBodyId?: ref(waterBodies)   // resolved at ingest from path (D44) — the water body this skate was on
 waterBodyIds?: ref(waterBodies)[] // when a skate spans connected bodies; waterBodyId = primary
 photoUrls?: string[]         // provider-dependent + subject to provider ToS
 promptState: enum(pending, prompted, converted, dismissed)  // A08/B4: an hourly sweep flips a skate
@@ -206,7 +206,7 @@ supersededByActivityId?: ref(gpsActivities)  // A08/B4a — the better copy of t
 ```
 > **Water-body resolution (D44):** at ingest, spatially match `path` against
 > `waterBodies` (bbox prefilter → Turf.js, the D5/D36 machinery) and store the
-> resolved `waterBodyId` so skates are findable **by lake identity/name**, not by
+> resolved `waterBodyId` so skates are findable **by water body identity/name**, not by
 > drawing a geospatial box ("5 miles on *Lake Morey*", not "5 miles somewhere here").
 > If the path matches no known body, fall back to the D14/D36 create-or-attach flow.
 > **Wired in Phase 08 (2026-07-24).** `gpsActivities.ingestTrack` fills this table from the native
@@ -223,7 +223,7 @@ supersededByActivityId?: ref(gpsActivities)  // A08/B4a — the better copy of t
 ```
 _id
 name: string
-type: enum(lake, pond, river, stream, reservoir, bay, marsh, other)
+type: enum(water body, pond, river, stream, reservoir, bay, marsh, other)
 source: enum(osm, nhd, user)
 externalId?: string          // OSM/NHD id when source != user
 polygon: geojson             // Polygon / MultiPolygon (rivers: the reach/segment)
@@ -249,7 +249,7 @@ fetchProfileM?: number[]     // 16 bearings @ 22.5°: contiguous over-water run 
 satelliteImagery?: enum(auto, on, off)  // ✅ BUILT in A06e (Workstream 4, D138). Absent ⇒ auto: only an
                                         // operator DISAGREEING with satelliteImageryAvailable() is stored,
                                         // and `auto` clears rather than writes. Survives re-import.
-referenceLinks?: { label, url }[]       // the ONE non-derivable link class: lake associations (D71)
+referenceLinks?: { label, url }[]       // the ONE non-derivable link class: water body associations (D71)
 // ── The map summary card (A06c/E, D141). Absent ⇒ no card at all, which is §5.3's whole rule.
 //    Recomputed from a bounded window on every write that could change it, never incremented:
 //    the counts are window- AND season-scoped, so a report ageing out has no event to decrement
@@ -281,8 +281,8 @@ createdAt: timestamp
 > the OSM import re-runs — the idempotent `importCanonical` upsert **must preserve** a
 > removed state so a re-import never resurrects it.
 > **`centroid` is a guaranteed on-water representative point** (Turf `pointOnFeature`), not
-> a raw area centroid — the area centroid of a crescent/horseshoe lake can land on shore,
-> which would break both the geospatial point index and D20's "fit the map to this lake."
+> a raw area centroid — the area centroid of a crescent/horseshoe water body can land on shore,
+> which would break both the geospatial point index and D20's "fit the map to this water body."
 > Rivers: model as **segments/reaches** (D4). A long river = multiple `waterBodies`
 > rows (or one row per named reach), so reports/hazards attach to the right stretch.
 > **Dedup (D36):** match on create (bbox prefilter → Turf IoU / point-in-polygon +
@@ -312,11 +312,11 @@ createdAt: timestamp
 > makes it more dangerous, not less.
 > **Reference links are generated, not stored (D71)** — every other outbound link is a pure function of
 > **`(interiorPoint, name, states)`** computed in `@skating/core`, which is what gives all 24,953 bodies
-> coverage with no migration and no stale URLs. `referenceLinks` exists only for lake associations, which
+> coverage with no migration and no stale URLs. `referenceLinks` exists only for water body associations, which
 > no algorithm can derive; expect tens of rows, not thousands.
 > ⚠ **`interiorPoint`, not `centroid`** — this doc and A06c's Workstream 2 both said `centroid` until
 > 2026-08-09, and both were wrong for the reason the block above already states: `centroid` is
-> `pointOnFeature` and lands **on the shoreline** for any curved lake. Champlain's is 30.7 km from
+> `pointOnFeature` and lands **on the shoreline** for any curved water body. Champlain's is 30.7 km from
 > mid-lake, so a Windy or Copernicus link built from it opens 30 km off the water. Caught at the A06c-2
 > build; a test pins it.
 > **`summary` is written only by `lib/bodySummary.ts`** (D141) and swept six-hourly for the time decay
@@ -342,7 +342,7 @@ createdAt / updatedAt: timestamp
 removedAt? / removedByUserId?  // soft-delist, reversible — never a hard delete
 systemDelistReason?: string    // why the SYSTEM retired it; cleared by a restore or redraw
 ```
-> **A bay is a name on a lake, not a lake.** Reports, hazards and bounties keep belonging to the
+> **A bay is a name on a water body, not a water body.** Reports, hazards and bounties keep belonging to the
 > **parent**; the sub-area is the finer name they carry, denormalized flat (`subAreaId` /
 > `subAreaName`) at create and re-stamped by a self-rescheduling cursor when a bay is redrawn, renamed
 > or delisted. Minting bays as bodies would split one sheet of ice's reports, hazards, bounties,
@@ -375,7 +375,7 @@ centroid: { lat, lng }       // geospatial point index
 createdAt: timestamp
 ```
 > **Purpose (Phase 05, decided 2026-07-16):** resolve a report's `point` (put-in pin / GPS start) →
-> `{ town?, county?, state? }` so the newsfeed/lake cards show *which town/side* a skater put in from —
+> `{ town?, county?, state? }` so the newsfeed/water body cards show *which town/side* a skater put in from —
 > correct even for a body spanning multiple towns or states (Lake Champlain = NY|VT). Imported from the
 > **same per-state OSM extracts** the water ETL uses (`boundary=administrative`, `admin_level` 4/6/7–8;
 > same ODbL attribution, **no new dataset**). New England (VT/NH/ME/MA) is fully tiled by towns; county
@@ -503,7 +503,7 @@ userId: ref(profiles)
 waterBodyId: ref(waterBodies)
 createdAt: timestamp
 ```
-> **Purpose (Phase 04):** you subscribe to *lakes you care about*, not to people (D13). A favorite
+> **Purpose (Phase 04):** you subscribe to *water bodies you care about*, not to people (D13). A favorite
 > **notifies by default** (`favoriteReport`), gets a **feed prominence boost** (exempt from the distance
 > filter, but still obeys quality/snow/recency filters), and is **highlighted on the map**. Indexed
 > `by_user` (my favorites) **and** `by_water_body` (the notification fan-out: who favorited this body?).
@@ -529,7 +529,7 @@ createdAt: timestamp
 > point can be mid-lake/on-ice, so derived markers are *approximate*. `official` markers are **admin-set**
 > from the Phase-07 operator surface (accurate; priority styling). A **moderator hide is per-coord**
 > (a `hidden` row / suppression entry) so one action kills the marker regardless of how many reports feed
-> it, plus a `moderationActions` audit row. **Directions** deep-link (Apple/Google) from the lake detail
+> it, plus a `moderationActions` audit row. **Directions** deep-link (Apple/Google) from the water body detail
 > **drawer button** target a put-in `coord`, **never** the on-water `waterBodies.centroid`.
 > **Amended by A06d (D72): directions target the `parkingAreas` row when one exists, else the put-in.**
 > The old rule was right about what to avoid (the on-water centroid) and wrong about what to aim at — for
@@ -820,7 +820,7 @@ uploaderId: ref(profiles)
 caption?: string
 takenAt?: timestamp          // preserved from EXIF only if user opts in (D42)
 coord?: { lat, lng }         // preserved from EXIF only if placeOnMap == true (D42)
-placeOnMap: boolean          // opt-in: pin at coord on the lake map vs. report-only (D42)
+placeOnMap: boolean          // opt-in: pin at coord on the water body map vs. report-only (D42)
 createdAt: timestamp
 ```
 > **EXIF (D42):** all EXIF is stripped client-side during the D31 optimize pass. Only
@@ -923,7 +923,7 @@ longAxisDeciles: number[]
 bodyCount: number            // how many bodies the deciles were computed over
 computedAt: timestamp
 ```
-> **One row per state, not a percentile per body.** The generated lake caption wants to say *"among the
+> **One row per state, not a percentile per body.** The generated water body caption wants to say *"among the
 > deepest in Vermont"*, which needs a corpus-relative basis — but storing a percentile on each body would
 > mean **116,070 rewrites every import**, since every percentile shifts when the corpus does. Deciles
 > invert that: recompute ~5 rows at the end of each state's import, and every caption reads them at render
@@ -936,7 +936,7 @@ computedAt: timestamp
 
 ## Vocabulary  (✅ confirmed — community/official terms)
 
-**Water body `type`:** lake · pond · river · stream · reservoir · bay · marsh · other
+**Water body `type`:** water body · pond · river · stream · reservoir · bay · marsh · other
 
 **`iceTypes`** (what the ice *is*):
 - `black_ice` — clear, new, strong (the good stuff)
@@ -1106,7 +1106,7 @@ profiles 1─* pointEvents
     draws at* (D49 `minVisibleZoom`). That ceiling is what makes a zoom-filtered query provably
     complete — an object is never indexed finer than the zoom it appears at.
   - **Viewport semantic (unchanged, now exact): a body is "in view" when its `bbox` intersects the
-    viewport**, not when its centroid is inside it — a large lake can fill the screen with its
+    viewport**, not when its centroid is inside it — a large water body can fill the screen with its
     centroid off-screen. Because a body is in *every* cell it covers, this needs no margin and no
     large-body special case; candidates are refined with `bboxIntersects` from `@skating/core`.
   - **`listed` (D48) decides whether a body is indexed at all.** A removed / rejected / merged body
@@ -1136,7 +1136,7 @@ profiles 1─* pointEvents
 - **Suggested indexes:** `reports` by `waterBodyId + skateTime`, by `authorId`;
   `hazards` by `waterBodyId + status`;
   `gpsActivities` by `provider + providerActivityId` (unique, dedup), by
-  `waterBodyId` (per-lake skate history + bounty eligibility, D44) and by
+  `waterBodyId` (per-body skate history + bounty eligibility, D44) and by
   `waterBodyId + startTime` (the season-scoped aggregate-tracks layer, A05a — `by_water_body` orders
   by creation, so a season filter after a `.take()` would be a filter over the newest *rows* and last
   season's would fill the window while this season's silently didn't draw); `comments`
@@ -1148,9 +1148,9 @@ profiles 1─* pointEvents
   parent already in hand) plus a `search_subarea` index over a denormalized `searchText` carrying the
   aliases (A02/D60); `waterBodies` by `curatedBoost` (the curation list, A02 — a `> 0` range read costs
   the boosted rows and nothing else); `reports` by `subAreaId + moderationStatus + skateEndTime` (the
-  sub-area-scoped bounty freshness gate **and** the lake page's report filter — moderation *in* the
+  sub-area-scoped bounty freshness gate **and** the water body page's report filter — moderation *in* the
   index, so hidden reports can't eat the cap, and a bay filter is a narrower read rather than the
-  whole lake paged and then thrown away);
+  whole water body paged and then thrown away);
   `contentFlags` by `status`, by `targetType + targetId`, and by
   `targetType + targetId + status + reason` (auto-flag bundling's open-row lookup, A02 — see the table
   note for why a capped scan of the history is wrong in both directions); `reportRatings` by
@@ -1180,7 +1180,7 @@ profiles 1─* pointEvents
 - **User-created location dedup** → match-on-create + soft-tombstone merge, v1
   moderator queue (D36); fields `dedupStatus` / `mergedIntoId` / `duplicateCandidateIds`.
 - **GPS activity → water body** → resolved `waterBodyId` on `gpsActivities` at ingest
-  (D44) so skates are findable by lake identity, not by geospatial area.
+  (D44) so skates are findable by water body identity, not by geospatial area.
 - **Photo EXIF / geotag** → strip all EXIF on upload; preserve timestamp + coord only
   on opt-in; `placeOnMap` gates spatial pinning and coord retention (D42).
 - **Age gate & report/profile privacy** → 16+ minimum (DOB stored, age/minor status derived, D41);

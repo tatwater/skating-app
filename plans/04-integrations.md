@@ -49,7 +49,7 @@ Two ingestion patterns:
 
 All normalize to our canonical "ice skate" concept + `gpsActivities` (D24). At ingest,
 each activity's trusted path is **spatially resolved to the water body it was on** and
-that `waterBodyId` is stored (D44) — so a skate is findable by **lake name/ID**, not by
+that `waterBodyId` is stored (D44) — so a skate is findable by **water body name/ID**, not by
 geospatial area ("5 miles on Lake Morey", not "5 miles somewhere near here").
 
 **Canonical activity-type mapping** (verify each against current provider docs):
@@ -230,7 +230,7 @@ a **build-time acceptance criterion**, the same class of obligation as "Powered 
   `epqs.nationalmap.gov` — no key, no quota shared with the product's weather crons, and **98.2% of the
   corpus at 1 m LiDAR** against Copernicus GLO-90's 90 m. Kept below as the reasoning for why we left.
 - **Also Open-Meteo, no account:** the **elevation endpoint** (`/v1/elevation`, Copernicus GLO-90 DEM,
-  batched coordinates) — A06c's lake-elevation pass, ~1,200 requests for all 116,070 centroids.
+  batched coordinates) — A06c's body-elevation pass, ~1,200 requests for all 116,070 centroids.
 
 ### The short forward forecast — same call, same quota (A06c/B5b, D140) ✅ **BUILT 2026-08-09**
 
@@ -253,7 +253,7 @@ a **build-time acceptance criterion**, the same class of obligation as "Powered 
   header identifying the app; rate limits are unpublished (retry a 429 after ~5 s), and their docs warn a
   key **may** be required in future.
 - Use: **official alerts only** — winter-storm, ice-storm and wind-chill warnings from the local forecast
-  office, rendered as a labelled, attributed advisory strip on the lake drawer.
+  office, rendered as a labelled, attributed advisory strip on the water body drawer.
 - **The boundary is the decision (D74): Open-Meteo computes, NWS informs.** Open-Meteo stays the single
   source for anything feeding a calculation, because the D56 decay math depends on one deterministic,
   re-fetchable input — a multiplier you cannot reproduce is one you cannot debug or refit. **Never blend

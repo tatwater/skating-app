@@ -9,7 +9,7 @@
 > **Depends on:** A07a's `includedByRequest` field and `belongsInCorpus` predicate — **both landed
 > 2026-08-03**, deliberately ahead of this phase, because without them A07a's own prune deletes
 > exactly the bodies this feature admits.
-> **Reuses:** A02's lake-editor review queue, Phase 08's `pathToBody`, the archive lane in
+> **Reuses:** A02's body-editor review queue, Phase 08's `pathToBody`, the archive lane in
 > `scripts/etl`.
 > **Decisions:** D106–D108 (requests, proposed here, PR 2); **D176–D178 decided and built 2026-09-16**
 > (standing, retention, prunes-demote — see *§What PR 1 built*). The L1 draft below proposed a
@@ -50,7 +50,7 @@ skate this" is evidence, and a threshold invented at a desk is not.
 **Proposed.** A user long-presses (mobile) or right-clicks (web) on water that has no body, and picks
 **"This is skateable"**. That writes a request — a coordinate and a requester — and nothing else.
 
-**The user never draws the polygon.** A02's lake editor exists for hand-drawing and stays for the cases
+**The user never draws the polygon.** A02's water body editor exists for hand-drawing and stays for the cases
 where nothing else works, but a hand-drawn outline is worse in every measurable way than the one OSM
 or NHD already holds: less accurate, no `nhdId`, no path to depth or contours, and no provenance. The
 request's job is to say *where*, not *what*.
@@ -131,7 +131,7 @@ holds a *local* draft id (the track often hasn't flushed yet). Its "add it from 
 **A06f removed that blocker.** `UnreportedSkates` in the You tab is `listMine`-backed, so every row
 carries a server `activityId`, and an unmatched skate now renders this line instead of a dead button:
 
-> *"We couldn't match this to a lake we know, so there's nothing to report it against yet."*
+> *"We couldn't match this to a water body we know, so there's nothing to report it against yet."*
 
 **That sentence is this phase's to delete.** Replacing it with `<NewWaterPrompt activityId={…} />` is
 the smallest honest version of D108 — the resolver and the admission flow are still the real work, but
@@ -166,7 +166,7 @@ rows. It is already honoured: the prune's attachment check covers reports, hazar
 which is where it belongs.
 
 **But at the moment of admission there is no report and no track.** That is the entire point — someone
-is asking for a lake they *want* to skate. Protect it only by use, and the next prune deletes it
+is asking for a water body they *want* to skate. Protect it only by use, and the next prune deletes it
 before anyone can use it.
 
 The second reason is the one running through all of A07a: **prominence gets tuned.** D2 weights,
@@ -201,7 +201,7 @@ push surface; `isListed` (Convex) now means *reachable* and a removed body is li
 body draws at `DORMANT_MIN_VISIBLE_ZOOM` (z16), past the D49 floor; A06f's −2-zoom penalty is gone.
 
 **The transition** (`convex/lib/standing.ts`): `transitionStanding` is the one write — re-score with
-richness, cell rows, sub-area cells (a bay follows its lake's *active* standing), weather registry
+richness, cell rows, sub-area cells (a bay follows its water body's *active* standing), weather registry
 membership, `activatedAt`, audit row. `activateBody` / `demoteBody` / `activateOnEvidence` wrap it.
 `remove`, `restore` (now an activation), `setPublicAccess` (`none` ⇒ dormant, `open` ⇒ activation
 that clears a stored dormancy too), `setCuratedBoost` (a positive boost on a shelved body brings it
@@ -231,7 +231,7 @@ list from the destination shortlist and the design-corpus gazetteer and drives t
 
 **Clients:** `StandingNotice` under the drawer title (both), the map's `inactive` property from
 `isActiveRow` (both), *Inactive* on search hits (both), bounty composer hidden off-active, the About
-page's per-state *known · active* pair. Web admin: the lake editor's Listing card is now *Standing*;
+page's per-state *known · active* pair. Web admin: the water body editor's Listing card is now *Standing*;
 `/admin/water/standing` lists the lanes and recent activations.
 
 ### The regression net
@@ -250,16 +250,16 @@ precedence, the retention arithmetic and the copy.
   deferred to keep PR 1 to the model. `activatedAt` + `listRecentActivations`' *missing* column are
   the hooks.
 - **The attachment matrix as a document.** The cells the model changed are stated in D176/D177
-  (a removed body's reports attach, reach no push surface; bays follow the lake; favourites on
+  (a removed body's reports attach, reach no push surface; bays follow the water body; favourites on
   dormant yes / removed no; tracks hidden on removed). The rest — comments, photos, access alerts,
   notification-queue rows — behave as before and were not audited cell by cell.
-- **Mobile moderator controls.** Standing is set from the web editor, like every other lake edit.
+- **Mobile moderator controls.** Standing is set from the web editor, like every other water body edit.
 
 ### PR 2 — requests (built the same day; D179)
 
 **Model** (`@skating/core` `corpusRequests.ts`, `convex/corpusRequests.ts`, `waterBodyRequests`
 table): five kinds — `activate` · `admit` · `restore` · `contest_access` · `takedown` — with
-`requestKindsFor(standing)` deciding which a lake admits; `create` (one open ask per person per lake
+`requestKindsFor(standing)` deciding which a water body admits; `create` (one open ask per person per water body
 per kind, ten open per person; an `admit` at a point we already hold is refused with `known_water`
 + the body and its standing); `resolveAdmit` (an action: one fetch of the 3DHP waterbody layer,
 parsed by `parseCatalogueResponse` — smallest containing polygon, classified, with provenance;
@@ -272,17 +272,17 @@ misses and outages recorded on the row, `reresolve` for a moderator); `listMineF
 
 **Clients:** `RequestButtons` under `StandingNotice` (both), `AdmitPrompt` on long-press (mobile,
 MapLibre RN `onLongPress`) / right-click (web, `contextmenu`) — it resolves the coordinate first and
-hands off to a lake we hold; `NewWaterPrompt` mounted in `UnreportedSkates` behind *Add it from your
-track*, its matches carrying standing, `removed_water` attaching the skate to the removed lake;
+hands off to a water body we hold; `NewWaterPrompt` mounted in `UnreportedSkates` behind *Add it from your
+track*, its matches carrying standing, `removed_water` attaching the skate to the removed water body;
 `/admin/water/requests`. Dialog copy is `requestPrompt` in core.
 
 **Tests:** core `corpusRequests.test.ts` (10: kinds by standing, the query URL, the parser's four
 outcomes); Convex `corpusRequests.test.ts` (15: every kind's guards, the resolver record, each
 approval's effect including the admit insert and the no-twin rule, the queue, the D48 edge).
 
-**Not built:** a notification to the requester (in-app on the lake instead — see D179); a You-tab
+**Not built:** a notification to the requester (in-app on the water body instead — see D179); a You-tab
 list of one's own `admit` asks (`listMine` exists, no surface yet); the archive-lane fallback script
-for a service outage (the lake editor's hand-draw is the fallback today).
+for a service outage (the water body editor's hand-draw is the fallback today).
 
 ---
 
@@ -321,18 +321,18 @@ campaign. That test is the first thing this workstream should write.
 
 **The founder's read** ([A06h](./A06h-weather-detail.md), open questions): a moderator-confirmed
 `none` should *"eventually remove a body from the corpus rather than have every query learn to skip
-it — the ideal situation eventually (way down the line) would be managing 5,000 lakes that actually
+it — the ideal situation eventually (way down the line) would be managing 5,000 water bodies that actually
 get skated on, not 20,000 nobody ever touches."*
 
 **The scoped version, agreed 2026-09-16.** Deleting on a verdict is the wrong mechanism for the right
 goal. A06f's own argument for a third state — someone may hold a key, an invitation, or a landowner's
 word, and a ruling we got wrong is only corrected by someone who went anyway — is an argument
 against ever purging on it automatically. What the founder actually wants is narrower and better: a
-lake nobody can lawfully reach **stops being pushed at people**. So:
+water body nobody can lawfully reach **stops being pushed at people**. So:
 
 > **D175 (proposed) — A `none` verdict removes a body from every *discovery* surface and from no
 > *reference* surface.** One core predicate, `isDiscoverable(body)` ≡ `isListed(body) ∧
-> !isNoPublicAccess(body)`, applied to every surface that *recommends* a lake and to nothing a
+> !isNoPublicAccess(body)`, applied to every surface that *recommends* a water body and to nothing a
 > skater navigates to on purpose. Removal from the corpus stays a human act with a reason (D48).
 
 | Filter — these *push* | Leave — these are *reference* |
@@ -353,9 +353,9 @@ fan-out, and should not ride a feature phase.
 and is preserved through re-import. The only new lever worth building is a **purge-candidate list**
 in the admin tree: bodies with `none` standing **and** zero reports for N seasons (A05a boundaries),
 surfaced for a moderator to act on one at a time — a queue, never a cron. That gives the founder the
-"5,000 lakes" trajectory without a machine ever deciding a lake is gone.
+"5,000 water bodies" trajectory without a machine ever deciding a water body is gone.
 
-**Not in L1:** a notification copy change for `content_flag_resolved` on a lake (A06f follow-up
+**Not in L1:** a notification copy change for `content_flag_resolved` on a water body (A06f follow-up
 finding 5 — founder call pending); a `none` body's hazards and reports, which stay exactly as they
 are.
 
@@ -401,7 +401,7 @@ Unmeasured until the feature has users.
 
 **What the requested set will look like.** It skews toward wherever people happen to be, which is not
 the same as what is skateable — so this **complements** the named gap-fill rather than replacing it. A
-lake nobody has tapped stays invisible either way.
+water body nobody has tapped stays invisible either way.
 
 **Whether declines should be visible to the requester.** Telling someone "no" costs goodwill; telling
 them nothing costs more. Not decided.

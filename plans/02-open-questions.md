@@ -20,9 +20,9 @@ proposed AI classifier (on email content, not Strava data) routes each message �
 comment vs. new report. See `04-integrations.md`.
 **Status:** desired; feasibility + ToS research needed.
 **Partly routed around, 2026-07-30 (D71).** A06c ships a **pre-canned search link** into the regional
-community for the lake you're looking at, derived from `states[]`. That is *not* ingestion and does not
+community for the water body you're looking at, derived from `states[]`. That is *not* ingestion and does not
 touch this gate: we store nothing, republish nothing, and the skater arrives on the community's own site
-under its own terms. It delivers a slice of what Q8 wants — the archive's answer about *this* lake — at
+under its own terms. It delivers a slice of what Q8 wants — the archive's answer about *this* water body — at
 zero legal exposure, and it doubles as the bridge the founder asked for while people migrate. **Q8 stays
 open** for the thing the link can't do: turning those posts into in-app reports that feed search, decay
 and the feed.
@@ -83,8 +83,8 @@ that it would be *derivable*. The unlock came from somewhere else entirely — O
 slipways, parking, toilets and trails in the extract we download for water polygons, so the corpus signal
 and the data source were sitting one `osmium tags-filter` pass apart for four months.
 
-### ~~S2 — Big lakes are named by sub-area, spelling varies~~ → **D60** (A02, 2026-07-26)
-Large lakes are referred to by named arms/bays and nicknames, not the parent name: Lake Champlain's
+### ~~S2 — Big water bodies are named by sub-area, spelling varies~~ → **D60** (A02, 2026-07-26)
+Large water bodies are referred to by named arms/bays and nicknames, not the parent name: Lake Champlain's
 **Malletts Bay** appeared under **10 spellings** (Malletts/Mallets/Mallett's + Inner/Outer), and the
 NE arm as **"Inland Sea"** (55).
 
@@ -96,7 +96,7 @@ curation session*).
 **Checked and closed, not carried forward:** the obvious next worry — that the same problem exists
 one level up, since the corpus says "Saranac Lake" and OSM carries *Upper*, *Lower* and *Middle* —
 turned out not to be a problem. Searching "Saranac Lake" already returns all three, and they are
-genuinely distinct lakes rather than one body under three names, so an alias would have bound the
+genuinely distinct water bodies rather than one body under three names, so an alias would have bound the
 name to an arbitrary one of them. What that check *did* find is a real gap: **no rivers in the
 corpus at all** (see the A02 doc's *Open after this phase*).
 
@@ -130,10 +130,10 @@ corpus at all** (see the A02 doc's *Open after this phase*).
 - **Privacy/safety → D41/D42/D45** — 16+ age gate & derived visibility defaults;
   EXIF strip + geotag opt-in; signup assumption-of-risk ack.
 - **License → D43** — AGPL-3.0 + App Store / Play distribution exception.
-- **Skate→lake → D44** — GPS activities resolved to a `waterBodyId` (findable by lake).
+- **Skate→water body → D44** — GPS activities resolved to a `waterBodyId` (findable by water body).
 - **S1 → D72/D73** — Access is two questions, not one: parking is modelled apart from put-ins and
   directions route to the car; access blockers decay like hazards instead of sitting in a note that rots.
-- **Lake-profile content → D70/D71** — derived or third-party, never hand-maintained; reference links are
+- **Water-body profile content → D70/D71** — derived or third-party, never hand-maintained; reference links are
   generated at render time, which is what gives all 116,070 bodies coverage instead of a curated few.
 - **Weather providers → D74** — Open-Meteo computes, NWS informs; never blended.
 - **Satellite imagery → D75, then D81/D84** — the deferred layer's blocker was a licence question, and

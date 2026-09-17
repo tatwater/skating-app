@@ -34,6 +34,6 @@
 ## When it becomes a phase
 
 Once at least one approval lands, this is a `B`-era phase: the shared adapter shape (normalize any
-track → `gpsActivities`, resolve to lake, link to report — the B spine Phase 08 already built), one
+track → `gpsActivities`, resolve to water body, link to report — the B spine Phase 08 already built), one
 provider at a time, HealthKit first because it needs no approval. Not before — building adapters
 against APIs we can't call is the speculative work the register exists to hold back.

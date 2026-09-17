@@ -21,7 +21,7 @@ accurate a record of that day as it was the day it was posted. So reports are:
 - **Always public** — there is no visibility field (D13).
 - **Never archived, and never hidden by age, score or anything else *within a season*** — the
   one exception is the seasonal boundary, which is a change of *default view* rather than of
-  the report, and which is described [below](#age-framing-3--the-season-boundary-n5ad63). Contrast a
+  the report, and which is described [below](#age-framing-3--the-season-boundary-a05ad63). Contrast a
   hazard, which genuinely fades and can be archived.
 - **Sorted, not decayed** — everything orders by `skateEndTime`, "when the skater left the ice,"
   the freshest read of the ice.

@@ -19,7 +19,7 @@ corrections make this phase **more** consequential rather than less.
 
 The map's sources are `water`, `sub-areas`, `photo-pins`, `put-in-pin`, `put-in-markers`,
 `bounty-pins`, `hazards`, `tracks`, `body-features`, `hazard-draft`. There is no report layer. Reports
-live in the **feed** and the **lake drawer's list**; what reaches the map *from* a report is its
+live in the **feed** and the **water body drawer's list**; what reaches the map *from* a report is its
 **put-in marker**, its **track**, and its **photo pins** while it's open.
 
 So "previous seasons on the map" decomposes into three different things with three different answers:
@@ -36,7 +36,7 @@ The put-in exemption needs saying out loud because it's a trap in the implementa
 `putIns.listForBody` derives its markers by reading **reports**. Season-scope the report read
 carelessly and put-ins silently narrow with it — losing exactly the thing the founder asked to keep.
 
-Reports themselves are still season-scoped, in the feed and the lake list. That's most of the felt
+Reports themselves are still season-scoped, in the feed and the water body list. That's most of the felt
 change; it just isn't a map change.
 
 ### Correction 2: hazards never age out — they accumulate forever
@@ -87,9 +87,9 @@ this phase's job is to make that pass easy rather than to invent a parallel resu
 > admin surface has to say so, and this phase ships the list that makes it possible: last season's
 > hazards ranked by likelihood of recurrence (confirm count, decay tier, type), promote one click away.
 
-**4. The season filter lives on the water body, not globally.** A jump control in the lake detail
+**4. The season filter lives on the water body, not globally.** A jump control in the water body detail
 drawer/page: *This season · '25/'26 · '24/'25 …*. Past-season browsing is a curiosity ("what was this
-bay like in December?"), not a safety surface, so it belongs where you're already asking about one lake
+bay like in December?"), not a safety surface, so it belongs where you're already asking about one water body
 and nowhere near the map's default state.
 
 **5. A departed user's content is redacted, not erased** (D62 **second** amendment, founder call the
@@ -168,7 +168,7 @@ conversation, and the second reversed the first's premise.
 
 *The first:* A03/A04 shipped the 30-day window as "fully functional — sign in, post, and cancel".
 Reading decision 5 back exposed the flaw: if someone can post until the final hour, their newest and
-most relevant report is erased a month later while it's still the freshest thing on the lake.
+most relevant report is erased a month later while it's still the freshest thing on the water body.
 
 *The second, and the bigger one:* the window shouldn't preserve the **person** either. Someone who
 asks to be deleted should stop existing on the platform then and there. So the request now really
@@ -221,7 +221,7 @@ are reachable only through the season selector and the admin promotion list.
 > Seasons ask *"when was this first seen?"* — a clock nobody can move. Two questions, two fields; the
 > code has to say so at both sites or someone will "fix" one to match the other.
 
-**2. The season selector governs the whole lake view** — list, hazards *and* tracks, map included. A
+**2. The season selector governs the whole water body view** — list, hazards *and* tracks, map included. A
 re-listed sidebar over a current-season map would put two seasons on screen at once, which is precisely
 the confusion this phase exists to end.
 
@@ -234,7 +234,7 @@ a divider that says so. Labelled is what keeps it honest; silently mixing is wha
 about the state of the ice. It's also the index `lib/contentPurge` sweeps — see the build note.
 
 **5. The two D64 constants.** Expiry gets its **own 72-hour window** rather than reusing `agingH: 36`,
-so "faded" and "gone" aren't the same instant and a weekday-quiet lake doesn't lose its Sunday
+so "faded" and "gone" aren't the same instant and a weekday-quiet water body doesn't lose its Sunday
 crossing by Monday night. **Two** independent confirmations to stop being provisional, against every
 hazard's one — that's what "more corroboration" is, literally double.
 
@@ -262,7 +262,7 @@ then reconciling the two.
 `@skating/core` gains the vocabulary — `SEASON_START_MONTH`, `seasonOf(ms)`, `seasonStartMs(season)`,
 `formatSeason(season)` → `'24/'25` — and every seasonal read takes a lower bound derived from it.
 
-**Scoped:** the lake report list, the global feed, aggregate tracks (via the linked report's
+**Scoped:** the water body report list, the global feed, aggregate tracks (via the linked report's
 `skateEndTime`), per-body hazards, and the offline cache (already windowed; the season bound only
 tightens it).
 
@@ -278,7 +278,7 @@ tightens it).
 After this phase a hazard can be hidden for two unrelated reasons: it's **stale** (nobody has checked
 recently, within this season) or it's **from another season**. These mean different things and should
 not collapse into one control — "show older" answers *"has anyone verified this lately?"*, the season
-selector answers *"what did this lake look like last winter?"*. Conflating them would make the first
+selector answers *"what did this water body look like last winter?"*. Conflating them would make the first
 one silently mean the second in July.
 
 ### Departed-user redaction
@@ -385,10 +385,10 @@ is *for*.
 
 **Seasonal scoping is what turns hazards into a per-season historical record.** Today a hazard is a
 single mutable row with no season semantics — `lastConfirmedAt` moves, `status` flips, and the question
-*"which hazards existed on this lake in '24/'25?"* has no answer you can query. Once season is a
+*"which hazards existed on this water body in '24/'25?"* has no answer you can query. Once season is a
 derived, first-class dimension, it does. Repeat that across seasons and a new class of question opens:
 
-> *This lake has had a pressure ridge within ~80 m of this point in 3 of the last 4 seasons, always
+> *This water body has had a pressure ridge within ~80 m of this point in 3 of the last 4 seasons, always
 > between late December and February.*
 
 That is the substrate for two things the founder wants:
@@ -450,7 +450,7 @@ clean. Six things came out of the build that the design hadn't reached.
 **1. Tracks needed an index, and the reason is the A01 bug class.** The design says the aggregate layer
 is scoped "via the linked report's `skateEndTime`". `gpsActivities` has no time index at all —
 `by_water_body` orders by creation — so that could only have been a filter over the newest 200 *rows*,
-and on a lake with more than that in lifetime tracks last season's would fill the window while this
+and on a water body with more than that in lifetime tracks last season's would fill the window while this
 season's silently didn't draw. `by_water_body_start_time` bounds it in the index instead, on the
 activity's own `startTime`: it differs from the linked report's `skateEndTime` by the length of one
 skate, and the boundary is the one week of the year no skate spans.
@@ -461,11 +461,11 @@ label is derived from the cards instead, which works because the server bounds *
 so the first card answers for all of them. The server fields stay: they're what the tests assert, and
 they're the only way to know the served season when the page is empty.
 
-**3. The season had to be shared state, not drawer state.** The selector lives in the lake drawer; two
+**3. The season had to be shared state, not drawer state.** The selector lives in the water body drawer; two
 of the three things it governs (hazard pins, aggregate tracks) are drawn by the map behind it. A local
 `useState` would have moved the list to last December and left this winter's ice on screen — two
 seasons on one screen, which is the confusion this phase exists to end. It goes through
-`MapSelectionContext` on both clients, and resets on lake change *and* on unmount, because the map
+`MapSelectionContext` on both clients, and resets on water body change *and* on unmount, because the map
 outlives the drawer.
 
 **4. The on-ice banner reads the same query and must never be told about browsing.** `HazardBanner`'s
@@ -530,13 +530,13 @@ every public `still_there` voter, so the drawer could print more names than the 
 print the reporter as their own corroborator one line under *"reported by"* them. The vote is real and
 a moderator should see it, so `listForHazard` flags it as `isAuthor` rather than dropping it.
 
-**5. `listPromotionCandidates` collected a lake's entire hazard history.** `by_water_body` has no status
+**5. `listPromotionCandidates` collected a water body's entire hazard history.** `by_water_body` has no status
 or time key, so this was an unbounded read — on the one table this phase's own design note points out
 *never ages out*. Bounded to the newest 500, which is where last season's rows are, and it logs when the
 cap bites so it can't be the silent kind.
 
 **6. Two smaller ones.** `season` arrives as a bare `v.number()`, so `NaN` or `1e15` became index bounds
-matching nothing and rendered an empty lake — which reads as *"nobody skated here that winter"* rather
+matching nothing and rendered an empty water body — which reads as *"nobody skated here that winter"* rather
 than as a malformed request; `resolveSeason` lands those on the same default as no argument at all.
 And `applyConfirmation`, the offline optimistic path, had no `isPassage` option, so it could never
 reach `disputed`: a skater casting *"ridge closed here"* saw nothing change until the next sync, on the
@@ -638,7 +638,7 @@ the observation.
 > back into one transaction to match the sentence.
 
 **Both hiding controls stay.** "Show older" answers *"has anyone verified this lately?"*; the season
-selector answers *"what did this lake look like last winter?"*. Collapsing them would make the first
+selector answers *"what did this water body look like last winter?"*. Collapsing them would make the first
 silently mean the second come July, and the within-season distinction between a hazard confirmed
 yesterday and one untouched since November is exactly what D3's decay model exists to draw.
 
@@ -740,7 +740,7 @@ the empty state needs no special caveat — noted so the next person doesn't red
 ## Open questions
 
 - ~~**Whether the reset needs an announcement.**~~ **Answered at kickoff, and the answer was bigger
-  than the question.** No announcement: the empty state carries it, on the lake ("no reports yet this
+  than the question.** No announcement: the empty state carries it, on the water body ("no reports yet this
   season" plus the season selector) and in the feed — where the honest empty state turned out to be a
   **labelled fallback to last season**, because the feed doesn't go blank for a day in July, it goes
   blank until first ice. See kickoff decision 3.
@@ -770,7 +770,7 @@ hazards easy to bring back.
 Worth stating because it surprised the register: **nothing in the app expires today.** `reportFreshness`
 (D59) is an *opacity* multiplier, not a visibility gate, and the only age cutoffs anywhere are the
 offline-cache window and the 48-hour `recommended` strip — so a report from the 2024/25 season still
-renders in a lake's drawer, at ~0 opacity, with its GPS path still on the aggregate map.
+renders in a water body's drawer, at ~0 opacity, with its GPS path still on the aggregate map.
 
 - **A season is July 1 → June 30**, labelled `'24/'25`. **Derived, never stored** — no column, no
   backfill, no cron, nothing to drift. `skateEndTime` is already the range field of three existing
@@ -813,7 +813,7 @@ renders in a lake's drawer, at ~0 opacity, with its GPS path still on the aggreg
 **Two premises the code check falsified**, both making the phase *more* consequential:
 - **Reports don't draw on the map at all** — there is no report layer. What reaches the map from a
   report is its put-in marker, its track and (while open) its photo pins. So the map half of this is
-  **tracks + hazards**; reports are season-scoped in the *feed and lake list*. Put-ins are deliberately
+  **tracks + hazards**; reports are season-scoped in the *feed and water body list*. Put-ins are deliberately
   exempt, and the trap is that `putIns.listForBody` derives them by reading **reports** — scope that
   read carelessly and put-ins vanish with it.
 - **Hazards never age out.** `deriveHazardLifecycle` archives on community "fully healed" votes only;

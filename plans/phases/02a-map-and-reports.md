@@ -17,13 +17,13 @@ rationale lives in the decisions log (D3, D4, D6, D9, D13, D14, D20, D22–D25, 
 D41, D42, **D49**); this doc is the *how* — ordered workstreams, file-level changes, and the
 test plan.
 
-> **Goal.** Turn the read-only Phase 01 map into the usable MVP: a skater taps a real lake, reads
+> **Goal.** Turn the read-only Phase 01 map into the usable MVP: a skater taps a real water body, reads
 > its peer reports (newest **skate time** first), and **posts their own** — ice types, surface,
 > quality, thickness, photos, conditions, visibility. Plus the one thing that makes the map usable
 > at scale: **D49 zoom-scored display prominence**.
 >
 > **This is the usable MVP** — the "Done" line of the roadmap: *friends can post and read reports
-> on real lakes.* The pilot region's OSM corpus (9,967 Vermont bodies, imported in Phase 01) covers
+> on real water bodies.* The pilot region's OSM corpus (9,967 Vermont bodies, imported in Phase 01) covers
 > the alpha crew's destinations, so **user-created water bodies are deferred to Phase 08** (see Scope)
 > — the MVP reads and writes reports on the *canonical* corpus.
 
@@ -51,7 +51,7 @@ test plan.
   filter key** so `listInViewport` filters `minVisibleZoom <= zoom` **inside the query** (not a
   post-fetch refine). This is the *real* fix for the Phase 01 soft-cap truncation stopgap: at wide
   zoom the query returns the *few prominent* bodies instead of an arbitrary read-capped slice, so a
-  small-but-beloved lake (Lake Morey, via `curatedBoost`) is guaranteed to appear (see Workstream 2).
+  small-but-beloved water body (Lake Morey, via `curatedBoost`) is guaranteed to appear (see Workstream 2).
 - **Water-body detail** — name, area (imperial display), report feed sorted by skate time; report
   creation surfaced **in place** (D47), not a separate top-level route.
 - **Reports (create + read, online)** — full ice description (ice types, surface tags, coarse
@@ -270,11 +270,11 @@ migration-free optional fields.
   **URL-backed at `/water/$id`** so selection is deep-linkable (see "Settled during review"). Shows
   name, `formatAreaAcres`, the `listByWaterBody` feed, and a "Create report" affordance surfaced in
   place (D47) — not a separate top-level page. A `/water/$id` that `get` resolves through
-  `mergedIntoId` **silently lands on the survivor** (bad/old link still ends at the right lake); a
-  removed/unavailable body shows a friendly "this lake isn't available" state instead of a blank.
+  `mergedIntoId` **silently lands on the survivor** (bad/old link still ends at the right water body); a
+  removed/unavailable body shows a friendly "this water body isn't available" state instead of a blank.
 - **Report read** — likewise a drawer/panel, **URL-backed at `/report/$id`** (deep-linkable):
   render a report (all fields, imperial via units.ts), its photos (thumbs + full), author, skate
-  time; photo **pins on the lake map** when `placeOnMap` (D42). *(Comments are Phase 03 — omitted.)*
+  time; photo **pins on the water body map** when `placeOnMap` (D42). *(Comments are Phase 03 — omitted.)*
 - **Tests:** the pure `waterMap.ts`-style helpers stay unit-tested; component tests (Vitest +
   Testing Library) for detail rendering + imperial formatting; the imperative MapLibre shell stays
   excluded from coverage (Phase 01 precedent).
@@ -386,7 +386,7 @@ web-only glue stays in web: the datetime-**local** `<input>` round-trip and the 
 > `distanceToPolygonMeters` / `nearestBodyForPoint`, and `draftQueue.ts` (draft record + status
 > machine + checkpointed idempotent `flushDraft` + transient/permanent classification), both
 > property/unit-tested. Convex: additive `reports.idempotencyKey?` + `by_idempotency_key` +
-> idempotent `create`, and `waterBodies.resolveBodyForCoord` (coord→lake, reuses the geospatial
+> idempotent `create`, and `waterBodies.resolveBodyForCoord` (coord→water body, reuses the geospatial
 > lookup + the shared ranker), with `convex-test`s. Mobile (native glue, typechecked; emulator pass
 > pending): `bodyCache` (Layer-2 LRU + GPS auto-select), `draftStore`/`draftPhotos`/`flushService`,
 > `OfflineDraftsContext` (NetInfo/foreground/manual flush), `ReportForm` draft mode (save/hydrate/
@@ -396,7 +396,7 @@ web-only glue stays in web: the datetime-**local** `<input>` round-trip and the 
 > **Design settled 2026-07-15 (this build).** §6.2 + §7 share **one PR off `main`, dev-only** (prod
 > still uninitialized). The offline story splits into three layers with very different cost/risk;
 > **§6.2 ships Layers 1–2; Layer 3 (offline basemap tiles) is deferred to Phase 09a** (documented in
-> `07-roadmap.md`). Key reframe: report capture needs only *which lake* + GPS, **not** a visible
+> `07-roadmap.md`). Key reframe: report capture needs only *which water body* + GPS, **not** a visible
 > basemap — so the map dependency drops out of F2 entirely.
 
 - **Layer 1 — the draft queue.**
@@ -425,8 +425,8 @@ web-only glue stays in web: the datetime-**local** `<input>` round-trip and the 
     **transient** failure (network → auto-retry) from a **permanent** one (a `ConvexError` from
     `validateReportInput`, or the body was removed → park in `error`, surface to the user, don't
     loop). "Retry only the unsent" alone doesn't cover a draft the server *rejects*.
-  - **Multiple concurrent drafts are a real case:** a skater hops **several lakes in a day with no
-    signal**, one report per lake, all queued until reconnect. The queue is a **list**, not a single
+  - **Multiple concurrent drafts are a real case:** a skater hops **several water bodies in a day with no
+    signal**, one report per water body, all queued until reconnect. The queue is a **list**, not a single
     slot (unlike web's ephemeral form, §5).
   - **Flush triggers:** NetInfo reconnect **+ app-foreground + a manual "Sync now"**, all funneling
     through one idempotent flush routine (NetInfo transitions can be missed). Prompt to submit
@@ -437,10 +437,10 @@ web-only glue stays in web: the datetime-**local** `<input>` round-trip and the 
   - **On every `waterBodies.get`, cache the body's reference data** (polygon, centroid, name,
     `states`, bbox) in an **LRU sqlite cache (~50 bodies)** — polygons are tiny (avg ~600 bytes;
     Champlain worst-case ~tens of KB), so this is KBs, not MB.
-  - **Offline capture resolves the lake by GPS** (`expo-location`) against the cache via a new pure
+  - **Offline capture resolves the water body by GPS** (`expo-location`) against the cache via a new pure
     `@skating/core` **buffered `pointInPolygon`** — a tunable ~parking/approach radius (start
     ~300 m; tunable per the "don't bury constants" principle, D37/Phase 07) so **opening from the car
-    still selects the lake** (S1: access/put-ins are a dominant concern). Same primitive improves
+    still selects the water body** (S1: access/put-ins are a dominant concern). Same primitive improves
     the online map-open "you're at Lake X" framing and is the substrate Phase 09a hazard capture binds
     against.
   - **Gap-1 fallback (option A):** a draft stores `waterBodyId` when Layer 2 resolves it locally;
@@ -490,7 +490,7 @@ ships**; and the map-bounds widening is the *last* step (after the data lands), 
   want nothing south or west of NY (no lake-skating culture → clutter + storage cost). So pull
   **per-state Geofabrik extracts** (`us/new-york`, `us/vermont`, `us/new-hampshire`, `us/maine`,
   `us/massachusetts`) and process each; **clip the NY extract by bbox** to drop the NYC/Long Island
-  metro (roughly keep lat ≳ 41.3, and trim the SE corner) so downstate lakes never import.
+  metro (roughly keep lat ≳ 41.3, and trim the SE corner) so downstate water bodies never import.
 - **Water data (`scripts/etl`):** re-run the Phase 01 pipeline per state → `importCanonical` (each body
   D49-scored on insert; the loader paginates under the read cap). Record each extract's download date +
   md5 (per the ETL README). Corpus grows well past VT's ~9,970 bodies.
@@ -543,11 +543,11 @@ doc once web is proven:
 ## Settled during review (2026-07-13)
 - **URL-backed, deep-linkable selection (both surfaces).** Water-body selection and report views
   are presented as **drawers / side panels** in place (D47) — but their state lives in the **URL**
-  (`/water/$id`, `/report/$id`), not just local component state, so a user can **deep-link a lake
+  (`/water/$id`, `/report/$id`), not just local component state, so a user can **deep-link a water body
   or a report to another skater off-platform** (email forums, texts). This applies to **mobile too**
   (expo-router deep links), not just web. Tapping a body/report pushes the route; closing the drawer
   pops back to `/` (Map). Deep-linking is a first-class requirement here, not a nicety — the
-  community coordinates off-platform, so a shareable link to "this lake / this report" is core to
+  community coordinates off-platform, so a shareable link to "this water body / this report" is core to
   the value loop.
   - **Auth-gated for now (decided 2026-07-13).** A shared link still passes through the existing
     AuthGate — the recipient signs in (then onboarding/age-gate/risk-ack) before landing on the
@@ -581,7 +581,7 @@ doc once web is proven:
 
 - **Web report form is ephemeral; drafts are mobile-only.** No persisted web drafts (submit or lose,
   sidestepping orphan photos). The offline draft queue (§6) is the real draft feature and must hold
-  **multiple** concurrent drafts (a day of offline lake-hopping), not one.
+  **multiple** concurrent drafts (a day of offline body-hopping), not one.
 
 - **Photo-orphan cleanup is client-side + best-effort; a server-side GC is deferred (2026-07-15).**
   The report form uploads photos before `reports.create`, so a failed create, an abandoned form, or a
@@ -627,7 +627,7 @@ doc once web is proven:
   (from 1,197 real community posts — Champlain, Malletts Bay, Lake Morey, Button Bay, Colchester/
   Shelburne Pond, Burlington Bay, Lake Iroquois…). **Before using it, intersect with the bodies
   actually in the VT OSM import** — the seed's region tag is "which community discusses it," so it
-  includes NY/NH lakes VT skaters frequent (Lake George, Dillenbeck Bay) that won't exist in a
+  includes NY/NH water bodies VT skaters frequent (Lake George, Dillenbeck Bay) that won't exist in a
   VT-only import. Apply via a tiny admin action or one-off internal mutation.
   **→ Phase 07:** per-body `curatedBoost` must be **editable from the admin water-body surface**
   (set/adjust the boost on any body through the UI), not only via a seed script — same "don't bury
@@ -688,7 +688,7 @@ doc once web is proven:
 >
 > **Status (mobile §6.2 — offline draft queue, D30): ✅ shipped (2026-07-16, dev)** — capture a
 > report with no signal and it flushes on reconnect. `@skating/core` carries the pure heart: a
-> buffered `pointInPolygon` GPS→lake resolver and a checkpointed, idempotent flush state machine
+> buffered `pointInPolygon` GPS→water body resolver and a checkpointed, idempotent flush state machine
 > (transient-retry vs. permanent-park). On-device an `expo-sqlite` LRU caches recently-viewed body
 > polygons (Layer 2 — GPS auto-select offline, reused by Phase 09a), plus an `expo-sqlite` +
 > `expo-file-system` draft queue with NetInfo/foreground/manual flush; `reports.create` is idempotent
@@ -700,7 +700,7 @@ doc once web is proven:
 - MapLibre map (D6) with wintery style; home/water framing on open (D20).
 - **Zoom-scored display prominence (D49):** which bodies draw at a given zoom is a derived
   display score (area now; popularity + admin `curatedBoost` later), decoupled from the D48
-  `listed` gate — so a small-but-beloved lake (Lake Morey) can still show at state zoom while
+  `listed` gate — so a small-but-beloved water body (Lake Morey) can still show at state zoom while
   clutter drops. Phase 01 only stores `surfaceAreaSqM`; the score/threshold lands here.
 - Tap a water body → detail view (name, area, report feed by **skate time**).
 - Create + read a **report** (ice types, surface tags, coarse quality, structured
@@ -714,6 +714,6 @@ doc once web is proven:
   selector; it was removed in the D13 revision — reports carry no visibility now.)*
 - *(User-created water bodies + dedup **moved to Phase 08**, decided 2026-07-13 — the good version is
   GPS-path-backed, and the Vermont OSM corpus already covers the alpha. See Phase 08.)*
-- **Done:** friends can post and read reports on real lakes. *This is the usable MVP.*
+- **Done:** friends can post and read reports on real water bodies. *This is the usable MVP.*
 - Needs: MapLibre + tiles (Protomaps), Convex file storage.
 

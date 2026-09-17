@@ -30,8 +30,8 @@ observations at a specific time+place. We only *contextualize* aging reports
 ## D4 — Reports attach to water bodies, with in-polygon hazard geometry
 **Decided.** Reports are tied to a whole water-body polygon (OSM/NHD), *and*
 users can draw points/lines/shaded areas *within* the polygon to mark specific
-hazards. Lakes/ponds are thought of as whole units; rivers as segments.
-**Why:** Matches how skaters actually think ("the north half of the lake was
+hazards. Water bodies/ponds are thought of as whole units; rivers as segments.
+**Why:** Matches how skaters actually think ("the north half of the water body was
 skateable") while still capturing localized danger.
 
 ## D5 — Geo stack: renderer + tiles + routing + data are separate concerns
@@ -163,7 +163,7 @@ scoring feeds the Phase 07 merge queue, which until now had nothing flowing into
 
 ## D16 — Notifications are per-type toggleable
 **Decided.** Every notification type (Strava/GPS provider ice-skate detected, bounty request on
-a lake you skated, hazard-confirmation request, report you made was rated helpful, …) is
+a water body you skated, hazard-confirmation request, report you made was rated helpful, …) is
 individually mutable in user settings.
 **Why:** Avoid notification fatigue as the community grows.
 
@@ -269,7 +269,7 @@ of Strava's post-Nov-2024 terms** killed the pull model:
 - **The "cross-user map display is ToS-gated / we'll display a Strava path publicly if the terms
   allow" bullet is RESOLVED — they don't allow it.** Strava data provided by a user may only be shown
   *to that user*, publicly-viewable or not, plus a blanket AI/ML ban. So **Strava *pull* is shelved
-  indefinitely**: it can never legally feed the lake map, a heatmap, or a path on a public report.
+  indefinitely**: it can never legally feed the water body map, a heatmap, or a path on a public report.
 - **The first A-input is our own `native` recorder**, not a provider. A track we record is
   first-party Developer Application Data, so aggregating it, drawing it on public reports, and later
   heatmapping it are all legal with **none** of Strava's restrictions. The binding privacy constraint
@@ -314,7 +314,7 @@ server-side — not the deployment.
 (chronological, cross-water-body, in-range, temporary radius expansion) — plus
 create/detail/profile flows. Route structure documented in `00-vision.md`.
 **Why:** Newsfeed serves the "where's the community been lately?" browse/inspiration
-need that lake-by-lake tapping doesn't.
+need that body-by-body tapping doesn't.
 **Web refinement (D47):** on web these two stay top-level, but **Report and Bounties are
 folded into them** (report surfaced on both; bounties on Map) rather than getting their
 own top-level routes — see D47. Mobile keeps its five tabs.
@@ -380,7 +380,7 @@ person's content/profile from me and mine from them" — there is no friendship/
 to also tear down. Block/mute ship in **Phase 03** alongside comments + flagging.
 
 ## D33 — Account lifecycle: deletion, retention, export
-> **Amended by [D62](#d62--account-deletion-a-30-day-grace-window-and-three-buckets-rather-than-two-n3-amends-d33) (2026-07-27, A03).** The *decision* below stands; its **premise** does not.
+> **Amended by [D62](#d62--account-deletion-a-30-day-grace-window-and-three-buckets-rather-than-two-a03-amends-d33) (2026-07-27, A03).** The *decision* below stands; its **premise** does not.
 > "There's no private content to selectively remove" was true before Phase 04 added `homeCoord` +
 > isochrones and Phase 08 added raw GPS paths + OAuth tokens. Deletion now uses **three buckets**
 > (erase private / anonymize the public record / keep-but-sever published tracks), runs after a
@@ -667,8 +667,8 @@ posture around collecting minors' birthdates is flagged for the ToS/legal review
 ## D42 — Photo EXIF stripping + opt-in geotag placement
 **Decided.** **Strip all EXIF on upload by default**, with **two fields deliberately
 preserved when the user opts in**: capture **timestamp** and **GPS lat/lng**. Tying a
-photo to *when* during a session and *where on the lake* it was taken is genuinely
-useful (which end of the lake had the pressure ridge). But location is sensitive, so
+photo to *when* during a session and *where on the water body* it was taken is genuinely
+useful (which end of the water body had the pressure ridge). But location is sensitive, so
 it's the user's call:
 - **Per-user default + per-photo override:** a `placeOnMap` choice. If on, the photo
   is pinned at its coordinate within the water body on the map. If off, the photo is
@@ -704,21 +704,21 @@ in this spot have historically resolved it (relicense-with-exception by the copy
 holder). Dual-licensing (proprietary store binary) was considered and rejected as
 heavier for no added benefit at our scale.
 
-## D44 — Every ice skate resolves to a water-body ID (findable by lake, not just by area)
+## D44 — Every ice skate resolves to a water-body ID (findable by water body, not just by area)
 **Decided.** A detected GPS activity (`gpsActivities`, D24) is **resolved to the
 `waterBodyId` it took place on** at ingest time (spatial match of the trusted path
 against `waterBodies` polygons — bbox prefilter → Turf.js, the D5/D36 machinery). We
 store the resolved `waterBodyId` on the activity (and, when a skate genuinely spans
 connected bodies, an optional `waterBodyIds[]` with the primary broken out).
-**Why:** Users must be able to find *"skates on Lake Morey"* **by the lake's identity
+**Why:** Users must be able to find *"skates on Lake Morey"* **by the water body's identity
 (its ID/name), not by drawing a geospatial box**. "A 5-mile skate somewhere around
 here" is useless; "5 miles on Lake Morey specifically" is the whole point. Resolving
-once at ingest makes every downstream query (a lake's skate history, bounty
+once at ingest makes every downstream query (a water body's skate history, bounty
 eligibility, hazard-path proximity) a cheap indexed lookup instead of a repeated
 geometry scan.
 **Consequences (see `06-data-model.md`):** `gpsActivities` gains `waterBodyId?` (+
 optional `waterBodyIds?`); indexed by `waterBodyId`. Bounty eligibility (D-bounties)
-and the per-lake feed query off it. If the path matches no known body, we fall back
+and the per-body feed query off it. If the path matches no known body, we fall back
 to the D14/D36 create-or-attach flow (offer to create/attach a water body).
 
 ## D45 — In-app assumption-of-risk acknowledgment at signup (interim, pre-legal)
@@ -825,7 +825,7 @@ takedown **wording/obligation** is **legal-gated (Q10)** — we ship the mechani
 settle the policy later.
 **Why:** A map that can't be curated fills with unskateable clutter, and a safety app that
 can direct people onto private land needs a takedown lever. This is the display-side
-complement to the storage decision: **store every lake** (discovery needs bodies to exist
+complement to the storage decision: **store every water body** (discovery needs bodies to exist
 before anyone reports on them — D14/D28), but **control what displays** (soft-delist +
 zoom-based rendering), rather than under-populating the data.
 
@@ -845,7 +845,7 @@ score = w_area · normalize(log(area))   // log — pond→Champlain spans order
 → minVisibleZoom(score)                   // higher score ⇒ draws at a lower (wider) zoom
 ```
 - **Popularity is a boost, not a gate.** A pure popularity gate is rich-get-richer (popular
-  lakes draw more → get more reports → score higher), which buries obscure-but-good spots and
+  water bodies draw more → get more reports → score higher), which buries obscure-but-good spots and
   fights the discovery mission (D14/D28). Area guarantees a discoverability *floor* at the
   appropriate zoom; popularity only promotes.
 - **`curatedBoost` is the cold-start answer.** In Phase 01 there is zero popularity signal (no
@@ -855,7 +855,7 @@ score = w_area · normalize(log(area))   // log — pond→Champlain spans order
 raw material) and uses a soft viewport cap with truncation logging (see D5). The stored
 `displayScore` and threshold curve are optional Convex fields added in Phase 02a — free to defer
 (optional fields need no migration). See `phases/01-water-bodies.md` and Phase 02a in the roadmap.
-**Why:** area alone would let Champlain dominate and would drop a small-but-beloved lake like
+**Why:** area alone would let Champlain dominate and would drop a small-but-beloved water body like
 Morey from the state view; a score that combines area with (later) popularity and an
 admin-curated boost keeps the map legible at every zoom without under-populating the data.
 
@@ -1025,11 +1025,11 @@ looks "gone"); modeling permanent risk as a durable body attribute is both truer
 **Decided (2026-07-18; Layers 0–1 in Phase 09a, Layer 2 deferred).** New hazards must reach skaters
 **already on that ice** without holding everyone's live location server-side (D12: no live GPS). The
 architecture inverts the naïve "server pushes to nearby phones": **the server only syncs hazard *data*
-to devices that care about that lake; each phone decides for itself** whether its own on-device GPS
+to devices that care about that water body; each phone decides for itself** whether its own on-device GPS
 warrants an alert. This is D12-clean (positions never leave the device), needs no server fan-out, keeps
 the griefing blast radius naturally local, and — because hazards are already cached on-device — **works
 with no cell signal** (the alert is computed and fired locally). Layers:
-- **Layer 0 — silent data sync (Phase 09a v1).** A device with a lake cached / subscribed gets new
+- **Layer 0 — silent data sync (Phase 09a v1).** A device with a water body cached / subscribed gets new
   hazards automatically (Convex reactivity while open; on next foreground otherwise). No notification.
   True background sync to a *closed* app (silent push) is a nice-to-have deferred to the offline commits.
 - **Layer 1 — on-ice proximity alert + confirm-gate (Phase 09a v1).** A co-located skater's client
@@ -1274,13 +1274,13 @@ each consumer keeping the policy its question demands — the report↔path pair
 because they're one number, and bounties stop carrying a duplicate of the blend.
 
 ## D60 — A bay is a named sub-area of one polygon, not a water body (A02)
-**Decided (2026-07-26).** The community corpus names big lakes by *arm*, not by lake — Malletts Bay
+**Decided (2026-07-26).** The community corpus names big water bodies by *arm*, not by water body — Malletts Bay
 under ten spellings, the northeast arm of Champlain as "the Inland Sea" (S2). Every name the Phase-02b
 seed failed to match turned out to be a region **inside** an existing polygon. So:
 - **New table `waterBodySubAreas`**, one row per named region, always inside a parent body. Reports,
   hazards and bounties keep belonging to the **parent**; the sub-area is the finer name they carry,
   denormalized flat onto each row (`subAreaId` / `subAreaName`) at create. This is the **D4 model**,
-  deferred since Phase 01 for rivers-as-named-reaches, instantiated for lakes where the evidence is
+  deferred since Phase 01 for rivers-as-named-reaches, instantiated for water bodies where the evidence is
   overwhelming. *Rejected:* minting each bay as its own body — that splits one sheet of ice's reports,
   hazards, bounties, favorites and aggregate tracks across a dozen rows and hands the D36 dedup queue
   a permanent stream of parent-vs-child overlap pairs it has no verdict for.
@@ -1300,7 +1300,7 @@ seed failed to match turned out to be a region **inside** an existing polygon. S
   it's **order-independent** — the answer is a property of the geometry, not of which row an index
   reached first. (First-match would have been A01's whole correction series happening again.)
 - **A sub-area is visible only while its parent is.** Cell rows exist on the conjunction, so a
-  landowner takedown takes the lake's bays with it; a merge repoints them to the survivor.
+  landowner takedown takes the water body's bays with it; a merge repoints them to the survivor.
 - **Full citizens:** labelled (feed card, report detail, hazard lines, through one composition helper),
   searchable by alias, rendered on both clients off their own ladder-grid cell table, and targetable by
   a bounty — narrowed at `attachReportToOpenBounties` and at a sub-area-scoped freshness index, since
@@ -1311,9 +1311,9 @@ seed failed to match turned out to be a region **inside** an existing polygon. S
 **Why:** the corpus was never asking for more bodies; it was asking for names inside one body. This
 gives a skater the name they already use, on their own report, without fragmenting the ice.
 
-## D61 — The operator surface is a per-lake editor, on the same canvas as the map (A02)
+## D61 — The operator surface is a per-body editor, on the same canvas as the map (A02)
 **Decided (2026-07-26).** `/admin` was entirely tables and the map lived only in the skater tree, so
-curating a lake meant holding it in your head across a queue row, a CSV and an internal mutation.
+curating a water body meant holding it in your head across a queue row, a CSV and an internal mutation.
 - **`/admin/water/$id`** — one canvas whose **camera is locked to the body** (`maxBounds` = its bbox
   plus a proportional margin, `minZoom` = the zoom that fits it), carrying every per-body lever:
   prominence with a live zoom preview, sub-area draw/rename/delist, put-ins, weather sample points,
@@ -1367,7 +1367,7 @@ and wrong for a private location trace, so the rule is no longer uniform.
 - **The GPS rule is D58's own predicate, reused: a `gpsActivities` row is kept iff it is linked to a
   visible report.** An unlinked activity is a recording the person never published — private, no
   community value, erased. A linked one is *publish-is-consent* (D58 gate 1) and is already drawn on the
-  lake. Provider handles (`providerActivityId`, `photoUrls`) are scrubbed; the path stays.
+  water body. Provider handles (`providerActivityId`, `photoUrls`) are scrubbed; the path stays.
 - **Finalize must NOT set `excludeTracksFromAggregate`.** Stated as a prohibition because the mistake
   is attractive: flipping it on looks like the cautious privacy choice, and would silently delete the
   contribution this decision exists to preserve. D58's four gates all read data that survives deletion,
@@ -1384,7 +1384,7 @@ rule couldn't serve both, and the seam that separates them already existed in D5
 
 ## D63 — A season is July 1 → June 30, and it is derived rather than stored (A05a)
 **Decided (2026-07-27).** Nothing in the app expired: `reportFreshness` (D59) is an *opacity*
-multiplier, not a visibility gate, so a report from two seasons ago still rendered in a lake's drawer
+multiplier, not a visibility gate, so a report from two seasons ago still rendered in a water body's drawer
 and its GPS path still drew on the aggregate map — at ~0 opacity, but present. The map should show
 **this** season's ice; everything else is history you go and look at on purpose.
 - **The season boundary is July 1**, labelled `'24/'25` because a skating season spans New Year. July
@@ -1401,11 +1401,11 @@ and its GPS path still drew on the aggregate map — at ~0 opacity, but present.
   task rather than housekeeping, so the admin surface has to present it as one.
 - **Past seasons are browsable per water body**, never globally and never in the map's default state —
   a curiosity ("what was this bay like in December?"), not a safety surface, so it sits where you're
-  already asking about one lake.
+  already asking about one water body.
 **Two premises the code check falsified**, both making this decision matter more rather than less:
 **reports don't draw on the map at all** (there is no report layer — what reaches the map from a report
 is its put-in marker, its track and its photo pins), so the map half is *tracks + hazards* while reports
-are scoped in the feed and lake list; and **hazards never age out** —
+are scoped in the feed and water body list; and **hazards never age out** —
 `deriveHazardLifecycle` archives on community "fully healed" votes only, with no time-based archival
 anywhere, so an unvisited hazard stays `active` forever at a deliberate map opacity floor. A ridge
 reported in February 2025 is still drawn today. The recurring-hazard case is therefore handled *by
@@ -1422,7 +1422,7 @@ honest exception.
   the question the promotion pass exists to ask. Note this is the *opposite* field from the one
   `lib/contentPurge` ages hazards on, and deliberately so: redaction asks *"is the community still
   maintaining this?"*, seasons ask *"when was this first seen?"*.
-- **The season selector governs the whole lake view** — the report list, the hazards *and* the tracks,
+- **The season selector governs the whole water body view** — the report list, the hazards *and* the tracks,
   on the map as well as in the list. "What did this bay look like last December?" is mostly a map
   question, and answering it with a re-listed sidebar over a current-season map would show two seasons
   at once, which is the confusion this decision exists to end.
@@ -1456,7 +1456,7 @@ Clerk user would lock someone out of the login they need to cancel with. That re
 its conclusion overshot in both directions.
 
 *Too permissive about content.* A report posted in hour 719 of the window is erased hours later while
-it is still the freshest thing on the lake — the window preserving nothing and costing someone the
+it is still the freshest thing on the water body — the window preserving nothing and costing someone the
 effort of writing it. Contributing and leaving are contradictory acts; the app should make you pick.
 
 *Too slow about the person.* Someone who asks to be deleted should stop existing on the platform then
@@ -1653,8 +1653,8 @@ the recoverable one — which is the opposite bias from a hazard.
 the numbers, and both of them are safety numbers:
 - **Expiry is its own window — 72 hours — not the existing `agingH`.** Reusing the freshness tier
   would have made "faded" and "gone" the same instant, so a Saturday-morning crossing would stop
-  rendering on Monday evening whether or not anyone had been near the lake. A separate constant lets
-  the pin fade first and expire later, and it survives a weekday-quiet lake where nobody is around to
+  rendering on Monday evening whether or not anyone had been near the water body. A separate constant lets
+  the pin fade first and expire later, and it survives a weekday-quiet water body where nobody is around to
   re-confirm. It is deliberately **shorter** than any hazard's stale threshold and deliberately
   **longer** than a crossing's own `agingH: 36`.
 - **Two independent confirmations to stop being provisional**, against `DEFAULT_CONFIRM_THRESHOLD: 1`
@@ -1794,7 +1794,7 @@ the next tick retries rather than accepting an unanswered question as finished. 
 the one place a Convex index on an optional field being **non-sparse** is the behaviour we want —
 never-swept accounts have no value, `undefined` sorts before every number, so the range *is* the queue.
 
-## D67 — Freeform hazard areas, and shore bands that come off the lake's own outline (A05b)
+## D67 — Freeform hazard areas, and shore bands that come off the water body's own outline (A05b)
 **Decided (2026-07-28; built in A05b.)** Completes the third of D51's three primitives, and instantiates
 the "snap to shoreline" affordance research §4 logged and Phases 09a and 10 each deferred. Both are
 authoring — no lifecycle, no new hazard type, no schema change.
@@ -1900,11 +1900,11 @@ and `ringSelfIntersects` on each ring. terra-draw refuses a crossing ring on web
 server refuses it because a client's manners are not evidence.
 
 ## D68 — Depth is a best-available number that carries its provenance (A06a)
-**Decided (2026-07-29; A06a kickoff.)** No single source gives us lake depth, and the sources differ in
+**Decided (2026-07-29; A06a kickoff.)** No single source gives us water body depth, and the sources differ in
 kind — some measured, some modelled — so depth is stored as a **best-available value plus a record of
 which rung produced it**. Four rungs, highest first: an **operator override** (a state-agency survey or
-local knowledge, typed into the A02 per-lake editor); **LAGOS-US DEPTH** (observed, ~65 compiled agency /
-university / monitoring sources, lakes > 1 ha); **HydroLAKES `Depth_avg`** (`Vol_total / Lake_area`);
+local knowledge, typed into the A02 per-body editor); **LAGOS-US DEPTH** (observed, ~65 compiled agency /
+university / monitoring sources, water bodies > 1 ha); **HydroLAKES `Depth_avg`** (`Vol_total / Lake_area`);
 and **GLOBathy `Dmax`** (random forest over shoreline length / area / volume / elevation / watershed
 area).
 
@@ -1958,7 +1958,7 @@ test, and the never-hide bound is unmodified.
 from 1 — and a property test refuted it in about two seconds: in **mixed** weather where cold wins
 narrowly, a deep body reads just above 1 and a shallow one just below, so the shallow multiplier lands
 *closer* to 1 and on the other side of it. That crossing is **correct**, not a bug — the same period
-genuinely nets "refreezing" for a deep lake and "thawing" for a shallow one, which is the entire content
+genuinely nets "refreezing" for a deep water body and "thawing" for a shallow one, which is the entire content
 of the decision. What holds absolutely is per-class: shallow `structural` ≥ deep, shallow
 `refreeze_healed`/`rotten` ≤ deep, `weather_insensitive` identical, and with no thaw nothing changes for
 any type. Worth recording because the weaker-sounding invariant is the one that is actually true, and a
@@ -1985,15 +1985,15 @@ outside support — and moves only on real data. `SHALLOW_MAX_DEPTH_M = 7` is th
 
 It stays high because **the errors are asymmetric**. Shallowness only amplifies the thaw term, so a false
 positive makes a `refreeze_healed`/`rotten` warning linger and prompts a ridge recheck sooner — bounded by
-never-hide and the map's opacity floor — while a false negative loses the signal outright on a lake that
+never-hide and the map's opacity floor — while a false negative loses the signal outright on a water body that
 deserved it. Cheap error against expensive error, so the objection to over-inclusiveness becomes the
 argument for it. The remaining false negative has a named shape: a broad shallow sheet with one deep hole
 (mean 2 m, max 9 m) reads as not shallow, mitigated by a mean always winning when present and by the
 `shallow_early_thaw` flag overriding the number entirely.
 
-**And it gets settled with data rather than argument.** LAGOS-US DEPTH carries ~6,137 lakes with *both* a
+**And it gets settled with data rather than argument.** LAGOS-US DEPTH carries ~6,137 water bodies with *both* a
 mean and a max — a labelled set where `mean ≤ 3 m` is ground truth. **Step 6 of `scripts/lake-depth`'s
-runbook** sweeps the cutoff against our own region's matched lakes, minimizing false negatives first, and
+runbook** sweeps the cutoff against our own region's matched water bodies, minimizing false negatives first, and
 tests relative depth on the same set. That check lives in the procedure that produces the evidence, not in
 a plan doc, because Phase 07-2 built a metric *and* an index to decide whether a cron was worth writing and
 nobody pointed at either for months.
@@ -2036,7 +2036,7 @@ rung alone, **a number** is the moderator's reading, and **`null`** is a rejecti
 
 **A rejection keeps the rung.** When a moderator clears an imported depth, the number goes and the
 `operator` rung **stays** as a tombstone, which is what stops the next ETL run from putting it back.
-*"A human read HydroLAKES' 14 m and says it's wrong"* is a durable claim about the lake; if it evaporates
+*"A human read HydroLAKES' 14 m and says it's wrong"* is a durable claim about the water body; if it evaporates
 on the next run it was never worth making. This inverts D68's original *never provenance without a
 number*, deliberately — that rule was protecting the **caption**, and it still does, because
 `describeLakeDepth` renders nothing without a number. A tombstone is therefore invisible to skaters and
@@ -2047,11 +2047,11 @@ collision rather than inferring it from a count.
 **Related:** [D68](#d68--depth-is-a-best-available-number-that-carries-its-provenance-a06a), [D3](#d3),
 [`phase-N6a`](./phases/A06a-body-depth.md).
 
-## D70 — Lake-profile content is derived or third-party, never hand-maintained (A06c/A06d)
+## D70 — Water-body profile content is derived or third-party, never hand-maintained (A06c/A06d)
 
-**Decided (2026-07-30; founder call at A06c scoping.)** Every field in the expanded lake profile must come
-from geometry we already store, an ETL source, a user report, or a URL template. **Hand-written per-lake
-prose and hand-maintained per-lake notes are out of scope.**
+**Decided (2026-07-30; founder call at A06c scoping.)** Every field in the expanded water body profile must come
+from geometry we already store, an ETL source, a user report, or a URL template. **Hand-written per-body
+prose and hand-maintained per-body notes are out of scope.**
 
 **Because the alternative has a known failure mode, and we can watch it happen.** The clearest example in
 our own region is Christopher Boone's **Catamount Hardware Ice Atlas**
@@ -2059,7 +2059,7 @@ our own region is Christopher Boone's **Catamount Hardware Ice Atlas**
 *good*: 36 hand-picked NH and VT bodies, each with coordinates, elevation, surface area, dimensions, mean
 and max depth, individually named launches with their parking and facilities, and a curated set of
 external references. **Several ideas in A06c and A06d are lifted straight from what it chose to record** —
-elevation as a first-class field, per-lake reference links, tying depth to freeze behaviour in prose, and
+elevation as a first-class field, per-body reference links, tying depth to freeze behaviour in prose, and
 naming put-ins by compass side. It is also the source of the sharpest one-line framing of D3 any of us has
 written: *"This site tells you where to find ice, not whether it is safe."*
 
@@ -2071,27 +2071,27 @@ plausible, and nobody can tell which sentences are still true. A launch descript
 exactly like one from last week.
 
 That is the failure we are designing against, and the reason is not that we would be more diligent. **We
-would not be.** The only durable answer is that no sentence on our lake pages should require a human to
+would not be.** The only durable answer is that no sentence on our water body pages should require a human to
 keep it true.
 
 The second reason is arithmetic. Curation scales to the ~36 bodies someone cares enough to write about.
 **We have 116,070.** Anything requiring a human per body is a feature for 0.03% of the corpus that *looks*
-like a feature for all of it — which is worse than not having it, because a skater cannot tell which lakes
+like a feature for all of it — which is worse than not having it, because a skater cannot tell which water bodies
 got the treatment.
 
 **What this rules in.** Depth (A06a), elevation, long axis, shoreline length and wind fetch are all derived
 from a polygon or one free lookup. Access points come from OSM (D72). Access blockers come from skaters
-and expire (D73). The lake caption is *generated* from those numbers against per-state deciles — so the
+and expire (D73). The water body caption is *generated* from those numbers against per-state deciles — so the
 prose is ours, it exists for every body that has the inputs, and no sentence can outlive the number it was
 built from.
 
-**What it rules out, specifically:** free-text lake descriptions, free-text seasonal access notes, per-body
+**What it rules out, specifically:** free-text water body descriptions, free-text seasonal access notes, per-body
 archival photos, and any "we'll fill these in as we go" field. *Considered:* letting moderators write
 descriptions for the top ~50 bodies. Rejected — that is precisely the 0.03% feature, and once the field
 exists nothing stops it filling with text nobody dates or re-reads.
 
-**One deliberate exception, and it proves the rule:** the local lake-association URL (D71), because there
-is no algorithm from a lake's name to its association's website.
+**One deliberate exception, and it proves the rule:** the local body-association URL (D71), because there
+is no algorithm from a water body's name to its association's website.
 
 ## D2 amendment — profile-richness weights are fractions of the score, and activity dominates (A06c-1)
 
@@ -2112,13 +2112,13 @@ level is `0.125`, which is the unit these should be read in.
 
 **Activity dominates, and the caps encode why** (founder call):
 
-> *"I would love for the real-world data of users documenting lakes well… to completely remove the
-> need for moderators to hand-curate 'destination' lakes. Curation should exist only as a way to get
+> *"I would love for the real-world data of users documenting water bodies well… to completely remove the
+> need for moderators to hand-curate 'destination' water bodies. Curation should exist only as a way to get
 > us a good seed, and as a check on our automated system."*
 
 So static metadata caps at **0.15**, *below* `curatedBoost`'s 0.3 — metadata says a body is
 documented, not that anyone wants to skate it — while activity alone reaches 0.30 and the total caps
-at **0.40**, above it. A genuinely used lake overtakes a hand-seeded one.
+at **0.40**, above it. A genuinely used water body overtakes a hand-seeded one.
 
 **And the retirement path becomes a mechanism**: `curatedBoostIsRedundant` flags a boost the body has
 now earned on its own, for the admin surface. **Advisory, never automatic** — clearing a boost on a
@@ -2131,11 +2131,11 @@ zoom bucket. That is the founder's *"I'd hate to not have a body someone cares a
 
 **`hasContours` ships live** (founder call, 2026-08-02), via a `bathymetryCoverage` side table keyed
 on `externalId` rather than a column on `waterBodies`: coverage is a property of the **tileset**, so
-re-tiling replaces ~2,000 rows instead of migrating 116,070, and a dropped lake cannot leave a stale
+re-tiling replaces ~2,000 rows instead of migrating 116,070, and a dropped water body cannot leave a stale
 flag claiming a survey we no longer draw. It records the **2,022** bodies that produced a visible
 contour line, not the 2,437 the join merely matched. **The put-in terms still wait on A06d.**
 
-**Related:** [D49](#d49), [D70](#d70--lake-profile-content-is-derived-or-third-party-never-hand-maintained-n6cn6d), [`phase-N6c`](./phases/A06c-expanded-body-profiles.md).
+**Related:** [D49](#d49), [D70](#d70--water-body-profile-content-is-derived-or-third-party-never-hand-maintained-a06ca06d), [`phase-N6c`](./phases/A06c-expanded-body-profiles.md).
 
 ## D71 — Reference links are generated at render time, not stored per body (A06c)
 
@@ -2159,7 +2159,7 @@ nothing — the skater arrives at the community's own site under the community's
 the ingestion feature carrying 0% of its risk.
 
 **The one exception, stored because it cannot be derived:** `referenceLinks[]` on `waterBodies` for local
-lake associations. Expect tens of bodies, not thousands. Operator-editable, preserved across re-import
+water body associations. Expect tens of bodies, not thousands. Operator-editable, preserved across re-import
 like `curatedBoost`.
 
 ## D72 — Parking is modelled apart from put-ins, and directions route to the car (A06d)
@@ -2183,7 +2183,7 @@ on its critical path for a modelling nicety.
 parking, toilets and trails corpus-wide, with **no new source, no new download, no new account**. Where OSM
 has no name, a **deterministic compass-side label** ("North launch") is derived from the point's bearing off
 the centroid — re-derivable on every import, never drifting, and matching how skaters already talk about a
-lake's ends.
+water body's ends.
 
 Derived rows sit on an **`osm` rung below `official`** and never overwrite an operator-set point — the same
 precedence discipline as the A06a depth ladder. **Amenity scope:** toilets, trails, parking, boat ramp (kept
@@ -2210,7 +2210,7 @@ The bug this decision exists to fix — a maps app handed a destination it canno
 entirely in the link, so the free half buys all of the stated value. The band's residue is real and is
 recorded rather than hidden: a mile-away trailhead still classifies against the water rather than the
 car, so its 30/60/90 band reads slightly optimistic. **That is a bounded, one-band error on the small
-population of hike-in lakes**, against a per-report read on the feed's hot path for every lake.
+population of hike-in water bodies**, against a per-report read on the feed's hot path for every water body.
 
 **What would change the call** is a denormalised access coord on `waterBodies` — no read cost, but a
 second copy of a fact, maintained on every access-point write, of exactly the kind that drifts silently.
@@ -2219,7 +2219,7 @@ Not worth it for a band boundary until something demonstrates that it is.
 ## D73 — An access blocker is a decaying community alert, not a note (A06d)
 
 **Decided (2026-07-30; founder call.)** *"Road closed south of the gate until repairs are done"* is the most
-useful sentence on a lake page and the one most certain to be wrong. It is correct the day it's written and
+useful sentence on a water body page and the one most certain to be wrong. It is correct the day it's written and
 stale by spring, and **nothing in the system knows the difference**.
 
 So access blockers are modelled on hazards, not on text: an **`accessAlerts`** row against a put-in or
@@ -2276,18 +2276,18 @@ opens a *window* rather than a date.
 **Availability is derived, not curated (D70).** 10 m pixels cannot resolve a 2-hectare pond, so
 `satelliteImagery: 'auto' | 'on' | 'off'` defaults to `auto`, resolved against a surface-area threshold,
 with operator overrides for the exceptions. Worth noting for the Phase 07 posture: **this toggle needs no
-redeploy** — "constants stay in code" governs *constants*, and per-row data edits through the lake editor
-and takes effect immediately. The threshold driving `auto` is the constant; the per-lake override is data.
+redeploy** — "constants stay in code" governs *constants*, and per-row data edits through the water body editor
+and takes effect immediately. The threshold driving `auto` is the constant; the per-body override is data.
 
 **Tier 2, deferred with a trigger: imagery in the app.** The Copernicus Data Space free tier is **10,000
 requests + 10,000 processing units/month, 300/min**; a full-screen tile view is ~10–20 requests, so raw
-that's ~500–1,000 lake views/month. **Server-side tile caching is what makes it viable** — the open licence
+that's ~500–1,000 water body views/month. **Server-side tile caching is what makes it viable** — the open licence
 permits it, and a body only needs re-fetching once per ~5-day revisit. **Do this when** we know which bodies
 get real traffic, since caching only wins if reads concentrate.
 
 **Planet: waited on, not rejected.** Their public catalogue (Sentinel, Landsat, HLS, Copernicus DEM) is the
 *same free data*; paying buys **PlanetScope — ~3 m, near-daily**, which is a real difference for ice, since a
-lake can go from open to skateable in 48 hours and a 5-day revisit can miss the whole onset. Against that:
+water body can go from open to skateable in 48 hours and a 5-day revisit can miss the whole onset. Against that:
 quote-based commercial pricing, a pilot with no revenue, and **no evidence yet that anyone opens the imagery
 link at all**. Low-regret detail — Planet serves public data from Sentinel Hub endpoints, the same API
 surface as Copernicus, so building against Copernicus now is not a lock-out. **Trigger:** real usage of the
@@ -2387,7 +2387,7 @@ never feeds `displayScore` (D49), trust, points or the bounty gate.
 
 **The `volatile` family is the one raised bar.** Recurring `thin_ice` / `open_water` / `thawed_rotten`
 may propose a **`shallow_early_thaw`** feature, because a spot that goes out early *every* March is a
-property of the lake bed rather than of the weather — but only at **3 seasons minimum regardless of the
+property of the water body bed rather than of the weather — but only at **3 seasons minimum regardless of the
 public constant**, and only where A06a's depth (D68/D69) does not contradict it. Recurrence is how that
 flag finally gets *proposed* from observation; depth is how the proposal gets *checked*.
 
@@ -2411,13 +2411,13 @@ feature today is the Convex dashboard or the CLI. Consequently **four of the nin
 (`constriction`, `bridge_narrows`, `delta`, `shallow_early_thaw`) are unreachable in the product: no
 hazard promotes into them and no form creates them.
 
-A05c ships the authoring surface on `/admin/water/$id`, drawing on the lake's own map and reusing A05b's
+A05c ships the authoring surface on `/admin/water/$id`, drawing on the water body's own map and reusing A05b's
 web authoring (terra-draw, the same primitives hazards use). Web only — `/admin` is a web tree and
 terra-draw has no React Native adapter.
 
-**Why:** it is also the answer to "what covers the first three winters". An operator who *knows* a lake
+**Why:** it is also the answer to "what covers the first three winters". An operator who *knows* a water body
 has a spring at the outlet shouldn't wait for the corpus to prove it; the recurrence engine is for the
-lakes nobody on the team skates.
+water bodies nobody on the team skates.
 
 ## D80 — Duplicate hazards are consensus, not clutter: prevent, pool, render, and merge reversibly (A05c)
 
@@ -2473,7 +2473,7 @@ should still be visible as a reported hazard in all years in which it was report
 is a pattern, not a real marker — so even in seasons after it's been promoted, users will still report
 it."*
 
-That names the seam better than D53 did: **a `bodyFeature` is a standing statement about the lake; a
+That names the seam better than D53 did: **a `bodyFeature` is a standing statement about the water body; a
 hazard is a sighting by a person on a date.** Promotion adds the first; it must not delete the second, in
 any season, past or future.
 
@@ -2525,7 +2525,7 @@ vector basemap ↔ aerial/satellite raster — and takes contours and water-body
 skate paths, put-ins and parking stay drawn in both modes.**
 
 **Because the toggle A06b proposed would have been a control for a question the user doesn't have.** A
-skater does not arrive at the map wanting to *decide about contours*; they want to look at a lake. Making
+skater does not arrive at the map wanting to *decide about contours*; they want to look at a water body. Making
 the layer follow the thing they already did — opening a body — gets the contours in front of them at the
 only moment they're useful, with no affordance to find, no state to persist, and no settings row.
 
@@ -2576,11 +2576,11 @@ absolutely is the one with no copy behind it.
 - **The only copy that remains is provenance** — which agency surveyed this, at what interval (D83).
   Attribution, not interpretation.
 
-**A useful side effect:** because contours make no claim, a lake with no survey data costs the skater
+**A useful side effect:** because contours make no claim, a water body with no survey data costs the skater
 nothing — it renders as a flat shape, exactly as today. So Maine's density gate and every other
 coverage gate can be set conservatively with no product argument pushing back.
 
-**Related:** [D3](#d3), [D52](#d52), [D81](#d81--the-map-has-exactly-one-layer-toggle-and-it-is-satellite-n6bn6e), [D68/D69](#d68), [`phase-N6b`](./phases/A06b-bathymetry-layer.md).
+**Related:** [D3](#d3), [D52](#d52), [D81](#d81--the-map-has-exactly-one-layer-toggle-and-it-is-satellite-a06ba06e), [D68/D69](#d68), [`phase-N6b`](./phases/A06b-bathymetry-layer.md).
 
 ## D83 — Contours carry their source's native interval and units, labelled; we never resample (A06b)
 
@@ -2605,7 +2605,7 @@ surveys *are* different — but it puts weight on the label, which has to be leg
 styled-by-depth ramp. Native intervals make that easier to hold — each set already renders as its own
 labelled thing.
 
-**The revisit has a trigger, not a date:** a cross-state comparison surface ("the deepest lakes within 90
+**The revisit has a trigger, not a date:** a cross-state comparison surface ("the deepest water bodies within 90
 minutes") would need common units, and should convert **at read time** from stored native values. The
 tiles stay native permanently.
 
@@ -2614,7 +2614,7 @@ tiles stay native permanently.
 16 just lands on a fraction, which is nothing to a float. 16 wins because it *is* the compass points, so
 every bucket has the name the wind data already uses. See A06c open question 1.)*
 
-**Related:** [D81](#d81--the-map-has-exactly-one-layer-toggle-and-it-is-satellite-n6bn6e), [D82](#d82--bathymetry-is-context-not-counsel-a06b), [`phase-N6b`](./phases/A06b-bathymetry-layer.md).
+**Related:** [D81](#d81--the-map-has-exactly-one-layer-toggle-and-it-is-satellite-a06ba06e), [D82](#d82--bathymetry-is-context-not-counsel-a06b), [`phase-N6b`](./phases/A06b-bathymetry-layer.md).
 
 ## D84 — Satellite imagery is two tiers with different jobs (A06e)
 
@@ -2637,7 +2637,7 @@ aerial than by 10 m winter Sentinel-2, **and** it is the unconstrained one. Spli
 
 **The second reason is honesty, and it's the one that would have bitten us.** A Sentinel-2 view is a
 **dated observation** — a specific pass on a specific day, possibly under cloud — not a base map. Rendered
-in the same affordance as a base map, without its date foregrounded, it invites *"the lake looked frozen
+in the same affordance as a base map, without its date foregrounded, it invites *"the water body looked frozen
 in the picture"* about an image from eleven days ago. That is the **D3** trap in raster form. Tier 2's
 date stamp is not a caption detail; it is the content, which is also why A06e open question 4 asks whether
 Tier 2 belongs in the drawer rather than on the map at all.
@@ -2646,7 +2646,7 @@ Tier 2 belongs in the drawer rather than on the map at all.
 116,070 bodies at zero cost, and remains the right answer for historical browsing and a date slider. This
 decision is the second step of that two-step, not a replacement for it.
 
-**Related:** [D75](#d75--satellite-imagery-ships-as-a-link-first-the-licence-blocker-is-resolved-the-cost-one-isnt-a06c), [D81](#d81--the-map-has-exactly-one-layer-toggle-and-it-is-satellite-n6bn6e), [`phase-N6e`](./phases/A06e-satellite-imagery.md).
+**Related:** [D75](#d75--satellite-imagery-ships-as-a-link-first-the-licence-blocker-is-resolved-the-cost-one-isnt-a06c), [D81](#d81--the-map-has-exactly-one-layer-toggle-and-it-is-satellite-a06ba06e), [`phase-N6e`](./phases/A06e-satellite-imagery.md).
 
 ## D85 — Derived geometry stats are measured on the source geometry, not the simplified copy (A06c)
 
@@ -2660,7 +2660,7 @@ store.
 **Because the wrong source wasn't a provider, it was our own copy.** Perimeter is resolution-dependent
 (the coastline paradox), our stored polygons are simplified to ~5 m, and Lake Champlain is coarsened
 further to fit the D48 8,192-element array cap. Measuring the stored polygon systematically under-reports,
-and worst on exactly the large crenellated lakes where the number is most interesting. Measuring before
+and worst on exactly the large crenellated water bodies where the number is most interesting. Measuring before
 simplification removes that error entirely for the cost of one scalar — the array cap constrains what we
 *store as geometry*, not what we *measure in flight*.
 
@@ -2674,7 +2674,7 @@ conflating them is how a field gets missed. Inventoried in
 
 **A free cross-check, not a source:** HydroLAKES carries `Shore_len`, and we already download and join it
 for A06a's depth rung 3. Its 10 ha floor covers ~7% of our corpus and its polygon is a different water mask
-at a different date, so a disagreement doesn't say who's right — but a 2× gap on a known lake means our
+at a different date, so a disagreement doesn't say who's right — but a 2× gap on a known water body means our
 join or ring handling is broken, and that is worth catching at load time. **Log the comparison; store
 ours.**
 
@@ -2684,16 +2684,16 @@ Under a mile renders as *"under a mile of shoreline"* — no decimal on a farm p
 source it is never presented as authoritative:** OSM's shoreline is a tracing by many hands and still
 won't equal a published survey.
 
-**Related:** [D3](#d3), [D25](#d25), [D48](#d48), [D70](#d70--lake-profile-content-is-derived-or-third-party-never-hand-maintained-n6cn6d), [`phase-N6c`](./phases/A06c-expanded-body-profiles.md).
+**Related:** [D3](#d3), [D25](#d25), [D48](#d48), [D70](#d70--water-body-profile-content-is-derived-or-third-party-never-hand-maintained-a06ca06d), [`phase-N6c`](./phases/A06c-expanded-body-profiles.md).
 
 ## D85 amendment — the stats are measured from an interior point, and `centroid` is not one (A06c-1)
 
-**Decided (2026-08-02; found by running §1.4 against real lakes rather than fixtures.)**
+**Decided (2026-08-02; found by running §1.4 against real water bodies rather than fixtures.)**
 
 D85 said *measure the source geometry*. It did not say *from where*, and A06c's §1.4 said "cast a ray
 through the centroid" — which cannot be taken literally. **`waterBodies.centroid` is Turf's
 `pointOnFeature`**, which returns the bbox centre only when that lands inside the polygon and a point
-on the **boundary** when it does not. That is true of any curved or narrow lake: Lake Willoughby's
+on the **boundary** when it does not. That is true of any curved or narrow water body: Lake Willoughby's
 stored centroid **is ring vertex 199**, and Lake Champlain's sits **30.7 km** from mid-lake.
 
 Nothing caught it because `pointInPolygon` counts the boundary as inside, and it was harmless for
@@ -2714,7 +2714,7 @@ reads it, because **weather sampling was the one consumer the offset genuinely h
 grid is 2–25 km, so Champlain's error was one to several cells wrong on an input the D56 decay math
 is supposed to be reproducible from.
 
-**Related:** [D48](#d48), [D56](#d56), [D85](#d85--derived-geometry-stats-are-measured-on-the-source-geometry-not-the-simplified-copy-a06c), [D90](#d90--wind-exposure-is-frequency-times-fetch-never-fetch-alone-n6c-1).
+**Related:** [D48](#d48), [D56](#d56), [D85](#d85--derived-geometry-stats-are-measured-on-the-source-geometry-not-the-simplified-copy-a06c), [D90](#d90--wind-exposure-is-frequency-times-fetch-never-fetch-alone-a06c-1).
 
 ## D90 — Wind exposure is frequency × fetch, never fetch alone (A06c-1)
 
@@ -2722,7 +2722,7 @@ is supposed to be reproducible from.
 
 The caption described Lake Willoughby as *"most open to wind out of the south-southeast"* because
 that is where its longest fetch runs. **Founder:** *"I am almost certain Lake Willoughby never gets
-wind out of the south… the terrain (mountains) around lakes drastically impact the chance that wind
+wind out of the south… the terrain (mountains) around water bodies drastically impact the chance that wind
 could come from particular directions."*
 
 **A fetch profile is a claim about geometry. Rendering it as a claim about wind is the error.** A
@@ -2739,7 +2739,7 @@ shows the named mechanism — terrain funnels wind *along* the valley rather tha
 [`phase-N6c` §3](./phases/A06c-expanded-body-profiles.md) for the comparison and the unconfirmed
 explanation; the decision below does not depend on which sector leads.)*
 
-**The rule:** exposure is `winterFrequency[k] × fetchM[k]`, and **a lake with no rose says nothing
+**The rule:** exposure is `winterFrequency[k] × fetchM[k]`, and **a water body with no rose says nothing
 about wind at all.** There is deliberately no fallback to fetch-alone: that fallback is the claim
 this decision exists to stop making, and its failure mode is a plausible sentence, not an empty one.
 `mostExposedBearing` was deleted rather than left unused, because exporting it leaves the bug one
@@ -2842,9 +2842,9 @@ routed distance + ascent → straight-line **flagged** (it under-reports, so the
 between *"about 900 m on foot"* and *"at least 900 m on foot"*) → nothing, for the majority of bodies with
 no parking area to route from.
 
-**The `hike_in` chip ships with it** (founder ask), on the map summary card, the lake drawer and the feed
+**The `hike_in` chip ships with it** (founder ask), on the map summary card, the water body drawer and the feed
 card — derived from `approachKind`, not entered. A skater filtering to "within 60 minutes" is filtering on
-**drive** time, and a hike-in lake inside that band is not the trip they think they're being offered. The
+**drive** time, and a hike-in water body inside that band is not the trip they think they're being offered. The
 two numbers are never summed: a 55-minute drive plus a 25-minute walk is not an 80-minute drive.
 
 **Still out of scope:** routing the walk itself. We report distance, climb and a kind; navigating a trail
@@ -2874,23 +2874,23 @@ knobs for one idea is the same failure D70's `curatedBoost`-not-`isDestination` 
 bounds any single point's abuse surface, and minors are read-only (Phase 03), so the population that can
 upload is already the population trusted with reports.
 
-**Related:** [D57](#d57), [D62](#d62), [D66](#d66), [D70](#d70--lake-profile-content-is-derived-or-third-party-never-hand-maintained-n6cn6d), [`phase-N6d`](./phases/A06d-body-access-points.md).
+**Related:** [D57](#d57), [D62](#d62), [D66](#d66), [D70](#d70--water-body-profile-content-is-derived-or-third-party-never-hand-maintained-a06ca06d), [`phase-N6d`](./phases/A06d-body-access-points.md).
 
-## D89 — The contour interval is a fixed ladder, not a per-lake target (A06b)
+## D89 — The contour interval is a fixed ladder, not a per-body target (A06b)
 
 **Decided (2026-08-01, after comparing our output against Maine IF&W's and VT DEC's own depth charts.)**
 
-Every lake is drawn on the same **5 ft ladder**, and the ladder only ever steps **coarser** — to 10, 25
-or 50 ft, each a whole multiple so two lakes' rings always nest. Ring *count* is therefore a readout of
+Every water body is drawn on the same **5 ft ladder**, and the ladder only ever steps **coarser** — to 10, 25
+or 50 ft, each a whole multiple so two water bodies' rings always nest. Ring *count* is therefore a readout of
 depth: three rings on a 17 ft pond, eleven on a 59 ft one.
 
-> *"I'd rather see contours every 5 ft and therefore only get 3 contours in one lake and 10 in another.
+> *"I'd rather see contours every 5 ft and therefore only get 3 contours in one water body and 10 in another.
 > But I don't want to just make it up and end up with a very inaccurate depiction."* — founder
 
-**What it replaces, and why that was wrong.** The interval used to target ~12 bands per lake from
+**What it replaces, and why that was wrong.** The interval used to target ~12 bands per water body from
 `maxDepth` alone. Checked against the agencies' charts, that was backwards in the way that matters:
 Washington Pond (36 ft, **105 soundings**) got a 2 ft interval and seventeen levels, while Lake Morey
-(42 ft, **68,139 soundings**) got 5 ft. The sparse lake was given the fine interval and the dense one
+(42 ft, **68,139 soundings**) got 5 ft. The sparse water body was given the fine interval and the dense one
 the coarse, because depth is the one input that says nothing about how much structure the survey can
 support.
 
@@ -2902,7 +2902,7 @@ support.
   of 1,387 points collapsing into 24 cells carries 24 measurements' worth of information.
 
 Refusing to go finer than the base is what keeps it honest: the failure being fixed was too many lines
-on too little data, so no lake gets a denser picture than the standard.
+on too little data, so no water body gets a denser picture than the standard.
 
 **Contour lanes reach the same ladder by subtraction only.** For NH and MA the agency already drew the
 isobaths, so we thin their published levels toward the ladder and never move or add one — a source
@@ -2913,7 +2913,7 @@ by a different road.
 
 **This does not reopen what D82 closed.** The proposal D82 rejected dropped levels *where lines crowd
 together on the map*, which would make ring count depend on bed steepness. A fixed **depth** ladder is
-uniform in depth and never in map distance, so a deeper lake always shows more rings. **And D83
+uniform in depth and never in map distance, so a deeper water body always shows more rings. **And D83
 survives**: its rule was *"don't draw a line where no depth-sounder went"*, not *"don't choose which
 surveyed lines to show."*
 
@@ -2944,8 +2944,8 @@ anyone drives to.
 
 **Why five, when 25 / 30 / 50 were on the table.** Because the size argument cannot tell those apart
 and the cost argument can. All three floors delete ~95% of the corpus — 25 ac keeps 6,966 bodies,
-50 ac keeps 4,207, a gap of 2% of the corpus — while the difference between them is 2,759 real lakes.
-Above five acres you are no longer deleting junk, you are choosing how many lakes to lose for a
+50 ac keeps 4,207, a gap of 2% of the corpus — while the difference between them is 2,759 real water bodies.
+Above five acres you are no longer deleting junk, you are choosing how many water bodies to lose for a
 rounding error in row count.
 
 Checked against the only two demand signals we have, and both said the same thing:
@@ -2954,8 +2954,8 @@ Checked against the only two demand signals we have, and both said the same thin
   deletes **Keiser Pond** (36 ac — and on our own VT curation seed), Boston Lot Lake (44.8), Drew Lake
   (48.2), Ewell Pond (48.2) and Oliverian Pond (32.1). Nothing anyone has been recorded skating is
   under five.
-- **State bathymetric surveys** (the A06b ingest, 2,022 lakes an agency paid to sound). **41% are under
-  50 acres, 23% under 25.** A 50-acre floor deletes 826 lakes whose contours we had already drawn.
+- **State bathymetric surveys** (the A06b ingest, 2,022 water bodies an agency paid to sound). **41% are under
+  50 acres, 23% under 25.** A 50-acre floor deletes 826 water bodies whose contours we had already drawn.
 
 **Area is also the wrong axis, which is the second half of why the floor is set low.** The test being
 applied — "you can't skate a full circle" — is about *length*, and we store `longAxisM` (D85). Keiser
@@ -2973,21 +2973,21 @@ It stays because it is a cheap way to be wrong in the recoverable direction. A n
 assertion that a place is a place, and it is the only such signal in the extract; search is name-driven,
 so a named pond returning nothing reads as broken rather than curated. It costs ~2% of the corpus
 against the 81% the floor removes. **If it is ever dropped, drop it on that trade and not on a belief
-that it is protecting known lakes.**
+that it is protecting known water bodies.**
 
 **There is deliberately no "…or an agency surveyed it" tier, and that knowingly costs 5 bodies.**
 One was built on 2026-08-03 and removed the same day (founder call), because **agency coverage is
-downstream of this rule**: `waterBodies.matchBathymetryLakes` resolves a surveyed lake by looking for
-a *listed body in our corpus* at its deepest sounding, with a zero-metre buffer. A lake the floor
+downstream of this rule**: `waterBodies.matchBathymetryLakes` resolves a surveyed water body by looking for
+a *listed body in our corpus* at its deepest sounding, with a zero-metre buffer. A water body the floor
 excludes therefore can never be matched, contoured, or counted as covered.
 
-The consequence is a ratchet rather than a cycle. The clause could only ever protect lakes that a
+The consequence is a ratchet rather than a cycle. The clause could only ever protect water bodies that a
 **previous, more permissive** corpus had already discovered — and for **any newly imported region it
 is a no-op by construction**, since the import runs before the join. Keeping it would have bought
 five bodies (3 in Maine, 2 in New Hampshire, all unnamed, 3.6–4.6 acres) in exchange for a permanent
 ordering rule nobody could enforce — *import unfiltered → join → build → coverage → prune* — plus a
 live trap: `importContourCoverage` **replaces** the coverage set, so pruning first and re-tiling later
-would silently drop those lakes from coverage and then delete them.
+would silently drop those water bodies from coverage and then delete them.
 
 Five bodies is the right price for deleting a whole class of ordering bug. **They are knowingly
 skipped**, and the fallback is the same one the rest of this decision rests on: someone reports a
@@ -3002,10 +3002,10 @@ above it: 2.0% named under an acre, then 5.6% / 10.4% / 16.1% / 19.7% through th
 
 Cutting the sub-acre named bodies costs one gazetteer name and it is a **false match**: "Button Bay"
 (32 mentions) resolves only to an unrelated 0.62-acre bay in *Maine*. The real Button Bay is on Lake
-Champlain and is not a body in the corpus under any rule — OSM models it as part of the lake, so it
+Champlain and is not a body in the corpus under any rule — OSM models it as part of the water body, so it
 belongs to the sub-area layer with Malletts Bay and Dillenbeck Bay. Dropping it fixes a search that
-currently returns the wrong lake. Every other discussed name only loses redundant same-name matches
-(Beaver Pond drops 9 of 89, Mud Pond 2 of 180, Mill Pond 4 of 87) and keeps the lake itself.
+currently returns the wrong water body. Every other discussed name only loses redundant same-name matches
+(Beaver Pond drops 9 of 89, Mud Pond 2 of 180, Mill Pond 4 of 87) and keeps the water body itself.
 
 **Three acres for the unnamed tier was weighed and rejected** (same session). It would admit 4,988
 more bodies — +23% on the kept set — whose median shape is 235 × 117 m. **81% of them are `other` or
@@ -3081,10 +3081,10 @@ isochrones northward, and still searches the whole corpus.
 
 ---
 
-## D92 — OSM draws the lakes, because the bake-off found no reason to prefer NHD (A07a)
+## D92 — OSM draws the water bodies, because the bake-off found no reason to prefer NHD (A07a)
 
 **Decided (2026-08-06) by measurement, not precedent.** The referee was our own bathymetry: **21.9
-million measurements** across 2,359 surveyed lakes, physical, and drawn by neither publisher.
+million measurements** across 2,359 surveyed water bodies, physical, and drawn by neither publisher.
 
 ```
 metric            OSM wins    NHD wins        tie
@@ -3097,7 +3097,7 @@ medians:  containment 1.0000 / 1.0000 · gap 88 m / 87 m · area 68 ac / 68 ac
 **They are indistinguishable, and D92 said in advance that this was a legitimate outcome that "must
 not be dressed up".** Every median is a tie to three significant figures. On the metric least
 confounded by size — the coverage gap, which asks how much of a polygon's own area sits far from any
-measurement — it is 13.4% against 12.6%, a coin flip over 2,359 lakes.
+measurement — it is 13.4% against 12.6%, a coin flip over 2,359 water bodies.
 
 So the rule is **OSM by default**, on the tie-break D92 specified: *pick the one with the cheaper
 pipeline.* OSM is already ingested, is the identity spine (`Permanent_Identifier` is a field on our
@@ -3108,9 +3108,9 @@ measure.
 ### Two metrics, because either alone can be gamed
 
 `containedFraction` punishes a polygon that is **too small** and is blind to one that is too large — a
-polygon covering the lake and the field beside it contains every sounding and scores a perfect 1.0.
+polygon covering the water body and the field beside it contains every sounding and scores a perfect 1.0.
 `probeCoverage` (D98, `@skating/core/bodyProbe.ts`) is the mirror: probe the polygon's *own* area and
-measure the distance from each probe to the nearest measurement, so an over-drawn lake has probes in
+measure the distance from each probe to the nearest measurement, so an over-drawn water body has probes in
 the pasture. Bounded on both sides.
 
 ### What the measurement actually says, stated carefully
@@ -3121,15 +3121,15 @@ Massachusetts, which is the whole of the apparent state split — **MA 53.7% OSM
 a size-convention difference, not a quality difference.** Big area disagreements (>25%) are a flat
 5–6% in every state, so it is not segmentation either.
 
-**NHD wins small lakes and OSM wins large ones** — 43.2% NHD under 10 acres, 18.1% OSM above 1,000 —
+**NHD wins small water bodies and OSM wins large ones** — 43.2% NHD under 10 acres, 18.1% OSM above 1,000 —
 which is consistent with a 1:24,000 compilation resolving a small pond better than a volunteer tracing
 imagery, and worse on a shoreline long enough for that volunteer to have walked it.
 
-**The two metrics disagree on 140 lakes (5.9%)**, counted as ties. Where one outline contains the
+**The two metrics disagree on 140 water bodies (5.9%)**, counted as ties. Where one outline contains the
 survey better and the other describes the water better, picking a winner would mean inventing a
-weighting the evidence does not support. Those are the per-lake override candidates.
+weighting the evidence does not support. Those are the per-body override candidates.
 
-### The per-lake override stays, and this is what makes D93 worth having
+### The per-body override stays, and this is what makes D93 worth having
 
 `geometrySource` remains a field. The default is OSM; the override is for named cases where the margin
 is large — and it costs a field update rather than a migration precisely because D93 minted our own
@@ -3139,7 +3139,7 @@ clips the Québec half, present in NHD at 1,876.6.
 ### ⚠ The limits of this result, recorded rather than buried
 
 **It cannot measure coverage, only shoreline quality where both catalogues have a polygon.** The
-referee set is built from the bathymetry join, which needed an OSM body to exist — so the lakes OSM is
+referee set is built from the bathymetry join, which needed an OSM body to exist — so the water bodies OSM is
 *missing* are excluded by construction. **Beau Lake is not in this sample.** The 15 OSM-only against 7
 NHD-only surveys found here are therefore not a coverage measurement, and must not be quoted as one;
 the coverage claim rests on the separately-measured 36 Maine surveys with no polygon at all.
@@ -3147,7 +3147,7 @@ the coverage claim rests on the separately-measured 36 Maine surveys with no pol
 **The first run of this bake-off was wrong and the numbers looked fine.** It took the OSM side from
 the bathymetry join — which only accepts a body holding ≥ 0.5 of the survey — so every OSM polygon had
 already passed the exact test it was about to be scored on. `osmContained` had a hard floor at 0.524
-with **zero lakes below 0.5**, against 12 for NHD and 8 at exactly zero, and that tail was where every
+with **zero water bodies below 0.5**, against 12 for NHD and 8 at exactly zero, and that tail was where every
 "OSM wins" came from. It then picked the NHD counterpart by matching *against the OSM polygon*, so the
 second catalogue was selected to resemble the first. Both are fixed by anchoring on the survey's
 medoid — a real measurement, so on water by construction — with each catalogue independently supplying
@@ -3157,14 +3157,14 @@ the smallest feature containing it, and neither selection rule reading either sc
 confound: neither ships a zero-depth shoreline trace (MA's shallowest contour is 2 ft, NH's 1 ft), so
 these are in-water measurements and not a re-tracing of the agency's own shoreline.
 
-**Related:** [D48](#d48--water-body-removal-reversible-soft-delist-curation--landowner-takedown), [D91](#d91--the-canonical-corpus-has-a-floor-five-acres-or-one-acre-with-a-name), [D111](#d111--rendering-a-place-and-covering-it-are-two-questions-new-york-south-of-i-84-gets-one-answer-each-a07), [`phase-N7`](./phases/A07a-unified-corpus.md).
+**Related:** [D48](#d48--water-body-removal-reversible-soft-delist-curation--landowner-takedown), [D91](#d91--the-canonical-corpus-has-a-floor-five-acres-or-one-acre-with-a-name), [D111](#d111--rendering-a-place-and-covering-it-are-two-questions-new-york-south-of-i-84-gets-one-answer-each-a07a), [`phase-N7`](./phases/A07a-unified-corpus.md).
 
 ## D112 — The map is two archives and a mask, and it stops drawing at our border rather than being fenced to it (A07a)
 
 **Decided (2026-08-05, founder call.)**
 
 Zoom out and you see the whole world: oceans, continents, borders, a few country names. Zoom in and
-detail appears **only inside the five states** — towns, then highways and lakes. Everywhere else keeps
+detail appears **only inside the five states** — towns, then highways and water bodies. Everywhere else keeps
 its border and its name over flat, empty fill. And the camera is no longer fenced: you may pan to
 Australia, and a control offers the way back.
 
@@ -3184,7 +3184,7 @@ grazing New York survives whole — a 2.4 km fringe at z14, and ~450 km at z6, w
 drags across Québec at every higher zoom. `--region` is a size optimisation; the mask is what makes
 the border crisp.
 
-**The mask covers water as well as land**, in three layers — sea, land over it, then the big lakes.
+**The mask covers water as well as land**, in three layers — sea, land over it, then the big water bodies.
 Land alone leaves the tail of "Madison" lying on Long Island Sound, because a label is wider than the
 ground it names. Its hole is our land grown five kilometres seaward, intersected back with the ocean
 so it can only ever grow into water and never into Connecticut; without that allowance a mask starting
@@ -3220,12 +3220,12 @@ rather than a wrong-looking layer.
 `within expression currently only support Point/LineString geometry type` and evaluates **false** — so
 filtering a polygon-sourced label layer does not filter it, it *deletes* it. Decoding real tiles says
 `places` and `pois` are Point and `roads` is LineString, while `water`, `earth` and `buildings` are
-Polygon. Filtering all symbol layers alike therefore took **every lake name off the map inside our own
+Polygon. Filtering all symbol layers alike therefore took **every water body name off the map inside our own
 region**, which is the one label class this app can least afford to lose: the basemap is the only
-thing that draws it, since we label bays and not lakes. The filter is keyed on the *source layer*
+thing that draws it, since we label bays and not water bodies. The filter is keyed on the *source layer*
 rather than the style layer's id, because geometry is a property of the source.
 
-**Related:** [D6](#d6--renderer-maplibre-gl-locked), [D49](#d49--zoom-scored-display-prominence-the-zoom-based-rendering-d48-gestured-at), [D111](#d111--rendering-a-place-and-covering-it-are-two-questions-new-york-south-of-i-84-gets-one-answer-each-a07), [`phase-N7`](./phases/A07a-unified-corpus.md).
+**Related:** [D6](#d6--renderer-maplibre-gl-locked), [D49](#d49--zoom-scored-display-prominence-the-zoom-based-rendering-d48-gestured-at), [D111](#d111--rendering-a-place-and-covering-it-are-two-questions-new-york-south-of-i-84-gets-one-answer-each-a07a), [`phase-N7`](./phases/A07a-unified-corpus.md).
 
 ---
 
@@ -3239,7 +3239,7 @@ were eight uncounted exits, and the largest single filter in the whole pipeline 
 | where | what vanished |
 | --- | --- |
 | the one-acre floor, all three lanes | ~64% of raw OSM, with **no number at all** |
-| `JSON.parse` in a `try`/`catch` | a truncated extract reads as a region with fewer lakes |
+| `JSON.parse` in a `try`/`catch` | a truncated extract reads as a region with fewer water bodies |
 | OSM features with no `@type`/`@id` | an export that lost `-a type,id` reads as an empty state |
 | `normalizeNhdId` rejections | the exact case `DropLedger` was built for, bypassed |
 | the `ogr2ogr -where` pre-filter | the publisher's own `areasqkm`, silently excluding NULLs |
@@ -3279,7 +3279,7 @@ Lake Erie as FTYPE 390 `LakePond`**, so Erie's and Ontario's exclusion rested en
 counterpart matching at IoU ≥ 0.5, over the largest and most awkwardly-clipped polygons in the
 archive. The merge's own test suite pinned this as a known hole rather than closing it. And
 `inRegion` would not have caught the escape: TIGER's state outline includes New York's share of both
-lakes.
+water bodies.
 
 Two vetoes that need no match, no second catalogue and no geometry:
 
@@ -3418,14 +3418,14 @@ Three things that fell out of doing it:
 
 **And `GEOMETRY_OVERRIDES` exists.** D92 settled OSM-by-default on a tie-break and said, explicitly,
 that the default loses on named cases and that `geometrySource` stays a field so those can be fixed
-one lake at a time. Until now the override was **a decision with no producer**: the bake-off wrote
-its per-lake scores to a scratch file nothing read, and `chooseGeometry` was a hardcoded OSM-first
+one water body at a time. Until now the override was **a decision with no producer**: the bake-off wrote
+its per-body scores to a scratch file nothing read, and `chooseGeometry` was a hardcoded OSM-first
 placeholder. Beau Lake — the fixture this phase is named for — merged at **2,457 acres** against
 Maine's published **1,788** and Wikipedia's 7.23 km² (1,786 ac), two independent figures agreeing to
 within a percent. NHD's archived polygon is 1,876.6 ac, within 5% of both. The table's first entry is
-that lake, and the bake-off's 140 two-metric disagreements are the pool for extending it.
+that water body, and the bake-off's 140 two-metric disagreements are the pool for extending it.
 
-**Related:** [D40](#d40--coverage-thresholds), [D92](#d92--osm-draws-the-lakes-because-the-bake-off-found-no-reason-to-prefer-nhd-a07), [D93](#d93--we-mint-the-body-key-osm-and-nhd-become-claims-on-our-record), [`phase-N7`](./phases/A07a-unified-corpus.md).
+**Related:** [D40](#d40--coverage-thresholds), [D92](#d92--osm-draws-the-water-bodies-because-the-bake-off-found-no-reason-to-prefer-nhd-a07a), [D93](#d93--we-mint-the-body-key-osm-and-nhd-become-claims-on-our-record), [`phase-N7`](./phases/A07a-unified-corpus.md).
 
 ---
 
@@ -3435,8 +3435,8 @@ that lake, and the bake-off's 140 two-metric disagreements are the pool for exte
 any run report: **the matcher's false negatives do not produce gaps, they produce extra rows.**
 
 `resolveUpsert` keys identity on catalogue ids (D93). A merged group with no OSM member carries no
-`osmId`, so it meets a corpus that already holds that lake and **inserts a second row beside it**.
-Nothing downstream can tell the pair from two real lakes: not the loader, not the prune, not the map.
+`osmId`, so it meets a corpus that already holds that water body and **inserts a second row beside it**.
+Nothing downstream can tell the pair from two real water bodies: not the loader, not the prune, not the map.
 
 Measured over the master list as it stood — **632 pairs of separate bodies overlapping at IoU ≥ 0.3**,
 34 of them above 0.5, and **408 of the pairs share a name**. `Peabody Pond` 7 ac beside `Peabody
@@ -3467,7 +3467,7 @@ So the name is **never** a proximity rule and never fires alone. A pair qualifie
 3. exactly **one** candidate qualifies, so a chain of same-named ponds refuses rather than guesses;
 4. the geometric lane has not already spoken for the target, including when it said `ambiguous`.
 
-Two lakes 400 km apart cannot overlap by any amount, so the condition is satisfied structurally
+Two water bodies 400 km apart cannot overlap by any amount, so the condition is satisfied structurally
 rather than by a tuned radius. What the name buys is *permission to accept an overlap the
 area-ratio ceiling would have refused* — nothing else.
 
@@ -3480,8 +3480,8 @@ IoU ≈ 0.12 and the two share a name exactly.
 D93 had already written the rule for this evidence class, for the *stronger* signal:
 
 > `RECONCILE_MIN_IOU_WITH_GNIS` **0.3** — both publishers independently naming the same place is real
-> evidence, but not a bypass, because a lake NHD splits shares its GNIS id with both halves.
-> **Accepting those merges a real lake into a fragment.**
+> evidence, but not a bypass, because a water body NHD splits shares its GNIS id with both halves.
+> **Accepting those merges a real water body into a fragment.**
 
 A matching *name* is weaker evidence than a matching *GNIS id* — the gazetteer is an authority, a name
 is a string two mappers typed — so this lane cannot justify a looser bar than the one already settled
@@ -3489,7 +3489,7 @@ for the stronger one. `NAME_MATCH_MIN_IOU` is now pinned to that constant rather
 
 It still covers what the lane exists for: Peabody Pond at 7 ac against 16 has an area-ratio ceiling of
 0.44, comfortably clear. What it declines is anything past a ~3.3× size difference, which is exactly
-where "the same lake drawn differently" stops being distinguishable from "an arm of it".
+where "the same water body drawn differently" stops being distinguishable from "an arm of it".
 
 ### And a sweep, because the name cannot close the unnamed case
 
@@ -3535,7 +3535,7 @@ the estuary that drains it.
 is spelled *Ocean or Great Lake*, and masking with the whole class flagged **Braddock Bay** and
 **Blind Sodus Bay** — freshwater embayments of Lake Ontario that people skate. The clip holds 19
 type-4 features: Huron, Erie, Ontario, and 16 Atlantic pieces whose 7 unnamed members all sit on the
-Maine coast. So the split is exact and needs only the name. The lakes themselves stay refused, by the
+Maine coast. So the split is exact and needs only the name. The water bodies themselves stay refused, by the
 token veto and by the area ceiling; what this preserves is their **shoreline**.
 
 ### The two it gets wrong, and why they are a list rather than a rule
@@ -3551,7 +3551,7 @@ rest by any threshold, because they interleave:
 | **Winnegance Lake**, Phippsburg ME | 46.3% | 187 ac | **fresh** — above the tidal dam |
 | Little Bay, NH | 47.8% | 1,827 ac | salt |
 
-Both are lakes dammed immediately above a tidal inlet **of the same name**, and NHD's estuary polygon
+Both are water bodies dammed immediately above a tidal inlet **of the same name**, and NHD's estuary polygon
 simply runs past the dam. `FRESHWATER_ALLOW_LIST` names them, the same shape as
 `AREA_CEILING_ALLOW_LIST` and for the same reason: the rule is right and these are the exceptions.
 The general escape hatch stays A07b's `includedByRequest`.
@@ -3567,16 +3567,16 @@ carrying an `ele` regardless — Gleason Cove 13 m, Federal Harbor 14 m, Morong 
 
 Recorded as a *negative* result because it is the kind that gets re-attempted: the comment promising
 it survived two audits, and the tag exists, so the next person to read one and grep for the other
-would build the rule and readmit ten tidal coves to save one lake.
+would build the rule and readmit ten tidal coves to save one water body.
 
 `tidal=yes` is the tag that does hold — 96 of the 595 refused OSM bodies carry it, every one already
 refused. That is 96 independent confirmations, not a rule we need.
 
-**Related:** [D96](#d96--settled-the-four-admission-rules-a07), [D114](#d114--the-ocean-veto-needs-no-match-and-an-explicit-refusal-beats-another-sources-silence-a07), [`phase-N7`](./phases/A07a-unified-corpus.md).
+**Related:** [D96](#d96--settled-the-four-admission-rules-a07a), [D114](#d114--the-ocean-veto-needs-no-match-and-an-explicit-refusal-beats-another-sources-silence-a07a), [`phase-N7`](./phases/A07a-unified-corpus.md).
 
 ---
 
-## D120 — A name veto that is not gated on size deletes real lakes (A07a)
+## D120 — A name veto that is not gated on size deletes real water bodies (A07a)
 
 D114 added `assertsOceanOrGreatLake` because NHD publishes Lake Erie as FTYPE 390 `LakePond`, so no
 class rule refuses it and the token veto was contingent on a geometric match. The rule was a
@@ -3584,7 +3584,7 @@ class rule refuses it and the token veto was contingent on a geometric match. Th
 
 | | | |
 | --- | --- | --- |
-| **Lake Superior** | 179 ac, `lakePond`, **New York** | a real lake in Sullivan County, with a state park on it |
+| **Lake Superior** | 179 ac, `lakePond`, **New York** | a real water body in Sullivan County, with a state park on it |
 | **Little Lake Erie** | 4 ac, `reservoir`, **New York** | matches because `\blake erie\b` sits inside "Little Lake Erie" |
 
 Both would have been deleted on the next run, and the only trace would have been `+2` on a
@@ -3600,7 +3600,7 @@ and Québec, there's a chance we might still need it, gated on area."* The Gulf 
 Lake Huron become our neighbours the moment Québec does, and a categorical refusal that needs no
 cross-catalogue match is worth keeping for that. Gated, it costs nothing.
 
-**Related:** [D114](#d114--the-ocean-veto-needs-no-match-and-an-explicit-refusal-beats-another-sources-silence-a07), [`phase-N7`](./phases/A07a-unified-corpus.md).
+**Related:** [D114](#d114--the-ocean-veto-needs-no-match-and-an-explicit-refusal-beats-another-sources-silence-a07a), [`phase-N7`](./phases/A07a-unified-corpus.md).
 
 ---
 
@@ -3609,14 +3609,14 @@ cross-catalogue match is worth keeping for that. Gated, it costs nothing.
 **Founder, 2026-08-06: sub-area.** The bay rule had two outcomes and both of them produced a
 top-level water body, which double-counts the water: the corpus carried `West Branch Keuka Lake`
 (2,707 ac), `Spencer Bay` (4,742 ac, on Moosehead) and Winnipesaukee's `Alton`, `Paugus` and
-`Meredith` bays as rows overlapping the very lakes they are arms of. A search for the lake returned
+`Meredith` bays as rows overlapping the very water bodies they are arms of. A search for the water body returned
 it twice and the D2 deciles counted its water twice.
 
-A02 built `waterBodySubAreas` for exactly this shape — Malletts Bay is part of Champlain, not a lake
+A02 built `waterBodySubAreas` for exactly this shape — Malletts Bay is part of Champlain, not a water body
 beside it — so this is a new lane on an existing table, not a new concept:
 
 - **`bayParent` returns the parent** rather than a boolean, and prefers the **smallest** qualifying
-  one, which is Decision 9's smallest-containing rule one layer up (a cove in a bay in a lake belongs
+  one, which is Decision 9's smallest-containing rule one layer up (a cove in a bay in a water body belongs
   to the bay). Without it the answer depended on grid iteration order.
 - **The merge emits `sub-areas.ndjson`** and `subAreas.importBaySubAreas` loads it, resolving the
   parent by catalogue id (D93) and clipping the bay's own traced outline to the parent's polygon
@@ -3627,7 +3627,7 @@ beside it — so this is a new lane on an existing table, not a new concept:
 - **A bay with no parent at all is still demoted and queued**, unchanged. Half Moon Cove is 330
   acres, named "Cove", contained in nothing, and is a wetland.
 
-**Related:** [D60](#d60--a-bay-is-a-named-sub-area-of-one-polygon-not-a-water-body-a02), [D96](#d96--settled-the-four-admission-rules-a07), [`phase-N2`](./phases/A02-body-editor-and-subareas.md), [`phase-N7`](./phases/A07a-unified-corpus.md).
+**Related:** [D60](#d60--a-bay-is-a-named-sub-area-of-one-polygon-not-a-water-body-a02), [D96](#d96--settled-the-four-admission-rules-a07a), [`phase-N2`](./phases/A02-body-editor-and-subareas.md), [`phase-N7`](./phases/A07a-unified-corpus.md).
 
 ---
 
@@ -3653,7 +3653,7 @@ Two things changed anyway, both about the number being worth trusting:
 `inRegion` itself is unchanged and deliberately generous: one in-region vertex admits the whole
 polygon, which is what keeps Beau Lake — most of which is in Québec.
 
-**Related:** [D111](#d111--rendering-a-place-and-covering-it-are-two-questions-new-york-south-of-i-84-gets-one-answer-each-a07), [`phase-N7`](./phases/A07a-unified-corpus.md).
+**Related:** [D111](#d111--rendering-a-place-and-covering-it-are-two-questions-new-york-south-of-i-84-gets-one-answer-each-a07a), [`phase-N7`](./phases/A07a-unified-corpus.md).
 
 ---
 
@@ -3674,13 +3674,13 @@ Three artifacts close it, all of them cheap:
 | --- | --- |
 | **`dropped.ndjson`** | one line per refused group — key, name, class, acres, reason, sources. ~150k lines, ~15 MB, and it makes the whole intake diffable. |
 | **`merge-manifest.json` outputs + delta** | the previous manifest is already on disk; every re-run now prints what moved and by how much. |
-| **`geometry-review.ndjson`** | the candidate pool for D92's per-lake override — bodies whose chosen outline scores `polygon: low` against another catalogue's, ranked by the area spread between the claims. The Beau Lake shape, mechanically. |
+| **`geometry-review.ndjson`** | the candidate pool for D92's per-body override — bodies whose chosen outline scores `polygon: low` against another catalogue's, ranked by the area spread between the claims. The Beau Lake shape, mechanically. |
 
 **And the middle of the pipeline asserts.** `groups == bodies + subAreas + dropped` now throws, which
 is the equation between the two D113 already had: a `continue` added anywhere in the filter loop would
-otherwise remove lakes from the corpus and from the report at the same time.
+otherwise remove water bodies from the corpus and from the report at the same time.
 
-**Related:** [D99](#d99--every-pass-in-the-campaign-is-run-logged-and-the-ledger-is-wiped-first), [D113](#d113--nothing-leaves-the-pipeline-uncounted-and-the-two-artifacts-have-to-balance-a07), [`phase-N7`](./phases/A07a-unified-corpus.md).
+**Related:** [D99](#d99--every-pass-in-the-campaign-is-run-logged-and-the-ledger-is-wiped-first), [D113](#d113--nothing-leaves-the-pipeline-uncounted-and-the-two-artifacts-have-to-balance-a07a), [`phase-N7`](./phases/A07a-unified-corpus.md).
 
 ---
 
@@ -3696,7 +3696,7 @@ the master list did not contain* — has two ways of being false, and both were 
    `merge` verdict, which is also what the prune's protection list already honours.
 2. **`load.ts` deliberately survives isolated batch failures**, and every body in a skipped batch of
    ~150 is left unstamped and indistinguishable from a body the rules now refuse. A load reporting
-   success with three failed batches would hand the prune 450 real lakes.
+   success with three failed batches would hand the prune 450 real water bodies.
 
 So the prune gained a **blast radius**: a page more than `maxDeleteFraction` (default a third)
 deletions refuses outright, in dry mode as well as in apply mode, because a number printed for
@@ -3720,16 +3720,16 @@ outline we drew is `geometrySource`, which *is* patched. The two disagreeing is 
 Recorded here because the fix was written, tested, and reverted within the hour, and the next audit
 will find the same smell.
 
-**Related:** [D36](#d36--water-body-dedup-match-on-create--soft-tombstone-merge-resolves-q12), [D48](#d48--water-body-removal-reversible-soft-delist-curation--landowner-takedown), [D93](#d93--we-mint-the-body-key-osm-and-nhd-become-claims-on-our-record), [D115](#d115--what-the-merge-learned-rides-on-the-row-confidence-region-share-and-campaign-membership-a07), [`phase-N7`](./phases/A07a-unified-corpus.md).
+**Related:** [D36](#d36--water-body-dedup-match-on-create--soft-tombstone-merge-resolves-q12), [D48](#d48--water-body-removal-reversible-soft-delist-curation--landowner-takedown), [D93](#d93--we-mint-the-body-key-osm-and-nhd-become-claims-on-our-record), [D115](#d115--what-the-merge-learned-rides-on-the-row-confidence-region-share-and-campaign-membership-a07a), [`phase-N7`](./phases/A07a-unified-corpus.md).
 
 ---
 
-## D125 — One catalogue's account of one lake is represented by its **largest** feature (A07a)
+## D125 — One catalogue's account of one water body is represented by its **largest** feature (A07a)
 
 **Found by running it, 2026-08-06.** `chooseGeometry` took `members.find(m => m.source === 'osm')` —
 the first OSM feature in array order, which is the order the extracts happened to stream in. A merge
 group routinely holds several features from one catalogue, because OSM carries invisible duplicates
-*and* traces a big lake as one relation with its arms as separate ways. So the stored outline was
+*and* traces a big water body as one relation with its arms as separate ways. So the stored outline was
 being chosen arbitrarily, and `geometry-review.ndjson` — an artifact built the same day, for D92's
 override, which had never had a producer — surfaced what that cost on its first run:
 
@@ -3739,26 +3739,26 @@ override, which had never had a producer — surfaced what that cost on its firs
 | `Blake Falls Reservoir` | 288 ac | 265 + 78 ac | 630 ac |
 | `Fairhill Swamp` | 28 ac | 153 ac | 187 ac |
 
-A fragment stored as the whole lake **under-draws silently**, where a wrong outline at least looks
+A fragment stored as the whole water body **under-draws silently**, where a wrong outline at least looks
 wrong on a map. The group carries `same-source-duplicate` so a human sees it eventually; the polygon
 was wrong in the meantime.
 
 **The rule is the largest member of the chosen catalogue**, and it is defensible in each of the three
-cases the flag covers: whole-versus-fragment, the largest is the lake; a genuine duplicate pair (Long
+cases the flag covers: whole-versus-fragment, the largest is the water body; a genuine duplicate pair (Long
 Pond as a way and as a relation, within a percent of each other), it is a coin toss and at least a
-deterministic one; two distinct lakes wrongly chained, it is no worse than the first and the flag is
+deterministic one; two distinct water bodies wrongly chained, it is no worse than the first and the flag is
 what actually addresses that.
 
 **This is not D94's "never the larger of two claims".** That rule is about *area* and still holds —
 the stored area is measured from whichever polygon wins, never taken as the maximum of what the
-catalogues assert. This is about *which polygon*, within one catalogue's account of one lake.
+catalogues assert. This is about *which polygon*, within one catalogue's account of one water body.
 
 **And one helper answers it for all three callers.** `chooseGeometry`, `catalogueIdsOf` and the
 absorbed-member list each picked a representative separately, so a fix to one would have left a row
 whose `externalId` and `osmId` named two different OSM features. `representativeOf` is the single
 spelling.
 
-**Related:** [D92](#d92--osm-draws-the-lakes-because-the-bake-off-found-no-reason-to-prefer-nhd-a07), [D93](#d93--we-mint-the-body-key-osm-and-nhd-become-claims-on-our-record), [D118](#d118--a-missed-match-is-a-duplicate-so-the-name-gets-a-lane--bounded-by-geometry-a07), [`phase-N7`](./phases/A07a-unified-corpus.md).
+**Related:** [D92](#d92--osm-draws-the-water-bodies-because-the-bake-off-found-no-reason-to-prefer-nhd-a07a), [D93](#d93--we-mint-the-body-key-osm-and-nhd-become-claims-on-our-record), [D118](#d118--a-missed-match-is-a-duplicate-so-the-name-gets-a-lane--bounded-by-geometry-a07a), [`phase-N7`](./phases/A07a-unified-corpus.md).
 
 ---
 
@@ -3793,7 +3793,7 @@ distance.
 **The same measurement is what stopped it being general.** 1,002 corpus bodies sit at or under five
 metres and only 81 are bay-class or tidally named. A corpus-wide rule would delete **~920 freshwater
 bodies**, beginning with **Nequasset Lake** (4.8 m) and **Winnegance Lake** (1.1 m) — which are the
-*entire contents of* `FRESHWATER_ALLOW_LIST`, the two lakes D119 hand-verified as fresh — plus two
+*entire contents of* `FRESHWATER_ALLOW_LIST`, the two water bodies D119 hand-verified as fresh — plus two
 separate ponds named **Fresh Pond**. Coastal Maine and Cape Cod are full of kettle ponds a metre
 above the sea.
 
@@ -3810,7 +3810,7 @@ because twelve of those bays were tidal — the queue shrank by the question bei
 A missing reading returns `undefined` and never a default: *"we have no elevation"* must not read as
 "high up" **or** as "tidal". A merge with no archive still runs, on the spatial veto alone.
 
-**Related:** [D119](#d119--no-salt-water-and-the-veto-has-to-be-spatial-a07), [D127](#d127--elevation-comes-from-3dep-and-the-archive-is-keyed-on-the-coordinate-n7-2), [`phase-N7`](./phases/A07a-unified-corpus.md).
+**Related:** [D119](#d119--no-salt-water-and-the-veto-has-to-be-spatial-a07a), [D127](#d127--elevation-comes-from-3dep-and-the-archive-is-keyed-on-the-coordinate-a07a-2), [`phase-N7`](./phases/A07a-unified-corpus.md).
 
 ---
 
@@ -3833,24 +3833,24 @@ nothing else. **4.9/s at concurrency 12 → ~1.5 h for the corpus.**
 
 **Sample `interiorPoint`, never `representativePoint`.** The latter is Turf `pointOnFeature` and
 lands *on the shoreline*, so a DEM read there returns the height of the bank — a hand-picked
-shoreline point near Paugus Bay read 171 m against the lake's 153 m. See
+shoreline point near Paugus Bay read 171 m against the water body's 153 m. See
 [D68](#d68--lake-depth-is-a-five-rung-ladder-and-the-rung-is-stored-with-the-number-a06a).
 
 **3DEP's `resolution` is not always in metres.** Most tiles answer `1`; some answer in *degrees*
 (`3.086e-5`, which is 3.4 m and not a 31-micrometre DEM). Normalized on the way in, or D104's
-*"re-stamp the lakes that came from a coarse raster"* comparison breaks the day two rows carry two
+*"re-stamp the water bodies that came from a coarse raster"* comparison breaks the day two rows carry two
 units.
 
 **The archive is keyed on the rounded coordinate, never on a body id.** That is what survives a
-corpus rebuild — a lake whose polygon did not move has the same interior point next campaign and
+corpus rebuild — a water body whose polygon did not move has the same interior point next campaign and
 costs no request, which is D104's *"near zero"* recurring cost made real. It is also what lets the
 **merge** read it, since the tidal referee needs an elevation before the body exists as a row.
 
-Fetch is split from load, before the mistake rather than after it: [D134](#d134--the-wind-lane-archives-responses-and-captures-the-speed-it-was-already-fetching-n7-3)
+Fetch is split from load, before the mistake rather than after it: [D134](#d134--the-wind-lane-archives-responses-and-captures-the-speed-it-was-already-fetching-a07a-3)
 exists because the wind pass fetched, parsed and discarded, and one derived statistic then cost a
 7.7-hour re-fetch.
 
-**Related:** [D101](#d101--elevation-comes-from-data-we-already-hold-not-from-a-metered-forecast-api), [D104](#d104--elevation-from-3dep-and-the-recurring-cost-is-near-zero), [D126](#d126--the-sea-is-settled-by-how-high-the-water-sits-not-by-what-it-is-called-n7-2), [`phase-N7`](./phases/A07a-unified-corpus.md).
+**Related:** [D101](#d101--elevation-comes-from-data-we-already-hold-not-from-a-metered-forecast-api), [D104](#d104--elevation-from-3dep-and-the-recurring-cost-is-near-zero), [D126](#d126--the-sea-is-settled-by-how-high-the-water-sits-not-by-what-it-is-called-a07a-2), [`phase-N7`](./phases/A07a-unified-corpus.md).
 
 ---
 
@@ -3866,7 +3866,7 @@ along, keyed on the token of whichever member refused.
 
 | family | what it is | measured |
 | --- | --- | --- |
-| **`flowing`** | a catalogue calls it moving water, another calls it a lake — the impoundment and deadwater case D96 already settles in our favour, and we carry 26 `river`-class bodies on purpose | **164** (`osm:water=river` 109, `3dhp:featuretype=1` 43) |
+| **`flowing`** | a catalogue calls it moving water, another calls it a water body — the impoundment and deadwater case D96 already settles in our favour, and we carry 26 `river`-class bodies on purpose | **164** (`osm:water=river` 109, `3dhp:featuretype=1` 43) |
 | **`engineered`** | refused as built infrastructure. **NHD drops 43% of its reservoirs** by purpose code, which is the volume D96 warned would bury the queue | **~87** (`nhd:fcode=436*`, `water=wastewater`, `water=basin`) |
 | *residue* | a contradiction nothing in our rules explains | **the queue** |
 
@@ -3886,7 +3886,7 @@ about which kind of water it is, and it is rarer.
 catalogues; what does not drift is that a sharp move in the *unsettled* count means a source changed
 shape. The merge reports both halves.
 
-**Related:** [D96](#d96--accepted-classes-are-chosen-for-parity-between-the-two-catalogues), [D110](#d110--how-much-the-catalogues-agree-is-stored-per-attribute-a07), [D123](#d123--every-refused-group-is-named-and-the-middle-of-the-pipeline-asserts-a07), [D126](#d126--the-sea-is-settled-by-how-high-the-water-sits-not-by-what-it-is-called-n7-2).
+**Related:** [D96](#d96--accepted-classes-are-chosen-for-parity-between-the-two-catalogues), [D110](#d110--how-much-the-catalogues-agree-is-stored-per-attribute-a07a), [D123](#d123--every-refused-group-is-named-and-the-middle-of-the-pipeline-asserts-a07a), [D126](#d126--the-sea-is-settled-by-how-high-the-water-sits-not-by-what-it-is-called-a07a-2).
 
 ---
 
@@ -3894,19 +3894,19 @@ shape. The merge reports both halves.
 
 **Founder call, 2026-08-08: run a refereed pass, then decide.** 292 flagged duplicate pairs sit at
 IoU 0.30–0.49, below the merge bar and above the sweep. D92 was settled by refereeing against 2.4M
-soundings, so the same referee was asked a different question: *a survey is taken over one lake, so
+soundings, so the same referee was asked a different question: *a survey is taken over one water body, so
 does a single survey's points fall inside **both** halves of a pair?*
 
 | | |
 | --- | --- |
-| one lake drawn twice | **9** |
-| two distinct lakes | **0** |
+| one water body drawn twice | **9** |
+| two distinct water bodies | **0** |
 | no survey reaches it | **283** |
 
-The evidence is one-sided **and it is 3% of the band**. The archive covers 2,383 prominent lakes and
+The evidence is one-sided **and it is 3% of the band**. The archive covers 2,383 prominent water bodies and
 the rest of the band is unsurveyed water, so lowering the bar would act on 292 pairs using evidence
 from nine — and the 283 unreached ones are exactly where D93's warning lives: *"accepting those
-merges a real lake into a fragment"*. A wrong merge is unrecoverable; a queued duplicate is visible.
+merges a real water body into a fragment"*. A wrong merge is unrecoverable; a queued duplicate is visible.
 **The threshold does not move and the other 283 stay queued.**
 
 **The nine merge anyway**, as a named table with its evidence in the comment, because two independent
@@ -3929,7 +3929,7 @@ and it was read as tuples. That is the D85 shoreline cross-check's `0 comparable
 result that reads exactly like agreement. It was caught only because zero bbox overlaps out of 569
 is implausible by chance.
 
-**Related:** [D36](#d36--water-body-dedup-match-on-create--soft-tombstone-merge-resolves-q12), [D92](#d92--osm-draws-the-lakes-because-the-bake-off-found-no-reason-to-prefer-nhd-a07), [D93](#d93--we-mint-the-body-key-osm-and-nhd-become-claims-on-our-record), [D118](#d118--a-missed-match-is-a-duplicate-so-the-name-gets-a-lane--bounded-by-geometry-a07).
+**Related:** [D36](#d36--water-body-dedup-match-on-create--soft-tombstone-merge-resolves-q12), [D92](#d92--osm-draws-the-water-bodies-because-the-bake-off-found-no-reason-to-prefer-nhd-a07a), [D93](#d93--we-mint-the-body-key-osm-and-nhd-become-claims-on-our-record), [D118](#d118--a-missed-match-is-a-duplicate-so-the-name-gets-a-lane--bounded-by-geometry-a07a).
 
 ---
 
@@ -3937,7 +3937,7 @@ is implausible by chance.
 
 **Founder call, 2026-08-08.** New York is 9,422 bodies of the corpus and had effectively no measured
 depth — the statewide bathymetry search came back empty twice, and NYSDEC's CSLAP layer carries 278
-lakes. The **Adirondack Lakes Survey** sounded 1,469 ponds in 1984–87; **1,345 are reachable** through
+water bodies. The **Adirondack Lakes Survey** sounded 1,469 ponds in 1984–87; **1,345 are reachable** through
 its county form, every one with both a max and a mean depth.
 
 > *"ALSC is great for data pre-fill, so we have some data in places we otherwise wouldn't. But it's
@@ -4029,7 +4029,7 @@ salt marshes and tidal flats that the salt veto would have refused a stage later
 ### Narrow on **both** sides, and the founder chose the narrow option deliberately
 
 - **The refusal must be `flowing`**, decided by `refusalFamily` — the same triage
-  [D128](#d128--a-contested-class-is-triaged-before-it-is-queued-n7-2) reads, so "which refusals are
+  [D128](#d128--a-contested-class-is-triaged-before-it-is-queued-a07a-2) reads, so "which refusals are
   the flowing ones" is answered in exactly one place. A body a catalogue calls wastewater, a settling
   basin or a salt pool is rescued by no name at all.
 - **The name must be in `STILL_WATER_NAME`**, not anywhere in `NAME_KEEP`. The wider rule was offered
@@ -4050,7 +4050,7 @@ only way a member can carry a `name:` token *and* a flowing `sourceToken`, becau
 name-keyword rung fires on silence and silence is never `flowing`. The 123-body wetland deletion went
 unnoticed for a year precisely because the rule that caused it left no count.
 
-**Related:** [D96](#d96--the-four-admission-rules), [D109](#d109--every-catalogues-vocabulary-maps-into-ours), [D128](#d128--a-contested-class-is-triaged-before-it-is-queued-n7-2).
+**Related:** [D96](#d96--the-four-admission-rules), [D109](#d109--every-catalogues-vocabulary-maps-into-ours), [D128](#d128--a-contested-class-is-triaged-before-it-is-queued-a07a-2).
 
 ---
 
@@ -4070,9 +4070,9 @@ Coverage today is **5,633 / 24,945 (22.6%)**, and the ceiling is set by *area*, 
 | **5–20 ac** | **12,406** | **nothing global** |
 | < 5 ac | 2,284 | nothing |
 
-Half the corpus sits below every model's floor, and state surveys are biased to large lakes too. The
+Half the corpus sits below every model's floor, and state surveys are biased to large water bodies too. The
 one candidate that reaches the 5–20 acre band is **Hollister & Milstead** (EPA, *PLoS ONE* 2011):
-maximum depth predicted from the slope of the surrounding topography, validated on ~28,000 lakes in
+maximum depth predicted from the slope of the surrounding topography, validated on ~28,000 water bodies in
 **exactly our region** (HUC 01 and 02) at cross-validated RMSE 5.95 m / 5.09 m, correlation 0.82 /
 0.69, implemented in the `lakemorpho` R package. It has **no area floor** — it needs a DEM and a
 shoreline, both of which we hold.
@@ -4087,7 +4087,7 @@ least separable from a fact, and where `isShallowBody` turns depth into a **safe
 **The honest consequence is stated rather than worked around:** the 12,406 bodies in the 5–20 acre
 band will carry no depth, the `shallow_early_thaw` `bodyFeature` remains the only signal for them
 (which A06a already called *"permanent infrastructure, not a stand-in"*), and the operator override
-remains the path for any specific lake worth the minutes.
+remains the path for any specific water body worth the minutes.
 
 **Related:** [D3](#d3--attribution-and-licensing-are-a-product-surface-not-a-footnote), [D68](#d68--lake-depth-is-a-five-rung-ladder-and-the-rung-is-stored-with-the-number-a06a), [D69](#d69--shallowness-amplifies-the-thaw-response-only-and-never-the-cold-one).
 
@@ -4101,7 +4101,7 @@ together because they draw the same line from opposite sides.
 ### CSLAP sits between `state_agency` and `lagos_us`
 
 NYSDEC's **Citizens Statewide Lake Assessment Program** publishes a mean depth for **278 of its 294
-lakes**, sampled through 2024. It is measured, current, and published by the state — but volunteers
+water bodies**, sampled through 2024. It is measured, current, and published by the state — but volunteers
 collect it, which is not the same claim as a NHDES depth-sounder transect. Folding it into
 `state_agency` would make those indistinguishable in a stored row and in the caption; a separate rung
 keeps the difference visible at no cost, because the ladder is ordered and position **is** the
@@ -4112,7 +4112,7 @@ compilation of ~65 programmes and CSLAP is plausibly one of them, so where they 
 primary source and that is the aggregator, one re-publication removed and possibly a decade stale.
 It contributes **mean only** — the programme publishes no maximum.
 
-Like ALSC ([D130](#d130--alsc-is-pre-fill-measured-forty-years-old-and-below-every-newer-source-n7-2))
+Like ALSC ([D130](#d130--alsc-is-pre-fill-measured-forty-years-old-and-below-every-newer-source-a07a-2))
 it has **no published licence**: the hosting ArcGIS item's `licenseInfo` *and* `accessInformation` are
 both empty and the service carries no `copyrightText`. Same response — credit rather than assume.
 
@@ -4120,17 +4120,17 @@ both empty and the service carries no `copyrightText`. Same response — credit 
 
 NH GRANIT publishes `EDP_Bathymetry_Lakes` as two layers. A06b read layer 0, the contour **lines**.
 Layer 1 is the same survey as **polygons** — 7,351 rows carrying `depthmin`, `depthmax` and `acres`
-over 636 assessment units. That is a published hypsographic curve per lake, and integrating it gives
-**624 New Hampshire lakes a max *and* a mean**.
+over 636 assessment units. That is a published hypsographic curve per water body, and integrating it gives
+**624 New Hampshire water bodies a max *and* a mean**.
 
 **The line the founder drew:** the arithmetic runs over *the agency's own published areas*.
-Integrating our A06b interpolated surface would produce a mean for every contoured lake in four states
+Integrating our A06b interpolated surface would produce a mean for every contoured water body in four states
 — and it would be our model wearing an agency's label, which is a weaker claim than it looks.
 
 Three consequences worth recording:
 
 - **NH's depth comes from the bands, not from the contour lines.** Two producers writing one rung for
-  one lake is an ambiguity, not redundancy; `export-depths` skips `nh-granit-contours` by name.
+  one water body is an ambiguity, not redundancy; `export-depths` skips `nh-granit-contours` by name.
 - **NH's maximum stops being a lower bound.** The innermost polygon's `depthmax` is the deepest
   reading in that basin — Beaver Pond's is `40–47` — where the lines layer would only ever have said
   40. Every other contour-derived maximum in the corpus is still a floor on the truth, and
@@ -4140,7 +4140,7 @@ Three consequences worth recording:
   **10**. Validated against published figures — Winnipesaukee 180 ft max / 41.5 ft mean (published
   180 / ~43), Little Squam 70 / 30 (published 68 / ~30).
 
-**Related:** [D68](#d68--lake-depth-is-a-five-rung-ladder-and-the-rung-is-stored-with-the-number-a06a), [D130](#d130--alsc-is-pre-fill-measured-forty-years-old-and-below-every-newer-source-n7-2), [D132](#d132--depth-stays-measured-only-the-corpus-accepts-a-30-ceiling-n7-3).
+**Related:** [D68](#d68--lake-depth-is-a-five-rung-ladder-and-the-rung-is-stored-with-the-number-a06a), [D130](#d130--alsc-is-pre-fill-measured-forty-years-old-and-below-every-newer-source-a07a-2), [D132](#d132--depth-stays-measured-only-the-corpus-accepts-a-30-ceiling-a07a-3).
 
 ---
 
@@ -4181,7 +4181,7 @@ because it renders as a percentage, and a percentage of 300 hours reads identica
 Counts carry their own denominator, so a thin sample there is a small number honestly reported. **A
 cell can therefore contribute strong-wind hours and no rose.**
 
-✅ **No copy — and that is now settled, not pending.** [D145](#d145--wind-hole-risk-is-data-not-copy-no-clause-in-the-caption-or-the-profile-n7-3)
+✅ **No copy — and that is now settled, not pending.** [D145](#d145--wind-hole-risk-is-data-not-copy-no-clause-in-the-caption-or-the-profile-a07a-3)
 took the call on 2026-08-15: **nowhere**, in neither the caption nor the profile. `windHoleSectors`
 returns data; nothing writes a sentence. Same discipline as
 [D82](#d82--bathymetry-is-context-not-counsel), and this is the same class of number wearing a
@@ -4204,12 +4204,12 @@ outside support.
 | wall clock | 7.7 h | **10.5 h** |
 
 The handoff predicted the scope *"can only have gone down"*. It went **up**, and the reason is a good
-one: `fetchProfileM` is measured on the **merged** outline, so A07a turning fragments into whole lakes
+one: `fetchProfileM` is measured on the **merged** outline, so A07a turning fragments into whole water bodies
 pushed more bodies over the 1 km fetch bar. The wall clock also grew because the estimate now counts
 the **measured 5.3 s response latency** plus pacing, where the old loader's *"~96 min at 1/s"*
 counted only the deliberate pause and was wrong by 5×.
 
-**Related:** [D82](#d82--bathymetry-is-context-not-counsel), [D86](#d86--a-rose-is-suppressed-rather-than-rendered-thin), [D145](#d145--wind-hole-risk-is-data-not-copy-no-clause-in-the-caption-or-the-profile-n7-3), [`scripts/wind-climate/README.md`](../scripts/wind-climate/README.md).
+**Related:** [D82](#d82--bathymetry-is-context-not-counsel), [D86](#d86--a-rose-is-suppressed-rather-than-rendered-thin), [D145](#d145--wind-hole-risk-is-data-not-copy-no-clause-in-the-caption-or-the-profile-a07a-3), [`scripts/wind-climate/README.md`](../scripts/wind-climate/README.md).
 
 ---
 
@@ -4220,11 +4220,11 @@ counted only the deliberate pause and was wrong by 5×.
 
 ### The bug was a constant doing two jobs
 
-`MIN_FETCH_CLAUSE_M` was chosen for **pressure ridges**, which are a fetch problem: a lake with no
+`MIN_FETCH_CLAUSE_M` was chosen for **pressure ridges**, which are a fetch problem: a water body with no
 fetch has no ridge to warn about, so gating that caption clause at a kilometre is right and stays.
 
 It was also, silently, deciding which bodies got a WTK cell **fetched at all** — and
-[D134](#d134--the-wind-lane-archives-responses-and-captures-the-speed-it-was-already-fetching-n7-3)
+[D134](#d134--the-wind-lane-archives-responses-and-captures-the-speed-it-was-already-fetching-a07a-3)
 had just added sustained-wind capture for **wind holes**, which are a *speed* problem with **no
 comparable fetch minimum** (founder, 2026-08-02). So the new lane was scoped by a bar chosen for the
 old one, and reached 1,193 of 24,958 bodies — 4.8% — by accident rather than by decision.
@@ -4259,7 +4259,7 @@ be there, which is the misleading-denominator shape this campaign has now correc
 This is the same reasoning that retired `--min-area-acres=N` in favour of `meetsAreaFloor`: *a
 parameter invites a caller to invent a floor; a shared constant cannot drift.*
 
-**Related:** [D134](#d134--the-wind-lane-archives-responses-and-captures-the-speed-it-was-already-fetching-n7-3), [D86](#d86--a-rose-is-suppressed-rather-than-rendered-thin).
+**Related:** [D134](#d134--the-wind-lane-archives-responses-and-captures-the-speed-it-was-already-fetching-a07a-3), [D86](#d86--a-rose-is-suppressed-rather-than-rendered-thin).
 
 ---
 
@@ -4270,7 +4270,7 @@ parameter invites a caller to invent a floor; a shared constant cannot drift.*
 ### The gap: three lanes, and none of them looked at one catalogue twice
 
 The merge ran `3dhp→nhd`, `osm→nhd` and `osm→3dhp`. **Nothing matched OSM against itself** — and OSM
-is the one catalogue that routinely publishes a lake twice, as a multipolygon **relation** and its own
+is the one catalogue that routinely publishes a water body twice, as a multipolygon **relation** and its own
 outer **way**, both tagged and both arriving as features. Where NHD carries no counterpart, which is
 the normal case for wetland, neither cross-catalogue lane can see it and **both halves ship as
 separate corpus rows**.
@@ -4305,13 +4305,13 @@ under 0.3"* by `RECONCILE_MIN_IOU`'s own docstring.
 
 `decideMatch` drops the bar to `RECONCILE_MIN_IOU_WITH_GNIS` (0.3) whenever both sides assert the same
 GNIS id. That is sound across two catalogues and **actively wrong within one**: two OSM features
-sharing a GNIS id are most often a lake and its own named arm, both tagged with the place name.
+sharing a GNIS id are most often a water body and its own named arm, both tagged with the place name.
 Leaving that bar at 0.3 would merge precisely the pairs this lane exists to leave alone. Both bars go
 to 0.9 together, and there is a test that fails if only one moves.
 
 **A collapsed group is still flagged `sameSourceDuplicate`** and still reaches a moderator. That is
 not a half-measure: the corpus stops carrying two rows, and the finding is still recorded. *"Two
-features from ONE catalogue in one group means either our matching chained two distinct lakes, or the
+features from ONE catalogue in one group means either our matching chained two distinct water bodies, or the
 catalogue carries a duplicate it cannot see. Both are findings."*
 
 **Related:** [D93](./phases/A07a-unified-corpus.md#d93--we-mint-the-body-key-osm-and-nhd-become-claims-on-our-record), [D129](#d129--reconcile_min_iou-holds-at-05-and-nine-pairs-merge-on-evidence-instead).
@@ -4352,7 +4352,7 @@ is a hypothesis this census exists to confirm or refute; two numbers landing clo
 This is the same correction the campaign has now made five times. **Report `covered / inScope`, and
 name what was walked past.**
 
-**Related:** [D96](./phases/A07a-unified-corpus.md#d96--settled-the-four-admission-rules--approved), [D132](#d132--depth-stays-measured-only-the-corpus-accepts-a-30-ceiling-n7-3).
+**Related:** [D96](./phases/A07a-unified-corpus.md#d96--settled-the-four-admission-rules--approved), [D132](#d132--depth-stays-measured-only-the-corpus-accepts-a-30-ceiling-a07a-3).
 
 ---
 
@@ -4375,7 +4375,7 @@ imagery surface in the product — which is exactly the "a toggle appears later 
 seam A06e exists to avoid.
 
 **What this does NOT defer:** Workstream **D**'s curated boosts, which were bundled with B3a because
-they share a matcher. They ship in A06c-2 — see [D139](#d139--the-seed-script-is-named-for-the-job-it-does-today-n6c-2).
+they share a matcher. They ship in A06c-2 — see [D139](#d139--the-seed-script-is-named-for-the-job-it-does-today-a06c-2).
 
 `referenceLinks.ts` carries a test asserting no Copernicus URL is emitted, so the link cannot creep
 back in ahead of the layer.
@@ -4389,7 +4389,7 @@ back in ahead of the layer.
 **2026-08-09, founder call.** `scripts/seed-satellite` becomes **`scripts/seed-destinations`**.
 
 The original rename (2026-07-31) was argued well: *"`seed-destinations` names the **input** — a list
-of lakes — which is the thing most likely to change. `seed-satellite` names the **job**."* That
+of water bodies — which is the thing most likely to change. `seed-satellite` names the **job**."* That
 reasoning holds, and D138 changed which job it is. With the imagery half deferred, what this script
 does is match a curated shortlist to corpus rows and set `curatedBoost` (Workstream 4). Naming it
 after work it will not do for a phase is the same failure the first rename was avoiding, pointed the
@@ -4450,7 +4450,7 @@ so the common case is a read and nothing else.
 ## D142 — The profile reveal flag shows the **slots**, never invents what fills them (A06c-2)
 
 **2026-08-09, founder call:** *"Can we put this display calc behind a flag, so we can see all of the
-possible parts of a lake profile while testing dev… I'd rather not forget to test something in the
+possible parts of a water body profile while testing dev… I'd rather not forget to test something in the
 wild before the season starts just because I couldn't see it."*
 
 Nearly every profile surface is built to render nothing when it has nothing to say — the caption's
@@ -4460,7 +4460,7 @@ are invisible, and *"invisible because there is no data"* is indistinguishable f
 because I broke it."*
 
 `PROFILE_REVEAL_ALL` (`@skating/core/profileReveal.ts`) makes the slots visible. **It never
-fabricates a value** — a lake with no depth still has no depth, and the section says so. What it
+fabricates a value** — a water body with no depth still has no depth, and the section says so. What it
 bypasses is the *suppression of data we do have* (E3's activity gate, D86's quorum) and the hiding of
 empty sections.
 
@@ -4488,7 +4488,7 @@ persisting a below-quorum mark.
 Everything revealed carries `·dev`. **Flip the constant to `false` before the season**; the guard
 means forgetting is survivable rather than harmful.
 
-**Related:** [D86](#d86--aggregate-quality-renders-as-a-graded-mark-never-as-a-word), [D141](#d141--the-map-cards-counts-are-recomputed-never-incremented-n6c-2--e), [D3](#d3--never-a-safety-verdict).
+**Related:** [D86](#d86--aggregate-quality-renders-as-a-graded-mark-never-as-a-word), [D141](#d141--the-map-cards-counts-are-recomputed-never-incremented-a06c-2--e), [D3](#d3--never-a-safety-verdict).
 
 ---
 
@@ -4517,7 +4517,7 @@ for choosing the conservative rung rather than the flattering one.
 The ladder still does its job on top: an operator who pins an `official` marker at an OSM-derived
 coordinate promotes it, and a re-import never overwrites them (B3).
 
-**Related:** [D2](#d2--display-prominence-is-computed), [D49](#d49--display-prominence), [D70](#d70--lake-profile-content-is-derived-or-third-party-never-hand-maintained-n6cn6d), [D72](#d72--parking-is-modelled-apart-from-put-ins-and-directions-route-to-the-car-a06d), [`phase-N6d`](./phases/A06d-body-access-points.md).
+**Related:** [D2](#d2--display-prominence-is-computed), [D49](#d49--display-prominence), [D70](#d70--water-body-profile-content-is-derived-or-third-party-never-hand-maintained-a06ca06d), [D72](#d72--parking-is-modelled-apart-from-put-ins-and-directions-route-to-the-car-a06d), [`phase-N6d`](./phases/A06d-body-access-points.md).
 
 ---
 
@@ -4535,7 +4535,7 @@ walk.
 - **800 m** is roughly ten minutes in boots carrying skates, a chair and a shovel — the point where a
   trip acquires a decision rather than a walk from the car.
 - **150 m** is a pull-off and a bank, not an approach worth a sentence.
-- **1,600 m** — a mile — is the founder's own example of the lakes this phase exists for (*"you park at
+- **1,600 m** — a mile — is the founder's own example of the water bodies this phase exists for (*"you park at
   least a mile from the ice"*), which makes it the natural place for assertion to replace inference.
 
 **The asymmetry that makes the last one a demand rather than a chip.** Everything else here is
@@ -4565,7 +4565,7 @@ appear & nobody has written actual reports that document them."*
 this shore *averaged* 393 hours at or above 20 mph across five winters. That is a statement about
 Januaries in general. A skater standing on the ice needs to know about **today**, and a permanent
 profile line saying "prone to wind holes" answers a question nobody asked in a voice that sounds like
-it did. It would also be the first thing on a lake page to warn about a hazard that **no one has
+it did. It would also be the first thing on a water body page to warn about a hazard that **no one has
 observed** — inverting the direction of evidence the whole hazard system runs on, where a warning
 exists because a person saw something.
 
@@ -4587,17 +4587,17 @@ That is a live, conditional, self-retiring claim rather than a permanent label, 
 weather trigger (D56's lane) plus the never-hide invariant. **Not built, not scheduled**; the data it
 would read is already stored, which is the point of having derived it.
 
-**Related:** [D3](#d3--never-a-safety-verdict), [D82](#d82--bathymetry-is-context-not-counsel), [D90](#d90--wind-exposure-is-frequency-times-fetch-never-fetch-alone-n6c-1), [D134](#d134--the-wind-lane-archives-responses-and-captures-the-speed-it-was-already-fetching-n7-3), [`phase-N6c`](./phases/A06c-expanded-body-profiles.md).
+**Related:** [D3](#d3--never-a-safety-verdict), [D82](#d82--bathymetry-is-context-not-counsel), [D90](#d90--wind-exposure-is-frequency-times-fetch-never-fetch-alone-a06c-1), [D134](#d134--the-wind-lane-archives-responses-and-captures-the-speed-it-was-already-fetching-a07a-3), [`phase-N6c`](./phases/A06c-expanded-body-profiles.md).
 
 ---
 
 ## D146 — Satellite imagery is body-scoped **content**, not a base-map swap (A06e)
 
 **2026-08-21, founder call re-scoping A06e:** *"I'm actually tempted to only allow satellite imagery to
-be turned on for a particular lake in the lake detail view… toggling satellite imagery on might somehow
-bound the image to the confines of a single lake body somehow."*
+be turned on for a particular water body in the water body detail view… toggling satellite imagery on might somehow
+bound the image to the confines of a single water body body somehow."*
 
-**This replaces the second half of [D81](#d81--the-map-has-exactly-one-layer-toggle-and-it-is-satellite-n6bn6e).**
+**This replaces the second half of [D81](#d81--the-map-has-exactly-one-layer-toggle-and-it-is-satellite-a06ba06e).**
 D81 said satellite *replaces the base map, not the content*. It now says: **satellite *is* content,
 revealed one body at a time, clipped to that body and its access, and the base map never changes.**
 
@@ -4615,7 +4615,7 @@ founder wanted**, which is the shape of most good re-scopings.
 **What it costs, stated plainly:** you can no longer pan the region in aerial to hunt for access, which
 was the original scoping's headline pairing with A06d. Accepted explicitly.
 
-**Related:** [D81](#d81--the-map-has-exactly-one-layer-toggle-and-it-is-satellite-n6bn6e), [D84](#d84--satellite-imagery-is-two-tiers-with-different-jobs-a06e), D147, D148, [`phase-N6e`](./phases/A06e-satellite-imagery.md).
+**Related:** [D81](#d81--the-map-has-exactly-one-layer-toggle-and-it-is-satellite-a06ba06e), [D84](#d84--satellite-imagery-is-two-tiers-with-different-jobs-a06e), D147, D148, [`phase-N6e`](./phases/A06e-satellite-imagery.md).
 
 ---
 
@@ -4636,7 +4636,7 @@ the live services 2026-08-21:
 - **A pressure ridge is 1–3 m wide**: legible at 0.3 m, a smudge at 3 m, **nonexistent at 10 m**.
 
 So the imagery that would answer *"where can I cross?"* is **tasked commercial** — SkySat or Pléiades
-Neo at roughly $200–400 per lake per capture — against a pilot with no revenue. **The honest scope is
+Neo at roughly $200–400 per water body per capture — against a pilot with no revenue. **The honest scope is
 0.3 m for the landscape, 10 m for the ice, and no promise about the surface.**
 
 **Revisit when there are users to spread the cost across.** D75's low-regret detail still holds: Planet
@@ -4644,7 +4644,7 @@ serves from Sentinel Hub–compatible endpoints, so building against Copernicus 
 
 **Worth remembering:** the product already runs a 0.3 m winter sensor — the skaters. A06d access photos,
 hazard reports and Phase 08 tracks are the "what does it look like today" channel. Imagery's job is what
-a person on the shore cannot photograph: the whole lake at once, and the landscape around it.
+a person on the shore cannot photograph: the whole water body at once, and the landscape around it.
 
 **Related:** [D75](#d75--satellite-imagery-ships-as-a-link-first-the-licence-blocker-is-resolved-the-cost-one-isnt-a06c), [D84](#d84--satellite-imagery-is-two-tiers-with-different-jobs-a06e), D146, [`phase-N6e`](./phases/A06e-satellite-imagery.md).
 
@@ -4708,7 +4708,7 @@ founder asked for over calendar-year invalidation.
 **Backfill last season on first build**, so the feature ships with a full scrubber rather than an empty
 one that fills over three weeks.
 
-**Related:** [D56](#d56), [D63](#d63), [D140](#d140--a-forecast-and-an-observation-are-separated-by-a-type-not-a-rule-n6c-2--b5b), D148, [`phase-N6e`](./phases/A06e-satellite-imagery.md).
+**Related:** [D56](#d56), [D63](#d63), [D140](#d140--a-forecast-and-an-observation-are-separated-by-a-type-not-a-rule-a06c-2--25b), D148, [`phase-N6e`](./phases/A06e-satellite-imagery.md).
 
 ---
 
@@ -4742,7 +4742,7 @@ deferring costs nothing structurally. **Capture the SCL and SWIR bands during A0
 anyway** — we are already paying for the download, and re-fetching a season later is the expensive
 version.
 
-**Related:** [D3](#d3--never-a-safety-verdict), [D140](#d140--a-forecast-and-an-observation-are-separated-by-a-type-not-a-rule-n6c-2--b5b), D147, D148, [`phase-N6e`](./phases/A06e-satellite-imagery.md).
+**Related:** [D3](#d3--never-a-safety-verdict), [D140](#d140--a-forecast-and-an-observation-are-separated-by-a-type-not-a-rule-a06c-2--25b), D147, D148, [`phase-N6e`](./phases/A06e-satellite-imagery.md).
 
 ---
 
@@ -4754,8 +4754,8 @@ that it's about the **observed** date, not the actual date."*
 
 **Two rules, and the second falls out of the first:**
 
-- **The subject of the sentence is us, not the lake.** *"Satellite observed full ice coverage on Jan 8"*
-  is a fact about a photograph. *"The lake froze on Jan 8"* is a claim about the world that a cloudy
+- **The subject of the sentence is us, not the water body.** *"Satellite observed full ice coverage on Jan 8"*
+  is a fact about a photograph. *"The water body froze on Jan 8"* is a claim about the world that a cloudy
   fortnight can make false. Same grammar D140 applies to weather, one sensor over.
 - **A date is published as the two passes that bracket it**, never as a point with an error bar:
   **"open water observed Dec 29 · fully frozen observed Jan 8."** The gap *is* the uncertainty, expressed
@@ -4784,19 +4784,19 @@ satellites, which makes the number an event rather than a preference.
 
 **Prior art, checked 2026-08-21:** nobody has done this for ~25,000 bodies, but
 [NSIDC G01377](https://nsidc.org/data/g01377/versions/1) supplies the standard variable definitions and a
-[published algorithm for small lakes validated on 296 Maine lakes](https://doi.org/10.3390/rs11141718)
+[published algorithm for small water bodies validated on 296 Maine water bodies](https://doi.org/10.3390/rs11141718)
 is the closest thing to a reference implementation. Maine's **human ice-out records** give us ground
 truth inside our own region — worth more than any dataset we could have borrowed.
 
-**Related:** [D3](#d3--never-a-safety-verdict), [D140](#d140--a-forecast-and-an-observation-are-separated-by-a-type-not-a-rule-n6c-2--b5b), D149, D150, [`phase-N6e`](./phases/A06e-satellite-imagery.md).
+**Related:** [D3](#d3--never-a-safety-verdict), [D140](#d140--a-forecast-and-an-observation-are-separated-by-a-type-not-a-rule-a06c-2--25b), D149, D150, [`phase-N6e`](./phases/A06e-satellite-imagery.md).
 
 ## D152 — The weather cache key is a two-tier grid, not a coordinate (A06h)
 
 **2026-09-02, from a costing question.** `samplePointKeyFor` rounds to `toFixed(3)` — ~110 m
 (`packages/convex/convex/weather.ts:68`). Measured against the merged corpus that produces **24,832
-distinct keys for 24,948 bodies**: the cache shares nothing, one fetch per lake. It is invisible today
+distinct keys for 24,948 bodies**: the cache shares nothing, one fetch per water body. It is invisible today
 only because both weather actions are drawer-open-only, so the hour bucket collapses concurrent
-viewers of the *same* lake and nothing ever asks for two.
+viewers of the *same* water body and nothing ever asks for two.
 
 It is also buying nothing. Open-Meteo's US best-match resolves at ~3 km (HRRR) to ~13 km (GFS) — a
 110 m key asks a model with roughly three thousand distinct answers for twenty-five thousand of them.
@@ -4814,10 +4814,10 @@ It is also buying nothing. Open-Meteo's US best-match resolves at ~3 km (HRRR) t
 
 **The elevation band is not optional.** Open-Meteo lapse-rate-downscales temperature to whatever
 `elevation` you pass, and the corpus is at ~99.5% coverage after A07a-3. In the Greens, the Adirondacks
-and the Whites a valley lake can sit 400 m below its grid cell's mean elevation, and the default
+and the Whites a valley water body can sit 400 m below its grid cell's mean elevation, and the default
 answer is then wrong by several degrees — *across freezing*, the only threshold that matters here.
 Including a coarse band in the key is what keeps the fix from fragmenting the cache back to
-one-key-per-lake.
+one-key-per-body.
 
 **Measured 2026-09-02** (three 3,000-body samples off dev, 100% elevation coverage): banding costs
 **~1.16× at 100 m, ~1.08× at 200 m**. Tier A lands at ~9,500–10,500 keys, sharing ~2.6 bodies/cell.
@@ -4827,7 +4827,7 @@ union — the true ratio is slightly higher.
 
 **Why two tiers rather than one compromise.** A key fine enough for the detail panel cannot be
 afforded corpus-wide; a key cheap enough corpus-wide is too coarse for the panel. The cheap one is
-allowed to be wrong in ways that only change *which lakes you look at*, never what the panel then says
+allowed to be wrong in ways that only change *which water bodies you look at*, never what the panel then says
 about them. Paying Open-Meteo (D158) collapses the two into one.
 
 **Related:** D153, D154, D158, D159, [`phase-N6h`](./phases/A06h-weather-detail.md).
@@ -4842,7 +4842,7 @@ season archive, for the same reason `weatherForecastCache` was split out of `wea
 New table `weatherDays`, keyed `(cellKey, tier, dayMs)`, never pruned on the hygiene schedule.
 
 **Open-Meteo's `past_days` reaches 92 days on the forecast endpoint we already use**, so the first
-person to open a lake in February backfills the whole season to date in one ~9-call request. **Lazy
+person to open a water body in February backfills the whole season to date in one ~9-call request. **Lazy
 backfill is not lossy.** The rule: 92-day backfill on first touch of a cell in a season, then one
 appended day per day.
 
@@ -4896,7 +4896,7 @@ built for correctness rather than for thrift.
 ## D155 — The forecast is a planning window, not a moment (A06h)
 
 **2026-09-02, founder correction.** The first draft proposed *"show the forecast at now + drive time."*
-The correction became the feature: *"If I'm checking before bedtime for a lake I plan to wake up early
+The correction became the feature: *"If I'm checking before bedtime for a water body I plan to wake up early
 and skate, or midday at work thinking about where I'll go at 5pm, the start time I care about isn't
 just now + drive. But also, the weather leading up to when I'd get there still matters! If it's going
 to snow for hours overnight, I want to see that instead of skipping it."*
@@ -4915,7 +4915,7 @@ to snow for hours overnight, I want to see that instead of skipping it."*
 temptation is one fused "Weather" card. Do not — the D74 wall (`weather.ts:380-386`) is a type in the
 code and should be a boundary on the screen.
 
-**Related:** [D140](#d140--a-forecast-and-an-observation-are-separated-by-a-type-not-a-rule-n6c-2--b5b), D152, [`phase-N6h`](./phases/A06h-weather-detail.md).
+**Related:** [D140](#d140--a-forecast-and-an-observation-are-separated-by-a-type-not-a-rule-a06c-2--25b), D152, [`phase-N6h`](./phases/A06h-weather-detail.md).
 
 ## D156 — Radar publishes its own blindness; resolution is not the fix (A06h)
 
@@ -4976,7 +4976,7 @@ for an open-source project; belongs in `08-legal-feasibility-checklist.md` befor
 nearly generic (parameterise id prefix, URL builder, attribution, anchor); `scrubberTrack.ts` lifts
 unchanged. But `FreezeUpScrubber.tsx` is 558 lines mostly *about* blocked stops, cloud fraction, SCL
 bands and granule seams — none of which a regular 10-minute radar timeline has — and it is **drag-only
-with no play/pause**. Two structural mismatches: the imagery control is **gated on a single lake being
+with no play/pause**. Two structural mismatches: the imagery control is **gated on a single water body being
 selected** (D146) while radar is **viewport-scoped**, and **there is no layer registry** — a second
 overlay means a real refactor this phase should pay for rather than discover. Good news: radar is plain
 raster XYZ, so **mobile gets it for free** (MapLibre Native reads raster and `pmtiles://` natively).
@@ -5011,10 +5011,10 @@ not deferred.
 if reports haven't been written about them in the specified window… I don't want to limit
 discoverability to only filtering on reports that exist."*
 
-This inverts what the corpus is *for*. Today discovery is report-shaped: you find lakes because
+This inverts what the corpus is *for*. Today discovery is report-shaped: you find water bodies because
 somebody wrote about them, so 25,000 bodies are functionally invisible and the few with reports take
-all the attention — a rich-get-richer loop a new lake can never break into. **Weather is the first
-signal we have about a lake that requires no human to have visited it.**
+all the attention — a rich-get-richer loop a new water body can never break into. **Weather is the first
+signal we have about a water body that requires no human to have visited it.**
 
 **⚠ The read-path danger is one this repo has been burned by twice.** *"Three nights below 20°F and no
 snow since"* over 25,000 bodies is a full-corpus scan per query — the shape that made `listInViewport`
@@ -5034,7 +5034,7 @@ transition"* — and the copy must say which, because an invisible anchor reads 
 is.
 
 **One shared filter state across map and feed**, carried across navigation until cleared — you narrow
-on the feed, switch to the map, and the same dozen lakes are drawn.
+on the feed, switch to the map, and the same dozen water bodies are drawn.
 
 **The feed becomes heterogeneous and is renamed "Newsfeed" → "Latest"** (founder call, 2026-09-03).
 The rename does real work: *Newsfeed* names a source, *Latest* names an ordering, and an ordering can
@@ -5095,7 +5095,7 @@ made redundant by the scanner; it becomes **the thing that starts it.**
 
 **They are also different questions.** *"Has winter started anywhere in the region?"* is coarse and
 region-wide — 25 sites is plenty, and more resolution would not improve the answer. *"Which specific
-lakes look frozen?"* needs per-cell fidelity, because distinguishing a lake from its neighbour is the
+water bodies look frozen?"* needs per-cell fidelity, because distinguishing a water body from its neighbour is the
 entire point.
 
 **Their failure modes differ, which is the stronger argument.** A season gate firing two days late
@@ -5131,7 +5131,7 @@ construction, so the correct measure was one field away and unused.
 
 **⚠ The larger term was missing entirely: albedo.** Fresh snow reflects 0.8–0.9 of incoming shortwave;
 bare clear ice ~0.1. The same 3 kWh/m² day deposits roughly **9× more energy into black ice than into
-the same lake under 5 cm of snow.** Three fields land in `weatherDay.ts`:
+the same water body under 5 cm of snow.** Three fields land in `weatherDay.ts`:
 
 - **`absorbedInsolationWhM2`** — Σ shortwave × (1 − albedo), albedo estimated per *hour* from that
   hour's snow depth (a cover that melts out by noon leaves the afternoon absorbing like bare ice).
@@ -5181,7 +5181,7 @@ the **recorded** date.
 archive stops growing. All three would rather be two weeks late than one week early — closing early
 truncates the melt-out record *and* blinds discovery during the last, most marginal skateable weeks.
 
-**⚠ What the close is NOT.** A coarse region-wide *ice-out* signal for gating spend. Never a per-lake
+**⚠ What the close is NOT.** A coarse region-wide *ice-out* signal for gating spend. Never a per-body
 claim that skating is over, and D162's melt fields must not be promoted into one. *"Several days like
 that ruins it"* is a real signal whose home is the **panel**, as an observation, not a switch.
 
@@ -5207,7 +5207,7 @@ single tolerance. Two consecutive non-cold nights of either kind end the chain.
 
 **Why this closes D159's anchor gap without a report.** Every since-style predicate before this
 borrowed its start from a user-visible entity (`resolveStripAnchor`: a report's `skateEndTime`, a
-hazard's `lastConfirmedAt`). A lake nobody has written about had no anchor, so *"no snow since"* was a
+hazard's `lastConfirmedAt`). A water body nobody has written about had no anchor, so *"no snow since"* was a
 claim with an invisible start date. The chain supplies one: **the first night of the current cold
 chain.** The copy names it — *"4 nights below 20°F, no snow since the first"* — so the sentence
 carries its own anchor.
@@ -5392,7 +5392,7 @@ email sender needs — one place to add a transport, rather than six insert site
 answered". The code notified the **fulfilling report's author** — "your report fulfilled a bounty" —
 and nobody, anywhere, told the requester a report had landed on their bounty. Fulfilment can't happen
 until the requester thumbs an attached report, so the loop only closed if they happened to have
-favorited the lake.
+favorited the water body.
 
 **The type becomes `bounty_answered`, to the requester, on attach.** `attachReportToOpenBounties`
 enqueues it; several reports inside the settle window coalesce into "N reports came in"; the flush
@@ -5408,7 +5408,7 @@ is a nice thing to know, not a reason for a phone to ding.
 
 **2026-07-30, founder call.** Hazards generate no `notifications` rows at all, and that is not an
 omission. Phase 09b made the hazard channel a client-side **proximity** alert fired while you're on the
-ice — deliberately local and offline-capable. A push about a hazard on a lake you are not standing on
+ice — deliberately local and offline-capable. A push about a hazard on a water body you are not standing on
 would put safety content on the least reliable transport we have (deferred, throttled by iOS at its
 discretion, D54) for a skater who by definition isn't there.
 
@@ -5478,7 +5478,7 @@ distinction ("thumbs by push but not by mail") nobody had asked to draw.
 
 **Which types email is fixed in code** (`NOTIFICATION_EMAIL_ELIGIBLE`): the daily digest, an
 unreported skate, a bounty asked or answered, a moderator's ruling. Never a thumb, a comment, a
-favorited lake's new report or a "great ice" alert — frequent, hours-old by the time mail is read, and
+favorited water body's new report or a "great ice" alert — frequent, hours-old by the time mail is read, and
 an email about each would be spam the user configured. Every mail carries a one-click unsubscribe
 (`/unsubscribe?u=&t=` on the Convex `.site` host + `List-Unsubscribe` headers) authorized by a
 per-user secret that can do exactly one thing: turn the email channel off.
@@ -5542,7 +5542,7 @@ bay — the label, the weather strip's point, the feed card's heading. `reportSu
 bay bounty gate must both find a spanning report under its *second* bay. The join mirrors
 `moderationStatus` and `skateEndTime` so both reads stay in-index, and every writer of those two
 fields goes through `lib/reportSubAreas.ts`. A bounty on any member bay is satisfied; a bounty on the
-lake is satisfied by any report on the lake, including one in a bay — the asymmetry is correct.
+water body is satisfied by any report on the water body, including one in a bay — the asymmetry is correct.
 Notifications de-dup on the recipient set before enqueue, so favoriting Champlain *and* Malletts Bay
 yields one row, not "2 new reports" for one.
 
@@ -5563,7 +5563,7 @@ shore, the tracks through it); what does not is inherited (elevation — the sam
 wind rose — because our data has *no finer answer*, not because the wind is the same, and the caption
 says so on every body, since the corpus median is a tenth of one WTK cell); and the one thing that is
 neither, a favorite, is stored. **Depth is derived and stored but never inherited**: Malletts Bay is
-not as deep as the broad lake, and a bay page reading the lake's 122 m is worse than one reading
+not as deep as the broad water body, and a bay page reading the water body's 122 m is worse than one reading
 nothing (D3). Its inputs live on disk, so a redraw *clears* it and the admin card asks for the re-run.
 
 **Related:** D4, D9, D44, D60, D93, [`phase-N9`](./phases/A09-subareas-as-places.md).
@@ -5579,13 +5579,13 @@ discoverable unless a user specifically tries to access them, whereupon they'll 
 reads `reviewStatus`/`dedupStatus`, `removedAt`, `publicAccess.verdict` and the new `dormant` field
 in one precedence order — unlisted › removed › `none` › dormant › active — so no two fields can
 disagree about what a body is. That is the A06f lesson applied: the access demotion was a *derived*
-number re-derived at six scoring sites, and every omission silently un-demoted a lake. Now one
+number re-derived at six scoring sites, and every omission silently un-demoted a water body. Now one
 function is the input and `scoreFields` takes `active: boolean`, never a hand-spelled flag.
 
 **The dormant rung, not a subtraction.** A body that is not active draws at
 `DORMANT_MIN_VISIBLE_ZOOM` (z16), *past* the D49 discoverability floor: you see it only zoomed in on
 the water itself, dimmed, and the drawer says why. A06f's −2-zoom penalty term is retired; "how
-prominent among the lakes we push" (the score) and "whether we push it at all" (standing) are two
+prominent among the water bodies we push" (the score) and "whether we push it at all" (standing) are two
 questions. The cell index is unchanged — `indexLevelFor` clamps to z14 and the `by_cell` range does
 the rest — and a coordinate lookup scans every rung with no cutoff, which is the load-bearing
 property: **a dormant body is still resolvable by a tap or a track.**
@@ -5595,7 +5595,7 @@ property: **a dormant body is still resolvable by a tap or a track.**
 dormant rung with the reason in the drawer (including *"Removed at the landowner's request"* — *"we
 can re-address this if someone complains"*), is absent from search and every push surface, and is
 found by someone standing on it — so the landowner skating their own taken-down pond, or a resident
-of a private lake, attaches to *that* row rather than minting a fresh public body over the takedown
+of a private water body, attaches to *that* row rather than minting a fresh public body over the takedown
 (D48's deferred edge (a), closed). Reports there attach and reach no feed or notification.
 
 **`isActive` is the predicate every push surface gates on**: the drive-time fan-out and digest,
@@ -5633,7 +5633,7 @@ visible on `/admin/water/standing`. Removal stays a human act (D48).
 or imported, a moderator confirming public access (`open`), a positive boost, a restore, an admitted
 request. **Only the machine-written dormancies yield** (`inactive`, `not_in_campaign`); a moderator's
 dormancy, a `none` ruling and a removal are decisions and are reversed by a person — the resident of a
-private lake skating it is not evidence the public may. Coming back from `not_in_campaign` sets
+private water body skating it is not evidence the public may. Coming back from `not_in_campaign` sets
 `includedByRequest`, or the next campaign would shelve it straight back. Every activation re-scores
 with richness, re-cells, re-registers the weather cell, stamps `activatedAt` and writes an audit row;
 the enrichment passes find the returned bodies by that stamp.
@@ -5665,13 +5665,13 @@ reachable-removed rule.
 request as *a coordinate plus a requester*, resolved against the archives, admitted by a moderator.
 Built with three changes the kickoff settled.
 
-**Five kinds, not one.** With standing (D176) a request is usually about a lake we already hold:
+**Five kinds, not one.** With standing (D176) a request is usually about a water body we already hold:
 `activate` a dormant body (the common case once the corpus is tiered — no geometry, one decision),
 `restore` a removed one, `contest_access` a `none` ruling, and the landowner's `takedown` D48
 deferred to Phase 07 and nobody built (*"we should add landowner takedown request as a fifth kind"*).
 `admit` — water the corpus does not hold — is the one that needs the catalogue. `requestKindsFor`
 maps a standing to the kinds it admits; the drawer offers exactly those and `create` refuses the
-rest. One open ask per person per lake per kind; the count of distinct people is the queue's rank;
+rest. One open ask per person per water body per kind; the count of distinct people is the queue's rank;
 ten open asks per person.
 
 **The resolver asks the live service, not the archives** — the plan's order inverted. "The
@@ -5684,18 +5684,18 @@ queue says why there is nothing to admit. The archive lane stays the manual fall
 
 **Approving performs the act through the verb that already exists** — `activateBody`, `restore`,
 `remove`, `setPublicAccess('open')` — so the audit log reads the same from the queue as from the
-lake editor, and one decision closes every sibling ask. An admitted body is inserted `source:
+water body editor, and one decision closes every sibling ask. An admitted body is inserted `source:
 '3dhp'` with the catalogue id as `externalId` and `threeDhpId`, `includedByRequest` and active from
 birth, so a later campaign upserts *that* row (D93) and the transform's floor cannot delete it; a
 feature already in the corpus is activated, never twinned. `restore` and `takedown` approvals take an
 admin, as their verbs do.
 
-**Declines are visible to the requester** (the plan's open question): the lake's drawer reads the
+**Declines are visible to the requester** (the plan's open question): the water body's drawer reads the
 ask back and, after, the moderator's note. Not a notification type — the A08 pipeline's 1:1 pref
 mirror makes a new type a wider change than this warrants; deferred.
 
 **A track over a removed body attaches to it** (D48's deferred edge (a)). `findMatchCandidates`
-carries each match's standing, `NewWaterPrompt` shows a shelved or removed lake for what it is, and
+carries each match's standing, `NewWaterPrompt` shows a shelved or removed water body for what it is, and
 `create` refuses to mint over a removed body even with `confirmedNew` — the takedown cannot be
 re-drawn around.
 

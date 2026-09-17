@@ -103,11 +103,11 @@ The long-form write-ups the entries above point at — preserved verbatim, since
   pass, as the other D3-sensitive half — it is A06c's open question 5; **(3)** the "do this when" density
   trigger is **retired by a design rule instead of by waiting** — a body with nothing to say gets **no
   card at all**, not an empty one, so the feature is harmless in a sparse corpus and simply appears on
-  the lakes people are actually using. The original text follows.
+  the water bodies people are actually using. The original text follows.
 
   Today the map
-  shows water-body polygons and you must open a lake to learn anything about it. The ask: at suitable
-  zoom levels, surface a compact card/label over *unselected* bodies with the at-a-glance basics — lake
+  shows water-body polygons and you must open a water body to learn anything about it. The ask: at suitable
+  zoom levels, surface a compact card/label over *unselected* bodies with the at-a-glance basics — water body
   name, recent report count, a general quality consensus, and the most important active hazard types.
   **Deliberately not in Phase 09a** (decided at kickoff): it is a map-browse feature, not a hazard feature,
   and doing it properly would roughly double Phase 09a's backend surface.
@@ -126,7 +126,7 @@ The long-form write-ups the entries above point at — preserved verbatim, since
     an authoritative safety claim (D3 — the same trap as hazard decay); whether the card renders as a
     MapLibre `symbol` layer with data-driven zoom filters or as HTML overlays; and how it interacts with
     `minVisibleZoom`/`displayScore` (D49) so cards don't fight the existing prominence scoring.
-  - **Do this when** there's enough report density that a lake summary is non-empty for most bodies in a
+  - **Do this when** there's enough report density that a water body summary is non-empty for most bodies in a
     viewport — before that it's mostly blank cards.
 - ~~**Harden `waterBodies.listInViewport` against the read-cap crash — multi-cell / bbox-coverage
   geospatial indexing**~~ **✅ SHIPPED as A01 (2026-07-26).** Kept as a pointer because the *root cause*
@@ -163,7 +163,7 @@ The long-form write-ups the entries above point at — preserved verbatim, since
   (D36), AI summarization beyond weather facts (Q9), the full legal review (Q10), in-app guides,
   group-skate organizing, and Fitbit — now live in **Waiting on a blocker** above, filed under what's
   actually blocking each. Not dropped; sorted.)*
-- ~~Satellite imagery layer toggleable in lake detail view. **NOTE: This plan still needs to be explored**
+- ~~Satellite imagery layer toggleable in water body detail view. **NOTE: This plan still needs to be explored**
   — and it needs an imagery source whose terms permit the use, which is its own question.~~
   **✅ EXPLORED — and the blocking question is answered (A06c, 2026-07-30, D75).** Kept as a pointer
   because the shape of the answer is worth carrying: *"an imagery source whose terms permit the use"* had

@@ -61,7 +61,7 @@ Six notification types are being generated today and have never been visible to 
 |---|---|---|
 | `report_rated` | `ratings.ts:140` (a thumb on your report **or hazard**) | Phase 06 |
 | `report_rated` | `reports.ts:448` (your report was corroborated) | Phase 06 |
-| `bounty_request` | `bounties.ts:662` (a bounty on a lake you recently reported) | Phase 06 |
+| `bounty_request` | `bounties.ts:662` (a bounty on a water body you recently reported) | Phase 06 |
 | `bounty_fulfilled` | `bounties.ts:760` (your bounty was answered) | Phase 06 |
 | `favorite_report` | `notifications.ts` flush | Phase 04 |
 | `nearby_report_digest` | `notifications.ts` flush | Phase 04 |
@@ -114,7 +114,7 @@ Neither is wrong. Both are behind the inbox in every ordering that a user would 
 Hazards generate **no** `notifications` rows at all — `hazards.ts` contains no notification code. That
 looks like an omission and isn't: Phase 09b made the hazard channel a client-side **proximity** alert
 fired while you're on the ice, deliberately local and offline-capable. Founder call, 2026-07-30:
-**keep it that way** (D79). A push about a hazard on a lake you are not standing on is a different
+**keep it that way** (D79). A push about a hazard on a water body you are not standing on is a different
 product decision, and not this phase's.
 
 The distinction that survives: **author-directed** hazard notifications are in scope (B2 — someone
@@ -155,7 +155,7 @@ contribution is not a broadcast.
 
 The fan-out's cost is that it *examines* every profile. It is not that it examines them wrongly: each
 check is a real polygon test (`bandForCoord`, `core/driveTime.ts:50`) against that viewer's own cached
-isochrones. A cell index can cheaply say *"these profiles could plausibly reach this lake"* — it cannot
+isochrones. A cell index can cheaply say *"these profiles could plausibly reach this water body"* — it cannot
 say who qualifies, because a bbox is not a band.
 
 So the index returns **candidates**, and the exact test still runs per candidate — the same discipline
@@ -256,7 +256,7 @@ probably belongs there instead — which is most of the argument for D79.
 Founder call, 2026-07-30: **purge notifications each July**, on A05a's season rollover (July 1, D63).
 
 It's the right clock rather than a convenient one. Every notification we generate is about a *moment* —
-someone thumbed your report, a bounty opened on a lake, three lakes near you had new ice. None of that
+someone thumbed your report, a bounty opened on a water body, three water bodies near you had new ice. None of that
 survives a summer, and a July inbox holding February's ice reports is landfill with a badge on it.
 Reusing the season boundary also means no new concept: D66 already expires a departed skater's
 condition photos on exactly this line, for exactly this reason.
@@ -727,7 +727,7 @@ p.timezone ?? DIGEST_TIMEZONE)`). Logged as **D173**.
    already in from pass 5. *Second pass (xhigh):* a late `linkActivityToReport` follows the dedup
    chain to the winner, stopping short of a path-less one or one already reported (it links the copy
    it was filed from — the sweep's own can't-move state); the sweep's move refuses a path-less winner
-   and carries the loser's lake onto an unresolved one; dedup body-matching considers every body a
+   and carries the loser's water body onto an unresolved one; dedup body-matching considers every body a
    spanning skate touched. Also: `PastWeatherPanel.test.tsx` (A06h) waited on a heading that renders
    in the loading state too, then asserted synchronously — a race a slow CI runner lost; it now
    waits for the loading line to clear.
@@ -830,7 +830,7 @@ the route answers 500 and the launch-time sync is the only refresh.
 that exist predate PR 3 — and no profile has an `emailUnsubscribeSecret`, which is minted on the
 first mail. So the 2026-09-14 Android push proved the credentials, not `flush → deliverBatch`; the
 `/unsubscribe` route has never been hit outside tests. One deliberate trigger from a second account
-(a thumb for the push-only path, a bounty on a lake the founder reported for the email path) is the
+(a thumb for the push-only path, a bounty on a water body the founder reported for the email path) is the
 outstanding smoke.
 
 **Credentials are complete on both platforms** — FCM V1 key, `google-services.json` and the APNs
@@ -848,7 +848,7 @@ purpose (`notifications.ts:452`, a digest row with no body the enqueue never wri
 TypeScript-narrowing fallbacks in `mergeTriggers`). `lib/clerkEmail.ts` had had no test file at all.
 Branch coverage was deliberately *not* chased past that: the remaining partials are `??` and spread
 fallbacks whose other side can't happen, and pinning them would mean writing rows the code can't
-produce. The one reachable case — a skate the recorder couldn't place on a lake — was added.
+produce. The one reachable case — a skate the recorder couldn't place on a water body — was added.
 
 **Founder tasks closed this PR:** Android small icon (needed an asset — arrived inverted the first
 time, wordmark transparent and surround white, flipped in place; then re-cut heavier), preview
@@ -863,7 +863,7 @@ run, an install, a decision, or a scale trigger.
    ever carried `pushedAt` or `emailedAt`, and no profile has an `emailUnsubscribeSecret` (minted
    on the first mail) — the 2026-09-14 Android push proved the credentials with a direct call, not
    the pipeline. One deliberate trigger from a second account: a thumb on a founder report (the
-   push-only path) and a bounty on a lake the founder has reported (the email path, and the first
+   push-only path) and a bounty on a water body the founder has reported (the email path, and the first
    real `/unsubscribe` link). Then check the stamps, the secret, and the inbox at `updates@…`.
 2. **Install preview build `a09708e6`** on the Pixel — it carries the small icon, `syncFromClerk`
    and the post-Greptile JS. The first push after install is what shows the icon.

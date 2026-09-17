@@ -56,7 +56,7 @@ unverifiable.
 
 **5. What A04 didn't say at all:** `weatherCache` growth is now **multiplied by A02**. The cache key is
 `(samplePointKey, windowStartMs, windowEndBucketMs)`, and A02 shipped the `weatherSamplePoints` writer —
-so a big lake samples at several points, and rows accrue per hour *per point*, not per hour per lake.
+so a big water body samples at several points, and rows accrue per hour *per point*, not per hour per water body.
 
 ## Decisions taken at kickoff (2026-07-27)
 
@@ -78,7 +78,7 @@ tombstone D36, demotion D53) and protects against the rage-quit and the misclick
 > overshot in both directions, and the sign-in argument only ever justified not banning the *login*.
 >
 > It was too permissive about **content**: a report posted in hour 719 is erased hours later while
-> it's still the freshest thing on the lake. So a pending deletion is **read-only** —
+> it's still the freshest thing on the water body. So a pending deletion is **read-only** —
 > `requireContributor`, with flagging, blocking, support, export and private preferences deliberately
 > still open.
 >
@@ -106,7 +106,7 @@ what we want from GPS tracks, so there's a third:
 That is not a new rule invented for deletion — it is literally gate (1) of `listTracksForBody`,
 *publish-is-consent* (D58). An **unlinked** activity is a private recording the person never published:
 raw movement data, no community value, so it goes with the rest of the private bucket. A **linked** one
-was already public, is already drawn on the lake, and is part of the ice record the whole
+was already public, is already drawn on the water body, and is part of the ice record the whole
 anonymize-don't-erase posture exists to preserve.
 
 The consequence worth stating plainly rather than burying: because each deleted user keeps their **own**
@@ -478,7 +478,7 @@ Two things came out that weren't scoped: **`showPutIn` was bypassed on the repor
 put-in had their first/last 150 m drawn publicly, despite the aggregate layer 60 lines below carefully
 clipping it (fixed here, since deletion can't respect a rule the live product doesn't); and
 **`weatherCache` growth is multiplied by A02**, which shipped the `weatherSamplePoints` writer — rows
-accrue per hour *per sample point*, not per hour per lake. Its retention argument also turned out
+accrue per hour *per sample point*, not per hour per water body. Its retention argument also turned out
 stronger than "disk growth": the cache key contains the current hour bucket, so yesterday's rows are
 *unaddressable* rather than merely stale.
 

@@ -59,7 +59,7 @@ The `listed` filter-key refactor replaced the Phase 00 `reviewStatus`-only filte
 `listInViewport` made a real corpus queryable at all. A read-only MapLibre map on a self-hosted
 Vermont `.pmtiles` basemap confirmed the data, with OSM attribution as a build-time acceptance
 criterion. Rivers were deferred — reaches are hard, and pilot skating is still-water. *Vermont's
-lakes render on a map and an admin can remove or restore one.*
+water bodies render on a map and an admin can remove or restore one.*
 
 #### Data runs
 - **2026-07-13 — Vermont OSM import:** 9,967 bodies (PR #9)
@@ -74,13 +74,13 @@ lakes render on a map and an admin can remove or restore one.*
 🟢 **Complete** 2026-07-16 · PRs #12 #13 #16 · [plan](./phases/02a-map-and-reports.md) · D9 D13 D20 D30 D31 D41 D42 D49
 
 The usable MVP: an interactive MapLibre map with the D49 zoom-scored prominence (a small-but-beloved
-lake can show at state zoom while clutter drops), tap-to-detail with deep-linkable drawers, and report
+water body can show at state zoom while clutter drops), tap-to-detail with deep-linkable drawers, and report
 create/read — multi-reading thickness, conditions, a put-in pin, photos with HEIC decode, EXIF strip
 and geotag opt-in. Web shipped first to prove the shared backend, then the mobile online loop on
-native MapLibre, then the offline draft queue: a buffered `pointInPolygon` GPS→lake resolver and a
+native MapLibre, then the offline draft queue: a buffered `pointInPolygon` GPS→water body resolver and a
 checkpointed, idempotent flush state machine in `@skating/core`, backed by an `expo-sqlite` body-polygon
 LRU and draft queue. Reports are always public (D13 — a visibility selector shipped and was removed).
-*Friends can post and read reports on real lakes, with or without signal.*
+*Friends can post and read reports on real water bodies, with or without signal.*
 
 #### Deferred
 - 🟢 **User-created water bodies + dedup** — moved to Phase 08, where a GPS path makes them trustworthy
@@ -94,9 +94,9 @@ Data and infra only: the Vermont pilot widened to the Northeast lake-skating sta
 metro, VT, NH, ME, MA, deliberately not the whole Geofabrik "northeast" dump — via per-state extracts
 through the Phase 01 ETL. The multi-state basemap blew past Convex's storage tier, so tiles moved to
 Cloudflare R2 (zero egress; an env-var swap for the apps), map bounds widened only after the data
-landed, and the corpus size made a lake name-search box near-essential, so it shipped here in both
+landed, and the corpus size made a water body name-search box near-essential, so it shipped here in both
 apps. The `curatedBoost` seed mechanism landed with a flat +0.3 for 21 Vermont bodies. *A skater
-anywhere in the five states opens the app and sees their lakes.*
+anywhere in the five states opens the app and sees their water bodies.*
 
 #### Data runs
 - **2026-07-15 — five-state OSM import:** ~116,070 bodies (NY clipped downstate); replaced by the A07a unified corpus in August
@@ -127,7 +127,7 @@ block and flag, and content can be taken down fast.*
 Reframed at scoping from a hard distance gate to a **soft, quality-weighted signal that behaves
 differently per context**: browse is permissive (show all, filters narrow, favorites boosted),
 notifications are conservative (favorites on, distance and quality opt-in). Favorites are the
-strongest signal and the stand-in for place-based curation — you subscribe to lakes, not people.
+strongest signal and the stand-in for place-based curation — you subscribe to water bodies, not people.
 Three drive-time bands are read-time isochrone polygons on `profiles` (30/60 from hosted ORS, 90 a
 crow-flies fallback), the feed filter row persists local-first with server LWW sync and includes
 unknown values by default so a thickness floor can't hide the 84% of reports without a reading, a
@@ -152,7 +152,7 @@ state label from the report's put-in pin, backed by a new `adminAreas` boundary 
 report create — no per-read geocode, no corpus backfill — which GPS and hazards reuse. Tap a card and
 the report opens in a drawer, preserving scroll; photo carousel, empty state, pull-to-refresh. Built
 ahead of Phase 04, whose drive-time filters became an additive clause on the same `listFeed`. *Recent
-community activity is browsable without going lake by lake.*
+community activity is browsable without going water body by water body.*
 
 ## Phase 06 — Bounties + trust score
 🟢 **Complete** 2026-07-22 · PR #22 · [plan](./phases/06-bounties-and-trust.md) · D10 D17 D44 D50
@@ -199,12 +199,12 @@ The phase inverted before it started: Strava's 2024 terms forbid showing one ath
 another, so the "pull tracks from Strava" plan died and became **record in-app, push to Strava** —
 first-party data we may aggregate, and *record once, keep your Strava stats* as the adoption lever.
 Modeled A→B→C: a native GPS recorder over a durable buffer (A), our own `gpsActivities` store with
-resolve-to-lake and a decaying aggregate tracks layer under publish-is-consent privacy with put-in-
+resolve-to-body and a decaying aggregate tracks layer under publish-is-consent privacy with put-in-
 gated endpoint clipping (B), and Strava `activity:write` via the repo's first HTTP router and OAuth
 state nonce (C). User-created bodies finally landed here, **path-only at the trust boundary** — no
 freehand drawing, ever — with match-on-create dedup feeding Phase 07's queue. Unified report freshness
 (D59) drives path opacity. *A phone-only skater records a skate, sees the path on their report and
-the lake, pushes it to Strava, and new water gets a body from the track.*
+the water body, pushes it to Strava, and new water gets a body from the track.*
 
 #### Deferred
 - ⚪ **Watch adapters (Garmin / COROS / Polar / Health Connect) + watch-wins ingest** — partner approvals → [`backlog/partnerships.md`](./backlog/partnerships.md)
@@ -280,7 +280,7 @@ weather-aware bounty freshness. *Aging reports say what the weather has done sin
 by what actually happened.*
 
 #### Deferred
-- 🟢 **Lake depth as a decay input** — the `isShallow` scalar this plan described never existed; A06a built the signal
+- 🟢 **Water body depth as a decay input** — the `isShallow` scalar this plan described never existed; A06a built the signal
 - 🟢 **Multi-cell giants** — `weatherSamplePoints` reader here, writer in A02
 - ⚪ **Decay-magnitude refit** of `HAZARD_DECAY` and `decayMultiplier` — needs a real in-app corpus; `bountyGateEvents` is the input → register
 
@@ -292,13 +292,13 @@ by what actually happened.*
 
 The crash class: `@convex-dev/geospatial` reads roughly in proportion to `maxResults`, not results,
 so a wide sparse viewport hit Convex's 4,096-read cap — and the 256-row clamp meant to contain it had
-already been silently dropping lakes in dense Maine. The fix wasn't expressible in that component
+already been silently dropping water bodies in dense Maine. The fix wasn't expressible in that component
 (one point per key), so it was **retired entirely** for an own ladder-grid cell index: one row per
 grid cell an object's bbox covers, at a rung no finer than the zoom it first draws at, so a viewport
 read is bounded by geometry. Two unscoped finds: `adminAreas` had the same bug with a worse symptom
 (Adirondack towns wider than the search box lost their labels), and `reports.create` was scanning every
 profile to fan out notifications — now a paged scheduled job. *The map can't crash by panning, and
-257 lakes that were missing are back.*
+257 water bodies that were missing are back.*
 
 #### Data runs
 - **2026-07-26 — cell backfill:** 116,070 bodies indexed; the off-data pan that crashed costs 22 reads, the heaviest real viewport 1,771, eastern Maine returns 513 where the clamp returned 256 (`waterBodies:viewportReadStats`)
@@ -306,18 +306,18 @@ profile to fan out notifications — now a paged scheduled job. *The map can't c
 #### Deferred
 - ⚪ **Reverse spatial index for notification fan-out** — A01 bounded the walk, didn't remove it → A08 (D172)
 
-## Phase A02 — Lake editor + sub-areas
+## Phase A02 — Water body editor + sub-areas
 🟢 **Complete** 2026-07-26 · PR #28 · [plan](./phases/A02-body-editor-and-subareas.md) · D60 D61
 
-Named sub-areas (D60): a bay is a region *inside* one polygon, not a lake beside it, so one sheet of
+Named sub-areas (D60): a bay is a region *inside* one polygon, not a water body beside it, so one sheet of
 ice keeps one set of reports, hazards, bounties and favorites while carrying the name skaters use.
 Labelled on cards and detail surfaces, searchable by alias, drawn from a third ladder-grid table,
-targetable by a bounty. And the per-lake editor (D61) at `/admin/water/$id` with the camera locked to
+targetable by a bounty. And the per-body editor (D61) at `/admin/water/$id` with the camera locked to
 the body — including the `weatherSamplePoints` writer Phase 10 shipped a reader for and never a
 mutation, auto-flag bundling, and `activeBountyPostLimit`. `MapView` became a shared shell so the
 editor and the skater map are one canvas. What the register had asked for — "add the bays OSM lacks"
 — was unbuildable (`waterBodies.create` is path-only) and the wrong shape anyway. *Malletts Bay is
-a place with a name, and an operator can curate a lake in place.*
+a place with a name, and an operator can curate a water body in place.*
 
 #### Data runs
 - **2026-07-26 — curation session:** the seeded sub-areas and the bay re-parenting recorded in the plan doc
@@ -343,7 +343,7 @@ account. *A user can export or delete their account, and the record stays honest
 
 Nothing in the app expired before this: freshness was an opacity, not a gate, so a 2024/25 report
 still rendered and a ridge from February was still on the map. A season is July 1 → June 30 (D63),
-derived and never stored; reports are season-scoped in the feed and lake list, tracks and hazards on
+derived and never stored; reports are season-scoped in the feed and water body list, tracks and hazards on
 the map, with a deliberate way to browse a past season. Hazards reset on the boundary, and recurrence
 is D53's promotion — which makes the pre-first-ice promotion pass a safety task. Suggested crossings
 decay the *opposite* way from hazards (D64): faster, needing more corroboration, one "closed" vote
@@ -363,7 +363,7 @@ so the plan's "same lazy chunk on both clients" was unbuildable, and the Phase 0
 out to be the mobile path already. And **snap-to-shoreline** (D67): two taps near a shore produce the
 band of ice along it, straight off `waterBodies.polygon`, with a refused band offering narrowing
 rather than a dead end. The pass fixed two pre-existing bugs outside its scope: every admin detail
-page was a dead link (a TanStack outlet-less leaf), and favorite paint drifted between lakes on pan.
+page was a dead link (a TanStack outlet-less leaf), and favorite paint drifted between water bodies on pan.
 *A skater can draw the shape a hazard actually has.*
 
 #### Owed
@@ -373,7 +373,7 @@ page was a dead link (a TanStack outlet-less leaf), and favorite paint drifted b
 ## Phase A05c — Hazard identity
 🟢 **Complete** 2026-07-31 · PRs #34 #35 · [plan](./phases/A05c-hazard-memory.md) · D77 D78 D79 D80
 
-Two founder asks that were one problem: "which hazards were on this lake in '24/'25?" and "if three
+Two founder asks that were one problem: "which hazards were on this water body in '24/'25?" and "if three
 people pin the same ridge, do their confirmations split?" are the same geometric judgement at two time
 scales. One `clusterHazards` primitive, two windows (D77): within a season it prevents, pools, renders
 as consensus and auto-merges reversibly on the D36 tombstone pattern (D80); across seasons it becomes
@@ -387,7 +387,7 @@ corroboration, and operators watch recurrence form.*
 #### Deferred
 - ⚪ **Flip `RECURRENCE_ADVISORIES_PUBLIC`** — after operators have read the queue across two rollovers; a judgement, not a date
 
-## Phase A06a — Lake depth
+## Phase A06a — Water body depth
 🟢 **Complete** 2026-07-30 · PR #33 · [plan](./phases/A06a-body-depth.md) · D68 D69
 
 The body-level depth D56 was designed around and never got — the `isShallow` scalar Phase 10 described
@@ -410,22 +410,22 @@ shallow pond's hazards thaw faster in the model, and the drawer says where its d
 ## Phase A06b — The bathymetry layer
 🟢 **Complete** 2026-08-01 · PRs #36 #37 · [plan](./phases/A06b-bathymetry-layer.md) · D81 D82 D83 D89
 
-Measured state-agency isobaths as a PMTiles overlay drawn inside the open lake: five sources archived
+Measured state-agency isobaths as a PMTiles overlay drawn inside the open water body: five sources archived
 and normalized, joined at 98%, gated, contoured, tiled on the Phase 02b upload lane, and rendered by
 both clients on drawer-open with no toggle (D81 — contours follow the detail view) and no safety copy
 at all (D82 — bathymetry is context, not counsel, which dissolved the doc's hardest part). Vermont
 publishes soundings, not isobaths, so it was the hardest lane: `gmt surface` with the shoreline as a
 depth-0 constraint on an axis-compressed grid, after five interpolators failed on a render. The
 finding that governs it: **every input-side quality gate we tried was falsified by a render**, so it
-ships with none. A fixed 5 ft ladder (D89) makes ring count read as depth. *Open a lake and see
+ships with none. A fixed 5 ft ladder (D89) makes ring count read as depth. *Open a water body and see
 its basin.*
 
 #### Data runs
-- **2026-08-01 — bathymetry archive:** 5 agencies, 298 MB mirrored → 2,437 of 2,491 lakes joined → 2,042 contoured into 49,742 lines → 15 MB z9–z14 `dev/bathymetry-20260801-2.pmtiles`
-- **2026-08-09 — re-keyed under A07a (D95):** 2,298 lakes → 52,522 lines → 2,287 bodies (+232 net-new)
+- **2026-08-01 — bathymetry archive:** 5 agencies, 298 MB mirrored → 2,437 of 2,491 water bodies joined → 2,042 contoured into 49,742 lines → 15 MB z9–z14 `dev/bathymetry-20260801-2.pmtiles`
+- **2026-08-09 — re-keyed under A07a (D95):** 2,298 water bodies → 52,522 lines → 2,287 bodies (+232 net-new)
 
 #### Deferred
-- ⚪ **A curving anisotropy axis** — mitigated by capping at each lake's elongation; revisit only when a user complains about a named lake
+- ⚪ **A curving anisotropy axis** — mitigated by capping at each water body's elongation; revisit only when a user complains about a named water body
 - ⚪ **Contour crowding on steep beds** — the obvious fix understates depth by omission
 - ⚪ **NY has no statewide source** — covered only via Champlain; the PDF digitisation path is costed in the plan doc
 
@@ -433,7 +433,7 @@ its basin.*
 - **Contours from GLOBathy rasters, permanently** — a linear distance-from-shore transform; an authoritative-looking rendering of a guess
 - **Reusing a third party's prebuilt Vermont tiles** — every state goes through our own pipeline
 
-## Phase A06c — Expanded lake profiles
+## Phase A06c — Expanded water body profiles
 🟢 **Complete** 2026-08-10 · PRs #38 #42 · [plan](./phases/A06c-expanded-body-profiles.md) · D70 D71 D74 D76 D85 D86 D90 D138–D142
 
 What A06a's depth numbers were missing — split at kickoff into **A06c-1** (derived numbers: geometry
@@ -441,10 +441,10 @@ stats measured on the source geometry, elevation, a 16-bearing wind-fetch profil
 *frequency* from NREL's toolkit (D90), a generated caption, profile richness feeding prominence) and
 **A06c-2** (reference links generated not stored so they cover the whole corpus (D71), NWS alerts on a
 15-minute cron alongside Open-Meteo never blended (D74), the forward forecast the fetch was already
-discarding, per-body map summary cards with D86's graded consensus dots, the per-lake timeline). Four
-of the plan's claims were false and caught by running the code against real lakes, not fixtures —
+discarding, per-body map summary cards with D86's graded consensus dots, the per-body timeline). Four
+of the plan's claims were false and caught by running the code against real water bodies, not fixtures —
 including that `waterBodies.centroid` is a point *on the shoreline*, which would have opened Windy
-30 km off Champlain. *A lake page says how big, how deep, how exposed, and where else to look.*
+30 km off Champlain. *A water body page says how big, how deep, how exposed, and where else to look.*
 
 #### Data runs
 - **2026-08-09 — the campaign passes (A07a-3):** elevation 99.5% · wind roses 11,114 bodies (completed 2026-08-15) · `regionStats` 5 states × 5 metrics
@@ -454,7 +454,7 @@ including that `waterBodies.centroid` is a point *on the shoreline*, which would
 - 🟢 **Everything satellite** — A06e, at the founder's ask, so the imagery story lands in one piece (D138)
 - ⚪ **`PROFILE_REVEAL_ALL`** — the reveal flag (D142) is still on; flip it to `false` before the season
 
-## Phase A06d — Lake access points
+## Phase A06d — Water body access points
 🟢 **Complete** 2026-08-13 · PR #43 · [plan](./phases/A06d-body-access-points.md) · D72 D73 D87 D88 D143 D144
 
 Parking modelled apart from put-ins so directions stop routing cars to hike-in shorelines (D72,
@@ -478,17 +478,17 @@ whether the gate is locked.*
 - ⚪ **The 1,376 unmatched slipways** — an afternoon's sample, not a phase → [`backlog/unmatched-slipways.md`](./backlog/unmatched-slipways.md)
 - ⚪ **`matchBathymetryLakes` (51 GB) and `coveringBodyForPoints` (21 GB)** — the same unbounded-read shape as the parking load, unfixed
 
-## Phase A06e — Imagery, scoped to a lake
+## Phase A06e — Imagery, scoped to a water body
 🟡 **In progress** 2026-08-26 · PRs #44 #45 #46 #47 · [plan](./phases/A06e-satellite-imagery.md) · D75 D84 D146–D151
 
-Not a base map you switch to: a photograph of *this lake*, clipped to its shape and the way in, with a
+Not a base map you switch to: a photograph of *this water body*, clipped to its shape and the way in, with a
 date on it (D146 — a founder review falsified the map-wide toggle the first scoping specced, and the
 doc was rewritten rather than patched); behind it, a season of Sentinel passes to scrub through and
 watch the ice arrive, stored as one masked raster PMTiles per pass on our first owned infrastructure
 (a Fly granule job → R2, D148). The constraint was never quota but physics (D147): NAIP is mid-summer
 aerial and will never show ice; 10 m Sentinel can't show a 1–3 m ridge. Ingest is weather-gated and
 the archive turns over on a frame, not a date (D149). Workstream 0 recovered the ORS route geometry
-A06d never stored and drew the approach on both clients. *A lake can be revealed as a photograph and
+A06d never stored and drew the approach on both clients. *A water body can be revealed as a photograph and
 its freeze-up scrubbed, on both clients.*
 
 #### Data runs
@@ -502,7 +502,7 @@ its freeze-up scrubbed, on both clients.*
 - ⚪ **Ice classification (D150)** → A06g
 
 #### Ruled out
-- **Tasked commercial imagery** — ~$200–400 per lake per capture; we buy neither end
+- **Tasked commercial imagery** — ~$200–400 per water body per capture; we buy neither end
 - **Skia on mobile** — PR 2's baked alpha made the reveal an `ImageSource`
 
 ## Phase A06f — No public access
@@ -514,7 +514,7 @@ moderator's ruling turns into a 50% dim and a two-zoom-level demotion, the D2 la
 penalty, safe because `minVisibleZoom` clamps. `open` is a stored verdict whose whole job is to make
 re-reporting cost one sentence. Taken straight into the A06e branch with no plan doc and no D-number;
 the doc was written after the fact. Under the same prefix: the 164-function audit that armed eleven
-unreachable mutations, the first edit-a-report UI, and the You tab's unreported-skates list. *A lake
+unreachable mutations, the first edit-a-report UI, and the You tab's unreported-skates list. *A water body
 you can't legally reach stays visible and says so.*
 
 #### Deferred
@@ -533,14 +533,14 @@ the number stays vacant. *(The doc moves to `backlog/imagery-research.md` in the
 🟡 **In progress** 2026-09-12 · PRs #48 #49 #50 #51 #54 · [plan](./phases/A06h-weather-detail.md) · D152–D166
 
 Grew out of a costing question whose answer moved the design: the expensive half wasn't the data but
-the **cache key**, which produced one fetch per lake (24,832 keys for 24,948 bodies) against models
+the **cache key**, which produced one fetch per water body (24,832 keys for 24,948 bodies) against models
 that resolve at 3–13 km. Two keys replace it — Tier A for browse, Tier B for a corpus-wide cron on
 3,043 cells (D152). Past weather became a durable archive rather than a cache, lazily backfilled 92
 days on first open (D153). The drawer got three sub-tabs; the past panel and hourly timeline; a seven-
 day planner off the fetch already paid for; and **weather-first discovery** (D159) — filter cells,
-then bodies — which makes 25,000 lakes findable for the first time and turns the Newsfeed into
+then bodies — which makes 25,000 water bodies findable for the first time and turns the Newsfeed into
 "Latest". An admin-only ice-thickness instrument ships dark to collect a season of paired
-observations (D160). *A skater asks "do I get in the car?" against a lake with a visible history.*
+observations (D160). *A skater asks "do I get in the car?" against a water body with a visible history.*
 
 #### Deferred
 - ⚪ **Workstream 6 — radar** — MRMS with its Radar Quality Index, drawing where it *can't* see (D156/D157); cut on the Fly→R2 pattern, ~$5/mo
@@ -554,15 +554,15 @@ observations (D160). *A skater asks "do I get in the car?" against a lake with a
 ## Phase A07a — The unified corpus
 🟢 **Complete** 2026-08-09 · PRs #39 #40 #41 · [plan](./phases/A07a-unified-corpus.md) · D92–D105 D109–D137
 
-The corpus was OSM-only, per-state, and a lake split across two features was two rows. A07a merges
-OSM + NHD + 3DHP + GNIS into one record per lake with our own minted key (D93), best-of-both per field
+The corpus was OSM-only, per-state, and a water body split across two features was two rows. A07a merges
+OSM + NHD + 3DHP + GNIS into one record per water body with our own minted key (D93), best-of-both per field
 (D94), and one admission floor applied *once* to the merged body (D109/D110): 178,095 groups in,
 24,958 bodies out. Then the audit and the referee (three open questions settled by measurement; OSM
-draws the lakes because the bake-off was a dead heat), then the enrichment campaign that ran every
+draws the water bodies because the bake-off was a dead heat), then the enrichment campaign that ran every
 loader A06a–A06c had been waiting on. Four findings to carry: a ladder rung with no producer, no
 `osm→osm` matching lane, one constant doing two jobs, and *denominators lie by default, and so do
 instruments*. Provenance is the default: every loader replays the merge's path. *One record per
-lake, with the numbers the profile page needed.*
+water body, with the numbers the profile page needed.*
 
 #### Data runs
 - **2026-08-07 — corpus load:** 178,095 merged groups → 24,958 bodies + 120 sub-areas, in the order bodies → sub-areas → prune
@@ -586,19 +586,19 @@ removal need a person (D177); the prunes demote, never delete (D178). A seed par
 corpus by evidence of use and a July cron shelves three idle seasons. Then requests (D179): five
 kinds by standing — activate, admit, restore, contest access, takedown — asked from the drawer or
 by long-press on unheld water, `admit` resolved live against the 3DHP catalogue, and a moderator
-queue whose approve performs the act. *A skater can vouch a lake into the corpus, and an operator
+queue whose approve performs the act. *A skater can vouch a water body into the corpus, and an operator
 can stand one down.*
 
 #### Deferred
-- ⚪ **Cap open asks per lake per kind at create** — the sibling set is unbounded by construction, so a decision drains it in scheduled pages snapshotted at decision time (five review passes to get right); a cap of ~100 would delete `closeSiblings` and the snapshot outright. Trigger: the next defect in that code
+- ⚪ **Cap open asks per water body per kind at create** — the sibling set is unbounded by construction, so a decision drains it in scheduled pages snapshotted at decision time (five review passes to get right); a cap of ~100 would delete `closeSiblings` and the snapshot outright. Trigger: the next defect in that code
 
 #### Owed
 - Dev deploy, the seed run (`seed-destinations`), device verification of the request flows
 
-## Phase A07c — Lake corrections
+## Phase A07c — Water body corrections
 ⚪ **Scoped** 2026-09-16 · [plan](./phases/A07c-body-corrections.md) · D180–D183
 
-The skater says *"this is wrong"* — the lake is two polygons, the boat ramp is a private driveway,
+The skater says *"this is wrong"* — the water body is two polygons, the boat ramp is a private driveway,
 the aerial is off, the lot has no toilets — and today only "no public access" has anywhere to go.
 One *Report a problem* sheet in the drawer, launched with context from the put-in row, the amenity
 line or the imagery control, files a correction into `contentFlags`, where A06f's dedup already
@@ -607,9 +607,9 @@ makes the open-row count the corroboration count; a corrections lane on `/admin/
 correction dedups per *reason* where a flag on content dedups per target (D180), and an operator's
 outline sets `geometrySource: 'user'` so the campaign import stops overwriting it (D182) — the first
 outline writer being a **union** that draws both halves and offers each original as a bay (D183),
-because `merge` was built for duplicates and would delete half the lake. Three of the categories
+because `merge` was built for duplicates and would delete half the water body. Three of the categories
 first scoped turned out to be A07b requests and are not re-built. *A skater can say what is wrong
-about a lake, and a moderator can fix it in place and have it stay fixed.*
+about a water body, and a moderator can fix it in place and have it stay fixed.*
 
 #### Deferred
 - ⚪ **Split** — one row that is really two ponds; most "split" reports are a bay that wants a name → D183, a feat if it outgrows PR 2
@@ -651,9 +651,9 @@ fixed the Clerk mirrors that had never refreshed, with change-email and the `use
 Sub-areas become destinations rather than labels: favoritable, with their own put-ins, lots, bounties,
 hazards, reports, wind rose and access section, findable in search and drive time, and borrowing what
 they don't store from the parent on demand — derive from the parent and the polygon, store only what
-is expensive. A report on a bay is a report *on* the bay and a member of the lake; a put-in hidden on
+is expensive. A report on a bay is a report *on* the bay and a member of the water body; a put-in hidden on
 a bay is a separate `hidden` row, not a status. PR 2 clipped bay max depths from the bathymetry
-archive. Greptile's pass on PR 1 found bay-scoped features leaking lake-wide, a hidden launch still
+archive. Greptile's pass on PR 1 found bay-scoped features leaking body-wide, a hidden launch still
 drawing, and a cross-page cell dedup gap. *Malletts Bay has its own page, its own depth, and its own
 launches.*
 
@@ -705,7 +705,7 @@ long-form register this table replaced is archived verbatim in
 | `RECURRENCE_ADVISORIES_PUBLIC` → `true` | ⚪ | two rollovers of operator reading | A05c |
 | Deletion / retention policy copy (L3) | ⚪ | the legal pass | A03/A04 |
 | In-app guides · group-skate organizing · rivers as named reaches (D4) | ⚪ | design | — |
-| Bathymetry: a curving anisotropy axis · contour crowding · NY statewide coverage | ⚪ | a user complaint about a named lake; a NY source | A06b |
+| Bathymetry: a curving anisotropy axis · contour crowding · NY statewide coverage | ⚪ | a user complaint about a named water body; a NY source | A06b |
 | A06e: radar terrain correction · two-surface ice fractions | ⚪ | the backfill | A06e |
 | Strava: a real sandbox upload | ⚪ | a session | Phase 08 |
 | The Apple / Play / TestFlight distribution track | ⚪ | the accounts, with the prod cutover | `05` |

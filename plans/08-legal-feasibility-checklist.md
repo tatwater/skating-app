@@ -140,7 +140,7 @@ What the current (post-Nov-2024) Agreement actually says, and how it moved our d
 - **Cross-user display is flatly forbidden.** *"Strava Data provided by a specific user can only be
   displayed or disclosed in your Developer Application to that user"* — and data about other users
   *"even if such data is publicly viewable… may not be displayed or disclosed."* That kills showing a
-  **Strava-sourced** path to anyone but its owner: no lake heatmap, no crowd pressure-ridge
+  **Strava-sourced** path to anyone but its owner: no water body heatmap, no crowd pressure-ridge
   intelligence, no path on a (public) report — off Strava data.
 - **AI/ML ban.** Nov-2024 terms prohibit using API data in AI/ML models — rules out any derived
   route-intelligence over Strava data too.

@@ -25,11 +25,11 @@ than in a workstream.*
 > lane's real question is.**
 >
 > ⚠ **Updated 2026-08-25 by the first correctly-measured radar cut.** Lane 1 gains a **gate zero**
-> before its validation gate — on `VH`, the median lake now sits **1.24 dB** above the instrument's
+> before its validation gate — on `VH`, the median water body now sits **1.24 dB** above the instrument's
 > own noise floor and 38% sit below it, which constrains *per-pixel* claims (where the black ice is)
-> while leaving *per-body* ones (whether a lake darkened) intact. Lane 2's area floor becomes
+> while leaving *per-body* ones (whether a water body darkened) intact. Lane 2's area floor becomes
 > measurable rather than assumed. **Both lanes must read frames cut after this date** — earlier ones
-> measured a 60 m ring of shoreline as though it were lake.
+> measured a 60 m ring of shoreline as though it were water body.
 >
 > **Decisions carried in:** **D3** (never a safety verdict), **D150** (classification is an
 > observation, never counsel), **D151** (a phenology date is a bracket, and the subject of the
@@ -65,11 +65,11 @@ Which means the ingredients all exist in the archive, and none of them requires 
 
 ### Why it is nonetheless the riskiest thing in the roadmap
 
-- **Resolution.** 10–20 m pixels over a lake whose interesting features are metres across.
+- **Resolution.** 10–20 m pixels over a water body whose interesting features are metres across.
 - **Latency.** Black ice is a *condition of a few days* and often of a few hours. A pass is up to six
   days old, and a six-day-old smoothness observation is not a claim about today.
 - **The incentive structure is the actual hazard.** Everyone wants black ice. **A false positive is
-  therefore the most costly error this product can make** — it would send someone to a lake *because*
+  therefore the most costly error this product can make** — it would send someone to a water body *because*
   we implied the good stuff was there, which is the precise mechanism D3 exists to prevent. The
   asymmetry is not "sometimes wrong in both directions"; it is "wrong in the direction people act on."
 
@@ -77,7 +77,7 @@ Which means the ingredients all exist in the archive, and none of them requires 
 
 **Before the validation gate below, there is a prior question nobody had asked, and the first real
 radar cut answers it uncomfortably.** With the shoreline correctly removed and thermal noise
-subtracted, `VH` over actual lake surfaces sits at a median of **−24.28 dB** — and the instrument's
+subtracted, `VH` over actual water body surfaces sits at a median of **−24.28 dB** — and the instrument's
 own noise floor on that pass is **−25.19 dB**.
 
 | margin over each body's own NESZ | bodies |
@@ -93,7 +93,7 @@ Median margin **+1.24 dB**, across 2,576 bodies on one February ascending pass.
 figures read ~−20.6 dB against a floor *assumed* to be −27, which looked like six decibels of room.
 The bright shoreline was inflating the whole-body mean by **3.67 dB**, unremoved thermal noise by
 another **~0.8**, and the assumed floor was ~2 dB below the measured one. Remove all three and most
-lakes are sitting on the floor.
+water bodies are sitting on the floor.
 
 #### ✅ The floor itself is right, and being under it is not the problem
 
@@ -102,10 +102,10 @@ Checked, because "38% below the floor" reads like over-subtraction:
 - **It is not.** Only **2 nulls in 2,578**; the margin distribution runs to **p90 +8.8 dB** across a
   45 dB spread. Over-subtraction collapses a distribution; this one is broad.
 - **The size trend is flat to inverted** — 34% below floor for bodies under 50 interior pixels against
-  **51% for bodies over 1,000**. An estimation artefact would punish small lakes hardest; this does the
+  **51% for bodies over 1,000**. An estimation artefact would punish small water bodies hardest; this does the
   opposite, which is the signature of a real property of large open surfaces.
 - **NESZ is ESA's own annotation**, consistent with the IW specification (≤ −22 dB) and with published
-  calm-water `VH` values of −25 to −30 dB. Lakes are genuinely that dark.
+  calm-water `VH` values of −25 to −30 dB. Water bodies are genuinely that dark.
 - **Subtraction recovers sub-floor targets in expectation**, and averaging makes it precise: median
   1σ per body is **0.50 dB**, 75% of bodies better than 1 dB.
 
@@ -113,17 +113,17 @@ Checked, because "38% below the floor" reads like over-subtraction:
 
 | the claim | reliability at or below the floor |
 | --- | --- |
-| *"this lake averaged −24.3 dB"* | fine — ~0.5 dB, because thousands of pixels average |
+| *"this water body averaged −24.3 dB"* | fine — ~0.5 dB, because thousands of pixels average |
 | *"**this pixel** is specular"* | **~3–4 dB 1σ** — noise |
 
 A per-body mean survives the floor; a per-pixel classification does not, because a single look carries
 ~4.4 equivalent looks of speckle and no averaging to lean on. **Lane 1's founding ask is "predict
-*where* black ice is", and *where* is a per-pixel question.** A "fraction of the lake below −22 dB"
-statistic computed against a 3–4 dB per-pixel error, on lakes whose median sits 1 dB above the floor,
+*where* black ice is", and *where* is a per-pixel question.** A "fraction of the water body below −22 dB"
+statistic computed against a 3–4 dB per-pixel error, on water bodies whose median sits 1 dB above the floor,
 is measuring the instrument.
 
-**What this does not kill.** Change detection over time on a *whole lake* is unaffected — that is a
-per-body mean, and it is precise. So the archive still supports *"this lake darkened by 2 dB between
+**What this does not kill.** Change detection over time on a *whole water body* is unaffected — that is a
+per-body mean, and it is precise. So the archive still supports *"this water body darkened by 2 dB between
 these two dates"*; what it does not support is *"this corner of it is glassy"*.
 
 Two things could yet reopen the spatial question, and both are testable from the archive rather than by
@@ -154,7 +154,7 @@ before Christmas."*
 The lane's premise is a **conjunction** — low radar backscatter AND optical classification of *ice, not
 water*. The second half is simply absent: optical calls black ice water, which is what
 [Chapter 4](../../docs/reading-ice-from-orbit.md) has always said. So the question becomes whether
-anything else separates it. Measured, on the same lake, against two open-water dates:
+anything else separates it. Measured, on the same water body, against two open-water dates:
 
 | | 22 Nov (open water) | **22 Dec (black ice)** | 27 Mar (open water) | 15 Feb (snow-covered) |
 | --- | --- | --- | --- | --- |
@@ -174,13 +174,13 @@ exists precisely to catch "the mean hides the shape" finds no shape to catch eit
 
 ⚠ **NDSI is worse than merely unhelpful here: it is unstable over water.** The two *open-water* dates
 differ by 0.54 in mean and by 0.05 against 1.95 in spread, and March's p90 reaches +0.95 — pixels
-reading as snow on an ice-free lake. Green and SWIR are both near zero over water, so a normalised
+reading as snow on an ice-free water body. Green and SWIR are both near zero over water, so a normalised
 difference between them amplifies noise rather than measuring anything. It is excellent at its actual
 job (snow, 0.991 at zero spread) and should never be pointed at this one.
 
 #### Why, physically — and it is not a resolution problem
 
-Black ice is **transparent**. Optically the light passes through and returns off the dark lake bottom,
+Black ice is **transparent**. Optically the light passes through and returns off the dark water body bottom,
 so it *is* water to a camera. To radar it is a smooth surface over that same substrate, so it is
 specular exactly like calm water. **Both instruments are correctly reporting the same physical thing.**
 There is no band on either satellite where transparent ice and liquid water diverge — which is why
@@ -198,7 +198,7 @@ on wind speed at the hour of each pass. If low `VH` only means "ice" when it was
 gate it can actually stand on. If ice and water are indistinguishable at every wind speed, the lane is
 finished and should be closed rather than left open as a maybe.
 
-**What survives regardless.** Whole-lake seasonal change is real and larger than previously recorded:
+**What survives regardless.** Whole-water body seasonal change is real and larger than previously recorded:
 Mascoma moved **+5.0 dB (descending) and +3.7 dB (ascending)** from December to March, flat through
 freeze-up and rising as snow accumulated. That is a snow-cover signal, not an ice-formation one, and it
 is solid — the two orbit directions agree independently.
@@ -211,7 +211,7 @@ is solid — the two orbit directions agree independently.
 above tests whether a SINGLE observation can identify black ice, and the answer is a clear no. This
 section is about a different question, and it is the one worth spending effort on.*
 
-Every measurement so far has been asked to stand alone: *what is this lake, in this frame?* But the
+Every measurement so far has been asked to stand alone: *what is this water body, in this frame?* But the
 archive is not a pile of independent snapshots. It is **a time series of one physical object that obeys
 physical law**, sitting next to a weather record that says what was done to it in between. Those
 constraints are free, and none of them have been used.
@@ -232,7 +232,7 @@ the pass. Either low `VH` means "ice" once the wind is above some threshold, in 
 a real gate, or ice and water are indistinguishable at every speed, in which case it is finished and
 should be **closed rather than left open as a maybe**.
 
-### Deduction 2 — temperature, because a lake cannot un-freeze without a thaw
+### Deduction 2 — temperature, because a water body cannot un-freeze without a thaw
 
 > **Founder, 2026-08-26:** *"If ice had snow on it and temps never went above freezing in between, and
 > a new image shows either black ice or water, it's probably black ice."*
@@ -240,7 +240,7 @@ should be **closed rather than left open as a maybe**.
 **This is the strongest idea in this document, and it inverts the whole approach.** Instead of asking
 the imagery to identify a state, it uses physics to *eliminate* one.
 
-A lake that read snow-covered ice on the 5th and reads "water" on the 15th has two possible histories.
+A water body that read snow-covered ice on the 5th and reads "water" on the 15th has two possible histories.
 It melted — which requires energy, and the weather record says whether that energy existed. Or it did
 not melt, the snow went (wind, sublimation, compaction, rain-then-refreeze), and the classifier is
 looking through clear ice at the dark bottom and calling it water, **which is the one failure mode this
@@ -265,14 +265,14 @@ geometry, sub-area splits — and the weather lane brings temperature, wind, sno
 **Nobody has systematically asked what that combination can prove.** Some starting threads, offered as
 prompts rather than as a plan:
 
-- **Freeze-up must precede snow cover.** A lake reading snow/ice must have frozen at some earlier date,
+- **Freeze-up must precede snow cover.** A water body reading snow/ice must have frozen at some earlier date,
   even if every frame in between was clouded — which bounds an ice-in date from the *other* direction.
 - **Snowfall without a brightening** means the snow did not stay, which is the founder's
   "blown clear" case (§3.5) and is *itself* evidence of a hard smooth surface.
-- **Neighbouring lakes are a control.** Bodies within a few kilometres share weather; one behaving
+- **Neighbouring water bodies are a control.** Bodies within a few kilometres share weather; one behaving
   unlike its neighbours is either genuinely different (depth, flow, spring-fed) or a measurement
   artifact — and the corpus already knows depth and elevation.
-- **A lake that never darkens through a whole winter** is Lane 2's candidate arriving from a different
+- **A water body that never darkens through a whole winter** is Lane 2's candidate arriving from a different
   direction entirely.
 - **`waterPct` rising while temperature stays below freezing** may be a black-ice *detector* rather
   than a nuisance — the same signal this document treats as a failure, read with its sign flipped.
@@ -337,7 +337,7 @@ smaller than a pixel.
 erodes the shoreline by 1–2 px before classifying, because edge pixels mix water with bank. After
 erosion a 1-acre body has **under ten** pixels to vote, and a 5-acre body has around a hundred.
 
-⚠ **So "never observed frozen" is strong evidence for a 50-acre lake and weak evidence for a 1-acre
+⚠ **So "never observed frozen" is strong evidence for a 50-acre water body and weak evidence for a 1-acre
 pond** — and it is weak in the dangerous direction, because a body too small to classify reads exactly
 like a body that never froze. **The elimination rule needs its own area floor, well above the corpus
 floor**, and that floor should be measured against bodies we *know* freeze rather than assumed.
@@ -349,15 +349,15 @@ The erosion this section calls for is **built**, and every frame records what it
 body has *at all*, independent of the pass), and the full 12-class `classHist` beside them.
 
 The distinction between those two is the one that matters here. `interiorPixels` varying tells you a
-pass caught only part of a lake; **`interiorTotalPixels` is a property of the geometry**, and it is
+pass caught only part of a water body; **`interiorTotalPixels` is a property of the geometry**, and it is
 what an area floor should actually be set against — *"this body is too small to ever be classified"*
 rather than *"this granule only caught a corner of it"*. Verified on a synthetic 3×3-pixel pond: it
 comes out of the erosion with **exactly one** voting pixel, which is this section's caution rendered
 as a number an operator can be shown.
 
 ⚠ **And every frame cut before 2026-08-25 measured the wrong shape.** The zone raster was the *reveal*
-— the lake buffered 60 m outward, unioned with the walk in and the parking, islands filled. Measured
-across 40 real corpus bodies, the median old zone was **44% not-lake**, rising to **70% under ten
+— the water body buffered 60 m outward, unioned with the walk in and the parking, islands filled. Measured
+across 40 real corpus bodies, the median old zone was **44% not-body**, rising to **70% under ten
 acres** and 86% on a 1.3-acre pond. Since this lane eliminates bodies precisely at the small end, an
 elimination run against those frames would have been reading the surrounding woods. Only frames from
 the re-cut carry water-only statistics.

@@ -13,7 +13,7 @@
 prefilter + two-tier large-body workaround with a spatial index whose reads are bounded **by
 construction**, then apply the same discipline to every other query whose cost grows with the corpus.
 
-Nothing here is a feature. A skater sees exactly one difference — more lakes at dense zoom — and
+Nothing here is a feature. A skater sees exactly one difference — more water bodies at dense zoom — and
 the operator sees a read path that stops needing to be re-tuned every time the corpus grows.
 
 ---
@@ -210,12 +210,12 @@ same kind of unchecked claim this whole phase exists to retire. Re-run any line 
 |---|---|---|---|---|---|---|---|
 | Whole Northeast | 40.5, −80.0 → 47.5, −67.0 | 6 | 7 | 8 | 10 | **25** | the widest zoom anything draws at |
 | Atlantic, off-data | 41.0, −69.0 → 41.5, −68.5 | 10 | 0 | 17 | 5 | **22** | *the PR #11 crash case* |
-| Maine lake belt | 45.0, −69.2 → 45.05, −69.1 | 14 | 2 | 32 | 87 | **121** | |
+| Maine water body belt | 45.0, −69.2 → 45.05, −69.1 | 14 | 2 | 32 | 87 | **121** | |
 | Northern Vermont | 44.4, −73.4 → 45.0, −71.5 | 9 | 36 | 22 | 110 | **168** | |
 | Burlington waterfront | 44.46, −73.24 → 44.50, −73.18 | 14 | 49 | 27 | 232 | **308** | |
 | Burlington + Champlain | 44.35, −73.35 → 44.55, −73.05 | 12 | 138 | 28 | 286 | **452** | |
-| Adirondack lake country | 43.7, −74.6 → 43.95, −74.2 | 12 | 154 | 39 | 538 | **731** | |
-| Eastern Maine lakes | 44.6, −69.8 → 45.3, −68.4 | 11 | **314** | 74 | 768 | **1,156** | *would have been clamped to 256* |
+| Adirondack water body country | 43.7, −74.6 → 43.95, −74.2 | 12 | 154 | 39 | 538 | **731** | |
+| Eastern Maine water bodies | 44.6, −69.8 → 45.3, −68.4 | 11 | **314** | 74 | 768 | **1,156** | *would have been clamped to 256* |
 | Adirondacks | 43.5, −74.8 → 44.0, −74.0 | 11 | **404** | 43 | 989 | **1,436** | |
 | Eastern Maine, deep | 44.6, −69.8 → 45.3, −68.4 | 12 | **513** | 227 | 1,031 | **1,771** | |
 | Wider Adirondacks | 43.2, −75.2 → 44.3, −73.8 | 11 | 957 | 74 | 1,500 | **2,531** | row budget hit, logged |
@@ -228,7 +228,7 @@ same kind of unchecked claim this whole phase exists to retire. Re-run any line 
    empty cell costs an index lookup and nothing else.
 2. **Real viewports sit 2–100× under the cap.** The heaviest genuine one (eastern Maine at z12) is
    1,771 — under half of budget.
-3. **The 256 clamp was costing real lakes.** That eastern-Maine viewport returns **513** bodies and
+3. **The 256 clamp was costing real water bodies.** That eastern-Maine viewport returns **513** bodies and
    the Adirondacks **404**. Under the old ceiling, 257 and 148 of them — Great Moose, Sebasticook,
    Pushaw, Schoodic, Seboeis and the rest — were simply absent from the map, with a log line nobody
    was reading.
@@ -305,7 +305,7 @@ The first cut of `bodiesCoveringBox` hydrated bodies as the cell walk reached th
 the render budget. Within one cell that's prominence-ordered (`by_cell` is ascending on
 `minVisibleZoom`), but a viewport spans many cells, and row-major traversal is not a prominence
 order — so when the budget bound, an early cell's least prominent ponds displaced a later cell's
-headline lake. Which lakes the map drew depended on cell arithmetic.
+headline water body. Which water bodies the map drew depended on cell arithmetic.
 
 It now runs in two passes: collect candidate *rows* across every rung (cheap — `minVisibleZoom` is
 denormalized onto the row, so ranking costs no document read), then sort by prominence and hydrate
@@ -471,7 +471,7 @@ self-continuing paged job.
 
 Measured on dev after backfilling 116,070 bodies: the off-data pan that used to crash costs **22**
 document reads, the heaviest real viewport **1,771** (under half of Convex's 4,096 cap), and dense
-eastern Maine returns **513** bodies where the old clamp returned 256 — 257 real lakes that had been
+eastern Maine returns **513** bodies where the old clamp returned 256 — 257 real water bodies that had been
 missing from the map. `waterBodies:viewportReadStats` keeps that checkable, and every measured
 viewport is recorded with its exact bbox so the table can be re-run rather than trusted.
 

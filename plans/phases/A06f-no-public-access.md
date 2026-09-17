@@ -21,7 +21,7 @@ expires, or a body that vanishes — and needed a third: **on the map, and marke
 > summary of all three; this doc is the `n6f` prefix only.
 > **Touches:** `waterBodies` (a new field and six scoring sites), `contentFlags` (a new target type
 > and reason), `moderation` (a grouped queue lane), the D2 zoom ladder in `core/display.ts`, both
-> clients' map layers, the web drawer, the web list, and — under the same prefix — the lake editor's
+> clients' map layers, the web drawer, the web list, and — under the same prefix — the water body editor's
 > placement tools, `reports.update`'s first UI, and the recorder's unreported-skates list.
 > **Not built at #44:** a mobile report control (mobile had the map dim and nothing to press) —
 > **closed by PR #56**, along with the web surface's missing test and a form-state bug on both
@@ -37,10 +37,10 @@ yours to skate and you still cannot get to it, and the map had no way to say so.
 that looked adjacent were both wrong for it:
 
 - **`accessAlerts` (A06d, D73) expires by design.** A 30-day TTL, hard-expired at the season
-  boundary, and hung off a *launch or lot* rather than the lake. That lifecycle is right for a locked
+  boundary, and hung off a *launch or lot* rather than the water body. That lifecycle is right for a locked
   gate and wrong for a deed — private land does not thaw, and the fact would be deleted every July.
-- **`waterBodies.remove` (D48) is total.** It drops the body's cell rows and the lake vanishes. But
-  someone may hold a key or an invitation, and taking a real lake off the map is a claim we have no
+- **`waterBodies.remove` (D48) is total.** It drops the body's cell rows and the water body vanishes. But
+  someone may hold a key or an invitation, and taking a real water body off the map is a claim we have no
   business making from a parcel map.
 
 `isListed` was binary — fully on the map or not there — so the state this phase needed did not
@@ -69,16 +69,16 @@ The proposal offered was simpler than what shipped, and the founder's amendments
 phase its shape. Recorded here because there is no D-number to point at.
 
 1. **A pending report shows a drawer note only — no map change for anyone else.** One account must
-   not be able to dim any lake in the corpus until a human gets to it. But three amendments make the
+   not be able to dim any water body in the corpus until a human gets to it. But three amendments make the
    report *do* something:
    - **(a) Others corroborate rather than re-report.** The count is public in the drawer — *"3 people
      have reported no public access here — under review."*
-   - **(b) The reporter sees their own lake faded.** Their claim, reflected back to nobody else. It
+   - **(b) The reporter sees their own water body faded.** Their claim, reflected back to nobody else. It
      is the only feedback that a report went anywhere.
-   - **(c) More reporters ⇒ higher in the queue.** The moderator lane groups by lake and ranks by how
+   - **(c) More reporters ⇒ higher in the queue.** The moderator lane groups by water body and ranks by how
      many people agree, not by age.
 2. **"Reviewed, and it IS public" is a stored verdict**, not a dismissed flag. Dismissal is a fact
-   about one report; this has to be a fact about the lake, because its job is to stop the same body
+   about one report; this has to be a fact about the water body, because its job is to stop the same body
    being reported over and over.
 3. **The first penalty in the zoom ladder is allowed, scoped to this one attribute.** See
    *Workstream 2*.
@@ -118,7 +118,7 @@ carries both the new ruling and the previous one.
 A06d's pre-PR review learned the hard way: a target type takes **three** edits — the enum,
 `TARGET_TABLE` in `contentFlags.ts`, and a `case` in `resolveFlagTarget` in `moderation.ts` — and
 skipping the third renders every such flag as "(deleted)" in the queue. The A06f test *"the queue
-names the lake rather than rendering it as '(deleted)'"* pins the third edit.
+names the water body rather than rendering it as '(deleted)'"* pins the third edit.
 
 ---
 
@@ -134,17 +134,17 @@ the rule is *scoped* rather than softened. Two things make this the exception ra
 of many:
 
 1. **It is the only attribute that *should* discourage someone from trying.** Every other term
-   rewards what we know about a lake, and the absence of that knowledge is *our* gap, not the lake's
+   rewards what we know about a water body, and the absence of that knowledge is *our* gap, not the water body's
    fault. "There is no lawful way in" is a fact about the place, and a map that led someone there
    anyway would be doing harm rather than merely failing to help.
 2. **It is entirely contingent on a human decision.** The rest of the ladder moves on aggregates —
-   time, report density, profile completeness — side effects of activity a lake neither controls
+   time, report density, profile completeness — side effects of activity a water body neither controls
    nor deserves. This one is a moderator's ruling with a name and an audit row.
 
 **The clamp is what makes it safe rather than what makes it right.** `minVisibleZoom` clamps its
 input to `[0, 1]`, so the z14 floor (D49) holds however negative the total goes. A demoted body
 draws *later*; it can never stop drawing. The magnitude is `2 × SCORE_PER_ZOOM_LEVEL` = 0.25 — two
-zoom levels on the `[0,1] → z14..z6` span: enough that a private lake stops crowding a regional
+zoom levels on the `[0,1] → z14..z6` span: enough that a private water body stops crowding a regional
 view, small enough that a large one is still findable when you zoom to where you know it is.
 
 ### ⚠ The trap: the demotion is derived, and `importCanonical` would have silently undone it
@@ -178,7 +178,7 @@ therefore: file a `no_public_access` flag against the `waterbody`, and the count
 off `by_target_status_reason` (`pendingAccessReportCount`, `waterBodies.ts:2917`).
 
 **The reporter sees their own claim** via `contentFlags.myAccessFlags` (`contentFlags.ts:~123`) —
-the caller's open access reports, bounded by how many lakes one person has been turned away from,
+the caller's open access reports, bounded by how many water bodies one person has been turned away from,
 `[]` when signed out because the map renders for anonymous visitors.
 
 ### The re-report gate under an `open` verdict — a note requirement, not a block
@@ -203,11 +203,11 @@ so the boundary is only reachable from the disputing side.
 ### The queue lane
 
 `moderation.listFlags` now returns a third lane, `accessReports`. The access rows **leave the flat
-lanes entirely** — a lake in both places would put one job in front of a moderator twice, once
-collapsed and once not. `groupAccessReports` collapses per-reporter rows into one job per lake,
+lanes entirely** — a water body in both places would put one job in front of a moderator twice, once
+collapsed and once not. `groupAccessReports` collapses per-reporter rows into one job per water body,
 carries the reporters' notes newest-first, marks `disputesReviewFrom` when the newest report
 post-dates an `open` ruling, and sorts **most-corroborated first, age breaking ties** — the
-founder's *"the more users, the higher it rises"*, with two one-report lakes still draining
+founder's *"the more users, the higher it rises"*, with two one-report water bodies still draining
 front-to-back. A body deleted out from under its reports has no job left; the rows stay for the
 record.
 
@@ -221,7 +221,7 @@ Native binding has no ergonomic `setFeatureState`, and two mechanisms for one vi
 the platforms drift. So `noPublicAccess` and `selfFlagged` are properties on the feature, and one
 `withAccessDim()` expression in core wraps each water layer's existing opacity on **both** clients.
 It is a **multiplier** (`NO_PUBLIC_ACCESS_OPACITY_SCALE = 0.5`), not a fixed opacity, so web's
-selected/unselected fill distinction survives on a dimmed lake and mobile's flat fill is not fought.
+selected/unselected fill distinction survives on a dimmed water body and mobile's flat fill is not fought.
 `['==', ['get', …], true]` rather than a bare `get`: a missing property reads as `null`, and `any`
 over a null *throws* in MapLibre's evaluator instead of reading as false. Mobile needs `as never` on
 the paint props (the `hazardFillOpacityExpression` idiom).
@@ -264,7 +264,7 @@ mutation with nothing to press.
 
 | Function | State before | What shipped |
 |---|---|---|
-| `putIns.setOfficial` / `hide` | Zero callers since Phase 04, behind a comment deferring the operator UI to "Phase 07". The admin Put-ins card linked to the public map to *"place and hide pins"* — no such control existed there, and the destination linked back to admin. | Armed on the lake-editor canvas. `setOfficial` gained an optional `name` (60 chars) — `osm` has OSM's, `derived` gets a compass label, so `official` was the one rung that could never be named despite being the rung where somebody *knows*. |
+| `putIns.setOfficial` / `hide` | Zero callers since Phase 04, behind a comment deferring the operator UI to "Phase 07". The admin Put-ins card linked to the public map to *"place and hide pins"* — no such control existed there, and the destination linked back to admin. | Armed on the body-editor canvas. `setOfficial` gained an optional `name` (60 chars) — `osm` has OSM's, `derived` gets a compass label, so `official` was the one rung that could never be named despite being the rung where somebody *knows*. |
 | parking creation | Two decimal lat/lng text boxes beside a locked canvas. Every plausible typo is a valid coordinate somewhere. | A click on the canvas, which cannot be in the wrong hemisphere. |
 | `waterBodies.remove` / `restore` | A landowner takedown — the case D48 was built *for* — only from the Convex dashboard; a delisted body rendered *"Restore it before editing"* with no way to restore. | Both ends wired. |
 | `accessAlerts.setOfficial` | `retract` was wired, this wasn't — a moderator reaching a flagged alert could only conclude "this is false". But a flag is also how a *true* alert reaches a moderator, and pinning it is the founder's 2026-08-10 TTL exemption. | Wired. |
@@ -281,7 +281,7 @@ clusters, and hiding takes a mandatory reason.
 **Operator put-ins snap to the shoreline** (`OPERATOR_PUT_IN_SNAP_MAX_M = 500`,
 `core/access.ts:130`). `official` was the only rung stored raw — `derived` clusters are snapped in
 `listForBody`, `osm` launches arrive on the shore — and a put-in coord is the directions destination,
-so a hand-placed floating pin reintroduced the exact bug put-ins exist to fix, one lake at a time.
+so a hand-placed floating pin reintroduced the exact bug put-ins exist to fix, one water body at a time.
 Snapped on write and previewed snapped. The bound is only reachable from *outside* the polygon
 (`distanceToPolygonMeters` reads 0 on the water, so a mid-Champlain click snaps five kilometres,
 which is right); a click well inland is somebody marking a trailhead, and is **refused** rather than
@@ -332,7 +332,7 @@ was written, complete and unmounted for lack of exactly this id (see
 phase's own headline trap — a derived value re-computed from fewer inputs than it was built from.*
 
 **1. A ruling dropped the richness the body had earned** (`waterBodies.ts`, `setPublicAccess`).
-`scoreFields` takes richness too, and the ruling wasn't passing it — so ruling on a lake re-scored it
+`scoreFields` takes richness too, and the ruling wasn't passing it — so ruling on a water body re-scored it
 from area + boost alone and dropped every D2 term: its put-ins, its depth, its contours, the fact
 that anyone had ever reported on it. The trap the module already warned about for `noPublicAccess`,
 one argument over, and it lands hardest here because this is the ladder's only penalty: a demotion
@@ -398,7 +398,7 @@ red run teaches anyone is to re-run it.
   [A06h](./A06h-weather-detail.md) rather than here: weather discovery deliberately does *not*
   filter `none` bodies, because the founder's read is that a confirmed ruling should eventually
   **remove a body from the corpus** rather than have every query learn to skip it — *"the ideal
-  situation eventually (way down the line) would be managing 5,000 lakes that actually get skated
+  situation eventually (way down the line) would be managing 5,000 water bodies that actually get skated
   on, not 20,000 nobody ever touches."* **Scoped 2026-09-16 as [A07b Workstream L1](./A07b-corpus-by-request.md#workstream-l1--what-a-none-verdict-does-next-on-the-map-and-marked-never-recommended)
   and proposed as D175:** a `none` verdict removes a body from every *discovery* surface and no
   *reference* surface (one `isDiscoverable` predicate; purge stays a human act via D48 plus a
@@ -438,11 +438,11 @@ rule buttons, and is pinned.
 **3. `cut-granule.sh` said the SCL/NDSI bands are "the bands A06f is built on."** They are A06g's.
 One letter.
 
-**4. ⚠ Greptile's P1: a half-written note could be filed against the wrong lake — on both clients.**
+**4. ⚠ Greptile's P1: a half-written note could be filed against the wrong water body — on both clients.**
 Flagged on the new mobile section; the web drawer had the identical shape. Neither client keys its
 detail view by body: the `/water/[id]` route re-renders in place when its param changes, and the web
 drawer swaps `body` when the map selection moves. The form's note and error lived in component
-state, so an explanation started for lake A could be the one submitted against lake B — B's id,
+state, so an explanation started for water body A could be the one submitted against water body B — B's id,
 A's sentence, and nothing would look wrong. Both sections now key their stateful half by `body._id`
 **themselves** — a wrapper on mobile, `key` on the View in web's data half — so no mount site has
 to remember, which is precisely the failure the finding described. The web test renders the real
@@ -457,24 +457,24 @@ that reading; they now say what `undefined` actually is there — loading. **A c
 an unreachable state is a bug report waiting to be filed.**
 
 **5. A ruling never told the reporters, and never counted — found closing the phase out
-(2026-09-16, committed on the A09 branch).** `setPublicAccess` closes a lake's open reports by
+(2026-09-16, committed on the A09 branch).** `setPublicAccess` closes a water body's open reports by
 patching the rows, and two systems built *after* A06f hang off `moderation.resolveFlag` instead: the
 A08 `content_flag_resolved` notification (PR #55) and the Phase 07-2 `flag_dispositions` counter. So a
 reporter the drawer had told *"it's with the moderators"* never heard the verdict — their fade
 flipped silently, and for an `open` ruling that is their claim dismissed without a word — and the
 control-room chart read zero upheld / zero dismissed for `no_public_access` forever. Now one
 `lib/flagResolution.closeFlag` (status + metric + notification) that both paths call; the audit row
-stays with each caller, because the queue's per-flag row and the ruling's one-per-lake row are both
+stays with each caller, because the queue's per-flag row and the ruling's one-per-body row are both
 right. Three tests, verified to fail first.
 
 *Left as a founder call:* the A08 copy is verdict-only and target-less — *"A moderator reviewed
 something you flagged and left it up"* — because the flagged party is usually a person. Here it is a
-lake, so a reason-aware line (*"…your access report on Tomhannock — public access confirmed"*) would
+water body, so a reason-aware line (*"…your access report on Tomhannock — public access confirmed"*) would
 extend B3 rather than break it. Not done.
 
 **6. The ordinary verdict reads as a plain fact (founder call, 2026-09-16, from the first live look
 at the drawer).** *"A moderator reviewed this on August 25, 2026 and found public access"* dressed
-the normal state of a lake in the language of a dispute. `open` now renders **"Accessible to the
+the normal state of a water body in the language of a dispute. `open` now renders **"Accessible to the
 public."** — no date, no moderator — and the review register moves to `none`, the only verdict that
 costs a reader something: *"A moderator reviewed this on … and found no public access — every
 approach crosses private land."* The `open` date is not lost; it lives in the re-report gate, where
@@ -541,7 +541,7 @@ doc and no D-number. The state that did not exist: `isListed` was binary, so a b
 the map or gone, and `waterBodies.publicAccess` is the **third state — on the map, and marked**. Three
 verdicts with absence as one (`none` dims 50% and demotes ~2 zoom levels; `open` renders nothing and
 exists only to gate re-reports). A member's report changes nothing on anyone else's map; others
-**corroborate** rather than re-report, the reporter sees their own lake faded, and the queue lane
+**corroborate** rather than re-report, the reporter sees their own water body faded, and the queue lane
 ranks by how many agree. Corroboration needed no votes table — `contentFlags` already dedups to one
 open flag per (flagger, target), so N open rows *is* N people. **This is the D2 ladder's first
 penalty**, scoped by two arguments (the only attribute that *should* discourage a trip; the only one

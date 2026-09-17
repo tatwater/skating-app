@@ -271,7 +271,7 @@ The fix is different per client, and the difference is the honest one:
   other thing.
 
 **Two smaller calls worth recording.** A snapped band's polygon comes from the **offline body cache**
-on mobile, not `waterBodies.get` — the skater this is for is standing on the lake, and on the lake
+on mobile, not `waterBodies.get` — the skater this is for is standing on the water body, and on the water body
 there is frequently no signal; the cache already writes every viewed body's polygon, which on arrival
 is the one under their feet. And the shore arc is **simplified** before buffering, with a tolerance
 starting at half the band's own half-width: a real shoreline is arbitrarily detailed, and detail
@@ -292,9 +292,9 @@ in this branch and belong to no other phase's doc.
   renamed to `.index.tsx` to make them siblings, and the guard is a test on the **file layout** rather
   than on any component, because that is where the bug lives: `routeNesting.test.ts` fails if any parent
   route gains a child without rendering an outlet.
-- **Favourite paint drifted onto the wrong lakes.** `setData` does *not* clear MapLibre feature-state,
+- **Favourite paint drifted onto the wrong water bodies.** `setData` does *not* clear MapLibre feature-state,
   and our feature ids are array indices — so panning rebound every painted id to whatever body now sat
-  at that index, and unrelated lakes came back gold while their own sheets correctly said they weren't
+  at that index, and unrelated water bodies came back gold while their own sheets correctly said they weren't
   favorited. Fixed by clearing the whole source's state on every data change rather than tracking which
   ids to un-paint, because the bookkeeping version re-breaks the moment a third paint is added.
 
@@ -403,7 +403,7 @@ re-litigated.
   25 m is the right default half-width for a pond, or whether the derivation should try narrowing on the
   skater's behalf before refusing. Worth a look once a real snap has been made on real ice.
 - **The chunk cost is asserted, not measured in situ.** 218 kB is the built asset on disk; what a
-  phone on lake ice actually pays for it over a marginal connection is the thing the founder call
+  phone on water body ice actually pays for it over a marginal connection is the thing the founder call
   accepted on reasoning, and it is worth measuring once there's a real session to measure.
 
 
@@ -457,7 +457,7 @@ type selection rather than on arming the snap.
 dead link — TanStack made `admin.water.$id.tsx` a child of an outlet-less leaf, so `/admin/water/:id` and
 `/admin/users/:id` (Phase 07's whole ban / suspend / grant-role surface) matched the URL and rendered the
 parent's queue table instead, with every test passing in isolation. Guarded now by a test on the route
-*file layout*. And favourite paint drifted onto the wrong lakes, because `setData` doesn't clear MapLibre
+*file layout*. And favourite paint drifted onto the wrong water bodies, because `setData` doesn't clear MapLibre
 feature-state and our ids are array indices, so panning rebound them.
 
 *Left for later:* nothing from this pass. Paste-GeoJSON stays admin-only, as scoped. The one thing the
