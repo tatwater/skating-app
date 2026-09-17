@@ -4,7 +4,7 @@ import { Paragraph, Text, YStack } from 'tamagui';
 import { Section } from './detailUi';
 
 /**
- * The lake sheet's reference-link list (A06c Workstream B).
+ * The lake sheet's reference-link list (A06c Workstream 2).
  *
  * **Every link opens in-app (D76).** `openBrowserAsync` is SFSafariViewController on iOS and Chrome
  * Custom Tabs on Android: the page opens *over* our app with a Done button, shares the system cookie

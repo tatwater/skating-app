@@ -9,9 +9,9 @@
 > nothing here has been deployed. See
 > [*§What the A06c-2 build found*](#what-the-n6c-2-build-found).
 >
-> Shipped: **B** (reference links), **B5** (NWS alerts), **B5b** (the forward forecast), **B7** (the
-> stored link + its editor), **B3a/D** (`scripts/seed-destinations`), **E** (map summary cards),
-> **F1** (the per-lake timeline), and mobile parity for all three drawer strips.
+> Shipped: **§2** (reference links), **§2.5** (NWS alerts), **§2.5b** (the forward forecast), **§2.7** (the
+> stored link + its editor), **B3a/D** (`scripts/seed-destinations`), **§5** (map summary cards),
+> **§6.1** (the per-lake timeline), and mobile parity for all three drawer strips.
 >
 > **Deferred by founder call: everything satellite** (**D138**) — B3's Copernicus deep link, the
 > `satelliteImagery` per-row override and `SATELLITE_MIN_AREA_SQM` all move to
@@ -20,13 +20,13 @@
 > | this doc says | actually |
 > | --- | --- |
 > | **"We have 116,070"** — in P1, P2, D2 and a dozen other places | **24,953 listed** (24,961 rows incl. 8 tombstones). Off by 4.65×. The rules survive; the cost arguments were measured on a corpus that no longer exists |
-> | Workstream B derives links from **`centroid`** | `centroid` is a **shoreline** point — this doc proves it in finding 2 and then B uses it anyway. Links read `interiorPoint` |
+> | Workstream 2 derives links from **`centroid`** | `centroid` is a **shoreline** point — this doc proves it in finding 2 and then B uses it anyway. Links read `interiorPoint` |
 > | D86's dots derive from **the Phase 06 thumbs** | `reports.skateQuality`, per the roadmap's own D86 amendment. The thumbs measure whether a *report* was helpful |
 > | Sequencing: elevation must precede an **unrun** A06a loader | Both ran, in the A07a-2/A07a-3 campaign. The whole section is history |
-> | *(this branch previously said `regionStats` was empty)* | ✅ **Populated** — 5 states × 5 metrics over 24,953 bodies, recomputed as A07a-3's last pass (PR #41, merged after this branch was cut). A5's decile clauses are **live** |
+> | *(this branch previously said `regionStats` was empty)* | ✅ **Populated** — 5 states × 5 metrics over 24,953 bodies, recomputed as A07a-3's last pass (PR #41, merged after this branch was cut). §1.5's decile clauses are **live** |
 >
-> **Workstream F is split, not whole:** F2 was pulled forward into the data campaign and shipped
-> months of runs ago; only F1 was A06c-2's.
+> **Workstream 6 is split, not whole:** F2 was pulled forward into the data campaign and shipped
+> months of runs ago; only §6.1 was A06c-2's.
 
 
 > ### ⚠ The elevation source changed (A07a-2, 2026-08-08)
@@ -57,7 +57,7 @@
 > | contour coverage feeding the `+2` prominence term | ✅ **2,057 bodies** in `bathymetryCoverage` |
 > | `regionStats` deciles | ⬜ **the one thing still outstanding** — it is the campaign's last pass |
 >
-> **So A06c-1's numbers exist and A06c-2 is buildable now.** The only copy still gated is A5's decile
+> **So A06c-1's numbers exist and A06c-2 is buildable now.** The only copy still gated is §1.5's decile
 > phrasing, which needs `regionStats:recompute`.
 >
 > ⚠ **Two things this document says about wind are now wrong.** The fetch gate is **`WIND_ARCHIVE_MIN_FETCH_M`
@@ -72,21 +72,21 @@
 > corpus-wide re-score — comfortably the largest phase on the roadmap and one review surface for all
 > of it.
 >
-> - **A06c-1 — derived numbers.** Workstreams **A** (geometry stats, elevation), **A5**
->   (`regionStats`), **C** (the caption) and **D2** (profile richness → prominence), plus **A4b**,
+> - **A06c-1 — derived numbers.** Workstreams **§1** (geometry stats, elevation), **§1.5**
+>   (`regionStats`), **§3** (the caption) and **D2** (profile richness → prominence), plus **§1.4b**,
 >   the winter wind rose that came out of the build. ✅ **BUILT 2026-08-02** on branch
 >   `phase-N6c-1-lake-profiles` — unpushed, undeployed, ETL passes **not yet run**. See
 >   [*§What the A06c-1 build found*](#what-the-n6c-1-build-found).
-> - **A06c-2 — links, cards and observability.** Workstreams **B** (reference links, NWS alerts, the
->   short forecast), **B3a/D** (the seed script), **E** (per-body summary cards) and **F1** (the
+> - **A06c-2 — links, cards and observability.** Workstreams **§2** (reference links, NWS alerts, the
+>   short forecast), **B3a/D** (the seed script), **§5** (per-body summary cards) and **§6.1** (the
 >   per-lake activity timeline). **Not built.** Everything below those headings stands as written
 >   except where *§What the A06c-1 build found* corrects it.
->   — **except F2, which was pulled forward into the data campaign** (founder ask, 2026-08-02) and
->   is built: see [*§F2 as built*](#f2-as-built--the-run-history). Its own sequencing note asked for
->   this and was nearly missed: *"F2 wants to exist **before** the A06a depth run, not after — the
+>   — **except §6.2, which was pulled forward into the data campaign** (founder ask, 2026-08-02) and
+>   is built: see [*§6.2 as built*](#f2-as-built--the-run-history). Its own sequencing note asked for
+>   this and was nearly missed: *"§6.2 wants to exist **before** the A06a depth run, not after — the
 >   first real run is the one whose numbers matter most."*
 >
-> **Status:** 📋 Scoped, not built (2026-07-30). Founder ask, same day. **Workstream E (per-body map
+> **Status:** 📋 Scoped, not built (2026-07-30). Founder ask, same day. **Workstream 5 (per-body map
 > summary cards) was folded in on 2026-07-30**, out of the roadmap's deferred design sketches.
 > **Depends on:** A06a (`meanDepthM`/`maxDepthM` + the depth ladder) — built and on dev, **ETL not yet
 > run**. That unrun loader is this phase's one scheduling constraint; see [Sequencing](#sequencing--and-the-one-time-sensitive-item).
@@ -95,11 +95,11 @@
 > [A06b — bathymetry contours](./A06b-bathymetry-layer.md) (complete 2026-08-01 — its coverage is
 > what feeds this doc's `+2 has bathymetric contours` prominence term).
 > **A06 is now a five-way split:** A06a depth → A06b contours → **A06c profiles** → A06d access points →
-> [A06e satellite imagery](./A06e-satellite-imagery.md) (specced 2026-07-31 out of B3).
+> [A06e satellite imagery](./A06e-satellite-imagery.md) (specced 2026-07-31 out of §2.3).
 > **Decisions:** D70, D71, D74, D75, D76, and **D85/D86** added 2026-07-31, plus **D90** (the wind
 > rose) and the **D85/D86/D2 amendments** added 2026-08-02 (see [`01-decisions.md`](../01-decisions.md)).
 > D72/D73 are A06d's; D81–D84 are A06b's and A06e's, plus **D89** (A06b's fixed contour ladder).
-> **All five open questions were answered 2026-07-31**, plus A3, B3, B3a, B5 and E3 — see the marked
+> **All five open questions were answered 2026-07-31**, plus §1.3, §2.3, §2.3a, §2.5 and §5.3 — see the marked
 > sections. Two answers changed the build: **shoreline is measured on the source geometry** (D85, and it
 > moves A2–A4 onto the *canonical water re-import* rather than the depth run), and **the summary card
 > carries a consensus quality mark after all** (D86, reversing this doc's own recommendation).
@@ -113,27 +113,27 @@ memory of them. **Two specified items had been missed** and are now done; both a
 
 | Item | State | Where |
 | --- | --- | --- |
-| **A1** elevation + `elevationSource`, operator precedence, batched resumable loader | ✅ | `core/elevation.ts`, `scripts/lake-depth/{elevation,loadElevation}.ts` |
-| **A2** long/short axis + undirected bearing | ✅ *(method corrected — see finding 1)* | `core/lakeGeometry.ts` |
-| **A3** shoreline measured pre-`simplify()` (D85) | ✅ | `core/lakeGeometry.ts`, `scripts/etl/transform.ts` |
-| **A3** HydroLAKES `Shore_len` cross-check — *"log the comparison; store ours"* | ✅ **was missed, now done** | `waterBodies.matchAndImportDepths` |
+| **§1.1** elevation + `elevationSource`, operator precedence, batched resumable loader | ✅ | `core/elevation.ts`, `scripts/lake-depth/{elevation,loadElevation}.ts` |
+| **§1.2** long/short axis + undirected bearing | ✅ *(method corrected — see finding 1)* | `core/lakeGeometry.ts` |
+| **§1.3** shoreline measured pre-`simplify()` (D85) | ✅ | `core/lakeGeometry.ts`, `scripts/etl/transform.ts` |
+| **§1.3** HydroLAKES `Shore_len` cross-check — *"log the comparison; store ours"* | ✅ **was missed, now done** | `waterBodies.matchAndImportDepths` |
 | **A4** 16-bearing fetch profile, contiguous-run rule, stated limitations | ✅ *(origin corrected — see finding 2)* | `core/lakeGeometry.ts` |
-| **A4b** winter wind rose — **not in the original plan**, added by founder call | ✅ | `core/windRose.ts`, `scripts/wind-climate/` |
-| **A5** `regionStats` per-state deciles | ✅ *(one deviation — see below)* | `convex/regionStats.ts` |
-| **C** derived caption, all four rules, rendered on both clients | ✅ | `core/lakeCaption.ts`, `core/lakeProfile.ts` |
+| **§1.4b** winter wind rose — **not in the original plan**, added by founder call | ✅ | `core/windRose.ts`, `scripts/wind-climate/` |
+| **§1.5** `regionStats` per-state deciles | ✅ *(one deviation — see below)* | `convex/regionStats.ts` |
+| **§3** derived caption, all four rules, rendered on both clients | ✅ | `core/lakeCaption.ts`, `core/lakeProfile.ts` |
 | **D2** richness → prominence, boost-never-penalty, retirement signal | ✅ *(weights rescaled — see finding 4)* | `core/display.ts`, `waterBodies.backfillCells` |
 | **D2** `hasContours` term | ✅ **was dark, now live** | `bathymetryCoverage` table, `scripts/bathymetry coverage` |
-| **D2 / A4** constants surfaced read-only on the Phase 07-2 tuning page | ✅ **was missed, now done** | `apps/web/src/routes/admin.tuning.tsx` |
+| **D2 / §1.4** constants surfaced read-only on the Phase 07-2 tuning page | ✅ **was missed, now done** | `apps/web/src/routes/admin.tuning.tsx` |
 | `centroid` → `representativePoint` rename | ◐ **stage 1 of 2** | blocked on the backfill running |
-| **F2** run history + full-path import observability — *pulled forward from A06c-2* | ✅ | `importRuns` table, `convex/importRuns.ts`, `scripts/run-log`, `/admin/imports` |
+| **§6.2** run history + full-path import observability — *pulled forward from A06c-2* | ✅ | `importRuns` table, `convex/importRuns.ts`, `scripts/run-log`, `/admin/imports` |
 
 **One deliberate deviation from the text.** A5 says the deciles are *"recomputed at the end of each
 state's import"*. `regionStats:recompute` instead recomputes **every state in one pass**, because it
 is an action that pages the whole corpus and splitting it per state would mean five passes over
 116,070 rows to produce five small rows. The output is identical; only the trigger differs.
 
-**Out of scope here by the split, not by omission:** Workstreams **B** (reference links, NWS alerts,
-the short forecast), **B3a/D** (the seed script), **E** (summary cards) and **F** (record history and
+**Out of scope here by the split, not by omission:** Workstreams **§2** (reference links, NWS alerts,
+the short forecast), **B3a/D** (the seed script), **§5** (summary cards) and **§6** (record history and
 import observability) are A06c-2. That matches this doc's own sequencing, where items 1–3 are the
 derived numbers and 4–7 are everything else.
 
@@ -281,7 +281,7 @@ and an empty tileset look the same, and only one of them should cost 2,022 rows.
 5. **`bathymetry coverage`** — the 2,022 contoured bodies, for D2's `hasContours` term
 6. **`backfillRepresentativePoint`** for `waterBodySubAreas` and `adminAreas` — the water re-import
    already writes the field for `waterBodies`, but nothing rewrites those two
-7. …then everything **A06c-2** gathers (A06d put-ins if they land in the same window, the B3a seed
+7. …then everything **A06c-2** gathers (A06d put-ins if they land in the same window, the §2.3a seed
    boosts)
 8. **`backfillCells` — ONE re-score pass, at the very end of A06c as a whole** (founder call,
    2026-08-02: *"once we've gathered as much data as we can on every body during this phase A06c
@@ -303,7 +303,7 @@ A test fails if step 1 stops clobbering richness, so the constraint cannot drift
 >   B3a/D touches ~40 bodies, B5 polls per state on a cron by design, E's counters are
 >   write-maintained, and F writes one row per run. **No A06c-2 field wants to ride the water
 >   transform** — the specific check A06a's ordering gate got incomplete.
-> - **A06d reuses the archived extract.** Its Workstream B1 is a second `osmium tags-filter` pass over
+> - **A06d reuses the archived extract.** Its Workstream §2.1 is a second `osmium tags-filter` pass over
 >   *the same* Geofabrik file, and `scripts/etl`'s `fetchExtract` keeps each state's `.pbf` in a
 >   permanent `.raw/<state>/` with a manifest pinning the resolved dated URL and md5. So A06d is not a
 >   reason to delay the re-import — and it is *better* built after one, since put-in→body association
@@ -356,7 +356,7 @@ on-water guarantee display, drive-time and the town stamp all depend on. A06b al
 *Written 2026-08-09, against the code. The pattern from A06c-1 repeated: **the plan's own earlier
 findings had not been propagated into its later workstreams.***
 
-### 1. Workstream B was still built on the shoreline
+### 1. Workstream 2 was still built on the shoreline
 
 B says every link is *"a pure function of `(centroid, name, states[])`"*. Finding 2 of this same
 document measured what `centroid` actually is — Turf `pointOnFeature`, which returns a point on the
@@ -393,7 +393,7 @@ own length.)*
 
 ### 3. E's counter is the wrong shape, and the neighbouring file is why — **D141**
 
-E2 specifies `summary` as a counter *"generalizing the Phase 04 contribution-counter pattern"*, and
+§5.2 specifies `summary` as a counter *"generalizing the Phase 04 contribution-counter pattern"*, and
 `lib/contributionCounts.ts` makes ±1 look obvious. But a profile's `reportCount` is a lifetime total
 where a card's counts are **window- and season-scoped**: a report ageing out has no event to hang a
 decrement on, and the D86 mean cannot be maintained incrementally at all — you cannot remove a value
@@ -532,7 +532,7 @@ settled the next day as `≥ 5 acres OR (named AND ≥ 1 acre)` — *stricter* �
 sub-one-acre bodies that `pruneBelowAreaFloor` deletes.
 
 > **Do not reintroduce a threshold argument here.** A parameter invites a caller to invent a floor; a
-> predicate cannot drift. This is the same shape as A06c-2's own finding that E3's card rule was
+> predicate cannot drift. This is the same shape as A06c-2's own finding that §5.3's card rule was
 > implemented twice — two definitions that agree are the ones that drift silently.
 
 ### `/admin/imports` has no delete path for an orphaned `running` row
@@ -574,7 +574,7 @@ A hand-curated regional atlas is a genuinely useful artifact — and it is also 
 stops being updated after one winter, because the maintenance cost lands on one person every season.
 Ours has to survive nobody feeling like writing anything.
 
-A corollary that shapes Workstream B in particular:
+A corollary that shapes Workstream 2 in particular:
 
 > **P2 (D71) — A link is not an integration.**
 > A URL template computed from `(centroid, name, states)` costs no storage, no quota, no license and
@@ -583,12 +583,12 @@ A corollary that shapes Workstream B in particular:
 
 ---
 
-## Workstream A — Derived geometry stats
+## §1 — Derived geometry stats
 
 Everything here is computed from data we already have or a single free lookup. Nothing here needs a
 human.
 
-### A1 — Elevation *(the time-sensitive one)*
+### §1.1 — Elevation *(the time-sensitive one)*
 
 **Why it matters.** Elevation is a real freeze-*order* signal in the Northeast, and an underrated one.
 A 1,700 ft pond in the Greens is skateable weeks before a valley lake twenty minutes away, and skaters
@@ -612,7 +612,7 @@ canonical re-import untouched, same as depth.
 scarce and wildly uneven in quality. Elevation is not scarce — a 90 m global DEM is accurate to a few
 metres at a lake surface, far inside the precision this signal needs. A ladder here would be ceremony.
 
-### A2 — Long axis: length, bearing, and a dimension line
+### §1.2 — Long axis: length, bearing, and a dimension line
 
 **Compute:** rotating calipers over the convex hull of the stored polygon → the hull diameter (longest
 chord between hull vertices), giving `longAxisM` and `longAxisBearingDeg` (0–180°, undirected — an axis
@@ -624,10 +624,10 @@ call. Runs in the ETL transform alongside `surfaceAreaSqM`, already computed the
 geometry (`scripts/etl/src/transform.ts`).
 
 **Value on its own is modest** — we already show surface area, and this is the least important item in
-Workstream A. It earns its place because **A4 needs the axis anyway**, so the dimension line is a free
+Workstream 1. It earns its place because **A4 needs the axis anyway**, so the dimension line is a free
 by-product.
 
-### A3 — Shoreline length: measure the source geometry, not our copy of it (D85)
+### §1.3 — Shoreline length: measure the source geometry, not our copy of it (D85)
 
 > **Founder, 2026-07-31:** *"Is there another source we could use to get the perimeter length? I'm open to
 > rounding to the nearest mile, or even up to the next whole mile, to be easy. But maybe we're looking at
@@ -689,7 +689,7 @@ Same honesty problem A06a solved for modelled depth, same treatment: the framing
 This is D3-adjacent and worth stating plainly, because a shoreline number *looks* like a hard fact in a
 way a modelled depth does not — which makes it more dangerous, not less.
 
-### A4 — Directional fetch profile *(the interesting one)*
+### §1.4 — Directional fetch profile *(the interesting one)*
 
 **Wind fetch** is the distance wind travels over open water before reaching a point. It is one of the
 main determinants of whether a lake sets smooth black ice or gets chopped and wind-slabbed, and of where
@@ -718,9 +718,9 @@ geometry at read time, zero extra reads.
 - **Rivers would produce nonsense.** Still deferred (D4), and one more reason the still-water assumption
   belongs in the function contract.
 
-### A5 — `regionStats`: the comparison basis
+### §1.5 — `regionStats`: the comparison basis
 
-Workstream C wants to say things like *"among the deepest in Vermont."* That needs a corpus-relative
+Workstream 3 wants to say things like *"among the deepest in Vermont."* That needs a corpus-relative
 basis, and per-body percentiles are the wrong shape — they shift with every import and would need
 116,070 rewrites to stay true.
 
@@ -730,7 +730,7 @@ deciles; bodies store nothing extra.
 
 ---
 
-## Workstream B — Reference links
+## §2 — Reference links
 
 ### The design call that makes this cover 116k bodies
 
@@ -748,7 +748,7 @@ Generating them in a `referenceLinks.ts` module in `@skating/core` means:
 Storing 116,070 copies of a derivable string would be the expensive way to get a worse result. The
 *only* thing that needs storage is the one link that genuinely isn't derivable (B7).
 
-### B1 — Every external link opens **in-app** on mobile (D76)
+### §2.1 — Every external link opens **in-app** on mobile (D76)
 
 Founder call: linking out is fine on desktop, but on mobile a skater should not be ejected into Safari
 and left to find their way back.
@@ -770,7 +770,7 @@ chrome, which sounds better and is worse:
 **Rule to record:** a `WebView` is only for content we're licensed to embed (a provider's own documented
 embed widget). Everything else goes through the in-app browser. Web stays a plain `target="_blank"`.
 
-### B2 — Directions ✅ already built
+### §2.2 — Directions ✅ already built
 
 `directionsUrl` (`packages/core/src/putIn.ts:144`) already emits Apple Maps on iOS and Google Maps
 elsewhere, wired into `apps/web/src/components/DirectionsButton.tsx` and
@@ -779,7 +779,7 @@ elsewhere, wired into `apps/web/src/components/DirectionsButton.tsx` and
 *(Directions are the one deliberate exception to B1: a maps deep link should hand off to the real maps
 app, which is where navigation belongs.)*
 
-### B3 — Copernicus Browser — and the satellite blocker it retires
+### §2.3 — Copernicus Browser — and the satellite blocker it retires
 
 **The roadmap entry this closes.** [`07-roadmap.md`](../07-roadmap.md) has parked the satellite-imagery
 layer as *"needs design — and it needs an imagery source whose terms permit the use."* That second half
@@ -828,7 +828,7 @@ research, rather than waiting for general traffic.
 - A script (**`scripts/seed-satellite/`** — renamed from `seed-destinations` at the founder's ask,
   2026-07-31: *"then in the future we can expand this beyond just the lake shortlist"*) matches each to a
   `waterBodies` row by name + state + centroid proximity, **reports ambiguous matches for a human rather
-  than guessing**, sets `curatedBoost` (Workstream D), and **verifies the generated Copernicus URL
+  than guessing**, sets `curatedBoost` (Workstream 4), and **verifies the generated Copernicus URL
   resolves for each**.
 
   *The rename is worth the thirty seconds it costs.* `seed-destinations` names the **input** — a list of
@@ -872,7 +872,7 @@ guessing that they do. B3a's proving run is what starts producing that evidence,
 Full cost/benefit for Copernicus and Planet lives in
 [`05-accounts-and-credentials.md`](../05-accounts-and-credentials.md).
 
-### B4 — Weather links: Windy
+### §2.4 — Weather links: Windy
 
 **Windy is a link, not an integration — but on mobile it's an in-app link (B1).** Confirmed against their
 docs: the Map Forecast API is *"a simple-to-use library based on Leaflet 1.4.x"* and tightly coupled to
@@ -886,7 +886,7 @@ what the founder asked for — Windy's animation, over our app, with a Done butt
 Cost, tiers and the future-integration case are documented in
 [`05-accounts-and-credentials.md`](../05-accounts-and-credentials.md).
 
-### B5 — Weather data: NWS alerts ✅ **in scope** (D74)
+### §2.5 — Weather data: NWS alerts ✅ **in scope** (D74)
 
 Founder call, 2026-07-30: build it.
 
@@ -918,7 +918,7 @@ chill advisories — issued by the local forecast office.
 **Coverage gap to record:** US-only. A future Québec expansion needs Environment Canada, a different API
 with different terms.
 
-### B5b — A short forward forecast, for the drive decision ✅ **in scope, and cheaper than expected**
+### §2.5b — A short forward forecast, for the drive decision ✅ **in scope, and cheaper than expected**
 
 > **Founder, 2026-07-31:** *"It would be cool to show a few hours' forecast in-app for a given lake, not
 > just official alerts. That way if someone's going to drive 90 minutes they could see in-app if it's
@@ -968,7 +968,7 @@ We show snow starting at 3pm and their drive time; the inference is theirs, and 
   runs on what happened, and a hazard whose confidence decayed on a forecast that didn't come true would
   be unreproducible after the fact.
 
-### B6 — Regional community search link
+### §2.6 — Regional community search link
 
 Founder ✅, framed as *a bridge to future ingestion* — something to tide skaters over until they switch.
 
@@ -982,7 +982,7 @@ feature that carries 0% of the risk.
 
 Store nothing per body; the state is already on the row.
 
-### B7 — Local lake associations — the one thing that gets stored
+### §2.7 — Local lake associations — the one thing that gets stored
 
 Founder ✅. Genuinely non-derivable: there is no algorithm from a lake's name to its association's URL.
 
@@ -995,9 +995,9 @@ exception that proves P2's rule, which is why it's the only field of its kind he
 
 ---
 
-## Workstream C — The derived caption
+## §3 — The derived caption
 
-Workstream A's payoff: one or two sentences per lake, generated from our own numbers, telling a skater
+Workstream 1's payoff: one or two sentences per lake, generated from our own numbers, telling a skater
 what the stats *mean*.
 
 **Rules, all load-bearing:**
@@ -1030,13 +1030,13 @@ Every clause there is a lookup plus a threshold. None of it needs a person.
 
 ---
 
-## Workstream D — Curated boost for known destinations
+## §4 — Curated boost for known destinations
 
 **Founder call: no new flag.** Use `curatedBoost`. The reasoning is worth recording: a separate
 `isDestination` boolean *and* a `curatedBoost` number would be two knobs expressing one idea, and within
 a season nobody would remember which governs what. One concept, one maintenance surface.
 
-**Task:** the seed list and matching script from B3a set the boosts through the existing Phase 07 admin
+**Task:** the seed list and matching script from §2.3a set the boosts through the existing Phase 07 admin
 path. Same script, two outputs — which is why they're specified together.
 
 **Cross-check the two source lists against each other.** Where the scraped community corpus's
@@ -1114,14 +1114,14 @@ it as "deprioritize the empty ones" and implementing it as a subtraction would p
 ponds below the discoverability floor — and the founder's own stated worry, *"I'd hate to not have a
 body someone cares about"*, is precisely the thing that would break.
 
-**It interacts with `curatedBoost` (Workstream D above) and should not duplicate it.** The curated
+**It interacts with `curatedBoost` (Workstream 4 above) and should not duplicate it.** The curated
 seed is a cold-start hack with a retirement path; this is the durable mechanism meant to replace it.
 Best read as: curated boosts are what we assert before we know anything, and profile richness is what
 takes over once we do.
 
 ---
 
-## Workstream E — Per-body summary cards on the map
+## §5 — Per-body summary cards on the map
 
 **Moved into this phase by founder call, 2026-07-30**, from the roadmap's *Design sketches for deferred
 items*, where it had sat since 2026-07-21 — *"it's about time we took care of that."* It belongs here
@@ -1131,7 +1131,7 @@ it**: A–C answer that from geometry and third-party data, and this answers it 
 **The ask.** At suitable zoom levels, surface a compact card or label over *unselected* bodies with the
 at-a-glance basics, so the map stops being a field of anonymous polygons you must click one at a time.
 
-### E1 — What goes on the card (founder call, 2026-07-30)
+### §5.1 — What goes on the card (founder call, 2026-07-30)
 
 **Active report counts and types only.**
 
@@ -1152,7 +1152,7 @@ recent reports — but deliberately, later, and not inherited by default.
 [open question 5](#5--the-consensus-quality-signal-ships-as-a-graded-mark-d86), which reverses this
 doc's own recommendation to defer it.
 
-### E2 — Denormalized on write, not aggregated on read
+### §5.2 — Denormalized on write, not aggregated on read
 
 The shape from the original sketch stands, and **A01 changed the argument for it rather than against it**:
 a viewport read is now bounded (the ladder grid replaced the geospatial component), so aggregating per
@@ -1165,7 +1165,7 @@ maintained on write, generalizing the Phase 04 contribution-counter pattern
 create/confirm/archive. Swept by a cron for time decay, because the counts are inherently time-windowed
 and go stale without a tick.
 
-### E3 — It renders nothing when there is nothing to say
+### §5.3 — It renders nothing when there is nothing to say
 
 The old deferral trigger was *"do this when there's enough report density that a summary is non-empty for
 most bodies"* — otherwise it's a field of blank cards. **That trigger is retired by a design rule rather
@@ -1199,7 +1199,7 @@ just **Pond** is worse than no title at all — it looks like a bug and it's amb
 - **A body with no name at all still gets its counts**, because the card's job on an unnamed body is to
   say *someone skated here* — which is arguably more valuable there than on a lake everyone knows.
 
-### E4 — The sub-questions to settle at build ✅ *all four answered at the A06c-2 build, 2026-08-09*
+### §5.4 — The sub-questions to settle at build ✅ *all four answered at the A06c-2 build, 2026-08-09*
 
 > - **What "recent" means:** `SUMMARY_RECENT_DAYS = 14`, the same window the feed and report list use.
 > - **Rendering:** a MapLibre **`symbol` layer** (founder call), which buys collision detection for
@@ -1224,7 +1224,7 @@ just **Pond** is worse than no title at all — it looks like a bug and it's amb
 
 ---
 
-## Workstream F — Record history and import observability
+## §6 — Record history and import observability
 
 *Added 2026-07-31 from the A06a review (founder call: fold it in here rather than into its own phase).
 Both halves answer the same question — **what happened to this lake, and who or what did it** — and both
@@ -1256,9 +1256,9 @@ One row per run — source, target deployment, started/finished, the counts, and
 itemized rejects — written by the loader through an internal mutation. **Not one row per body**: an 8k-row
 audit trail per run is a different feature with a different cost, and the per-body question is answered by
 the depth provenance already stored on the row. An `/admin/imports` page then lists runs and drills into
-one, which also gives F1's timeline its ETL half ("HydroLAKES filled this mean on 2026-08-12").
+one, which also gives §6.1's timeline its ETL half ("HydroLAKES filled this mean on 2026-08-12").
 
-Sequencing note: F2 wants to exist **before** the A06a depth run, not after — the first real run is the
+Sequencing note: §6.2 wants to exist **before** the A06a depth run, not after — the first real run is the
 one whose numbers matter most, and it is also the run whose LAGOS-US findings (§5b of that runbook) want
 a durable home.
 
@@ -1370,7 +1370,7 @@ replaces.
 
 ## Out of scope / explicitly not doing
 
-- **Hand-maintained per-lake prose** (D70) — replaced by Workstream C.
+- **Hand-maintained per-lake prose** (D70) — replaced by Workstream 3.
 - **Per-body archival photos** (founder call) — the photos that matter come from reports and hazards.
   Access-point photos are A06d's business: infrastructure, not conditions.
 - **Blending weather providers** (D74) — one physics source, deliberately.
@@ -1383,7 +1383,7 @@ replaces.
 
 ## Sequencing — and the one time-sensitive item
 
-> **A1 (elevation) should land before the A06a depth ETL is run.**
+> **§1.1 (elevation) should land before the A06a depth ETL is run.**
 
 That loader is written and tested but **has not been run yet** — it's waiting on three third-party
 downloads plus a licence/column confirmation. Elevation is a per-centroid lookup against a free
@@ -1481,7 +1481,7 @@ Recorded in A06a itself as a hard gate — see
 [*§Before the ETL runs*](./A06a-body-depth.md#before-the-etl-runs--the-ordering-gate) — with the
 escape hatch stated (run alone, accept a second pass) so the decision stays reversible under season
 pressure rather than becoming a rule nobody can override. The founder's phrasing was *"until A06c is
-complete,"* deliberately more conservative than *"until A1 is built,"* and A06a's gate carries the
+complete,"* deliberately more conservative than *"until §1.1 is built,"* and A06a's gate carries the
 inventory of what else wants to ride a pass.
 
 ### 4 — The seed list gets founder review before boosts are applied ✅
@@ -1592,7 +1592,7 @@ this is source material, not a feature.
 | Work | Relevance to us |
 |---|---|
 | Michel, B. & Ramseier, R.O. (1971), *Classification of River and Lake Ice*, Canadian Geotechnical Journal | The academic taxonomy behind our **16 canonical hazard type keys**. Worth citing in [`docs/hazard-decay-and-lifecycle.md`](../../docs/hazard-decay-and-lifecycle.md). |
-| Ashton, G.D. (1989), *Thin Ice Growth*, Water Resources Research | Early-season growth rates — directly relevant to Workstream C's freeze-timing clauses and to D56 decay. |
+| Ashton, G.D. (1989), *Thin Ice Growth*, Water Resources Research | Early-season growth rates — directly relevant to Workstream 3's freeze-timing clauses and to D56 decay. |
 | Gow, A.J., Ueda, H.T. & Ricard, J.A. (1978), *Flexural Strength of Ice on Temperate Lakes*, CRREL Report 78-9 | Load-bearing physics — the basis for any thickness guidance, and therefore for our decision **not** to give any. |
 | Fransson, L. (2009), *Ice Handbook for Engineers* v1.2, Luleå University of Technology | General engineering reference. |
 | Tsai, V.C. & Wettlaufer, J.S. (2007), *The Formation of Lake Stars*, Physical Review E | Radial melt patterns — a surface feature skaters see and may report. |
@@ -1654,7 +1654,7 @@ for all of it.)*
 > archive (1,193 at the time this was written; widened to the 250 m gate and completed 2026-08-15),
 > **depth 24.2% overall but 83–90% above 50 acres**, and **bathymetry coverage 2,057
 > bodies**. The one number still outstanding is `regionStats:recompute`, which is the last pass of the
-> campaign and gates only the **decile** copy (A5), not the rest of A06c-1.
+> campaign and gates only the **decile** copy (§1.5), not the rest of A06c-1.
 >
 > See [`phases/A07a-unified-corpus.md`](./A07a-unified-corpus.md) for the campaign's final state.
 
@@ -1699,10 +1699,10 @@ and the per-lake timeline.** ✅ **BUILT 2026-08-09** on branch `phase-n6c-2-lin
 against dev, and a redeploy mid-pass is the one way to break an otherwise resumable run). Tests green:
 core 1,738+ · convex 1,141 · web 291+ · mobile 95 · seed-destinations 15. New decisions **D138–D142**.
 
-Shipped: **B** (Windy + the regional community archive, derived and stored nowhere), **B5** (NWS
-alerts on a 15-minute cron, state rung of the zone ladder), **B5b** (the forward forecast), **B7**
-(the one stored link, with its editor), **B3a/D** (`scripts/seed-destinations`), **E** (map summary
-cards with D86's dots), **F1** (the per-lake activity timeline), and mobile parity for all three
+Shipped: **§2** (Windy + the regional community archive, derived and stored nowhere), **§2.5** (NWS
+alerts on a 15-minute cron, state rung of the zone ladder), **§2.5b** (the forward forecast), **§2.7**
+(the one stored link, with its editor), **B3a/D** (`scripts/seed-destinations`), **§5** (map summary
+cards with D86's dots), **§6.1** (the per-lake activity timeline), and mobile parity for all three
 drawer strips through `openBrowserAsync` (D76).
 
 **Everything satellite deferred to [A06e](./A06e-satellite-imagery.md) at the founder's ask
@@ -1716,7 +1716,7 @@ thumbs, which measure whether a *report* was helpful rather than what the ice wa
 
 **What the build found — the plan's own findings had not reached its later workstreams:**
 
-- **Workstream B was still built on `centroid`**, which this same plan proves in its finding 2 is a
+- **Workstream 2 was still built on `centroid`**, which this same plan proves in its finding 2 is a
   *shoreline* point (Willoughby = ring vertex 199; Champlain 30.7 km off mid-lake). A Windy link for
   Champlain would have opened 30 km away, silently, because a shoreline coordinate is a valid
   coordinate. Links and summary cards read `interiorPoint`; a test pins it.

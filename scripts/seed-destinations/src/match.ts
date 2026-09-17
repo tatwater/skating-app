@@ -45,7 +45,7 @@ export interface CandidateBody {
   states?: string[];
   surfaceAreaSqM?: number;
   curatedBoost?: number;
-  /** The operator's satellite-link override (A06e Workstream D) — read by the `--verify-imagery` run. */
+  /** The operator's satellite-link override (A06e Workstream 4) — read by the `--verify-imagery` run. */
   satelliteImagery?: 'auto' | 'on' | 'off';
   interiorPoint?: { lat: number; lng: number };
   representativePoint?: { lat: number; lng: number };
@@ -191,7 +191,7 @@ export function matchAll(
 }
 
 /**
- * Where the two source lists agree, and where they don't (Workstream D's cross-check).
+ * Where the two source lists agree, and where they don't (Workstream 4's cross-check).
  *
  * **The disagreement is the interesting part.** A spot the community talks about constantly that no
  * atlas lists is a discovery signal; a listed spot nobody discusses may be listed for scenery rather

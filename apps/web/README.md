@@ -90,7 +90,7 @@ deep-linkable** — `/water/$id` (detail: area, report feed by skate time, "Add 
 its survivor and show a friendly "not available" panel for a removed/unlisted target. The drawers
 push highlight / fly-to / photo pins up to the map via `MapSelectionContext`.
 
-**Report create (§E).** "Add a report" opens a form (`Dialog`) — ice types / surface tags / quality /
+**Report create (§5).** "Add a report" opens a form (`Dialog`) — ice types / surface tags / quality /
 sky / precip on toggle groups, multi-reading thickness (value ⇄ range, measured/estimated), manual
 conditions, notes, skate time, and an optional **put-in pin** the skater drops on the map (arms a
 pin-drop mode; sets `reports.point`). Reports are **always public** (D13 — no visibility control);
@@ -178,7 +178,7 @@ pnpm --filter @skating/web build         # production build (regenerates routeTr
 - **Block filter** — reports are always public (D13, no follow graph), so reads gate on moderation
   only for now; the viewer↔author **block** subtraction lands in Phase 03 through `@skating/core`'s
   `canViewReport` (already the read seam), so it flips on with no report re-write.
-- **Offline draft queue** + native map — the mobile follow-on (§F, D9/D30; F2 shipped on mobile).
+- **Offline draft queue** + native map — the mobile follow-on (§6, D9/D30; §6.2 shipped on mobile).
   The web form is ephemeral by design.
 - Signed-out viewing of public bodies/reports (deep links are auth-gated for the alpha).
 - PostHog analytics/session replay (D29, "later").

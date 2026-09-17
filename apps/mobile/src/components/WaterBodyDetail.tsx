@@ -49,7 +49,7 @@ import { WeatherPlacePicker } from './WeatherPlacePicker';
 import { WindExposure } from './WindExposure';
 
 /**
- * Water-body detail drawer (§F, D47) for `/water/[id]`, the mobile mirror of web's `WaterBodyDetail`.
+ * Water-body detail drawer (§6, D47) for `/water/[id]`, the mobile mirror of web's `WaterBodyDetail`.
  * Reads `waterBodies.get`, which **follows a merge to the survivor** (a stale/merged deep link
  * silently lands on the canonical lake) and distinguishes not-found (`null`) from removed/unlisted
  * (`{ available: false }`) so each gets its own friendly state. Shows name, type, imperial area

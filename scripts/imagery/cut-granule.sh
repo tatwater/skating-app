@@ -12,7 +12,7 @@
 # Action, or a person with Docker, and none of them are a migration.
 #
 # It also makes the parallel story trivial. One season is ~750 granules; because no job can observe
-# another, 25 at once is the same total spend as 25 in a row (§C2), and a crash takes exactly one
+# another, 25 at once is the same total spend as 25 in a row (§3.2), and a crash takes exactly one
 # granule with it.
 #
 # ## Two seasons, and they are not the same season
@@ -206,11 +206,11 @@ resolve_granule() {
   log "captured $CAPTURED_AT, cloud ${CLOUD_PCT:-unknown}%, season $FRAME_SEASON"
 }
 
-# Assets we care about, and why each one (§C1). True color is what PR 2 ships; the rest are the
+# Assets we care about, and why each one (§3.1). True color is what PR 2 ships; the rest are the
 # bands A06g is built on and they cost nothing extra to note while we are already holding the granule.
 #   visual — the RGB composite, the frame a skater actually looks at
 #   scl    — ESA's per-pixel scene classification: snow/ice AND cloud mask in one band. The single
-#            most valuable asset here, per §C1.
+#            most valuable asset here, per §3.1.
 #   green, swir16 — the NDSI pair, the only way to tell snow/ice from cloud (true color cannot).
 asset_href() { jq -r --arg k "$1" '.assets[$k].href // empty' granule.json; }
 
@@ -704,7 +704,7 @@ reconcile_bodies() {
 # `(green − swir16) / (green + swir16)`. Snow and ice are bright in the visible and very dark in the
 # shortwave infrared; **cloud is bright in both.** That difference is the only thing that separates
 # them, and true color cannot do it — which is why a 22 Nov Morey frame read 99% clear through
-# visible haze. This is the independent check on SCL's snow/cloud confusion (§C1).
+# visible haze. This is the independent check on SCL's snow/cloud confusion (§3.1).
 #
 # ⚠ **It will not find black ice, and should never be sold as though it might.** NDSI is a *snow*
 # index built on the same brightness that misleads SCL: transparent ice over a dark bottom is dark in
@@ -922,7 +922,7 @@ transform_granule() {
   # a corner the swath misses got `gdalwarp`'s nodata black under an alpha saying **fully opaque**.
   # On this granule that was **843 of 3,213 tiles** — 26% of the output — including the whole northern
   # third of Lake Champlain as a black lake-shaped blob. It read as "this lake is black" rather than
-  # "this lake was not photographed", the exact confusion `footprint` and §C4 exist to prevent.
+  # "this lake was not photographed", the exact confusion `footprint` and §3.4 exist to prevent.
   #
   # `gdal raster tile` honours the source's per-band nodata — which `scene.tif` inherits from Sentinel's
   # TCI (`NoData Value=0`) — and applies it **per pixel**, not merely per tile. So out-of-swath pixels
@@ -963,7 +963,7 @@ transform_granule() {
 
   # SCL as its own *frame* is ON by default — founder call, 2026-08-25, reversing the 08-24 default.
   #
-  # PR 3's band selector shows the classification alongside true color, which is what §C1 argues makes
+  # PR 3's band selector shows the classification alongside true color, which is what §3.1 argues makes
   # a band selector honest rather than decorative: a skater who wants to know what a claim was derived
   # *from* can look at it. That is a product reason, and it outranks the cost reason the flag was
   # originally set for. Set `EMIT_SCL_FRAME=0` to go back to statistics-only.

@@ -1,5 +1,5 @@
 /**
- * Lake surface elevation (A06c Workstream A1) — the source list, plausibility bounds, and the
+ * Lake surface elevation (A06c Workstream §1.1) — the source list, plausibility bounds, and the
  * framing rules for showing it.
  *
  * ## Why elevation earns a field

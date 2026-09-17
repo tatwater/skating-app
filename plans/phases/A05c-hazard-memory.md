@@ -145,9 +145,9 @@ Concretely, and testable:
 
 ---
 
-## 4. Workstream A — The clustering primitive (D77)
+## 4. §1 — The clustering primitive (D77)
 
-### A1 — What counts as "the same place"
+### §1.1 — What counts as "the same place"
 
 **Two hazards match when they are in the same *type family* and their *footprints* are within a
 tolerance of each other.** One function, `clusterHazards(members, { matchMeters, maxSpanMeters })`, in
@@ -162,7 +162,7 @@ facts, not one:
 | `spring` | `spring_current` | `spring_current` |
 | `gas` | `gas_hole` | `gas_hole` |
 | `reef` | `reef_hole` | `reef_hole` |
-| `volatile` | `open_water`, `thin_ice`, `overflow_slush`, `drain_hole`, `wind_hole`, `slush_hole`, `thawed_rotten` | `shallow_early_thaw` — **only at the raised bar** (§C7) |
+| `volatile` | `open_water`, `thin_ice`, `overflow_slush`, `drain_hole`, `wind_hole`, `slush_hole`, `thawed_rotten` | `shallow_early_thaw` — **only at the raised bar** (§3.7) |
 | `crack` | `wet_crack`, `drilled_hole`, `shell_area` | *(nothing)* |
 
 The first four mirror `promotionTargetFor` (`hazardPromotion.ts:45-62`), reused unchanged. `crack`
@@ -170,7 +170,7 @@ The first four mirror `promotionTargetFor` (`hazardPromotion.ts:45-62`), reused 
 collapsing, even though a recurring crack is not a permanent feature of the lake. This is the first
 place the two windows diverge and it is deliberate — *dedup is about identity, promotion is about
 permanence.* `volatile` is the one family where recurrence *earns* a promotion target the single-season
-table could never justify; the argument and the raised bar are in §C7.
+table could never justify; the argument and the raised bar are in §3.7.
 
 `ridge_crossing` **never clusters, in either window.** It is a passage marker, not a danger (D51/D64); a
 recurring *crossing* is a statement about where people walked, and merging two crossings would claim a
@@ -196,14 +196,14 @@ the most confidently wrong output in the system and looks fine in every tidy fix
 **Deterministic.** Greedy agglomeration depends on visit order, so members are visited by
 `firstReportedAt` then `_id`, and a property test asserts a shuffled input yields identical clusters.
 
-### A2 — The two windows
+### §1.2 — The two windows
 
 | | **Within-season (duplicates)** | **Cross-season (recurrence)** |
 |---|---|---|
 | Question | is this the same ridge you already marked? | is this the ridge that forms here every winter? |
 | Members | active, visible hazards in the **current** season on one body | visible hazards across `RECURRENCE_WINDOW_SEASONS` on one body |
 | Tolerance | `DUPLICATE_MATCH_METERS` = **25** | `RECURRENCE_MATCH_METERS` = **80** |
-| Families | all six | five — the four, plus `volatile` at §C7's raised bar |
+| Families | all six | five — the four, plus `volatile` at §3.7's raised bar |
 | Computed | **at read time**, in `hazards.listForBody` | **by a job**, stored in `hazardRecurrence` |
 | Public? | immediately | behind the bar (§9.3) |
 
@@ -221,12 +221,12 @@ should be stated in both files so nobody "unifies" them later.
 
 ---
 
-## 5. Workstream B — Within-season consensus (D80)
+## 5. §2 — Within-season consensus (D80)
 
 Four layers, cheapest first. The first three are non-destructive; the fourth is destructive-looking and
 is built on the one merge pattern this repo already trusts.
 
-### B1 — Prevent: the draw-time nudge
+### §2.1 — Prevent: the draw-time nudge
 
 When a skater finishes drawing a hazard whose footprint is within `DUPLICATE_MATCH_METERS` of a live
 same-family hazard, the form says so before it submits:
@@ -243,7 +243,7 @@ draw the map, so the check is a pure `@skating/core` call against data in memory
 which matters: the on-ice capture path is where duplicates are most likely (two skaters, same ridge, no
 signal, both flagging it).
 
-### B2 — Pool: gate on the cluster, not the row
+### §2.2 — Pool: gate on the cluster, not the row
 
 Every count that *decides* something reads the cluster total instead of the row:
 
@@ -265,7 +265,7 @@ D3 draws everywhere: pool the evidence that a hazard is *there*, never the evide
 (Auto-merge, below, is what actually reduces the N× retirement work, and it does so by making the
 duplicates *one row* rather than by sharing their clearance votes.)
 
-### B3 — Render: one consensus footprint
+### §2.3 — Render: one consensus footprint
 
 Overlapping same-family pins draw as **one** footprint — the union of the members' footprints — carrying
 the cluster's pooled freshness. Opening it shows every reporter, every confirmation, and each member's
@@ -274,7 +274,7 @@ own date, so nothing about who said what is lost.
 The union direction matters: a consensus footprint is never *smaller* than any member, so consensus
 rendering can only ever warn about more area, never less.
 
-### B4 — Auto-merge above a high bar (founder call, 2026-07-30)
+### §2.4 — Auto-merge above a high bar (founder call, 2026-07-30)
 
 Above a deliberately high confidence bar, duplicates collapse into one row without waiting for a
 moderator. **Built on D36's water-body merge pattern**, which is what makes this safe enough to
@@ -317,9 +317,9 @@ being wrong is *a confusing pin*, not *unwarned ice*.
 
 ---
 
-## 6. Workstream C — Cross-season recurrence
+## 6. §3 — Cross-season recurrence
 
-### C1 — A season contributes at most one
+### §3.1 — A season contributes at most one
 
 The honesty rule, and not optional. Three skaters pinning the same ridge in one January is **one**
 season of evidence. `seasonsObserved` is a **set**, derived per member from `seasonOf(firstReportedAt)` —
@@ -329,7 +329,7 @@ enthusiastic week becomes "a pattern".
 (B4's auto-merge reduces how often this rule has to do the work, but never replaces it: unmerged
 near-misses at 30 m still need collapsing to one season.)
 
-### C2 — What is excluded from a cluster
+### §3.2 — What is excluded from a cluster
 
 - `moderationStatus !== 'visible'` — a moderator judged the pin bad; it is not evidence.
 - Hazards whose community verdict was **`never_existed`** — a claim the report was bogus is the opposite
@@ -350,22 +350,22 @@ carries `promotedToFeatureId` and drops out of §7.2's queue. This falls out of 
 voted healed in March is exactly the kind that comes back in December; 'it healed' is a fact about last
 winter, not about this one."*
 
-### C3 — The `hazardRecurrence` table
+### §3.3 — The `hazardRecurrence` table
 
 One row per (body, family, cluster):
 
 | Field | Notes |
 |---|---|
 | `waterBodyId` | |
-| `family` | `ridge` / `spring` / `gas` / `reef` / `volatile` — five, not four. `volatile` earns a row precisely so §C7's raised bar has something to be raised *about*; `crack` is the one family with no cross-season record, since a recurring working crack is not a permanent feature of a lake |
+| `family` | `ridge` / `spring` / `gas` / `reef` / `volatile` — five, not four. `volatile` earns a row precisely so §3.7's raised bar has something to be raised *about*; `crack` is the one family with no cross-season record, since a recurring working crack is not a permanent feature of a lake |
 | `geometryKind`, `geometry`, `bufferMeters?`, `radiusMeters?`, `bbox` | the **representative footprint** — the medoid member, carried across whole so a promoted cluster keeps a real ridge's shape rather than a synthesised average |
 | `memberHazardIds` | every contributing hazard (survivors only — merged tombstones are represented by their survivor) |
 | `seasonsObserved` | `Season[]`, ascending, **deduped** |
 | `windowSeasons` | the denominator |
-| `firstReportedDayOfSeasonP25` / `…P75` | the timing window (§C5), days since July 1 |
+| `firstReportedDayOfSeasonP25` / `…P75` | the timing window (§3.5), days since July 1 |
 | `distinctAuthorCount` | operator-visible; see open question 2 |
 | `suggestedFeatureType` | from the family table |
-| `priority` | the ranking score (§C4) |
+| `priority` | the ranking score (§3.4) |
 | `subAreaId?`, `subAreaName?` | from the medoid (A02/D60) — the place phrase |
 | `publiclyVisible` | **stored, not derived** — see below |
 | `computedAt`, `computedForSeason` | provenance |
@@ -379,7 +379,7 @@ Indexes: `by_water_body`, `by_computed_season_and_priority` (the ranked cross-la
 > asks the client not to render them. The founder call was that a thin pattern is admin-only; a
 > client-side filter is "admin-only if you don't open the network tab".
 
-### C4 — The job
+### §3.4 — The job
 
 A `recomputeRecurrence` staged job on the established self-continuing pattern (`lib/contentPurge`,
 `photoReconcile`), scheduled at the **season rollover** — early July, which D63 chose because nobody is
@@ -409,7 +409,7 @@ or hidden three bogus pins should not wait a year.
 
 **Idempotence is a test.** Two runs must produce byte-identical rows apart from `computedAt`.
 
-### C5 — Ranking, and what happens to A05a's
+### §3.5 — Ranking, and what happens to A05a's
 
 `rankPromotionCandidates` is **kept, not replaced**. On a lake with one season of hazards it is the only
 thing there is, and it will be for most lakes for years. Recurrence, where it exists, outranks it; the
@@ -432,7 +432,7 @@ The recurrence score, in weight order:
 Reuses `CORROBORATION_CAP` and `TIER_WEIGHT` so the two rankings cannot disagree about what a tier means.
 Pure, property-tested — this is where a sign error is invisible and consequential.
 
-### C6 — The timing window
+### §3.6 — The timing window
 
 *"Always between late December and February"* is the sentence the founder ask named, and the one most
 easily overclaimed. Computed as the **25th–75th percentile of members' day-of-season**, an interquartile
@@ -444,7 +444,7 @@ range so one anomalous November sighting doesn't stretch it across the winter. R
 - **Only at the same bar as the advisory itself** — founder call, 2026-07-30. One constant governs both,
   so raising it makes both claims more conservative together.
 
-### C7 — The `shallow_early_thaw` exception (founder call, 2026-07-30)
+### §3.7 — The `shallow_early_thaw` exception (founder call, 2026-07-30)
 
 **Recurring thin ice / open water / thawed ice may propose a permanent feature — but only this family
 has to clear a raised bar.**
@@ -481,7 +481,7 @@ than later is the whole reason to do it at all.
 
 ---
 
-## 7. Workstream D — The operator surfaces
+## 7. §4 — The operator surfaces
 
 ### 7.1 The per-lake card, upgraded
 
@@ -506,7 +506,7 @@ Every cluster across every body, ranked, read off `by_computed_season_and_priori
 not-suppressed, region. This is where an operator spends an hour in October and covers the whole corpus,
 which is the difference between the feature existing and the feature working.
 
-Same page carries the **Recent automatic merges** panel (§B4), with one-click unmerge.
+Same page carries the **Recent automatic merges** panel (§2.4), with one-click unmerge.
 
 ### 7.3 Suppression, with a reason
 
@@ -543,7 +543,7 @@ of whether the bar is set right — a rising unmerge rate means it is too low). 
 
 ---
 
-## 8. Workstream E — Manual authoring (D79)
+## 8. §5 — Manual authoring (D79)
 
 Founder call, 2026-07-30: *"also allow admins to promote their own manually."*
 
@@ -623,7 +623,7 @@ So `promoteFromRecurrence`:
 
 ---
 
-## 9. Workstream F — The skater-facing advisory
+## 9. §6 — The skater-facing advisory
 
 ### 9.1 Where it lives
 
@@ -703,7 +703,7 @@ Checked in the repo on 2026-07-30:
 5. **`goneCount` pools `never_existed` with `fully_healed`** (`hazardLifecycle.ts:281`) while
    `schema.ts` still says otherwise. Stale comment, real consequence for recurrence.
 6. **`promotionTargetFor` maps 5 hazard types to 4 feature types**, leaving 4 of 9 `BODY_FEATURE_TYPES`
-   unreachable. §C7 reaches one of them (`shallow_early_thaw`) from recurrence; §8.1 reaches the rest by
+   unreachable. §3.7 reaches one of them (`shallow_early_thaw`) from recurrence; §8.1 reaches the rest by
    hand.
 7. **`bodyFeatures.create` has no UI** → §8.1 is a build item, not a wiring item.
 8. **Supersession hides across all seasons and blocks permalinks + confirmation**
@@ -746,7 +746,7 @@ Checked in the repo on 2026-07-30:
 12. **The advisory** — component on both lake surfaces, yield rule, offline field, D3 copy tests.
 13. **The D53 amendment** (§8.2) — supersession becomes a backlink; every reader of
     `promotedToFeatureId` reviewed; the "also a recurring feature" drawer line.
-14. **The `shallow_early_thaw` rename + the depth cross-check** (§C7) — the rename is free while dev
+14. **The `shallow_early_thaw` rename + the depth cross-check** (§3.7) — the rename is free while dev
     holds zero `bodyFeatures` rows, so it lands early in the phase rather than late.
 
 **If the phase has to be cut**, items 2–6 are the half that pays off this winter and 12 is the half that
@@ -767,7 +767,7 @@ ships dark — cut from the bottom, not the top.
 | **Stale precomputed rows read as live** | annual recompute | provenance on every surface, recompute button, merge hook |
 | **The advisory read as a live warning** | the most consequential misreading available | §3's discipline, no map presence, structural exclusion from on-ice, copy tests |
 | **Promotion erases the evidence trail** | supersession hides across all seasons today | the D53 amendment (§8.2) — supersession becomes a backlink and hides nothing |
-| **A volatile-family promotion over-warns permanently** | `shallow_early_thaw` is the one promotion reachable from a tier-A type | §C7's raised bar: 3 seasons minimum, depth must not contradict, mechanism named in the copy — and `demote` is one click |
+| **A volatile-family promotion over-warns permanently** | `shallow_early_thaw` is the one promotion reachable from a tier-A type | §3.7's raised bar: 3 seasons minimum, depth must not contradict, mechanism named in the copy — and `demote` is one click |
 
 ---
 
@@ -778,7 +778,7 @@ three of the five changed the design.
 
 **1. Recurring volatile hazards do propose a permanent feature — renamed and at a raised bar.** ✅
 Yes, and the type is renamed **`shallow_early_thaw`**: there is no guarantee the spot is a bay, and the
-old name narrows the type to one of its cases. The bar is raised as recommended. See §C7 — this is the
+old name narrows the type to one of its cases. The bar is raised as recommended. See §3.7 — this is the
 single clearest illustration of what recurrence buys that one season cannot, and the rename is free
 *today* and never again.
 
@@ -799,7 +799,7 @@ hard block, ever. The founder's counter-proposal is better than the question and
 follow-on, not built here** — see below.
 
 **5. No recurrence content on the per-body summary cards.** ✅ And the cards themselves move to
-**A06c** (founder ask, same day) — they have waited long enough in the deferred register. They ship with
+**§1.06c** (founder ask, same day) — they have waited long enough in the deferred register. They ship with
 **active report counts and types only**. Revisit later: *"likely open water"* or *"frequently pressure
 ridges off the eastern shore"* could genuinely help someone judge a lake with no recent reports — but
 that is the surface closest to the map, where D3 pressure is highest, and it should be decided
@@ -826,7 +826,7 @@ What has to be decided before it is buildable, and why it is a separate piece of
   never marked. A vote is honest but slow, and slow is wrong for a geometry correction on live ice.
 - **The safety asymmetry decides most of it.** A redraw that **grows** a footprint is conservative and
   can apply immediately; one that **shrinks** it un-warns ice somebody marked, and should need more
-  evidence — the same asymmetry as confirm (1 vote) versus removal (2), and the same logic as §B4's
+  evidence — the same asymmetry as confirm (1 vote) versus removal (2), and the same logic as §2.4's
   union rule. This is the seam a design should start from.
 - **Vandalism surface.** Editing someone else's safety geometry is a strictly stronger power than filing
   your own, so it needs the moderation and history that hazard authoring already has — an edit log, a
@@ -841,12 +841,12 @@ no new lifecycle. Correction is a new authoring power and deserves its own scopi
 
 ## 14. Trigger and staging
 
-- **Ship now, public immediately:** workstreams A and B (clustering, nudge, pooling, consensus rendering,
+- **Ship now, public immediately:** workstreams 1 and 2 (clustering, nudge, pooling, consensus rendering,
   auto-merge), E (manual authoring), the D53 amendment (§8.2) and the `shallow_early_thaw` rename. None
   of it makes a claim about the future, and the corroboration fix pays off in the first winter.
 - **Do the rename first.** It is a find-and-replace while dev holds zero `bodyFeatures` rows and a
   migration once it doesn't.
-- **Ship now, dark:** workstreams C, D and F behind `RECURRENCE_ADVISORIES_PUBLIC = false`.
+- **Ship now, dark:** workstream 3, D and F behind `RECURRENCE_ADVISORIES_PUBLIC = false`.
 - **Flip the public flag when** the operator queue has been read across at least **two** rollovers and
   the clusters at the current bar look like real patterns — realistically the `'28/'29` rollover,
   possibly `'27/'28` if the corpus is dense. A judgement from `/admin/recurrence` and the tuning chart,
@@ -866,7 +866,7 @@ are more useful than the things it got right.
 
 ### 15.1 The chaining guard had to be rebuilt twice
 
-§A1 bounds a cluster's **total span** at `DUPLICATE_MAX_CLUSTER_SPAN_M` = 150 m. Both halves of that
+§1.1 bounds a cluster's **total span** at `DUPLICATE_MAX_CLUSTER_SPAN_M` = 150 m. Both halves of that
 are wrong, and each was caught by a fixture rather than by reading.
 
 **An absolute cap cannot work.** A `pressure_ridge` is routinely 600 m of buffered LineString, so any
@@ -896,13 +896,13 @@ bounding boxes still overlap, so the common answer costs nothing extra.
 
 ### 15.3 The witness count includes people who *drew*, not only people who tapped confirm
 
-**Founder call, 2026-07-31.** §B2 says the pooled gate reads "distinct confirming users across the
+**Founder call, 2026-07-31.** §2.2 says the pooled gate reads "distinct confirming users across the
 cluster". But the commonest duplicate has no confirmations at all — three skaters each mark the same
 ridge, nobody presses anything — and a confirmers-only count leaves every phone on the lake stuck at
 the soft *"can you see it?"*, which is the failure §1.2 opened with.
 
 So a cluster's witnesses are distinct users who **either** confirmed a member **or** authored one,
-always excluding the pin's own author. §B4 already made this argument for the merge case (*"the
+always excluding the pin's own author. §2.4 already made this argument for the merge case (*"the
 merged-away reporter counts as a corroborating observer — stronger evidence than a confirm tap, since
 they saw it independently and drew it"*); it applies identically to an unmerged cluster. Singletons are
 unchanged — identical to today's `confirmCount`, which is a property test — one person double-posting
@@ -957,7 +957,7 @@ merge makes, which is a residual tension worth a founder's eye. If it reads as o
 the lever is to carry `dismissedDuplicateOf` into `poolConsensus` as a cluster split, **not** to weaken
 the merge bar.
 
-**Not built here, and not started:** workstreams C (the `hazardRecurrence` table, the rollover job, the
+**Not built here, and not started:** workstream 3 (the `hazardRecurrence` table, the rollover job, the
 ranking), D (the two-section lake card, the cross-lake queue, suppression) and F (the skater-facing
 advisory and its copy tests). §11's cut line held exactly as written — items 2–6, 11, 13 and 14 are the
 half that pays off this winter.
@@ -999,7 +999,7 @@ grow. §15.6's claim that *"`unmerge` restores the original by recomputing from 
   and stores the widened footprint again.
 
 The existing test passed because its fixture sits mid-lake, where `clipFootprintToBody` returns `null`
-and the row falls back to the drawn shape — a fixture that was tidy in exactly the way §A1 warns
+and the row falls back to the drawn shape — a fixture that was tidy in exactly the way §1.1 warns
 chaining fixtures are tidy. Every recomputation now starts from `geometry` + `radiusMeters`/
 `bufferMeters`, the one thing a merge never edits, and the three-pin case is a test.
 
@@ -1024,7 +1024,7 @@ to the runtime and a reviewable file to everything else.
 - `listForHazard` queried votes by the **argument** id while resolving the hazard through the merge
   chain, so a stale deep link listed the tombstone's confirmers under the survivor's count.
 - The nudge's *"no, this is a different hazard"* cost a **second** submit press on both clients, which
-  §B1 promised it would not. It now files in the same tap — passed as an argument rather than through
+  §2.1 promised it would not. It now files in the same tap — passed as an argument rather than through
   `setState`, which would not have been visible to the call that followed it anyway.
 - The idempotent-replay branch of `create` returned the stored id without resolving the chain, breaking
   the *"`create` returns the survivor"* rule for exactly the offline-flush path that rule was for.
@@ -1052,7 +1052,7 @@ The primitives were already well covered — `hazardCluster` has shuffle-invaria
 span-guard property tests, and `hazardConsensus` has the monotonicity one. The gaps were all a layer
 out, in the code that *uses* them, and every one of them was a documented claim nothing asserted:
 
-- **Pooled corroboration credit** (§B2's fourth row) had no test at all. Now covered by the case it
+- **Pooled corroboration credit** (§2.2's fourth row) had no test at all. Now covered by the case it
   exists for: two pins 30 m apart — overlapping enough to cluster, not enough to merge — where one
   confirm tap credits both reporters on a bar no single pin reached.
 - **The `hazard_merges` rollup**, which §7.4 calls the only empirical check on the merge bar. Now
@@ -1180,7 +1180,7 @@ app's own making:
   the offline path that is not a rare race, it is the expected case, since hours pass between the nudge
   on the ice and the flush in signal. Refusing only the dismissed id let the *survivor* — the pin now
   carrying exactly that hazard's warning — absorb the new one.
-- **The cluster.** A sibling overlapping the same ice is, by §A1's own definition, the same hazard.
+- **The cluster.** A sibling overlapping the same ice is, by §1.1's own definition, the same hazard.
   Folding into it put the pin in precisely the cluster the skater rejected, through a different door.
 
 `shouldAutoMerge` now takes a `dismissedIds` set and the server resolves it: the dismissed row, its
@@ -1219,7 +1219,7 @@ that list before it adds anything else.
 
 Same discipline as §15: the places the plan was wrong are worth more than the places it was right.
 
-### 18.1 §C4's own matching threshold could not do what §C4 said it would
+### 18.1 §3.4's own matching threshold could not do what §3.4 said it would
 
 The plan asks for two things in the same paragraph, and they contradict each other:
 
@@ -1238,7 +1238,7 @@ lets only one half inherit, because a claimed row is out of the running for the 
 
 ### 18.2 The rollover is a daily tick with a month gate, not a `crons.cron`
 
-§C4 notes this would be the repo's first cron expression. It still isn't one, and the reason is better
+§3.4 notes this would be the repo's first cron expression. It still isn't one, and the reason is better
 than uniformity: a `0 8 2 7 *` expression that fails on July 2 **waits a year**. A daily interval that
 does nothing outside the first week of July, and nothing again once `computedForSeason` is stamped,
 makes the once-a-year job retryable for the price of one indexed read on 358 days. Both halves of that
@@ -1396,7 +1396,7 @@ and with the status block linking to the section by number. Renumbered to **18**
 ## 20. What Greptile found (2026-07-31) — *"never capped" was right about the wrong risk*
 
 One finding, no line comments, and it overturns a sentence this plan asserts in **three** places
-(§C4.2, §11's work item 8, and the module docstring in `lib/recurrence.ts`): *"process one body per
+(§3.4.2, §11's work item 8, and the module docstring in `lib/recurrence.ts`): *"process one body per
 call, fully — never capped."*
 
 ### 20.1 The finding
@@ -1418,7 +1418,7 @@ the whole corpus, permanently.**
 
 ### 20.2 Why the plan's own argument does not survive contact with this
 
-§C4.2's case against a cap is genuinely good: *"a cap here is the `listPromotionCandidates` finding one
+§3.4.2's case against a cap is genuinely good: *"a cap here is the `listPromotionCandidates` finding one
 level up"*, and a recurrence record computed over a corpus missing rows is a count that looks complete
 and isn't. That argument is about **silent** truncation, and it still holds.
 
@@ -1483,7 +1483,7 @@ it was written as.
 **The fix is an exact short-circuit, not a smaller cap.** `goneCount` is not an approximation of the
 vote set — it *is* the same computation, stored: `deriveHazardLifecycle` counts distinct non-author
 users whose latest verdict is `fully_healed` **or** `never_existed`, and `hazards.confirm` writes it on
-every vote. The pooling is why §C2 says the job must read the votes to *split* the two verdicts. But it
+every vote. The pooling is why §3.2 says the job must read the votes to *split* the two verdicts. But it
 is decisive in the other direction: **`goneCount === 0` proves no user's current verdict is
 `never_existed`**, and no read can change that answer. So the confirmation read is skipped outright for
 very nearly every pin — the gone verdicts need two independent users before they do anything, so most

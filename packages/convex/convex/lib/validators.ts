@@ -51,7 +51,7 @@ export const latLng = v.object({ lat: v.number(), lng: v.number() });
 
 /** Axis-aligned bounding box — the cheap prefilter before precise Turf tests (D5). */
 /**
- * One metric's distribution within one state (A06c A5) — the 10th–90th percentiles plus the sample
+ * One metric's distribution within one state (A06c §1.5) — the 10th–90th percentiles plus the sample
  * that produced them.
  *
  * `count` is not decoration: `decileRankOf` refuses to rank against a block below
@@ -214,7 +214,7 @@ export const notificationTrigger = v.union(
 );
 
 /**
- * The `ForecastHour` shape from `@skating/core` (A06c B5b; the planner's fields since A06h D), for the
+ * The `ForecastHour` shape from `@skating/core` (A06c §2.5b; the planner's fields since A06h D), for the
  * `weatherForecastCache` table and `writeForecastCache`'s args — one validator, so the row a
  * mutation accepts and the row the table accepts cannot drift. **Keep in sync with the core
  * interface** — a compile-time `Infer` check in `weather.ts` catches drift. The optional fields are

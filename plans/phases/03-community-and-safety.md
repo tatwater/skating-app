@@ -248,11 +248,11 @@ deploy (memory: convex-test-is-not-deploy).
 > **Detailed build plan:** [`phases/03-community-and-safety.md`](./03-community-and-safety.md)
 > (design settled 2026-07-16 — the four "don't code into a corner" calls are recorded there).
 >
-> **Status: ✅ shipped on dev (2026-07-16, PR #17)** — all four workstreams landed: **A** `@skating/core`
+> **Status: ✅ shipped on dev (2026-07-16, PR #17)** — all four workstreams landed: **§1** `@skating/core`
 > `comment`/`block` modules + revised `visibility` (report gate → moderation-only; `isAuthorBlocked` +
-> the "a block never hides a report" invariant test); **B** Convex `blocks`/`comments`/`contentFlags`/
+> the "a block never hides a report" invariant test); **§2** Convex `blocks`/`comments`/`contentFlags`/
 > `moderation` + extended `profiles` (search index, `getPublicProfile`, `searchProfiles`, `updateProfile`,
-> `loadBlockedAuthorIds` union, `backfillNotificationPrefs`); **C** web UI (profile page + edit, 2-level
+> `loadBlockedAuthorIds` union, `backfillNotificationPrefs`); **§3** web UI (profile page + edit, 2-level
 > comment threads with `[hidden]` placeholders, block/flag controls + "Blocked" chip, role-gated inline
 > moderator actions, profile search, blocked-users list); **D** the mobile mirror. Review fixes followed:
 > block-failure surfacing, a bidirectional "Blocked" chip, bounded profile reads, and a broadened

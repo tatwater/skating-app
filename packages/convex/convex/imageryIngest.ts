@@ -1,5 +1,5 @@
 /**
- * Watching for the imagery season to open (A06e §C3 / **D149**).
+ * Watching for the imagery season to open (A06e §3.3 / **D149**).
  *
  * > **D149 — Ingest is weather-gated, and the archive turns over on the first frame of the new
  * > season, never on a date.**
@@ -19,7 +19,7 @@
  *
  * ## Why October, and not September
  *
- * §C3's summit trigger opens a season when `Upper Lake of the Clouds` (1,531 m, and in the corpus)
+ * §3.3's summit trigger opens a season when `Upper Lake of the Clouds` (1,531 m, and in the corpus)
  * registers a freeze — which on Mt Washington can happen in *August*. The phase doc reasoned that this
  * was safe because an early gate only wastes granule reads.
  *
@@ -53,7 +53,7 @@ import { internal } from './_generated/api';
 import type { Doc } from './_generated/dataModel';
 import { internalAction, internalMutation, internalQuery } from './_generated/server';
 
-/** §C3's summit trigger, found by name rather than by a hardcoded coordinate. */
+/** §3.3's summit trigger, found by name rather than by a hardcoded coordinate. */
 const SENTINEL_NAME = 'Upper Lake of the Clouds';
 
 /**

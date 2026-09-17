@@ -2,8 +2,8 @@
 
 The **Expo / React Native** app — the primary surface for field ice-reporting (D1/D8).
 Auth-gated tab navigation, themed via shared design tokens, wired to Clerk + Convex + Sentry.
-**Phase 02a F1** built the online map + report loop (native MapLibre map, tap→detail→feed, report
-create with photos); **Phase 02a F2** added the offline draft queue (capture with no signal → flush on
+**Phase 02a §6.1** built the online map + report loop (native MapLibre map, tap→detail→feed, report
+create with photos); **Phase 02a §6.2** added the offline draft queue (capture with no signal → flush on
 reconnect). Newsfeed / Bounties / You stay placeholders for their later phases.
 
 ## Stack
@@ -11,7 +11,7 @@ reconnect). Newsfeed / Bounties / You stay placeholders for their later phases.
 - **Expo SDK 57** (new architecture), **Expo Router** tab navigation (D28), EAS
   dev-client workflow with Continuous Native Generation — no committed `ios/`/`android/`.
 - **Tamagui** for UI, projecting `@skating/design` tokens (D7) — see `tamagui.config.ts`.
-- **`@maplibre/maplibre-react-native`** map (Phase 02a §F): reads the same Protomaps `.pmtiles`
+- **`@maplibre/maplibre-react-native`** map (Phase 02a §6): reads the same Protomaps `.pmtiles`
   basemap as web via the native `pmtiles://` scheme (no Mapbox token), and reuses the web basemap
   style/palette (`src/lib/waterMap.ts`). Detail + report create render in a `@gorhom/bottom-sheet`
   drawer over a persistent map (`app/(tabs)/(map)/`), URL-backed + deep-linkable (`/water/[id]`,
@@ -141,7 +141,7 @@ pnpm --filter @skating/mobile check-types   # tsc --noEmit
 npx expo-doctor                             # project health
 ```
 
-## Offline draft queue (Phase 02a F2, D30)
+## Offline draft queue (Phase 02a §6.2, D30)
 
 Capture a report with no signal; it flushes on reconnect. The pure heart lives in `@skating/core`
 (a buffered `pointInPolygon` GPS→lake resolver + a checkpointed, idempotent flush state machine),

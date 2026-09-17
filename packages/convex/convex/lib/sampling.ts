@@ -55,7 +55,7 @@ export function nearestSamplePoint(
 }
 
 /**
- * The point to sample when there is no anchor to be near (A06c B5b).
+ * The point to sample when there is no anchor to be near (A06c §2.5b).
  *
  * The weather-since strip always has one — a report's put-in, a hazard's centre — because it is
  * *about* something that happened somewhere. A body-level forward forecast is about the lake, so it

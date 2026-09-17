@@ -38,8 +38,8 @@
 >   hazard detail (both platforms).
 > - **prod cutover** outstanding (with the rest of phases 3–5).
 >
-> **Build order (per-workstream, web-first on shared surfaces):** **A** `@skating/core` pure logic →
-> **B** Convex trust primitives → **C** Convex bounties → **D** Web + Mobile UI → **E** recommended
+> **Build order (per-workstream, web-first on shared surfaces):** **§1** `@skating/core` pure logic →
+> **§2** Convex trust primitives → **§3** Convex bounties → **D** Web + Mobile UI → **§5** recommended
 > feed (last — it *consumes* the trust primitives). See the PR / commit breakdown below.
 
 Decisions referenced as D#; see [`01-decisions.md`](../01-decisions.md). This phase is the build-out of
@@ -53,7 +53,7 @@ D3/D13 hard constraints they all inherit.
 Everything below was settled with the founder on 2026-07-21. Point weights, windows, and thresholds
 ship as **tunable constants in one file** (single-sourced the way D49's display curve is), so the
 Phase 07 admin UI can bind controls to them and the founder can retune without an engineer. The
-**backfill script (§B)** recomputes every derived value from the ledger, so retuning mid-alpha is safe.
+**backfill script (§2)** recomputes every derived value from the ledger, so retuning mid-alpha is safe.
 
 ### Trust score (D50) — reputation model
 

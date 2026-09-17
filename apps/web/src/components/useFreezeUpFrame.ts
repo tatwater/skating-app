@@ -1,5 +1,5 @@
 /**
- * Painting one archived pass onto the map (A06e §C2, D148).
+ * Painting one archived pass onto the map (A06e §3.2, D148).
  *
  * ## The client does almost nothing here, and that was the point of the archive
  *
@@ -116,7 +116,7 @@ export function freezeUpLaneIds(
  *
  * - **The seam went under the photograph.** `useFreezeUpSeam` adds its hairline with the same anchor
  *   after the frames, so it starts on top; the first `show()` moved a raster back above it and the
- *   §C4 join simply stopped being drawn.
+ *   §3.4 join simply stopped being drawn.
  * - **The companion could cover the primary.** `framesToRender` holds a stale companion precisely
  *   *because* the primary occludes it wherever the primary has water — so whichever slot's tiles
  *   happened to land last winning the stack turns a held half into a frame from another date drawn

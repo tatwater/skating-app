@@ -1,5 +1,5 @@
 /**
- * Where two frames of one lake actually meet (A06e §C4).
+ * Where two frames of one lake actually meet (A06e §3.4).
  *
  * > **Founder, 2026-08-24:** *"we should provide a hairline border between the two images, with their
  * > respective dates on either side."*
@@ -13,7 +13,7 @@
  * **Not the whole intersection outline.** Intersecting the footprint with the lake gives a polygon
  * whose boundary is part granule edge and part *shoreline*, and drawing all of it would trace the
  * shore a second time in a color that means something else. The shoreline is already drawn, and
- * §A3 makes it matter more once imagery is on. So the seam is specifically the piece that is **not**
+ * §1.3 makes it matter more once imagery is on. So the seam is specifically the piece that is **not**
  * shoreline.
  *
  * ## How, given what a footprint is

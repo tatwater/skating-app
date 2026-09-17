@@ -37,7 +37,7 @@ import { useAction } from 'convex/react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 /**
- * The forward forecast on a lake drawer (A06c B5b, grown into the planner by A06h Workstream D).
+ * The forward forecast on a lake drawer (A06c §2.5b, grown into the planner by A06h Workstream 4).
  *
  * Three things, one fetch: the one-line strip that has been here since B5b (*"Next 12 hours: 22–31°F,
  * snow starting 8 PM"*), a row of hourly cards for the whole week that opens at *now*, and a row of

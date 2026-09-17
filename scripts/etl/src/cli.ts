@@ -11,7 +11,7 @@
  * (A06a rung 7), for `pnpm --filter @skating/etl load-depths`. Omit it and depths are simply counted.
  *
  * `--summary=run.json` writes the run summary as JSON beside the NDJSON, for the loader to fold
- * into the `importRuns` row it writes (A06c F2). The same numbers still go to stderr — this is not a
+ * into the `importRuns` row it writes (A06c §6.2). The same numbers still go to stderr — this is not a
  * replacement for the operator seeing them live, it is a way for them to survive the terminal.
  */
 

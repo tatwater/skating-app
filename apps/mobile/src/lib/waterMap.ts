@@ -1,5 +1,5 @@
 /**
- * Pure helpers for the native water-body map (Phase 02a §F) — the mobile mirror of web's
+ * Pure helpers for the native water-body map (Phase 02a §6) — the mobile mirror of web's
  * `apps/web/src/lib/waterMap.ts`. Kept out of the imperative `<MapView>` component so the basemap
  * style, feature transform, viewport math, and geolocation framing are unit-testable without a
  * native map context. Reuses the same Protomaps basemap + icy palette + regional framing as web so
@@ -56,7 +56,7 @@ export const TRACK_PALETTE = {
   dark: '#f0a06a',
 } as const;
 
-/** Access-point (put-in) + report-photo pin colors (§E/D42) — success green + amber, as on web. */
+/** Access-point (put-in) + report-photo pin colors (§5/D42) — success green + amber, as on web. */
 export const PUT_IN_PIN_COLOR = '#137138';
 export const PHOTO_PIN_COLOR = '#f59e0b';
 

@@ -4,13 +4,13 @@
 > deployed to dev** — Workstreams **A + B + C + G**, D162 + D163, **and a continuous hourly weather
 > timeline on both clients that this plan never specified** (see *§What PR 1 actually shipped*). Four
 > Greptile passes on the PR; suites at merge: core 2,460 · convex 1,437 · web 508 · mobile 108.
-> **PR 3 = Workstream H = [#50](https://github.com/tatwater/skating/pull/50), merged 2026-09-11**
+> **PR 3 = Workstream 8 = [#50](https://github.com/tatwater/skating/pull/50), merged 2026-09-11**
 > (the three-tab drawer IA + sub-areas as the weather unit + the spread) — see *§What PR 3 shipped*.
-> **PR 4 = Workstream D, built 2026-09-11 on `phase-n6h-weather-detail-4`** (two commits, deployed
+> **PR 4 = Workstream 4, built 2026-09-11 on `phase-n6h-weather-detail-4`** (two commits, deployed
 > to dev, verified in the running web app against Champlain; mobile by type-check + suite only —
 > founder checks the sheet) — see *§What PR 4 shipped*. Founder call 12 revised call 11's D+E bundle.
 > ~~**Two PRs remain after this one: E → F.**~~
-> **PR 5 = Workstream E, built 2026-09-11/12 on `phase-n6h-weather-detail-5`** (seven commits,
+> **PR 5 = Workstream 5, built 2026-09-11/12 on `phase-n6h-weather-detail-5`** (seven commits,
 > deployed to dev, the corpus-wide prime run, verified headlessly in the running web app, **= PR #54** — see
 > *§What PR 5 shipped*; mobile by type-check + suite, founder checks the sheet). **One PR remains: F.**
 > Scoped 2026-09-02. Founder ask, same day. Grew out of a costing
@@ -29,7 +29,7 @@
 >
 > 1. **Discovery must not be limited to bodies that have reports.** The weather filter searches the
 >    corpus, not the report table — *"with all this helpful data I don't want to limit discoverability
->    to only filtering on reports that exist."* This turned Workstream E from a feed filter into its
+>    to only filtering on reports that exist."* This turned Workstream 5 from a feed filter into its
 >    own thing. See **D159**.
 > 2. **The ice-thickness estimate gets built, admin-only, as a calibration instrument** — *"can we
 >    calculate this number and show it to admins-only just as a curiosity? I'm very interested to see
@@ -108,7 +108,7 @@
 >     *"4 nights below 20°F, no snow since the first"*, which names its own anchor. ⚠ The 48-hour
 >     tolerance is a founder rule, not a physics constant; pin it as one named number in core.
 >
-> ### Founder calls, 2026-09-11 — sixth pass, kicking off PR 5 (Workstream E)
+> ### Founder calls, 2026-09-11 — sixth pass, kicking off PR 5 (Workstream 5)
 >
 > Ten questions asked before a line was written; ten answered. Recorded as **D164–D166** where they
 > are decisions and here where they are calls.
@@ -146,7 +146,7 @@
 >
 > ⚠ **Readiness pass for E, same evening — four things the plan had wrong or stale:**
 >
-> - **`weatherCellKeyB` is dead** (readiness note 1 for PR 4) but Workstream E's text and holes-table
+> - **`weatherCellKeyB` is dead** (readiness note 1 for PR 4) but Workstream 5's text and holes-table
 >   row 7 still owed it; both now say the join. Fixed below.
 > - **Hole 3's "only predicate" is no longer the predicate.** Call 17 above.
 > - **D159's "cost proportional to the answer" is false in January.** In a real cold snap every cell
@@ -234,7 +234,7 @@
 
 ## What PR 1 shipped, and where it differs from this plan
 
-**Built 2026-09-03: Workstreams A + B + C + G.** D (forecast panel), E (weather-first discovery) and
+**Built 2026-09-03: Workstreams 1 and 2 + C + G.** D (forecast panel), E (weather-first discovery) and
 F (radar) are untouched. ⚠ The subsections below were written on 2026-09-03; **the PR then grew for a
 week before merging as #48** — see *§What PR 1 actually shipped* immediately after them.
 
@@ -359,7 +359,7 @@ fixed one.
 
 ---
 
-## What PR 3 shipped — Workstream H, 2026-09-11
+## What PR 3 shipped — Workstream 8, 2026-09-11
 
 **Built on `phase-n6h-weather-detail-3`, five commits:** the three-tab IA on both clients, sub-areas
 as the weather unit, and the spread. Suites at build: core 2,546 · convex 1,447 · web 515 · mobile
@@ -430,7 +430,7 @@ the bay's). D's forecast panel inherits both; the Planning tab already has the p
 ### ⚠ Readiness pass for PR 4, 2026-09-11 — four things the plan had wrong or stale
 
 1. **`weatherCellKeyB` is dead; the join won, and it is free.** The holes table (row 7) and
-   Workstream E still owe a single `weatherCellKeyB` field on `waterBodies`; open question 5 §4 had
+   Workstream 5 still owe a single `weatherCellKeyB` field on `waterBodies`; open question 5 §4 had
    already *"picked the `bodyWeatherCells` option"* because a giant spans many cells and Convex has
    no array index. The join is what E builds — same shape as A01's `waterBodyCells` (`by_cell` +
    `by_body`) — and it costs no widen→deploy→backfill→narrow dance, because a new table has no
@@ -451,7 +451,7 @@ the bay's). D's forecast panel inherits both; the Planning tab already has the p
 
 ---
 
-## What PR 4 shipped — Workstream D, 2026-09-11
+## What PR 4 shipped — Workstream 4, 2026-09-11
 
 **Built on `phase-n6h-weather-detail-4`, two commits.** The seven-day planner on both clients, off
 one fetch. Suites at build: core 2,570 · convex 1,452 · web 524 · mobile 108. Deployed to dev and
@@ -576,7 +576,7 @@ reusable on a body-result card if E wants a symbol there — the same code, the 
 
 ---
 
-## What PR 5 shipped — Workstream E, 2026-09-12
+## What PR 5 shipped — Workstream 5, 2026-09-12
 
 **Built on `phase-n6h-weather-detail-5`, seven commits** (docs · core · server · web · mobile ·
 review fixes). Suites at build: core 2,629 · convex 1,470 · web 525 · mobile 108; lint clean.
@@ -662,7 +662,7 @@ The `/code-review` skill hit a session limit before running, so the pass was by 
 |---|---|
 | D159's *"no snow since has no anchor"* | ✅ The chain's first night (D164). |
 | 2 · multi-cell giants, third question (*"does D159 match a body if any cell matches?"*) | ✅ Yes, through the join; the card names the bay. |
-| Workstream E's `weatherCellKeyB` / holes row 7 | ✅ Superseded by the join; both corrected. |
+| Workstream 5's `weatherCellKeyB` / holes row 7 | ✅ Superseded by the join; both corrected. |
 | 9 · offline | ⚠ Unchanged — the forecast payload still waits for the on-ice/offline surface. |
 
 ### Greptile's pass — two findings, both right, both fixed
@@ -1684,7 +1684,7 @@ works when there is one (a report's coordinate, a hazard's centre). **A body-lev
 no target.** Lake Champlain is ~200 km long, spans many 0.05° cells, and is the top of the Google Group
 corpus at 60 mentions — so the least-specified case is also the most-visited one.
 
-Three sub-questions, all needing answers before Workstream C:
+Three sub-questions, all needing answers before Workstream 3:
 
 - **Which point does the panel show?** Proposal: the sample point nearest the user's selected put-in or
   sub-area if one is selected, else the default anchor — **and the panel says which**, because
@@ -1763,7 +1763,7 @@ payload — the data is small and it is needed precisely when the network is not
 
 1. ✅ **Tier A cardinality with elevation banding: ~9,500–10,500 keys, a ~1.16× cost. Take 100 m
    bands.** Measured against dev; three samples, method and its limits stated in the header block.
-   Workstream A is unblocked.
+   Workstream 1 is unblocked.
 
 2. ✅ **Unanswerable, permanently, until there are users — and that is the answer.** 0 favorites,
    2 reports, 3 hazards, 1 bounty on dev. The precompute job must derive its own set at runtime
@@ -1823,7 +1823,7 @@ payload — the data is small and it is needed precisely when the network is not
 can't see.** 🚧 **Scoped 2026-09-02/03; PR 1 (#48: re-key · durable archive · past panel + hourly
 timeline · dark thickness instrument · D162/D163) merged and on dev 2026-09-10; PR 3 (#50, the
 three-tab drawer IA + sub-area weather spread) and PR 4 (#51, the seven-day planner) merged
-2026-09-11; PR 5 (Workstream E — the cold chain, the per-cell digest, the "Latest" feed and the map
+2026-09-11; PR 5 (Workstream 5 — the cold chain, the per-cell digest, the "Latest" feed and the map
 dim, D164–D166) built 2026-09-12 on dev; F (radar) remains.** Founder ask, grown out
 of a costing question — *"what is most expensive about this plan?"* — whose answer moved the design: the
 expensive half is not the data, it is **the cache key**, which today shares nothing. See
@@ -1871,5 +1871,5 @@ range. That answers "is a storm coming" and nothing else. The question a skater 
   sits **above** the tab strip, preserving the alert > observation > prediction ordering.
 
 **Split as built:** A+B+C+G (re-key · `weatherDays` · the past panel · the admin instrument) shipped
-as PR 1 and is where the value concentrates. **H** (the drawer IA, which D turned out to need first)
+as PR 1 and is where the value concentrates. **§8** (the drawer IA, which D turned out to need first)
 is PR 3; D+E (forecast panel · discovery) a fourth; F (radar) a fifth, depending on neither.

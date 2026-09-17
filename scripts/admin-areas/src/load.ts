@@ -9,7 +9,7 @@
  *   pnpm --filter @skating/admin-areas load <areas.ndjson> --state=VT [--prod]
  *     [--campaign=<id>] [--no-run-log]
  *
- * Writes one `importRuns` row (A06c F2) with its coverage and any failed batches, readable at
+ * Writes one `importRuns` row (A06c §6.2) with its coverage and any failed batches, readable at
  * `/admin/imports`. `--no-run-log` opts out; nothing else about the load changes.
  */
 

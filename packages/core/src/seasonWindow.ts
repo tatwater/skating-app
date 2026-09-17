@@ -1,5 +1,5 @@
 /**
- * The timing window (A05c / §C6) — *"always between late December and February"*, which is the sentence
+ * The timing window (A05c / §3.6) — *"always between late December and February"*, which is the sentence
  * the founder ask named and the one most easily overclaimed.
  *
  * Two rules do all the work, and both widen rather than narrow:
@@ -21,7 +21,7 @@
  * The narrowest window we will print, in half-months.
  *
  * Two half-months is about a month, comfortably past the "never narrower than about three weeks" line
- * §C6 draws. It is expressed in half-months rather than days because the *rendering* is in
+ * §3.6 draws. It is expressed in half-months rather than days because the *rendering* is in
  * half-months: a minimum in days would be snapped away by the widening step and would only look like a
  * guarantee.
  */

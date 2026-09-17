@@ -1,5 +1,5 @@
 /**
- * The ice-thickness calibration instrument (A06h Workstream G / **D160**).
+ * The ice-thickness calibration instrument (A06h Workstream 7 / **D160**).
  *
  * ## This is an operator instrument. It is not a feature.
  *

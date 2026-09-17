@@ -5,7 +5,7 @@ import { ViewportLakeList } from '../components/ViewportLakeList';
 import { hasMapDrawer, parseMapSelection } from '../lib/mapSelection';
 
 /**
- * Pathless layout (§D, D47) that keeps ONE `MapView` mounted under an `<Outlet />` across the map
+ * Pathless layout (§4, D47) that keeps ONE `MapView` mounted under an `<Outlet />` across the map
  * routes — `/` (map), `/water/$id`, `/report/$id` — so panning/zoom survive opening a detail panel.
  * The panels render into the outlet as siblings of the map and push what to highlight/frame up
  * through `MapSelectionContext`. This layout owns the highlight-from-URL sync; the panels own the

@@ -99,7 +99,7 @@ async function main(): Promise<void> {
   for (let i = 0; i < ids.length; i += BATCH) batches.push(ids.slice(i, i + BATCH));
   if (batches.length === 0) batches.push([]);
 
-  // Run history (A06c F2). This run is a *replacement* — the first batch clears the old set — so a
+  // Run history (A06c §6.2). This run is a *replacement* — the first batch clears the old set — so a
   // pass that dies halfway leaves coverage genuinely truncated, and a row saying so is the only
   // thing standing between that and a silently smaller `hasContours` population.
   const logger = new RunLogger({

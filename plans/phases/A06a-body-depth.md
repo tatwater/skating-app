@@ -42,7 +42,7 @@ consumer that makes it mean something. One ETL, one core change, one display sur
 > 2026-07-31). A06c's elevation pass wants to ride this same run, and running without it costs a second
 > full pass over 116,070 bodies. See *§Before the ETL runs — the ordering gate*.
 >
-> Split from the register's single **A06** entry at kickoff: the founder's ask for **real bathymetric
+> Split from the register's single **§1.06** entry at kickoff: the founder's ask for **real bathymetric
 > contour lines inside the lake polygons** turned out to be both feasible and phase-sized, so it became
 > [**A06b**](./A06b-bathymetry-layer.md) and this doc keeps the scalar depth attribute + its decay
 > consumer. New decisions **D68** (the precedence ladder) and **D69** (shallow amplifies thaw only).
@@ -572,20 +572,20 @@ audit metadata, so the timeline will have before/after from the day it renders.
 
 The loader is written, tested and deployed, and the instinct is to go get the data. Don't yet.
 
-**The reason is one column.** A06c's Workstream A1 adds `elevationM` from the Open-Meteo Elevation API —
+**The reason is one column.** A06c's Workstream §1.1 adds `elevationM` from the Open-Meteo Elevation API —
 a per-centroid lookup against a free, keyless endpoint, batched ~100 coordinates at a time. Folded into
 this run it is a few minutes of extra wall clock on a pass we are making anyway. Run separately it is a
 **second full pass over 116,070 bodies**, for a field that could have been free.
 
 **The rule as the founder stated it is deliberately conservative:** wait for *A06c complete*, not merely
-*A06c A1 built*. That is the right conservatism, because A1 is not the only A06c item that wants a pass
+*A06c §1.1 built*. That is the right conservatism, because §1.1 is not the only A06c item that wants a pass
 over the corpus, and discovering the second one after the first run is exactly the failure this gate
 exists to prevent. The current inventory of what wants to ride a pass:
 
 | A06c item | Which pass | Why it rides |
 |---|---|---|
 | **A1 elevation** | **this one** — the depth run | Per-centroid third-party lookup; identical shape to the depth join, and it writes to the same rows. |
-| **A3 shoreline length** | the **canonical water re-import** (`scripts/etl`), not this one | It must be measured on the *pre-simplification* geometry, which only the water ETL holds (see A06c A3). |
+| **§1.3 shoreline length** | the **canonical water re-import** (`scripts/etl`), not this one | It must be measured on the *pre-simplification* geometry, which only the water ETL holds (see A06c §1.3). |
 | **A2 long axis / A4 fetch profile** | the canonical water re-import | Pure geometry, computed in `transform.ts` alongside `surfaceAreaSqM`. |
 | **A5 `regionStats`** | after both | Deciles are computed *from* the loaded values, so it is a consequence of the runs, not a rider on one. |
 
@@ -608,7 +608,7 @@ depth pass; the geometry stats ride the other and are not blocked by it.
 > optional — `importCanonical` resets `displayScore` to area + boost, so the D2 re-score has to come
 > after everything it reads.
 
-**When the gate lifts:** the moment A06c's A1 loader can write `elevationM` in the same invocation. At
+**When the gate lifts:** the moment A06c's §1.1 loader can write `elevationM` in the same invocation. At
 that point the licence/column confirmation in *§Open questions* is the only thing left in the way, and
 that one resolves by doing rather than by deciding.
 

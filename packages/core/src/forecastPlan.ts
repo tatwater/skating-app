@@ -1,5 +1,5 @@
 /**
- * The seven-day planner (A06h Workstream D, D155) — hours as cards, days as cards, episodes as
+ * The seven-day planner (A06h Workstream 4, D155) — hours as cards, days as cards, episodes as
  * sentences.
  *
  * ## What it is

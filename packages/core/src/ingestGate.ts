@@ -1,5 +1,5 @@
 /**
- * When to start looking, and when to stop (A06e §C3 / **D149**).
+ * When to start looking, and when to stop (A06e §3.3 / **D149**).
  *
  * > **D149 — Ingest is weather-gated, and the archive turns over on the first frame of the new
  * > season, never on a date.**
@@ -140,7 +140,7 @@ function lowsOn(sites: readonly SiteSeries[], date: string, index: LowIndex): Ma
  *
  * Ten consecutive days where **every** ordinary site went without an overnight freeze. That is a much
  * stronger claim than "it thawed," and it is meant to be: closing early truncates the melt-out record,
- * which is half of what §C5's window metrics are computed from. Closing a fortnight late costs a
+ * which is half of what §3.5's window metrics are computed from. Closing a fortnight late costs a
  * handful of granule reads the cloud gate has probably already refused.
  *
  * Calibrated against real 2025-26 weather at five sites — the defaults put ice-out at **5 May 2026**,
@@ -155,7 +155,7 @@ function lowsOn(sites: readonly SiteSeries[], date: string, index: LowIndex): Ma
  *
  * Measured against real 2025-26 weather: Lake of the Clouds first froze **2025-09-20**, five weeks
  * before Burlington — the sentinel doing exactly its job. But feeding it into the *closing* rule too
- * produced a window of **20 Sep → 26 Jun**: nine months, against §C3's estimate of skipping roughly
+ * produced a window of **20 Sep → 26 Jun**: nine months, against §3.3's estimate of skipping roughly
  * half the year. At 1,531 m the tarn has sub-4 °C nights into late June, so "every site thawed" was
  * never true until the tarn said so.
  *
@@ -164,7 +164,7 @@ function lowsOn(sites: readonly SiteSeries[], date: string, index: LowIndex): Ma
  * whole region's ingest open through a Vermont summer. So **closing consults the ordinary sites
  * only**, and the sentinel is what it was always meant to be: an early warning, not a veto.
  *
- * The asymmetry is not a fudge; it follows from §C3. Weather decides when we *start looking*, and
+ * The asymmetry is not a fudge; it follows from §3.3. Weather decides when we *start looking*, and
  * being early there is cheap. Nothing about that argument says a summit should decide when to stop.
  */
 export function ingestWindow(sites: readonly SiteSeries[], options: GateOptions = {}): GateWindow {
@@ -284,7 +284,7 @@ export function thawClose(
     // alone silently treats a site that went dark as thawed — and `fetchLows` drops null readings
     // per site, which is precisely how a series goes dark. Four sites out of five dropping out for a
     // fortnight would then let the one warm survivor close the season, truncating the melt-out
-    // record that §C5's window metrics are computed from. A missing series must not be able to end a
+    // record that §3.5's window metrics are computed from. A missing series must not be able to end a
     // season; the same reasoning that makes the opening rule an OR makes this an all-or-reset.
     const allThawed =
       reporting.length === closingSiteIds.size && reporting.every((low) => low > thawC);

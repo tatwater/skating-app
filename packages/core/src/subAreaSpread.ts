@@ -23,7 +23,7 @@
  * Not *"___ Bay is your best bet"* — a recommendation to drive somewhere, from air temperature alone,
  * by a system that knows nothing about depth, current, springs or whether anyone has been on the
  * ice. The most counsel-shaped sentence available short of a thickness (D3 / D150). The sorted bay
- * lists (*"bays by coldest nights"*) are the honest version and wait for Workstream E, where the
+ * lists (*"bays by coldest nights"*) are the honest version and wait for Workstream 5, where the
  * per-cell digest supplies their inputs.
  *
  * ## Same days, or no comparison
@@ -125,7 +125,7 @@ export interface SubAreaSpread {
   /** The one-liner for the collapsed case; also usable as a heading when not collapsed. */
   summary: string;
   /**
-   * The sorted bay lists (Workstream E, founder call 9) — *"Bays by coldest nights: Missisquoi ·
+   * The sorted bay lists (Workstream 5, founder call 9) — *"Bays by coldest nights: Missisquoi ·
    * Broad Lake …"*. The honest version of *"___ Bay is your best bet"*: the user picks the
    * criterion, the app counts. Absent until the discovery digest exists for the bays' cells.
    */

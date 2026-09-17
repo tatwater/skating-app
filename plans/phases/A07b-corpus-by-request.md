@@ -301,7 +301,7 @@ map of them, one fully-scoped workstream, and the list of what still needs scopi
 | **rejected** | `reviewStatus: 'rejected'` | moderator | no (`isListed`) | n/a |
 | **merged** | `dedupStatus: 'merged'` + `mergedIntoId` (D36) | moderator / A07a dedup | no; reads follow the survivor | kept by the prune; **unverified** against the loader |
 | **removed** | `removedAt` + `removalReason` (D48) | admin `remove` | no (`isListed`) | **yes** — `importCanonical` preserves it, the prune keeps it (`kept.delisted`) |
-| **no public access** | `publicAccess.verdict: 'none'` (A06f) | moderator | yes — dimmed, −2 zoom | yes — the six `scoreFields` sites (A06f §B) |
+| **no public access** | `publicAccess.verdict: 'none'` (A06f) | moderator | yes — dimmed, −2 zoom | yes — the six `scoreFields` sites (A06f §2) |
 | **admitted by request** | `includedByRequest` (this phase) | moderator | yes | left alone — the transform drops it at the floor (above) |
 
 Two things fall out of the table. **`isListed` is the only membership predicate the read paths
@@ -340,7 +340,7 @@ lake nobody can lawfully reach **stops being pushed at people**. So:
 | Phase 04 drive-time notification fan-out (`notifications.ts` — `bandForCoord` call site) and the 8 pm nearby digest | the map — never-hide (D49), the dim + demotion is the whole treatment |
 | A06h weather-discovery cards (`weatherDiscovery.ts:288` gates on `isListed` today, **deliberately** not on `none`) | search, and the drawer |
 | the Phase 06 recommended strip (`listFeed` recommended caps) | favourites — *if you favourited it, you know something we don't* |
-| bounty requests fanned to nearby reporters (`bounties.ts`) | the viewport list (already sinks `none` to the bottom — A06f §D) |
+| bounty requests fanned to nearby reporters (`bounties.ts`) | the viewport list (already sinks `none` to the bottom — A06f §4) |
 | the A08 `great_report_nearby` and `activity_detected` triggers, if the body is the subject | a report or hazard *on* the body — content is never suppressed (A06f's `AccessSection` invariant) |
 
 **Build shape.** This is the A06d "a new surface added to a system that enumerates its inputs" shape,

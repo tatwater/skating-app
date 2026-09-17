@@ -60,7 +60,7 @@ describe('selectGranules', () => {
   });
 
   it('keeps a frame with no cloud figure at all', () => {
-    // Absent metadata is not a cloudy scene. The expensive failure is a missed freeze-up (§C3), so
+    // Absent metadata is not a cloudy scene. The expensive failure is a missed freeze-up (§3.3), so
     // the unknown case resolves generously and the manifest records whatever was actually found.
     const result = selectGranules([at('S2C_18TXP_20260310_0_L2A')]);
     expect(result.selected).toHaveLength(1);

@@ -1,6 +1,6 @@
 /**
  * The access loader (glue) — chunks the transform's two NDJSON streams into the internal
- * `accessPoints` mutations, which do the geometric join (A06d B3).
+ * `accessPoints` mutations, which do the geometric join (A06d §2.3).
  *
  *   pnpm --filter @skating/etl load-access parking  .scratch/access/parking.ndjson [--prod]
  *   pnpm --filter @skating/etl load-access put-ins  .scratch/access/put-ins.ndjson [--prod]

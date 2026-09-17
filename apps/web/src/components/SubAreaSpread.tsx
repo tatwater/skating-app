@@ -38,7 +38,7 @@ export function SubAreaSpread({ waterBodyId }: { waterBodyId: Id<'waterBodies'> 
           ))}
         </ul>
       )}
-      {/* The sorted bay lists (Workstream E, founder call 9) — the honest form of "which bay is
+      {/* The sorted bay lists (Workstream 5, founder call 9) — the honest form of "which bay is
           your best bet": the user picks the criterion and the app counts (D150). Each bay is the
           same `?sub=` link the extremes are. */}
       {[spread.rankings?.coldestNights, spread.rankings?.leastSnow]

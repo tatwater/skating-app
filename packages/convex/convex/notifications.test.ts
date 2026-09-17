@@ -799,7 +799,7 @@ describe('notifications — the fan-out is scheduled, not inline (A01)', () => {
   });
 });
 
-// ── The inbox (A08 / A1 + A2) ─────────────────────────────────────────────────────────────────────
+// ── The inbox (A08 / §1.1 + §1.2) ─────────────────────────────────────────────────────────────────────
 
 describe('notifications — the inbox read path', () => {
   async function inbox(as: ReturnType<ReturnType<typeof convexTest>['withIdentity']>) {

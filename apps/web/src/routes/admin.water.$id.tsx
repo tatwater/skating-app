@@ -138,7 +138,7 @@ function LakeEditor() {
 
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_380px]">
         <div className="relative h-[70vh] min-h-96 overflow-hidden rounded-lg border border-border">
-          {/* Unmasked aerial under the editor (A06e Workstream E). Off by default: tracing against
+          {/* Unmasked aerial under the editor (A06e Workstream 5). Off by default: tracing against
               the vector map is the ordinary case, and a photograph is what you reach for when the
               stored shoreline and the real one disagree. */}
           <label className="absolute top-2 right-2 z-10 flex cursor-pointer items-center gap-2 rounded-md bg-background/95 px-2 py-1 text-xs shadow-lg">
@@ -2274,7 +2274,7 @@ function PromotionTool({
 }
 
 /**
- * The Copernicus link's per-row override (A06c Workstream D, D70/D75).
+ * The Copernicus link's per-row override (A06c Workstream 4, D70/D75).
  *
  * **Shows the derivation before it shows the lever**, which is the same argument `ProminenceTool`
  * makes: `auto`/`on`/`off` is an abstract tri-state, while "10 m pixels over 4 ha — about 400 pixels
@@ -2357,7 +2357,7 @@ function SatelliteTool({ body, onResult }: { body: Doc<'waterBodies'>; onResult:
 }
 
 /**
- * Operator-entered reference links (A06c Workstream B7) — the phase's only stored link.
+ * Operator-entered reference links (A06c Workstream §2.7) — the phase's only stored link.
  *
  * Everything else in the lake drawer's link list is derived from the row at render time (P2/D71) and
  * has no editor because there is nothing to edit. A lake association's URL is genuinely

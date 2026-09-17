@@ -1,5 +1,5 @@
 /**
- * Pure URL ↔ map-selection mapping (Phase 02a §D). Selection lives in the URL so a lake or report is
+ * Pure URL ↔ map-selection mapping (Phase 02a §4). Selection lives in the URL so a lake or report is
  * deep-linkable off-platform (a settled requirement — the community coordinates over email/text);
  * the map layout parses the current pathname to decide what to highlight and which drawer to open.
  * Kept pure so the route grammar is tested without a router harness (the components stay thin).

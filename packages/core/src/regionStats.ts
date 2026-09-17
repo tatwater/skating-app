@@ -1,5 +1,5 @@
 /**
- * Per-state distribution statistics (A06c Workstream A5) — the comparison basis the derived caption
+ * Per-state distribution statistics (A06c Workstream §1.5) — the comparison basis the derived caption
  * needs to say things like *"among the deepest in Vermont."*
  *
  * ## Why deciles per state, and not a percentile per body
@@ -74,7 +74,7 @@ export function computeDeciles(values: readonly number[]): DecileBlock | null {
  *
  * Returns `null` when there is no usable basis, and a caller **must** treat that as "say nothing"
  * rather than as "average". The whole point of the block is that a comparison we cannot support is
- * a clause we omit (Workstream C rule 3).
+ * a clause we omit (Workstream 3 rule 3).
  */
 export function decileRankOf(value: number, block: DecileBlock | undefined | null): number | null {
   if (!block || block.count < MIN_DECILE_SAMPLE || block.deciles.length !== DECILE_COUNT) {

@@ -139,7 +139,7 @@ function polygonOf(geometry: unknown): Polygon | MultiPolygon | null {
 }
 
 /**
- * Interactive MapLibre map — the read side of the Phase 02a loop (§D, D5/D6/D47/D49). Imperative
+ * Interactive MapLibre map — the read side of the Phase 02a loop (§4, D5/D6/D47/D49). Imperative
  * (MapLibre owns its canvas), rendered **client-only** (see the `_map` layout) since WebGL needs
  * the DOM, and kept mounted across `/`, `/water/$id`, `/report/$id` so panning/zoom survive opening
  * a drawer. All pure logic (style, feature/viewport transforms, framing) lives in `../lib/waterMap`;
@@ -599,7 +599,7 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
         source: 'put-in-pin',
         paint: {
           'circle-radius': 7,
-          'circle-color': '#137138', // success green — the access point (§E put-in pin)
+          'circle-color': '#137138', // success green — the access point (§5 put-in pin)
           'circle-stroke-color': pinHalo,
           'circle-stroke-width': 2,
         },
@@ -782,7 +782,7 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
         setAdmitCoordRef.current({ lat: e.lngLat.lat, lng: e.lngLat.lng });
       });
 
-      // A single map-click handler: in pin-drop mode (§E) the next tap sets the put-in pin; otherwise
+      // A single map-click handler: in pin-drop mode (§5) the next tap sets the put-in pin; otherwise
       // tapping a water body opens its drawer (D47). Reads pin-drop mode via ref (handler is bound once).
       map.on('click', (e) => {
         if (pinDropModeRef.current) {
@@ -1146,7 +1146,7 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
     onPaintedChange: setPaintedIds,
   });
 
-  // ## Tier 2 — the freeze-up timeline (A06e §C, D148)
+  // ## Tier 2 — the freeze-up timeline (A06e §3, D148)
   //
   // Rides the same switch as the aerial rather than getting its own. D146's rule is one control per
   // lake, and the founder's open question — whether these ever want separate affordances — is
@@ -1262,7 +1262,7 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
     frame: freezeUpSelected?.frame ?? null,
     season: freezeUpSeason,
   });
-  // The other half of a bisected lake (§C4's seam). Its own slot, so scrubbing to a date with no
+  // The other half of a bisected lake (§3.4's seam). Its own slot, so scrubbing to a date with no
   // companion tears down exactly this one and leaves the primary alone. Both are alpha-masked to the
   // same corpus shapes, so they abut along the granule edge that split them rather than overlapping.
   useFreezeUpFrame({
@@ -1415,7 +1415,7 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
     if (!imageryOn || !open) return;
     // `representativePoint` lands *on* the shoreline (it is Turf's `pointOnFeature`), and here that
     // is fine: NAIP photographs land and water alike, and a quarter-quad scene is far larger than
-    // the error. It is emphatically **not** fine for Workstream D's Copernicus link, which opens a
+    // the error. It is emphatically **not** fine for Workstream 4's Copernicus link, which opens a
     // browser centred on the point — hence the stored `interiorPoint` there and this one here.
     const centre = representativePoint(open.mask.polygon);
     const controller = new AbortController();
@@ -1544,7 +1544,7 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
     });
   }, [photoPins, loaded, mapRef.current]);
 
-  // The put-in pin the report form is placing (§E): render it, and show a crosshair while arming.
+  // The put-in pin the report form is placing (§5): render it, and show a crosshair while arming.
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !loaded) return;

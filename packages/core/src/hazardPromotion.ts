@@ -98,7 +98,7 @@ export function promotionPriority(candidate: PromotionCandidate): number {
 /**
  * Confirmations past this add nothing: the question they answer is "was it real", not "how big".
  *
- * Exported so the cross-season ranking reads the same number (A05c / §C5). Two rankings that disagreed
+ * Exported so the cross-season ranking reads the same number (A05c / §3.5). Two rankings that disagreed
  * about how much a third confirmation is worth would put the same hazard in two different places on two
  * halves of one operator surface.
  */

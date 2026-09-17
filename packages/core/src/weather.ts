@@ -66,7 +66,7 @@ export interface HourlyWeather {
   cloudCoverPct?: number;
   /**
    * Open-Meteo `weather_code` (WMO). The only input that separates sleet, ice pellets and freezing
-   * drizzle from "some precipitation near freezing" (A06h Workstream D).
+   * drizzle from "some precipitation near freezing" (A06h Workstream 4).
    *
    * Unused by every reducer here — they aggregate amounts, and a modal weather code is not a mean.
    * It rides on the shared hour type so the timeline chart can name a precipitation type from the

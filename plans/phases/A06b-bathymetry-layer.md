@@ -33,7 +33,7 @@
 > gate we tried, what each one drew, and why it was abandoned. Read that before changing a threshold.
 >
 > **Originally: 📋 Designed at A06a's kickoff (2026-07-29), deliberately not built.** Split out of the
-> register's single **A06** entry when the founder asked whether we could draw topographic lines inside
+> register's single **§1.06** entry when the founder asked whether we could draw topographic lines inside
 > the lake bodies. The answer is **yes, from measured state-agency data, and emphatically not from the
 > global modelled sources** — the finding that made this its own phase rather than a bullet in
 > [A06a](./A06a-body-depth.md). Storage/serving settled at kickoff: **PMTiles on R2**.

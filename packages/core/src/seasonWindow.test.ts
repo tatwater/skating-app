@@ -111,7 +111,7 @@ describe('timingWindowLabel', () => {
           const label = timingWindowLabel(a, b);
           expect(label).not.toBeNull();
           expect((label as string).length).toBeGreaterThan(0);
-          // A single half-month is about fifteen days, under the three-week floor §C6 draws.
+          // A single half-month is about fifteen days, under the three-week floor §3.6 draws.
           const span = Math.abs(halfMonthOf(b) - halfMonthOf(a)) + 1;
           if (span < MIN_WINDOW_HALF_MONTHS) {
             // Widened: the label names a whole month or a two-half-month range, never one half alone.

@@ -3,7 +3,7 @@ import type { LineString } from 'geojson';
 import { createContext, type ReactNode, useCallback, useContext, useMemo, useState } from 'react';
 
 /**
- * Shared selection state for the persistent native map (Phase 02a §F), the mobile mirror of web's
+ * Shared selection state for the persistent native map (Phase 02a §6), the mobile mirror of web's
  * `MapSelectionContext`. The `(map)` layout keeps one `<MapView>` mounted beside a bottom-sheet
  * `<Slot />`; the detail drawers rendered into that slot are *siblings* of the map, so they push
  * what the map should show — the highlighted body, where to fly, photo pins — up through this
@@ -42,7 +42,7 @@ interface MapSelectionValue {
   trackPath: LineString | null;
   setTrackPath: (path: LineString | null) => void;
   setPhotoPins: (pins: PhotoPin[]) => void;
-  /** The put-in pin the report form is placing (§E) — the access point → `reports.point`. */
+  /** The put-in pin the report form is placing (§5) — the access point → `reports.point`. */
   putInPin: { lat: number; lng: number } | null;
   setPutInPin: (pin: { lat: number; lng: number } | null) => void;
   /** True while the report form has armed map-tap pin placement; the next map tap sets the pin. */
@@ -242,7 +242,7 @@ export function useMapSelection(): MapSelectionValue {
  * Like `useMapSelection` but returns `null` outside a provider instead of throwing — for the report
  * form when it's rendered **off the map** (the F2 offline draft capture/edit routes, which live
  * outside the `(map)` layout). There the map-tap put-in isn't available; the form falls back to
- * "use my current location" (§F2/D42).
+ * "use my current location" (§6.2/D42).
  */
 export function useMapSelectionOptional(): MapSelectionValue | null {
   return useContext(MapSelectionContext);

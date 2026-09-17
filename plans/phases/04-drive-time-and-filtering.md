@@ -154,7 +154,7 @@ the feed, and highlighted on the map.
      on-water point, so routing there drives you into the middle of the lake).
 
 8. **Offline read-cache of recent reports (mobile).**
-   Reuse the **expo-sqlite** infra from the Phase 02a F2 offline write-queue. Cache, for on-ice-without-
+   Reuse the **expo-sqlite** infra from the Phase 02a §6.2 offline write-queue. Cache, for on-ice-without-
    service recall:
    - feed reports the user **read recently**,
    - reports for any lake whose **detail/drawer the user opened** (from feed or map) — a strong "might go

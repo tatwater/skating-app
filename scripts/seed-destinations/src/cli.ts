@@ -1,5 +1,5 @@
 /**
- * `pnpm --filter @skating/seed-destinations seed [--apply] [--verify-imagery]` (A06c B3a / A06e D).
+ * `pnpm --filter @skating/seed-destinations seed [--apply] [--verify-imagery]` (A06c §2.3a / A06e D).
  *
  * **Two commands, and the default is the safe one.** Without `--apply` this writes a reviewable
  * report and touches nothing — the founder asked to see the seed list before boosts go in, and the

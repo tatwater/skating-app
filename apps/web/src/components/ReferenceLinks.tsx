@@ -1,7 +1,7 @@
 import { allReferenceLinks, type ReferenceLinkBody, revealPlaceholder } from '@skating/core';
 
 /**
- * The lake drawer's reference-link list (A06c Workstream B).
+ * The lake drawer's reference-link list (A06c Workstream 2).
  *
  * Every link is derived from the row at render time (P2/D71) except the operator-entered ones, so
  * this component takes a body rather than fetching anything — there is no query behind it and no

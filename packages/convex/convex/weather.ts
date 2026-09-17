@@ -63,10 +63,10 @@ const DAY_MS = 86_400_000;
 export const MAX_PAST_DAYS = 92;
 /**
  * Forward days the *default* fetch asks for — two, not one, so a 12-hour horizon survives a day
- * boundary (A06c B5b). The drawer's forecast passes `FORECAST_PLAN_DAYS` (7) instead; this default
+ * boundary (A06c §2.5b). The drawer's forecast passes `FORECAST_PLAN_DAYS` (7) instead; this default
  * serves the archive backfill, the decay cron and the contradiction checker, none of which read a
  * forward hour, and bumping it here would move the 92-day backfill from 7 to 8 billing units for
- * nothing (A06h Workstream D, founder call 13).
+ * nothing (A06h Workstream 4, founder call 13).
  */
 const FORECAST_DAYS = 2;
 /** The provider name `externalApiCalls` meters this path under (D158). */
@@ -81,7 +81,7 @@ export const OPEN_METEO_FORECAST_URL = 'https://api.open-meteo.com/v1/forecast';
  * is roughly `ceil(days / 14) × (variables / 10)`, so the eleventh variable makes every call cost
  * 1.1×. `wind_direction_10m` earns it alone: multiplied against a body's `fetchProfileM` it is what
  * turns "it was windy" into "the wind ran the full 3.2 km fetch", which is the difference between
- * black ice and a rippled surface nobody wants to skate (A06h Workstream C). The cost is counted, not
+ * black ice and a rippled surface nobody wants to skate (A06h Workstream 3). The cost is counted, not
  * guessed — see `externalApiCalls` and D158.
  *
  * ## ⚠ `weather_code` is the twelfth, and it costs ~9% on every weather call in the app
@@ -145,7 +145,7 @@ function num(x: number | null | undefined): number {
 /**
  * The split return: hours at or before `nowMs`, and hours after it.
  *
- * **The two arrays are the D74 wall, and they are separate on purpose (A06c B5b).** `past` is what
+ * **The two arrays are the D74 wall, and they are separate on purpose (A06c §2.5b).** `past` is what
  * every calculation reads — the decay cron, the bounty gate, the contradiction settle — and its
  * reproducibility depends on it containing only observations. `forecast` is render-only. Returning
  * one array with a timestamp filter each caller must remember to apply would put that guarantee in
@@ -561,7 +561,7 @@ export const writeForecastCache = internalMutation({
 });
 
 /**
- * Resolve the forward forecast for a point, cache-first (A06c B5b; seven days since A06h D).
+ * Resolve the forward forecast for a point, cache-first (A06c §2.5b; seven days since A06h D).
  *
  * **The window it asks for is one hour of past, and that is not waste.** Open-Meteo's `past_days`
  * has a floor of 1, so the smallest honest request already spans today; asking for a one-hour window
@@ -630,8 +630,8 @@ export async function resolveForecast(
 }
 
 /**
- * Public: the forward forecast for a **water body**'s drawer (A06c B5b; the planner's source since
- * A06h Workstream D).
+ * Public: the forward forecast for a **water body**'s drawer (A06c §2.5b; the planner's source since
+ * A06h Workstream 4).
  *
  * Keyed on the body rather than on a report or hazard, because unlike the weather-since strip this
  * has nothing to anchor to — the question "will it be snowing when I get there" is about the lake,

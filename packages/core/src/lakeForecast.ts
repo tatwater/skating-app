@@ -1,5 +1,5 @@
 /**
- * The short forward forecast for the drive decision (A06c Workstream B5b).
+ * The short forward forecast for the drive decision (A06c Workstream §2.5b).
  *
  * The weather-since strip answers *what has happened to this ice since the report*. This is the same
  * question pointed the other way in time: **what will happen to it before I arrive.** A skater
@@ -41,7 +41,7 @@ export const FORECAST_NOTABLE_RAIN_MM = 0.5;
 
 /**
  * One hour of the forward forecast. The five required fields are what the strip line has always
- * read; the optional ones arrived with the planner (A06h Workstream D) and are carried rather than
+ * read; the optional ones arrived with the planner (A06h Workstream 4) and are carried rather than
  * re-fetched, because they were already in the response and it is the same 1.2 weighted calls
  * either way. A row cached before they existed simply lacks them, and the planner degrades to the
  * amount-based derivations rather than refusing to draw.
@@ -68,7 +68,7 @@ export interface ForecastHour {
 }
 
 /**
- * What the drawer's forecast action returns (A06h Workstream D).
+ * What the drawer's forecast action returns (A06h Workstream 4).
  *
  * `hours` is the hour in progress plus the full forward series — seven days, ascending,
  * local-shifted like every `HourlyWeather.startMs` — and **both surfaces derive from it on the

@@ -1,5 +1,5 @@
 /**
- * Pure, native-side photo helpers (§F, D42). The D42 upload gate itself (`photoUploadCoord`) is
+ * Pure, native-side photo helpers (§6, D42). The D42 upload gate itself (`photoUploadCoord`) is
  * shared from `@skating/core`; this parses a GPS coord out of an `expo-image-picker` asset's EXIF,
  * which is platform-shaped (iOS/Android tag differences), so it stays app-local and unit-tested. The
  * coord is read from the ORIGINAL here, *before* `expo-image-manipulator` re-encodes (which strips

@@ -753,7 +753,7 @@ export default defineSchema({
      *
      * ⚠️ **Until then, three field names describe two points, and that is a live trap rather than
      * cosmetic debt.** `representativePoint` *is* this field (byte-identical); `interiorPoint` is the
-     * genuinely different, strictly-interior one. A06c's Workstream B was written against `centroid`
+     * genuinely different, strictly-interior one. A06c's Workstream 2 was written against `centroid`
      * and would have opened Windy 30 km off Lake Champlain — a shoreline coordinate is a perfectly
      * valid coordinate, so nothing downstream catches it. **If you want a point in the water, you
      * want `interiorPoint`.**
@@ -786,7 +786,7 @@ export default defineSchema({
      */
     interiorPoint: v.optional(latLng),
     surfaceAreaSqM: v.optional(v.number()),
-    // ── Derived shape stats (A06c Workstream A / D85) ───────────────────────────────────────────
+    // ── Derived shape stats (A06c Workstream 1 / D85) ───────────────────────────────────────────
     // Measured in the ETL transform on the **full-resolution OSM geometry, before `simplify()`** —
     // never on the polygon stored above. Perimeter is resolution-dependent (the coastline paradox),
     // our stored copy is simplified to ~5 m and Champlain is coarsened past that to fit the D48
@@ -902,7 +902,7 @@ export default defineSchema({
     // chart, max from the 2015 DEC survey") without a second field nobody fills. Cleared when no
     // operator-sourced depth remains, so a note can never outlive the claim it substantiates.
     depthSourceNote: v.optional(v.string()),
-    // Lake **surface elevation** (A06c A1) — a real freeze-ORDER signal: a 1,700 ft pond in the
+    // Lake **surface elevation** (A06c §1.1) — a real freeze-ORDER signal: a 1,700 ft pond in the
     // Greens is skateable weeks before a valley lake twenty minutes away. One source, not a ladder
     // (see `@skating/core`'s `elevation.ts` for why depth needed five rungs and this needs one),
     // but D68's precedence discipline carries across unchanged: an `operator` value wins and the
@@ -940,7 +940,7 @@ export default defineSchema({
     curatedBoost: v.optional(v.number()),
     minVisibleZoom: v.optional(v.number()),
     /**
-     * Whether this body offers the Copernicus satellite link (A06e Workstream D, D70/D75).
+     * Whether this body offers the Copernicus satellite link (A06e Workstream 4, D70/D75).
      *
      * **`auto` is the value nearly every row holds, and it is not stored** — absent means `auto`,
      * resolved against `surfaceAreaSqM` by `satelliteImageryAvailable` in `@skating/core`. What gets
@@ -955,7 +955,7 @@ export default defineSchema({
      */
     satelliteImagery: v.optional(literals(SATELLITE_IMAGERY_MODES)),
     /**
-     * Operator-entered reference links (A06c Workstream B7) — the phase's **only** stored link.
+     * Operator-entered reference links (A06c Workstream §2.7) — the phase's **only** stored link.
      *
      * Every other link in the drawer is derived at render time from `(interiorPoint, name, states)`
      * and stored nowhere (P2/D71), because a derivable string stored 24,953 times is 24,953 strings
@@ -1014,7 +1014,7 @@ export default defineSchema({
       }),
     ),
     /**
-     * The map summary card's denormalized counts (A06c Workstream E).
+     * The map summary card's denormalized counts (A06c Workstream 5).
      *
      * **Denormalized on write, not aggregated on read.** A01 changed the argument for this rather
      * than against it: a viewport read is now bounded (the ladder grid replaced the geospatial
@@ -1177,7 +1177,7 @@ export default defineSchema({
     externalId: v.string(),
   }).index('by_external_id', ['source', 'externalId']),
 
-  // When each imagery season's ingest window opened (A06e §C3 / D149). One row per season, written
+  // When each imagery season's ingest window opened (A06e §3.3 / D149). One row per season, written
   // once by `imageryIngest.maybeCheckSeasonOpen` and never revised — the gate is a judgement made on
   // the observations available at the time, and re-deciding it later with more data would silently
   // rewrite the reason a backfill was started.
@@ -1213,7 +1213,7 @@ export default defineSchema({
     detectedAt: v.number(),
   }).index('by_season', ['season']),
 
-  // Per-state distribution basis for the derived caption (A06c A5). **One row per state**, holding
+  // Per-state distribution basis for the derived caption (A06c §1.5). **One row per state**, holding
   // the 10th–90th percentiles of each metric across that state's listed bodies.
   //
   // The obvious alternative — a stored percentile per body — is the wrong shape: a percentile is a
@@ -1453,7 +1453,7 @@ export default defineSchema({
     .index('by_window_end', ['windowEndBucketMs']),
 
   /**
-   * The short forward forecast for the drive decision (A06c B5b).
+   * The short forward forecast for the drive decision (A06c §2.5b).
    *
    * **A separate table from `weatherCache`, deliberately.** That one is keyed on a *past window*
    * (`windowStartMs` + `windowEndBucketMs`) because its rows describe what happened between two
@@ -1470,7 +1470,7 @@ export default defineSchema({
     samplePointKey: v.string(), // the same `browse`-tier cell key `weatherCache` uses (D152; fossil name)
     forecastBucketMs: v.number(), // `now` bucketed to the hour: how fresh this prediction is
     /**
-     * How many forward days the row holds (A06h Workstream D). A reader asking for more than this
+     * How many forward days the row holds (A06h Workstream 4). A reader asking for more than this
      * treats the row as a miss — the key is the hour bucket, so without it the strip's 2-day row
      * would satisfy the planner's 7-day request for the rest of the hour. Absent on rows from
      * before the planner, which held two.
@@ -1576,7 +1576,7 @@ export default defineSchema({
   }).index('by_tier', ['tier']),
 
   /**
-   * **Which filter-tier cell each body and bay sits in (A06h Workstream E / D159, D165).**
+   * **Which filter-tier cell each body and bay sits in (A06h Workstream 5 / D159, D165).**
    *
    * The reverse of `bodyWeatherCell(body, 'filter')`: a cell is a pure function of a body's point,
    * but discovery needs *cell → bodies*, and Convex has no computed index. One row per body, plus one
@@ -1789,7 +1789,7 @@ export default defineSchema({
     .index('by_tier_day', ['tier', 'dayMs']),
 
   /**
-   * **Hourly weather, for the timeline chart only (A06h Workstream D).**
+   * **Hourly weather, for the timeline chart only (A06h Workstream 4).**
    *
    * ## Why this is not four more columns on `weatherDays`
    *
@@ -1858,7 +1858,7 @@ export default defineSchema({
          * Degrees meteorological — the direction wind blew **from**.
          *
          * Free in the same response as the speed (`wind_direction_10m` has been in `HOURLY_VARS`
-         * since Workstream C, for the daily sector histogram) and simply not carried through to the
+         * since Workstream 3, for the daily sector histogram) and simply not carried through to the
          * hourly row at first. Multiplied against the body's `fetchProfileM` it is what separates
          * "it was windy" from "the wind had 3 km of open water behind it".
          */
@@ -1910,7 +1910,7 @@ export default defineSchema({
   }).index('by_provider_day', ['provider', 'dayMs']),
 
   /**
-   * Cached NWS active alerts (A06c B5, D74) — the advisory layer, kept strictly apart from the
+   * Cached NWS active alerts (A06c §2.5, D74) — the advisory layer, kept strictly apart from the
    * physics source.
    *
    * **One row per (state, alert), refreshed by a cron that polls five states.** Alerts are issued
@@ -2358,7 +2358,7 @@ export default defineSchema({
     // under even after the constant moves. "3 of the last 4 winters" is only honest if both halves came
     // from the same pass.
     windowSeasons: v.number(),
-    // The timing window (§C6), as days since July 1 — the interquartile range of members' day-of-season,
+    // The timing window (§3.6), as days since July 1 — the interquartile range of members' day-of-season,
     // so one anomalous November sighting can't stretch it across the winter. Rendered widened to whole
     // half-months and never narrower than about three weeks, because a narrow window implies the rest of
     // the season is clear and that is a claim we do not have.
@@ -2371,7 +2371,7 @@ export default defineSchema({
     // single reporter is visible; tunable into a gate later, with data.
     distinctAuthorCount: v.number(),
     suggestedFeatureType: v.optional(literals(BODY_FEATURE_TYPES)),
-    priority: v.number(), // the ranking score (§C4) — a queue order for a human, never a probability
+    priority: v.number(), // the ranking score (§3.4) — a queue order for a human, never a probability
     // The place phrase, from the medoid (A02/D60). Absent when the medoid sits in no named sub-area,
     // and then the advisory omits the phrase entirely rather than inventing geography.
     subAreaId: v.optional(v.id('waterBodySubAreas')),
@@ -2413,7 +2413,7 @@ export default defineSchema({
     .index('by_water_body_public', ['waterBodyId', 'publiclyVisible']),
 
   /**
-   * The recurrence job's scratch queue (A05c / §C4).
+   * The recurrence job's scratch queue (A05c / §3.4).
    *
    * The job has two phases and Convex allows **one `.paginate()` per function execution**, which makes
    * "discover the bodies, then process them" a hard structural requirement rather than a style choice.
@@ -3014,7 +3014,7 @@ export default defineSchema({
     subAreaId: v.optional(v.id('waterBodySubAreas')),
   })
     .index('by_water_body', ['waterBodyId'])
-    // Idempotent OSM upsert (A06d B3), mirroring `waterBodies.by_external_id`.
+    // Idempotent OSM upsert (A06d §2.3), mirroring `waterBodies.by_external_id`.
     .index('by_external_id', ['externalId'])
     // A bay's own launches (A09) — the drive-time coordinate and the bay view's access list. `eq()`
     // only; an optional-field index is not sparse.
@@ -3208,7 +3208,7 @@ export default defineSchema({
     .index('by_author', ['createdByUserId']),
 
   /**
-   * Photos of an access point (A06d Workstream D / D88) — *"is this the right dirt road"*.
+   * Photos of an access point (A06d Workstream 4 / D88) — *"is this the right dirt road"*.
    *
    * ## Why this is a join table and not a `photoIds` array on the access point
    *
@@ -3414,7 +3414,7 @@ export default defineSchema({
 
   /**
    * One row per ETL run — the durable version of the summary every loader used to print to a
-   * terminal that scrolls (A06c Workstream F2).
+   * terminal that scrolls (A06c Workstream §6.2).
    *
    * **The question this exists to answer is "how did the last import go", and the sharper one
    * underneath it: "which bodies did it decline, and why".** Every loader we have (`etl`,

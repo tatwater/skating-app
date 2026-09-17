@@ -59,7 +59,7 @@ export const RECURRENCE_PUBLIC_MIN_SEASONS = 2;
 export const RECURRENCE_ADVISORIES_PUBLIC = false;
 
 /**
- * The raised bar for the `volatile` family (D78 / §C7) — **three winters minimum, regardless of
+ * The raised bar for the `volatile` family (D78 / §3.7) — **three winters minimum, regardless of
  * `RECURRENCE_PUBLIC_MIN_SEASONS`**.
  *
  * Volatile types are volatile. Two ridges in a row is a pattern; two thin patches in a row is a
@@ -147,7 +147,7 @@ export interface RecurrenceScoreInput {
 }
 
 /**
- * How much of the score each input may move, in the weight order §C5 sets out.
+ * How much of the score each input may move, in the weight order §3.5 sets out.
  *
  * **Seasons dominate by design.** It is the only input that is about *recurrence* rather than about a
  * row; everything else is a fact the single-season list already had. If these are ever retuned, that

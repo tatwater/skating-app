@@ -8,7 +8,7 @@ type Stage = ImportRun['stages'][number];
 type Count = ImportRun['counts'][number];
 
 /**
- * The full path of one ETL run (A06c F2), read top-down as **outcome → funnel → detail → evidence**.
+ * The full path of one ETL run (A06c §6.2), read top-down as **outcome → funnel → detail → evidence**.
  *
  * **Why the path and not just the totals.** A run is an archived extract → an `osmium` filter → a
  * tested transform → a batched load, and the useful questions cross those boundaries: "the count

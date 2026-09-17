@@ -29,7 +29,7 @@
  * viewer's cached drive-time bands, so there's no index to look recipients up by — it means walking
  * profiles. A01 moved that walk out of `reports.create` and into a **scheduled, self-continuing paged
  * job** (`fanOutNearbyNotifications`), so the write path no longer scales with user count. Making the
- * walk itself unnecessary — a reverse reach index — is designed in the A08 plan (Workstream D) and
+ * walk itself unnecessary — a reverse reach index — is designed in the A08 plan (Workstream 4) and
  * deliberately unbuilt until ~1,000 profiles make it worth a second writer to keep in sync.
  */
 
@@ -552,7 +552,7 @@ export const flushNotificationQueue = internalMutation({
   },
 });
 
-// ── The inbox read path (A08 / A1) ────────────────────────────────────────────────────────────────
+// ── The inbox read path (A08 / §1.1) ────────────────────────────────────────────────────────────────
 
 /**
  * The signed-in user's notifications, newest first, **paginated** — a season of notification history

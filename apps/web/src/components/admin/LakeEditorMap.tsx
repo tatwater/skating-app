@@ -66,7 +66,7 @@ export function LakeEditorMap({
   /** Hand the raw map up, so the lazy-loaded draw control can attach to it. */
   onReady?: (map: maplibregl.Map) => void;
   /**
-   * Show the 0.3 m aerial under the editor (A06e Workstream E) — **unmasked**, unlike the skater's
+   * Show the 0.3 m aerial under the editor (A06e Workstream 5) — **unmasked**, unlike the skater's
    * reveal. An operator is correcting the polygon that decides where the lake is, so clipping the
    * photograph to that polygon would hide the one thing they need: the ground just past the line
    * they are about to move.

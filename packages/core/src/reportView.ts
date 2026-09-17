@@ -1,5 +1,5 @@
 /**
- * Pure presentation helpers for rendering a report (Phase 02a §D, D22–D25). Turns the metric,
+ * Pure presentation helpers for rendering a report (Phase 02a §4, D22–D25). Turns the metric,
  * enum-coded report the server stores into the **imperial**, human-readable strings the UI shows
  * (D25) — kept framework-free in `@skating/core` so **both** the web and mobile apps draw from one
  * source (D7/D40) and the formatting is unit-testable without a DOM.

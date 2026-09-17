@@ -892,12 +892,12 @@ describe('named confirmers (D65)', () => {
 });
 
 /**
- * Corroboration credit reads the **cluster**, not the row (A05c / D80, §B2).
+ * Corroboration credit reads the **cluster**, not the row (A05c / D80, §2.2).
  *
  * This is the gate duplicates were splitting most quietly: a real ridge marked by three people and
  * confirmed by a fourth cleared the bar in the community's eyes and cleared it on no single pin, so
  * nobody was ever credited for it. The fix credits every person who independently *drew* the thing,
- * which is the same argument §B4 makes for the merge case — drawing it is stronger evidence than a
+ * which is the same argument §2.4 makes for the merge case — drawing it is stronger evidence than a
  * confirm tap, not weaker.
  */
 describe('corroboration credit across a cluster', () => {

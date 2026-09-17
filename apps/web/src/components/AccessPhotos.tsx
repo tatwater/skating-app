@@ -7,7 +7,7 @@ import { Button } from './ui/button';
 import { usePhotoDrafts } from './usePhotoDrafts';
 
 /**
- * Photos of an access point (A06d Workstream D / D88) — *"is this the right dirt road?"*
+ * Photos of an access point (A06d Workstream 4 / D88) — *"is this the right dirt road?"*
  *
  * A picture of the pull-off answers that better than any prose, which is the founder's whole
  * rationale. Three things about it are deliberately unlike report photos:

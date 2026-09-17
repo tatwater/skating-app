@@ -5,7 +5,7 @@ import { useQuery } from 'convex/react';
 import { Paragraph, Text, YStack } from 'tamagui';
 
 /**
- * NWS active alerts on a lake sheet (A06c B5, D74) — the mobile half of the web `AlertStrip`.
+ * NWS active alerts on a lake sheet (A06c §2.5, D74) — the mobile half of the web `AlertStrip`.
  *
  * **Visually distinct and attributed.** Everything else in this sheet is ours; this is the National
  * Weather Service speaking, and the two carry very different kinds of authority. It sits at the top,

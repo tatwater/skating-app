@@ -2025,7 +2025,7 @@ export const importContourCoverage = internalMutation({
   },
 });
 
-// ── Elevation (A06c A1) ───────────────────────────────────────────────────────────────────────
+// ── Elevation (A06c §1.1) ───────────────────────────────────────────────────────────────────────
 
 /**
  * Page the corpus for bodies whose elevation the DEM pass should look up.
@@ -2134,7 +2134,7 @@ export const listNeedingElevation = internalQuery({
 });
 
 /**
- * Write a batch of DEM elevations (A06c A1).
+ * Write a batch of DEM elevations (A06c §1.1).
  *
  * **Re-checks the operator rung at write time** even though `listNeedingElevation` already filtered
  * on it. The read and the write are separate transactions and a 116k-body pass takes minutes, so a
@@ -2280,7 +2280,7 @@ export const retractElevations = internalMutation({
   },
 });
 
-// ── Winter wind rose (A06c A4b) ───────────────────────────────────────────────────────────────
+// ── Winter wind rose (A06c §1.4b) ───────────────────────────────────────────────────────────────
 
 /**
  * Page the corpus for bodies whose wind rose is worth fetching.
@@ -3153,7 +3153,7 @@ export async function mergeBodyInto(
     // The loser's reports and hazards now belong to the survivor, so their sub-area stamps have to be
     // recomputed against the survivor's bays — the old stamps were resolved against a different set.
     await scheduleRestamp(ctx, survivorId);
-    // And so does the survivor's cross-season recurrence (A05c / §C4): it just gained a winter's worth
+    // And so does the survivor's cross-season recurrence (A05c / §3.4): it just gained a winter's worth
     // of sightings that were clustered against a different lake, and the loser's stored clusters would
     // otherwise sit ranked in the operator queue on a tombstoned body, linking nowhere. Scheduled
     // rather than run inline — the merge is already a fan-out over every body-keyed child, and one
@@ -3437,7 +3437,7 @@ export const setCuratedBoost = mutation({
 });
 
 /**
- * Moderator: set a body's operator-entered reference links (A06c Workstream B7).
+ * Moderator: set a body's operator-entered reference links (A06c Workstream §2.7).
  *
  * The one link in the phase that is stored rather than derived, because no algorithm turns a lake's
  * name into its association's URL. Everything else in the drawer's link list is computed at render
@@ -3492,7 +3492,7 @@ export const setReferenceLinks = mutation({
 });
 
 /**
- * Moderator: override whether a body offers the Copernicus satellite link (A06c Workstream D, D70/D75).
+ * Moderator: override whether a body offers the Copernicus satellite link (A06c Workstream 4, D70/D75).
  *
  * **The writer the schema field had been promising and did not have.** `satelliteImageryAvailable`
  * has read `satelliteImagery` since A06c-2 and the field's own comment says "an operator's correction
@@ -6185,7 +6185,7 @@ export const setIncludedByRequest = internalMutation({
 });
 
 /**
- * Sweep stale map summaries (A06c Workstream E).
+ * Sweep stale map summaries (A06c Workstream 5).
  *
  * **The counts decay with no write to hang the decay on.** Every other path that touches
  * `summary` is an event — a report created, a hazard archived, a moderator hiding something — but a
@@ -6278,7 +6278,7 @@ export const listNamedForSeeding = internalQuery({
         surfaceAreaSqM: body.surfaceAreaSqM,
         curatedBoost: body.curatedBoost,
         // Read by `seed-destinations --verify-imagery` so an operator's `off` doesn't get reported
-        // as the area threshold's doing (A06e Workstream D).
+        // as the area threshold's doing (A06e Workstream 4).
         satelliteImagery: body.satelliteImagery,
         interiorPoint: body.interiorPoint,
         representativePoint: body.representativePoint,

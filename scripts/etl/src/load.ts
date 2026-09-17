@@ -13,7 +13,7 @@
  *     [--transform-summary=<run.json>] [--filter-command=<text>]
  *     [--merge-manifest=<merge-manifest.json>] [--no-run-log]
  *
- * The second block of flags is the run history (A06c F2): the loader writes one `importRuns` row
+ * The second block of flags is the run history (A06c §6.2): the loader writes one `importRuns` row
  * carrying the **whole path** — the archived extract's URL/checksum/build date, the `osmium`
  * filter, the transform's own summary and itemized skips, and its own batch outcomes — so an
  * admin can answer "how did the last import go" and "which features did it decline" without
@@ -259,7 +259,7 @@ function main(): void {
       `${state ? ` (state: ${state})` : ''}…\n`,
   );
 
-  // ---- Run history (A06c F2) -------------------------------------------------------------------
+  // ---- Run history (A06c §6.2) -------------------------------------------------------------------
   // Assembled before the first batch so a killed process still leaves a row naming what it was
   // doing. Everything here is best-effort: `RunLogger` swallows its own failures by design.
   const manifest = readJson<ExtractManifest>(manifestPath, 'extract manifest');

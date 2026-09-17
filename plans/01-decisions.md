@@ -2545,7 +2545,7 @@ safety regression delivered by a display preference.
 - Contour tiles load lazily on drawer-open, so the browse map's tile budget is unchanged.
 - Contours are not drawn over imagery — no cartographic base to annotate, and they'd fight a photograph
   for legibility.
-- The satellite preference is per-device and persisted, default off (A06e A5). It is the map's **only**
+- The satellite preference is per-device and persisted, default off (A06e §1.5). It is the map's **only**
   persisted display state.
 
 **Related:** [D82](#d82--bathymetry-is-context-not-counsel-a06b), [D84](#d84--satellite-imagery-is-two-tiers-with-different-jobs-a06e),
@@ -2618,7 +2618,7 @@ every bucket has the name the wind data already uses. See A06c open question 1.)
 
 ## D84 — Satellite imagery is two tiers with different jobs (A06e)
 
-**Decided (2026-07-31; scoping A06e out of A06c's B3 at the founder's ask.)**
+**Decided (2026-07-31; scoping A06e out of A06c's §2.3 at the founder's ask.)**
 
 The word "satellite" was covering two features with different sources, different constraints and different
 honesty requirements. They ship in order:
@@ -2688,9 +2688,9 @@ won't equal a published survey.
 
 ## D85 amendment — the stats are measured from an interior point, and `centroid` is not one (A06c-1)
 
-**Decided (2026-08-02; found by running A4 against real lakes rather than fixtures.)**
+**Decided (2026-08-02; found by running §1.4 against real lakes rather than fixtures.)**
 
-D85 said *measure the source geometry*. It did not say *from where*, and A06c's A4 said "cast a ray
+D85 said *measure the source geometry*. It did not say *from where*, and A06c's §1.4 said "cast a ray
 through the centroid" — which cannot be taken literally. **`waterBodies.centroid` is Turf's
 `pointOnFeature`**, which returns the bbox centre only when that lands inside the polygon and a point
 on the **boundary** when it does not. That is true of any curved or narrow lake: Lake Willoughby's
@@ -2828,7 +2828,7 @@ distance."*)**
 `foot-hiking` profile is the same key, same client, same free tier, and with `elevation: true` the
 response carries **ascent and descent in metres** — the second half of the founder's question, delivered
 by a request parameter rather than a second integration. It is also OSM-routed, so it walks the same
-`highway=path` / `route=hiking` ways A06d's Workstream B is already extracting.
+`highway=path` / `route=hiking` ways A06d's Workstream 2 is already extracting.
 
 *(Considered: GraphHopper — comparable, but a second vendor and key for no capability we lack. Valhalla —
 most control, and a server to run. Mapbox — `walking` only, tuned for sidewalks. AllTrails/Gaia/Strava —
@@ -4361,7 +4361,7 @@ name what was walked past.**
 **2026-08-09, founder call at A06c-2 kickoff:** *"let's postpone any satellite imagery part until A06e
 so we can do it all together."*
 
-A06c's Workstream **B3** specified a Copernicus Browser deep link, a `satelliteImagery:
+A06c's Workstream **§2.3** specified a Copernicus Browser deep link, a `satelliteImagery:
 'auto'|'on'|'off'` per-row override and a `SATELLITE_MIN_AREA_SQM` threshold — all of it now deferred
 to [A06e](./phases/A06e-satellite-imagery.md).
 
@@ -4391,7 +4391,7 @@ back in ahead of the layer.
 The original rename (2026-07-31) was argued well: *"`seed-destinations` names the **input** — a list
 of lakes — which is the thing most likely to change. `seed-satellite` names the **job**."* That
 reasoning holds, and D138 changed which job it is. With the imagery half deferred, what this script
-does is match a curated shortlist to corpus rows and set `curatedBoost` (Workstream D). Naming it
+does is match a curated shortlist to corpus rows and set `curatedBoost` (Workstream 4). Naming it
 after work it will not do for a phase is the same failure the first rename was avoiding, pointed the
 other way.
 
@@ -4402,7 +4402,7 @@ was the durable half of the original argument all along.
 
 ---
 
-## D140 — A forecast and an observation are separated by a **type**, not a rule (A06c-2 / B5b)
+## D140 — A forecast and an observation are separated by a **type**, not a rule (A06c-2 / §2.5b)
 
 **2026-08-09.** `fetchOpenMeteoHourly` returns `{ past, forecast, utcOffsetMs }`. Every calculation —
 the D56 decay multiplier, the bounty gate, the contradiction settle — reads `.past` and only `.past`.
@@ -5435,7 +5435,7 @@ with a failure mode nobody would report. Building it before the inbox would have
 pipeline whose output nobody could see. Trigger: ~1,000 profiles, or the first fan-out that spans more
 than a handful of pages.
 
-**Related:** D5, D80, A01, [`phase-N8`](./phases/A08-notification-pipeline.md) Workstream D.
+**Related:** D5, D80, A01, [`phase-N8`](./phases/A08-notification-pipeline.md) Workstream 4.
 
 ## D173 — The digest is 8pm local: the zone is per person, the hour is not, and sunset is not a clock (A08)
 
@@ -5463,7 +5463,7 @@ asked for on a settings page that already has ten toggles.
 zone between a report and 8pm gets that one digest at the old target. Coalescing keeps the earliest
 `flushAfter`, so the failure direction is "slightly early", never "never".
 
-**Related:** D11, D167, Phase 04 decision #4, [`phase-N8`](./phases/A08-notification-pipeline.md) Workstream C.
+**Related:** D11, D167, Phase 04 decision #4, [`phase-N8`](./phases/A08-notification-pipeline.md) Workstream 3.
 
 ## D174 — Push and email are two switches over the inbox, not a matrix; mail is for the digest-class types; the address is mirrored from Clerk (A08)
 

@@ -30,7 +30,7 @@ const AMENITY_LABELS: Record<string, string> = {
  * How you get onto this lake (A06d / D72, D73, D87).
  *
  * Renders **nothing at all** when there is no access data, which is most of the corpus. That is the
- * A06c B4 discipline applied here: a section that says "we don't know where to park" on 20,000 lakes is
+ * A06c §2.4 discipline applied here: a section that says "we don't know where to park" on 20,000 lakes is
  * worse than no section, and the honest signal is its absence.
  *
  * ## What the alert strip is careful about

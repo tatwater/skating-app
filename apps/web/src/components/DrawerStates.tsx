@@ -3,7 +3,7 @@ import { PanelDescription, PanelHeader, PanelTitle } from './DetailPanel';
 import { Skeleton } from './ui/skeleton';
 
 /**
- * Shared loading + unavailable states for the detail drawers (§D), so the water-body and report
+ * Shared loading + unavailable states for the detail drawers (§4), so the water-body and report
  * drawers present an identical skeleton and "not available" panel instead of two copies that drift.
  */
 

@@ -7,7 +7,7 @@ import schema from './schema';
 const modules = import.meta.glob('./**/*.*s');
 
 /**
- * `regionStats.recompute` — the per-state decile basis behind the derived caption (A06c A5).
+ * `regionStats.recompute` — the per-state decile basis behind the derived caption (A06c §1.5).
  *
  * The interesting behaviour is not "does it compute percentiles" (that is `computeDeciles`, tested
  * in core) but the three ways this job can produce a *confidently wrong* basis: counting a body in

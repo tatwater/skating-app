@@ -109,7 +109,7 @@ export interface CanonicalBody {
    */
   interiorPoint?: LatLng;
   /**
-   * Derived shape stats (A06c Workstream A), measured on the **pre-simplification** geometry per
+   * Derived shape stats (A06c Workstream 1), measured on the **pre-simplification** geometry per
    * D85. Each is independently optional: a degenerate ring costs one field, not the feature.
    */
   shorelineM?: number;

@@ -3,7 +3,7 @@ import { humanizeEnum } from '@skating/core';
 import { useQuery } from 'convex/react';
 
 /**
- * The per-lake activity timeline on `/admin/water/$id` (A06c Workstream F1).
+ * The per-lake activity timeline on `/admin/water/$id` (A06c Workstream §6.1).
  *
  * **This is a UI component and no backend at all**, which is the finding that made F1 worth doing:
  * `moderation.listActions` has always accepted `targetType: 'waterbody'` + `targetId`, read

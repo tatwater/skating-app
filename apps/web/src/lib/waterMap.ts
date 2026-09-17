@@ -1,5 +1,5 @@
 /**
- * Pure helpers for the water-body map (Phase 01 read-only; Phase 02a §D adds tap-to-detail +
+ * Pure helpers for the water-body map (Phase 01 read-only; Phase 02a §4 adds tap-to-detail +
  * geolocation framing). Kept out of the imperative MapLibre component (`../components/MapView`)
  * so the data transforms, feature-state lookup, basemap style, and framing math are unit-testable
  * without a DOM/WebGL context.
@@ -497,7 +497,7 @@ export function boundsForBody(
 }
 
 /**
- * Per-body summary cards (A06c Workstream E).
+ * Per-body summary cards (A06c Workstream 5).
  *
  * **A MapLibre `symbol` layer, not HTML overlays.** Symbol layers keep the cards inside the style,
  * so they scale to a viewport full of bodies, and — the load-bearing reason — MapLibre's own collision

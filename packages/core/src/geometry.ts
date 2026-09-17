@@ -164,7 +164,7 @@ function segmentDistanceMetres(
 /**
  * Distance in metres from `point` to the nearest edge of `polygon` — **`0` when the point is
  * inside** (boundary counts as inside, per `pointInPolygon`). The proximity primitive behind
- * offline body auto-select (F2), the map-open "you're at this lake" framing, and Phase 09a hazard
+ * offline body auto-select (§6.2), the map-open "you're at this lake" framing, and Phase 09a hazard
  * binding: a skater standing in the parking lot is *near* the lake though not *on* it, so a plain
  * `pointInPolygon` would miss them.
  *

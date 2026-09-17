@@ -1,5 +1,5 @@
 /**
- * The water-body drawer's three sub-tabs (A06h Workstream H, open question 4).
+ * The water-body drawer's three sub-tabs (A06h Workstream 8, open question 4).
  *
  * ## Why the vocabulary lives in core
  *

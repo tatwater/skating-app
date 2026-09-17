@@ -3,7 +3,7 @@
  *
  * ## Why the join is here and not in the ETL
  *
- * The A06d plan's B2 says put-in candidates within ~30 m of a body's polygon boundary attach to that
+ * The A06d plan's §2.2 says put-in candidates within ~30 m of a body's polygon boundary attach to that
  * body, which reads as transform work. It cannot be: the transform has no polygons, and post-N7 the
  * merge output is **not** the loaded corpus — bodies are pruned, deduped, re-keyed and retired after
  * it, so measuring locally would measure against a snapshot that has already moved.
@@ -197,7 +197,7 @@ export async function recomputeAccessKind(
 }
 
 /**
- * Load a batch of parking areas and attach them to every body they plausibly serve (A06d B3).
+ * Load a batch of parking areas and attach them to every body they plausibly serve (A06d §2.3).
  *
  * Runs **before** the put-in lane, because a put-in references its lot by OSM id and cannot be
  * resolved until the lot is a row. That ordering is why the transform emits two files rather than one
@@ -320,7 +320,7 @@ export const matchAndImportParking = internalMutation({
 });
 
 /**
- * Load a batch of put-in candidates, attach each to its body, and link its lot (A06d B3).
+ * Load a batch of put-in candidates, attach each to its body, and link its lot (A06d §2.3).
  *
  * **Every rejection is counted and named**, on the A06a rule that an ETL matching 60% of its input
  * looks exactly like one that matched all of it. The two failure classes are kept apart on purpose:
@@ -550,7 +550,7 @@ export const listParkingForBody = query({
 });
 
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
-// Photos (Workstream D / D88) — infrastructure, not conditions
+// Photos (Workstream 4 / D88) — infrastructure, not conditions
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
 
 /**

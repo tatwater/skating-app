@@ -1,5 +1,5 @@
 /**
- * Per-body reference links (A06c Workstream B) — derived, never stored.
+ * Per-body reference links (A06c Workstream 2) — derived, never stored.
  *
  * **P2 (D71): a link is not an integration.** Every link here is a pure function of
  * `(coordinate, name, states[])`, all already on the row, so the whole corpus is covered the day
@@ -155,7 +155,7 @@ export const WINDY_ZOOM = 9;
 /**
  * The coordinate every link is built from.
  *
- * **`interiorPoint` first, and this is a correction rather than a preference.** The Workstream B
+ * **`interiorPoint` first, and this is a correction rather than a preference.** The Workstream 2
  * text specified these links as "a pure function of `(centroid, name, states[])`", which was written
  * before A06c-1 measured what `centroid` actually is: Turf's `pointOnFeature`, which returns a point
  * on the **shoreline** whenever the bbox centre falls outside the polygon. Lake Willoughby's is ring

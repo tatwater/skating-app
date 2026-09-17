@@ -31,7 +31,7 @@ import { TrustAvatar } from './TrustDisplay';
 import { WeatherStrip } from './WeatherStrip';
 
 /**
- * Report detail drawer (§F, D42/D47) for `/report/[id]`, the mobile mirror of web's `ReportDetail`.
+ * Report detail drawer (§6, D42/D47) for `/report/[id]`, the mobile mirror of web's `ReportDetail`.
  * Reads the report (visibility-checked server-side), its author + lake name + serving photo URLs,
  * and pushes the lake highlight, a fly-to on the put-in point, and any `placeOnMap` photo pins up to
  * the persistent map via `useMapSelection`. Every stored value renders **imperial** (D25) via the

@@ -666,15 +666,15 @@ Still no code assertion of safety (D3) — the harvested lakeice vocabulary powe
 - **Done:** hazards are drawn (right primitive per type), age per type, can be confirmed via the
   three-tier vote / cleared; permanent body features persist without re-marking; skaters on that ice get
   a client-local alert (offline-capable) gated behind one confirmation.
-- **Offline hazard capture — inherited from Phase 02a F2 (decided 2026-07-15).** Hazards are drawn
-  **on the ice, often offline**, so Phase 09a reuses the Phase 02a F2 offline substrate:
+- **Offline hazard capture — inherited from Phase 02a §6.2 (decided 2026-07-15).** Hazards are drawn
+  **on the ice, often offline**, so Phase 09a reuses the Phase 02a §6.2 offline substrate:
   - **The offline body-reference cache** (F2 "Layer 2" — `@skating/core` buffered
     `pointInPolygon` auto-select + an on-device LRU cache of recently-viewed body polygons)
     is built in F2 as a **standalone, reusable module** *specifically so hazard capture reuses
     it* — GPS + cached polygon tells the offline app which lake the skater is on without a
     network round-trip.
-  - **Offline basemap tiles (F2 "Layer 3") were deferred here from Phase 02a F2 (decided
-    2026-07-15) — then dropped from Phase 09a at build time (2026-07-21).** F2's report capture
+  - **Offline basemap tiles (§6.2 "Layer 3") were deferred here from Phase 02a §6.2 (decided
+    2026-07-15) — then dropped from Phase 09a at build time (2026-07-21).** §6.2's report capture
     needs only *which lake* (the body cache) + GPS, so it ships with **no offline basemap** and
     degrades the put-in pin to "drop at my current GPS location." Hazards want the same offline
     basemap *ideally* — dropping an accurate pin is easier with the lake polygon as reference — but

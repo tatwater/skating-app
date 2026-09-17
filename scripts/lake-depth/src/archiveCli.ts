@@ -331,7 +331,7 @@ async function main(): Promise<void> {
 }
 
 /**
- * One `raw_archive` run row per source, matching what the other two archives record (A06c F2).
+ * One `raw_archive` run row per source, matching what the other two archives record (A06c §6.2).
  *
  * The outcome is derived from whether a manifest exists rather than passed in: a manifest is written
  * only after the bytes are on disk and any published checksum has matched, so it *is* the success

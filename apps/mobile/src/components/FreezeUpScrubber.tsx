@@ -1,5 +1,5 @@
 /**
- * The freeze-up scrubber on mobile (A06e §C4, D146).
+ * The freeze-up scrubber on mobile (A06e §3.4, D146).
  *
  * Same decisions as web's, and the same reasons — the arguments are in
  * `apps/web/src/components/FreezeUpScrubber.tsx` and in `imageryTimeline`, which is where the logic

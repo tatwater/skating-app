@@ -1,5 +1,5 @@
 /**
- * Weather-first discovery — the reads (A06h Workstream E / **D159**, **D164**, **D165**, **D166**).
+ * Weather-first discovery — the reads (A06h Workstream 5 / **D159**, **D164**, **D165**, **D166**).
  *
  * ## The pipeline, and why each stage is where it is
  *

@@ -543,7 +543,7 @@ then bodies — which makes 25,000 lakes findable for the first time and turns t
 observations (D160). *A skater asks "do I get in the car?" against a lake with a visible history.*
 
 #### Deferred
-- ⚪ **Workstream F — radar** — MRMS with its Radar Quality Index, drawing where it *can't* see (D156/D157); cut on the Fly→R2 pattern, ~$5/mo
+- ⚪ **Workstream 6 — radar** — MRMS with its Radar Quality Index, drawing where it *can't* see (D156/D157); cut on the Fly→R2 pattern, ~$5/mo
 - ⚪ **Multi-season climatology** — unlocked by D153
 - ⚪ **Paying Open-Meteo (D158)** — season two, with a written trigger; no request counter exists yet
 
@@ -684,7 +684,7 @@ long-form register this table replaced is archived verbatim in
 | HealthKit adapter · server-tracked recommended caps · a CI GPS replay rig · first-class avatar upload | ⚪ | a trigger each; none urgent | [`backlog/low-urgency-items.md`](./backlog/low-urgency-items.md) |
 | A06e PR 4 (phenology) + PR 5 (charts, freeze-up notification) | ⚪ | the nine-season backfill spend | A06e |
 | A06g imagery research lanes | ⚪ | the same backfill | A06g |
-| A06h Workstream F — radar | ⚪ | nothing; next in A06h | A06h |
+| A06h Workstream 6 — radar | ⚪ | nothing; next in A06h | A06h |
 | Multi-season weather climatology · paying Open-Meteo (D158) | ⚪ | D153 unlocked it; season two | A06h |
 | `centroid` → `representativePoint` stage 2 — the ~100-site code sweep | ⚪ | nothing, and it shouldn't linger | [`features/representative-point-rename.md`](./features/representative-point-rename.md) |
 | Phase renumbering — the mechanical PR and the PR-title pass | ⚪ | nothing — A07b landed 2026-09-16 | [`features/phase-numbers.md`](./features/phase-numbers.md) |

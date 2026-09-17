@@ -20,7 +20,7 @@
 #
 # Per-second billing with no barrier between jobs means 25 Machines for an hour costs what one Machine
 # costs for 25 hours. A season's ~750 granules is five days serial and a few hours fanned out, at the
-# same total spend (§C2). A pool would add scheduling, idle time, and a reason to care which host a job
+# same total spend (§3.2). A pool would add scheduling, idle time, and a reason to care which host a job
 # lands on --- all of which we get to not have.
 set -euo pipefail
 

@@ -1,5 +1,5 @@
 /**
- * Access alerts (A06d Workstream C / D73).
+ * Access alerts (A06d Workstream 3 / D73).
  *
  * Two properties carry this module and both are about what it refuses to inherit from hazards: the
  * decay is weather-blind (a locked gate does not thaw), and a moderator's pin is exempt from an expiry

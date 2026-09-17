@@ -1,5 +1,5 @@
 /**
- * Access alerts — "temporarily inaccessible" as a decaying community claim (A06d Workstream C / D73).
+ * Access alerts — "temporarily inaccessible" as a decaying community claim (A06d Workstream 3 / D73).
  *
  * ## Why this is not a note
  *

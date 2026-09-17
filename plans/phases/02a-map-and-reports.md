@@ -1,8 +1,8 @@
 # Phase 02a build plan — Map + reports (the MVP)
 
-> **✅ Phase 02a COMPLETE (2026-07-16).** All workstreams shipped: web MVP §A–§E (2026-07-13),
-> mobile online loop §F1 (2026-07-14, PR #13), regional expansion §H → Phase 02b (2026-07-15, PR #14),
-> mobile offline draft queue §F2 + docs §G (2026-07-16). Convex **prod remains uninitialized** by
+> **✅ Phase 02a COMPLETE (2026-07-16).** All workstreams shipped: web MVP §1–§5 (2026-07-13),
+> mobile online loop §6.1 (2026-07-14, PR #13), regional expansion §8 → Phase 02b (2026-07-15, PR #14),
+> mobile offline draft queue §6.2 + docs §7 (2026-07-16). Convex **prod remains uninitialized** by
 > decision, so everything runs on the **dev** deployment; the prod cutover is a later pass. Native
 > mobile UI carries a pending emulator-verification pass (pure + Convex layers are tested).
 >
@@ -29,7 +29,7 @@ test plan.
 
 ## Surface sequencing (decided 2026-07-13)
 
-- **Web first, then mobile — as two separate PRs** (web = this plan's §A–§E; mobile = §F, a
+- **Web first, then mobile — as two separate PRs** (web = this plan's §1–§5; mobile = §6, a
   follow-on plan). Rationale: every Convex function the web MVP needs is exactly what mobile
   consumes, so **web-first front-loads the shared backend**; and we prove the entire data model
   online before taking on the native-build lift + the offline-capture complexity (D30), which is
@@ -51,7 +51,7 @@ test plan.
   filter key** so `listInViewport` filters `minVisibleZoom <= zoom` **inside the query** (not a
   post-fetch refine). This is the *real* fix for the Phase 01 soft-cap truncation stopgap: at wide
   zoom the query returns the *few prominent* bodies instead of an arbitrary read-capped slice, so a
-  small-but-beloved lake (Lake Morey, via `curatedBoost`) is guaranteed to appear (see Workstream B).
+  small-but-beloved lake (Lake Morey, via `curatedBoost`) is guaranteed to appear (see Workstream 2).
 - **Water-body detail** — name, area (imperial display), report feed sorted by skate time; report
   creation surfaced **in place** (D47), not a separate top-level route.
 - **Reports (create + read, online)** — full ice description (ice types, surface tags, coarse
@@ -67,7 +67,7 @@ test plan.
   including a **HEIC→JPEG decode step** so iPhone uploads work on desktop web; opt-in `placeOnMap`
   geotag pinning (coord retained *only* on opt-in).
 
-**In scope (mobile PR, follow-on — §F):** native MapLibre map, the same tap→detail→report loop,
+**In scope (mobile PR, follow-on — §6):** native MapLibre map, the same tap→detail→report loop,
 **offline draft queue** (D9/D30), device geolocation framing, `expo-image-manipulator` optimize.
 
 **Explicitly OUT of Phase 02a (deferred, by decision):**
@@ -137,7 +137,7 @@ before anything consumes them.
     draws at a *lower/wider* zoom), clamped to a **discoverability floor** (every listed body
     becomes visible by some detail zoom regardless of score — area guarantees a floor, D49) and a
     widest zoom for top-score bodies. **Returns an integer zoom bucket** (e.g. 5..14) so it can be
-    stored and indexed as a geospatial filter key (Workstream B). Exact curve/constants tuned
+    stored and indexed as a geospatial filter key (Workstream 2). Exact curve/constants tuned
     against the Vermont corpus during build.
   - **Tests:** monotonicity (bigger area ⇒ score up ⇒ minVisibleZoom down; `curatedBoost` raises
     prominence), floor/ceiling clamps, and a property that every body is visible by the floor zoom.
@@ -186,7 +186,7 @@ migration-free optional fields.
   re-insert per body (the ETL loader batches under the read cap; a full-corpus backfill paginates).
 - **`reports`:** no schema change for web. *(An optional `idempotencyKey?` for the offline queue
   lands with the **mobile** PR, D30 — additive then.)* `reports.point` is already required in the
-  schema; `create` fills it from the optional put-in pin, else the body centroid (Workstream C).
+  schema; `create` fills it from the optional put-in pin, else the body centroid (Workstream 3).
 - **No `reports.point` geospatial index this phase** — report feeds query the existing
   `by_water_body_skate_time` DB index; near-me/cross-body geospatial is Phase 04/5.
 
@@ -209,7 +209,7 @@ migration-free optional fields.
     imported bodies score immediately).
   - `listInViewport` — **replace the Phase-01 soft-cap truncation with zoom-based rendering (D49):**
     take the client `zoom` and filter `minVisibleZoom <= zoom` **as a geospatial filter key**
-    (Workstream B), so wide zooms return few prominent bodies instead of a read-capped arbitrary
+    (Workstream 2), so wide zooms return few prominent bodies instead of a read-capped arbitrary
     slice. Keeps the two-tier viewport lookup + the read-cap backstop; the in-query zoom filter is
     what actually makes wide zooms legible instead of truncated (and guarantees the Morey criterion).
 
@@ -308,7 +308,7 @@ migration-free optional fields.
   map to mark the access point they used (sets `reports.point`; a nice future signal for guiding
   others to good access). Metric storage, imperial input/display (units.ts). Validates via
   `validateReportInput` before submit. The form is **ephemeral** (in-memory) on web — no persisted
-  drafts; the offline draft queue is a mobile-only concern (§F, D30).
+  drafts; the offline draft queue is a mobile-only concern (§6, D30).
 - **Photo pipeline (web, D31/D42):** on select → **if HEIC/HEIF, decode to a canvas-readable format
   first** (Chrome/Firefox can't decode HEIC in `<canvas>`; iPhones shoot HEIC by default) → read
   EXIF GPS/timestamp with **`exifr`** *before* stripping → downscale to ~2048px long edge + a ~400px
@@ -320,8 +320,8 @@ migration-free optional fields.
   profile is not offered `public`**; thickness add/remove + value-XOR-range UI; geotag opt-in
   toggles coord retention; put-in pin sets/clears `point`.
 
-### F. Mobile (separate follow-on PR(s)) — split into F1 (online) + F2 (offline queue), decided 2026-07-13
-Built after web ships; reuses **all** of §A–§C unchanged. **Split into two PRs** (decided 2026-07-13):
+### F. Mobile (separate follow-on PR(s)) — split into §6.1 (online) + §6.2 (offline queue), decided 2026-07-13
+Built after web ships; reuses **all** of §1–§3 unchanged. **Split into two PRs** (decided 2026-07-13):
 the online loop lands and gets proven first, then the offline queue (the single hardest, mobile-only
 piece) lands on its own so its review is scoped (Greptile reviews are metered).
 
@@ -332,7 +332,7 @@ piece) lands on its own so its review is scoped (Greptile reviews are metered).
 web-only glue stays in web: the datetime-**local** `<input>` round-trip and the browser photo pipeline
 (`heic2any`/`exifr`/`browser-image-compression`) — neither applies on native.
 
-#### F1 — native map + read + **online** report write — ✅ DONE (2026-07-14, PR #13)
+#### §6.1 — native map + read + **online** report write — ✅ DONE (2026-07-14, PR #13)
 
 > **Shipped:** the three pure helpers lifted into `@skating/core` (`reportView` [plan-named
 > `reportDisplay`], `reportForm`, `photo`) with web refactored onto them; native
@@ -369,7 +369,7 @@ web-only glue stays in web: the datetime-**local** `<input>` round-trip and the 
   tappable while the report form drawer is open) and (b) selection is **URL-backed + deep-linkable**
   at `/water/$id` `/report/$id` (expo-router deep links) — not full pushed screens. Tamagui for the
   drawer content (D7: share tokens, not UI).
-- The report create/read loop, mirroring web §D/§E but native (Tamagui): water-body detail (merged→
+- The report create/read loop, mirroring web §4/§5 but native (Tamagui): water-body detail (merged→
   survivor redirect, unavailable state, imperial area, feed by skate time), report detail (all fields
   imperial, photos, author, `placeOnMap` pins), and the create form (ice/surface/quality/thickness/
   conditions/visibility-clamped/notes/skate-time/put-in-pin) validated by `validateReportInput`.
@@ -380,7 +380,7 @@ web-only glue stays in web: the datetime-**local** `<input>` round-trip and the 
 - **Verify on the Android emulator** (`Pixel_6_Android_15`) as the primary target (user's first device
   is a Pixel); iOS Simulator secondary.
 
-#### F2 — offline draft queue (D9/D30) — ✅ SHIPPED (2026-07-16, dev; + §G docs)
+#### §6.2 — offline draft queue (D9/D30) — ✅ SHIPPED (2026-07-16, dev; + §7 docs)
 
 > **Shipped:** the pure heart in `@skating/core` — `geometry.ts` buffered `pointInPolygon` /
 > `distanceToPolygonMeters` / `nearestBodyForPoint`, and `draftQueue.ts` (draft record + status
@@ -393,9 +393,9 @@ web-only glue stays in web: the datetime-**local** `<input>` round-trip and the 
 > current-location put-in), and the drafts-list tab + `draft/new`·`draft/[id]` routes. **Layer 3
 > (offline basemap tiles) deferred to Phase 09a** (see `07-roadmap.md`).
 
-> **Design settled 2026-07-15 (this build).** F2 + §G share **one PR off `main`, dev-only** (prod
+> **Design settled 2026-07-15 (this build).** §6.2 + §7 share **one PR off `main`, dev-only** (prod
 > still uninitialized). The offline story splits into three layers with very different cost/risk;
-> **F2 ships Layers 1–2; Layer 3 (offline basemap tiles) is deferred to Phase 09a** (documented in
+> **§6.2 ships Layers 1–2; Layer 3 (offline basemap tiles) is deferred to Phase 09a** (documented in
 > `07-roadmap.md`). Key reframe: report capture needs only *which lake* + GPS, **not** a visible
 > basemap — so the map dependency drops out of F2 entirely.
 
@@ -427,7 +427,7 @@ web-only glue stays in web: the datetime-**local** `<input>` round-trip and the 
     loop). "Retry only the unsent" alone doesn't cover a draft the server *rejects*.
   - **Multiple concurrent drafts are a real case:** a skater hops **several lakes in a day with no
     signal**, one report per lake, all queued until reconnect. The queue is a **list**, not a single
-    slot (unlike web's ephemeral form, §E).
+    slot (unlike web's ephemeral form, §5).
   - **Flush triggers:** NetInfo reconnect **+ app-foreground + a manual "Sync now"**, all funneling
     through one idempotent flush routine (NetInfo transitions can be missed). Prompt to submit
     pending drafts on reconnect (D12). Drafts are **device-local** (lost on sign-out / app-data
@@ -464,7 +464,7 @@ web-only glue stays in web: the datetime-**local** `<input>` round-trip and the 
   `create` + coord→body resolver (+ `convex-test`); (2) core — draft state machine, flush
   orchestration, buffered `pointInPolygon` (+ tests); (3) mobile — Layer-2 body cache + GPS
   auto-select; (4) mobile — draft queue (sqlite/fs persistence, photo checkpointing, flush triggers,
-  offline put-in); (5) mobile — drafts list + edit; (6) §G docs + hygiene.
+  offline put-in); (5) mobile — drafts list + edit; (6) §7 docs + hygiene.
 
 ### G. Docs + hygiene — ✅ DONE (2026-07-16)
 - README updates: `packages/convex` (reports/photos functions, displayScore/minVisibleZoom),
@@ -477,10 +477,10 @@ web-only glue stays in web: the datetime-**local** `<input>` round-trip and the 
 
 > **Execution runbook:** [`phases/02b-regional-expansion.md`](./02b-regional-expansion.md) — the
 > step-by-step ops (per-state ETL + NY clip, multi-state `.pmtiles` → R2, bounds widening) and the
-> small code changes. **Reordered 2026-07-14: H runs before F2** (F2 is the mobile-only offline
+> small code changes. **Reordered 2026-07-14: H runs before §6.2** (§6.2 is the mobile-only offline
 > queue, orthogonal to H's data/infra — nothing in H depends on it).
 
-Runs **after the mobile online loop (F1)** and before Phase 03 (see roadmap "Phase 02b"). Pure data +
+Runs **after the mobile online loop (§6.1)** and before Phase 03 (see roadmap "Phase 02b"). Pure data +
 infra — no app features — so it's a separate PR. Widens the pilot's **single-state Vermont** corpus +
 basemap to the Northeast lake-skating states. **Nothing here changes until the mobile online loop
 ships**; and the map-bounds widening is the *last* step (after the data lands), never before.
@@ -516,7 +516,7 @@ ships**; and the map-bounds widening is the *last* step (after the data lands), 
 ## Suggested PR breakdown
 
 **Web (this plan) — one PR, clean sub-workstream commits** (Greptile reviews are metered, so one
-PR; commits map to §A–§E):
+PR; commits map to §1–§5):
 1. **core:** `display.ts` (incl. bucketed `minVisibleZoom`) + `report.ts` validation & visibility
    clamp (+ tests). *(no infra)*
 2. **convex:** `displayScore`/`curatedBoost`/`minVisibleZoom` schema + geospatial numeric filter key
@@ -531,7 +531,7 @@ PR; commits map to §A–§E):
    >
    > *(User-created water bodies + dedup are no longer in this plan — deferred to Phase 08, GPS-backed.)*
 
-**Mobile — two separate follow-on PRs** (§F, decided 2026-07-13), each with its own short build-plan
+**Mobile — two separate follow-on PRs** (§6, decided 2026-07-13), each with its own short build-plan
 doc once web is proven:
 1. **F1 — mobile online loop:** lift the shared `reportDisplay`/`reportForm`/`photo` helpers into
    `@skating/core` (+ refactor web onto them); `@maplibre/maplibre-react-native` map + tap→detail;
@@ -553,7 +553,7 @@ doc once web is proven:
     AuthGate — the recipient signs in (then onboarding/age-gate/risk-ack) before landing on the
     target. Acceptable for a friends alpha (everyone has an account). **Mitigation:** set Clerk's
     session lifetime very long (multi-month) so existing users effectively never hit a sign-in wall
-    from a shared link — a config task, tracked in §G/roadmap. **Fast-follow (post-MVP):** let
+    from a shared link — a config task, tracked in §7/roadmap. **Fast-follow (post-MVP):** let
     `public`-visibility bodies/reports render for **signed-out** viewers, gating only with a blocking
     risk-ack modal. Not in Phase 02a.
 
@@ -561,7 +561,7 @@ doc once web is proven:
   is a bucketed integer stored on `waterBodies` and indexed as a geospatial **filter key**, so
   `listInViewport` filters `minVisibleZoom <= zoom` inside the query. A post-fetch JS filter (the
   original sketch) *cannot* satisfy the "Lake Morey at state zoom" criterion: the read cap fills with
-  an arbitrary slice before a small-but-boosted body is reached. See Workstream B (incl. the spike +
+  an arbitrary slice before a small-but-boosted body is reached. See Workstream 2 (incl. the spike +
   fallbacks if the component lacks numeric range filters).
 
 - **Minor/locked visibility is clamped, not just defaulted (D41, decided 2026-07-13).** `@skating/core`
@@ -580,7 +580,7 @@ doc once web is proven:
   canvas optimize/strip pass (via `heic2any`), so iPhone photos upload from desktop browsers.
 
 - **Web report form is ephemeral; drafts are mobile-only.** No persisted web drafts (submit or lose,
-  sidestepping orphan photos). The offline draft queue (§F) is the real draft feature and must hold
+  sidestepping orphan photos). The offline draft queue (§6) is the real draft feature and must hold
   **multiple** concurrent drafts (a day of offline lake-hopping), not one.
 
 - **Photo-orphan cleanup is client-side + best-effort; a server-side GC is deferred (2026-07-15).**
@@ -600,9 +600,9 @@ doc once web is proven:
   Low urgency at alpha scale, but it should land before storage cost/quotas matter.
 
 - **Regional expansion = Phase 02b, Northeast skating states only (decided 2026-07-14).** After the
-  mobile MVP (F1+F2), before Phase 03, expand the VT-only corpus + basemap to **NY (excl. NYC/Long
+  mobile MVP (§6.1+§6.2), before Phase 03, expand the VT-only corpus + basemap to **NY (excl. NYC/Long
   Island), VT, NH, ME, MA** — via **per-state** Geofabrik extracts (not the `us/northeast` dump, which
-  drags in NJ/PA/CT/RI we don't want) with NY bbox-clipped downstate. See Workstream H + roadmap
+  drags in NJ/PA/CT/RI we don't want) with NY bbox-clipped downstate. See Workstream 8 + roadmap
   "Phase 02b". Map-bounds widening happens **last**, after the water data lands.
 
 - **Basemap tiles move to Cloudflare R2 (decided 2026-07-14).** The 5-state `.pmtiles` extract
@@ -639,9 +639,9 @@ doc once web is proven:
 
 ## Risks / watch-outs
 - **Report-form surface area is large** — the ice/surface/thickness/conditions vocab is real
-  (D22/D23). Push all validation into `@skating/core` (§A) so both apps + Convex share one
+  (D22/D23). Push all validation into `@skating/core` (§1) so both apps + Convex share one
   contract and the UI is thin.
-  - **Enum reconciliation — DONE (2026-07-13, §A):** per the community corpus (see `06-data-model.md`
+  - **Enum reconciliation — DONE (2026-07-13, §1):** per the community corpus (see `06-data-model.md`
     "Corpus validation"), `SURFACE_TAGS` **added `orange_peel`** (49 occ) and **kept the superset**
     — `windswept`/`frozen_chop` retained despite near-zero usage (founder call: don't strip meaningful
     terms). `glare_ice` rejected (= `black_ice` + `glass`); `resurfaced` held. `ICE_TYPES` unchanged.
@@ -674,19 +674,19 @@ doc once web is proven:
 > dependency blocks it (web ships on Vercel; mobile needs only an EAS dev build + — for physical
 > iPhones — Apple Developer enrollment, which should start now in parallel).
 >
-> **Status (web MVP): ✅ shipped (2026-07-13)** — §A–§E complete: `@skating/core` scoring/validation,
+> **Status (web MVP): ✅ shipped (2026-07-13)** — §1–§5 complete: `@skating/core` scoring/validation,
 > Convex `reports`/`photos` + D49 geospatial zoom filter + `waterBodies.get`/`setCuratedBoost`, the
 > interactive map (tap→detail, geolocation framing, deep-linkable `/water/$id` · `/report/$id`
 > drawers), and report create (multi-reading thickness, manual conditions, put-in pin, photos with
 > HEIC decode + EXIF strip + geotag opt-in). Built on shadcn/ui (Base UI).
 >
-> **Status (mobile §F1): ✅ shipped (2026-07-14, PR #13)** — native `@maplibre/maplibre-react-native`
+> **Status (mobile §6.1): ✅ shipped (2026-07-14, PR #13)** — native `@maplibre/maplibre-react-native`
 > map with the D49 zoom filter, `expo-location` framing, `@gorhom/bottom-sheet` drawers +
 > deep-linkable `/water/[id]` · `/report/[id]`, and the read + **online** report-create loop
 > (native `expo-image-picker`/`expo-image-manipulator` photo pipeline). Shared helpers lifted into
 > `@skating/core`.
 >
-> **Status (mobile §F2 — offline draft queue, D30): ✅ shipped (2026-07-16, dev)** — capture a
+> **Status (mobile §6.2 — offline draft queue, D30): ✅ shipped (2026-07-16, dev)** — capture a
 > report with no signal and it flushes on reconnect. `@skating/core` carries the pure heart: a
 > buffered `pointInPolygon` GPS→lake resolver and a checkpointed, idempotent flush state machine
 > (transient-retry vs. permanent-park). On-device an `expo-sqlite` LRU caches recently-viewed body

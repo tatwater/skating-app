@@ -1,5 +1,5 @@
 /**
- * The derived lake caption (A06c Workstream C) — one or two sentences per body, generated from our
+ * The derived lake caption (A06c Workstream 3) — one or two sentences per body, generated from our
  * own numbers, telling a skater what the stats *mean*.
  *
  * ## The four rules, all load-bearing

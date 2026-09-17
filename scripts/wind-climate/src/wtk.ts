@@ -1,5 +1,5 @@
 /**
- * NREL WIND Toolkit client + rose accumulation (A06c A4b) — the tested half.
+ * NREL WIND Toolkit client + rose accumulation (A06c §1.4b) — the tested half.
  *
  * The WIND Toolkit is WRF run on a **2 km grid** over the contiguous US, hourly, with wind speed
  * and direction at 10 m. Free with an API key; see `.env.example` for where to get one and why the

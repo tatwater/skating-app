@@ -75,7 +75,7 @@ export function osmExportArgs(filtered: string, out: string): string[] {
 }
 
 /**
- * The OSM tags the **access** pass keeps (A06d B1) — a second filter over the same state extract.
+ * The OSM tags the **access** pass keeps (A06d §2.1) — a second filter over the same state extract.
  *
  * A superset again, and for the same reason: `parseAccessFeature` makes the final call, so this only
  * has to be wide enough not to lose anything. What it must *not* do is overlap the water pass — these
@@ -103,7 +103,7 @@ export const OSM_ACCESS_TAGS = [
   'man_made=pier',
 ] as const;
 
-/** `osmium tags-filter` argv — the access subset of a state extract (A06d B1). */
+/** `osmium tags-filter` argv — the access subset of a state extract (A06d §2.1). */
 export function osmAccessFilterArgs(pbf: string, out: string): string[] {
   return ['tags-filter', '-t', pbf, ...OSM_ACCESS_TAGS, '-o', out, '--overwrite'];
 }

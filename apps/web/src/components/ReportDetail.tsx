@@ -77,7 +77,7 @@ export interface ReportViewData {
 }
 
 /**
- * Presentational report renderer (§D) — every stored value shown **imperial** (D25) via the pure
+ * Presentational report renderer (§4) — every stored value shown **imperial** (D25) via the pure
  * `reportDisplay` helpers, so the formatting is unit-testable without Convex or a map. The container
  * `ReportDetail` below feeds it live data; a test can feed it a fixture.
  */

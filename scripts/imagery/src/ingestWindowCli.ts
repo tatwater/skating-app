@@ -1,5 +1,5 @@
 /**
- * Ask the observed weather whether the season has opened (A06e §C3 / D149).
+ * Ask the observed weather whether the season has opened (A06e §3.3 / D149).
  *
  *   pnpm --filter @skating/imagery ingest-window [--masks=<path.fgb>] [--days=92] [--sites=12]
  *

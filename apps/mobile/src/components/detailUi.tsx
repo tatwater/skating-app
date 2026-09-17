@@ -3,7 +3,7 @@ import type { ReactNode } from 'react';
 import { H4, Paragraph, Spinner, Text, XStack, YStack } from 'tamagui';
 
 /**
- * Small shared Tamagui pieces for the map detail drawers (§F) — the mobile analog of web's
+ * Small shared Tamagui pieces for the map detail drawers (§6) — the mobile analog of web's
  * `DrawerStates` + the badge/section helpers, themed via `@skating/design` tokens (D7/D34).
  */
 

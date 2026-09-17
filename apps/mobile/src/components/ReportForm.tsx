@@ -323,7 +323,7 @@ function StartWindowField({
 }
 
 /**
- * Report create form (§F/§E, D22–D25/D41) — the mobile mirror of web's `ReportForm`, rendered in
+ * Report create form (§6/§5, D22–D25/D41) — the mobile mirror of web's `ReportForm`, rendered in
  * place inside the water-body drawer (D47). Imperial input → metric storage (D25) via the shared
  * `@skating/core` `buildReportInput`, validated by `validateReportInput` before submit. All reports
  * are public (D13); minors are read-only (D41), so the form is replaced by a notice for them. The

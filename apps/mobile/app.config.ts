@@ -75,7 +75,7 @@ const config: ExpoConfig = {
     'expo-web-browser',
     // Native date/time picker for editing a report's skate time (D9 — past times for offline).
     '@react-native-community/datetimepicker',
-    // Native MapLibre map (Phase 02a §F). The plugin wires the iOS Podfile post_install; the native
+    // Native MapLibre map (Phase 02a §6). The plugin wires the iOS Podfile post_install; the native
     // SDK bundled by v11.3.x reads Protomaps `.pmtiles` directly (no JS protocol), so the map shares
     // the web basemap. Can't run in Expo Go — needs the EAS/dev build (already our workflow, D8).
     '@maplibre/maplibre-react-native',

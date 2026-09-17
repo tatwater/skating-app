@@ -128,7 +128,7 @@ function isoResponse(
     snowFor?: (date: string, hour: number) => number;
     windFor?: (date: string, hour: number) => number;
     dirFor?: (date: string, hour: number) => number;
-    /** WMO code by flat hour index — the variable A06h Workstream D added. */
+    /** WMO code by flat hour index — the variable A06h Workstream 4 added. */
     codeFor?: (index: number) => number;
     hoursPerDay?: number;
   } = {},
@@ -232,7 +232,7 @@ describe('weatherArchive: the request builder (D153)', () => {
     expect(rows[0]?.provider).toBe('open-meteo');
     // 93 days over 12 vars: ceil(93/14)=7 × 1.2 = 8.4 billed calls in ONE request.
     //
-    // ⚠ **This number went up by 9% in A06h Workstream D and that was the point of the founder call.**
+    // ⚠ **This number went up by 9% in A06h Workstream 4 and that was the point of the founder call.**
     // It was 7.7 at eleven variables; `weather_code` is the twelfth, and it is what lets the scrub
     // readout name sleet and freezing drizzle instead of guessing. The increase applies to every
     // Open-Meteo call in the app, including the corpus-wide Tier-B sweep, which is most of the
@@ -1273,7 +1273,7 @@ describe('reconcileSatisfiedBy — the debounce rule, stated directly', () => {
   });
 });
 
-describe('weatherArchive: hourly rows for the timeline (A06h Workstream D)', () => {
+describe('weatherArchive: hourly rows for the timeline (A06h Workstream 4)', () => {
   test('a browse-tier ingest stores the hours the day reducer would have discarded', async () => {
     const t = convexTest(schema, modules);
     const waterBodyId = await seedBody(t);
@@ -1385,7 +1385,7 @@ describe('weatherArchive: hourly rows for the timeline (A06h Workstream D)', () 
   });
 });
 
-describe('weatherArchive: the hourly row version (A06h Workstream D)', () => {
+describe('weatherArchive: the hourly row version (A06h Workstream 4)', () => {
   test('rewrites rows written by an older generation of the writer', async () => {
     // ⚠ The second appearance of the same shape. The first was hourly rows missing entirely; this is
     // rows that exist but predate a newly-added field. Both are invisible — nothing errors, the

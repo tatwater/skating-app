@@ -20,7 +20,7 @@
 > document proposed (D77–D81) were taken by A05c and A06b before it was built. The mapping: D77→**D167**
 > (inbox first), D78→**D168** (producer + renderer or no type), D79→**D171** (hazards don't broadcast),
 > D80→**D172** (reverse index filters candidates; deferred), D81→**D169** (settle + re-check).
-> **D173** (`bounty_answered`) was found at kickoff; **D173** is Workstream C's call; **D174** is the
+> **D173** (`bounty_answered`) was found at kickoff; **D173** is Workstream 3's call; **D174** is the
 > transports — see the built records below.
 
 ---
@@ -189,9 +189,9 @@ the *trigger* that the flush already applies to the *recipient*.
 **One consequence worth stating:** the queue becomes the only path into `notifications`. That is also
 what a push sender needs later — one place to add a transport, rather than six insert sites.
 
-## Workstream A — The inbox (the deliverable)
+## §1 — The inbox (the deliverable)
 
-### A1 — The read path
+### §1.1 — The read path
 
 Three functions in `notifications.ts`, all public:
 
@@ -209,7 +209,7 @@ Three functions in `notifications.ts`, all public:
 
 Rows already die with the account (`accountDeletion.ts:537`); their *own* retention is A5.
 
-### A2 — The resolver, and why it's the actual work
+### §1.2 — The resolver, and why it's the actual work
 
 A notification row is ids in a `v.any()` payload. Rendering "Ellie found your report on Lake Morey
 helpful" means resolving those ids, and the resolution has to survive the content having changed since:
@@ -229,7 +229,7 @@ helpful" means resolving those ids, and the resolution has to survive the conten
 Batch-load per page. One notification page must not become N round trips — the N+1 shape that
 `contradictionCluster` hid inside A01's read path.
 
-### A3 — Where it renders
+### §1.3 — Where it renders
 
 - **Web:** a bell in `AppShell.tsx` (:41 is the existing nav row) with an unread dot, opening
   `/notifications`. A route, not a popover-only surface, so it's linkable and testable.
@@ -245,13 +245,13 @@ Batch-load per page. One notification page must not become N round trips — the
 Both surfaces read the same three functions and the same resolver output, so "web and mobile agree" is
 structural rather than a review checklist item.
 
-### A4 — What the inbox must not become
+### §1.4 — What the inbox must not become
 
 Not a feed. The newsfeed (Phase 05) is the place for *what happened on the ice*; the inbox is *what
 happened to you and your contributions*. If a notification type would be equally at home in the feed, it
 probably belongs there instead — which is most of the argument for D79.
 
-### A5 — Retention: the inbox empties at the season boundary
+### §1.5 — Retention: the inbox empties at the season boundary
 
 Founder call, 2026-07-30: **purge notifications each July**, on A05a's season rollover (July 1, D63).
 
@@ -277,9 +277,9 @@ live tables — not the inbox.
 
 ---
 
-## Workstream B — The four missing producers (D78)
+## §2 — The four missing producers (D78)
 
-### B1 — `report_commented`
+### §2.1 — `report_commented`
 
 **Trigger:** `comments.create` (`comments.ts`), after the insert. Notify the **report author**, and for
 a reply, also the **parent comment's author**.
@@ -298,7 +298,7 @@ kept reports still drawing comments while the mute switch is closed (A05a review
 landed in `canReceiveNotifications` at both enqueue *and* flush (`notifications.ts:261–279`). B1 inherits
 both gates by using the same path.
 
-### B2 — `hazard_confirmation`
+### §2.2 — `hazard_confirmation`
 
 **Trigger:** `hazardConfirmations.confirm` (`hazardConfirmations.ts:56`) → notify
 `hazard.createdByUserId`.
@@ -331,7 +331,7 @@ history, so it costs a find-and-replace plus its tests. `confirmation_vote` says
 outbound. The notification type stays, because renaming it means touching `NOTIFICATION_TYPES`, the
 `notificationPrefs` object on every profile, and any stored row.
 
-### B3 — `content_flag_resolved`
+### §2.3 — `content_flag_resolved`
 
 **Trigger:** `moderation.resolveFlag` (`moderation.ts:95`) → notify `flag.flaggerId` that their report
 was actioned or dismissed.
@@ -371,7 +371,7 @@ only when `origin === 'user'`* — absent reads as auto. That is the fail-quiet 
 notification is invisible, an unexpected one about a report you never filed is alarming, and the
 un-notified backlog is finite and historical either way.
 
-### B4 — `activity_detected`, re-derived from a source that exists
+### §2.4 — `activity_detected`, re-derived from a source that exists
 
 D24's premise — "detected on any linked provider" — was retired with the Phase 08 pivot to push (L7), and
 the remaining watch adapters are stuck behind approval queues (L8). Building the type against that
@@ -393,7 +393,7 @@ sparse-index trap here.
 L8, and the type's description in `06-data-model.md:61` ("on ANY linked provider") should be corrected
 when this lands rather than left to imply a capability we cut.
 
-#### B4a — One skate, several sources: dedup before the prompt (founder ask, 2026-07-30)
+#### §2.4a — One skate, several sources: dedup before the prompt (founder ask, 2026-07-30)
 
 Someone can connect two things that both saw the same session — most plausibly a watch **and** an
 aggregator, e.g. Garmin plus Apple HealthKit, where HealthKit is re-exporting the Garmin recording. One
@@ -439,12 +439,12 @@ first, then notifies **once, on the winner**. That's the same idea as D81 below,
 
 ---
 
-## Workstream E — Settle before you send (D81)
+## §5 — Settle before you send (D81)
 
 *Lettered E because it arrived after the first pass; it **sequences with B**, since it changes the shape
 every producer is written to.*
 
-### E1 — Route every producer through the queue
+### §5.1 — Route every producer through the queue
 
 Six insert sites write `notifications` directly today — `ratings.ts:140`, `reports.ts:448`,
 `bounties.ts:662` and `:760`, plus the two in the flush. Under D81 the first four become `enqueue`
@@ -460,7 +460,7 @@ Coalescing keys on `(recipient, target, kind)`, so five thumbs inside a minute b
 found this helpful"* rather than five rows. That is the same `coalesceKey` shape the report buckets
 already use.
 
-### E2 — What "still true?" means, per type
+### §5.2 — What "still true?" means, per type
 
 The flush loads the trigger and drops the row if it no longer holds:
 
@@ -479,7 +479,7 @@ which enqueues its own row.
 queue row (coalesced) whose trigger re-reads as `helpful` at flush ⇒ exactly one notification. Helpful →
 unhelpful ⇒ the row is dropped, and the author is never told about a thumb that isn't there.
 
-### E3 — Where it doesn't apply
+### §5.3 — Where it doesn't apply
 
 The digest and `activity_detected` already wait far longer than any settle window — to 8pm and to the
 pending sweep respectively — so they inherit the re-check (B4a's dedup is the same idea at hours rather
@@ -487,7 +487,7 @@ than seconds) and need no debounce of their own.
 
 ---
 
-## Workstream C — Per-user digest timing
+## §3 — Per-user digest timing
 
 Today: `DIGEST_HOUR = 20`, `DIGEST_TIMEZONE = 'America/New_York'` (`notifications.ts:36–37`), applied
 identically to everyone.
@@ -501,7 +501,7 @@ also keeps this workstream a data change plus one argument, rather than a new pr
 fan-out has the recipient's profile in hand when it computes `flushAfter` — so it becomes
 `nextZonedHourMs(now, hour, profile.timezone ?? DIGEST_TIMEZONE)`. The work is the data.
 
-### C1 — Where a timezone comes from
+### §3.1 — Where a timezone comes from
 
 | Option | Cost | Problem |
 |---|---|---|
@@ -517,7 +517,7 @@ web-only user turns out to matter.
 **Privacy note:** a coarse timezone is a much weaker signal than `homeCoord`, which we already hold and
 treat as private. It carries no new exposure, and it doesn't go on a public profile.
 
-### C2 — True sunset: **dropped** (founder call, 2026-07-30), and the reason is the season
+### §3.2 — True sunset: **dropped** (founder call, 2026-07-30), and the reason is the season
 
 The roadmap named "true-sunset" timing as the deferred idea, so it gets a recorded answer rather than a
 quiet disappearance. Sunset in Vermont is **~16:20 in early January** and ~20:30 in late June. A digest
@@ -528,7 +528,7 @@ the one we want.
 A fixed 20:00 needs no astronomical calculation, no per-body sunrise/sunset fetch, and no explanation to
 a user about why their digest moved. **8pm local, everywhere.**
 
-### C3 — The edge worth writing down
+### §3.3 — The edge worth writing down
 
 `flushAfter` is stamped at **enqueue**, so a user who changes timezone between enqueue and 8pm gets one
 digest at the old target. That's acceptable and should be a comment, not a mechanism: the alternative is
@@ -538,7 +538,7 @@ failure direction is "slightly early", not "never".
 
 ---
 
-## Workstream D — The reverse reach index
+## §4 — The reverse reach index
 
 ### D1 — What it replaces, precisely
 
@@ -666,14 +666,14 @@ producer enqueues with `SETTLE_MS = 60 s` and a typed `trigger` the flush re-rea
    never-seen rows; the resolver types it at the boundary and the season purge retires the old shapes.
 7. **`unreadCount` answers 0 without a profile** rather than throwing — both shells subscribe from a
    layout that can render a frame before the row exists.
-8. **Workstream D is deliberately unbuilt** (D172). Dev has three profiles.
+8. **Workstream 4 is deliberately unbuilt** (D172). Dev has three profiles.
 9. **`bounties.answeredByMyReport`** backs the post-submit "at least N skaters were looking forward to
    it" line on both report-detail views; it answers 0 to anyone but the author.
 
 ## Built record — PR 2 (2026-09-11)
 
 **Shipped:** B4 (`gpsActivities.sweepUnpromptedActivities`, hourly; `by_prompt_state_detected` index;
-`ACTIVITY_PROMPT_DELAY_MS = 3 h`), B4a (`core/activityDedup.ts` — overlap + 10-minute start window +
+`ACTIVITY_PROMPT_DELAY_MS = 3 h`), §2.4a (`core/activityDedup.ts` — overlap + 10-minute start window +
 compatible body, the four-rung ladder, `supersededByActivityId`, the link moves to the winner; the
 sweep runs it per user over that user's recent rows, not only the due ones), A5
 (`storageHygiene.purgeLastSeasonNotifications`, daily, `notifications.by_created_at`), C
@@ -882,7 +882,7 @@ run, an install, a decision, or a scale trigger.
    finalization deletes the Clerk user *after* the tombstone, so the ordinary arrival is a no-op.
    A founder deleting a live user from the Clerk dashboard leaves a profile the D62 lifecycle never
    started on. Founder call whether that should begin the deletion request automatically.
-7. **The reverse reach index** (Workstream D / D172) — build at ~1,000 profiles, or the first
+7. **The reverse reach index** (Workstream 4 / D172) — build at ~1,000 profiles, or the first
    report whose fan-out spans more than a handful of pages. Design is complete above.
 8. **Web push** — service worker, VAPID keys, a second token type. Web = inbox + email until then.
 9. **Silent background-refresh push to a closed app** (D54) — a privacy decision (the biggest
@@ -966,7 +966,7 @@ because the *reasoning* is what a later reader needs:
 8. **One skate from several sources dedups before it prompts** (B4a). Overlap-based matching plus a
    four-rung precedence ladder that sorts on fidelity **and** displayability — D24's Strava
    cross-user restriction is why the second axis exists. Loser rows are superseded, never deleted.
-9. **Notifications settle before they send** (D81 / Workstream E). 60-second window, and the trigger is
+9. **Notifications settle before they send** (D81 / Workstream 5). 60-second window, and the trigger is
    **re-read at flush** rather than cancelled at undo — one place to get right instead of every undo
    path in the app.
 

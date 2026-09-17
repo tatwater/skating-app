@@ -210,7 +210,7 @@ describe('PastWeatherPanel', () => {
   });
 
   it('always reads the timeline range, whatever window the sentences describe', async () => {
-    // ⚠ **Deliberately decoupled in A06h Workstream D, and it used to be one number.** The chart pans
+    // ⚠ **Deliberately decoupled in A06h Workstream 4, and it used to be one number.** The chart pans
     // back thirty days; the headline still describes seven, because "no snow in the last 30 days" is
     // a much rarer and quite different claim from the seven-day one, and nothing in the copy would
     // show that the window had moved. One request serves both — the archive's first touch already

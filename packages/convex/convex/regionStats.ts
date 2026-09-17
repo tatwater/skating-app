@@ -1,5 +1,5 @@
 /**
- * Per-state distribution basis for the derived caption (A06c Workstream A5).
+ * Per-state distribution basis for the derived caption (A06c Workstream §1.5).
  *
  * One row per state holding the 10th–90th percentiles of depth, elevation, surface area and long
  * axis. See the `regionStats` table comment for why this is deciles-per-state rather than a stored
@@ -95,7 +95,7 @@ export const upsertState = internalMutation({
 export const recompute = internalAction({
   args: { batchSize: v.optional(v.number()), campaignId: v.optional(v.string()) },
   handler: async (ctx, { batchSize, campaignId }) => {
-    // Run history (A06c F2). This is the one pass that isn't a script, and it earns a row for the
+    // Run history (A06c §6.2). This is the one pass that isn't a script, and it earns a row for the
     // same reason the loaders do: it walks 116,070 bodies, it can die halfway, and the deciles it
     // leaves behind after a partial pass describe a corpus that never existed.
     const runId = await ctx.runMutation(internal.importRuns.start, {

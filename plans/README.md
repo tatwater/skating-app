@@ -138,8 +138,8 @@ change. This table is how to read them.
 | N8, "N8 PR 1–4" | A08, A08-1 … -4 | #52, #53, #55, #57 | [phases/A08-notification-pipeline.md](./phases/A08-notification-pipeline.md) | |
 | N9, "N9 PR 1–2" | A09, A09-1, A09-2 | #58, #59 | [phases/A09-subareas-as-places.md](./phases/A09-subareas-as-places.md) | |
 
-Workstreams were letters before the renumbering: `§A` / `Workstream A` / a bare `A3` in a code
-comment all mean what is now `§1` / `§1.3`; `B4` is `§2.4`, and so on through `H` = `§8`. (Phase 08's
+Workstreams were letters before the renumbering: `§1` / `Workstream 1` / a bare `§1.3` in a code
+comment all mean what is now `§1` / `§1.3`; `§2.4` is `§2.4`, and so on through `H` = `§8`. (Phase 08's
 "A→B→C pipeline" are stage names, not workstreams, and are unchanged.)
 
 Lowercase tokens are always literals and were never rewritten: `feat(n6e):` is the scope a commit

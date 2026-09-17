@@ -1,5 +1,5 @@
 /**
- * The caption's client-side assembly (A06c Workstream C) — turning a `waterBodies` row plus the
+ * The caption's client-side assembly (A06c Workstream 3) — turning a `waterBodies` row plus the
  * per-state decile basis into the single string both clients render.
  *
  * Lives in `@skating/core` rather than in either client for the reason rule 1 gives: web and

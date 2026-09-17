@@ -22,12 +22,12 @@ import { type HazardNotificationData, ingestOnIceFix } from '../../../src/lib/on
 import { adoptUnfinishedRecording } from '../../../src/lib/recorder';
 
 /**
- * Persistent-map layout (§F, D47) — the mobile mirror of web's `_map` layout. Keeps ONE `<MapView>`
+ * Persistent-map layout (§6, D47) — the mobile mirror of web's `_map` layout. Keeps ONE `<MapView>`
  * mounted beside a bottom-sheet `<Slot />` across the map routes — `/` (map), `/water/[id]`,
  * `/report/[id]` — so panning/zoom survive opening a detail drawer. The drawers render into the slot
  * as siblings of the map and push what to highlight/frame up through `MapSelectionContext`; this
  * layout owns the highlight-clear on navigation. The map stays behind the (non-modal, backdrop-less)
- * sheet, so it's tappable while a drawer is open — the put-in-pin flow (§E) depends on it.
+ * sheet, so it's tappable while a drawer is open — the put-in-pin flow (§5) depends on it.
  */
 /**
  * Grid cell (degrees) the on-ice coord is snapped to before it keys the lake-resolve query. ~0.003° ≈
@@ -68,7 +68,7 @@ function MapLayoutInner() {
 
   // A detail route (`/water/…`, `/report/…`) opens the drawer; the bare map (`/`) closes it. While a
   // put-in pin is being placed the drawer drops to a peek so the map above is tappable (the report
-  // form stays mounted behind it, D47/§E).
+  // form stays mounted behind it, D47/§5).
   const isDetail = pathname !== '/';
   const snapIndex = !isDetail ? -1 : pinDropMode || hazardDropMode ? DRAWER_PEEK : DRAWER_NORMAL;
 

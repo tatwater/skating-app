@@ -1,5 +1,5 @@
 /**
- * Drawing the hairline where two frames of one lake meet (A06e §C4).
+ * Drawing the hairline where two frames of one lake meet (A06e §3.4).
  *
  * ## Why the line is drawn at all, when the rasters already abut
  *
@@ -32,7 +32,7 @@ export const FREEZE_UP_SEAM_LAYER_ID = 'freeze-up-seam-line';
  * A *hairline*, and the word is doing work.
  *
  * Wide enough to read as deliberate at any zoom a lake is looked at, narrow enough that it never
- * competes with the shoreline it runs beside — which is the outline §A3 says matters more once
+ * competes with the shoreline it runs beside — which is the outline §1.3 says matters more once
  * imagery is on. A heavier line would read as a feature of the lake rather than of the picture.
  */
 const SEAM_WIDTH_PX = 1.25;

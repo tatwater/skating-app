@@ -81,21 +81,21 @@ phase its shape. Recorded here because there is no D-number to point at.
    about one report; this has to be a fact about the lake, because its job is to stop the same body
    being reported over and over.
 3. **The first penalty in the zoom ladder is allowed, scoped to this one attribute.** See
-   *Workstream B*.
+   *Workstream 2*.
 4. **Under the same prefix, later the same evening:** *you save your changes or you don't* — the
    report edit form has no draft lane (the draft flush only ever calls `reports.create`, so a
    mis-tap would have posted a duplicate).
 
 ---
 
-## Workstream A — The model: three states, and absence is one of them
+## §1 — The model: three states, and absence is one of them
 
 **`waterBodies.publicAccess`** (`packages/convex/convex/schema.ts:982`) is one optional object:
 
 | Field | Notes |
 |---|---|
 | `verdict` | `'none'` \| `'open'` — `PUBLIC_ACCESS_VERDICTS` in core |
-| `decidedAt` | **load-bearing, not decoration** — see the gate in Workstream C |
+| `decidedAt` | **load-bearing, not decoration** — see the gate in Workstream 3 |
 | `decidedByUserId` | the moderator, for the audit row |
 | `note?` | shown publicly, ≤ 160 chars (the depth-note ceiling) — *"Ringed by posted parcels; no legal approach."* |
 
@@ -122,7 +122,7 @@ names the lake rather than rendering it as '(deleted)'"* pins the third edit.
 
 ---
 
-## Workstream B — The demotion: the ladder's first penalty
+## §2 — The demotion: the ladder's first penalty
 
 `packages/core/src/display.ts:56` states the D2 rule with a founder note attached: **every term is a
 boost, never a penalty.** A body with no profile data keeps the zoom it has; richer bodies rise past
@@ -169,7 +169,7 @@ silently and permissively — the direction a review will not catch by looking a
 
 ---
 
-## Workstream C — Corroboration on `contentFlags`, with nothing new
+## §3 — Corroboration on `contentFlags`, with nothing new
 
 **The count needed no votes table.** `contentFlags.flag` already dedups to one *open* flag per
 (flagger, target) — a repeat is a no-op returning the existing row — so **N open rows *is* N
@@ -213,7 +213,7 @@ record.
 
 ---
 
-## Workstream D — The surfaces
+## §4 — The surfaces
 
 **Both map signals ride GeoJSON `properties`, not feature-state.** Favourites use feature-state on
 web; copying that here would have forced mobile into a parallel filtered layer, because the React
@@ -256,7 +256,7 @@ passing on a pending user-drawn body, while prominence is curation you sit down 
 
 ---
 
-## Workstream E — The wiring nothing could reach
+## §5 — The wiring nothing could reach
 
 Same prefix, same evening, different problem. An audit of **all 164 public Convex functions** turned
 up **11 with no caller in either app**. The pattern repeated: a fully implemented, authz'd, audited
@@ -268,7 +268,7 @@ mutation with nothing to press.
 | parking creation | Two decimal lat/lng text boxes beside a locked canvas. Every plausible typo is a valid coordinate somewhere. | A click on the canvas, which cannot be in the wrong hemisphere. |
 | `waterBodies.remove` / `restore` | A landowner takedown — the case D48 was built *for* — only from the Convex dashboard; a delisted body rendered *"Restore it before editing"* with no way to restore. | Both ends wired. |
 | `accessAlerts.setOfficial` | `retract` was wired, this wasn't — a moderator reaching a flagged alert could only conclude "this is false". But a flag is also how a *true* alert reaches a moderator, and pinning it is the founder's 2026-08-10 TTL exemption. | Wired. |
-| `reports.update` | Existed since D25; no edit UI, so posting was a one-way door. | Both apps open the same form seeded from the stored report (Workstream F). |
+| `reports.update` | Existed since D25; no edit UI, so posting was a one-way door. | Both apps open the same form seeded from the stored report (Workstream 6). |
 | `gpsActivities.listMine` / `setPromptState` | The recorder's prompt was component state on a map control — `promptState` never left `pending` for any activity ever recorded. Background the app mid-skate and the recording was unreachable. | The You tab lists skates with no linked report, server-backed, above the device-local `TrackHistory`. |
 | `bounties.get` | Zero callers including tests; superseded by `getDetail`. | Deleted — a public query returning an unenriched row is worse than none. |
 
@@ -295,7 +295,7 @@ operator UI "in Phase 07", `bodyFeatures.ts` said the same of a tool that had sh
 
 ---
 
-## Workstream F — Editing a report, without losing what you didn't touch
+## §6 — Editing a report, without losing what you didn't touch
 
 `reports.update` is last-write-wins over the **whole content block**, so the form is seeded from the
 whole report — a form that started empty would silently delete every field the author didn't
@@ -522,7 +522,7 @@ core and by the same server tests, not by a render.
 
 > One stray reference *was* a mislabel, not a link: `scripts/imagery/cut-granule.sh` said the SCL /
 > NDSI bands are *"the bands A06f is built on."* They are the ice-classification bands the roadmap
-> defers to **A06g** ([`backlog/A06g-imagery-research.md`](../backlog/A06g-imagery-research.md)); nothing in
+> defers to **§1.06g** ([`backlog/A06g-imagery-research.md`](../backlog/A06g-imagery-research.md)); nothing in
 > this phase reads a granule. Corrected in #56 — noted so a future grep for `A06f` that comes up one
 > short knows why.
 

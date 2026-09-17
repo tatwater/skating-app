@@ -1,6 +1,6 @@
 /**
  * Geometry for the past-weather timeline — **pure, and deliberately not a component** (A06h
- * Workstream D).
+ * Workstream 4).
  *
  * The same picture ships on the web app (SVG) and in the native app (`react-native-svg`), which share
  * no element types at all. What they can share is the arithmetic, so this module returns plain
@@ -1281,7 +1281,7 @@ export function weatherTimelineModel(input: WeatherTimelineInput): WeatherTimeli
  * The archive payload's shape, as `getWeatherDaysForBody` returns it.
  *
  * ⚠ **Every list is optional, and that is not defensive padding.** `hours` was added in A06h
- * Workstream D, so a client running a cached bundle against a newer backend — or any caller
+ * Workstream 4, so a client running a cached bundle against a newer backend — or any caller
  * constructing this by hand — legitimately arrives without it. Treating a missing list as a hard
  * error meant the *whole panel* vanished: the adapter threw, the fetch's own `.catch` swallowed it,
  * and the sentences that had nothing to do with the chart disappeared along with it. An absent list

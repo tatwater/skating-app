@@ -427,7 +427,7 @@ skater creates from a recorded track (Phase 08) never pass through here and are 
 The rule itself lives in `@skating/core` (`meetsAreaFloor`), not here, because the ETL is not the
 only thing that applies it — see **[Pruning an already-loaded corpus](#pruning-an-already-loaded-corpus)**.
 
-**`--summary` — the durable copy of what you just watched scroll past (A06c F2).** The same counts,
+**`--summary` — the durable copy of what you just watched scroll past (A06c §6.2).** The same counts,
 plus **every** skipped feature itemized rather than only tallied, as JSON. The loader folds it into
 the `importRuns` row as the `transform` stage, which is what lets `/admin/imports` answer *which
 features did it decline, and why* without re-running the pass. `"3 skipped"` is a number an operator
@@ -472,7 +472,7 @@ failures abort, because a streak is a schema mismatch or a dead deployment rathe
 600 more doomed batches would turn a clear error into a slow one. A load that skipped any batch
 closes its run row as `failed` and exits non-zero: reaching the end is not the same as succeeding.
 
-**Run history flags (A06c F2).** Pass these and the load writes one `importRuns` row carrying the
+**Run history flags (A06c §6.2).** Pass these and the load writes one `importRuns` row carrying the
 whole path, readable at `/admin/imports`:
 
 | flag | what it adds to the row |

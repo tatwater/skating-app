@@ -4,7 +4,7 @@
 > Grew out of a founder question at the A09 kickoff and is kept out of the A09 doc on purpose — it is
 > a research program, not a gap to close.
 >
-> **Depends on:** A09 Workstream G (every bay's weather archived every day of the season — the
+> **Depends on:** A09 Workstream 7 (every bay's weather archived every day of the season — the
 > model-side record this study reads). **Feeds:** [`weather-shelter-index.md`](./weather-shelter-index.md)
 > (its validation data). **Blocks nothing.**
 
@@ -32,7 +32,7 @@ from inside the season. So within a season the record is ~3 km; across seasons i
 an archive, never pruned (D153), with daily wind fields (`maxWindKph`, `windRunKm`,
 `windSectorHours`, `freezingHoursMeanWindKph`…), and `weatherHours` holds the hourly series for
 browse cells. The gap was that **browse-tier rows are fetched lazily** — only for bays someone
-opened. A09's Workstream G closes it: one Tier A fetch per live bay per day, all season, ~128
+opened. A09's Workstream 7 closes it: one Tier A fetch per live bay per day, all season, ~128
 calls/day.
 
 **3. Can model-at-bay minus model-at-lake teach us a per-bay correction? No — and this is the part
@@ -91,7 +91,7 @@ tables, and the deliverable of the first winter is a doc with the fitted numbers
 
 ## What A09 already does for this
 
-- Workstream G: every bay's Tier A day + hours archived daily, all season, so step 3 has its
+- Workstream 7: every bay's Tier A day + hours archived daily, all season, so step 3 has its
   model side for every bay and not just the opened ones.
 - `reports.conditions.source` already distinguishes typed from autofilled, so the on-ice ground
   truth is filterable today.
@@ -106,7 +106,7 @@ tables, and the deliverable of the first winter is a doc with the fitted numbers
 
 ## Related
 
-[`phases/A09-subareas-as-places.md`](../phases/A09-subareas-as-places.md) (Workstream G) ·
+[`phases/A09-subareas-as-places.md`](../phases/A09-subareas-as-places.md) (Workstream 7) ·
 [`weather-shelter-index.md`](./weather-shelter-index.md) ·
 [`phases/A06h-weather-detail.md`](../phases/A06h-weather-detail.md) (D152, D153, D161) ·
 [`phases/A06c-expanded-body-profiles.md`](../phases/A06c-expanded-body-profiles.md) (the NWS client)

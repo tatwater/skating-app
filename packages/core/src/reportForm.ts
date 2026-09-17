@@ -1,5 +1,5 @@
 /**
- * Pure form-state ⇆ domain logic for the report create form (§E, D22–D25/D41), shared by **both**
+ * Pure form-state ⇆ domain logic for the report create form (§5, D22–D25/D41), shared by **both**
  * apps (D7/D40). Each surface's form holds the imperial strings the skater types; these helpers turn
  * that into the metric `ReportInput` the shared validator + `reports.create` consume (D25 — store
  * metric, enter/display imperial). Kept pure so the conversions and the thickness value-XOR-range

@@ -24,8 +24,8 @@ missing" is now the question that gates several deferred items, and the list bel
 | Sentry | ✅ in use | Both surfaces |
 | OpenRouteService (hosted) | ✅ in use | 60-min isochrone ceiling ⇒ the 90-min band is a radius fallback. **Also A06d's `foot-hiking` approach routing (D87)** — same key, and `elevation: true` returns ascent. ⚠ Dashboard moved to <https://account.heigit.org>; **directions ≈2,000/day & 40/min, quota-exceeded is a `403`**, and quotas are **per-endpoint** (§6) |
 | Cloudflare R2 | ✅ in use | 948 MB 5-state basemap |
-| Open-Meteo | ✅ no account | Phase 10 forecast/history; also the **elevation** endpoint (A06c A1) |
-| NWS `api.weather.gov` | ⬜ not set up | 🆓 **no account, no key.** A06c B5 alerts. Needs only a `User-Agent` header (D74) |
+| Open-Meteo | ✅ no account | Phase 10 forecast/history; also the **elevation** endpoint (A06c §1.1) |
+| NWS `api.weather.gov` | ⬜ not set up | 🆓 **no account, no key.** A06c §2.5 alerts. Needs only a `User-Agent` header (D74) |
 | Copernicus Data Space | ⬜ **needed for A06e** | 🆓 registration. **Now on the critical path** — A06e's freeze-up timeline reads Sentinel-2 + Sentinel-1 (D148). ⚠ We read the **open COGs via STAC**, not the metered Process API, so the 10,000-req/month quota is not the ceiling; AWS Earth Search is the anonymous alternative if registration bites |
 | USGS / The National Map (NAIP) | ⬜ nothing to set up | 🆓 **no account, no key, no quota** — public-domain aerial. Ships A06e's aerial reveal. ⚠ Use **`USGSNAIPPlus`** (0.3 m), **not** `USGSImageryOnly` (caps at z16) — §14b |
 | Fly.io | ⬜ **needed for A06e** | 💰 First infrastructure we operate. Granule pipeline ≈ **$4/mo** (per-job Machines, seasonal); self-hosted ORS later ≈ **$46/mo** always-warm at 8 GB. Chosen over Railway (~$81/mo for the same ORS) — D148 |
@@ -155,13 +155,13 @@ See `04-integrations.md` for per-provider integration detail.
 ### 9. Weather — 🆓 no account
 - **Open-Meteo** <https://open-meteo.com> — no key. Nothing to set up. **The single source for
   anything that feeds a calculation** (D74): forecast + `past_days` history for the D56 decay math.
-  **Also A06c B5b's short forward forecast**, at no additional cost: `weather.ts:112` already sends
+  **Also A06c §2.5b's short forward forecast**, at no additional cost: `weather.ts:112` already sends
   `forecast_days: '1'` and the window filter discards the forward hours, so a drawer-side "will it be
   snowing when I get there" strip is a parameter change and a slice, not a new call.
 - **Also Open-Meteo:** the **elevation endpoint** (`/v1/elevation`, Copernicus GLO-90 DEM, batched
   coordinates) — A06c's lake-elevation pass. Same vendor, same no-key posture, ~1,200 requests to
   cover all 116,070 centroids.
-- **NWS `api.weather.gov`** — 🆓, **no account and no API key**, US-only. Added for A06c B5 (official
+- **NWS `api.weather.gov`** — 🆓, **no account and no API key**, US-only. Added for A06c §2.5 (official
   winter-storm / ice-storm / wind-chill **alerts**, `/alerts/active?area={state}`).
   - **Setup is one header:** a `User-Agent` identifying the app (contact info encouraged). Their docs
     note a key **may be required in future** — leave a comment at the call site so that isn't a surprise.
@@ -271,8 +271,8 @@ Founder ask: record cost, benefit and setup for the providers we evaluated durin
   - **Benefit:** 10 m resolution is enough that open water vs. black ice vs. snow-covered ice is
     visually obvious. Cloud cover is the real limiter, not resolution.
   - **Do this when** we know which handful of bodies get real traffic — caching only wins if reads
-    concentrate. A06c's proving run (B3a) is what starts producing that evidence.
-  - **→ Now scoped as [A06e](./phases/A06e-satellite-imagery.md) Workstream C (D84, 2026-07-31)**, where it
+    concentrate. A06c's proving run (§2.3a) is what starts producing that evidence.
+  - **→ Now scoped as [A06e](./phases/A06e-satellite-imagery.md) Workstream 3 (D84, 2026-07-31)**, where it
     is **Tier 2** of a two-tier split. Everything above still holds — but it is no longer what gates the
     satellite toggle, because Tier 1 doesn't need an account at all:
 

@@ -1,5 +1,5 @@
 /**
- * Web-only photo helper (§E, D31). The privacy-critical `photoUploadCoord` gate (D42) is shared
+ * Web-only photo helper (§5, D31). The privacy-critical `photoUploadCoord` gate (D42) is shared
  * from `@skating/core`; this `isHeic` check is browser-specific (only browsers can't decode HEIC in
  * a `<canvas>`, so only web needs to detect it and route through `heic2any` first — native decodes
  * HEIC natively via `expo-image-manipulator`).

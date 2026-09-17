@@ -279,7 +279,7 @@ split" reports are a bay that wants a name, and the sheet says so before the cat
   and ranked by distinct reporters, because every reason here is one many people can independently
   hold about the same target. Content flags stay where they are; `isCorrectionReason` is the split.
 - **§3.2 `CorrectionRow`** on `/admin/flags`: the target resolved to a name and a deep link, the
-  context arm rendered as the thing it is (§D181), the notes, and the actions — **a lever button
+  context arm rendered as the thing it is (D181), the notes, and the actions — **a lever button
   when one exists** (*Open in editor* for name/link/posted-access/sub-area; *Hide launch*, *Move
   launch*, *Apply amenity change*, *Union with …* performing the mutation in place with a
   `ReasonDialog`) and always *Actioned* / *Dismiss* through `resolveFlag`. A lever's success closes

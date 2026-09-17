@@ -1,5 +1,5 @@
 /**
- * Write an `importRuns` row from outside TypeScript — a bash script, or a backfill (A06c F2).
+ * Write an `importRuns` row from outside TypeScript — a bash script, or a backfill (A06c §6.2).
  *
  * The `RunLogger` class assumes a process that opens a row, works, and closes it. Two things don't
  * fit that shape and both matter:

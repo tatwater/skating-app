@@ -1,5 +1,5 @@
 /**
- * Winter wind climatology (A06c A4b) — how often wind actually blows from each compass sector at a
+ * Winter wind climatology (A06c §1.4b) — how often wind actually blows from each compass sector at a
  * lake, and what that means when combined with the fetch profile.
  *
  * ## Why this exists: fetch alone names the wrong direction

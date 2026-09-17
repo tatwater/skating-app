@@ -1,5 +1,5 @@
 /**
- * ETL run history (A06c Workstream F2) — the durable home for the summary every loader used to
+ * ETL run history (A06c Workstream §6.2) — the durable home for the summary every loader used to
  * print to a terminal that scrolls.
  *
  * The write path is **internal only** and is called by the loaders under `scripts/` through

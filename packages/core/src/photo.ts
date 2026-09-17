@@ -1,5 +1,5 @@
 /**
- * Pure, privacy-critical photo decisions shared by both apps (§E, D42). The heavy pipeline glue —
+ * Pure, privacy-critical photo decisions shared by both apps (§5, D42). The heavy pipeline glue —
  * decode, EXIF read, downscale + strip, upload — is platform-specific (browser canvas/WASM on web,
  * `expo-image-picker`/`expo-image-manipulator` on native); this gate is the part that must never
  * silently regress, so it lives in `@skating/core` where it's unit-tested and reused by both.

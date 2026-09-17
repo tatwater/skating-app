@@ -693,7 +693,7 @@ export function HazardForm({
 
   /**
    * `dismissed` is threaded as an argument rather than read off state so *"no, this is a different
-   * hazard"* can file the pin in the same tap that dismisses the nudge. §B1's promise is one tap and no
+   * hazard"* can file the pin in the same tap that dismisses the nudge. §2.1's promise is one tap and no
    * argument; making the skater press Report a second time is the argument, just quieter. Passing it in
    * also sidesteps the real bug in the alternative — a `setState` isn't visible to the call that
    * follows it, so re-submitting from the handler would re-raise the nudge it just answered.

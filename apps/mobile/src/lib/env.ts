@@ -14,7 +14,7 @@ export const env = {
   convexUrl: process.env.EXPO_PUBLIC_CONVEX_URL ?? CONVEX_URL_PLACEHOLDER,
   sentryDsn: process.env.EXPO_PUBLIC_SENTRY_DSN ?? '',
   // Self-built Vermont `.pmtiles` extract later; empty ⇒ the map falls back to the Protomaps demo
-  // tiles (§F, mirrors web's VITE_PMTILES_URL). Read natively by MapLibre via the pmtiles:// scheme.
+  // tiles (§6, mirrors web's VITE_PMTILES_URL). Read natively by MapLibre via the pmtiles:// scheme.
   pmtilesUrl: process.env.EXPO_PUBLIC_PMTILES_URL ?? '',
   // The whole-planet z0–6 overview archive that sits *under* the regional one, so the map has an
   // ocean and a set of continents everywhere rather than ending in a straight line at the regional

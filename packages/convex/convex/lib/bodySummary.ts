@@ -1,5 +1,5 @@
 /**
- * Maintaining `waterBodies.summary` — the map card's denormalized counts (A06c Workstream E).
+ * Maintaining `waterBodies.summary` — the map card's denormalized counts (A06c Workstream 5).
  *
  * ## Recomputed from the window, not incremented
  *

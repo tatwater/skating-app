@@ -1,5 +1,5 @@
 /**
- * Weather-first discovery (A06h Workstream E / D159, D164, D165, D166): the join the registry walk
+ * Weather-first discovery (A06h Workstream 5 / D159, D164, D165, D166): the join the registry walk
  * writes, the digest the sweep rebuilds, and the two reads over them.
  */
 

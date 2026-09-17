@@ -38,8 +38,8 @@ with a date on it — and behind it, a season of passes you can scrub through an
 >    **zoom 16** (~1.7 m/px at our latitude), not the "~0.6 m" the doc and
 >    [`05-accounts-and-credentials.md`](../05-accounts-and-credentials.md) both claimed — and NAIP is
 >    **summer aerial photography on a 2–3 year cycle**, so no NAIP frame will ever show ice. See
->    **D147**, and §B for the 0.3 m endpoint that does exist.
-> 3. **The founder wants a scrubbable timeline of the freeze**, which promotes Workstream C from
+>    **D147**, and §2 for the 0.3 m endpoint that does exist.
+> 3. **The founder wants a scrubbable timeline of the freeze**, which promotes Workstream 3 from
 >    "gated on evidence" to shipping in the same PR. That brings the phase its own **infrastructure** —
 >    the first service we operate ourselves. See **D148**.
 >
@@ -66,7 +66,7 @@ datasheet:
 | **NAIP** via `USGSNAIPPlus` | **0.3 m** | 2–3 yrs, **summer only** | **Never** | Free, no key |
 | NAIP via `USGSImageryOnly` | z16 ≈ 1.7 m/px here | same | Never | Free, no key |
 | **Sentinel-2 L2A** | 10 m | **~2–3 days at 44°N** | Yes — extent, snow, open water | Free |
-| **Sentinel-1 SAR** | 10–20 m | ~6 days, **cloud- and night-proof** | Yes — with a caveat, see C1 | Free |
+| **Sentinel-1 SAR** | 10–20 m | ~6 days, **cloud- and night-proof** | Yes — with a caveat, see §3.1 | Free |
 | PlanetScope | ~3 m | near-daily | Yes | ~$1.80/km², 250 km² order min |
 | SkySat | 0.5 m | **tasked on request** | Yes — would show a ridge | $6–40/km², **25 km² polygon + $15,000 order min** |
 
@@ -135,9 +135,9 @@ imagery control on the browse map.
 
 ---
 
-## Workstream A — The reveal: masking, feathering, and what else changes
+## §1 — The reveal: masking, feathering, and what else changes
 
-### A1 — The mask is a union of the lake and the way in
+### §1.1 — The mask is a union of the lake and the way in
 
 > **Founder, 2026-08-21:** *"the same standard buffer distance (10 m maybe) from the polygon's edges
 > AND on both sides of the hiking trail for its whole length AND around the parking lot, all feathering
@@ -160,7 +160,7 @@ feather = buffer(solid, r₁ … rₙ) at stepped opacity, or a true alpha ramp 
   is a buffered point, not a buffered lot outline. Fine, and worth knowing before someone is surprised
   by a circle.
 
-### A2 — Three ways to clip, and which tier gets which
+### §1.2 — Three ways to clip, and which tier gets which
 
 MapLibre cannot blur a fill or vary `raster-opacity` spatially, so a soft edge has to be constructed:
 
@@ -179,7 +179,7 @@ which is documented, load-bearing, and will bite again here if anyone rounds it 
 client-side and stays tunable. Sentinel is *our own archive*, so baking a true alpha ramp in is prettier
 and makes the client nearly free — at the cost of needing an ETL re-run to change the buffer.
 
-### A3 — What else changes when imagery is revealed
+### §1.3 — What else changes when imagery is revealed
 
 | Layer | Imagery off | Imagery on | Why |
 |---|---|---|---|
@@ -192,7 +192,7 @@ and makes the client nearly free — at the cost of needing an ETL re-run to cha
 | **Skate paths** | drawn | **not drawn** | Founder call — *"different user intents."* The least contentious half: a track is a record, not a warning. |
 | **Put-ins / parking / toilets / approach** | drawn | **drawn** | They're inside the mask *by construction* — that's what the union in A1 is for |
 | **Place labels** | from the vector style | **kept** | The base map never changed, so this is free |
-| Attribution | OSM/ODbL, on-map control | **drawer credits + an on-map ⓘ** | §A4 |
+| Attribution | OSM/ODbL, on-map control | **drawer credits + an on-map ⓘ** | §1.4 |
 
 > **Hazards: the middle, and it is the better answer.** *(Founder, 2026-08-21c: "let's provide a toggle
 > when viewing imagery layers to turn hazards on/off. Then users get to choose.")*
@@ -216,7 +216,7 @@ and makes the client nearly free — at the cost of needing an ETL re-run to cha
 >
 > Skate paths need none of this — a recorded track carries no warning, so hiding it costs nothing.
 
-### A4 — Attribution: credits in the drawer, one ⓘ on the map
+### §1.4 — Attribution: credits in the drawer, one ⓘ on the map
 
 > **Founder, 2026-08-21b:** *"can we keep all attribution strings in the sidebar/drawer, instead of over
 > the map itself? Or is that against ToS"*
@@ -249,9 +249,9 @@ and suppressing it in favour of our own ⓘ has not been checked on Android.
 
 ---
 
-## Workstream B — Tier 1: the 0.3 m aerial, for reading access
+## §2 — Tier 1: the 0.3 m aerial, for reading access
 
-### B1 — The source, corrected
+### §2.1 — The source, corrected
 
 **Not `USGSImageryOnly`.** That service's `maxScale` is 9027.977411 — **ArcGIS level 16** — and z17+
 returns a hard 404 rather than upsampling. At 44.5°N, z16 is **~1.7 m/px on the ground**. Enough to see
@@ -264,14 +264,14 @@ returning a 256×256 JPEG at a z18 extent over Burlington, in which individual c
 which is the A5 use case exactly.
 
 **The trade:** dynamic rendering, no CDN. Courtesy load matters much more here than against a cached
-service, which is why §B3 exists. Keep `USGSImageryOnly` as the low-zoom floor if it proves useful;
+service, which is why §2.3 exists. Keep `USGSImageryOnly` as the low-zoom floor if it proves useful;
 `0.3 m` is what the phase is for.
 
 ⚠ **Confirm at build:** ArcGIS tile axis order is `/tile/{z}/{y}/{x}` — **y before x**. A swapped pair
 404'd in testing, but that is luck of the coordinate; elsewhere it returns tiles, just the wrong ones.
 Put the URL behind one function with a test.
 
-### B2 — The date stamp is queryable, per lake
+### §2.2 — The date stamp is queryable, per lake
 
 `USGSNAIPPlus/ImageServer/identify?…&returnCatalogItems=true` returns the **source scene** for a point.
 For Burlington: `m_4407339_ne_18_030_20230621` — a NAIP quarter-quad, `030` = 0.3 m, acquired
@@ -281,22 +281,22 @@ So *"aerial: June 2023"* is a fact we can state per body rather than a hedge. On
 refreshed when the `Year` field moves. **This filename is also the phase's proof that NAIP cannot show
 ice** — it is a photograph taken on the summer solstice.
 
-### B3 — Caching
+### §2.3 — Caching
 
 Public-domain imagery may be freely cached and redistributed, so there is no licence obstacle. **v1
 points at the service and measures**, but the trigger to put a proxy in front is much closer than it
-was for the cached tier, because every request renders. The Tier 2 pipeline (§C) is the same
+was for the cached tier, because every request renders. The Tier 2 pipeline (§3) is the same
 infrastructure, so it gets designed once.
 
 ---
 
-## Workstream C — Tier 2: the freeze-up timeline
+## §3 — Tier 2: the freeze-up timeline
 
 The half the original scoping gated on evidence. **It ships here** — founder, 2026-08-21: *"let's build
 the timeline at the same time! We can still wait until we have a proven imaging pipeline, but we
 shouldn't push our PR until it's all in."*
 
-### C1 — What the timeline honestly is
+### §3.1 — What the timeline honestly is
 
 **~2–4 usable optical frames per month per lake.** Sentinel-2's revisit at 44°N is ~2–3 days (better
 than the advertised 5, because adjacent orbital swaths overlap at latitude), but Burlington averages
@@ -325,7 +325,7 @@ A06g is worth doing and they should be captured while we're already downloading 
 - **NDSI** (green vs. SWIR) separates snow/ice from cloud, which true color cannot — both are white.
 - **SWIR generally** is why any of this works: water absorbs it almost totally, ice and snow reflect it.
 
-### C2 — The archive: one masked raster PMTiles per pass
+### §3.2 — The archive: one masked raster PMTiles per pass
 
 > **D148 — The timeline is our own archive, not a metered API. One region-wide raster PMTiles per
 > pass, pre-masked to buffered bodies.**
@@ -394,7 +394,7 @@ deletion would also take the granules we would want to re-cut *from*.
 ⚠ **Worth re-reading before anyone proposes it again**, because "own the pixels" is a phrase that
 sounds like it settles this and does not.
 
-### C3 — Ingest gate and season turnover
+### §3.3 — Ingest gate and season turnover
 
 > **D149 — Ingest is weather-gated, and the archive turns over on the first frame of the new season,
 > never on a date.**
@@ -454,7 +454,7 @@ notes on making it safe:
 That asymmetry is licence to make the gate deliberately generous — the expensive failure is a *late*
 gate that misses freeze-up, not an early one that wastes compute.
 
-### C4 — The scrubber, and the honesty that rides with it
+### §3.4 — The scrubber, and the honesty that rides with it
 
 **The date is the content, not a caption** (D84, C1 of the original doc, and D3 behind both). A
 timeline invites inference far harder than a static image does, so every frame carries its own date and
@@ -480,7 +480,7 @@ partially covers a body, not where the join falls.
 point-in-polygon test against the footprint returns one frame per date and would call a half-covering
 pass "not covered", which throws away the half we have.
 
-### C5 — The nine-season archive and the phenology it yields *(derived dark in PR 4)*
+### §3.5 — The nine-season archive and the phenology it yields *(derived dark in PR 4)*
 
 > **Founder, 2026-08-21:** hold every available pass for the region, reveal only the current season, and
 > mine the history for **ice-in / ice-out, >90% coverage, first snow, melt events** per body.
@@ -612,9 +612,9 @@ start before it exists, and both are easy to ship and hard to ship *correctly*:
 
 ---
 
-## Workstream D — The four pieces D138 moved here
+## §4 — The four pieces D138 moved here
 
-These were specced in A06c's B3, deferred wholesale, and never given a workstream. They are it.
+These were specced in A06c's §2.3, deferred wholesale, and never given a workstream. They are it.
 
 1. **The Copernicus Browser deep link** (D75), built from **`interiorPoint`** — *not* `centroid`, which
    is a `pointOnFeature` result that lands **on the shoreline** and would open the browser off the edge
@@ -637,7 +637,7 @@ here.**
 
 ---
 
-## Workstream E — The admin lake editor gets imagery, unmasked
+## §5 — The admin lake editor gets imagery, unmasked
 
 `LakeEditorMap.tsx:301` already re-exports `buildMapStyle`, and tracing a shoreline over a photograph is
 the obvious operator win. **Unmasked there** *(founder call, 2026-08-21)* — an operator correcting a
@@ -652,7 +652,7 @@ already closed, and because the founder took the second half of it at the same t
 
 ### 0a — The line ORS was already handing us
 
-A1's mask buffers the trail. **We had no trail geometry.** A06d's correction #9 dropped trail lines from
+§1.1's mask buffers the trail. **We had no trail geometry.** A06d's correction #9 dropped trail lines from
 the OSM extract on the reasoning that a successful `foot-hiking` route *is* the trail signal, so
 `amenities` carried a `trail` flag and the schema stored `approachMeters`, `approachAscentM` and
 `approachRouted` — but no line.
@@ -905,7 +905,7 @@ projection-and-feather logic, no native dependency.** The fallback was never nee
   imagery" button into the timeline card, at the founder's ask (**D146**'s UI corollary, 2026-08-25).
 - **A lake split across a granule edge shows both halves and both dates** — a case the archive's
   one-frame-per-pass shape did not anticipate, and which is a *seam*, not a picture (founder call,
-  2026-08-24). See [§C4](#a-split-body-shows-a-seam-not-one-picture-founder-call-2026-08-24--built-in-pr-3).
+  2026-08-24). See [§3.4](#a-split-body-shows-a-seam-not-one-picture-founder-call-2026-08-24--built-in-pr-3).
 - **A radar timeline holds one orbit direction**, which stops the lake bouncing between dates. That is
   a mitigation of open question 8, not a fix.
 - **Four producer defects, found by looking rather than by review.** The radar was never denoised;
@@ -920,7 +920,7 @@ projection-and-feather logic, no native dependency.** The fallback was never nee
 been, and a device is what caught the bug declarative bindings were hiding; but the search-bar slide
 and the re-derived camera padding have been through types and tests only.
 
-**PR 4 — phenology, derived dark.** §C5's window metrics over the nine-season archive. This one
+**PR 4 — phenology, derived dark.** §3.5's window metrics over the nine-season archive. This one
 *defers itself*: the metrics want eight more seasons than the first backfill produces, and that spend
 is deliberately separate. Nothing user-facing.
 
@@ -952,7 +952,7 @@ everything user-facing that reads what PR 4 derived. This is A06g's content, and
 > - **Coalescing, not a firehose.** Phase 04 built the queue and the 8pm digest for exactly this shape
 >   of event, and a regional freeze-up fires on *many* bodies within days. Reuse it; do not invent a
 >   second delivery path.
-> - **The 2–4 usable frames a month problem is sharper here than anywhere else** (§C1). "Just reached"
+> - **The 2–4 usable frames a month problem is sharper here than anywhere else** (§3.1). "Just reached"
 >   implies a transition we watched happen, and with a fortnight of cloud between frames we may only
 >   be able to say "was open on the 3rd, was frozen by the 18th". The honest phrasing has to survive
 >   that, and the frame's own date travels with the claim (C4).
@@ -995,7 +995,7 @@ frames to discard did not.
 >
 > This section argued for gating on STAC's `eo:cloud_cover`, and estimated that doing so would cut nine
 > seasons from ~6,750 jobs to ~1,000. **Both the lever and the number are dead**, for two separate
-> reasons, and the §C5 economics table now carries the measured figures.
+> reasons, and the §3.5 economics table now carries the measured figures.
 >
 > **The founder overrode the gate (2026-08-24):** *"Let's always cut & store all imagery regardless of
 > cloud cover. Then we know we have everything from Copernicus and we can rerun whatever we want on it
@@ -1021,7 +1021,7 @@ it discards only granules that contain nothing of ours, where the cloud gate dis
 lakes we care about.
 
 **The real cost lever turned out to be neither.** RAM was 82% of everything the project had spent, and
-`FLY_VM_MEMORY` was set to 8192 while the largest granule in the corpus completes in 1024. See §C5.
+`FLY_VM_MEMORY` was set to 8192 while the largest granule in the corpus completes in 1024. See §3.5.
 
 D149's freeze-to-thaw window still rides along, skipping half the year. **The "~83% I/O-bound, so drop
 to `shared-cpu-4x`→`1x`" note was wrong** — that reading came from a smoke test that fetched one band
@@ -1046,7 +1046,7 @@ irreversibly.
   restraint on *firing* NAIP requests at absurd zooms is courtesy, not a product rule.)
 - **Parent bodies only.** Search a bay, jump to it, turn imagery on, and **the whole lake reveals** —
   not the bay. Consistent with D60: a bay is a name on a lake, not a thing you select.
-- **The Copernicus deep link stays**, in the drawer beside Windy (Workstream D).
+- **The Copernicus deep link stays**, in the drawer beside Windy (Workstream 4).
 - **Dev-only; prod deferred**, like every phase since 2.5. This is the first phase with a *recurring
   bill*, and paying it to serve a deployment with no users is a different proposition. Founder: *"Fewer
   surfaces right now keeps life simpler until we're ready."*
@@ -1075,7 +1075,7 @@ irreversibly.
   ⚠ **"Best summer imagery each year" is not annual:** NAIP flies each state on a **2–3 year cycle**,
   so the refresh mechanism is watching the ImageServer's `Year` field per state and re-reading when it
   moves — not a yearly fetch.
-- **Nine seasons, derived dark in PR 4, surfaced for real in PR 5.** See §C5 and **D151**.
+- **Nine seasons, derived dark in PR 4, surfaced for real in PR 5.** See §3.5 and **D151**.
 - **Six PRs.** See [Sequencing](#sequencing--six-prs-settled-2026-08-21-resplit-2026-08-23).
 - **App-wide season turnover: the surgical version, at the founder's delegation** (*"I'll follow your
   lead"*). D63's July boundary stays as the **season key** — it is load-bearing across A05a hazards,
@@ -1253,7 +1253,7 @@ that produced the `27% ice / 65% water` reading can now answer the question that
    reveal punches the alpha channel of the fetched photograph on a canvas, so the feather is a true
    per-pixel ramp rather than a stack of stepped fills. `packages/core/src/imageryMask.ts` records the
    retirement — *"`inverseMask`, `featherRings` and the stacked-opacity arithmetic are gone"* — and with
-   them went the `fill-opacity: 0.999` gotcha §A2 warned would bite again. It cannot; there is no fill.
+   them went the `fill-opacity: 0.999` gotcha §1.2 warned would bite again. It cannot; there is no fill.
    The baked-alpha choice for Tier 2 is unaffected and is what PR 2 built.
 2. ~~**Buffer distances per tier**~~ — **measured by looking, then frozen as constants.**
    `AERIAL_MASK_METERS = { solid: 20, feather: 80 }` and `SENTINEL_MASK_METERS = { solid: 60,

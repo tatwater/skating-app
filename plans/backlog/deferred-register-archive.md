@@ -63,7 +63,7 @@ Grouped by *what* is blocking, because that's what determines when it moves.
     and only one of them is ours to say. Every public advisory carries both numbers, is past-tense with a
     reporter, and never enters the on-ice payload.
 - **Volume + calibration (buildable, but building now is speculative).** ~~Per-body map summary cards~~
-  **→ moved into A06c as Workstream E (2026-07-30, founder call)**; the density gate that held them here
+  **→ moved into A06c as Workstream 5 (2026-07-30, founder call)**; the density gate that held them here
   is retired by a design rule rather than by waiting — *a body with nothing to say gets no card at all,
   not an empty one* — so they're safe to ship into a sparse corpus. **GPS-path hazard
   deduction** (Q11 / L9 — the *legal* half cleared with the Phase 08 pivot, so what's left is path volume

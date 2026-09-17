@@ -153,7 +153,7 @@ crons.interval(
   internal.weatherArchive.maybeRefreshFilterTier,
   {},
 );
-// **The Tier-A bay append (A09 / Workstream G).** Every live bay's browse cell, days and hours, so the
+// **The Tier-A bay append (A09 / Workstream 7).** Every live bay's browse cell, days and hours, so the
 // season's record is complete for every bay whether or not anyone opened it — ~128 calls a day. Same
 // interval-with-a-gate shape as the filter append above, for the same reason.
 crons.interval(
@@ -217,7 +217,7 @@ crons.interval(
 );
 
 /**
- * The season-rollover recurrence pass (A05c / §C4) — the once-a-year job, checked daily.
+ * The season-rollover recurrence pass (A05c / §3.4) — the once-a-year job, checked daily.
  *
  * A daily tick with a month gate rather than a `crons.cron` expression, for two reasons. It keeps this
  * file uniform (every other job here is an interval), and more usefully it makes the rollover
@@ -250,7 +250,7 @@ crons.interval(
 );
 
 /**
- * Watch for the imagery season to open (A06e §C3 / D149) — the other once-a-year job, same shape.
+ * Watch for the imagery season to open (A06e §3.3 / D149) — the other once-a-year job, same shape.
  *
  * Daily from 1 October, this asks the observed weather whether freeze-up has started, and records the
  * answer once per season. It **does not** start a backfill: cutting granules spends money on
@@ -268,7 +268,7 @@ crons.interval(
 );
 
 /**
- * NWS active alerts (A06c B5). Fifteen minutes because a winter storm warning is issued on that kind
+ * NWS active alerts (A06c §2.5). Fifteen minutes because a winter storm warning is issued on that kind
  * of timescale and a skater deciding at 7am should not be reading 6am's picture — and because five
  * requests a quarter-hour is nothing to an unauthenticated public API that asks only for a
  * `User-Agent`. The sweep that retires a silent state's rows rides the same tick.

@@ -1,5 +1,5 @@
 /**
- * Per-body map summary cards (A06c Workstream E).
+ * Per-body map summary cards (A06c Workstream 5).
  *
  * The map is a field of anonymous polygons you must click one at a time. This is the compact card
  * that sits over the ones where something is happening, so a browsing skater can see *where people

@@ -1,5 +1,5 @@
 /**
- * What the freeze-up archive publishes, and which season an app should be showing (A06e §C2, D149).
+ * What the freeze-up archive publishes, and which season an app should be showing (A06e §3.2, D149).
  *
  * ## Why the producer's output type lives in core
  *
@@ -50,7 +50,7 @@ export function archiveSeasonAt(ms: number): string {
 /**
  * One frame in a season's scrubber.
  *
- * `capturedAt` and `cloudCoverPct` are **content, not metadata** (D84, §C4): a timeline invites
+ * `capturedAt` and `cloudCoverPct` are **content, not metadata** (D84, §3.4): a timeline invites
  * inference far harder than a still image does, so every frame carries its own date and its own cloud
  * caveat, and they travel with the frame rather than sitting as furniture around the control.
  */
@@ -525,7 +525,7 @@ export function bodyStatsIn(
  * > **D149 — the archive turns over on the first frame of the new season, never on a date.**
  *
  * **The most recent season that has frames.** Not the current calendar season, and not the newest
- * directory: ingest starts *looking* in September on the summit trigger (§C3), so an empty
+ * directory: ingest starts *looking* in September on the summit trigger (§3.3), so an empty
  * `winter-2027-28` exists for weeks before its first frame lands. Turning over on the directory would
  * take away a scrubber that has been serving last winter perfectly well since April and replace it
  * with nothing.

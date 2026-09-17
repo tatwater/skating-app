@@ -152,7 +152,7 @@ read-cost decision, not a call-site tweak.
 
 - **Photos:** ⚠ `lib/photoOrphans.referencedPhotoIds` decides "referenced" by scanning **only the
   uploader's own reports and hazards**, and states that as its soundness argument: *"the only rows that
-  can ever reference a photo are its uploader's own reports and hazards."* Workstream D breaks that
+  can ever reference a photo are its uploader's own reports and hazards."* Workstream 4 breaks that
   invariant, so an access-point photo becomes an orphan and is **deleted after the 30-day grace** —
   silently, by a cron, a month later. `photoReconcile` has the same shape. Extending both is
   unbudgeted work inside D, and it is the one finding here that would have shipped as data loss.
@@ -168,9 +168,9 @@ routing result rather than extracted, and the line-geometry export goes away wit
 
 ---
 
-## Workstream A — The model: parking as a first-class thing
+## §1 — The model: parking as a first-class thing
 
-### A1 — Additive, not a rewrite (D72)
+### §1.1 — Additive, not a rewrite (D72)
 
 `putIns` is load-bearing across drive-time bands, the notification fan-out, A03 deletion and the Phase 05
 feed. Renaming it to a general `accessPoints` table would put a metadata phase on the critical path of
@@ -197,14 +197,14 @@ override.
 put-in. `directionsUrl` itself doesn't change; its call sites pick a better target, and the drawer shows
 the remaining approach — *"park here, then about 400 m on foot."*
 
-### A2 — Amenity scope (founder calls, recorded so they aren't relitigated)
+### §1.2 — Amenity scope (founder calls, recorded so they aren't relitigated)
 
 - **Toilets ✅, trails ✅, parking ✅** — all three change whether a trip works.
 - **Boat ramp ✅, kept** — the ice-fishing rationale holds, and it costs nothing: it is the *same OSM tag*
   we already read to find put-ins (`leisure=slipway`), so excluding it would be extra work.
 - **Food ❌** — everyone has a maps app for restaurants, and it is the amenity most likely to be wrong.
 
-### A3 — Names come from OSM, and fall back to a derived label
+### §1.3 — Names come from OSM, and fall back to a derived label
 
 This is what makes the phase work at corpus scale rather than for the 36 lakes someone would hand-type.
 *(Written as "116k scale"; the corpus is ~25.2k post-N7 — see correction 1, which makes the argument
@@ -221,9 +221,9 @@ re-import and never drifts, and it happens to match how skaters already talk abo
 
 ---
 
-## Workstream B — Derive it all from OSM
+## §2 — Derive it all from OSM
 
-### B1 — A second `osmium tags-filter` pass
+### §2.1 — A second `osmium tags-filter` pass
 
 Over the *same* Geofabrik state extract the water pass already downloads
 (`scripts/etl/README.md`, step 2). No new source, no new download, no new account.
@@ -236,7 +236,7 @@ Over the *same* Geofabrik state extract the water pass already downloads
 | ~~`highway=path\|footway\|track`, `route=hiking`~~ | ~~`trail` amenity + approach path~~ — **dropped, correction 9**: ORS routes over these ways already, so a successful `foot-hiking` leg *is* the trail signal. Removes the line-geometry export entirely. |
 | `natural=beach`, `leisure=fishing`, `man_made=pier` | put-in candidate |
 
-### B2 — Association rules
+### §2.2 — Association rules
 
 - Put-in candidates within **~30 m** of a body's polygon boundary attach to that body. **This test runs
   server-side** (correction 3), in `matchAndImportAccessPoints`, against the A01 cell index — the
@@ -253,14 +253,14 @@ Both thresholds are tunable constants with tests, not magic numbers. They will n
 eyeballing against real output — the 250 m figure in particular is a guess that a dense state will
 falsify quickly. *(They stay code constants, per [A06c's tuning-constants note](./A06c-expanded-body-profiles.md#where-the-tuning-constants-live); if the ETL tuning loop gets tedious, the fix is a script flag, not a database row.)*
 
-### B3 — Provenance and re-import safety
+### §2.3 — Provenance and re-import safety
 
 Add an **`osm` rung to the existing `PUTIN_SOURCES`**, below `official`. Same rule as the A06a depth
 ladder and the A02 editor: **a derived access point never overwrites an operator-set one.** Derived rows
 are keyed on OSM id, so a re-run updates in place rather than duplicating — the same discipline that lets
 `importCanonical` re-run without destroying curation.
 
-### B4 — Coverage expectation, stated honestly
+### §2.4 — Coverage expectation, stated honestly
 
 OSM's coverage of parking and slipways in the rural Northeast is real but patchy. Expect solid results on
 well-known bodies and nothing on most of the corpus.
@@ -273,22 +273,22 @@ well-known bodies and nothing on most of the corpus.
 > what the pass walked past (the A07a-3 *"denominators lie by default"* rule, D137).
 
 That is fine. It is strictly more than the zero we have now — dev carries **0 put-in rows today** — it
-costs one ETL pass over a file we already download, and the gaps are exactly where Workstream C's
+costs one ETL pass over a file we already download, and the gaps are exactly where Workstream 3's
 community layer and operator edits fill in.
 **Do not** let the patchiness argue for hand-entering the rest — that is the trap P1 exists to prevent.
 
 ---
 
-## Workstream C — "Temporarily inaccessible": a community alert, not a text field (D73)
+## §3 — "Temporarily inaccessible": a community alert, not a text field (D73)
 
-### C1 — Why not a note
+### §3.1 — Why not a note
 
 The founder's instinct here is the same as P1, and it is worth spelling out because the alternative is so
 tempting: a free-text seasonal note — *"road closed south of the gate until repairs are done"* — is a
 promise to maintain something nobody will maintain. It is correct the day it's written and wrong by
 spring, and nothing in the system knows the difference.
 
-### C2 — So model it like a hazard
+### §3.2 — So model it like a hazard
 
 Reusing machinery we already built, which is most of the argument for this shape:
 
@@ -315,7 +315,7 @@ Reusing machinery we already built, which is most of the argument for this shape
 This gets the *value* of a seasonal access note with none of its rot, because freshness is enforced by
 the people who benefit from it.
 
-### C3 — What it does not do
+### §3.3 — What it does not do
 
 **An active alert annotates; it does not suppress.** A blocked launch on a lake with three others must
 not silence the lake in drive-time notifications. *(Open question 3 — recommend annotate-only,
@@ -323,7 +323,7 @@ consistent with the never-hide invariant.)*
 
 ---
 
-## Workstream D — Photos on access points
+## §4 — Photos on access points
 
 Founder ✅ — a picture of the pull-off answers *"is this the right dirt road"* better than any prose.
 
@@ -355,7 +355,7 @@ to no privacy benefit; there is no personal information in a photograph of a gra
 
 ## Out of scope
 
-- **Hand-written access descriptions** of any kind (D70/P1) — Workstream C replaces the one case that
+- **Hand-written access descriptions** of any kind (D70/P1) — Workstream 3 replaces the one case that
   mattered.
 - **Food amenities** (founder call).
 - **Renaming `putIns` to `accessPoints`** — additive only (A1), for blast-radius reasons.
@@ -969,7 +969,7 @@ posting permissions, and access photos sit *below* reports and hazards in risk, 
 - **A bad ice report is a safety problem.** A bad photo of a parking lot is wrong, not dangerous.
 - **The content is inherently low-stakes** — there is no personal information in a picture of a gravel
   pull-off, which is the same reasoning that put access photos under the D62 *redact-don't-erase* rule in
-  Workstream D rather than under deletion.
+  Workstream 4 rather than under deletion.
 - **A separate toggle would be a permission nobody ever sets differently**, and a permission that is
   always equal to another permission is a permission that will drift out of sync and confuse someone in a
   year.
@@ -977,7 +977,7 @@ posting permissions, and access photos sit *below* reports and hazards in risk, 
 > **D88 — Access-point photos ride D57's existing report/hazard posting permission. Post-hoc moderation
 > via `contentFlags`, same as every other user-supplied photo.**
 
-**Two inherited constraints do the actual protective work:** the ~3-per-access-point cap (Workstream D)
+**Two inherited constraints do the actual protective work:** the ~3-per-access-point cap (Workstream 4)
 bounds any single point's abuse surface, and minors are read-only (Phase 03), so the population that can
 upload is already the population we trust with reports.
 
@@ -1003,7 +1003,7 @@ integration.
 
 | Option | Verdict |
 |---|---|
-| **ORS `foot-hiking`** | **Chosen.** Existing account/key/client; OSM-based, so it routes the same `highway=path`/`route=hiking` ways Workstream B is already extracting; returns ascent/descent. |
+| **ORS `foot-hiking`** | **Chosen.** Existing account/key/client; OSM-based, so it routes the same `highway=path`/`route=hiking` ways Workstream 2 is already extracting; returns ascent/descent. |
 | GraphHopper | Comparable hiking profile and quality, but a second vendor, second key, second free-tier limit, for no capability we lack. |
 | Valhalla (self-hosted) | Most control, and a server to run. Not for a field computed a few thousand times, once. |
 | Mapbox Directions | `walking` profile only — tuned for sidewalks, not trails, and no hiking-specific weighting. |
@@ -1031,7 +1031,7 @@ one test asserting we don't accidentally report the round trip.
 **The Hike-In chip ✅.** Founder ask, and it belongs on **all three surfaces**, because the whole point is
 that nobody should discover this at the trailhead:
 
-- **The map summary card** ([A06c Workstream E](./A06c-expanded-body-profiles.md#workstream-e--per-body-summary-cards-on-the-map)) — so it's visible while browsing, before anyone commits.
+- **The map summary card** ([A06c Workstream 5](./A06c-expanded-body-profiles.md#workstream-e--per-body-summary-cards-on-the-map)) — so it's visible while browsing, before anyone commits.
 - **The lake drawer/detail** — with the number: *"park here, then about 1.1 km on foot, 90 m of climb."*
 - **The feed card** — the Phase 04 drive-time filter row's neighbour. A skater filtering to "within 60
   minutes" is filtering on *drive* time, and a hike-in lake inside that band is not the trip they think

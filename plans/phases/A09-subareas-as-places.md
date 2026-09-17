@@ -50,7 +50,7 @@ files. **Prod is deferred, as for every phase since A01.**
 - **Drive-time** from the bay's best put-in (`subAreaDriveCoord`), in the feed and the fan-out.
 - **The bay view** on both clients (`describeSubAreaHeader`, `windRoseCaption` on every body),
   narrowed hazards / bounties / access reads, the admin card line (`adminStatsForBody`).
-- **Workstream G**: `maybeRefreshBayTier` daily, season-gated, Tier A days + hours per live bay.
+- **Workstream 7**: `maybeRefreshBayTier` daily, season-gated, Tier A days + hours per live bay.
 
 ### Deltas from the kickoff pass — read these before extending
 
@@ -136,7 +136,7 @@ Measured on dev (`agile-bee-397`) 2026-09-16 with a one-off query:
   feature stamps ship tested but empty, and the favorites migration is trivial.
 - The bathymetry archive is on this machine: `scripts/bathymetry/.raw/` is 299 MB (ME soundings,
   VT soundings incl. Champlain, NH + MA contours, MIDAS crosswalk), `.scratch/join/lakes.json` is
-  the last join, so the depth lane (§Workstream F) can run without a refetch.
+  the last join, so the depth lane (§Workstream 6) can run without a refetch.
 
 ### What the audit found already built — corrections to the scoping table
 
@@ -192,7 +192,7 @@ Two premises of the scoping doc that do not survive contact with the code:
 
 Plus three things that came up alongside:
 
-- **Widen the weather archive's *coverage* to every bay, all season** (§Workstream G). Retention was
+- **Widen the weather archive's *coverage* to every bay, all season** (§Workstream 7). Retention was
   never the gap — `weatherDays` is kept for ever (D153) — coverage was: Tier A (bay-resolution) rows
   are fetched lazily, only for bays somebody opened.
 - **The shelter index and the station-bias study are post-alpha**, scoped in
@@ -356,7 +356,7 @@ Per bay: *"N skates this season ran past the mouth line"* (`gpsActivities.by_sub
 `export-bay-depths`"* when `geometryUpdatedAt > depthDerivedAt`, and the stored `fetchProfileM`.
 Nothing automatic.
 
-### Workstream G — every bay's weather, every day of the season
+### §7 — every bay's weather, every day of the season
 
 `bodyWeatherCells.by_bay` already lists every live bay's browse cell (~128 rows). A daily internal
 mutation, gated by the same season-open signal as Tier B (D161), fetches each bay's Tier A day
@@ -378,7 +378,7 @@ bay whether or not anyone opened it. ~128 calls/day. The consumer is the post-se
 5. `feat(n9)`: drive-time coordinate in core + the three read paths.
 6. `feat(n9)`: web + mobile bay view (heart, header, filtered lists, access, wind caption on every
    body); admin card.
-7. `feat(n9)`: Workstream G cron.
+7. `feat(n9)`: Workstream 7 cron.
 8. `docs(n9)`: built record.
 
 Estimate 5–7k lines incl. tests — under the ~8k / ~100-file bar. Local gate before the PR:

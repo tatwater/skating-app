@@ -441,7 +441,7 @@ export function HazardCapture() {
 
   /**
    * `dismissed` is an argument rather than a state read so *"no, this is a different hazard"* files the
-   * pin in the same tap that dismisses the nudge — §B1 promises one tap and no argument, and a second
+   * pin in the same tap that dismisses the nudge — §2.1 promises one tap and no argument, and a second
    * Done press is the argument, just quieter. It also avoids the real bug in the alternative: a
    * `setState` isn't visible to the call that follows it, so re-posting from the handler would re-raise
    * the nudge it just answered. On mobile that matters twice over, since this fires with a cold phone

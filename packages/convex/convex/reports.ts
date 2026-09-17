@@ -6,7 +6,7 @@
  * but the server never trusts it. **All reports are public (D13)** — there is no visibility field;
  * minors can't post at all (D41). Reads gate on **moderation only** — a block never hides a report
  * (D3, safety-first); the block set instead annotates a blocked author's line (a Phase-03 "Blocked"
- * chip, Workstream B/C) and hides comments/profiles, never a report.
+ * chip, Workstream 2/C) and hides comments/profiles, never a report.
  */
 
 import {

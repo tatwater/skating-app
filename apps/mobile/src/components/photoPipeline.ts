@@ -3,7 +3,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { exifCoord } from '../lib/photo';
 
 /**
- * Native photo-pipeline glue (§F, D31/D42) — the mobile analog of web's `photoPipeline.ts`, but much
+ * Native photo-pipeline glue (§6, D31/D42) — the mobile analog of web's `photoPipeline.ts`, but much
  * simpler: `expo-image-picker` returns EXIF (incl. GPS) directly (no `exifr`) and reads HEIC natively
  * (no `heic2any`), and `expo-image-manipulator` resizes + re-encodes to strip EXIF (no
  * `browser-image-compression`). The privacy invariant is unchanged: the coord is read from the

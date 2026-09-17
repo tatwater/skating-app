@@ -1,5 +1,5 @@
 /**
- * Derived lake-shape statistics (A06c Workstream A) — shoreline length, the long/short axis, and
+ * Derived lake-shape statistics (A06c Workstream 1) — shoreline length, the long/short axis, and
  * the directional wind-fetch profile. Pure, framework-free and dependency-free, so the ETL, a
  * Convex function and a test can all reach the same numbers.
  *
@@ -644,7 +644,7 @@ export interface LakeGeometryStats {
 }
 
 /**
- * Compute every A06c Workstream A shape stat for one body, from the **source** geometry (D85).
+ * Compute every A06c Workstream 1 shape stat for one body, from the **source** geometry (D85).
  *
  * Resilient by design: each stat is omitted rather than zeroed when its geometry is degenerate, so
  * one unusable ring costs one field instead of failing a feature — the same per-feature discipline

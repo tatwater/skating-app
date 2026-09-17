@@ -4,7 +4,7 @@ Cuts Sentinel granules down to the corpus and publishes masked raster PMTiles to
 scrubber is an archive URL swap rather than a metered API call per lake.
 
 Phase doc: [`plans/phases/A06e-satellite-imagery.md`](../../plans/phases/A06e-satellite-imagery.md) —
-**§C2 (D148)** is the decision this directory implements, and the *Settled 2026-08-21* section is
+**§3.2 (D148)** is the decision this directory implements, and the *Settled 2026-08-21* section is
 where the hosting call and its one condition live.
 
 > **Working end to end as of 2026-08-23.** A granule id in, a masked PMTiles archive and its manifest
@@ -569,7 +569,7 @@ fly secrets list --app skating-imagery
 
 > **`skating-imagery` is its own bucket, not a prefix in `skating-basemap`.** Retention differs: D149
 > turns the archive over on the first frame of a new season, and you do not want that lifecycle rule
-> anywhere near the basemap. Budget ~1.2 GB per season (§C2) — nine seasons of backfill is ~11 GB.
+> anywhere near the basemap. Budget ~1.2 GB per season (§3.2) — nine seasons of backfill is ~11 GB.
 
 ### 4. Mint a scoped token for anything non-interactive
 
@@ -668,7 +668,7 @@ If that ever stops working, the host-neutrality claim has quietly stopped being 
 
 - **Granule source.** `cut-granule.sh` defaults to AWS Earth Search (`sentinel-2-l2a`, anonymous, no
   credentials) because it needs none and `sjc` is the closest live Fly region to it. Copernicus CDSE serves both S2 and
-  S1 from one place but needs an account and sits in Europe. Sentinel-1 SAR is in scope (§C1) and is
+  S1 from one place but needs an account and sits in Europe. Sentinel-1 SAR is in scope (§3.1) and is
   *not* free on AWS in the same shape, so this may end up split by band — which the per-job `--region`
   flag already accommodates.
 - ~~**VM sizing.** `shared-cpu-4x` / 8 GB is a guess, not a measurement.~~ **Settled 2026-08-24:**

@@ -34,7 +34,7 @@ export function SubAreaSpread({ waterBodyId }: { waterBodyId: Id<'waterBodies'> 
                 ))}
               </Paragraph>
             ))}
-        {/* The sorted bay lists (Workstream E, founder call 9): the user picks the criterion, the
+        {/* The sorted bay lists (Workstream 5, founder call 9): the user picks the criterion, the
             app counts (D150). Each bay is the same `sub=` navigation the extremes are. */}
         {[spread.rankings?.coldestNights, spread.rankings?.leastSnow]
           .filter((r): r is NonNullable<typeof r> => !!r)

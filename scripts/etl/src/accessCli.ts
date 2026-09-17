@@ -10,7 +10,7 @@
  *   pnpm --filter @skating/etl access-transform --parking-radius=400  # eyeball a different radius
  *
  * Writes `.scratch/access/parking.ndjson` and `.scratch/access/put-ins.ndjson`, plus a
- * `summary.json` for the loader to fold into its `importRuns` row (A06c F2). **Two files rather than
+ * `summary.json` for the loader to fold into its `importRuns` row (A06c §6.2). **Two files rather than
  * one**, because a put-in references its lot by OSM id and the loader has to have inserted the lot
  * before it can resolve that — a mixed stream would work only until a pair straddled a batch
  * boundary, which is a bug that shows up once at scale and never in a fixture.

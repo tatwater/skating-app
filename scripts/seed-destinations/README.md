@@ -1,7 +1,7 @@
 # `@skating/seed-destinations`
 
 Matches a curated shortlist of regional skating destinations to corpus bodies and applies
-`curatedBoost` — A06c Workstream **B3a** (the proving run) and **D** (the boosts). One script, because
+`curatedBoost` — A06c Workstream **§2.3a** (the proving run) and **D** (the boosts). One script, because
 the plan specifies them together: the matching is the hard part and both outputs need it.
 
 > **Renamed from `seed-satellite`** (founder call, 2026-08-09). That name was chosen to name the
@@ -43,7 +43,7 @@ cannot judge:
 - `community` — the most-discussed bodies in the scraped community corpus.
 - `atlas` — the well-known regional destinations from the atlas survey.
 
-**The disagreement between the two lists is the signal** (Workstream D). Where they agree, confidence
+**The disagreement between the two lists is the signal** (Workstream 4). Where they agree, confidence
 is high. Where only the community talks about a spot, that is a discovery signal; where only an atlas
 lists it, it may be listed for scenery rather than for ice.
 

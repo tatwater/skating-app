@@ -357,7 +357,7 @@ async function clearFromHazards(
 }
 
 /**
- * Phase 04 — the same, for access-point attachments (A06d Workstream D).
+ * Phase 04 — the same, for access-point attachments (A06d Workstream 4).
  *
  * **Runs in both modes**, which no other clearing phase does, and the asymmetry is the policy rather
  * than an oversight. `reports` is `orphan`-only because a surviving report must not protect a departed

@@ -4,7 +4,7 @@ import { createContext, type ReactNode, useContext, useEffect, useMemo, useState
 import type { ViewportLake } from '../lib/viewportLakes';
 
 /**
- * Shared selection state for the persistent map (Phase 02a §D). The `_map` layout keeps one `MapView`
+ * Shared selection state for the persistent map (Phase 02a §4). The `_map` layout keeps one `MapView`
  * mounted under an `<Outlet />`; the detail drawers rendered into that outlet are *siblings* of the
  * map, so they push what the map should show — the highlighted body, where to fly, photo pins —
  * up through this context rather than remounting the map per navigation. The layout owns the
@@ -46,7 +46,7 @@ interface MapSelectionValue {
    */
   trackPath: LineString | null;
   setTrackPath: (path: LineString | null) => void;
-  /** The put-in pin the report form is placing (§E) — the access point → `reports.point`. */
+  /** The put-in pin the report form is placing (§5) — the access point → `reports.point`. */
   putInPin: { lat: number; lng: number } | null;
   setPutInPin: (pin: { lat: number; lng: number } | null) => void;
   /** True while the report form has armed map-tap pin placement; the next map tap sets the pin. */

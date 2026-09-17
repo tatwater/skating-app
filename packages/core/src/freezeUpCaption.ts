@@ -1,5 +1,5 @@
 /**
- * What a scrubber stop says about itself (A06e §C4, D84, D150).
+ * What a scrubber stop says about itself (A06e §3.4, D84, D150).
  *
  * ## The date is content, not a caption
  *

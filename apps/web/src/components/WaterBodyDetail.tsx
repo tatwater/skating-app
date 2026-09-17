@@ -60,7 +60,7 @@ import { WeatherPlacePicker } from './WeatherPlacePicker';
 import { WindExposure } from './WindExposure';
 
 /**
- * Water-body detail drawer content (§D, D47) for `/water/$id`. Reads `waterBodies.get`, which
+ * Water-body detail drawer content (§4, D47) for `/water/$id`. Reads `waterBodies.get`, which
  * **follows a merge to the survivor** (a stale/merged deep link silently lands on the canonical
  * lake) and distinguishes not-found (`null`) from removed/unlisted (`{ available: false }`) so each
  * gets its own friendly state instead of a blank. Shows the name, type, imperial area (D25), and

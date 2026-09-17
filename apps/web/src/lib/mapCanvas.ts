@@ -164,7 +164,7 @@ export function useMapCanvas(options: MapCanvasOptions): MapCanvas {
     // enabled — pinch-to-zoom is essential — with only its rotation half switched off.
     map.touchZoomRotate.disableRotation();
     map.keyboard.disableRotation();
-    // **Compact: the credits live behind an ⓘ rather than across the map** (A06e A4, founder ask:
+    // **Compact: the credits live behind an ⓘ rather than across the map** (A06e §1.4, founder ask:
     // *"can we keep all attribution strings in the sidebar/drawer, instead of over the map itself?"*).
     //
     // MapLibre's own compact mode *is* that affordance, and using it beats hand-rolling one for a

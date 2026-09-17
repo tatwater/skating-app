@@ -848,7 +848,7 @@ describe('gpsActivities.listTracksForBody — the D58 privacy chain', () => {
   });
 });
 
-// ── The activity_detected sweep (A08/B4 + B4a) ────────────────────────────────────────────────────
+// ── The activity_detected sweep (A08/B4 + §2.4a) ────────────────────────────────────────────────────
 
 /** Make every queued notification due and flush it — the settle window (A08 / D169), fast-forwarded. */
 async function flushAllDue(t: ReturnType<typeof convexTest>) {

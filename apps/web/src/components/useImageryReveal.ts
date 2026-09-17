@@ -168,7 +168,7 @@ export interface ImageryRevealOptions {
    */
   onPaintedChange?: (ids: readonly string[]) => void;
   /**
-   * Skip the clip and show the photograph across the whole view (Workstream E).
+   * Skip the clip and show the photograph across the whole view (Workstream 5).
    *
    * **The admin lake editor's mode, and the reason is the opposite of the skater's.** A skater is
    * looking *at* a lake, so the reveal stops where the lake does. An operator is correcting the

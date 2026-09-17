@@ -1,5 +1,5 @@
 /**
- * "Temporarily inaccessible" as a decaying community claim, not a note (A06d Workstream C / D73).
+ * "Temporarily inaccessible" as a decaying community claim, not a note (A06d Workstream 3 / D73).
  *
  * ## Why this isn't a text field
  *

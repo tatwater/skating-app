@@ -1,5 +1,5 @@
 /**
- * The access join (A06d B3 / D72, D143).
+ * The access join (A06d §2.3 / D72, D143).
  *
  * The load-bearing properties here are the two an ETL gets wrong quietly: a re-run must never undo an
  * operator's work (the source ladder, and a moderator's `hide`), and a launch must never attach to the
@@ -545,7 +545,7 @@ describe('accessPoints.listParkingForBody', () => {
   });
 });
 
-describe('access-point photos (Workstream D / D88)', () => {
+describe('access-point photos (Workstream 4 / D88)', () => {
   async function seedUploader(
     t: ReturnType<typeof convexTest>,
     subject: string,

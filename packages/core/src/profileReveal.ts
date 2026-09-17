@@ -6,7 +6,7 @@
  *
  * Nearly every part of a lake profile is built to **render nothing when there is nothing to say** —
  * the caption's clauses (C rule 3), the reference links, the two weather strips, the bathymetry
- * credit, and above all Workstream E's cards (E3) and D86's quality mark. That rule is right for
+ * credit, and above all Workstream 5's cards (E3) and D86's quality mark. That rule is right for
  * skaters and hostile to testing: on a corpus holding one report, almost every one of those surfaces
  * is invisible, and "invisible because there is no data" is indistinguishable from "invisible
  * because I broke it".

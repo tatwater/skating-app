@@ -40,8 +40,8 @@ import { Paragraph, Text, useTheme, XStack, YStack } from 'tamagui';
 import { Section } from './detailUi';
 
 /**
- * The forward forecast on a lake sheet — the mobile half of the web `ForecastPanel` (A06c B5b, the
- * seven-day planner since A06h Workstream D).
+ * The forward forecast on a lake sheet — the mobile half of the web `ForecastPanel` (A06c §2.5b, the
+ * seven-day planner since A06h Workstream 4).
  *
  * Same one fetch, same three things: the strip line, the hourly cards that open at *now*, and the
  * day cards whose tap scrolls the hours to that morning. Every sentence and number comes from

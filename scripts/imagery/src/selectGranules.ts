@@ -207,7 +207,7 @@ async function main(): Promise<void> {
     console.error(
       'usage: select-granules --from=YYYY-MM-DD --to=YYYY-MM-DD [--mission=s2|s1] [--cloud=60]',
     );
-    console.error('  the window is D149 ingest gate territory — see the phase doc §C3');
+    console.error('  the window is D149 ingest gate territory — see the phase doc §3.3');
     process.exit(64);
   }
 

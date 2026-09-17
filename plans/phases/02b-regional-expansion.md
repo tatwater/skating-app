@@ -4,8 +4,8 @@
 > All workstreams executed — see "Progress" below. The prod pass (re-run the loader + tiles + env
 > against a prod deployment) waits until prod exists.
 
-The execution runbook for **Workstream H** of [`phases/02a-map-and-reports.md`](./02a-map-and-reports.md)
-(§H) and **Phase 02b** of [`07-roadmap.md`](../07-roadmap.md). Design rationale lives in those docs
+The execution runbook for **Workstream 8** of [`phases/02a-map-and-reports.md`](./02a-map-and-reports.md)
+(§8) and **Phase 02b** of [`07-roadmap.md`](../07-roadmap.md). Design rationale lives in those docs
 and the decisions log (D5/D6/D48/D49); this doc is the *how* — the ordered ops runbook, the small
 code changes, and the tuning knobs.
 
@@ -58,8 +58,8 @@ code changes, and the tuning knobs.
 
 ## Status / prerequisites
 
-- **Runs after the mobile MVP.** F1 (online loop) shipped 2026-07-14 (PR #13); F2 (offline queue)
-  is **deferred past this** by decision (2026-07-14) — F2 is orthogonal (mobile-only draft queue),
+- **Runs after the mobile MVP.** §6.1 (online loop) shipped 2026-07-14 (PR #13); §6.2 (offline queue)
+  is **deferred past this** by decision (2026-07-14) — §6.2 is orthogonal (mobile-only draft queue),
   nothing in H depends on it, so H goes first. This branch (`phase-02b-regional-expansion`) is
   **stacked on `phase-02a-mobile-f1`**, which is stacked on `phase-02a-web`; H's PR chains behind #12 → #13.
 - **Import target: dev only.** Convex **prod is still uninitialized** (never deployed; blocked on
@@ -188,7 +188,7 @@ apply them:
   `minVisibleZoom`, re-inserts the geospatial key, writes a `moderationActions` row) — a small
   one-off internal-mutation/script pass, same shape as the Phase 01 VT seed apply.
 - **Phase 07** lifts per-body boost editing into the admin water-body surface (don't bury it in a
-  script long-term — see §H open items).
+  script long-term — see §8 open items).
 
 ## §6 — Bounds + framing widening (LAST)
 
@@ -233,7 +233,7 @@ that no wanted lake falls outside the box or south of the clip.
 
 ## Suggested commit breakdown (one PR — Phase 02b)
 
-1. **docs** — this plan + §H/README/roadmap status (+ the F1-done markers already staged).
+1. **docs** — this plan + §8/README/roadmap status (+ the F1-done markers already staged).
 2. **basemap infra** — `upload-r2.sh` + basemap README (R2 + multi-state).
 3. **etl docs** — per-state + NY-clip runbook.
 4. **bounds** — widen `NORTHEAST_MAX_BOUNDS` + framing + tests (both apps). *(Last — after you've run
@@ -276,8 +276,8 @@ that no wanted lake falls outside the box or south of the clip.
 
 ### Phase 02b — Regional expansion (Northeast skating states) ✅ Complete (dev; prod deferred) (2026-07-15)
 > **Detailed plan + runbook:** [`phases/02b-regional-expansion.md`](./02b-regional-expansion.md)
-> (was §H of the Phase 02a plan). Slotted **after the mobile online loop (F1); reordered ahead of F2**
-> (2026-07-14 — F2 is the orthogonal offline queue). It's data + infra, so it doesn't gate the
+> (was §8 of the Phase 02a plan). Slotted **after the mobile online loop (§6.1); reordered ahead of §6.2**
+> (2026-07-14 — §6.2 is the orthogonal offline queue). It's data + infra, so it doesn't gate the
 > community layer (Phase 03) — but the corpus should be region-complete before drive-time / feeds
 > (Phase 04/5) reason over it.
 >

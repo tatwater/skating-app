@@ -1,4 +1,4 @@
-# @skating/wind-climate — winter wind roses (A06c-1 / A4b)
+# @skating/wind-climate — winter wind roses (A06c-1 / §1.4b)
 
 A manual, run-on-demand ETL that gives each qualifying water body a **winter wind rose**: how often
 wind blows from each of 16 compass sectors between December and March. Like the other `scripts/`

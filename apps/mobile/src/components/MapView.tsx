@@ -122,7 +122,7 @@ import { ReturnToRegion } from './ReturnToRegion';
 import { useFreezeUpTimeline } from './useFreezeUpTimeline';
 
 /**
- * Interactive native MapLibre map — the read side of the Phase 02a loop (§F, D5/D6/D47/D49), the
+ * Interactive native MapLibre map — the read side of the Phase 02a loop (§6, D5/D6/D47/D49), the
  * mobile mirror of web's `MapView`. This is the imperative native shell (excluded from unit tests
  * like web's WebGL shell); all pure logic (style, feature/viewport transforms, framing) lives in
  * `../lib/waterMap`. It stays mounted in the `(map)` layout beside a bottom-sheet `<Slot />`, so
@@ -411,7 +411,7 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
   // on a dedicated outline layer (RN has no feature-state). Empty when signed out.
   const favorites = useQuery(api.waterBodyFavorites.listForUser, {});
 
-  // ## The freeze-up timeline (A06e §C, D148)
+  // ## The freeze-up timeline (A06e §3, D148)
   //
   // Mobile has no Tier 1 aerial — that one needs a canvas React Native does not have — so here
   // "imagery" means the archive and nothing else. One toggle per lake, per D146, and it lives on the
@@ -787,7 +787,7 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
     };
   }, [geolocateOnMount]);
 
-  // In pin-drop mode (§E) the next map tap sets the put-in pin; otherwise a tap on a water body
+  // In pin-drop mode (§5) the next map tap sets the put-in pin; otherwise a tap on a water body
   // (handled by the source's onPress below) opens its drawer. Handlers are recreated each render, so
   // they read the current `pinDropMode` directly (no ref needed, unlike web's once-bound handler).
   function onMapPress(e: NativeSyntheticEvent<PressEvent | PressEventWithFeatures>) {

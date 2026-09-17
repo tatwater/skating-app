@@ -10,13 +10,13 @@
 > **Status:** ✅ **Complete (dev; prod deferred) — 2026-07-17.** Merged as PR #18, deployed to the
 > `dev:agile-bee-…` deployment, `adminAreas` OSM import loaded, and the skate-time migration accounted
 > for (verified 2026-07-17 — see the Operational note below). All four workstreams
-> landed with tests green + lint clean across the repo: **A** `@skating/core` (`skateTime`→`skateEndTime`
+> landed with tests green + lint clean across the repo: **§1** `@skating/core` (`skateTime`→`skateEndTime`
 > rename + `skateStartTime` + `resolveSkateWindow`/`formatSkateWindow` + new `feed.ts` —
-> `formatPlaceLabel`/`formatRelativeTime`/`buildFeedCardView`, 100% coverage); **B** Convex (schema
+> `formatPlaceLabel`/`formatRelativeTime`/`buildFeedCardView`, 100% coverage); **§2** Convex (schema
 > rename + indexes + `skateStartTime`/`place`/`gpsActivities` timestamps + `adminAreas` table & second
 > spatial index for boundaries + `adminAreas.ts` import/`resolvePlaceForCoord` + `reports.create` place
 > stamp + `reports.listFeed` + `renameSkateTimeToSkateEndTime` migration + `scripts/admin-areas` OSM
-> boundary ETL, all `convex-test`ed); **C** Web (`/feed` page, `FeedCard` + component tests, tap→drawer
+> boundary ETL, all `convex-test`ed); **§3** Web (`/feed` page, `FeedCard` + component tests, tap→drawer
 > `?report=` overlay, report-form relabel + optional start/duration); **D** Mobile (feed tab FlatList +
 > pull-to-refresh + `@gorhom/bottom-sheet` detail, `FeedCard` mirror + horizontal carousel, form
 > relabel).

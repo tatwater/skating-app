@@ -210,7 +210,7 @@ export const BODY_FEATURE_TYPES = CORE_BODY_FEATURE_TYPES;
  * `accessAlert` added A06d (D73).
  *
  * The A06d kickoff found this list one short of the claim its own plan made. Access **photos** ride
- * `photo` exactly as Workstream C assumes, but an access **alert** is user-supplied free text on a
+ * `photo` exactly as Workstream 3 assumes, but an access **alert** is user-supplied free text on a
  * public surface with no target type to flag it by — so *"moderation rides the existing
  * `contentFlags`"* was true of half of it.
  */
@@ -269,7 +269,7 @@ export const MODERATION_ACTIONS = [
   'approve_waterbody',
   'reject_waterbody',
   'set_curated_boost', // adjust a body's D49 display prominence (admin, Phase 02a)
-  // Operator-entered reference links — a lake association's URL (A06c B7). The only *stored* link in
+  // Operator-entered reference links — a lake association's URL (A06c §2.7). The only *stored* link in
   // the phase; every other one in the drawer is derived from the row at render time (P2/D71), so
   // this is the only link surface with a writer to audit at all.
   'set_reference_links',
@@ -440,7 +440,7 @@ export const NOTIFICATION_PREF_DEFAULTS = CORE_NOTIFICATION_PREF_DEFAULTS;
  * same reason: an operator's correction has to survive the next ETL run or it is not worth making.
  *
  * - `derived` — clustered from visible reports' points. Approximate, recomputed on read.
- * - `osm` — a named slipway, beach, pier or fishing access from the Geofabrik extract (A06d B1).
+ * - `osm` — a named slipway, beach, pier or fishing access from the Geofabrik extract (A06d §2.1).
  * - `official` — an operator pinned it. Accurate, priority styling.
  *
  * ⚠ **`osm` scores as `derived` in D2's richness ladder, not as `official`** (D143). It is stored like
@@ -463,7 +463,7 @@ export const PARKING_SOURCES = ['osm', 'official'] as const;
 export const PARKING_STATUSES = ['visible', 'hidden'] as const;
 
 /**
- * What an access point offers, beyond existing (A06d A2, founder calls).
+ * What an access point offers, beyond existing (A06d §1.2, founder calls).
  *
  * Toilets, trails and parking all change whether a trip works. **Boat ramp is kept** for the
  * ice-fishing crossover and because it costs nothing — it is the same `leisure=slipway` tag we already
@@ -484,7 +484,7 @@ export const ACCESS_AMENITIES = ['toilets', 'trail', 'boat_ramp'] as const;
  */
 export const APPROACH_KINDS = CORE_APPROACH_KINDS;
 
-/** Satellite-link override modes (A06e Workstream D / D70), from core for the same reason. */
+/** Satellite-link override modes (A06e Workstream 4 / D70), from core for the same reason. */
 export const SATELLITE_IMAGERY_MODES = CORE_SATELLITE_IMAGERY_MODES;
 
 /** Access-alert vocabulary (A06d / D73) — all four re-exported from `@skating/core` for the same reason. */
@@ -530,7 +530,7 @@ export const POINT_EVENT_REASONS = [
 ] as const;
 
 /**
- * Which loader an `importRuns` row describes (A06c F2). One member per manual ETL under `scripts/`,
+ * Which loader an `importRuns` row describes (A06c §6.2). One member per manual ETL under `scripts/`,
  * because "how did the last import go" is a question about a *pipeline*, and the coverage of the
  * depth join is not comparable to the coverage of the wind-rose fetch.
  */

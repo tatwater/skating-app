@@ -54,7 +54,7 @@ rather than suffered:
 - **Smooth ice is specular.** Radar hitting a flat surface reflects away from the sensor, so smooth
   new ice returns **dark** in Sentinel-1 backscatter. Rough, deformed, snow-covered or ridged ice
   scatters back and returns **bright**.
-- **Calm open water is also dark**, which is exactly the confusion A06e §C1 warns about — and it is
+- **Calm open water is also dark**, which is exactly the confusion A06e §3.1 warns about — and it is
   resolvable, because **Sentinel-2 can tell ice from water** where SAR cannot. So the signature is a
   *conjunction*: **low SAR backscatter AND optical classification of ice, not water.**
 - **Freeze rate is a genuine covariate.** Ice that formed fast over still water in a cold snap is the
@@ -268,7 +268,7 @@ prompts rather than as a plan:
 - **Freeze-up must precede snow cover.** A lake reading snow/ice must have frozen at some earlier date,
   even if every frame in between was clouded — which bounds an ice-in date from the *other* direction.
 - **Snowfall without a brightening** means the snow did not stay, which is the founder's
-  "blown clear" case (§C5) and is *itself* evidence of a hard smooth surface.
+  "blown clear" case (§3.5) and is *itself* evidence of a hard smooth surface.
 - **Neighbouring lakes are a control.** Bodies within a few kilometres share weather; one behaving
   unlike its neighbours is either genuinely different (depth, flow, spring-fed) or a measurement
   artifact — and the corpus already knows depth and elevation.

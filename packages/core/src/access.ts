@@ -77,7 +77,7 @@ export const HIKE_IN_ASSERT_M = 1600;
 export const PARKING_INFER_RADIUS_M = 250;
 
 /**
- * How many photos one access point carries (A06d Workstream D).
+ * How many photos one access point carries (A06d Workstream 4).
  *
  * Three, so it answers *"is this the right dirt road"* and does not become a gallery. The cap is also
  * the abuse surface: combined with minors being read-only (Phase 03), it bounds what any single point
