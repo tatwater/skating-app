@@ -1,23 +1,16 @@
-# Gli — working notes for Claude
+# Working notes for Claude
 
-Map-first peer ice-reporting app for Nordic (wild) skating. The product is in `plans/00-vision.md`,
-every decision is a `D#` in `plans/01-decisions.md`, and the build record is `plans/07-roadmap.md`.
-This file is what has to be true in every session; it points at the record rather than repeating it.
+Decisions are `D#` in `plans/01-decisions.md`; the build record is `plans/07-roadmap.md`; naming
+and doc conventions are in `plans/README.md`. This file is only what can't be found by reading.
 
-## Invariants — every change, every phase
+## Invariants
 
-- **Safety-first, never authoritative (D3).** The app never says ice is safe, skateable, or "good to
-  go", never predicts it, and never lets a score, decay curve or classification imply it. Reports are
-  named peers' observations at a time and place. Decay is *confidence*, not safety; a stale hazard
-  never reads as "all clear". Any copy, model or feature that erodes this is wrong however well built.
-- **Reports are always public (D13); minors are read-only (D41).** A block hides a person, never
-  their safety observations. Trust is boost-only and cosmetic (D50): nobody is penalized for
-  conditions changing.
-- **Privacy by default:** `homeCoord` and raw GPS are private (D11, D58's publish-is-consent), EXIF
-  stripped and geotag opt-in (D42), profile privacy is the user's (D13).
-- **Tests land with the feature (D40)** — Vitest for logic, `fast-check` property tests for
-  safety-sensitive math, `convex-test` for functions. Metric internally, imperial on display (D25).
-  Accessibility and dark mode as UI is built (D34). US spellings in all new text.
+- **Safety-first, never authoritative (D3).** No copy, score, decay curve or classification may say
+  or imply that ice is safe, skateable, or "good to go", or predict it. Decay is *confidence*, not
+  safety; a stale hazard never reads as "all clear".
+- **Tests land with the feature (D40).** The goal is 100% coverage, relaxed only where a line
+  genuinely isn't worth a test — say so when that's the call. Vitest for logic, `fast-check` for
+  safety-sensitive math, `convex-test` for functions. US spellings in all new text.
 
 ## Starting a new phase
 
@@ -40,23 +33,18 @@ Read, in this order: `plans/README.md` (conventions), the phase doc, its `07-roa
    `roadmapShape.test.ts` enforces the shape. Record what the build found in the phase doc, not the
    roadmap. New decisions get a `D#`.
 
-## Repo mechanics that bite
+## Things that bite
 
-- **`pnpm`, never `npx`** (root `devEngines` blocks npm). Convex: `pnpm convex-dev` / `pnpm
-  convex-deploy`; the package is `packages/convex`, the mobile app `apps/mobile`.
-- **Push functions before running the app** — `convex dev --once`. Tests and commits don't deploy.
-  `convex/_generated` is committed and must stay in sync (new `convex/` files need codegen before
-  push).
+- **`pnpm`, never `npx`** — the root `devEngines` blocks npm, and the error doesn't say so.
+- **Tests and commits don't deploy.** Run `convex dev --once` before using the app against dev;
+  `convex/_generated` is committed, so new `convex/` files need codegen before a push.
 - **Prod has never been initialized.** Every "shipped" means dev. Don't `convex deploy` to prod.
-- **Convex indexes on optional fields aren't sparse**: `undefined` sorts first, so a bare `lte()`
-  range matches every row lacking the field. Field names must be ASCII. Schema changes go
-  widen → deploy → backfill → narrow.
-- **Any corpus-wide read needs a bound** — pass `marginMeters` to `listedBodiesNearCoord`; the N6d
-  load without it cost 105 GB and disabled the deployment. `waterBodies.centroid` is a point *on the
-  shoreline*, not a centroid; use `interiorPoint` for anything that must be inside the lake.
-- **Relative TS imports stay extensionless** (`moduleResolution: Bundler`). Declare every direct
-  dependency (the linker is hoisted; CI won't catch a phantom).
-- **The Convex MCP server** (`.mcp.json`) answers "what's in the table" questions — use
-  `runOneoffQuery` / `logs` instead of deploying a throwaway query.
-- **Device testing** is Android via EAS `preview` builds (standalone, not the dev client); env vars
-  live in EAS environments. Clerk sign-in on dev is email-code only.
+- **A Convex index on an optional field is not sparse** — `undefined` sorts first, so a bare
+  `lte()` range matches every row lacking the field. Schema changes go widen → deploy → backfill →
+  narrow; field names must be ASCII.
+- **Bound every corpus-wide read** — pass `marginMeters` to `listedBodiesNearCoord`; without it one
+  ETL load read 105 GB and disabled the deployment.
+- **Declare every direct dependency.** The linker is hoisted, so a phantom import works locally
+  and CI won't catch it.
+- **Device testing** is Android via EAS `preview` builds (standalone, not the dev client), with env
+  vars in EAS environments. Clerk sign-in on dev is email-code only; password can never complete.
