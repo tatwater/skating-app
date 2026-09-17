@@ -14,8 +14,8 @@ import { Badge } from './ui/badge';
  * The one sentence comes from `describeStanding`, shared with mobile, so the two clients cannot
  * explain a dormancy differently. A removal names its reason — including a landowner request
  * (founder call, 2026-09-16) — because the whole point of keeping a shelved body reachable is that the
- * skater who finds it learns *why* and can say we are wrong. The way to say so is the request path
- * (N7b PR 2); until it lands this is the explanation alone.
+ * skater who finds it learns *why* and can say we are wrong — `RequestButtons` sits directly under
+ * this and offers the asks the standing admits.
  */
 export function StandingNotice({ body }: { body: StandingInput }) {
   return <StandingNoticeView standing={standingOf(body)} />;

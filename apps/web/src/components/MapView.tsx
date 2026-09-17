@@ -104,6 +104,7 @@ import {
 import { FreezeUpScrubber } from './FreezeUpScrubber';
 import { ImageryControl } from './ImageryControl';
 import { useMapSelection } from './MapSelectionContext';
+import { AdmitPrompt } from './RequestLake';
 import { ReturnToRegion } from './ReturnToRegion';
 import { useFreezeUpFrame } from './useFreezeUpFrame';
 import { useFreezeUpSeam } from './useFreezeUpSeam';
@@ -237,6 +238,9 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
   pinDropModeRef.current = pinDropMode;
   const setPutInPinRef = useRef(setPutInPin);
   setPutInPinRef.current = setPutInPin;
+  const [admitCoord, setAdmitCoord] = useState<{ lat: number; lng: number } | null>(null);
+  const setAdmitCoordRef = useRef(setAdmitCoord);
+  setAdmitCoordRef.current = setAdmitCoord;
   const setPinDropModeRef = useRef(setPinDropMode);
   setPinDropModeRef.current = setPinDropMode;
   const hazardDropModeRef = useRef(hazardDropMode);
@@ -767,6 +771,15 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
           'circle-stroke-color': pinHalo,
           'circle-stroke-width': 2,
         },
+      });
+
+      // Right-click on water with no body (N7b PR 2 / D106): "this is skateable." The prompt
+      // resolves the coordinate itself — a dormant or removed lake under the click is reachable
+      // now and is what the click was about — so this only records where.
+      map.on('contextmenu', (e) => {
+        if (pinDropModeRef.current || hazardDropModeRef.current) return;
+        e.preventDefault();
+        setAdmitCoordRef.current({ lat: e.lngLat.lat, lng: e.lngLat.lng });
       });
 
       // A single map-click handler: in pin-drop mode (§E) the next tap sets the put-in pin; otherwise
@@ -1595,6 +1608,8 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
     // rounding or border: it is the surface now, not a card on one.
     <div className="absolute inset-0">
       <div ref={containerRef} className="h-full w-full overflow-hidden" />
+      {/* "This is skateable" — the right-click ask (N7b PR 2). */}
+      {admitCoord ? <AdmitPrompt coord={admitCoord} onClose={() => setAdmitCoord(null)} /> : null}
       <ReturnToRegion
         visible={regionOffscreen}
         onReturn={() =>

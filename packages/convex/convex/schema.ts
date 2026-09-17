@@ -25,6 +25,8 @@ import {
   PROFILE_VISIBILITIES,
   RATING_TARGET_TYPES,
   RECURRENCE_FAMILIES,
+  REQUEST_KINDS,
+  REQUEST_STATUSES,
   REVIEW_REASONS,
   SKATE_QUALITIES,
   SKY_CONDITIONS,
@@ -2502,6 +2504,84 @@ export default defineSchema({
   })
     .index('by_blocker', ['blockerId'])
     .index('by_blocked', ['blockedId']),
+
+  /**
+   * Corpus requests (N7b PR 2 / D106–D108, D179): a skater asking for a lake — to be activated,
+   * admitted from a catalogue, restored, un-ruled, or taken down — and a moderator's answer.
+   *
+   * **A request is a proposal; a moderator admits** (D107). One row per ask, never deleted: a
+   * declined request stays as the record that four people asked for the same pond rather than one
+   * unanswered tap. The requester reads the outcome on the lake's own drawer.
+   *
+   * `waterBodyId` is set for every kind but `admit`, where there is no body yet — `coord` is what the
+   * skater pointed at, and `candidate` is what the resolver found in the catalogue (the polygon a
+   * moderator approves, with its provenance). `activityId` is D108's stronger evidence: a recorded
+   * skate over the water.
+   */
+  waterBodyRequests: defineTable({
+    kind: literals(REQUEST_KINDS),
+    status: literals(REQUEST_STATUSES),
+    requesterId: v.id('profiles'),
+    /** Where the skater pointed — always stored, even when a body id resolves it, for the queue's map. */
+    coord: latLng,
+    waterBodyId: v.optional(v.id('waterBodies')),
+    activityId: v.optional(v.id('gpsActivities')),
+    /** The skater's sentence — why, or how to get in. Public to moderators only. */
+    note: v.optional(v.string()),
+    /**
+     * The resolver's answer for an `admit` (D106): the catalogue polygon and its provenance. Absent
+     * until the action has run; `resolveError` says why it could not, and `resolvedAt` says it did.
+     */
+    candidate: v.optional(
+      v.object({
+        source: v.literal('3dhp'),
+        externalId: v.string(),
+        gnisId: v.optional(v.string()),
+        name: v.string(),
+        cls: v.optional(literals(WATER_BODY_CLASSES)),
+        featureType: v.number(),
+        polygon: geoJson,
+        bbox,
+        centroid: latLng,
+        surfaceAreaSqM: v.number(),
+        serviceUrl: v.string(),
+        fetchedAt: v.number(),
+      }),
+    ),
+    resolvedAt: v.optional(v.number()),
+    resolveError: v.optional(v.string()),
+    /**
+     * `candidate.externalId`, lifted to the row so it can be indexed: two people tapping the same
+     * pond file two `admit` rows with no `waterBodyId` to group them by, and the catalogue id is the
+     * one identity they share once resolved. Written with `candidate`, never on its own.
+     */
+    candidateExternalId: v.optional(v.string()),
+    /** The moderator's decision. */
+    decidedAt: v.optional(v.number()),
+    decidedByUserId: v.optional(v.id('profiles')),
+    decisionNote: v.optional(v.string()),
+    /** For an approved `admit`: the body that was created. */
+    admittedWaterBodyId: v.optional(v.id('waterBodies')),
+    createdAt: v.number(),
+  })
+    // The moderator queue: open requests, oldest first (a request nobody answered is the worst row).
+    .index('by_status_created', ['status', 'createdAt'])
+    // The requester's own — the drawer's "you asked for this" line and the You-tab list.
+    .index('by_requester_created', ['requesterId', 'createdAt'])
+    // The per-person cap on OPEN asks: an equality on status, so a long history of decided rows
+    // cannot push an open one out of a newest-N window (Greptile, PR #63).
+    .index('by_requester_status', ['requesterId', 'status'])
+    // One person's asks on one lake — the drawer's "you asked for this" line, bounded by the
+    // person rather than by the lake's whole history (PR #63, the read audit).
+    .index('by_requester_body', ['requesterId', 'waterBodyId'])
+    // Everything asked about one lake, for its drawer and for the dedup on create. `kind` sits
+    // before `status` so the open asks of ONE kind — the sibling set a decision closes — are a
+    // contiguous range a mutation can drain page by page, not a filter over a capped page of every
+    // kind (Greptile, PR #63).
+    .index('by_water_body', ['waterBodyId', 'kind', 'status'])
+    // Every `admit` that resolved to the same catalogue feature — the sibling set a decision closes.
+    // `eq()` only: the field is optional and the index is not sparse.
+    .index('by_candidate_external_id', ['candidateExternalId', 'status']),
 
   contentFlags: defineTable({
     flaggerId: v.id('profiles'),

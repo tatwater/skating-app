@@ -290,7 +290,7 @@ export async function activateOnEvidence(
  * When no walk has ever claimed the tier the registry is empty and the sweep self-heals, so the
  * stamp is a placeholder the first walk replaces.
  */
-async function registerWeatherMembership(
+export async function registerWeatherMembership(
   ctx: MutationCtx,
   body: Doc<'waterBodies'>,
   nowMs: number,

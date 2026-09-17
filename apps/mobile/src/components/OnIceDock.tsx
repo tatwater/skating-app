@@ -380,7 +380,7 @@ function FinishedSkate({
       <Paragraph color="$foregroundMuted" fontSize={12}>
         {finished.waterBodyId
           ? 'Want to post a report? Your recorded path goes on it, so other skaters can see where the ice was good.'
-          : "We couldn't match this to a lake we know. You can add it from your track — that's the only way new water gets on the map."}
+          : "We couldn't match this to a lake we know. Once it syncs you can add it from your track on the You tab, or long-press the water on the map to ask for it."}
       </Paragraph>
       <XStack gap="$2">
         <Button

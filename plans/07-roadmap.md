@@ -17,8 +17,8 @@ it's part of the phase's own PR.
 ## Phase <token> — <title>
 <🟢|🟡|⚪|⚫> **<Complete|In progress|Scoped|Withdrawn>** <YYYY-MM-DD> · PR #n · [plan](./<doc>.md) · D# D#
 
-<One paragraph, ~120 words (up to ~180 for a big phase): what it is, why, the one or two calls that
-shaped it, ending with what a skater or operator can now do.>
+<One paragraph, ~120 words (up to ~180 for a big phase), concise and direct: what it is, why, the one or two
+calls that shaped it, ending with what a skater or operator can now do.>
 
 #### Data runs
 - **<YYYY-MM-DD> — <what ran>:** <the numbers>
@@ -574,20 +574,23 @@ lake, with the numbers the profile page needed.*
 - ⚪ **1,353 downstate NY bodies still unpurged on dev** — the map draws five whole states, the corpus stops at I-84
 
 ## Phase N7b — Corpus lifecycle and the request path
-🟡 **In progress** 2026-09-16 · PRs #61 #63 · [plan](./phase-N7b-corpus-by-request.md) · D106–D108 D176 D177 D178
+🟢 **Complete** 2026-09-16 · PRs #61 #63 · [plan](./phase-N7b-corpus-by-request.md) · D106–D108 D176–D179
 
 Split out of N7 as a product feature, not a data campaign, and widened at kickoff into the whole
 lifecycle: the 25,000-body corpus should settle toward the few hundred that are actually reached and
-skated. PR 1 gives a body a **standing** — `active` · `dormant` · `removed` · `unlisted` — derived
-from four fields by one function (D176). Only `active` is pushed (notifications, discovery, bounties,
-the weather registry, enrichment); everything reachable still draws when zoomed in, and the drawer
-says why. Evidence re-activates a machine-shelved body, while a person's dormancy, a `none` ruling
-and a removal need a person (D177); the prunes demote, never delete (D178). A seed partitions the
-stored corpus by evidence of use and a July cron shelves three idle seasons. PR 2 is the request path
-(D106–D108). *A skater can vouch a lake into the corpus, and an operator can stand one down.*
+skated. A body has a **standing** — `active` · `dormant` · `removed` · `unlisted` — derived from
+four fields by one function (D176). Only `active` is pushed (notifications, discovery, bounties, the
+weather registry, enrichment); everything reachable still draws when zoomed in, and the drawer says
+why. Evidence re-activates a machine-shelved body, while a person's dormancy, a `none` ruling and a
+removal need a person (D177); the prunes demote, never delete (D178). A seed partitions the stored
+corpus by evidence of use and a July cron shelves three idle seasons. Then requests (D179): five
+kinds by standing — activate, admit, restore, contest access, takedown — asked from the drawer or
+by long-press on unheld water, `admit` resolved live against the 3DHP catalogue, and a moderator
+queue whose approve performs the act. *A skater can vouch a lake into the corpus, and an operator
+can stand one down.*
 
 #### Owed
-- Dev deploy and the seed run (`seed-destinations`), after PR 1 merges
+- Dev deploy, the seed run (`seed-destinations`), device verification of the request flows
 
 ## Phase N8 — The notification pipeline
 🟢 **Complete** 2026-09-15 · PRs #52 #53 #55 #57 · [plan](./phase-N8-notification-pipeline.md) · D167–D174

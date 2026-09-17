@@ -47,6 +47,7 @@ import { PostedAccess } from './PostedAccess';
 import { PublicAccessSection } from './PublicAccessSection';
 import { ReferenceLinks } from './ReferenceLinks';
 import { ReportForm } from './ReportForm';
+import { RequestButtons } from './RequestLake';
 import { SeasonEmptyState, SeasonFilter, useResetBrowseSeason } from './SeasonFilter';
 import { StandingNotice } from './StandingNotice';
 import { SubAreaSpread } from './SubAreaSpread';
@@ -266,8 +267,11 @@ export function WaterBodyDetail({
             ) : null}
           </>
         )}
-        {/* Why this lake is not on the active map (N7b) — nothing on the active majority. */}
+        {/* Why this lake is not on the active map (N7b) — nothing on the active majority — and
+            the asks its standing admits (N7b PR 2): bring it back, contest, restore, or a
+            landowner's takedown. Closed while a deletion is pending, like every other composer. */}
         <StandingNotice body={result.body} />
+        {leaving ? null : <RequestButtons body={result.body} />}
         {/* The derived profile (N6c/C). Renders NOTHING — no heading, no empty section — when
             there is nothing to say, which is most of the corpus and is the correct outcome rather
             than a gap to fill with hedged filler. */}

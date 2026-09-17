@@ -6,6 +6,7 @@ import { useRouter } from 'expo-router';
 import { useState } from 'react';
 import { Button, Paragraph, Text, XStack, YStack } from 'tamagui';
 import { Section } from './detailUi';
+import { NewWaterPrompt } from './NewWaterPrompt';
 
 /**
  * Skates you recorded and never turned into a report (N6f) — the other half of the recorder's loop.
@@ -37,6 +38,8 @@ export function UnreportedSkates() {
   const setPromptState = useMutation(api.gpsActivities.setPromptState);
   const router = useRouter();
   const [busy, setBusy] = useState<string | null>(null);
+  /** The row whose "add it from your track" prompt is open (N7b PR 2 / D108). */
+  const [adding, setAdding] = useState<string | null>(null);
 
   // A skate is unreported when nothing links it to a report and the owner hasn't waved it off.
   // `linkedReportId` leads because it is the fact — `promptState` can lag a conversion that happened
@@ -93,14 +96,31 @@ export function UnreportedSkates() {
                 Not reporting this one
               </Button>
             </XStack>
-            {row.waterBodyId ? null : (
-              // The D14 case: a skate on water the corpus doesn't have. `NewWaterPrompt` is written
-              // and takes exactly this activity id, but adding a body from a track is its own lane —
-              // saying so beats a button that does nothing.
-              <Paragraph color="$foregroundMuted" fontSize={12}>
-                We couldn't match this to a lake we know, so there's nothing to report it against
-                yet.
-              </Paragraph>
+            {row.waterBodyId ? null : adding === row.activityId ? (
+              // The D14 / D108 case: a skate on water the corpus doesn't have. This is the surface
+              // the plan said to wire rather than write — the prompt takes exactly this server
+              // activity id, offers the ranked matches first (a dormant or removed lake included),
+              // and only then a track-derived body.
+              <NewWaterPrompt
+                activityId={row.activityId}
+                onResolved={(waterBodyId) => {
+                  setAdding(null);
+                  router.navigate({
+                    pathname: '/water/[id]',
+                    params: { id: waterBodyId, activity: row.activityId },
+                  });
+                }}
+                onDismiss={() => setAdding(null)}
+              />
+            ) : (
+              <YStack gap="$2">
+                <Paragraph color="$foregroundMuted" fontSize={12}>
+                  We couldn't match this to a lake we know.
+                </Paragraph>
+                <Button size="$2" variant="outlined" onPress={() => setAdding(row.activityId)}>
+                  Add it from your track
+                </Button>
+              </YStack>
             )}
           </YStack>
         ))}

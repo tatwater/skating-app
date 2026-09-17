@@ -286,6 +286,10 @@ export const MODERATION_ACTIONS = [
   'set_standing',
   'activate_body',
   'demote_body',
+  // A corpus request answered (N7b PR 2 / D107). The body-side effect writes its own row
+  // (`activate_body`, `restore`, `remove`, `set_public_access`); this one is the decision on the ask.
+  'approve_request',
+  'decline_request',
   'set_put_in', // admin placed an official put-in marker (Phase 4, decision #7)
   'resolve_flag',
   'dismiss_flag',
@@ -386,6 +390,9 @@ export const MODERATION_TARGET_TYPES = [
   'putIn',
   'parkingArea',
   'accessAlert',
+  // N7b PR 2: a corpus request, so a moderator's approve/decline is a row on the request as well as
+  // on the body it changed.
+  'waterBodyRequest',
 ] as const;
 
 /** In-app support inbox (D37). */

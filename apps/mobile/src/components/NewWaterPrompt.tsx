@@ -6,6 +6,7 @@ import {
   waterBodyDisplayName,
 } from '@skating/core';
 import { useMutation, useQuery } from 'convex/react';
+import { ConvexError } from 'convex/values';
 import { useState } from 'react';
 import { Button, Paragraph, Text, XStack, YStack } from 'tamagui';
 import { Input } from './ThemedInputs';
@@ -27,6 +28,14 @@ import { Input } from './ThemedInputs';
  * Either way the new body is auto-visible and reviewed after the fact (D37) with its dedup verdict
  * stamped — so a moderator sees it in the merge queue even when the skater was sure it was new.
  */
+function messageOf(err: unknown): string {
+  if (err instanceof ConvexError) {
+    const data = err.data as { message?: string } | string;
+    return typeof data === 'string' ? data : (data.message ?? 'Could not create this lake.');
+  }
+  return err instanceof Error ? err.message : 'Could not create this lake.';
+}
+
 export function NewWaterPrompt({
   activityId,
   onResolved,
@@ -81,7 +90,15 @@ export function NewWaterPrompt({
       });
       onResolved(id);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Could not create this lake.');
+      // `removed_water` (N7b): a takedown cannot be re-drawn around; the skate attaches to the
+      // removed body instead, which the server names.
+      const data =
+        e instanceof ConvexError ? (e.data as { code?: string; waterBodyId?: string }) : null;
+      if (data?.code === 'removed_water' && data.waterBodyId) {
+        onResolved(data.waterBodyId);
+        return;
+      }
+      setError(messageOf(e));
     } finally {
       setBusy(false);
     }
@@ -121,6 +138,13 @@ export function NewWaterPrompt({
                 <Text color="$foregroundMuted" fontSize={11}>
                   {match.centroidDistanceM} m away
                   {match.official ? ' · on the official map' : ''}
+                  {/* A shelved or removed lake is still the water they skated (N7b): attaching
+                      to it is the evidence that brings a dormant one back. */}
+                  {match.standing?.standing === 'dormant'
+                    ? ' · inactive'
+                    : match.standing?.standing === 'removed'
+                      ? ' · removed from the map'
+                      : ''}
                 </Text>
               </YStack>
             </Button>

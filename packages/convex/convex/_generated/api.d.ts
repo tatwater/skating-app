@@ -24,6 +24,7 @@ import type * as comments from "../comments.js";
 import type * as conditions from "../conditions.js";
 import type * as contentFlags from "../contentFlags.js";
 import type * as contradictions from "../contradictions.js";
+import type * as corpusRequests from "../corpusRequests.js";
 import type * as crons from "../crons.js";
 import type * as dataExport from "../dataExport.js";
 import type * as gpsActivities from "../gpsActivities.js";
@@ -126,6 +127,7 @@ declare const fullApi: ApiFromModules<{
   conditions: typeof conditions;
   contentFlags: typeof contentFlags;
   contradictions: typeof contradictions;
+  corpusRequests: typeof corpusRequests;
   crons: typeof crons;
   dataExport: typeof dataExport;
   gpsActivities: typeof gpsActivities;

@@ -41,6 +41,7 @@ import { PostedAccess } from './PostedAccess';
 import { PublicAccessSection } from './PublicAccessSection';
 import { ReferenceLinks } from './ReferenceLinks';
 import { ReportForm } from './ReportForm';
+import { RequestButtons } from './RequestLake';
 import { SeasonEmptyState, SeasonFilter, useResetBrowseSeason } from './SeasonFilter';
 import { StandingNotice } from './StandingNotice';
 import { SubAreaSpread } from './SubAreaSpread';
@@ -282,8 +283,10 @@ export function WaterBodyDetail({
                 ) : null}
               </>
             )}
-            {/* Why this lake is not on the active map (N7b) — nothing on the active majority. */}
+            {/* Why this lake is not on the active map (N7b) — nothing on the active majority — and
+                the asks its standing admits (N7b PR 2). Closed while a deletion is pending. */}
             <StandingNotice body={result.body} />
+            {leaving ? null : <RequestButtons body={result.body} />}
             {/* The derived profile (N6c/C), assembled by the same @skating/core function web calls so
                 the two surfaces cannot drift. Nothing renders when there is nothing to say. */}
             {/* The lake's caption is the lake's (its depth, its fetch); under a bay header it would

@@ -1,8 +1,9 @@
 # N7b — Corpus by request: the skater says "this is skateable", and the catalogue answers
 
-> **Status:** 🔨 **PR 1 of 2 built 2026-09-16** (branch `phase-n7b-corpus-lifecycle`, from `main`):
-> the lifecycle model — standing, transitions, the seed, the rollover, the surfaces, the docs. PR 2
-> (requests: the table, the gestures, the resolver, the moderator queue, `NewWaterPrompt`) is next.
+> **Status:** ✅ **Built 2026-09-16, two PRs** — PR 1 (`phase-n7b-corpus-lifecycle`, #61): the
+> lifecycle model — standing, transitions, the seed, the rollover, the surfaces, the docs. PR 2
+> (`phase-n7b-requests`, stacked on PR 1): requests — the table, the gestures, the resolver, the
+> moderator queue, `NewWaterPrompt`. Neither deployed to dev nor device-tested; the seed not run.
 > Split out of [`N7`](./phase-N7-unified-corpus.md) because it is a product feature across two
 > clients, not a data campaign.
 > **Depends on:** N7's `includedByRequest` field and `belongsInCorpus` predicate — **both landed
@@ -254,14 +255,34 @@ precedence, the retention arithmetic and the copy.
   notification-queue rows — behave as before and were not audited cell by cell.
 - **Mobile moderator controls.** Standing is set from the web editor, like every other lake edit.
 
-### PR 2 — requests
+### PR 2 — requests (built the same day; D179)
 
-The `waterBodyRequests` table with five kinds (`activate` · `admit` · `restore` · `contest_access` ·
-`takedown`), long-press (mobile) / right-click (web) on water with no *active* body, the drawer's
-"Request this lake" from `StandingNotice`, a Convex **action** resolving an `admit` against the live
-USGS NHD service (the plan's archive-first order is inverted — the archives need a laptop), the
-moderator queue, `NewWaterPrompt` mounted in `UnreportedSkates` with `findMatchCandidates` extended
-to dormant and removed bodies, and `create` refusing to mint over a removed body.
+**Model** (`@skating/core` `corpusRequests.ts`, `convex/corpusRequests.ts`, `waterBodyRequests`
+table): five kinds — `activate` · `admit` · `restore` · `contest_access` · `takedown` — with
+`requestKindsFor(standing)` deciding which a lake admits; `create` (one open ask per person per lake
+per kind, ten open per person; an `admit` at a point we already hold is refused with `known_water`
++ the body and its standing); `resolveAdmit` (an action: one fetch of the 3DHP waterbody layer,
+parsed by `parseCatalogueResponse` — smallest containing polygon, classified, with provenance;
+misses and outages recorded on the row, `reresolve` for a moderator); `listMineForBody`,
+`listMine`, `openCountsForBody` (public — the "3 people have asked" count); `listQueue` /
+`queueCount` (moderator); `approve` (performs the act through `activateBody` / `restore` / `remove` /
+`setPublicAccess('open')` / `admitCandidate`, closes siblings, `restore` + `takedown` take an admin) /
+`decline` (a note is required — the requester reads it). Audit: `approve_request` / `decline_request` on a
+`waterBodyRequest` target; an admitted body gets `set_included_by_request` with the service URL.
+
+**Clients:** `RequestButtons` under `StandingNotice` (both), `AdmitPrompt` on long-press (mobile,
+MapLibre RN `onLongPress`) / right-click (web, `contextmenu`) — it resolves the coordinate first and
+hands off to a lake we hold; `NewWaterPrompt` mounted in `UnreportedSkates` behind *Add it from your
+track*, its matches carrying standing, `removed_water` attaching the skate to the removed lake;
+`/admin/water/requests`. Dialog copy is `requestPrompt` in core.
+
+**Tests:** core `corpusRequests.test.ts` (10: kinds by standing, the query URL, the parser's four
+outcomes); Convex `corpusRequests.test.ts` (15: every kind's guards, the resolver record, each
+approval's effect including the admit insert and the no-twin rule, the queue, the D48 edge).
+
+**Not built:** a notification to the requester (in-app on the lake instead — see D179); a You-tab
+list of one's own `admit` asks (`listMine` exists, no surface yet); the archive-lane fallback script
+for a service outage (the lake editor's hand-draw is the fallback today).
 
 ---
 
