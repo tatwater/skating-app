@@ -1570,3 +1570,42 @@ number instead.** `.take(n)` then filter, `.take(n)` then find, `.take(n)` then 
 variations on doing in memory what the key could have done exactly. A cap is the right tool only when
 the rows past it cannot change the answer; when they can, the cap is a wrong answer with a ceiling on
 it, and the honest fix is always to make the predicate part of the key.
+
+
+---
+
+## Relocated from the roadmap (2026-09-16)
+
+*The roadmap entry for N5c as it stood before the 2026-09-16 rewrite, kept verbatim so nothing it said is lost. The roadmap now carries a one-paragraph summary; this is the long form.*
+
+**N5c — Hazard identity: one clustering primitive, two time windows.** ✅ **Built 2026-07-31, both
+halves.** The within-season half shipped as **PR #34** (clustering, nudge, pooling, consensus
+rendering, auto-merge, manual authoring, the D53 amendment and the rename); the cross-season half —
+`hazardRecurrence`, the rollover job, the operator queue and the skater advisory — is built on
+`phase-n5c-recurrence`, green across every suite, **unpushed and undeployed**. The advisory ships
+**dark** behind `RECURRENCE_ADVISORIES_PUBLIC = false`, which is the intended state: operators watch
+patterns form for two rollovers before anybody sets the public bar. Scoped 2026-07-30 —
+see [`phase-N5c-hazard-memory.md`](./phase-N5c-hazard-memory.md); decisions **D77** (one clustering
+primitive, two windows), **D78** (recurrence is history with its denominator, admin-only until a tunable
+bar), **D79** (moderators author body features directly), **D80** (duplicates are consensus: prevent,
+pool, render, merge reversibly), plus a **D53 amendment** (supersession is a backlink, not a hiding
+mechanism) and the `shallow_bay_early_thaw` → `shallow_early_thaw` rename. **Moved out of *Waiting on a
+blocker* by a founder call**, and merged at scoping with the duplicate-corroboration ask of the same day.
+
+- **Two founder asks turned out to be one problem.** *"Which hazards existed on this lake in `'24/'25`?"*
+  and *"if three people pin the same ridge, do their confirmations split?"* are the same geometric
+  judgement at two time scales. One `clusterHazards` in `@skating/core`, two callers, two tolerances —
+  because building it twice guarantees they drift, which is the D65 four-copies lesson.
+- **The corpus gate was answered, not waited out.** Dev holds **one** hazard row and the three-season gate
+  can't fire before ~2029, so the engine ships now with thin patterns **admin-only** and the skater-facing
+  advisory dark behind a constant (D78). Nothing shows a skater a one-winter coincidence; operators watch
+  patterns form and set the bar from evidence.
+- **The duplicate half has no corpus gate and pays off in the first winter.** Splitting confirmations
+  doesn't fade hazards — there's no time-based archival and the opacity floor is deliberate — but it does
+  stop the on-ice alert escalating, and it **deletes** a `ridge_crossing`, which is the one pin that
+  expires on time alone (D64).
+- **Absorbs two entries from *Volume + calibration*:** consensus rendering of clustered same-type hazards,
+  and auto-merge of very-high-confidence dedup pairs (now reversible, on the D36 tombstone pattern).
+- **Reaches a `bodyFeature` type nothing could reach before.** Recurring volatile hazards propose
+  `shallow_early_thaw` at a raised bar, checked against N6a's depth (D68/D69) — recurrence proposes the
+  flag from observation, depth checks the proposal.

@@ -2518,7 +2518,7 @@ export const pageBayBrowseCells = internalQuery({
  * browse cell was only ever fetched lazily, on the drawer-open of somebody who picked that bay — so
  * the season's record existed for the bays people looked at and not for the rest, which is
  * precisely the selection bias a post-season station study cannot work around
- * (`next-gen-weather-stations.md`, the consumer this exists for; nothing renders it in N9). ~128
+ * (`plans/backlog/weather-stations.md`, the consumer this exists for; nothing renders it in N9). ~128
  * calls a day in season, against a budget with two million spare.
  *
  * Season-gated by its caller like the filter tier; this function does what it is told, so an

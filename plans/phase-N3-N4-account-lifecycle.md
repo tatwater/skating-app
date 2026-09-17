@@ -439,3 +439,55 @@ disposable account before the alpha.
 - **A still-valid Clerk session between the tombstone and the Clerk delete** can call `upsertFromClerk`
   and get a *fresh, empty* profile. Not a leak — it's the same thing signing up again gives them, and
   the Clerk delete closes the window seconds later — so it's logged rather than guarded.
+
+
+---
+
+## Relocated from the roadmap (2026-09-16)
+
+*The roadmap entry for N3 / N4 as it stood before the 2026-09-16 rewrite, kept verbatim so nothing it said is lost. The roadmap now carries a one-paragraph summary; this is the long form.*
+
+~~**N3 / N4 — Account lifecycle + storage hygiene (D33/D62).**~~ **✅ COMPLETE on dev (2026-07-27)** —
+see [`phase-N3-N4-account-lifecycle.md`](./phase-N3-N4-account-lifecycle.md) for the design, the
+corrections to what these entries used to say, and the measured results. **The two entries are one
+phase**; the old N3 (two storage-hygiene crons, "tiny — a half-day") is a workstream inside it,
+because the lifecycle work *creates* the storage problems the crons exist to solve: an export bundle is
+a stored blob needing a TTL sweep, deletion strands a departing user's unattached photo blobs, and the
+grace window needs a finalize cron in the same family. One phase, one review surface, one test pattern.
+
+Deletion/export is a trust-and-launch requirement that touches every surface showing an author. The
+**mechanism is unblocked**; only the *policy wording* is legal-gated (L3), so build the machinery and
+leave the copy to the Q10 pass. Public content **anonymizes rather than erases** (D33/D13) — but that
+rule is no longer uniform, and **D62** says why: D33's premise ("all reports are public, so there's no
+private content to selectively remove") predates Phase 4's `homeCoord`/isochrones and Phase 8's raw GPS
+paths + OAuth tokens. Three buckets now — erase the private, anonymize the public record, and
+**keep-but-sever** published GPS tracks (kept iff linked to a visible report, which is D58's own
+publish-is-consent predicate reused).
+
+Two things this pair of entries had wrong, both corrected in the phase doc: the photo-orphan GC's
+**evidence gate already exists and has produced nothing** — Phase 7b built the `photo_orphans` metric
+*and* the `photos.by_created_at` index expressly to decide whether the cron was worth building, and it
+reads 0 on dev because dev holds **0 photos** (and 0 `weatherCache` rows, 1 report, 2 profiles); and
+the anonymized-author work is **smaller** than "everywhere" implies, since `reports`/`bounties`/
+`comments` already funnel a missing author through one `{ displayName: 'Unknown', … }` shape. What's
+*bigger* than stated: `by_clerk_user_id` and `by_username` are read with `.unique()`, so tombstone
+sentinels must be per-row-unique or the second deleted account breaks auth app-wide.
+
+Two things came out that weren't scoped: **`showPutIn` was bypassed on the report-detail map** —
+`gpsActivities.getForReport` returned the raw path to every viewer, so a skater who withheld their
+put-in had their first/last 150 m drawn publicly, despite the aggregate layer 60 lines below carefully
+clipping it (fixed here, since deletion can't respect a rule the live product doesn't); and
+**`weatherCache` growth is multiplied by N2**, which shipped the `weatherSamplePoints` writer — rows
+accrue per hour *per sample point*, not per hour per lake. Its retention argument also turned out
+stronger than "disk growth": the cache key contains the current hour bucket, so yesterday's rows are
+*unaddressable* rather than merely stale.
+
+**The bug worth carrying forward past this phase.** The finalize cron's first real tick against dev
+returned `due: 2, started: 2` on a deployment where nobody had requested deletion — it would have
+queued **every account in the app**. A Convex index on an **optional** field is *not sparse*: rows
+without the field are in it, and `undefined` sorts before every number, so a bare `lte(cutoff)` range
+matches everything. The schema comment asserting the index was "sparse in practice" was a guess wearing
+documentation's clothes. Nothing was lost — a mid-flight cancel guard, written for an entirely
+different reason, was the only thing in the way. Every other bare upper-bound range in the codebase was
+swept and is on a required field. **Tests didn't catch this; running the job against a real deployment
+did**, and the regression test was only trusted after reverting the fix and watching it fail.

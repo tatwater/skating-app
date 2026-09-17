@@ -266,3 +266,47 @@ that no wanted lake falls outside the box or south of the clip.
   data. Keep them in sync (called out in each file).
 - **ODbL attribution** unchanged — driven by the water source + always-on attribution control,
   independent of the tile host.
+
+
+---
+
+## Relocated from the roadmap (2026-09-16)
+
+*The roadmap entry for Phase 2.5 as it stood before the 2026-09-16 rewrite, kept verbatim so nothing it said is lost. The roadmap now carries a one-paragraph summary; this is the long form.*
+
+### Phase 2.5 — Regional expansion (Northeast skating states) ✅ Complete (dev; prod deferred) (2026-07-15)
+> **Detailed plan + runbook:** [`phase-2.5-regional-expansion.md`](./phase-2.5-regional-expansion.md)
+> (was §H of the Phase 2 plan). Slotted **after the mobile online loop (F1); reordered ahead of F2**
+> (2026-07-14 — F2 is the orthogonal offline queue). It's data + infra, so it doesn't gate the
+> community layer (Phase 3) — but the corpus should be region-complete before drive-time / feeds
+> (Phase 4/5) reason over it.
+>
+> **Status: ✅ mostly shipped on dev (2026-07-15)** — ~116k bodies across NY/VT/NH/ME/MA imported
+> (NY clipped downstate), a 948 MB multi-state basemap on Cloudflare R2, map bounds widened to the
+> region, a **lake name-search box** (added when the big corpus made it near-essential) in both apps,
+> and the **`curatedBoost` re-seed** (mechanism `applyCuratedBoostSeed` shipped + VT seed applied at
+> flat +0.3 — 21 bodies boosted). **Remaining:** clean per-body curation (a few bay mis-matches; add
+> the Champlain/Lake George bays OSM lacks) via the **Phase 7 admin UI**, and the prod cutover
+> (Convex prod uninitialized).
+
+Widen the pilot's **single-state Vermont** corpus + basemap to the Northeast **lake-skating** states.
+- **Region scope (decided 2026-07-14):** **NY (upstate/northern only — exclude NYC + Long Island),
+  VT, NH, ME, MA.** Deliberately **not** the whole Geofabrik "us/northeast" dump: nothing south or
+  west of NY (no NJ/PA — and CT/RI omitted too) — no lake-skating culture there, so importing them is
+  pure clutter + cost. Use **per-state Geofabrik extracts** for exactly those 5 states; **clip NY by
+  bbox** to drop the NYC/Long Island metro.
+- **Water data:** re-run the Phase 1 ETL (`scripts/etl`) per state → `importCanonical` into Convex
+  (each body scored for D49 on insert). Much bigger corpus than VT's ~9,970.
+- **Basemap tiles → Cloudflare R2 (decided 2026-07-14):** the 5-state `.pmtiles` extract (z0–14) far
+  exceeds VT's ~280 MB and **blows past the Convex free storage tier**, so the tiles move to
+  **Cloudflare R2** now (zero egress, the standard pmtiles host — the off-ramp Phase 1 already flagged).
+  The VT tiles migrate too, so all environments serve from one host. **App change is nil** — it reads
+  `VITE_PMTILES_URL` / `EXPO_PUBLIC_PMTILES_URL`, so this is an env swap.
+- **Map bounds + framing:** widen `VERMONT_MAX_BOUNDS` / `INITIAL_CENTER` + the geolocation in-region
+  gate (web + mobile, kept in sync with the tile bbox) — **only after** the water data lands, so we
+  never expose pan area with no data.
+- **`curatedBoost` re-seed:** the VT seed CSV already lists NY/NH lakes (Lake George, Dillenbeck Bay)
+  skipped for not being in the VT import — apply them once those states are in.
+- **Done:** a skater anywhere in NY (north of the metro) / VT / NH / ME / MA opens the app and sees
+  their lakes with a real basemap, served from R2.
+

@@ -196,10 +196,10 @@ Plus three things that came up alongside:
   never the gap — `weatherDays` is kept for ever (D153) — coverage was: Tier A (bay-resolution) rows
   are fetched lazily, only for bays somebody opened.
 - **The shelter index and the station-bias study are post-alpha**, scoped in
-  [`next-gen-weather-shelter-index.md`](./next-gen-weather-shelter-index.md) and
-  [`next-gen-weather-stations.md`](./next-gen-weather-stations.md). Not built here.
+  [`backlog/weather-shelter-index.md`](./backlog/weather-shelter-index.md) and
+  [`backlog/weather-stations.md`](./backlog/weather-stations.md). Not built here.
 - **US spellings everywhere**, as a separate mechanical PR *after* this phase lands — findings in
-  [`next-gen-US-spellings.md`](./next-gen-US-spellings.md). New text written for this phase uses US
+  [`features/us-spellings.md`](./features/us-spellings.md). New text written for this phase uses US
   spellings; the existing prose in this doc is left for that sweep.
 
 ### The rule, settled — to be written as **D175** in `01-decisions.md` by PR 1
@@ -362,7 +362,7 @@ Nothing automatic.
 mutation, gated by the same season-open signal as Tier B (D161), fetches each bay's Tier A day
 (`weatherDays` + `weatherHours`, the drawer's own path) so the season's record is complete for every
 bay whether or not anyone opened it. ~128 calls/day. The consumer is the post-season study in
-`next-gen-weather-stations.md`; nothing renders it in this phase.
+`backlog/weather-stations.md`; nothing renders it in this phase.
 
 ### PR breakdown (two PRs; Greptile credits are metered)
 
@@ -651,9 +651,9 @@ written down.
 
 ## Related
 
-[`next-gen-weather-shelter-index.md`](./next-gen-weather-shelter-index.md) ·
-[`next-gen-weather-stations.md`](./next-gen-weather-stations.md) ·
-[`next-gen-US-spellings.md`](./next-gen-US-spellings.md) ·
+[`backlog/weather-shelter-index.md`](./backlog/weather-shelter-index.md) ·
+[`backlog/weather-stations.md`](./backlog/weather-stations.md) ·
+[`features/us-spellings.md`](./features/us-spellings.md) ·
 [`phase-N2-lake-editor-and-subareas.md`](./phase-N2-lake-editor-and-subareas.md) ·
 [`phase-N6b-bathymetry-layer.md`](./phase-N6b-bathymetry-layer.md) ·
 [`phase-N6d-lake-access-points.md`](./phase-N6d-lake-access-points.md) ·

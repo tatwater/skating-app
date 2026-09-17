@@ -287,3 +287,63 @@ Push to the dev deployment (`convex dev --once`) + run any migration before veri
   pilot).
 - **Operator UI for official put-ins** lives in the **Phase 7** admin surface; the `putIns` data +
   `setOfficial`/`hide` mutations land here.
+
+
+---
+
+## Relocated from the roadmap (2026-09-16)
+
+*The roadmap entry for Phase 4 as it stood before the 2026-09-16 rewrite, kept verbatim so nothing it said is lost. The roadmap now carries a one-paragraph summary; this is the long form.*
+
+### Phase 4 — Drive-time + dynamic filtering ✅ Complete (dev; prod deferred) (2026-07-18)
+> **Detailed build plan:** [`phase-4-drive-time-and-filtering.md`](./phase-4-drive-time-and-filtering.md)
+> (decisions settled 2026-07-17).
+>
+> **Status: ✅ shipped on dev (2026-07-18), PR #19** — all six workstreams landed: **favorites**
+> (`waterBodyFavorites` — notify-by-default, feed boost exempt from distance, map highlight at *every*
+> zoom); **three drive-time bands** as read-time isochrone polygons on `profiles` (30/60 from hosted ORS,
+> 90 = crow-flies radius fallback; `homeCoord` stays private); the **persisted feed filter row**
+> (include-unknown by default, local-first + `feedFilterPrefs` LWW sync); the **notification coalescing
+> queue** (favorites / all-within-X₁ digest / great-within-X₂, X₂ ≥ X₁ enforced) drained by a
+> DST-correct **8pm-ET digest** that rolls up per user into one notification grouped by body; **put-ins +
+> directions** (derived from report points, drawer-only deep-link to a put-in coord); and the **mobile
+> offline read-cache** (recently-read feed + opened lakes + favorites' recent reports). **Review
+> follow-ups (2026-07-18):** consolidated per-user digest, denormalized profile `reportCount`/
+> `commentCount` (true totals, not a windowed cap), paginated per-body report lists, recency scroll
+> headers, minor photo-upload gate, and coverage/cleanup. **Push delivery is deferred** (flush lands an
+> in-app `notifications` row); self-hosted ORS (true 90-min band) and the "Recommended" filter-breaking
+> feed posts are deferred (roadmap Later / Phase 6). Prod cutover still deferred (Convex prod uninitialized).
+> **Reframed 2026-07-17:** drive-time is now a **soft, quality-weighted signal that behaves differently
+> per context** (browse vs. notify), not a hard global gate. Browse (feed) defaults *permissive* — show
+> all, filters narrow, favorites boosted; notifications default *conservative* — favorites on, distance/
+> quality opt-in.
+- **Favorites (`waterBodyFavorites`) — the strongest signal + the D13 place-based curation stand-in.**
+  Mark specific bodies as favorites: **notify by default**, **feed prominence boost** (exempt from the
+  distance filter, but still subject to quality/snow/recency filters), and **map highlight**. You
+  subscribe to *lakes*, not people.
+- **Three drive-time bands (30/60/90) as isochrone *polygons* on `profiles`** (derive band at read time;
+  **not** a per-user membership table — it balloons + goes stale). Hosted ORS caps at **60 min**, so 30/60
+  come from ORS and the **90 band is a uniform crow-flies radius fallback** (self-hosted ORS deferred —
+  see Later/deferred). `homeCoord` stays private (D11).
+- **Newsfeed dynamic filter row (persisted, offline-first):** drive radius, quality floor, thickness
+  floor, no-snow (off `surfaceTags`), ideal ice/surface types, **recency floor** + "older than N days"
+  scroll headers. **Optional-field filters include-unknown by default** (a thickness floor must not hide
+  the ~84% of reports without a reading). Filter memory = **local-first + `profiles.feedFilterPrefs`
+  server-sync** (LWW). Additive on the Phase 5 `listFeed`.
+- **Notifications = a coalescing queue, three opt-in types:** favorites (default on) · all within **X₁** ·
+  great within **X₂** (**two independent radii, X₂ ≥ X₁** — "drive farther for better ice"). "All" →
+  **once-daily 8pm-ET digest** grouped by body (corpus: ~87% of reports land before 8pm; misses are the
+  lowest-priority slice); favorites/great fire ~individually, coalesced per `(user, waterBody)` via APNs
+  `collapse-id` / Android `tag` (replace, never un-send).
+- **Map put-ins + directions:** put-in markers **derived from report points** (+ admin-set official ones,
+  Phase 7 UI), snapped to shore; per-report `showPutIn` opt-out (private property) + moderator hide.
+  **Directions deep-link from the lake detail drawer button** (never a map tap), targeting a **put-in
+  coord, not the on-water centroid**.
+- **Mobile offline read-cache** (reuse expo-sqlite): recently-read + opened-lake + favorites' reports
+  (thumbnails only) for on-ice-without-service recall (D9).
+- **Done:** feed/map/notifications scope by favorites + quality-weighted drive-time; put-ins + directions
+  on the map; filters persist; recent reports readable offline.
+- **Needs:** OpenRouteService key. Notification fan-out uses a per-user polygon scan — moved off the
+  `reports.create` write path into a scheduled paged job by N1; a reverse spatial index (removing the
+  scan entirely) is still a documented future seam.
+

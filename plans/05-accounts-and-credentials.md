@@ -19,7 +19,7 @@ missing" is now the question that gates several deferred items, and the list bel
 |---|---|---|
 | Convex (dev) | ✅ in use | **Prod deployment never initialized** — the prod cutover's first blocker |
 | Clerk (dev) | ✅ in use | Prod instance env vars are what unblock `convex deploy` to prod |
-| Vercel | ✅ in use | `SENTRY_AUTH_TOKEN` still unset ⇒ no build-time source-map upload |
+| Vercel | ✅ in use | `SENTRY_AUTH_TOKEN` set (confirmed 2026-09-16) ⇒ build-time source-map upload works |
 | Expo / EAS | ✅ in use | Dev builds; a **new dev-client build** is needed for the Phase 8 recorder |
 | Sentry | ✅ in use | Both surfaces |
 | OpenRouteService (hosted) | ✅ in use | 60-min isochrone ceiling ⇒ the 90-min band is a radius fallback. **Also N6d's `foot-hiking` approach routing (D87)** — same key, and `elevation: true` returns ascent. ⚠ Dashboard moved to <https://account.heigit.org>; **directions ≈2,000/day & 40/min, quota-exceeded is a `403`**, and quotas are **per-endpoint** (§6) |
@@ -33,7 +33,7 @@ missing" is now the question that gates several deferred items, and the list bel
 | Planet | ⬜ deliberately not set up | Quote-based. Their free catalogue duplicates Copernicus; only PlanetScope is new (§16) |
 | Apple Developer | ✅ enrolled | Per the Phase 8 doc. TestFlight distribution to the alpha crew still pending |
 | Strava API app | ✅ registered | **Callback domain not yet set** to the Convex `.site` host ⇒ no real OAuth round-trip yet |
-| Resend | ❔ unknown | Operator alerts log-and-skip until the key + verified domain exist (D38) |
+| Resend | ✅ dev, 2026-09-16 | Key + verified sending domain on dev Convex; operator alerts and N8 email send. Prod needs its own key at the cutover (D38) |
 | Google Play | ❔ unknown | $25 one-time; needed for Android distribution **and** any Health Connect review |
 | PostHog | ⬜ not set up | Deliberate (D29) — add when there's usage to measure; replay is L12-gated |
 | Garmin / COROS / Polar | ❔ unknown whether applied | **Weeks of review.** These gate the deferred watch adapters — the roadmap has said "apply now" since Phase 0 |

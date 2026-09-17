@@ -826,3 +826,37 @@ rendered `MapView` or the shell. See *Testing* for the three files that now do.
   the diff, and keep the skater suite green as the arbiter.
 - **Bundling cooldown** — 30d is the opening number, and it belongs in the control room with the chart
   that says whether it's right (repeat-flag interval distribution).
+
+
+---
+
+## Relocated from the roadmap (2026-09-16)
+
+*The roadmap entry for N2 as it stood before the 2026-09-16 rewrite, kept verbatim so nothing it said is lost. The roadmap now carries a one-paragraph summary; this is the long form.*
+
+~~**N2 — Operator surface completion + corpus curation.**~~ **✅ COMPLETE on dev (2026-07-26)** — see
+[`phase-N2-lake-editor-and-subareas.md`](./phase-N2-lake-editor-and-subareas.md) for the design, the
+seven corrections to what this entry and its own plan claimed, and the measured results.
+
+Shipped: **named sub-areas** (D60) — a bay is a region *inside* one polygon, not a lake beside it, so
+one sheet of ice keeps one set of reports, hazards, bounties, favorites and tracks while carrying the
+name skaters actually use. Full citizens: labelled on the feed card and both detail surfaces, searchable
+by alias, drawn on both clients off a third ladder-grid cell table, and targetable by a bounty. Plus the
+**per-lake editor** (D61) at `/admin/water/$id` with the camera locked to the body, the `weatherSamplePoints`
+writer that Phase 10 shipped a reader for and never a mutation, auto-flag bundling, and
+`activeBountyPostLimit`.
+
+Four things this entry had wrong, all corrected in the phase doc: "add the bays OSM lacks" was
+**unbuildable** (`waterBodies.create` is path-only) and asked for the wrong shape anyway; the five
+"bay mis-matches" were **already fixed** and the note was stale (what was actually missing was a screen
+that lists curated bodies at all); Champlain and Winnipesaukee are *not* both multi-cell giants — at
+180 km² Winnipesaukee's grid proposes one point, which is the centroid default; and the bundling fix's
+obvious form would have corrupted a 7b rollup by reopening terminal flags.
+
+Two things came out that weren't scoped: the **read walk was extracted** from `waterBodies` into
+`lib/cellScan.ts` rather than copied for the second layer, because those ~100 lines encode four
+PR-#27 corrections that a copy would drift from; and **`MapView` became a shared shell** so the editor
+and the skater map are one canvas (founder call, with the skater suite green unchanged as the price).
+
+*A worry that bodies need aliases the way sub-areas do was checked and dismissed:
+"Saranac Lake" already returns Upper, Middle and Lower, and they're genuinely three lakes.*
