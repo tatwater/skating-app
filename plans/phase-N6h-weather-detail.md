@@ -1811,3 +1811,65 @@ payload — the data is small and it is needed precisely when the network is not
    how it feels."* Comparing five lakes on *Planning* without re-selecting it four times is the
    common case. Persist for the session; revisit if it turns out people expect a fresh body to open on
    *Overview*.
+
+
+---
+
+## Relocated from the roadmap (2026-09-16)
+
+*The roadmap entry for N6h as it stood before the 2026-09-16 rewrite, kept verbatim so nothing it said is lost. The roadmap now carries a one-paragraph summary; this is the long form.*
+
+**N6h — The weather panel: a season of past days, a planning window, and radar that admits what it
+can't see.** 🚧 **Scoped 2026-09-02/03; PR 1 (#48: re-key · durable archive · past panel + hourly
+timeline · dark thickness instrument · D162/D163) merged and on dev 2026-09-10; PR 3 (#50, the
+three-tab drawer IA + sub-area weather spread) and PR 4 (#51, the seven-day planner) merged
+2026-09-11; PR 5 (Workstream E — the cold chain, the per-cell digest, the "Latest" feed and the map
+dim, D164–D166) built 2026-09-12 on dev; F (radar) remains.** Founder ask, grown out
+of a costing question — *"what is most expensive about this plan?"* — whose answer moved the design: the
+expensive half is not the data, it is **the cache key**, which today shares nothing. See
+[`phase-N6h-weather-detail.md`](./phase-N6h-weather-detail.md); decisions **D152**–**D166**. Depends on
+nothing; every seam it needs is already built.
+
+*Today the weather block is two lines: an NWS alert when one is active, and a 12-hour temperature
+range. That answers "is a storm coming" and nothing else. The question a skater actually has is
+**do I get in the car**, and it is asked against a lake whose history is invisible.*
+
+- **The cache key was the finding (D152).** `samplePointKeyFor` rounds to ~110 m, which produces
+  **24,832 distinct keys for 24,948 bodies** — one fetch per lake, no sharing — while Open-Meteo's US
+  models resolve at 3–13 km. Invisible today only because both weather actions are drawer-open-only.
+  Replaced by two keys: **Tier A `0.05° + 100 m elevation band`** (browse, on demand, ~9,500–10,500
+  keys) and **Tier B `0.1°`** (filter, corpus-wide, cron, 3,043 cells). Elevation banding measured at
+  **~1.16×**, far from the blow-up that would have forced a rethink.
+- **Past weather is a durable archive, not a cache (D153)**, and **`past_days` reaches 92 days**, so
+  the first person to open a lake in February backfills the whole season in one request — **lazy
+  backfill is not lossy.** ⚠ This **supersedes Phase 10's "never the archive API"** past the 92-day
+  horizon, which also unlocks multi-season climatology (deferred). Storage was never the constraint:
+  a Tier-B season is ~548 MB against Convex Pro's included 50 GB.
+- **Weather-first discovery is the most consequential piece (D159).** Filtering on weather makes the
+  whole corpus discoverable for the first time — today you find lakes only because somebody wrote
+  about them, so 25,000 bodies are invisible and the few with reports take all the attention. ⚠ It
+  **filters cells, then bodies**, because the naive shape is exactly what made `listInViewport`
+  read-cap-fragile at N1 and cost the N6d load 105 GB. **The feed becomes heterogeneous and is
+  renamed "Newsfeed" → "Latest"**, with an *"only show reports"* boolean for the old behaviour.
+- **Radar: resolution is not the fix (D156).** NEXRAD's failure in the Greens and Adirondacks is beam
+  geometry, and no vendor tier changes physics. MRMS fuses radars with gauges and model fields **and
+  publishes a Radar Quality Index encoding terrain blockage** — so the layer **draws where it cannot
+  see** instead of showing clear sky. Cut, don't serve (D157): the `scripts/imagery/` Fly→R2 pattern
+  costs **~$5/mo** against ~$760/yr for an always-on LibreWXR.
+- **An admin-only ice-thickness instrument, shipped dark (D160)** — the same pattern as N5c's advisory
+  and N6e's phenology. Build it **early**: `reports.iceThickness` carries a `measured` vs `estimated`
+  discriminator, so a season of paired observations is a real calibration dataset that can only be
+  collected by a season passing. ⚠ It never feeds anything, and graduating it needs its own decision.
+- **The season checker stays the trigger (D161).** Running the 3,043-cell scanner year-round is ~43%
+  of the annual free-tier budget spent mostly in July; the 25-site checker is ~365 calls a year. It
+  **starts** the scanner at the N5a boundary, and during the season reads `weatherDays` rather than
+  fetching — so it gets *cheaper*.
+- **Paying Open-Meteo is season two, with a written trigger (D158)** — $319/yr for 1M calls/month
+  collapses the two tiers into one. ⚠ **No request counter exists today**, so building one is in scope.
+- **The drawer gets three sub-tabs** — *Overview* (machine-compiled facts, incl. climatology) ·
+  *Reporting* (user-supplied, this season) · *Planning* (weather, put-ins, directions). The NWS alert
+  sits **above** the tab strip, preserving the alert > observation > prediction ordering.
+
+**Split as built:** A+B+C+G (re-key · `weatherDays` · the past panel · the admin instrument) shipped
+as PR 1 and is where the value concentrates. **H** (the drawer IA, which D turned out to need first)
+is PR 3; D+E (forecast panel · discovery) a fourth; F (radar) a fifth, depending on neither.

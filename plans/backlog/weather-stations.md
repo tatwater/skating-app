@@ -1,11 +1,11 @@
 # Next-gen — Weather stations: learning how a bay's weather really differs from its lake's
 
-> **Scoped 2026-09-16 (N9 kickoff), post-alpha, unbuilt.** Second doc in the `next-gen-*` series.
+> **Scoped 2026-09-16 (N9 kickoff), post-alpha, unbuilt.** Second doc in the backlog series.
 > Grew out of a founder question at the N9 kickoff and is kept out of the N9 doc on purpose — it is
 > a research program, not a gap to close.
 >
 > **Depends on:** N9 Workstream G (every bay's weather archived every day of the season — the
-> model-side record this study reads). **Feeds:** [`next-gen-weather-shelter-index.md`](./next-gen-weather-shelter-index.md)
+> model-side record this study reads). **Feeds:** [`weather-shelter-index.md`](./weather-shelter-index.md)
 > (its validation data). **Blocks nothing.**
 
 ---
@@ -106,7 +106,7 @@ tables, and the deliverable of the first winter is a doc with the fitted numbers
 
 ## Related
 
-[`phase-N9-subareas-as-places.md`](./phase-N9-subareas-as-places.md) (Workstream G) ·
-[`next-gen-weather-shelter-index.md`](./next-gen-weather-shelter-index.md) ·
-[`phase-N6h-weather-detail.md`](./phase-N6h-weather-detail.md) (D152, D153, D161) ·
-[`phase-N6c-expanded-lake-profiles.md`](./phase-N6c-expanded-lake-profiles.md) (the NWS client)
+[`phase-N9-subareas-as-places.md`](../phase-N9-subareas-as-places.md) (Workstream G) ·
+[`weather-shelter-index.md`](./weather-shelter-index.md) ·
+[`phase-N6h-weather-detail.md`](../phase-N6h-weather-detail.md) (D152, D153, D161) ·
+[`phase-N6c-expanded-lake-profiles.md`](../phase-N6c-expanded-lake-profiles.md) (the NWS client)

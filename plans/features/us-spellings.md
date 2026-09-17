@@ -74,4 +74,4 @@ prose; a minority in UI copy (the part that matters to a user) and README text.
 
 ## Related
 
-[`phase-N9-subareas-as-places.md`](./phase-N9-subareas-as-places.md) (where this was found)
+[`phase-N9-subareas-as-places.md`](../phase-N9-subareas-as-places.md) (where this was found)

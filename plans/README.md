@@ -5,11 +5,10 @@ open questions, and the build sequence. Read `00`–`08` top-to-bottom the first
 a reference. Decisions are numbered `D#`, open questions `Q#`, and both are cross-referenced
 throughout.
 
-> ⏳ **The layout below is the target.** The naming scheme was settled on 2026-09-16
-> ([`next-gen-phase-numbers.md`](./next-gen-phase-numbers.md)); the directory move and the renames
-> land in the next PR, after `phase-n7b-corpus-lifecycle` merges. Until then the phase docs sit
-> flat in this directory under their old names, and the crosswalk at the bottom links to them where
-> they are today.
+> ⏳ **Almost the layout below.** `backlog/`, `features/`, `research/` and `phases/00-foundations.md`
+> exist; the other phase docs still sit flat in this directory under their old names until the
+> renumbering pass ([`features/phase-numbers.md`](./features/phase-numbers.md)) lands after
+> `phase-n7b-corpus-lifecycle` merges. The crosswalk at the bottom links to them where they are today.
 
 ## Layout
 

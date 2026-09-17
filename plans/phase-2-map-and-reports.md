@@ -659,3 +659,61 @@ doc once web is proven:
   the spike so it doesn't reintroduce the wide-zoom crash it's meant to prevent.
 - **Hazard seam (Phase 9)** — don't paint the report data path into a corner that makes in-polygon
   hazard geometry hard to add later; `hazardIdsCreated` already exists in the schema, leave it be.
+
+
+---
+
+## Relocated from the roadmap (2026-09-16)
+
+*The roadmap entry for Phase 2 as it stood before the 2026-09-16 rewrite, kept verbatim so nothing it said is lost. The roadmap now carries a one-paragraph summary; this is the long form.*
+
+### Phase 2 — Map + reports (the MVP) ✅ Complete (2026-07-16)
+> **Detailed build plan:** [`phase-2-map-and-reports.md`](./phase-2-map-and-reports.md).
+> **Web first, then mobile (two PRs)** — web front-loads the shared Convex backend and proves the
+> whole data model online before the native-build + offline-capture (D30) lift. No store/dev-account
+> dependency blocks it (web ships on Vercel; mobile needs only an EAS dev build + — for physical
+> iPhones — Apple Developer enrollment, which should start now in parallel).
+>
+> **Status (web MVP): ✅ shipped (2026-07-13)** — §A–§E complete: `@skating/core` scoring/validation,
+> Convex `reports`/`photos` + D49 geospatial zoom filter + `waterBodies.get`/`setCuratedBoost`, the
+> interactive map (tap→detail, geolocation framing, deep-linkable `/water/$id` · `/report/$id`
+> drawers), and report create (multi-reading thickness, manual conditions, put-in pin, photos with
+> HEIC decode + EXIF strip + geotag opt-in). Built on shadcn/ui (Base UI).
+>
+> **Status (mobile §F1): ✅ shipped (2026-07-14, PR #13)** — native `@maplibre/maplibre-react-native`
+> map with the D49 zoom filter, `expo-location` framing, `@gorhom/bottom-sheet` drawers +
+> deep-linkable `/water/[id]` · `/report/[id]`, and the read + **online** report-create loop
+> (native `expo-image-picker`/`expo-image-manipulator` photo pipeline). Shared helpers lifted into
+> `@skating/core`.
+>
+> **Status (mobile §F2 — offline draft queue, D30): ✅ shipped (2026-07-16, dev)** — capture a
+> report with no signal and it flushes on reconnect. `@skating/core` carries the pure heart: a
+> buffered `pointInPolygon` GPS→lake resolver and a checkpointed, idempotent flush state machine
+> (transient-retry vs. permanent-park). On-device an `expo-sqlite` LRU caches recently-viewed body
+> polygons (Layer 2 — GPS auto-select offline, reused by Phase 9), plus an `expo-sqlite` +
+> `expo-file-system` draft queue with NetInfo/foreground/manual flush; `reports.create` is idempotent
+> on an additive `idempotencyKey`, and `waterBodies.resolveBodyForCoord` resolves a coord-only draft
+> at flush. Offline editing + a drafts list ship too. **Offline basemap *tiles* (F2 "Layer 3") were
+> deferred to Phase 9** (hazard pins need them; report capture doesn't). Native UI pending an emulator
+> verification pass (pure + Convex layers are tested).
+
+- MapLibre map (D6) with wintery style; home/water framing on open (D20).
+- **Zoom-scored display prominence (D49):** which bodies draw at a given zoom is a derived
+  display score (area now; popularity + admin `curatedBoost` later), decoupled from the D48
+  `listed` gate — so a small-but-beloved lake (Lake Morey) can still show at state zoom while
+  clutter drops. Phase 1 only stores `surfaceAreaSqM`; the score/threshold lands here.
+- Tap a water body → detail view (name, area, report feed by **skate time**).
+- Create + read a **report** (ice types, surface tags, coarse quality, structured
+  thickness, photos, conditions) — always public (D13, no visibility field) and
+  **offline-capable** (D9/D30), with **client-side image optimization + EXIF stripping**
+  on upload (D31/D42).
+- **Photo geotag opt-in** (D42): default off; if on, photos pin at their coord within
+  the water body.
+- **Reports are always public** (D13) — no per-report visibility field at all. Minors are
+  **read-only** (can't post; D41). *(The Phase 2 web/mobile MVP shipped with a 2-level visibility
+  selector; it was removed in the D13 revision — reports carry no visibility now.)*
+- *(User-created water bodies + dedup **moved to Phase 8**, decided 2026-07-13 — the good version is
+  GPS-path-backed, and the Vermont OSM corpus already covers the alpha. See Phase 8.)*
+- **Done:** friends can post and read reports on real lakes. *This is the usable MVP.*
+- Needs: MapLibre + tiles (Protomaps), Convex file storage.
+

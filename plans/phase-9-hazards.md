@@ -613,3 +613,80 @@ into **D52** ([`01-decisions.md`](./01-decisions.md)) and the schema
    not heal on cold; ridges escalate in thaws) + a snow-lowers-confidence rule.
 
 Still no code assertion of safety (D3) — the harvested lakeice vocabulary powers the honest copy layer.
+
+
+---
+
+## Relocated from the roadmap (2026-09-16)
+
+*The roadmap entry for Phase 9 as it stood before the 2026-09-16 rewrite, kept verbatim so nothing it said is lost. The roadmap now carries a one-paragraph summary; this is the long form.*
+
+### Phase 9 — Hazards ✅ Complete (dev; prod deferred) (2026-07-22)
+> **Detailed build plan:** [`phase-9-hazards.md`](./phase-9-hazards.md) (decisions settled 2026-07-18;
+> **D51–D55** — D55 added at build kickoff: on-ice hazards auto-bundle into the skater's later report).
+> Ship order within the **single PR**: online-first commits (authoring + lifecycle + render +
+> client-side on-ice alerts) → offline commit (hazard/confirmation draft-queue reuse) → PR. The
+> **Layer-3 offline basemap tile-pack** that was originally sequenced into the offline commit was
+> **dropped from this phase** — it's a native spike that needs a device build, and the on-ice flow
+> already degrades correctly without it (see `phase-9-hazards.md` → *Layer-3 offline basemap tile-pack —
+> spike findings*).
+- **Authoring — geometry-per-type, not freeform-by-default (D51).** Most people can't hand-draw an
+  accurate blob on a phone from what they see on the ice, so the primitive matches the hazard's shape:
+  **point + adjustable radius** (default — `open_water`, `thin_ice`, `overflow_slush`, `drilled_hole`,
+  `shell_area`, `spring_current`, and the holes/zones), **polyline** (`pressure_ridge`, `ice_heave`,
+  `wet_crack`), **polygon** (opt-in "advanced" — **renders + stores but is not authorable in v1**; the
+  vertex-dragging editor was deferred at build kickoff, call 5). The type keys shipped as **16 canonical
+  keys**: build-kickoff call 2 collapsed the slash-pairs (`open_water` absorbs `lead`, `ice_heave`
+  absorbs `buckling`, `spring_current` replaces both `inlet_outlet_current` and `spring`) so
+  `Record<HazardType, HazardDecay>` typechecks against the research table, and the 2026-07-21 research
+  pass **added seven types**: volatile holes `drain_hole` / `wind_hole` / `slush_hole`, the
+  `thawed_rotten` zone (the #1 fatality cause), the persistent natural holes `gas_hole` / `reef_hole`,
+  and the `ridge_crossing` passage marker. Rendered **fuzzy + advisory** ("reported *around here*"),
+  never a surveyed boundary (D3). Two paths — **standalone** quick-flag and **in-report**
+  (`hazardIdsCreated[]`) — on **both web and mobile**. Full 16-key table + labels in `06-data-model.md`.
+- **Lifecycle — per-type decay + three-tier healing confirmation (D52, extends D15).** Decay rate is
+  per hazard type (Tier A volatile 24/72h → Tier D permanent 14d/45d; tunable, admin-editable Phase 7).
+  Confirmations are **"still here" / "healing but unsafe" / "fully healed & safe"** — only the last
+  counts toward removal (2 independent, tunable); "healing but unsafe" **keeps the pin** so future
+  skaters can read the healing ice. Triggered opportunistically (app-open nearby, report flow, post-hoc
+  GPS path — D12/D15). A decayed open-water hazard never reads as "all clear" (D3).
+- **Known seasonal body features (D53).** Springs/current, constrictions, bridges/narrows, and
+  ridges that reform annually graduate into a persistent **`bodyFeatures`** entity — always-shown, no
+  decay, no re-marking. v1 ships schema + rendering; promotion/demotion is an **admin action** (Phase 7).
+- **On-ice alerts — client-side, D12-clean (D54).** The server only **syncs hazard data** to devices
+  that care about a lake; each phone evaluates its **own** GPS against cached hazards. **Layer 0** silent
+  cache sync + **Layer 1** on-ice proximity alert where the confirm-gate *is* the confirmation mechanism
+  (unconfirmed → soft "can you confirm?"; ≥1 independent confirm → "⚠ hazard ahead") ship in v1. Because
+  hazards are cached on-device, alerts fire **with no cell signal**. **Layer 2** (directional
+  "hazard ahead" 30–60s out via an opt-in live-position "on-ice mode" — a conscious safety exception to
+  D12) and **server-push-to-a-sleeping-phone** are **deferred/designed-for**.
+- **Deferred, designed-for:** non-destructive **consensus rendering** (cluster same-type hazards, keep
+  the rows) + **GPS negative-evidence** (Q11 — tracks through a hazard nudge its *confidence*, never
+  auto-clear it). Both post-density / Phase 8+.
+- **Done:** hazards are drawn (right primitive per type), age per type, can be confirmed via the
+  three-tier vote / cleared; permanent body features persist without re-marking; skaters on that ice get
+  a client-local alert (offline-capable) gated behind one confirmation.
+- **Offline hazard capture — inherited from Phase 2 F2 (decided 2026-07-15).** Hazards are drawn
+  **on the ice, often offline**, so Phase 9 reuses the Phase 2 F2 offline substrate:
+  - **The offline body-reference cache** (F2 "Layer 2" — `@skating/core` buffered
+    `pointInPolygon` auto-select + an on-device LRU cache of recently-viewed body polygons)
+    is built in F2 as a **standalone, reusable module** *specifically so hazard capture reuses
+    it* — GPS + cached polygon tells the offline app which lake the skater is on without a
+    network round-trip.
+  - **Offline basemap tiles (F2 "Layer 3") were deferred here from Phase 2 F2 (decided
+    2026-07-15) — then dropped from Phase 9 at build time (2026-07-21).** F2's report capture
+    needs only *which lake* (the body cache) + GPS, so it ships with **no offline basemap** and
+    degrades the put-in pin to "drop at my current GPS location." Hazards want the same offline
+    basemap *ideally* — dropping an accurate pin is easier with the lake polygon as reference — but
+    the tile-pack turned out to be a real native spike (does `@maplibre/maplibre-react-native`'s
+    offline-pack API crawl our `pmtiles://` range source, or must we ship an on-device
+    mini-`.pmtiles`?) that **can't be resolved without a device build**, which the rest of the native
+    Phase 9 UI is also waiting on. It was **timeboxed and not built**; on-ice capture degrades
+    correctly regardless (the pin drops at GPS, sizing/Done/queue all work — only *tapping the map*
+    to Move/Trace needs tiles). Findings + the three candidate routes are recorded in
+    `phase-9-hazards.md` → *Layer-3 offline basemap tile-pack — spike findings*; revisit alongside
+    the device-build pass. The F2 body-cache module was already designed to accept a tile-pack field,
+    so slotting it in later needs no rearchitecture.
+  - The buffered auto-select (a tunable ~parking/approach radius so opening from the car still
+    resolves the lake) is the same primitive hazard capture uses to bind a hazard to its body.
+

@@ -729,3 +729,56 @@ be chosen out loud rather than arrived at by someone running the script because 
    forcing it yields "local knowledge" typed by rote); cleared when no depth remains; attached only to the
    `operator` rung, so a leftover note never reads as a citation for a model's number; and carried into the
    `moderationActions` reason, since the log is where you ask on what basis a claim was made.
+
+
+---
+
+## Relocated from the roadmap (2026-09-16)
+
+*The roadmap entry for N6 / N6a as it stood before the 2026-09-16 rewrite, kept verbatim so nothing it said is lost. The roadmap now carries a one-paragraph summary; this is the long form.*
+
+**N6 — Lake depth.** *(Split at kickoff 2026-07-29 into **N6a** — the depth attribute and its decay
+consumer — and **N6b** — the bathymetric contour layer — after the founder asked whether we could draw
+real topographic lines inside the lake polygons. The answer is yes, from measured state-agency surveys,
+and that turned out to be phase-sized on its own. Was sequenced after N1 so the two shared one reindex;
+**N1 has now shipped and its backfill is run**, so both are unblocked.)*
+
+**N6a — Lake depth: the precedence ladder and the shallow signal.** ✅ **BUILT + on dev 2026-07-30** (ETL written and tested but **not yet run** — it needs three third-party downloads plus a licence/column confirmation; not device-tested; prod deferred) — see
+[`phase-N6a-lake-depth.md`](./phase-N6a-lake-depth.md); decisions **D68** (provenance-carrying depth) and
+**D69** (shallow amplifies thaw only). **Four of this entry's own premises were false**, all corrected in
+the phase doc, and the first one reshaped the work:
+
+- **The `isShallow` scalar this entry claimed to be "replacing" has never existed.** `phase-10-weather.md`
+  describes the decay model as reading it; nothing does. `shallow_early_thaw` lives in exactly two
+  places — the enum and an admin dropdown label — so a moderator can set it and see a pin, and it changes
+  no decay anywhere. `decayMultiplier` takes no body-level input at all. **The signal is the deliverable**;
+  the data is what extends it past hand-flagged bodies.
+- **"Own data PR — no app changes" was unachievable**, and the field shape here is wrong: mean and max
+  depth arrive from *different* sources (LAGOS-US holds 17,675 maxima and 6,137 means), so one
+  `depthSource` cannot be honest. Provenance is per measurement (D68).
+- **"For most bodies" is off by an order of magnitude, and the correction is better news than the claim.**
+  HydroLAKES' floor is 10 ha; a 4,000-body sample of the dev corpus puts **7%** above it (73% are under
+  1 ha). But **every** sampled body drawing at z ≤ 10 is above the floor — 234 of 234, plus all 16
+  curated-boosted bodies. The data reaches 7% of the corpus and ~100% of what a skater browses at regional
+  zoom. The inverse is the honest half: the shallow signal is most predictive for the ponds no global
+  source reaches, so the manual `bodyFeature` is **permanent infrastructure, not a stand-in**.
+- **"Real data instead of a manual flag" overstates both named sources** — HydroLAKES' `Depth_avg` is
+  modelled from a 90 m DEM, GLOBathy's `Dmax` is a random forest validated at 1,503 lakes *globally*.
+  Neither is measured bathymetry, which is why provenance is a field and why D3 governs the display.
+- **A better first source than either:** **LAGOS-US DEPTH** — *observed* depths compiled from ~65 agency /
+  university / monitoring sources, lakes > 1 ha, an order of magnitude below HydroLAKES' floor. It becomes
+  rung 2 of the D68 ladder, above both modelled sources.
+
+
+---
+
+## Relocated from the roadmap (2026-09-16)
+
+*The roadmap entry for N6a (the 'also folded into N6a' note) as it stood before the 2026-09-16 rewrite, kept verbatim so nothing it said is lost. The roadmap now carries a one-paragraph summary; this is the long form.*
+
+*Also folded into N6a:* the ETL update carrying OSM `depth`/`maxdepth` tags where they exist (rare).
+**Built 2026-07-31, in the review pass, having been asserted here and missed in the build** — this line
+claimed the work was folded in while `osm_tag` sat in the enum with no producer, which is the same
+described-as-wired failure N6a opened by cataloguing. It rides the **water** ETL (`scripts/etl`,
+`--depths` → `load-depths`), not the depth ETL, since only that pass ever sees an OSM feature, and it
+therefore ships with the canonical re-import rather than the depth run.

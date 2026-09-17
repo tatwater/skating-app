@@ -381,3 +381,48 @@ their consumers:
   degrade gracefully (logged truncation) long before crashing.
 - **Push delivery** — deferred repo-wide; Phase 6 bounty/rating notices are in-app rows.
 - **Prod cutover** — deferred with the rest of phases 3–5.
+
+
+---
+
+## Relocated from the roadmap (2026-09-16)
+
+*The roadmap entry for Phase 6 as it stood before the 2026-09-16 rewrite, kept verbatim so nothing it said is lost. The roadmap now carries a one-paragraph summary; this is the long form.*
+
+### Phase 6 — Bounties + trust score ✅ Complete (dev; prod deferred) (2026-07-22)
+> **Detailed build plan:** [`phase-6-bounties-and-trust.md`](./phase-6-bounties-and-trust.md) (decisions
+> settled 2026-07-21). All six workstreams shipped on **web + mobile**, green (core/convex/web/mobile
+> suites). Trust class is derived server-side + rendered as a cosmetic chip/ring (never a raw number, D50);
+> bounty browse rides the bounded `by_status_expires` index (no viewport geospatial); recommended-feed
+> caps are stateless (impression-tracking = logged fast-follow). Prod cutover outstanding.
+- **Bounties:** request a report for a water body; notify eligible recent skaters (report
+  *or* resolved GPS skate on that body, D44); fulfill; helpful/unhelpful thumbs →
+  cosmetic points/badges (D10/D17).
+  - *(Ordering note: this phase now precedes **GPS providers (Phase 8)**, so the "resolved GPS
+    skate" half of eligibility (D44) lights up only once Phase 8 lands. Native **reports** are the
+    eligibility signal at Phase 6 — enough for a working bounty loop; GPS widens it later.)*
+- **Trust score (D50) — the asymmetric reputation signal that stands in for the removed
+  social graph (D13).** A reporter's public trust score rises from two signals:
+  - **(a) Corroboration within a similar timeframe.** An independent report on the **same
+    water body within a tunable window** that **agrees** (similar `skateQuality`/`iceTypes`/
+    hazards) boosts both reporters. **Boost-only + window-bounded:** a later report of
+    *different* conditions is not counter-evidence (ice changed), so **nobody is penalized for
+    conditions changing** — this protects honest "don't do it"/negative reports (D3). Derived
+    from `reports` on the same body + `pointEvents` (`report_corroborated`); no social edges.
+  - **(b) Helpful marks.** Any viewer can mark a report **useful/helpful** (`reportRatings`,
+    D17); `helpful` raises the author's score. `unhelpful` feeds moderation/quality, not a
+    public penalty.
+  - **Constraints (D17/D3):** reputational/**cosmetic only** — never weights safety, never
+    gates visibility/ranking of safety content, never makes the app assert ice is safe.
+- **"Recommended" filter-breaking feed posts (moved here from Phase 4, 2026-07-17).** Occasionally
+  inject into a user's feed an *exceptional* report that breaks their own **distance / quality / thickness**
+  filters — so someone who never touches the filters still gets a shot at seeing a lake in rare condition.
+  **Deliberately gated on this phase:** the "exceptional" bar must be **corroboration/trust (D50)**, not a
+  lone `skateQuality == great`, or we'd build a machine for wasted trips (and implicitly amplify one
+  unverified claim — a D3 concern). Mechanics: a relaxed complement query, ranked, **frequency-capped**
+  (≤1–2 per session/day), **per-lake de-duped**, visually distinct ("Recommended — exceptional ice outside
+  your usual range"); breaks distance/quality/thickness but **never recency, blocks, or moderation**.
+- **Done:** end-to-end bounty loop; reporters accrue a public, boost-only trust score from
+  corroboration + helpful marks; the feed can occasionally recommend corroborated exceptional ice
+  outside a user's filters.
+

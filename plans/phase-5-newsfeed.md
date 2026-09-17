@@ -274,3 +274,31 @@ Push to the dev deployment (`convex dev --once`) + run the migration before app 
   start/end → the report is **Phase 8**.
 - **Notification delivery** for feed activity → later (with the broader notifications work).
 - **Weather-since strips** on feed cards → **Phase 10** (D19).
+
+
+---
+
+## Relocated from the roadmap (2026-09-16)
+
+*The roadmap entry for Phase 5 as it stood before the 2026-09-16 rewrite, kept verbatim so nothing it said is lost. The roadmap now carries a one-paragraph summary; this is the long form.*
+
+### Phase 5 — Newsfeed page ✅ Complete (dev; prod deferred) (2026-07-17)  *(brought forward ahead of Phase 4 — see doc)*
+> **Detailed build plan:** [`phase-5-newsfeed.md`](./phase-5-newsfeed.md) (decisions settled 2026-07-16).
+> **Reordered ahead of Phase 4 (2026-07-16):** the feed ships **global** (all lakes, all regions); the
+> two drive-time bullets below — *"within range"* and *"temporarily expand radius"* — are definitionally
+> Phase 4 and move there as an **additive filter** on the same `listFeed` query (near-zero rework).
+- Cross-water-body feed, newest **skate-*end* time** first (D28) — **sort key redefined 2026-07-16:**
+  `reports.skateTime` → **`skateEndTime`** ("when the skater left the ice" = the freshest read), a
+  project-wide rename affecting every surface that sorts reports (per-body feed + profile history too).
+  Also **store `skateStartTime`** (optional; duration derived, never stored) — manual form takes
+  start-or-duration; `gpsActivities` gets `endTime`/`elapsedSeconds` prep (wired Phase 8). Shows
+  **`public`** reports minus **blocks** (D13) — the block filter landed in Phase 3.
+- Feed card carries the water body **name + a point-derived town/county + state label** (from the report's
+  put-in pin / GPS start — shows which town/side, correct for multi-town/-state lakes; disambiguates
+  same-name lakes). Backed by a new **`adminAreas`** boundary table (OSM, same ODbL) resolved at report
+  create — no per-read geocode, no 116k-body backfill. Reused by GPS (Phase 8) + hazards (Phase 9).
+- Tap a card → **report drawer/sheet** (no full navigation — preserves scroll); **photo carousel** in
+  cards + drawer; empty state; pull-to-refresh (mobile).
+- ~~**Temporarily expand radius** (session-only) to browse wider.~~ → **Phase 4** (needs drive-time).
+- **Done:** browse recent community activity without going lake-by-lake.
+

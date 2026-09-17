@@ -1325,3 +1325,133 @@ begins streaming the entire layer. So the page size is a measured value, not a c
 *(Also worth recording because it cost fourteen minutes: `pnpm fetch` is a **built-in pnpm command**
 that populates the package store. A package script named `fetch` is silently shadowed and runs an
 install instead of your code. The script is called `snapshot`.)*
+
+
+---
+
+## Relocated from the roadmap (2026-09-16)
+
+*The roadmap entry for N6b as it stood before the 2026-09-16 rewrite, kept verbatim so nothing it said is lost. The roadmap now carries a one-paragraph summary; this is the long form.*
+
+**N6b — The bathymetry layer: real isobaths inside the lake.** ✅ **COMPLETE (2026-08-01); prod
+deferred.** See [`phase-N6b-bathymetry-layer.md`](./phase-N6b-bathymetry-layer.md).
+
+Archived (five sources, 298 MB, mirrored privately) → normalized → **joined, 2,437 of 2,491 lakes
+(98%)**, Vermont included for the first time → gated → **2,042 lakes contoured into 49,742 lines** →
+tiled to a **15 MB** z9–z14 `.pmtiles` on the Phase 2.5 upload lane → uploaded → drawn by both clients.
+
+The render half is small because **D81 and D82 removed most of what there was to decide**: contours
+are a property of the detail view, so the source mounts on drawer-open and unmounts on close, with no
+toggle, no persisted preference and no settings row. They sit under every hazard, fade in once their
+own lines are on screen, and carry one credit line at the bottom of the drawer, derived from the
+features actually drawn. The rung-1 depth write stays correctly gated behind N6a's ordering gate.
+
+**Two findings worth carrying forward.** GLOBathy's 1.4 M per-lake rasters are a linear
+distance-from-shoreline transform, so contours drawn from them would be an authoritative-looking
+rendering of a guess — permanently out of scope, not deferred. And **every input-side quality gate we
+tried was falsified by a render**: five of them, each plausible on paper. The layer ships with no
+output-side gate at all, which is only tolerable because D82 means a contour makes no claim a skater
+can act on wrongly.
+
+- **A source lake key is not always one lake.** 17 keys hold two or more water bodies — NH files two
+  ponds 51 km apart under one `au_id`, Maine's MIDAS `870` scatters over 379 km. One key resolves to
+  one polygon, so unsplit, the second pond's geometry is clipped against a shoreline miles away and
+  vanishes *without an error*. Found by rendering a blank card. Split before the join now.
+- **The join blows Convex's 16 MB per-execution read cap**, and lowering the batch size cannot fix it:
+  the cost per lake spans three orders of magnitude between a farm pond and a point in the middle of
+  Champlain. Batching is adaptive — split-and-retry, with a lake that fails alone recorded as a named
+  reject.
+- **Checked against the agencies' own charts.** Maine IF&W and VT DEC both publish finished depth maps,
+  and for Maine those are the *originals our points were digitised from*. Max depth matches exactly on
+  both lakes checked (36 ft, 42 ft), which independently validates the whole unit chain.
+- **⚠ Three gates, and two of them had to be re-derived by looking.** The density gate's premise was
+  overturned by its own comparison (quality does not track the gap ratio); the shore-share gate was
+  added and removed the same day after it kept the worst map in a 20-lake sample and dropped four of
+  the cleanest. Its replacement — disconnected pieces per contour level — was falsified within the hour
+  by Lake Champlain, whose 10.2 pieces per level are a dozen real basins. **Five metrics have now
+  failed to predict output quality**, so we ship with no output gate at all, which D82 makes cheap.
+  The whole sequence is written up for a non-specialist reader in
+  [`docs/bathymetry-challenges.md`](../docs/bathymetry-challenges.md).
+- **A fairness bug in the primary gate**, found by the founder asking whether the floor should be a
+  density rather than a count: the coverage gap was normalised by the **bbox diagonal**, which across
+  2,437 bodies runs 1.76–3.36× `sqrt(area)` — so long thin lakes got up to a 4× easier pass. Now
+  normalised by `sqrt(area)`.
+
+- **All five states are covered, and two of them aren't what this entry assumed.** VT publishes
+  **soundings, not isobaths** (2.4M BioBase sonar points over 66 lakes, plus 105k NOAA-chart points for
+  Champlain), which makes it the *hardest* lane rather than the easy pilot half. Maine's IF&W depth maps
+  turned out to be **already digitised by the state** (147,755 points over 1,525 lakes). NH (9,285
+  contours / 558 lakes) and MA (27,989 contours) are clean published isobaths. **NY publishes nothing** —
+  checked exhaustively; it is covered only via Champlain, and the PDF digitisation path is costed in the
+  phase doc.
+- **The interpolation was the hard part by a wide margin**, and every failure was invisible in review and
+  obvious on a render. Five mechanisms were rejected — IDW (bullseyes), TIN (facets), moving average
+  (search-radius arcs), isotropic GMT `surface` (splits a real trough into isolated pits), and coordinate
+  compression left uncompressed (smears every lake into a lens). What works: `gmt surface` with the
+  shoreline as a depth-0 constraint, solved on an axis-compressed grid and `grdedit`-ed back to real
+  metres. **The shoreline constraint is load-bearing** — without it contours never close and nothing
+  nests.
+- **⚠ One limitation is documented and unresolved: the anisotropy axis is straight, and lakes bend.**
+  Mitigated by capping anisotropy at each lake's own measured elongation (a curved basin's point cloud is
+  rounder, so it relaxes itself). Five options for a curving axis are costed in the phase doc §*Options
+  for the curving axis* — the recommendation is to accept the current state and revisit with a
+  medial-axis frame only when a real user complains about a named lake.
+- **Also unresolved:** contour crowding on steep beds (the obvious fix — dropping bunched levels — was
+  rejected because it would understate depth by omission), and the fact that the most detailed-looking
+  part of a rendered lake is the unmeasured strip between the shore and the first sounding.
+- **Density gate set at 12%** by rendering twelve real lakes in three bands. The comparison overturned its
+  own premise: quality does **not** track the gap ratio — the worst map in the grid was at 10%, with more
+  soundings than any other sample.
+- **D89 — the contour interval is a fixed 5 ft ladder, not a per-lake target.** Ring *count* now reads as
+  depth across lakes (three on a 17 ft pond, eleven on a 59 ft one) rather than every lake being
+  normalised to a dozen bands. The old depth-only rule was backwards in the way that mattered: it gave
+  Washington Pond (36 ft, **105 soundings**) a 2 ft interval and Lake Morey (42 ft, **68,139 soundings**)
+  a 5 ft one. The ladder only ever steps *coarser* — for depth, or for thin data — never finer. Contour
+  lanes reach it by **subtraction only**: an agency's published levels are thinned toward the ladder and
+  never moved or added to, and the deepest published level is always kept, because thinning away the
+  innermost ring is D82's understating-by-omission by another road.
+- **The render half found one real thing, and it was a licence problem rather than a rendering one.** To
+  stay small, a tile carries a short agency label — and for Champlain that label is `VCGI / NOAA`, which
+  is exactly the credit we may **not** render: VCGI's terms name the University of Vermont, and NOAA asks
+  that attribution not imply its involvement in data it did not draw. So the client resolves each label
+  to the required wording verbatim (`CONTOUR_SOURCE_TERMS` in `@skating/core`), and a test in
+  `scripts/bathymetry` pins that table against the source registry **in both directions** — adding a
+  source without registering it would ship lines with no credit at all.
+
+Settled at kickoff: **PMTiles on R2** (the Phase 2.5 basemap infra), **VT + NH first**, Maine's
+point-interpolation path written up rather than built. Two findings worth carrying:
+
+- **Not from GLOBathy's rasters, permanently.** They are generated by converting each cell's Euclidean
+  distance-to-shoreline into a depth with a linear equation, so contours drawn from them are inward
+  offsets of an outline we already store — smooth, plausible, and carrying zero information about basin
+  shape. The mistake is available (free, global, already joined for N6a, and the output *looks like*
+  bathymetry), which is why it is recorded as out of scope rather than deferred.
+- **Vermont is cheap, and we build it ourselves anyway** *(decided 2026-07-30)*. VT ANR + NOAA-charted
+  Champlain isobaths are cleanly published, and an open-source CC0 project has already run the same chain
+  over them — useful as prior art (two of the phase doc's findings come from its README, including the
+  Champlain **datum trap**), but not as a dependency. Reusing its prebuilt tiles would save one lane of a
+  pipeline we're building for NH/MA/NY regardless, while leaving one state's overlay on someone else's
+  tiling parameters and skipping the end-to-end proof on half our pilot. **Every state goes through our
+  own pipeline.**
+
+- **All six open questions answered 2026-07-31**, and two of them were **dissolved rather than decided**.
+  **D81** — contours are a property of the detail view, not a toggleable layer — removes the zoom-cutoff /
+  D49-prominence question (contours are never on the browse map) *and* the persisted-preference question
+  (there's no preference left to persist). **D82** — bathymetry is context, not counsel — removes what the
+  doc called its hardest part: the copy that had to explain that "shallow = safer" reverses across the
+  season is now **no copy at all**, since depth's safety role stays inside the decay math the skater never
+  reads. **D83** keeps each state's native contour interval and units, labelled, because resampling a
+  survey means drawing isobaths nobody surveyed. And attribution turned out smaller than feared: OSM's
+  on-map obligation is the *basemap's*, while state-agency contour credits have no placement rule and
+  belong at the bottom of the lake drawer with the depth provenance.
+
+
+
+---
+
+## Relocated from the roadmap (2026-09-16)
+
+*The roadmap entry for N6b (the 'also folded into N6b' note) as it stood before the 2026-09-16 rewrite, kept verbatim so nothing it said is lost. The roadmap now carries a one-paragraph summary; this is the long form.*
+
+*Also folded into N6b:* bulk state-agency bathymetry (NH GRANIT, VT ANR, MassGIS, NYSDEC), since those
+datasets are being fetched there anyway — an operator override covers specific lakes until then.

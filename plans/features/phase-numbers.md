@@ -304,7 +304,7 @@ that outlive them — the "alpha" era is still dev-only. Neutral letters age bet
    added lines carry old-name tokens**. Merging it after the rename means conflicts on the
    overlapping comment hunks *and* 94 stale lines re-entering the tree. Both fixable, neither worth
    it for a branch that's ready. Step 1 below is safe alongside it (touches two files the branch
-   doesn't); step 2 waits. The `next-gen-US-spellings.md` sweep is the same shape of diff — do the two
+   doesn't); step 2 waits. The `us-spellings.md` sweep is the same shape of diff — do the two
    back-to-back in the same window, as **separate** PRs.
    *Durable mitigation whatever the order:* the substitution script is **idempotent and committed**
    (e.g. `scripts/rename-phases.sh`) until the last old-name branch has landed, so a straggler is
@@ -320,7 +320,7 @@ that outlive them — the "alpha" era is still dev-only. Neutral letters age bet
    wrote `memory/phase-7-operator-surface.md` into the **repo root** (tracked, commit `54ae486`)
    instead of `~/.claude/…/memory/` — `git rm` it in the mechanical PR.
 8. **The next-gen docs get sorted, not renamed in place.** By the phase-vs-feat test: this doc and
-   `next-gen-US-spellings.md` are scoped and scheduled → `features/phase-numbers.md`,
+   `us-spellings.md` are scoped and scheduled → `features/phase-numbers.md`,
    `features/us-spellings.md`; `next-gen-weather-shelter-index.md`, `next-gen-weather-stations.md`
    and `phase-N6g-imagery-research.md` are unscoped → `backlog/weather-shelter-index.md`,
    `backlog/weather-stations.md`, `backlog/imagery-research.md`.
@@ -362,5 +362,5 @@ that outlive them — the "alpha" era is still dev-only. Neutral letters age bet
 
 - `plans/CLAUDE_NOTES.md` — the founder's draft table this doc supersedes, plus the roadmap /
   README refactor asks that become step 3.
-- `plans/next-gen-US-spellings.md` — the other tree-wide mechanical diff; same landing window.
+- `plans/features/us-spellings.md` — the other tree-wide mechanical diff; same landing window.
 - `plans/README.md § Conventions` — where the rules go once decided.
