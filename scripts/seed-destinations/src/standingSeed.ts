@@ -6,19 +6,50 @@
 import type { Destination } from './match';
 
 /**
+ * Split one CSV line, honouring double-quoted fields and doubled quotes inside them — the same
+ * splitter `scripts/lake-depth` uses (copied: the scripts do not depend on each other). A lake
+ * named `"Pond, Little"` in the gazetteer must not shift the `region` column and get shelved for it.
+ */
+export function splitCsvLine(line: string): string[] {
+  const out: string[] = [];
+  let field = '';
+  let quoted = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (quoted) {
+      if (ch === '"') {
+        if (line[i + 1] === '"') {
+          field += '"';
+          i++;
+        } else quoted = false;
+      } else field += ch;
+    } else if (ch === '"') {
+      quoted = true;
+    } else if (ch === ',') {
+      out.push(field);
+      field = '';
+    } else {
+      field += ch;
+    }
+  }
+  out.push(field);
+  return out.map((f) => f.trim());
+}
+
+/**
  * The gazetteer's rows as destinations — `water_body` is the name, `region` the state the corpus
  * analysis attributed it to. No coordinate: the mbox knows where people are, not where the lake is.
  */
 export function gazetteerToDestinations(csv: string): Destination[] {
   const lines = csv.split(/\r?\n/).filter((l) => l.trim().length > 0);
-  const header = (lines.shift() ?? '').split(',');
+  const header = splitCsvLine(lines.shift() ?? '');
   const nameAt = header.indexOf('water_body');
   const regionAt = header.indexOf('region');
   if (nameAt < 0 || regionAt < 0) {
     throw new Error('gazetteer: expected `water_body` and `region` columns');
   }
   return lines.flatMap((line) => {
-    const cols = line.split(',');
+    const cols = splitCsvLine(line);
     const name = cols[nameAt]?.trim();
     const state = cols[regionAt]?.trim();
     if (!name || !state) return [];

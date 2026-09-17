@@ -306,7 +306,13 @@ async function registerWeatherMembership(
       .query('weatherCells')
       .withIndex('by_key', (q) => q.eq('cellKey', cell.key))
       .first();
-    if (!existing) {
+    if (existing) {
+      // Re-stamped with the current claim: a walk in flight that has already passed this cell
+      // would otherwise prune it as vacated at the end, membership and all (review, PR #61).
+      if (existing.runId !== runId) {
+        await ctx.db.patch(existing._id, { runId, updatedAt: nowMs });
+      }
+    } else {
       await ctx.db.insert('weatherCells', {
         cellKey: cell.key,
         tier,

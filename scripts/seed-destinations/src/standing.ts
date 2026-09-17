@@ -71,28 +71,52 @@ async function main() {
   const unmatched = outcomes.filter((o) => o.kind === 'unmatched');
   const keepIds = matched.map((o) => (o.kind === 'matched' ? o.body._id : '')).filter(Boolean);
 
+  // **The run row is opened before the first mutating page** (review, PR #61): every page commits
+  // on its own, so a walk that dies at page 80 has shelved 4,000 bodies — and without a `running`
+  // row nothing would say so, and the `standing_seed` finish that reconciles the vacated weather
+  // cells would never fire. Dry runs get no row; they write nothing.
+  const logger = apply
+    ? new RunLogger({
+        kind: 'standing_seed',
+        label: 'corpus standing seed (N7b)',
+        ...(campaignId ? { campaignId } : {}),
+        target: resolveDeployment(),
+        call: convexRun,
+      })
+    : null;
+  logger?.start();
+
   // The seed itself, paged. Dry unless --apply; the tallies are identical either way.
   const totals = { scanned: 0, demoted: 0, kept: {} as Record<string, number> };
   let seedCursor: string | undefined;
   let seedDone = false;
-  while (!seedDone) {
-    const page = convexRun<{
-      scanned: number;
-      demoted: number;
-      kept: Record<string, number>;
-      cursor: string;
-      isDone: boolean;
-    }>('standing:seedStanding', {
-      keepIds,
-      ...(apply ? { apply: true } : {}),
-      ...(seedCursor ? { cursor: seedCursor } : {}),
-    });
-    totals.scanned += page.scanned;
-    totals.demoted += page.demoted;
-    for (const [k, v] of Object.entries(page.kept)) totals.kept[k] = (totals.kept[k] ?? 0) + v;
-    seedCursor = page.cursor;
-    seedDone = page.isDone;
-    process.stderr.write(`[standing] …${totals.scanned} scanned, ${totals.demoted} to shelve\r`);
+  try {
+    while (!seedDone) {
+      const page = convexRun<{
+        scanned: number;
+        demoted: number;
+        kept: Record<string, number>;
+        cursor: string;
+        isDone: boolean;
+      }>('standing:seedStanding', {
+        keepIds,
+        ...(apply ? { apply: true } : {}),
+        ...(seedCursor ? { cursor: seedCursor } : {}),
+      });
+      totals.scanned += page.scanned;
+      totals.demoted += page.demoted;
+      for (const [k, v] of Object.entries(page.kept)) totals.kept[k] = (totals.kept[k] ?? 0) + v;
+      seedCursor = page.cursor;
+      seedDone = page.isDone;
+      process.stderr.write(`[standing] …${totals.scanned} scanned, ${totals.demoted} to shelve\r`);
+    }
+  } catch (err) {
+    logger?.count('scanned', totals.scanned);
+    logger?.count('demoted', totals.demoted);
+    logger?.failed(err, [
+      `Died after ${totals.scanned} bodies with ${totals.demoted} already shelved. Re-run: the seed is idempotent (a shelved body is counted, not re-shelved).`,
+    ]);
+    throw err;
   }
   process.stderr.write('\n');
 
@@ -140,22 +164,11 @@ async function main() {
     );
   }
 
-  if (!apply) {
+  if (!apply || !logger) {
     process.stderr.write('[standing] dry run. Review the report, then re-run with --apply.\n');
     return;
   }
 
-  // Recorded after the fact rather than around the loop: the seed's writes are per-page mutations
-  // that each commit on their own, and the run row's job is the tallies and the registry walk
-  // `importRuns.finish` schedules for `standing_seed`.
-  const logger = new RunLogger({
-    kind: 'standing_seed',
-    label: 'corpus standing seed (N7b)',
-    ...(campaignId ? { campaignId } : {}),
-    target: resolveDeployment(),
-    call: convexRun,
-  });
-  logger.start();
   logger.count('scanned', totals.scanned);
   logger.count('demoted', totals.demoted);
   for (const [k, v] of Object.entries(totals.kept)) logger.count(`kept.${k}`, v);
