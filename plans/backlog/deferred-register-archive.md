@@ -51,7 +51,7 @@ Grouped by *what* is blocking, because that's what determines when it moves.
   which avoids the D3 trap by the gate rather than by the delay, since the trap is showing a *skater* a
   one-winter coincidence, and nothing does that. Deferring would instead have meant three winters of rows
   nobody looked at as a series, and a matching radius tuned from scratch in 2029. See
-  [`phase-N5c-hazard-memory.md`](../phase-N5c-hazard-memory.md).
+  [`phases/A05c-hazard-memory.md`](../phases/A05c-hazard-memory.md).
   - **The D62 constraint is closed, and it's worth keeping the record of why it mattered.** Under the
     first amendment a departed user's hazards were *deleted*, so recurrence would have been computed over
     a corpus silently missing rows — a count that looks complete and isn't. Under redact-don't-erase,
@@ -138,7 +138,7 @@ The long-form write-ups the entries above point at — preserved verbatim, since
   - The fix this entry proposed — "index each body under every S2 cell its bbox covers" — turned out
     **not to be expressible in that component at all**: its write API is one point per unique key. So
     N1 replaced it with a plain-table ladder grid, where reads cost only the rows returned. See
-    [`phase-N1-read-path-durability.md`](../phase-N1-read-path-durability.md).
+    [`phases/A01-read-path-durability.md`](../phases/A01-read-path-durability.md).
   - Its "do this when" trigger — *the 256 clamp visibly drops bodies at normal zoom* — had **already
     fired and gone unnoticed**: dense eastern Maine holds 513 bodies at z12. That's the lesson worth
     carrying forward more than the mechanism.
@@ -146,7 +146,7 @@ The long-form write-ups the entries above point at — preserved verbatim, since
   this entry was stale (caught 2026-07-24). `core/hazardGeometry.clipFootprintToBody` precomputes the
   clipped polygon at create time and `hazardLayer` render, bbox and `distanceToHazard` all read the
   *same* stored footprint — which is what the "what's drawn IS what the proximity alert measures"
-  invariant required. Kept here only as a pointer; see [`phase-9.5-on-ice-alerting.md`](../phase-9.5-on-ice-alerting.md).
+  invariant required. Kept here only as a pointer; see [`phases/09b-on-ice-alerting.md`](../phases/09b-on-ice-alerting.md).
 - **Self-hosted OpenRouteService (true 90-min+ isochrone band).** Phase 4 ships drive-time on the
   **hosted ORS**, whose isochrone API is hardcoded to a **60-min max range** for `driving-car` — so the
   90-min band is a uniform crow-flies radius fallback there. Self-hosting ORS (a memory-hungry JVM/Docker
@@ -176,7 +176,7 @@ The long-form write-ups the entries above point at — preserved verbatim, since
   - **The toggle this entry asked for exists, derived** (D70): `satelliteImagery: 'auto' | 'on' | 'off'`,
     where `auto` resolves off surface area, because 10 m pixels cannot resolve a 2-hectare pond. Per-row
     data ⇒ **the admin control needs no redeploy**; only the threshold behind `auto` is a code constant.
-  - **What's left, and where it went → [N6e](../phase-N6e-satellite-imagery.md), scoped 2026-07-31** at the
+  - **What's left, and where it went → [N6e](../phases/A06e-satellite-imagery.md), scoped 2026-07-31** at the
     founder's ask (*"I want to do it ASAP"*). And the scoping pass found that **the quota binds only half
     of it (D84)**: the 10,000-requests/month ceiling is a *Sentinel-2* constraint and says nothing about
     **USGS/NAIP aerial imagery**, which is **public domain, no key, no quota, 0.6 m**. The
@@ -195,7 +195,7 @@ The long-form write-ups the entries above point at — preserved verbatim, since
   pipeline uploads before `reports.create`, so failed/abandoned/partial submits can strand storage. The
   client reclaims best-effort (`photos.remove`/`removeBlob`, incl. uploads that resolve after the form
   unmounts), but a killed app or a failed reclaim call can still leave orphans. See
-  `phase-2-map-and-reports.md` → "Settled during review" (2026-07-15).
+  `phases/02a-map-and-reports.md` → "Settled during review" (2026-07-15).
   - This entry said "low urgency until storage quotas bite", and **the trigger it was waiting for is not
     the one that fired**: N3's account deletion strands a departing user's unattached blobs and emits
     export bundles that need a TTL, so the cron became that phase's own cleanup path rather than a
