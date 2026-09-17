@@ -284,6 +284,54 @@ approval's effect including the admit insert and the no-twin rule, the queue, th
 list of one's own `admit` asks (`listMine` exists, no surface yet); the archive-lane fallback script
 for a service outage (the water body editor's hand-draw is the fallback today).
 
+### The review pass on PR 2 — one root cause, five findings
+
+Greptile returned five times to `corpusRequests.ts`, and every finding was the same one: the
+sibling set a decision closes (open asks of one kind on one water body, or on one catalogue feature)
+has **no bound by construction**, so every read of it needed its own defense, and each defense
+created the next finding — a page cap truncated the group; walking it all could exceed a
+mutation's write budget; paging across scheduled mutations let an ask filed mid-drain inherit a
+decision made before it existed; and a per-row sibling read in `listQueue` was 200 × 200 documents
+against the 16,384-read limit. What shipped: `by_water_body` is `[waterBodyId, kind, status]` so
+one kind's open asks are a contiguous range; `decide` closes the request plus one page and
+schedules `closeSiblings` for the rest, the range ended at `_creationTime <= decision.now`; the
+queue's asker count is grouped from the page already read and marked as a floor when the queue is
+a backlog; `listMineForBody` reads by requester (`by_requester_body`), not by everything ever filed
+on the water body. **The founder chose paging over a create-time cap on the group** (~100 open asks per
+water body per kind would have deleted `closeSiblings` and the snapshot outright); the cap is the
+roadmap's Deferred lever if the code bites again. The lesson: bound an unbounded set at the write,
+not at each read.
+
+### The seed run — dev, 2026-09-17
+
+`convex dev --once` put both PRs on dev, then `seed-standing --gazetteer=training_data/google_group/gazetteer.csv`
+dry, then `--apply` as campaign `standing-seed-20260916` (run row `succeeded`), then
+`regionStats:recompute`.
+
+| | |
+| --- | --- |
+| Scanned | 24,961 |
+| **Shelved — dormant, `inactive`** | **23,520** |
+| Kept active | 1,441 — 1,377 attached (put-ins etc.) · 52 keep-list · 3 curated · 1 by request · 8 already inactive |
+| Active per state | NY 345 · VT 106 · NH 238 · ME 401 · MA 358 |
+
+**The first dry run found three matcher defects**, fixed before anything was applied
+(`d6d70e1`, `fd6615c9` — both in PR #64): the gazetteer's `region` is where the *posters* are,
+not the water — a Vermont list discusses Lake George, Lake Placid, Saranac and Sebago, all four
+"unmatched (VT)"; `normalizeName("Reservoir Pond")` was `""` and matched every body called
+"Reservoir" (1,375 candidates); an apostrophe was a word break, so "Joe's Pond" could never meet
+GNIS's "Joes Pond". The founder's call on the first: every state in `region_breakdown` is *tried*,
+but a match resting on a poster state alone is reported and never kept — the risk is shelving the
+right water body to keep a same-named wrong one. In the end only Lake Placid hit that path, and it was
+kept by its put-ins anyway, as were every marquee lake on the list.
+
+**What the matcher could not settle** — a hand list for the water body editor's Standing card, since
+the seed never re-activates: 23 ambiguous (Long Pond NH ×18 and Beaver Pond NH ×31 want a `near`
+coordinate in the shortlist, not a hand fix; Lake George ×3 across states), 27 unmatched (Saranac
+is Lower / Middle / Upper in the corpus; Sebago is ME and the gazetteer never mentions ME; the bays
+are A09 sub-areas, not bodies). Each seed pass is 12–25 minutes — one `convex run` subprocess per
+50-body page — so run it in the background.
+
 ---
 
 ## The other half — corpus lifecycle (added 2026-09-16)
