@@ -134,6 +134,7 @@ change. This table is how to read them.
 | N6h, "N6h PR 1–5" | A06h, A06h-1 … -5 | #48–#51, #54 | [phase-N6h-weather-detail.md](./phase-N6h-weather-detail.md) | **not** A06g — gaps stay |
 | N7, N7-2, N7-3 | A07a, A07a-2, A07a-3 | #39, #40, #41 | [phase-N7-unified-corpus.md](./phase-N7-unified-corpus.md) | |
 | N7b | A07b | — | [phase-N7b-corpus-by-request.md](./phase-N7b-corpus-by-request.md) | branch `phase-n7b-corpus-lifecycle` |
+| — | A07c | — | [phases/A07c-lake-corrections.md](./phases/A07c-lake-corrections.md) | scoped under the new scheme; no old name |
 | N8, "N8 PR 1–4" | A08, A08-1 … -4 | #52, #53, #55, #57 | [phase-N8-notification-pipeline.md](./phase-N8-notification-pipeline.md) | |
 | N9, "N9 PR 1–2" | A09, A09-1, A09-2 | #58, #59 | [phase-N9-subareas-as-places.md](./phase-N9-subareas-as-places.md) | |
 

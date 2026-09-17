@@ -595,6 +595,32 @@ can stand one down.*
 #### Owed
 - Dev deploy, the seed run (`seed-destinations`), device verification of the request flows
 
+## Phase A07c — Lake corrections
+⚪ **Scoped** 2026-09-16 · [plan](./phases/A07c-lake-corrections.md) · D180–D183
+
+The skater says *"this is wrong"* — the lake is two polygons, the boat ramp is a private driveway,
+the aerial is off, the lot has no toilets — and today only "no public access" has anywhere to go.
+One *Report a problem* sheet in the drawer, launched with context from the put-in row, the amenity
+line or the imagery control, files a correction into `contentFlags`, where A06f's dedup already
+makes the open-row count the corroboration count; a corrections lane on `/admin/flags` groups by
+(target, reason) and puts a lever button on every row that has one. Two calls shaped it: a
+correction dedups per *reason* where a flag on content dedups per target (D180), and an operator's
+outline sets `geometrySource: 'user'` so the campaign import stops overwriting it (D182) — the first
+outline writer being a **union** that draws both halves and offers each original as a bay (D183),
+because `merge` was built for duplicates and would delete half the lake. Three of the categories
+first scoped turned out to be A07b requests and are not re-built. *A skater can say what is wrong
+about a lake, and a moderator can fix it in place and have it stay fixed.*
+
+#### Deferred
+- ⚪ **Split** — one row that is really two ponds; most "split" reports are a bay that wants a name → D183, a feat if it outgrows PR 2
+- ⚪ **Outline editing (§4.3)** — scoped at build; the union is the only outline writer PR 2 commits to
+
+#### Ruled out
+- **A separate `corrections` table** — `contentFlags` already carries the dedup, the queue, the purge, the resolution notification and the rollups; a second table would re-implement all five to keep "moderation" and "data" apart, and the lane split does that
+
+#### Owed
+- The five founder calls in the plan's *Open questions* before build
+
 ## Phase N8 — The notification pipeline
 🟢 **Complete** 2026-09-15 · PRs #52 #53 #55 #57 · [plan](./phase-N8-notification-pipeline.md) · D167–D174
 
