@@ -267,7 +267,7 @@ misses and outages recorded on the row, `reresolve` for a moderator); `listMineF
 `listMine`, `openCountsForBody` (public — the "3 people have asked" count); `listQueue` /
 `queueCount` (moderator); `approve` (performs the act through `activateBody` / `restore` / `remove` /
 `setPublicAccess('open')` / `admitCandidate`, closes siblings, `restore` + `takedown` take an admin) /
-`decline` (note required in the UI). Audit: `approve_request` / `decline_request` on a
+`decline` (a note is required — the requester reads it). Audit: `approve_request` / `decline_request` on a
 `waterBodyRequest` target; an admitted body gets `set_included_by_request` with the service URL.
 
 **Clients:** `RequestButtons` under `StandingNotice` (both), `AdmitPrompt` on long-press (mobile,

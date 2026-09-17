@@ -2550,6 +2550,12 @@ export default defineSchema({
     ),
     resolvedAt: v.optional(v.number()),
     resolveError: v.optional(v.string()),
+    /**
+     * `candidate.externalId`, lifted to the row so it can be indexed: two people tapping the same
+     * pond file two `admit` rows with no `waterBodyId` to group them by, and the catalogue id is the
+     * one identity they share once resolved. Written with `candidate`, never on its own.
+     */
+    candidateExternalId: v.optional(v.string()),
     /** The moderator's decision. */
     decidedAt: v.optional(v.number()),
     decidedByUserId: v.optional(v.id('profiles')),
@@ -2560,10 +2566,16 @@ export default defineSchema({
   })
     // The moderator queue: open requests, oldest first (a request nobody answered is the worst row).
     .index('by_status_created', ['status', 'createdAt'])
-    // The requester's own — the drawer's "you asked for this" line, and the per-person rate cap.
+    // The requester's own — the drawer's "you asked for this" line and the You-tab list.
     .index('by_requester_created', ['requesterId', 'createdAt'])
+    // The per-person cap on OPEN asks: an equality on status, so a long history of decided rows
+    // cannot push an open one out of a newest-N window (Greptile, PR #63).
+    .index('by_requester_status', ['requesterId', 'status'])
     // Everything asked about one lake, for its drawer and for the dedup on create.
-    .index('by_water_body', ['waterBodyId', 'status']),
+    .index('by_water_body', ['waterBodyId', 'status'])
+    // Every `admit` that resolved to the same catalogue feature — the sibling set a decision closes.
+    // `eq()` only: the field is optional and the index is not sparse.
+    .index('by_candidate_external_id', ['candidateExternalId', 'status']),
 
   contentFlags: defineTable({
     flaggerId: v.id('profiles'),

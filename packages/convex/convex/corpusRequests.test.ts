@@ -240,6 +240,37 @@ describe('create — the five kinds and their guards', () => {
     ).rejects.toThrow(/catch up/i);
   });
 
+  test('the cap counts open asks only — a history of decided ones does not hide them', async () => {
+    const t = harness();
+    const skater = await seedUser(t, 'skater');
+    const mod = await seedUser(t, 'mod', 'moderator');
+    // Ten open, then forty decided — the newest rows are all decided, the open ten are older.
+    const openIds = [];
+    for (let i = 0; i < 10; i++) {
+      openIds.push(
+        await skater.as.mutation(api.corpusRequests.create, {
+          kind: 'admit',
+          coord: { lat: 30 + i, lng: 30 },
+        }),
+      );
+    }
+    await expect(
+      skater.as.mutation(api.corpusRequests.create, { kind: 'admit', coord: { lat: 45, lng: 30 } }),
+    ).rejects.toThrow(/catch up/i);
+    // Decide one; the cap frees one slot, and only one.
+    await mod.as.mutation(api.corpusRequests.decline, {
+      requestId: openIds[0] as Id<'waterBodyRequests'>,
+      note: 'Not water.',
+    });
+    await skater.as.mutation(api.corpusRequests.create, {
+      kind: 'admit',
+      coord: { lat: 46, lng: 30 },
+    });
+    await expect(
+      skater.as.mutation(api.corpusRequests.create, { kind: 'admit', coord: { lat: 47, lng: 30 } }),
+    ).rejects.toThrow(/catch up/i);
+  });
+
   test('signed out cannot ask; a note over the cap is refused', async () => {
     const t = harness();
     const skater = await seedUser(t, 'skater');
@@ -319,6 +350,84 @@ describe('decide — what approving performs', () => {
     // The requester reads the outcome on the lake.
     const mine = await a.as.query(api.corpusRequests.listMineForBody, { waterBodyId: id });
     expect(mine[0]).toMatchObject({ status: 'approved', decisionNote: 'Welcome back.' });
+  });
+
+  test('a decline needs a note the skater can read', async () => {
+    const t = harness();
+    const skater = await seedUser(t, 'skater');
+    const mod = await seedUser(t, 'mod', 'moderator');
+    const id = await seedBody(t, 'osm/1', dormant);
+    const requestId = await skater.as.mutation(api.corpusRequests.create, {
+      kind: 'activate',
+      coord: INSIDE,
+      waterBodyId: id,
+    });
+    await expect(
+      mod.as.mutation(api.corpusRequests.decline, { requestId, note: '   ' }),
+    ).rejects.toThrow(/say why/i);
+    expect((await t.run((ctx) => ctx.db.get(requestId)))?.status).toBe('open');
+  });
+
+  test('two admits that resolved to the same feature are one decision, counted as two askers', async () => {
+    const t = harness();
+    const a = await seedUser(t, 'a');
+    const b = await seedUser(t, 'b');
+    const mod = await seedUser(t, 'mod', 'moderator');
+    const first = await a.as.mutation(api.corpusRequests.create, { kind: 'admit', coord: FAR });
+    const second = await b.as.mutation(api.corpusRequests.create, {
+      kind: 'admit',
+      coord: { lat: 20.001, lng: 20.001 },
+    });
+    for (const requestId of [first, second]) {
+      await t.mutation(internal.corpusRequests.recordResolution, {
+        requestId,
+        resolvedAt: Date.now(),
+        candidate: CANDIDATE,
+      });
+    }
+    const queue = await mod.as.query(api.corpusRequests.listQueue, {});
+    expect(queue.map((r) => r.askers)).toEqual([2, 2]);
+    await mod.as.mutation(api.corpusRequests.approve, { requestId: first });
+    const rows = await t.run((ctx) => ctx.db.query('waterBodyRequests').collect());
+    expect(rows.map((r) => r.status)).toEqual(['approved', 'approved']);
+    expect(new Set(rows.map((r) => r.admittedWaterBodyId)).size).toBe(1);
+    expect(await t.run((ctx) => ctx.db.query('waterBodies').collect())).toHaveLength(1);
+  });
+
+  test('approving an admit re-checks the point: a body admitted under it since, without a 3DHP id, is used', async () => {
+    const t = harness();
+    const skater = await seedUser(t, 'skater');
+    const mod = await seedUser(t, 'mod', 'moderator');
+    const requestId = await skater.as.mutation(api.corpusRequests.create, {
+      kind: 'admit',
+      coord: FAR,
+    });
+    await t.mutation(internal.corpusRequests.recordResolution, {
+      requestId,
+      resolvedAt: Date.now(),
+      candidate: CANDIDATE,
+    });
+    // An OSM import lands the same pond after the ask was filed — no 3DHP id on it.
+    await t.mutation(internal.waterBodies.importCanonical, {
+      bodies: [
+        {
+          source: 'osm',
+          externalId: 'osm/way/9',
+          osmId: 'osm/way/9',
+          name: 'Unseen Pond',
+          type: 'lakePond',
+          polygon: CANDIDATE.polygon as Polygon,
+          bbox: CANDIDATE.bbox,
+          centroid: FAR,
+          surfaceAreaSqM: 4_900_000,
+        },
+      ],
+    });
+    const res = await mod.as.mutation(api.corpusRequests.approve, { requestId });
+    const bodies = await t.run((ctx) => ctx.db.query('waterBodies').collect());
+    expect(bodies).toHaveLength(1);
+    expect(res.admittedWaterBodyId).toEqual(bodies[0]?._id);
+    expect(bodies[0]?.includedByRequest).toBe(true);
   });
 
   test('declining leaves the body alone and keeps the record', async () => {

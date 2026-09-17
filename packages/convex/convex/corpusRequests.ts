@@ -41,6 +41,7 @@ import {
   internalQuery,
   type MutationCtx,
   mutation,
+  type QueryCtx,
   query,
 } from './_generated/server';
 import { resolvePlaceForCoord } from './adminAreas';
@@ -98,10 +99,11 @@ export const create = mutation({
 
     const open = await ctx.db
       .query('waterBodyRequests')
-      .withIndex('by_requester_created', (q) => q.eq('requesterId', profile._id))
-      .order('desc')
-      .take(MAX_OPEN_REQUESTS_PER_USER * 3);
-    if (open.filter((r) => r.status === 'open').length >= MAX_OPEN_REQUESTS_PER_USER) {
+      .withIndex('by_requester_status', (q) =>
+        q.eq('requesterId', profile._id).eq('status', 'open'),
+      )
+      .take(MAX_OPEN_REQUESTS_PER_USER);
+    if (open.length >= MAX_OPEN_REQUESTS_PER_USER) {
       throw new ConvexError(
         'You have a few requests waiting on a moderator already — give them a chance to catch up.',
       );
@@ -120,23 +122,13 @@ export const create = mutation({
       }
       // Reachable, not merely active (N7b): a dormant or removed body under the tap is the body the
       // skater means, and the right ask is about *it*.
-      const nearby = await listedBodiesNearCoord(ctx, coord, ADMIT_KNOWN_WATER_MARGIN_M);
-      const known = nearestBodyForPoint(
-        coord,
-        [...nearby.values()].map((b) => ({
-          ref: b._id,
-          polygon: b.polygon as unknown as Polygon | MultiPolygon,
-          surfaceAreaSqM: b.surfaceAreaSqM ?? 0,
-        })),
-        ADMIT_KNOWN_WATER_MARGIN_M,
-      );
-      if (known !== null) {
-        const body = nearby.get(known);
+      const body = await bodyUnder(ctx, coord);
+      if (body) {
         throw new ConvexError({
           code: 'known_water',
-          message: `We already know this water${body?.name ? ` — ${body.name}` : ''}.`,
-          waterBodyId: known,
-          standing: body ? standingOf(body) : undefined,
+          message: `We already know this water${body.name ? ` — ${body.name}` : ''}.`,
+          waterBodyId: body._id,
+          standing: standingOf(body),
         });
       }
       const requestId = await ctx.db.insert('waterBodyRequests', {
@@ -283,6 +275,7 @@ export const recordResolution = internalMutation({
       candidate: candidate
         ? { ...candidate, cls: candidate.cls as Doc<'waterBodies'>['type'] | undefined }
         : undefined,
+      candidateExternalId: candidate?.externalId,
       resolveError,
     });
   },
@@ -391,17 +384,7 @@ export const listQueue = query({
     for (const r of rows) {
       const requester = await ctx.db.get(r.requesterId);
       const body = r.waterBodyId ? await ctx.db.get(r.waterBodyId) : null;
-      const sameBodyOpen =
-        r.waterBodyId && r.status === 'open'
-          ? (
-              await ctx.db
-                .query('waterBodyRequests')
-                .withIndex('by_water_body', (q) =>
-                  q.eq('waterBodyId', r.waterBodyId).eq('status', 'open'),
-                )
-                .take(QUEUE_CAP)
-            ).filter((o) => o.kind === r.kind).length
-          : 1;
+      const sameBodyOpen = r.status === 'open' ? (await openSiblings(ctx, r)).length + 1 : 1;
       out.push({
         _id: r._id,
         kind: r.kind,
@@ -548,20 +531,56 @@ export const approve = mutation({
 
 /** Moderator: decline — with a note the requester reads. Declining is not deleting (D107). */
 export const decline = mutation({
-  args: { requestId: v.id('waterBodyRequests'), note: v.optional(v.string()) },
+  args: { requestId: v.id('waterBodyRequests'), note: v.string() },
   handler: async (ctx, { requestId, note }) => {
     const actor = await requireContributorRole(ctx, 'moderator');
     const request = await ctx.db.get(requestId);
     if (!request) throw new ConvexError('Request not found');
     if (request.status !== 'open') throw new ConvexError('This request has been decided');
-    await decide(ctx, request, 'declined', actor._id, Date.now(), note?.trim());
+    // The requester reads this; a decline with nothing to read is the "unavailable" with no reason
+    // that N7b exists to end. Enforced here, not only in the dialog.
+    const trimmed = note.trim();
+    if (trimmed.length === 0) throw new ConvexError('Say why — the skater reads this.');
+    if (trimmed.length > MAX_REQUEST_NOTE_LENGTH) {
+      throw new ConvexError(`Keep the note under ${MAX_REQUEST_NOTE_LENGTH} characters.`);
+    }
+    await decide(ctx, request, 'declined', actor._id, Date.now(), trimmed);
     return requestId;
   },
 });
 
 /**
- * Close the request and every open sibling of the same kind on the same body, with one audit row
- * each. Siblings share the decision because they share the question.
+ * The other open asks that share this one's question: the same kind on the same body, or — for an
+ * `admit` — the same catalogue feature (Greptile, PR #63: admits have no body to group by, and two
+ * taps on one pond were two independent decisions). An unresolved admit has no siblings yet.
+ */
+async function openSiblings(
+  ctx: QueryCtx,
+  request: Doc<'waterBodyRequests'>,
+): Promise<Doc<'waterBodyRequests'>[]> {
+  if (request.kind === 'admit') {
+    if (request.candidateExternalId === undefined) return [];
+    const rows = await ctx.db
+      .query('waterBodyRequests')
+      .withIndex('by_candidate_external_id', (q) =>
+        q.eq('candidateExternalId', request.candidateExternalId).eq('status', 'open'),
+      )
+      .take(QUEUE_CAP);
+    return rows.filter((r) => r._id !== request._id);
+  }
+  if (request.waterBodyId === undefined) return [];
+  const rows = await ctx.db
+    .query('waterBodyRequests')
+    .withIndex('by_water_body', (q) =>
+      q.eq('waterBodyId', request.waterBodyId).eq('status', 'open'),
+    )
+    .take(QUEUE_CAP);
+  return rows.filter((r) => r.kind === request.kind && r._id !== request._id);
+}
+
+/**
+ * Close the request and every open sibling, with one audit row each. Siblings share the decision
+ * because they share the question.
  */
 async function decide(
   ctx: MutationCtx,
@@ -572,16 +591,7 @@ async function decide(
   note: string | undefined,
   admittedWaterBodyId?: Id<'waterBodies'>,
 ): Promise<void> {
-  const siblings = request.waterBodyId
-    ? (
-        await ctx.db
-          .query('waterBodyRequests')
-          .withIndex('by_water_body', (q) =>
-            q.eq('waterBodyId', request.waterBodyId).eq('status', 'open'),
-          )
-          .collect()
-      ).filter((r) => r.kind === request.kind && r._id !== request._id)
-    : [];
+  const siblings = await openSiblings(ctx, request);
   for (const row of [request, ...siblings]) {
     await ctx.db.patch(row._id, {
       status,
@@ -605,6 +615,24 @@ async function decide(
       createdAt: now,
     });
   }
+}
+
+/** The reachable body under a point, within the admit margin — the check `create` makes, repeated. */
+async function bodyUnder(
+  ctx: QueryCtx,
+  coord: { lat: number; lng: number },
+): Promise<Doc<'waterBodies'> | null> {
+  const nearby = await listedBodiesNearCoord(ctx, coord, ADMIT_KNOWN_WATER_MARGIN_M);
+  const known = nearestBodyForPoint(
+    coord,
+    [...nearby.values()].map((b) => ({
+      ref: b._id,
+      polygon: b.polygon as unknown as Polygon | MultiPolygon,
+      surfaceAreaSqM: b.surfaceAreaSqM ?? 0,
+    })),
+    ADMIT_KNOWN_WATER_MARGIN_M,
+  );
+  return known === null ? null : (nearby.get(known) ?? null);
 }
 
 /**
@@ -635,12 +663,15 @@ async function admitCandidate(
       'The catalogue classifies this as flowing water or a canal, which the corpus does not hold. Decline it, or draw it by hand in the lake editor.',
     );
   }
-  // The same-id guard `importCanonical` would apply: if a campaign admitted this feature since the
-  // request was filed, activate that row rather than minting a second one.
-  const twin = await ctx.db
+  // Two guards against a second row for one lake, because the check `create` made is stale by the
+  // time a moderator approves: the same-id guard `importCanonical` would apply (a campaign admitted
+  // this feature since), and then the same spatial check `create` made (a body admitted without a
+  // 3DHP id — a user drawing, an OSM import — now sits under the candidate's point).
+  const byId = await ctx.db
     .query('waterBodies')
     .withIndex('by_three_dhp_id', (q) => q.eq('threeDhpId', c.externalId))
     .first();
+  const twin = byId ?? (await bodyUnder(ctx, c.centroid));
   if (twin) {
     const twinStanding = standingOf(twin);
     if (twinStanding.standing === 'removed' || twinStanding.standing === 'unlisted') {

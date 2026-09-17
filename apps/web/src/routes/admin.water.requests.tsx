@@ -19,7 +19,8 @@ import { Card, CardContent } from '../components/ui/card';
 /**
  * The request queue (N7b PR 2 / D107) — **a skater asked; a moderator answers.**
  *
- * One card per open request, oldest first, because a request nobody answered is the worst row.
+ * One card per open request, **oldest first, whatever the kind** — a request nobody answered is the
+ * worst row, and grouping by kind would bury an old restore under every new tap.
  * Each card shows what a decision needs and nothing it doesn't: who asked and what they wrote, the
  * lake and its standing (or, for an `admit`, what the catalogue found under the point — name, class,
  * acres, and the service URL to eyeball the outline), and how many *other* people have the same
@@ -38,8 +39,6 @@ function messageOf(err: unknown): string {
   }
   return err instanceof Error ? err.message : 'Something went wrong.';
 }
-
-const KIND_ORDER: RequestKind[] = ['admit', 'activate', 'restore', 'contest_access', 'takedown'];
 
 function RequestQueue() {
   const [status, setStatus] = useState<'open' | 'approved' | 'declined'>('open');
@@ -87,175 +86,173 @@ function RequestQueue() {
         </AdminEmpty>
       ) : (
         <div className="flex flex-col gap-3">
-          {[...rows]
-            .sort((a, b) => KIND_ORDER.indexOf(a.kind) - KIND_ORDER.indexOf(b.kind))
-            .map((row) => (
-              <Card key={row._id}>
-                <CardContent className="flex flex-col gap-3">
-                  <div className="flex flex-wrap items-baseline justify-between gap-2">
-                    <p className="font-medium text-foreground">
-                      {requestKindTitle(row.kind)}
-                      {row.askers > 1 ? (
-                        <span className="ml-2 font-mono text-foreground-muted text-xs">
-                          {row.askers} people
-                        </span>
-                      ) : null}
-                    </p>
-                    <p className="font-mono text-foreground-muted text-xs">
-                      {new Date(row.createdAt).toLocaleDateString()} · {row.requester.displayName}
-                    </p>
-                  </div>
+          {rows.map((row) => (
+            <Card key={row._id}>
+              <CardContent className="flex flex-col gap-3">
+                <div className="flex flex-wrap items-baseline justify-between gap-2">
+                  <p className="font-medium text-foreground">
+                    {requestKindTitle(row.kind)}
+                    {row.askers > 1 ? (
+                      <span className="ml-2 font-mono text-foreground-muted text-xs">
+                        {row.askers} people
+                      </span>
+                    ) : null}
+                  </p>
+                  <p className="font-mono text-foreground-muted text-xs">
+                    {new Date(row.createdAt).toLocaleDateString()} · {row.requester.displayName}
+                  </p>
+                </div>
 
-                  {row.body ? (
-                    <p className="text-sm">
-                      <Link
-                        to="/admin/water/$id"
-                        params={{ id: row.body._id }}
-                        className="underline underline-offset-2"
-                      >
-                        {row.body.name || '(unnamed)'}
-                      </Link>
-                      <span className="ml-2 text-foreground-muted">
-                        {waterBodyClassLabel(row.body.type)} · {row.body.states.join(' ')} ·{' '}
-                        {formatAreaAcres(row.body.surfaceAreaSqM)}
-                      </span>
-                      <span className="ml-2 text-foreground-muted">
-                        — {describeStanding(row.body.standing) ?? 'active'}
-                      </span>
-                    </p>
-                  ) : row.candidate ? (
-                    <p className="text-sm">
-                      <span className="text-foreground">
-                        {row.candidate.name || '(unnamed in the catalogue)'}
-                      </span>
-                      <span className="ml-2 text-foreground-muted">
-                        {row.candidate.cls
-                          ? waterBodyClassLabel(row.candidate.cls)
-                          : `3DHP feature type ${row.candidate.featureType} — not a class we hold`}{' '}
-                        · {formatAreaAcres(row.candidate.surfaceAreaSqM)} · 3DHP{' '}
-                        {row.candidate.externalId}
-                      </span>{' '}
-                      <a
-                        href={row.candidate.serviceUrl}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="text-primary underline-offset-2 hover:underline"
-                      >
-                        outline ↗
-                      </a>
-                    </p>
-                  ) : (
-                    <p className="text-foreground-muted text-sm">
-                      {row.resolveError
-                        ? `Catalogue lookup: ${row.resolveError}`
-                        : 'Waiting for the catalogue lookup…'}
-                      <span className="ml-2 font-mono text-xs">
-                        {row.coord.lat.toFixed(4)}, {row.coord.lng.toFixed(4)}
-                      </span>
-                    </p>
-                  )}
+                {row.body ? (
+                  <p className="text-sm">
+                    <Link
+                      to="/admin/water/$id"
+                      params={{ id: row.body._id }}
+                      className="underline underline-offset-2"
+                    >
+                      {row.body.name || '(unnamed)'}
+                    </Link>
+                    <span className="ml-2 text-foreground-muted">
+                      {waterBodyClassLabel(row.body.type)} · {row.body.states.join(' ')} ·{' '}
+                      {formatAreaAcres(row.body.surfaceAreaSqM)}
+                    </span>
+                    <span className="ml-2 text-foreground-muted">
+                      — {describeStanding(row.body.standing) ?? 'active'}
+                    </span>
+                  </p>
+                ) : row.candidate ? (
+                  <p className="text-sm">
+                    <span className="text-foreground">
+                      {row.candidate.name || '(unnamed in the catalogue)'}
+                    </span>
+                    <span className="ml-2 text-foreground-muted">
+                      {row.candidate.cls
+                        ? waterBodyClassLabel(row.candidate.cls)
+                        : `3DHP feature type ${row.candidate.featureType} — not a class we hold`}{' '}
+                      · {formatAreaAcres(row.candidate.surfaceAreaSqM)} · 3DHP{' '}
+                      {row.candidate.externalId}
+                    </span>{' '}
+                    <a
+                      href={row.candidate.serviceUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-primary underline-offset-2 hover:underline"
+                    >
+                      outline ↗
+                    </a>
+                  </p>
+                ) : (
+                  <p className="text-foreground-muted text-sm">
+                    {row.resolveError
+                      ? `Catalogue lookup: ${row.resolveError}`
+                      : 'Waiting for the catalogue lookup…'}
+                    <span className="ml-2 font-mono text-xs">
+                      {row.coord.lat.toFixed(4)}, {row.coord.lng.toFixed(4)}
+                    </span>
+                  </p>
+                )}
 
-                  {row.note ? (
-                    <blockquote className="border-border border-l-2 pl-3 text-foreground-muted text-sm">
-                      {row.note}
-                    </blockquote>
-                  ) : null}
-                  {row.activityId ? (
-                    <p className="text-foreground-muted text-xs">
-                      Backed by a recorded skate over this water.
-                    </p>
-                  ) : null}
+                {row.note ? (
+                  <blockquote className="border-border border-l-2 pl-3 text-foreground-muted text-sm">
+                    {row.note}
+                  </blockquote>
+                ) : null}
+                {row.activityId ? (
+                  <p className="text-foreground-muted text-xs">
+                    Backed by a recorded skate over this water.
+                  </p>
+                ) : null}
 
-                  {row.status === 'open' ? (
-                    <div className="flex flex-wrap gap-2">
-                      <ReasonDialog
-                        trigger={
-                          <Button size="sm" disabled={row.kind === 'admit' && !row.candidate}>
-                            Approve
-                          </Button>
-                        }
-                        title={`Approve — ${requestKindTitle(row.kind).toLowerCase()}`}
-                        description={approveDescription(row.kind)}
-                        confirmLabel="Approve"
-                        requireReason={false}
-                        reasonPlaceholder="Optional note the skater will read"
-                        onConfirm={async (note) => {
-                          try {
-                            await approve({
-                              requestId: row._id as Id<'waterBodyRequests'>,
-                              ...(note ? { note } : {}),
-                            });
-                            setBanner({ tone: 'ok', text: 'Approved.' });
-                          } catch (err) {
-                            setBanner({ tone: 'error', text: messageOf(err) });
-                            throw err;
-                          }
-                        }}
-                      />
-                      <ReasonDialog
-                        trigger={
-                          <Button size="sm" variant="outline">
-                            Decline
-                          </Button>
-                        }
-                        title="Decline this request"
-                        description="The skater reads your note on the lake. Declining keeps the record — a lake four people asked for stays a lake four people asked for."
-                        confirmLabel="Decline"
-                        confirmVariant="secondary"
-                        requireReason={true}
-                        reasonPlaceholder="Why not — what they can do instead"
-                        onConfirm={async (note) => {
-                          try {
-                            await decline({
-                              requestId: row._id as Id<'waterBodyRequests'>,
-                              note,
-                            });
-                            setBanner({ tone: 'ok', text: 'Declined.' });
-                          } catch (err) {
-                            setBanner({ tone: 'error', text: messageOf(err) });
-                            throw err;
-                          }
-                        }}
-                      />
-                      {row.kind === 'admit' ? (
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={async () => {
-                            try {
-                              await reresolve({ requestId: row._id as Id<'waterBodyRequests'> });
-                              setBanner({ tone: 'ok', text: 'Asked the catalogue again.' });
-                            } catch (err) {
-                              setBanner({ tone: 'error', text: messageOf(err) });
-                            }
-                          }}
-                        >
-                          Look up again
+                {row.status === 'open' ? (
+                  <div className="flex flex-wrap gap-2">
+                    <ReasonDialog
+                      trigger={
+                        <Button size="sm" disabled={row.kind === 'admit' && !row.candidate}>
+                          Approve
                         </Button>
-                      ) : null}
-                    </div>
-                  ) : (
-                    <p className="text-foreground-muted text-xs">
-                      {row.status === 'approved' ? 'Approved' : 'Declined'}
-                      {row.decidedAt ? ` ${new Date(row.decidedAt).toLocaleDateString()}` : ''}
-                      {row.decisionNote ? ` — ${row.decisionNote}` : ''}
-                      {row.admittedWaterBodyId ? (
-                        <>
-                          {' · '}
-                          <Link
-                            to="/admin/water/$id"
-                            params={{ id: row.admittedWaterBodyId }}
-                            className="underline underline-offset-2"
-                          >
-                            the admitted body
-                          </Link>
-                        </>
-                      ) : null}
-                    </p>
-                  )}
-                </CardContent>
-              </Card>
-            ))}
+                      }
+                      title={`Approve — ${requestKindTitle(row.kind).toLowerCase()}`}
+                      description={approveDescription(row.kind)}
+                      confirmLabel="Approve"
+                      requireReason={false}
+                      reasonPlaceholder="Optional note the skater will read"
+                      onConfirm={async (note) => {
+                        try {
+                          await approve({
+                            requestId: row._id as Id<'waterBodyRequests'>,
+                            ...(note ? { note } : {}),
+                          });
+                          setBanner({ tone: 'ok', text: 'Approved.' });
+                        } catch (err) {
+                          setBanner({ tone: 'error', text: messageOf(err) });
+                          throw err;
+                        }
+                      }}
+                    />
+                    <ReasonDialog
+                      trigger={
+                        <Button size="sm" variant="outline">
+                          Decline
+                        </Button>
+                      }
+                      title="Decline this request"
+                      description="The skater reads your note on the lake. Declining keeps the record — a lake four people asked for stays a lake four people asked for."
+                      confirmLabel="Decline"
+                      confirmVariant="secondary"
+                      requireReason={true}
+                      reasonPlaceholder="Why not — what they can do instead"
+                      onConfirm={async (note) => {
+                        try {
+                          await decline({
+                            requestId: row._id as Id<'waterBodyRequests'>,
+                            note,
+                          });
+                          setBanner({ tone: 'ok', text: 'Declined.' });
+                        } catch (err) {
+                          setBanner({ tone: 'error', text: messageOf(err) });
+                          throw err;
+                        }
+                      }}
+                    />
+                    {row.kind === 'admit' ? (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={async () => {
+                          try {
+                            await reresolve({ requestId: row._id as Id<'waterBodyRequests'> });
+                            setBanner({ tone: 'ok', text: 'Asked the catalogue again.' });
+                          } catch (err) {
+                            setBanner({ tone: 'error', text: messageOf(err) });
+                          }
+                        }}
+                      >
+                        Look up again
+                      </Button>
+                    ) : null}
+                  </div>
+                ) : (
+                  <p className="text-foreground-muted text-xs">
+                    {row.status === 'approved' ? 'Approved' : 'Declined'}
+                    {row.decidedAt ? ` ${new Date(row.decidedAt).toLocaleDateString()}` : ''}
+                    {row.decisionNote ? ` — ${row.decisionNote}` : ''}
+                    {row.admittedWaterBodyId ? (
+                      <>
+                        {' · '}
+                        <Link
+                          to="/admin/water/$id"
+                          params={{ id: row.admittedWaterBodyId }}
+                          className="underline underline-offset-2"
+                        >
+                          the admitted body
+                        </Link>
+                      </>
+                    ) : null}
+                  </p>
+                )}
+              </CardContent>
+            </Card>
+          ))}
         </div>
       )}
     </div>
