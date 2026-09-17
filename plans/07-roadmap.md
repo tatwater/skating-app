@@ -522,7 +522,7 @@ you can't legally reach stays visible and says so.*
 - 🟢 **A mobile report control** — PR #56
 
 ## Phase A06g — What nine seasons of imagery might know
-⚫ **Withdrawn** 2026-09-16 · [plan](./backlog/A06g-imagery-research.md)
+⚫ **Withdrawn** 2026-09-16 · [plan](./phases/A06g-imagery-research.md)
 
 Three research lanes that read A06e's archive — single-frame ice identification, corpus shrinking by
 observed freeze behavior, and the phenology derivations — none of which can start before the

@@ -799,7 +799,7 @@ hard block, ever. The founder's counter-proposal is better than the question and
 follow-on, not built here** — see below.
 
 **5. No recurrence content on the per-body summary cards.** ✅ And the cards themselves move to
-**§1.06c** (founder ask, same day) — they have waited long enough in the deferred register. They ship with
+**A06c** (founder ask, same day) — they have waited long enough in the deferred register. They ship with
 **active report counts and types only**. Revisit later: *"likely open water"* or *"frequently pressure
 ridges off the eastern shore"* could genuinely help someone judge a water body with no recent reports — but
 that is the surface closest to the map, where D3 pressure is highest, and it should be decided

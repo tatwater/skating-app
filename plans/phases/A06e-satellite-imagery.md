@@ -596,7 +596,7 @@ exactly the fact a skater is trying to reconstruct by reading reports.
 is a description. *"Prime window"* and *"best ice"* are the phrasings to avoid; the sentence is more
 useful without them anyway.
 
-#### Two research lanes this archive opens → [A06g](../backlog/A06g-imagery-research.md)
+#### Two research lanes this archive opens → [A06g](../phases/A06g-imagery-research.md)
 
 Split into their own doc at the founder's ask (2026-08-21c), because both read this archive, neither can
 start before it exists, and both are easy to ship and hard to ship *correctly*:
@@ -1191,7 +1191,7 @@ function predated it. Every job would have exited 0 and written an ordinary fram
 ### What the pre-run review found *(2026-08-25, founder: "I'd rather wait until we're confident")*
 
 The season backfill was started and stopped forty seconds in, because a read-through of this doc and
-[A06g](../backlog/A06g-imagery-research.md) against the built pipeline turned up two things that a
+[A06g](../phases/A06g-imagery-research.md) against the built pipeline turned up two things that a
 nine-season run would have baked in irreversibly. Both are now fixed.
 
 **1. Thermal noise was never removed.** `sar-cal-lut.py` reads the calibration annotation; the *noise*

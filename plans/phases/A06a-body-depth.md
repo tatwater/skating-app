@@ -42,7 +42,7 @@ consumer that makes it mean something. One ETL, one core change, one display sur
 > 2026-07-31). A06c's elevation pass wants to ride this same run, and running without it costs a second
 > full pass over 116,070 bodies. See *§Before the ETL runs — the ordering gate*.
 >
-> Split from the register's single **§1.06** entry at kickoff: the founder's ask for **real bathymetric
+> Split from the register's single **A06** entry at kickoff: the founder's ask for **real bathymetric
 > contour lines inside the water body polygons** turned out to be both feasible and phase-sized, so it became
 > [**A06b**](./A06b-bathymetry-layer.md) and this doc keeps the scalar depth attribute + its decay
 > consumer. New decisions **D68** (the precedence ladder) and **D69** (shallow amplifies thaw only).

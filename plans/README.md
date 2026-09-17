@@ -140,7 +140,7 @@ change. This table is how to read them.
 | N6d | A06d | #43 | [phases/A06d-body-access-points.md](./phases/A06d-body-access-points.md) | |
 | N6e, "N6e PR 0–3" | A06e, A06e-0 … -3 | #44–#47 | [phases/A06e-satellite-imagery.md](./phases/A06e-satellite-imagery.md) | PR 4/5 unbuilt |
 | N6f | A06f | #44, #56 | [phases/A06f-no-public-access.md](./phases/A06f-no-public-access.md) | |
-| N6g | *(vacant)* | — | [backlog/A06g-imagery-research.md](./backlog/A06g-imagery-research.md) | never built → `backlog/imagery-research.md` |
+| N6g | *(vacant)* | — | [phases/A06g-imagery-research.md](./phases/A06g-imagery-research.md) | never built → `backlog/imagery-research.md` |
 | N6h, "N6h PR 1–5" | A06h, A06h-1 … -5 | #48–#51, #54 | [phases/A06h-weather-detail.md](./phases/A06h-weather-detail.md) | **not** A06g — gaps stay |
 | N7, N7-2, N7-3 | A07a, A07a-2, A07a-3 | #39, #40, #41 | [phases/A07a-unified-corpus.md](./phases/A07a-unified-corpus.md) | |
 | N7b | A07b | — | [phases/A07b-corpus-by-request.md](./phases/A07b-corpus-by-request.md) | branch `phase-n7b-corpus-lifecycle` |

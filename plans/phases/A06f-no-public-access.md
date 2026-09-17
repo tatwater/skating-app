@@ -522,7 +522,7 @@ core and by the same server tests, not by a render.
 
 > One stray reference *was* a mislabel, not a link: `scripts/imagery/cut-granule.sh` said the SCL /
 > NDSI bands are *"the bands A06f is built on."* They are the ice-classification bands the roadmap
-> defers to **§1.06g** ([`backlog/A06g-imagery-research.md`](../backlog/A06g-imagery-research.md)); nothing in
+> defers to **A06g** ([`phases/A06g-imagery-research.md`](../phases/A06g-imagery-research.md)); nothing in
 > this phase reads a granule. Corrected in #56 — noted so a future grep for `A06f` that comes up one
 > short knows why.
 

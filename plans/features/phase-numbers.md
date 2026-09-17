@@ -324,7 +324,7 @@ that outlive them — the "alpha" era is still dev-only. Neutral letters age bet
 8. **The next-gen docs get sorted, not renamed in place.** By the phase-vs-feat test: this doc and
    `us-spellings.md` are scoped and scheduled → `features/phase-numbers.md`,
    `features/us-spellings.md`; `next-gen-weather-shelter-index.md`, `next-gen-weather-stations.md`
-   and `backlog/A06g-imagery-research.md` are unscoped → `backlog/weather-shelter-index.md`,
+   are unscoped → `backlog/weather-shelter-index.md`,
    `backlog/weather-stations.md`, `backlog/imagery-research.md`.
 9. **Verified clean, nothing to do:** the Fly app is `skating-imagery`; no cron name, R2 key,
    snapshot file, or `vitest -t` filter carries a token; GitHub has no repo description, milestones,
