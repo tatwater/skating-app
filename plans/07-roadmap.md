@@ -589,11 +589,15 @@ by long-press on unheld water, `admit` resolved live against the 3DHP catalogue,
 queue whose approve performs the act. *A skater can vouch a water body into the corpus, and an operator
 can stand one down.*
 
+#### Data runs
+- **2026-09-17 — standing seed `standing-seed-20260916`:** 24,961 scanned → 23,520 shelved, 1,433 active (1,377 attached · 52 keep-list · 3 curated · 1 by request), 8 already inactive; `regionStats` recomputed. Three matcher defects fixed first; the keep-list gaps are in the plan doc
+
 #### Deferred
 - ⚪ **Cap open asks per water body per kind at create** — the sibling set is unbounded by construction, so a decision drains it in scheduled pages snapshotted at decision time (five review passes to get right); a cap of ~100 would delete `closeSiblings` and the snapshot outright. Trigger: the next defect in that code
+- ⚪ **The keep list's 23 ambiguous + 27 unmatched names** — hand-set in the Standing card, or a `near` coordinate in the shortlist and a re-run; the seed never re-activates
 
 #### Owed
-- Dev deploy, the seed run (`seed-destinations`), device verification of the request flows
+- Device verification of the request flows (long-press → admit, the drawer's request buttons)
 
 ## Phase A07c — Water body corrections
 ⚪ **Scoped** 2026-09-16 · [plan](./phases/A07c-body-corrections.md) · D180–D183
