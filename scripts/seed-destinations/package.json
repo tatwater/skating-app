@@ -3,7 +3,7 @@
   "version": "0.0.1",
   "private": true,
   "type": "module",
-  "description": "Match a curated shortlist of regional skating destinations to corpus bodies and apply curatedBoost (A06c B3a/D). Not built or deployed.",
+  "description": "Match a curated shortlist of regional skating destinations to corpus bodies and apply curatedBoost (A06c §2.3a/D). Not built or deployed.",
   "scripts": {
     "check-types": "tsc --noEmit",
     "test": "vitest run --coverage",

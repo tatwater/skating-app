@@ -203,7 +203,7 @@ async function main() {
 
   const logger = new RunLogger({
     kind: 'seed_destinations',
-    label: 'curated destination boosts (A06c B3a/D)',
+    label: 'curated destination boosts (A06c §2.3a/D)',
     ...(campaignId ? { campaignId } : {}),
     target: resolveDeployment(),
     call: convexRun,

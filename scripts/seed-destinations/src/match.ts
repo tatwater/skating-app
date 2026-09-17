@@ -1,5 +1,5 @@
 /**
- * Matching a curated destination shortlist to corpus bodies (A06c Workstream B3a/D).
+ * Matching a curated destination shortlist to corpus bodies (A06c Workstream §2.3a/D).
  *
  * **Renamed from `seed-satellite` (founder call, 2026-08-09).** That name was chosen to name the
  * *job* rather than the input list — provision and prove the imagery path. With B3's Copernicus deep
