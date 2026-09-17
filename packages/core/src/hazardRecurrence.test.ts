@@ -44,7 +44,7 @@ describe('suggestedFeatureTypeFor', () => {
   });
 
   it('reaches the type no hazard could reach', () => {
-    // The whole argument for §C7: a single winter's thin patch is weather, and N5a scored tier-A at
+    // The whole argument for §C7: a single winter's thin patch is weather, and A05a scored tier-A at
     // zero promotability. A spot that goes out early every March is a property of the lake bed.
     expect(suggestedFeatureTypeFor('volatile')).toBe('shallow_early_thaw');
   });

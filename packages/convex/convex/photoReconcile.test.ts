@@ -352,7 +352,7 @@ describe('photoReconcile — season_expiry mode (D66)', () => {
   });
 
   /**
-   * The `access` phase (N6d), and it is the **only** clearing phase besides `hazards` that runs in
+   * The `access` phase (A06d), and it is the **only** clearing phase besides `hazards` that runs in
    * this mode — which is the D66 carve-out expressed as a list entry in `MODES`.
    *
    * The escalation path matters more than it looks: this is the completing pass that runs when the
@@ -467,7 +467,7 @@ async function seedCappingHazard(
 /**
  * The starvation this replaced. A capped account that is merely *retried* is never marked, so it sits
  * at the front of `by_status_photos_expired` forever, occupying a slot in a bounded page — enough of
- * them and no other tombstone is ever reached. That is the shape N3/N4's pending sweep shipped and had
+ * them and no other tombstone is ever reached. That is the shape A03/A04's pending sweep shipped and had
  * to fix, and it arrived here by the same route: treating "couldn't determine" as "try again".
  */
 describe('expireDepartedPhotos escalates a capped account instead of retrying it', () => {

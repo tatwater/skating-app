@@ -1,5 +1,5 @@
 /**
- * How a giant describes itself: **the spread across its bays, with the ends named** (N6h / open
+ * How a giant describes itself: **the spread across its bays, with the ends named** (A06h / open
  * question 5, second half).
  *
  * ## The trap this refuses

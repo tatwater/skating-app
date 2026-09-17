@@ -1,5 +1,5 @@
 /**
- * The state-agency source registry (N6b) — every dataset we fetch, declared as data.
+ * The state-agency source registry (A06b) — every dataset we fetch, declared as data.
  *
  * Adding a state is an entry here plus (for a sounding lane) a density threshold. Nothing about a
  * state's identity lives in a code path, which is the property that keeps five agencies from becoming

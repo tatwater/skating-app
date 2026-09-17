@@ -8,7 +8,7 @@ type Stage = ImportRun['stages'][number];
 type Count = ImportRun['counts'][number];
 
 /**
- * The full path of one ETL run (N6c F2), read top-down as **outcome → funnel → detail → evidence**.
+ * The full path of one ETL run (A06c F2), read top-down as **outcome → funnel → detail → evidence**.
  *
  * **Why the path and not just the totals.** A run is an archived extract → an `osmium` filter → a
  * tested transform → a batched load, and the useful questions cross those boundaries: "the count
@@ -18,7 +18,7 @@ type Count = ImportRun['counts'][number];
  *
  * **Why the ordering was rebuilt.** The first version rendered every one of a run's tallies as an
  * equal-weight cell in one uppercase grid. That is fine at eight counts and unreadable at forty-five:
- * the N7 merge reports `groups`, `emitted` and `dropped` — the three numbers the pass exists to
+ * the A07a merge reports `groups`, `emitted` and `dropped` — the three numbers the pass exists to
  * produce — in the same typeface and the same box as `refused.refused-over-silence`, so nothing on
  * the page said which numbers were the answer. Every count is still here, and none of them is still
  * equal: the outcome is a KPI row, the funnel is a ledger that has to balance, and the long tail is
@@ -275,7 +275,7 @@ const UNGROUPED = 'Totals';
  * Rows a prefixed group shows before the rest go behind a disclosure.
  *
  * **Totals is deliberately never capped.** It is the group every other one is a breakdown of, the
- * loaders emit it in a meaningful order (the N7 merge leads with groups → kept → emitted → dropped),
+ * loaders emit it in a meaningful order (the A07a merge leads with groups → kept → emitted → dropped),
  * and it is small by convention — nineteen at its largest anywhere in this repo. A cap there would
  * hide `outOfRegion` behind a disclosure to save four lines, which is the exact trade this redesign
  * exists to stop making.
@@ -292,7 +292,7 @@ interface CountGroup {
 /**
  * Split `refused.no-class` into `refused` / `no-class`, and file every count under its family.
  *
- * The loaders have named counts this way since N7 (`refused.*`, `floor.*`, `queue.*`, `osm.*`) —
+ * The loaders have named counts this way since A07a (`refused.*`, `floor.*`, `queue.*`, `osm.*`) —
  * the structure was always in the data and the page simply flattened it back out. Groups keep
  * first-appearance order so a loader's own reporting order survives; rows sort by size, because
  * within a family the question is always "which of these is the big one".
@@ -510,7 +510,7 @@ function Path({ run }: { run: ImportRun }) {
 }
 
 /**
- * The empty state, which used to be the whole answer this page gave for the N7 merge.
+ * The empty state, which used to be the whole answer this page gave for the A07a merge.
  *
  * "The loader was given no provenance sidecars" was true and useless: it named an internal concept,
  * assigned the blame to a file nobody had heard of, and offered no way to tell "this loader cannot

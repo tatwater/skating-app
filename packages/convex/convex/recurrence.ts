@@ -1,5 +1,5 @@
 /**
- * The season-rollover recurrence pass (N5c / §C4) — once a year, plus a button.
+ * The season-rollover recurrence pass (A05c / §C4) — once a year, plus a button.
  *
  * **Why a job rather than a query.** `hazards` never ages out, so "every hazard on this lake across
  * four winters" is a read that grows forever; the within-season half can cluster at read time precisely
@@ -566,7 +566,7 @@ export const listForBodyAdmin = query({
  *
  * **Bounded by construction.** It reads the precomputed table off
  * `by_computed_season_and_priority` and never touches `hazards` or `waterBodies` in bulk, which is the
- * Phase 7b rule. This is where an operator spends an hour in October and covers the whole corpus,
+ * Phase 07-2 rule. This is where an operator spends an hour in October and covers the whole corpus,
  * which is the difference between the feature existing and the feature working.
  *
  * ⚠ **Genuinely paginated, not capped, and the distinction is one this repo has already paid for.**

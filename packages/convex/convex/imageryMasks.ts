@@ -1,5 +1,5 @@
 /**
- * The corpus read that feeds the imagery reveal mask (N6e PR 2a, D148).
+ * The corpus read that feeds the imagery reveal mask (A06e PR 2a, D148).
  *
  * ## Why this is its own module
  *
@@ -71,7 +71,7 @@ export const listForImageryMask = internalQuery({
       //
       // This is the one filter here whose omission fails *open*, which is why it runs before the
       // corpus floor rather than after it.
-      // Active, not merely listed (N7b): a dormant body is one nobody is shown and needs no
+      // Active, not merely listed (A07b): a dormant body is one nobody is shown and needs no
       // imagery, and a removed one is the takedown this filter was written for.
       if (!isListed(body) || !isActive(body)) {
         unlisted++;
@@ -160,7 +160,7 @@ export const listForImageryMask = internalQuery({
 });
 
 /**
- * Every sub-area's geometry, for the second zone grid the cutter burns (N6e, deferred question 7).
+ * Every sub-area's geometry, for the second zone grid the cutter burns (A06e, deferred question 7).
  *
  * ## Why sub-areas need their own artifact and their own raster
  *

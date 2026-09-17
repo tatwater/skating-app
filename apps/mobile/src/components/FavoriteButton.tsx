@@ -14,7 +14,7 @@ import { Linking, Platform } from 'react-native';
 import { Button, Text, useTheme } from 'tamagui';
 
 /**
- * Favorite toggle (Phase 4, decision #1) — the mobile mirror of web's `FavoriteButton`. Favoriting a
+ * Favorite toggle (Phase 04, decision #1) — the mobile mirror of web's `FavoriteButton`. Favoriting a
  * lake makes its reports notify by default, boost + badge in the feed, and highlight on the map. Uses
  * the reactive `isFavorite` query; the mutation requires auth.
  *
@@ -29,7 +29,7 @@ export function FavoriteButton({
   subAreaId,
 }: {
   waterBodyId: Id<'waterBodies'>;
-  /** A bay's own heart (N9): favorites the bay, not the lake. The lake keeps its own button. */
+  /** A bay's own heart (A09): favorites the bay, not the lake. The lake keeps its own button. */
   subAreaId?: Id<'waterBodySubAreas'>;
 }) {
   const target = { waterBodyId, ...(subAreaId !== undefined ? { subAreaId } : {}) };
@@ -61,7 +61,7 @@ function detectPlatform(): DirectionsPlatform {
 }
 
 /**
- * Directions button (Phase 4 decision #7; re-targeted by N6d / D72) — opens the platform maps app to
+ * Directions button (Phase 04 decision #7; re-targeted by A06d / D72) — opens the platform maps app to
  * the **parking area** when the chosen launch has one, else to the launch itself.
  *
  * The change is the phase's whole point: routing a car to a put-in on a hike-in pond hands a maps app

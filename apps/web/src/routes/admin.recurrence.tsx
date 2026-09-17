@@ -11,13 +11,13 @@ import { Button } from '../components/ui/button';
 import { Card, CardContent } from '../components/ui/card';
 
 /**
- * Hazard identity, from the operator's side (N5c) — two lists that answer the same question at two
+ * Hazard identity, from the operator's side (A05c) — two lists that answer the same question at two
  * time scales.
  *
  * **The recurrence queue** is where an operator spends an hour in October and covers the whole corpus,
  * which is the difference between the feature existing and the feature working. Ranked across every
  * lake, bounded by construction — it reads the precomputed table and never touches `hazards` or
- * `waterBodies` in bulk (the Phase 7b rule).
+ * `waterBodies` in bulk (the Phase 07-2 rule).
  *
  * **The merges panel** is why auto-merge could ship at all. A mechanism that folds one safety pin into
  * another without a human, and leaves nowhere to look at what it did, is a mechanism nobody can check.

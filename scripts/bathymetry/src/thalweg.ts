@@ -1,5 +1,5 @@
 /**
- * Anisotropic gridding along a lake's own axis (N6b).
+ * Anisotropic gridding along a lake's own axis (A06b).
  *
  * ## The problem
  *

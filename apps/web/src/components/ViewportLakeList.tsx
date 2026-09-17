@@ -76,7 +76,7 @@ export function ViewportLakeListView({
         // view the list is empty but the *map* isn't, and saying "no water in view" would contradict
         // the shapes on screen — the water is there, it just has no name to list it under. With
         // nothing at all in view it's a zoom problem: below its prominence rung a small pond isn't
-        // drawn *or* returned (D49/N1), so "nothing here" on a regional view usually means "not yet".
+        // drawn *or* returned (D49/A01), so "nothing here" on a regional view usually means "not yet".
         <p className="px-4 text-muted-foreground text-sm">
           {unnamedCount > 0
             ? 'No named water in view. The unnamed ponds on the map are still there to tap.'
@@ -143,7 +143,7 @@ function rowMeta(row: {
   const parts = [waterBodyClassLabel(row.type)];
   if (row.surfaceAreaSqM !== undefined) parts.push(formatAreaAcres(row.surfaceAreaSqM));
   if (row.states?.length) parts.push(row.states.join(', '));
-  // Leads rather than trails (N6f): it is the one fact here that decides whether the rest matters.
+  // Leads rather than trails (A06f): it is the one fact here that decides whether the rest matters.
   if (row.publicAccess?.verdict === 'none') return `No public access · ${parts.join(' · ')}`;
   return parts.join(' · ');
 }

@@ -4,7 +4,7 @@ import { StandingNotice } from './StandingNotice';
 
 const T = Date.parse('2026-09-16T12:00:00Z');
 
-describe('StandingNotice (N7b)', () => {
+describe('StandingNotice (A07b)', () => {
   it('renders nothing on an active body', () => {
     const { container } = render(<StandingNotice body={{ dedupStatus: 'clean' }} />);
     expect(container).toBeEmptyDOMElement();

@@ -1,6 +1,6 @@
 /**
  * Profile identity + editable-profile fields (06-data-model.md, D13). Single-sourced here so the
- * collection/edit UI (mobile onboarding + the Phase-3 profile editor, web + mobile) and the
+ * collection/edit UI (mobile onboarding + the Phase-03 profile editor, web + mobile) and the
  * `upsertFromClerk` / `updateProfile` trust boundary (D37) normalize + validate *identically*: the
  * client gives instant feedback, but the Convex function is what actually enforces these before
  * writing the `profiles` row. Never trust the client's normalization — re-run it server-side.

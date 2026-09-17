@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Mirror the 3DEP elevation archive to a PRIVATE R2 bucket (N7-2).
+# Mirror the 3DEP elevation archive to a PRIVATE R2 bucket (A07a-2).
 #
 #   scripts/lake-depth/mirror-elevation-r2.sh push
 #   scripts/lake-depth/mirror-elevation-r2.sh pull

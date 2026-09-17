@@ -3,7 +3,7 @@
  *
  * ## What this source is, and why we had been reading the wrong half of it
  *
- * NH GRANIT publishes `EDP_Bathymetry_Lakes` as two layers. N6b read layer 0, the contour **lines**,
+ * NH GRANIT publishes `EDP_Bathymetry_Lakes` as two layers. A06b read layer 0, the contour **lines**,
  * and drew them. Layer 1 is the same survey as **polygons** — one per depth band, carrying
  * `depthmin`, `depthmax` and `acres` — 7,351 rows over **636 assessment units**. That is a
  * hypsographic curve per lake, published, and nothing had ever read it.
@@ -22,7 +22,7 @@
  * ## The founder's constraint, and what it rules out
  *
  * *"Yes for NH's published bands, no for our surfaces"* (2026-08-09). The arithmetic below runs over
- * **the agency's own published areas**. Integrating our N6b interpolated surface would produce a mean
+ * **the agency's own published areas**. Integrating our A06b interpolated surface would produce a mean
  * for every contoured lake in four states — and it would be our model wearing an agency's label,
  * which is a weaker claim than it looks. This does not do that.
  *
@@ -219,7 +219,7 @@ export function nhBandsQueryUrl(offset: number, pageSize: number = NH_BANDS_PAGE
     where: '1=1',
     outFields: NH_BANDS_FIELDS.join(','),
     // **Centroid, not geometry.** We need one point per band and the rings are the render payload
-    // N6b already fetched; asking for them again would multiply the archive for nothing.
+    // A06b already fetched; asking for them again would multiply the archive for nothing.
     returnGeometry: 'false',
     returnCentroid: 'true',
     outSR: '4326',

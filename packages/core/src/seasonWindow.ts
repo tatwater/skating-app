@@ -1,5 +1,5 @@
 /**
- * The timing window (N5c / §C6) — *"always between late December and February"*, which is the sentence
+ * The timing window (A05c / §C6) — *"always between late December and February"*, which is the sentence
  * the founder ask named and the one most easily overclaimed.
  *
  * Two rules do all the work, and both widen rather than narrow:

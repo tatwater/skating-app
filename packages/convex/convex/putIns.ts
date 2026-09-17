@@ -1,5 +1,5 @@
 /**
- * Put-in markers (Phase 4, decision #7) — routable access points for the map + directions button.
+ * Put-in markers (Phase 04, decision #7) — routable access points for the map + directions button.
  * A report `point` can be dropped mid-lake / on the ice, so it is NOT itself a put-in: `listForBody`
  * clusters the visible reports' points, snaps each cluster to the nearest shore/road edge, and merges
  * in any admin-set `official` markers, minus moderator-`hidden` coords. Directions always target a
@@ -7,7 +7,7 @@
  *
  * The clustering/snap/geometry lives in `@skating/core` (`clusterPutIns` / `snapToEdge`) so it's pure
  * + tested; this module is the Convex glue + the moderator/admin mutations. The operator UI is the
- * lake editor's Put-ins tool (N6f) — this header promised it "in Phase 7" for three phases while
+ * lake editor's Put-ins tool (A06f) — this header promised it "in Phase 07" for three phases while
  * `setOfficial` and `hide` had no caller at all, which is exactly how nobody noticed.
  */
 
@@ -49,7 +49,7 @@ export interface PutInMarker {
    */
   id?: string;
   /**
-   * The walk from the lot to here, as a line to draw (N6e Workstream 0).
+   * The walk from the lot to here, as a line to draw (A06e Workstream 0).
    *
    * Carried on the marker rather than fetched separately because the map is already holding it: this
    * query loads the whole row for the pin, and the drawer's `accessForBody` is a different read on a
@@ -65,7 +65,7 @@ export interface PutInMarker {
   approachMeters?: number;
   approachAscentM?: number;
   /**
-   * The launch's name (N6d/A3) — OSM's where it has one, else the derived compass label.
+   * The launch's name (A06d/A3) — OSM's where it has one, else the derived compass label.
    *
    * *"Lake Fairlee Boat Ramp"* is what makes a pin worth tapping rather than a dot, and it is the
    * headline of the phase's A3: OSM already names these features, so the names arrive free with the
@@ -78,7 +78,7 @@ export interface PutInMarker {
    * When somebody was last known to get on the ice here — the newest `skateEndTime` among the reports
    * that formed the cluster, or the write time for a stored row.
    *
-   * Put-ins are the one thing on the map deliberately exempt from every ageing rule in the app (N5a
+   * Put-ins are the one thing on the map deliberately exempt from every ageing rule in the app (A05a
    * correction 1: access is the corpus's single most-discussed concern, so a marker outlives its
    * season and its author). That exemption is right, and it has a cost this field pays: an access
    * point from three winters ago renders identically to one used last week, while being the kind of
@@ -123,7 +123,7 @@ export async function loadPutInRows(ctx: QueryCtx, waterBodyId: Id<'waterBodies'
  * The approach fields a stored row contributes to its marker, or nothing.
  *
  * One helper for the two buckets that can have them, so a launch's line and its distance can never
- * be included by one and forgotten by the other — the enumeration failure that cost N6d four
+ * be included by one and forgotten by the other — the enumeration failure that cost A06d four
  * separate defects.
  */
 function approachOf(row: Doc<'putIns'>): {
@@ -153,7 +153,7 @@ export const listForBody = query({
 
     // Derived clusters from the visible reports that didn't opt out of showing a put-in (decision #7).
     //
-    // ⚠ **This read is deliberately NOT season-scoped, and it is the trap of N5a** (D63, correction 1).
+    // ⚠ **This read is deliberately NOT season-scoped, and it is the trap of A05a** (D63, correction 1).
     // Put-ins are exempt from the seasonal reset by founder call — where you can get on the ice doesn't
     // change because the calendar did, and S1 says access is the corpus's single most-discussed
     // concern. But the markers are *derived from reports*, and reports are the most thoroughly
@@ -189,7 +189,7 @@ export const listForBody = query({
       }
     }
 
-    // Then the OSM-derived launches (N6d). **Between `official` and `derived`, matching the
+    // Then the OSM-derived launches (A06d). **Between `official` and `derived`, matching the
     // `PUTIN_SOURCES` ladder**: a mapped slipway is better evidence than a cluster of report points and
     // worse than an operator's pin. Without this bucket they render nowhere — they are neither
     // `official` nor `derived`, so the 3,588 launches the access ETL imported would be invisible on the
@@ -242,8 +242,8 @@ export const listForBody = query({
  * Admin/moderator: add an `official` put-in marker (accurate, priority styling). Writes a
  * `moderationActions` audit row for accountability.
  *
- * The operator UI is the lake editor's Put-ins tool (N6f) — arm, click the canvas, save. This
- * mutation shipped in Phase 4 with a comment promising that UI "in Phase 7" and went unwired for
+ * The operator UI is the lake editor's Put-ins tool (A06f) — arm, click the canvas, save. This
+ * mutation shipped in Phase 04 with a comment promising that UI "in Phase 07" and went unwired for
  * three phases while the admin card linked to the public map, which never grew a control either.
  *
  * `name` is optional and new with that UI. An `osm` launch arrives with whatever OSM called it and a
@@ -268,7 +268,7 @@ export const setOfficial = mutation({
       );
     }
 
-    // **Snap to the shoreline, like every other rung already does** (N6f). `derived` clusters are
+    // **Snap to the shoreline, like every other rung already does** (A06f). `derived` clusters are
     // snapped in `listForBody` because a report's `point` is where somebody *skated*, which is often
     // mid-lake; `osm` launches arrive on the shore by construction. `official` — the one rung a human
     // places by hand — was the only one stored raw, so an operator's click landed exactly where they
@@ -286,7 +286,7 @@ export const setOfficial = mutation({
       );
     }
     const snapped = snapToEdge(coord, polygon);
-    // The bay this launch serves (N9) — by distance to the bay's outline, since the coord was just
+    // The bay this launch serves (A09) — by distance to the bay's outline, since the coord was just
     // snapped onto the shoreline that outline traces. Absent on the ~99% of bodies with no bays.
     const subAreaId = await resolveSubAreaForPutIn(ctx, waterBodyId, snapped);
 
@@ -314,7 +314,7 @@ export const setOfficial = mutation({
       metadata: { coord: snapped, putInId: id, ...(trimmedName ? { name: trimmedName } : {}) },
       createdAt: Date.now(),
     });
-    // Standing (N7b, founder call): an official put-in on a dormant body brings it back — a human
+    // Standing (A07b, founder call): an official put-in on a dormant body brings it back — a human
     // saying "you can get on the ice here" is evidence of access, and access is what the seed
     // partitions on. Then the retention clock runs: a put-in alone does not *keep* a body active.
     await activateOnEvidence(ctx, waterBodyId, 'put_in');
@@ -341,7 +341,7 @@ export const hide = mutation({
     const body = await ctx.db.get(waterBodyId);
     if (!body) throw new ConvexError('Water body not found');
     if (reason.trim().length === 0) throw new ConvexError('A reason is required');
-    // Stamped like any other row (N9), so a bay-scoped access read can find the suppression rows
+    // Stamped like any other row (A09), so a bay-scoped access read can find the suppression rows
     // that apply to its shore without re-deriving them from the coordinate.
     const subAreaId = await resolveSubAreaForPutIn(ctx, waterBodyId, coord);
     const id = await ctx.db.insert('putIns', {

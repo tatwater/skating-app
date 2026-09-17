@@ -1,5 +1,5 @@
 /**
- * Lake depth: the provenance ladder, the shallow classifier, and the display framing (D68/D69, N6a).
+ * Lake depth: the provenance ladder, the shallow classifier, and the display framing (D68/D69, A06a).
  *
  * **Why a ladder rather than a source.** No single dataset gives us lake depth. Some of what exists is
  * measured (a state agency's depth-sounder transects; LAGOS-US DEPTH's ~65 compiled monitoring sources)
@@ -16,7 +16,7 @@
  * exactly where "goes out early" is most predictive.
  *
  * The thresholds here are the tunable-magnitude kind (like `HAZARD_DECAY`): the *direction* is locked by
- * physics, the numbers are defaults to refit. Surfaced read-only on the Phase 7b tuning page.
+ * physics, the numbers are defaults to refit. Surfaced read-only on the Phase 07-2 tuning page.
  */
 
 import { formatDepthFeet } from './units';
@@ -28,7 +28,7 @@ import { formatDepthFeet } from './units';
  *  - `operator`            — typed into the per-lake editor by a moderator: a state-agency survey read
  *                            off a chart, or local knowledge. Beats every automated rung and is never
  *                            overwritten by an import.
- *  - `state_agency`        — bulk-loaded from a state bathymetry dataset (deferred to N6b, where those
+ *  - `state_agency`        — bulk-loaded from a state bathymetry dataset (deferred to A06b, where those
  *                            datasets are fetched for their contours anyway).
  *  - `lagos_us`            — LAGOS-US DEPTH v1.0: *observed* depth compiled from ~65 sources, lakes > 1 ha.
  *  - `alsc_1987`           — the Adirondack Lakes Survey, 1,345 ponds sounded **1984–87**. Measured, so

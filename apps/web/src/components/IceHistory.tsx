@@ -9,7 +9,7 @@ import {
 import { useQuery } from 'convex/react';
 
 /**
- * *Ice history* — what several winters said about one spot (N5c / §9, D78).
+ * *Ice history* — what several winters said about one spot (A05c / §9, D78).
  *
  * **It is not a hazard, and every difference from one is deliberate.** No pin, no halo, no confirm
  * buttons, no freshness chip, no decay. It sits above the hazard list rather than among the pins,

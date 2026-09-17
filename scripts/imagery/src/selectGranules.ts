@@ -1,5 +1,5 @@
 /**
- * Ask STAC which granules are worth cutting, and write the list a fan-out consumes (N6e PR 2).
+ * Ask STAC which granules are worth cutting, and write the list a fan-out consumes (A06e PR 2).
  *
  *   pnpm --filter @skating/imagery select-granules --from=2026-01-01 --to=2026-03-15
  *     [--cloud=60] [--bbox=minLng,minLat,maxLng,maxLat] [--masks=<path.fgb>] [--out=<file>]

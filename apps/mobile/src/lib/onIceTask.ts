@@ -1,5 +1,5 @@
 /**
- * The background-location TaskManager task behind **on-ice mode** (D54 Layer 2) **and the Phase 8
+ * The background-location TaskManager task behind **on-ice mode** (D54 Layer 2) **and the Phase 08
  * track recorder** — one task, two consumers, one GPS profile at a time.
  *
  * `TaskManager.defineTask` must run at module load, in global scope — so this module is imported once

@@ -1,5 +1,5 @@
 /**
- * The web contour layer's palette (N6b).
+ * The web contour layer's palette (A06b).
  *
  * Everything else — the D81 filter, the depth ramp, the zoom floor, the drawer credit — lives in
  * `@skating/core/contourLayer`, shared with mobile. Same split as the hazard layers: *what gets

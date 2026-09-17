@@ -25,7 +25,7 @@ describe('putInsToFeatureCollection', () => {
     expect(fc.features[0]?.properties?.source).toBe('official');
   });
 
-  /** The `osm` rung and its name (N6d/A3) — the same assertion web's helper carries, so the two
+  /** The `osm` rung and its name (A06d/A3) — the same assertion web's helper carries, so the two
    *  clients cannot drift on what an imported launch looks like to a layer. */
   it('carries the osm rung and its name through to the layer', () => {
     const fc = putInsToFeatureCollection([
@@ -128,7 +128,7 @@ describe('waterBodiesToFeatureCollection', () => {
       _id: 'wb1',
       name: 'Lake Morey',
       type: 'lake',
-      // Always present, never absent (N6f): the shared dim expression compares against `true`, and a
+      // Always present, never absent (A06f): the shared dim expression compares against `true`, and a
       // missing property evaluates to null inside an `any`, which throws rather than reading false.
       inactive: false,
       selfFlagged: false,
@@ -136,7 +136,7 @@ describe('waterBodiesToFeatureCollection', () => {
     });
   });
 
-  it('dims every non-active standing (N7b), and the viewer’s own reports (N6f)', () => {
+  it('dims every non-active standing (A07b), and the viewer’s own reports (A06f)', () => {
     const body = {
       _id: 'wb1',
       name: 'Lake Morey',
@@ -188,7 +188,7 @@ describe('frameForCoord', () => {
     expect(frameForCoord({ lat: 37.77, lng: -122.42 })).toBeNull();
   });
 
-  it('includes the wider Northeast region (Phase 2.5) that the old VT-only bounds excluded', () => {
+  it('includes the wider Northeast region (Phase 02b) that the old VT-only bounds excluded', () => {
     expect(frameForCoord({ lat: 43.66, lng: -70.25 })).not.toBeNull(); // Portland, ME
     expect(frameForCoord({ lat: 42.89, lng: -78.88 })).not.toBeNull(); // Buffalo, NY
   });

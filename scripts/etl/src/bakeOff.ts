@@ -1,5 +1,5 @@
 /**
- * **D92's bake-off** — which catalogue draws a better lake, decided by our own soundings (N7).
+ * **D92's bake-off** — which catalogue draws a better lake, decided by our own soundings (A07a).
  *
  *   pnpm --filter @skating/bathymetry export-soundings   # once, produces the referee
  *   pnpm --filter @skating/etl bake-off [--input=<soundings.ndjson>] [--grid=N]

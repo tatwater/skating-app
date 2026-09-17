@@ -1,14 +1,14 @@
-# Phase 9.5 build plan — On-ice live alerting (D54 Layer 2) + deferred hazard threads
+# Phase 09b build plan — On-ice live alerting (D54 Layer 2) + deferred hazard threads
 
-> **Roadmap / parent:** the fast-follow to [`phases/09a-hazards.md`](./09a-hazards.md). Phase 9 shipped
+> **Roadmap / parent:** the fast-follow to [`phases/09a-hazards.md`](./09a-hazards.md). Phase 09a shipped
 > Layers 0–1 (silent sync + foreground-only proximity banners); this is the deferred **D54 Layer 2** —
 > the opt-in **"on-ice mode"** that keeps warning you *while you skate with the phone in your pocket* —
-> bundled with the several smaller hazard threads Phase 9 logged as deferred.
+> bundled with the several smaller hazard threads Phase 09a logged as deferred.
 >
-> **Naming.** `9.5` mirrors `2.5` (the Phase 2 offline fast-follow): a same-phase follow-on, not a new
+> **Naming.** `9.5` mirrors `2.5` (the Phase 02a offline fast-follow): a same-phase follow-on, not a new
 > roadmap phase.
 >
-> **Status:** ✅ **Complete (2026-07-22)** on branch `phase-9.5-on-ice-alerting` — all nine build items
+> **Status:** ✅ **Complete (2026-07-22)** on branch `phase-09b-on-ice-alerting` — all nine build items
 > landed, full test suite green (core / mobile / backend), code-reviewed. Pending PR + Greptile review,
 > then dev deploy; prod deferred (never deployed). One code-review fix folded in: the every-approach
 > directional re-alert used a distance-only hysteresis that machine-gunned notifications while a skater
@@ -16,7 +16,7 @@
 > re-armed, once its vicinity has been *entered*). The `file://` pmtiles offline-basemap path is built
 > flag-off and still awaits its one on-device confirmation (route (1) in the smaller-threads section).
 >
-> **Prerequisites — all in place.** Phase 9 is **merged (PR #20), on dev, Android-emulator smoke-tested**.
+> **Prerequisites — all in place.** Phase 09a is **merged (PR #20), on dev, Android-emulator smoke-tested**.
 > The pure proximity evaluator (`hazardProximity.evaluateOnIceAlert`), the per-session `alerted` set
 > (`onIce.ts` `AlertSession`), the on-device hazard cache, and the `skating://hazard/<id>` route all
 > exist and were built *specifically* so this layer is additive. What's genuinely new: one pure core
@@ -98,7 +98,7 @@ promoted to `01-decisions.md` as a *D54 Layer-2 amendment* alongside the existin
   background syncing reactively. Local notifications (in scope) need none of that stack. Revisit as its
   own focused decision.
 - **Per-body summary cards** and **freeform polygon authoring** — explicitly not needed yet (founder).
-- Everything Phase 9 already deferred to Phase 7/8/10 (admin tuning UI, consensus render, GPS
+- Everything Phase 09a already deferred to Phase 07/8/10 (admin tuning UI, consensus render, GPS
   negative-evidence, weather-driven decay, shore-band snap) stays where it is.
 
 ---
@@ -263,7 +263,7 @@ added (course-over-ground decision).
     pocketed-phone stretch leaves gaps and the suggestion is best-effort. Earliest/latest aggregation is
     the same either way — arming just fills it in. Intervals are on-device only (D12), pruned to the day.
   - Overlaps the D24 activity-detection path; keep the bookkeeping small and local to the watcher.
-- **Layer-3 offline basemap tile-pack — retry.** From the Phase 9 spike, the blocker is our `pmtiles://`
+- **Layer-3 offline basemap tile-pack — retry.** From the Phase 09a spike, the blocker is our `pmtiles://`
   object-built style has no crawlable URL for `OfflineManager.createPack`. On this build, test the three
   logged routes in order of cheapness: (1) confirm whether native pmtiles reads a `file://` archive
   (ship a mini regional `.pmtiles`, point the style at a local URI); (2) `mergeOfflineRegions` with a

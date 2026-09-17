@@ -16,7 +16,7 @@ import { Button, Paragraph, Text, XStack, YStack } from 'tamagui';
 import { useIsLeaving } from './LeavingNotice';
 
 /**
- * The Strava connect control (Phase 8 / L7 brand kit).
+ * The Strava connect control (Phase 08 / L7 brand kit).
  *
  * The flow is: mint a state nonce server-side → open Strava's consent page in the **system browser**
  * (not a webview — OAuth in an embedded webview is both a phishing surface and increasingly refused

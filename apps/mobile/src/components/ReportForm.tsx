@@ -213,7 +213,7 @@ function SkateTimeField({ value, onChange }: { value: number; onChange: (ms: num
 type StartMode = 'none' | 'start' | 'duration';
 
 /**
- * Optional "when did you get on the ice?" input (Phase 5), the mobile mirror of web's
+ * Optional "when did you get on the ice?" input (Phase 05), the mobile mirror of web's
  * `StartWindowField`. The skater enters a start time *or* a duration; `resolveSkateWindow`
  * back-computes the start from a duration at this input boundary, and only the resolved
  * `skateStartTime` (epoch ms) is lifted to the form — duration is never stored. Re-derives on any
@@ -228,7 +228,7 @@ function StartWindowField({
   end: number;
   skateStartTime?: number;
   /**
-   * A dwell-derived start (Phase 9.5) to prefill from — when present, the field opens in "start time"
+   * A dwell-derived start (Phase 09b) to prefill from — when present, the field opens in "start time"
    * mode already showing it, so the skater confirms or edits rather than entering it from scratch.
    */
   suggestedStart?: number;
@@ -350,7 +350,7 @@ export function ReportForm({
   /** An existing draft to hydrate + update (offline edit); absent = a fresh report/draft. */
   draft?: ReportDraft;
   /**
-   * The **local** id of a recording this report describes (Phase 8), when the form was opened from a
+   * The **local** id of a recording this report describes (Phase 08), when the form was opened from a
    * finished skate. Local rather than server, because both may have been captured with no signal: the
    * flush resolves it to an `activityId` once the track lands, and if the track can't be sent the
    * report goes out without a path (D24) rather than waiting.
@@ -360,7 +360,7 @@ export function ReportForm({
   /** Called after saving a draft (defaults to `onClose`). */
   onSaved?: () => void;
   /**
-   * An existing **server** report to edit rather than create (N6f).
+   * An existing **server** report to edit rather than create (A06f).
    *
    * Seeded from the whole stored report, because `reports.update` is last-write-wins over the entire
    * content block — a half-seeded form would silently clear every field the author didn't retype.
@@ -372,7 +372,7 @@ export function ReportForm({
    */
   editing?: { reportId: Id<'reports'>; report: StoredReportForForm; photoIds: Id<'photos'>[] };
   /**
-   * A **server** activity to attach (N6f), as opposed to `trackDraftId`'s local one.
+   * A **server** activity to attach (A06f), as opposed to `trackDraftId`'s local one.
    *
    * The recorder hands over a local draft id because the track may not have flushed yet. The You
    * tab's unreported-skates list is the opposite case: those rows come from the server, so a local
@@ -432,7 +432,7 @@ export function ReportForm({
         }))
       : [],
   );
-  // The already-attached photos an edit is keeping (N6f). Seeded synchronously from the prop so it is
+  // The already-attached photos an edit is keeping (A06f). Seeded synchronously from the prop so it is
   // correct before first paint, and held apart from `photos` on purpose: those are drafts with local
   // files that the unmount sweep reclaims, and running a published report's committed rows through
   // that sweep would delete its images the moment someone opened the edit form and backed out.
@@ -441,7 +441,7 @@ export function ReportForm({
   const [submitting, setSubmitting] = useState(false);
   const [savingDraft, setSavingDraft] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  // Phase 9.5: the dwell-derived start prefilled into the start-window field, and whether *any* skate
+  // Phase 09b: the dwell-derived start prefilled into the start-window field, and whether *any* skate
   // time was suggested (drives the "from your time on the ice" caption). Only set for a fresh online form.
   const [suggestedStart, setSuggestedStart] = useState<number | undefined>(undefined);
   const [prefilledFromDwell, setPrefilledFromDwell] = useState(false);
@@ -451,7 +451,7 @@ export function ReportForm({
 
   // Initialize a fresh form once the profile is known (a hydrated draft already set it above). For an
   // online report on a resolved lake, prefill the skate window from today's dwell on that lake (Phase
-  // 9.5) — earliest-in as the start, latest-out as the end. Editable, never authoritative.
+  // 09b) — earliest-in as the start, latest-out as the end. Editable, never authoritative.
   useEffect(() => {
     if (profile !== undefined && !minor && form === null) {
       // An edit seeds from the published report and takes no dwell prefill — the skate window is a
@@ -593,7 +593,7 @@ export function ReportForm({
     if (!result.ok) {
       setError(result.errors.map((e) => `${e.field}: ${e.message}`).join('; '));
       // A future skate time is nearly always device clock skew, not a bogus claim — and this
-      // rejection happens *client-side*, so the server never sees it. Report it (Phase 7b) so the
+      // rejection happens *client-side*, so the server never sees it. Report it (Phase 07-2) so the
       // rate is visible and `SKATE_TIME_FUTURE_TOLERANCE_MS` can be judged on evidence. Advisory
       // telemetry: fire-and-forget, and a failure here must never affect the form. Deliberately not
       // wired into the offline flush — a queued draft retries, and retries would inflate the count.
@@ -1088,7 +1088,7 @@ export function ReportForm({
         <Button chromeless onPress={onClose} disabled={submitting || savingDraft}>
           Cancel
         </Button>
-        {/* No draft lane for a published report (N6f) — you save the changes or you don't. A draft
+        {/* No draft lane for a published report (A06f) — you save the changes or you don't. A draft
             flushes through `reports.create`, so this would duplicate the report rather than edit it. */}
         {editing ? null : (
           <Button onPress={handleSaveDraft} disabled={submitting || savingDraft}>

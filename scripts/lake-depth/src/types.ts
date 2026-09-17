@@ -1,5 +1,5 @@
 /**
- * Shared lake-depth ETL types (N6a). Three external sources, one normalized record.
+ * Shared lake-depth ETL types (A06a). Three external sources, one normalized record.
  *
  * Every source is keyed to its **own** lake ids — `Hylak_id`, `lagoslakeid` — and none of them knows
  * anything about OSM, so there is no join key to our corpus. What each source can give us is a point

@@ -7,7 +7,7 @@ import { Paragraph, Text, YStack } from 'tamagui';
 import { Section } from './detailUi';
 
 /**
- * The spread across a giant's named bays (N6h / open question 5) — the mobile twin of web's
+ * The spread across a giant's named bays (A06h / open question 5) — the mobile twin of web's
  * `SubAreaSpread`, over the same core sentences. The named extremes are pressable and navigate to
  * `sub=`, the same route the chips and a search hit use, so pressing *Missisquoi Bay* frames it and
  * scopes both weather panels to it. Nothing renders until the filter tier has rows for two of the

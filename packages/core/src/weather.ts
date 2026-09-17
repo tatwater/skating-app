@@ -35,7 +35,7 @@ export interface HourlyWeather {
    * The same hour as an absolute UTC instant. Carried beside `startMs` because two local-shifted
    * timestamps cannot say whether their hours were consecutive across a DST transition — a
    * spring-forward night reads as a two-hour gap and a fall-back night as a repeated hour. Anything
-   * judging *contiguity* reads this; anything printing a *clock* reads `startMs` (N6h D).
+   * judging *contiguity* reads this; anything printing a *clock* reads `startMs` (A06h D).
    */
   utcMs?: number;
   temperatureC: number;
@@ -49,7 +49,7 @@ export interface HourlyWeather {
    *
    * Unused by this reducer, which is deliberate: every aggregate here is scalar, and a mean bearing
    * is not a mean. It exists on the shared hour type so the daily archive (`weatherDay.ts`) can build
-   * its sector histogram from the same fetch rather than forking a second hour shape (N6h).
+   * its sector histogram from the same fetch rather than forking a second hour shape (A06h).
    */
   windDirectionDeg?: number;
   /** Open-Meteo `rain` (mm) — liquid only. Split from snowfall (opposite decay signs, D56). */
@@ -66,7 +66,7 @@ export interface HourlyWeather {
   cloudCoverPct?: number;
   /**
    * Open-Meteo `weather_code` (WMO). The only input that separates sleet, ice pellets and freezing
-   * drizzle from "some precipitation near freezing" (N6h Workstream D).
+   * drizzle from "some precipitation near freezing" (A06h Workstream D).
    *
    * Unused by every reducer here — they aggregate amounts, and a modal weather code is not a mean.
    * It rides on the shared hour type so the timeline chart can name a precipitation type from the
@@ -145,7 +145,7 @@ export interface IceChangeThresholds {
 }
 
 /**
- * Did the weather over a window plausibly **change the ice** (Phase 10 / §7b)? True when a meaningful
+ * Did the weather over a window plausibly **change the ice** (Phase 10 / §07-2)? True when a meaningful
  * freeze *or* thaw occurred. The corroboration contradiction check uses this to tell an honest "the ice
  * changed" report from a real contradiction: if the weather-since between two disagreeing reports explains
  * the change, it is **not** a contradiction (D3/D50). An empty summary (`hours === 0`, e.g. a failed

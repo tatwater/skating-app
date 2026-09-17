@@ -1,5 +1,5 @@
 /**
- * Body-level shallowness for the D69 decay amplifier (N6a).
+ * Body-level shallowness for the D69 decay amplifier (A06a).
  *
  * Two independent paths to the same bit, because they cover different halves of the corpus:
  *  - **depth data** (`isShallowDepth`), which reaches ~7% of bodies — but essentially all of the ones

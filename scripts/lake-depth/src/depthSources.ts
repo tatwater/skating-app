@@ -1,5 +1,5 @@
 /**
- * The three depth datasets, their provenance, and the manifest that pins a download (N6a).
+ * The three depth datasets, their provenance, and the manifest that pins a download (A06a).
  *
  * Written because this ETL's README called its own provenance story *"the weakest part of this
  * runbook"* — three downloads recorded as a date in someone's run notes. `scripts/bathymetry` and
@@ -78,7 +78,7 @@ export const DEPTH_SOURCES: DepthSource[] = [
     fetch: { kind: 'figshare', articleId: 13_402_070, filename: 'GLOBathy_basic_parameters.zip' },
     provides: ['max'],
     notes:
-      'Keyed to HydroLAKES by Hylak_id — it is an attribute table with no geometry of its own. The bathymetry RASTERS in the same collection are permanently out of scope (D-note in the N6b plan): they are distance-to-shore run through a linear equation.',
+      'Keyed to HydroLAKES by Hylak_id — it is an attribute table with no geometry of its own. The bathymetry RASTERS in the same collection are permanently out of scope (D-note in the A06b plan): they are distance-to-shore run through a linear equation.',
   },
   {
     key: 'lagos-us-depth',
@@ -118,7 +118,7 @@ export interface DepthArchiveFile {
  * What `.raw/<key>/manifest.json` holds.
  *
  * Same job as the OSM and bathymetry manifests: make a download reproducible without anyone
- * remembering anything. `licence` is the field this ETL specifically needed — the N6a open question
+ * remembering anything. `licence` is the field this ETL specifically needed — the A06a open question
  * is *"confirm the Intellectual Rights statement at download"*, and a confirmation that lives in a
  * terminal is not a confirmation.
  */

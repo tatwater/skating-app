@@ -1,7 +1,7 @@
 /**
  * Wall-clock ↔ instant primitives for a named IANA zone.
  *
- * Extracted when `solar.ts` and `postedAccess.ts` (N6e) both needed what `schedule.ts` had already
+ * Extracted when `solar.ts` and `postedAccess.ts` (A06e) both needed what `schedule.ts` had already
  * worked out for the notification digest. Three copies of an `Intl.DateTimeFormat` parse is three
  * chances to fix a DST bug in two places, so the primitives live here and `schedule.ts` re-exports
  * `zonedParts` for the callers that already import it from there.
@@ -87,7 +87,7 @@ export function zonedInstant(
  * Whether this runtime knows `timeZone` — `Intl` throws a `RangeError` for anything it doesn't. The
  * runtime's own table is the one authority on what counts as a zone, and every helper in this file
  * would throw on a string it rejects, so a zone that crosses a trust boundary (a client writing
- * `profiles.timezone`, N8/C) is checked here before it can become the argument that throws later.
+ * `profiles.timezone`, A08/C) is checked here before it can become the argument that throws later.
  */
 export function isKnownTimeZone(timeZone: string): boolean {
   if (timeZone.length === 0 || timeZone.length > 64) return false;

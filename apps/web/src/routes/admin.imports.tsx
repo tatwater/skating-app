@@ -8,7 +8,7 @@ import { Badge } from '../components/ui/badge';
 import { Card, CardContent } from '../components/ui/card';
 
 /**
- * ETL run history (N6c Workstream F2) — **admin-only**, because a run row names deployment targets,
+ * ETL run history (A06c Workstream F2) — **admin-only**, because a run row names deployment targets,
  * source URLs and file checksums.
  *
  * Every loader under `scripts/` used to compute a genuinely useful summary and print it to a

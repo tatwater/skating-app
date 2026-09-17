@@ -28,7 +28,7 @@ export function useCanModerate(): boolean {
 /**
  * Role-gated inline moderator takedown (D32/D37) — hide/remove a visible report/comment with a
  * required reason (audited). Renders nothing for non-moderators. The full queue + restore live in
- * Phase 7's `/admin`.
+ * Phase 07's `/admin`.
  */
 export function ModeratorActions({
   targetType,

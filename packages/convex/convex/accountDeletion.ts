@@ -165,7 +165,7 @@ export const requestDeletion = mutation({
       // The wipe. Everything here is identity or private location; none of it is community record.
       displayName: DELETED_DISPLAY_NAME,
       profileImageUrl: undefined,
-      email: undefined, // the Clerk mirror (N8 PR 3) — it goes at the request, like the avatar
+      email: undefined, // the Clerk mirror (A08 PR 3) — it goes at the request, like the avatar
       emailUnsubscribeSecret: undefined,
       bio: undefined,
       homeTownLabel: undefined,
@@ -546,7 +546,7 @@ async function erasePrivate(
       .withIndex('by_user', (q) => q.eq('userId', userId))
       .take(size),
   );
-  // The device addresses (N8 PR 3): a token is a capability to ring this person's phone, and a
+  // The device addresses (A08 PR 3): a token is a capability to ring this person's phone, and a
   // tombstone must not keep one.
   await drain(
     await ctx.db

@@ -1,5 +1,5 @@
 /**
- * **Archive → roses and strong-wind hours, offline** — the cheap half of the wind lane (N7-3).
+ * **Archive → roses and strong-wind hours, offline** — the cheap half of the wind lane (A07a-3).
  *
  *   pnpm --filter @skating/wind-climate derive [--min-mps=8.94] [--campaign=<id>] [--prod]
  *

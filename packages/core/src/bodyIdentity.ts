@@ -1,5 +1,5 @@
 /**
- * How an incoming catalogue feature finds the body it already is — the upsert rule (N7, D93).
+ * How an incoming catalogue feature finds the body it already is — the upsert rule (A07a, D93).
  *
  * ## The job `externalId` used to do, and why it cannot keep doing it
  *
@@ -19,7 +19,7 @@
  * catalogue draws a lake* — which changes the polygon, the bbox, and therefore any key derived from
  * them, at exactly the moment identity must not move. It would also repeat `externalId`'s sin at a
  * worse ratio: a foreign key at least changes rarely; a shoreline is edited continuously. The useful
- * half of that idea is a **blocking key** for dedup, and `waterBodyCells` (N1) already is one.
+ * half of that idea is a **blocking key** for dedup, and `waterBodyCells` (A01) already is one.
  *
  * ## The rule
  *
@@ -101,7 +101,7 @@ export interface ResolveOptions<Key> {
    * Defaults to the **first** match in `CATALOGUE_ID_FIELDS` order, i.e. an OSM-keyed row outranks an
    * NHD-keyed one. That is not a claim about geometry quality — D92 decides that per lake through
    * `geometrySource` — it is a claim about **attachment**: the OSM lane has been the corpus since
-   * Phase 1, so its rows are the ones carrying reports, hazards, sub-areas and favourites. Merging
+   * Phase 01, so its rows are the ones carrying reports, hazards, sub-areas and favourites. Merging
    * *into* them keeps the most user content on its original `_id`.
    */
   preferSurvivor?: (candidates: readonly { key: Key; field: CatalogueIdField }[]) => Key;

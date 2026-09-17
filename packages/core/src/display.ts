@@ -6,11 +6,11 @@
  * which the body should appear. `waterBodies` stores `minVisibleZoom` and indexes it as a
  * geospatial filter key, so `listInViewport` filters `minVisibleZoom <= zoom` **in-query** — a wide
  * zoom then returns only the prominent bodies instead of an arbitrary read-capped slice (the fix
- * for the Phase 1 truncation stopgap).
+ * for the Phase 01 truncation stopgap).
  *
  * The area→score mapping uses **fixed** log-area reference bounds, NOT corpus-relative
  * normalization, so adding a new region later never re-scores existing bodies. The constants below
- * are a starting point tuned against the Vermont pilot corpus in Phase 2; Phase 4 lifts them behind
+ * are a starting point tuned against the Vermont pilot corpus in Phase 02a; Phase 04 lifts them behind
  * admin controls (D49) so a non-engineer can adjust them without a code change.
  */
 
@@ -30,7 +30,7 @@ export const MIN_VISIBLE_ZOOM_WIDEST = 6;
 export const MIN_VISIBLE_ZOOM_FLOOR = 14;
 
 /**
- * The zoom at which named sub-area (bay) labels start drawing (N2 / D60).
+ * The zoom at which named sub-area (bay) labels start drawing (A02 / D60).
  *
  * D49 already decides *which* bays are prominent enough for a given zoom, so this is not a second
  * prominence rule — it's a floor below which the layer isn't worth asking for at all. At z8 you are
@@ -47,7 +47,7 @@ export const SUB_AREA_MIN_RENDER_ZOOM = 10;
 const LOG_AREA_MIN = Math.log(DISPLAY_AREA_MIN_SQM);
 const LOG_AREA_SPAN = Math.log(DISPLAY_AREA_MAX_SQM) - LOG_AREA_MIN;
 
-// ── Profile-richness prominence (N6c / D2) ───────────────────────────────────────────────────
+// ── Profile-richness prominence (A06c / D2) ───────────────────────────────────────────────────
 //
 // **Prominence rewards how much we know about a body.** The founder's starting instinct was to
 // consider dropping unnamed bodies, and the corpus falsified it: 92% of the 116,070 are unnamed, so
@@ -62,7 +62,7 @@ const LOG_AREA_SPAN = Math.log(DISPLAY_AREA_MAX_SQM) - LOG_AREA_MIN;
 //
 // ## The scale, which the plan got wrong by an order of magnitude
 //
-// N6c's D2 table proposed +1 for a name, +2 for contours, +4 for an official put-in — summing to
+// A06c's D2 table proposed +1 for a name, +2 for contours, +4 for an official put-in — summing to
 // +13. But `displayScore` is `normalize(log area) ∈ [0,1] + curatedBoost`, and `minVisibleZoom`
 // clamps the total to [0,1] before mapping it onto z14→z6. Every curated boost on dev is exactly
 // **0.3**, and boosted bodies score 0.75–1.30. A "+1 has a real name" term would therefore push all
@@ -86,13 +86,13 @@ export const SCORE_PER_ZOOM_LEVEL = 1 / (14 - 6);
 
 /** Someone cared enough to name it. Weak but real, and free — the name is already on the row. */
 export const RICHNESS_NAMED = 0.02;
-/** Any depth rung (N6a). Weaker than contours, because most of it is modelled. */
+/** Any depth rung (A06a). Weaker than contours, because most of it is modelled. */
 export const RICHNESS_DEPTH = 0.04;
-/** A state surveyed it (N6b) — itself a statement that the water matters. */
+/** A state surveyed it (A06b) — itself a statement that the water matters. */
 export const RICHNESS_CONTOURS = 0.06;
-/** Access exists and we found it (N6d, `derived`). */
+/** Access exists and we found it (A06d, `derived`). */
 export const RICHNESS_PUT_IN_DERIVED = 0.06;
-/** A human confirmed you can get on the ice here (N6d, `official`). The strongest static signal. */
+/** A human confirmed you can get on the ice here (A06d, `official`). The strongest static signal. */
 export const RICHNESS_PUT_IN_OFFICIAL = 0.12;
 /**
  * Someone has actually been there.
@@ -157,7 +157,7 @@ export function profileRichness(r: ProfileRichness | undefined): number {
  * **The retirement signal** (founder call): curated boosts are a cold-start seed with a retirement
  * path, not a permanent registry. Without something that says so, a seed set in 2026 sits on the
  * row forever and nobody can tell which ones are still load-bearing. This makes that answerable —
- * the Phase 7 admin surface flags these so a moderator can clear them.
+ * the Phase 07 admin surface flags these so a moderator can clear them.
  *
  * Deliberately **advisory, never automatic**. Un-setting a boost on a body's behalf would be a
  * silent prominence change nobody reviewed, and the founder's framing keeps curation as "a check on
@@ -182,7 +182,7 @@ export interface DisplayScoreInput {
    * `curatedBoostIsRedundant`.
    */
   curatedBoost?: number;
-  /** What we know about the body (N6c / D2). Absent ⇒ no richness boost, same score as before. */
+  /** What we know about the body (A06c / D2). Absent ⇒ no richness boost, same score as before. */
   richness?: ProfileRichness;
 }
 
@@ -192,9 +192,9 @@ export interface DisplayScoreInput {
  * above 1 (force wider) or below 0 (demote) — `minVisibleZoom` re-clamps, so out-of-range totals are
  * safe.
  *
- * **Every term is still a boost.** N6f briefly made "no public access" the ladder's one penalty — a
+ * **Every term is still a boost.** A06f briefly made "no public access" the ladder's one penalty — a
  * −2-zoom subtraction, argued as the only attribute that *should* discourage someone from trying.
- * N7b kept the argument and moved the mechanism: a `none` body is *dormant*, and dormant is a rung
+ * A07b kept the argument and moved the mechanism: a `none` body is *dormant*, and dormant is a rung
  * above the floor (`DORMANT_MIN_VISIBLE_ZOOM`), not a number subtracted here. A score says how
  * prominent a lake is *among the lakes we push*; whether we push it at all is standing, a different
  * question, answered by `minVisibleZoomFor`.
@@ -225,7 +225,7 @@ export function minVisibleZoom(score: number): number {
 }
 
 /**
- * The zoom a body first draws at, **given its standing** (N7b) — the function every scoring site
+ * The zoom a body first draws at, **given its standing** (A07b) — the function every scoring site
  * calls, so that "is this lake active" is decided once rather than at each of them.
  *
  * An active body draws at the D49 bucket its score earns. Anything else draws at

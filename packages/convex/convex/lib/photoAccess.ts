@@ -1,7 +1,7 @@
 /**
  * Shared photo ownership + URL resolution (D31/D42).
  *
- * Lifted out of `reports.ts`/`photos.ts` in Phase 9, when hazards became the second entity that can
+ * Lifted out of `reports.ts`/`photos.ts` in Phase 09a, when hazards became the second entity that can
  * carry photos. The important part is that **every** photo-bearing entity gates its URLs on its own
  * visibility rule: a serving URL (and any GPS coord on it) must never outlive the viewer's access to
  * the thing that references it. Sharing the *resolver* while each caller keeps its own gate is what

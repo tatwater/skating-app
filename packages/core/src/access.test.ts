@@ -264,7 +264,7 @@ describe('the approach leg (D87)', () => {
   });
 
   /**
-   * The N6e Workstream 0 half: the line ORS hands us for free, which the first version of this
+   * The A06e Workstream 0 half: the line ORS hands us for free, which the first version of this
    * parser dropped on the floor. Recovering it cost a re-route of every hike-in leg against a
    * 2,000/day quota, so these tests pin the shape rather than the happy path alone.
    */
@@ -624,7 +624,7 @@ describe('bodyAccessKind', () => {
   });
 });
 
-describe('subAreaDriveCoord (N9)', () => {
+describe('subAreaDriveCoord (A09)', () => {
   const bay = {
     representativePoint: { lat: 44.6, lng: -73.3 },
     centroid: { lat: 44.61, lng: -73.31 },

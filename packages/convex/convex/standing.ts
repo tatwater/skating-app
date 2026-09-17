@@ -1,5 +1,5 @@
 /**
- * Corpus standing — the operator surface, the seed and the season cron (N7b).
+ * Corpus standing — the operator surface, the seed and the season cron (A07b).
  *
  * The *rules* live in `@skating/core`'s `standing.ts` (what a body is, when it stays active) and
  * the *transition* in `lib/standing.ts` (what moves when it changes). This file is everything that
@@ -223,7 +223,7 @@ export const listRecentActivations = query({
 
 /**
  * Partition the stored corpus into active and dormant — **the one-time seed, re-runnable after any
- * campaign** (N7b, founder call 2026-09-16, option (b)).
+ * campaign** (A07b, founder call 2026-09-16, option (b)).
  *
  * A body stays active on any evidence of *access or use*: a put-in, a curated boost, any human
  * attachment (a report, a hazard, a track, a favourite, a bounty, a body feature, a hand-drawn bay),

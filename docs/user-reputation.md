@@ -1,14 +1,14 @@
 # User reputation
 
 How trust is earned, shown, and — separately — how bad-actor patterns get routed to a human. The
-whole system (Phase 6, D50; extended by Phase 10's contradiction signal, D56 §7) is designed
+whole system (Phase 06, D50; extended by Phase 10's contradiction signal, D56 §7) is designed
 around one asymmetry, so start there.
 
 > **Who this is for.** Anyone tuning reputation, or trying to understand why a user who posts
 > conflicting reports never loses points. The numbers are **"approved starting points" (founder,
 > 2026-07-21), not measured optima** — recalibrate once alpha shows the real point/age
 > distribution. Almost all of them live in one file, `packages/core/src/reputationConfig.ts`,
-> which is the Phase-7 admin tuning surface.
+> which is the Phase-07 admin tuning surface.
 
 ---
 
@@ -144,7 +144,7 @@ The moderator's response to a flagged pattern is a posting restriction, enforced
 - **Fail-open:** absent ⇒ **allowed**. The default for every adult is unrestricted posting;
   restriction is an explicit, deliberate act.
 - **Human-only:** *nothing in the codebase ever auto-sets these.* They're written solely from the
-  Phase-7 admin surface. The contradiction signal routes a pattern *to* a human; the human flips
+  Phase-07 admin surface. The contradiction signal routes a pattern *to* a human; the human flips
   the boolean.
 - The report path also requires `assertCanPostHazards` when a report bundles/attaches hazards, so
   a hazard restriction can't be bypassed by posting hazards *through* a report.
@@ -155,7 +155,7 @@ This is the payoff of the two-axis design: automation is good at *spotting patte
 **Planned extensions (not yet built).** The per-capability pattern generalizes, but each lever's
 *shape* matches the abuse it answers rather than blanket symmetry:
 
-- **`canPostComments`** — a planned 3rd boolean (Phase 7). Comments are free-text content, so a boolean
+- **`canPostComments`** — a planned 3rd boolean (Phase 07). Comments are free-text content, so a boolean
   fits; it lets a moderator mute a toxic commenter *without* silencing their useful safety reports —
   something neither a [block](#blocking-mute) nor a whole-app suspend can express. Would gate
   `comments.create` via an `assertCanPostComments` mirroring the two above.
@@ -200,7 +200,7 @@ the author-line chip can't disagree.
 ### What a block does **not** affect — and why
 
 **A block never hides the other person's reports or hazards.** This is the deliberate, load-bearing
-choice (D3, Phase 3). Report and hazard reads gate on **moderation status only** — never on the
+choice (D3, Phase 03). Report and hazard reads gate on **moderation status only** — never on the
 block set. The reasoning is stark: an open-water pin or a thin-ice report is a fact about the
 *commons*, and the person most likely to be near a danger you reported might be someone you happen
 to have blocked. Pulling a real hazard off *their* map because of an interpersonal dispute could

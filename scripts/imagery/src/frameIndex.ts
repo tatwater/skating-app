@@ -1,5 +1,5 @@
 /**
- * Folding a season's manifests into the index a client reads (N6e §C2/§C4).
+ * Folding a season's manifests into the index a client reads (A06e §C2/§C4).
  *
  * ## What is here, and what moved to core
  *

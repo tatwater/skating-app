@@ -17,7 +17,7 @@ import { useTheme } from 'next-themes';
 import { useEffect, useMemo, useRef, useState } from 'react';
 
 /**
- * The past-weather timeline (N6h Workstream D) — **the drawing half only.**
+ * The past-weather timeline (A06h Workstream D) — **the drawing half only.**
  *
  * Every coordinate comes from `weatherTimelineModel` in core, and every color from
  * `@skating/design`'s validated scale. This file owns nothing but SVG elements, the two `<defs>` the

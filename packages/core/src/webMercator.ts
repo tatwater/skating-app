@@ -1,5 +1,5 @@
 /**
- * Web Mercator, and turning a lat/lng into a pixel inside an image (N6e).
+ * Web Mercator, and turning a lat/lng into a pixel inside an image (A06e).
  *
  * ## Why this exists at all
  *

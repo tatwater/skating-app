@@ -45,7 +45,7 @@ export interface HazardViewData {
   hazardId: string;
   waterBodyId: string;
   bodyName?: string;
-  /** The named sub-area the footprint sits in (N2/D60), composed ahead of the lake. */
+  /** The named sub-area the footprint sits in (A02/D60), composed ahead of the lake. */
   subAreaName?: string;
   type: HazardType;
   freshness: HazardFreshness;
@@ -233,7 +233,7 @@ export function HazardView({
         </div>
 
         {/* Whichever season this pin belongs to, said out loud. A hazard's season is its
-            `firstReportedAt` (N5a) and a past-season pin is off the map entirely, so a permalink is
+            `firstReportedAt` (A05a) and a past-season pin is off the map entirely, so a permalink is
             the only way anyone reaches this — the same courtesy a past-season report gets, for the
             same reason: a link that used to work must not 404, and must not lie about its age. */}
         {seasonOf(data.firstReportedAt) === seasonOf(Date.now()) ? null : (
@@ -495,8 +495,8 @@ export function HazardDetail({ hazardId, action }: { hazardId: string; action?: 
         // hidden strip / no-confirm rather than silently rendering as active.
         archived: hazard.status !== 'active',
         description: hazard.description,
-        // Phase 6 wires the reporter through `publicByIds` so the author line carries the TrustAvatar
-        // ring + avatar (superseding Phase 9.5's plain `hazard.reporterName`).
+        // Phase 06 wires the reporter through `publicByIds` so the author line carries the TrustAvatar
+        // ring + avatar (superseding Phase 09b's plain `hazard.reporterName`).
         alsoAKnownFeature: hazard.promotedFeatureType !== undefined,
         ...(clusterMembers && clusterMembers.length > 1 ? { clusterMembers } : {}),
         reporterName: reporter?.displayName,

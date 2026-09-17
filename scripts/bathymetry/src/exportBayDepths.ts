@@ -1,5 +1,5 @@
 /**
- * Derive every live bay's max depth from its parent's archived survey, and load it (N9 PR 2).
+ * Derive every live bay's max depth from its parent's archived survey, and load it (A09 PR 2).
  *
  *   pnpm --filter @skating/bathymetry export-bay-depths [--dry] [--out=path] [--campaign=<id>]
  *

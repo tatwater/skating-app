@@ -23,12 +23,12 @@ and a Clerk JWT template named `convex`).
 - **`convex/lib/`** — `auth.ts` (identity + role/status gating), `validators.ts`
   (`literals`, `boolFlags`, `latLng`, `bbox`, `geoJson`), `enums.ts`, `cellIndex.ts`
   (the ladder-grid spatial index — write-side reconciliation for `waterBodyCells` /
-  `adminAreaCells`, D5/D48/N1), `listing.ts` (the `isListed` derivation).
+  `adminAreaCells`, D5/D48/A01), `listing.ts` (the `isListed` derivation).
 - **No Convex components are installed.** `convex.config.ts` was deleted with
-  `@convex-dev/geospatial` in N1; spatial lookups are plain tables + indexes now.
+  `@convex-dev/geospatial` in A01; spatial lookups are plain tables + indexes now.
 - **`convex/profiles.ts`** — `current` + `upsertFromClerk` (idempotent Clerk→profile
   bridge; enforces the 16+ gate and username uniqueness) + `publicByIds` (minimal public
-  attribution — `username`/`displayName` keyed by id — for report feeds/detail, Phase 2).
+  attribution — `username`/`displayName` keyed by id — for report feeds/detail, Phase 02a).
 - **`convex/waterBodies.ts`** — internal `importCanonical` (idempotent OSM/NHD upsert keyed
   on `by_external_id`, preserves removed state across re-import, D14/D48; now also computes the
   D49 `displayScore`/`minVisibleZoom`) + `backfillCells` (the paginated cell-index migration);
@@ -50,7 +50,7 @@ and a Clerk JWT template named `convex`).
   `photos` row; **drops `coord` unless `placeOnMap === true`, D42** — enforced server-side),
   `getUrls` (resolve full/thumb serving URLs, null-guarded).
 - **`convex/basemap.ts`** — internal `generateUploadUrl` / `getServingUrl`: the ops path for
-  hosting the self-built Vermont `.pmtiles` basemap in Convex file storage (Phase 1, PR#5, D6 —
+  hosting the self-built Vermont `.pmtiles` basemap in Convex file storage (Phase 01, PR#5, D6 —
   its serving URL honors HTTP `Range` + CORS, which `pmtiles://` requires). Invoked by
   [`scripts/basemap`](../../scripts/basemap/README.md), never client-callable.
 - **`convex/*.test.ts`** — `convex-test` suites: auth/role/suspension gating, upsert
@@ -66,7 +66,7 @@ and a Clerk JWT template named `convex`).
 - **`profiles` renames the doc's `users` table.** Per the identity model above;
   `plans/06-data-model.md` and `01-decisions.md` (D26) have been reconciled to match.
   `clerkUserId` (+ `by_clerk_user_id` index) is the Clerk tie the doc didn't spell out.
-- **Spatial lookups (D5) run on the N1 ladder grid.** A water body has one `waterBodyCells`
+- **Spatial lookups (D5) run on the A01 ladder grid.** A water body has one `waterBodyCells`
   row per grid cell its **bbox** covers, at a level no finer than the zoom it first draws at, so
   `listInViewport` is "scan the cells covering the viewport, at every rung up to this zoom" —
   bounded by geometry rather than by a tuned constant, with `by_cell`'s trailing `minVisibleZoom`
@@ -76,7 +76,7 @@ and a Clerk JWT template named `convex`).
   (PRs #10/#11) before its workarounds were retired here. `zoom` is a **required** argument —
   the completeness guarantee is stated against it. See
   `plans/phases/A01-read-path-durability.md` and `packages/core/src/spatialCells.ts`. Still
-  deferred: a spatial index on `reports.point` (near-me / cross-body queries, Phase 5/6).
+  deferred: a spatial index on `reports.point` (near-me / cross-body queries, Phase 05/6).
 - **`geoJson` is now a structured GeoJSON-geometry validator** (`lib/validators.ts`),
   not `v.any()` — a discriminated union over Point/MultiPoint/Line/MultiLine/Polygon/
   MultiPolygon that rejects unknown `type`s and wrong nesting at the mutation boundary.
@@ -86,7 +86,7 @@ and a Clerk JWT template named `convex`).
   geometry it needs — `polygonIoU`, `pointInPolygon`, `bufferedLineOverlap` (rivers),
   `polygonBBox` — now lives in `@skating/core` with property tests; what remains is the
   Convex-side wiring (bbox prefilter → these helpers → name similarity) + threshold
-  tuning against the Phase 1 OSM corpus.
+  tuning against the Phase 01 OSM corpus.
 
 ## `convex/_generated/` is committed — do not regenerate it before a check
 
@@ -119,7 +119,7 @@ afterwards and commit *that* — or `git checkout -- convex/_generated`.
 
 When a `convex.config.ts` exists the script also emits the loosely-typed component stub
 (`components: AnyComponents`), the same one `convex dev` writes before its first push.
-**Currently dormant** — N1 removed the only component we had.
+**Currently dormant** — A01 removed the only component we had.
 
 ## Scripts
 

@@ -112,7 +112,7 @@ describe('putIns.listForBody', () => {
     expect(onEdge).toBe(true);
   });
 
-  // The N5a trap, asserted rather than commented: put-ins derive from reports, and reports are the
+  // The A05a trap, asserted rather than commented: put-ins derive from reports, and reports are the
   // most thoroughly season-scoped read in the app. A bound added here would narrow access points to
   // this winter's with no error and no empty state — losing exactly what the exemption protects.
   test('survives the seasonal reset — where you get on the ice is not a seasonal fact (D63)', async () => {
@@ -202,7 +202,7 @@ describe('putIns.setOfficial / hide (auth + audit)', () => {
   });
 
   /**
-   * The operator UI (N6f) can name a hand-placed launch. `osm` arrives with OSM's name and `derived`
+   * The operator UI (A06f) can name a hand-placed launch. `osm` arrives with OSM's name and `derived`
    * is labelled by compass bearing, so `official` was the one rung that could never be named —
    * despite being the rung where somebody actually knows what the place is called.
    */
@@ -249,7 +249,7 @@ describe('putIns.setOfficial / hide (auth + audit)', () => {
   });
 
   /**
-   * `official` was the only rung stored raw (N6f): `derived` clusters are snapped in `listForBody`
+   * `official` was the only rung stored raw (A06f): `derived` clusters are snapped in `listForBody`
    * because a report's point is where somebody *skated*, and `osm` launches arrive on the shore by
    * construction. A put-in coord is the directions destination (D#7), and the stated reason put-ins
    * exist at all is that routing to a point on the water sends you into the middle of the lake — so a
@@ -348,7 +348,7 @@ describe('putIns.setOfficial / hide (auth + audit)', () => {
   });
 });
 
-describe('OSM-derived launches on the map (N6d)', () => {
+describe('OSM-derived launches on the map (A06d)', () => {
   /**
    * ⚠ Caught in pre-PR review, and it would have shipped silently. `loadPutInRows` bucketed rows as
    * `official` or `derived`; an `osm` row is neither, so the **3,588 launches the access ETL imported
@@ -427,7 +427,7 @@ describe('OSM-derived launches on the map (N6d)', () => {
   });
 });
 
-describe('the approach line on the map (N6e Workstream 0)', () => {
+describe('the approach line on the map (A06e Workstream 0)', () => {
   const LINE = [
     { lat: 44.03, lng: -72.001 },
     { lat: 44.025, lng: -72.0005 },

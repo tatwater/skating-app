@@ -1,9 +1,9 @@
 /**
- * `listed` — **is this body reachable at all?** (D48/D5, re-scoped by N7b.)
+ * `listed` — **is this body reachable at all?** (D48/D5, re-scoped by A07b.)
  *
  * A listed body has rows in the cell index (`./cellIndex`), can be opened by id, and can be resolved
  * from a coordinate — by the map at some zoom, by a tap, by a recorded track. It is the predicate for
- * *existence on the map*, and since N7b it is deliberately **not** the predicate for *being pushed*:
+ * *existence on the map*, and since A07b it is deliberately **not** the predicate for *being pushed*:
  * that is `isActive` (`@skating/core`'s `standing.ts`), which every notification, digest, discovery
  * card, recommended strip and enrichment pass gates on instead.
  *
@@ -31,11 +31,11 @@ type DedupStatus = (typeof DEDUP_STATUSES)[number];
 export interface ListableBody {
   reviewStatus?: ReviewStatus;
   dedupStatus: DedupStatus;
-  /** Accepted and ignored — a removed body is listed (N7b). Here so `{ ...body, removedAt }` typechecks. */
+  /** Accepted and ignored — a removed body is listed (A07b). Here so `{ ...body, removedAt }` typechecks. */
   removedAt?: number;
 }
 
-/** Whether a water body is reachable — cell-indexed, openable, coordinate-resolvable (D48/N7b). */
+/** Whether a water body is reachable — cell-indexed, openable, coordinate-resolvable (D48/A07b). */
 export function isListed(body: ListableBody): boolean {
   return isReachable(body);
 }

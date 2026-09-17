@@ -356,7 +356,7 @@ describe('regional vocabulary found by reading the unresolved list', () => {
   });
 });
 
-describe('assertsOceanOrGreatLake (N7 audit)', () => {
+describe('assertsOceanOrGreatLake (A07a audit)', () => {
   /** An area comfortably over the gate, so these cases test the *name* half of the rule. */
   const OCEANIC = 1_000_000 * SQ_M_PER_ACRE_TEST;
 
@@ -386,7 +386,7 @@ describe('assertsOceanOrGreatLake (N7 audit)', () => {
     expect(assertsOceanOrGreatLake('Sound Pond', OCEANIC)).toBe(false);
   });
 
-  // ── The area gate (N7 second audit, 2026-08-06) ────────────────────────────
+  // ── The area gate (A07a second audit, 2026-08-06) ────────────────────────────
   //
   // The name-only rule was measured against the master list and it deleted **two real New York
   // lakes**. Both are in the region, both are the size of an ordinary pond, and the only trace either

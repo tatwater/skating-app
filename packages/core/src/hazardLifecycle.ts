@@ -23,7 +23,7 @@
  * `never_existed` is not a fourth degree of gone. `fully_healed` says *the ice changed*; this says
  * *the report was wrong* — a mis-tapped location, a shadow read as a lead, or a troll. Without it, the
  * only way to clear a bogus pin was to record that it "healed", which writes a false entry into the ice
- * record and, once N5a's recurrence detection reads across seasons, becomes evidence that a hazard
+ * record and, once A05a's recurrence detection reads across seasons, becomes evidence that a hazard
  * formed somewhere it never did.
  */
 export const HAZARD_VERDICTS = [
@@ -77,7 +77,7 @@ export interface HazardLifecycleState {
 
 /**
  * How many independent `still_there` confirmations promote a hazard from *provisional* to *confirmed*.
- * Tunable, admin-editable in Phase 7 (D49); no reputation weighting yet (D50/D54).
+ * Tunable, admin-editable in Phase 07 (D49); no reputation weighting yet (D50/D54).
  */
 export const DEFAULT_CONFIRM_THRESHOLD = 1;
 
@@ -324,7 +324,7 @@ export function isProvisional(
 }
 
 /**
- * The one-word summary of where a hazard is in its life (N8/B2) — what the author is told about,
+ * The one-word summary of where a hazard is in its life (A08/B2) — what the author is told about,
  * and **only** when it changes. Derived from the stored state, never stored itself, for the same
  * reason `isProvisional` isn't: a threshold change reclassifies without a migration.
  *

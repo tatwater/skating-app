@@ -13,13 +13,13 @@
  *     [--transform-summary=<run.json>] [--filter-command=<text>]
  *     [--merge-manifest=<merge-manifest.json>] [--no-run-log]
  *
- * The second block of flags is the run history (N6c F2): the loader writes one `importRuns` row
+ * The second block of flags is the run history (A06c F2): the loader writes one `importRuns` row
  * carrying the **whole path** — the archived extract's URL/checksum/build date, the `osmium`
  * filter, the transform's own summary and itemized skips, and its own batch outcomes — so an
  * admin can answer "how did the last import go" and "which features did it decline" without
  * re-running it. `--no-run-log` opts out; nothing else about the load changes.
  *
- * **A full record is the default, not a flag.** Those sidecars describe the *OSM* path, and the N7
+ * **A full record is the default, not a flag.** Those sidecars describe the *OSM* path, and the A07a
  * corpus does not take it: `merge` reads seventeen archives and emits one NDJSON, so every flag
  * above was inapplicable and the campaign was run with `--campaign=` alone — producing a run row
  * labelled "unscoped canonical water" with an empty path, for the load of the entire corpus. The
@@ -49,7 +49,7 @@ import { loadMergeProvenance } from './mergeProvenance';
  *  1. **Reads per mutation: Convex caps a single mutation at 4096 document reads.** This used to
  *     be the binding constraint — each body's geospatial `.insert()` read ~15–20 S2-cell docs,
  *     a cost that *grew with the index size*, so a batch fine against an empty index blew the
- *     limit once tens of thousands of bodies were indexed. Since N1 a body costs one `by_body`
+ *     limit once tens of thousands of bodies were indexed. Since A01 a body costs one `by_body`
  *     lookup plus ≤ 4 cell writes, flat regardless of corpus size, so `MAX_BATCH_COUNT` now has
  *     enormous headroom here; ARG_MAX below is what actually binds.
  *  2. **ARG_MAX:** `convex run` takes its args only as an inline JSON string (macOS ARG_MAX
@@ -95,7 +95,7 @@ const MAX_CONSECUTIVE_BATCH_FAILURES = 5;
 interface ImportResult {
   inserted: number;
   updated: number;
-  /** Ambiguous identity, flagged for the D36 queue rather than merged (N7 / D93). */
+  /** Ambiguous identity, flagged for the D36 queue rather than merged (A07a / D93). */
   queuedForMerge: number;
   /** One id resolving to two rows, or a record carrying no id at all. */
   conflicts: number;
@@ -187,7 +187,7 @@ function main(): void {
   const allowNonDev = args.includes('--prod');
   // `--state=XX` (2-letter code) tags the batch's bodies with their source region; unioned into each
   // body's `states` so a border-spanning body imported from several state extracts accumulates them
-  // all (Phase 2.5). Equals-form so it doesn't look like the positional input path.
+  // all (Phase 02b). Equals-form so it doesn't look like the positional input path.
   const state = args
     .find((arg) => arg.startsWith('--state='))
     ?.slice('--state='.length)
@@ -218,7 +218,7 @@ function main(): void {
 
   // Guard the region tag: a typo (`--state=VE`, `--state=VERMONT`) would silently union a bad code
   // into every body's `states`, corrupting the state label + boost-seed disambiguation for the run.
-  // Fail before any write rather than let it reach importCanonical (Phase 2.5 review).
+  // Fail before any write rather than let it reach importCanonical (Phase 02b review).
   if (state !== undefined && !isKnownStateCode(state)) {
     process.stderr.write(
       `[etl] refusing: unknown --state=${state}. Expected one of: ${KNOWN_STATE_CODES.join(', ')}.\n`,
@@ -259,7 +259,7 @@ function main(): void {
       `${state ? ` (state: ${state})` : ''}…\n`,
   );
 
-  // ---- Run history (N6c F2) -------------------------------------------------------------------
+  // ---- Run history (A06c F2) -------------------------------------------------------------------
   // Assembled before the first batch so a killed process still leaves a row naming what it was
   // doing. Everything here is best-effort: `RunLogger` swallows its own failures by design.
   const manifest = readJson<ExtractManifest>(manifestPath, 'extract manifest');
@@ -319,12 +319,12 @@ function main(): void {
   // **The campaign and the label are inherited when they weren't given.** An explicit flag always
   // wins; the fallback exists because the merge already knows both, and a load row that says
   // "unscoped canonical water" with no campaign cannot be grouped with the pass that produced its
-  // input — which is precisely how the N7 corpus load ended up sitting alone in the list.
+  // input — which is precisely how the A07a corpus load ended up sitting alone in the list.
   const campaignId = flag('campaign') ?? merge?.campaignId;
   const mergedLabel =
     merge === undefined
       ? undefined
-      : `N7 unified corpus — the master list${merge.producedAt ? `, merged ${merge.producedAt.slice(0, 10)}` : ''}`;
+      : `A07a unified corpus — the master list${merge.producedAt ? `, merged ${merge.producedAt.slice(0, 10)}` : ''}`;
 
   const logger = new RunLogger({
     kind: 'canonical_water',
@@ -469,7 +469,7 @@ function main(): void {
     name: 'load',
     detail:
       'waterBodies:importCanonical — idempotent upsert keyed on the catalogue ids (D93), ' +
-      'cell-indexed (N1); merge/conflict verdicts are queued, never performed',
+      'cell-indexed (A01); merge/conflict verdicts are queued, never performed',
     input: inputPath,
     output: target.label,
     counts: [
@@ -517,10 +517,10 @@ function main(): void {
     logger.failed(
       new Error(`${failedBatches} of ${batches.length} batches failed and were skipped`),
     );
-    // **The one consequence that is not obvious from "some batches failed"** (N7 second audit).
+    // **The one consequence that is not obvious from "some batches failed"** (A07a second audit).
     // Every body in a skipped batch is missing its `lastCampaignId` stamp, and step 6 shelves
     // precisely the rows that lack it — so a partial load followed by a prune shelves real lakes
-    // that were never refused by any rule. (Demotes rather than deletes since N7b, so the damage is
+    // that were never refused by any rule. (Demotes rather than deletes since A07b, so the damage is
     // recoverable — but a thousand active lakes silently going dormant is still a bad afternoon.)
     // `pruneNotInCampaign` has a blast-radius guard for the gross case; this is the specific
     // warning, at the moment the operator can still act on it.

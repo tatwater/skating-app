@@ -1,5 +1,5 @@
 /**
- * **GPS path → water-body polygon** (D14/D36, Phase 8) — the only way a new body's shape is ever
+ * **GPS path → water-body polygon** (D14/D36, Phase 08) — the only way a new body's shape is ever
  * derived.
  *
  * There is **no freehand drawing anywhere in this app, ever.** A skate that resolves to no known

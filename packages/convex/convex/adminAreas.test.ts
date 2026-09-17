@@ -77,7 +77,7 @@ describe('adminAreas.importCanonical', () => {
     expect(rows[0]?.name).toBe('Burlington City');
 
     // The re-import must *reconcile* the boundary's cells, not append a second stale set — stale
-    // rows would send containment lookups chasing a boundary that has moved (N1).
+    // rows would send containment lookups chasing a boundary that has moved (A01).
     const cells = await t.run((ctx) => ctx.db.query('adminAreaCells').collect());
     expect(new Set(cells.map((c) => c.adminAreaId))).toEqual(new Set([rows[0]?._id]));
     expect(new Set(cells.map((c) => c.z)).size).toBe(1); // one rung, no leftovers from before
@@ -123,11 +123,11 @@ describe('adminAreas.resolvePlace', () => {
   });
 });
 
-describe('adminAreas.resolvePlace — boundaries too big for the old centroid margin (N1)', () => {
+describe('adminAreas.resolvePlace — boundaries too big for the old centroid margin (A01)', () => {
   test('labels a point in a town far wider than 0.4°, which used to silently lose its town', async () => {
     // The regression this migration exists for. `findContainingTown` used to query town *centroids*
     // within ±0.2° of the point, on the stated premise that "our towns run well under 0.4° across".
-    // Phase 2.5 loaded the Adirondacks, where towns like Long Lake span more than that — and the
+    // Phase 02b loaded the Adirondacks, where towns like Long Lake span more than that — and the
     // failure was silent: the label just quietly degraded to county+state. Here the point sits deep
     // in a 2°-wide town, more than the old margin from its centroid.
     const t = convexTestWithGeo();
@@ -167,14 +167,14 @@ describe('adminAreas.resolvePlace — boundaries too big for the old centroid ma
 });
 
 /**
- * **The two delete paths, and the query the merge clips against** (N7-3).
+ * **The two delete paths, and the query the merge clips against** (A07a-3).
  *
  * None of these had a test. `deleteByExternalIds` and `retireOsmSourcedAreas` are the only mutations
  * in this file that destroy rows, and they destroy the table **every place label in the app reads
  * from** — through `adminAreaCells`, which is why both delete cells before rows. A row removed
  * without its cells leaves containment pointing at an id that no longer loads.
  */
-describe('adminAreas delete paths (N7)', () => {
+describe('adminAreas delete paths (A07a)', () => {
   /** Seed one area and give it a cell row, the way the importer does. */
   async function seedWithCell(
     t: ReturnType<typeof convexTestWithGeo>,

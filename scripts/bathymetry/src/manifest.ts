@@ -1,5 +1,5 @@
 /**
- * Manifest construction and **drift detection** for the raw snapshot cache (N6b).
+ * Manifest construction and **drift detection** for the raw snapshot cache (A06b).
  *
  * The archive's job is to make reprocessing free. This module's job is the other half: noticing when
  * an agency has republished underneath us. That matters more here than it looks, because every failure
@@ -7,7 +7,7 @@
  * `copyrightText` means we are rendering a credit line the agency no longer asks for, and a doubled
  * record count means a state merged two surveys and our density gate is now measuring something else.
  *
- * N6a learned this the expensive way: its transform matches CSV headers case-insensitively and raises
+ * A06a learned this the expensive way: its transform matches CSV headers case-insensitively and raises
  * a *named* error listing the headers it actually found, precisely so a third-party rename fails loudly.
  * `diffManifests` is that discipline moved one stage earlier — to the fetch, where the change is
  * observable before any transform has had a chance to shrug it off.

@@ -14,7 +14,7 @@ export default defineConfig({
       // Only files whose every remaining line is `ogr2ogr`, file I/O or a CLI shell. Mirrors the
       // water ETL's config, including its rule: **if a file holds a decision, extract the decision.**
       //
-      // ✅ The warning this comment used to carry has been acted on (N7 audit, 2026-08-06).
+      // ✅ The warning this comment used to carry has been acted on (A07a audit, 2026-08-06).
       // `buildRegion.ts` was excluded as `ogr2ogr` glue while holding `nearRegion`, `needsClipping`,
       // `roundCoords`, the bleed box and the downstate county list — and that last one is not
       // scenery: `scripts/etl`'s merge reads `downstate-ny.geojson` as the D111 corpus cut, so a

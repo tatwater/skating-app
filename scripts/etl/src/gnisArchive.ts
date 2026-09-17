@@ -1,5 +1,5 @@
 /**
- * Archive the GNIS Domestic Names gazetteer — the fourth catalogue (N7, D105).
+ * Archive the GNIS Domestic Names gazetteer — the fourth catalogue (A07a, D105).
  *
  *   pnpm --filter @skating/etl archive-gnis            # fetch + verify + manifest
  *   pnpm --filter @skating/etl archive-gnis --refresh  # re-fetch, accepting a new upstream version

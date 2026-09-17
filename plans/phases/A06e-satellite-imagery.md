@@ -1,4 +1,4 @@
-# Phase N6e — Imagery, scoped to a lake: the aerial reveal and the freeze-up timeline
+# Phase A06e — Imagery, scoped to a lake: the aerial reveal and the freeze-up timeline
 
 *Not a base map you switch to. A photograph of **this lake**, clipped to its own shape and the way in,
 with a date on it — and behind it, a season of passes you can scrub through and watch the ice arrive.*
@@ -10,12 +10,12 @@ with a date on it — and behind it, a season of passes you can scrub through an
 >
 > | | | |
 > |---|---|---|
-> | **PR 0** — the way in | ✅ Built 2026-08-21 | [Workstream 0](#workstream-0--getting-the-way-in-into-the-app--built-2026-08-21) — the access prerequisite that grew into a build of its own, landed on this phase's branch rather than as an N6d follow-up (founder call) |
+> | **PR 0** — the way in | ✅ Built 2026-08-21 | [Workstream 0](#workstream-0--getting-the-way-in-into-the-app--built-2026-08-21) — the access prerequisite that grew into a build of its own, landed on this phase's branch rather than as an A06d follow-up (founder call) |
 > | **PR 1** — the reveal, web only | ✅ Merged 2026-08-23 | PR **#45** |
 > | **PR 2** — the producer | ✅ Merged 2026-08-25 | PR **#46** — the Fly box, the granule transform, the masked archive, the S1 pipeline, and the single-season backfill |
 > | **PR 3** — the consumer | ✅ **Built 2026-08-26**, branch `phase-n6e-satellite-imagery-3` — **no PR opened yet, undeployed** | The Convex read path, both scrubbers, the band selector, **mobile's reveal**, attribution, and the per-frame date and cloud caveat |
 > | **PR 4** — phenology, derived dark | ⏳ Not started | Needs the nine-season backfill, which is a deliberate separate spend |
-> | **PR 5** — what the archive knows | ⏳ Not started | N6g's content; D150's real home |
+> | **PR 5** — what the archive knows | ⏳ Not started | A06g's content; D150's real home |
 >
 > ⚠ **PR 3's branch is not only client work.** Scrubbing a real season put a skater in front of the
 > producer's output for the first time, and that falsified four producer assumptions the artifact
@@ -25,7 +25,7 @@ with a date on it — and behind it, a season of passes you can scrub through an
 > nothing before a scrubber could have found them — see [the batched re-run queue](#the-batched-re-run-queue-established-2026-08-25),
 > which is what they feed.
 >
-> Gated behind [N6d](./A06d-body-access-points.md), which is complete on dev.
+> Gated behind [A06d](./A06d-body-access-points.md), which is complete on dev.
 >
 > **What changed, and why the rewrite rather than a patch.** The 2026-07-31 scoping specced a
 > **base-map toggle**: satellite replaces the vector basemap across the whole map, everywhere, and the
@@ -47,7 +47,7 @@ with a date on it — and behind it, a season of passes you can scrub through an
 > sources only; the resolution/cadence trade is physical), **D148** (the timeline is our own archive:
 > one masked raster PMTiles per pass), **D149** (ingest is weather-gated; the archive turns over on the
 > first frame, not on a date), **D150** (derived ice classification is an observation, never counsel —
-> deferred to N6g). Carried in from D138: the Copernicus deep link, `satelliteImagery` and
+> deferred to A06g). Carried in from D138: the Copernicus deep link, `satelliteImagery` and
 > `SATELLITE_MIN_AREA_SQM`. Still true: **D84** (two tiers, different jobs), **D75** (the licence
 > question was answered by Copernicus).
 
@@ -101,7 +101,7 @@ handful of times a season at ~$15k an order** — a feature paying users fund, n
 > Sentinel Hub–compatible endpoints**, so building against Copernicus is not a lock-out.
 
 **The consolation worth remembering:** we already operate a 0.3 m winter sensor, and it is the
-skaters. N6d access photos, hazard reports and Phase 8 tracks are the "what does it look like today"
+skaters. A06d access photos, hazard reports and Phase 08 tracks are the "what does it look like today"
 channel. Imagery's job is the part a person standing on the shore cannot photograph — the whole lake
 at once, and the landscape around it.
 
@@ -317,7 +317,7 @@ photograph. It is also the honest precursor to PR 5's hatch layer: anyone who wa
 classification was derived *from* can look at it.
 
 **The bands are where the real signal is.** Not needed for v1's true-color frames, but they are why
-N6g is worth doing and they should be captured while we're already downloading the granule:
+A06g is worth doing and they should be captured while we're already downloading the granule:
 
 - **SCL (Scene Classification Layer)** — shipped *inside* Sentinel-2 L2A, computed by ESA, with
   per-pixel classes for water, **snow/ice**, cloud (high/medium), and cloud shadow. It is simultaneously
@@ -596,7 +596,7 @@ exactly the fact a skater is trying to reconstruct by reading reports.
 is a description. *"Prime window"* and *"best ice"* are the phrasings to avoid; the sentence is more
 useful without them anyway.
 
-#### Two research lanes this archive opens → [N6g](../backlog/A06g-imagery-research.md)
+#### Two research lanes this archive opens → [A06g](../backlog/A06g-imagery-research.md)
 
 Split into their own doc at the founder's ask (2026-08-21c), because both read this archive, neither can
 start before it exists, and both are easy to ship and hard to ship *correctly*:
@@ -607,14 +607,14 @@ start before it exists, and both are easy to ship and hard to ship *correctly*:
   forever.
 - **Bodies that never freeze.** Nine dry seasons is strong evidence for a 50-acre lake and weak evidence
   for a 1-acre pond, because after shoreline erosion a 1-acre body has under ten pixels to vote with.
-  The founder's N7b recoverability argument holds **if** we archive the enriched row before removing it
-  — the expensive part of a corpus row is the N7-3 enrichment, not the row.
+  The founder's A07b recoverability argument holds **if** we archive the enriched row before removing it
+  — the expensive part of a corpus row is the A07a-3 enrichment, not the row.
 
 ---
 
 ## Workstream D — The four pieces D138 moved here
 
-These were specced in N6c's B3, deferred wholesale, and never given a workstream. They are it.
+These were specced in A06c's B3, deferred wholesale, and never given a workstream. They are it.
 
 1. **The Copernicus Browser deep link** (D75), built from **`interiorPoint`** — *not* `centroid`, which
    is a `pointOnFeature` result that lands **on the shoreline** and would open the browser off the edge
@@ -623,7 +623,7 @@ These were specced in N6c's B3, deferred wholesale, and never given a workstream
    keeping precisely *because* our own archive stops at the season boundary, and someone will want 2019.
 2. **`satelliteImagery: 'auto' | 'on' | 'off'`** per row, resolved by `auto` against
    `surfaceAreaSqM` (`schema.ts:683`, geodesic). Per-row **data**, so an operator edit needs no
-   redeploy — only the threshold behind `auto` is a code constant (D75, and the Phase 7 posture).
+   redeploy — only the threshold behind `auto` is a code constant (D75, and the Phase 07 posture).
 3. **`SATELLITE_MIN_AREA_SQM`** — the threshold. ⚠ **It is now per-tier**, which the original doc could
    not have known: a pond too small to resolve at Sentinel's 10 m may be perfectly legible at NAIP's
    0.3 m. One constant cannot govern both.
@@ -652,7 +652,7 @@ already closed, and because the founder took the second half of it at the same t
 
 ### 0a — The line ORS was already handing us
 
-A1's mask buffers the trail. **We had no trail geometry.** N6d's correction #9 dropped trail lines from
+A1's mask buffers the trail. **We had no trail geometry.** A06d's correction #9 dropped trail lines from
 the OSM extract on the reasoning that a successful `foot-hiking` route *is* the trail signal, so
 `amenities` carried a `trail` flag and the schema stored `approachMeters`, `approachAscentM` and
 `approachRouted` — but no line.
@@ -661,7 +661,7 @@ the OSM extract on the reasoning that a successful `foot-hiking` route *is* the 
 > hadn't
 >
 > *"Before its routing pass finishes"* was the right instruction and it arrived eight days late.
-> N6d's routing pass **completed at 99.4% on 2026-08-13**, and the check that mattered was not the
+> A06d's routing pass **completed at 99.4% on 2026-08-13**, and the check that mattered was not the
 > plan but the cache: `.scratch/access/ors-cache.json` holds 4,976 legs as
 > `{"meters":129.3,"ascentM":0.2,"routed":true}`. `parseOrsFootHikingRoute` read `summary.distance`
 > and `ascent` off `features[0].properties` and dropped `features[0].geometry` — so the responses are
@@ -672,10 +672,10 @@ the OSM extract on the reasoning that a successful `foot-hiking` route *is* the 
 > over 150 m (~2 days), or **262 hike-in legs (under one day)**.
 >
 > **Founder call, 2026-08-21: hike-in only.** The line exists to be drawn and to be buffered into
-> N6e's mask, and below 800 m it is a few metres of tarmac between a car and a bank — invisible at
+> A06e's mask, and below 800 m it is a few metres of tarmac between a car and a bank — invisible at
 > the drawer's zoom, invisible inside a 30 m buffer, and paid for on every read of the row. The
 > residue, stated: the 2,087 legs between 150 m and 800 m keep their distance and their chip and
-> render no line, so N6e's mask on a short-walk body buffers the lake and the parking alone.
+> render no line, so A06e's mask on a short-walk body buffers the lake and the parking alone.
 
 **What shipped.** `approachPathWanted` is one predicate shared by the parser and the ETL, so a leg can
 never be re-routed against the quota and then have its geometry thrown away. The path is stripped to
@@ -687,7 +687,7 @@ that stops in the woods.
 **The cache gained `pathAsked`, and that is what lets the backfill finish.** A routed leg whose line
 came back unusable is a **real answer** and is remembered, exactly as a 404 is. Without the flag those
 legs would be re-requested on every run for ever — the mirror image of the 429-cached-as-an-answer bug
-N6d's first run found, which cached a failure as an answer where this would refuse to cache an answer
+A06d's first run found, which cached a failure as an answer where this would refuse to cache an answer
 at all.
 
 **One line is never drawn: the straight-line fallback's.** The distance can hedge itself — *"at least
@@ -699,10 +699,10 @@ authoritatively as the routed ones beside it.
 
 ### 0b — Pairing a trailhead by the trail rather than by the radius
 
-> **Founder call, 2026-08-21:** take the trail-connectivity fast-follow N6d sized and declined, in
+> **Founder call, 2026-08-21:** take the trail-connectivity fast-follow A06d sized and declined, in
 > the same pass.
 
-N6d's *§Sized 2026-08-14* recommended *"don't, yet"* and the founder overrode it. The case is real and
+A06d's *§Sized 2026-08-14* recommended *"don't, yet"* and the founder overrode it. The case is real and
 nothing else reaches it: `pairAccessFeatures` caps at `PARKING_INFER_RADIUS_M`, so **a lot a kilometre
 up a trail never pairs, and a leg that never pairs is never routed.** Widening the radius does not
 help — the measured distance curve from unpaired lots to the nearest launch rises monotonically to
@@ -711,7 +711,7 @@ help — the measured distance curve from unpaired lots to the nearest launch ri
 So the trail lines come back, for a question routing cannot answer. They are **not stored**: 1.15M ways
 stream into `Float64Array`s, build a graph, and are discarded. Nothing about trails reaches Convex.
 
-- **The graph is built by hashing endpoint coordinates**, which is the de-risking N6d measured: 29% of
+- **The graph is built by hashing endpoint coordinates**, which is the de-risking A06d measured: 29% of
   Vermont's trail endpoints are byte-identical across ways, because `osmium export` round-trips the
   same double for the same node. No pyosmium, no node-ref extraction. `COORD_KEY_DP` is 7 (~11 mm) and
   ⚠ loosening it does not improve connectivity, it invents crossings where a path passes over a
@@ -729,7 +729,7 @@ stream into `Float64Array`s, build a graph, and are discarded. Nothing about tra
 
 ### 0c — The walk, drawn
 
-N6d gave a distance, a climb and a Hike-In chip and no way to see **where** the kilometre goes. The
+A06d gave a distance, a climb and a Hike-In chip and no way to see **where** the kilometre goes. The
 line now renders on both clients from `packages/core/src/approachLayer.ts` — dashed, because a solid
 line reads as surveyed infrastructure and this is an ORS route over OSM's trail data.
 
@@ -756,18 +756,18 @@ Vermont reproduced the sizing pass's own figures to the row (27 of 185 unpaired 
 the doc measured 27). Across five states, **2,030 of 8,361 unpaired launches** and **52,667 of 92,384
 unpaired lots** are within `TRAIL_SNAP_M` of a trail, 106.9M candidate pairs were pruned by the exact
 straight-line filter, 24,480 searches ran — and the result is **69 new pairings**, against the
-150–300 N6d extrapolated.
+150–300 A06d extrapolated.
 
 Loaded, that is **+12 launches that gained a lot** and **+1 body with a put-in**: the 69 include a
 great many coastal beaches and piers that match no corpus body, which is the same scope boundary the
-9,737 unmatched candidates already described. **N6d's *"don't, yet"* was right about the yield.** The
+9,737 unmatched candidates already described. **A06d's *"don't, yet"* was right about the yield.** The
 founder took it anyway and the machinery now exists; the honest summary is that the trailhead case is
 rarer in OSM than the lot-side numbers suggested, because the **launch** side was always the ceiling.
 
 **3. ⚠ Thirty approaches were not walks, and drawing them is what made that obvious.** Sorted, the
 routed legs run continuously to 4,061 m and then jump to 4.9 km, 8 km, 17 km, 26 km, and **three at
 99 km** — every one of them a lot within 250 m of its launch that ORS could only reach by going
-around the water. N6d has been storing those since August: the drawer says *"about 99 km on foot"* and
+around the water. A06d has been storing those since August: the drawer says *"about 99 km on foot"* and
 the body wears a Hike-In chip. As a number it is absurd and easy to miss; as a **dashed line crossing
 three counties out of a lake's parking marker**, it is unmissable, which is why this fell out of the
 render work rather than the data work.
@@ -802,7 +802,7 @@ coastal launches we do not carry.
 
 ## Out of scope
 
-- **Derived ice classification / hatch layers → N6g.** Deferred on PR size, not principle; see D150.
+- **Derived ice classification / hatch layers → A06g.** Deferred on PR size, not principle; see D150.
 - **Paid imagery** (D147). No PlanetScope, no tasking. Revisit with users and a cost-sharing story.
 - **A base-map swap** (D146). There is no map-wide satellite mode, and no layer menu.
 - **Offline raster.** Imagery requires a connection. Mobile has NetInfo already
@@ -817,8 +817,8 @@ coastal launches we do not carry.
 
 ## Sequencing — six PRs *(settled 2026-08-21, resplit 2026-08-23)*
 
-**PR 0 — the way in.** ✅ **Built 2026-08-21**, on this branch rather than inside N6d (founder call —
-N6d is merged, and a follow-up PR against it would have been a second review of the same code). The
+**PR 0 — the way in.** ✅ **Built 2026-08-21**, on this branch rather than inside A06d (founder call —
+A06d is merged, and a follow-up PR against it would have been a second review of the same code). The
 route geometry, the trail connectivity pass the founder took at the same time, and the approach drawn
 on both clients. See [Workstream 0](#workstream-0--getting-the-way-in-into-the-app--built-2026-08-21)
 — including why *"while the routing pass is still running"* arrived eight days too late to be free.
@@ -832,7 +832,7 @@ on both clients. See [Workstream 0](#workstream-0--getting-the-way-in-into-the-a
 4. **E** — the admin editor, unmasked. Cheap once 1–3 land, and where operators will stress it.
 5. **D** — the deep link and the `satelliteImagery` machinery.
 
-Ships against a keyless public endpoint with no box, no archive and no cron. **Could land while N6d is
+Ships against a keyless public endpoint with no box, no archive and no cron. **Could land while A06d is
 still settling**, which is the point of putting the seam here.
 
 > ### ~~⚠ Mobile is deferred to PR 3~~ — ✅ **resolved by PR 3, and the argument held**
@@ -925,7 +925,7 @@ and the re-derived camera padding have been through types and tests only.
 is deliberately separate. Nothing user-facing.
 
 **PR 5 — what the archive knows.** The ice-coverage charts in the drawer and the live hatch layer —
-everything user-facing that reads what PR 4 derived. This is N6g's content, and D150's real home.
+everything user-facing that reads what PR 4 derived. This is A06g's content, and D150's real home.
 
 > #### 🔔 Founder ask, 2026-08-23 — notify on freeze-up, not just chart it
 >
@@ -938,7 +938,7 @@ everything user-facing that reads what PR 4 derived. This is N6g's content, and 
 > season behind it to know that a jump is real rather than a cloud artifact.
 >
 > **Who gets told, in the founder's order of preference:** a body the user has **favourited** first,
-> then bodies inside their **drive-time** radius (Phase 4 already models this, and its
+> then bodies inside their **drive-time** radius (Phase 04 already models this, and its
 > quality-weighting distinguishes *browse* from *notify* — this is squarely the notify side), then
 > **popular** bodies generally.
 >
@@ -949,7 +949,7 @@ everything user-facing that reads what PR 4 derived. This is N6g's content, and 
 >   to the latest imaging data"* reports a measurement and a source. It must never become *"Lake
 >   George is ready to skate"* — 10 m imagery cannot see a pressure ridge (D147), and a notification
 >   is the most authoritative-feeling surface in the app.
-> - **Coalescing, not a firehose.** Phase 4 built the queue and the 8pm digest for exactly this shape
+> - **Coalescing, not a firehose.** Phase 04 built the queue and the 8pm digest for exactly this shape
 >   of event, and a regional freeze-up fires on *many* bodies within days. Reuse it; do not invent a
 >   second delivery path.
 > - **The 2–4 usable frames a month problem is sharper here than anywhere else** (§C1). "Just reached"
@@ -959,7 +959,7 @@ everything user-facing that reads what PR 4 derived. This is N6g's content, and 
 > - **A notification is a decay-sensitive claim in a way a chart is not.** A chart is read now and
 >   understood as history; a push arrives once and is remembered. D56's weather-driven decay should
 >   gate whether a freeze-up notice is still worth sending by the time we could send it.
-> - **Opt-in, per D57 and Phase 4's `notificationPrefs`.** A new preference key, defaulted off, and
+> - **Opt-in, per D57 and Phase 04's `notificationPrefs`.** A new preference key, defaulted off, and
 >   minors read-only as ever.
 >
 > **The one thing worth prototyping early:** whether "100%" is a number we can honestly report at all,
@@ -1064,7 +1064,7 @@ irreversibly.
   outright; the awkwardness turned out to be a UI problem — a June frame sitting *inside* a freeze-up
   timeline — with a different fix. Turn the reveal on ⇒ **0.3 m aerial**, no pipeline, works today.
   Scrub ⇒ **winter frames display over it** for the dates that exist. One control, no summer frame in
-  the scrubber, and the N6d access pairing survives at the only resolution where a pull-off is legible.
+  the scrubber, and the A06d access pairing survives at the only resolution where a pull-off is legible.
   **Keep it easily removable**: founder's standing intent is that *high-res winter replaces summer
   entirely* the day we can pay for tasked imagery (D147's revisit trigger).
 - **NAIP stays live-fetched in PR 1 — not archived.** *Archiving it would be ~44 GB* (0.3 m over the
@@ -1078,7 +1078,7 @@ irreversibly.
 - **Nine seasons, derived dark in PR 4, surfaced for real in PR 5.** See §C5 and **D151**.
 - **Six PRs.** See [Sequencing](#sequencing--six-prs-settled-2026-08-21-resplit-2026-08-23).
 - **App-wide season turnover: the surgical version, at the founder's delegation** (*"I'll follow your
-  lead"*). D63's July boundary stays as the **season key** — it is load-bearing across N5a hazards,
+  lead"*). D63's July boundary stays as the **season key** — it is load-bearing across A05a hazards,
   `contentPurge`, the D66 photo purge, `seasonWindow` and bounties, and changing it is wide blast radius
   for nothing a skater sees. D149's freeze signal applies to the **display default** instead: when last
   season's content stops reading as current. Most of that already happens without a cliff — hazards
@@ -1191,14 +1191,14 @@ function predated it. Every job would have exited 0 and written an ordinary fram
 ### What the pre-run review found *(2026-08-25, founder: "I'd rather wait until we're confident")*
 
 The season backfill was started and stopped forty seconds in, because a read-through of this doc and
-[N6g](../backlog/A06g-imagery-research.md) against the built pipeline turned up two things that a
+[A06g](../backlog/A06g-imagery-research.md) against the built pipeline turned up two things that a
 nine-season run would have baked in irreversibly. Both are now fixed.
 
 **1. Thermal noise was never removed.** `sar-cal-lut.py` reads the calibration annotation; the *noise*
 annotation sits beside it in the same bucket directory and nothing had ever opened it. Measured NESZ
 for VH: **S1A median −25.15 dB, S1C median −27.96 dB**, worst-across-swath −21.84 dB on S1A — against
 lakes that measure −20 to −22 dB. The bias is compressive and worst where the signal is darkest, which
-is exactly where N6g Lane 1's smooth ice lives. Applied to 3,276 real bodies:
+is exactly where A06g Lane 1's smooth ice lives. Applied to 3,276 real bodies:
 
 | | raw | denoised |
 | --- | --- | --- |
@@ -1283,7 +1283,7 @@ that produced the `27% ice / 65% water` reading can now answer the question that
    from *"the north half is ready"* — and the skate log says it was the second, with the bridge at the
    narrows as the divide for two weeks.
 
-   **The mechanism already exists.** N2's sub-areas (bays, arms, basins) were built for *naming*, and
+   **The mechanism already exists.** A02's sub-areas (bays, arms, basins) were built for *naming*, and
    narrows and bridges are precisely where a lake stops behaving as one surface — where flow
    concentrates and ice forms last. Zoning the raster by sub-area rather than by body is a change to
    `zonal-clear.py`'s zone raster, not a new pipeline.
@@ -1380,13 +1380,13 @@ that produced the `27% ice / 65% water` reading can now answer the question that
 
 ## Relocated from the roadmap (2026-09-16)
 
-*The roadmap entry for N6e as it stood before the 2026-09-16 rewrite, kept verbatim so nothing it said is lost. The roadmap now carries a one-paragraph summary; this is the long form.*
+*The roadmap entry for A06e as it stood before the 2026-09-16 rewrite, kept verbatim so nothing it said is lost. The roadmap now carries a one-paragraph summary; this is the long form.*
 
-**N6e — Imagery, scoped to a lake: the aerial reveal and the freeze-up timeline.** ✅ **Built through
+**A06e — Imagery, scoped to a lake: the aerial reveal and the freeze-up timeline.** ✅ **Built through
 PR 3, 2026-08-26** — a lake can be revealed as a photograph and its freeze-up scrubbed, on **both**
 clients. Re-scoped 2026-08-21; see [`phases/A06e-satellite-imagery.md`](./A06e-satellite-imagery.md);
 decisions **D146**–**D151**, plus **D84** (two tiers) and **D75** (the licence question is answered).
-Gated behind N6d, which is complete on dev.
+Gated behind A06d, which is complete on dev.
 
 **Four of six PRs done.** **PR 0** the way in (2026-08-21) · **PR 1** the web reveal (#45, 2026-08-23)
 · **PR 2** the producer (#46, 2026-08-25) · **PR 3** the consumer — both scrubbers, the band selector,
@@ -1424,25 +1424,25 @@ three ways, so the doc was rewritten rather than patched.*
   season boundary is right for reports and absurd for imagery — it would blank the scrubber in
   midsummer. Last winter's frames stay live until the first frame of the new winter lands; in a warm
   year that flips late, by itself.
-- **Ice classification is an observation, never counsel (D150) — deferred to N6g.** The band data (SCL,
+- **Ice classification is an observation, never counsel (D150) — deferred to A06g.** The band data (SCL,
   NDSI, SWIR) is where the real signal is, and ESA computes the snow/ice classification for us inside
   L2A. Amended onto D140's line: dated per-pass classification is permitted, the hop to *skateable*
-  is not. **Capture the bands during N6e's reads anyway** — re-fetching a season later is the
+  is not. **Capture the bands during A06e's reads anyway** — re-fetching a season later is the
   expensive version.
-- ✅ **Workstream 0 — the way in, built 2026-08-21** (on the N6e branch, not as an N6d follow-up). The
-  prerequisite was *"store the ORS route geometry **before** N6d's routing pass finishes"*, and it
+- ✅ **Workstream 0 — the way in, built 2026-08-21** (on the A06e branch, not as an A06d follow-up). The
+  prerequisite was *"store the ORS route geometry **before** A06d's routing pass finishes"*, and it
   arrived eight days late: the pass completed 2026-08-13 and the cache holds only
   `{meters, ascentM, routed}`, so the free window had shut. Re-routing the **262 hike-in legs**
   (founder call, over 4,945 or 2,349) bought the lines back for under a day of quota. **The trail
-  connectivity fast-follow N6d sized and declined shipped with it** at the founder's ask — 1.15M ways
+  connectivity fast-follow A06d sized and declined shipped with it** at the founder's ask — 1.15M ways
   hashed into a graph by byte-identical endpoints, never stored, budget capped at `HIKE_IN_ASSERT_M`
   because D144 already said an association at that range must be asserted rather than derived. And the
   approach is **drawn** on both clients, from the marker query so a moderator's `hide` takes the line
   with it. **254 of 262 lines recovered; 30 launches across 22 lakes now draw a walk.** The trail pass
   found **69 pairings against the 150–300 it was sized at** (+12 launches that gained a lot once
-  loaded) — N6d's *"don't, yet"* was right about the yield, and the launch side was always the
+  loaded) — A06d's *"don't, yet"* was right about the yield, and the launch side was always the
   ceiling. ⚠ **And drawing the lines exposed 30 approaches that were never walks**: legs ORS routed
-  around the water, up to **99 km** between a lot and a launch 250 m apart, which N6d has been
+  around the water, up to **99 km** between a lot and a launch 250 m apart, which A06d has been
   rendering as *"about 99 km on foot"* since August. `MAX_PLAUSIBLE_APPROACH_M` demotes them to the
   straight-line rung; dev now carries none.
 

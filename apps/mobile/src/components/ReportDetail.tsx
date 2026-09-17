@@ -41,7 +41,7 @@ export function ReportDetail({ reportId }: { reportId: string }) {
   const router = useRouter();
   const report = useQuery(api.reports.get, { reportId: reportId as Id<'reports'> });
   const body = useQuery(api.waterBodies.get, report ? { waterBodyId: report.waterBodyId } : 'skip');
-  // The author's own edit sheet (N6f). With the other hooks, above the early returns.
+  // The author's own edit sheet (A06f). With the other hooks, above the early returns.
   const [editing, setEditing] = useState(false);
   const authors = useQuery(
     api.profiles.publicByIds,
@@ -55,7 +55,7 @@ export function ReportDetail({ reportId }: { reportId: string }) {
   // hides the report itself. Skipped when signed out (the query requires a profile).
   const me = useQuery(api.profiles.current, {});
   const blockedIds = useQuery(api.blocks.blockedUserIds, me ? {} : 'skip');
-  // The author's "people were waiting for this" line (N8 / D170) — 0 for anyone but the author (the
+  // The author's "people were waiting for this" line (A08 / D170) — 0 for anyone but the author (the
   // server re-checks), so only the author subscribes rather than every reader holding a query that
   // can only ever say 0.
   const bountiesAnswered = useQuery(
@@ -64,7 +64,7 @@ export function ReportDetail({ reportId }: { reportId: string }) {
   );
   const { setHighlightWaterBodyId, setFocus, setPhotoPins, setTrackPath } = useMapSelection();
 
-  // The recorded GPS path behind this report (Phase 8), when there is one — most reports have none
+  // The recorded GPS path behind this report (Phase 08), when there is one — most reports have none
   // (D24), so this resolves to null and the layer stays empty.
   const track = useQuery(api.gpsActivities.getForReport, { reportId: reportId as Id<'reports'> });
 
@@ -123,7 +123,7 @@ export function ReportDetail({ reportId }: { reportId: string }) {
   return (
     <YStack gap="$3">
       <YStack gap="$1">
-        {/* Composed through `@skating/core`, never assembled here (N2/D60): the bay name goes ahead
+        {/* Composed through `@skating/core`, never assembled here (A02/D60): the bay name goes ahead
             of the lake, and this screen is the reason that helper exists — the mobile feed card was
             already showing "Malletts Bay" while this one still said "Lake Champlain". */}
         <H4 color="$foreground">
@@ -306,7 +306,7 @@ export function ReportDetail({ reportId }: { reportId: string }) {
         </XStack>
       ) : null}
 
-      {/* The author's own control (N6f). `reports.update` shipped with D25 and had nothing calling
+      {/* The author's own control (A06f). `reports.update` shipped with D25 and had nothing calling
           it, so posting was a one-way door: a mistyped thickness could only be fixed by asking a
           moderator to remove the whole report. Hidden once moderated, which the server refuses. */}
       {me && isOwn && report.moderationStatus === 'visible' && !isLeaving(me) ? (

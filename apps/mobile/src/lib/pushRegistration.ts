@@ -1,8 +1,8 @@
 /**
- * Remote push registration (N8 PR 3) — the device half of "push is a transport over the inbox".
+ * Remote push registration (A08 PR 3) — the device half of "push is a transport over the inbox".
  *
- * Phase 9.5 installed `expo-notifications` for **local** on-ice alerts and deliberately never asked
- * Expo for a push token. This does, under two rules that keep the Phase 9.5 posture:
+ * Phase 09b installed `expo-notifications` for **local** on-ice alerts and deliberately never asked
+ * Expo for a push token. This does, under two rules that keep the Phase 09b posture:
  *
  * 1. **Never prompt on cold launch.** `registerIfPermitted` only registers when permission is
  *    *already* granted (by on-ice mode, or by the explicit switch below); a permission prompt the

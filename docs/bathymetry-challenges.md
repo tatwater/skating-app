@@ -1,6 +1,6 @@
 # Drawing the bottom of a lake: what didn't work
 
-A field report from building the bathymetry layer (N6b) — the underwater contour lines you see inside
+A field report from building the bathymetry layer (A06b) — the underwater contour lines you see inside
 a lake when you open its drawer. Almost everything in here is a **failure**, kept deliberately,
 because the failures were far more instructive than the successes and every one of them looked
 correct in advance.

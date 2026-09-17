@@ -5,7 +5,7 @@
  *
  * Observation-friendly (D3): nothing about ice *quality* is required — a "don't skate here" report
  * carrying only `notes` is valid. What's required is just the anchor: a water body, when the skater
- * **left the ice** (`skateEndTime` — the freshest read; Phase 5). An optional `skateStartTime`
+ * **left the ice** (`skateEndTime` — the freshest read; Phase 05). An optional `skateStartTime`
  * captures when they got on; duration is *derived* (`end − start`), never stored. All reports are
  * public (D13) — there is no visibility field. (Minors can't create reports at all; that gate lives
  * in `reports.create`, not here — D41.)
@@ -52,7 +52,7 @@ export interface ReportConditionsInput {
 
 export interface ReportInput {
   waterBodyId: string;
-  /** When the skater **left the ice** — the primary sort key everywhere (D28; Phase 5 rename). */
+  /** When the skater **left the ice** — the primary sort key everywhere (D28; Phase 05 rename). */
   skateEndTime: number;
   /** Optional — when they got *on* the ice. Duration is derived (`end − start`), never stored. */
   skateStartTime?: number;
@@ -112,7 +112,7 @@ export type ReportValidationResult =
 
 /**
  * The one validation message with a caller outside the form: both apps report a future-skate-time
- * rejection as an analytics signal (Phase 7b), because that failure is almost always **device clock
+ * rejection as an analytics signal (Phase 07-2), because that failure is almost always **device clock
  * skew costing someone a report**, not someone claiming a skate that hasn't happened — and a
  * persistent non-zero rate is the case for widening `SKATE_TIME_FUTURE_TOLERANCE_MS`. Shared as a
  * constant so the check and the copy can't drift into a silently-dead detector.
@@ -224,7 +224,7 @@ function validateConditions(
     errors.push({ field: 'conditions.source', message: 'is not a known source' });
   }
 
-  // Phase 2 conditions are manual entry (D19) — default the provenance to the user. Built even on
+  // Phase 02a conditions are manual entry (D19) — default the provenance to the user. Built even on
   // error (the caller discards it when `errors` is non-empty), so the return type stays concrete.
   const normalized: NormalizedConditions = { source: conditions.source ?? 'user' };
   if (conditions.airTempC !== undefined) normalized.airTempC = conditions.airTempC;
@@ -259,7 +259,7 @@ export function validateReportInput(
   }
 
   // Optional start (when they got on the ice). Must be a valid instant and not after the end —
-  // duration is `end − start`, so an inverted window is nonsensical (Phase 5).
+  // duration is `end − start`, so an inverted window is nonsensical (Phase 05).
   if (input.skateStartTime !== undefined) {
     if (!Number.isFinite(input.skateStartTime) || input.skateStartTime <= 0) {
       errors.push({ field: 'skateStartTime', message: 'must be a valid time' });

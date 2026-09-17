@@ -1,4 +1,4 @@
-# Phase N5c — Hazard identity: one clustering primitive, two time windows
+# Phase A05c — Hazard identity: one clustering primitive, two time windows
 
 *Within a winter it answers "is this the same ridge you already marked?" Across winters it answers "is
 this the ridge that forms here every year?" Same question, same function, two windows — and building it
@@ -14,7 +14,7 @@ once is the only way the two can't disagree.*
 > *§20 — What Greptile found*.
 > Founder asks 2026-07-27 (hazard memory) and 2026-07-30 (duplicate corroboration), merged into one
 > phase by the founder call in [§4](#4-workstream-a--the-clustering-primitive-d77).
-> **Depends on:** [N5a](./A05a-seasons.md) — seasons as a derived first-class dimension, the
+> **Depends on:** [A05a](./A05a-seasons.md) — seasons as a derived first-class dimension, the
 > interim promotion list, and the D62 second amendment that keeps a departed skater's hazards.
 > **Touches:** `hazards`, `hazardConfirmations`, `bodyFeatures`, a new `hazardRecurrence` table, a new
 > season-rollover job, the hazard draw flow on both clients, the map's hazard layer, the on-ice payload,
@@ -30,12 +30,12 @@ once is the only way the two can't disagree.*
 
 ### 1.1 The seasonal reset needs cover
 
-N5a hides last winter's hazards on July 1. That is the right default — a February ridge asserting a
+A05a hides last winter's hazards on July 1. That is the right default — a February ridge asserting a
 position in July is a claim nobody has stood behind for five months — but it means **the first skater in
-November sees a clean map where there was a ridge.** N5a said so and named the cover: promotion into
+November sees a clean map where there was a ridge.** A05a said so and named the cover: promotion into
 `bodyFeatures`, which no seasonal reset touches.
 
-What N5a could build was an **interim**, and its own docstring says so
+What A05a could build was an **interim**, and its own docstring says so
 (`packages/core/src/hazardPromotion.ts:11-15`): `listPromotionCandidates` reads **one season**, and
 `rankPromotionCandidates` scores on decay tier, corroboration and contradiction — every one of them a
 fact about a *row*, none of them a fact about *recurrence*. An operator still has to remember, unaided,
@@ -55,7 +55,7 @@ this" anywhere. The schema comment justifying the offline key already names the 
 *"two overlapping footprints read as two hazards, and the confirm loop then has to retire both."*
 
 **The correction:** splitting confirmations does **not** make hazards dissipate. There is no time-based
-archival at all (N5a, correction 2). A hazard fades `fresh → aging → stale` to a deliberate opacity
+archival at all (A05a, correction 2). A hazard fades `fresh → aging → stale` to a deliberate opacity
 **floor** it never drops below, and archives only on two independent `fully_healed`/`never_existed`
 verdicts. Absence of evidence *keeps a hazard alive*, on purpose (D3).
 
@@ -76,7 +76,7 @@ Founder call, 2026-07-30: **one clustering primitive, two windows.**
 winters are the same geometric judgement with a different time bound and a different tolerance. Build it
 twice and the two *will* drift into disagreeing about what "the same ridge" means — this repo has the
 scar already: the hazard verdict vocabulary was written in four places and only three were updated for
-D65, so a shipped verdict went untested (N5a, *What Greptile found*, item 2).
+D65, so a shipped verdict went untested (A05a, *What Greptile found*, item 2).
 
 So one function in `@skating/core`, two callers, two constants.
 
@@ -135,13 +135,13 @@ Concretely, and testable:
   *"expect…"*.
 - An advisory is **not a hazard**: no confirm buttons, no decay, no freshness chip, no pin, no halo.
 - **It never reaches on-ice alerting.** The single most important line in the phase. The proximity
-  evaluator (D54 / Phase 9.5) fires *"⚠ hazard ahead"* from cached hazard rows; an advisory entering
+  evaluator (D54 / Phase 09b) fires *"⚠ hazard ahead"* from cached hazard rows; an advisory entering
   that path turns a statement about past winters into a live warning about ice underfoot — the exact
   inversion D3 forbids. Precedent for the enforcement already exists (`hazardProximity.ts:90` skips
   passage markers with one guarded `continue`), but advisories are excluded *more* strongly: by never
   entering the payload at all (§9.5).
 - **Ranking is a queue for a human, not a probability.** The admin list may sort by a score; it may not
-  print one as a percentage or a likelihood — the line N5a's `hazardPromotion` already holds.
+  print one as a percentage or a likelihood — the line A05a's `hazardPromotion` already holds.
 
 ---
 
@@ -213,7 +213,7 @@ under-warn. Across seasons, a ridge re-forming within 80 m *is* the same feature
 reassemble to the metre. Tight for identity, loose for recurrence.
 
 **Why one is derived and the other stored.** `listForBody` already collects *all* of a body's active
-hazards in one bounded read (`hazards.ts:343-353`) — Phase 9's call 6, deliberately never a viewport
+hazards in one bounded read (`hazards.ts:343-353`) — Phase 09a's call 6, deliberately never a viewport
 scan — so within-season clustering is free there and never goes stale. The cross-season read is the
 opposite: `hazards` has no time index, never ages out, and `listPromotionCandidates` had to be capped
 mid-review for exactly that reason. That asymmetry is the whole justification for §6's table, and it
@@ -323,7 +323,7 @@ being wrong is *a confusing pin*, not *unwarned ice*.
 
 The honesty rule, and not optional. Three skaters pinning the same ridge in one January is **one**
 season of evidence. `seasonsObserved` is a **set**, derived per member from `seasonOf(firstReportedAt)` —
-the field N5a chose for hazard season, because it is a clock nobody can move. Without this rule, one
+the field A05a chose for hazard season, because it is a clock nobody can move. Without this rule, one
 enthusiastic week becomes "a pattern".
 
 (B4's auto-merge reduces how often this rule has to do the work, but never replaces it: unmerged
@@ -346,7 +346,7 @@ to). So a promoted cluster keeps all its members, keeps accumulating new ones ea
 carries `promotedToFeatureId` and drops out of §7.2's queue. This falls out of the D53 amendment in
 §8.2 — once supersession stops hiding hazards, there is nothing to exclude them *from*.
 
-**Deliberately included:** `status: 'archived'` rows. N5a's reasoning holds — *"a ridge the community
+**Deliberately included:** `status: 'archived'` rows. A05a's reasoning holds — *"a ridge the community
 voted healed in March is exactly the kind that comes back in December; 'it healed' is a fact about last
 winter, not about this one."*
 
@@ -366,7 +366,7 @@ One row per (body, family, cluster):
 | `distinctAuthorCount` | operator-visible; see open question 2 |
 | `suggestedFeatureType` | from the family table |
 | `priority` | the ranking score (§C4) |
-| `subAreaId?`, `subAreaName?` | from the medoid (N2/D60) — the place phrase |
+| `subAreaId?`, `subAreaName?` | from the medoid (A02/D60) — the place phrase |
 | `publiclyVisible` | **stored, not derived** — see below |
 | `computedAt`, `computedForSeason` | provenance |
 | `suppressedAt?`, `suppressedByUserId?`, `suppressReason?` | §7.3 |
@@ -388,7 +388,7 @@ looking. ⚠ Note for the build: `crons.ts` uses only `crons.interval` today, so
 or hidden three bogus pins should not wait a year.
 
 1. **Build the work queue.** Page `hazards` (a new `by_first_reported` index earns its keep here, and for
-   the season-scoped reads N5a currently filters in memory) and collect distinct `waterBodyId`s into a
+   the season-scoped reads A05a currently filters in memory) and collect distinct `waterBodyId`s into a
    scratch queue. There is no "bodies with hazards" index, and adding a counter to `waterBodies` would be
    a write-path change for a once-a-year read.
 2. ⚠ **Superseded by [§20](#20-what-greptile-found-2026-07-31--never-capped-was-right-about-the-wrong-risk).**
@@ -409,7 +409,7 @@ or hidden three bogus pins should not wait a year.
 
 **Idempotence is a test.** Two runs must produce byte-identical rows apart from `computedAt`.
 
-### C5 — Ranking, and what happens to N5a's
+### C5 — Ranking, and what happens to A05a's
 
 `rankPromotionCandidates` is **kept, not replaced**. On a lake with one season of hazards it is the only
 thing there is, and it will be for most lakes for years. Recurrence, where it exists, outranks it; the
@@ -419,7 +419,7 @@ The recurrence score, in weight order:
 
 1. **Seasons observed against the window** — `|seasonsObserved| / windowSeasons`. The only input about
    recurrence rather than about a row. Dominant by design.
-2. **Decay tier**, as N5a has it: the only input about physics.
+2. **Decay tier**, as A05a has it: the only input about physics.
 3. **Recency** — a cluster last seen in `'26/'27` is weaker than one seen last winter. Lakes change
    (a dredged channel, a new culvert), and a pattern that stopped is evidence too. *(No constant of its
    own in §7.4: the decay is a function of `seasonsObserved`'s newest entry against the current season,
@@ -450,7 +450,7 @@ range so one anomalous November sighting doesn't stretch it across the winter. R
 has to clear a raised bar.**
 
 The argument for including it is the strongest case in the phase for why recurrence is worth building at
-all. A single winter's thin patch is weather: N5a scored tier-A types at **zero** promotability and was
+all. A single winter's thin patch is weather: A05a scored tier-A types at **zero** promotability and was
 right to. But a spot that goes out early *every* March is not weather — it is a **permanent property of
 the lake bed**: shallow water over a sandbar, a reef, a delta, the lee of an island. D53 already names
 the type, and today it is **unreachable from any hazard**, which is exactly the gap recurrence closes.
@@ -470,12 +470,12 @@ than later is the whole reason to do it at all.
 | Condition | Why |
 |---|---|
 | **3 seasons minimum**, regardless of `RECURRENCE_PUBLIC_MIN_SEASONS` | volatile types are volatile; two coincidences in a row is a plausible accident in a way two ridges are not |
-| **Depth must not contradict it**, where depth exists | N6a gave every body a depth with provenance (D68) and `SHALLOW_MAX_DEPTH_M`/`SHALLOW_MEAN_DEPTH_M` already encode "shallow" (D69). A recurring thin-ice cluster on a body the data says is deep is a signal about *that spot*, not the lake — suggest it, but say the depth disagrees |
+| **Depth must not contradict it**, where depth exists | A06a gave every body a depth with provenance (D68) and `SHALLOW_MAX_DEPTH_M`/`SHALLOW_MEAN_DEPTH_M` already encode "shallow" (D69). A recurring thin-ice cluster on a body the data says is deep is a signal about *that spot*, not the lake — suggest it, but say the depth disagrees |
 | **Never auto-suggested where depth positively contradicts** and the depth is measured rather than modelled | D68's provenance ladder exists precisely so a claim can be weighted by what it was read off |
 | Suggestion copy names the mechanism | *"this spot has been reported thin in 3 of the last 4 winters — shallow water goes out from the bottom first"*, so the moderator is judging a physical claim, not a count |
 
-> **A pleasing loop worth noting.** N6a's write-up records that `shallow_early_thaw` is a manual flag
-> nobody had a path to set, and that N6a's depth data *"does not retire it"*. This is the other half:
+> **A pleasing loop worth noting.** A06a's write-up records that `shallow_early_thaw` is a manual flag
+> nobody had a path to set, and that A06a's depth data *"does not retire it"*. This is the other half:
 > recurrence is how the flag gets *proposed* from observation, and depth is how the proposal gets
 > checked. Neither alone was enough.
 
@@ -493,7 +493,7 @@ than later is the whole reason to do it at all.
 - **Last season, single sighting** (the existing `listPromotionCandidates` list, unchanged): last
   winter's hazards that have somewhere to be promoted *to* but no history behind them yet.
 
-N5a's framing stays — **this is a safety pass, not tidying up** — and the new section adds the honest
+A05a's framing stays — **this is a safety pass, not tidying up** — and the new section adds the honest
 half: *nothing here is a prediction; it is what was reported, and how often.* The card states its own
 provenance (*"computed 2 July 2029 for the `'29/'30` season"*) with the recompute button beside it: a
 stale answer that looks live is the failure mode of every precomputed surface.
@@ -502,7 +502,7 @@ stale answer that looks live is the failure mode of every precomputed surface.
 
 Every cluster across every body, ranked, read off `by_computed_season_and_priority`, paginated —
 **bounded by construction**, since it reads the precomputed table and never touches `hazards` or
-`waterBodies` in bulk (the Phase 7b rule). Filters: family, minimum seasons, not-yet-promoted,
+`waterBodies` in bulk (the Phase 07-2 rule). Filters: family, minimum seasons, not-yet-promoted,
 not-suppressed, region. This is where an operator spends an hour in October and covers the whole corpus,
 which is the difference between the feature existing and the feature working.
 
@@ -517,7 +517,7 @@ misreading the same shadow. Writes a `moderationActions` row (new `suppress_recu
 
 ### 7.4 `/admin/tuning` gets the constants
 
-Per the settled Phase 7 posture — *constants live in code, the dashboard makes their effect legible, an
+Per the settled Phase 07 posture — *constants live in code, the dashboard makes their effect legible, an
 edit is a redeploy* — "tunable" means a **documented exported constant rendered read-only** in a new
 "Hazard memory" section:
 
@@ -556,9 +556,9 @@ to hand-create a permanent feature is the Convex dashboard or the CLI, so four o
 ### 8.1 Draw a body feature by hand
 
 On `/admin/water/$id`, on the lake's own map: pick from all nine types, draw the geometry, add a note,
-give a reason (already required), save. Reuses **N5b's web authoring** — terra-draw, the same
+give a reason (already required), save. Reuses **A05b's web authoring** — terra-draw, the same
 point/line/polygon primitives hazards use — which is why it lands here rather than as its own phase. Web
-only: `/admin` is a web tree, and N5b established terra-draw has no React Native adapter.
+only: `/admin` is a web tree, and A05b established terra-draw has no React Native adapter.
 
 This is also the answer to *"what covers the first three winters"*: an operator who **knows** a lake has
 a spring at the outlet needn't wait for the corpus to prove it. The engine is for the lakes nobody on the
@@ -595,7 +595,7 @@ What that buys, beyond honest history:
 - **Confirmation still works on the sighting.** Confirming *"the ridge is here right now"* is a
   different statement from *"ridges form here"*, and only the first can be confirmed.
 - **The two never race.** After a season boundary, last winter's sighting is hidden by the **season**
-  axis and the feature remains — which is the desired end state, reached by the mechanism N5a already
+  axis and the feature remains — which is the desired end state, reached by the mechanism A05a already
   built rather than by a second one.
 
 **What replaces the hiding.** Nothing needs to: features and hazards are already separate map sources
@@ -616,7 +616,7 @@ So `promoteFromRecurrence`:
 
 > ⚠ **This is a behaviour change to shipped code, and the reviewer's diff is every reader of
 > `promotedToFeatureId`** — `listForBody`, `isUserVisibleHazard`, `listPromotionCandidates`, and the
-> confirm path. That is precisely the pattern N5a's own review pass named: *"the diff to review after
+> confirm path. That is precisely the pattern A05a's own review pass named: *"the diff to review after
 > widening a value is every existing reader of it."* Here the value is being **narrowed** in meaning,
 > which is the same hazard from the other direction. `listPromotionCandidates` is the one reader that
 > should keep filtering on it — an already-promoted hazard is genuinely finished as a *suggestion*.
@@ -641,7 +641,7 @@ Templates in `@skating/core` so both clients and the tests read one source:
 > *This is what was reported in past seasons — not a report of conditions now. Nothing has been reported
 > here yet this winter.*
 
-Place phrase from the medoid's `subAreaName` (N2/D60) when present, **omitted entirely** when absent — no
+Place phrase from the medoid's `subAreaName` (A02/D60) when present, **omitted entirely** when absent — no
 invented geography. Type from `HAZARD_TYPE_LABELS`. Timing clause only at the bar. The second paragraph
 is not decoration; it is the D3 line, asserted in tests.
 
@@ -696,7 +696,7 @@ Checked in the repo on 2026-07-30:
    time-based archival, and the opacity floor is deliberate (D3). The exception is `ridge_crossing`,
    which expires at `PASSAGE_EXPIRY_H = 72` off `lastConfirmedAt` (D64) — the one place vote-splitting
    deletes rather than dims.
-3. **`hazards` has no time index.** `by_water_body` is creation-ordered; N5a filters season in memory
+3. **`hazards` has no time index.** `by_water_body` is creation-ordered; A05a filters season in memory
    (`hazards.ts:355-357`) — correct for a body-bounded read, insufficient for a corpus-wide job.
 4. **`listPromotionCandidates` caps at 500 rows in creation order** and logs when it bites
    (`hazards.ts:417-426`). Fine for one season; wrong as a multi-season basis.
@@ -715,7 +715,7 @@ Checked in the repo on 2026-07-30:
 11. **D62's second amendment keeps a departed skater's hazards, anonymised** — the constraint the roadmap
     flagged is genuinely closed. Consequence: member `description`s may be blank; label that
     ("description removed"), or an operator reads the gap as a data bug.
-12. **N5a's clock-pinning lesson applies directly.** A January fixture is in this season for half the
+12. **A05a's clock-pinning lesson applies directly.** A January fixture is in this season for half the
     year — every test here pins `now`, per the convention `accountDeletion.test.ts` documents.
 
 ---
@@ -799,7 +799,7 @@ hard block, ever. The founder's counter-proposal is better than the question and
 follow-on, not built here** — see below.
 
 **5. No recurrence content on the per-body summary cards.** ✅ And the cards themselves move to
-**N6c** (founder ask, same day) — they have waited long enough in the deferred register. They ship with
+**A06c** (founder ask, same day) — they have waited long enough in the deferred register. They ship with
 **active report counts and types only**. Revisit later: *"likely open water"* or *"frequently pressure
 ridges off the eastern shore"* could genuinely help someone judge a lake with no recent reports — but
 that is the surface closest to the map, where D3 pressure is highest, and it should be decided
@@ -834,7 +834,7 @@ What has to be decided before it is buildable, and why it is a separate piece of
 - **It interacts with auto-merge.** A correction and a merge both change what one footprint means, and
   they should be one story rather than two mechanisms racing to reshape the same pin.
 
-Not in N5c: this phase's nudge converts duplicates into *confirmations*, which is the 80% case and needs
+Not in A05c: this phase's nudge converts duplicates into *confirmations*, which is the 80% case and needs
 no new lifecycle. Correction is a new authoring power and deserves its own scoping.
 
 ---
@@ -983,7 +983,7 @@ an invitation to read the raw input**, and the on-ice path had a second, indepen
 same rule sitting a package away. `toProximityHazards` now feeds `clusterConfirmCount ?? confirmCount`
 into the evaluator, which makes the pooled number load-bearing rather than decorative. The deeper fix —
 carrying the server's `provisional` and deleting the client-side re-derivation — is a bigger change to a
-shipped Phase 9.5 interface and its `confirmThreshold` tunable, and is the right thing to do the next
+shipped Phase 09b interface and its `confirmThreshold` tunable, and is the right thing to do the next
 time that file is opened.
 
 ### 16.2 Recomputing a union from the stored union is not reversible
@@ -1008,7 +1008,7 @@ chaining fixtures are tidy. Every recomputation now starts from `geometry` + `ra
 `listRecentMerges` was written as `.order('desc').filter(...).take(50)` and documented as *"bounded"*.
 Convex reads rows until it has 50 **matches**, so on a corpus with no merges — which is every corpus
 today — it walks the whole append-only audit log. The same commit had already added
-`moderationActions.by_created_at` for the 7b rollup, with a comment saying precisely this about scans of
+`moderationActions.by_created_at` for the 07-2 rollup, with a comment saying precisely this about scans of
 that table. It now reads a 120-day window off that index: bounded by a season's moderation volume rather
 than by how long the app has been running.
 
@@ -1042,7 +1042,7 @@ where the loop reads, since it is a fact about `clusterConsensus` that is not ob
 site — which is exactly how it got misread the first time.
 
 **Left as-is, deliberately:** `tryAutoMerge` reads every active hazard on the body inside the create
-mutation. It matches `listForBody`'s bound (Phase 9 call 6) and is correct; it does widen the OCC
+mutation. It matches `listForBody`'s bound (Phase 09a call 6) and is correct; it does widen the OCC
 conflict window for concurrent creates on one lake, which is worth remembering if a popular lake ever
 sees contention.
 
@@ -1432,7 +1432,7 @@ the card says so" and "no lake is recomputed this year", the plan picked the sec
 
 - **The window bound moved into the index.** New `hazards.by_water_body_first_reported`, so a
   recompute reads *four winters of one lake* rather than one lake's entire history. This is the actual
-  fix; everything below is defence in depth. It is the same lesson as N1's `listInViewport` and
+  fix; everything below is defence in depth. It is the same lesson as A01's `listInViewport` and
   `listPromotionCandidates` — **the bound has to be in the index, not after it**, which this repo has
   now learned three times.
 - **One confirmation read per hazard, not two.** `never_existed` decides both eligibility and ranking;
@@ -1511,7 +1511,7 @@ documents this transaction can touch, and which of those numbers can a user incr
 
 Worth noting what did **not** change: `recurrence.listForBody` still collects a body's active hazards.
 That is a *query*, so a failure costs one drawer render rather than the corpus's annual recompute, and
-it matches the bound `hazards.listForBody` has had since Phase 9 (call 6). Changing it here would be
+it matches the bound `hazards.listForBody` has had since Phase 09a (call 6). Changing it here would be
 fixing a different function's contract inside a hazard-identity PR.
 
 ### 20.7 The third pass: two P1s, and both were caps standing in for indexes
@@ -1576,9 +1576,9 @@ it, and the honest fix is always to make the predicate part of the key.
 
 ## Relocated from the roadmap (2026-09-16)
 
-*The roadmap entry for N5c as it stood before the 2026-09-16 rewrite, kept verbatim so nothing it said is lost. The roadmap now carries a one-paragraph summary; this is the long form.*
+*The roadmap entry for A05c as it stood before the 2026-09-16 rewrite, kept verbatim so nothing it said is lost. The roadmap now carries a one-paragraph summary; this is the long form.*
 
-**N5c — Hazard identity: one clustering primitive, two time windows.** ✅ **Built 2026-07-31, both
+**A05c — Hazard identity: one clustering primitive, two time windows.** ✅ **Built 2026-07-31, both
 halves.** The within-season half shipped as **PR #34** (clustering, nudge, pooling, consensus
 rendering, auto-merge, manual authoring, the D53 amendment and the rename); the cross-season half —
 `hazardRecurrence`, the rollover job, the operator queue and the skater advisory — is built on
@@ -1607,5 +1607,5 @@ blocker* by a founder call**, and merged at scoping with the duplicate-corrobora
 - **Absorbs two entries from *Volume + calibration*:** consensus rendering of clustered same-type hazards,
   and auto-merge of very-high-confidence dedup pairs (now reversible, on the D36 tombstone pattern).
 - **Reaches a `bodyFeature` type nothing could reach before.** Recurring volatile hazards propose
-  `shallow_early_thaw` at a raised bar, checked against N6a's depth (D68/D69) — recurrence proposes the
+  `shallow_early_thaw` at a raised bar, checked against A06a's depth (D68/D69) — recurrence proposes the
   flag from observation, depth checks the proposal.

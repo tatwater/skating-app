@@ -1,5 +1,5 @@
 /**
- * **The master list** — three catalogues in, one record per lake out (N7, D109/D110).
+ * **The master list** — three catalogues in, one record per lake out (A07a, D109/D110).
  *
  *   pnpm --filter @skating/etl merge            # read-only; writes .scratch/merge/
  *   pnpm --filter @skating/etl merge --refresh  # re-extract the sources first
@@ -334,7 +334,7 @@ function loadGnis(): Map<string, GnisPoint[]> {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Where the region mask comes from — **`build-region`'s local file first** (N7 second audit).
+ * Where the region mask comes from — **`build-region`'s local file first** (A07a second audit).
  *
  * The mask decides tens of thousands of exclusions and used to have **no producer at all**: the only
  * instruction for building it was a sentence inside this file's own error message telling the
@@ -440,7 +440,7 @@ async function main(): Promise<void> {
   // opts out for a local experiment, and a logger whose `start` fails degrades every later call to a
   // no-op rather than taking the run down with it.
   // **The path, assembled before a single lake is read.** Every archive that decides this corpus has
-  // a manifest on disk carrying its URL, size, checksum and vintage; until N7's provenance pass none
+  // a manifest on disk carrying its URL, size, checksum and vintage; until A07a's provenance pass none
   // of it reached the run row, so the pass that made 178,104 admission decisions rendered on
   // `/admin/imports` with an empty Path. Built up-front so a merge that dies mid-load still leaves a
   // row naming exactly which files it was reading — the failure a printed summary can never capture.
@@ -458,7 +458,7 @@ async function main(): Promise<void> {
 
   const logger = new RunLogger({
     kind: 'corpus_merge',
-    label: 'N7 master list — three catalogues, one filter',
+    label: 'A07a master list — three catalogues, one filter',
     campaignId,
     target: resolveDeployment(),
     stages: sourceStages,
@@ -587,7 +587,7 @@ async function main(): Promise<void> {
   });
   const { bodies: kept, subAreas, dropped, stats } = master;
 
-  // ── The emit stage — the artifact the loader actually consumes (N7 step 5) ────────────────
+  // ── The emit stage — the artifact the loader actually consumes (A07a step 5) ────────────────
   const emit = emitCanonicalBodies(kept, stateGrid);
   const failedCount = [...emit.failures.values()].reduce((a, b) => a + b, 0);
   if (emit.emitted.length + failedCount !== kept.length) {
@@ -735,7 +735,7 @@ async function main(): Promise<void> {
     '    a real class beats a drop (the 123-body rescue), so these resolve SILENTLY today:',
   );
   for (const sample of stats.classDissentSamples) lines.push(`      ${sample}`);
-  // **Split by the refusing code, because a total cannot be triaged** (N7-2). The class-conflict
+  // **Split by the refusing code, because a total cannot be triaged** (A07a-2). The class-conflict
   // queue was settled exactly this way — joining its 652 rows to the NHD FTYPE behind each split
   // them 520 settled / 132 real. A code that accounts for hundreds of rows is a systematic property
   // of that catalogue; one that accounts for three is a body worth looking at.
@@ -779,7 +779,7 @@ async function main(): Promise<void> {
   writeNdjson(join(SCRATCH, 'sub-areas.ndjson'), subAreas);
   log(`sub-areas → ${join(SCRATCH, 'sub-areas.ndjson')} (${subAreas.length.toLocaleString()})`);
 
-  // **Every flagged pair with the score that flagged it** (N7-2), so `RECONCILE_MIN_IOU` can be
+  // **Every flagged pair with the score that flagged it** (A07a-2), so `RECONCILE_MIN_IOU` can be
   // decided the way D92 was decided — refereed against evidence — rather than argued. Sorted by IoU
   // so the band under the 0.5 merge bar reads as a block.
   writeNdjson(
@@ -791,7 +791,7 @@ async function main(): Promise<void> {
       `(${stats.duplicatePairList.length.toLocaleString()})`,
   );
 
-  // **Every group that did not become a body, by name** (N7 second audit). The counts always
+  // **Every group that did not become a body, by name** (A07a second audit). The counts always
   // balanced; the *identities* were never written down, so "what happened to Lake X" had no answer
   // and two runs could not be diffed. The largest bucket alone — the post-merge floor — is ~100,000
   // groups, and a rule change that silently moved a thousand of them looked like a slightly
@@ -799,7 +799,7 @@ async function main(): Promise<void> {
   writeNdjson(join(SCRATCH, 'dropped.ndjson'), dropped);
   log(`dropped → ${join(SCRATCH, 'dropped.ndjson')} (${dropped.length.toLocaleString()})`);
 
-  // **`absorbed.ndjson` — the rows the corpus must retire** (N7-3, D136 follow-up).
+  // **`absorbed.ndjson` — the rows the corpus must retire** (A07a-3, D136 follow-up).
   //
   // `absorbedIds` was computed here, written into `master.ndjson`, and consumed by nothing. That gap
   // was invisible because `importCanonical` is an UPSERT: it writes what this emits and never deletes
@@ -944,7 +944,7 @@ async function main(): Promise<void> {
   const omissions = [...omissionCounts].map(([reason, count]) => ({ reason, count }));
   if (subAreas.length > 0) {
     omissions.push({
-      reason: 'kept as a sub-area of a parent body rather than as a body of its own (N2/D60)',
+      reason: 'kept as a sub-area of a parent body rather than as a body of its own (A02/D60)',
       count: subAreas.length,
     });
   }
@@ -1048,7 +1048,7 @@ function readManifest(path: string): { producedAt?: unknown; outputs?: unknown }
 
 main().catch((error: unknown) => {
   log(`FAILED: ${error instanceof Error ? error.message : String(error)}`);
-  // **The run row must not be left `running`.** D99 records that the abandoned N6c campaign left
+  // **The run row must not be left `running`.** D99 records that the abandoned A06c campaign left
   // three rows in that state, which is the signature of a pass that died before it could say so —
   // and a balance assertion throwing is exactly the case where the row is worth having.
   activeLogger?.failed(error);

@@ -1,5 +1,5 @@
 /**
- * Shared pure helper for the map lake-search box (Phase 2.5). Kept in core so both apps gate the
+ * Shared pure helper for the map lake-search box (Phase 02b). Kept in core so both apps gate the
  * `waterBodies.searchByName` query identically, without a Convex/router harness.
  */
 

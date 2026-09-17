@@ -93,7 +93,7 @@ describe('orderViewportLakes', () => {
     expect(input.map((r) => r._id)).toEqual(['a', 'b']);
   });
 
-  describe('no public access (N6f)', () => {
+  describe('no public access (A06f)', () => {
     const shut = { verdict: 'none' };
 
     it('sinks a body with no public access below bigger and smaller water alike', () => {

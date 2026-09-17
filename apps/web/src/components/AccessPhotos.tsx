@@ -7,7 +7,7 @@ import { Button } from './ui/button';
 import { usePhotoDrafts } from './usePhotoDrafts';
 
 /**
- * Photos of an access point (N6d Workstream D / D88) — *"is this the right dirt road?"*
+ * Photos of an access point (A06d Workstream D / D88) — *"is this the right dirt road?"*
  *
  * A picture of the pull-off answers that better than any prose, which is the founder's whole
  * rationale. Three things about it are deliberately unlike report photos:
@@ -15,7 +15,7 @@ import { usePhotoDrafts } from './usePhotoDrafts';
  * - **They document infrastructure, not conditions**, so they are exempt from D66's seasonal purge.
  *   A parking lot looks the same next November.
  * - **No new permission** (D88). They ride D57's existing report/hazard posting right, because a bad
- *   photo of a parking lot is wrong rather than dangerous. The `MAX_ACCESS_PHOTOS` cap and Phase 3's
+ *   photo of a parking lot is wrong rather than dangerous. The `MAX_ACCESS_PHOTOS` cap and Phase 03's
  *   minors-are-read-only rule do the protective work instead.
  * - **They live in `accessPhotos` rows, not a `photoIds` array**, and that is not a style choice: the
  *   put-in is created by the ETL, so a photo hanging off it would be invisible to the orphan sweep's

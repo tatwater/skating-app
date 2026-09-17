@@ -1,5 +1,5 @@
 /**
- * Changing the email on a Clerk account — the sequence, written once (N8 post-merge).
+ * Changing the email on a Clerk account — the sequence, written once (A08 post-merge).
  *
  * Clerk owns the address (D26); we never store a password or a verification code. The steps are
  * Clerk's own: add the new address, send it a code, verify it, make it primary, and let go of the

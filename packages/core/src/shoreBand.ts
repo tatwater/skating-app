@@ -1,7 +1,7 @@
 /**
- * Snap-to-shoreline (N5b) — turn two taps near a shore into the band of ice along it.
+ * Snap-to-shoreline (A05b) — turn two taps near a shore into the band of ice along it.
  *
- * `thin_ice` and `open_water` along a shore are **linear along the shore** (N5b Decision 1): rotten
+ * `thin_ice` and `open_water` along a shore are **linear along the shore** (A05b Decision 1): rotten
  * shore ice, and a lead running along the ice edge. Drawing one by hand means tracing a shoreline the
  * app already knows exactly, because `waterBodies.polygon` *is* that line. So a skater picks two
  * points near the shore, and the geometry comes off the body's own boundary.
@@ -12,11 +12,11 @@
  * stored relationship.
  *
  * The band is buffered **symmetrically** and half of it lands on shore. That is deliberate, and it is
- * why this file does no clipping of its own: Phase 9.5's `clipFootprintToBody` already confines a
+ * why this file does no clipping of its own: Phase 09b's `clipFootprintToBody` already confines a
  * hazard footprint to the water at insert, and a shore band is the exact case it was written for.
  * Cutting the band here as well would mean two places that decide where the ice ends.
  *
- * Two things it **refuses rather than guesses** — the N2 clip-refusal spirit. A tap that lands far
+ * Two things it **refuses rather than guesses** — the A02 clip-refusal spirit. A tap that lands far
  * from any shoreline isn't a shore band, it's a mis-tap; and two taps that resolve to *different
  * rings* (an island's shore and the mainland's, or two parts of a MultiPolygon) have no arc between
  * them at all, only a shape someone would have to invent.

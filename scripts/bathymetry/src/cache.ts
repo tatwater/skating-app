@@ -1,5 +1,5 @@
 /**
- * The permanent raw snapshot cache (N6b) — file I/O around `.raw/<key>/`.
+ * The permanent raw snapshot cache (A06b) — file I/O around `.raw/<key>/`.
  *
  * **This directory is not scratch.** Every other ETL in this repo keeps its downloads in a `.scratch/`
  * that a person is expected to `rm -rf`, with the provenance recorded by hand in a README line that

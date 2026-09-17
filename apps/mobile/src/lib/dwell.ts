@@ -1,5 +1,5 @@
 /**
- * Per-body dwell bookkeeping (Phase 9.5) — the pure half of "auto-suggest the skate window".
+ * Per-body dwell bookkeeping (Phase 09b) — the pure half of "auto-suggest the skate window".
  *
  * The on-ice GPS watcher already resolves *which lake you're on* every fix (see the `(map)` layout).
  * This folds that stream of `(bodyId, time)` observations into **dwell intervals per body**, so when the

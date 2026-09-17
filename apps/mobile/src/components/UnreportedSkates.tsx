@@ -9,14 +9,14 @@ import { Section } from './detailUi';
 import { NewWaterPrompt } from './NewWaterPrompt';
 
 /**
- * Skates you recorded and never turned into a report (N6f) — the other half of the recorder's loop.
+ * Skates you recorded and never turned into a report (A06f) — the other half of the recorder's loop.
  *
  * ## Why this exists
  *
  * The prompt on stop has always been **component state on a map control**: it lives on a card that
  * unmounts the moment you navigate, it is never persisted, and it never touched the server — so
  * `promptState` never left `pending` for any activity ever recorded, and `listMine` and
- * `setPromptState` sat with zero callers since Phase 8. Background the app during a skate, or tap
+ * `setPromptState` sat with zero callers since Phase 08. Background the app during a skate, or tap
  * "Not now" and change your mind, and the recording was unreachable from anywhere in the product.
  * The path was on disk and on the server; nothing offered it to you again.
  *
@@ -38,7 +38,7 @@ export function UnreportedSkates() {
   const setPromptState = useMutation(api.gpsActivities.setPromptState);
   const router = useRouter();
   const [busy, setBusy] = useState<string | null>(null);
-  /** The row whose "add it from your track" prompt is open (N7b PR 2 / D108). */
+  /** The row whose "add it from your track" prompt is open (A07b PR 2 / D108). */
   const [adding, setAdding] = useState<string | null>(null);
 
   // A skate is unreported when nothing links it to a report and the owner hasn't waved it off.

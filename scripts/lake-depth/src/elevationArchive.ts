@@ -1,5 +1,5 @@
 /**
- * The 3DEP elevation archive — **the durable half**, so the four-hour pass happens once (N7-2).
+ * The 3DEP elevation archive — **the durable half**, so the four-hour pass happens once (A07a-2).
  *
  * ## Why an archive at all, for a field that is one number
  *
@@ -16,7 +16,7 @@
  *
  * ## Keyed on the COORDINATE, never on a body id
  *
- * That is what makes the archive survive a corpus rebuild. The N7 campaign re-mints `waterBodies`
+ * That is what makes the archive survive a corpus rebuild. The A07a campaign re-mints `waterBodies`
  * rows every run; a lake whose polygon did not change has the same interior point next campaign, so
  * its entry is reused and no request is spent. Keying on `waterBodyId` would discard the whole
  * archive every time the merge ran — which is the difference between "only new bodies" (D104's

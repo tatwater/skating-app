@@ -1,5 +1,5 @@
 /**
- * The gridding plan for one lake (N6b) — every number GMT is handed, computed in one place.
+ * The gridding plan for one lake (A06b) — every number GMT is handed, computed in one place.
  *
  * This is the arithmetic the phase doc warns about most directly: *"every failure here was invisible
  * in code review and obvious on a render."* It is extracted from the CLI so it can be tested without

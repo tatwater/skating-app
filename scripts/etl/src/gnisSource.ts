@@ -1,5 +1,5 @@
 /**
- * The GNIS gazetteer's constants and pure rules — **importable without fetching anything** (N7).
+ * The GNIS gazetteer's constants and pure rules — **importable without fetching anything** (A07a).
  *
  * ## Why this is a separate file
  *
@@ -12,7 +12,7 @@
  * `scripts/admin-areas/src/tiger.ts` was split out of `fetchStates.ts` for exactly this reason and
  * says so in its own header: *"That module runs its `main()` on import — importing a constant out of
  * it would have re-run the entire five-state fetch as a side effect."* The same trap, one package
- * over, found by the N7 audit's refactor rather than by anybody noticing the network traffic.
+ * over, found by the A07a audit's refactor rather than by anybody noticing the network traffic.
  *
  * The rule the two now share: **a module with a `main()` exports nothing anybody else needs.**
  */
@@ -38,7 +38,7 @@ export const gnisTextPath = (code: string) => join(GNIS_DIR, `DomesticNames_${co
  * stream that point is somewhere along its length. Letting it name the polygon it happens to fall
  * inside would christen a lake after the brook running through it.
  *
- * **`Harbor`, `Channel` and `Gut` were added by the N7 audit.** The first four map cleanly onto
+ * **`Harbor`, `Channel` and `Gut` were added by the A07a audit.** The first four map cleanly onto
  * `lakePond`, `reservoir`, `wetland` and `bay` — and then stopped, which left our own `bay` class
  * half-served: GNIS files a great many tidal and semi-enclosed waters under `Harbor` and `Channel`,
  * and `Gut` is the New England term for a narrows. They are the same kind of feature `natural=bay`

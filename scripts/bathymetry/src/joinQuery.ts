@@ -1,5 +1,5 @@
 /**
- * Calling `waterBodies:matchBathymetryLakes`, and surviving the read cap (N6b).
+ * Calling `waterBodies:matchBathymetryLakes`, and surviving the read cap (A06b).
  *
  * ## Why this is its own module
  *
@@ -36,7 +36,7 @@ export interface JoinCandidate {
   point: { lat: number; lng: number };
   samplePoints?: { lat: number; lng: number }[];
   /**
-   * The NHD `Permanent_Identifier` the publisher assigns this survey, where one exists (N7-3).
+   * The NHD `Permanent_Identifier` the publisher assigns this survey, where one exists (A07a-3).
    *
    * Maine only, via `me-midas-crosswalk`. **Evidence, never gospel** — the server promotes a body
    * the survey already covers and reports a disagreement rather than acting on one. See
@@ -141,7 +141,7 @@ export async function joinInBatches(
 /**
  * Run `items` through `run` in batches, halving any batch that trips the read cap.
  *
- * **Extracted so the splitting logic is directly testable** (N7-3). It is the part this module's
+ * **Extracted so the splitting logic is directly testable** (A07a-3). It is the part this module's
  * docstring calls out as *"the part that can be wrong in a way that still looks right"* — dropping a
  * half, or recursing forever on one item that fails for an unrelated reason — and it was reachable
  * only through a query before.

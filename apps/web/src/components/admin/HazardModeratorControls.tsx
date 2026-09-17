@@ -16,7 +16,7 @@ import { ReasonDialog } from './ReasonDialog';
  * body feature** right from where it is, so a permanent risk stops needing user re-marking. Renders
  * nothing for non-moderators.
  *
- * The feature-type list comes from `@skating/core` (N5c) rather than being a hand-kept copy — D79's
+ * The feature-type list comes from `@skating/core` (A05c) rather than being a hand-kept copy — D79's
  * authoring form on the lake page made it the third reader, and a third copy is how a new type
  * reaches the schema while one surface goes on offering eight.
  */

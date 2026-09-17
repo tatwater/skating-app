@@ -19,7 +19,7 @@ import { activeFilterCount } from '../lib/feedFilters';
 import { Input } from './ThemedInputs';
 
 /**
- * The persisted newsfeed filter row (Phase 4, decision #3) — the mobile mirror of web's
+ * The persisted newsfeed filter row (Phase 04, decision #3) — the mobile mirror of web's
  * `FeedFilterBar`. An **additive** narrow over the global feed, defaulting to show-all; collapsible so
  * it stays out of the way. Controlled: renders the current `FeedFilters`, calls `onChange` with the
  * next set; the feed screen owns persistence (local-first + server sync). Encodes include-unknown by
@@ -150,7 +150,7 @@ export function FeedFilterBar({
             />
           </XStack>
 
-          {/* Weather-first discovery (N6h / D164–D166): "at least N nights below T, no snow
+          {/* Weather-first discovery (A06h / D164–D166): "at least N nights below T, no snow
               since". Describes a lake, not a report — matching lakes appear as their own cards and
               non-matches dim on the map. Disabled, with the reason, out of season. */}
           <YStack

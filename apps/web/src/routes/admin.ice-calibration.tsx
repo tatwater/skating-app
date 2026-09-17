@@ -7,13 +7,13 @@ import { Badge } from '../components/ui/badge';
 import { Card, CardContent } from '../components/ui/card';
 
 /**
- * **Does the growth model work?** — the ice-thickness calibration instrument (N6h / **D160**).
+ * **Does the growth model work?** — the ice-thickness calibration instrument (A06h / **D160**).
  *
  * ## This page is the entire reason the estimator is allowed to exist
  *
  * The Stefan model produces a number in inches, which is the most counsel-shaped quantity this
  * codebase can produce and exactly what D3 forbids publishing. D160 permits it as an **operator
- * instrument that ships dark**, on the same pattern as N5c's hazard advisory and N6e's phenology
+ * instrument that ships dark**, on the same pattern as A05c's hazard advisory and A06e's phenology
  * brackets: computed, stored, shown only here, and judged against reality before anyone decides
  * whether it earns a skater surface.
  *

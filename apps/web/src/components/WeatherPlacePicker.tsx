@@ -1,7 +1,7 @@
 import { useNavigate } from '@tanstack/react-router';
 
 /**
- * Which place on a giant the Planning tab's weather is about (N6h / open question 5).
+ * Which place on a giant the Planning tab's weather is about (A06h / open question 5).
  *
  * Renders nothing on the ~99% of bodies with no named bays: their weather is about the lake and
  * there is nothing to pick. On a body with bays it is the panel's scope line **and** the switcher —

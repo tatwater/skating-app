@@ -1,5 +1,5 @@
 /**
- * Derived lake-shape statistics (N6c Workstream A) — shoreline length, the long/short axis, and
+ * Derived lake-shape statistics (A06c Workstream A) — shoreline length, the long/short axis, and
  * the directional wind-fetch profile. Pure, framework-free and dependency-free, so the ETL, a
  * Convex function and a test can all reach the same numbers.
  *
@@ -28,7 +28,7 @@ import type { MultiPolygon, Polygon, Position } from 'geojson';
 import { haversineMeters, type LatLng, pointInPolygon } from './geometry';
 
 /**
- * Compass bearings the fetch profile is sampled at — **16**, at 22.5° steps (D-answer to N6c open
+ * Compass bearings the fetch profile is sampled at — **16**, at 22.5° steps (D-answer to A06c open
  * question 1).
  *
  * The precision argument between 16 and 18 is a wash (11.25° vs 10° of worst-case angular error,
@@ -241,7 +241,7 @@ function convexHull(points: [number, number][]): [number, number][] {
  * excluded from the hull; a MultiPolygon's overall extent spans all its parts, because that is
  * what a dimension line for the *body* means.
  *
- * ## This is the minimum-area bounding rectangle, and the N6c plan specified something else
+ * ## This is the minimum-area bounding rectangle, and the A06c plan specified something else
  *
  * The plan said *"the hull diameter (longest chord between hull vertices), giving `longAxisM`…
  * The perpendicular hull width gives `shortAxisM`."* **That pair does not produce a dimension
@@ -405,7 +405,7 @@ function longestSpanAt(
  * was harmless for every prior consumer — the field exists for display and distance (D48), where
  * a shoreline point is fine — and it is fatal here: a ray cast north from a point on the *west*
  * shore correctly finds no water, so seven of Willoughby's sixteen bearings came back **0.0**, and
- * eight of Champlain's. The N6c plan's *"cast a ray through the centroid"* cannot be taken
+ * eight of Champlain's. The A06c plan's *"cast a ray through the centroid"* cannot be taken
  * literally.
  *
  * ## What this returns instead
@@ -569,7 +569,7 @@ function firstBoundaryCrossing(
  *   across an island would overstate exposure, which is the wrong direction to be wrong in.
  * - **MultiPolygon bodies use the largest component**, since fetch across open land to a detached
  *   basin is not fetch.
- * - **Sub-areas (N2) should eventually get their own profiles** — a named bay is exactly the scale
+ * - **Sub-areas (A02) should eventually get their own profiles** — a named bay is exactly the scale
  *   at which per-point fetch starts to matter. Deferred; the field shape already supports it, since
  *   sub-areas carry their own geometry.
  * - **Rivers would produce nonsense** (D4) — see this file's header.
@@ -644,7 +644,7 @@ export interface LakeGeometryStats {
 }
 
 /**
- * Compute every N6c Workstream A shape stat for one body, from the **source** geometry (D85).
+ * Compute every A06c Workstream A shape stat for one body, from the **source** geometry (D85).
  *
  * Resilient by design: each stat is omitted rather than zeroed when its geometry is degenerate, so
  * one unusable ring costs one field instead of failing a feature — the same per-feature discipline

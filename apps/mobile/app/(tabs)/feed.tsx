@@ -39,10 +39,10 @@ type FeedListItem =
   | { kind: 'recommended'; key: string; cards: FeedCardData[] };
 
 /**
- * Latest tab (Phase 5, renamed from Newsfeed by N6h/D159) — the mobile mirror of web's `/feed`.
+ * Latest tab (Phase 05, renamed from Newsfeed by A06h/D159) — the mobile mirror of web's `/feed`.
  * Reads `reports.listFeed` (global, newest skate-end time first) via `usePaginatedQuery` into a
  * `FlatList` with pull-to-refresh and infinite scroll, and opens a tapped report in a
- * `@gorhom/bottom-sheet` (the Phase 2 drawer pattern, reusing the shared `ReportDetail`) so the
+ * `@gorhom/bottom-sheet` (the Phase 02a drawer pattern, reusing the shared `ReportDetail`) so the
  * feed scroll position survives. All reports are public (D13); a blocked author's report still
  * shows, de-emphasized (D3).
  *
@@ -110,7 +110,7 @@ export default function NewsfeedScreen() {
     recommended?.flatMap((rec) => rec.cards.map((c) => c.reportId)) ?? [],
   );
 
-  // Interleave recency scroll-divider headers (Phase 4, decision #5) into the flat list — one header
+  // Interleave recency scroll-divider headers (Phase 04, decision #5) into the flat list — one header
   // row per section ("Today / Yesterday / …"), then that section's cards, so infinite scroll +
   // pull-to-refresh keep working over a single `FlatList`. The recommended bundles lead the list.
   const listItems: FeedListItem[] = [

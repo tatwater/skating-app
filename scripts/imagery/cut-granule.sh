@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Cut one Sentinel granule down to the corpus and push the result to R2 (N6e PR 2, D148).
+# Cut one Sentinel granule down to the corpus and push the result to R2 (A06e PR 2, D148).
 #
 #   cut-granule <granule-id> [--smoke]
 #
@@ -207,7 +207,7 @@ resolve_granule() {
 }
 
 # Assets we care about, and why each one (§C1). True color is what PR 2 ships; the rest are the
-# bands N6g is built on and they cost nothing extra to note while we are already holding the granule.
+# bands A06g is built on and they cost nothing extra to note while we are already holding the granule.
 #   visual — the RGB composite, the frame a skater actually looks at
 #   scl    — ESA's per-pixel scene classification: snow/ice AND cloud mask in one band. The single
 #            most valuable asset here, per §C1.
@@ -216,7 +216,7 @@ asset_href() { jq -r --arg k "$1" '.assets[$k].href // empty' granule.json; }
 
 # What a body looks like in `bodies[]` when it is in the frame but was not measured — see
 # `reconcile_bodies`. Every statistic is `null` ("unmeasured"); only the counts are 0, because "no
-# pixels" is itself a measurement and the thing N6g Lane 2 has to be able to read.
+# pixels" is itself a measurement and the thing A06g Lane 2 has to be able to read.
 OPTICAL_NULL_BODY='{"clearPct":null,"coveragePct":null,"snowIcePct":null,"waterPct":null,
   "ndsiMean":null,"pixels":0,"interiorPixels":0,"classHist":null,"interiorClassHist":null}'
 SAR_NULL_BODY='{"vvDb":null,"vhDb":null,"coveragePct":null,"pixels":0,"interiorPixels":0,
@@ -644,7 +644,7 @@ deshift_band() {
 # ## `interior.tif` — the shoreline eroded off, because an edge pixel is not a lake pixel
 #
 # A pixel straddling the shoreline mixes water with bank, and standard practice in the lake-ice
-# literature is to erode 1–2 pixels before classifying. N6g Lane 2 is the reason it is worth the extra
+# literature is to erode 1–2 pixels before classifying. A06g Lane 2 is the reason it is worth the extra
 # proximity pass: its elimination rule turns on *"never observed frozen"*, and **a body too small to
 # classify reads exactly like a body that never froze**. After erosion a 1-acre pond has under ten
 # pixels left to vote with — so the honest artifact is not a cleaner percentage, it is a **stated
@@ -713,7 +713,7 @@ reconcile_bodies() {
 #
 # **A statistic, not a frame.** No tiling, no PMTiles, no upload — two band warps and one windowed
 # sweep. Tiling is 63% of a job and there is no product surface asking to look at an NDSI raster; the
-# per-body number is what PR 4 and N6g want.
+# per-body number is what PR 4 and A06g want.
 #
 # ## ⚠⚠ The offset, which is the thing that would quietly ruin a nine-season backfill
 #
@@ -1124,7 +1124,7 @@ transform_granule() {
 #     east as the scrubber advanced through alternating passes. "Over a lake it is flat" is true and
 #     insufficient — what matters is the lake's height above the GCP reference, not its own flatness.
 #     PR 3 mitigates by holding one orbit direction per timeline; the fix is a DEM-corrected geocode.
-#     See the N6e plan's open question 8, and note it may share a cause with question 7.
+#     See the A06e plan's open question 8, and note it may share a cause with question 7.
 #   * **The pixels are not the measurement.** They are detector counts; the calibration annotation is
 #     what turns them into `sigma0`. See `sar-cal-lut.py` for why skipping it is a 1.5 dB error inside
 #     a single scene, against a ~2 dB signal.

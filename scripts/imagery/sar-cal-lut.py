@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Turn Sentinel-1's calibration annotation into a raster that can be warped (N6e PR 2, §C1).
+"""Turn Sentinel-1's calibration annotation into a raster that can be warped (A06e PR 2, §C1).
 
     sar-cal-lut.py <calibration.xml> <grd-url-or-path> <out.tif>
 

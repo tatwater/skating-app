@@ -1,5 +1,5 @@
 /**
- * Ranking last season's hazards by how likely they are to come back (N5a, D53 + D63).
+ * Ranking last season's hazards by how likely they are to come back (A05a, D53 + D63).
  *
  * **Why this exists is a safety argument, not a tidiness one.** Seasonal scoping hides last winter's
  * hazards, so the first skater in November sees a clean map where there was a ridge. What covers that
@@ -98,7 +98,7 @@ export function promotionPriority(candidate: PromotionCandidate): number {
 /**
  * Confirmations past this add nothing: the question they answer is "was it real", not "how big".
  *
- * Exported so the cross-season ranking reads the same number (N5c / §C5). Two rankings that disagreed
+ * Exported so the cross-season ranking reads the same number (A05c / §C5). Two rankings that disagreed
  * about how much a third confirmation is worth would put the same hazard in two different places on two
  * halves of one operator surface.
  */

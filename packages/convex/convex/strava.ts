@@ -1,5 +1,5 @@
 /**
- * **C — Strava push** (Phase 8): upload a skater's own recorded activity to their own Strava account.
+ * **C — Strava push** (Phase 08): upload a skater's own recorded activity to their own Strava account.
  *
  * This is the *only* legal direction. Strava's Nov-2024 API terms forbid displaying one athlete's
  * Strava data to any other user — even public data, even to no one but its owner's friends — and ban

@@ -433,7 +433,7 @@ describe('hazardFootprint never yields a non-areal geometry', () => {
   });
 });
 
-describe('clipFootprintToBody (Phase 9.5)', () => {
+describe('clipFootprintToBody (Phase 09b)', () => {
   // A body occupying the western half-plane: water is west of the shoreline at lng 0, land is east.
   const WEST_BODY: Polygon = {
     type: 'Polygon',
@@ -514,7 +514,7 @@ describe('clipFootprintToBody (Phase 9.5)', () => {
   });
 });
 
-describe('polygonShape + the hardened polygon gate (N5b)', () => {
+describe('polygonShape + the hardened polygon gate (A05b)', () => {
   /** Four corners of a small square near Burlington, as draft vertices. */
   const SQUARE: LatLng[] = [
     { lat: 44.47, lng: -73.22 },

@@ -1,5 +1,5 @@
 /**
- * The tile contract — `tile.sh`'s flags against the constants the clients read (N6b).
+ * The tile contract — `tile.sh`'s flags against the constants the clients read (A06b).
  *
  * `feature.ts` pins the *properties* on every line. This pins the two things that are not properties
  * and that live on the other side of a language boundary: the tippecanoe layer name and the zoom

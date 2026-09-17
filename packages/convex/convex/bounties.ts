@@ -9,7 +9,7 @@
  * (`bountyPoints`, decision 11): fulfilling awards `bounties.rewardPoints` to the *report author*, never
  * touching `reputationPoints`, so trust stays purely about report/hazard accuracy.
  *
- * The GPS-skate half of eligibility (D44) is dark until Phase 8; Phase 6 fans out to authors who
+ * The GPS-skate half of eligibility (D44) is dark until Phase 08; Phase 06 fans out to authors who
  * *reported* on the body recently.
  */
 
@@ -68,10 +68,10 @@ const HOUR_MS = 60 * 60 * 1000;
  * dedicated bounties cell index; at alpha scale it never bites.
  */
 const OPEN_BOUNTY_SCAN_CAP = 200;
-/** Bounties the expiry cron retires per tick. Anything past it goes on the next interval (N1). */
+/** Bounties the expiry cron retires per tick. Anything past it goes on the next interval (A01). */
 const EXPIRE_SWEEP_CAP = 500;
 /**
- * Reports the freshness gate weighs for one body+window (N1). It bounds more than the index scan: the
+ * Reports the freshness gate weighs for one body+window (A01). It bounds more than the index scan: the
  * gate does an author `get` + a `tallyThumbs` scan **per report**, so this is really a cap on read
  * fan-out, and it can't simply be raised — 1,000 here would be ~2,000+ reads on its own.
  */
@@ -85,14 +85,14 @@ const RECENT_REPORT_SCAN_CAP = 200;
  * on it would retain the *oldest* rows in the window, and both callers want the newest. A busy body
  * would then have hidden its freshest report from the suppression gate (letting a bounty be opened on
  * ice someone just skated) and notified only the people who reported longest ago. Reversed, the cap
- * drops the oldest candidates instead (N1, Greptile PR #27).
+ * drops the oldest candidates instead (A01, Greptile PR #27).
  */
 async function recentReports(
   ctx: QueryCtx,
   waterBodyId: Id<'waterBodies'>,
   cutoff: number,
   /**
-   * Narrow to one named sub-area (N2 / D60). **This has to happen at the index, not after it.**
+   * Narrow to one named sub-area (A02 / D60). **This has to happen at the index, not after it.**
    * Filtering a body-level result down to a bay afterwards would keep the cap at body scale while
    * shrinking the useful sample: on Champlain the gate could saturate on 200 reports from Burlington
    * Bay and — since a saturated scan blocks — reject a perfectly good Malletts Bay bounty every
@@ -119,7 +119,7 @@ async function recentReports(
     );
     return { reports, truncated };
   }
-  // The bay half reads the `reportSubAreas` join (N9): a spanning report satisfies a bounty on
+  // The bay half reads the `reportSubAreas` join (A09): a spanning report satisfies a bounty on
   // *either* bay it was skated in (D175), and only the join can find it under its second one. The
   // join mirrors `moderationStatus` and `skateEndTime` so the gate and the window stay in the index,
   // for the same reason as above; the survivors are then hydrated one `get` per row, which the cap
@@ -147,7 +147,7 @@ async function recentReports(
  * (which fetches each suppressor's weather) and the transactional create-check (which re-decides at
  * commit) work from these. Carries `reportId` so a weather verdict can be tied back to its report, and
  * `windowH` so the analytics log can record the window the gate *actually applied* rather than the
- * base constant (Phase 7b — that pair is one dot on the suppression scatter).
+ * base constant (Phase 07-2 — that pair is one dot on the suppression scatter).
  */
 interface EvaluatedReport {
   reportId: Id<'reports'>;
@@ -181,7 +181,7 @@ interface EvaluatedReport {
  * test fails, and this cap has to be revisited with it.
  *
  * `newest` is the freshest recent report **whether or not it suppresses** — carried purely for the
- * gate log (Phase 7b). Without it the suppression scatter would only ever plot blocked attempts, and
+ * gate log (Phase 07-2). Without it the suppression scatter would only ever plot blocked attempts, and
  * "dots below the line = allowed" would be empty by construction: an allowed attempt usually has no
  * suppressors at all, so the closest call is the only honest reference point it has.
  *
@@ -210,7 +210,7 @@ async function evaluateFreshness(
   ctx: QueryCtx,
   body: Doc<'waterBodies'>,
   now: number,
-  /** Narrow the gate to a named sub-area (N2 / D60) — see `recentReports`. */
+  /** Narrow the gate to a named sub-area (A02 / D60) — see `recentReports`. */
   subAreaId?: Id<'waterBodySubAreas'>,
 ): Promise<{
   suppressors: EvaluatedReport[];
@@ -254,7 +254,7 @@ async function evaluateFreshness(
   }
   if (truncated) {
     console.warn(
-      `bounties.evaluateFreshness(${subAreaId ?? body._id}): hit the ${RECENT_REPORT_SCAN_CAP}-report scan cap, so an older long-window report may be unweighed — blocking rather than guessing (D5/N1).`,
+      `bounties.evaluateFreshness(${subAreaId ?? body._id}): hit the ${RECENT_REPORT_SCAN_CAP}-report scan cap, so an older long-window report may be unweighed — blocking rather than guessing (D5/A01).`,
     );
   }
   return { suppressors, newest, truncated };
@@ -292,7 +292,7 @@ async function underOpenBountyCap(
 }
 
 /**
- * The open-bounty cap that applies to one requester (N2) — their `activeBountyPostLimit` if a
+ * The open-bounty cap that applies to one requester (A02) — their `activeBountyPostLimit` if a
  * moderator set one, else the global constant.
  *
  * Exported because the **clients read it too**: both `BountyForm`s used to hardcode
@@ -316,7 +316,7 @@ const GATE_MESSAGES = {
 } as const;
 
 /**
- * Append the gate's verdict to `bountyGateEvents` (Phase 7b). Called on **every** attempt, including
+ * Append the gate's verdict to `bountyGateEvents` (Phase 07-2). Called on **every** attempt, including
  * both rejections — that's the entire point of the table: the suppression window and the daily cap are
  * invisible constants until you can see the attempts they blocked. `decidingReport` is the blocker
  * when suppressed and the closest call when allowed, so each row is one (age, window) dot on the
@@ -361,7 +361,7 @@ async function logGateEvent(
  * candidate's **weather-since** to decide which weather has likely reopened; the final fresh-eyes verdict
  * is re-made transactionally in `createChecked`, so a suppressor that lands mid-fetch can't slip through.
  *
- * Returns a **verdict, not a throw**, for the two outcomes the analytics log cares about (Phase 7b):
+ * Returns a **verdict, not a throw**, for the two outcomes the analytics log cares about (Phase 07-2):
  * `unavailable` (body missing/unlisted — `createChecked` raises the proper error) and `capped`. The cap
  * used to throw right here; it now short-circuits instead, so the attempt still reaches a mutation that
  * can record it. The resource guard the throw provided is preserved exactly — a capped caller skips the
@@ -398,7 +398,7 @@ export const bountyFreshnessInputs = internalQuery({
       return { status: 'unavailable' as const };
     }
     // Anchored on the sub-area when the bounty names one — a bay is what people skate, and on a
-    // giant it is a different weather cell from mid-lake (D152 / N6h hole 2).
+    // giant it is a different weather cell from mid-lake (D152 / A06h hole 2).
     const cell = bodyWeatherCell(body, 'browse', subArea?.centroid ?? body.centroid);
     const { suppressors, truncated } = await evaluateFreshness(ctx, body, now, subAreaId);
     // A truncated scan is going to be blocked by `createChecked` no matter what the weather says, so
@@ -422,7 +422,7 @@ export const bountyFreshnessInputs = internalQuery({
 export const create = action({
   args: {
     waterBodyId: v.id('waterBodies'),
-    /** Narrow the ask to one named bay (N2 / D60) — see `bounties.subAreaId` in the schema. */
+    /** Narrow the ask to one named bay (A02 / D60) — see `bounties.subAreaId` in the schema. */
     subAreaId: v.optional(v.id('waterBodySubAreas')),
   },
   handler: async (ctx, { waterBodyId, subAreaId }): Promise<Id<'bounties'>> => {
@@ -458,7 +458,7 @@ export const create = action({
           summary && summary.hours > 0
             ? weatherExplainsIceChange(summary, {
                 // A HIGHER bar than the contradiction check's default — one ordinary freezing night must
-                // not reopen a well-corroborated report's bounty (§7c). Admin-tunable in Phase 7.
+                // not reopen a well-corroborated report's bounty (§7c). Admin-tunable in Phase 07.
                 freezingDegreeHours: BOUNTY_REOPEN_FREEZING_DEGREE_HOURS,
                 thawDegreeHours: BOUNTY_REOPEN_THAW_DEGREE_HOURS,
               })
@@ -493,7 +493,7 @@ type CreateOutcome =
  * the rolling open-bounty cap + freshness gate (decision 7/8), insert, and fan out `bounty_request`
  * notices. Internal — only `create` (the action) calls it, passing the reports weather has likely reopened.
  *
- * **The two gate rejections return instead of throwing** (Phase 7b). Every attempt appends a
+ * **The two gate rejections return instead of throwing** (Phase 07-2). Every attempt appends a
  * `bountyGateEvents` row, and a thrown mutation rolls its writes back — so a throwing gate could only
  * ever log the attempts it *allowed*, which is precisely the half that can't tell you whether
  * `FRESH_REPORT_HOURS` or `MAX_OPEN_BOUNTIES_PER_DAY` is set right. The caller re-raises. Auth failures
@@ -528,7 +528,7 @@ export const createChecked = internalMutation({
     }
 
     const body = await resolveSurvivor(ctx, waterBodyId);
-    // Active, not merely listed (N7b): a bounty asks other people to go there, which is the one
+    // Active, not merely listed (A07b): a bounty asks other people to go there, which is the one
     // thing a dormant or removed body must not do.
     if (!body || !isListed(body)) throw new ConvexError('Water body not found');
     if (!isActive(body)) {
@@ -647,9 +647,9 @@ export const createChecked = internalMutation({
 
 /**
  * Notify the eligible: authors who reported on this body within `windowHours` (decision 9). One
- * `bounty_request` per recent author, through the settle queue (N8 / D169) so a bounty cancelled a
+ * `bounty_request` per recent author, through the settle queue (A08 / D169) so a bounty cancelled a
  * moment after it was posted never rings anyone; the flush re-checks that it's still open. Never the
- * requester. The GPS-skate half of eligibility (D44) lands in Phase 8.
+ * requester. The GPS-skate half of eligibility (D44) lands in Phase 08.
  */
 async function fanOutEligibility(
   ctx: MutationCtx,
@@ -706,8 +706,8 @@ export const cancel = mutation({
  * report to every open bounty on its body's `fulfillingReportIds` (the minimum bar is deliberately simple:
  * any new visible report on the body). Fulfillment itself waits for the requester's helpful thumb.
  *
- * **This is also where the requester finds out** (N8 / D170). Fulfillment can't happen until the
- * requester thumbs an attached report, and until N8 nothing told them one had arrived — the loop only
+ * **This is also where the requester finds out** (A08 / D170). Fulfillment can't happen until the
+ * requester thumbs an attached report, and until A08 nothing told them one had arrived — the loop only
  * closed if they happened to have favorited the lake. Each attach enqueues a `bounty_answered` to the
  * requester; several reports inside the settle window coalesce into one "N reports came in", and the
  * flush re-checks that the bounty is still open (if they've already ruled, there's nothing to ask).
@@ -727,12 +727,12 @@ export async function attachReportToOpenBounties(
     )
     .collect();
   for (const bounty of open) {
-    // **This is where sub-area targeting is either real or cosmetic** (N2 / D60). Fulfillment starts
+    // **This is where sub-area targeting is either real or cosmetic** (A02 / D60). Fulfillment starts
     // here, not at the create gate: the requester's helpful thumb on an *attached* report is what
     // flips a bounty, so a Burlington Bay report attaching to a Malletts Bay bounty would let the
     // wrong ice satisfy the ask. A body-wide bounty still takes any report on the body — narrowing
     // that would break the ordinary case for no reason.
-    // **Any member bay satisfies** (N9 / D175): a skate that crossed from Malletts into Shelburne
+    // **Any member bay satisfies** (A09 / D175): a skate that crossed from Malletts into Shelburne
     // answers a bounty on either — membership carries reach — while a report from open water or a
     // third bay still does not.
     if (bounty.subAreaId !== undefined && !memberSubAreaIds(report).includes(bounty.subAreaId)) {
@@ -759,7 +759,7 @@ export async function attachReportToOpenBounties(
 /**
  * Fulfillment-on-helpful (decisions 10–11) — invoked from `ratings.rate` when the **requester** thumbs a
  * fulfilling report helpful. Flips the bounty to `fulfilled` and awards `rewardPoints` (as
- * `bounty_fulfilled` → `bountyPoints`) to the **report author** — no notification to them since N8 /
+ * `bounty_fulfilled` → `bountyPoints`) to the **report author** — no notification to them since A08 /
  * D170; see the note at the end of the body. Guarded so a bounty
  * fulfills once: no-op unless still `open`, the rater is the requester, and the report is in its
  * fulfilling set. (The rater can't be the report author — self-rating is already blocked upstream — so
@@ -786,7 +786,7 @@ export async function fulfillBountyOnHelpful(
   if (!report) return;
 
   // `fulfilledAt` is stamped alongside the status so the time-to-fulfillment histogram has an end
-  // point (Phase 7b) — `status` alone only records *that* it happened, never how long people waited,
+  // point (Phase 07-2) — `status` alone only records *that* it happened, never how long people waited,
   // which is the half that says whether DEFAULT_BOUNTY_LIFETIME_MS is anywhere near the real answer time.
   await ctx.db.patch(args.bountyId, { status: 'fulfilled', fulfilledAt: Date.now() });
   await awardPointEvent(ctx, {
@@ -796,7 +796,7 @@ export async function fulfillBountyOnHelpful(
     delta: bounty.rewardPoints,
   });
   await checkAndAwardBadges(ctx, report.authorId);
-  // No notification to the author (N8 / D170): the requester's thumb is the thing that *made* this
+  // No notification to the author (A08 / D170): the requester's thumb is the thing that *made* this
   // report helpful, and they already see that thumb on the report. The one person who needed telling
   // — the requester, when the report first arrived — is told at attach time (`bounty_answered`).
 }
@@ -810,7 +810,7 @@ export const expireBounties = internalMutation({
   handler: async (ctx) => {
     const now = Date.now();
     // Bounded per tick, not per run: whatever the cap leaves behind expires on the next interval,
-    // so a backlog drains rather than crashing the sweep (N1).
+    // so a backlog drains rather than crashing the sweep (A01).
     const due = await takeCapped(
       ctx.db
         .query('bounties')
@@ -823,7 +823,7 @@ export const expireBounties = internalMutation({
   },
 });
 
-// `bounties.get` — a raw `ctx.db.get` for the detail view — was removed in N6f. It had zero callers
+// `bounties.get` — a raw `ctx.db.get` for the detail view — was removed in A06f. It had zero callers
 // anywhere, including tests: `getDetail` below replaced it before either client ever shipped a bounty
 // screen, and both apps have always read that. A public query returning an unenriched row is worse
 // than no query, because the next detail surface would reach for the one whose name reads right.
@@ -883,7 +883,7 @@ const ANSWERED_SCAN_CAP = 100;
 
 /**
  * How many bounties a report is attached to — the "at least N people were looking forward to this"
- * line after submit (N8 / D170). Only the report's own author gets a number: the count is a fact
+ * line after submit (A08 / D170). Only the report's own author gets a number: the count is a fact
  * about who asked, and a stranger reading "3 people wanted this" off someone else's report is a
  * signal nobody asked for.
  *
@@ -921,7 +921,7 @@ export const answeredByMyReport = query({
 /**
  * The open bounties on a body (for the map/detail surfaces), newest first, with the requester's name.
  *
- * With a `subAreaId` (N9, the bay view): the bounties **on that bay, plus the lake-wide ones** — a
+ * With a `subAreaId` (A09, the bay view): the bounties **on that bay, plus the lake-wide ones** — a
  * lake-wide ask is satisfied by a report from this bay (D175), so it is an ask this bay's skaters can
  * answer; a bounty on a *different* bay is not, and is dropped.
  */
@@ -1041,7 +1041,7 @@ export const listOpen = query({
 });
 
 /**
- * The caller's own open-bounty cap and how much of it they've used (N2).
+ * The caller's own open-bounty cap and how much of it they've used (A02).
  *
  * Exists so the bounty form can state the rule that applies *to this person*. Both clients used to
  * hardcode `MAX_OPEN_BOUNTIES_PER_DAY` into their copy, which would have made the form promise three

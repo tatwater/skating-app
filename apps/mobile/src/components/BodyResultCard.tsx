@@ -5,7 +5,7 @@ import { Text, useTheme, XStack, YStack } from 'tamagui';
 import { Badge } from './detailUi';
 
 /**
- * A weather-matched **lake** in the Latest feed (N6h / D165) — the mobile twin of web's
+ * A weather-matched **lake** in the Latest feed (A06h / D165) — the mobile twin of web's
  * `BodyResultCard`. An *Overview* object where a report card is a *Reporting* one (D159), and the
  * layout says so: no author, no quality, no photos; a place, the chain sentence that matched, and the
  * date the reading is as of. Every sentence comes from `buildBodyResultView` in core. Pressing opens

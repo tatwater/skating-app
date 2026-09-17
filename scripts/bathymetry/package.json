@@ -3,7 +3,7 @@
   "version": "0.0.1",
   "private": true,
   "type": "module",
-  "description": "Manual bathymetry ETL (N6b): state-agency contours + soundings \u2192 isobath PMTiles + rung-1 depths. Not built or deployed.",
+  "description": "Manual bathymetry ETL (A06b): state-agency contours + soundings \u2192 isobath PMTiles + rung-1 depths. Not built or deployed.",
   "scripts": {
     "check-types": "tsc --noEmit",
     "test": "vitest run --coverage",

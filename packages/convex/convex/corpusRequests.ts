@@ -1,5 +1,5 @@
 /**
- * Corpus requests (N7b PR 2 / D106–D108, D179) — a skater asks for a lake; a moderator answers.
+ * Corpus requests (A07b PR 2 / D106–D108, D179) — a skater asks for a lake; a moderator answers.
  *
  * Five kinds (`REQUEST_KINDS` in `@skating/core`'s `corpusRequests.ts`, which also says why five):
  * `activate` a dormant body, `admit` water the corpus does not hold, `restore` a removed body,
@@ -120,7 +120,7 @@ export const create = mutation({
       if (waterBodyId !== undefined) {
         throw new ConvexError('An admit request names a place, not a body');
       }
-      // Reachable, not merely active (N7b): a dormant or removed body under the tap is the body the
+      // Reachable, not merely active (A07b): a dormant or removed body under the tap is the body the
       // skater means, and the right ask is about *it*.
       const body = await bodyUnder(ctx, coord);
       if (body) {
@@ -568,7 +568,7 @@ export const decline = mutation({
     if (!request) throw new ConvexError('Request not found');
     if (request.status !== 'open') throw new ConvexError('This request has been decided');
     // The requester reads this; a decline with nothing to read is the "unavailable" with no reason
-    // that N7b exists to end. Enforced here, not only in the dialog.
+    // that A07b exists to end. Enforced here, not only in the dialog.
     const trimmed = note.trim();
     if (trimmed.length === 0) throw new ConvexError('Say why — the skater reads this.');
     if (trimmed.length > MAX_REQUEST_NOTE_LENGTH) {

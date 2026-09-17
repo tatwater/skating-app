@@ -12,7 +12,7 @@ import {
 } from '@skating/core';
 
 /**
- * The wind-exposure section of a lake page (N7-3) — a 16-sector rose plus the sentences that say
+ * The wind-exposure section of a lake page (A07a-3) — a 16-sector rose plus the sentences that say
  * what it means.
  *
  * **Two measurements, two channels, one hue.** The filled area is *frequency* (how often wind comes
@@ -44,7 +44,7 @@ export function WindExposure({
   body: WindExposureBody;
   /**
    * `subArea` when `body` is a bay's composite — the **parent's** rose with the bay's **own** fetch
-   * (N9). The caption says which half is whose; on a lake it still says the rose is the cell's.
+   * (A09). The caption says which half is whose; on a lake it still says the rose is the cell's.
    */
   scope?: 'body' | 'subArea';
 }) {
@@ -150,7 +150,7 @@ export function WindExposure({
         against a {Math.round(WIND_ARROW_REFERENCE_MPS * 2.23694)} mph scale shared by every lake.
         {model.emphasizedSector !== null ? ' The solid arrow marks the most exposed shore.' : ''}
       </p>
-      {/* The over-claim, said on every body (N9 kickoff call 6): the corpus median is a tenth of one
+      {/* The over-claim, said on every body (A09 kickoff call 6): the corpus median is a tenth of one
           reanalysis cell, so this rose is the cell's wherever it is shown — D3 applies to a wind rose
           as much as to an ice condition. A bay adds the half that is genuinely its own. */}
       <p className="text-muted-foreground text-xs">{windRoseCaption(scope)}</p>

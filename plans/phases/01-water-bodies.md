@@ -1,6 +1,6 @@
-# Phase 1 build plan — Water-body data
+# Phase 01 build plan — Water-body data
 
-The concrete implementation plan for **Phase 1** of [`07-roadmap.md`](../07-roadmap.md).
+The concrete implementation plan for **Phase 01** of [`07-roadmap.md`](../07-roadmap.md).
 Design rationale lives in the decisions log (D5, D6, D14, D36, D37, **D48**); this doc is
 the *how* — ordered workstreams, file-level changes, and the test plan.
 
@@ -8,7 +8,7 @@ the *how* — ordered workstreams, file-level changes, and the test plan.
 > drive-time, and tap candidate lakes — *before* anyone has reported on them. Storage is the
 > substrate for discovery (D14/D28); display is curated separately (D48).
 
-> **⚠️ The spatial mechanism described below was replaced by N1 (2026-07-26).** Everything about
+> **⚠️ The spatial mechanism described below was replaced by A01 (2026-07-26).** Everything about
 > *what* `listInViewport` must answer still holds — a body is "in view" when its **bbox** intersects
 > the viewport — but the *how* (a `@convex-dev/geospatial` centroid index, a margin-expanded query
 > rectangle, the `isLarge` two-tier scan, the 256-row clamp) is gone. Reads now run on a bbox-coverage
@@ -23,8 +23,8 @@ the *how* — ordered workstreams, file-level changes, and the test plan.
 - **Lakes / ponds / reservoirs only. Rivers deferred** — modeling rivers as named *reaches*
   (D4/D36) is a later release once still-water is validated with users.
 - **Read-only web map** to *confirm* the data renders. Interactive map, tap-to-detail, and
-  report creation are **Phase 2**. Mobile's full map is also Phase 2 (bigger native lift);
-  web is the fastest way to verify Phase 1.
+  report creation are **Phase 02a**. Mobile's full map is also Phase 02a (bigger native lift);
+  web is the fastest way to verify Phase 01.
 - **Basemap: Protomaps** (D6) — start against hosted demo tiles, swap to a self-built
   Vermont `.pmtiles` once the water data is confirmed.
 
@@ -113,7 +113,7 @@ Not a workspace app — a manual `tsx` script directory. Pipeline stages:
   otherwise breach 1 MiB with a safety margin — realistically Champlain is the sole
   candidate, and even at 5 m it should fit. No vertex cap. If a large lake's *query payload*
   (not its storage) becomes the problem, the fix is a coarse map-outline for the list layer +
-  lazy-load full detail on tap (a Phase 2+ lever), **not** a degraded stored geometry.
+  lazy-load full detail on tap (a Phase 02a+ lever), **not** a degraded stored geometry.
   Vermont total ≈ 10–20 MB.
 - Non-npm tools (`osmium`, `gdal`) are **local prerequisites** — document install in the
   script README; the *transform* stage stays testable TS via `@skating/core`.
@@ -123,10 +123,10 @@ Not a workspace app — a manual `tsx` script directory. Pipeline stages:
   (`maplibre-gl` + `react-map-gl` or direct), framed on Vermont.
 - Basemap: a Protomaps style over demo `.pmtiles` first; self-built Vermont extract after.
 - A source/layer driven by `listInViewport` for the current viewport bbox; render polygons as
-  a fill + outline. **No** tap-to-detail / interactivity yet (Phase 2).
+  a fill + outline. **No** tap-to-detail / interactivity yet (Phase 02a).
 - **Attribution control:** "© OpenStreetMap contributors" always visible (map attribution
   control), per `04-integrations.md`.
-- Keep it behind the existing auth/provisioning gate (unchanged from Phase 0).
+- Keep it behind the existing auth/provisioning gate (unchanged from Phase 00).
 
 ### 6. Docs + hygiene
 - README updates: `packages/convex` (import path, `listed`, remove/restore), `scripts/etl`
@@ -146,7 +146,7 @@ Not a workspace app — a manual `tsx` script directory. Pipeline stages:
    two-tier `listInViewport` fix (the PR#4 prerequisite below).
 5. **basemap** ✅ (PR#11): swap demo tiles → self-built Vermont `.pmtiles`. Built via
    `pmtiles extract` (z0–14, ~280 MB), hosted on Convex file storage; tooling in `scripts/basemap`.
-   The swap itself is a `VITE_PMTILES_URL` change (per environment) — see the roadmap's Phase 1
+   The swap itself is a `VITE_PMTILES_URL` change (per environment) — see the roadmap's Phase 01
    operational follow-ups.
 
 ## Settled before the build (2026-07-12)
@@ -164,19 +164,19 @@ Not a workspace app — a manual `tsx` script directory. Pipeline stages:
   still bites on logic.
 - **`waterBodyTypeFromOsmTags` lives in `@skating/core`** (colocated with the `WATER_BODY_TYPES`
   enum it targets + core's property-test discipline), even though only the ETL consumes it today.
-- **Zoom-scored display prominence is D49 — Phase 2, not here.** Phase 1 only populates
+- **Zoom-scored display prominence is D49 — Phase 02a, not here.** Phase 01 only populates
   `surfaceAreaSqM` and uses a soft viewport cap with truncation logging (below); the display
-  score / per-zoom threshold is built with Phase 2's real map. `listed` stays a binary gate,
+  score / per-zoom threshold is built with Phase 02a's real map. `listed` stays a binary gate,
   decoupled from prominence.
 
 ## Open items to settle during the build (small)
 - **Final simplify tolerance** — start 5 m, eyeball Champlain + a small pond on the map, adjust.
 - **Viewport cap (D5).** The geospatial `limit` truncates *before* the bbox refine, so a wide
-  (state-level) zoom silently drops bodies. Phase 1: raise the pilot cap (64 → ~512) and `log`
+  (state-level) zoom silently drops bodies. Phase 01: raise the pilot cap (64 → ~512) and `log`
   a warning when truncation actually happens rather than drop silently; expansion is a tuned
   constant (~Champlain's half-height), not a per-query computation. **This is now known to be
   worse than a wide-zoom edge case — see "PR#4 prerequisite" below; the real fix must land in
-  PR#4, not Phase 2.**
+  PR#4, not Phase 02a.**
 - **`.pmtiles` hosting — SETTLED (2026-07-13): Convex file storage.** Verified its serving URL
   honors HTTP `Range` requests (`206` + correct `Content-Range`) *and* reflects CORS — the two
   hard requirements for the browser `pmtiles://` protocol. Colocating on Convex (vs. a static
@@ -189,7 +189,7 @@ Not a workspace app — a manual `tsx` script directory. Pipeline stages:
   Alaska to populated areas + named/area threshold (never the whole state). Now also counts the
   **basemap `.pmtiles`** (Vermont ≈ 280 MB on Convex file storage) — each new region adds a
   water-data slice *and* a basemap slice, so the R2 off-ramp (above) may arrive on storage
-  pressure, not just egress. Not a Phase 1 concern, logged so it isn't forgotten.
+  pressure, not just egress. Not a Phase 01 concern, logged so it isn't forgotten.
 
 ## PR#4 prerequisite: fix `listInViewport` (discovered during the PR#3 load)
 
@@ -200,7 +200,7 @@ corpus scale and must be fixed as the first thing in PR#4, before the map can re
 city-zoom viewport (e.g. the Burlington waterfront) even though a manual bbox scan finds 14
 bodies there, incl. Lake Champlain. So the data is correct; the *query* is broken.
 
-> **Superseded by N1** (see the banner at the top) — both fixes below were workarounds for one
+> **Superseded by A01** (see the banner at the top) — both fixes below were workarounds for one
 > property of the component: it reads ∝ `maxResults`, not ∝ results returned.
 
 **Root cause.** `listInViewport` indexes **centroids** and expands the query rectangle by
@@ -242,12 +242,12 @@ stream-*intersection* roughly **halved** the safe ceiling. Measured on the live 
 unfiltered crashes at ~384 and survives at ≤320; filtered crashes at ~192.
 
 **Fix (shipped).** (1) Drop the `listed` filter from the geospatial query — the JS `isListed`
-refine already enforces listing, and Phase 1 has ~no unlisted bodies, so fetch-then-drop is free;
+refine already enforces listing, and Phase 01 has ~no unlisted bodies, so fetch-then-drop is free;
 (2) lower `DEFAULT_VIEWPORT_LIMIT` 512 → **256** and clamp `MAX_VIEWPORT_LIMIT` to it, so no client
 value can push `maxResults` past the safe zone (~20% margin under the 320 edge). Verified across
 every previously-crashing viewport + normal cases + the tier-2 large body (Champlain). Regression
 test: an over-cap seed confirms a huge client `limit` is clamped. **The real fix stays D49** (Phase
-2 zoom-scored display) — this keeps Phase 1 from crashing; it doesn't make wide-zoom show
+2 zoom-scored display) — this keeps Phase 01 from crashing; it doesn't make wide-zoom show
 everything (it can't, and shouldn't — that's clutter).
 
 ## Risks / watch-outs
@@ -257,7 +257,7 @@ everything (it can't, and shouldn't — that's clutter).
   ETL does this adaptively (+~1 m/step; Champlain settles ~7 m) and skips anything still over
   the array cap per-feature. Fidelity is the priority; these two limits are the only hard lines.
 - **Query read size** — `listInViewport` returning many full polygons could get heavy at wide
-  zoom; if so, return low-detail outlines + lazy-load detail on tap (a Phase 2+ lever, noted).
+  zoom; if so, return low-detail outlines + lazy-load detail on tap (a Phase 02a+ lever, noted).
 - **OSM attribute quality** — names/types vary; the `other` bucket + later NHD enrichment
   (deferred) are the safety nets.
 - **Attribution is a launch gate** — ODbL, treat like "Powered by Strava."
@@ -267,9 +267,9 @@ everything (it can't, and shouldn't — that's clutter).
 
 ## Relocated from the roadmap (2026-09-16)
 
-*The roadmap entry for Phase 1 as it stood before the 2026-09-16 rewrite, kept verbatim so nothing it said is lost. The roadmap now carries a one-paragraph summary; this is the long form.*
+*The roadmap entry for Phase 01 as it stood before the 2026-09-16 rewrite, kept verbatim so nothing it said is lost. The roadmap now carries a one-paragraph summary; this is the long form.*
 
-### Phase 1 — Water-body data ✅ Complete (2026-07-13)
+### Phase 01 — Water-body data ✅ Complete (2026-07-13)
 > **Detailed build plan:** [`phases/01-water-bodies.md`](./01-water-bodies.md).
 > **Pilot region: Vermont** (compact; the Nordic-skating heartland — Lake Morey et al.).
 > **Rivers deferred** to a later release (reaches are hard; pilot skating is still-water) —
@@ -297,16 +297,16 @@ everything (it can't, and shouldn't — that's clutter).
   **`by_external_id`** index), inserting centroids into the geospatial index. Re-runnable;
   **preserves removed state** across re-imports (D48).
 - **`listed` filter-key refactor + bbox-intersection viewport (D5/D48):** replace the
-  Phase-0 `reviewStatus`-only geospatial filter with the derived `listed` boolean (fixes
+  Phase-00 `reviewStatus`-only geospatial filter with the derived `listed` boolean (fixes
   canonical bodies being hidden + the D37 auto-visible contradiction), and implement the
   decided bbox-intersection `listInViewport` (expanded geospatial prefilter → `@skating/core`
   `bboxIntersects` refine), now tunable against the real polygon corpus.
 - **Admin remove/restore (D48):** minimal `remove`/`restore` mutations (soft-delist +
   `removalReason` + `moderationActions` audit row) so the fresh import can be curated and a
-  landowner takedown honored. Request-intake UX defers to Phase 7.
+  landowner takedown honored. Request-intake UX defers to Phase 07.
 - **Read-only map layer (web):** a MapLibre map (**Protomaps `.pmtiles`** basemap, D6 —
   start on hosted demo tiles, swap to a self-built Vermont extract) rendering the imported
-  polygons, to *confirm* the data. Full interactive map + report creation stays Phase 2.
+  polygons, to *confirm* the data. Full interactive map + report creation stays Phase 02a.
 - **Attribution:** "© OpenStreetMap contributors" (**ODbL**) shown wherever the data/basemap
   appears — a build-time acceptance criterion like "Powered by Strava" (see
   `04-integrations.md`).

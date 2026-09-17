@@ -83,7 +83,7 @@ function DataExport() {
                 expires {formatDate(e.expiresAt)}
               </Text>
               {/* Never a silent cap: a bundle someone treats as their complete record has to say
-                  when it isn't (the Phase 7 rule). */}
+                  when it isn't (the Phase 07 rule). */}
               {e.omittedPhotoCount ? (
                 <Text color="$foregroundMuted" fontSize={12}>
                   ({e.omittedPhotoCount} photo{e.omittedPhotoCount === 1 ? '' : 's'} too large to

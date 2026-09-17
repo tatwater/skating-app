@@ -63,10 +63,10 @@ const DAY_MS = 86_400_000;
 export const MAX_PAST_DAYS = 92;
 /**
  * Forward days the *default* fetch asks for — two, not one, so a 12-hour horizon survives a day
- * boundary (N6c B5b). The drawer's forecast passes `FORECAST_PLAN_DAYS` (7) instead; this default
+ * boundary (A06c B5b). The drawer's forecast passes `FORECAST_PLAN_DAYS` (7) instead; this default
  * serves the archive backfill, the decay cron and the contradiction checker, none of which read a
  * forward hour, and bumping it here would move the 92-day backfill from 7 to 8 billing units for
- * nothing (N6h Workstream D, founder call 13).
+ * nothing (A06h Workstream D, founder call 13).
  */
 const FORECAST_DAYS = 2;
 /** The provider name `externalApiCalls` meters this path under (D158). */
@@ -81,12 +81,12 @@ export const OPEN_METEO_FORECAST_URL = 'https://api.open-meteo.com/v1/forecast';
  * is roughly `ceil(days / 14) × (variables / 10)`, so the eleventh variable makes every call cost
  * 1.1×. `wind_direction_10m` earns it alone: multiplied against a body's `fetchProfileM` it is what
  * turns "it was windy" into "the wind ran the full 3.2 km fetch", which is the difference between
- * black ice and a rippled surface nobody wants to skate (N6h Workstream C). The cost is counted, not
+ * black ice and a rippled surface nobody wants to skate (A06h Workstream C). The cost is counted, not
  * guessed — see `externalApiCalls` and D158.
  *
  * ## ⚠ `weather_code` is the twelfth, and it costs ~9% on every weather call in the app
  *
- * Including the corpus-wide Tier-B sweep, which is most of the traffic. Founder call, N6h Workstream
+ * Including the corpus-wide Tier-B sweep, which is most of the traffic. Founder call, A06h Workstream
  * D, made with that number stated. What it buys is **precipitation typing that no combination of the
  * other variables can produce**: sleet, ice pellets, freezing drizzle and freezing rain are all
  * "some precipitation near 0°C" to `rain` + `snowfall` + `temperature_2m`.
@@ -145,7 +145,7 @@ function num(x: number | null | undefined): number {
 /**
  * The split return: hours at or before `nowMs`, and hours after it.
  *
- * **The two arrays are the D74 wall, and they are separate on purpose (N6c B5b).** `past` is what
+ * **The two arrays are the D74 wall, and they are separate on purpose (A06c B5b).** `past` is what
  * every calculation reads — the decay cron, the bounty gate, the contradiction settle — and its
  * reproducibility depends on it containing only observations. `forecast` is render-only. Returning
  * one array with a timestamp filter each caller must remember to apply would put that guarantee in
@@ -423,7 +423,7 @@ export const resolveStripAnchor = internalQuery({
       if (!hazard) return null;
       // Same visibility gate the hazard drawer uses — a moderator-hidden pin has no strip (it doesn't
       // render), so it can't drive a fetch either. **Supersession is no longer part of that gate**
-      // (D53 amendment, N5c): a promoted pin still renders, still opens, and still shows how the
+      // (D53 amendment, A05c): a promoted pin still renders, still opens, and still shows how the
       // weather has moved since it was last confirmed, because it is still a sighting on a date.
       if (hazard.moderationStatus !== 'visible') return null;
       waterBodyId = hazard.waterBodyId;
@@ -561,7 +561,7 @@ export const writeForecastCache = internalMutation({
 });
 
 /**
- * Resolve the forward forecast for a point, cache-first (N6c B5b; seven days since N6h D).
+ * Resolve the forward forecast for a point, cache-first (A06c B5b; seven days since A06h D).
  *
  * **The window it asks for is one hour of past, and that is not waste.** Open-Meteo's `past_days`
  * has a floor of 1, so the smallest honest request already spans today; asking for a one-hour window
@@ -630,8 +630,8 @@ export async function resolveForecast(
 }
 
 /**
- * Public: the forward forecast for a **water body**'s drawer (N6c B5b; the planner's source since
- * N6h Workstream D).
+ * Public: the forward forecast for a **water body**'s drawer (A06c B5b; the planner's source since
+ * A06h Workstream D).
  *
  * Keyed on the body rather than on a report or hazard, because unlike the weather-since strip this
  * has nothing to anchor to — the question "will it be snowing when I get there" is about the lake,
@@ -644,13 +644,13 @@ export async function resolveForecast(
  *
  * The viewer's drive-time band to the place rides along (D155's "drive time as a hint"): it is
  * computed here from the profile's cached isochrones because no query today tells a client a single
- * body's band, and it is a band — 30/60/90 — because that is all Phase 4 ever knows.
+ * body's band, and it is a band — 30/60/90 — because that is all Phase 04 ever knows.
  */
 export const getForecastForBody = action({
   args: {
     waterBodyId: v.id('waterBodies'),
     /**
-     * The bay this forecast is about (N6h / open question 5) — the same one the past-weather panel
+     * The bay this forecast is about (A06h / open question 5) — the same one the past-weather panel
      * beside it reads, so the Planning tab describes one place rather than a bay's past and the
      * lake's future. Validated like the archive's: a stale or foreign id answers for the lake.
      */

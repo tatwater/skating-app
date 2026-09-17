@@ -1,14 +1,14 @@
 /**
- * State boundaries from **Census TIGER**, because OSM cannot reliably give us five (N7).
+ * State boundaries from **Census TIGER**, because OSM cannot reliably give us five (A07a).
  *
  *   pnpm --filter @skating/admin-areas fetch-states            # archive + transform
  *   pnpm --filter @skating/admin-areas fetch-states --refresh  # re-download
  *
- * ## Why this exists — a silent gap that had been there since Phase 5
+ * ## Why this exists — a silent gap that had been there since Phase 05
  *
  * `adminAreas` held **three** state rows: Vermont, Maine and Massachusetts. New Hampshire and New
  * York had none, and nothing ever said so — `resolvePlace` resolves those two through their counties
- * and towns, so the label lookup worked and the hole stayed invisible until N7's merge needed a
+ * and towns, so the label lookup worked and the hole stayed invisible until A07a's merge needed a
  * five-state region mask and found it could only build three fifths of one.
  *
  * **The cause is structural, not a bad import.** A US state boundary is an OSM *relation* whose member

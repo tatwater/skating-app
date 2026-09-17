@@ -1,6 +1,6 @@
 # Trail-connectivity pairing — the principled way to widen the parking radius
 
-> **Backlog — moved out of `07-roadmap.md` in the 2026-09-16 rewrite, verbatim.** Sized 2026-08-14 as an N6d follow-up (~6% yield); the trail pass itself later shipped inside N6e Workstream 0 with 69 pairings, which confirmed the yield estimate. Kept because the sizing argument still governs whether to widen it.
+> **Backlog — moved out of `07-roadmap.md` in the 2026-09-16 rewrite, verbatim.** Sized 2026-08-14 as an A06d follow-up (~6% yield); the trail pass itself later shipped inside A06e Workstream 0 with 69 pairings, which confirmed the yield estimate. Kept because the sizing argument still governs whether to widen it.
 
 **1. Trail-connectivity pairing — the principled way to widen the parking radius. ⚖ Small phase,
 ~6% yield.** A lot at the end of a `highway=path` that leads to a lake *is* a trailhead; that is a

@@ -1,5 +1,5 @@
 /**
- * Elevation loader (glue) — **reads the 3DEP archive, not a metered API** (D127, N7-3).
+ * Elevation loader (glue) — **reads the 3DEP archive, not a metered API** (D127, A07a-3).
  *
  *   pnpm --filter @skating/lake-depth load-elevation --compare        # D101, and run this FIRST
  *   pnpm --filter @skating/lake-depth load-elevation [--import-floor] [--campaign=<id>] [--prod]

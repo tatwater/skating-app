@@ -1,5 +1,5 @@
 /**
- * **CSLAP** — New York's Citizens Statewide Lake Assessment Program (N7-3, founder 2026-08-09).
+ * **CSLAP** — New York's Citizens Statewide Lake Assessment Program (A07a-3, founder 2026-08-09).
  *
  * ## Why a fourth New York source
  *

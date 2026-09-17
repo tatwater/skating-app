@@ -2,7 +2,7 @@ import { existsSync } from 'node:fs';
 import type { ExpoConfig } from 'expo/config';
 
 /**
- * Firebase's Android config, for FCM behind Expo push (N8 PR 3). The file is a per-project secret
+ * Firebase's Android config, for FCM behind Expo push (A08 PR 3). The file is a per-project secret
  * (gitignored): locally it sits at `apps/mobile/google-services.json`; on EAS it arrives as the file
  * environment variable `GOOGLE_SERVICES_JSON`, whose value is a path. Absent ⇒ the field is left off
  * and the build still succeeds — push tokens can't be minted on that build, and `pushRegistration`
@@ -19,7 +19,7 @@ const googleServicesFile = [process.env.GOOGLE_SERVICES_JSON, './google-services
 );
 
 /**
- * Dynamic Expo config (D8). Barebones Phase 0 shell — Continuous Native Generation
+ * Dynamic Expo config (D8). Barebones Phase 00 shell — Continuous Native Generation
  * (no committed `ios/`/`android/`, see root .gitignore), new architecture (default
  * in SDK 57), EAS dev-client workflow (native map/auth modules need a dev build).
  *
@@ -75,12 +75,12 @@ const config: ExpoConfig = {
     'expo-web-browser',
     // Native date/time picker for editing a report's skate time (D9 — past times for offline).
     '@react-native-community/datetimepicker',
-    // Native MapLibre map (Phase 2 §F). The plugin wires the iOS Podfile post_install; the native
+    // Native MapLibre map (Phase 02a §F). The plugin wires the iOS Podfile post_install; the native
     // SDK bundled by v11.3.x reads Protomaps `.pmtiles` directly (no JS protocol), so the map shares
     // the web basemap. Can't run in Expo Go — needs the EAS/dev build (already our workflow, D8).
     '@maplibre/maplibre-react-native',
     // Device geolocation (D12/D20). Foreground use frames the map on nearby lakes and marks where you
-    // skated; the Phase 9.5 opt-in "on-ice mode" (D54 Layer 2) additionally runs a *background*
+    // skated; the Phase 09b opt-in "on-ice mode" (D54 Layer 2) additionally runs a *background*
     // location session while you actively skate, so the directional "hazard ahead" alert fires with the
     // phone pocketed and the screen asleep. Background updates go through a foreground service on Android
     // (a persistent notification — which doubles as the "on-ice mode is on" affordance and one-tap off)
@@ -99,7 +99,7 @@ const config: ExpoConfig = {
       },
     ],
     // Notifications: the on-ice directional alert (D54 Layer 2) is still **local** — computed and
-    // scheduled on-device, D12 holds. Since N8 PR 3 the same module also mints a remote push token
+    // scheduled on-device, D12 holds. Since A08 PR 3 the same module also mints a remote push token
     // (`src/lib/pushRegistration.ts`), against the FCM key / APNs key held in EAS credentials — the
     // server never sees a platform credential. Permission is still requested lazily (on-ice mode or
     // the "this phone" switch), never on cold launch.

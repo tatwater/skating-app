@@ -1,14 +1,14 @@
-# N9 — A bay is a place: sub-areas become destinations, not labels
+# A09 — A bay is a place: sub-areas become destinations, not labels
 
-> **Scoped 2026-08-07, unbuilt.** Founder ask, arrived out of the N7 Great Lakes question:
+> **Scoped 2026-08-07, unbuilt.** Founder ask, arrived out of the A07a Great Lakes question:
 > *"I would love if `waterBodySubAreas` could be favorited, supported put-ins, parking, bathrooms,
 > outlets, hazards/reports, etc… have their own maxDepth and windRose, and borrow cropped versions of
 > their parents' contours… Maybe they don't store much of this info themselves, but they should be
 > able to (based on their boundary polygon), pull all these data from their parent on demand, and be
 > findable/routeable in search & drive time!"*
 >
-> **Depends on:** N7's corpus (landed), N2's sub-area authoring (landed), N6b's contour build
-> (landed). **Blocks nothing.** Deliberately sequenced *after* the N7 PR — see §Ordering.
+> **Depends on:** A07a's corpus (landed), A02's sub-area authoring (landed), A06b's contour build
+> (landed). **Blocks nothing.** Deliberately sequenced *after* the A07a PR — see §Ordering.
 >
 > **Scope note:** this is about **all** sub-areas — Malletts Bay, Spencer Bay, Alton Bay — not just
 > the Great Lakes case that surfaced it. That case took a different answer (see §The bay class,
@@ -29,7 +29,7 @@ dev (`agile-bee-397`) and backfilled: `mintSubAreaKeys` keyed and fetch-profiled
 `backfillReportSubAreas` found the two dev reports have no bay, `restampAllParents` swept the 22
 parents and tagged 132 of their 388 put-ins (Champlain 42/172, Winnipesaukee 69/76, Mascoma 6/6).
 Suites at build: core 2,689 · convex 1,614 · web 552 · mobile 111, all green; ~4,600 lines over 63
-files. **Prod is deferred, as for every phase since N1.**
+files. **Prod is deferred, as for every phase since A01.**
 
 ### What shipped, by workstream
 
@@ -62,7 +62,7 @@ files. **Prod is deferred, as for every phase since N1.**
    screens therefore costs no reads. `memberSubAreaIds` in core is the one reader of the pair.
 3. **A membership floor** (`SUB_AREA_MEMBERSHIP_MIN_SHARE` = 10% of samples, ~6 minutes of an hour).
    Found by the review: with plurality alone, a lake-wide skate that crossed Malletts' mouth for
-   one sample would be labelled, banded, fed and notified as a Malletts Bay report — and before N9 it
+   one sample would be labelled, banded, fed and notified as a Malletts Bay report — and before A09 it
    carried no bay at all. Below the floor the samples are open water for everything but the
    mouth-line flag. The primary is a plurality among *members*, the body rule.
 4. **`depthDerivedAt` survives the invalidation.** The kickoff said clear all four; the admin card's
@@ -82,7 +82,7 @@ files. **Prod is deferred, as for every phase since N1.**
 
 ### Smoke — Malletts Bay on web, headless (2026-09-16)
 
-Signed in by Clerk sign-in token (the N6h recipe; Chrome needs `--use-angle=swiftshader` or MapLibre
+Signed in by Clerk sign-in token (the A06h recipe; Chrome needs `--use-angle=swiftshader` or MapLibre
 throws into the error boundary). Header: *Malletts Bay* + own heart · *Part of Lake Champlain* +
 lake's heart · *1585.1 acres* · *No depth inside this bay recorded* (reveal) · *Elevation 97 ft —
 the lake's*. Overview: the wind caption's bay form. Reporting: bay filter seeded to Malletts.
@@ -118,7 +118,7 @@ away exactly the crossing contours a bay mouth has most of.
 ## Kickoff pass — 2026-09-16 (founder calls + the code audit)
 
 Everything in this section was settled in one sitting with the founder, against the code as it
-stands on `main` at `5bb3f93` (PR #56/#57 merged, N8 complete). Nothing here is built yet.
+stands on `main` at `5bb3f93` (PR #56/#57 merged, A08 complete). Nothing here is built yet.
 
 ### The dev corpus, for sizing
 
@@ -175,7 +175,7 @@ Two premises of the scoping doc that do not survive contact with the code:
 2. **Drive-time coordinate for a bay:** its best put-in (`official` > `osm` > `derived`), else the
    bay's own `representativePoint` — **never the parent's**, whose representative point is 30.7 km
    off mid-Champlain. Bands are per-viewer polygon tests against a coordinate, so this costs no extra
-   cache — N2's "multiplied cache" objection was mistaken about the mechanism. ⚠ supersedes the
+   cache — A02's "multiplied cache" objection was mistaken about the mechanism. ⚠ supersedes the
    drive-time row of the principle table ("else inherit the parent's bands").
 3. **Put-in tagging by distance, not containment.** Put-ins are snapped *to the shoreline*, so
    point-in-polygon is a coin flip at the edge: tag by `distanceToPolygonMeters(coord, bay.polygon) ≤
@@ -317,7 +317,7 @@ carry one (Champlain's restamp already ran; the seed is a few hundred rows).
 
 | table | writer(s) | rule |
 | --- | --- | --- |
-| `putIns` | `setOfficial`, `hide`, the N6d OSM upsert (`accessPoints.ts`), `restampParent` | nearest bay within `SUB_AREA_PUT_IN_TOLERANCE_M`, smallest wins |
+| `putIns` | `setOfficial`, `hide`, the A06d OSM upsert (`accessPoints.ts`), `restampParent` | nearest bay within `SUB_AREA_PUT_IN_TOLERANCE_M`, smallest wins |
 | `bodyFeatures` | `promote` / `create` in `bodyFeatures.ts` | `hazardCenter`-style point, `smallestContainingSubArea` — the hazard rule |
 | `gpsActivities` | `ingestTrack`, the Strava push (`strava.ts`), `resolveTrackToBodies` callers | majority-of-samples primary + all touched + `leftSubArea` |
 | `reports` (via activity) | `reports.create` when `activityId` is set, `linkActivityToReport` | copy the track's list; pin-only reports keep the single stamp |
@@ -418,7 +418,7 @@ internal query, clip each archived parent's soundings / isobaths to each bay pol
    mobile's mirrors it).
 4. Memory rules that bite here: Convex optional-field indexes are not sparse (`eq()` only);
    push functions with `convex dev --once` before smoke-testing; keep imports extensionless;
-   `waterBodies.centroid` is `pointOnFeature`, not a centroid; N6d's access load cost 105 GB — never
+   `waterBodies.centroid` is `pointOnFeature`, not a centroid; A06d's access load cost 105 GB — never
    scan the corpus for a small question.
 5. The next decision number is **D175**.
 
@@ -427,7 +427,7 @@ internal query, clip each archived parent's soundings / isobaths to each bay pol
 ## Why this is smaller than it sounds
 
 The audit that produced this doc found that **most of a sub-area's first-class behaviour already
-exists**, built incrementally across N2, N5c and N6b without anyone naming the through-line:
+exists**, built incrementally across A02, A05c and A06b without anyone naming the through-line:
 
 | already built | where |
 | --- | --- |
@@ -435,7 +435,7 @@ exists**, built incrementally across N2, N5c and N6b without anyone naming the t
 | its own cell index, so it draws and hit-tests independently of its parent | `waterBodySubAreaCells` |
 | its own D49 display curve — `displayScore`, `minVisibleZoom`, `curatedBoost` | so Malletts Bay labels at regional zoom while a cove waits for z13 |
 | reports, hazards, hazard recurrence and bounties can already name one | `subAreaId` on all four tables |
-| contour cropping to a nested shape | `clipDrawnToBody`, built for N6b's `alsoCovers` |
+| contour cropping to a nested shape | `clipDrawnToBody`, built for A06b's `alsoCovers` |
 | containment survives the parent changing shape | `reclipSubAreasToParent` + `systemDelistReason` |
 | moderator authoring: create / redraw / rename / remove / restore, all audited | `subAreas.ts` |
 
@@ -507,7 +507,7 @@ So there are exactly three honest moves, and the first two are free:
    EPQS point service over the 3DEP raster tiles specifically to avoid a ~4 GB download** — and this
    is the second use that would justify taking the raster after all. Nothing needs mirroring to R2;
    the index is computed once locally and only the 16 numbers are stored.
-   **Not scoped here.** It belongs with the wind pass (N7 step 11), it should be priced against a
+   **Not scoped here.** It belongs with the wind pass (A07a step 11), it should be priced against a
    measured sample rather than an estimate, and it is a *modelled* signal — so if it ships it is
    labelled as one, and it never turns into a safety claim (cf. D82, where bathymetry was ruled
    "context, not counsel").
@@ -541,7 +541,7 @@ Which means concretely:
 
 **The failure mode to design against is double-counting, and it is silent in every one of those six
 places.** That is why the rule is written down before the schema changes rather than discovered per
-consumer — the N7 audit's own recurring lesson.
+consumer — the A07a audit's own recurring lesson.
 
 ---
 
@@ -549,7 +549,7 @@ consumer — the N7 audit's own recurring lesson.
 
 1. **`waterBodyFavorites.subAreaId`** — plus a uniqueness rule and the notification de-dup above.
    Small, except for the de-dup, which is the rule not the column.
-2. **`putIns.subAreaId`** — tagged at write. N6d's access layer (parking, toilets, trails) rides the
+2. **`putIns.subAreaId`** — tagged at write. A06d's access layer (parking, toilets, trails) rides the
    same change; check whether it landed on `putIns` or its own table before writing the migration.
 3. **`bodyFeatures.subAreaId`** — known outlets and springs (D103). The vocabulary rule still binds:
    *"known outlet", never "outlet"*.
@@ -625,7 +625,7 @@ shoreline for no pixels gained.
 
 - The `bay` class was effectively unreachable after D121 and is now useful again, for exactly the
   case it should cover: an arm of water whose parent we deliberately do not carry.
-- **A salt-water bay can be added by hand later without adding the ocean** — through N7b's
+- **A salt-water bay can be added by hand later without adding the ocean** — through A07b's
   `includedByRequest` flow, one body at a time, with a human looking. So "people skate somewhere on
   the sea" stops being an argument for weakening the ocean veto.
 
@@ -638,7 +638,7 @@ changes nothing about them.
 
 ## Ordering
 
-**After the N7 PR.** N7's re-merge changes admission rules (the wetland rule, the three bay rules,
+**After the A07a PR.** A07a's re-merge changes admission rules (the wetland rule, the three bay rules,
 the duplicate matcher fixes), and every number in this document's sibling docs is re-measured against
 that run. Starting a schema-changing phase on top of a corpus that is about to move is the ordering
 trap D100 names, one table over.

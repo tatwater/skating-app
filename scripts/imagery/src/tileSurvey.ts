@@ -1,5 +1,5 @@
 /**
- * The empty-tile survey, cached as something a person can look at (N6e PR 2).
+ * The empty-tile survey, cached as something a person can look at (A06e PR 2).
  *
  * ## Why this is cached at all, and it is not for speed
  *

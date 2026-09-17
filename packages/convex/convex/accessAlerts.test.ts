@@ -1,5 +1,5 @@
 /**
- * Access alerts (N6d Workstream C / D73).
+ * Access alerts (A06d Workstream C / D73).
  *
  * Two properties carry this module and both are about what it refuses to inherit from hazards: the
  * decay is weather-blind (a locked gate does not thaw), and a moderator's pin is exempt from an expiry
@@ -515,7 +515,7 @@ describe('an alert on a shared lot (D72 amendment)', () => {
 });
 
 /**
- * Flagging an access alert (N6d correction 8) — and the half that is easy to ship without.
+ * Flagging an access alert (A06d correction 8) — and the half that is easy to ship without.
  *
  * Adding `accessAlert` to `FLAG_TARGET_TYPES` makes *filing* work on its own, so the feature looks
  * finished from the reporting side while the moderator queue renders every one of these as

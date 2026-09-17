@@ -1,5 +1,5 @@
 /**
- * The run logger every loader wraps its work in (N6c F2).
+ * The run logger every loader wraps its work in (A06c F2).
  *
  * Two rules shape the whole class:
  *

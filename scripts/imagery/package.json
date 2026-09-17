@@ -3,7 +3,7 @@
   "version": "0.0.1",
   "private": true,
   "type": "module",
-  "description": "Imagery ETL (N6e PR 2): reveal-mask pre-bake + STAC granule selection for the freeze-up archive. Not built or deployed; the cutting itself runs in the Fly container (see README).",
+  "description": "Imagery ETL (A06e PR 2): reveal-mask pre-bake + STAC granule selection for the freeze-up archive. Not built or deployed; the cutting itself runs in the Fly container (see README).",
   "scripts": {
     "check-types": "tsc --noEmit",
     "test": "vitest run --coverage",

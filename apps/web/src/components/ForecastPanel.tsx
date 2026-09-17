@@ -37,7 +37,7 @@ import { useAction } from 'convex/react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 /**
- * The forward forecast on a lake drawer (N6c B5b, grown into the planner by N6h Workstream D).
+ * The forward forecast on a lake drawer (A06c B5b, grown into the planner by A06h Workstream D).
  *
  * Three things, one fetch: the one-line strip that has been here since B5b (*"Next 12 hours: 22–31°F,
  * snow starting 8 PM"*), a row of hourly cards for the whole week that opens at *now*, and a row of
@@ -60,11 +60,11 @@ export function ForecastPanel({
   reveal = false,
 }: {
   waterBodyId: Id<'waterBodies'>;
-  /** The bay this forecast is about (N6h / open question 5) — the same one `PastWeatherPanel` reads. */
+  /** The bay this forecast is about (A06h / open question 5) — the same one `PastWeatherPanel` reads. */
   subAreaId?: string | undefined;
   /** True while the caller has not resolved the bay yet; holds rather than fetching twice. */
   pending?: boolean;
-  /** N6c-2's reveal flag — states the absence instead of hiding the panel. */
+  /** A06c-2's reveal flag — states the absence instead of hiding the panel. */
   reveal?: boolean;
 }) {
   const getForecast = useAction(api.weather.getForecastForBody);

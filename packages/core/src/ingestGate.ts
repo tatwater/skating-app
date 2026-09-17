@@ -1,5 +1,5 @@
 /**
- * When to start looking, and when to stop (N6e §C3 / **D149**).
+ * When to start looking, and when to stop (A06e §C3 / **D149**).
  *
  * > **D149 — Ingest is weather-gated, and the archive turns over on the first frame of the new
  * > season, never on a date.**

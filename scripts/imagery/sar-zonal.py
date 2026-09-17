@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Per-body radar brightness from a calibrated Sentinel-1 pass (N6e PR 2, §C1).
+"""Per-body radar brightness from a calibrated Sentinel-1 pass (A06e PR 2, §C1).
 
     sar-zonal.py <zones.tif> <zone-to-id.json> <pol>:<dn.tif>:<a.tif>[:<noise.tif>] […]
                  [--interior <interior.tif> --erode-projected-m <m>]
@@ -88,7 +88,7 @@ the number recorded above.
 ## `sigma0Hist` — because a mean cannot answer the question the archive was built for
 
 The mean is one number for a whole lake, and it cannot distinguish a uniformly medium-rough surface
-from one that is half glassy and half ridged. **That distinction is the entire premise of N6g Lane 1**
+from one that is half glassy and half ridged. **That distinction is the entire premise of A06g Lane 1**
 — smooth ice is specular and returns dark, so "40% of this lake sat below −22 dB" is a claim about
 smoothness that "this lake averaged −20 dB" cannot make.
 
@@ -360,7 +360,7 @@ def main() -> int:
         entry["pixels"] = seen
         if any(nb is not None for *_, nb in channels):
             # How much of this body returned nothing above the noise floor. A high figure is not a
-            # smooth lake — it is a lake the instrument cannot measure, and N6g Lane 1 has to be able
+            # smooth lake — it is a lake the instrument cannot measure, and A06g Lane 1 has to be able
             # to tell those apart before it calls anything specular.
             entry["belowNoiseFloorPct"] = {
                 pol: (round(int(below_floor[pol][zone]) / int(counts[pol][zone]), 4)

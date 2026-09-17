@@ -1,6 +1,6 @@
 # `@skating/run-log` — ETL run history
 
-The shared writer behind the `importRuns` table and `/admin/imports` (N6c Workstream F2).
+The shared writer behind the `importRuns` table and `/admin/imports` (A06c Workstream F2).
 
 ## Why it exists
 

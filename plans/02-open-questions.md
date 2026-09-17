@@ -19,7 +19,7 @@ obtainable* as early as possible. Account/permission setup is deferred in
 proposed AI classifier (on email content, not Strava data) routes each message —
 comment vs. new report. See `04-integrations.md`.
 **Status:** desired; feasibility + ToS research needed.
-**Partly routed around, 2026-07-30 (D71).** N6c ships a **pre-canned search link** into the regional
+**Partly routed around, 2026-07-30 (D71).** A06c ships a **pre-canned search link** into the regional
 community for the lake you're looking at, derived from `states[]`. That is *not* ingestion and does not
 touch this gate: we store nothing, republish nothing, and the skater arrives on the community's own site
 under its own terms. It delivers a slice of what Q8 wants — the archive's answer about *this* lake — at
@@ -48,9 +48,9 @@ If many skaters' paths on the same day detour around the same stretch, that's a
 signal of an unreported hazard (pressure ridge / open water). Noisy (people detour
 for many reasons), needs volume + privacy care. **Status:** future bet; logged
 because it's a genuine advantage over email forums.
-**Unblocked legally, blocked on volume (2026-07-24, Phase 8 / L7).** The legal half of this question
+**Unblocked legally, blocked on volume (2026-07-24, Phase 08 / L7).** The legal half of this question
 is answered: it now runs over **our own** natively-recorded tracks, not Strava data, so Strava's
-cross-user-display and AI/ML bans don't reach it, and Phase 8 built the substrate (`gpsActivities`
+cross-user-display and AI/ML bans don't reach it, and Phase 08 built the substrate (`gpsActivities`
 paths + the D58-governed aggregate layer). What's left is **not** a legal gate — it's **volume +
 calibration + an L14 privacy pass** on inferring hazards from clustered paths. Same for the sibling
 crowd-intelligence derivations (pressure-ridge / clearest-side). Don't build it until real paths
@@ -64,7 +64,7 @@ Observations from analyzing 1,197 real community posts (`training_data/google_gr
 `08-legal-feasibility-checklist.md` L5a). Not open *questions* — future-facing signals recorded so
 they aren't lost.
 
-### ~~S1 — Access / put-ins are a dominant concern~~ → **D72/D73** (N6d, 2026-07-30)
+### ~~S1 — Access / put-ins are a dominant concern~~ → **D72/D73** (A06d, 2026-07-30)
 Access language pervades the corpus: `boat launch` (72), `town beach` (43), plus `shore`, `point`,
 `beach`, `island`, `access`, and gear/rescue talk (`dry suit` 41, `rescue` 167). Skaters obsess over
 **where to park and get on the ice** — which reinforces D18's "refine with put-in points later" note
@@ -72,7 +72,7 @@ and D3's safety framing. **Possible future feature:** per-water-body **put-in / 
 (parking, launches) — not scoped to a phase yet, but clearly wanted. *(Also feeds the D18 drive-time
 approximation: testing the actual put-in, not the water-body centroid.)*
 
-**Answered by D72/D73** — [N6d](./phases/A06d-body-access-points.md) scopes parking as a first-class table
+**Answered by D72/D73** — [A06d](./phases/A06d-body-access-points.md) scopes parking as a first-class table
 apart from put-ins, named access points derived from a second OSM pass, and access blockers as decaying
 community alerts. **The corpus was more specific than this entry recorded, and the extra specificity is
 the phase:** "where to park" and "where to get on the ice" are *two* questions, and we had been answering
@@ -83,7 +83,7 @@ that it would be *derivable*. The unlock came from somewhere else entirely — O
 slipways, parking, toilets and trails in the extract we download for water polygons, so the corpus signal
 and the data source were sitting one `osmium tags-filter` pass apart for four months.
 
-### ~~S2 — Big lakes are named by sub-area, spelling varies~~ → **D60** (N2, 2026-07-26)
+### ~~S2 — Big lakes are named by sub-area, spelling varies~~ → **D60** (A02, 2026-07-26)
 Large lakes are referred to by named arms/bays and nicknames, not the parent name: Lake Champlain's
 **Malletts Bay** appeared under **10 spellings** (Malletts/Mallets/Mallett's + Inner/Outer), and the
 NE arm as **"Inland Sea"** (55).
@@ -98,7 +98,7 @@ one level up, since the corpus says "Saranac Lake" and OSM carries *Upper*, *Low
 turned out not to be a problem. Searching "Saranac Lake" already returns all three, and they are
 genuinely distinct lakes rather than one body under three names, so an alias would have bound the
 name to an arbitrary one of them. What that check *did* find is a real gap: **no rivers in the
-corpus at all** (see the N2 doc's *Open after this phase*).
+corpus at all** (see the A02 doc's *Open after this phase*).
 
 ---
 
@@ -116,7 +116,7 @@ corpus at all** (see the N2 doc's *Open after this phase*).
 - **Q7 → D18** — Real drive-time via cached per-user isochrone (radius fallback).
 - **Q9 (baseline) → D19** — "Weather since report" = descriptive facts, no AI.
 - **Q13 → D24** — All six GPS providers v1-scoped (provider-agnostic); apply for all
-  approvals in Phase 0, ship fast-follow. **Amended 2026-07-24 (Phase 8 / L7):** the *pull* model is
+  approvals in Phase 00, ship fast-follow. **Amended 2026-07-24 (Phase 08 / L7):** the *pull* model is
   dead — the first capture source is our own **native recorder**, Strava is **push-only**
   (`activity:write`), and the watch providers are deferred adapters. See the D24 amendment.
 - **Q11 (legal half) → D58/L7** — path deduction over **our own** tracks is outside Strava's terms;
@@ -137,8 +137,8 @@ corpus at all** (see the N2 doc's *Open after this phase*).
   generated at render time, which is what gives all 116,070 bodies coverage instead of a curated few.
 - **Weather providers → D74** — Open-Meteo computes, NWS informs; never blended.
 - **Satellite imagery → D75, then D81/D84** — the deferred layer's blocker was a licence question, and
-  Copernicus Sentinel data already answered it. Deep link ships in N6c; **in-app imagery is now
-  [N6e](./phases/A06e-satellite-imagery.md)** (2026-07-31), where the cost call turned out to bind only one
+  Copernicus Sentinel data already answered it. Deep link ships in A06c; **in-app imagery is now
+  [A06e](./phases/A06e-satellite-imagery.md)** (2026-07-31), where the cost call turned out to bind only one
   of two tiers: public-domain **USGS/NAIP** aerial has no quota at all, and it's the tier that serves the
   most common use. Sentinel-2's quota keeps its traffic trigger.
 - **External links on mobile → D76** — in-app browser (`expo-web-browser`), never a WebView, because

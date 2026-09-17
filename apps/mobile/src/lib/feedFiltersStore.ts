@@ -1,12 +1,12 @@
 /**
- * Device-local feed-filter storage (Phase 4, decision #6) — the `expo-sqlite` glue behind the pure
+ * Device-local feed-filter storage (Phase 04, decision #6) — the `expo-sqlite` glue behind the pure
  * logic in `feedFilters.ts`. A tiny key-value table (`prefsDb`, shared with the theme preference)
  * holds the working copy (the UI reads it first → instant, offline-safe); the pure `feedFilters`
  * module handles parse/reconcile. Best-effort native (like `bodyCache`): a storage failure never
  * blocks the feed.
  *
- * **Since N6h (D166) this is also the in-memory store both the feed and the map subscribe to**,
- * through `useFeedFilters`. Phase 4 kept the working copy in the feed screen's own state; weather
+ * **Since A06h (D166) this is also the in-memory store both the feed and the map subscribe to**,
+ * through `useFeedFilters`. Phase 04 kept the working copy in the feed screen's own state; weather
  * discovery makes the map a second reader, and two copies of one row is how the map draws one set
  * of lakes while the feed lists another.
  */

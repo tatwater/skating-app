@@ -1,9 +1,9 @@
-# Phase N6d — Lake access points: parking, named put-ins, and access alerts
+# Phase A06d — Lake access points: parking, named put-ins, and access alerts
 
 > **Status:** ✅ **COMPLETE on dev 2026-08-13** — all five workstreams, every UI surface, and the ETL
 > run end to end (3,588 put-ins · 11,375 parking areas · 4,209 bodies with access; routing 99.4%).
 > Unpushed; prod deferred as every phase since 2.5. **`backfillCells` ran 2026-08-14** — 24,961 bodies
-> re-scored in 84 batches, closing the pass N6c had held since 2026-08-02. —
+> re-scored in 84 batches, closing the pass A06c had held since 2026-08-02. —
 > scoped 2026-07-30, kickoff re-read against the post-N7 codebase 2026-08-10. Founder ask, same day as
 > the scoping. **Pre-PR review 2026-08-14** — four defects fixed, a red build made green, and the
 > client surfaces covered. **Greptile round 1 (PR #43)** — three P1s, one of them a security hole,
@@ -14,20 +14,20 @@
 > See *§What the build found*, *§What the first real run found*, *§The 250 m radius, eyeballed*,
 > *§What the load found*, *§The run, completed*, *§What the pre-PR review found* and
 > *§What Greptile found*.
-> **Split from** [N6c](./A06c-expanded-body-profiles.md) at scoping — it was roughly the size of
+> **Split from** [A06c](./A06c-expanded-body-profiles.md) at scoping — it was roughly the size of
 > everything else in that phase combined, and it is the only part touching a new lifecycle.
-> **Depends on:** nothing in N6c. These two can run in parallel or in either order.
-> **Touches:** the existing `putIns` table, the Phase 1 OSM ETL, the Phase 9 confirm/deny machinery,
-> the N2 lake editor, and N5a's season boundary.
+> **Depends on:** nothing in A06c. These two can run in parallel or in either order.
+> **Touches:** the existing `putIns` table, the Phase 01 OSM ETL, the Phase 09a confirm/deny machinery,
+> the A02 lake editor, and A05a's season boundary.
 > **Decisions:** D72, D73, and **D87/D88** added 2026-07-31 (see [`01-decisions.md`](../01-decisions.md)).
 > **All four open questions were answered 2026-07-31.** Two changed the build: **approach distance is
-> routed via OpenRouteService `foot-hiking`** (D87 — the account Phase 4 already uses, and it returns
+> routed via OpenRouteService `foot-hiking`** (D87 — the account Phase 04 already uses, and it returns
 > elevation gain), and **`parkingAreas` is many-to-many with bodies** because the association radius caps
 > inference, not human assertion (D72 amendment).
 >
-> ### ⚠ This doc was written before N7, and three of its premises moved
+> ### ⚠ This doc was written before A07a, and three of its premises moved
 >
-> Scoped 2026-07-30; [N7](./A07a-unified-corpus.md) landed 2026-08-07 and rebuilt the corpus under
+> Scoped 2026-07-30; [A07a](./A07a-unified-corpus.md) landed 2026-08-07 and rebuilt the corpus under
 > it. See *§What the kickoff found in the plan*, which is the first section below — the corrections are
 > **not** cosmetic: one of them changes where the join runs.
 >
@@ -35,7 +35,7 @@
 >
 > 1. **All five workstreams ship in one phase.** The doc's own *"suggested split"* (1–3 without 4–5) was
 >    offered and declined. So the access alert lifecycle and the photo carve-out are in scope here, not
->    deferred to an N6d-2.
+>    deferred to an A06d-2.
 > 2. **Directions re-target to parking; drive-time bands do not.** See correction 6.
 > 3. **An `osm` put-in scores as `derived` (+0.06) in D2's richness ladder.** See correction 5.
 > 4. **The approach thresholds:** `drive_up` ≤ 150 m · `short_walk` ≤ 800 m · `hike_in` > 800 m, and the
@@ -58,7 +58,7 @@ The founder's framing is exactly right: many put-ins are drive-up or close enoug
 **tracking parking separately is what lets us handle hike-in spots properly** instead of pretending
 every launch has a road to it.
 
-This phase inherits N6c's governing rule, and it is the harder test of it:
+This phase inherits A06c's governing rule, and it is the harder test of it:
 
 > **P1 (D70) — Derived or third-party, never hand-maintained.**
 
@@ -70,13 +70,13 @@ from a skater, or expires on its own. **No free-text field in this phase is perm
 
 ## What the kickoff found in the plan — 2026-08-10
 
-Same discipline N1/N2/N6a applied to their own entries: every load-bearing claim re-checked against a
+Same discipline A01/A02/A06a applied to their own entries: every load-bearing claim re-checked against a
 file before a line was written. Seven corrections. The third is the one that changes the build.
 
 **1. "116,070 bodies" is now ~25,197, and the correction is good news.** `regionStats` sums to
 **25,011** across the five states (NY 9,420 · ME 5,507 · MA 5,681 · NH 3,069 · VT 1,334). This doc leans
 on the old figure four times — *"what makes named access points a 116k feature rather than a 36-lake
-one"*, *"nothing on most of the 116k"*. But N7 did not merely shrink the corpus, it **changed its
+one"*, *"nothing on most of the 116k"*. But A07a did not merely shrink the corpus, it **changed its
 composition**: one admission floor now applies once to the merged body (≥ 5 acres, or ≥ 1 acre if named
 — D91), so the ~90k sub-acre ponds B4's pessimism was calibrated against are no longer rows at all. The
 surviving population is exactly the set OSM is most likely to have named a slipway or a lot for. B4's
@@ -93,8 +93,8 @@ inputs are byte-identical to the ones behind the current corpus.
 *"Put-in candidates within ~30 m of a body's polygon boundary attach to that body"* reads as something
 the transform does. It can't: the transform has no access to our polygons, and post-N7 the merge output
 is **not** the loaded corpus (bodies are pruned, deduped, re-keyed and retired after it). This is
-precisely what [N6a](./A06a-body-depth.md) discovered mid-build and it has the same fix —
-`waterBodies.matchAndImportDepths` does the geometric join in Convex against the N1 cell index, and
+precisely what [A06a](./A06a-body-depth.md) discovered mid-build and it has the same fix —
+`waterBodies.matchAndImportDepths` does the geometric join in Convex against the A01 cell index, and
 `matchAndImportAccessPoints` will mirror it. The same free benefit comes with it: an access point and
 the app's own *"you're at Lake X"* resolution agree by construction, because both go through
 `listedBodiesNearCoord`. `distanceToPolygonMeters` and `pointNearPolygon` already exist in
@@ -109,7 +109,7 @@ has.
 
 **4. The second `osmium` pass needs geometry types the first one throws away.**
 `scripts/etl/src/extract.ts` centralises the argv — deliberately, after five copies drifted — and its
-`osmExportArgs` exports `--geometry-types=polygon`. N6d's features are **nodes** (toilets, many
+`osmExportArgs` exports `--geometry-types=polygon`. A06d's features are **nodes** (toilets, many
 slipways), **polygons** (parking) and **lines** (trails, slipway ways). That is a second export
 configuration, and by that file's own docstring it belongs *in* it rather than beside it.
 
@@ -121,7 +121,7 @@ default. **Founder call: it scores as `derived`.** An OSM feature is *data*; `of
 operator vouched for access, which is what makes it *"the strongest static signal we have"*.
 
 This matters more than a constant usually would, because **`backfillCells` — the single full-corpus
-re-score N6c has been holding since 2026-08-02 — is gated on this phase precisely for these two
+re-score A06c has been holding since 2026-08-02 — is gated on this phase precisely for these two
 terms.** They have never fired: dev carries **0 `putIns` rows**, 1 report and 2 hazards. So the OSM pass
 is not merely the best put-in producer, it is in practice the *only* one, and this phase is that held
 pass's actual finish line.
@@ -172,7 +172,7 @@ routing result rather than extracted, and the line-geometry export goes away wit
 
 ### A1 — Additive, not a rewrite (D72)
 
-`putIns` is load-bearing across drive-time bands, the notification fan-out, N3 deletion and the Phase 5
+`putIns` is load-bearing across drive-time bands, the notification fan-out, A03 deletion and the Phase 05
 feed. Renaming it to a general `accessPoints` table would put a metadata phase on the critical path of
 five other systems for no user-visible gain. So:
 
@@ -239,7 +239,7 @@ Over the *same* Geofabrik state extract the water pass already downloads
 ### B2 — Association rules
 
 - Put-in candidates within **~30 m** of a body's polygon boundary attach to that body. **This test runs
-  server-side** (correction 3), in `matchAndImportAccessPoints`, against the N1 cell index — the
+  server-side** (correction 3), in `matchAndImportAccessPoints`, against the A01 cell index — the
   transform has no polygons to measure against.
 - Parking within **~250 m** (`PARKING_INFER_RADIUS_M`) of a put-in candidate attaches to it. **This one
   runs in the transform**, because it is an OSM-to-OSM question that needs no corpus — which is what
@@ -251,12 +251,12 @@ Over the *same* Geofabrik state extract the water pass already downloads
 
 Both thresholds are tunable constants with tests, not magic numbers. They will need one round of
 eyeballing against real output — the 250 m figure in particular is a guess that a dense state will
-falsify quickly. *(They stay code constants, per [N6c's tuning-constants note](./A06c-expanded-body-profiles.md#where-the-tuning-constants-live); if the ETL tuning loop gets tedious, the fix is a script flag, not a database row.)*
+falsify quickly. *(They stay code constants, per [A06c's tuning-constants note](./A06c-expanded-body-profiles.md#where-the-tuning-constants-live); if the ETL tuning loop gets tedious, the fix is a script flag, not a database row.)*
 
 ### B3 — Provenance and re-import safety
 
-Add an **`osm` rung to the existing `PUTIN_SOURCES`**, below `official`. Same rule as the N6a depth
-ladder and the N2 editor: **a derived access point never overwrites an operator-set one.** Derived rows
+Add an **`osm` rung to the existing `PUTIN_SOURCES`**, below `official`. Same rule as the A06a depth
+ladder and the A02 editor: **a derived access point never overwrites an operator-set one.** Derived rows
 are keyed on OSM id, so a re-run updates in place rather than duplicating — the same discipline that lets
 `importCanonical` re-run without destroying curation.
 
@@ -265,12 +265,12 @@ are keyed on OSM id, so a re-run updates in place rather than duplicating — th
 OSM's coverage of parking and slipways in the rural Northeast is real but patchy. Expect solid results on
 well-known bodies and nothing on most of the corpus.
 
-> **Re-read against N7 (correction 1).** This was written against 116,070 bodies, ~90k of which were
+> **Re-read against A07a (correction 1).** This was written against 116,070 bodies, ~90k of which were
 > under an acre and had no chance of a mapped lot. The post-N7 corpus is ~25.2k at a ≥ 5 acre floor
 > (≥ 1 acre if named), so the denominator this pessimism divides by is four times smaller and made of
 > exactly the bodies OSM bothers to map access for. **The rate will be better than this paragraph
 > expects — and it is still a rate to measure rather than assume.** Report `matched / inScope` and name
-> what the pass walked past (the N7-3 *"denominators lie by default"* rule, D137).
+> what the pass walked past (the A07a-3 *"denominators lie by default"* rule, D137).
 
 That is fine. It is strictly more than the zero we have now — dev carries **0 put-in rows today** — it
 costs one ETL pass over a file we already download, and the gaps are exactly where Workstream C's
@@ -294,14 +294,14 @@ Reusing machinery we already built, which is most of the argument for this shape
 
 - A user drops an **`accessAlerts`** row on a put-in or parking area with a reason
   (`road_closed`, `gate_locked`, `not_plowed`, `lot_full`, `private_no_access`, `other`) plus free text.
-- **Confirm/deny reuses Phase 9's pattern**: "Still blocked" / "It's open" writes to `pointEvents` (the
-  `by_ref` index already exists from the Phase 6 corroboration work). N5b's *"never existed"* verdict
+- **Confirm/deny reuses Phase 09a's pattern**: "Still blocked" / "It's open" writes to `pointEvents` (the
+  `by_ref` index already exists from the Phase 06 corroboration work). A05b's *"never existed"* verdict
   (D65) applies here too — a mistaken alert should be retractable, not just decayable.
 - **Decay is weather-insensitive.** Unlike ice hazards, **a locked gate does not thaw.** So: a plain TTL
   (~30 days) extended by confirmation, **not** the D56 weather multiplier. Worth calling out loudly,
   because the temptation to reuse `HAZARD_DECAY` wholesale will be strong and it would be wrong in a way
   that's hard to notice — a warm week would silently expire a road closure.
-- **Season boundary (N5a):** hard-expire at season end. Road closures often span seasons, but an alert
+- **Season boundary (A05a):** hard-expire at season end. Road closures often span seasons, but an alert
   must never outlive the evidence for it. The map starts each winter clean and the community
   re-establishes what's actually true — which is also the cheapest possible re-survey.
 - **Never hides the put-in** — same never-hide invariant as hazards. It annotates and de-prioritizes for
@@ -328,22 +328,22 @@ consistent with the never-hide invariant.)*
 Founder ✅ — a picture of the pull-off answers *"is this the right dirt road"* better than any prose.
 
 **Attach to the access point, not to a report.** Which raises a lifecycle tension worth naming, because
-it cuts against an N5a decision:
+it cuts against an A05a decision:
 
 - Report and hazard photos **purge at season end** (D66) because they document **conditions**, which
   expire.
 - An access-point photo documents **infrastructure**, which doesn't. A parking lot looks the same next
   November.
 
-**So: a carve-out.** Access-point photos are excluded from the seasonal purge. They stay inside N3
+**So: a carve-out.** Access-point photos are excluded from the seasonal purge. They stay inside A03
 deletion under the **D62 second amendment's redact-don't-erase** rule — a departing user's photo of a
 parking lot is reassigned to anonymous, not destroyed. Erasing it would degrade the map for everyone else
 to no privacy benefit; there is no personal information in a photograph of a gravel pull-off.
 
 **Constraints:** cap per access point (~3) so it doesn't become a gallery; moderation rides the existing
-`contentFlags`; the Phase 2 photo-upload pipeline applies unchanged.
+`contentFlags`; the Phase 02a photo-upload pipeline applies unchanged.
 
-> ⚠ **"N3's orphan-GC cron applies unchanged" is false, and it is this phase's one data-loss finding**
+> ⚠ **"A03's orphan-GC cron applies unchanged" is false, and it is this phase's one data-loss finding**
 > (correction 8). `lib/photoOrphans.referencedPhotoIds` derives "referenced" by scanning **only the
 > uploader's own reports and hazards** — and that is not an implementation detail, it is the function's
 > stated soundness argument for being allowed to *delete*. An access-point photo satisfies none of it,
@@ -372,7 +372,7 @@ to no privacy benefit; there is no personal information in a photograph of a gra
    extract before it touches the corpus.
 3. **A3 + the routing rule** — names and directions-target-parking. This is the first user-visible win
    and it is small once the data exists.
-4. **C** — the alert lifecycle. New table, new decay, reuses Phase 9's confirm/deny UI.
+4. **C** — the alert lifecycle. New table, new decay, reuses Phase 09a's confirm/deny UI.
 5. **D** — photos, and the purge carve-out.
 
 **Suggested split if this grows:** steps 1–3 (derived access data) are shippable without 4–5 (the
@@ -381,7 +381,7 @@ community layer), and the first three are where most of the value is.
 > **Offered and declined at kickoff (founder call, 2026-08-10): all five ship together.** Recorded
 > because the split remains the correct fallback if the phase stalls — the finish line that matters to
 > everything downstream is step 2, since that is what puts `putIns` rows in the corpus and releases
-> N6c's held `backfillCells` re-score (correction 5).
+> A06c's held `backfillCells` re-score (correction 5).
 
 ---
 
@@ -396,7 +396,7 @@ read actually asks — *"what parking serves this lake?"* — because Convex has
 so a body-side lookup is a full table scan on a table that grows with the corpus. It is the
 `listInViewport` failure in a new coat. So the association is a **`parkingAreaBodies` join table**
 indexed both directions, and the array is deliberately not kept beside it: two copies of one fact is
-what N7 spent a phase undoing. Its `inferred` column is the D72 amendment written into the data.
+what A07a spent a phase undoing. Its `inferred` column is the D72 amendment written into the data.
 
 **2. `photoIds` on the access point could not work either, and that one would have shipped as data
 loss.** Covered in the kickoff as a `photoOrphans` gap; the build found it was a *schema* problem
@@ -430,7 +430,7 @@ cron, the photo model, the operator write path, and the D2 richness rung that fi
 against real output — including the `PARKING_INFER_RADIUS_M` eyeballing pass the plan asks for.
 
 **All four remaining UI surfaces landed the same day** (founder ask): the Hike-In chip on the map
-summary card and the feed card, access photos on both clients, parking + approach editing in the N2
+summary card and the feed card, access photos on both clients, parking + approach editing in the A02
 lake editor, and alert posting on mobile.
 
 The chip's two card surfaces read a new **`accessKind` column on `waterBodies`**, denormalized by the
@@ -591,10 +591,10 @@ they are:
 By state: **MA 40% · NY 34% · ME 18%** · NH 4% · VT 1%.
 
 **82% are piers and beaches, 58% are in our two coastal states** — that is the ocean, water we
-deliberately do not carry (D4 and N7's salt-water veto). A scope boundary working as designed.
+deliberately do not carry (D4 and A07a's salt-water veto). A scope boundary working as designed.
 
 **The 1,376 unmatched slipways are the actual question.** A boat ramp implies real inland water, so
-each is one of three things: a body below the N7 admission floor, a river landing (D4), or **a lake
+each is one of three things: a body below the A07a admission floor, a river landing (D4), or **a lake
 the corpus is missing**. Only the third says the corpus is *wrong* rather than *bounded*, and a sample
 of a few dozen against the map would settle which dominates. That is an afternoon, and it is a bigger
 lever on access coverage than the trail work above.
@@ -636,7 +636,7 @@ nothing to leave open:
 - the loader upserts on OSM id, so re-running the transform and the put-ins lane later fills the
   approaches in place with no other consequence.
 
-**⚠ Phase 4 is unaffected, and it was worth checking**: D87 shares the key, but ORS quotas are
+**⚠ Phase 04 is unaffected, and it was worth checking**: D87 shares the key, but ORS quotas are
 **per-service** — `isochrones/driving-car` returned HTTP 200 with a real polygon while directions was
 refusing. The ETL cannot starve the app's drive-time bands.
 
@@ -662,7 +662,7 @@ honest result rather than something to re-run.
 
 **What the pass walked past, named rather than buried in a ratio** (D137): **9,737 put-in candidates
 had no corpus body within 30 m.** That is a scope boundary, not a fault — coastal slipways, river
-landings, and ponds below the N7 admission floor. And **92,384 lots were refused by the
+landings, and ponds below the A07a admission floor. And **92,384 lots were refused by the
 water-relevance gate**, which is the finding that gate exists for.
 
 ### The two things the load itself taught us
@@ -727,12 +727,12 @@ next two candidates if I/O ever binds again.
 ## What the pre-PR review found — 2026-08-14
 
 *Four defects and a red build, found by reading the branch end to end before pushing it. The pattern
-in all four is the same and worth naming: **N6d added new surfaces to systems that enumerate their
+in all four is the same and worth naming: **A06d added new surfaces to systems that enumerate their
 inputs**, and an enumeration nobody updated fails silently rather than loudly.*
 
 **0. CI was red, and the type error was inside a test.** `pnpm check-types` failed on
 `feed.test.ts`'s Hike-In fixture — a `FeedAuthor` built from the wrong fields — and `pnpm lint`
-failed with 15 diagnostics, eleven of them unformatted N6d files. Worth recording because vitest does
+failed with 15 diagnostics, eleven of them unformatted A06d files. Worth recording because vitest does
 not typecheck: **every one of the 1,837 tests passed against a build that could not compile**, so
 "suites green" was true and meaningless. Run `lint` and `check-types` before believing a phase is
 done.
@@ -757,7 +757,7 @@ which is the exact trip this phase exists to prevent somebody making. Nothing wo
 wrong; the `putIns` row was correct and only the two browse surfaces lied. `clearParking` was the
 mirror, leaving a `drive_up` chip outliving the measurement it came from.
 
-**3. Three user-authored tables were invisible to the N3 account lifecycle.** `accessAlerts`,
+**3. Three user-authored tables were invisible to the A03 account lifecycle.** `accessAlerts`,
 `accessAlertVotes` and `accessPhotos` appeared in no deletion or export path. Two consequences:
 
 - `lib/contentPurge`'s `CATEGORIES` did not include alerts, so a departed skater's `note` — free text
@@ -777,7 +777,7 @@ hide path that does not exist. Safe to narrow: no row has ever held it.
 
 The backend was thoroughly covered from the start — ~2,800 lines across `accessPoints`,
 `accessAlerts`, `access`, `accessAlert` and `accessTransform`. **Every client surface the phase added
-had nothing**, which breaks this repo's own convention: each Phase 9 hazard component carries a
+had nothing**, which breaks this repo's own convention: each Phase 09a hazard component carries a
 `.test.tsx`. And two of the gaps were in files that already existed and already tested the exact
 function — `waterMap.test.ts` had fourteen `summaryCardText` cases and no Hike-in one.
 
@@ -918,7 +918,7 @@ have sent two targets the moment either was given both — a latent mismatch wit
 refusal. They now derive the id and the type together and are incapable of forming the request.
 
 **Known and deliberately not fixed:** `putIns.loadPutInRows` still `.collect()`s a body's rows
-uncapped (Phase 4 code, now reading a table N6d filled), and `expireLapsedAlerts` sweeps 200 rows per
+uncapped (Phase 04 code, now reading a table A06d filled), and `expireLapsedAlerts` sweeps 200 rows per
 six hours, so a season rollover lags for days. The second is now *safe* rather than merely tolerable,
 because the read no longer trusts the sweep's schedule — which is what round 3 bought.
 
@@ -978,7 +978,7 @@ posting permissions, and access photos sit *below* reports and hazards in risk, 
 > via `contentFlags`, same as every other user-supplied photo.**
 
 **Two inherited constraints do the actual protective work:** the ~3-per-access-point cap (Workstream D)
-bounds any single point's abuse surface, and minors are read-only (Phase 3), so the population that can
+bounds any single point's abuse surface, and minors are read-only (Phase 03), so the population that can
 upload is already the population we trust with reports.
 
 ### 2 — Trail routing: **OpenRouteService `foot-hiking`**, an account we already have (D87)
@@ -987,7 +987,7 @@ upload is already the population we trust with reports.
 > could be 800m as the crow flies but a full kilometer of weaving trail … And elevation gain on the trail
 > is going to affect people just as much as distance. We should definitely show a 'Hike-In' chip/badge."*
 
-**Yes, and it's the API we're already paying no money for.** Phase 4's drive-time isochrones run on
+**Yes, and it's the API we're already paying no money for.** Phase 04's drive-time isochrones run on
 [**OpenRouteService**](https://openrouteservice.org/). ORS exposes a **`foot-hiking`** routing profile
 alongside the `driving-car` one we use, on the **same key, same account, same client code**. With
 `elevation: true` the Directions response carries **`ascent` and `descent` in metres** for the route —
@@ -1031,9 +1031,9 @@ one test asserting we don't accidentally report the round trip.
 **The Hike-In chip ✅.** Founder ask, and it belongs on **all three surfaces**, because the whole point is
 that nobody should discover this at the trailhead:
 
-- **The map summary card** ([N6c Workstream E](./A06c-expanded-body-profiles.md#workstream-e--per-body-summary-cards-on-the-map)) — so it's visible while browsing, before anyone commits.
+- **The map summary card** ([A06c Workstream E](./A06c-expanded-body-profiles.md#workstream-e--per-body-summary-cards-on-the-map)) — so it's visible while browsing, before anyone commits.
 - **The lake drawer/detail** — with the number: *"park here, then about 1.1 km on foot, 90 m of climb."*
-- **The feed card** — the Phase 4 drive-time filter row's neighbour. A skater filtering to "within 60
+- **The feed card** — the Phase 04 drive-time filter row's neighbour. A skater filtering to "within 60
   minutes" is filtering on *drive* time, and a hike-in lake inside that band is not the trip they think
   they're being offered.
 
@@ -1073,7 +1073,7 @@ saying so. It was never meant to constrain what a person can assert, and B2 didn
 handled:
 
 1. **Drive time must target the parking, not the put-in.** ✅ Already the design (A1's routing rule), and
-   at a mile it stops being cosmetic: the Phase 4 isochrone bands are computed to a coordinate, and
+   at a mile it stops being cosmetic: the Phase 04 isochrone bands are computed to a coordinate, and
    computing them to a shoreline point a car cannot reach makes the band **wrong**, not just imprecise.
    The routing rule fixes drive time and directions together.
 2. **The drive-time band and the hike are different quantities and must not be summed.** A 55-minute
@@ -1114,20 +1114,20 @@ getting it wrong costs some missed or spurious *inferences*, never a rejected hu
 
 ## Relocated from the roadmap (2026-09-16)
 
-*The roadmap entry for N6d as it stood before the 2026-09-16 rewrite, kept verbatim so nothing it said is lost. The roadmap now carries a one-paragraph summary; this is the long form.*
+*The roadmap entry for A06d as it stood before the 2026-09-16 rewrite, kept verbatim so nothing it said is lost. The roadmap now carries a one-paragraph summary; this is the long form.*
 
-**N6d — Lake access points: parking, named put-ins, and access alerts.** ✅ **COMPLETE on dev
+**A06d — Lake access points: parking, named put-ins, and access alerts.** ✅ **COMPLETE on dev
 2026-08-13** — all five workstreams, every UI surface, and the ETL run end to end: **3,588 put-ins,
 11,375 parking areas, 4,209 bodies with access** (16.7% of the corpus), routing 99.4%. Prod deferred. —
 scoped 2026-07-30; see [`phases/A06d-body-access-points.md`](./A06d-body-access-points.md); decisions
 **D72** (parking modelled apart from put-ins) and **D73** (access blockers decay, they aren't notes), plus
-**D143**/**D144** and a **D72 second amendment** taken at the 2026-08-10 kickoff. **Split out of N6c at
+**D143**/**D144** and a **D72 second amendment** taken at the 2026-08-10 kickoff. **Split out of A06c at
 scoping** — it was roughly the size of everything else there combined, and it's the only part introducing
-a new lifecycle. Independent of N6c; either order.
+a new lifecycle. Independent of A06c; either order.
 
 > **The kickoff re-read this entry against the post-N7 codebase and found seven corrections** — see the
 > doc's *§What the kickoff found in the plan*. The one that changes the build: **the body association
-> has to run server-side**, exactly as N6a discovered mid-build, because the transform has no polygons
+> has to run server-side**, exactly as A06a discovered mid-build, because the transform has no polygons
 > and the merge output is no longer the loaded corpus. The one that would have shipped as data loss:
 > **`photoOrphans` would delete access-point photos** thirty days after upload, since its soundness
 > argument is that only an uploader's own reports and hazards can reference a photo.
@@ -1145,7 +1145,7 @@ a new lifecycle. Independent of N6c; either order.
 > permanently unroutable.
 >
 > **✅ `backfillCells` ran 2026-08-14** — 24,961 bodies re-scored in 84 batches, closing the single
-> full-corpus re-score N6c had held since 2026-08-02. D2's put-in terms are live for the first time.
+> full-corpus re-score A06c had held since 2026-08-02. D2's put-in terms are live for the first time.
 >
 > ⚠ **The parking load cost 104.95 GB of database I/O and disabled the dev deployment** (restored by
 > raising the spending cap). One parameter: `listedBodiesNearCoord`'s candidate box was a fixed
@@ -1165,12 +1165,12 @@ a new lifecycle. Independent of N6c; either order.
   named access points a 116k feature rather than a 36-lake one.
 - **Access blockers reuse the hazard confirm/deny machinery but must *not* reuse its decay.** A locked
   gate does not thaw; applying the D56 weather multiplier would let a warm week silently expire a road
-  closure (D73). Plain TTL + confirmation, hard-expiring at the N5a season boundary.
-- **One N5a carve-out:** access-point photos document infrastructure, not conditions, so they're excluded
-  from the seasonal photo purge (D66) while staying inside N3's redact-don't-erase.
+  closure (D73). Plain TTL + confirmation, hard-expiring at the A05a season boundary.
+- **One A05a carve-out:** access-point photos document infrastructure, not conditions, so they're excluded
+  from the seasonal photo purge (D66) while staying inside A03's redact-don't-erase.
 
 > **All four open questions answered 2026-07-31.** **D87** — approach distance is **routed**, not flown:
-> **OpenRouteService's `foot-hiking` profile** is the same account, key and client Phase 4's drive-time
+> **OpenRouteService's `foot-hiking` profile** is the same account, key and client Phase 04's drive-time
 > isochrones already use, and with `elevation: true` it returns **ascent in metres**, which answers the
 > founder's *"elevation gain is going to affect people just as much as distance"* with a request parameter
 > rather than a second integration. Called at ETL time and cached — **never from a request path**. The

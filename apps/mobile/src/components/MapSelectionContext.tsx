@@ -3,7 +3,7 @@ import type { LineString } from 'geojson';
 import { createContext, type ReactNode, useCallback, useContext, useMemo, useState } from 'react';
 
 /**
- * Shared selection state for the persistent native map (Phase 2 §F), the mobile mirror of web's
+ * Shared selection state for the persistent native map (Phase 02a §F), the mobile mirror of web's
  * `MapSelectionContext`. The `(map)` layout keeps one `<MapView>` mounted beside a bottom-sheet
  * `<Slot />`; the detail drawers rendered into that slot are *siblings* of the map, so they push
  * what the map should show — the highlighted body, where to fly, photo pins — up through this
@@ -36,7 +36,7 @@ interface MapSelectionValue {
   setFocus: (focus: MapFocus | null) => void;
   photoPins: PhotoPin[];
   /**
-   * The recorded GPS track behind the open report (Phase 8) — display-only. A path only ever comes
+   * The recorded GPS track behind the open report (Phase 08) — display-only. A path only ever comes
    * from a track someone actually skated; there is no draw action anywhere in the app.
    */
   trackPath: LineString | null;
@@ -68,7 +68,7 @@ interface MapSelectionValue {
   drawerPeekNonce: number;
   requestDrawerPeek: () => void;
   /**
-   * The hazard being captured (Phase 9, D51) — the shared `@skating/core` draft, so the map previews
+   * The hazard being captured (Phase 09a, D51) — the shared `@skating/core` draft, so the map previews
    * the *real* buffered footprint (the same shape the proximity evaluator measures) and mobile
    * inherits web's authoring transitions rather than reimplementing them.
    */
@@ -84,7 +84,7 @@ interface MapSelectionValue {
   hazardDropMode: boolean;
   setHazardDropMode: (on: boolean) => void;
   /**
-   * The two taps that become a shore band (N5b), or `null` when not snapping.
+   * The two taps that become a shore band (A05b), or `null` when not snapping.
    *
    * `[]` means "armed, waiting for the first tap" — a state the map must be able to hold, since the
    * affordance is two taps and the adjust bar can't count them. Same split as web: the map collects
@@ -122,7 +122,7 @@ interface MapSelectionValue {
   browseSeason: number | null;
   setBrowseSeason: (season: number | null) => void;
   /**
-   * The open lake, keyed the way the **contour tiles** are keyed (N6b/D81) — the OSM `externalId`,
+   * The open lake, keyed the way the **contour tiles** are keyed (A06b/D81) — the OSM `externalId`,
    * falling back to the Convex `_id`. `null` whenever no lake sheet is open, which is what makes the
    * bathymetry layer's visibility derived rather than managed: there is no toggle, no persisted
    * preference and no settings row, because the layer is a property of the detail view.

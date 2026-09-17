@@ -1,5 +1,5 @@
 /**
- * **The master list, as a decision rather than a script** (N7, second intake audit 2026-08-06).
+ * **The master list, as a decision rather than a script** (A07a, second intake audit 2026-08-06).
  *
  * ## Why this file exists
  *
@@ -215,7 +215,7 @@ export interface MasterListStats {
   classDissentUnsettled: number;
   classDissentSamples: string[];
   /**
-   * `classDissent`, **split by which catalogue code did the refusing** (N7-2, founder 2026-08-08).
+   * `classDissent`, **split by which catalogue code did the refusing** (A07a-2, founder 2026-08-08).
    *
    * The count above says 354 bodies are contested and nothing more, which is not enough to decide
    * whether they belong in a review queue. The class-conflict queue met exactly this problem and was
@@ -717,7 +717,7 @@ export function buildMasterList(input: MasterListInput): MasterList {
     });
   }
 
-  // ── Phase 1: the geographic cuts ──────────────────────────────────────────
+  // ── Phase 01: the geographic cuts ──────────────────────────────────────────
   //
   // Split from the admission floor below so the gazetteer can be resolved over the whole surviving
   // set at once — see `resolveGnisNames`. A name decides admission, so it has to be settled before
@@ -771,7 +771,7 @@ export function buildMasterList(input: MasterListInput): MasterList {
 
   for (const group of merged) {
     let cls = group.cls;
-    // A bay is an arm OF something. With a parent it is a sub-area (N2); without one we cannot
+    // A bay is an arm OF something. With a parent it is a sub-area (A02); without one we cannot
     // support the claim at all, so it is demoted and queued — Half Moon Cove is the fixture.
     const parent = cls === 'bay' ? bayParent(group, bayGrid) : undefined;
     // **A bay whose only parent is a Great Lake keeps the class and stays a body** (founder,
@@ -868,7 +868,7 @@ export function buildMasterList(input: MasterListInput): MasterList {
     survivors.push({ group, cls, bayWithoutParent, parent });
   }
 
-  // ── Phase 2: the gazetteer, resolved across ALL survivors at once ─────────
+  // ── Phase 02a: the gazetteer, resolved across ALL survivors at once ─────────
   //
   // **GNIS runs BEFORE the floor**, and that ordering is the whole point of the lane: D96 admits a
   // named wetland at five acres and refuses an unnamed one under fifty, so a gazetteer name does not
@@ -883,7 +883,7 @@ export function buildMasterList(input: MasterListInput): MasterList {
     gnisGrid,
   );
 
-  // ── Phase 3: the admission floor, and what survives it ────────────────────
+  // ── Phase 03: the admission floor, and what survives it ────────────────────
   for (const { group, cls, bayWithoutParent, parent } of survivors) {
     let name = group.name;
     let namedByGnis = false;

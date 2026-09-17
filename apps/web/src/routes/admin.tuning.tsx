@@ -59,7 +59,7 @@ import {
 } from '../components/admin/MetricCharts';
 
 /**
- * Tuning control-room (D37/D49, Phase 7b) — **admin-only**. Every tunable constant, rendered read-only
+ * Tuning control-room (D37/D49, Phase 07-2) — **admin-only**. Every tunable constant, rendered read-only
  * beside the chart that tells you whether it's set right (settled decision #1: the founder tunes by
  * editing the constant and redeploying, so the dashboard's job is to make the effect legible, not to
  * offer an edit field). Constants come straight from `@skating/core`, so the value shown is the value
@@ -341,7 +341,7 @@ function AdminTuning() {
       {/* ── Hazard memory ────────────────────────────────────────────────── */}
       <TuningSection
         title="Hazard memory"
-        blurb="When two pins are the same hazard (N5c / D77, D80). The match tolerance decides what pools and draws as one outline; the merge bar decides what collapses into one row without anyone being asked. Watch the unmerge rate — it is the only empirical evidence the merge bar is set right, and a rising one means it is set too low."
+        blurb="When two pins are the same hazard (A05c / D77, D80). The match tolerance decides what pools and draws as one outline; the merge bar decides what collapses into one row without anyone being asked. Watch the unmerge rate — it is the only empirical evidence the merge bar is set right, and a rising one means it is set too low."
       >
         <div className="grid gap-3 sm:grid-cols-2">
           <ConstantCard
@@ -392,7 +392,7 @@ function AdminTuning() {
       {/* ── Cross-season recurrence ──────────────────────────────────────── */}
       <TuningSection
         title="Cross-season recurrence"
-        blurb="What several winters said about one spot (N5c / D78). Everything here ships dark: until the master switch is on, the whole engine feeds this dashboard and nothing a skater can see. Flip it when the queue has been read across two rollovers and the patterns at the current bar look real — a judgement from the chart below, not a date."
+        blurb="What several winters said about one spot (A05c / D78). Everything here ships dark: until the master switch is on, the whole engine feeds this dashboard and nothing a skater can see. Flip it when the queue has been read across two rollovers and the patterns at the current bar look real — a judgement from the chart below, not a date."
       >
         <MetricComposition metricKey="recurrence_clusters_by_seasons" catalogue={catalogue} />
         <div className="grid gap-3 sm:grid-cols-2">
@@ -464,7 +464,7 @@ function AdminTuning() {
       {/* ── Display / map ────────────────────────────────────────────────── */}
       <TuningSection
         title="Display & map"
-        blurb="The displayScore curve decides which bodies draw at each zoom. Compare a band against the 1,000-body render budget — once a band holds far more than that, dense viewports at that zoom are being truncated and the curve is what to move. (That budget is now a rendering choice, not a safety limit: since N1 the viewport read is bounded by the cell index rather than by a tuned row cap.)"
+        blurb="The displayScore curve decides which bodies draw at each zoom. Compare a band against the 1,000-body render budget — once a band holds far more than that, dense viewports at that zoom are being truncated and the curve is what to move. (That budget is now a rendering choice, not a safety limit: since A01 the viewport read is bounded by the cell index rather than by a tuned row cap.)"
       >
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <ConstantCard name="RICHNESS_ACTIVITY" value={RICHNESS_ACTIVITY} file="display.ts">

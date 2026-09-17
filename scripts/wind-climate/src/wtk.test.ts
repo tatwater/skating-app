@@ -22,7 +22,7 @@ import {
  * A WTK CSV: two header lines, then Year,Month,Day,Hour,Minute,direction,speed.
  *
  * The speed column defaults to 4.2 m/s — below `STRONG_WIND_MIN_MPS`, so a row is an ordinary hour
- * unless a test says otherwise. It is the seventh column, `cells[6]`, which every run before N7-3
+ * unless a test says otherwise. It is the seventh column, `cells[6]`, which every run before A07a-3
  * fetched and never read.
  */
 function csv(rows: Array<[number, number] | [number, number, number]>): string {
@@ -113,7 +113,7 @@ describe('accumulateCsv', () => {
   });
 });
 
-describe('the speed column, which every run before N7-3 discarded', () => {
+describe('the speed column, which every run before A07a-3 discarded', () => {
   it('counts an hour at or above the threshold as strong, in its own sector', () => {
     const acc = emptyAccumulator();
     accumulateCsv(

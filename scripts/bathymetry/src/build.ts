@@ -1,5 +1,5 @@
 /**
- * Build the contour set for every lane, ready to tile (N6b).
+ * Build the contour set for every lane, ready to tile (A06b).
  *
  *
  * Runs the chain over every joined lake and writes newline-delimited GeoJSON to

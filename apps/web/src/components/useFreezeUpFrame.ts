@@ -1,5 +1,5 @@
 /**
- * Painting one archived pass onto the map (N6e §C2, D148).
+ * Painting one archived pass onto the map (A06e §C2, D148).
  *
  * ## The client does almost nothing here, and that was the point of the archive
  *

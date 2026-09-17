@@ -1,7 +1,7 @@
 /**
- * The walk from the car to the ice, drawn (N6e Workstream 0).
+ * The walk from the car to the ice, drawn (A06e Workstream 0).
  *
- * N6d gave a skater a distance, a climb and a Hike-In chip — *"park here, then about 1.1 km on foot,
+ * A06d gave a skater a distance, a climb and a Hike-In chip — *"park here, then about 1.1 km on foot,
  * 90 m of climb"* — and no way to see **where** that kilometre goes. On a lake with two launches on
  * opposite shores, the sentence does not say which one the trail reaches, and a hike-in pond's whole
  * problem is that the way in is not obvious from the map.

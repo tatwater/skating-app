@@ -1,5 +1,5 @@
 /**
- * The native contour layer's palette (N6b) — the mobile mirror of web's `lib/contourMap.ts`.
+ * The native contour layer's palette (A06b) — the mobile mirror of web's `lib/contourMap.ts`.
  *
  * Everything else — the D81 filter, the depth ramp, the zoom floor, the drawer credit — lives in
  * `@skating/core/contourLayer`, shared with mobile. Same split as the hazard layers: *what gets

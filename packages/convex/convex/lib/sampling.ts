@@ -7,7 +7,7 @@
  * v1 samples every body at one derived point; the escape hatch is `waterBodies.weatherSamplePoints[]` for
  * the few genuinely multi-cell giants (Champlain ~200 km), where a hazard/report picks its nearest point.
  *
- * **That derived point is `interiorPoint`, not `centroid` (N6c).** `centroid` is Turf's
+ * **That derived point is `interiorPoint`, not `centroid` (A06c).** `centroid` is Turf's
  * `pointOnFeature`, which falls back to a point on the **shoreline** whenever the bbox centre lands
  * outside the polygon — true of any curved or narrow lake, and measured at **30.7 km** off mid-lake for
  * Champlain. Against Open-Meteo's 2–25 km grid that is one to several cells wrong, on an input the D56
@@ -55,7 +55,7 @@ export function nearestSamplePoint(
 }
 
 /**
- * The point to sample when there is no anchor to be near (N6c B5b).
+ * The point to sample when there is no anchor to be near (A06c B5b).
  *
  * The weather-since strip always has one — a report's put-in, a hazard's centre — because it is
  * *about* something that happened somewhere. A body-level forward forecast is about the lake, so it
@@ -71,12 +71,12 @@ export function defaultSampleAnchor(body: Doc<'waterBodies'>): { lat: number; ln
 }
 
 /**
- * **The one place a body becomes a weather cell (N6h / D152).**
+ * **The one place a body becomes a weather cell (A06h / D152).**
  *
  * Four independent consumers reach Open-Meteo through `resolveWeatherSince` — the drawer strip, the
  * hazard decay cron, the bounty reopen gate and the contradiction settle — and Phase 10 §5's
  * strip↔decay consistency invariant depends on all four resolving the *same* body to the *same*
- * cache entry. Before N6h that agreement was a convention: each site called `nearestSamplePoint` and
+ * cache entry. Before A06h that agreement was a convention: each site called `nearestSamplePoint` and
  * then, separately, the key function. Adding an elevation band to the key made that convention
  * dangerous, because a site that resolved the point but forgot the elevation would key into a
  * *different, valid-looking* entry and fork the cache silently — the strip describing one window
@@ -103,7 +103,7 @@ export function bodyWeatherCell(
 }
 
 /**
- * **The one place a sub-area becomes a weather cell (N6h / open question 5).**
+ * **The one place a sub-area becomes a weather cell (A06h / open question 5).**
  *
  * A bay is its own sample point. `bodyWeatherCell`'s `target` cannot do this job: it picks among the
  * parent's `weatherSamplePoints`, and no body in the corpus has any, so a target is inert and every
@@ -125,7 +125,7 @@ export function subAreaWeatherCell(
 
 /**
  * Center of a hazard's footprint bbox — its representative point for nearest-sample-point selection,
- * and (N9) the point a hazard *or a body feature* is stamped into a bay by; the two share the bbox.
+ * and (A09) the point a hazard *or a body feature* is stamped into a bay by; the two share the bbox.
  */
 export function hazardCenter(hazard: Pick<Doc<'hazards'>, 'bbox'>): { lat: number; lng: number } {
   return {

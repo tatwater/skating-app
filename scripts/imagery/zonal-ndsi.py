@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Per-body NDSI from Sentinel-2's green and SWIR bands (N6e PR 2, §C1).
+"""Per-body NDSI from Sentinel-2's green and SWIR bands (A06e PR 2, §C1).
 
     zonal-ndsi.py <zones.tif> <green.tif> <swir16.tif> <zone-to-id.json>
                   --green-scale S --green-offset O --swir16-scale S --swir16-offset O
@@ -21,7 +21,7 @@ confuses with cloud, and a 22 Nov Morey frame read 99% clear through visible haz
 ⚠ **It will not find black ice.** NDSI is a *snow* index built on the same brightness that misleads
 SCL. Transparent ice over a dark bottom is dark in both bands and reads as water here exactly as it
 does in class 11. Anyone reaching for this to solve the black-ice problem is reaching for the wrong
-instrument — see N6g Lane 1, where the discriminator is radar texture rather than reflectance.
+instrument — see A06g Lane 1, where the discriminator is radar texture rather than reflectance.
 
 ## ⚠⚠ Reflectance, not DN — and the offset is not a constant across the archive
 
@@ -44,7 +44,7 @@ NDSI entirely rather than assuming them. `null` is recoverable; a plausible wron
 ## Why there is no NDSI raster
 
 Tiling is ~63% of a granule job and nothing in the product asks to look at an NDSI image. The
-per-body number is what PR 4's phenology and N6g want, so this reads the two bands windowed and emits
+per-body number is what PR 4's phenology and A06g want, so this reads the two bands windowed and emits
 statistics — no intermediate raster on disk, no pyramid, no upload.
 """
 

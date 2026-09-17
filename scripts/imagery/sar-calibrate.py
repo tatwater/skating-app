@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Measure where Sentinel-1 actually puts a lake, so the geocode model can be checked (N6e).
+"""Measure where Sentinel-1 actually puts a lake, so the geocode model can be checked (A06e).
 
     sar-calibrate.py <water.fgb> --granules g1,g2,… --lakes 12 [--out fits.json]
 

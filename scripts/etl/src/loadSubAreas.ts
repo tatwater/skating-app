@@ -1,5 +1,5 @@
 /**
- * Load the merge's bays into `waterBodySubAreas` (N7 second intake audit, step 5b).
+ * Load the merge's bays into `waterBodySubAreas` (A07a second intake audit, step 5b).
  *
  *   pnpm --filter @skating/etl load-sub-areas <sub-areas.ndjson> --actor=<profileId> [--apply]
  *
@@ -49,7 +49,7 @@ interface SubAreaRow {
  * lake by construction, so every clip here runs against one of the largest polygons in the corpus,
  * and every failure was a bay of Moosehead or Winnipesaukee. `subAreas.importSeed` had already
  * written the answer down: *"a clip against it is comfortable alone and blows a mutation's 1s budget
- * at a dozen (measured in the N2 curation session)."* **Comfortable alone** is the operative phrase,
+ * at a dozen (measured in the A02 curation session)."* **Comfortable alone** is the operative phrase,
  * and this pass now takes it literally.
  *
  * The artifact is ~112 rows once per campaign, so one-at-a-time costs about five minutes of
@@ -77,7 +77,7 @@ function main(): void {
     process.stderr.write(
       'usage: pnpm --filter @skating/etl load-sub-areas <sub-areas.ndjson> ' +
         '--actor=<profileId> [--campaign=<id>] [--merge-manifest=<path>] [--apply]\n' +
-        '  --actor is required: every sub-area write is audited to a person (N2/D60).\n' +
+        '  --actor is required: every sub-area write is audited to a person (A02/D60).\n' +
         '  A merge-manifest.json beside the input is read automatically for the run path.\n',
     );
     process.exit(1);
@@ -103,7 +103,7 @@ function main(): void {
 
   const logger = new RunLogger({
     kind: 'sub_area_seed',
-    label: 'N7 bays — an arm is not a lake',
+    label: 'A07a bays — an arm is not a lake',
     campaignId: campaignId ?? found?.manifest.campaignId,
     target,
     stages: found?.manifest.stages ?? [],
@@ -205,7 +205,7 @@ function main(): void {
 
 // **The run row must not be left `running`** (D99). The first attempt at this pass threw out of
 // `main` on a mutation timeout and left three rows in that state on dev — the exact signature D99
-// records from the abandoned N6c campaign, reproduced by the loader written to honour it. `merge.ts`
+// records from the abandoned A06c campaign, reproduced by the loader written to honour it. `merge.ts`
 // has carried this handler since the first audit; this file was written without it.
 try {
   main();

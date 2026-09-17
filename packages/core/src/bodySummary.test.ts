@@ -109,7 +109,7 @@ describe('summaryHasCard (E3)', () => {
 });
 
 describe('summaryTitle', () => {
-  it('disambiguates a generic name with its town, like the Phase 5 feed card', () => {
+  it('disambiguates a generic name with its town, like the Phase 05 feed card', () => {
     expect(summaryTitle({ name: 'Beaver Pond', place: 'Marshfield' })).toBe(
       'Beaver Pond · Marshfield',
     );
@@ -143,7 +143,7 @@ describe('qualityMarkLabel', () => {
   });
 });
 
-describe('the reveal flag (N6c-2)', () => {
+describe('the reveal flag (A06c-2)', () => {
   it('draws a card for every body with a summary, empty ones included', () => {
     expect(summaryHasCard(summary(), true)).toBe(true);
     expect(summaryHasCard(summary({ recentReportCount: 3 }), true)).toBe(true);

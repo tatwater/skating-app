@@ -1,5 +1,5 @@
 /**
- * Corpus requests (N7b PR 2): the five kinds, the guards, the resolver's record, the decisions and
+ * Corpus requests (A07b PR 2): the five kinds, the guards, the resolver's record, the decisions and
  * what they perform, and the create-over-a-takedown refusal.
  */
 

@@ -1,5 +1,5 @@
 /**
- * Where two frames of one lake actually meet (N6e §C4).
+ * Where two frames of one lake actually meet (A06e §C4).
  *
  * > **Founder, 2026-08-24:** *"we should provide a hairline border between the two images, with their
  * > respective dates on either side."*

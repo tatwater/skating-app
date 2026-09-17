@@ -15,7 +15,7 @@ import Svg, { Circle, Line, Path, Polygon, Text as SvgText } from 'react-native-
 import { Paragraph, Text, useTheme, XStack, YStack } from 'tamagui';
 
 /**
- * The wind-exposure section on a lake page — the native mirror of web's `WindExposure` (N7-3).
+ * The wind-exposure section on a lake page — the native mirror of web's `WindExposure` (A07a-3).
  *
  * **The picture is not re-derived here.** Every coordinate comes from `windRoseChartModel` in
  * `@skating/core`, the same function the web app calls, so the two clients cannot drift into two
@@ -41,7 +41,7 @@ export function WindExposure({
   scope = 'body',
 }: {
   body: WindExposureBody;
-  /** `subArea` when `body` is a bay's composite — the parent's rose with the bay's own fetch (N9). */
+  /** `subArea` when `body` is a bay's composite — the parent's rose with the bay's own fetch (A09). */
   scope?: 'body' | 'subArea';
 }) {
   const theme = useTheme();
@@ -157,7 +157,7 @@ export function WindExposure({
         lake.
         {model.emphasizedSector !== null ? ' The solid arrow marks the most exposed shore.' : ''}
       </Text>
-      {/* The over-claim, said on every body (N9 kickoff call 6) — the same sentence web shows. */}
+      {/* The over-claim, said on every body (A09 kickoff call 6) — the same sentence web shows. */}
       <Text color="$foregroundMuted" fontSize={11}>
         {windRoseCaption(scope)}
       </Text>

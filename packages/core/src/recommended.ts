@@ -8,7 +8,7 @@
  * quality, black ice, and recent — all at once. It breaks distance / quality / thickness filters but
  * **never** recency, blocks, or moderation (those gates are applied by the caller before this runs).
  *
- * Thresholds live in `reputationConfig.ts`; callers may override per field for tests / Phase-7 tuning.
+ * Thresholds live in `reputationConfig.ts`; callers may override per field for tests / Phase-07 tuning.
  */
 
 import {

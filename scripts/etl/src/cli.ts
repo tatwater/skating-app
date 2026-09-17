@@ -8,10 +8,10 @@
  *   cat water.geojsonseq | pnpm --filter @skating/etl transform > bodies.ndjson
  *
  * `--depths` writes the second, much smaller stream: bodies carrying an OSM `depth`/`maxdepth` tag
- * (N6a rung 7), for `pnpm --filter @skating/etl load-depths`. Omit it and depths are simply counted.
+ * (A06a rung 7), for `pnpm --filter @skating/etl load-depths`. Omit it and depths are simply counted.
  *
  * `--summary=run.json` writes the run summary as JSON beside the NDJSON, for the loader to fold
- * into the `importRuns` row it writes (N6c F2). The same numbers still go to stderr — this is not a
+ * into the `importRuns` row it writes (A06c F2). The same numbers still go to stderr — this is not a
  * replacement for the operator seeing them live, it is a way for them to survive the terminal.
  */
 
@@ -64,9 +64,9 @@ function main(): void {
       `${summary.skipped} skipped (errors) · of ${summary.total} features\n`,
   );
   // Named even at zero: "no inland lake in five states tags its depth" is the expected result and a
-  // finding, whereas a silent absence reads the same as never having looked (the N6a review's finding 5).
+  // finding, whereas a silent absence reads the same as never having looked (the A06a review's finding 5).
   process.stderr.write(
-    `[etl] ${summary.depthsTagged} bodies carry a usable OSM depth tag (N6a rung 7)` +
+    `[etl] ${summary.depthsTagged} bodies carry a usable OSM depth tag (A06a rung 7)` +
       `${depthsPath ? ` → ${depthsPath}` : ' — pass --depths=… to write them'}\n`,
   );
   for (const err of errors)

@@ -8,10 +8,10 @@
 /** One member of `IMPORT_RUN_KINDS` (`packages/convex/convex/lib/enums.ts`). Keep in step. */
 export type ImportRunKind =
   | 'canonical_water'
-  /** `scripts/etl merge` — the offline three-archive reconciliation that decides the corpus (N7). */
+  /** `scripts/etl merge` — the offline three-archive reconciliation that decides the corpus (A07a). */
   | 'corpus_merge'
   /**
-   * `scripts/etl load-sub-areas` — the bays the merge found a parent for (N7 second audit).
+   * `scripts/etl load-sub-areas` — the bays the merge found a parent for (A07a second audit).
    *
    * Its own kind rather than a `canonical_water` variant, because it writes a different table and
    * fails differently: a bay that cannot find its parent is an ordering error in the campaign, not a
@@ -19,7 +19,7 @@ export type ImportRunKind =
    */
   | 'sub_area_seed'
   /**
-   * `scripts/etl resolve-merge-duplicates` — the `merge` verdicts a load declined (N7).
+   * `scripts/etl resolve-merge-duplicates` — the `merge` verdicts a load declined (A07a).
    *
    * Its own kind because it **deletes**, and a pass that removes rows must never be filed under the
    * one that adds them: `/admin/imports` is where an operator goes to ask what a campaign did, and
@@ -42,7 +42,7 @@ export type ImportRunKind =
   | 'bathymetry_build'
   | 'bathymetry_tiles'
   /**
-   * `scripts/etl load-access` — the N6d access pass, in two kinds because it runs in two stages with
+   * `scripts/etl load-access` — the A06d access pass, in two kinds because it runs in two stages with
    * a hard order between them.
    *
    * A put-in references its lot by OSM id, so the lots must be rows first. Sharing one kind would
@@ -51,7 +51,7 @@ export type ImportRunKind =
    */
   | 'access_parking'
   | 'access_put_ins'
-  // Corpus standing (N7b): the one-time partition into active / dormant, and the July rollover.
+  // Corpus standing (A07b): the one-time partition into active / dormant, and the July rollover.
   | 'standing_seed'
   | 'standing_rollover';
 

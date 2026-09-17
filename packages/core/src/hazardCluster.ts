@@ -1,5 +1,5 @@
 /**
- * Hazard identity — one clustering primitive, read through two time windows (N5c / D77).
+ * Hazard identity — one clustering primitive, read through two time windows (A05c / D77).
  *
  * *"Are these the same ridge you already marked?"* within a winter and *"is this the ridge that forms
  * here every winter?"* across winters are the **same geometric judgement** with a different time bound

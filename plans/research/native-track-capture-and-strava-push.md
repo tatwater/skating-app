@@ -1,4 +1,4 @@
-# Phase 8 — Native Track Capture + Strava Push
+# Phase 08 — Native Track Capture + Strava Push
 
 *Scoping doc — 2026-07-24. Extends [`04-integrations.md`](../04-integrations.md) (esp.
 "Cross-user map display — our stance") and [`08-legal-feasibility-checklist.md`](../08-legal-feasibility-checklist.md)
@@ -46,7 +46,7 @@ have to choose between us and Strava — record once, get both.**
 
 ## Piece 1 — the native recorder (the hard part)
 
-We already have **most of the primitive**: Phase 9.5 on-ice mode ships session-scoped
+We already have **most of the primitive**: Phase 09b on-ice mode ships session-scoped
 **background location** (`expo-location`), course-over-ground math, and the
 `hazardProjection.ts` track-processing plumbing. Track *recording* is the same GPS
 stream, retained instead of consumed-and-discarded.
@@ -54,7 +54,7 @@ stream, retained instead of consumed-and-discarded.
 What's net-new:
 
 - **A recording session** (start/pause/resume/stop) with a durable local buffer —
-  reuse the Phase 2 **expo-sqlite** offline-queue pattern so a crash/kill never loses a
+  reuse the Phase 02a **expo-sqlite** offline-queue pattern so a crash/kill never loses a
   skate. Points: `{lat, lon, elevation?, timestamp, accuracy, speed?}`.
 - **Foreground-service notification (Android)** + **iOS background-location mode** —
   mandatory for sustained background GPS; also the honest "we're recording" signal.
@@ -223,7 +223,7 @@ always own; A and C are pluggable provider sets on either side:**
   first and most important A-input (phone-only skaters, and the source we fully control).
   **Garmin / HealthKit / Health Connect / COROS / Polar** augment A later — each an
   incremental adapter into the same normalized shape (reusing the provider-agnostic
-  ingest core already scoped in Phase 8). The watch-user case (above) enters here.
+  ingest core already scoped in Phase 08). The watch-user case (above) enters here.
 - **B — our track store + aggregate (the hub, always covered).** Normalize any input to
   `gpsActivities`, resolve to `waterBodyId` (D44), and — because this data is **ours,
   not Strava's** — build the heatmap / crowd intelligence / path-on-public-report, gated
@@ -269,7 +269,7 @@ gives us the gravity; our own recorder gives us the data we're legally free to b
   sub-Q: the *auto-detect* of "user has a watch" vs. the v1 per-session toggle default.
 - **Q (fidelity/battery):** default fix cadence per mode is settled in principle
   (Balanced/20 m for hazards, High–BestForNav/~5 m for record); still needs on-ice
-  device tuning + the auto-stop-on-stationary threshold (the Phase 9.5 GPX route-playback
+  device tuning + the auto-stop-on-stationary threshold (the Phase 09b GPX route-playback
   rig helps).
 - **Q (privacy):** k-anonymity threshold + minors handling for aggregate layers — this
   is a **decision-grade** call (new D-number), not an implementation detail.

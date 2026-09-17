@@ -2,7 +2,7 @@
 
 A practical, end-to-end runbook for expanding map coverage to a new geographic area — new
 states, a new part of the country, or eventually a new country. This is the generalized version
-of what we did in **Phase 2.5** when we grew the pilot from Vermont-only to the five-state
+of what we did in **Phase 02b** when we grew the pilot from Vermont-only to the five-state
 Northeast (NY/VT/NH/ME/MA). If you follow it top to bottom you'll end up with real lake data and
 a matching basemap live on the map, with no app-code surprises.
 
@@ -77,7 +77,7 @@ yet initialized — everything targets dev.)
 Pick the area and write down a single bounding box (`west,south,east,north` in lon/lat) that:
 
 - covers every lake you want to import,
-- excludes areas you *don't* want (in Phase 2.5 we cut the NYC/Long Island metro so downstate
+- excludes areas you *don't* want (in Phase 02b we cut the NYC/Long Island metro so downstate
   clutter never imported — a straight lat cut at ~41.3°N, chosen to sit well south of every
   skated lake so it can't bisect a destination),
 - is the same box you'll use for the tile extract and the pan bounds.
@@ -93,7 +93,7 @@ outside it or on the wrong side of a clip line.
 
 ## Step 1 — Import the water data (per state/extract)
 
-Run the Phase 1 ETL pipeline **once per extract**. Full detail:
+Run the Phase 01 ETL pipeline **once per extract**. Full detail:
 [`scripts/etl/README.md`](../scripts/etl/README.md). The short version, per state:
 
 ```bash
@@ -133,7 +133,7 @@ Key facts that make this safe to repeat:
   as one row and its `states` unions to both. **Run order doesn't matter**, and re-running is
   idempotent (it also preserves any `removed` state).
 - **Each body is D49-scored and cell-indexed on insert** — `displayScore` + `minVisibleZoom` for
-  zoom-based prominence, plus the `waterBodyCells` rows the map reads (N1). Import cost per body is
+  zoom-based prominence, plus the `waterBodyCells` rows the map reads (A01). Import cost per body is
   flat regardless of how big the corpus already is, so the loader's batching has plenty of headroom;
   its binding constraint is `ARG_MAX` on the `convex run` argument string, not reads. Dev holds
   **116,070** bodies across five states.
@@ -173,7 +173,7 @@ pnpm --filter @skating/admin-areas load .scratch/areas.ndjson --state=<XX>
 - **`--state=XX` is required here too** — unlike lakes, boundaries don't span states, so each
   extract is exactly one state's worth.
 - **Town size doesn't matter.** Containment runs off the same bbox-coverage cell index as water
-  bodies (N1), so an enormous rural town resolves as exactly as a small one. It didn't used to: the
+  bodies (A01), so an enormous rural town resolves as exactly as a small one. It didn't used to: the
   previous centroid-margin lookup silently fell back to a county-only label for towns wider than
   ~0.4°, which the Adirondacks are full of.
 
@@ -246,7 +246,7 @@ Reload the map and confirm the basemap covers the new region.
 
 ## Step 4b — Bathymetry contours (per **agency**, not per bbox)
 
-> **Status: complete and live (N6b).** Both clients draw contours inside an open lake, so a new
+> **Status: complete and live (A06b).** Both clients draw contours inside an open lake, so a new
 > agency's tiles show up as soon as this step's last line — repointing the app env var — is done.
 
 **This step breaks the mental model above, and that is the most important thing to know about it.**
@@ -338,7 +338,7 @@ region has known destinations, boost them:
   `waterBodies.setCuratedBoost` admin mutation.
 - **Expect imperfect matches.** The seed has no coordinates, so a name that repeats across states
   (or a "bay" that isn't its own OSM body) can mis-match or not-find. That's the exact curation
-  the **Phase 7 admin water-body UI** is meant to own (set/adjust/remove per-body boost with the
+  the **Phase 07 admin water-body UI** is meant to own (set/adjust/remove per-body boost with the
   map in front of you). For now, spot-check the wins and don't over-invest in the seed.
 
 ---
@@ -382,7 +382,7 @@ other **and** the Step 2 `--bbox`:
 - [ ] Admin boundaries imported per state (`scripts/admin-areas`), and a report in the new region
       shows a town/county label rather than a bare lake name.
 - [ ] Read counts spot-checked against the new corpus with `waterBodies:viewportReadStats` — a wide
-      zoom, a dense zoom, and a pan into empty space. *(This checklist item existed before N1 and was
+      zoom, a dense zoom, and a pan into empty space. *(This checklist item existed before A01 and was
       never actually performed, which is how a 256-body clamp sized for a 9,967-body corpus survived
       a jump to 116k and started dropping real lakes. It takes a minute; do it.)*
 

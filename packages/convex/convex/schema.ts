@@ -3,7 +3,7 @@
  *
  * Shared vocabulary comes from `@skating/core` (single source of truth); backend-only
  * enums come from `./lib/enums`. Point/bbox/GeoJSON fields are defined here, but the
- * spatial *indexes* are the `*Cells` ladder-grid tables below (D5/N1) — see README.
+ * spatial *indexes* are the `*Cells` ladder-grid tables below (D5/A01) — see README.
  *
  * Identity split (D26): **Clerk owns the auth user**; we own a `profiles` row per
  * user holding all domain data (display, prefs, role, status, reputation). The two
@@ -116,12 +116,12 @@ export default defineSchema({
     homeCoord: v.optional(latLng), // PRIVATE — filter input only (D11); set at onboarding
     homeTownLabel: v.optional(v.string()), // optional PUBLIC label (D11)
     bio: v.optional(v.string()), // optional PUBLIC blurb, shown only on a public profile (D13)
-    // Avatar mirrored from Clerk's `imageUrl` — written at `upsertFromClerk` (Phase 3 decision #2) and
+    // Avatar mirrored from Clerk's `imageUrl` — written at `upsertFromClerk` (Phase 03 decision #2) and
     // refreshed on every app open by `syncFromClerk` — no upload pipeline; users manage it via Clerk's
     // own UI. Optional ⇒ migration-free; scrubbed on deletion.
     profileImageUrl: v.optional(v.string()),
     driveTimePrefMinutes: v.number(), // legacy single pref (D18); superseded by the bands + notif radii below
-    // Drive-time bands derived from the PRIVATE `homeCoord` (Phase 4, decision #2). 30/60 are hosted-ORS
+    // Drive-time bands derived from the PRIVATE `homeCoord` (Phase 04, decision #2). 30/60 are hosted-ORS
     // isochrone polygons (the API caps at 60 min); the 90 band is the crow-flies `outerRadiusMeters`
     // fallback. Recomputed on home/pref change (D18), stamping `cachedIsochronesAt`. All optional ⇒
     // migration-free; a viewer with no home has none and every lake reads band `null`.
@@ -130,7 +130,7 @@ export default defineSchema({
     ),
     outerRadiusMeters: v.optional(v.number()),
     cachedIsochronesAt: v.optional(v.number()),
-    // Server-sync copy of the newsfeed filter row (Phase 4, decision #3/#6); local storage is the
+    // Server-sync copy of the newsfeed filter row (Phase 04, decision #3/#6); local storage is the
     // working copy, this is the durable/LWW copy. All fields optional (all-absent = show everything).
     feedFilterPrefs: v.optional(
       v.object({
@@ -141,7 +141,7 @@ export default defineSchema({
         iceTypes: v.optional(v.array(literals(ICE_TYPES))),
         surfaceTags: v.optional(v.array(literals(SURFACE_TAGS))),
         recencyHours: v.optional(v.number()),
-        // Weather-first discovery (N6h / D166): the same row the map reads. Persisted like the rest
+        // Weather-first discovery (A06h / D166): the same row the map reads. Persisted like the rest
         // because the founder wanted it to survive a session (call 26).
         weather: v.optional(
           v.object({
@@ -153,13 +153,13 @@ export default defineSchema({
         onlyReports: v.optional(v.boolean()),
       }),
     ),
-    // Two independent notification radii (Phase 4, decision #4): X₁ for the "all nearby" digest, X₂
+    // Two independent notification radii (Phase 04, decision #4): X₁ for the "all nearby" digest, X₂
     // for "great nearby" (X₂ ≥ X₁, enforced in `setNotificationPrefs`). Optional ⇒ migration-free.
     allRadiusMinutes: v.optional(v.number()),
     greatRadiusMinutes: v.optional(v.number()),
     profileVisibility: literals(PROFILE_VISIBILITIES), // public=searchable/browsable; minors forced private (D13/D41)
     /**
-     * Global opt-out from the aggregate tracks layer (D58, Phase 8). Person-level rather than
+     * Global opt-out from the aggregate tracks layer (D58, Phase 08). Person-level rather than
      * per-activity **on purpose**: a preference about being in a crowd map is about the person, and
      * putting it here means flipping it retroactively drops every track they've ever contributed
      * rather than only future ones. Recording and Strava push are unaffected — this only governs
@@ -168,7 +168,7 @@ export default defineSchema({
     excludeTracksFromAggregate: v.optional(v.boolean()),
     notificationPrefs, // every type toggleable (D16)
     /**
-     * The device's IANA timezone, refreshed on app open (N8/C). Only the 8pm digest reads it: the
+     * The device's IANA timezone, refreshed on app open (A08/C). Only the 8pm digest reads it: the
      * hour is 20:00 for everyone, the *zone* is per person. The device's zone rather than one
      * derived from `homeCoord`, because the digest is a "when will this person look at their phone"
      * question, and someone travelling is exactly the case where the device is right. Coarse enough
@@ -178,7 +178,7 @@ export default defineSchema({
     timezone: v.optional(v.string()),
     /**
      * The primary email, mirrored from the Clerk identity's `email` claim — written at
-     * `upsertFromClerk` (N8 PR 3 / D174) and refreshed on every app open by `syncFromClerk` — the same
+     * `upsertFromClerk` (A08 PR 3 / D174) and refreshed on every app open by `syncFromClerk` — the same
      * posture as `profileImageUrl`: Clerk owns it, we hold a copy so a send is not a Clerk API call per
      * recipient (`lib/clerkEmail` says why that doesn't scale). PRIVATE:
      * never on a public profile, scrubbed at the deletion request and again at the tombstone. Absent
@@ -207,7 +207,7 @@ export default defineSchema({
     dateOfBirth: v.number(), // UTC-midnight epoch ms; age gate (≥16) + minor status (<18) DERIVED (D41)
     riskAckVersion: v.optional(v.string()), // assumption-of-risk accepted (D45)
     riskAckAt: v.optional(v.number()),
-    reputationPoints: v.number(), // cosmetic/reputational only (D17); aggregated from `pointEvents` (D50, Phase 6)
+    reputationPoints: v.number(), // cosmetic/reputational only (D17); aggregated from `pointEvents` (D50, Phase 06)
     // Separate achievement currency for fulfilling bounties (D17 decision 11) — kept OUT of
     // `reputationPoints` so trust stays purely about report/hazard accuracy. Optional ⇒ migration-free;
     // treated as 0 when absent. Bumped by `bounty_fulfilled` point events; the rest bump reputation.
@@ -223,18 +223,18 @@ export default defineSchema({
     // Granular posting permissions (Phase 10 / D57): a moderation lever FINER than a whole-app ban —
     // a user who abuses one surface loses that surface, appealably and reversibly, not the whole app.
     // Optional booleans, **absent ⇒ allowed** (fail-open in the safe direction; default-on for adults —
-    // minors are already read-only, D41). Restricted/restored from the Phase 7 admin surface; fed by the
+    // minors are already read-only, D41). Restricted/restored from the Phase 07 admin surface; fed by the
     // contradiction signal (D56). `contradictionCount` is a PRIVATE, non-scoring tally of weather-
     // unexplained, never-corroborated contradictions — NOT trust (D50 stays boost-only), a moderation
-    // input the Phase 7 panel charts tenure-aware. Absent ⇒ 0.
+    // input the Phase 07 panel charts tenure-aware. Absent ⇒ 0.
     canPostReports: v.optional(v.boolean()),
     canPostHazards: v.optional(v.boolean()),
-    // `canPostComments` (D57 extension, Phase 7): comments are free-text content — the classic
+    // `canPostComments` (D57 extension, Phase 07): comments are free-text content — the classic
     // harassment/spam surface — so a boolean revocation fits, exactly like reports/hazards. Its point
     // is muting a toxic commenter *without* silencing their safety reports. Absent ⇒ allowed.
     canPostComments: v.optional(v.boolean()),
     /**
-     * Per-user open-bounty cap (D57's deferred bounty lever, built in N2). Absent ⇒ the global
+     * Per-user open-bounty cap (D57's deferred bounty lever, built in A02). Absent ⇒ the global
      * `MAX_OPEN_BOUNTIES_PER_DAY`; `0` ⇒ can't post bounties at all. A *number* rather than a boolean
      * on purpose: bounties aren't content, they're requests, so the proportionate lever for someone
      * spamming them is fewer — not none, and certainly not a ban.
@@ -255,13 +255,13 @@ export default defineSchema({
      * has to be able to read the app to change their mind. Absent ⇒ no pending request.
      *
      * The consequence downstream is load-bearing: because nothing new can be posted, a departed user's
-     * newest `skateEndTime` can never postdate this stamp, so N5a's erasure sweep is a stage of the
+     * newest `skateEndTime` can never postdate this stamp, so A05a's erasure sweep is a stage of the
      * finalize chain rather than a deferred per-row schedule.
      */
     deletionRequestedAt: v.optional(v.number()),
     deletedAt: v.optional(v.number()),
     /**
-     * The season through which this tombstoned account's photos have been expired (D66/N5a) — a
+     * The season through which this tombstoned account's photos have been expired (D66/A05a) — a
      * **completion marker**, and the thing that makes `sweepDepartedPhotos` terminate.
      *
      * Without it the cron re-paginated every tombstone's whole photo table every day forever, and the
@@ -300,7 +300,7 @@ export default defineSchema({
     // stops being free without anything changing except success.
     .index('by_role', ['role'])
     /**
-     * The departed-photo sweep's work queue (D66/N5a): tombstones that haven't been swept for the
+     * The departed-photo sweep's work queue (D66/A05a): tombstones that haven't been swept for the
      * current season yet.
      *
      * **This is the one place the non-sparse-index behaviour above is what we want**, and it's worth
@@ -321,7 +321,7 @@ export default defineSchema({
     // deletion. `finalizeDueDeletions` bounds the range from below for exactly this reason; read its
     // comment before touching that query.
     .index('by_deletion_requested_at', ['deletionRequestedAt'])
-    // Signups-per-day for the analytics rollup (Phase 7b). The implicit creation order can't be
+    // Signups-per-day for the analytics rollup (Phase 07-2). The implicit creation order can't be
     // range-scanned to "just this UTC day", so the daily job reads a bounded slice off this instead.
     .index('by_created_at', ['createdAt'])
     // Name search for public profiles (D13). The filter field lets the query exclude private
@@ -332,7 +332,7 @@ export default defineSchema({
     }),
 
   /**
-   * Short-lived OAuth `state` nonces (Phase 8, Strava).
+   * Short-lived OAuth `state` nonces (Phase 08, Strava).
    *
    * The OAuth callback arrives at an **unauthenticated** HTTP endpoint — there is no Clerk identity on
    * a redirect from Strava — so without this table there would be no way to know *whose* account is
@@ -394,16 +394,16 @@ export default defineSchema({
     providerActivityId: v.string(), // unique per provider — dedup webhook re-deliveries
     sportType: v.string(),
     startTime: v.number(), // GPS start → report.skateStartTime on convert (D44)
-    // Phase 5 prep (wired Phase 8): GPS end → report.skateEndTime. `elapsedSeconds` is the
+    // Phase 05 prep (wired Phase 08): GPS end → report.skateEndTime. `elapsedSeconds` is the
     // provider's moving/elapsed time — NON-redundant with (end − start) because it excludes
-    // pauses/stops. Both optional ⇒ migration-free; no behavior now (GPS ingest is Phase 8).
+    // pauses/stops. Both optional ⇒ migration-free; no behavior now (GPS ingest is Phase 08).
     endTime: v.optional(v.number()),
     elapsedSeconds: v.optional(v.number()),
     path: v.optional(geoJson), // TRUSTED GPS track = skated extent
     waterBodyId: v.optional(v.id('waterBodies')), // resolved at ingest (D44)
     waterBodyIds: v.optional(v.array(v.id('waterBodies'))), // when a skate spans bodies
     /**
-     * The named bay this skate was mostly in (N9 / D175) — the bay holding the **majority of the
+     * The named bay this skate was mostly in (A09 / D175) — the bay holding the **majority of the
      * sampled points**, the same rule `resolveTrackToBodies` uses for the body. Absent on a body with
      * no bays, or a skate that stayed in open water. Re-stamped by `subAreas.restampParent`.
      */
@@ -411,7 +411,7 @@ export default defineSchema({
     /** Every bay the track touched, primary first — stored only when more than one (the `waterBodyIds` convention). */
     subAreaIds: v.optional(v.array(v.id('waterBodySubAreas'))),
     /**
-     * Samples fell on the parent **outside every bay** — the mouth-line evidence (N9 kickoff Q4).
+     * Samples fell on the parent **outside every bay** — the mouth-line evidence (A09 kickoff Q4).
      * Nothing acts on it; the admin card counts it beside the redraw control, because a bay's seaward
      * edge is a judgement a skater can prove wrong by skating past it, and this is where that shows.
      */
@@ -421,7 +421,7 @@ export default defineSchema({
     linkedReportId: v.optional(v.id('reports')),
     detectedAt: v.number(),
     /**
-     * Another row that is the better copy of this same skate (N8/B4a) — a watch and an aggregator
+     * Another row that is the better copy of this same skate (A08/B4a) — a watch and an aggregator
      * both saw one session, and the ladder in core's `activityDedup.ts` picked the other one. Never
      * deleted: the record that two devices saw it is cheap, and a deletion is unrecoverable if the
      * ladder was wrong. A superseded row is skipped by the prompt sweep and the unreported-skates
@@ -437,23 +437,23 @@ export default defineSchema({
     .index('by_user', ['userId'])
     .index('by_provider_activity', ['provider', 'providerActivityId']) // unique dedup (D24)
     .index('by_water_body', ['waterBodyId']) // per-lake skate history + bounty eligibility (D44)
-    // The `activity_detected` sweep (N8/B4): `eq('pending').lte(detectedAt, now − settle)`. Both
+    // The `activity_detected` sweep (A08/B4): `eq('pending').lte(detectedAt, now − settle)`. Both
     // fields are required, so no sparse-index trap — and the sweep flips the row to `prompted`, so a
     // row leaves this range the moment it's been asked about.
     .index('by_prompt_state_detected', ['promptState', 'detectedAt'])
-    // The sweep's dedup candidates (N8/B4a, PR #53 review): a same-skate copy starts within
+    // The sweep's dedup candidates (A08/B4a, PR #53 review): a same-skate copy starts within
     // `ACTIVITY_DEDUP_START_WINDOW_MS` of the due row, so the read is a start-time window per due
     // row. `by_user` orders by *insertion*, and "the 50 most recently inserted" is the wrong set —
     // an already-prompted copy behind fifty later syncs fell out of it and the skate was asked
     // about twice.
     .index('by_user_start_time', ['userId', 'startTime'])
     /**
-     * The aggregate-tracks layer, season-scoped (N5a/D63).
+     * The aggregate-tracks layer, season-scoped (A05a/D63).
      *
      * `by_water_body` orders by creation, so bounding the season after a `.take()` would be a filter
      * over the newest 200 *rows* rather than the newest 200 in-season ones: on a lake with more than
      * that in lifetime tracks, last season's would fill the window and this season's would silently
-     * not draw. That is the shape of bug N1 spent a phase removing, and the fix is the same one —
+     * not draw. That is the shape of bug A01 spent a phase removing, and the fix is the same one —
      * bound it in the index.
      *
      * `startTime` rather than the linked report's `skateEndTime`, which is what the design says the
@@ -463,7 +463,7 @@ export default defineSchema({
      * avoid.
      */
     .index('by_water_body_start_time', ['waterBodyId', 'startTime'])
-    // The admin card's mouth-line count (N9): this season's skates in one bay, take-bounded, filtered
+    // The admin card's mouth-line count (A09): this season's skates in one bay, take-bounded, filtered
     // to `leftSubArea` in memory. Not sparse — a bare range on `subAreaId` would match every
     // un-stamped track — so it is only ever read with an `eq()` on the bay.
     .index('by_sub_area_start_time', ['subAreaId', 'startTime']),
@@ -471,7 +471,7 @@ export default defineSchema({
   waterBodies: defineTable({
     name: v.string(),
     /**
-     * **Every name a publisher gave this water, including the ones that lost** (N7).
+     * **Every name a publisher gave this water, including the ones that lost** (A07a).
      *
      * `name` is chosen by authority — `gnis > nhd > 3dhp > osm` — and that rule costs **463 bodies**
      * their local name. Auburn, Maine's water supply is stored as `The Basin` because that is NHD's
@@ -544,7 +544,7 @@ export default defineSchema({
      * large irregular lake (D85 amendment). Both failures are silent.
      */
     /**
-     * **Our own id for this lake, minted once and never changed** (N7 / D93).
+     * **Our own id for this lake, minted once and never changed** (A07a / D93).
      *
      * `externalId` is doing three unrelated jobs — upsert key, tile stamp, and identity — which is
      * why changing a lake's geometry source is currently impossible without re-tiling five states.
@@ -606,7 +606,7 @@ export default defineSchema({
      */
     geometrySource: v.optional(literals(GEOMETRY_SOURCES)),
     /**
-     * The area the **admission decision** was made on, before simplification (N7 audit).
+     * The area the **admission decision** was made on, before simplification (A07a audit).
      *
      * `surfaceAreaSqM` is measured from the polygon we store, because that is what we draw. The D91
      * floor is applied to the *source* geometry, because that is the more accurate measure. The two
@@ -622,7 +622,7 @@ export default defineSchema({
      */
     sourceAreaSqM: v.optional(v.number()),
     /**
-     * What share of this body's outline lies inside our five states, in `[0, 1]` (N7 audit).
+     * What share of this body's outline lies inside our five states, in `[0, 1]` (A07a audit).
      *
      * The region clip is deliberately generous: **one** in-region vertex admits the whole polygon,
      * which is what keeps Beau Lake — 1,875 acres, most of them in Québec, and the fixture this phase
@@ -667,11 +667,11 @@ export default defineSchema({
      */
     reviewReasons: v.optional(v.array(literals(REVIEW_REASONS))),
     /**
-     * The one reason this body is filed under — **stored because an array cannot be indexed** (N7).
+     * The one reason this body is filed under — **stored because an array cannot be indexed** (A07a).
      *
      * `reviewReasons` is what a moderator reads; this is what `/admin/water/review` ranges over.
      * Convex has no index over array membership, and the alternative is scanning 25,136 rows to find
-     * ~2,000 — the read-cap failure N1 exists to have ended. Derived by `primaryReviewReason`, so a
+     * ~2,000 — the read-cap failure A01 exists to have ended. Derived by `primaryReviewReason`, so a
      * body that is both a duplicate and a name conflict is filed as the duplicate: the one a skater
      * can see going wrong.
      *
@@ -680,7 +680,7 @@ export default defineSchema({
      */
     reviewReason: v.optional(literals(REVIEW_REASONS)),
     /**
-     * The last import campaign that **re-affirmed** this body — campaign membership (N7 step 6).
+     * The last import campaign that **re-affirmed** this body — campaign membership (A07a step 6).
      *
      * `importCanonical` upserts and never deletes, so after a re-import the corpus is the *union* of
      * the new master list and whatever was there before. Neither set contains the other (18,383
@@ -696,7 +696,7 @@ export default defineSchema({
     lastCampaignId: v.optional(v.string()),
     /**
      * **This body is in the corpus because somebody asked for it** — not because it cleared the D91
-     * area floor (N7b).
+     * area floor (A07b).
      *
      * A statement about **membership**, and deliberately nothing else. Not `curatedBoost`, which is a
      * D2 *display* lever that gets tuned — the moment someone re-weighted prominence they would be
@@ -718,7 +718,7 @@ export default defineSchema({
     // Admin regions (2-letter US state codes) the body falls in, unioned from the per-state ETL
     // extracts at import — a border-spanning body (Lake Champlain) appears in multiple state
     // extracts and accumulates e.g. ["NY","VT"]. Powers the search-result location label +
-    // curatedBoost disambiguation (Phase 2.5). Optional ⇒ migration-free.
+    // curatedBoost disambiguation (Phase 02b). Optional ⇒ migration-free.
     states: v.optional(v.array(v.string())),
     polygon: geoJson, // Polygon / MultiPolygon (rivers: the reach/segment)
     bbox, // prefilter index
@@ -732,7 +732,7 @@ export default defineSchema({
      *
      * **That behaviour is correct and must not be "fixed" into a true centroid.** The area centroid
      * of a crescent lake is on the headland in the middle, i.e. on land — which breaks the on-water
-     * guarantee every consumer here relies on. N6b already paid for this lesson: a hand-rolled
+     * guarantee every consumer here relies on. A06b already paid for this lesson: a hand-rolled
      * centroid join missed 4 of 6 real Maine lakes (`scripts/bathymetry/src/join.ts`). The name was
      * the bug, not the maths.
      *
@@ -753,7 +753,7 @@ export default defineSchema({
      *
      * ⚠️ **Until then, three field names describe two points, and that is a live trap rather than
      * cosmetic debt.** `representativePoint` *is* this field (byte-identical); `interiorPoint` is the
-     * genuinely different, strictly-interior one. N6c's Workstream B was written against `centroid`
+     * genuinely different, strictly-interior one. A06c's Workstream B was written against `centroid`
      * and would have opened Windy 30 km off Lake Champlain — a shoreline coordinate is a perfectly
      * valid coordinate, so nothing downstream catches it. **If you want a point in the water, you
      * want `interiorPoint`.**
@@ -763,10 +763,10 @@ export default defineSchema({
     // (~2–25 km), so **every body samples at its centroid by default** — town/county is the wrong
     // abstraction. Only the few genuinely multi-cell giants (Champlain ~200 km) need more: an admin sets
     // a handful of points spaced at grid resolution here, and a hazard/report picks its nearest. Absent /
-    // empty ⇒ `[centroid]`. Populated via the Phase 7 admin surface; no auto-population in v1.
+    // empty ⇒ `[centroid]`. Populated via the Phase 07 admin surface; no auto-population in v1.
     weatherSamplePoints: v.optional(v.array(latLng)),
     /**
-     * A point genuinely **inside** the water (N6c / `@skating/core`'s `fetchOrigin`), computed at
+     * A point genuinely **inside** the water (A06c / `@skating/core`'s `fetchOrigin`), computed at
      * canonical import from the source geometry.
      *
      * **It exists because `centroid` above is not a centroid.** That field is Turf's
@@ -786,7 +786,7 @@ export default defineSchema({
      */
     interiorPoint: v.optional(latLng),
     surfaceAreaSqM: v.optional(v.number()),
-    // ── Derived shape stats (N6c Workstream A / D85) ───────────────────────────────────────────
+    // ── Derived shape stats (A06c Workstream A / D85) ───────────────────────────────────────────
     // Measured in the ETL transform on the **full-resolution OSM geometry, before `simplify()`** —
     // never on the polygon stored above. Perimeter is resolution-dependent (the coastline paradox),
     // our stored copy is simplified to ~5 m and Champlain is coarsened past that to fit the D48
@@ -834,7 +834,7 @@ export default defineSchema({
      */
     windRoseSource: v.optional(v.literal(WIND_ROSE_SOURCES[0])),
     /**
-     * **Sustained wind — the speed question the rose cannot answer** (N7-3).
+     * **Sustained wind — the speed question the rose cannot answer** (A07a-3).
      *
      * `windRose` is sixteen frequencies: which way the wind comes from, and nothing about how hard
      * it blows. The two wind hazards on a lake are different questions — pressure ridges are a
@@ -873,7 +873,7 @@ export default defineSchema({
      * counts genuinely differ. Absent entirely when no sector had a reading.
      */
     meanWindMps: v.optional(v.array(v.union(v.number(), v.null()))),
-    // Lake depth (N6a / D68). Best-available value plus **per-measurement** provenance: mean and max
+    // Lake depth (A06a / D68). Best-available value plus **per-measurement** provenance: mean and max
     // routinely come from different rungs of the ladder (LAGOS-US holds 17,675 maxima against 6,137
     // means), so one `depthSource` could not honestly describe both. The ladder itself lives in
     // `@skating/core`'s `lakeDepth.ts` — `operator` beats every automated source and the depth loader
@@ -902,7 +902,7 @@ export default defineSchema({
     // chart, max from the 2015 DEC survey") without a second field nobody fills. Cleared when no
     // operator-sourced depth remains, so a note can never outlive the claim it substantiates.
     depthSourceNote: v.optional(v.string()),
-    // Lake **surface elevation** (N6c A1) — a real freeze-ORDER signal: a 1,700 ft pond in the
+    // Lake **surface elevation** (A06c A1) — a real freeze-ORDER signal: a 1,700 ft pond in the
     // Greens is skateable weeks before a valley lake twenty minutes away. One source, not a ladder
     // (see `@skating/core`'s `elevation.ts` for why depth needed five rungs and this needs one),
     // but D68's precedence discipline carries across unchanged: an `operator` value wins and the
@@ -940,14 +940,14 @@ export default defineSchema({
     curatedBoost: v.optional(v.number()),
     minVisibleZoom: v.optional(v.number()),
     /**
-     * Whether this body offers the Copernicus satellite link (N6e Workstream D, D70/D75).
+     * Whether this body offers the Copernicus satellite link (A06e Workstream D, D70/D75).
      *
      * **`auto` is the value nearly every row holds, and it is not stored** — absent means `auto`,
      * resolved against `surfaceAreaSqM` by `satelliteImageryAvailable` in `@skating/core`. What gets
      * written here is only ever *an operator disagreeing with that derivation*, which is the same
      * shape as `approachKindOverride`: never persist a derivation, always persist the exception.
      *
-     * **Per-row data on purpose, so a correction needs no redeploy.** The Phase 7 posture is
+     * **Per-row data on purpose, so a correction needs no redeploy.** The Phase 07 posture is
      * "constants stay in code" — that governs `SATELLITE_MIN_AREA_SQM`, the threshold. The exception
      * to a threshold is a fact about one lake, and facts about lakes live in rows.
      *
@@ -955,7 +955,7 @@ export default defineSchema({
      */
     satelliteImagery: v.optional(literals(SATELLITE_IMAGERY_MODES)),
     /**
-     * Operator-entered reference links (N6c Workstream B7) — the phase's **only** stored link.
+     * Operator-entered reference links (A06c Workstream B7) — the phase's **only** stored link.
      *
      * Every other link in the drawer is derived at render time from `(interiorPoint, name, states)`
      * and stored nowhere (P2/D71), because a derivable string stored 24,953 times is 24,953 strings
@@ -968,7 +968,7 @@ export default defineSchema({
      */
     referenceLinks: v.optional(v.array(v.object({ label: v.string(), url: v.string() }))),
     /**
-     * What the sign says (N6e) — the posted seasonal window and daily hours for being on the ice.
+     * What the sign says (A06e) — the posted seasonal window and daily hours for being on the ice.
      *
      * **This is not an `accessAlert`, and the difference is the whole design.** An alert is a decaying
      * community claim: 30-day TTL, hard-expired at the season boundary, resolved by two votes. Run
@@ -985,7 +985,7 @@ export default defineSchema({
      */
     postedAccess: v.optional(postedAccess),
     /**
-     * A moderator's ruling on whether this body can be lawfully reached at all (N6f).
+     * A moderator's ruling on whether this body can be lawfully reached at all (A06f).
      *
      * **Three states, and absence is one of them**: no ruling, `none` (no lawful way in — the body
      * dims to half opacity and drops ~2 zoom levels), and `open` (reviewed, there *is* public access).
@@ -1014,9 +1014,9 @@ export default defineSchema({
       }),
     ),
     /**
-     * The map summary card's denormalized counts (N6c Workstream E).
+     * The map summary card's denormalized counts (A06c Workstream E).
      *
-     * **Denormalized on write, not aggregated on read.** N1 changed the argument for this rather
+     * **Denormalized on write, not aggregated on read.** A01 changed the argument for this rather
      * than against it: a viewport read is now bounded (the ladder grid replaced the geospatial
      * component), so aggregating per read is no longer a crash risk — just a cost proportional to
      * bodies × reports on every map pan. The denormalized shape still wins, and now it wins on cost
@@ -1045,7 +1045,7 @@ export default defineSchema({
       }),
     ),
     /**
-     * The **easiest** known way onto this body (N6d / D144) — denormalized from its put-ins.
+     * The **easiest** known way onto this body (A06d / D144) — denormalized from its put-ins.
      *
      * Stamped by the access join and the operator mutations, never by hand. It exists so the map
      * summary card and the feed card can render the Hike-In chip off the body row they already hold,
@@ -1069,7 +1069,7 @@ export default defineSchema({
     /**
      * Soft-delist (D48); reversible, cleared on restore.
      *
-     * **A removed body is still cell-indexed** (N7b, founder call 2026-09-16): it draws at the dormant
+     * **A removed body is still cell-indexed** (A07b, founder call 2026-09-16): it draws at the dormant
      * rung — zoomed right in, dimmed, with the removal reason in the drawer — and is resolvable by
      * coordinate, so a landowner skating their own taken-down pond attaches to *this* row rather than
      * minting a fresh public one. It is on no push surface and not in search. `standingOf` reads it
@@ -1079,7 +1079,7 @@ export default defineSchema({
     removedByUserId: v.optional(v.id('profiles')), // the admin who removed it (D48)
     removalReason: v.optional(literals(REMOVAL_REASONS)), // why it was delisted (D48)
     /**
-     * **Dormant: in the corpus, on no push surface** (N7b) — the field for the standings no other
+     * **Dormant: in the corpus, on no push surface** (A07b) — the field for the standings no other
      * field expresses. Read only through `standingOf` (`@skating/core`), which ranks it below a
      * removal and a `none` access ruling; never written directly — every transition goes through
      * `lib/standing.ts` so the re-score, the cell rows, the sub-areas and the audit row move together.
@@ -1099,7 +1099,7 @@ export default defineSchema({
     ),
     /**
      * When this body last became active — by evidence, a moderator, a restore or an admitted request
-     * (N7b). The admin standing page lists recent activations so a machine's re-activation is seen
+     * (A07b). The admin standing page lists recent activations so a machine's re-activation is seen
      * by a person, and the ETL enrichment passes use it to find bodies that came back after their
      * last run. Absent on a body that has been active since import.
      */
@@ -1126,20 +1126,20 @@ export default defineSchema({
     .index('by_nhd_id', ['nhdId'])
     // The third catalogue id, same shape and same trap as `by_nhd_id`: NOT sparse, so `eq()` only.
     .index('by_three_dhp_id', ['threeDhpId'])
-    // The curation list (N2). Until now there was NO index on `curatedBoost` and no query listing
+    // The curation list (A02). Until now there was NO index on `curatedBoost` and no query listing
     // boosted bodies — `WaterBodyModeratorControls` edits the boost on a body you already navigated
-    // to, and nothing told you which of 116k carry one. The five known Phase-2.5 mis-matches (South
+    // to, and nothing told you which of 116k carry one. The five known Phase-02b mis-matches (South
     // Bay, Button Bay, Half Moon Cove, Foster Pond, Mill Pond, all boosted onto same-named lakes
     // elsewhere) were invisible until someone remembered them. A `> 0` range read costs the boosted
     // rows and nothing else: `undefined` sorts before every number, so unboosted bodies are excluded
     // by the range rather than filtered after the read.
     .index('by_curated_boost', ['curatedBoost'])
-    // The standing lists (N7b): dormant bodies by reason, newest first, and recent activations. Both
+    // The standing lists (A07b): dormant bodies by reason, newest first, and recent activations. Both
     // are `eq()` / `gt()` reads on optional fields — `undefined` sorts first and an equality or a
     // strictly-positive range never includes it, so neither read touches the active majority.
     .index('by_dormant_reason', ['dormant.reason', 'dormant.since'])
     .index('by_activated_at', ['activatedAt'])
-    // The other two standing lanes (N7b): removed bodies newest first (`gt(0)` — undefined sorts
+    // The other two standing lanes (A07b): removed bodies newest first (`gt(0)` — undefined sorts
     // first and is excluded by the range), and `none` rulings (`eq('none')`).
     .index('by_removed_at', ['removedAt'])
     .index('by_public_access_verdict', ['publicAccess.verdict', 'publicAccess.decidedAt'])
@@ -1147,7 +1147,7 @@ export default defineSchema({
     // `.eq()` on the reason never reads the rows that carry none — `undefined` sorts before every
     // value, but an equality range simply does not include it, which is what makes this cheap.
     .index('by_review_reason', ['reviewReason', 'displayScore'])
-    // **`searchText`, not `name` — the last step of the four** (N7). `[name, ...aliases]` joined, so
+    // **`searchText`, not `name` — the last step of the four** (A07a). `[name, ...aliases]` joined, so
     // a lake is findable under every name a publisher gave it: Auburn's water supply stores as NHD's
     // `The Basin` and a skater types "Lake Auburn". 583 bodies carry a distinct second name.
     //
@@ -1157,7 +1157,7 @@ export default defineSchema({
     // first would have taken search down for every row the backfill had not yet reached.
     .searchIndex('search_name', { searchField: 'searchText' }),
 
-  // Which bodies the N6b contour tileset actually draws lines for (N6c-1 / D2).
+  // Which bodies the A06b contour tileset actually draws lines for (A06c-1 / D2).
   //
   // **A side table rather than a flag on `waterBodies`, because contour coverage is a property of
   // the TILESET, not of the body.** Re-tiling replaces ~2,000 rows here instead of migrating 116,070,
@@ -1165,7 +1165,7 @@ export default defineSchema({
   // a boolean column invites, and it would be silent: a lake claiming surveyed bathymetry it no
   // longer has.
   //
-  // Keyed on `externalId` for the same reason the tiles are (N6b): a Convex `_id` changes if a row
+  // Keyed on `externalId` for the same reason the tiles are (A06b): a Convex `_id` changes if a row
   // is recreated, and re-tiling five states because a re-import churned ids is not a thing we should
   // be one accident away from. That also means coverage survives a canonical re-import untouched.
   //
@@ -1177,7 +1177,7 @@ export default defineSchema({
     externalId: v.string(),
   }).index('by_external_id', ['source', 'externalId']),
 
-  // When each imagery season's ingest window opened (N6e §C3 / D149). One row per season, written
+  // When each imagery season's ingest window opened (A06e §C3 / D149). One row per season, written
   // once by `imageryIngest.maybeCheckSeasonOpen` and never revised — the gate is a judgement made on
   // the observations available at the time, and re-deciding it later with more data would silently
   // rewrite the reason a backfill was started.
@@ -1200,7 +1200,7 @@ export default defineSchema({
      * season is still open, which is the normal state from November to roughly May.
      *
      * ⚠ **This is the only "the season is over" signal in the system, and two very different
-     * consumers read it**: imagery ingest stops cutting granules, and N6h's corpus-wide weather
+     * consumers read it**: imagery ingest stops cutting granules, and A06h's corpus-wide weather
      * sweep stops spending Open-Meteo calls. Both want the *same* reluctance — being late costs a
      * few granule reads and a few thousand weather calls, while being early truncates the melt-out
      * record and blinds discovery during the last skateable weeks of the season.
@@ -1213,7 +1213,7 @@ export default defineSchema({
     detectedAt: v.number(),
   }).index('by_season', ['season']),
 
-  // Per-state distribution basis for the derived caption (N6c A5). **One row per state**, holding
+  // Per-state distribution basis for the derived caption (A06c A5). **One row per state**, holding
   // the 10th–90th percentiles of each metric across that state's listed bodies.
   //
   // The obvious alternative — a stored percentile per body — is the wrong shape: a percentile is a
@@ -1242,14 +1242,14 @@ export default defineSchema({
     /** Bodies scanned for this state, whether or not they carried any metric — the honest denominator. */
     bodiesScanned: v.number(),
     /**
-     * How many of those are **active** (N7b) — the public "X known, Y active" pair (founder call,
+     * How many of those are **active** (A07b) — the public "X known, Y active" pair (founder call,
      * 2026-09-16). Optional because rows predate it; the next `recompute` fills it.
      */
     bodiesActive: v.optional(v.number()),
     updatedAt: v.number(),
   }).index('by_state', ['state']),
 
-  // The water-body spatial index (N1) — one row per grid cell a *listed* body's bbox covers, at the
+  // The water-body spatial index (A01) — one row per grid cell a *listed* body's bbox covers, at the
   // ladder level `indexLevelFor` picks (see `lib/cellIndex` / `@skating/core`'s `spatialCells`).
   // Replaces `@convex-dev/geospatial`, whose per-row *point* and read-∝-`maxResults` query shape
   // crashed a wide viewport against Convex's 4,096-read cap. `by_cell`'s trailing `minVisibleZoom`
@@ -1266,14 +1266,14 @@ export default defineSchema({
     .index('by_cell', ['z', 'x', 'y', 'minVisibleZoom'])
     .index('by_body', ['waterBodyId']), // the write-path diff + backfill
 
-  // Named sub-areas (N2 / D60) — a region *inside* one water body, carrying the name skaters
+  // Named sub-areas (A02 / D60) — a region *inside* one water body, carrying the name skaters
   // actually use for it. "Malletts Bay" is part of Lake Champlain, not a lake beside it: reports,
   // hazards and bounties keep belonging to the **parent**, and the sub-area is the finer name they
   // carry. Minting each bay as its own `waterBodies` row would split one sheet of ice's reports,
   // hazards, bounties, favorites and aggregate tracks across a dozen rows, and hand the D36 dedup
   // queue a permanent stream of parent-vs-child overlap pairs it has no verdict for.
   //
-  // This is the **D4 model** (deferred since Phase 1 for rivers-as-named-reaches), instantiated for
+  // This is the **D4 model** (deferred since Phase 01 for rivers-as-named-reaches), instantiated for
   // lakes first, where the corpus evidence is overwhelming: every name the community seed failed to
   // match is a region inside one existing polygon.
   //
@@ -1310,7 +1310,7 @@ export default defineSchema({
     updatedAt: v.number(),
     removedAt: v.optional(v.number()), // soft-delist, reversible — never a hard delete (D48 ethos)
     removedByUserId: v.optional(v.id('profiles')), // absent on a system delist — see below
-    // Why the *system* delisted this bay, when no human did (N2). A canonical re-import that refines
+    // Why the *system* delisted this bay, when no human did (A02). A canonical re-import that refines
     // a shoreline, or a merge onto a survivor with a different outline, can leave a hand-drawn bay no
     // longer inside its parent — Decision 10's "inside by construction" has to survive the parent
     // changing shape, so the bay is delisted rather than kept as geometry that escaped the invariant.
@@ -1319,7 +1319,7 @@ export default defineSchema({
     // never silent). Cleared by any write that re-establishes containment — restore or redraw.
     systemDelistReason: v.optional(v.string()),
 
-    // ── N9 (D175): a bay is a place ──────────────────────────────────────────────────────────────
+    // ── A09 (D175): a bay is a place ──────────────────────────────────────────────────────────────
 
     /**
      * Our own opaque, sortable identity for the bay — `sa_<uuid>`, the `waterBodyKey` treatment
@@ -1361,20 +1361,20 @@ export default defineSchema({
     // `waterBodyId`, the search hit carries its parent, the lake editor is one body. Bounded by the
     // handful of sub-areas one lake has, not by the corpus.
     .index('by_parent', ['waterBodyId'])
-    // The depth loader's lookup by our own key (N9). `eq()` only — an optional field's index is not
+    // The depth loader's lookup by our own key (A09). `eq()` only — an optional field's index is not
     // sparse, so a range here would walk every un-keyed legacy row first.
     .index('by_sub_area_key', ['subAreaKey'])
     .searchIndex('search_subarea', { searchField: 'searchText' }),
 
-  // The sub-area spatial index (N2) — the third table on N1's shared ladder-grid mechanism, same
+  // The sub-area spatial index (A02) — the third table on A01's shared ladder-grid mechanism, same
   // shape as `waterBodyCells`. It exists because a viewport is not a parent: the map render is the
   // one sub-area read that can't be scoped to a body already loaded, and fanning `by_parent` out over
   // the 1,000 bodies `listInViewport` can return is a read whose input is the render budget. "Sub-
   // areas only exist on a handful of giants" is a fact about today's data, not a bound — which is the
-  // exact reasoning N1 exists to retire.
+  // exact reasoning A01 exists to retire.
   //
   // **A row exists only while the sub-area is un-delisted AND its parent is listed** (Decision 11).
-  // N1's "unlisted means absent" rule is what makes the listing filter free, and a sub-area that
+  // A01's "unlisted means absent" rule is what makes the listing filter free, and a sub-area that
   // outlived its parent's takedown would label a bay on a lake the app no longer has.
   waterBodySubAreaCells: defineTable({
     subAreaId: v.id('waterBodySubAreas'),
@@ -1386,10 +1386,10 @@ export default defineSchema({
     .index('by_cell', ['z', 'x', 'y', 'minVisibleZoom'])
     .index('by_sub_area', ['subAreaId']),
 
-  // The admin-boundary spatial index (N1), same shape keyed by boundary `level` instead of zoom.
+  // The admin-boundary spatial index (A01), same shape keyed by boundary `level` instead of zoom.
   // Retires `findContainingTown`'s ±0.2° centroid rectangle, which was explicitly sized on the
   // premise that "our towns run well under 0.4° across" — false for the Adirondack towns the
-  // Phase-2.5 corpus added, and its failure was *silent* (the label quietly degraded to
+  // Phase-02b corpus added, and its failure was *silent* (the label quietly degraded to
   // county+state). A bbox covering has no such premise: containment is exact at any size.
   adminAreaCells: defineTable({
     adminAreaId: v.id('adminAreas'),
@@ -1401,11 +1401,11 @@ export default defineSchema({
     .index('by_cell', ['z', 'x', 'y', 'level'])
     .index('by_area', ['adminAreaId']),
 
-  // Administrative-boundary polygons for point→place labels (Phase 5). A report's `point` (put-in
+  // Administrative-boundary polygons for point→place labels (Phase 05). A report's `point` (put-in
   // pin / GPS start) resolves against these to `{ town?, county?, state? }`, stamped onto
   // `reports.place` at create. Imported from the same per-state OSM extracts as the water ETL
-  // (`boundary=administrative`, admin_level 4/6/7–8; same ODbL). Reused by GPS (Phase 8) + hazards
-  // (Phase 9). Small (5 states of towns/counties ≈ single-digit thousands of rows).
+  // (`boundary=administrative`, admin_level 4/6/7–8; same ODbL). Reused by GPS (Phase 08) + hazards
+  // (Phase 09a). Small (5 states of towns/counties ≈ single-digit thousands of rows).
   adminAreas: defineTable({
     name: v.string(), // this row's own name — "Burlington" (town) / "Chittenden County" (county)
     level: literals(ADMIN_AREA_LEVELS), // admin granularity
@@ -1413,10 +1413,10 @@ export default defineSchema({
     externalId: v.string(), // OSM relation id (way/123 · relation/456) — idempotent upsert key
     polygon: geoJson, // boundary
     bbox, // cheap point-containment prefilter before the Turf pointInPolygon test
-    /** Representative interior point; display/debug only, never a lookup key (N1). */
+    /** Representative interior point; display/debug only, never a lookup key (A01). */
     representativePoint: v.optional(latLng),
     /** @deprecated Renamed to `representativePoint`; see the note on `waterBodies`. */
-    centroid: latLng, // representative interior point; kept for display/debug, not for lookup (N1)
+    centroid: latLng, // representative interior point; kept for display/debug, not for lookup (A01)
     createdAt: v.number(),
   })
     // Idempotent re-import upsert key (OSM re-runs), mirroring waterBodies.by_external_id (D14).
@@ -1431,10 +1431,10 @@ export default defineSchema({
   // safe to drop/prune (a miss just refetches).
   weatherCache: defineTable({
     /**
-     * The **weather cell key** (N6h / D152) — `weatherCellFor('browse', …).key`, e.g. `b:895:-1441:3`.
+     * The **weather cell key** (A06h / D152) — `weatherCellFor('browse', …).key`, e.g. `b:895:-1441:3`.
      *
      * ⚠ **The field name is a fossil and is kept deliberately.** It held a `lat.toFixed(3)` sample
-     * point until N6h, which produced 24,832 distinct values for 24,948 bodies — one fetch per lake,
+     * point until A06h, which produced 24,832 distinct values for 24,948 bodies — one fetch per lake,
      * no sharing at all. Renaming the *field* would be a schema migration (widen → deploy → backfill
      * → narrow) for a table that prunes itself every 24 h, so instead the meaning changed and the
      * name stayed. Old-format rows are simply unreachable under the new key and are swept by
@@ -1447,13 +1447,13 @@ export default defineSchema({
     fetchedAt: v.number(),
   })
     .index('by_key', ['samplePointKey', 'windowStartMs', 'windowEndBucketMs'])
-    // Retention sweep (N3). `by_key` is an exact-triple lookup and can't be range-scanned by age, so
+    // Retention sweep (A03). `by_key` is an exact-triple lookup and can't be range-scanned by age, so
     // the pruner reads this instead. Ordering on the *window end* rather than `fetchedAt` is the
     // point: the end bucket is what makes a row reachable at all (see `pruneWeatherCache`).
     .index('by_window_end', ['windowEndBucketMs']),
 
   /**
-   * The short forward forecast for the drive decision (N6c B5b).
+   * The short forward forecast for the drive decision (A06c B5b).
    *
    * **A separate table from `weatherCache`, deliberately.** That one is keyed on a *past window*
    * (`windowStartMs` + `windowEndBucketMs`) because its rows describe what happened between two
@@ -1470,7 +1470,7 @@ export default defineSchema({
     samplePointKey: v.string(), // the same `browse`-tier cell key `weatherCache` uses (D152; fossil name)
     forecastBucketMs: v.number(), // `now` bucketed to the hour: how fresh this prediction is
     /**
-     * How many forward days the row holds (N6h Workstream D). A reader asking for more than this
+     * How many forward days the row holds (A06h Workstream D). A reader asking for more than this
      * treats the row as a miss — the key is the hour bucket, so without it the strip's 2-day row
      * would satisfy the planner's 7-day request for the rest of the hour. Absent on rows from
      * before the planner, which held two.
@@ -1483,7 +1483,7 @@ export default defineSchema({
      * `lib/validators`) is what `writeForecastCache` accepts too.
      */
     hours: v.array(forecastHour),
-    // ⚠ Written by nothing since the planner (N6h D): the strip line is now derived on the client
+    // ⚠ Written by nothing since the planner (A06h D): the strip line is now derived on the client
     // from `hours`. Kept optional so the last pre-planner hour of rows validates on push; the
     // hourly prune removes them and the fields can be dropped in any later schema pass.
     precipStartsMs: v.optional(v.number()),
@@ -1493,19 +1493,19 @@ export default defineSchema({
     fetchedAt: v.number(),
   })
     .index('by_key', ['samplePointKey', 'forecastBucketMs'])
-    // Retention sweep (N3), same shape and same reasoning as `weatherCache.by_window_end`: the
+    // Retention sweep (A03), same shape and same reasoning as `weatherCache.by_window_end`: the
     // bucket is what makes a row reachable, so it is what the pruner orders on. A forecast row is
     // garbage far sooner than a weather-since row, since nothing can ever read it again once its
     // bucket passes.
     .index('by_forecast_bucket', ['forecastBucketMs']),
 
   /**
-   * **The registry of weather cells the corpus actually occupies (N6h / D152, D161).**
+   * **The registry of weather cells the corpus actually occupies (A06h / D152, D161).**
    *
    * The Tier-B cron has to visit every `filter` cell once a day. Deriving that list by paginating
    * 25,000 `waterBodies` rows would cost ~75 MB of read I/O *daily* to rediscover 3,043 keys that
    * change only when the corpus does — and this repo has already paid once for treating a corpus scan
-   * as a cheap way to answer a small question (the N6d access load, 105 GB).
+   * as a cheap way to answer a small question (the A06d access load, 105 GB).
    *
    * So the cells are materialised. `backfillWeatherCells` walks the corpus once, in batches, and
    * writes one row per distinct (tier, cell); after that the cron reads a few thousand small rows.
@@ -1576,7 +1576,7 @@ export default defineSchema({
   }).index('by_tier', ['tier']),
 
   /**
-   * **Which filter-tier cell each body and bay sits in (N6h Workstream E / D159, D165).**
+   * **Which filter-tier cell each body and bay sits in (A06h Workstream E / D159, D165).**
    *
    * The reverse of `bodyWeatherCell(body, 'filter')`: a cell is a pure function of a body's point,
    * but discovery needs *cell → bodies*, and Convex has no computed index. One row per body, plus one
@@ -1613,7 +1613,7 @@ export default defineSchema({
     .index('by_bay', ['isBay', 'cellKey']),
 
   /**
-   * **One rolling digest per filter-tier cell — what discovery actually reads (N6h / D159, D165).**
+   * **One rolling digest per filter-tier cell — what discovery actually reads (A06h / D159, D165).**
    *
    * ## Why not query `weatherDays`
    *
@@ -1666,7 +1666,7 @@ export default defineSchema({
     .index('by_nights_0', ['nightsBelow0F']),
 
   /**
-   * **Daily weather observations — an archive, not a cache (N6h / D153).**
+   * **Daily weather observations — an archive, not a cache (A06h / D153).**
    *
    * Everything else in this file's weather block expires. `weatherCache` prunes at 24 h because its
    * rows are *window summaries* reachable only inside their own hour bucket; `weatherForecastCache`
@@ -1789,7 +1789,7 @@ export default defineSchema({
     .index('by_tier_day', ['tier', 'dayMs']),
 
   /**
-   * **Hourly weather, for the timeline chart only (N6h Workstream D).**
+   * **Hourly weather, for the timeline chart only (A06h Workstream D).**
    *
    * ## Why this is not four more columns on `weatherDays`
    *
@@ -1797,7 +1797,7 @@ export default defineSchema({
    * `weatherDays` is **range-scanned corpus-wide** — by the D159 filter, by `sweepWeatherDayGaps`,
    * by `tierHasDay` — and Convex bills read I/O by the whole document. Adding ~96 numbers to a row
    * roughly triples it, so every one of those scans would pay for hourly data it never reads. That
-   * is the shape of the N6d access load that cost 105 GB and disabled the deployment.
+   * is the shape of the A06d access load that cost 105 GB and disabled the deployment.
    *
    * It is also the one table `storageHygiene` deliberately never sweeps, because a past observation
    * stays true for ever — so the growth would have been permanent as well as corpus-wide.
@@ -1883,7 +1883,7 @@ export default defineSchema({
     .index('by_cell_day', ['cellKey', 'dayMs']),
 
   /**
-   * **Outbound third-party API call counts, one row per provider per UTC day (N6h / D158).**
+   * **Outbound third-party API call counts, one row per provider per UTC day (A06h / D158).**
    *
    * D158 makes buying Open-Meteo's $319/yr plan conditional on *"sustained use above ~7,000
    * calls/day"* — a trigger that could not fire, because nothing in the weather path counted
@@ -1910,7 +1910,7 @@ export default defineSchema({
   }).index('by_provider_day', ['provider', 'dayMs']),
 
   /**
-   * Cached NWS active alerts (N6c B5, D74) — the advisory layer, kept strictly apart from the
+   * Cached NWS active alerts (A06c B5, D74) — the advisory layer, kept strictly apart from the
    * physics source.
    *
    * **One row per (state, alert), refreshed by a cron that polls five states.** Alerts are issued
@@ -1951,14 +1951,14 @@ export default defineSchema({
     authorId: v.id('profiles'),
     waterBodyId: v.id('waterBodies'),
     point: latLng, // representative point (geo index)
-    // When the skater **left the ice** — the primary sort key everywhere (D28; Phase 5 rename of
+    // When the skater **left the ice** — the primary sort key everywhere (D28; Phase 05 rename of
     // `skateTime`). The freshest read of the ice is the one from whoever got off latest.
     skateEndTime: v.number(),
-    // Optional — when they got *on* the ice. Duration is DERIVED (end − start), never stored (Phase 5).
+    // Optional — when they got *on* the ice. Duration is DERIVED (end − start), never stored (Phase 05).
     skateStartTime: v.optional(v.number()),
     // Point-derived location label, stamped at create from `point` (put-in pin / GPS start) via the
     // `adminAreas` resolver — so a multi-town/-state body shows WHICH side the skater put in from
-    // (Phase 5). Card reads "{body} · {town or county}, {state}". Optional ⇒ migration-free.
+    // (Phase 05). Card reads "{body} · {town or county}, {state}". Optional ⇒ migration-free.
     place: v.optional(
       v.object({
         town: v.optional(v.string()),
@@ -1966,7 +1966,7 @@ export default defineSchema({
         state: v.optional(v.string()),
       }),
     ),
-    // The named sub-area this report's `point` falls in (N2 / D60), stamped at create by the
+    // The named sub-area this report's `point` falls in (A02 / D60), stamped at create by the
     // smallest-containing rule (Decision 9) and re-stamped by `subAreas.restampParent` whenever the
     // parent's sub-areas are redrawn, renamed or delisted. **Flat, not a nested object**, so the
     // bounty gate can index `['subAreaId', 'moderationStatus', 'skateEndTime']` without a dotted
@@ -1976,7 +1976,7 @@ export default defineSchema({
     subAreaId: v.optional(v.id('waterBodySubAreas')),
     subAreaName: v.optional(v.string()),
     /**
-     * Every bay this report is a member of, primary first (N9 / D175) — the `subAreaId` above is the
+     * Every bay this report is a member of, primary first (A09 / D175) — the `subAreaId` above is the
      * **label** (finest place, the weather strip's point); this is the **membership** (every place
      * that contains it). Filled from the track's sampled points when the report is activity-sourced
      * — a skate that spends an hour in two bays lists both — and stored only when there is more
@@ -2021,7 +2021,7 @@ export default defineSchema({
     ),
     photoIds: v.array(v.id('photos')),
     notes: v.optional(v.string()),
-    // Per-report private-property opt-out (Phase 4, decision #7): when false, the map suppresses the
+    // Per-report private-property opt-out (Phase 04, decision #7): when false, the map suppresses the
     // precise put-in pin derived from this report's `point` but keeps the coarse `place` label — we
     // hide a marker, we never scrub location. Default true; optional ⇒ migration-free.
     showPutIn: v.optional(v.boolean()),
@@ -2037,7 +2037,7 @@ export default defineSchema({
     // boost-only) and NEVER hides the report (D3). Absent ⇒ no known conflict. **Symmetric** — both sides
     // of a disagreement carry it.
     conflicting: v.optional(v.boolean()),
-    // The escalation half of the contradiction signal (Phase 10 / D56 §7b) — set when this report is the
+    // The escalation half of the contradiction signal (Phase 10 / D56 §07-2) — set when this report is the
     // weather-unexplained, **un-corroborated minority** against a *more-corroborated* opposing report. Drives
     // the author's private `contradictionCount`; recomputed each settle, so a report that later earns
     // corroboration clears it (self-correcting, order-independent — never the corroborated majority). NOT a
@@ -2047,7 +2047,7 @@ export default defineSchema({
     createdAt: v.number(),
     updatedAt: v.number(),
     /**
-     * When the **author** last edited this report (N6f) — the `comments.editedAt` precedent, and the
+     * When the **author** last edited this report (A06f) — the `comments.editedAt` precedent, and the
      * only honest basis for an "· edited" byline.
      *
      * **Deliberately not `updatedAt`.** That field moves for reasons the author had nothing to do
@@ -2068,19 +2068,19 @@ export default defineSchema({
       'skateEndTime',
     ])
     // The sub-area-scoped reads (the bay feed, the bay bounty gate) moved onto the `reportSubAreas`
-    // join in N9 — a report can be a member of two bays, and an index over one `subAreaId` column
+    // join in A09 — a report can be a member of two bays, and an index over one `subAreaId` column
     // cannot see it under the second. The old `by_sub_area_moderation_and_skate_end_time` index
     // was dropped with them: an unread index is write amplification plus a trap.
     .index('by_author', ['authorId'])
     // Newest-first author history for the profile page, bounded by a `.take()` on skate-end time so a
     // prolific reporter's page never `.collect()`s an unbounded set (D13).
     .index('by_author_skate_end_time', ['authorId', 'skateEndTime'])
-    // The global cross-body newsfeed sort/paginate index — newest skate-end time first (Phase 5, D28).
+    // The global cross-body newsfeed sort/paginate index — newest skate-end time first (Phase 05, D28).
     // `moderationStatus` leads so `listFeed` filters the moderation gate *in* the index (only
     // `visible`, D32) rather than after `paginate`, which would let a page of all-hidden reports
     // return empty with `isDone: false` and strand the feed on its empty state.
     .index('by_moderation_and_skate_end_time', ['moderationStatus', 'skateEndTime'])
-    // Submission-time (not skate-time) day slices for the analytics rollup (Phase 7b). Deliberately
+    // Submission-time (not skate-time) day slices for the analytics rollup (Phase 07-2). Deliberately
     // NOT the skate-end index: an offline report syncs days after the skate, so "what landed today"
     // and "what ice was skated today" are different questions and the photo-orphan sweep needs the
     // former (a photo is attached at create, whatever the skate time claims).
@@ -2088,7 +2088,7 @@ export default defineSchema({
     .index('by_idempotency_key', ['idempotencyKey']), // offline-flush dedup (F2/D30)
 
   /**
-   * **A report's bay memberships, one row per (report, bay)** (N9 / D175) — the indexable copy of
+   * **A report's bay memberships, one row per (report, bay)** (A09 / D175) — the indexable copy of
    * `reports.subAreaIds`, because Convex cannot index an array and the bay-scoped feed and the bay
    * bounty gate must both find a spanning report under its *second* bay too. The
    * `parkingAreaBodies` argument, one table over.
@@ -2141,7 +2141,7 @@ export default defineSchema({
 
   hazards: defineTable({
     waterBodyId: v.id('waterBodies'),
-    // EXACTLY ONE type (changed from an array in Phase 9): per-type decay (D52), geometry-per-type
+    // EXACTLY ONE type (changed from an array in Phase 09a): per-type decay (D52), geometry-per-type
     // (D51) and the ridge_crossing verdict relabeling all need an unambiguous type. With an array,
     // "what decay tier is this?" has no answer — ambiguity exactly where the safety math must be
     // exact. Nuance goes in `description`, or in a second hazard.
@@ -2154,30 +2154,30 @@ export default defineSchema({
     // the proximity alert buffer. Type-aware default in @skating/core, user-adjustable.
     bufferMeters: v.optional(v.number()),
     bbox, // of the *footprint* (geometry grown by radius/buffer), for proximity prefiltering
-    // The footprint intersected with the water-body polygon, stored at create (Phase 9.5) so a big
+    // The footprint intersected with the water-body polygon, stored at create (Phase 09b) so a big
     // circle near shore can't imply danger across land / a neighbouring lake. Present ONLY when clipping
     // actually removed area; render, the stored bbox, AND the proximity/directional distance all read it
     // when set and fall back to the live footprint when absent — so it's migration-safe (existing rows
     // keep working, and are lazily recomputable) and the drawn halo can never drift from the measured one.
     clippedFootprint: v.optional(geoJson),
-    // The named sub-area this hazard's footprint centre falls in (N2 / D60) — same stamp, same
+    // The named sub-area this hazard's footprint centre falls in (A02 / D60) — same stamp, same
     // re-stamp job, same flat shape as `reports` above, so the hazard reporter line composes through
     // the one `formatLocationLine` helper the feed card uses.
     subAreaId: v.optional(v.id('waterBodySubAreas')),
     subAreaName: v.optional(v.string()),
     createdByUserId: v.id('profiles'),
-    // Mobile offline queue (Phase 9 offline / F2/D30): one client-generated key carried across every
+    // Mobile offline queue (Phase 09a offline / F2/D30): one client-generated key carried across every
     // flush retry, so a create whose ack was lost returns the same hazard instead of dropping a
     // second pin on the same spot. Omitted by web/online callers.
     idempotencyKey: v.optional(v.string()),
-    // The pin this skater was shown at draw time and told was a **different** hazard (N5c / D80).
+    // The pin this skater was shown at draw time and told was a **different** hazard (A05c / D80).
     // Recorded because the nudge promised not to argue: auto-merge is a strictly stronger claim than
     // the nudge's 25 m match, so without this a skater who tapped "no, this is different" could have
     // their pin silently merged a second later — the same argument, held quietly. A moderator can
     // still merge the pair by hand; what this blocks is the machine overruling a person who was
     // standing on the ice looking at it.
     dismissedDuplicateOf: v.optional(v.id('hazards')),
-    // MERGE — a fourth axis, and like the other three it means one specific thing (N5c / D80). Set when
+    // MERGE — a fourth axis, and like the other three it means one specific thing (A05c / D80). Set when
     // this pin was folded into another as a duplicate: the survivor carries the warning with the
     // **union** of both footprints, so a merge can never shrink warned area. Mirrors
     // `waterBodies.mergedIntoId` (D36) down to the tombstone-not-delete rule, and `resolveHazardSurvivor`
@@ -2198,7 +2198,7 @@ export default defineSchema({
     // because a ridge or lead often needs two angles; reuses the report photo pipeline (D31/D42).
     photoIds: v.array(v.id('photos')),
     status: literals(HAZARD_STATUSES), // LIFECYCLE: archived (not deleted) so it can resurface
-    // MODERATION — a separate axis from `status` on purpose (Phase 9). Archiving means the community
+    // MODERATION — a separate axis from `status` on purpose (Phase 09a). Archiving means the community
     // voted it healed; hiding means a moderator judged the pin bad. If a mod-hide looked like an
     // archive, abuse would be indistinguishable from a safety verdict (D3).
     moderationStatus: literals(MODERATION_STATUSES),
@@ -2206,7 +2206,7 @@ export default defineSchema({
     // PROVENANCE — set when a moderator promotes this hazard into a persistent `bodyFeatures` row
     // (D53). It records where the feature came from and **nothing else**.
     //
-    // It used to be a visibility axis, and the D53 amendment (N5c) is that it stopped being one: a
+    // It used to be a visibility axis, and the D53 amendment (A05c) is that it stopped being one: a
     // `bodyFeature` is a standing statement about the lake, a hazard is a sighting by a person on a
     // date, and promotion adds the first without deleting the second — in any season, before or after.
     // Hiding on this field rewrote past winters as winters in which nobody reported anything, blocked
@@ -2243,7 +2243,7 @@ export default defineSchema({
     // Phase 10 decay cron: sweep active hazards (across bodies) to refresh weather-adjusted decay,
     // **stalest first**. The trailing `weatherAdjustedAt` is what lets that sweep be capped without
     // starving anyone: on a plain `by_status` scan the cap always returns the same index prefix, so a
-    // hazard past it would never be refreshed at all, no matter how many ticks ran (N1, Greptile PR
+    // hazard past it would never be refreshed at all, no matter how many ticks ran (A01, Greptile PR
     // #27). Ascending, `undefined` sorts first — never-refreshed hazards ahead of stale ones — and a
     // refresh moves that hazard to the back of the queue.
     //
@@ -2256,8 +2256,8 @@ export default defineSchema({
       'moderationStatus',
       'weatherAdjustedAt',
     ])
-    .index('by_created_at', ['createdAt']) // per-day hazard volume + photo-orphan sweep (Phase 7b)
-    // The recurrence job's corpus walk (N5c / D77). `by_water_body` is creation-ordered and
+    .index('by_created_at', ['createdAt']) // per-day hazard volume + photo-orphan sweep (Phase 07-2)
+    // The recurrence job's corpus walk (A05c / D77). `by_water_body` is creation-ordered and
     // `by_water_body_status` is per body, so neither can answer "every hazard first reported inside
     // this four-season window" — which is the read the once-a-year pass is built on. Keyed on
     // `firstReportedAt` because that is the season clock (D63), the field nobody can move, and the
@@ -2269,16 +2269,16 @@ export default defineSchema({
     // out, so that read grows for the life of the app on the busiest lakes — a mutation whose read set
     // is a function of accumulated user-created rows, which is a transaction that eventually cannot
     // commit. With the range on the index the recompute is bounded by *four winters of one lake*
-    // instead. (Greptile, PR #35 — the same shape as N1's `listInViewport` and `listPromotionCandidates`
+    // instead. (Greptile, PR #35 — the same shape as A01's `listInViewport` and `listPromotionCandidates`
     // before it: the bound has to be in the index, not after it.)
     .index('by_water_body_first_reported', ['waterBodyId', 'firstReportedAt'])
-    .index('by_idempotency_key', ['idempotencyKey']) // offline-flush dedup (Phase 9 offline)
-    // The merge chain (N5c / D80): every pin folded into one survivor, which is what the union
+    .index('by_idempotency_key', ['idempotencyKey']) // offline-flush dedup (Phase 09a offline)
+    // The merge chain (A05c / D80): every pin folded into one survivor, which is what the union
     // footprint is recomputed from and what `unmerge` walks. An equality read on a field almost every
     // row leaves unset, so it costs nothing to carry and turns "what was merged into this?" from a
     // scan of the body's hazards into a lookup.
     .index('by_merged_into', ['mergedIntoHazardId']),
-  // NOTE: no spatial index for hazards (Phase 9 call 6). Hazards are only ever queried per body —
+  // NOTE: no spatial index for hazards (Phase 09a call 6). Hazards are only ever queried per body —
   // the map renders them for the selected lake, the mobile cache stores them per cached body, and the
   // proximity evaluator runs against that same cached set. A third spatial index
   // would re-enter the read-cap fragility that took PRs #10/#11 to fix on `listInViewport`, for no v1
@@ -2295,7 +2295,7 @@ export default defineSchema({
     .index('by_hazard', ['hazardId'])
     // One confirmation per user per hazard per window — re-confirming updates rather than stacking.
     .index('by_hazard_and_user', ['hazardId', 'userId'])
-    // **One verdict's holders, without reading the pin's whole argument** (N5c, Greptile PR #35).
+    // **One verdict's holders, without reading the pin's whole argument** (A05c, Greptile PR #35).
     // The recurrence pass needs "how many distinct users currently say this was never real", and read
     // it by collecting every vote on the hazard and reducing — which on a contested pin is a large,
     // unbounded read to answer a question about a handful of rows. Capping that read was worse than
@@ -2305,18 +2305,18 @@ export default defineSchema({
     // community rejected. Keyed on the verdict, the read is a handful of rows and exact.
     .index('by_hazard_and_verdict', ['hazardId', 'verdict'])
     // A user's confirmations across all hazards — the `Watchdog` badge counts distinct *others'*
-    // hazards this user has acted on (D50, Phase 6).
+    // hazards this user has acted on (D50, Phase 06).
     .index('by_user', ['userId'])
     // Per-day confirmation outcomes + age-at-confirmation, the empirical check on the D52 decay
-    // table (Phase 7b). Day-sliced so the rollup never re-reads the whole confirmation history.
+    // table (Phase 07-2). Day-sliced so the rollup never re-reads the whole confirmation history.
     .index('by_created_at', ['createdAt']),
 
   /**
-   * Cross-season hazard recurrence (N5c / D77, D78) — *this is what was reported here, and in how many
+   * Cross-season hazard recurrence (A05c / D77, D78) — *this is what was reported here, and in how many
    * of the last N winters.*
    *
    * **Precomputed, and the asymmetry with within-season clustering is about read bounds rather than
-   * taste.** `listForBody` already collects a body's active hazards in one bounded read (Phase 9 call
+   * taste.** `listForBody` already collects a body's active hazards in one bounded read (Phase 09a call
    * 6), so duplicate clustering is free there and can never go stale. The cross-season read is the
    * opposite: `hazards` never ages out, so "every hazard on this lake across four winters" is a query
    * that grows forever — which is exactly why `listPromotionCandidates` had to be capped at 500 rows
@@ -2372,7 +2372,7 @@ export default defineSchema({
     distinctAuthorCount: v.number(),
     suggestedFeatureType: v.optional(literals(BODY_FEATURE_TYPES)),
     priority: v.number(), // the ranking score (§C4) — a queue order for a human, never a probability
-    // The place phrase, from the medoid (N2/D60). Absent when the medoid sits in no named sub-area,
+    // The place phrase, from the medoid (A02/D60). Absent when the medoid sits in no named sub-area,
     // and then the advisory omits the phrase entirely rather than inventing geography.
     subAreaId: v.optional(v.id('waterBodySubAreas')),
     subAreaName: v.optional(v.string()),
@@ -2406,14 +2406,14 @@ export default defineSchema({
   })
     .index('by_water_body', ['waterBodyId'])
     // The ranked cross-lake queue (§7.2) — bounded by construction, since it reads this precomputed
-    // table and never touches `hazards` or `waterBodies` in bulk (the Phase 7b rule).
+    // table and never touches `hazards` or `waterBodies` in bulk (the Phase 07-2 rule).
     .index('by_computed_season_and_priority', ['computedForSeason', 'priority'])
     // The skater-facing read. `publiclyVisible` sits in the key so the bar is applied *at the index*
     // rather than after the read — the difference between "admin-only" and "admin-only unless you look".
     .index('by_water_body_public', ['waterBodyId', 'publiclyVisible']),
 
   /**
-   * The recurrence job's scratch queue (N5c / §C4).
+   * The recurrence job's scratch queue (A05c / §C4).
    *
    * The job has two phases and Convex allows **one `.paginate()` per function execution**, which makes
    * "discover the bodies, then process them" a hard structural requirement rather than a style choice.
@@ -2472,7 +2472,7 @@ export default defineSchema({
   // Springs/current, constrictions and bridges/narrows are weaker every season regardless of cold, and
   // some pressure ridges reform in the same place annually. Making users re-mark them is busywork and
   // a false-negative risk: an un-re-marked spring looks "gone". Promotion/demotion are admin actions
-  // (Phase 7 surface); v1 ships schema + rendering + the mutations.
+  // (Phase 07 surface); v1 ships schema + rendering + the mutations.
   bodyFeatures: defineTable({
     waterBodyId: v.id('waterBodies'),
     type: literals(BODY_FEATURE_TYPES),
@@ -2488,7 +2488,7 @@ export default defineSchema({
     promotedFromHazardId: v.optional(v.id('hazards')),
     active: v.boolean(), // demotion flips this off (reversible, never hard-deleted)
     createdAt: v.number(),
-    // The named bay the feature's footprint centre falls in (N9 / D175) — the hazard rule
+    // The named bay the feature's footprint centre falls in (A09 / D175) — the hazard rule
     // (`hazardCenter` → smallest containing), stamped at write and re-stamped by `restampParent`.
     // "Known outlet", never "outlet" (D103) — the bay view lists what the lake already knows.
     subAreaId: v.optional(v.id('waterBodySubAreas')),
@@ -2506,7 +2506,7 @@ export default defineSchema({
     .index('by_blocked', ['blockedId']),
 
   /**
-   * Corpus requests (N7b PR 2 / D106–D108, D179): a skater asking for a lake — to be activated,
+   * Corpus requests (A07b PR 2 / D106–D108, D179): a skater asking for a lake — to be activated,
    * admitted from a catalogue, restored, un-ruled, or taken down — and a moderator's answer.
    *
    * **A request is a proposal; a moderator admits** (D107). One row per ask, never deleted: a
@@ -2591,15 +2591,15 @@ export default defineSchema({
     note: v.optional(v.string()),
     status: literals(FLAG_STATUSES),
     resolvedByUserId: v.optional(v.id('profiles')), // a moderator or admin (D37)
-    // Auto-flag bundling (N2) — see `lib/autoFlag.ts`. A recurring system-generated problem bumps a
+    // Auto-flag bundling (A02) — see `lib/autoFlag.ts`. A recurring system-generated problem bumps a
     // count on its open row instead of filing an identical one; a recurrence *after* a resolution
     // files a NEW row carrying the count forward and pointing back, because flipping a terminal row
-    // open again would retroactively change a past day's flag-resolution count in the 7b rollup that
+    // open again would retroactively change a past day's flag-resolution count in the 07-2 rollup that
     // `by_status_resolved_at` serves. All optional ⇒ migration-free; absent `occurrences` reads as 1.
     occurrences: v.optional(v.number()),
     lastOccurrenceAt: v.optional(v.number()),
     supersedesFlagId: v.optional(v.id('contentFlags')),
-    // Who filed it (N8/B3): a person, or the system crossing a threshold. Absent on rows from before
+    // Who filed it (A08/B3): a person, or the system crossing a threshold. Absent on rows from before
     // the field and read as `auto` — the fail-quiet direction for the one reader that cares
     // (`content_flag_resolved` notifies only `user` flaggers). See `FLAG_ORIGINS`.
     origin: v.optional(literals(FLAG_ORIGINS)),
@@ -2613,7 +2613,7 @@ export default defineSchema({
     // by target — so this index exists solely so that sweep can be a bounded equality read instead of
     // a scan of a table that grows forever.
     .index('by_flagger', ['flaggerId'])
-    // Auto-flag bundling's lookup (N2): "is there an OPEN flag for this (target, reason), and what
+    // Auto-flag bundling's lookup (A02): "is there an OPEN flag for this (target, reason), and what
     // was the most recent terminal one?" `by_target` alone can't answer that under a cap, and why is
     // worth writing down — it's the `lib/scan.ts` trap in a place where the cap *decides* something.
     // Terminal rows accumulate forever on a chronically-flagged target, and they pile up on **both
@@ -2624,7 +2624,7 @@ export default defineSchema({
     // the decision at all — `reason` earns its place because open rows are NOT one-per-target (user
     // flags dedupe per flagger, so a much-flagged report carries one per reporter).
     .index('by_target_status_reason', ['targetType', 'targetId', 'status', 'reason'])
-    // Analytics (Phase 7b): flags *filed* on a day, and flags *resolved* on a day. The resolution
+    // Analytics (Phase 07-2): flags *filed* on a day, and flags *resolved* on a day. The resolution
     // index is keyed by status first so the rollup reads only terminal rows in the day's range —
     // `actioned`/`dismissed` accumulate forever, and a scan of all of them would grow without bound.
     .index('by_created_at', ['createdAt'])
@@ -2632,7 +2632,7 @@ export default defineSchema({
 
   moderationActions: defineTable({
     /**
-     * The moderator/admin who acted — **absent when the system did** (N5c / D80).
+     * The moderator/admin who acted — **absent when the system did** (A05c / D80).
      *
      * Auto-merge writes rows here, deliberately: a mechanism that folds one safety pin into another
      * without leaving an audit row is a mechanism nobody can check, and this one is explicitly meant
@@ -2653,10 +2653,10 @@ export default defineSchema({
   })
     .index('by_target', ['targetType', 'targetId'])
     .index('by_actor', ['actorId'])
-    // The 7b rollup's day slice (N5c). Auto-merge is the one mechanism that changes a row without a
+    // The 07-2 rollup's day slice (A05c). Auto-merge is the one mechanism that changes a row without a
     // human, and its unmerge rate is the only empirical check on the bar — which means counting merges
     // per day, which means reading this table by time. Without the index that is a scan of an
-    // append-only audit log, i.e. the exact unbounded-growth shape the Phase 7b rule forbids.
+    // append-only audit log, i.e. the exact unbounded-growth shape the Phase 07-2 rule forbids.
     .index('by_created_at', ['createdAt']),
 
   supportTickets: defineTable({
@@ -2683,7 +2683,7 @@ export default defineSchema({
     .index('by_status', ['status'])
     // Rate-limit lookup: how many tickets this submitter filed inside the window.
     .index('by_clerk_user_created', ['clerkUserId', 'createdAt'])
-    // Analytics (Phase 7b): volume by category on a day, and resolution latency for tickets closed
+    // Analytics (Phase 07-2): volume by category on a day, and resolution latency for tickets closed
     // that day — same bounded-by-status shape as `contentFlags` above.
     .index('by_created_at', ['createdAt'])
     .index('by_status_resolved_at', ['status', 'resolvedAt']),
@@ -2691,7 +2691,7 @@ export default defineSchema({
   bounties: defineTable({
     requesterId: v.id('profiles'),
     waterBodyId: v.id('waterBodies'),
-    // Optionally narrowed to a named sub-area (N2 / D60). "Someone skate Malletts Bay" is a
+    // Optionally narrowed to a named sub-area (A02 / D60). "Someone skate Malletts Bay" is a
     // materially different ask from "someone skate Champlain," and that difference is most of why
     // bounties on a giant are weak today: a report from the far end fulfilled them.
     //
@@ -2704,7 +2704,7 @@ export default defineSchema({
     status: literals(BOUNTY_STATUSES),
     rewardPoints: v.number(), // cosmetic (D17)
     fulfillingReportIds: v.array(v.id('reports')),
-    // When the requester's helpful thumb flipped this to `fulfilled` (Phase 7b). Stamped so the
+    // When the requester's helpful thumb flipped this to `fulfilled` (Phase 07-2). Stamped so the
     // time-to-fulfillment histogram — the chart that says whether DEFAULT_BOUNTY_LIFETIME_MS is
     // anywhere near the real answer time — has an end point; `status` alone only says *that* it
     // happened. Optional ⇒ migration-free, and forward-only: bounties fulfilled before this shipped
@@ -2714,7 +2714,7 @@ export default defineSchema({
     expiresAt: v.number(),
   })
     .index('by_water_body_status', ['waterBodyId', 'status'])
-    // Trailing-window outcome funnel for the analytics rollup (Phase 7b).
+    // Trailing-window outcome funnel for the analytics rollup (Phase 07-2).
     .index('by_created_at', ['createdAt'])
     // Global expiry sweep (`open → expired` past `expiresAt`, decision 12). The body-keyed index above
     // can't drive a global sweep without a full scan, so the cron reads `by_status_expires`.
@@ -2760,7 +2760,7 @@ export default defineSchema({
      */
     orphanCandidate: v.optional(v.boolean()),
     /**
-     * The same scratch mark for `photoReconcile`'s **season-expiry** mode (D66/N5a) — a departed
+     * The same scratch mark for `photoReconcile`'s **season-expiry** mode (D66/A05a) — a departed
      * skater's photos, where the question is "is this named by a *hazard*" rather than "is this named
      * by anything".
      *
@@ -2777,12 +2777,12 @@ export default defineSchema({
     seasonExpiryCandidate: v.optional(v.boolean()),
   })
     .index('by_uploader', ['uploaderId'])
-    // Day-sliced orphan sweep (Phase 7b): a photo abandoned between upload and attach is invisible
+    // Day-sliced orphan sweep (Phase 07-2): a photo abandoned between upload and attach is invisible
     // today, and the number decides whether the deferred GC cron is worth building.
     .index('by_created_at', ['createdAt']),
 
   /**
-   * A requested data export (D33/D62, N3) — one row per request, the bundle itself in file storage.
+   * A requested data export (D33/D62, A03) — one row per request, the bundle itself in file storage.
    *
    * A **table** rather than a fire-and-forget action because assembling the bundle is asynchronous and
    * fallible, and the user needs somewhere to look. It's also the only durable record that a bundle
@@ -2799,7 +2799,7 @@ export default defineSchema({
     storageId: v.optional(v.string()), // set once the bundle lands
     sizeBytes: v.optional(v.number()),
     photoCount: v.optional(v.number()), // photos whose bytes are embedded
-    // Photos left out because the bundle hit its byte budget. Surfaced, never silent — the Phase 7
+    // Photos left out because the bundle hit its byte budget. Surfaced, never silent — the Phase 07
     // "no silent caps" rule applies hardest to a file someone will treat as their complete record.
     omittedPhotoCount: v.optional(v.number()),
     error: v.optional(v.string()),
@@ -2821,7 +2821,7 @@ export default defineSchema({
     .index('by_expires_at', ['expiresAt']),
 
   /**
-   * The inbox (N8 / D167). One row per delivered notification; **only the queue flush inserts here**
+   * The inbox (A08 / D167). One row per delivered notification; **only the queue flush inserts here**
    * (D169), so a push or email transport has one place to hang off rather than six.
    *
    * `payload` stays `v.any()` deliberately. Its shape is typed at the boundary instead —
@@ -2830,7 +2830,7 @@ export default defineSchema({
    * the payloads were typed carry older shapes, nobody has ever seen them (there was no reader), and
    * the season purge retires them; a validator here would have forced a migration for the privilege.
    *
-   * Retention is the season boundary (N8/A5): `storageHygiene.purgeLastSeasonNotifications` deletes
+   * Retention is the season boundary (A08/A5): `storageHygiene.purgeLastSeasonNotifications` deletes
    * rows created before the current season's start, read or not, daily off `by_created_at`. Rows
    * otherwise die only with the account (`accountDeletion.ts`). The inbox is not an archive.
    */
@@ -2840,7 +2840,7 @@ export default defineSchema({
     payload: v.any(), // typed at the boundary — see the table note
     readAt: v.optional(v.number()),
     createdAt: v.number(),
-    // Transport stamps (N8 PR 3): when a push / an email actually went out for this row. Written by
+    // Transport stamps (A08 PR 3): when a push / an email actually went out for this row. Written by
     // the delivery action after the send, read by it before — so a retried batch never sends twice.
     // Absent on rows that went nowhere (channel off, no token, type not email-eligible).
     pushedAt: v.optional(v.number()),
@@ -2848,10 +2848,10 @@ export default defineSchema({
   })
     .index('by_user', ['userId'])
     // The unread badge: `eq(userId).eq(readAt, undefined)`. An index on an optional field is not
-    // sparse and `undefined` sorts first — but that trap bites **range** bounds (the N3 finalize
+    // sparse and `undefined` sorts first — but that trap bites **range** bounds (the A03 finalize
     // bug), and this is an **equality**, which is the shape that behaves.
     .index('by_user_read', ['userId', 'readAt'])
-    // The season purge (N8/A5): `lt(createdAt, seasonStart)` across every user. `createdAt` is
+    // The season purge (A08/A5): `lt(createdAt, seasonStart)` across every user. `createdAt` is
     // required, so the range is honest.
     .index('by_created_at', ['createdAt']),
 
@@ -2863,14 +2863,14 @@ export default defineSchema({
     createdAt: v.number(),
   })
     .index('by_user', ['userId'])
-    // Count a report's corroborators for the recommended feed (Phase 6 Step 5): `report_corroborated`
+    // Count a report's corroborators for the recommended feed (Phase 06 Step 5): `report_corroborated`
     // rows carry `refId = the corroborated report`, so a per-ref lookup tallies them without a scan.
     .index('by_ref', ['refId'])
-    // Point-source composition over a trailing window (Phase 7b) — the chart that says whether
+    // Point-source composition over a trailing window (Phase 07-2) — the chart that says whether
     // POINT_WEIGHTS lets volume masquerade as trust.
     .index('by_created_at', ['createdAt']),
 
-  // Place-based curation (Phase 4, decision #1) — the D13 stand-in for the removed people-follow
+  // Place-based curation (Phase 04, decision #1) — the D13 stand-in for the removed people-follow
   // graph. A user favorites specific water bodies: those reports notify by default, boost + badge in
   // the feed, and highlight on the map. Indexed both directions — `by_user` for the viewer's set,
   // `by_water_body` for the notification fan-out ("who favorited this lake?").
@@ -2878,7 +2878,7 @@ export default defineSchema({
     userId: v.id('profiles'),
     waterBodyId: v.id('waterBodies'),
     /**
-     * A favorite of one named bay rather than the whole lake (N9 / D175). A bay favorite still
+     * A favorite of one named bay rather than the whole lake (A09 / D175). A bay favorite still
      * carries the parent's `waterBodyId`, so the notification fan-out's one `by_water_body` scan
      * finds both audiences; it then keeps this row only for reports whose membership includes the
      * bay. Wanting to hear about Malletts Bay is a different statement from wanting all of
@@ -2895,9 +2895,9 @@ export default defineSchema({
     // pattern), and it is exactly what makes the lake row and each bay row distinct entries.
     .index('by_user_water_body_sub_area', ['userId', 'waterBodyId', 'subAreaId']),
 
-  // Routable put-in markers (Phase 4, decision #7). `derived` markers are materialized by clustering
+  // Routable put-in markers (Phase 04, decision #7). `derived` markers are materialized by clustering
   // visible report points (approximate — a report `point` can be mid-lake); `official` markers are
-  // admin-set (accurate, priority styling), placed from the lake editor's Put-ins tool (N6f).
+  // admin-set (accurate, priority styling), placed from the lake editor's Put-ins tool (A06f).
   // A moderator `hide` writes a `hidden` row at the coord so the suppression outlives
   // re-clustering (decision #7). Indexed by body for the per-lake marker list + directions target.
   putIns: defineTable({
@@ -2909,7 +2909,7 @@ export default defineSchema({
     createdByUserId: v.optional(v.id('profiles')), // the admin/mod who set official / hid it
     createdAt: v.number(),
 
-    // ── N6d (D72): the access layer ───────────────────────────────────────────────────────────────
+    // ── A06d (D72): the access layer ───────────────────────────────────────────────────────────────
 
     /**
      * OSM's own name for the feature — *"Lake Fairlee Boat Ramp"*, a state fishing access area, a town
@@ -2965,7 +2965,7 @@ export default defineSchema({
 
     /**
      * The line the walk follows, parking → put-in, simplified to `APPROACH_PATH_TOLERANCE_M`
-     * (N6e Workstream 0).
+     * (A06e Workstream 0).
      *
      * **Only ever present on a routed hike-in leg**, and both halves of that are deliberate:
      *
@@ -2973,11 +2973,11 @@ export default defineSchema({
      *   itself — *"at least 900 m"* — but a line drawn on a map cannot, and a crow-flies segment
      *   through the woods would look exactly like the routed ones beside it.
      * - **Hike-in**, because below `SHORT_WALK_MAX_M` the path is a few metres between a car and a
-     *   bank: invisible at the zoom the drawer uses, invisible inside N6e's mask buffer, and paid for
+     *   bank: invisible at the zoom the drawer uses, invisible inside A06e's mask buffer, and paid for
      *   on every read of the row.
      *
-     * Two consumers, and the second is why this field exists at all: the clients draw it, and N6e's
-     * reveal buffers it into the mask that clips the imagery to the lake **and the way in**. N6d had
+     * Two consumers, and the second is why this field exists at all: the clients draw it, and A06e's
+     * reveal buffers it into the mask that clips the imagery to the lake **and the way in**. A06d had
      * ORS's GeoJSON response in hand and read only `distance` and `ascent` off it, so recovering
      * these cost a re-route of every hike-in leg against a 2,000/day quota — which is the note worth
      * leaving here: the geometry is free at request time and expensive at any other.
@@ -2989,7 +2989,7 @@ export default defineSchema({
      *
      * **The kind itself is never stored.** It is a pure function of `approachMeters`
      * (`approachKindFor`), so persisting it would be a cached derivation that goes stale the moment a
-     * re-route changes the distance — the N6a lesson about a second copy of a ladder, in miniature.
+     * re-route changes the distance — the A06a lesson about a second copy of a ladder, in miniature.
      * What *is* stored is a human disagreeing with the derivation, which no function can recompute.
      *
      * Also the field the D144 assertion gate writes: above `HIKE_IN_ASSERT_M` the UI requires the
@@ -2997,14 +2997,14 @@ export default defineSchema({
      */
     approachKindOverride: v.optional(literals(APPROACH_KINDS)),
     /**
-     * What the sign at *this launch* says (N6e) — hours posted on the gate, not on the lake.
+     * What the sign at *this launch* says (A06e) — hours posted on the gate, not on the lake.
      *
      * Separate from the body's rule because they constrain different things and are never merged: a
      * reservoir open around the clock with one launch shut at dusk is not a reservoir shut at dusk.
      */
     postedAccess: v.optional(postedAccess),
     /**
-     * The named bay this launch serves (N9 / D175), tagged at write and re-stamped by
+     * The named bay this launch serves (A09 / D175), tagged at write and re-stamped by
      * `subAreas.restampParent`. **By distance, not containment**: put-ins are snapped *to the
      * shoreline*, so point-in-polygon is a coin flip at the edge — a launch within
      * `SUB_AREA_PUT_IN_TOLERANCE_M` of a bay's outline belongs to it, smallest bay winning (the
@@ -3014,22 +3014,22 @@ export default defineSchema({
     subAreaId: v.optional(v.id('waterBodySubAreas')),
   })
     .index('by_water_body', ['waterBodyId'])
-    // Idempotent OSM upsert (N6d B3), mirroring `waterBodies.by_external_id`.
+    // Idempotent OSM upsert (A06d B3), mirroring `waterBodies.by_external_id`.
     .index('by_external_id', ['externalId'])
-    // A bay's own launches (N9) — the drive-time coordinate and the bay view's access list. `eq()`
+    // A bay's own launches (A09) — the drive-time coordinate and the bay view's access list. `eq()`
     // only; an optional-field index is not sparse.
     .index('by_sub_area', ['subAreaId'])
     // Every access point one uploader has attached a photo to — the third arm of the orphan-GC
-    // reference scan (N3 / `lib/photoOrphans`). Without it the sweep would have to scan the whole
+    // reference scan (A03 / `lib/photoOrphans`). Without it the sweep would have to scan the whole
     // table to decide whether one person's photo is referenced, and the alternative it would fall
     // back to is deleting it.
     .index('by_created_by', ['createdByUserId']),
 
   /**
-   * Where the car goes (N6d / D72) — modelled apart from `putIns`, and many-to-many with bodies.
+   * Where the car goes (A06d / D72) — modelled apart from `putIns`, and many-to-many with bodies.
    *
-   * **Apart**, because `putIns` is load-bearing across drive-time bands, the notification fan-out, N3
-   * deletion and the Phase 5 feed: generalizing it into an `accessPoints` table with a `kind`
+   * **Apart**, because `putIns` is load-bearing across drive-time bands, the notification fan-out, A03
+   * deletion and the Phase 05 feed: generalizing it into an `accessPoints` table with a `kind`
    * discriminator is cleaner on paper and puts five other systems on a metadata phase's critical path.
    *
    * **Many-to-many**, because a trailhead lot serving three ponds is normal in the Northeast (D72
@@ -3050,7 +3050,7 @@ export default defineSchema({
     createdByUserId: v.optional(v.id('profiles')),
     createdAt: v.number(),
     /**
-     * What the sign on *this lot* says (N6e) — and the case that forced rules onto three tables
+     * What the sign on *this lot* says (A06e) — and the case that forced rules onto three tables
      * rather than one: a lot shared with a business, barred during business hours, while the lake and
      * the other two lots serving it are unrestricted. Hanging that on the body would be a false claim
      * about both.
@@ -3061,7 +3061,7 @@ export default defineSchema({
     .index('by_created_by', ['createdByUserId']),
 
   /**
-   * Which bodies a parking area serves (N6d / D72 amendment) — a join table, and it has to be one.
+   * Which bodies a parking area serves (A06d / D72 amendment) — a join table, and it has to be one.
    *
    * The plan's field sketch put a plural `waterBodyIds` array on `parkingAreas`. That stores the fact
    * but cannot answer the question every read actually asks: **"what parking serves this lake?"**
@@ -3069,7 +3069,7 @@ export default defineSchema({
    * the `listInViewport` failure, on a table that will grow with the corpus.
    *
    * So the association is rows, indexed both directions, and the array is **not** kept alongside them:
-   * two copies of one fact is what N7 spent a phase undoing.
+   * two copies of one fact is what A07a spent a phase undoing.
    *
    * `inferred` records how the association was made, and it is the D72 amendment written into the
    * data. An OSM-inferred link is bounded by `PARKING_INFER_RADIUS_M` and may be re-derived away by
@@ -3103,7 +3103,7 @@ export default defineSchema({
     .index('by_parking_area_water_body', ['parkingAreaId', 'waterBodyId']),
 
   /**
-   * "Temporarily inaccessible" as a decaying community claim (N6d / D73).
+   * "Temporarily inaccessible" as a decaying community claim (A06d / D73).
    *
    * A free-text seasonal note is correct the day it is written and wrong by spring, and nothing in the
    * system knows the difference — because nothing is ever asked. So a blocker is modelled like a
@@ -3133,7 +3133,7 @@ export default defineSchema({
     note: v.optional(v.string()),
     createdByUserId: v.id('profiles'),
     createdAt: v.number(),
-    /** The N5a season this belongs to, from `createdAt`. What the hard-expire is measured against. */
+    /** The A05a season this belongs to, from `createdAt`. What the hard-expire is measured against. */
     season: v.number(),
     /**
      * When this lapses — `min(TTL, season end)`, reset by each confirmation.
@@ -3204,11 +3204,11 @@ export default defineSchema({
      * depends on a prefix that excludes the exempt rows by construction.
      */
     .index('by_status_expires_at', ['status', 'expiresAt'])
-    // A departing user's alerts (N3/D62), and the author-side half of the orphan-photo scan.
+    // A departing user's alerts (A03/D62), and the author-side half of the orphan-photo scan.
     .index('by_author', ['createdByUserId']),
 
   /**
-   * Photos of an access point (N6d Workstream D / D88) — *"is this the right dirt road"*.
+   * Photos of an access point (A06d Workstream D / D88) — *"is this the right dirt road"*.
    *
    * ## Why this is a join table and not a `photoIds` array on the access point
    *
@@ -3234,7 +3234,7 @@ export default defineSchema({
    *
    * Report and hazard photos purge at season end (D66) because they document **conditions**, which
    * expire. This documents **infrastructure**, which does not — a parking lot looks the same next
-   * November. So these are exempt from the seasonal purge while staying inside N3 deletion under the
+   * November. So these are exempt from the seasonal purge while staying inside A03 deletion under the
    * D62 second amendment's redact-don't-erase rule: a departing skater's photo of a gravel pull-off is
    * reassigned to anonymous, not destroyed. Erasing it would degrade the map for everyone else to no
    * privacy benefit, and there is no personal information in a photograph of a pull-off.
@@ -3248,7 +3248,7 @@ export default defineSchema({
     uploaderId: v.id('profiles'),
     createdAt: v.number(),
   })
-    // The orphan-GC and account-deletion reference scan (N3). Without it a photo attached here is
+    // The orphan-GC and account-deletion reference scan (A03). Without it a photo attached here is
     // invisible to the only query that decides whether it may be deleted.
     .index('by_uploader', ['uploaderId'])
     .index('by_put_in', ['putInId'])
@@ -3257,7 +3257,7 @@ export default defineSchema({
     .index('by_photo', ['photoId']),
 
   /**
-   * One skater's latest word on one access alert (N6d / D73).
+   * One skater's latest word on one access alert (A06d / D73).
    *
    * **One row per user per alert** is the invariant that makes confirmation idempotent: a queued
    * confirmation replayed on flush updates the same row and re-derives the same counts, so a lost ack
@@ -3275,16 +3275,16 @@ export default defineSchema({
     .index('by_alert', ['accessAlertId'])
     // Point lookup + uniqueness for the upsert (one vote per user×alert).
     .index('by_alert_user', ['accessAlertId', 'userId'])
-    // A departing user's votes (N3/D62).
+    // A departing user's votes (A03/D62).
     .index('by_user', ['userId']),
 
-  // Outbound-notification coalescing queue (Phase 4, decision #4). `reports.create` enqueues one row
+  // Outbound-notification coalescing queue (Phase 04, decision #4). `reports.create` enqueues one row
   // per candidate recipient×bucket; a row coalesces per `(user, body, kind)` (bumping `count` +
   // `latestReportId` instead of stacking). The `flushNotificationQueue` cron drains rows whose
   // `flushAfter` has passed — the 8pm-ET digest is just a `flushAfter` set to the next 8pm; favorites/
   // great use a short debounce. `coalesceKey` seeds the eventual APNs collapse-id / Android tag.
   //
-  // **N8 / D169 widened this into the only path into `notifications`.** The actor-triggered types
+  // **A08 / D169 widened this into the only path into `notifications`.** The actor-triggered types
   // (thumbs, corroborations, comments, hazard lifecycle, flag verdicts, bounties) used to insert
   // directly; now they enqueue with a short settle window and a `trigger` the flush re-reads, so a
   // retracted thumb or a deleted comment never becomes a notification about something that isn't
@@ -3311,7 +3311,7 @@ export default defineSchema({
 
   /**
    * Expo push tokens — one row per (person, device) that has granted notification permission and
-   * registered (N8 PR 3). The token is the address; `disabledAt` is set when Expo reports
+   * registered (A08 PR 3). The token is the address; `disabledAt` is set when Expo reports
    * `DeviceNotRegistered` (the app was uninstalled, or the token rotated) so a dead address stops
    * costing a send. A person can hold several: a phone and a tablet each register their own. Rows
    * die with the account.
@@ -3329,13 +3329,13 @@ export default defineSchema({
     .index('by_token', ['token']),
 
   // ───────────────────────────────────────────────────────────────────────────
-  // Analytics (Phase 7b / D37). Two tables, shaped to keep every chart's read cost independent of
+  // Analytics (Phase 07-2 / D37). Two tables, shaped to keep every chart's read cost independent of
   // the corpus — the `listInViewport` lesson (PRs #10/#11) applied before it can bite: charts read
   // pre-aggregated rows, never the live corpus. See `@skating/core` `metrics.ts` for the vocabulary.
   // ───────────────────────────────────────────────────────────────────────────
 
   /**
-   * One row per **bounty-create attempt**, appended by the create gate (Phase 7b, forward-only).
+   * One row per **bounty-create attempt**, appended by the create gate (Phase 07-2, forward-only).
    *
    * The rejections are the point. `bounties.create` decides whether a lake already has fresh eyes by
    * comparing each recent report's age against a window that stretches with the author's trust and
@@ -3366,7 +3366,7 @@ export default defineSchema({
     /** Did the weather pass clear a report that would otherwise have suppressed this attempt (D56)? */
     weatherReopened: v.boolean(),
     /**
-     * The open-bounty cap actually applied to this attempt (N2). Recorded so 7b's cap-hit-rate chart
+     * The open-bounty cap actually applied to this attempt (A02). Recorded so 07-2's cap-hit-rate chart
      * can't confuse "the global cap is too tight" with "this one user is restricted" — without it, a
      * handful of restricted users would read as evidence to loosen the cap for everyone. Absent on
      * rows written before the per-user limit existed.
@@ -3378,7 +3378,7 @@ export default defineSchema({
     .index('by_water_body', ['waterBodyId']),
 
   /**
-   * Per-user rate-limit bookkeeping for the client analytics signal (Phase 7b). `recordClientSignal`
+   * Per-user rate-limit bookkeeping for the client analytics signal (Phase 07-2). `recordClientSignal`
    * is the one metric a browser reports directly (the future-skate rejection the server never sees),
    * so — like `supportTickets` — it needs a per-submitter window cap to keep one caller from inflating
    * an advisory chart. One row per accepted bump; the daily prune drops rows past the window, so this
@@ -3414,7 +3414,7 @@ export default defineSchema({
 
   /**
    * One row per ETL run — the durable version of the summary every loader used to print to a
-   * terminal that scrolls (N6c Workstream F2).
+   * terminal that scrolls (A06c Workstream F2).
    *
    * **The question this exists to answer is "how did the last import go", and the sharper one
    * underneath it: "which bodies did it decline, and why".** Every loader we have (`etl`,

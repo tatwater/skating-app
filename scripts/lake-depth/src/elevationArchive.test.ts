@@ -1,5 +1,5 @@
 /**
- * The elevation archive's rules — the incremental story, and the datum check D101 demanded (N7-2).
+ * The elevation archive's rules — the incremental story, and the datum check D101 demanded (A07a-2).
  */
 
 import { describe, expect, it } from 'vitest';

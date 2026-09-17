@@ -144,7 +144,7 @@ describe('DataExportView', () => {
     expect(screen.getByRole('button', { name: /preparing your export/i })).toBeDisabled();
   });
 
-  /** No silent caps (Phase 7) — hardest to skip on a file someone treats as their complete record. */
+  /** No silent caps (Phase 07) — hardest to skip on a file someone treats as their complete record. */
   it('says so when photos were left out of a bundle', () => {
     render(<DataExportView exports={[{ ...ready, omittedPhotoCount: 3 }]} onRequest={vi.fn()} />);
     expect(screen.getByText(/3 photos too large to include/i)).toBeInTheDocument();

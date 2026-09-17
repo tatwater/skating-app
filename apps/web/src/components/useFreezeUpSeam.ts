@@ -1,5 +1,5 @@
 /**
- * Drawing the hairline where two frames of one lake meet (N6e §C4).
+ * Drawing the hairline where two frames of one lake meet (A06e §C4).
  *
  * ## Why the line is drawn at all, when the rasters already abut
  *

@@ -1,10 +1,10 @@
 /**
- * Water-body favorites (Phase 4, decision #1) — place-based curation, the D13 stand-in for the
+ * Water-body favorites (Phase 04, decision #1) — place-based curation, the D13 stand-in for the
  * removed people-follow graph. A user favorites specific water bodies; those reports notify by
  * default (see `notifications.ts`), boost + badge in the feed (`reports.listFeed`), and highlight on
  * the map. You subscribe to *lakes*, not people.
  *
- * **Since N9 a favorite can name a bay** (D175). A bay favorite still carries the parent's
+ * **Since A09 a favorite can name a bay** (D175). A bay favorite still carries the parent's
  * `waterBodyId`, so the fan-out's one `by_water_body` scan finds both audiences; it then applies
  * only to reports whose *membership* includes the bay. Wanting to hear about Malletts Bay is a
  * different statement from wanting all of Champlain, and only the user can make it — which is why
@@ -26,7 +26,7 @@ import { isListed } from './lib/listing';
 import { subAreaListed } from './subAreas';
 
 /**
- * A viewer's favorites, split the way the two consumers need them (N9): lake favorites by body id,
+ * A viewer's favorites, split the way the two consumers need them (A09): lake favorites by body id,
  * bay favorites by bay id. The feed boost asks "is this *report* favorited" (`isFavoriteReport` in
  * `@skating/core`), which a bay favorite answers only for reports inside the bay; the map highlight
  * and discovery ask "is this *lake* favorited", which either kind answers — see
@@ -57,7 +57,7 @@ export async function loadFavorites(
 /**
  * The bodies a user has any favorite on — the lake itself, or a bay of it. The read behind the map
  * highlight and weather discovery's favorite chip, both of which are about the *lake*: a bay only
- * draws at z ≥ 10, so the parent is what gets pinned (N9 kickoff, favorites UX).
+ * draws at z ≥ 10, so the parent is what gets pinned (A09 kickoff, favorites UX).
  */
 export async function loadFavoriteBodyIds(
   ctx: QueryCtx,
@@ -87,7 +87,7 @@ async function favoriteRow(
 }
 
 /**
- * Toggle a water body — or one named bay of it (N9) — as a favorite for the caller (idempotent per
+ * Toggle a water body — or one named bay of it (A09) — as a favorite for the caller (idempotent per
  * state). Returns the resulting `favorited` boolean so the client can flip the heart without a
  * refetch. Rejects a body that isn't listed (removed/merged/rejected) so you can't favorite a
  * delisted lake, and a bay that isn't live on *this* body — the same cross-lake pairing check the
@@ -105,7 +105,7 @@ export const toggle = mutation({
     }
     const body = await ctx.db.get(waterBodyId);
     // A dormant lake can be favourited — *"if you favourited it, you know something we don't"*, and
-    // a favourite is what keeps it from going dormant again. A removed one cannot (N7b): a takedown
+    // a favourite is what keeps it from going dormant again. A removed one cannot (A07b): a takedown
     // is the one standing a favourite must not quietly subscribe someone to.
     if (!body || !isListed(body) || standingOf(body).standing === 'removed') {
       throw new ConvexError('Water body not found');

@@ -1,5 +1,5 @@
 /**
- * What a *cluster* of duplicate hazards knows, as opposed to what one row knows (N5c / D80).
+ * What a *cluster* of duplicate hazards knows, as opposed to what one row knows (A05c / D80).
  *
  * Duplicates split every gate that decides something. Three people marking the same ridge produce
  * three rows, three confirm loops and three freshness clocks, so a hazard the community is actively

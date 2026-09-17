@@ -1,5 +1,5 @@
 /**
- * Matching a third-party depth record to one of our water bodies (N6a).
+ * Matching a third-party depth record to one of our water bodies (A06a).
  *
  * **Why this exists as its own module, after the first real run.** The join was a single rule:
  * *"the source's point must be strictly inside our polygon"*, with a loose area gate behind it. That
@@ -9,7 +9,7 @@
  * same size, no match, because HydroLAKES' representative point and our polygon come from different
  * water masks drawn on different dates.
  *
- * This is the `centroid`-is-not-a-centroid finding from N6c-1 arriving from the other direction. A
+ * This is the `centroid`-is-not-a-centroid finding from A06c-1 arriving from the other direction. A
  * source's "point on the lake" is a point on **its** lake.
  *
  * **The rule that keeps the fallback safe: it is STRICTER than the primary path, never looser.**

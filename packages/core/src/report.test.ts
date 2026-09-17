@@ -39,7 +39,7 @@ describe('validateReportInput — valid reports', () => {
     expect(result.normalized.skateStartTime).toBeUndefined();
   });
 
-  it('accepts and preserves an optional start time before the end (Phase 5)', () => {
+  it('accepts and preserves an optional start time before the end (Phase 05)', () => {
     const result = validateReportInput(base({ skateStartTime: NOW - 60 * 60 * 1000 }), CTX);
     expect(result.ok).toBe(true);
     if (!result.ok) return;
@@ -153,7 +153,7 @@ describe('validateReportInput — required fields', () => {
     });
   });
 
-  it('rejects a start after the end, and a non-positive start (Phase 5)', () => {
+  it('rejects a start after the end, and a non-positive start (Phase 05)', () => {
     const end = NOW - 1000;
     expect(fieldsOf(base({ skateEndTime: end, skateStartTime: end + 1000 }))).toContain(
       'skateStartTime',

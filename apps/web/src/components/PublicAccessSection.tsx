@@ -14,7 +14,7 @@ import { Button } from './ui/button';
 import { Textarea } from './ui/textarea';
 
 /**
- * "No public access" — the report control and all three states of the ruling (N6f).
+ * "No public access" — the report control and all three states of the ruling (A06f).
  *
  * ## Why an unconfirmed report is loud here and silent on the map
  *

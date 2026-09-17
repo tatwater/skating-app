@@ -28,11 +28,11 @@ export function BountyForm({
   const router = useRouter();
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  // Named bays on this lake (N2/D60). The whole lake stays the default — most lakes have none, and
+  // Named bays on this lake (A02/D60). The whole lake stays the default — most lakes have none, and
   // asking "which part?" of a pond is noise. Rendered as chips rather than a picker: at the handful
   // a lake carries, one tap beats a modal wheel.
   const subAreas = useQuery(api.subAreas.listForBody, { waterBodyId });
-  // The cap that applies to *this* person (N2) — the global constant would lie to a limited user.
+  // The cap that applies to *this* person (A02) — the global constant would lie to a limited user.
   const myLimit = useQuery(api.bounties.myBountyLimit, {});
   const bays = (subAreas ?? []).filter((s) => !s.removed);
   const [subAreaId, setSubAreaId] = useState<string | null>(null);

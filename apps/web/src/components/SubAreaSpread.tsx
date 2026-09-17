@@ -5,7 +5,7 @@ import { Link } from '@tanstack/react-router';
 import { useQuery } from 'convex/react';
 
 /**
- * How a giant describes itself: the spread across its named bays, with the ends named (N6h /
+ * How a giant describes itself: the spread across its named bays, with the ends named (A06h /
  * open question 5). *"Lows 0°F to 12°F — coldest at Missisquoi Bay, mildest at Burlington Bay."*
  *
  * Every sentence comes from `buildSubAreaSpread` in core, where the trap it refuses — a composite

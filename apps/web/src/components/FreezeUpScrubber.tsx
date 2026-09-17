@@ -1,5 +1,5 @@
 /**
- * The freeze-up scrubber (N6e §C4) — discrete stops, because that is what the archive is.
+ * The freeze-up scrubber (A06e §C4) — discrete stops, because that is what the archive is.
  *
  * ## Why this is a stepper and not a slider
  *

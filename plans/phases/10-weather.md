@@ -3,9 +3,9 @@
 > **What this is.** The build plan for Phase 10, settled in a scoping pass on **2026-07-22**. It plugs
 > Open-Meteo weather into two things we already shipped: the **aging-report strip** (D19) and the
 > **per-type hazard decay** (D52). It also lights up three already-deferred tasks that were explicitly
-> waiting on weather-since — report **conditions auto-fill**, the Phase-6 corroboration
-> **contradiction signal**, and the Phase-6 **decay-based bounty-freshness score** — plus lands the
-> founder-idea **auto-suggest skate times** (which turned out to already be built in Phase 9.5).
+> waiting on weather-since — report **conditions auto-fill**, the Phase-06 corroboration
+> **contradiction signal**, and the Phase-06 **decay-based bounty-freshness score** — plus lands the
+> founder-idea **auto-suggest skate times** (which turned out to already be built in Phase 09b).
 > Decisions: **D19** (descriptive-not-predictive), **D52** (per-type decay + the corrected weather
 > sign-flips), **D50** (trust/corroboration), **D3** (safety-first, non-authoritative) throughout. New
 > decisions **D56** (weather-decay design) and **D57** (granular posting permissions — the moderation
@@ -15,7 +15,7 @@
 > New decisions **D56** (weather-driven decay) + **D57** (granular posting permissions). Shipped-vs-plan
 > deltas + the post-merge review rounds are in *Built — shipped vs. plan* below.
 >
-> **Prod note.** Like everything since Phase 2.5, Phase 10 lands on **dev**; prod cutover stays deferred
+> **Prod note.** Like everything since Phase 02b, Phase 10 lands on **dev**; prod cutover stays deferred
 > (Convex prod uninitialized, blocked on Clerk PROD env). Not a Phase 10 blocker.
 
 ---
@@ -38,12 +38,12 @@ mid-build:
 - **Conditions auto-fill is object-level "user wins":** the scheduled action fills only when the report
   has **no** conditions at all (not field-by-field), clean given `source` is one enum for the object.
 - **Contradiction escalation is consensus-based + order-independent** (revised in the 2026-07-23 review;
-  §7b). `settleContradictions` escalates the weather-unexplained **un-corroborated minority** (a report
+  §07-2). `settleContradictions` escalates the weather-unexplained **un-corroborated minority** (a report
   disagreeing with a *more-corroborated* one, itself un-corroborated) — never the later poster, never the
   corroborated majority — via a private `reports.contradiction` flag that drives the author's non-scoring
   `contradictionCount` and **self-corrects** (a report that later earns corroboration clears + decrements).
   Crossing the threshold files a system `contentFlags` row (targetType `user`, reason `unsafe_false_report`,
-  a corroborated opponent as `flaggerId`). The `/admin` queue + Resend alert are Phase 7.
+  a corroborated opponent as `flaggerId`). The `/admin` queue + Resend alert are Phase 07.
 - **Units follow Open-Meteo native** (`snowfallCm`, `snowDepthM`) not the plan's loose `snowfallMm`, to
   avoid a silent unit bug; imperial conversion at display.
 - **Schema is all additive/optional** (fail-open defaults) — no migration needed after all, despite the
@@ -53,7 +53,7 @@ mid-build:
 - **Test infra:** `packages/convex/test.setup.ts` stubs a benign offline `fetch` by default so the weather
   actions `reports.create` now schedules never hit the network in unrelated tests.
 
-Commit map: §1 reducer · §4 decay core · §2 fetch+cache · §5a read-path · §5b cron+sampling · §7a
+Commit map: §1 reducer · §4 decay core · §2 fetch+cache · §5a read-path · §5b cron+sampling · §07-1
 conditions · §7b-1 D57 perms · §7b-2 contradiction · §7c bounty gate · §7c+ bounty weather action · §3
 strip core · §3 strip UI.
 
@@ -66,7 +66,7 @@ A scoping scan (2026-07-22) found that **half of the original Phase 10 bullet li
 | Piece | Status | Where |
 |---|---|---|
 | `summarizeWeatherSince` pure reducer (D19 strip math) | **BUILT + property-tested** | `packages/core/src/weather.ts`, `weather.test.ts` |
-| Auto-suggest skate start/end times from on-ice dwell | **BUILT (Phase 9.5), wired into the report form** | `apps/mobile/src/lib/dwell.ts`, `dwellTracker.ts`, `components/ReportForm.tsx` |
+| Auto-suggest skate start/end times from on-ice dwell | **BUILT (Phase 09b), wired into the report form** | `apps/mobile/src/lib/dwell.ts`, `dwellTracker.ts`, `components/ReportForm.tsx` |
 | Hazard decay (`deriveHazardFreshness` + `HAZARD_DECAY`) | **BUILT — but takes no weather input** | `packages/core/src/hazardDecay.ts`, call site `packages/convex/convex/hazards.ts` `toView()` |
 | Reports carry `skateEndTime`/`skateStartTime` + body coord | BUILT | `packages/convex/convex/schema.ts` |
 | `openmeteo` condition-source enum | present but **unused** | `packages/core/src/types.ts` `CONDITION_SOURCES`; `schema.ts` `reports.conditions.source` |
@@ -89,8 +89,8 @@ weather-since **reducer already exists** (Phase 10 only adds the fetch + the dis
    on-ice alert** (§5, §6).
 4. **Conditions auto-fill + the corroboration contradiction signal + decay-based bounty freshness** —
    populate the stubbed `openmeteo` condition source on report create (weather *at* the skate time);
-   finish the Phase-6 `runCorroboration` stub so a weather-unexplained contradiction escalates for
-   moderation **without** punishing honest "the ice changed" reports (§7, D57); and upgrade the Phase-6
+   finish the Phase-06 `runCorroboration` stub so a weather-unexplained contradiction escalates for
+   moderation **without** punishing honest "the ice changed" reports (§7, D57); and upgrade the Phase-06
    bounty-freshness gate to the weather-aware decay score (§7).
 
 ---
@@ -240,11 +240,11 @@ weather alone can never push a hazard past `aging` into the hidden/`stale` bucke
 a human `fully_healed` confirmation can fully retire a pin. A refrozen lead is still thin ice; the model
 must not make a real hazard disappear on a forecast's say-so.
 
-**Fail-open (matches the Phase 6 guardrail).** Missing/failed weather ⇒ `multiplier = 1` (fall back to
+**Fail-open (matches the Phase 06 guardrail).** Missing/failed weather ⇒ `multiplier = 1` (fall back to
 plain `elapsed`). Weather trouble can never make a hazard *less* visible.
 
-**Admin-tunable, Phase 7.** The multiplier constants ship as tuned `@skating/core` defaults and get
-lifted behind `/admin` in Phase 7, same pattern as the D52 `HAZARD_DECAY` tiers (D49).
+**Admin-tunable, Phase 07.** The multiplier constants ship as tuned `@skating/core` defaults and get
+lifted behind `/admin` in Phase 07, same pattern as the D52 `HAZARD_DECAY` tiers (D49).
 
 **Magnitude calibration.** Signs are locked; magnitudes are literature/anecdote defaults (Ashton's 15
 FDD/inch, thaw ~30% faster) and are **explicitly tunable** — refit against real in-app hazard rows once
@@ -264,7 +264,7 @@ per-town pull buys no signal. **Town/county boundaries are the wrong abstraction
   `[centroid]`. Populate a few points spaced at grid resolution for flagged large bodies.
 - **Assignment:** a hazard or report picks its **nearest sample point** by plain distance (`@skating/core`
   geometry helpers). For a complex hazard shape, use its geometry's representative point to pick the
-  nearest sample. Admins set sample points for large bodies in the Phase 7 surface.
+  nearest sample. Admins set sample points for large bodies in the Phase 07 surface.
 
 So 99% of bodies stay on the trivial single-pull path with a clean, non-over-engineered exception for the
 handful that genuinely cross cells.
@@ -314,7 +314,7 @@ bits land a beat later.
   auto-fill must never clobber a `source: 'user'` field (the UI should expect a brief empty→filled beat).
   **D3:** this is *observed weather*, never a safety assertion, and must read as such.
 - **Corroboration contradiction *signal* → conflicting-reports disclosure + moderation escalation
-  (finishes the Phase-6 `runCorroboration` stub; D50 stays boost-only; new D57).** `runCorroboration`
+  (finishes the Phase-06 `runCorroboration` stub; D50 stays boost-only; new D57).** `runCorroboration`
   today awards a boost only when `reportsAgree(report, prior)`. Its inverse is the seam: when a later
   report on the same body/window **disagrees** AND the weather-since between the two **doesn't explain the
   change**, we do **three** things — none of which subtracts trust (honest "the ice changed" reports must
@@ -339,8 +339,8 @@ bits land a beat later.
   The deterrent against bad actors is **restriction/ban risk + the low default weight of an un-corroborated
   report**, not micro-penalties (which are both too weak for a real bad actor and too harsh for an honest
   mistake). Safety-adjacent, so it lands with tests and the boost-only invariant intact.
-- **Decay-based bounty-freshness score (finishes the Phase-6 bounty-gate upgrade; reuses §4's decay
-  shape).** Phase 6 blocks a new bounty when a *visible report exists within `FRESH_REPORT_HOURS` = 48h* —
+- **Decay-based bounty-freshness score (finishes the Phase-06 bounty-gate upgrade; reuses §4's decay
+  shape).** Phase 06 blocks a new bounty when a *visible report exists within `FRESH_REPORT_HOURS` = 48h* —
   a hard cutoff. Phase 10 replaces it with a **freshness score = recency × peer thumbs × author trust ×
   weather-since**, so a well-corroborated report suppresses bounties longer than a lone stale one, and
   **warming weather reopens bounties sooner**. This is the founder's decay idea; it needs weather-since to
@@ -349,10 +349,10 @@ bits land a beat later.
 
 ---
 
-## 8. Auto-suggest skate times — already done (Phase 9.5)
+## 8. Auto-suggest skate times — already done (Phase 09b)
 
 The founder idea "prefill the report form's skate window from the on-ice dwell interval" was **already
-built in Phase 9.5** (`apps/mobile/src/lib/dwell.ts` `suggestedSkateWindow` + `dwellTracker.ts`, wired
+built in Phase 09b** (`apps/mobile/src/lib/dwell.ts` `suggestedSkateWindow` + `dwellTracker.ts`, wired
 into `ReportForm.tsx` earliest-in/latest-out across today's dwells, grace-debounced). **No Phase 10 work
 — mark the roadmap bullet done.** Left here so the roadmap history is coherent.
 
@@ -378,9 +378,9 @@ into `ReportForm.tsx` earliest-in/latest-out across today's dwells, grace-deboun
 
 ---
 
-## 10. Schema — all additive, no migration (parity with Phase 9)
+## 10. Schema — all additive, no migration (parity with Phase 09a)
 
-Every field Phase 10 adds is **optional ⇒ migration-free**, matching Phase 9's "no migrations" posture:
+Every field Phase 10 adds is **optional ⇒ migration-free**, matching Phase 09a's "no migrations" posture:
 
 - **New table `weatherCache`** (§2) — additive.
 - **`waterBodies.weatherSamplePoints[]`** (§5) — optional; absent ⇒ `[centroid]`.
@@ -398,11 +398,11 @@ No backfill needed anywhere.
 ## Later / deferred
 
 - ~~**Lake depth / bathymetry data source (the shallow-water decay signal).**~~ **→ scoped as
-  [N6a](./A06a-body-depth.md) + [N6b](./A06b-bathymetry-layer.md) (2026-07-29).** Kept in full
+  [A06a](./A06a-body-depth.md) + [A06b](./A06b-bathymetry-layer.md) (2026-07-29).** Kept in full
   below because two of its claims are load-bearing and **wrong**, and someone reading this entry would act
   on them: (a) *"v1 ships the signal without the data, manually"* — **it didn't.** The `bodyFeature` was
   added to the enum and the admin dropdown and wired to no decay at all, so there is no `isShallow` scalar
-  and nothing reads shallowness anywhere. N6a builds the signal for the first time. (b) *"the decay model
+  and nothing reads shallowness anywhere. A06a builds the signal for the first time. (b) *"the decay model
   reads a simple `isShallow` scalar and doesn't care where it came from"* describes an intention, not code.
   Also superseded: **LAGOS-US DEPTH** (observed depths, lakes > 1 ha) is a better first source than either
   named here, and the manual flag is **permanent** rather than a stand-in — 73% of the corpus sits below
@@ -413,7 +413,7 @@ No backfill needed anywhere.
   - **OSM won't give it to us.** `depth`/`maxdepth` tags exist but coverage on inland lakes is near-zero
     (they're mostly nautical). Our existing OSM ETL can't backfill depth.
   - **v1 ships the signal *without* the data, manually.** Model "shallow" as a **`shallow_bay_early_thaw`
-    `bodyFeature`** (the Phase 9 mechanism + Phase 7 admin surface) that mods/locals set on known-shallow
+    `bodyFeature`** (the Phase 09a mechanism + Phase 07 admin surface) that mods/locals set on known-shallow
     bodies — locals know exactly which ponds go out first, and it covers the highest-value bodies with
     zero new data source. The decay model reads a simple `isShallow` scalar and doesn't care where it came
     from.
@@ -427,7 +427,7 @@ No backfill needed anywhere.
   - **Do this when** the decay model is proven and we want to sharpen it — the manual bodyFeature is the
     Phase 10 deliverable; the depth data is a follow-on.
 - **Ridge-crossing "switch sides" hinting** — the richer v2 of the `ridge_crossing` passage marker
-  (suggest crossing spots where overlap switches). Deferred from Phase 9 (research §8).
+  (suggest crossing spots where overlap switches). Deferred from Phase 09a (research §8).
 - **Shore-band "snap to shoreline" affordance** — "thin ice along the shore" / "ice edge" hazards are
   linear-along-shore; a one-tap snap-to-shoreline was logged in the hazard research (§4) as a Phase-10
   idea, but it's a geometry/UX feature, not a weather one. Log; build with a later hazard-authoring pass.
@@ -441,7 +441,7 @@ Accepted as postponable at alpha scale; logged here so they're not lost. (The re
 — cron fail-fast on a failed fetch, empty-200 no-cache-retry, stable strip window/`near`, active-only
 strip, single-sourced 7-day lookback, and the bounty-suppressor-selection fix — landed on the branch.)
 
-- ~~**`.collect()` read-cap hardening across the weather gates.**~~ **✅ DONE in N1 (2026-07-26)**, folded
+- ~~**`.collect()` read-cap hardening across the weather gates.**~~ **✅ DONE in A01 (2026-07-26)**, folded
   into the `listInViewport` hardening as this entry asked. `hazardWeather.listActiveHazardsForWeather`,
   `bounties.recentReports` and the contradiction cluster load are all capped-and-logged now (via
   `lib/scan.takeCapped`). Two corrections worth carrying: **`contradictions.findContradictingPriors`
@@ -452,14 +452,14 @@ strip, single-sourced 7-day lookback, and the bounty-suppressor-selection fix �
 - **`weatherCache` TTL / prune.** No pruner today; a new row per `(samplePoint, windowStart, hourBucket)`
   accumulates as the `now`-bucket advances. It's a *disk-growth* concern, not staleness (served summaries
   are ≤1 hour old by the bucket key). A tiny prune cron (drop rows older than N days) clears it.
-- **Sample-point admin surface (Phase 7).** `waterBodies.weatherSamplePoints[]` is wired end-to-end
+- **Sample-point admin surface (Phase 07).** `waterBodies.weatherSamplePoints[]` is wired end-to-end
   (cron + strip now resolve the **same** nearest point via `lib/sampling`, so they can't diverge), but
-  nothing populates it. The Phase-7 admin UI should let a mod place/preview/bundle sample points on a
+  nothing populates it. The Phase-07 admin UI should let a mod place/preview/bundle sample points on a
   flagged giant (Champlain, Winnipesaukee) on a map, spaced at grid resolution.
 - **Contradiction re-flag bundling.** The auto-flag dedups only on an *open* flag, so a user parked above
   threshold files a fresh `/admin` row on each further contradiction after a mod resolves the prior one.
-  Bundle repeated auto-flags into one queue entry in the Phase-7 moderation surface. (The escalation
-  *targeting* was fixed in the review — §7b now escalates the un-corroborated minority, order-independent,
+  Bundle repeated auto-flags into one queue entry in the Phase-07 moderation surface. (The escalation
+  *targeting* was fixed in the review — §07-2 now escalates the un-corroborated minority, order-independent,
   and self-corrects — so this is purely the mod-queue UX, not a correctness item.)
 
 
@@ -473,16 +473,16 @@ strip, single-sourced 7-day lookback, and the bounty-suppressor-selection fix �
 > **Detailed build plan:** [`phases/10-weather.md`](./10-weather.md) (scoping settled 2026-07-22;
 > new decision **D56**). **Scoping scan found half of this phase already on dev:** the D19 **weather-since
 > reducer** (`summarizeWeatherSince`) is built + property-tested in `@skating/core`, and **auto-suggest
-> skate times is done (Phase 9.5)** — see the struck bullet below. The genuinely new work is **four
+> skate times is done (Phase 09b)** — see the struck bullet below. The genuinely new work is **four
 > deliverables:** (1) a live **Open-Meteo fetch + `weatherCache`** (the one new piece of infra — a Convex
 > action like `isochrones.ts`, on the **forecast API with `past_days`** — *not* the ~5-day-lagged
 > archive — fetched **on drawer-open**), (2) wiring the **weather-since strip** onto aging report **and
 > hazard** views (plain-text, verdict-free, Open-Meteo-attributed), (3) **weather-driven hazard decay**
 > (`decayMultiplier(type, weatherSince)` + `effectiveAge`, threaded through `hazards.ts` and **precomputed
 > server-side for the offline on-ice alert**), and (4) **report conditions auto-fill** (`openmeteo`
-> source, already stubbed) **+ the Phase-6 corroboration contradiction *signal*** (withhold-boost +
+> source, already stubbed) **+ the Phase-06 corroboration contradiction *signal*** (withhold-boost +
 > conflicting-reports disclosure + escalate-to-moderation via the new **D57** posting-permission lever —
-> never a trust subtraction) **+ the Phase-6 decay-based bounty-freshness score** — the deferred tasks
+> never a trust subtraction) **+ the Phase-06 decay-based bounty-freshness score** — the deferred tasks
 > that were explicitly waiting on weather-since. Lands on **dev**; prod deferred.
 - Open-Meteo "what the weather has done since this report" factual strip (D19). **Plain-text,
   verdict-free** (e.g. "since this report: peak 41°F · low 22°F · 3 nights below freezing · 6h strong sun
@@ -513,7 +513,7 @@ strip, single-sourced 7-day lookback, and the bounty-suppressor-selection fix �
   **cold-weather multiplier floored at ≥1 (never <1)**; only a sustained hard freeze of the whole
   sheet — not one cold night — heals it. **Same D3 caveat as D52:** accelerated decay ≠ "safe" — a
   refrozen lead is thin ice, so the copy must never imply skateability. Pure logic in `@skating/core`
-  (property-tested, D40); admin-tunable alongside the D52 decay tiers (Phase 7). **Never-hide invariant
+  (property-tested, D40); admin-tunable alongside the D52 decay tiers (Phase 07). **Never-hide invariant
   (founder call 2026-07-22, D56):** weather can **age** a hazard (fresh→aging) but the cold-acceleration
   direction is **bounded so weather alone can never push a hazard past `aging` into hidden/`stale`** —
   only elapsed time + a human `fully_healed` confirmation fully retires a pin. **Fail-open** (missing
@@ -530,17 +530,17 @@ strip, single-sourced 7-day lookback, and the bounty-suppressor-selection fix �
 - **Three deferred tasks the fetch unblocks (added to scope 2026-07-22).** (a) **Conditions auto-fill:**
   populate the stubbed `openmeteo` source (weather *at* the skate time) on report create — user-entered
   values always win; runs as a **scheduled post-insert action** (a mutation can't fetch), so it's
-  eventually-consistent. (b) **Corroboration contradiction *signal* (D56/D57):** finish the Phase-6
+  eventually-consistent. (b) **Corroboration contradiction *signal* (D56/D57):** finish the Phase-06
   `runCorroboration` stub — a later disagreeing report counts as a contradiction **only when the
   weather-since doesn't explain the change**, and even then it **never subtracts trust** (D50 stays
   boost-only): it withholds the boost, shows a "conflicting reports" indicator, and — *on a repeated,
   never-corroborated pattern* — auto-files an `/admin` flag so a human can restrict the offender's
   `canPostReports`/`canPostHazards` right (D57, finer + appealable vs a whole-app ban). Honest "the ice
-  changed" reports stay unpenalized (D3/D50). (c) **Decay-based bounty-freshness (Phase-6 upgrade):**
+  changed" reports stay unpenalized (D3/D50). (c) **Decay-based bounty-freshness (Phase-06 upgrade):**
   replace the hard `FRESH_REPORT_HOURS = 48h` bounty gate with a **freshness score = recency × thumbs ×
   trust × weather-since** (reuses §4's decay shape) so warming weather reopens bounties sooner. All land
   with tests + the boost-only invariant intact.
-- **~~Auto-suggest skate start/end times from the on-ice dwell~~ ✅ Done (Phase 9.5, 2026-07-22).** Built
+- **~~Auto-suggest skate start/end times from the on-ice dwell~~ ✅ Done (Phase 09b, 2026-07-22).** Built
   ahead of schedule: `apps/mobile/src/lib/dwell.ts` (`suggestedSkateWindow`) + `dwellTracker.ts`, wired
   into `ReportForm.tsx` (earliest-in/latest-out across today's dwells, grace-debounced). **No Phase 10
   work.** *(Original note, kept for history:* the on-ice GPS watcher knows when a device entered/left a
@@ -551,9 +551,9 @@ strip, single-sourced 7-day lookback, and the bounty-suppressor-selection fix �
   signal** ships v1 as a manual `shallow_early_thaw` `bodyFeature` (no depth data source exists in
   OSM); the real fix is a **HydroLAKES + GLOBathy** backfill of `meanDepthM`/`maxDepthM`, a separate data
   PR. Full write-up (sources, state bathymetry, ETL update) in `phases/10-weather.md` → Later/deferred.
-  **→ scoped as [N6a](./A06a-body-depth.md) (2026-07-29).** Correction worth carrying: *"the decay
+  **→ scoped as [A06a](./A06a-body-depth.md) (2026-07-29).** Correction worth carrying: *"the decay
   model reads a simple `isShallow` scalar"* was never true — the v1-without-the-data half of this bullet
-  **did not ship**. The `bodyFeature` renders and is wired to nothing, so N6a builds the signal rather
+  **did not ship**. The `bodyFeature` renders and is wired to nothing, so A06a builds the signal rather
   than sharpening it, and the manual flag turns out to be permanent (73% of the corpus is below every
   global source's area floor).
 - **Done:** aging reports **and hazards** show a plain-text, Open-Meteo-attributed weather-since strip

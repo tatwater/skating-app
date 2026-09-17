@@ -86,13 +86,13 @@ function MapLayoutInner() {
     setHighlightWaterBodyId(null);
     setPhotoPins([]);
     setFocus(null);
-    // The contour source unmounts with the sheet it belongs to (N6b/D81). Cleared here rather than
+    // The contour source unmounts with the sheet it belongs to (A06b/D81). Cleared here rather than
     // in the sheet's own unmount so navigating lake → lake tears it down and rebuilds it for the new
     // body, instead of leaving one lake's isobaths filtered to another's id.
     setContourBodyKey(null);
   }, [pathname, setHighlightWaterBodyId, setPhotoPins, setFocus, setContourBodyKey]);
 
-  // Adopt a recording the app was killed in the middle of (Phase 8). A skate is unrepeatable, so a
+  // Adopt a recording the app was killed in the middle of (Phase 08). A skate is unrepeatable, so a
   // crash on the ice must surface the session again — paused, with everything captured so far — not
   // silently lose it or start a second one. Runs once at mount; it never resumes GPS on its own,
   // because the app may be launching hours later from the car.
@@ -100,7 +100,7 @@ function MapLayoutInner() {
     void adoptUnfinishedRecording();
   }, []);
 
-  // The "on-ice" state (Phase 9 §Mobile), part 1: ONE GPS watcher, owned here, publishes each fix as
+  // The "on-ice" state (Phase 09a §Mobile), part 1: ONE GPS watcher, owned here, publishes each fix as
   // `onIceCoord`. The proximity banner reads that shared coord instead of running a second watcher
   // (two GPS subscriptions on a cold phone is the battery cost this feature can't afford). It seeds
   // from the last known fix so the affordances don't wait on a cold receiver, re-arms on return to
@@ -205,7 +205,7 @@ function MapLayoutInner() {
       resolveCachedBody(onIceCoord)?.waterBodyId ?? null,
     );
     setOnIceWaterBodyId(resolved);
-    // Record the dwell (Phase 9.5) so the report form can later prefill the skate window from when the
+    // Record the dwell (Phase 09b) so the report form can later prefill the skate window from when the
     // device was actually on this lake. On-device only (D12); best-effort while unarmed (foreground-only).
     // INVARIANT: `resolved` is the *survivor* body id — `resolveBodyForCoord` returns only listed bodies
     // and the offline cache stores the resolved `_id` — which is the exact id `WaterBodyDetail` hands the

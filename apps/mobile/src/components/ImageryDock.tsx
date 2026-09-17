@@ -6,7 +6,7 @@ import Animated, { FadeIn, LinearTransition } from 'react-native-reanimated';
 import { Button, Text, useTheme, XStack, YStack } from 'tamagui';
 
 /**
- * The imagery toggle and the freeze-up scrubber, as one box (N6e / D146).
+ * The imagery toggle and the freeze-up scrubber, as one box (A06e / D146).
  *
  * > **Founder, 2026-08-25:** *"tapping/clicking 'Show imagery' [should] make the button grow/
  * > transition into the timeline scrubber container, with an X in the upper right to turn off

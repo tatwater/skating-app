@@ -1,5 +1,5 @@
 /**
- * The **track recorder** runtime (Phase 8, A-input #1) — start / pause / resume / stop over a durable
+ * The **track recorder** runtime (Phase 08, A-input #1) — start / pause / resume / stop over a durable
  * buffer, with the live session owned by a module singleton for the same reason `onIceMode` is: the
  * background location task runs outside React, so the buffer has to live somewhere both the task and
  * the UI can reach. React reads it through `useRecorder` (a `useSyncExternalStore` subscription).

@@ -189,7 +189,7 @@ describe('hazards.create', () => {
   });
 });
 
-describe('hazards clip-to-body (Phase 9.5)', () => {
+describe('hazards clip-to-body (Phase 09b)', () => {
   // A hazard well inside the lake needs no clip — the footprint is already all water, so nothing is
   // stored and reads fall back to the live footprint.
   test('stores no clipped footprint for a hazard well inside the body', async () => {
@@ -333,9 +333,9 @@ describe('hazards.listForBody', () => {
     ).toHaveLength(1);
   });
 
-  // The hardest call in N5a, and the one most likely to be "fixed" back: a hazard's season is the
+  // The hardest call in A05a, and the one most likely to be "fixed" back: a hazard's season is the
   // clock **nobody can move**, so a single confirmation can't carry last winter's ridge into this one.
-  describe('seasonal scoping (N5a/D63)', () => {
+  describe('seasonal scoping (A05a/D63)', () => {
     /** Backdate a hazard's first sighting past the July boundary, leaving its confirmation fresh. */
     const lastSeasonStart = () => seasonStartMs(seasonOf(Date.now())) - 1;
 
@@ -384,7 +384,7 @@ describe('hazards.listForBody', () => {
 });
 
 // Hazards are moderated through the shared `moderation.setModerationStatus` (targetType: 'hazard'), so
-// the Phase 7 takedown queue has one entry point rather than a hazard-only mutation to also wire up.
+// the Phase 07 takedown queue has one entry point rather than a hazard-only mutation to also wire up.
 describe('hazard moderation (moderation.setModerationStatus)', () => {
   // The full flag → hide path a phone now reaches (mobile gained a flag control): a member flags a bad
   // pin through `contentFlags`, a moderator resolves it and hides the hazard, and it leaves the map.
@@ -503,7 +503,7 @@ describe('hazard moderation (moderation.setModerationStatus)', () => {
   });
 });
 
-describe('hazards.get reporter line (Phase 9.5)', () => {
+describe('hazards.get reporter line (Phase 09b)', () => {
   test("resolves the reporter's display name for the drawer's author line", async () => {
     const t = harness();
     const author = await seedUser(t, 'author');
@@ -863,7 +863,7 @@ describe('photos.getHazardUrls', () => {
 });
 
 /**
- * The pre-first-ice pass (N5a). This list is the safety cover for hiding last winter's hazards, so
+ * The pre-first-ice pass (A05a). This list is the safety cover for hiding last winter's hazards, so
  * what it *omits* matters as much as what it ranks.
  */
 describe('hazards.listPromotionCandidates', () => {
@@ -1004,7 +1004,7 @@ describe('a nonsense season argument falls back rather than emptying the lake', 
 });
 
 /**
- * Cluster pooling (N5c / D80) — the gates read what the *cluster* knows, not what one row does.
+ * Cluster pooling (A05c / D80) — the gates read what the *cluster* knows, not what one row does.
  *
  * The seeded body is a 1°-square polygon around `[0.5, 0.5]`, so "40 m away" is a coordinate nudge of
  * about 0.00036°. Two 40 m-radius pins that close overlap comfortably inside `DUPLICATE_MATCH_METERS`.
@@ -1275,7 +1275,7 @@ describe('hazards.listForBody — cluster consensus', () => {
 });
 
 /**
- * Auto-merge (N5c / D80, layer 4) — the only destructive-looking layer, and the one whose safety rests
+ * Auto-merge (A05c / D80, layer 4) — the only destructive-looking layer, and the one whose safety rests
  * on three properties: the survivor takes the union, clearance votes are never pooled, and a moderator
  * can put both pins back.
  */
@@ -1611,7 +1611,7 @@ describe('hazards auto-merge', () => {
 });
 
 /**
- * Pooling scope (N5c / D77) — which rows are even eligible to be one hazard. The exclusions matter more
+ * Pooling scope (A05c / D77) — which rows are even eligible to be one hazard. The exclusions matter more
  * than the matches: each one is a claim that some pin must *not* borrow another's evidence.
  */
 describe('hazards cluster scope', () => {
@@ -1655,7 +1655,7 @@ describe('hazards cluster scope', () => {
 });
 
 /**
- * The merges panel's read (N5c / D80). Its whole justification is that auto-merge can be watched, so
+ * The merges panel's read (A05c / D80). Its whole justification is that auto-merge can be watched, so
  * the read backing it must not be the kind that gets slower every week the app is alive.
  */
 describe('hazards.listRecentMerges', () => {

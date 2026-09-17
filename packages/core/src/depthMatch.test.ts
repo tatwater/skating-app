@@ -7,7 +7,7 @@ import {
 } from './depthMatch';
 
 /**
- * The depth join's fallback (N6a, added after the first real run).
+ * The depth join's fallback (A06a, added after the first real run).
  *
  * The load-bearing property is **not** "proximity finds more lakes" — it is that proximity is held
  * to a *stricter* standard than containment. A fallback looser than the primary path would be the

@@ -1,5 +1,5 @@
 /**
- * Pure helpers for the native water-body map (Phase 2 §F) — the mobile mirror of web's
+ * Pure helpers for the native water-body map (Phase 02a §F) — the mobile mirror of web's
  * `apps/web/src/lib/waterMap.ts`. Kept out of the imperative `<MapView>` component so the basemap
  * style, feature transform, viewport math, and geolocation framing are unit-testable without a
  * native map context. Reuses the same Protomaps basemap + icy palette + regional framing as web so
@@ -47,7 +47,7 @@ export const WATER_PALETTE = {
 } as const;
 
 /**
- * The recorded-GPS-track line (Phase 8) — mirrors web's `TRACK_PALETTE`. A warm accent, deliberately
+ * The recorded-GPS-track line (Phase 08) — mirrors web's `TRACK_PALETTE`. A warm accent, deliberately
  * outside both the water ramp and the hazard danger ramp: a skated path is neither water nor a
  * warning, and it must stay legible drawn over ice fill and under a hazard footprint.
  */
@@ -76,13 +76,13 @@ export const PIN_HALO_COLOR: Record<MapFlavor, string> = {
   dark: themes.dark.surface,
 } as const;
 
-/** Favorited-body outline gold (Phase 4, decision #1) — matches web's amber-500 favorite signal. */
+/** Favorited-body outline gold (Phase 04, decision #1) — matches web's amber-500 favorite signal. */
 export const FAVORITE_OUTLINE_COLOR = '#eab308';
-/** Put-in marker colors (Phase 4, decision #7): accurate admin `official` vs. approximate `derived`. */
+/** Put-in marker colors (Phase 04, decision #7): accurate admin `official` vs. approximate `derived`. */
 export const PUT_IN_MARKER_OFFICIAL_COLOR = '#0e7490';
 export const PUT_IN_MARKER_DERIVED_COLOR = '#5b8fb0';
 /**
- * The middle rung (N6d/D143) — a slipway somebody mapped in OSM.
+ * The middle rung (A06d/D143) — a slipway somebody mapped in OSM.
  *
  * Between the two existing colors on purpose: better evidence than a cluster of report points, and
  * not a human vouching that you can get on the ice here. Rendering it in the `derived` blue, which is
@@ -91,7 +91,7 @@ export const PUT_IN_MARKER_DERIVED_COLOR = '#5b8fb0';
 export const PUT_IN_MARKER_OSM_COLOR = '#3d7ea6';
 
 /**
- * The approach line (N6e Workstream 0) — amber-700.
+ * The approach line (A06e Workstream 0) — amber-700.
  *
  * Warm against the cool put-in blues so the walk reads as a distinct kind of thing from the markers
  * it joins, and deliberately **not** the hazard palette's red: a long walk is something to plan for,
@@ -224,7 +224,7 @@ export function buildMapStyle(input: {
 }
 
 /**
- * Named sub-area outlines + labels (N2 / D60) — a **second** source over the water layer.
+ * Named sub-area outlines + labels (A02 / D60) — a **second** source over the water layer.
  *
  * Deliberately not folded into the water source: a bay is drawn inside its parent, so the two
  * collections overlap by construction. Keeping them apart is what lets a tap on Malletts Bay still
@@ -290,7 +290,7 @@ export interface MappableBody {
   type: string;
   polygon: GeoJSON.Geometry;
   /**
-   * The standing fields (N7b): `removedAt`, `publicAccess`, `dormant`, `reviewStatus`, `dedupStatus`.
+   * The standing fields (A07b): `removedAt`, `publicAccess`, `dormant`, `reviewStatus`, `dedupStatus`.
    * Any body that is not `active` draws dimmed — `isActiveRow` reads them all, so the map cannot
    * show a dormant lake at full opacity by forgetting a case.
    */
@@ -308,7 +308,7 @@ export interface MappableBody {
  * layer filters on `_id` (RN has no `setFeatureState`, so the highlight is a data-driven filter, not
  * a feature-state flag as on web).
  *
- * `selfFlaggedIds` are the bodies **this viewer** has reported as having no public access (N6f) —
+ * `selfFlaggedIds` are the bodies **this viewer** has reported as having no public access (A06f) —
  * dimmed for them alone, because an unconfirmed report must not change anyone else's map. Carried as
  * a property rather than a filtered layer so both clients share one opacity expression; that RN gap
  * above is exactly why web puts it in properties too instead of using feature-state as favourites do.
@@ -316,7 +316,7 @@ export interface MappableBody {
 export function waterBodiesToFeatureCollection(
   bodies: readonly MappableBody[],
   selfFlaggedIds: ReadonlySet<string> = new Set(),
-  /** Bodies the active weather filter did not match (N6h / D166) — drawn dimmed, never hidden. */
+  /** Bodies the active weather filter did not match (A06h / D166) — drawn dimmed, never hidden. */
   weatherDimmedIds: ReadonlySet<string> = new Set(),
 ): GeoJSON.FeatureCollection {
   return {
@@ -340,12 +340,12 @@ export function waterBodiesToFeatureCollection(
 export interface MappablePutIn {
   coord: { lat: number; lng: number };
   source: 'derived' | 'osm' | 'official';
-  /** OSM's name for the launch (N6d/A3), where it has one — what makes a pin worth tapping. */
+  /** OSM's name for the launch (A06d/A3), where it has one — what makes a pin worth tapping. */
   name?: string;
 }
 
 /**
- * Put-in markers → a GeoJSON `FeatureCollection` for the map's `put-in-markers` source (Phase 4,
+ * Put-in markers → a GeoJSON `FeatureCollection` for the map's `put-in-markers` source (Phase 04,
  * decision #7). Each point carries its `source` so the layer styles `official` (accurate) markers
  * distinctly from `derived` (approximate) clusters. Mirrors web's helper.
  */

@@ -1,5 +1,5 @@
 /**
- * ETL run history (N6c Workstream F2) — the durable home for the summary every loader used to
+ * ETL run history (A06c Workstream F2) — the durable home for the summary every loader used to
  * print to a terminal that scrolls.
  *
  * The write path is **internal only** and is called by the loaders under `scripts/` through
@@ -157,7 +157,7 @@ export const finish = internalMutation({
       notes: notes ?? run.notes,
     });
 
-    // ⚠ **A finished corpus import is what invalidates the weather cell registry (N6h / D152).**
+    // ⚠ **A finished corpus import is what invalidates the weather cell registry (A06h / D152).**
     //
     // `weatherCells` is a projection of `waterBodies`, and the daily Tier-B sweep pages it — so a
     // body imported into a previously-unoccupied cell is absent from weather discovery until

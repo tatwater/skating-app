@@ -1,7 +1,7 @@
 /**
  * Water-body resolution shared by every entity that attaches to a lake (reports, hazards, …).
  *
- * Lifted out of `reports.ts` in Phase 9 so hazards resolve bodies identically — a hazard and the
+ * Lifted out of `reports.ts` in Phase 09a so hazards resolve bodies identically — a hazard and the
  * report it was drawn in must never end up on two different rows for the same lake.
  */
 
@@ -27,7 +27,7 @@ export async function resolveSurvivor(
 /**
  * The bay a client asked for, **only if it is really a live bay of this lake** — else `null`.
  *
- * The one validation every scoped weather read shares (N6h / open question 5): the archive panel,
+ * The one validation every scoped weather read shares (A06h / open question 5): the archive panel,
  * the forecast strip and anything after them must refuse the same ids for the same reasons — a
  * delisted bay, or one that belongs to another body — and then answer for the lake rather than
  * erroring, because a stale deep link is not a fault a skater can act on. Two copies of this test

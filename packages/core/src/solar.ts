@@ -1,5 +1,5 @@
 /**
- * Sunrise and sunset, for rendering a posted "daylight hours only" rule (N6e).
+ * Sunrise and sunset, for rendering a posted "daylight hours only" rule (A06e).
  *
  * ## This is display-only, and that boundary is deliberate
  *

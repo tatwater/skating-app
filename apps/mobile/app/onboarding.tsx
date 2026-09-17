@@ -21,7 +21,7 @@ import { RISK_ACK_VERSION } from '../src/lib/riskAck';
 /**
  * Profile provisioning (D26). Reached only when the user is Clerk-authenticated but has
  * no Convex `profiles` row yet (see the gate in `app/_layout.tsx`). This is the client
- * half of the trust boundary: it collects the profile fields and the blocking Phase 0
+ * half of the trust boundary: it collects the profile fields and the blocking Phase 00
  * gates — the 16+ age gate (D41) and the assumption-of-risk acknowledgment (D45) — then
  * calls `upsertFromClerk`, which *re-enforces* all of it server-side (D37).
  *

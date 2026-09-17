@@ -43,11 +43,11 @@ import { Label } from '../components/ui/label';
 import { createPolygonDraw, type PolygonDrawControl, parsePastedPolygon } from '../lib/polygonDraw';
 
 /**
- * The per-lake editor (N2 / D61) — **one lake, one canvas, every per-body lever**.
+ * The per-lake editor (A02 / D61) — **one lake, one canvas, every per-body lever**.
  *
  * Before this, `/admin` was entirely tables and the map lived only in the skater tree. Curation
  * therefore meant holding a lake in your head across a queue row, a CSV and an internal mutation,
- * and the resulting mis-matches (five of them, from the Phase-2.5 seed) were invisible because no
+ * and the resulting mis-matches (five of them, from the Phase-02b seed) were invisible because no
  * screen listed what had been curated. This is the screen.
  *
  * The camera is locked to the body (Decision 5) — see `LakeEditorMap` for why that's the feature
@@ -88,7 +88,7 @@ function LakeEditor() {
     null,
   );
   /**
-   * **What the next map click means — one slot, not a boolean per tool** (N6f).
+   * **What the next map click means — one slot, not a boolean per tool** (A06f).
    *
    * Three tools now place a point on this canvas, and there is a single unconditional click handler
    * on the map. With a boolean each, two could be armed at once and the click would go to whichever
@@ -138,7 +138,7 @@ function LakeEditor() {
 
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_380px]">
         <div className="relative h-[70vh] min-h-96 overflow-hidden rounded-lg border border-border">
-          {/* Unmasked aerial under the editor (N6e Workstream E). Off by default: tracing against
+          {/* Unmasked aerial under the editor (A06e Workstream E). Off by default: tracing against
               the vector map is the ordinary case, and a photograph is what you reach for when the
               stored shoreline and the real one disagree. */}
           <label className="absolute top-2 right-2 z-10 flex cursor-pointer items-center gap-2 rounded-md bg-background/95 px-2 py-1 text-xs shadow-lg">
@@ -187,7 +187,7 @@ function LakeEditor() {
               // One-shot: consume the click and disarm, so a stray second click can't move the point
               // an operator has already started filling a form around.
               if (placing === 'feature') setFeaturePoint(coord);
-              // **Snapped in the preview, not just on save** (N6f). The server snaps a put-in to the
+              // **Snapped in the preview, not just on save** (A06f). The server snaps a put-in to the
               // shoreline before storing it, so a raw click drawn on the canvas would promise a pin
               // where one is never going to be — and the gap is most visible for the mid-lake click
               // that most needs snapping. What you see hollow is where it lands.
@@ -256,7 +256,7 @@ function LakeEditor() {
           <RecurrenceTool waterBodyId={waterBodyId} onResult={setBanner} />
           <PromotionTool waterBodyId={waterBodyId} onResult={setBanner} />
           <TrackTool tracks={Array.isArray(tracks) ? [] : (tracks?.tracks ?? [])} />
-          {/* What the sign says (N6e) — beside the reference links, because both are things a human
+          {/* What the sign says (A06e) — beside the reference links, because both are things a human
               read somewhere and typed in, and neither is derivable from the row. */}
           <ToolCard title="Posted rules">
             <PostedAccessTool body={body} onResult={setBanner} />
@@ -268,7 +268,7 @@ function LakeEditor() {
           {/* The one lever here that removes rather than refines, so it sits below all of them and
               above only the log that records it. */}
           <RemovalTool body={body} onResult={setBanner} />
-          {/* Last in the column (N6c/F1): the log answers "what happened to this lake", which is a
+          {/* Last in the column (A06c/F1): the log answers "what happened to this lake", which is a
               question you ask after looking at the levers, not before. */}
           <ToolCard title="History">
             <WaterBodyTimeline waterBodyId={waterBodyId} />
@@ -303,7 +303,7 @@ function ToolCard({ title, children }: { title: string; children: React.ReactNod
 }
 
 /**
- * Which publisher's name this body displays (N7).
+ * Which publisher's name this body displays (A07a).
  *
  * **A picker, not a text field, and that is the design rather than a shortcut.** `NAME_SOURCE_RANK`
  * stores the most authoritative name — `gnis > nhd > 3dhp > osm` — and that costs 463 bodies their
@@ -491,7 +491,7 @@ interface DepthBody {
 }
 
 /**
- * Lake depth (N6a / D68) — rung 1 of the ladder, and the only rung a human writes.
+ * Lake depth (A06a / D68) — rung 1 of the ladder, and the only rung a human writes.
  *
  * **The editable fields hold operator values only, and that is a correctness rule rather than a
  * styling one** (review fix, 2026-07-31). The first cut pre-filled them from whatever the row held,
@@ -758,7 +758,7 @@ function SubAreaTool({
   const rename = useMutation(api.subAreas.rename);
   const remove = useMutation(api.subAreas.remove);
   const restore = useMutation(api.subAreas.restore);
-  // Per-bay evidence beside the redraw control (N9): the mouth-line count and the depth's currency.
+  // Per-bay evidence beside the redraw control (A09): the mouth-line count and the depth's currency.
   const stats = useQuery(api.subAreas.adminStatsForBody, { waterBodyId });
 
   const [name, setName] = useState('');
@@ -861,7 +861,7 @@ function SubAreaTool({
                 {bay.systemDelistReason ? (
                   <span className="block text-warning text-xs">{bay.systemDelistReason}</span>
                 ) : null}
-                {/* The mouth line's evidence and the depth's currency (N9). Nothing here is
+                {/* The mouth line's evidence and the depth's currency (A09). Nothing here is
                     automatic: a bay's seaward edge is a judgement a skater can prove wrong by
                     skating past it, and this is where the proof collects for a human to act on. */}
                 {(() => {
@@ -1165,17 +1165,17 @@ const REMOVAL_REASON_LABELS: Record<string, string> = {
 };
 
 /**
- * Standing (N7b) — active, dormant, or off the map — with D48's remove/restore folded in.
+ * Standing (A07b) — active, dormant, or off the map — with D48's remove/restore folded in.
  *
- * `remove`/`restore` shipped in Phase 2 and had no caller in either app until N6c, which meant a
+ * `remove`/`restore` shipped in Phase 02a and had no caller in either app until A06c, which meant a
  * landowner takedown — the case D48 was built *for* — could only be performed from the Convex
- * dashboard. N7b widened the card from "on the map or not" to the full standing: a moderator can
+ * dashboard. A07b widened the card from "on the map or not" to the full standing: a moderator can
  * set a lake dormant with a note (the third rung the plan asked about — keep it, stop pushing it,
  * without the legal claim `none` makes), bring a shelved one back, or take it off the map
  * outright. The sentence at the top is `describeStanding` — the same one the skater reads in the
  * drawer — so an operator sees exactly what the public is told.
  *
- * Since N7b a removed body still draws when zoomed right in (dimmed, with the reason), so the old
+ * Since A07b a removed body still draws when zoomed right in (dimmed, with the reason), so the old
  * "it draws nowhere" line is gone; what removal takes away is standing, search and every push
  * surface, and its bays' cells.
  *
@@ -1339,11 +1339,11 @@ function RemovalTool({ body, onResult }: { body: Doc<'waterBodies'>; onResult: S
 }
 
 /**
- * Put-ins (Phase 4, decision #7) — the existing mutations, on the canvas that shows where they are.
+ * Put-ins (Phase 04, decision #7) — the existing mutations, on the canvas that shows where they are.
  *
  * **This card used to be three counts and a link reading "Place and hide pins on the public map →".**
  * There was no such control on the public map; `putIns.setOfficial` and `putIns.hide` had shipped in
- * Phase 4 with a comment deferring the operator UI to Phase 7 and had zero callers in either app
+ * Phase 04 with a comment deferring the operator UI to Phase 07 and had zero callers in either app
  * since. The link's destination was a moderator panel that links back here, so following the
  * instruction returned you to the card that gave it.
  *
@@ -1486,7 +1486,7 @@ function PutInTool({
 }
 
 /**
- * Parking and the approach (N6d / D72 amendment, D144) — **rung 1 of the access ladder.**
+ * Parking and the approach (A06d / D72 amendment, D144) — **rung 1 of the access ladder.**
  *
  * This is where a human's assertion outranks the OSM pass. Two rules make it different from every
  * other tool on this page:
@@ -1530,7 +1530,7 @@ function AccessTool({
   const storedPutIns = access?.putIns ?? [];
 
   /**
-   * **This used to be two text boxes taking a decimal latitude and longitude** (N6f), with the lake
+   * **This used to be two text boxes taking a decimal latitude and longitude** (A06f), with the lake
    * on a locked canvas three feet to the left. Typed coordinates are how a lot ends up in the wrong
    * hemisphere from a dropped minus sign — and there is no validation that could catch it, because
    * every plausible typo is still a valid coordinate somewhere on earth. A click cannot be in the
@@ -1691,7 +1691,7 @@ function AccessTool({
 /**
  * Author a persistent body feature by hand (D79).
  *
- * **A bigger gap than it sounds.** `bodyFeatures.create` has existed since Phase 9 with no UI
+ * **A bigger gap than it sounds.** `bodyFeatures.create` has existed since Phase 09a with no UI
  * anywhere, so the only way to hand-make a permanent feature was the Convex dashboard or the CLI —
  * which left four of the nine types (`constriction`, `bridge_narrows`, `delta`, `shallow_early_thaw`)
  * unreachable in the product entirely: no hazard promotes into them, and no form created them.
@@ -1978,7 +1978,7 @@ function TrackTool({ tracks }: { tracks: readonly unknown[] }) {
 }
 
 /**
- * **The pre-first-ice pass** (N5a/D63) — last season's hazards, ranked by how likely they are to be
+ * **The pre-first-ice pass** (A05a/D63) — last season's hazards, ranked by how likely they are to be
  * back, each one promotion away from becoming a permanent body feature (D53).
  *
  * Framed as a safety task because it is one. Seasonal scoping hides last winter's hazards, so the
@@ -1991,7 +1991,7 @@ function TrackTool({ tracks }: { tracks: readonly unknown[] }) {
  */
 
 /**
- * **Recurring** — the cross-season half of the pre-first-ice pass (N5c / §7.1).
+ * **Recurring** — the cross-season half of the pre-first-ice pass (A05c / §7.1).
  *
  * The section below this one ranks *last season's* hazards, which is all the single-season list can
  * see and all it will be able to see on most lakes for years. This one ranks **patterns**: what came
@@ -2274,7 +2274,7 @@ function PromotionTool({
 }
 
 /**
- * The Copernicus link's per-row override (N6c Workstream D, D70/D75).
+ * The Copernicus link's per-row override (A06c Workstream D, D70/D75).
  *
  * **Shows the derivation before it shows the lever**, which is the same argument `ProminenceTool`
  * makes: `auto`/`on`/`off` is an abstract tri-state, while "10 m pixels over 4 ha — about 400 pixels
@@ -2357,7 +2357,7 @@ function SatelliteTool({ body, onResult }: { body: Doc<'waterBodies'>; onResult:
 }
 
 /**
- * Operator-entered reference links (N6c Workstream B7) — the phase's only stored link.
+ * Operator-entered reference links (A06c Workstream B7) — the phase's only stored link.
  *
  * Everything else in the lake drawer's link list is derived from the row at render time (P2/D71) and
  * has no editor because there is nothing to edit. A lake association's URL is genuinely
@@ -2441,7 +2441,7 @@ function ReferenceLinkTool({ body, onResult }: { body: Doc<'waterBodies'>; onRes
 }
 
 /**
- * The admin card's one line per bay (N9): *"3 of 12 skates this season ran past the mouth line ·
+ * The admin card's one line per bay (A09): *"3 of 12 skates this season ran past the mouth line ·
  * depth derived Sep 2 · geometry changed Sep 14 — re-run export-bay-depths · fetch measured"*.
  * Take-bounded counts read as "200+" rather than as exact, per D5.
  */

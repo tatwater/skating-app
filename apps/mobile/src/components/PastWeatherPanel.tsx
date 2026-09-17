@@ -19,15 +19,15 @@ import { WeatherTimeline } from './WeatherTimeline';
 const TIMELINE_DAYS = 30;
 
 /**
- * What the ice has been through — the mobile half of the web `PastWeatherPanel` (N6h / **D153**).
+ * What the ice has been through — the mobile half of the web `PastWeatherPanel` (A06h / **D153**).
  *
  * ## It draws the same chart as the web app, and did not need a charting library to
  *
  * This panel was text-first through Workstream C, on the reasoning that `apps/mobile` had no charting
- * library and Phase 7b's Recharts kit is web-and-admin-only. Workstream D showed that framing was
+ * library and Phase 07-2's Recharts kit is web-and-admin-only. Workstream D showed that framing was
  * wrong: the missing thing was never a *library*, it was shared **geometry**. `weatherTimelineModel`
  * in core returns coordinates and semantic band names, `react-native-svg` was already a dependency
- * (`WindExposure` had been drawing a wind rose with it since N7-3), and the native chart is the same
+ * (`WindExposure` had been drawing a wind rose with it since A07a-3), and the native chart is the same
  * numbers through different primitives. No new dependency, no EAS rebuild.
  *
  * The sentences still come from `buildPastWeatherPanel` in core, for the reason they always did:
@@ -72,7 +72,7 @@ export function PastWeatherPanel({
   days = 7,
 }: {
   waterBodyId: Id<'waterBodies'>;
-  /** The bay this panel is about (N6h / open question 5), resolved by the caller. Absent on the lake itself. */
+  /** The bay this panel is about (A06h / open question 5), resolved by the caller. Absent on the lake itself. */
   subAreaId?: string | undefined;
   /**
    * True while the caller does not yet know which bay this is about. Load-bearing: the panel holds
@@ -170,7 +170,7 @@ export function PastWeatherPanel({
   if (panel.rows.length === 0) return null;
 
   // At least one day with real hours. A cell can legitimately hold thirty daily summaries and no
-  // hourly rows — every lake opened before N6h Workstream D is in that state until its next visit.
+  // hourly rows — every lake opened before A06h Workstream D is in that state until its next visit.
   const hasHourly = state.timeline.some((d) => (d.hours?.length ?? 0) > 0);
 
   return (

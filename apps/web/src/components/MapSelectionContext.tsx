@@ -4,7 +4,7 @@ import { createContext, type ReactNode, useContext, useEffect, useMemo, useState
 import type { ViewportLake } from '../lib/viewportLakes';
 
 /**
- * Shared selection state for the persistent map (Phase 2 §D). The `_map` layout keeps one `MapView`
+ * Shared selection state for the persistent map (Phase 02a §D). The `_map` layout keeps one `MapView`
  * mounted under an `<Outlet />`; the detail drawers rendered into that outlet are *siblings* of the
  * map, so they push what the map should show — the highlighted body, where to fly, photo pins —
  * up through this context rather than remounting the map per navigation. The layout owns the
@@ -24,7 +24,7 @@ export interface MapFocus {
   lng: number;
   zoom?: number;
   /**
-   * Frame these bounds instead of picking a zoom (N2). A named bay is the case that needs it: the
+   * Frame these bounds instead of picking a zoom (A02). A named bay is the case that needs it: the
    * right zoom for Malletts Bay and for the Inland Sea differ by several levels, so any single
    * number fits one and misses the other. Mobile has always framed on bounds; this is web catching
    * up, so a bay search lands the same way on both.
@@ -40,7 +40,7 @@ interface MapSelectionValue {
   photoPins: PhotoPin[];
   setPhotoPins: (pins: PhotoPin[]) => void;
   /**
-   * The recorded GPS track behind the open report (Phase 8) — display-only. A path only ever comes
+   * The recorded GPS track behind the open report (Phase 08) — display-only. A path only ever comes
    * from a track someone actually skated; there is no draw action anywhere in the app, so this is
    * never editable state, just what the map should draw.
    */
@@ -53,7 +53,7 @@ interface MapSelectionValue {
   pinDropMode: boolean;
   setPinDropMode: (on: boolean) => void;
   /**
-   * The hazard being authored (Phase 9, D51) — a circle awaiting a centre, or a polyline collecting
+   * The hazard being authored (Phase 09a, D51) — a circle awaiting a centre, or a polyline collecting
    * vertices. Held as the shared `@skating/core` draft rather than web-local state so the map can
    * preview the *real* buffered footprint (the same math the server stores and the proximity
    * evaluator measures), and so mobile's capture flow inherits the identical transitions.
@@ -73,7 +73,7 @@ interface MapSelectionValue {
   hazardDropMode: boolean;
   setHazardDropMode: (on: boolean) => void;
   /**
-   * The two taps that become a shore band (N5b), or `null` when not snapping.
+   * The two taps that become a shore band (A05b), or `null` when not snapping.
    *
    * `[]` means "armed, waiting for the first tap" — a state the map has to be able to hold, because
    * the affordance is two taps and the form is hidden for both of them. It lives here rather than in
@@ -96,7 +96,7 @@ interface MapSelectionValue {
   browseSeason: number | null;
   setBrowseSeason: (season: number | null) => void;
   /**
-   * The open lake, keyed the way the **contour tiles** are keyed (N6b/D81) — the OSM `externalId`,
+   * The open lake, keyed the way the **contour tiles** are keyed (A06b/D81) — the OSM `externalId`,
    * falling back to the Convex `_id`. `null` whenever no lake drawer is open, which is what makes
    * the bathymetry layer's visibility derived rather than managed: there is no toggle, no persisted
    * preference and no settings row, because the layer is a property of the detail view.
@@ -135,7 +135,7 @@ interface MapSelectionValue {
   viewportLakes: ViewportLake[] | null;
   setViewportLakes: (lakes: ViewportLake[] | null) => void;
   /**
-   * Is the aerial reveal on for the open lake? (N6e / D146.)
+   * Is the aerial reveal on for the open lake? (A06e / D146.)
    *
    * **Deliberately session state and not a stored preference**, which is the difference between this
    * and every other display toggle we have declined to build. D146 made imagery *content scoped to a

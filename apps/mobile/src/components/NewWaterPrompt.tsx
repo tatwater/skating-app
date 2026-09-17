@@ -90,7 +90,7 @@ export function NewWaterPrompt({
       });
       onResolved(id);
     } catch (e) {
-      // `removed_water` (N7b): a takedown cannot be re-drawn around; the skate attaches to the
+      // `removed_water` (A07b): a takedown cannot be re-drawn around; the skate attaches to the
       // removed body instead, which the server names.
       const data =
         e instanceof ConvexError ? (e.data as { code?: string; waterBodyId?: string }) : null;
@@ -138,7 +138,7 @@ export function NewWaterPrompt({
                 <Text color="$foregroundMuted" fontSize={11}>
                   {match.centroidDistanceM} m away
                   {match.official ? ' · on the official map' : ''}
-                  {/* A shelved or removed lake is still the water they skated (N7b): attaching
+                  {/* A shelved or removed lake is still the water they skated (A07b): attaching
                       to it is the evidence that brings a dormant one back. */}
                   {match.standing?.standing === 'dormant'
                     ? ' · inactive'

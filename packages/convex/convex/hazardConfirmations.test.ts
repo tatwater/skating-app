@@ -99,7 +99,7 @@ async function setup() {
 
 const VIA = { via: 'app_open_nearby' as const };
 
-/** Make every queued notification due and flush it — the settle window (N8 / D169), fast-forwarded. */
+/** Make every queued notification due and flush it — the settle window (A08 / D169), fast-forwarded. */
 async function flushAllDue(t: ReturnType<typeof convexTest>) {
   await t.run(async (ctx) => {
     for (const row of await ctx.db.query('notificationQueue').collect()) {
@@ -110,7 +110,7 @@ async function flushAllDue(t: ReturnType<typeof convexTest>) {
   return t.run((ctx) => ctx.db.query('notifications').collect());
 }
 
-describe('hazard_confirmation to the author (N8/B2)', () => {
+describe('hazard_confirmation to the author (A08/B2)', () => {
   test('fires on the phase transition — provisional → confirmed — not on every vote', async () => {
     const { t, hazardId, author } = await setup();
     const first = await seedUser(t, 'first');
@@ -892,7 +892,7 @@ describe('named confirmers (D65)', () => {
 });
 
 /**
- * Corroboration credit reads the **cluster**, not the row (N5c / D80, §B2).
+ * Corroboration credit reads the **cluster**, not the row (A05c / D80, §B2).
  *
  * This is the gate duplicates were splitting most quietly: a real ridge marked by three people and
  * confirmed by a fourth cleared the bar in the community's eyes and cleared it on no single pin, so
@@ -1017,7 +1017,7 @@ describe('corroboration credit across a cluster', () => {
     expect(await creditsFor(t, alex.id)).toHaveLength(1);
   });
 
-  test('a lone pin still needs its own two confirmations, exactly as before N5c', async () => {
+  test('a lone pin still needs its own two confirmations, exactly as before A05c', async () => {
     const { t, author, hazardId } = await setup();
     const kim = await seedUser(t, 'kim');
     await kim.as.mutation(api.hazardConfirmations.confirm, {

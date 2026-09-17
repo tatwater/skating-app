@@ -225,7 +225,7 @@ describe('waterBodiesToFeatureCollection', () => {
       _id: 'body_1',
       name: 'Lake Champlain',
       type: 'lake',
-      // Always present, never absent (N6f): the dim expression compares against `true`, and a missing
+      // Always present, never absent (A06f): the dim expression compares against `true`, and a missing
       // property would evaluate to null inside an `any`, which throws rather than reading as false.
       inactive: false,
       selfFlagged: false,
@@ -237,7 +237,7 @@ describe('waterBodiesToFeatureCollection', () => {
     expect(waterBodiesToFeatureCollection([]).features).toHaveLength(0);
   });
 
-  describe('standing (N6f → N7b)', () => {
+  describe('standing (A06f → A07b)', () => {
     const inactive = (over: Record<string, unknown>) =>
       waterBodiesToFeatureCollection([{ ...(bodies[0] as (typeof bodies)[number]), ...over }])
         .features[0]?.properties?.inactive;
@@ -314,7 +314,7 @@ describe('putInsToFeatureCollection', () => {
   });
 
   /**
-   * The `osm` rung (N6d), and the name that makes a pin worth tapping rather than a dot.
+   * The `osm` rung (A06d), and the name that makes a pin worth tapping rather than a dot.
    *
    * The rung is the load-bearing half: an OSM launch is neither `official` nor `derived`, so a layer
    * that only styles those two draws nothing for it — which is exactly how the 3,588 imported launches
@@ -357,7 +357,7 @@ describe('frameForCoord', () => {
     expect(frameForCoord({ lat: 34.05, lng: -118.24 })).toBeNull(); // Los Angeles
   });
 
-  it('includes the wider Northeast region (Phase 2.5) — fixes the old VT-only bounds excluded', () => {
+  it('includes the wider Northeast region (Phase 02b) — fixes the old VT-only bounds excluded', () => {
     expect(frameForCoord({ lat: 43.66, lng: -70.25 })).not.toBeNull(); // Portland, ME (E of old bounds)
     expect(frameForCoord({ lat: 42.89, lng: -78.88 })).not.toBeNull(); // Buffalo, NY (W of old bounds)
   });
@@ -441,7 +441,7 @@ describe('subAreasToFeatureCollection', () => {
   });
 });
 
-describe('summary cards (N6c/E)', () => {
+describe('summary cards (A06c/E)', () => {
   const base = {
     _id: 'body1',
     name: 'Beaver Pond',
@@ -503,7 +503,7 @@ describe('summary cards (N6c/E)', () => {
   });
 
   /**
-   * The Hike-In chip (N6d / D87) — the browse surface, where a skater is supposed to learn this
+   * The Hike-In chip (A06d / D87) — the browse surface, where a skater is supposed to learn this
    * *before* committing rather than at the trailhead.
    *
    * **Only `hike_in` prints, and that is the rule worth pinning.** A card has two legible lines; one
@@ -573,7 +573,7 @@ describe('qualityDotString', () => {
   });
 });
 
-describe('summary cards under the reveal flag (N6c-2)', () => {
+describe('summary cards under the reveal flag (A06c-2)', () => {
   const base = {
     _id: 'body1',
     name: 'Beaver Pond',

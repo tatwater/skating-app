@@ -3,7 +3,7 @@
  * and every safety-priority flag (`unsafe_false_report`, `category: safety`). Alerts deep-link into the
  * `/admin` queue so the founder's inbox is a real work trigger, not just a notice.
  *
- * Transport is **Resend** (D38/D35 free tier), via `lib/resend` — shared with the N3 data-export email
+ * Transport is **Resend** (D38/D35 free tier), via `lib/resend` — shared with the A03 data-export email
  * since that became the second caller. The send is a Convex **action** (fetch to the Resend REST API —
  * the default runtime supports fetch; no Node bundle needed) scheduled fire-and-forget from the
  * mutations that create the rows. **All Resend env vars ship unset**: the send **no-ops (logs) when

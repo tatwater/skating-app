@@ -1,5 +1,5 @@
 /**
- * The argv and scratch-path plumbing every CLI in this package had its own copy of (N6e PR 2).
+ * The argv and scratch-path plumbing every CLI in this package had its own copy of (A06e PR 2).
  *
  * Four entry points — `bakeMasks`, `selectGranules`, `ingestWindowCli`, `buildIndex` — each carried
  * an identical `flag()`, an identical `has()`, an identical `HERE`/`SCRATCH` pair, and two of them

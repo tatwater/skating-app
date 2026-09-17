@@ -6,7 +6,7 @@
  * `create` writes a `pending` body immediately (still listed), and a moderator later resolves
  * it via `approve`. Admins can `remove`/`restore` any body — a reversible soft-delist (D48).
  * Whether a body shows on the public map is the derived `listed` boolean (see `./lib/listing`) —
- * an unlisted body simply has no rows in the N1 cell index, so it can't be reached from the map at
+ * an unlisted body simply has no rows in the A01 cell index, so it can't be reached from the map at
  * all (see `./lib/cellIndex` and `plans/phases/A01-read-path-durability.md`).
  */
 
@@ -112,11 +112,11 @@ import {
 } from './subAreas';
 
 /**
- * Viewport read budget (N1). These are **product** numbers now, not safety numbers.
+ * Viewport read budget (A01). These are **product** numbers now, not safety numbers.
  *
  * The old two-tier scheme (a centroid prefilter over the viewport plus a small margin, plus a scan
  * of every `isLarge` body) had a genuine no-gap invariant, but its cost was governed by constants
- * measured live against the 9,967-body Vermont corpus — and Phase 2.5 then grew that corpus to
+ * measured live against the 9,967-body Vermont corpus — and Phase 02b then grew that corpus to
  * ~116k without anyone re-measuring. The ladder-grid index removes the coupling entirely: reads
  * scale with what's *on screen*, not with how big the query rectangle or the corpus is.
  *
@@ -126,7 +126,7 @@ import {
  * real viewports orders of magnitude below that.
  */
 /** How many bodies to hand the map. Purely a render budget: at dense z13–14 viewports across the
- *  Phase-2.5 corpus the old 256 was visibly short, and MapLibre is comfortable with ~1k small
+ *  Phase-02b corpus the old 256 was visibly short, and MapLibre is comfortable with ~1k small
  *  polygons. Truncation keeps the *most prominent* bodies and is logged, never silent (D5). */
 const DEFAULT_VIEWPORT_LIMIT = 1000;
 /** Hard ceiling on the client-supplied limit — the read-budget arithmetic above depends on it. */
@@ -204,7 +204,7 @@ function resolveStates(
 
 /**
  * A canonical body as prepared by the ETL — **keyed by its catalogue ids, not by `(source,
- * externalId)`** (N7 / D93).
+ * externalId)`** (A07a / D93).
  *
  * The ids are what changed. `externalId` is still carried and still written, because the contour
  * tiles are stamped with it and D93 keeps it in step for one full campaign before retiring it — but
@@ -280,7 +280,7 @@ const canonicalBody = v.object({
 });
 
 /**
- * The N6c shape stats as a patch fragment, `undefined` for anything the ETL couldn't measure.
+ * The A06c shape stats as a patch fragment, `undefined` for anything the ETL couldn't measure.
  *
  * **Spread explicitly into both the insert and the update**, rather than relying on `...item`:
  * `importCanonical` patches a named field list on purpose (that discipline is what lets depth,
@@ -309,7 +309,7 @@ function shapeFields(item: {
 }
 
 /**
- * What the **merge** knew and the loader used to discard (N7 audit).
+ * What the **merge** knew and the loader used to discard (A07a audit).
  *
  * Written as explicit `undefined`s rather than omitted keys, for the same reason `shapeFields` is:
  * a re-import must be able to *clear* a value the new evidence no longer supports. A stale
@@ -343,7 +343,7 @@ function mergeFields(item: {
 // every re-import, which is precisely the failure `nameFields` exists to prevent.
 
 /**
- * Flag a set of rows as duplicates **of each other** — status *and* pointers (N7, 2026-08-07).
+ * Flag a set of rows as duplicates **of each other** — status *and* pointers (A07a, 2026-08-07).
  *
  * `importCanonical`'s `merge` and `conflict` branches both said, in a comment, *"Both sides are
  * marked so whichever a human opens shows the other"*. Only the first half was true: they patched
@@ -411,7 +411,7 @@ function nameFields(
 }
 
 /**
- * Did a canonical re-import actually move this body's outline? (N2)
+ * Did a canonical re-import actually move this body's outline? (A02)
  *
  * Cheap on purpose — four bbox floats, an area, and a vertex count, all of which the loader hands us
  * or the row already stores. It exists to keep `importCanonical` from paying for a polygon clip per
@@ -451,7 +451,7 @@ function vertexCount(geometry: unknown): number {
 }
 
 /**
- * Look up every stored row each of an incoming record's catalogue ids resolves to (N7 / D93).
+ * Look up every stored row each of an incoming record's catalogue ids resolves to (A07a / D93).
  *
  * One index read per id present, each on the id's **own** index. `osmId` deliberately does not go
  * through `by_external_id`: the two fields hold the same string today and D93 exists to end that
@@ -538,7 +538,7 @@ export const importCanonical = internalMutation({
   },
   handler: async (ctx, { bodies, state, campaignId }) => {
     // Defense-in-depth against the ETL's `--state` guard: reject an unknown region code before any
-    // write so a bad tag can never be unioned into a body's `states` (Phase 2.5 review).
+    // write so a bad tag can never be unioned into a body's `states` (Phase 02b review).
     if (state !== undefined && !isKnownStateCode(state)) {
       throw new ConvexError(
         `Unknown state code: ${state}. Expected one of: ${KNOWN_STATE_CODES.join(', ')}.`,
@@ -566,7 +566,7 @@ export const importCanonical = internalMutation({
           action: 'conflict',
           reason: verdict.reason,
         });
-        // **A conflict must not become a deletion** (N7 second audit). This used to write nothing at
+        // **A conflict must not become a deletion** (A07a second audit). This used to write nothing at
         // all, which was right about the *body* and catastrophic in combination with step 6: the rows
         // an id resolved ambiguously to never got a `lastCampaignId`, so `pruneNotInCampaign` then
         // saw two clean, unattached, un-reaffirmed rows and **deleted both** — resolving a
@@ -607,7 +607,7 @@ export const importCanonical = internalMutation({
         const scores = scoreFields({
           surfaceAreaSqM: item.surfaceAreaSqM,
           curatedBoost: existing.curatedBoost,
-          // N6f/N7b: the standing fields (`removedAt`, `publicAccess`, `dormant`) all survive because
+          // A06f/A07b: the standing fields (`removedAt`, `publicAccess`, `dormant`) all survive because
           // this patch names its fields and does not name them — but the *rung* is derived, so
           // omitting it here would preserve a dormancy and quietly put the body back on the
           // browsable ladder on the next campaign. Same shape as the richness caveat above, and
@@ -656,7 +656,7 @@ export const importCanonical = internalMutation({
           ...assertedCatalogueIds(item),
         });
         // Re-derive listing from the preserved fields (removed stays removed, D48) and re-cell the
-        // body against its new geometry + prominence (N1).
+        // body against its new geometry + prominence (A01).
         await syncWaterBodyCells(ctx, existing._id, {
           bbox: item.bbox,
           minVisibleZoom: scores.minVisibleZoom,
@@ -669,7 +669,7 @@ export const importCanonical = internalMutation({
         // **Gated on the outline having actually moved, because the clip is the expensive thing in
         // this mutation.** Champlain's polygon is 10,755 vertices and carries nine bays; a clip
         // against it is comfortable alone and blows a mutation's 1s budget at a dozen (measured in
-        // the N2 curation session), and the ETL loads Champlain as a near-solo batch precisely
+        // the A02 curation session), and the ETL loads Champlain as a near-solo batch precisely
         // because it's already the heaviest row in the feed. Re-running the loader on unchanged data
         // is documented as a no-op, and an unconditional re-clip would have made it an increasingly
         // expensive one — worse with every bay drawn. The check is `footprintMoved`: identical bbox
@@ -691,7 +691,7 @@ export const importCanonical = internalMutation({
         const now = Date.now();
         // No boost on import, and **active**: a fresh canonical body is on the map until the next
         // season rollover asks whether anyone skated it, or until `seedStanding` is re-run after the
-        // campaign (N7b). Inserting dormant would have made every fixture-seeded test body invisible
+        // campaign (A07b). Inserting dormant would have made every fixture-seeded test body invisible
         // and every new-region import a season of dead map; the rollover is the honest clock.
         const scores = scoreFields({ surfaceAreaSqM: item.surfaceAreaSqM, active: true });
         const id = await ctx.db.insert('waterBodies', {
@@ -746,7 +746,7 @@ export const importCanonical = internalMutation({
 });
 
 /**
- * Backfill `osmId` / `geometrySource` onto rows imported before those fields existed (N6b follow-up).
+ * Backfill `osmId` / `geometrySource` onto rows imported before those fields existed (A06b follow-up).
  *
  * Pure restatement — every value is derived from `source` and `externalId`, which the row already
  * carries — so this is idempotent, order-independent, and safe to re-run against a corpus that is
@@ -762,9 +762,9 @@ export const importCanonical = internalMutation({
  * single row.
  */
 /**
- * Count the corpus, one page at a time — **the campaign baseline** (N7).
+ * Count the corpus, one page at a time — **the campaign baseline** (A07a).
  *
- * Every "how much did this add" claim in the N7 plan is measured against the post-prune corpus size,
+ * Every "how much did this add" claim in the A07a plan is measured against the post-prune corpus size,
  * and that number has been quoted as *"~21,000"* with a note that it is unconfirmed. There was no
  * cheap way to establish it: a one-off query cannot scan ~21,000 rows inside Convex's 16 MB read cap
  * (a body averages 1.8 KB and the large ones are far bigger), and no counting function existed.
@@ -863,7 +863,7 @@ export const corpusStats = internalQuery({
   },
   handler: async (ctx, { cursor, batchSize, running }) => {
     // 200 keeps a page well inside the byte cap even where the corpus is all Champlain-sized
-    // polygons — the N6c depth loader blew 16 MB at a batch of 25 by not thinking about this.
+    // polygons — the A06c depth loader blew 16 MB at a batch of 25 by not thinking about this.
     const numItems = Math.min(500, Math.max(1, batchSize ?? 200));
     const page = await ctx.db.query('waterBodies').paginate({ cursor: cursor ?? null, numItems });
 
@@ -1007,11 +1007,11 @@ export const corpusStats = internalQuery({
 });
 
 /**
- * Page the corpus out for offline reconciliation — campaign step 2 (N7).
+ * Page the corpus out for offline reconciliation — campaign step 2 (A07a).
  *
  * **Geometry included, which is why this is paged at 100 rather than 500.** A body averages 1.8 KB
  * but Champlain's polygon alone is 10,755 vertices, and Convex caps a transaction at 16 MB of reads
- * as well as 4,096 documents — the N6c depth loader blew the byte cap at a batch of 25 by reasoning
+ * as well as 4,096 documents — the A06c depth loader blew the byte cap at a batch of 25 by reasoning
  * only about the document count.
  *
  * Returns the minimum reconciliation needs: the key to write back to, the OSM id for the ledger, the
@@ -1037,7 +1037,7 @@ export const listForReconcile = internalQuery({
 });
 
 /**
- * Apply the OSM ↔ NHD reconciliation — campaign step 2's write half (N7, D93).
+ * Apply the OSM ↔ NHD reconciliation — campaign step 2's write half (A07a, D93).
  *
  * ## Why a match and a duplicate group are handled differently
  *
@@ -1117,7 +1117,7 @@ export const importReconciliation = internalMutation({
 });
 
 /**
- * Mint a `waterBodyKey` for every body that lacks one — campaign step 4 (N7 / D93).
+ * Mint a `waterBodyKey` for every body that lacks one — campaign step 4 (A07a / D93).
  *
  * **Never overwrites.** A key that already exists is the identity other things have already been
  * stamped with; re-minting it would be the exact failure the field exists to prevent.
@@ -1130,7 +1130,7 @@ export const importReconciliation = internalMutation({
  */
 
 /**
- * Recompute `searchText` across the corpus — **the repair pass** (N7).
+ * Recompute `searchText` across the corpus — **the repair pass** (A07a).
  *
  * It was written as step 3 of the four `searchText` had to come through (widen, deploy, backfill,
  * narrow): the field shipped optional, this filled 25,052 rows, the index moved off `name`, and the
@@ -1190,7 +1190,7 @@ export const backfillSearchText = internalMutation({
 
 /**
  * A light projection for the D97 audit: what each body is, what it is called, and which catalogue
- * rows it is tied to — **without the polygon** (N7).
+ * rows it is tied to — **without the polygon** (A07a).
  *
  * Separate from `listForReconcile`, which carries geometry and therefore pages at 100. The audit's
  * questions are about *attributes* — how much of `other` could borrow a class from NHD, whether a
@@ -1294,13 +1294,13 @@ export const backfillCatalogueIds = internalMutation({
 
 /**
  * Internal migration (run via `pnpm exec convex run`) that re-derives a body's D49 prominence and
- * rebuilds its cell rows (N1) — the path from the old centroid index to the ladder grid, and the
+ * rebuilds its cell rows (A01) — the path from the old centroid index to the ladder grid, and the
  * repair path for any body whose scores predate a scoring change.
  *
  * **Paginated, deliberately.** Its predecessor `collect()`-ed the whole table and re-inserted a
  * centroid-index point per body, which read far past Convex's 4,096-reads/mutation cap on anything
  * bigger than the handful of user-created bodies — so the canonical corpus had to be backfilled by
- * re-running the ETL loader instead. That stopped being viable at Phase 2.5's ~116k bodies. This
+ * re-running the ETL loader instead. That stopped being viable at Phase 02b's ~116k bodies. This
  * walks a `cursor` in bounded batches; the caller loops until `isDone`, and each batch is its own
  * transaction, so an interrupted run resumes rather than restarting.
  */
@@ -1338,7 +1338,7 @@ export const backfillCells = internalMutation({
 });
 
 /**
- * Copy `centroid` → `representativePoint` on rows written before the rename (N6c-1).
+ * Copy `centroid` → `representativePoint` on rows written before the rename (A06c-1).
  *
  * **The transition window in one job.** Convex validates the schema against existing data on push,
  * and dev holds 116,070 rows that predate the new field, so the rename cannot be a single atomic
@@ -1448,7 +1448,7 @@ export async function bodyAttachmentKind(
  * other half: one pass that brings the stored corpus into agreement with the rule, driven from
  * `pnpm --filter @skating/etl prune-floor`.
  *
- * **Since N7b this demotes rather than deletes** (founder call, 2026-09-16: a body the rules refuse
+ * **Since A07b this demotes rather than deletes** (founder call, 2026-09-16: a body the rules refuse
  * *"shouldn't leave our database entirely"*). A refused body becomes dormant with reason
  * `not_in_campaign`: on no push surface, drawn only when zoomed in on, and reachable — so the
  * skater who finds it learns why it is not on the active map and can ask for it back. The D91
@@ -1460,7 +1460,7 @@ export async function bodyAttachmentKind(
  * exactly what a real run would do before it does it.
  *
  * A body is demoted only when it fails the floor **and** nothing else speaks for it:
- *  - `source: 'user'` is never touched — a skater drew it from a track they recorded (Phase 8).
+ *  - `source: 'user'` is never touched — a skater drew it from a track they recorded (Phase 08).
  *  - `surfaceAreaSqM` absent ⇒ kept. The field is optional; "we can't measure it" is not "it's
  *    small", and a silent delete on a missing number is how you lose Champlain to a schema gap.
  *  - `curatedBoost` set ⇒ kept. An admin promoted it by hand (D49); that outranks a threshold.
@@ -1472,7 +1472,7 @@ export async function bodyAttachmentKind(
  *  - anything attached to it (`bodyAttachmentKind`) ⇒ kept, and named in the summary.
  *
  * Cell rows go through `syncWaterBodyCells` with `listed: false` rather than a hand-rolled delete, so
- * the one tested path that maintains the N1 index stays the only thing that writes to it.
+ * the one tested path that maintains the A01 index stays the only thing that writes to it.
  */
 export const pruneBelowAreaFloor = internalMutation({
   args: {
@@ -1578,8 +1578,8 @@ export const pruneBelowAreaFloor = internalMutation({
 });
 
 /**
- * Demote the stored bodies the campaign's master list did **not** re-affirm — campaign step 6 (N7;
- * demote-not-delete since N7b, see `pruneBelowAreaFloor` for the founder call).
+ * Demote the stored bodies the campaign's master list did **not** re-affirm — campaign step 6 (A07a;
+ * demote-not-delete since A07b, see `pruneBelowAreaFloor` for the founder call).
  *
  * ## The gap this closes, and why the two existing prunes cannot
  *
@@ -1610,7 +1610,7 @@ export const pruneBelowAreaFloor = internalMutation({
  *
  * A body carrying user content is **never** deleted, whatever the master list says — that is D93's
  * closing rule and it is the reason the whole campaign patches in place. `source: 'user'`, a
- * `curatedBoost`, a soft-delist, a dedup or merge pointer, `includedByRequest` (N7b's whole point),
+ * `curatedBoost`, a soft-delist, a dedup or merge pointer, `includedByRequest` (A07b's whole point),
  * and any attachment all keep a row. The shared predicate is `protectedFromPrune`, so the two passes
  * cannot drift.
  *
@@ -1625,7 +1625,7 @@ export const pruneNotInCampaign = internalMutation({
     apply: v.optional(v.boolean()),
     /**
      * How much of a page this pass is allowed to delete before it refuses — **the blast radius**
-     * (N7 second audit).
+     * (A07a second audit).
      *
      * The prune's whole premise is that a row the campaign did not stamp is a row the master list did
      * not contain. That premise fails silently in one specific, likely way: `load.ts` deliberately
@@ -1651,7 +1651,7 @@ export const pruneNotInCampaign = internalMutation({
       maxDeleteFraction === undefined
         ? DEFAULT_MAX_DELETE_FRACTION
         : Math.min(1, Math.max(0, maxDeleteFraction));
-    // **Bounded by READS, not by bytes — and the first version got this wrong** (N7, found by
+    // **Bounded by READS, not by bytes — and the first version got this wrong** (A07a, found by
     // running it 2026-08-07).
     //
     // `pruneBelowAreaFloor`'s page limit is about polygon bytes, and this mutation inherited the
@@ -1844,7 +1844,7 @@ const PRUNE_GUARD_MIN_PAGE = 25;
 
 /**
  * Demote water we no longer claim to cover — the corpus edge that is not the map's edge. (Deleted
- * until N7b; now dormant with reason `not_in_campaign`, like the other two prunes — see
+ * until A07b; now dormant with reason `not_in_campaign`, like the other two prunes — see
  * `pruneBelowAreaFloor` for the founder call.)
  *
  * ## Why there is anything to delete
@@ -1985,7 +1985,7 @@ export const pruneOutsideCoverage = internalMutation({
  */
 const SHORELINE_CROSS_CHECK_RATIO = 2;
 
-// ── Bathymetry contour coverage (N6c-1 / D2) ─────────────────────────────────────────────────
+// ── Bathymetry contour coverage (A06c-1 / D2) ─────────────────────────────────────────────────
 
 /**
  * Replace the contour-coverage set with the bodies the current tileset actually draws.
@@ -2025,7 +2025,7 @@ export const importContourCoverage = internalMutation({
   },
 });
 
-// ── Elevation (N6c A1) ───────────────────────────────────────────────────────────────────────
+// ── Elevation (A06c A1) ───────────────────────────────────────────────────────────────────────
 
 /**
  * Page the corpus for bodies whose elevation the DEM pass should look up.
@@ -2053,8 +2053,8 @@ export const listNeedingElevation = internalQuery({
     refresh: v.optional(v.boolean()),
     /**
      * Only return bodies the canonical import would keep — `belongsInCorpus`, imported, not restated.
-     * That predicate rather than the bare area floor, so a body admitted by request (N7b) gets its
-     * elevation like any other; before N7 this pass was stricter than the prune, so a below-floor
+     * That predicate rather than the bare area floor, so a body admitted by request (A07b) gets its
+     * elevation like any other; before A07a this pass was stricter than the prune, so a below-floor
      * body with a report on it would have survived forever with no elevation and nothing saying so.
      *
      * **Paging is free; API calls are not.** Open-Meteo's free tier counts each *coordinate* against
@@ -2071,7 +2071,7 @@ export const listNeedingElevation = internalQuery({
      */
     importFloorOnly: v.optional(v.boolean()),
     /**
-     * Also enrich bodies that are not active (N7b). Off by default: a dormant body is one nobody is
+     * Also enrich bodies that are not active (A07b). Off by default: a dormant body is one nobody is
      * shown, and fetching elevation for 24,000 of them is exactly the cost the founder asked
      * trimming to save. A body that comes back is stamped `activatedAt`, and the next run picks it
      * up without this flag.
@@ -2125,7 +2125,7 @@ export const listNeedingElevation = internalQuery({
       // otherwise "scanned 116,070, looked up 16,817" reads like a 14% failure rather than a 14%
       // target.
       belowFloor: importFloorOnly === true ? page.page.filter(belowFloor).length : 0,
-      /** Walked past for not being active — the N7b saving, made visible in the run row. */
+      /** Walked past for not being active — the A07b saving, made visible in the run row. */
       dormant,
       cursor: page.continueCursor,
       isDone: page.isDone,
@@ -2134,7 +2134,7 @@ export const listNeedingElevation = internalQuery({
 });
 
 /**
- * Write a batch of DEM elevations (N6c A1).
+ * Write a batch of DEM elevations (A06c A1).
  *
  * **Re-checks the operator rung at write time** even though `listNeedingElevation` already filtered
  * on it. The read and the write are separate transactions and a 116k-body pass takes minutes, so a
@@ -2210,7 +2210,7 @@ export const importElevations = internalMutation({
 });
 
 /**
- * Take back an elevation we no longer believe (N7-3 follow-up, 2026-08-26).
+ * Take back an elevation we no longer believe (A07a-3 follow-up, 2026-08-26).
  *
  * > **Founder, 2026-08-26:** *"It sounds like we should build a path to fix elevations that appear
  * > implausible so that existing bodies with weird elevations can be properly overwritten?"*
@@ -2280,7 +2280,7 @@ export const retractElevations = internalMutation({
   },
 });
 
-// ── Winter wind rose (N6c A4b) ───────────────────────────────────────────────────────────────
+// ── Winter wind rose (A06c A4b) ───────────────────────────────────────────────────────────────
 
 /**
  * Page the corpus for bodies whose wind rose is worth fetching.
@@ -2310,7 +2310,7 @@ export const listNeedingWindRose = internalQuery({
      * not "measured", and the run reports `belowFloor` either way.
      */
     importFloorOnly: v.optional(v.boolean()),
-    /** Also enrich bodies that are not active — see `listNeedingElevation` (N7b). */
+    /** Also enrich bodies that are not active — see `listNeedingElevation` (A07b). */
     includeDormant: v.optional(v.boolean()),
   },
   handler: async (
@@ -2374,7 +2374,7 @@ export const importWindRoses = internalMutation({
       v.object({
         waterBodyId: v.id('waterBodies'),
         /**
-         * **Optional, and that is the point of the N7-3 split.** A cell with too few winter hours
+         * **Optional, and that is the point of the A07a-3 split.** A cell with too few winter hours
          * stores no rose — a percentage of a thin sample renders identically to one of a thick
          * sample — but its strong-wind *counts* are absolute and carry their own denominator, so
          * they are honest at any sample size. One of the two can arrive without the other.
@@ -2503,7 +2503,7 @@ export const create = mutation({
         candidateIds: matches.map((m) => m.ref),
       });
     }
-    // **A takedown cannot be re-drawn around** (N7b, D48's deferred edge (a)). Since removed bodies
+    // **A takedown cannot be re-drawn around** (A07b, D48's deferred edge (a)). Since removed bodies
     // are listed, the dedup above sees them; and however sure the skater is that this is new water,
     // minting a public body over a pond a landowner asked us to remove is the one outcome
     // `confirmedNew` must not be able to buy. The skate attaches to the removed body instead —
@@ -2519,7 +2519,7 @@ export const create = mutation({
       }
     }
 
-    // No boost on a new body, and active: it exists because somebody skated it (N7b).
+    // No boost on a new body, and active: it exists because somebody skated it (A07b).
     const scores = scoreFields({ surfaceAreaSqM: derived.surfaceAreaSqM, active: true });
     const id = await ctx.db.insert('waterBodies', {
       name: args.name,
@@ -2537,12 +2537,12 @@ export const create = mutation({
       createdByUserId: profile._id,
       reviewStatus: 'pending', // auto-visible, review-after (D37)
       // The verdict is stamped even when the user confirmed it's new — that stamp is exactly what
-      // feeds the Phase 7 moderator merge queue, which has had nothing flowing into it until now.
+      // feeds the Phase 07 moderator merge queue, which has had nothing flowing into it until now.
       dedupStatus: status,
       ...(matches.length > 0 ? { duplicateCandidateIds: matches.map((m) => m.ref) } : {}),
       createdAt: now,
     });
-    // Cell-index it for viewport lookups (N1); a pending user body is auto-visible (D37/D48), so it
+    // Cell-index it for viewport lookups (A01); a pending user body is auto-visible (D37/D48), so it
     // lists immediately. A suspected/near-certain duplicate still lists: hiding it would take any
     // reports filed against it off the map on a machine's guess (D3).
     await syncWaterBodyCells(ctx, id, {
@@ -2583,7 +2583,7 @@ async function scoreAgainstNearby(
 /**
  * "Attach here?" — the ranked matches for the body a skate would create (D36).
  *
- * The **producer** the Phase 7 dedup queue has been waiting for. The client calls this before
+ * The **producer** the Phase 07 dedup queue has been waiting for. The client calls this before
  * `create`, shows the matches, and only sends `confirmedNew` once the user has explicitly rejected
  * all of them. Deriving the shape here (rather than taking one) means the preview is scored against
  * the *exact* geometry that would be stored.
@@ -2621,7 +2621,7 @@ export const findMatchCandidates = query({
             official: m.official,
             verdict: m.verdict,
             centroidDistanceM: Math.round(m.centroidDistanceM),
-            // A dormant or removed match is still the water they skated (N7b): attaching to it is
+            // A dormant or removed match is still the water they skated (A07b): attaching to it is
             // the evidence that brings a shelved lake back, and the prompt says which it is.
             ...(body ? { standing: standingOf(body) } : {}),
           };
@@ -2676,7 +2676,7 @@ export const approve = mutation({
  * delete): stamp `removed*`, write a `moderationActions` audit row. A re-import preserves this (see
  * `importCanonical`).
  *
- * **Since N7b a removed body keeps its cell rows** — it draws at the dormant rung, dimmed, with the
+ * **Since A07b a removed body keeps its cell rows** — it draws at the dormant rung, dimmed, with the
  * reason in the drawer, and is found by someone standing on it (so the landowner's own skate attaches
  * here rather than minting a fresh public body). What removal takes away is standing: search, every
  * push surface, the weather registry, and its bays' cells all go with it, through
@@ -2715,7 +2715,7 @@ export const remove = mutation({
  * Admin: reverse a removal — clear `removed*`, bring the body back to active, audit the restore
  * (D48).
  *
- * **A restore is an activation** (N7b, founder call: *"restoring a body should trigger the whole
+ * **A restore is an activation** (A07b, founder call: *"restoring a body should trigger the whole
  * data backfill for that body, so that it has a full profile when it goes live"*). It clears any
  * stored dormancy too, re-scores with richness, re-cells, re-registers the weather cell and stamps
  * `activatedAt` — which is what the enrichment passes read to find bodies that came back since their
@@ -2751,7 +2751,7 @@ export const restore = mutation({
 });
 
 /**
- * Moderator: rule on whether a body can be lawfully reached (N6f).
+ * Moderator: rule on whether a body can be lawfully reached (A06f).
  *
  * The three verdicts, and why the middle one is stored at all:
  * - `none` — no lawful way in. The body dims to half opacity and drops ~2 zoom levels. It stays on
@@ -2797,7 +2797,7 @@ export const setPublicAccess = mutation({
             ...(trimmedNote ? { note: trimmedNote } : {}),
           };
 
-    // The standing is derived from the verdict (N7b): `none` makes the body dormant — the dormant
+    // The standing is derived from the verdict (A07b): `none` makes the body dormant — the dormant
     // rung, no push surface, out of the weather registry — and `open` is the founder's "confirm
     // public access activates": it clears a stored dormancy as well, since a moderator who has just
     // established that the public may go there has answered the retention question too. Clearing
@@ -2826,8 +2826,8 @@ export const setPublicAccess = mutation({
     // again unsettled, and the queue should say so.
     //
     // Through `closeFlag`, not a bare patch: each reporter was told "it's with the moderators", and
-    // this is the moment they hear back (N8 `content_flag_resolved`) — and the ruling counts toward
-    // the Phase 7b disposition chart like any other resolution. Both were missed when this path
+    // this is the moment they hear back (A08 `content_flag_resolved`) — and the ruling counts toward
+    // the Phase 07-2 disposition chart like any other resolution. Both were missed when this path
     // patched the rows itself, because both were built after it.
     const resolution = verdict === 'none' ? 'actioned' : verdict === 'open' ? 'dismissed' : null;
     let resolved = 0;
@@ -2999,13 +2999,13 @@ export const merge = mutation({
 /**
  * Fold one body into another: re-point every child, tombstone the loser, audit it.
  *
- * **Extracted from `merge` so the ETL cannot grow a second, subtly different version** (N7-3). The
+ * **Extracted from `merge` so the ETL cannot grow a second, subtly different version** (A07a-3). The
  * import path needs exactly this — see `retireAbsorbedBodies` — and the parts that are easy to omit
  * when reimplementing are the ones that lose data silently: a stranded `bodyFeature` known-hazard
  * pin, a suppressed put-in whose suppression is forgotten, a favouriter cut off from drive-time
  * matching, a hand-drawn sub-area left on a tombstone. None of those throw.
  *
- * `actorId` is **optional, and absent means the system acted** — the precedent is N5c/D80's
+ * `actorId` is **optional, and absent means the system acted** — the precedent is A05c/D80's
  * auto-merge, and the schema note on `moderationActions.actorId` argues it: naming a human who took
  * no action is worse than an honest absence, and "no actor" already reads as "automatic" everywhere
  * it is rendered.
@@ -3059,7 +3059,7 @@ export async function mergeBodyInto(
     for (const child of [...reports, ...hazards, ...bounties, ...features, ...putIns]) {
       await ctx.db.patch(child._id, { waterBodyId: survivorId });
     }
-    // The bay join mirrors the report's body (N9); the bays themselves move to the survivor below,
+    // The bay join mirrors the report's body (A09); the bays themselves move to the survivor below,
     // so the `subAreaId` on each row stays valid and only the body needs following.
     for (const report of reports) {
       await mirrorReportSubAreas(ctx, { ...report, waterBodyId: survivorId });
@@ -3113,7 +3113,7 @@ export async function mergeBodyInto(
     // Soft-tombstone the loser: reads chase `mergedIntoId` to the survivor; `isListed` treats
     // `merged` as unlisted, so drop its cell rows too.
     await ctx.db.patch(loserId, { dedupStatus: 'merged', mergedIntoId: survivorId });
-    // …and clear the flag at the **other end of the pair**, which nothing used to do. N7's
+    // …and clear the flag at the **other end of the pair**, which nothing used to do. A07a's
     // reconciliation flags every member of a duplicate group mutually, so the survivor is normally
     // itself `near_certain` naming the body just merged — a candidate `merge` would now refuse as
     // "already merged". Left alone, every merge cleared one card and left a permanent, unclearable
@@ -3130,7 +3130,7 @@ export async function mergeBodyInto(
       minVisibleZoom: zoomSortKey(loser),
       listed: isListed({ ...loser, dedupStatus: 'merged' }),
     });
-    // **Both map cards move, so both are recomputed (N6c/E).** A merge re-points the loser's reports
+    // **Both map cards move, so both are recomputed (A06c/E).** A merge re-points the loser's reports
     // and hazards onto the survivor, which is a change to the survivor's counts with no report or
     // hazard mutation to hang the recompute on — the one shape `lib/bodySummary.ts`'s write-path
     // coverage cannot see. Left alone, the survivor understates its activity until the six-hourly
@@ -3153,7 +3153,7 @@ export async function mergeBodyInto(
     // The loser's reports and hazards now belong to the survivor, so their sub-area stamps have to be
     // recomputed against the survivor's bays — the old stamps were resolved against a different set.
     await scheduleRestamp(ctx, survivorId);
-    // And so does the survivor's cross-season recurrence (N5c / §C4): it just gained a winter's worth
+    // And so does the survivor's cross-season recurrence (A05c / §C4): it just gained a winter's worth
     // of sightings that were clustered against a different lake, and the loser's stored clusters would
     // otherwise sit ranked in the operator queue on a tombstoned body, linking nowhere. Scheduled
     // rather than run inline — the merge is already a fan-out over every body-keyed child, and one
@@ -3165,7 +3165,7 @@ export async function mergeBodyInto(
 }
 
 /**
- * Retire the rows the merge absorbed — **the half of `osm→osm` that was missing** (N7-3, D136).
+ * Retire the rows the merge absorbed — **the half of `osm→osm` that was missing** (A07a-3, D136).
  *
  * ## The defect this closes
  *
@@ -3387,7 +3387,7 @@ export const get = query({
     if (!body) return null;
     // Unlisted (rejected / merged-and-unresolvable) is the only "unavailable" now: a removed or
     // dormant body is returned whole, and the clients read `standingOf(body)` to say why it is not
-    // on the active map and offer the way back (N7b). Hiding the row was how a skater got
+    // on the active map and offer the way back (A07b). Hiding the row was how a skater got
     // "unavailable" with no reason and no recourse.
     if (!isListed(body)) return { available: false as const };
     return { available: true as const, body };
@@ -3406,9 +3406,9 @@ export const setCuratedBoost = mutation({
     const body = await ctx.db.get(waterBodyId);
     if (!body) throw new ConvexError('Water body not found');
 
-    // Through `transitionStanding` (N7b): richness is read for the same reason `setPublicAccess`
+    // Through `transitionStanding` (A07b): richness is read for the same reason `setPublicAccess`
     // reads it — one body under a moderator's hand — and the cell rows are restamped with the new
-    // `minVisibleZoom`, which is part of `by_cell`'s range (N1). A **positive** boost on a body the
+    // `minVisibleZoom`, which is part of `by_cell`'s range (A01). A **positive** boost on a body the
     // machine set dormant brings it back: a curated boost is a standing human decision (it is what
     // `retainsActive` honours), and a moderator boosting a lake the season cron shelved has plainly
     // decided it belongs on the map.
@@ -3437,7 +3437,7 @@ export const setCuratedBoost = mutation({
 });
 
 /**
- * Moderator: set a body's operator-entered reference links (N6c Workstream B7).
+ * Moderator: set a body's operator-entered reference links (A06c Workstream B7).
  *
  * The one link in the phase that is stored rather than derived, because no algorithm turns a lake's
  * name into its association's URL. Everything else in the drawer's link list is computed at render
@@ -3492,10 +3492,10 @@ export const setReferenceLinks = mutation({
 });
 
 /**
- * Moderator: override whether a body offers the Copernicus satellite link (N6c Workstream D, D70/D75).
+ * Moderator: override whether a body offers the Copernicus satellite link (A06c Workstream D, D70/D75).
  *
  * **The writer the schema field had been promising and did not have.** `satelliteImageryAvailable`
- * has read `satelliteImagery` since N6c-2 and the field's own comment says "an operator's correction
+ * has read `satelliteImagery` since A06c-2 and the field's own comment says "an operator's correction
  * takes effect immediately with no redeploy" — but nothing wrote it, so the only way to correct a
  * body was to hand-edit the row in the Convex dashboard. A documented escape hatch with no handle is
  * worse than no escape hatch: it is a promise the surface silently fails to keep.
@@ -3605,7 +3605,7 @@ export const setWeatherSamplePoints = mutation({
 });
 
 /**
- * Moderator: type in a body's depth — rung 1 of the D68 ladder (N6a).
+ * Moderator: type in a body's depth — rung 1 of the D68 ladder (A06a).
  *
  * This is the path for a state-agency survey read off a chart (NH Fish & Game, VT ANR) or firsthand local
  * knowledge, and it **outranks every automated source**: the depth ETL refuses to overwrite an
@@ -3750,7 +3750,7 @@ const REVIEW_QUEUE_PAGE = 40;
 const REVIEW_COUNT_CAP = 200;
 
 /**
- * The review queue — **2,010 rows that were stored and shown to nobody** (N7).
+ * The review queue — **2,010 rows that were stored and shown to nobody** (A07a).
  *
  * `confidence.ts` scored every body, `merge.ts` wrote the reasons onto the rows, and there the trail
  * ended: the first intake audit found the queue computed and discarded, and fixing that stored it
@@ -3823,7 +3823,7 @@ export const reviewQueueCounts = query({
 });
 
 /**
- * Moderator: choose which publisher's name a body displays (N7).
+ * Moderator: choose which publisher's name a body displays (A07a).
  *
  * ## Why this needs a mutation rather than a text field
  *
@@ -3928,7 +3928,7 @@ export const setWaterBodyName = mutation({
 });
 
 /**
- * Moderator: drop an `operator` rung entirely, handing the measurement back to the import (N6a).
+ * Moderator: drop an `operator` rung entirely, handing the measurement back to the import (A06a).
  *
  * The counterpart to `setDepth`'s tombstone, and the reason a rejection is safe to make: rung 1 is
  * durable *by design*, so without a release there would be no way back short of a database edit. Clears
@@ -4008,7 +4008,7 @@ function describeDepthChange(
 }
 
 /**
- * Idempotently stamp depths from the N6a ETL, honoring the D68 ladder (internal, never client-callable).
+ * Idempotently stamp depths from the A06a ETL, honoring the D68 ladder (internal, never client-callable).
  *
  * Two rules the loader enforces rather than trusting its input for:
  *  - **an `operator` value is never overwritten.** A moderator typed a survey in; a re-run of a global
@@ -4282,7 +4282,7 @@ const BATHYMETRY_APPROACH_M = 25;
  */
 /**
  * The identity fields an incoming record carries, **taken from the payload rather than derived**
- * (N7 / D93).
+ * (A07a / D93).
  *
  * This used to infer `osmId` from `source === 'osm' && externalId`, which is `externalId` doing the
  * identity job all over again — the exact conflation D93 exists to undo. A merged record knows all
@@ -4388,14 +4388,14 @@ function assertedCatalogueIds(item: IncomingIds): Record<string, string> {
 const MIN_SURVEY_CONTAINMENT = 0.5;
 
 /**
- * Spatially match a batch of source lakes to our bodies and stamp their depths (internal; the N6a ETL's
+ * Spatially match a batch of source lakes to our bodies and stamp their depths (internal; the A06a ETL's
  * load stage). The global sources are keyed to their **own** lake ids — `Hylak_id`, `lagoslakeid` — so
  * there is no join key to our OSM corpus and the join has to be geometric.
  *
  * The match runs **here rather than in the ETL** because the spatial index lives here: resolving ~8k
  * source lakes against the cell index costs ~8k small indexed lookups, where doing it locally would
  * mean exporting all 116,070 bodies with their polygons first. It reuses `listedBodiesNearCoord` — the
- * degenerate one-box viewport read N1 built for coord→lake resolution — so the depth join and the "you
+ * degenerate one-box viewport read A01 built for coord→lake resolution — so the depth join and the "you
  * are at Lake X" hint agree by construction about which body a point is on.
  *
  * **Every rejection is counted and named**, because an ETL that silently matches 60% of its input looks
@@ -4561,7 +4561,7 @@ export const matchAndImportDepths = internalMutation({
 });
 
 /**
- * Resolve a batch of source lakes to our bodies, for the N6b bathymetry ETL (internal; read-only).
+ * Resolve a batch of source lakes to our bodies, for the A06b bathymetry ETL (internal; read-only).
  *
  * Sibling to `matchAndImportDepths` above, over the same corpus and the same candidate lookup — but
  * **not the same resolver**, and the difference is load-bearing rather than incidental.
@@ -4606,7 +4606,7 @@ export const matchBathymetryLakes = internalQuery({
          */
         samplePoints: v.optional(v.array(latLng)),
         /**
-         * The NHD `Permanent_Identifier` the **publisher** says this survey belongs to (N7-3).
+         * The NHD `Permanent_Identifier` the **publisher** says this survey belongs to (A07a-3).
          *
          * Maine publishes a MIDAS → NHD crosswalk (`MaineDEP_Lakes_Data/MapServer/3`), which
          * resolves **5,611 of 5,803** MIDAS numbers and therefore 98.1% of the sounding sets. Where
@@ -4785,12 +4785,12 @@ export const matchBathymetryLakes = internalQuery({
 });
 
 /**
- * Internal seed (run via `pnpm exec convex run`, no auth) — the Phase 2.5 re-seed of the community
+ * Internal seed (run via `pnpm exec convex run`, no auth) — the Phase 02b re-seed of the community
  * favorites list. For each `{ name, boost, state? }`: find *listed* bodies whose name matches
  * (search index, then exact case-insensitive), disambiguate a repeated name by the optional `state`
  * hint else the **largest-area** body (the one people mean — Lake George NY over the MA reservoir),
  * set `curatedBoost` + recompute `displayScore`/`minVisibleZoom` + re-index. Mirrors
- * `setCuratedBoost`'s core minus the admin auth + audit row — Phase 7 lifts per-body boost editing
+ * `setCuratedBoost`'s core minus the admin auth + audit row — Phase 07 lifts per-body boost editing
  * into the admin UI with proper auditing. Returns what was boosted + names that matched nothing.
  */
 export const applyCuratedBoostSeed = internalMutation({
@@ -4823,7 +4823,7 @@ export const applyCuratedBoostSeed = internalMutation({
         notFound.push(name);
         continue;
       }
-      // Through the same transition `setCuratedBoost` uses (N7b): a seeded boost on a body the
+      // Through the same transition `setCuratedBoost` uses (A07b): a seeded boost on a body the
       // machine shelved brings it back — with `activatedAt`, the weather cell and the audit row —
       // rather than leaving a boosted lake at the dormant rung where the rollover never revisits it.
       const scored =
@@ -4847,7 +4847,7 @@ export const applyCuratedBoostSeed = internalMutation({
 });
 
 /**
- * The one place cell rows are read (N1) — shared by the viewport query and the coord resolver so a
+ * The one place cell rows are read (A01) — shared by the viewport query and the coord resolver so a
  * change to the read shape can't land in one and miss the other (the old centroid path had exactly
  * that split, and the comment on it said so).
  *
@@ -4863,7 +4863,7 @@ export const applyCuratedBoostSeed = internalMutation({
  * (Greptile PR #27). Sorting the whole candidate set first makes the answer traversal-independent —
  * the top-`limit` bodies by `minVisibleZoom`, wherever in the box they sit.
  *
- * **The walk itself lives in `lib/cellScan.ts`** (extracted in N2, when the sub-area layer needed the
+ * **The walk itself lives in `lib/cellScan.ts`** (extracted in A02, when the sub-area layer needed the
  * same one over a second cell table): whole-rung admission, the fair-share row budget, and the
  * probe-one-past truncation flag are all stated there, each with the review correction it came from.
  * What stays here is what's specific to water bodies — which table, and how a candidate hydrates.
@@ -4940,7 +4940,7 @@ async function bodiesCoveringBox(
 }
 
 /**
- * Public: water bodies whose **bbox intersects** the viewport (D5/D48), served off the N1 ladder-grid
+ * Public: water bodies whose **bbox intersects** the viewport (D5/D48), served off the A01 ladder-grid
  * cell index. A body is indexed under every cell its bbox covers, at a level no finer than the zoom
  * it first draws at, so this query is exactly: *scan the cells covering the viewport, at every rung
  * up to the current zoom.* No margin, no large-body outlier list, no read-cap tuning — see
@@ -4976,11 +4976,11 @@ export const listInViewport = query({
     });
     if (truncated) {
       console.warn(
-        `listInViewport stopped early at zoom ${z} with ${byId.size} bodies (render budget ${effectiveLimit}, ${rowsRead} cell rows read); the least prominent bodies were omitted (D5/D49/N1).`,
+        `listInViewport stopped early at zoom ${z} with ${byId.size} bodies (render budget ${effectiveLimit}, ${rowsRead} cell rows read); the least prominent bodies were omitted (D5/D49/A01).`,
       );
     }
 
-    // Favorites are pinned visible at **every zoom** (Phase 4 map highlight): a viewer's favorited body
+    // Favorites are pinned visible at **every zoom** (Phase 04 map highlight): a viewer's favorited body
     // that intersects the viewport is included even when its `minVisibleZoom` is above the current zoom,
     // so a small-but-beloved lake never drops out from under its highlight when you zoom out. Bounded by
     // a user's handful of favorites; follows merges to the survivor and honors the same `listed` gate.
@@ -4997,7 +4997,7 @@ export const listInViewport = query({
         }
         if (!body || byId.has(body._id)) continue;
         // A dormant favourite is pinned — the favourite is what keeps it from going dormant again,
-        // and its owner knows something we don't — but a removed one is not (N7b): a takedown must
+        // and its owner knows something we don't — but a removed one is not (A07b): a takedown must
         // not stay highlighted at every zoom for the people who favourited it, and `listForUser`
         // hides the same favourite.
         if (
@@ -5014,7 +5014,7 @@ export const listInViewport = query({
 });
 
 /**
- * Internal: what one viewport read actually costs (N1). Same scan as `listInViewport`, returning the
+ * Internal: what one viewport read actually costs (A01). Same scan as `listInViewport`, returning the
  * counters instead of the bodies.
  *
  * This exists because the constants it measures were wrong for a year without anyone noticing — the
@@ -5056,7 +5056,7 @@ export const viewportReadStats = internalQuery({
 
 /** Default parking/approach buffer for coord→lake resolution (F2 offline flush + map-open framing).
  *  ~300 m covers a lakeside lot / approach so opening from the car still resolves the lake (S1).
- *  Tunable — Phase 7 lifts it behind admin controls, same "don't bury constants" principle as the
+ *  Tunable — Phase 07 lifts it behind admin controls, same "don't bury constants" principle as the
  *  displayScore curve (D37). */
 const AUTOSELECT_BUFFER_M = 300;
 
@@ -5100,9 +5100,9 @@ const METERS_PER_DEG_LAT = 111_320;
 
 /**
  * The listed bodies worth testing a single coord against — the candidate lookup shared by
- * `resolveBodyForCoord` and the Phase 8 track resolver (D44).
+ * `resolveBodyForCoord` and the Phase 08 track resolver (D44).
  *
- * The degenerate case of the viewport read (N1): one small box, every ladder rung, **no zoom
+ * The degenerate case of the viewport read (A01): one small box, every ladder rung, **no zoom
  * cutoff** — a body you are standing on must be found however unprominent it is, which is exactly
  * why this can't reuse the map's prominence filter. Its predecessor needed a second tier scanning
  * every `isLarge` body for the same reason (Champlain's centroid is nowhere near most of its
@@ -5119,7 +5119,7 @@ export async function listedBodiesNearCoord(
    * margin is ~1,113 m because that is what coord→lake resolution needs. A caller testing 250 m that
    * accepts the default reads **20× the area it needs**; one testing 30 m reads **1,377×**.
    *
-   * That is not hypothetical. N6d's parking pass ran 95,294 lookups on the default and spent
+   * That is not hypothetical. A06d's parking pass ran 95,294 lookups on the default and spent
    * **104.95 GB of database I/O — 1.1 MB per lot** — enough to disable the deployment, because
    * Champlain's ~300 KB polygon was re-read for every lot within a kilometre of it.
    *
@@ -5151,7 +5151,7 @@ export async function listedBodiesNearCoord(
   );
   if (truncated) {
     console.warn(
-      `listedBodiesNearCoord stopped early near ${coord.lat},${coord.lng} with ${byId.size} candidates; a nearer body may have been missed (N1).`,
+      `listedBodiesNearCoord stopped early near ${coord.lat},${coord.lng} with ${byId.size} candidates; a nearer body may have been missed (A01).`,
     );
   }
   return byId;
@@ -5174,7 +5174,7 @@ export const searchByName = query({
     query: v.string(),
     limit: v.optional(v.number()),
     /**
-     * Drop the sub-area half of the merge (N2). Default `false` — a skater's box wants both, since
+     * Drop the sub-area half of the merge (A02). Default `false` — a skater's box wants both, since
      * they don't know or care which table their bay lives in.
      *
      * It exists for callers whose destination is a *body*: `/admin/water`'s "open a lake" box routes
@@ -5192,7 +5192,7 @@ export const searchByName = query({
       .query('waterBodies')
       .withSearchIndex('search_name', (s) => s.search('searchText', term))
       .take(max * 4);
-    // Sub-areas share the box (N2/D60). Searching a bay must reach it: S2 found Malletts under ten
+    // Sub-areas share the box (A02/D60). Searching a bay must reach it: S2 found Malletts under ten
     // spellings, and the northeast arm of Champlain is "the Inland Sea" — a name sharing no token
     // with anything the body index holds. Merged rather than a second box, because a skater typing
     // "malletts" doesn't know or care which table the answer lives in.
@@ -5210,7 +5210,7 @@ export const searchByName = query({
     for (const body of raw) {
       if (!isListed(body)) continue;
       // A removed body is map-only (founder call, 2026-09-16): findable by someone standing on it,
-      // never by someone typing its name. A dormant one is searchable, badged (N7b).
+      // never by someone typing its name. A dormant one is searchable, badged (A07b).
       const standing = standingOf(body);
       if (standing.standing === 'removed') continue;
       results.push({
@@ -5278,7 +5278,7 @@ type SearchHit = {
   parentName?: string;
   /** A bay's spelling variants, so an alias match can rank as the exact match it is. */
   aliases?: string[];
-  /** Set when the body is dormant (N7b) — the result wears the "Inactive" badge and ranks last. */
+  /** Set when the body is dormant (A07b) — the result wears the "Inactive" badge and ranks last. */
   inactive?: boolean;
   type: Doc<'waterBodies'>['type'];
   centroid: Doc<'waterBodies'>['centroid'];
@@ -5306,7 +5306,7 @@ async function searchSubAreas(ctx: QueryCtx, term: string, max: number): Promise
   for (const subArea of raw) {
     if (subArea.removedAt !== undefined) continue;
     const parent = await ctx.db.get(subArea.waterBodyId);
-    // Active, not merely listed (N7b): a bay is a name on a lake we push, and a bay of a dormant or
+    // Active, not merely listed (A07b): a bay is a name on a lake we push, and a bay of a dormant or
     // removed lake is not reachable from the map either (`subAreaListed`).
     if (!parent || !isActive(parent)) continue;
     hits.push({
@@ -5339,10 +5339,10 @@ const CURATED_LIST_CAP = 300;
 const CURATED_SCAN_CAP = CURATED_LIST_CAP * 2;
 
 /**
- * Moderator: every body carrying a `curatedBoost` (N2) — **the surface that makes a mis-match
+ * Moderator: every body carrying a `curatedBoost` (A02) — **the surface that makes a mis-match
  * visible**.
  *
- * The Phase-2.5 seed matched community favourites by name, and five of them landed on same-named
+ * The Phase-02b seed matched community favourites by name, and five of them landed on same-named
  * lakes in the wrong state. That wasn't five separate bugs so much as one missing screen: the boost
  * is editable per body, and nothing anywhere listed which bodies had one. Four of the five are
  * Champlain bays whose boost went to a namesake elsewhere, and the fix is one motion — strip the
@@ -5387,7 +5387,7 @@ export const listPendingReview = query({
   handler: async (ctx) => {
     await requireRole(ctx, 'moderator');
     // A moderator queue is meant to be short; if it isn't, showing a bounded page beats failing the
-    // whole screen, and the log says the queue is running away (N1).
+    // whole screen, and the log says the queue is running away (A01).
     return takeCapped(
       ctx.db
         .query('waterBodies')
@@ -5427,7 +5427,7 @@ export type DedupSummary = ReturnType<typeof dedupSummary>;
  *
  * The queue used to return one row per flagged body, which was right when the only producer was
  * D36's match-on-create: a user drew a pond over an OSM lake, one row got stamped, and the other end
- * of the pair was a clean canonical body that never appeared. N7's reconciliation pass produces the
+ * of the pair was a clean canonical body that never appeared. A07a's reconciliation pass produces the
  * opposite shape — it flags **every member of a duplicate group**, mutually — so a queue of 50 real
  * decisions rendered as 100 cards, each pair appearing twice with the survivor and loser swapped,
  * and nothing on either card saying they were the same decision seen from two ends.
@@ -5680,7 +5680,7 @@ async function countAttachments(ctx: QueryCtx, waterBodyId: Id<'waterBodies'>) {
  *
  * The queue could previously only be emptied by merging, which meant the only recorded outcome of a
  * review was "yes". That is a bad shape for any queue and a dangerous one for this queue: the
- * matcher's own audit found nine wrong matches in the bathymetry join, N7's `same-source-duplicate`
+ * matcher's own audit found nine wrong matches in the bathymetry join, A07a's `same-source-duplicate`
  * reason exists precisely because a flagged group can be two *distinct* lakes our matching chained
  * together, and a moderator who reached that conclusion had nowhere to put it. The card stayed, and
  * the pressure was always toward the irreversible button.
@@ -5756,7 +5756,7 @@ async function clearDuplicateFlag(
 }
 
 /**
- * **Resolve the duplicate pairs the campaign already answered** — a one-time pass (N7, 2026-08-07).
+ * **Resolve the duplicate pairs the campaign already answered** — a one-time pass (A07a, 2026-08-07).
  *
  * ## What it is for, and why it is not the moderator merge
  *
@@ -5764,7 +5764,7 @@ async function clearDuplicateFlag(
  * review is not deleted out from under the person reviewing it. Every one of them turned out to be
  * the **losing half of an OSM duplicate pair** — Long Pond, Lovell Lake, Duncan Lake among them, the
  * pairs this phase opens by naming. Two independent systems had reached the same verdict: D36's
- * geometric match-on-create flagged them, and the N7 merge collapsed each pair onto one body through
+ * geometric match-on-create flagged them, and the A07a merge collapsed each pair onto one body through
  * NHD's shared `Permanent_Identifier`. The queue's 61 cards were pre-answered.
  *
  * `merge` is the right tool when there is content to move and a pointer worth keeping: it re-points
@@ -5787,14 +5787,14 @@ async function clearDuplicateFlag(
  *    function's, and it is reported rather than swept up.
  * 3. **It never deletes a body a contour tileset points at**, unless told to. `bathymetryCoverage` is
  *    keyed on `(source, externalId)` rather than `waterBodyId`, so no `waterBodyId` check can see it
- *    — five of the 61 carry one, and in every case the *survivor* does not, because the N6b join
+ *    — five of the 61 carry one, and in every case the *survivor* does not, because the A06b join
  *    matched the survey to the duplicate. Deleting them is what lets the next join find the right
  *    body; `includeCoverageReferenced` is the deliberate opt-in.
  *
  * **Dry by default**, and it names every row in all four outcomes rather than counting them.
  */
 /**
- * Resolve the `merge` verdicts a load declined — **survivor chosen by the arrival key** (N7).
+ * Resolve the `merge` verdicts a load declined — **survivor chosen by the arrival key** (A07a).
  *
  * ## Why `resolveCampaignDuplicates` cannot do this
  *
@@ -5947,7 +5947,7 @@ export const resolveIncomingMergeDuplicates = internalMutation({
         }
         // **Decisions, not measurements — and the reason they are here is that losing one is worse
         // than losing a modelled depth.** A curated boost is an operator saying this lake matters;
-        // `includedByRequest` is N7b's override saying it exists *despite* a corpus rule. Both
+        // `includedByRequest` is A07b's override saying it exists *despite* a corpus rule. Both
         // survive every prune by design, and deleting the row that carries one would revoke a human
         // judgement with no trace. Neither is present on run 7's losers — which is exactly why it
         // is cheap to be right about now rather than after the first one appears.
@@ -6106,16 +6106,16 @@ export const resolveCampaignDuplicates = internalMutation({
 });
 
 /**
- * Mark a body as **wanted, whatever the rules say** — N7b's primitive, seeded early (2026-08-07).
+ * Mark a body as **wanted, whatever the rules say** — A07b's primitive, seeded early (2026-08-07).
  *
- * ## Why this exists before N7b does
+ * ## Why this exists before A07b does
  *
  * `includedByRequest` is already read in three places — `belongsInCorpus` short-circuits on it,
  * and both prunes protect it — and until now **nothing could set it**. A field every deletion path
  * honours and no path writes is a rule that cannot actually be used, and the campaign produced the
  * first body that needs it: a 5-acre unnamed wetland near Albany carrying an **active `open_water`
  * hazard**. D96 refuses it (an unnamed wetland needs fifty acres) and it is right to; but somebody
- * stood on that ice and marked open water, which is exactly the evidence N7b's request path is meant
+ * stood on that ice and marked open water, which is exactly the evidence A07b's request path is meant
  * to act on.
  *
  * Without this the body survives only because the prune spares anything with an attachment — a
@@ -6153,7 +6153,7 @@ export const setIncludedByRequest = internalMutation({
     const body = await ctx.db.get(key);
     if (!body) throw new ConvexError('setIncludedByRequest: body not found');
 
-    // Keeping a body by request is also an activation when the machine had shelved it (N7b): a
+    // Keeping a body by request is also an activation when the machine had shelved it (A07b): a
     // request is precisely the evidence `not_in_campaign` yields to, and an operator running this
     // against an inactive body means "put it back". Withdrawing the flag changes nothing about
     // standing — the next prune or rollover is the honest place for that.
@@ -6185,7 +6185,7 @@ export const setIncludedByRequest = internalMutation({
 });
 
 /**
- * Sweep stale map summaries (N6c Workstream E).
+ * Sweep stale map summaries (A06c Workstream E).
  *
  * **The counts decay with no write to hang the decay on.** Every other path that touches
  * `summary` is an event — a report created, a hazard archived, a moderator hiding something — but a
@@ -6252,7 +6252,7 @@ export const sweepAllBodySummaries = internalAction({
 });
 
 /**
- * Named bodies, paged, for the destination seeding script (N6c B3a/D).
+ * Named bodies, paged, for the destination seeding script (A06c B3a/D).
  *
  * **Named only.** A curated destination has a name by definition, so the unnamed ~92% of the corpus
  * can never match one — and filtering here rather than in the script is the difference between the
@@ -6278,7 +6278,7 @@ export const listNamedForSeeding = internalQuery({
         surfaceAreaSqM: body.surfaceAreaSqM,
         curatedBoost: body.curatedBoost,
         // Read by `seed-destinations --verify-imagery` so an operator's `off` doesn't get reported
-        // as the area threshold's doing (N6e Workstream D).
+        // as the area threshold's doing (A06e Workstream D).
         satelliteImagery: body.satelliteImagery,
         interiorPoint: body.interiorPoint,
         representativePoint: body.representativePoint,

@@ -1,11 +1,11 @@
 /**
- * Outbound third-party API metering (N6h / **D158**).
+ * Outbound third-party API metering (A06h / **D158**).
  *
  * ## Why this exists
  *
  * D158 makes buying Open-Meteo's paid plan conditional on *"sustained free-tier use above ~7,000
  * calls/day"* — a trigger that could not fire, because **nothing in the weather path counted
- * anything**. No token bucket, no rate limiter, no metric. N6h adds a corpus-wide daily cron on top
+ * anything**. No token bucket, no rate limiter, no metric. A06h adds a corpus-wide daily cron on top
  * of the existing drawer-open fetches, which is exactly the change that makes the ceiling reachable,
  * so the counter ships with it rather than after it.
  *
@@ -15,7 +15,7 @@
  * would degrade the app to protect a budget the founder would rather simply pay, and it would do so
  * invisibly: blank strips, stale decay, a filter quietly missing lakes. Counting surfaces the
  * decision and leaves it to a human, which is the same posture as the bounty gate that had to stop
- * throwing so suppressed events would still be visible (Phase 7).
+ * throwing so suppressed events would still be visible (Phase 07).
  *
  * ## Weighted vs raw
  *

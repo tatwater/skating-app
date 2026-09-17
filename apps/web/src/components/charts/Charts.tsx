@@ -23,7 +23,7 @@ import { CHART_TOKENS, type ChartStatus, chartSeries, statusColor } from './pale
 export type { ChartStatus };
 
 /**
- * The operator chart kit (Phase 7b) — thin, themed wrappers over Recharts (the shadcn `chart` house
+ * The operator chart kit (Phase 07-2) — thin, themed wrappers over Recharts (the shadcn `chart` house
  * choice), one per data shape the analytics layer produces: a time series, a histogram, a composition,
  * a scatter. Every chart follows the dataviz rules: recessive grid/axis, a legend + a table view so
  * identity is never color-alone (D34), fixed categorical order, and colors stepped for dark mode rather

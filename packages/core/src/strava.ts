@@ -1,5 +1,5 @@
 /**
- * Strava brand + connection copy (Phase 8, L7) — single-sourced so web and mobile can't drift.
+ * Strava brand + connection copy (Phase 08, L7) — single-sourced so web and mobile can't drift.
  *
  * Strava's brand guidelines are a **contractual build criterion**, not a design preference: the
  * official "Connect with Strava" wording on the connect control and "Powered by Strava" wherever the

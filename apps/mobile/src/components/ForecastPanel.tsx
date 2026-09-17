@@ -40,8 +40,8 @@ import { Paragraph, Text, useTheme, XStack, YStack } from 'tamagui';
 import { Section } from './detailUi';
 
 /**
- * The forward forecast on a lake sheet — the mobile half of the web `ForecastPanel` (N6c B5b, the
- * seven-day planner since N6h Workstream D).
+ * The forward forecast on a lake sheet — the mobile half of the web `ForecastPanel` (A06c B5b, the
+ * seven-day planner since A06h Workstream D).
  *
  * Same one fetch, same three things: the strip line, the hourly cards that open at *now*, and the
  * day cards whose tap scrolls the hours to that morning. Every sentence and number comes from
@@ -57,11 +57,11 @@ export function ForecastPanel({
   reveal = false,
 }: {
   waterBodyId: Id<'waterBodies'>;
-  /** The bay this forecast is about (N6h / open question 5) — the same one `PastWeatherPanel` reads. */
+  /** The bay this forecast is about (A06h / open question 5) — the same one `PastWeatherPanel` reads. */
   subAreaId?: string | undefined;
   /** True while the caller has not resolved the bay yet; holds rather than fetching twice. */
   pending?: boolean;
-  /** N6c-2's reveal flag — states the absence instead of hiding the panel. */
+  /** A06c-2's reveal flag — states the absence instead of hiding the panel. */
   reveal?: boolean;
 }) {
   const getForecast = useAction(api.weather.getForecastForBody);

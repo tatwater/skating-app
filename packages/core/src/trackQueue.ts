@@ -1,5 +1,5 @@
 /**
- * The offline **track** queue (Phase 8) — a recorded skate waiting for signal.
+ * The offline **track** queue (Phase 08) — a recorded skate waiting for signal.
  *
  * Third kind on the same contract as `draftQueue` (reports) and `hazardQueue` (hazards): one status
  * machine, one transient-vs-permanent classification, one "persist after every advance" rule, drained

@@ -1,4 +1,4 @@
-# `scripts/imagery` — the granule cutter and its box (N6e PR 2)
+# `scripts/imagery` — the granule cutter and its box (A06e PR 2)
 
 Cuts Sentinel granules down to the corpus and publishes masked raster PMTiles to R2, so the freeze-up
 scrubber is an archive URL swap rather than a metered API call per lake.
@@ -348,7 +348,7 @@ Worst case in that sample is Skylight Pond, 1.3 acres, at **86% land** — which
 for a circular 1-acre pond exactly. Seymour Lake at 1,747 acres is 13%. Two consequences worth stating
 plainly:
 
-- **N6g Lane 2** eliminates bodies on *"never observed frozen"*, and the size class it targets is the
+- **A06g Lane 2** eliminates bodies on *"never observed frozen"*, and the size class it targets is the
   one where the surrounding woods were casting the vote.
 - **Radar is worse.** Forest is the classic bright `VH` target at ~−13 dB against smooth ice near −22,
   a ~10 dB contaminant on the ~2 dB separation the archive exists to detect. The 2 dB was measured
@@ -367,7 +367,7 @@ a synthetic 20×20 lake — at 20 m (≈2 grid pixels) the interior came out **1
 uses 20 m (one ring, the mixed-pixel fix); radar uses 60 m (two rings, because a bank pixel there is a
 10 dB target whose energy spreads further than one pixel).
 
-**The point is the denominator, not the cleaner number.** N6g Lane 2 warns that a body too small to
+**The point is the denominator, not the cleaner number.** A06g Lane 2 warns that a body too small to
 classify reads exactly like a body that never froze. On the same fixture a **3×3-pixel pond comes out
 with exactly one interior pixel** — so `interiorPixels` and `interiorTotalPixels` put that caution in
 the manifest, where an operator confirming a removal can see it, instead of in a footnote.

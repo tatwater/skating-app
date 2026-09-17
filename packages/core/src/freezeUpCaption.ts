@@ -1,5 +1,5 @@
 /**
- * What a scrubber stop says about itself (N6e §C4, D84, D150).
+ * What a scrubber stop says about itself (A06e §C4, D84, D150).
  *
  * ## The date is content, not a caption
  *
@@ -16,7 +16,7 @@
  * one surface skaters most want is the one optical gets most wrong: black ice reads as *water*.
  *
  * So there is deliberately **no ice phrasing in this module at all.** Turning a classification into
- * words is N6g's problem, under a decision written for it. This says when the picture was taken, what
+ * words is A06g's problem, under a decision written for it. This says when the picture was taken, what
  * took it, and what was in the way.
  *
  * ## Why it lives in core

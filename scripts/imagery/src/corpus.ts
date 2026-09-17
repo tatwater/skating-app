@@ -1,5 +1,5 @@
 /**
- * Paging the corpus out of Convex for the mask bake (N6e PR 2a).
+ * Paging the corpus out of Convex for the mask bake (A06e PR 2a).
  *
  * Subprocess boundary — `convexRun` shells to `pnpm exec convex run`, the same way every other ETL
  * here reaches an `internalQuery`. Excluded from coverage on the usual rule: the decisions live in

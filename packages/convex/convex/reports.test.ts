@@ -7,7 +7,7 @@ import { syncReportSubAreas } from './lib/reportSubAreas';
 import schema from './schema';
 
 /**
- * Stamp a report into a bay by hand — the row *and* its `reportSubAreas` join row (N9), which is
+ * Stamp a report into a bay by hand — the row *and* its `reportSubAreas` join row (A09), which is
  * what the bay-scoped read actually serves. A fixture that patched only the row would test a path
  * nothing reads any more.
  */
@@ -36,7 +36,7 @@ const FORM_CONDITIONS = (airTempF: string) => ({
 });
 
 /**
- * **The clock is pinned, because a report now has a season** (N5a/D63).
+ * **The clock is pinned, because a report now has a season** (A05a/D63).
  *
  * Every read here defaults to `seasonOf(now)`, so a fixture dated January 2026 is in this season when
  * the suite runs in February and in a *hidden* one when it runs in August — a test that passes for
@@ -248,7 +248,7 @@ describe('reports.create', () => {
   });
 
   /**
-   * N7b: a removed body is reachable — the landowner skating their own taken-down pond, or a resident
+   * A07b: a removed body is reachable — the landowner skating their own taken-down pond, or a resident
    * of a private lake, files against the row that carries the takedown. The report exists; the body
    * stays removed (a report is not evidence the public may go there); nothing fans out.
    */
@@ -348,9 +348,9 @@ describe('reports.listByWaterBody (all public, D13)', () => {
     expect(second.page.map((r) => r._id)).toEqual([ids[2], ids[1]]);
   });
 
-  // The bay filter reads an index keyed by sub-area alone (N2/D60), so the body in the args does no
+  // The bay filter reads an index keyed by sub-area alone (A02/D60), so the body in the args does no
   // work in that read — the pairing has to be enforced, or one lake's page serves another's reports.
-  describe('sub-area filter (N2/D60)', () => {
+  describe('sub-area filter (A02/D60)', () => {
     const PAGE = { numItems: 50, cursor: null };
 
     /** A minimal bay row on `parent` — the query only reads its parent link. */
@@ -443,7 +443,7 @@ describe('reports.listByWaterBody (all public, D13)', () => {
 
   // The founder ask this phase started from: the map and the lists show **this** season's ice, and
   // everything else is history you go and look at on purpose. Hidden, never deleted, never unreachable.
-  describe('seasonal scoping (N5a/D63)', () => {
+  describe('seasonal scoping (A05a/D63)', () => {
     const PAGE = { numItems: 50, cursor: null };
     /** Last season, backdated past the boundary — a genuine `'24/'25` report on the same lake. */
     const LAST_SEASON = Date.UTC(2025, 1, 10);
@@ -708,7 +708,7 @@ describe('reports.update (author-only LWW, D25)', () => {
   });
 
   /**
-   * `editedAt` is the byline's basis and `updatedAt` cannot be (N6f): the conditions autofill moves
+   * `editedAt` is the byline's basis and `updatedAt` cannot be (A06f): the conditions autofill moves
    * `updatedAt` hours after posting on nearly every report, so a byline derived from it would mark
    * the whole corpus as edited by authors who never touched it.
    */
@@ -1106,7 +1106,7 @@ async function seedAdminAreas(t: ReturnType<typeof convexTest>) {
 
 const BURLINGTON_PLACE = { town: 'Burlington', county: 'Chittenden County', state: 'VT' };
 
-describe('reports.create place stamp + skate window (Phase 5)', () => {
+describe('reports.create place stamp + skate window (Phase 05)', () => {
   test('stamps the point-derived place from the adminAreas resolver', async () => {
     const t = convexTestWithGeo();
     const { id } = await seedBody(t);
@@ -1161,7 +1161,7 @@ describe('reports.create place stamp + skate window (Phase 5)', () => {
   });
 });
 
-describe('reports.listFeed (global newsfeed, Phase 5)', () => {
+describe('reports.listFeed (global newsfeed, Phase 05)', () => {
   const ALL = { paginationOpts: { numItems: 50, cursor: null } };
 
   test('orders by skate-end time desc across bodies; excludes hidden/removed (D28/D32)', async () => {
@@ -1334,7 +1334,7 @@ describe('reports.listFeed (global newsfeed, Phase 5)', () => {
   });
 });
 
-describe('reports.listFeed filters + favorite boost (Phase 4)', () => {
+describe('reports.listFeed filters + favorite boost (Phase 04)', () => {
   const ALL = { paginationOpts: { numItems: 50, cursor: null } };
 
   test('quality floor narrows the feed but keeps reports missing a quality (include-unknown)', async () => {
@@ -1449,7 +1449,7 @@ describe('reports.listFeed filters + favorite boost (Phase 4)', () => {
     expect(res.page[0]?.isFavorite).toBe(true);
   });
 
-  test('unfiltered feed for a viewer with no home/favorites is exactly Phase 5', async () => {
+  test('unfiltered feed for a viewer with no home/favorites is exactly Phase 05', async () => {
     const t = convexTestWithGeo();
     const { id } = await seedBody(t);
     const asUser = await seedUser(t, 'clerk_a');
@@ -1463,7 +1463,7 @@ describe('reports.listFeed filters + favorite boost (Phase 4)', () => {
   });
 });
 
-/** Like `convexTestWithGeo`, but with schema validation OFF — mirrors the Phase-3/5 migration dance
+/** Like `convexTestWithGeo`, but with schema validation OFF — mirrors the Phase-03/5 migration dance
  *  (temporarily `schemaValidation: false` on a deployment with drift), so a legacy `skateTime`-shaped
  *  report can be seeded to exercise the rename migration. */
 function convexTestNoValidation() {
@@ -1471,7 +1471,7 @@ function convexTestNoValidation() {
   return t;
 }
 
-describe('reports.renameSkateTimeToSkateEndTime (Phase 5 migration)', () => {
+describe('reports.renameSkateTimeToSkateEndTime (Phase 05 migration)', () => {
   test('copies legacy skateTime → skateEndTime, drops the old field, and stamps place', async () => {
     const t = convexTestNoValidation();
     const { id } = await seedBody(t);
@@ -1518,7 +1518,7 @@ describe('reports.renameSkateTimeToSkateEndTime (Phase 5 migration)', () => {
     // A modern report (already has skateEndTime + place) is untouched by the migration.
     await asUser.mutation(api.reports.create, { waterBodyId: id, skateEndTime: SKATE_TIME });
     const result = await t.mutation(internal.reports.renameSkateTimeToSkateEndTime, {});
-    expect(result).toMatchObject({ total: 1, renamed: 0, placed: 0, isDone: true }); // paginated (N1)
+    expect(result).toMatchObject({ total: 1, renamed: 0, placed: 0, isDone: true }); // paginated (A01)
   });
 
   test('a cleanup-only patch (dangling skateTime, skateEndTime already set) is not counted as a rename', async () => {
@@ -1593,7 +1593,7 @@ describe('reports counters + offline read-cache', () => {
 });
 
 /**
- * A body's map summary (N6c/E). `seedBody` returns an untyped id, so `db.get` widens to the union of
+ * A body's map summary (A06c/E). `seedBody` returns an untyped id, so `db.get` widens to the union of
  * every table's document and `summary` is invisible without narrowing.
  */
 async function cardFor(t: ReturnType<typeof convexTest>, bodyId: string) {

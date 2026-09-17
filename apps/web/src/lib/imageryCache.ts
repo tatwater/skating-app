@@ -1,5 +1,5 @@
 /**
- * Fetching aerial cells, through a cache that survives the CDN's own TTL (N6e / D146).
+ * Fetching aerial cells, through a cache that survives the CDN's own TTL (A06e / D146).
  *
  * ## Two caches, doing different jobs
  *

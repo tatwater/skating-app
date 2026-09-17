@@ -1,12 +1,12 @@
 /**
- * The ladder-grid **read** walk (N1, extracted in N2) — the shared half of every viewport query.
+ * The ladder-grid **read** walk (A01, extracted in A02) — the shared half of every viewport query.
  *
  * `lib/cellIndex.ts` owns the write side (which cells an object occupies); this owns the read side
  * (which cells a query looks in, and how a bounded budget is spent across them). It was inlined in
  * `waterBodies.bodiesCoveringBox` until the sub-area layer needed the same walk over a second cell
  * table. Copying it was not an option: the ~100 lines below encode four separate review corrections
  * from PR #27, each of which fixed a *silent wrong answer* rather than a crash, and a second copy
- * would drift from them one edit at a time. N1's Decision 1 asked for one spatial mechanism; the
+ * would drift from them one edit at a time. A01's Decision 1 asked for one spatial mechanism; the
  * read path is half of that mechanism.
  *
  * The three properties a caller gets, and why each exists:
@@ -120,14 +120,14 @@ export async function scanCells<Ref extends string>(
     // short, whose rungs each stay under the per-rung cap but sum past the total.
     if (range.count > budget.maxCellsPerLevel) {
       console.warn(
-        `${label}: box covers ${range.count} cells at level ${level} (max ${budget.maxCellsPerLevel}); rungs ${level}+ skipped, so objects that first draw at zoom ≥ ${level} are omitted (N1).`,
+        `${label}: box covers ${range.count} cells at level ${level} (max ${budget.maxCellsPerLevel}); rungs ${level}+ skipped, so objects that first draw at zoom ≥ ${level} are omitted (A01).`,
       );
       truncated = true;
       break;
     }
     if (plan.length + range.count > budget.cellBudget) {
       console.warn(
-        `${label}: cell budget ${budget.cellBudget} would be exceeded by level ${level} (${plan.length} cells planned + ${range.count}); rungs ${level}+ skipped whole, so the answer is complete for objects drawing at zoom < ${level} and omits finer-indexed ones (N1).`,
+        `${label}: cell budget ${budget.cellBudget} would be exceeded by level ${level} (${plan.length} cells planned + ${range.count}); rungs ${level}+ skipped whole, so the answer is complete for objects drawing at zoom < ${level} and omits finer-indexed ones (A01).`,
       );
       truncated = true;
       break;

@@ -23,7 +23,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { ToggleGroup, ToggleGroupItem } from './ui/toggle-group';
 
 /**
- * The persisted newsfeed filter row (Phase 4, decision #3) — an **additive** narrow over the global
+ * The persisted newsfeed filter row (Phase 04, decision #3) — an **additive** narrow over the global
  * feed, defaulting to show-all. Controlled: it renders the current `FeedFilters` and calls `onChange`
  * with the next set; the feed page owns persistence (local-first + server sync). Encodes the
  * include-unknown intent by framing gates as "at least" floors — a report that omits the attribute
@@ -185,7 +185,7 @@ export function FeedFilterBar({
         </FilterField>
       </div>
 
-      {/* Weather-first discovery (N6h / D164–D166): "at least N nights below T, no snow since".
+      {/* Weather-first discovery (A06h / D164–D166): "at least N nights below T, no snow since".
           The knobs describe a *lake*, not a report — matching lakes appear as their own cards in
           the feed and non-matches dim on the map. Disabled, with the reason, out of season. */}
       <fieldset

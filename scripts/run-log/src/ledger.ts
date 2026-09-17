@@ -1,5 +1,5 @@
 /**
- * The drop ledger — **the thing that makes a silent failure impossible** (N7).
+ * The drop ledger — **the thing that makes a silent failure impossible** (A07a).
  *
  * ## Why this exists, stated as the incident it came from
  *

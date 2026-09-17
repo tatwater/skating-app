@@ -1,13 +1,13 @@
-# N1 — Read-path durability: the crash class
+# A01 — Read-path durability: the crash class
 
 > **Status: ✅ complete on dev (2026-07-26); prod deferred.** PR **#27**. The first item in the
 > roadmap's *Next-phase candidates* register ([`07-roadmap.md`](../07-roadmap.md) → *Later /
-> deferred* → N1), picked first because this is the map's front door and its failure mode is a
+> deferred* → A01), picked first because this is the map's front door and its failure mode is a
 > **crash**, not a slowdown.
 >
 > Nothing from the plan below is outstanding. The retired `isLarge` field was stripped from all
 > 116,070 rows and dropped from the schema; the notification **reverse spatial index** was never in
-> scope and remains N8 (N1 made the profile walk bounded, not unnecessary).
+> scope and remains A08 (A01 made the profile walk bounded, not unnecessary).
 
 **Goal.** End the read-cap crash class on the water-body read path for good: replace the centroid
 prefilter + two-tier large-body workaround with a spatial index whose reads are bounded **by
@@ -18,16 +18,16 @@ the operator sees a read path that stops needing to be re-tuned every time the c
 
 ---
 
-## What the roadmap's N1 entry got wrong
+## What the roadmap's A01 entry got wrong
 
-The entry was written from the Phase-6 sketch and had drifted. Corrections found while scoping
+The entry was written from the Phase-06 sketch and had drifted. Corrections found while scoping
 (2026-07-26), all verified against code:
 
-1. **The stated fix isn't expressible in the component we're on.** N1 said "multi-cell /
+1. **The stated fix isn't expressible in the component we're on.** A01 said "multi-cell /
    bbox-coverage **geospatial** indexing," implying a reconfiguration of `@convex-dev/geospatial`.
    But that component's entire write API is
    `insert(key, { latitude, longitude }, filterKeys, sortKey)` — **one point per unique key**
-   (`dist/client/index.d.ts`, v0.2.1). There is no bbox, no multi-cell, no per-key cell set. So N1
+   (`dist/client/index.d.ts`, v0.2.1). There is no bbox, no multi-cell, no per-key cell set. So A01
    is not "configure the component differently"; it is **"stop using the component for water bodies
    and own the spatial index."**
 
@@ -38,20 +38,20 @@ The entry was written from the Phase-6 sketch and had drifted. Corrections found
 
 2. **The trigger already fired, and the safety constants are stale.** `MAX_VIEWPORT_LIMIT = 256`
    was tuned against a measured "~320 crash edge" on the **9,967-body Vermont** corpus (PR #11,
-   Phase 1). Phase 2.5 then loaded **~116k bodies** — NH 15,458 · ME 25,541 · MA 30,219 · NY 34,885
+   Phase 01). Phase 02b then loaded **~116k bodies** — NH 15,458 · ME 25,541 · MA 30,219 · NY 34,885
    plus VT's ~9,970 (`scripts/etl/README.md`, `phases/02b-regional-expansion.md` §1). Nobody
    re-measured. The roadmap's own trigger ("do this when the corpus grows enough that the 256 clamp
    visibly drops bodies at normal zoom") fired **11.6× ago**; the register just didn't know it.
 
 3. **A fifth unbounded `.collect()` sits in the hot path and wasn't listed.** `waterBodies.ts`
    collects the whole `by_is_large` index on **every** `listInViewport` call *and* every
-   `listedBodiesNearCoord` (which Phase 8's track resolver uses). `isLarge` means bbox extent >
+   `listedBodiesNearCoord` (which Phase 08's track resolver uses). `isLarge` means bbox extent >
    0.05° (~5.5 km): 12 bodies in Vermont, plausibly several hundred across Maine/NY/NH. It may well
    be the larger real-world cost today, and the new index deletes it outright.
 
 4. **Two of the four named `.collect()` sites were misfiled.**
    - `bounties.listOpen`'s `OPEN_BOUNTY_SCAN_CAP` **already logs what it dropped** — that bullet
-     shipped with Phase 6 and the register never struck it.
+     shipped with Phase 06 and the register never struck it.
    - `contradictions.findContradictingPriors` **does not exist**. The real site is
      `contradictions.contradictionCluster`, and it is worse than described: an unbounded
      report-window `collect()` *plus* a `pointEvents` `collect()` **per report** — an N+1 inside
@@ -59,7 +59,7 @@ The entry was written from the Phase-6 sketch and had drifted. Corrections found
 
 5. **There was no verification story.** `convex-test` does not enforce Convex's 4,096-read cap, so
    no unit test can prove "this no longer crashes." Both prior bugs (PR #10, #11) were only found
-   live on the dev deployment. Any N1 that ships on unit tests alone reproduces exactly the
+   live on the dev deployment. Any A01 that ships on unit tests alone reproduces exactly the
    evidence gap that left `256` sitting unexamined through an 11.6× corpus growth.
 
 A sixth item surfaced once `adminAreas` came into scope — see *Decision 2* below. It is a latent
@@ -80,7 +80,7 @@ growth).
 **Decision 2 — `adminAreas` comes along, because it has the same bug with a worse symptom.**
 `findContainingTown` queries town **centroids** within a ±0.2° rectangle, sized "to comfortably
 contain a town's centroid from any interior point … our towns run well under 0.4° across." Across
-the Phase-2.5 corpus that premise no longer holds: Adirondack towns (Long Lake, Newcomb, Arietta)
+the Phase-02b corpus that premise no longer holds: Adirondack towns (Long Lake, Newcomb, Arietta)
 span well past 0.4°, and their own comment admits the failure is silent — "a town larger than this
 margin can allow degrades to a county+state label." So a report from the middle of a big Adirondack
 town **silently loses its town label** in the newsfeed today. A bbox-covering index removes the
@@ -154,7 +154,7 @@ coverings contain. No margin, no `isLarge` outlier list, no gap to reason about.
 
 **What this retires.** `VIEWPORT_MARGIN_DEG` · `LARGE_BODY_EXTENT_DEG` · the `isLarge` field, its
 index, and both of its `.collect()`s · `MAX_VIEWPORT_LIMIT`'s role as a crash guard · the JS
-`listed` re-check and its "cheap only because Phase 1 has ~no unlisted bodies" caveat (unlisted
+`listed` re-check and its "cheap only because Phase 01 has ~no unlisted bodies" caveat (unlisted
 bodies simply aren't in the index, so the filter is free rather than ceiling-halving) · the
 `adminAreas` ±0.2° margin and its silent town-label degradation · the geospatial component itself.
 
@@ -183,7 +183,7 @@ Committed in the order below; one PR at the end (per the phase convention).
    + a *logged* cap on every one whose size grows with the corpus or a global table; a one-line note
    on the ones bounded by design, so the list never has to be re-derived.
 8. **Dev deploy, backfill, measurement** — the numbers recorded here.
-9. **Doc updates** — roadmap N1 struck with a pointer, plus the phase-1 / 2.5 root-cause notes,
+9. **Doc updates** — roadmap A01 struck with a pointer, plus the phase-01 / 2.5 root-cause notes,
    `packages/convex/README.md`, and the ETL README's batch-size rationale (sized around the
    component's ~15–20 S2-cell reads per insert, which no longer exist).
 
@@ -441,9 +441,9 @@ asserts they share a fate; against the old cut, the head pond came back and the 
 
 ## Relocated from the roadmap (2026-09-16)
 
-*The roadmap entry for N1 as it stood before the 2026-09-16 rewrite, kept verbatim so nothing it said is lost. The roadmap now carries a one-paragraph summary; this is the long form.*
+*The roadmap entry for A01 as it stood before the 2026-09-16 rewrite, kept verbatim so nothing it said is lost. The roadmap now carries a one-paragraph summary; this is the long form.*
 
-~~**N1 — Read-path durability: the crash class.**~~ **✅ COMPLETE on dev (2026-07-26)** — see
+~~**A01 — Read-path durability: the crash class.**~~ **✅ COMPLETE on dev (2026-07-26)** — see
 [`phases/A01-read-path-durability.md`](./A01-read-path-durability.md) for the design, the
 corrections to what this entry used to say, and the measured results.
 
@@ -457,7 +457,7 @@ as a crash guard, and the JS `listed` re-check (an unlisted body has no cell row
 
 Four things this entry had wrong, all corrected in the phase doc: the fix **wasn't expressible** in
 the component we were on (it indexes one point per key); the trigger had **already fired** (the 256
-clamp was measured against 9,967 bodies and never revisited after Phase 2.5 loaded ~116k); a **fifth**
+clamp was measured against 9,967 bodies and never revisited after Phase 02b loaded ~116k); a **fifth**
 unbounded `.collect()` ran on every viewport read and wasn't listed; and two of the four named
 `.collect()` sites were misfiled (the bounty cap already logged; `findContradictingPriors` doesn't
 exist — it's `contradictionCluster`, which hid a second scan inside an N+1).
@@ -475,5 +475,5 @@ eastern Maine returns **513** bodies where the old clamp returned 256 — 257 re
 missing from the map. `waterBodies:viewportReadStats` keeps that checkable, and every measured
 viewport is recorded with its exact bbox so the table can be re-run rather than trusted.
 
-*Left for later:* the notification **reverse spatial index** — still N8, since N1 only made the
+*Left for later:* the notification **reverse spatial index** — still A08, since A01 only made the
 profile walk bounded, not unnecessary.

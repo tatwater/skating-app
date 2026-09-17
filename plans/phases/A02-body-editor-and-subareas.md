@@ -1,9 +1,9 @@
-# N2 — The lake editor + named sub-areas
+# A02 — The lake editor + named sub-areas
 
 > **Status: ✅ COMPLETE on dev (2026-07-26; prod deferred, as every phase since 2.5).** Decisions
 > **D60** (named sub-areas) and **D61** (the per-lake operator canvas) are written into
 > [`01-decisions.md`](../01-decisions.md). The second item in the roadmap's *Next-phase candidates*
-> register ([`07-roadmap.md`](../07-roadmap.md) → *Later / deferred* → N2), picked second because the
+> register ([`07-roadmap.md`](../07-roadmap.md) → *Later / deferred* → A02), picked second because the
 > founder **is** the operator, and because the corpus models its most-skated destinations worst.
 
 **Goal.** Give one sheet of ice the names skaters actually use for it, and give the operator one place
@@ -16,9 +16,9 @@ stops doing curation through a CSV and an internal mutation.
 
 ---
 
-## What the roadmap's N2 entry got wrong
+## What the roadmap's A02 entry got wrong
 
-The entry was written before Phase 8 shipped and had drifted. Corrections found while scoping
+The entry was written before Phase 08 shipped and had drifted. Corrections found while scoping
 (2026-07-26), each verified against code:
 
 1. **"Add the Champlain / Lake George bays OSM lacks" was unbuildable — and the shape it asked for was
@@ -54,7 +54,7 @@ The entry was written before Phase 8 shipped and had drifted. Corrections found 
    zoomable, carrying drawing, pin-dropping, hazard moderation and track review together.
 
 4. **Contradiction re-flag bundling is not contradiction-specific, and the obvious fix would corrupt a
-   Phase-7b rollup.** `ratings.ts maybeAutoFlag` carries the identical "one *open* flag per author"
+   Phase-07-2 rollup.** `ratings.ts maybeAutoFlag` carries the identical "one *open* flag per author"
    dedup — `contradictions.ts:121` says so in its own comment. So bundling belongs on `contentFlags`
    generally, not in one caller. The trap: `contentFlags.by_status_resolved_at` was built on the stated
    premise that *"`actioned`/`dismissed` accumulate forever"*, so flipping a resolved row back to `open`
@@ -65,7 +65,7 @@ The entry was written before Phase 8 shipped and had drifted. Corrections found 
    `MODERATION_ACTIONS` has no value to audit one with.
 
 6. **`activeBountyPostLimit`'s own trigger said to wait** ("build it if a real spammer earns it"), and
-   Phase 7b already ships the daily-cap-hit-rate metric that would make the case. Overridden at kickoff
+   Phase 07-2 already ships the daily-cap-hit-rate metric that would make the case. Overridden at kickoff
    — see Decision 7. Also unnamed by the entry: `BountyForm.tsx` on **both** web and mobile hardcodes
    `MAX_OPEN_BOUNTIES_PER_DAY` into its "Up to 3 open bounties at a time" line, so a per-user limit that
    doesn't reach the copy makes the form lie to the one user it applies to.
@@ -83,7 +83,7 @@ The entry was written before Phase 8 shipped and had drifted. Corrections found 
 **Decision 1 — A bay is a named sub-area of one polygon, not a water body.**
 New table `waterBodySubAreas`, each row a named region *inside* an existing parent body. Reports,
 hazards and bounties keep belonging to the parent; the sub-area is the finer name they carry. This is
-the **D4 model** (deferred since Phase 1 for rivers-as-named-reaches) finally instantiated — for lakes
+the **D4 model** (deferred since Phase 01 for rivers-as-named-reaches) finally instantiated — for lakes
 first, where the corpus evidence is overwhelming. *Considered and rejected:* separate overlapping
 bodies (fragments every per-body aggregate and poisons the dedup queue); doing nothing (leaves the
 top-3 most-mentioned destinations in the corpus unnameable).
@@ -106,7 +106,7 @@ global newsfeed would need each body's sub-area polygons per row, which is an N+
 in the app.
 
 **Decision 4 — Sub-areas are full citizens: label, search, map, targeting.** All four capabilities land
-in N2 (founder call). See *The design* for what each means and where the line falls inside "targeting."
+in A02 (founder call). See *The design* for what each means and where the line falls inside "targeting."
 
 **Decision 5 — The operator surface is a per-lake editor at `/admin/water/$id`.**
 Look up a lake → one canvas whose camera is **locked to that body's bbox** (zoom freely, pan only
@@ -117,7 +117,7 @@ hazards and crossings, aggregate tracks, and this body's review/dedup actions. T
 **Decision 6 — Auto-flag bundling is a shared `contentFlags` mechanism, and it never mutates a
 resolved row.** A repeat occurrence bumps an **open** flag's counter; if the only prior is *resolved*,
 it files a **new** row that carries the running count forward and points back via `supersedesFlagId`.
-Terminal rows stay terminal, so the 7b resolution rollup keeps meaning what it says.
+Terminal rows stay terminal, so the 07-2 resolution rollup keeps meaning what it says.
 
 **Decision 7 — `activeBountyPostLimit` ships now** (founder override of its own trigger), including the
 copy path on both clients and the applied-limit stamp on the gate event.
@@ -131,7 +131,7 @@ map but fine as a report.
 **Decision 9 — Overlapping sub-areas stamp the *smallest containing* one.**
 Two bays that share an edge are fine; two that overlap ("Inner" and "Outer" Malletts are exactly this
 case) mean a point sits in both. The stamp takes the smallest by area — most specific name wins — and
-the editor warns rather than rejects. Promoted from an open question to a decision on N1's evidence:
+the editor warns rather than rejects. Promoted from an open question to a decision on A01's evidence:
 its whole correction series is one lesson about answers that depended on which row an index reached
 first, and "smallest containing" is order-independent where "first match" is not.
 
@@ -140,7 +140,7 @@ drawn polygon with the parent and stores the *clipped* result; it refuses only w
 more than a threshold share of what was drawn (⇒ the shape is mostly off the lake, i.e. a misplaced
 draw rather than a sloppy edge). Hand-tracing a bay along a real shoreline cuts across land on almost
 every vertex, so reject-by-default means fighting the tool on every bay — and clipping makes the
-stored geometry valid *by construction* rather than valid-because-validated. This is the Phase-9.5
+stored geometry valid *by construction* rather than valid-because-validated. This is the Phase-09b
 `clippedFootprint` pattern (a hazard circle near shore is already clipped to the body polygon so it
 can't imply danger across land), reused rather than reinvented. *Considered and rejected:* rejecting
 with a which-edge-left message (the original plan text — too much redraw churn, and "a small tolerance"
@@ -178,7 +178,7 @@ and **D61** (the per-lake operator canvas). Written when the code lands, not bef
 Reviewed against the landed post-N1 code at build kickoff (2026-07-26), same discipline the plan
 applied to the roadmap entry. Seven corrections, each verified against a file:
 
-1. **Nothing cascaded parent unlisting to sub-areas — the N1 invariant was leaking.** N1's load-bearing
+1. **Nothing cascaded parent unlisting to sub-areas — the A01 invariant was leaking.** A01's load-bearing
    rule is *unlisted means absent from the cell table*; that is what makes the listing filter free
    (`lib/cellIndex.ts`). This plan gave `waterBodySubAreas` its own `removedAt` and its own cell table
    keyed on that, and never connected the two. A landowner takedown on Lake Champlain drops the body's
@@ -189,11 +189,11 @@ applied to the roadmap entry. Seven corrections, each verified against a file:
 2. **The sub-area read budget was sized against a premise that isn't how the limit works.** Convex's
    4,096-read cap is **per function execution** — `lib/scan.ts` says so in its own opening paragraph —
    and `subAreas.listInViewport` is a separate query from `waterBodies.listInViewport`, so it gets its
-   own full budget. *§What N1 changed* item 1's "a second bounded query on the same view has to be
+   own full budget. *§What A01 changed* item 1's "a second bounded query on the same view has to be
    sized against the headroom that leaves, not against the cap" is false as stated. The instinct under
    it survives: two layers on one screen is real latency and real payload, and a bay layer drawing 250
    outlines is already generous. So the opening numbers stand — but as a **product** ceiling chosen on
-   its own merits and then measured, not as crash-safety arithmetic inherited from N1's table.
+   its own merits and then measured, not as crash-safety arithmetic inherited from A01's table.
 
 3. **`formatPlaceLabel` is not the single composition site the plan named.** It returns only the
    `"Colchester, VT"` segment; `bodyName` is a *separate* `FeedCardView` field that the card components
@@ -233,11 +233,11 @@ applied to the roadmap entry. Seven corrections, each verified against a file:
 
 ---
 
-## What N1 changed about this plan
+## What A01 changed about this plan
 
-N1 shipped between this plan's kickoff and its build, and its measured results overturned two calls
+A01 shipped between this plan's kickoff and its build, and its measured results overturned two calls
 made here on instinct. Both were the same instinct: *sub-areas are few, so a loose bound is fine.*
-That is the exact reasoning N1 exists to retire — `MAX_VIEWPORT_LIMIT = 256` was also fine, against a
+That is the exact reasoning A01 exists to retire — `MAX_VIEWPORT_LIMIT = 256` was also fine, against a
 corpus 11.6× smaller than the one it was still guarding.
 
 **1. The map-render path gets its own cell table, not a per-parent fan-out.** This plan originally had
@@ -247,24 +247,24 @@ giants" is a fact about today's data, not a bound. So:
 
 - **`waterBodySubAreaCells`**, a third table on the *same* ladder-grid mechanism — `spatialCells.ts`
   is already generic over a `CellLadder`, and `lib/cellIndex.ts`'s `diffCells` is generic over
-  `StoredCell`, so this is a `syncSubAreaCells` beside the two that exist, not a new mechanism. N1's
+  `StoredCell`, so this is a `syncSubAreaCells` beside the two that exist, not a new mechanism. A01's
   Decision 1 asked for *one* spatial mechanism, and this stays inside it.
 - The query reuses `bodiesCoveringBox`'s **two-pass shape** — collect rows across every rung, sort by
   prominence, *then* hydrate — because the round-3 correction proved that ranking a spatially-selected
   prefix silently blanks whole neighbourhoods. A sub-area layer that drew Champlain's bays and none of
   Lake George's, depending on cell arithmetic, is that bug wearing a smaller hat.
 - Its budgets are its own and much smaller — though **not for the reason first written here**. The
-  original text sized them against N1's leftover headroom (worst measured viewport 1,771 of 4,096,
+  original text sized them against A01's leftover headroom (worst measured viewport 1,771 of 4,096,
   derived ceiling 3,512), which assumes the two queries share a read budget. They don't: Convex's cap
   is per *function execution*, so a second query starts at 4,096 of its own. What's actually true is
   the product argument — two layers on one screen is latency and payload, and a bay layer drawing 250
   outlines is already generous. Opening numbers therefore stand as a **chosen ceiling, measured
   afterwards**, not as inherited arithmetic: a 200-row scan budget and a 250 render budget, written
-  next to N1's in `waterBodies.ts` and re-measured via a `subAreaReadStats` sibling to
+  next to A01's in `waterBodies.ts` and re-measured via a `subAreaReadStats` sibling to
   `viewportReadStats` (step 13). See *§What the build found* item 2.
 
 **2. The re-stamp pages to completion; it is never a capped scan.** The original wording said
-"paginated, logged," which N1's round-2 correction shows is not enough on its own: the hazard sweep
+"paginated, logged," which A01's round-2 correction shows is not enough on its own: the hazard sweep
 capped an index whose order never changes, so every tick re-read the same prefix and everything behind
 it starved forever. A re-stamp capped at N over `by_water_body_skate_end_time` would permanently strand
 the oldest reports on a busy body — and unlike a stale decay multiplier, a wrong label is *visible* on
@@ -272,7 +272,7 @@ the feed card. A cursor that self-reschedules until the body is exhausted has no
 (The hazard half pages `by_water_body`; hazards have no skate-end index — *§What the build found*
 item 7.)
 
-**3. Two smaller inheritances.** Every cap N2 adds uses `lib/scan.ts`'s `takeCapped`, whose `cap + 1`
+**3. Two smaller inheritances.** Every cap A02 adds uses `lib/scan.ts`'s `takeCapped`, whose `cap + 1`
 probe distinguishes "exactly this many" from "there are more" — the round-4 lesson, and it matters here
 because the bundling cooldown lookup *decides* something rather than merely logging. And the bounty
 gate's `saturated ⇒ block` rule (rounds 3 and 5) has to survive sub-area targeting: see below.
@@ -300,11 +300,11 @@ waterBodySubAreas: {
 drawn polygon is intersected with the parent and the *clipped* result is what gets stored, so a stored
 sub-area is inside its parent by construction rather than by assertion. The write refuses only when the
 clip removes more than a threshold share of the drawn area — a misplaced draw, not a sloppy shoreline
-edge — and says how much was outside. Same `@turf/intersect` path Phase 9.5 uses for `clippedFootprint`.
+edge — and says how much was outside. Same `@turf/intersect` path Phase 09b uses for `clippedFootprint`.
 
 **And its visibility is derived from the parent's** (Decision 11): a sub-area is renderable only while
 it is un-delisted **and** its parent `isListed`. That predicate is what `syncSubAreaCells` writes
-against, so — exactly as with bodies under N1 — an unreachable sub-area has no cell rows at all rather
+against, so — exactly as with bodies under A01 — an unreachable sub-area has no cell rows at all rather
 than a filter someone has to remember to apply.
 
 **Prominence reuses D49.** A sub-area gets `displayScore` / `minVisibleZoom` from the same
@@ -316,8 +316,8 @@ at a regional zoom while a small cove waits for z13. No second curve to tune.
 search hit carries its parent, the lake page is one body. Those cost a `by_parent` read on a body you
 already have: bounded by the handful of sub-areas one lake has, not by the corpus.
 
-The **map render** is the exception, because a viewport is not a parent — and it gets N1's ladder grid
-rather than a fan-out. See *§What N1 changed about this plan*.
+The **map render** is the exception, because a viewport is not a parent — and it gets A01's ladder grid
+rather than a fan-out. See *§What A01 changed about this plan*.
 
 ### The four capabilities
 
@@ -355,7 +355,7 @@ report must never attach to a Malletts Bay bounty — or the targeting is a labe
 behind it (*§What the build found* item 5). Notification fan-out (`fanOutEligibility`) deliberately
 stays body-wide: a bay bounty wants more eyes offered, not fewer.
 
-**The freshness gate has to be narrowed at the index, not after it.** N1 left `bounties.recentReports`
+**The freshness gate has to be narrowed at the index, not after it.** A01 left `bounties.recentReports`
 scanning `by_water_body_moderation_and_skate_end_time` newest-first under a cap, with a `saturated`
 flag that **blocks** when the scan truncated — because a truncated scan cannot clear a body, however
 the rows it did read resolve. Filtering that body-level result down to a sub-area afterwards would keep
@@ -367,7 +367,7 @@ the moderation gate *inside* the index exactly as the body-scoped one has it, be
 here). The cap then applies to the set the gate actually judges. The saturation rule is inherited
 verbatim, not softened.
 
-**Deliberately not targeted in N2: favorites and drive-time.** Both are per-body and should stay there.
+**Deliberately not targeted in A02: favorites and drive-time.** Both are per-body and should stay there.
 Drive-time in particular gains ~nothing — isochrone bands are cached per user against a body's centroid
 (D18), and a sub-area centroid inside the parent sits minutes from it, so a sub-area band would cost a
 multiplied cache for a difference below the model's own resolution. Logged as deferred with that
@@ -464,7 +464,7 @@ and `ratings.maybeAutoFlag`. `contentFlags` gains `occurrences?`, `lastOccurrenc
   the D38 operator alert re-fires only on a threshold multiple, not every time;
 - the only prior is **resolved** and within a cooldown → file a **new** row carrying the count forward
   with `supersedesFlagId` set. The resolved row is never touched, so `by_status_resolved_at` stays
-  terminal and the 7b rollup stays correct;
+  terminal and the 07-2 rollup stays correct;
 - no prior within the cooldown → a fresh row at `occurrences: 1`.
 
 The flag queue renders "4th occurrence · last dismissed 6d ago" with a link to prior dispositions —
@@ -479,7 +479,7 @@ read by `bounties.createChecked` as `?? MAX_OPEN_BOUNTIES_PER_DAY`, shown and ed
 (*§What the build found* item 4). The reusable parts are what get reused — the same
 `loadModeratableUser` guard and the same `set_posting_permission` audit action, so the moderation log
 reads as one story. Two details the register didn't name: the `capped` **gate event records the applied
-limit**, so 7b's cap-rate chart can't confuse a global cap with a per-user one; and **both**
+limit**, so 07-2's cap-rate chart can't confuse a global cap with a per-user one; and **both**
 `BountyForm.tsx` files read the effective limit rather than the constant, so the form doesn't promise a
 limited user three bounties.
 
@@ -487,7 +487,7 @@ limited user three bounties.
 
 ## Work breakdown
 
-Committed in this order; one PR at the end (per the phase convention). Everything assumes N1 has
+Committed in this order; one PR at the end (per the phase convention). Everything assumes A01 has
 merged.
 
 1. **This doc** — the design and the corrections, on record before the code.
@@ -522,9 +522,9 @@ merged.
     both clients' copy.
 14. **The curation session + measurement** — the data pass above; what got drawn and boosted, plus the
     measured sub-area read counts *and the two per-screen query costs side by side*, recorded in this
-    doc the way N1 recorded its table.
-15. **Docs** — roadmap N2 struck with a pointer; D60/D61 written into `01-decisions.md`; `06-data-model.md`
-    for the new table and fields; the Phase-2.5 mis-match note closed; `02-open-questions.md` S2 struck
+    doc the way A01 recorded its table.
+15. **Docs** — roadmap A02 struck with a pointer; D60/D61 written into `01-decisions.md`; `06-data-model.md`
+    for the new table and fields; the Phase-02b mis-match note closed; `02-open-questions.md` S2 struck
     (it's answered by D60).
 
 ---
@@ -541,7 +541,7 @@ boundary below is inference and should be read as one.**
    returns **16** boosted bodies and none of them is South Bay, Button Bay, Half Moon Cove, Foster
    Pond or Mill Pond. Better than that: those five carry a stored `curatedBoost: 0` rather than an
    absent field — which is the fingerprint of `setCuratedBoost(0)`, i.e. someone found and stripped
-   them. The Phase-2.5 note the plan inherited is a stale record of a problem already fixed. Step 2
+   them. The Phase-02b note the plan inherited is a stale record of a problem already fixed. Step 2
    of the curation pass therefore had nothing to strip; what it *did* need was the list, which is why
    `listCurated` still earns its place.
 
@@ -783,7 +783,7 @@ rendered `MapView` or the shell. See *Testing* for the three files that now do.
   draft→save→render round trip, dark mode, the a11y label) and `routes/admin.test.tsx` (the
   non-operator redirect, with no operator chrome rendered on the way out). `maplibre-gl` is faked —
   these pin how the shell drives the map API, not that MapLibre renders.
-- **Mobile** — sub-area render and label; no operator affordances (Phase 7 rule holds).
+- **Mobile** — sub-area render and label; no operator affordances (Phase 07 rule holds).
 - **Live** — the curation session is itself the acceptance test, and step 14 records what it found.
 
 ---
@@ -811,7 +811,7 @@ rendered `MapView` or the shell. See *Testing* for the three files that now do.
   it.
 - **Sub-area render threshold and budgets.** The zoom at which `subAreas.listInViewport` starts firing,
   and the 200/250 opening numbers. Both get picked against the real Champlain draw and *measured*, not
-  guessed — that is the one process commitment N1 earned. Log them next to N1's constants in the
+  guessed — that is the one process commitment A01 earned. Log them next to A01's constants in the
   control room.
 - ~~**The clip-refusal threshold**~~ **settled by the curation session**: 0.6 for an interactive
   trace, 0.35 for a box-seeded row, on the measured spread recorded above (0.61–0.92 for boxes on the
@@ -832,9 +832,9 @@ rendered `MapView` or the shell. See *Testing* for the three files that now do.
 
 ## Relocated from the roadmap (2026-09-16)
 
-*The roadmap entry for N2 as it stood before the 2026-09-16 rewrite, kept verbatim so nothing it said is lost. The roadmap now carries a one-paragraph summary; this is the long form.*
+*The roadmap entry for A02 as it stood before the 2026-09-16 rewrite, kept verbatim so nothing it said is lost. The roadmap now carries a one-paragraph summary; this is the long form.*
 
-~~**N2 — Operator surface completion + corpus curation.**~~ **✅ COMPLETE on dev (2026-07-26)** — see
+~~**A02 — Operator surface completion + corpus curation.**~~ **✅ COMPLETE on dev (2026-07-26)** — see
 [`phases/A02-body-editor-and-subareas.md`](./A02-body-editor-and-subareas.md) for the design, the
 seven corrections to what this entry and its own plan claimed, and the measured results.
 
@@ -851,7 +851,7 @@ Four things this entry had wrong, all corrected in the phase doc: "add the bays 
 "bay mis-matches" were **already fixed** and the note was stale (what was actually missing was a screen
 that lists curated bodies at all); Champlain and Winnipesaukee are *not* both multi-cell giants — at
 180 km² Winnipesaukee's grid proposes one point, which is the centroid default; and the bundling fix's
-obvious form would have corrupted a 7b rollup by reopening terminal flags.
+obvious form would have corrupted a 07-2 rollup by reopening terminal flags.
 
 Two things came out that weren't scoped: the **read walk was extracted** from `waterBodies` into
 `lib/cellScan.ts` rather than copied for the second layer, because those ~100 lines encode four

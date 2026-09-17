@@ -63,7 +63,7 @@ function MapLayoutInner() {
   useEffect(() => {
     setHighlightWaterBodyId(null);
     setPhotoPins([]);
-    // The contour layer unmounts with the panel it belongs to (N6b/D81). Cleared here rather than
+    // The contour layer unmounts with the panel it belongs to (A06b/D81). Cleared here rather than
     // in the panel's own unmount so navigating lake → lake tears the source down and rebuilds it
     // for the new body, instead of leaving one lake's isobaths filtered to another's id.
     setContourBodyKey(null);

@@ -1,5 +1,5 @@
 /**
- * Archive the 3DHP waterbody clip with its provenance (N7).
+ * Archive the 3DHP waterbody clip with its provenance (A07a).
  *
  *   pnpm --filter @skating/etl archive-3dhp [--refresh] [--campaign=<id>] [--keep-source]
  *   pnpm --filter @skating/etl archive-3dhp --clip-only     # source already on disk

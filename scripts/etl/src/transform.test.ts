@@ -509,8 +509,8 @@ describe('surface-area floor', () => {
 });
 
 /**
- * OSM depth tags (N6a rung 7). The roadmap said this rode the water ETL and it never did — `osm_tag`
- * was an enum value with no producer until the N6a review, so these tests pin the parse rules that
+ * OSM depth tags (A06a rung 7). The roadmap said this rode the water ETL and it never did — `osm_tag`
+ * was an enum value with no producer until the A06a review, so these tests pin the parse rules that
  * make the bottom rung safe to trust at all.
  */
 describe('parseOsmDepthMeters', () => {
@@ -595,7 +595,7 @@ describe('depthFromOsmTags', () => {
   });
 });
 
-describe('derived shape stats (N6c / D85)', () => {
+describe('derived shape stats (A06c / D85)', () => {
   /**
    * A crenellated shoreline whose detail is finer than `SIMPLIFY_TOLERANCE_DEG` (~5 m), so
    * simplification demonstrably eats it. This is the fixture the D85 ordering test needs: on a

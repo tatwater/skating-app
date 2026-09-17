@@ -1,5 +1,5 @@
 /**
- * Standing transitions (N7b) — **the one way a body becomes active or dormant.**
+ * Standing transitions (A07b) — **the one way a body becomes active or dormant.**
  *
  * `standingOf` (`@skating/core`) is derived from four fields, and three of them have their own
  * mutations already (`remove` / `restore`, `setPublicAccess`, the review triad). What this module
@@ -8,7 +8,7 @@
  *  1. the re-score — `minVisibleZoom` is `DORMANT_MIN_VISIBLE_ZOOM` for anything not active, and
  *     the browsable bucket (with richness, since this is one body under one transition) otherwise;
  *  2. the cell rows — the rung is part of `by_cell`'s range, so a stale copy shows or hides the
- *     body at the wrong zoom (N1);
+ *     body at the wrong zoom (A01);
  *  3. the sub-areas — a bay is reachable only while its lake is active (Decision 11, extended);
  *  4. the weather registry — an active body occupies a cell the daily sweep pays Open-Meteo for,
  *     a dormant one does not (the founder's "trimming the corpus should save us on crons");
@@ -195,7 +195,7 @@ export async function transitionStanding(
  * may not be, if a stronger standing (a `none` ruling under a restore) still holds.
  *
  * **Coming back from `not_in_campaign` sets `includedByRequest`.** The prune demoted it because the
- * admission rules refuse it; evidence that somebody skates it is exactly N7b's override, and
+ * admission rules refuse it; evidence that somebody skates it is exactly A07b's override, and
  * without the flag the next campaign would demote it straight back.
  */
 export async function activateBody(

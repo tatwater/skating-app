@@ -26,7 +26,7 @@
  * only makes a hazard *more* visible, never less.
  *
  * Magnitudes are literature/anecdote defaults (Ashton's ~1″ ice per 15 freezing-degree-days; thaw ~30%
- * faster) and are **explicitly tunable** — admin-liftable in Phase 7 (D49), refittable once real hazard
+ * faster) and are **explicitly tunable** — admin-liftable in Phase 07 (D49), refittable once real hazard
  * rows exist. The signs are locked; the numbers are not. See `plans/research/hazard-decay-calibration-and-behavior.md` §5 and
  * `plans/phases/10-weather.md` §4.
  */
@@ -111,7 +111,7 @@ export interface WeatherDecayOptions {
 /**
  * Facts about the **body** the hazard sits on, as distinct from the tuning knobs in
  * `WeatherDecayOptions`. Kept a separate parameter on purpose: `WeatherDecayOptions` is the set the
- * Phase 7b tuning page enumerates as "the magnitudes we might refit", and a fact about a lake is not a
+ * Phase 07-2 tuning page enumerates as "the magnitudes we might refit", and a fact about a lake is not a
  * magnitude. All fields optional ⇒ every existing call site is unchanged and reads as "not shallow".
  */
 export interface BodyDecayContext {
@@ -146,7 +146,7 @@ export interface WeatherDecaySignal {
 }
 
 /**
- * The shallow thaw amplifier's default (D69), exported because the Phase 7b tuning page shows the value
+ * The shallow thaw amplifier's default (D69), exported because the Phase 07-2 tuning page shows the value
  * that is actually running — every other magnitude in `DEFAULTS` is only ever read through the options
  * object, but this one has a card. One constant, referenced by `DEFAULTS` below, so they can't diverge.
  */

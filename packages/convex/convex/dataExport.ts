@@ -1,5 +1,5 @@
 /**
- * Data export (D33, delivery settled in D62/N3) — "give me everything you have about me", as one
+ * Data export (D33, delivery settled in D62/A03) — "give me everything you have about me", as one
  * downloadable JSON bundle.
  *
  * **Photo bytes are embedded, not linked.** D33 said "a JSON bundle … plus their uploaded photo files",
@@ -7,7 +7,7 @@
  * URL into our storage **dies when the account is deleted**, so a link-based export is worthless to
  * anyone who exports *then* deletes — which is the single most likely reason to ask for one. So photos
  * are base64'd into the bundle, under a byte budget, and anything that doesn't fit is reported rather
- * than dropped (the Phase 7 "no silent caps" rule, applied hardest to a file someone will reasonably
+ * than dropped (the Phase 07 "no silent caps" rule, applied hardest to a file someone will reasonably
  * treat as their complete record).
  *
  * **Delivered by email *and* listed in settings** (founder call). Email is the delivery mechanism; the
@@ -199,7 +199,7 @@ export const collect = internalQuery({
       .query('photos')
       .withIndex('by_uploader', (q) => q.eq('uploaderId', userId))
       .take(ROW_CAP);
-    // The access layer (N6d / D73, D88). Three tables of things a person said and did — a claim that
+    // The access layer (A06d / D73, D88). Three tables of things a person said and did — a claim that
     // a gate was locked, a verdict on somebody else's, a photo of a pull-off — and an export that
     // omitted them would be quietly incomplete in the one direction that matters, since the whole
     // promise here is "everything about you". The vote rows are included for the same reason
@@ -222,10 +222,10 @@ export const collect = internalQuery({
       // access to, and it's the join key an attacker would want most from a leaked bundle.
       clerkUserId: _clerkUserId,
       // Not exported, same rule as the OAuth tokens above: it is a live credential (the one-click
-      // unsubscribe link's authorization, N8 PR 3), not a record of anything the person did.
+      // unsubscribe link's authorization, A08 PR 3), not a record of anything the person did.
       emailUnsubscribeSecret: _emailUnsubscribeSecret,
       // Not exported either: a delivery address mirrored from Clerk, which the person already has
-      // and which a leaked bundle would otherwise pin to every row in it (N8 PR 3 / D174).
+      // and which a leaked bundle would otherwise pin to every row in it (A08 PR 3 / D174).
       email: _email,
       ...exportableProfile
     } = profile;

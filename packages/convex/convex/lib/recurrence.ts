@@ -1,5 +1,5 @@
 /**
- * Computing one body's cross-season recurrence (N5c / §C4) — the part that is about *this lake*, split
+ * Computing one body's cross-season recurrence (A05c / §C4) — the part that is about *this lake*, split
  * out from the staged job that decides *which lake*.
  *
  * **This pass reads a body's window in full, and says so when it can't.** Its job is completeness, and
@@ -451,7 +451,7 @@ function describeCluster(
       : {}),
     priority,
     // The place phrase comes from the representative, so "which bay is this pattern in" is answered by
-    // the same pin whose shape a promotion would inherit (N2/D60).
+    // the same pin whose shape a promotion would inherit (A02/D60).
     ...(representative.subAreaId !== undefined ? { subAreaId: representative.subAreaId } : {}),
     ...(representative.subAreaName !== undefined
       ? { subAreaName: representative.subAreaName }

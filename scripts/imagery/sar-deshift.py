@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Move each lake's pixels back under its own polygon (N6e open question 8).
+"""Move each lake's pixels back under its own polygon (A06e open question 8).
 
     sar-deshift.py <reveal.geojson> <in.tif> <out.tif>
                    --grid <grid.json> --feather-projected-m M [--no-look-right]
@@ -198,7 +198,7 @@ def main() -> int:
     #
     # `sigma0` genuinely varies with incidence angle — physics, not calibration error — and ice and
     # water have *different* angular responses, so an offset fitted on open water is wrong for ice.
-    # N6e open question 7 names "incidence-angle differences the manifest does not currently record"
+    # A06e open question 7 names "incidence-angle differences the manifest does not currently record"
     # as a prime suspect for the S1A/S1C disagreement that forbids pooling platforms.
     #
     # It is computed here anyway, per body, to place the pixels. Recording it costs one dict.

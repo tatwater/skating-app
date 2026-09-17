@@ -1,5 +1,5 @@
 /**
- * The shape imagery is allowed to show through — N6e's reveal, clipped to one lake **and the way in**.
+ * The shape imagery is allowed to show through — A06e's reveal, clipped to one lake **and the way in**.
  *
  * ## D146 — imagery is content scoped to a body, not a base-map swap
  *
@@ -54,7 +54,7 @@ export interface ImageryMaskInput {
   /** The body's stored geometry — what the reveal is *for*. */
   polygon: Polygon | MultiPolygon;
   /**
-   * Routed hike-in approaches, parking → put-in (`putIns.approachPath`, N6e Workstream 0).
+   * Routed hike-in approaches, parking → put-in (`putIns.approachPath`, A06e Workstream 0).
    *
    * Only routed hike-in legs have one, which is the correct set: a drive-up ramp's "walk" is a few
    * metres already inside the water's own buffer, so it would add vertices and no shape.

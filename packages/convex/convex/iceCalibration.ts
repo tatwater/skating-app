@@ -1,5 +1,5 @@
 /**
- * The ice-thickness calibration instrument (N6h Workstream G / **D160**).
+ * The ice-thickness calibration instrument (A06h Workstream G / **D160**).
  *
  * ## This is an operator instrument. It is not a feature.
  *
@@ -53,7 +53,7 @@ const DAY_MS = 86_400_000;
  * The Stefan model is a *growth* model: it answers "how much ice would form on still open water
  * exposed to this much cold", which is not "how thick is the ice on this lake" — it has no idea what
  * was there when the window opened. Anchoring the window to the season's first sustained freeze would
- * be the physically defensible choice and is not available yet (N6e's phenology brackets ship dark in
+ * be the physically defensible choice and is not available yet (A06e's phenology brackets ship dark in
  * a later PR), so the window is a fixed lookback and **the report says so** rather than implying an
  * anchor it does not have.
  */
@@ -426,7 +426,7 @@ export const calibrationFit = query({
  *
  * ⚠ **A `query`, not an `internalQuery`, and that is the whole point.** D158's trigger is *a human
  * reading a number and deciding whether to buy a plan*, so a meter no surface can read is a meter
- * that does not exist — the same reader-with-no-producer shape N6b's `hasContours` had. Role-gated
+ * that does not exist — the same reader-with-no-producer shape A06b's `hasContours` had. Role-gated
  * like everything else in this file; the calibration page is its reader.
  */
 export const apiCallBudget = query({

@@ -1,5 +1,5 @@
 /**
- * Regenerate the committed provenance record (N6b).
+ * Regenerate the committed provenance record (A06b).
  *
  *   pnpm --filter @skating/bathymetry provenance
  *

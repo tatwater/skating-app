@@ -128,7 +128,7 @@ function isoResponse(
     snowFor?: (date: string, hour: number) => number;
     windFor?: (date: string, hour: number) => number;
     dirFor?: (date: string, hour: number) => number;
-    /** WMO code by flat hour index — the variable N6h Workstream D added. */
+    /** WMO code by flat hour index — the variable A06h Workstream D added. */
     codeFor?: (index: number) => number;
     hoursPerDay?: number;
   } = {},
@@ -232,7 +232,7 @@ describe('weatherArchive: the request builder (D153)', () => {
     expect(rows[0]?.provider).toBe('open-meteo');
     // 93 days over 12 vars: ceil(93/14)=7 × 1.2 = 8.4 billed calls in ONE request.
     //
-    // ⚠ **This number went up by 9% in N6h Workstream D and that was the point of the founder call.**
+    // ⚠ **This number went up by 9% in A06h Workstream D and that was the point of the founder call.**
     // It was 7.7 at eleven variables; `weather_code` is the twelfth, and it is what lets the scrub
     // readout name sleet and freezing drizzle instead of guessing. The increase applies to every
     // Open-Meteo call in the app, including the corpus-wide Tier-B sweep, which is most of the
@@ -701,7 +701,7 @@ describe('weatherArchive: the recovery ladder (D161)', () => {
   });
 });
 
-describe('weatherArchive: honest coverage on a giant (N6h hole 2)', () => {
+describe('weatherArchive: honest coverage on a giant (A06h hole 2)', () => {
   test('flags a body too large for one sample point', async () => {
     const t = convexTest(schema, modules);
     // ~55 km of latitude — Champlain's scale, and Champlain carries zero sample points on dev.
@@ -758,7 +758,7 @@ describe('weatherArchive: honest coverage on a giant (N6h hole 2)', () => {
         bbox: { minLat: 44.0, minLng: -73.4, maxLat: 44.5, maxLng: -73.3 },
         centroid: { lat: 44.25, lng: -73.35 },
         interiorPoint: { lat: 44.25, lng: -73.35 },
-        // N2's suggester + moderator writer exist and have never been run; this is what it looks
+        // A02's suggester + moderator writer exist and have never been run; this is what it looks
         // like afterwards.
         weatherSamplePoints: [
           { lat: 44.1, lng: -73.35 },
@@ -1273,7 +1273,7 @@ describe('reconcileSatisfiedBy — the debounce rule, stated directly', () => {
   });
 });
 
-describe('weatherArchive: hourly rows for the timeline (N6h Workstream D)', () => {
+describe('weatherArchive: hourly rows for the timeline (A06h Workstream D)', () => {
   test('a browse-tier ingest stores the hours the day reducer would have discarded', async () => {
     const t = convexTest(schema, modules);
     const waterBodyId = await seedBody(t);
@@ -1385,7 +1385,7 @@ describe('weatherArchive: hourly rows for the timeline (N6h Workstream D)', () =
   });
 });
 
-describe('weatherArchive: the hourly row version (N6h Workstream D)', () => {
+describe('weatherArchive: the hourly row version (A06h Workstream D)', () => {
   test('rewrites rows written by an older generation of the writer', async () => {
     // ⚠ The second appearance of the same shape. The first was hourly rows missing entirely; this is
     // rows that exist but predate a newly-added field. Both are invisible — nothing errors, the
@@ -1492,7 +1492,7 @@ describe('weatherArchive: one response, one offset — but many dates', () => {
   });
 });
 
-describe('weatherArchive: a bay is its own place (N6h open question 5)', () => {
+describe('weatherArchive: a bay is its own place (A06h open question 5)', () => {
   // Champlain's shape: an anchor mid-lake, and a bay ~55 km north of it. 0.05° cells, so these are
   // many cells apart at either tier.
   const ANCHOR = { lat: 44.25, lng: -73.35 };
@@ -1617,7 +1617,7 @@ describe('weatherArchive: a bay is its own place (N6h open question 5)', () => {
   });
 });
 
-describe('weatherArchive: the sub-area spread reads Tier B (N6h open question 5)', () => {
+describe('weatherArchive: the sub-area spread reads Tier B (A06h open question 5)', () => {
   const ANCHOR = { lat: 44.25, lng: -73.35 };
   const NORTH = { lat: 44.95, lng: -73.15 };
   const SOUTH = { lat: 43.65, lng: -73.4 };
@@ -1810,7 +1810,7 @@ describe('weatherArchive: the sub-area spread reads Tier B (N6h open question 5)
     );
   });
 
-  test('the daily bay append (N9 / G) fetches every live bay’s browse cell — days and hours — in season only', async () => {
+  test('the daily bay append (A09 / G) fetches every live bay’s browse cell — days and hours — in season only', async () => {
     const t = convexTest(schema, modules);
     const lake = await seedBody(t, ANCHOR, 30);
     await seedBay(t, lake, 'North Bay', NORTH);

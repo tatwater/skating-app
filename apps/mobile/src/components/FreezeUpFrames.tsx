@@ -1,5 +1,5 @@
 /**
- * The freeze-up frames on mobile (N6e §C2, D148) — and the reason this file is short.
+ * The freeze-up frames on mobile (A06e §C2, D148) — and the reason this file is short.
  *
  * ## This is the payoff for deferring mobile imagery to PR 3
  *

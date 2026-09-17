@@ -249,7 +249,7 @@ describe('flushDraft — checkpointing (no orphaned uploads on retry)', () => {
   });
 });
 
-describe('flushDraft — linked recorded track (Phase 8, offline linkage)', () => {
+describe('flushDraft — linked recorded track (Phase 08, offline linkage)', () => {
   it('resolves a local track id to an activityId and attaches it to the report', async () => {
     const draft = draftWith({ trackDraftId: 'local-track-1' });
     const { effects, calls } = makeEffects({

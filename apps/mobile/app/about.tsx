@@ -9,7 +9,7 @@ import { DOC_URLS } from '../src/lib/links';
 
 /**
  * About + license disclosure (D43). The app is AGPL-3.0 with a GPLv3 §7 App
- * Store / Play distribution exception; both are referenced here per the Phase 0
+ * Store / Play distribution exception; both are referenced here per the Phase 00
  * license-hygiene requirement. Final legal wording remains Q10.
  */
 export default function AboutScreen() {
@@ -26,7 +26,7 @@ export default function AboutScreen() {
           ice.
         </Paragraph>
 
-        {/* Both numbers, always (N7b, founder call): what the map knows and what it recommends. */}
+        {/* Both numbers, always (A07b, founder call): what the map knows and what it recommends. */}
         {counts.length > 0 ? (
           <>
             <H2 color="$foreground">The map</H2>

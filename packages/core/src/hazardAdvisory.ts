@@ -1,5 +1,5 @@
 /**
- * The skater-facing recurrence advisory (N5c / §9, D78) — **the most consequential copy in the app**,
+ * The skater-facing recurrence advisory (A05c / §9, D78) — **the most consequential copy in the app**,
  * and the reason it lives in one tested module rather than in two components.
  *
  * *"Ridges usually form here"* and *"there is a ridge here"* are different sentences, and only the
@@ -12,7 +12,7 @@
  *   *"expect…"*. The subject of the sentence is the people, not the ice.
  * - **The disclaimer is not decoration.** It says the thing a history panel most easily implies and
  *   most badly needs not to: this is not a report of conditions now.
- * - **No invented geography.** The place phrase comes from a named sub-area (N2/D60) or is omitted
+ * - **No invented geography.** The place phrase comes from a named sub-area (A02/D60) or is omitted
  *   entirely. "Near the north end" would be a guess, and a guess about *where* reads as precision.
  *
  * **An advisory is not a hazard.** No confirm buttons, no decay, no freshness chip, no pin, no halo —

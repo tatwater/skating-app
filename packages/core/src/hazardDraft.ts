@@ -31,9 +31,9 @@ import type { HazardType } from './types';
 /**
  * The primitives a person can actually *draw*.
  *
- * `polygon` joined the other two in N5b. D51 deferred it past Phase 9 because authoring one needs
+ * `polygon` joined the other two in A05b. D51 deferred it past Phase 09a because authoring one needs
  * vertex dragging and self-intersection handling — both of which now exist: dragging from terra-draw
- * on web (N5b Decision 2), self-intersection from `isValidHazardShape`, which every path already went
+ * on web (A05b Decision 2), self-intersection from `isValidHazardShape`, which every path already went
  * through. It remains the **opt-in/advanced** primitive D51 describes: no type defaults to it
  * (`HAZARD_DEFAULT_GEOMETRY_KIND` has no `polygon` entry), so it is only ever reached by switching a
  * draft that started as something else.

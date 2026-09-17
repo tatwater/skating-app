@@ -60,7 +60,7 @@ describe('describeNotification', () => {
     });
   });
 
-  it('a degraded target is described and not tappable (N8 #5)', () => {
+  it('a degraded target is described and not tappable (A08 #5)', () => {
     const view: NotificationView = {
       ...base,
       type: 'report_commented',
@@ -116,7 +116,7 @@ describe('describeNotification', () => {
     expect(d.target).toBeNull();
   });
 
-  it('a single report in a named bay says the bay, with the lake in parentheses (N9)', () => {
+  it('a single report in a named bay says the bay, with the lake in parentheses (A09)', () => {
     expect(
       describeNotification({
         ...base,
@@ -187,7 +187,7 @@ describe('describeNotification', () => {
     expect(d.target).toBeNull();
   });
 
-  it('a recorded skate names the lake, carries its own time in the given zone, and lands on the list (N8/B4)', () => {
+  it('a recorded skate names the lake, carries its own time in the given zone, and lands on the list (A08/B4)', () => {
     // 2026-01-10 19:00Z — 2pm in New York, 11am in Los Angeles. The zone decides which one the
     // detail line says; a server composing this in UTC must pass the recipient's.
     const view: NotificationView = {
@@ -210,7 +210,7 @@ describe('describeNotification', () => {
   });
 });
 
-describe('timezoneToSync (N8/C)', () => {
+describe('timezoneToSync (A08/C)', () => {
   it('writes only when the device knows its zone and it differs from the stored one', () => {
     expect(timezoneToSync(undefined, 'America/New_York')).toBe('America/New_York');
     expect(timezoneToSync('America/New_York', 'America/Los_Angeles')).toBe('America/Los_Angeles');

@@ -25,7 +25,7 @@ import {
 } from '@skating/core';
 
 /**
- * Where a GPS activity came *in* from — the A-inputs of the Phase 8 pipeline (D24).
+ * Where a GPS activity came *in* from — the A-inputs of the Phase 08 pipeline (D24).
  *
  * `native` is our own in-app recorder and is the only one wired today. It matters that it's a
  * first-class provider value rather than a special case: an activity recorded here is **our**
@@ -62,7 +62,7 @@ export const WATER_BODY_SOURCES = ['osm', 'nhd', '3dhp', 'user'] as const;
 export const CANONICAL_SOURCES = ['osm', 'nhd', '3dhp'] as const;
 
 /**
- * Whose polygon a body actually draws — a superset of `WATER_BODY_SOURCES` (N7 / D92).
+ * Whose polygon a body actually draws — a superset of `WATER_BODY_SOURCES` (A07a / D92).
  *
  * **`3dhp` appears here and not in `WATER_BODY_SOURCES`**, and the asymmetry is the design. D92
  * settled that 3DHP cannot be the identity spine — it carries no `Permanent_Identifier`, so it can
@@ -81,7 +81,7 @@ export const GEOMETRY_SOURCES = ['osm', 'nhd', '3dhp', 'user'] as const;
 /** Moderation review lifecycle for user-created water bodies (D37). */
 export const REVIEW_STATUSES = ['pending', 'approved', 'rejected'] as const;
 
-/** Administrative-boundary granularity for point→place labels (Phase 5). */
+/** Administrative-boundary granularity for point→place labels (Phase 05). */
 export const ADMIN_AREA_LEVELS = ['state', 'county', 'town'] as const;
 
 /** Dedup state for user-created water bodies (D36). */
@@ -98,20 +98,20 @@ export const ADMIN_AREA_LEVELS = ['state', 'county', 'town'] as const;
 export const DEDUP_STATUSES = ['clean', 'suspected_duplicate', 'near_certain', 'merged'] as const;
 
 /**
- * A moderator's ruling on whether a body can be lawfully reached (N6f). Re-exported from
+ * A moderator's ruling on whether a body can be lawfully reached (A06f). Re-exported from
  * `@skating/core` so the schema, both clients and the mutation share one vocabulary.
  */
 export const PUBLIC_ACCESS_VERDICTS = CORE_PUBLIC_ACCESS_VERDICTS;
 
 /**
  * Why an admin soft-delisted a water body — reversible, never a hard delete (D48). Re-exported from
- * `@skating/core` since N7b, where `describeStanding` turns each reason into the drawer's sentence;
+ * `@skating/core` since A07b, where `describeStanding` turns each reason into the drawer's sentence;
  * the schema, the mutation and the copy share one list.
  */
 export const REMOVAL_REASONS = CORE_REMOVAL_REASONS;
 
 /**
- * Why a body carries a `dormant` field (N7b) — see `standing.ts` in `@skating/core`. Only the
+ * Why a body carries a `dormant` field (A07b) — see `standing.ts` in `@skating/core`. Only the
  * reasons no other field expresses: a `none` ruling is read from `publicAccess`, a removal from
  * `removedAt`.
  */
@@ -119,7 +119,7 @@ export const DORMANCY_REASONS = CORE_DORMANCY_REASONS;
 
 /** How a report entered the system. */
 /**
- * Where a `weatherDays` row's numbers came from (N6h / D153).
+ * Where a `weatherDays` row's numbers came from (A06h / D153).
  *
  * `forecast` is Open-Meteo's forecast endpoint with `past_days`, which reaches back 92 days and is
  * what fills the archive in normal operation. `archive` is the ERA5-backed historical API — banned
@@ -148,7 +148,7 @@ export const COMMENT_SOURCES = ['native', 'imported'] as const;
 /**
  * Hazard **lifecycle** status (archived, never hard-deleted, D15).
  *
- * Deliberately a different axis from `MODERATION_STATUSES`, which hazards *also* carry (Phase 9).
+ * Deliberately a different axis from `MODERATION_STATUSES`, which hazards *also* carry (Phase 09a).
  * Archiving means the community voted a hazard healed; hiding means a moderator judged the pin bad.
  * Collapsing them would make abuse indistinguishable from a safety verdict (D3).
  */
@@ -179,7 +179,7 @@ export const HAZARD_CONFIRM_VIA = [
   'proximity_alert',
   'report_flow',
   'strava_path',
-  // The draw-time duplicate nudge (N5c / D80): a skater about to mark a hazard was shown the pin
+  // The draw-time duplicate nudge (A05c / D80): a skater about to mark a hazard was shown the pin
   // already there and confirmed that one instead. Distinct from the others because it is the *only*
   // trigger that also tells us a duplicate was prevented, which is how the nudge's conversion rate
   // becomes measurable rather than assumed.
@@ -206,10 +206,10 @@ export const HAZARD_HEALING_STATES = ['none', 'healing_unsafe', 'disputed'] as c
 export const BODY_FEATURE_TYPES = CORE_BODY_FEATURE_TYPES;
 
 /**
- * Abuse/safety flag targets, reasons, and lifecycle (D32/D37). `hazard` added Phase 9 (D51);
- * `accessAlert` added N6d (D73).
+ * Abuse/safety flag targets, reasons, and lifecycle (D32/D37). `hazard` added Phase 09a (D51);
+ * `accessAlert` added A06d (D73).
  *
- * The N6d kickoff found this list one short of the claim its own plan made. Access **photos** ride
+ * The A06d kickoff found this list one short of the claim its own plan made. Access **photos** ride
  * `photo` exactly as Workstream C assumes, but an access **alert** is user-supplied free text on a
  * public surface with no target type to flag it by — so *"moderation rides the existing
  * `contentFlags`"* was true of half of it.
@@ -221,7 +221,7 @@ export const FLAG_TARGET_TYPES = [
   'user',
   'hazard',
   'accessAlert',
-  // N6f — the first flag target that is a *place* rather than something somebody wrote. It rides this
+  // A06f — the first flag target that is a *place* rather than something somebody wrote. It rides this
   // table because the machinery it needs already exists here and nowhere else: one open flag per
   // (flagger, target), which is exactly "one claim per person", so the open-row count *is* the
   // corroboration count and a votes table would only have re-implemented the dedup.
@@ -236,10 +236,10 @@ export const FLAG_REASONS = [
   'spam',
   'harassment',
   'inappropriate',
-  // Auto-routed to the mod queue when a target crosses the net-unhelpful threshold (D50, Phase 6).
+  // Auto-routed to the mod queue when a target crosses the net-unhelpful threshold (D50, Phase 06).
   // Written by `ratings.ts`; NEVER hides the target (visibility of safety content isn't score-gated, D3).
   'auto_low_quality',
-  // "There is no lawful way onto this water" (N6f) — a claim about a *place*, not about content, and
+  // "There is no lawful way onto this water" (A06f) — a claim about a *place*, not about content, and
   // the only reason in this list many people can independently make about the same target. That is
   // why it is the one reason the queue groups by target and ranks by how many said it.
   'no_public_access',
@@ -247,7 +247,7 @@ export const FLAG_REASONS = [
 ] as const;
 export const FLAG_STATUSES = ['open', 'reviewing', 'actioned', 'dismissed'] as const;
 /**
- * Who filed a flag (N8/B3): a person who pressed "report", or the system crossing a threshold.
+ * Who filed a flag (A08/B3): a person who pressed "report", or the system crossing a threshold.
  *
  * Needed because a system flag still names a **real person** in `flaggerId` — the rater whose thumb
  * crossed the line, the corroborated opponent, the Nth "never existed" voter — and until this field
@@ -268,17 +268,17 @@ export const MODERATION_ACTIONS = [
   'merge_waterbody',
   'approve_waterbody',
   'reject_waterbody',
-  'set_curated_boost', // adjust a body's D49 display prominence (admin, Phase 2)
-  // Operator-entered reference links — a lake association's URL (N6c B7). The only *stored* link in
+  'set_curated_boost', // adjust a body's D49 display prominence (admin, Phase 02a)
+  // Operator-entered reference links — a lake association's URL (A06c B7). The only *stored* link in
   // the phase; every other one in the drawer is derived from the row at render time (P2/D71), so
   // this is the only link surface with a writer to audit at all.
   'set_reference_links',
-  // Keep a body the admission rules refuse, or stop keeping one (N7b's primitive, seeded in N7).
+  // Keep a body the admission rules refuse, or stop keeping one (A07b's primitive, seeded in A07a).
   // Distinct from `set_curated_boost` because it is a statement about **membership** rather than
   // prominence — it overrides `belongsInCorpus` and both prunes, where a boost only moves a body up
   // and down the zoom ladder.
   'set_included_by_request',
-  // Corpus standing (N7b). `set_standing` is a person — a moderator setting a body dormant with a
+  // Corpus standing (A07b). `set_standing` is a person — a moderator setting a body dormant with a
   // note, or bringing one back. `activate_body` and `demote_body` are the machine: evidence
   // (a report, a track, a put-in) re-activating a dormant body, the season cron or a prune demoting
   // one. Both are audited with no actor, like `merge_hazards`, because a corpus that changes shape
@@ -286,33 +286,33 @@ export const MODERATION_ACTIONS = [
   'set_standing',
   'activate_body',
   'demote_body',
-  // A corpus request answered (N7b PR 2 / D107). The body-side effect writes its own row
+  // A corpus request answered (A07b PR 2 / D107). The body-side effect writes its own row
   // (`activate_body`, `restore`, `remove`, `set_public_access`); this one is the decision on the ask.
   'approve_request',
   'decline_request',
-  'set_put_in', // admin placed an official put-in marker (Phase 4, decision #7)
+  'set_put_in', // admin placed an official put-in marker (Phase 04, decision #7)
   'resolve_flag',
   'dismiss_flag',
   'grant_role',
   'revoke_role',
-  'set_posting_permission', // restrict/restore a canPost* right — finer than ban/suspend (D57, Phase 7)
-  'promote_body_feature', // a recurring hazard graduated to a persistent body feature (D53, Phase 9)
+  'set_posting_permission', // restrict/restore a canPost* right — finer than ban/suspend (D57, Phase 07)
+  'promote_body_feature', // a recurring hazard graduated to a persistent body feature (D53, Phase 09a)
   'demote_body_feature', // reversible: flips `active` off, never hard-deletes (D53)
-  // Named sub-areas (N2/D60). Drawing one is a content lever with real reach — it renames what a
+  // Named sub-areas (A02/D60). Drawing one is a content lever with real reach — it renames what a
   // skater sees on their own report — so each write is attributed. Delisting and restoring reuse the
   // generic `remove` / `restore` verbs, disambiguated by the `waterBodySubArea` target type, exactly
   // as `hide` / `remove` are already shared across content kinds.
-  // Duplicate hazards folded into one (N5c / D80). `merge_hazards` is written by the **machine** as
+  // Duplicate hazards folded into one (A05c / D80). `merge_hazards` is written by the **machine** as
   // well as by a moderator — deliberately, because an automatic merge that leaves no audit row is a
   // mechanism nobody can check, and this one is meant to be watched before it is trusted.
   'merge_hazards',
   'unmerge_hazards',
-  // A flagged duplicate group a moderator judged to be distinct bodies (D36, N7 review queue). The
+  // A flagged duplicate group a moderator judged to be distinct bodies (D36, A07a review queue). The
   // counterpart to `merge_waterbody`, and the reason the queue has an outcome other than "yes": a
   // `same-source-duplicate` group can be two real lakes our matching chained together, and without a
   // recorded "no" the only way to clear the card was to merge them.
   'dismiss_duplicate',
-  // A cross-season pattern a moderator judged not to be one (N5c / §7.3) — three pins in one cove
+  // A cross-season pattern a moderator judged not to be one (A05c / §7.3) — three pins in one cove
   // across three winters that are three people misreading the same shadow. Never a delete: the
   // cluster stops being suggested and stops being publicly advisable, and the reason stays readable.
   'suppress_recurrence',
@@ -323,15 +323,15 @@ export const MODERATION_ACTIONS = [
   // and thought it permanent" and "this came back four times".
   'promote_recurrence',
   'set_weather_sample_points', // placed the multi-cell weather sampling grid on a giant (D56 §5)
-  'set_lake_depth', // typed a surveyed depth in, the top rung of the D68 ladder (N6a)
+  'set_lake_depth', // typed a surveyed depth in, the top rung of the D68 ladder (A06a)
   'create_sub_area',
   'redraw_sub_area', // geometry changed — schedules a re-stamp of the parent's reports + hazards
   'rename_sub_area', // name or aliases changed — also a re-stamp, since the name is denormalized
-  // Chose which publisher's name a body displays (N7). Audited because it **overrides the import**:
+  // Chose which publisher's name a body displays (A07a). Audited because it **overrides the import**:
   // `NAME_SOURCE_RANK` would otherwise re-impose `gnis > nhd > 3dhp > osm` on the next campaign, and
   // the stored `user` claim is the only thing standing between a moderator's decision and that.
   'set_water_body_name',
-  // ── N6d, the access layer (D72/D73/D144) ────────────────────────────────────────────────────────
+  // ── A06d, the access layer (D72/D73/D144) ────────────────────────────────────────────────────────
   // An operator placed or edited a parking area. Audited for the reason the D72 amendment gives:
   // association distance is uncapped for humans, so a lot a mile from the ice is a legitimate write
   // *and* the one write in this phase that can send a stranger to the wrong trailhead in the dark.
@@ -350,7 +350,7 @@ export const MODERATION_ACTIONS = [
   // was never true, where removal says it is no longer wanted on screen, and a mistaken alert deserves
   // the first rather than the second.
   'retract_access_alert',
-  // ── N6e ─────────────────────────────────────────────────────────────────────────────────────────
+  // ── A06e ─────────────────────────────────────────────────────────────────────────────────────────
   // Typed in what a posted sign says — the seasonal window, the daily hours, the permit. One verb for
   // all three targets (body, put-in, lot) because it is one claim wearing three hats, and the target
   // type already distinguishes them.
@@ -366,7 +366,7 @@ export const MODERATION_ACTIONS = [
   // threshold, and the next operator to wonder why one small pond has the link needs to see who said
   // so. `auto` is a reversal rather than a third value, and it clears the field.
   'set_satellite_imagery',
-  // ── N6f ─────────────────────────────────────────────────────────────────────────────────────────
+  // ── A06f ─────────────────────────────────────────────────────────────────────────────────────────
   // Ruled on whether a body can be lawfully reached. Distinct from `remove` even though both take a
   // lake off the browse path: `remove` says it should not be on the map at all, this says it is real
   // and you cannot get to it. Auditing them together would lose which the moderator meant, and they
@@ -380,17 +380,17 @@ export const MODERATION_TARGET_TYPES = [
   'user',
   'waterbody',
   'contentFlag',
-  'hazard', // Phase 9 (D51): mods can hide a bad pin; admins promote/demote body features
+  'hazard', // Phase 09a (D51): mods can hide a bad pin; admins promote/demote body features
   'bodyFeature',
-  'waterBodySubArea', // N2 (D60): a named region inside one body
-  'hazardRecurrence', // N5c (D78): a cross-season pattern a moderator suppressed or restored
-  // N6d (D72/D73): the access layer. `putIn` was already moderatable through the Phase 4 `hide`
+  'waterBodySubArea', // A02 (D60): a named region inside one body
+  'hazardRecurrence', // A05c (D78): a cross-season pattern a moderator suppressed or restored
+  // A06d (D72/D73): the access layer. `putIn` was already moderatable through the Phase 04 `hide`
   // mutation with nothing auditing it; giving it a target type is that gap closed alongside the two
   // new surfaces rather than after them.
   'putIn',
   'parkingArea',
   'accessAlert',
-  // N7b PR 2: a corpus request, so a moderator's approve/decline is a row on the request as well as
+  // A07b PR 2: a corpus request, so a moderator's approve/decline is a row on the request as well as
   // on the body it changed.
   'waterBodyRequest',
 ] as const;
@@ -400,7 +400,7 @@ export const SUPPORT_CATEGORIES = ['bug', 'account', 'safety', 'other'] as const
 export const SUPPORT_STATUSES = ['open', 'in_progress', 'resolved'] as const;
 
 /**
- * Data-export bundle lifecycle (D33/D62, N3). `building` is a real state rather than an
+ * Data-export bundle lifecycle (D33/D62, A03). `building` is a real state rather than an
  * implementation detail: assembling a bundle is an action that can take a while and can fail, and a
  * user who clicked "export my data" and sees nothing has no way to tell "still working" from
  * "broken". `failed` carries a reason for the same reason.
@@ -411,7 +411,7 @@ export const DATA_EXPORT_STATUSES = ['building', 'ready', 'failed'] as const;
 export const BOUNTY_STATUSES = ['open', 'fulfilled', 'expired', 'cancelled'] as const;
 
 /**
- * What the bounty-create gate decided (Phase 7b analytics). One row per *attempt* — including the two
+ * What the bounty-create gate decided (Phase 07-2 analytics). One row per *attempt* — including the two
  * rejections, which is the whole point: a gate you only observe when it passes tells you nothing about
  * whether it's set right. `suppressed` = a recent report still counted as fresh eyes (decision 8);
  * `capped` = the requester already holds MAX_OPEN_BOUNTIES_PER_DAY (decision 7).
@@ -423,7 +423,7 @@ export const RATING_VERDICTS = ['helpful', 'unhelpful'] as const;
 
 /**
  * Notification types, their `notificationPrefs` keys, and the per-key defaults — **re-exported from
- * `@skating/core`, not defined here** (N8). Both settings pages iterate the list, so it has to live
+ * `@skating/core`, not defined here** (A08). Both settings pages iterate the list, so it has to live
  * where a client can import it; the D16 1:1 mirror between types and keys is enforced in core, and
  * `upsertFromClerk`'s defaults and `backfillNotificationPrefs`'s missing-key fill both read the
  * same `NOTIFICATION_PREF_DEFAULTS`.
@@ -433,14 +433,14 @@ export const NOTIFICATION_PREF_KEYS = CORE_NOTIFICATION_PREF_KEYS;
 export const NOTIFICATION_PREF_DEFAULTS = CORE_NOTIFICATION_PREF_DEFAULTS;
 
 /**
- * Put-in marker provenance (Phase 4, decision #7; `osm` added N6d / D143).
+ * Put-in marker provenance (Phase 04, decision #7; `osm` added A06d / D143).
  *
  * **In ladder order, weakest first** — `official` beats `osm` beats `derived`, and a re-import never
- * overwrites a rung above its own. The same precedence discipline as the N6a depth ladder, and for the
+ * overwrites a rung above its own. The same precedence discipline as the A06a depth ladder, and for the
  * same reason: an operator's correction has to survive the next ETL run or it is not worth making.
  *
  * - `derived` — clustered from visible reports' points. Approximate, recomputed on read.
- * - `osm` — a named slipway, beach, pier or fishing access from the Geofabrik extract (N6d B1).
+ * - `osm` — a named slipway, beach, pier or fishing access from the Geofabrik extract (A06d B1).
  * - `official` — an operator pinned it. Accurate, priority styling.
  *
  * ⚠ **`osm` scores as `derived` in D2's richness ladder, not as `official`** (D143). It is stored like
@@ -454,7 +454,7 @@ export const PUTIN_SOURCES = ['derived', 'osm', 'official'] as const;
 export const PUTIN_STATUSES = ['visible', 'hidden'] as const;
 
 /**
- * Where a parking area came from (N6d / D72). Same two-rung ladder as put-ins minus the derived one:
+ * Where a parking area came from (A06d / D72). Same two-rung ladder as put-ins minus the derived one:
  * nothing clusters a parking lot out of report points, so there is no approximate rung to have.
  */
 export const PARKING_SOURCES = ['osm', 'official'] as const;
@@ -463,38 +463,38 @@ export const PARKING_SOURCES = ['osm', 'official'] as const;
 export const PARKING_STATUSES = ['visible', 'hidden'] as const;
 
 /**
- * What an access point offers, beyond existing (N6d A2, founder calls).
+ * What an access point offers, beyond existing (A06d A2, founder calls).
  *
  * Toilets, trails and parking all change whether a trip works. **Boat ramp is kept** for the
  * ice-fishing crossover and because it costs nothing — it is the same `leisure=slipway` tag we already
  * read to *find* put-ins, so excluding it would be extra work. **Food is excluded**: everyone has a
  * maps app for restaurants, and it is the amenity most likely to be wrong.
  *
- * ⚠ `trail` is **derived from a successful ORS `foot-hiking` route**, not extracted (N6d correction 9).
+ * ⚠ `trail` is **derived from a successful ORS `foot-hiking` route**, not extracted (A06d correction 9).
  * ORS routes over the same `highway=path` / `route=hiking` ways a second extract would have pulled, so
  * a routed leg *is* the evidence a trail exists — which removed the line-geometry export entirely.
  */
 export const ACCESS_AMENITIES = ['toilets', 'trail', 'boat_ramp'] as const;
 
 /**
- * How you get from the car to the ice (N6d / D144) — **re-exported from `@skating/core`, not
+ * How you get from the car to the ice (A06d / D144) — **re-exported from `@skating/core`, not
  * redefined**, the `BODY_FEATURE_TYPES` discipline. The clients derive this from a distance and the
  * backend stores an operator's override of it, so a second hand-written copy would be two lists that
  * agree until one of them doesn't.
  */
 export const APPROACH_KINDS = CORE_APPROACH_KINDS;
 
-/** Satellite-link override modes (N6e Workstream D / D70), from core for the same reason. */
+/** Satellite-link override modes (A06e Workstream D / D70), from core for the same reason. */
 export const SATELLITE_IMAGERY_MODES = CORE_SATELLITE_IMAGERY_MODES;
 
-/** Access-alert vocabulary (N6d / D73) — all four re-exported from `@skating/core` for the same reason. */
+/** Access-alert vocabulary (A06d / D73) — all four re-exported from `@skating/core` for the same reason. */
 export const ACCESS_ALERT_REASONS = CORE_ACCESS_ALERT_REASONS;
 export const ACCESS_ALERT_STATUSES = CORE_ACCESS_ALERT_STATUSES;
 export const ACCESS_ALERT_VERDICTS = CORE_ACCESS_ALERT_VERDICTS;
 export const ACCESS_ALERT_TARGETS = CORE_ACCESS_ALERT_TARGETS;
 
 /**
- * Coalescing-queue bucket (Phase 4, decision #4; widened in N8 / D169). The first three are the
+ * Coalescing-queue bucket (Phase 04, decision #4; widened in A08 / D169). The first three are the
  * report-audience buckets: `digest` = the once-daily 8pm "all within X₁" roll-up; `favorite` /
  * `great` fire after a short per-`(user, body)` debounce. The rest are the **actor-triggered** kinds
  * that used to insert `notifications` directly and now settle in the queue first, so a misclick can
@@ -514,7 +514,7 @@ export const NOTIFICATION_QUEUE_KINDS = [
   'flag_resolved', // `content_flag_resolved`
   'bounty_request', // `bounty_request` — a bounty opened where you reported
   'bounty_answered', // `bounty_answered` — a report landed on your bounty
-  'activity', // `activity_detected` — an unreported skate (N8/B4)
+  'activity', // `activity_detected` — an unreported skate (A08/B4)
 ] as const;
 
 /** Reputation/trust ledger reasons (D17/D50). Boost-only in practice; no public penalties. */
@@ -525,36 +525,36 @@ export const POINT_EVENT_REASONS = [
   'helpful_thumb',
   'report_corroborated', // independent same-body report agreed within the window (D50)
   'hazard_confirmed',
-  'hazard_corroborated', // your hazard confirmed by ≥2 peers — author-side boost (D50, Phase 6)
+  'hazard_corroborated', // your hazard confirmed by ≥2 peers — author-side boost (D50, Phase 06)
   'bounty_fulfilled',
 ] as const;
 
 /**
- * Which loader an `importRuns` row describes (N6c F2). One member per manual ETL under `scripts/`,
+ * Which loader an `importRuns` row describes (A06c F2). One member per manual ETL under `scripts/`,
  * because "how did the last import go" is a question about a *pipeline*, and the coverage of the
  * depth join is not comparable to the coverage of the wind-rose fetch.
  */
 export const IMPORT_RUN_KINDS = [
   'canonical_water', // scripts/etl — OSM extract → waterBodies
-  // scripts/etl merge — the three archives reconciled offline into one master list (N7). Distinct
+  // scripts/etl merge — the three archives reconciled offline into one master list (A07a). Distinct
   // from `canonical_water`, which is the *load*: this pass writes nothing to Convex and is where
   // every admission decision is actually made, so "how many bodies did the corpus lose and why" is
   // a question only this row can answer.
   'corpus_merge',
-  // scripts/etl load-sub-areas — the bays the merge found a parent for (N7 second audit). A bay
+  // scripts/etl load-sub-areas — the bays the merge found a parent for (A07a second audit). A bay
   // with a parent is an arm of it, not a lake beside it, so it lands in `waterBodySubAreas` and not
   // in the corpus. Its own kind because it fails differently: a bay that cannot find its parent is
   // an ordering error in the campaign, not a body that failed a rule.
   'sub_area_seed',
   // Deletes rather than adds — see the note on `ImportRunKind` in `@skating/run-log`.
   'dedup_resolve',
-  'osm_depths', // scripts/etl load-depths — the N6a rung-7 tag stream
+  'osm_depths', // scripts/etl load-depths — the A06a rung-7 tag stream
   'admin_areas', // scripts/admin-areas
   'lake_depth', // scripts/lake-depth — HydroLAKES/GLOBathy/LAGOS-US join
   'elevation', // scripts/lake-depth load-elevation — Open-Meteo
   'wind_climate', // scripts/wind-climate — NREL WIND Toolkit winter roses
   'bathymetry_coverage', // scripts/bathymetry coverage — D2's hasContours
-  // scripts/seed-destinations — the curated shortlist → `curatedBoost` (N6c B3a/D). A pass rather
+  // scripts/seed-destinations — the curated shortlist → `curatedBoost` (A06c B3a/D). A pass rather
   // than a one-off because the shortlist grows and the interesting output is what it *declined* to
   // match: an ambiguous name, or a well-known lake absent from the corpus entirely.
   'seed_destinations',
@@ -565,14 +565,14 @@ export const IMPORT_RUN_KINDS = [
   'raw_archive', // a `.raw/` archive populated from third parties (OSM extracts, agency services)
   'r2_mirror', // scripts/lib/mirror-r2.sh — pushing an archive to its private R2 bucket
   'bathymetry_join', // scripts/bathymetry join — archived lakes matched to corpus bodies
-  // Corpus standing (N7b). The seed partitions the stored corpus into active / dormant once (and
+  // Corpus standing (A07b). The seed partitions the stored corpus into active / dormant once (and
   // again after any campaign); the rollover is the season cron's pass over the active set, recorded
   // as a run so "did this season's rollover finish" is a row rather than a guess.
   'standing_seed',
   'standing_rollover',
   'bathymetry_build', // scripts/bathymetry build-contours — soundings/contours → drawable isobaths
   'bathymetry_tiles', // scripts/bathymetry tile — contours → PMTiles
-  // scripts/etl load-access — the N6d access pass. **Two kinds rather than one**, because they fail
+  // scripts/etl load-access — the A06d access pass. **Two kinds rather than one**, because they fail
   // differently and in a fixed order: the parking stage failing leaves put-ins with lots they cannot
   // resolve (`parkingMissing`), which is a *sequencing* error and reads as a data error if the two
   // share a row. The put-in stage failing leaves lots nothing points at, which is merely incomplete.
@@ -581,7 +581,7 @@ export const IMPORT_RUN_KINDS = [
 ] as const;
 
 /**
- * The run kinds that can invalidate the **weather cell registry** (N6h / D152).
+ * The run kinds that can invalidate the **weather cell registry** (A06h / D152).
  *
  * A cell key is `bodyWeatherCell(body, tier)` — a function of the body's interior point, its
  * elevation band, and whether it exists at all. So only a pass that can change *those* leaves
@@ -604,7 +604,7 @@ export const WEATHER_CELL_INVALIDATING_KINDS: readonly (typeof IMPORT_RUN_KINDS)
   'dedup_resolve',
   'elevation',
   // A standing pass moves thousands of bodies out of (or, rarely, into) the active set, and the
-  // registry only counts active bodies now (N7b) — so the cells they vacated need a walk to prune.
+  // registry only counts active bodies now (A07b) — so the cells they vacated need a walk to prune.
   'standing_seed',
   'standing_rollover',
 ];

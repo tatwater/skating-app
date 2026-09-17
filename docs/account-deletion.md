@@ -363,7 +363,7 @@ Two mechanisms in this codebase both take something off the screen, and they are
 | Who it applies to | everyone | only someone who chose to leave |
 | Reversible | yes, with a labelled way back | no |
 
-Seasonal scoping (N5a, built 2026-07-28) hides last season's reports and hazards from the default
+Seasonal scoping (A05a, built 2026-07-28) hides last season's reports and hazards from the default
 view — reachable by permalink, browsable by a per-lake season selector. That is not this. The 30-day
 clock isn't "old content expires"; it's how long a departing skater's own words stay up, and it reaches
 nobody who's still here.
@@ -453,7 +453,7 @@ rows look right, and something is quietly wrong for a person who can no longer c
   Convex index on an optional field is *not* sparse and `undefined` sorts before every number, so a
   bare upper bound on `deletionRequestedAt` matches every profile that never asked to be deleted. Two
   independent guards is the deliberate posture for a job whose failure mode is deleting everyone.
-- **The redaction queries must not inherit a season bound.** N5a adds season lower bounds to reads off
+- **The redaction queries must not inherit a season bound.** A05a adds season lower bounds to reads off
   the same indexes the sweep uses (`by_author_skate_end_time`, `by_author_and_water_body`,
   `by_author`). If one leaks in, a departed user's older content silently stops being redacted — and
   nothing visible would look wrong.
@@ -493,14 +493,14 @@ rows look right, and something is quietly wrong for a person who can no longer c
   is an emailed confirmation whose link forces a Clerk re-authentication even with a live session:
   three factors instead of one, and a message in the victim's inbox saying it's happening. Blocked on
   Resend provisioning, with a reverification-only fallback so a mail outage can never strand somebody's
-  right to erasure. In the N5a deferred register.
+  right to erasure. In the A05a deferred register.
 - **Banned and suspended users have no self-service path.** Both gates reject them, and erasure and
   access rights don't depend on good standing. Suspended users need only a gate change; a *banned* user
   is Clerk-banned and can't sign in at all, so that half has to be an operator-run export and deletion
-  from `/admin/users` plus a documented contact address. In the N5a deferred register.
+  from `/admin/users` plus a documented contact address. In the A05a deferred register.
 - ~~**Photo *images* survive indefinitely, and only the caption comes off.**~~ **Decided as
-  [D66](../plans/01-decisions.md#d66--a-departed-skaters-photos-split-on-evidential-value-and-expire-at-the-season-boundary-n5a)
-  and built in N5a (2026-07-28).** This was the largest unresolved question in the design: a photo on a
+  [D66](../plans/01-decisions.md#d66--a-departed-skaters-photos-split-on-evidential-value-and-expire-at-the-season-boundary-a05a)
+  and built in A05a (2026-07-28).** This was the largest unresolved question in the design: a photo on a
   surviving report or hazard was kept whole — bytes, timestamp, coordinate — and the *image* is a far
   larger identifiability surface than any text field on this page. Faces, a licence plate, a house
   behind the put-in, the departed skater themselves.
@@ -512,7 +512,7 @@ rows look right, and something is quietly wrong for a person who can no longer c
   accepted knowingly, the put-in documentation S1 calls the corpus's most-discussed concern. The loss
   falls only on people who chose to leave, and only on the images with the least evidential value.
 
-  The clock is **N5a's season boundary rather than a fourth deletion timer**, which is the argument for
+  The clock is **A05a's season boundary rather than a fourth deletion timer**, which is the argument for
   building it there. One consequence worth knowing: finalization lands 30 days after the request and
   therefore mid-season, so the sweep has to **outlive the tombstone** — it runs off a `by_status` index
   rather than the pending one, which `writeTombstone` drops the row out of. A photo's own season is
@@ -533,7 +533,7 @@ rows look right, and something is quietly wrong for a person who can no longer c
 - **A still-valid session between the tombstone and the Clerk delete** can create a fresh, empty
   profile. Not a leak — the same thing signing up again gives you — so it's logged rather than guarded.
 - **A redacted comment's moderator view is unaudited**, as is whether `commentCount` should follow a
-  redaction (it currently doesn't — the comment still exists, which is arguably correct). In the N5a
+  redaction (it currently doesn't — the comment still exists, which is arguably correct). In the A05a
   deferred register.
 
 ---

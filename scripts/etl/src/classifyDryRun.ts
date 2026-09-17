@@ -1,5 +1,5 @@
 /**
- * Classify **every feature in all three catalogues** and report the funnel — N7, read-only.
+ * Classify **every feature in all three catalogues** and report the funnel — A07a, read-only.
  *
  *   pnpm --filter @skating/etl classify-dry-run              # all three lanes
  *   pnpm --filter @skating/etl classify-dry-run --osm        # one lane at a time

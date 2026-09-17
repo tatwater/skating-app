@@ -1,5 +1,5 @@
 /**
- * The chart kit renders under jsdom (Phase 7b). Recharts needs a real layout to draw its SVG, so these
+ * The chart kit renders under jsdom (Phase 07-2). Recharts needs a real layout to draw its SVG, so these
  * assert the *scaffolding* — the accessible table view and the legend that keep identity from being
  * color-alone (D34) — plus that a chart mounts without throwing. The visual correctness is the dataviz
  * skill's validated palette, not something a DOM test can see.

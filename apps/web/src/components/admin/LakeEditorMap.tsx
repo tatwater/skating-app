@@ -31,7 +31,7 @@ export interface LakeEditorData {
     centroid: LatLng;
   }[];
   putIns: readonly { coord: LatLng; source: string }[];
-  /** Lots serving this body (N6f) — context for placement, so a new one isn't a duplicate. */
+  /** Lots serving this body (A06f) — context for placement, so a new one isn't a duplicate. */
   parkingAreas: readonly { coord: LatLng; source: string }[];
   samplePoints: readonly LatLng[];
   /** A grid the operator is previewing but hasn't saved — drawn hollow, so it reads as a proposal. */
@@ -41,7 +41,7 @@ export interface LakeEditorData {
 }
 
 /**
- * The lake editor's canvas (N2 / D61) — **one lake, and you cannot wander off it**.
+ * The lake editor's canvas (A02 / D61) — **one lake, and you cannot wander off it**.
  *
  * The camera lock is the feature, not a guard rail (Decision 5): `maxBounds` is the body's bbox plus
  * a margin and `minZoom` is the zoom that fits it, so every tool on the canvas has an unambiguous
@@ -66,7 +66,7 @@ export function LakeEditorMap({
   /** Hand the raw map up, so the lazy-loaded draw control can attach to it. */
   onReady?: (map: maplibregl.Map) => void;
   /**
-   * Show the 0.3 m aerial under the editor (N6e Workstream E) — **unmasked**, unlike the skater's
+   * Show the 0.3 m aerial under the editor (A06e Workstream E) — **unmasked**, unlike the skater's
    * reveal. An operator is correcting the polygon that decides where the lake is, so clipping the
    * photograph to that polygon would hide the one thing they need: the ground just past the line
    * they are about to move.
@@ -203,7 +203,7 @@ export function LakeEditorMap({
         },
       });
 
-      // Parking (N6d/N6f) — drawn so an operator placing a lot can see the ones already there, which
+      // Parking (A06d/A06f) — drawn so an operator placing a lot can see the ones already there, which
       // is the difference between adding the lot that was missing and adding a third copy of one that
       // wasn't. Amber and larger than a put-in: a lot and a launch are the two things on this canvas
       // most easily confused, and they are placed by two different tools a card apart.

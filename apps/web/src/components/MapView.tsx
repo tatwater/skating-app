@@ -139,7 +139,7 @@ function polygonOf(geometry: unknown): Polygon | MultiPolygon | null {
 }
 
 /**
- * Interactive MapLibre map — the read side of the Phase 2 loop (§D, D5/D6/D47/D49). Imperative
+ * Interactive MapLibre map — the read side of the Phase 02a loop (§D, D5/D6/D47/D49). Imperative
  * (MapLibre owns its canvas), rendered **client-only** (see the `_map` layout) since WebGL needs
  * the DOM, and kept mounted across `/`, `/water/$id`, `/report/$id` so panning/zoom survive opening
  * a drawer. All pure logic (style, feature/viewport transforms, framing) lives in `../lib/waterMap`;
@@ -258,7 +258,7 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
   // All the state math is `@skating/core`'s, shared with mobile; this only wires it to the canvas.
   const handleHazardClickRef = useRef((_coord: { lat: number; lng: number }) => {});
   handleHazardClickRef.current = (coord) => {
-    // Snap-to-shoreline (N5b) takes the click first: it's a two-tap affordance, and the form is
+    // Snap-to-shoreline (A05b) takes the click first: it's a two-tap affordance, and the form is
     // hidden for both taps, so the map is the only thing that can count them. It never touches the
     // draft — the form owns the body polygon and turns the pair into geometry.
     if (hazardShoreTaps !== null) {
@@ -290,12 +290,12 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
     queryArgs && !regionOffscreen ? queryArgs : 'skip',
   );
 
-  // The lakes *this viewer* has reported as having no public access (N6f) — they draw dimmed for
+  // The lakes *this viewer* has reported as having no public access (A06f) — they draw dimmed for
   // them alone. One small query for the whole session rather than per body: a person reports a
   // handful of lakes in their life, and an unconfirmed report reaches nobody else's map.
   const selfFlagged = useQuery(api.contentFlags.myAccessFlags, {});
 
-  // The viewer's favorited bodies (Phase 4, decision #1) — painted with a distinct outline. Empty
+  // The viewer's favorited bodies (Phase 04, decision #1) — painted with a distinct outline. Empty
   // when signed out. The id set is stable-memoized so the paint effect only re-runs on a real change.
   const favorites = useQuery(api.waterBodyFavorites.listForUser, {});
   const favoriteKey = favorites?.map((f) => f.waterBodyId).join(',') ?? '';
@@ -305,7 +305,7 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
     [favoriteKey],
   );
 
-  // Weather-first discovery on the map (N6h / D166): the shared filter row's weather + radius, the
+  // Weather-first discovery on the map (A06h / D166): the shared filter row's weather + radius, the
   // matched cells from the server, and the dim set computed per body in view. Only the weather
   // filter engages this — the radius alone never dimmed the map before and does not now.
   const { value: feedFilters, set: setFeedFilters } = useFeedFilters();
@@ -357,11 +357,11 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
   // that were in view three pages ago if it ever renders before the map answers again.
   useEffect(() => () => setViewportLakes(null), [setViewportLakes]);
 
-  // Per-body summary cards (N6c/E). **No extra query** — the cards are derived from the same
+  // Per-body summary cards (A06c/E). **No extra query** — the cards are derived from the same
   // `listInViewport` rows the water source already has, because `summary` is denormalized onto the
   // body. That is the whole argument for denormalizing it: a card costs no read at all.
   const [summaryFeatures, setSummaryFeatures] = useState<GeoJSON.FeatureCollection>(EMPTY_FEATURES);
-  // The N6c-2 reveal flag: on dev it draws a card for every body carrying a summary, so a
+  // The A06c-2 reveal flag: on dev it draws a card for every body carrying a summary, so a
   // walk-through can see where cards land and how they collide on a corpus with almost no reports.
   // Forced off against the production deployment regardless of the constant — see `profileReveal`.
   const reveal = profileRevealEnabled(env.convexUrl);
@@ -369,7 +369,7 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
     if (bodies !== undefined) setSummaryFeatures(summaryCardsToFeatureCollection(bodies, reveal));
   }, [bodies, reveal]);
 
-  // Named sub-areas in view (N2/D60) — a second layer on its own ladder-grid query.
+  // Named sub-areas in view (A02/D60) — a second layer on its own ladder-grid query.
   //
   // **Not subscribed below the zoom floor at all.** The server answers `[]` there, but "returns
   // nothing" is still a query execution and a live subscription per viewport key, and a skater
@@ -385,16 +385,16 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
     else if (subAreas !== undefined) setSubAreaFeatures(subAreasToFeatureCollection(subAreas));
   }, [subAreas, subAreaArgs]);
 
-  // Put-in markers for the currently-focused lake (Phase 4, decision #7) — bounded to the open lake
+  // Put-in markers for the currently-focused lake (Phase 04, decision #7) — bounded to the open lake
   // rather than every body in view. `skip` when no lake is selected.
   const putIns = useQuery(
     api.putIns.listForBody,
     highlightWaterBodyId ? { waterBodyId: highlightWaterBodyId as Id<'waterBodies'> } : 'skip',
   );
 
-  // Hazards + known features for the focused lake (Phase 9). Deliberately scoped to the open body,
+  // Hazards + known features for the focused lake (Phase 09a). Deliberately scoped to the open body,
   // not the viewport: hazards are only ever queried per body, which is what keeps this off the
-  // path `listInViewport` had to be fixed for twice (PRs #10/#11) before N1 made it bounded.
+  // path `listInViewport` had to be fixed for twice (PRs #10/#11) before A01 made it bounded.
   // `browseSeason` is what makes the season selector govern the *lake*, not just its report list:
   // the selector lives in the drawer, these two layers are drawn here, and they have to agree or the
   // screen shows two winters at once. Put-ins above are deliberately left out of it (D63).
@@ -410,7 +410,7 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
     highlightWaterBodyId ? { waterBodyId: highlightWaterBodyId as Id<'waterBodies'> } : 'skip',
   );
   // The aggregate tracks layer (D58) — where people actually skated on the open lake. Scoped per
-  // body like hazards, deliberately NOT a viewport scan — per-body is the Phase 9 design call.
+  // body like hazards, deliberately NOT a viewport scan — per-body is the Phase 09a design call.
   const aggregateTracks = useQuery(
     api.gpsActivities.listTracksForBody,
     highlightWaterBodyId
@@ -447,7 +447,7 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
     }
   };
 
-  // Paint the `favorite` feature-state on every in-view favorited body (Phase 4, decision #1). Clears
+  // Paint the `favorite` feature-state on every in-view favorited body (Phase 04, decision #1). Clears
   // the prior set first (a body pans out / gets un-favorited) so stale gold outlines never linger.
   const applyFavorites = () => {
     const map = mapRef.current;
@@ -487,7 +487,7 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
         paint: {
           'fill-color': water.fill,
           // Selected body reads brighter (D47 tap highlight); a body with no public access reads
-          // half-strength (N6f). The dim is a *multiplier* so it composes with the selection rather
+          // half-strength (A06f). The dim is a *multiplier* so it composes with the selection rather
           // than flattening it — a dimmed lake you tap still brightens, relative to itself.
           'fill-opacity': withAccessDim([
             'case',
@@ -497,9 +497,9 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
           ]) as maplibregl.DataDrivenPropertyValueSpecification<number>,
         },
       });
-      // The reveal's loading skeleton (N6e). Its own layer on the existing water source rather than
+      // The reveal's loading skeleton (A06e). Its own layer on the existing water source rather than
       // a borrowed `water-fill`, because that layer's opacity is a data-driven expression carrying
-      // the D47 selection and the N6f access dim — animating a scalar over it would flatten both and
+      // the D47 selection and the A06f access dim — animating a scalar over it would flatten both and
       // then have to reconstruct them. A separate layer animates one number and owns nothing else.
       map.addLayer({
         id: IMAGERY_LOADING_LAYER_ID,
@@ -522,7 +522,7 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
           'line-color': waterOutlineColor(
             flavor,
           ) as maplibregl.DataDrivenPropertyValueSpecification<string>,
-          // The outline dims with the fill (N6f). A full-strength outline around a ghost fill reads
+          // The outline dims with the fill (A06f). A full-strength outline around a ghost fill reads
           // as a rendering bug rather than as a statement about the lake.
           'line-opacity': withAccessDim(
             1,
@@ -537,7 +537,7 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
           ],
         },
       });
-      // Named bays (N2/D60), over the water fill and under every pin layer. Dashed, so it reads as
+      // Named bays (A02/D60), over the water fill and under every pin layer. Dashed, so it reads as
       // a *name for part of this lake* rather than as another lake's shoreline — the distinction the
       // whole sub-area model exists to make. No click handler: tapping a bay falls through to
       // `water-fill` beneath it and opens the parent lake, which is the correct destination.
@@ -573,7 +573,7 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
           'text-halo-width': 1.2,
         },
       });
-      // Per-body summary cards (N6c/E). Added HERE — after the bay labels and before the hazard,
+      // Per-body summary cards (A06c/E). Added HERE — after the bay labels and before the hazard,
       // put-in and bounty pins — so it inherits the same collision posture the bay label documents:
       // a card may not displace a marker a skater needs to see, and if it doesn't fit it doesn't
       // draw. `text-optional` plus `text-allow-overlap: false` is what makes that true.
@@ -604,8 +604,8 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
           'circle-stroke-width': 2,
         },
       });
-      // The walk from the car to the ice (N6e Workstream 0), under the pins at its two ends: a
-      // hike-in lake's whole problem is that the way in is not obvious, and N6d could say "1.1 km on
+      // The walk from the car to the ice (A06e Workstream 0), under the pins at its two ends: a
+      // hike-in lake's whole problem is that the way in is not obvious, and A06d could say "1.1 km on
       // foot" without being able to say *where*. Added before the markers so the route never covers
       // the launch it leads to.
       map.addSource(APPROACH_SOURCE_ID, { type: 'geojson', data: EMPTY_FEATURES });
@@ -618,7 +618,7 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
         // owns — a long walk is a thing to plan for, not a thing to avoid.
         paint: approachLinePaint('#b45309') as never,
       });
-      // Put-in markers for the focused lake (Phase 4, decision #7): official markers read as a solid
+      // Put-in markers for the focused lake (Phase 04, decision #7): official markers read as a solid
       // teardrop-ish dot, derived clusters a lighter ring — both distinct from the report photo pins.
       map.addSource('put-in-markers', { type: 'geojson', data: EMPTY_FEATURES });
       map.addLayer({
@@ -627,7 +627,7 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
         source: 'put-in-markers',
         paint: {
           'circle-radius': 6,
-          // Three rungs, three colors — `PUTIN_SOURCES` on screen (N6d/D143). An OSM slipway is
+          // Three rungs, three colors — `PUTIN_SOURCES` on screen (A06d/D143). An OSM slipway is
           // better evidence than a cluster of report points and worse than an operator's pin, and
           // rendering it in the `derived` blue said the opposite. The `case` already had a fallback,
           // so the 3,588 imported launches drew — just in the wrong rung's color.
@@ -657,7 +657,7 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
           'circle-stroke-width': 2,
         },
       });
-      // ── Hazards (Phase 9). Drawn as buffered *footprint* polygons, not markers, so the shape on
+      // ── Hazards (Phase 09a). Drawn as buffered *footprint* polygons, not markers, so the shape on
       // screen is literally the shape the proximity evaluator measures against. Soft fill + a dashed
       // outline: a hazard is "reported around here", never a surveyed boundary (D3/D51).
       map.addSource('hazards', { type: 'geojson', data: EMPTY_FEATURES });
@@ -696,7 +696,7 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
           'line-width': 1.5,
         },
       });
-      // ── Recorded GPS tracks (Phase 8). The path someone actually skated, drawn under the hazard
+      // ── Recorded GPS tracks (Phase 08). The path someone actually skated, drawn under the hazard
       // layers so a warning is never hidden by a line. Display-only: a path can only ever come from
       // a recorded track, so there is no draw interaction here or anywhere else.
       //
@@ -773,7 +773,7 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
         },
       });
 
-      // Right-click on water with no body (N7b PR 2 / D106): "this is skateable." The prompt
+      // Right-click on water with no body (A07b PR 2 / D106): "this is skateable." The prompt
       // resolves the coordinate itself — a dormant or removed lake under the click is reachable
       // now and is what the click was about — so this only records where.
       map.on('contextmenu', (e) => {
@@ -879,7 +879,7 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
     applyFavorites();
   }, [favoriteIds, loaded]);
 
-  // Put-in markers for the focused lake (Phase 4, decision #7) — cleared when no lake is selected.
+  // Put-in markers for the focused lake (Phase 04, decision #7) — cleared when no lake is selected.
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !loaded) return;
@@ -891,7 +891,7 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
     approaches?.setData(approachesToFeatureCollection(putIns ?? []));
   }, [putIns, loaded, mapRef.current]);
 
-  // The recorded path behind the open report (Phase 8) — cleared when the drawer closes. The drawer
+  // The recorded path behind the open report (Phase 08) — cleared when the drawer closes. The drawer
   // pushes it up rather than the map fetching it, matching how photo pins already work: the map is
   // persistent across navigations and shouldn't know which report is open.
   useEffect(() => {
@@ -918,7 +918,7 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
     });
   }, [trackPath, aggregateTracks, loaded, mapRef.current]);
 
-  // Hazard footprints for the focused lake (Phase 9) — cleared when no lake is selected.
+  // Hazard footprints for the focused lake (Phase 09a) — cleared when no lake is selected.
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !loaded) return;
@@ -933,7 +933,7 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
     source?.setData(bodyFeaturesToFeatureCollection(bodyFeatures ?? []));
   }, [bodyFeatures, loaded, mapRef.current]);
 
-  // ── Bathymetric contours for the open lake (N6b / D81 / D82).
+  // ── Bathymetric contours for the open lake (A06b / D81 / D82).
   //
   // **The one layer in this file that is not added at map init**, and that is the decision rather
   // than an optimisation: contours are a property of the detail view, so the source is added when a
@@ -1059,7 +1059,7 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
     };
   }, [contourBodyKey, contourPalette, loaded, mapRef.current, setContourCredit]);
 
-  // ── The aerial reveal for the open lake (N6e / D146).
+  // ── The aerial reveal for the open lake (A06e / D146).
   //
   // The mask is a union of the water, the walk and the parking, so it is rebuilt only when one of
   // those three changes — a memo and not an effect, because a new object identity here tears the
@@ -1146,7 +1146,7 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
     onPaintedChange: setPaintedIds,
   });
 
-  // ## Tier 2 — the freeze-up timeline (N6e §C, D148)
+  // ## Tier 2 — the freeze-up timeline (A06e §C, D148)
   //
   // Rides the same switch as the aerial rather than getting its own. D146's rule is one control per
   // lake, and the founder's open question — whether these ever want separate affordances — is
@@ -1360,7 +1360,7 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
     setLayersVisible(map, IMAGERY_HAZARD_LAYERS, paintedIds.length === 0 || hazardsOverImagery);
   }, [paintedIds, hazardsOverImagery, loaded, mapRef.current]);
 
-  // The gentle wash over the lake while its photograph is on the way (N6e).
+  // The gentle wash over the lake while its photograph is on the way (A06e).
   //
   // **Two states look identical without it**, which is why a spinner alone would not have been
   // enough: a first fetch on a big lake takes seconds, and a *fidelity* refresh on zoom-in leaves a
@@ -1397,7 +1397,7 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
     };
   }, [imageryLoading, pendingIds, loaded, mapRef.current]);
 
-  // When was this lake last photographed? (N6e B2.)
+  // When was this lake last photographed? (A06e B2.)
   //
   // One `identify` per reveal, straight from the client — the service is keyless and CORS-open, so a
   // round trip through Convex would buy nothing but a hop. **Deliberately not a stored field yet:**
@@ -1448,7 +1448,7 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
     source?.setData(hazardDraftToFeatureCollection(hazardDraft, hazardDraftType));
   }, [hazardDraft, hazardDraftType, loaded, mapRef.current]);
 
-  // Freeform polygon authoring (N5b) — the one skater-facing surface that loads terra-draw.
+  // Freeform polygon authoring (A05b) — the one skater-facing surface that loads terra-draw.
   //
   // It arms only while a *polygon* draft is in drop mode, so the ~218 kB chunk is fetched by the
   // person who asked for the tool and nobody else. Everything it produces goes back through the same
@@ -1485,7 +1485,7 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
           return;
         }
         polygonDrawRef.current = control;
-        // A band that arrived by snapping is an ordinary polygon draft (N5b Decision 3) — hand it to
+        // A band that arrived by snapping is an ordinary polygon draft (A05b Decision 3) — hand it to
         // the editor rather than making the skater redraw it to adjust one corner.
         const existing = hazardDraftRef.current;
         const seed =
@@ -1515,7 +1515,7 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !loaded || !focus) return;
-    // Bounds win when given: a bay's extent decides its own zoom, where one number can't (N2).
+    // Bounds win when given: a bay's extent decides its own zoom, where one number can't (A02).
     if (focus.bounds) {
       map.fitBounds(
         [
@@ -1608,7 +1608,7 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
     // rounding or border: it is the surface now, not a card on one.
     <div className="absolute inset-0">
       <div ref={containerRef} className="h-full w-full overflow-hidden" />
-      {/* "This is skateable" — the right-click ask (N7b PR 2). */}
+      {/* "This is skateable" — the right-click ask (A07b PR 2). */}
       {admitCoord ? <AdmitPrompt coord={admitCoord} onClose={() => setAdmitCoord(null)} /> : null}
       <ReturnToRegion
         visible={regionOffscreen}

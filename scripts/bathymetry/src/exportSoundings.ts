@@ -1,5 +1,5 @@
 /**
- * Export the soundings, keyed to the bodies they were joined to — the D92 bake-off's referee (N7).
+ * Export the soundings, keyed to the bodies they were joined to — the D92 bake-off's referee (A07a).
  *
  *   pnpm --filter @skating/bathymetry export-soundings [--max-points=N]
  *

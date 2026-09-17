@@ -183,7 +183,7 @@ describe('smallestContainingSubArea', () => {
   });
 
   /**
-   * The reason this rule exists rather than first-match (Decision 9, on N1's evidence): the answer
+   * The reason this rule exists rather than first-match (Decision 9, on A01's evidence): the answer
    * must be a property of the geometry, not of which row `by_parent` happened to return first.
    */
   it('property: the answer is independent of candidate order', () => {
@@ -207,10 +207,10 @@ describe('smallestContainingSubArea', () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
-// N9 (D175): the rules that tag what sits in a bay
+// A09 (D175): the rules that tag what sits in a bay
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
 
-describe('subAreaForPutIn — by distance to the outline, not containment (N9 call 3)', () => {
+describe('subAreaForPutIn — by distance to the outline, not containment (A09 call 3)', () => {
   // Two bays sharing the parent's west shore; the small one is nested inside the big one.
   const big = { ref: 'big', polygon: rect(-73.5, 44.2, -73.2, 44.6), surfaceAreaSqM: 1e9 };
   const small = { ref: 'small', polygon: rect(-73.5, 44.3, -73.4, 44.4), surfaceAreaSqM: 1e8 };
@@ -252,7 +252,7 @@ describe('subAreaForPutIn — by distance to the outline, not containment (N9 ca
   });
 });
 
-describe('resolveTrackSubAreas — the two-bay skate (N9 kickoff Q4)', () => {
+describe('resolveTrackSubAreas — the two-bay skate (A09 kickoff Q4)', () => {
   const west = { ref: 'west', polygon: rect(-73.5, 44.2, -73.3, 44.6), surfaceAreaSqM: 5e8 };
   const east = { ref: 'east', polygon: rect(-72.8, 44.2, -72.5, 44.6), surfaceAreaSqM: 6e8 };
   const inner = { ref: 'inner', polygon: rect(-73.5, 44.5, -73.4, 44.6), surfaceAreaSqM: 5e7 };
@@ -319,7 +319,7 @@ describe('resolveTrackSubAreas — the two-bay skate (N9 kickoff Q4)', () => {
   });
 });
 
-describe('membership fields — the stored convention (N9)', () => {
+describe('membership fields — the stored convention (A09)', () => {
   it('one member is the label alone; two or more fill the list', () => {
     expect(subAreaMembershipFields(['a'])).toEqual({ subAreaId: 'a', subAreaIds: undefined });
     expect(subAreaMembershipFields(['a', 'b'])).toEqual({ subAreaId: 'a', subAreaIds: ['a', 'b'] });

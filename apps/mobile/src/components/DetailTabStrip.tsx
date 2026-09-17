@@ -2,7 +2,7 @@ import { DETAIL_TAB_LABELS, DETAIL_TABS, type DetailTab } from '@skating/core';
 import { Button, XStack } from 'tamagui';
 
 /**
- * The three-segment control over the water-body sheet's content groups (N6h/H) — the native
+ * The three-segment control over the water-body sheet's content groups (A06h/H) — the native
  * counterpart of web's shadcn `Tabs`. Not shadcn: those primitives are web-only whichever library
  * backs them, so this is three equal-width buttons with the platform's `tab`/`tablist` roles and
  * `selected` state, which is what a screen reader needs and all a segmented control is.

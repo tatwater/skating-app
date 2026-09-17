@@ -390,7 +390,7 @@ function main(): void {
 
   // ── 2b. the corpus clip mask, for the water ETL ───────────────────────────
   //
-  // **The mask that decides whether a lake is ours, and until now it had no producer** (N7 second
+  // **The mask that decides whether a lake is ours, and until now it had no producer** (A07a second
   // audit). `scripts/etl`'s merge clips every merged body against `boundaries.ndjson`, and the only
   // instruction for creating that file was a sentence inside an error message: hand-page
   // `adminAreas:listBoundariesForClip` out of Convex. That route is worse than manual — the outlines

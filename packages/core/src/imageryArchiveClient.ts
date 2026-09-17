@@ -1,5 +1,5 @@
 /**
- * Fetching the freeze-up archive, and caching it for as long as the tab lives (N6e §C2, D148/D149).
+ * Fetching the freeze-up archive, and caching it for as long as the tab lives (A06e §C2, D148/D149).
  *
  * ## Three reads, and they age very differently
  *

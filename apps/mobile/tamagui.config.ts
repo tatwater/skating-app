@@ -7,7 +7,7 @@ import { createTamagui } from 'tamagui';
  * Tamagui config for the mobile app. Per D7 we share design *tokens*, not UI:
  * `@skating/design` owns the values; here we project them into Tamagui's shape.
  *
- * Barebones Phase 0 scope: we override the color **themes** (the visible brand —
+ * Barebones Phase 00 scope: we override the color **themes** (the visible brand —
  * the icy/FUI palette, both high-contrast light + dark, D34) and layer our named
  * space/radius/z-index tokens on top of the v5 defaults. The v5 numeric token
  * scales are kept so Tamagui's built-in components keep working; projecting our

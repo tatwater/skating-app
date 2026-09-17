@@ -1,5 +1,5 @@
 /**
- * Write the reconciliation into Convex — campaign step 2's write half (N7).
+ * Write the reconciliation into Convex — campaign step 2's write half (A07a).
  *
  *   pnpm --filter @skating/etl load-reconciliation [--dry-run] [--campaign=<id>] [--batch=N]
  *
@@ -35,7 +35,7 @@ const MAPPING = join(HERE, '..', '.scratch', 'reconcile.ndjson');
  * Rows per mutation.
  *
  * Small because each one is a `get` plus a `patch` and Convex caps a transaction at 16 MB of reads —
- * a body averages 1.8 KB but the N1 cell index drags large polygons in, and the N6c depth loader blew
+ * a body averages 1.8 KB but the A01 cell index drags large polygons in, and the A06c depth loader blew
  * that cap at a batch of 25 by counting documents rather than bytes. 250 point-gets by id is a
  * different shape from 25 index scans, but the lesson is to leave headroom.
  */

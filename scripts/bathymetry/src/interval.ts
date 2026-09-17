@@ -1,5 +1,5 @@
 /**
- * Choosing which depths to draw a line at (N6b).
+ * Choosing which depths to draw a line at (A06b).
  *
  * ## The rule, and why it changed
  *

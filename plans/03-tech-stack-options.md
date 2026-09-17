@@ -10,7 +10,7 @@ open-source-friendly licensing. Founder to narrow down.
 - **Testing:** Vitest everywhere (+ `fast-check`, `convex-test`; Playwright/Maestro
   for E2E later); GitHub Actions CI (D40).
 - **DB / backend:** Convex (+ file storage). **No Convex components** — `@convex-dev/geospatial` was
-  retired by N1 in favour of a plain-table ladder-grid spatial index (see D5).
+  retired by A01 in favour of a plain-table ladder-grid spatial index (see D5).
 - **Language:** TypeScript everywhere.
 - **Mobile:** Expo / React Native + Tamagui.
 - **Web:** TanStack Start + Tailwind + shadcn.
@@ -44,7 +44,7 @@ open-source-friendly licensing. Founder to narrow down.
 
 **Why Protomaps over MapTiler (long-term):** unmetered static file matches the cost
 posture (D35); it's genuinely offline-friendly for a cold-weather field app (D9/D12); the
-OSM ETL we build in Phase 1 is the *same shape* of work as building a `.pmtiles` basemap;
+OSM ETL we build in Phase 01 is the *same shape* of work as building a `.pmtiles` basemap;
 and it keeps the stack fully open (D43). MapTiler wins on instant setup + polished default
 styles — fine to borrow its free demo/hosted tiles to get pixels on screen early, then swap
 to a self-built regional extract (D5 keeps renderer/tiles/data independent, so it's a

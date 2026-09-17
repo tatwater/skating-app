@@ -4,7 +4,7 @@
  * Every fetcher under `scripts/etl` writes a `manifest.json` beside the bytes it archives, and each
  * one already records what a reader needs to reproduce the input — the resolved URL, the
  * publisher's build date, the size, our sha256, and whatever verification the publisher made
- * possible. Until N7's provenance pass, only the OSM one was ever read back, so a run row could say
+ * possible. Until A07a's provenance pass, only the OSM one was ever read back, so a run row could say
  * "an OSM extract" and nothing at all about the three other catalogues that decide the corpus.
  *
  * **The manifest shapes are re-declared here, not imported**, for the same reason `types.ts` gives:

@@ -51,7 +51,7 @@ export const latLng = v.object({ lat: v.number(), lng: v.number() });
 
 /** Axis-aligned bounding box — the cheap prefilter before precise Turf tests (D5). */
 /**
- * One metric's distribution within one state (N6c A5) — the 10th–90th percentiles plus the sample
+ * One metric's distribution within one state (A06c A5) — the 10th–90th percentiles plus the sample
  * that produced them.
  *
  * `count` is not decoration: `decileRankOf` refuses to rank against a block below
@@ -94,7 +94,7 @@ export const geoJson = v.union(
 );
 
 /**
- * The `PostedAccess` shape from `@skating/core` (N6e) — what a posted sign says about when you may be
+ * The `PostedAccess` shape from `@skating/core` (A06e) — what a posted sign says about when you may be
  * there. **Keep in sync with the core interface**; a compile-time `Infer` check in `postedAccess.ts`
  * catches drift, the same guard `weatherSinceSummary` carries.
  *
@@ -155,7 +155,7 @@ export const weatherSinceSummary = v.object({
 });
 
 /**
- * What an actor-triggered queue row re-reads at flush (N8 / D169). One variant per queue kind that
+ * What an actor-triggered queue row re-reads at flush (A08 / D169). One variant per queue kind that
  * settles before sending; the report-audience buckets (`favorite` / `digest` / `great`) carry none —
  * their re-check is the recipient's eligibility, which every row gets. The id lists are what
  * coalescing accumulates inside one settle window ("5 people found this helpful"), and each id is
@@ -214,7 +214,7 @@ export const notificationTrigger = v.union(
 );
 
 /**
- * The `ForecastHour` shape from `@skating/core` (N6c B5b; the planner's fields since N6h D), for the
+ * The `ForecastHour` shape from `@skating/core` (A06c B5b; the planner's fields since A06h D), for the
  * `weatherForecastCache` table and `writeForecastCache`'s args — one validator, so the row a
  * mutation accepts and the row the table accepts cannot drift. **Keep in sync with the core
  * interface** — a compile-time `Infer` check in `weather.ts` catches drift. The optional fields are

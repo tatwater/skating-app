@@ -1,5 +1,5 @@
 /**
- * Pure model for the offline inbox (N8 PR 3) — the framework-free half behind `notificationCache.ts`,
+ * Pure model for the offline inbox (A08 PR 3) — the framework-free half behind `notificationCache.ts`,
  * factored out so it's unit-testable without a native db (the `reportCacheModel` ↔ `reportCache` split).
  *
  * What the cache is for: the last page of the inbox and the unread count, readable on the ice with no
@@ -8,7 +8,7 @@
  * moment it answers, and the overlay is dropped once the server has stamped the rows.
  *
  * What it is deliberately not: a notification *delivery* path. Nothing arrives offline (a push is a
- * push); the offline case that matters for safety is the on-ice hazard alert, which Phase 9.5 built
+ * push); the offline case that matters for safety is the on-ice hazard alert, which Phase 09b built
  * client-side and which never touches this table.
  */
 

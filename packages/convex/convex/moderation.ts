@@ -2,12 +2,12 @@
  * Moderation functions (D32/D37) — the minimal founder takedown path. Role-gated
  * (`requireRole('moderator')`); every action writes **exactly one** `moderationActions` audit row
  * (accountability for appeals/reversals). This is the inline hide/remove/restore + flag-resolution
- * surface; the full `/admin` work queues + email alerts are Phase 7 (D37/D38).
+ * surface; the full `/admin` work queues + email alerts are Phase 07 (D37/D38).
  *
  * Moderation applies to the UGC that carries a `moderationStatus` — **reports, comments and hazards**.
  * Hiding a report also hides its comments at read time (a comment on a hidden report is unreachable —
  * see `comments.listByReport`), so no cascade write is needed. Hazards are moderated through the same
- * mutation so the Phase 7 queue has a single takedown entry point, but they carry no contribution
+ * mutation so the Phase 07 queue has a single takedown entry point, but they carry no contribution
  * counter and their hide is a *moderation* axis kept strictly separate from the community-archival
  * lifecycle `status` (D3) — see the hazards schema note.
  */
@@ -76,14 +76,14 @@ export const setModerationStatus = mutation({
       );
     }
 
-    // A hidden report or hazard must leave the map card too (N6c/E) — otherwise moderating content
+    // A hidden report or hazard must leave the map card too (A06c/E) — otherwise moderating content
     // away would still leave its count on the map, which is the one surface where a stale number
     // reads as a live condition.
     if (args.targetType === 'report' || args.targetType === 'hazard') {
       const onBody = target as Doc<'reports'> | Doc<'hazards'>;
       await recomputeBodySummary(ctx, onBody.waterBodyId);
     }
-    // The bay join mirrors the verdict (N9): the bay feed and the bay bounty gate read the status
+    // The bay join mirrors the verdict (A09): the bay feed and the bay bounty gate read the status
     // off the join row, in-index, so a hidden report has to leave the bay's list here too.
     if (args.targetType === 'report') {
       await mirrorReportSubAreas(ctx, {
@@ -133,7 +133,7 @@ export const resolveFlag = mutation({
     }
 
     const now = Date.now();
-    // The status, the Phase 7b disposition metric, and the N8 verdict notification — shared with
+    // The status, the Phase 07-2 disposition metric, and the A08 verdict notification — shared with
     // `waterBodies.setPublicAccess`, which closes flags as a side effect of ruling on a lake.
     await closeFlag(ctx, flag, args.resolution, actor._id, now);
 
@@ -150,7 +150,7 @@ export const resolveFlag = mutation({
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Admin queue queries (Phase 7 read side). Every one gates `requireRole('moderator')`,
+// Admin queue queries (Phase 07 read side). Every one gates `requireRole('moderator')`,
 // reads off an index, and is bounded — a queue read never `.collect()`s a whole table.
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -247,7 +247,7 @@ async function resolveFlagTarget(
       };
     }
     case 'accessAlert': {
-      // N6d (D73). Without this case the switch falls through to `notFound`, and every access-alert
+      // A06d (D73). Without this case the switch falls through to `notFound`, and every access-alert
       // flag renders in the queue as "(deleted)" with no author and no note — a moderator looking at
       // a report about nothing. Adding the target type to `FLAG_TARGET_TYPES` made filing work; this
       // is what makes *triaging* work, and the two are easy to ship apart.
@@ -263,7 +263,7 @@ async function resolveFlagTarget(
       };
     }
     case 'waterbody': {
-      // N6f — the same trap the `accessAlert` case above documents, and the reason that note is worth
+      // A06f — the same trap the `accessAlert` case above documents, and the reason that note is worth
       // its length: without this the switch falls through to `notFound` and every access report shows
       // as "(deleted)".
       const id = ctx.db.normalizeId('waterBodies', rawTargetId);
@@ -304,7 +304,7 @@ interface FlagView {
   flagger: QueueUser | null;
   target: FlagTarget;
   /**
-   * Auto-flag bundling (N2). `occurrences` is how many times this problem has been recorded — the
+   * Auto-flag bundling (A02). `occurrences` is how many times this problem has been recorded — the
    * count a stream of identical rows was hiding, and the moderator's actual input to the D57 lever.
    * `priorResolvedAt`/`priorResolution` come from the superseded terminal row, so the queue can say
    * "4th occurrence · last dismissed 6d ago" rather than making someone go looking.
@@ -338,7 +338,7 @@ async function toFlagView(ctx: QueryCtx, flag: Doc<'contentFlags'>): Promise<Fla
 }
 
 /**
- * One lake's worth of "no public access" reports, collapsed (N6f).
+ * One lake's worth of "no public access" reports, collapsed (A06f).
  *
  * **The only flag reason the queue groups**, because it is the only one many people can independently
  * make about the same target: five people reporting one lake is one job, not five, and the count is
@@ -365,7 +365,7 @@ export interface AccessReportGroup {
 /**
  * The moderator flag queue (D37/D3). Open + reviewing flags off `by_status`, oldest-first (a queue
  * drains front-to-back so nothing rots), split into a **priority lane** — `unsafe_false_report` is a
- * *safety* incident, not FIFO spam (D3) — a standard lane, and the N6f **access lane**, which is
+ * *safety* incident, not FIFO spam (D3) — a standard lane, and the A06f **access lane**, which is
  * grouped by lake and ranked by how many people agree rather than by age. Each row carries its
  * resolved subject so a moderator can triage without opening every item. Bounded to `QUEUE_LIMIT` per
  * status.
@@ -510,7 +510,7 @@ export const listActions = query({
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// User-lifecycle + posting-permission mutations (Phase 7 write side). All moderator-level per the
+// User-lifecycle + posting-permission mutations (Phase 07 write side). All moderator-level per the
 // D37 refinement (2026-07-23) — a moderator handling a hateful account can act without escalating.
 // Each writes exactly one `moderationActions` row; role-grant/revoke live in `admin.ts` (admin-only).
 // ─────────────────────────────────────────────────────────────────────────────
@@ -638,7 +638,7 @@ export const unbanUser = mutation({
 });
 
 /**
- * Set (or clear) a requester's **open-bounty cap** (D57's deferred bounty lever, built in N2).
+ * Set (or clear) a requester's **open-bounty cap** (D57's deferred bounty lever, built in A02).
  *
  * A sibling of `setPostingPermission` rather than an argument on it, and the reason is mechanical:
  * that mutation's shape is `permission: 'reports' | 'hazards' | 'comments'` × `allowed: boolean`,

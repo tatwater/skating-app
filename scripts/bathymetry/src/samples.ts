@@ -414,7 +414,7 @@ async function main(): Promise<void> {
 
   writeFileSync(
     outPath,
-    `<!doctype html><meta charset="utf-8"><title>N6b — contour samples across five sources</title>
+    `<!doctype html><meta charset="utf-8"><title>A06b — contour samples across five sources</title>
 <style>
  body{font:14px/1.55 -apple-system,system-ui,sans-serif;margin:2rem auto;max-width:1400px;color:#16222c;padding:0 1rem}
  h1{font-size:1.5rem;margin-bottom:.3rem} h2{font-size:1.1rem;margin-top:2.5rem;border-bottom:1px solid #e3eaf0;padding-bottom:.3rem}
@@ -429,7 +429,7 @@ async function main(): Promise<void> {
  .key{color:#a9b6c0;font-weight:400;font-size:11px}
  .note{background:#f2f7fb;border-left:3px solid #7ba7c7;padding:.9rem 1.1rem;border-radius:4px;margin-top:1rem}
 </style>
-<h1>N6b — what the chain draws, across all five sources</h1>
+<h1>A06b — what the chain draws, across all five sources</h1>
 <p class="note"><b>Two lanes, and the difference is a provenance claim rather than a file format.</b>
 <span class="lane surveyed">state-surveyed</span> lakes are the agency's own isobaths; we reproject and
 clip, and invent nothing. <span class="lane fitted">interpolated from soundings</span> lakes are

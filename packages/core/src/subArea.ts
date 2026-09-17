@@ -1,5 +1,5 @@
 /**
- * Named sub-areas (N2 / D60) — the geometry rules for a region *inside* one water body.
+ * Named sub-areas (A02 / D60) — the geometry rules for a region *inside* one water body.
  *
  * A bay is not a lake. "Malletts Bay" is a name for part of Lake Champlain, and the whole point of
  * the model is that reports, hazards and bounties keep belonging to the parent while carrying the
@@ -28,7 +28,7 @@ import { distanceToPolygonMeters, type LatLng, pointInPolygon } from './geometry
  * pasted GeoJSON from somewhere else), and silently saving the sliver that happens to overlap is the
  * silent-wrong-answer class this codebase keeps refusing. So there is a line, and it's here.
  *
- * **0.6 is measured, not guessed** (N2 curation session, 2026-07-26). Boxes on the right water
+ * **0.6 is measured, not guessed** (A02 curation session, 2026-07-26). Boxes on the right water
  * retained 0.61–0.92; boxes in the wrong place retained 0.16–0.17. Between them sits the Inland Sea
  * at 0.42 — a genuine archipelago arm where roughly half of any rectangle is islands — which is why
  * `subAreas.importSeed` runs a looser 0.35 bar for *box*-shaped input while this stays 0.6 for a
@@ -77,7 +77,7 @@ const CLIP_EPSILON = 1e-9;
  * Clip a drawn sub-area to its parent water body (Decision 10): store the intersection, refuse only
  * when too little of the draw survives.
  *
- * **This is the Phase-9.5 `clipFootprintToBody` pattern with its failure direction reversed, and the
+ * **This is the Phase-09b `clipFootprintToBody` pattern with its failure direction reversed, and the
  * reversal is the interesting part.** A hazard clip fails *open* — a clipper error keeps the full
  * unclipped footprint, because making a real hazard invisible is the one direction safety never
  * fails (D3). A sub-area has the opposite asymmetry: the entire argument that drawing one doesn't
@@ -175,7 +175,7 @@ export interface SubAreaCandidate<T> {
  * Bays overlap in practice — "Inner" and "Outer" Malletts are exactly this case — so a point often
  * sits in two. Taking the smallest means the most specific name wins, which is what a skater expects
  * ("Inner Malletts," not "Malletts Bay"), and more importantly it is **order-independent**: the
- * answer is a property of the geometry, not of which row the `by_parent` index reached first. N1's
+ * answer is a property of the geometry, not of which row the `by_parent` index reached first. A01's
  * whole correction series was one lesson about answers that depended on traversal order, and
  * first-match here would have been the same bug in a smaller place.
  *
@@ -197,11 +197,11 @@ export function smallestContainingSubArea<T>(
 }
 
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
-// N9 (D175): a bay is a place — the rules that tag what sits in one
+// A09 (D175): a bay is a place — the rules that tag what sits in one
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
 
 /**
- * How far off a bay's outline a put-in may sit and still be *its* launch (N9 kickoff call 3).
+ * How far off a bay's outline a put-in may sit and still be *its* launch (A09 kickoff call 3).
  *
  * Put-ins are snapped **to the shoreline**, and a bay's clipped outline *is* that shoreline — so
  * point-in-polygon on a launch is a coin flip decided by which side of a shared edge the float
@@ -222,7 +222,7 @@ export const SUB_AREA_PUT_IN_TOLERANCE_M = 30;
 const SHARED_SHORE_EPSILON_M = 0.001;
 
 /**
- * The bay a put-in belongs to (N9): the nearest bay within {@link SUB_AREA_PUT_IN_TOLERANCE_M},
+ * The bay a put-in belongs to (A09): the nearest bay within {@link SUB_AREA_PUT_IN_TOLERANCE_M},
  * **smallest wins** on a tie — `nearestBodyForPoint`'s shape, because a launch inside both
  * "Inner" and "Outer" Malletts belongs to the inner one for the same reason a report does
  * (Decision 9) — with the tie judged to {@link SHARED_SHORE_EPSILON_M} rather than to the bit.
@@ -248,11 +248,11 @@ export function subAreaForPutIn<T>(
 }
 
 /**
- * The share of a track's samples a bay needs before the track is a **member** of it (N9).
+ * The share of a track's samples a bay needs before the track is a **member** of it (A09).
  *
  * Membership carries reach (D175): a member bay's favoriters are told, its bounty is satisfied, its
  * feed lists the report. A skate that crossed a bay's mouth for one sample of sixty-four — ninety
- * seconds of an hour — was not *in* that bay in any sense a bounty requester meant, and before N9
+ * seconds of an hour — was not *in* that bay in any sense a bounty requester meant, and before A09
  * such a skate carried no bay at all (its pin sat in open water). So a bay counts only past this
  * floor; below it, the samples are open water for every purpose except the mouth-line flag. At
  * `SUB_AREA_TRACK_SAMPLE_POINTS` = 64 this is ~6 samples, or about six minutes of an hour's skate.
@@ -270,7 +270,7 @@ export interface TrackSubAreas<T> {
   /** Every bay past {@link SUB_AREA_MEMBERSHIP_MIN_SHARE}, most-visited first. `[]` when none. */
   all: T[];
   /**
-   * Some sample fell on the **parent, outside every bay** — the mouth-line evidence (N9 kickoff Q4).
+   * Some sample fell on the **parent, outside every bay** — the mouth-line evidence (A09 kickoff Q4).
    * Judged only against samples that are actually on the parent when its polygon is supplied, so
    * shoreline GPS jitter on the way to the car does not read as a skater leaving the bay.
    */
@@ -278,11 +278,11 @@ export interface TrackSubAreas<T> {
 }
 
 /**
- * Resolve a track's sampled points to the bays it was skated in (N9 kickoff Q4, "the two-bay
+ * Resolve a track's sampled points to the bays it was skated in (A09 kickoff Q4, "the two-bay
  * skate").
  *
  * **Majority of samples, not the start point.** A report derived from an activity carries the GPS
- * *start* as its `point` (D44), which is the put-in — so before N9 an activity report was stamped
+ * *start* as its `point` (D44), which is the put-in — so before A09 an activity report was stamped
  * with the bay you launched from, whatever you skated. The primary is instead the bay with the most
  * sampled points, the same rule `resolveTrackToBodies` applies one level up for the body; and the
  * list is *every* bay touched, because a skater who spent an hour in each of two bays was in both,
@@ -325,7 +325,7 @@ export function resolveTrackSubAreas<T>(
 
 /**
  * The bays a stamped row is a member of, primary first — the one way to read the pair of fields
- * that carry membership (N9). `subAreaIds` is stored only when there is more than one (the
+ * that carry membership (A09). `subAreaIds` is stored only when there is more than one (the
  * `waterBodyIds` convention), so most rows answer through `subAreaId` alone; a row with neither is
  * in no bay.
  */
@@ -352,7 +352,7 @@ export function subAreaMembershipFields<T>(all: readonly T[]): {
 }
 
 /**
- * Does this report count as favorited for a viewer (N9)? A lake favorite takes every report on the
+ * Does this report count as favorited for a viewer (A09)? A lake favorite takes every report on the
  * lake; a bay favorite takes only reports whose **membership** includes the bay — the feed boost and
  * badge follow the report, not the lake, so favoriting Malletts Bay does not lift Burlington Bay's
  * reports. Both shapes of favorite are tested, because a person very plausibly holds both.

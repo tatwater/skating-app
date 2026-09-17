@@ -1,5 +1,5 @@
 /**
- * The ladder grid (N1) — the spatial index math behind every viewport and containment read.
+ * The ladder grid (A01) — the spatial index math behind every viewport and containment read.
  *
  * **Why this exists.** Water bodies used to be found by indexing their *centroids* into
  * `@convex-dev/geospatial` and querying a rectangle. That component reads roughly ∝ the

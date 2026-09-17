@@ -1,6 +1,6 @@
 /**
- * On-device cache of recently-seen feed reports (Phase 4, decision #8) — the `expo-sqlite` glue behind
- * the pure model in `reportCacheModel.ts`. Reuses the Phase-2 offline-queue infra pattern (`bodyCache`).
+ * On-device cache of recently-seen feed reports (Phase 04, decision #8) — the `expo-sqlite` glue behind
+ * the pure model in `reportCacheModel.ts`. Reuses the Phase-02a offline-queue infra pattern (`bodyCache`).
  * We cache the feed cards the user reads + the lakes they open + (pre-cached) favorites, so on the ice
  * with no signal the recent feed still reads back. Thumbnails only (the card already carries the small
  * URLs). Best-effort throughout — a cache failure never blocks the online read path.

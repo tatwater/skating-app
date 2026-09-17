@@ -1,5 +1,5 @@
 /**
- * The chain that turns one lake into contour lines (N6b).
+ * The chain that turns one lake into contour lines (A06b).
  *
  * `blockmedian` → `surface` → `grdedit` → `grdfilter` → `gdal_contour` → clip, for the sounding lanes;
  * a thinning and a clip for the contour lanes. Extracted from the sample renderer so the **tiler and
@@ -135,7 +135,7 @@ function clipToPolygon(
 }
 
 /**
- * Re-clip an already-drawn line set to a **bay** of the lake it was drawn for (N6b).
+ * Re-clip an already-drawn line set to a **bay** of the lake it was drawn for (A06b).
  *
  * The survey is fitted once, against the lake's own polygon, and then trimmed to each nested body the
  * join said it also covers. Fitting per bay instead would be both slower and *wrong*: a bay's share of

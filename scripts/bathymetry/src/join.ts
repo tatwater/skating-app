@@ -1,5 +1,5 @@
 /**
- * Resolve every source lake to our water bodies, and cache the result (N6b).
+ * Resolve every source lake to our water bodies, and cache the result (A06b).
  *
  *   pnpm --filter @skating/bathymetry join [--states=VT,NH] [--refresh]
  *
@@ -8,7 +8,7 @@
  * its polygon (the shoreline constraint), and any bays the survey also covers, keyed by
  * `<source>:<lakeKey>`.
  *
- * **Not the same resolver as N6a's depth ETL**, though it was written to be. Placing a whole survey
+ * **Not the same resolver as A06a's depth ETL**, though it was written to be. Placing a whole survey
  * and placing one depth reading want opposite answers when a lake's deepest point falls in one of its
  * bays — see `matchBathymetryLakes`. The first run of this ETL sent every acre of Moosehead Lake to
  * North Bay, and sent nothing at all about it to the log.
@@ -80,7 +80,7 @@ export interface JoinedLake {
    */
   alsoCovers?: { externalId?: string; waterBodyId: string; name: string; polygon?: unknown }[];
   /**
-   * Whether the publisher's crosswalk agreed with the geometry, where an id was sent (N7-3).
+   * Whether the publisher's crosswalk agreed with the geometry, where an id was sent (A07a-3).
    *
    * ⚠ **This was computed and then dropped on the first run**, because the record below is built
    * from an explicit field list and nobody added it — 2,463 rows, every one `undefined`, including
@@ -165,7 +165,7 @@ const CORPUS_NDJSON = pathJoin(
 );
 
 /**
- * Re-key every containment-rejected survey against corpus membership — **D95's lane** (N7-3).
+ * Re-key every containment-rejected survey against corpus membership — **D95's lane** (A07a-3).
  *
  * Rule 0 lives in the first line: only `isRekeyEligible` rejects get here, which is the containment
  * gate and nothing else. Everything downstream operates on measurements that some key claimed and
@@ -239,7 +239,7 @@ export async function rekeyRejected(
 /**
  * The re-keyed lakes, for the builder. Empty when the lane found nothing or never ran.
  *
- * Absent is a legitimate state — every run before N7-3 produced no such file — so this returns `[]`
+ * Absent is a legitimate state — every run before A07a-3 produced no such file — so this returns `[]`
  * rather than throwing, and the build simply has nothing extra to draw.
  */
 export function readRekeyedLakes(): ArchivedLake[] {
@@ -310,7 +310,7 @@ async function main(): Promise<void> {
   // under-states its lake — they sample the interior — so the first version rejected 68 correct lakes
   // as thousand-fold mismatches, worst on Maine's sparse surveys. What the server can answer reliably
   // is "how much of this survey is inside that polygon", and that needs the points themselves.
-  // **Maine's own MIDAS → NHD crosswalk**, where it is archived (N7-3). It resolves 5,611 of 5,803
+  // **Maine's own MIDAS → NHD crosswalk**, where it is archived (A07a-3). It resolves 5,611 of 5,803
   // MIDAS numbers and settles the one question geometry cannot: which of several adjacent bodies
   // the state meant. Absent archive → the join runs exactly as it did, which is why nothing here
   // fails when the file is missing.

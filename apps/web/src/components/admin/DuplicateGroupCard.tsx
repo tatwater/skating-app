@@ -21,7 +21,7 @@ import { Card, CardContent } from '../ui/card';
 import { ReasonDialog } from './ReasonDialog';
 
 /**
- * **One duplicate decision, with the evidence** (D36 queue, rebuilt for the N7 corpus).
+ * **One duplicate decision, with the evidence** (D36 queue, rebuilt for the A07a corpus).
  *
  * What this replaces: a card holding a name and a button reading `Merge →`. That was survivable when
  * the queue's only producer was a user drawing a pond over an OSM lake, and it stopped being

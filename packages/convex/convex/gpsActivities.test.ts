@@ -13,7 +13,7 @@ function harness() {
 }
 
 /**
- * **Pinned inside `T0`'s season** (N5a/D63): the aggregate layer now reads one season at a time, off
+ * **Pinned inside `T0`'s season** (A05a/D63): the aggregate layer now reads one season at a time, off
  * the activity's `startTime`. Un-pinned, a fixture skated in January is in the current season for half
  * the year and in a hidden one for the other half — and the failure would look like a privacy-chain
  * regression rather than the calendar moving. See the note in `reports.test.ts`.
@@ -68,7 +68,7 @@ async function seedUser(
 
 /**
  * A square lake spanning lat/lng 0..1, seeded through the **real** import path so it lands in the
- * N1 cell index the resolver reads. (It used to be a bare `db.insert` carrying `isLarge: true`, to
+ * A01 cell index the resolver reads. (It used to be a bare `db.insert` carrying `isLarge: true`, to
  * be picked up by the old tier-2 large-body scan — which meant the test never touched the spatial
  * index at all, and so couldn't have caught it being wrong.)
  */
@@ -229,7 +229,7 @@ describe('gpsActivities.ingestTrack', () => {
     const realBody = await seedBody(t);
     // A body the device cached that has since been merged away — `isListed` is false, so the hint
     // is dropped and the track re-resolves from its own geometry. (A *removed* body would be
-    // honoured: since N7b it is reachable, so the landowner's own skate lands on it — see
+    // honoured: since A07b it is reachable, so the landowner's own skate lands on it — see
     // `resolveBodyForCoord`'s test in waterBodies.)
     const mergedBody = await seedBody(t, { name: 'Merged Pond', offset: 10 });
     await t.run((ctx) =>
@@ -372,11 +372,11 @@ describe('gpsActivities.getForReport (the report-detail path render)', () => {
   });
 
   /**
-   * The N3 fix. Before it, `showPutIn === false` was honored by the aggregate layer and by the put-in
+   * The A03 fix. Before it, `showPutIn === false` was honored by the aggregate layer and by the put-in
    * pin list, and silently ignored here — so the one query a stranger actually hits from a report page
    * served the raw path, first and last 150 m included. These four tests are the regression fence.
    */
-  describe('put-in clipping (D58 §3, fixed in N3)', () => {
+  describe('put-in clipping (D58 §3, fixed in A03)', () => {
     async function seedWithdrawnPutIn(t: ReturnType<typeof convexTest>) {
       const author = await seedUser(t, 'author');
       const bodyId = await seedBody(t);
@@ -693,7 +693,7 @@ describe('gpsActivities.listTracksForBody — the D58 privacy chain', () => {
     expect(tracks[0]?.opacity).toBeLessThanOrEqual(1);
   });
 
-  test('last season’s paths stop drawing, and come back under last season (N5a/D63)', async () => {
+  test('last season’s paths stop drawing, and come back under last season (A05a/D63)', async () => {
     const t = harness();
     const user = await seedUser(t, 'skater');
     const bodyId = await seedBody(t);
@@ -834,7 +834,7 @@ describe('gpsActivities.listTracksForBody — the D58 privacy chain', () => {
     expect(tracks).toEqual([]);
   });
 
-  test('still returns tracks for a dormant body — its history is why it may come back (N7b)', async () => {
+  test('still returns tracks for a dormant body — its history is why it may come back (A07b)', async () => {
     const t = harness();
     const user = await seedUser(t, 'skater');
     const bodyId = await seedBody(t);
@@ -848,9 +848,9 @@ describe('gpsActivities.listTracksForBody — the D58 privacy chain', () => {
   });
 });
 
-// ── The activity_detected sweep (N8/B4 + B4a) ────────────────────────────────────────────────────
+// ── The activity_detected sweep (A08/B4 + B4a) ────────────────────────────────────────────────────
 
-/** Make every queued notification due and flush it — the settle window (N8 / D169), fast-forwarded. */
+/** Make every queued notification due and flush it — the settle window (A08 / D169), fast-forwarded. */
 async function flushAllDue(t: ReturnType<typeof convexTest>) {
   await t.run(async (ctx) => {
     for (const row of await ctx.db.query('notificationQueue').collect()) {

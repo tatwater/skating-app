@@ -1,5 +1,5 @@
 /**
- * The ladder-grid spatial index (N1) — the Convex half of `@skating/core`'s `spatialCells`.
+ * The ladder-grid spatial index (A01) — the Convex half of `@skating/core`'s `spatialCells`.
  *
  * Replaces `@convex-dev/geospatial`. That component indexed a single *point* per row and read
  * roughly ∝ the `maxResults` asked for rather than ∝ what it returned, so a wide sparse viewport
@@ -39,7 +39,7 @@ export const WATER_BODY_LADDER: CellLadder = {
 };
 
 /**
- * The admin-boundary ladder (Phase 5 place labels). Boundaries span from a small New England town
+ * The admin-boundary ladder (Phase 05 place labels). Boundaries span from a small New England town
  * (~0.05°) to a whole state (~10°), so the rungs run coarser and finer than the water ladder's; a
  * containment lookup scans them all, since a point sits inside exactly one area per level and
  * prominence has no meaning here.
@@ -80,7 +80,7 @@ export function diffCells<T extends StoredCell>(
  * filter costs a read path nothing — where the old geospatial index kept a `listed` filter key it
  * couldn't afford to actually use (the component's filter-stream intersection roughly halved the
  * read-cap-safe ceiling, so `listInViewport` fetched unlisted bodies and dropped them in JS,
- * "cheap only because Phase 1 has ~no unlisted bodies"). Dedup and takedown both make that
+ * "cheap only because Phase 01 has ~no unlisted bodies"). Dedup and takedown both make that
  * assumption weaker over time; this makes it irrelevant.
  *
  * Call it after **any** patch to a body's bbox, `minVisibleZoom`, or listing-bearing fields
@@ -122,14 +122,14 @@ export async function syncWaterBodyCells(
 }
 
 /**
- * Reconcile a **named sub-area's** cell rows (N2 / D60) — the third caller of this one mechanism,
+ * Reconcile a **named sub-area's** cell rows (A02 / D60) — the third caller of this one mechanism,
  * and structurally the water-body one with a second listing term.
  *
  * **`listed` here is a conjunction, and that's the whole point** (Decision 11). A sub-area is
  * reachable only while it is itself un-delisted *and* its parent body `isListed`. The plan gave
  * sub-areas their own `removedAt` and their own cell table and never connected the two, which would
  * have meant a landowner takedown on Lake Champlain dropping the lake's cell rows while "Malletts
- * Bay" stayed outlined and labelled on a map that no longer had the lake. N1's invariant is that an
+ * Bay" stayed outlined and labelled on a map that no longer had the lake. A01's invariant is that an
  * unreachable object has *no rows at all*, so the filter costs nothing; inheriting the mechanism
  * without inheriting the rule would have quietly reintroduced the filter-you-have-to-remember.
  *
@@ -174,7 +174,7 @@ export async function syncSubAreaCells(
   }
 }
 
-/** Reconcile an admin boundary's cell rows (Phase 5 place labels). No listing or prominence: a
+/** Reconcile an admin boundary's cell rows (Phase 05 place labels). No listing or prominence: a
  *  boundary is always indexed, and containment doesn't care how big the area is. */
 export async function syncAdminAreaCells(
   ctx: MutationCtx,

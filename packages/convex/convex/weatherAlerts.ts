@@ -1,5 +1,5 @@
 /**
- * NWS active alerts — poll, cache, and serve per body (N6c Workstream B5, D74).
+ * NWS active alerts — poll, cache, and serve per body (A06c Workstream B5, D74).
  *
  * **Polled per state on a cron, never per body per view.** Alerts are issued over counties and
  * forecast zones, so one state-level fetch serves every body in that state and the read cost stays

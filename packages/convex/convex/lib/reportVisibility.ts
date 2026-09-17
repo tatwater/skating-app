@@ -4,7 +4,7 @@
  * the *same* decision — in particular a photo's serving URL must never outlive the viewer's access
  * to the report that references it (D42).
  *
- * ⚠️ **Phase 3 (2026-07-16, D3):** a **block NEVER hides a report** — an interpersonal block must
+ * ⚠️ **Phase 03 (2026-07-16, D3):** a **block NEVER hides a report** — an interpersonal block must
  * not pull a safety observation off the map/feed. So report reads gate on moderation alone; the
  * block set instead hides **comments** by a blocked author, hides **profiles** both ways, and
  * de-emphasizes a blocked author's report line (a "Blocked" chip — a *display* concern the read paths

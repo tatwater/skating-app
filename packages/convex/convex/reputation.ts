@@ -1,5 +1,5 @@
 /**
- * Reputation backfill (D50, Phase 6) — recompute every denormalized total from the `pointEvents` ledger
+ * Reputation backfill (D50, Phase 06) — recompute every denormalized total from the `pointEvents` ledger
  * + live rows, so a mid-alpha weight/threshold change in `@skating/core`'s `reputationConfig` is a
  * **replay, not a migration** (D40). Mirrors `profiles.backfillContributionCounts`.
  *
@@ -19,7 +19,7 @@ export const backfillReputation = internalMutation({
   args: { cursor: v.optional(v.string()), batchSize: v.optional(v.number()) },
   handler: async (ctx, { cursor, batchSize }) => {
     // Small pages on purpose: `computeBadgeStats` reads five lifetime histories per profile, so the
-    // per-profile cost dominates (N1).
+    // per-profile cost dominates (A01).
     const page = await ctx.db
       .query('profiles')
       .paginate({ cursor: cursor ?? null, numItems: Math.min(200, Math.max(1, batchSize ?? 50)) });

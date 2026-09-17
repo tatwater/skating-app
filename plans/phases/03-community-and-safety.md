@@ -1,10 +1,10 @@
-# Phase 3 — Comments + profiles + user-facing safety tools
+# Phase 03 — Comments + profiles + user-facing safety tools
 
-> **Roadmap:** [`07-roadmap.md`](../07-roadmap.md) → Phase 3. This is the detailed build plan,
-> in the style of the Phase 1/2/2.5 docs.
+> **Roadmap:** [`07-roadmap.md`](../07-roadmap.md) → Phase 03. This is the detailed build plan,
+> in the style of the Phase 01/2/2.5 docs.
 >
 > **What this phase is.** The community-interaction + safety layer, kept **ahead of the feeds**
-> (Phase 5) so **blocks** are enforced before the Newsfeed filters on them. The social graph was
+> (Phase 05) so **blocks** are enforced before the Newsfeed filters on them. The social graph was
 > removed 2026-07-15 (D13) — no follows/friends. What remains: threaded **comments**, viewable/
 > searchable **profiles** (privacy respected), user-facing **block + flag** tools, and a minimal
 > founder **takedown** path.
@@ -12,10 +12,10 @@
 > **Status: ✅ Complete on dev (2026-07-16, PR #17).** All four workstreams (A `@skating/core`,
 > B Convex backend, C web UI, D mobile mirror) shipped, plus review fixes (block-failure surfacing,
 > bidirectional "Blocked" chip, bounded profile reads, broadened `notificationPrefs` migration).
-> Trust score renders `0` everywhere until Phase 6 (D50). Prod cutover deferred (Convex prod
+> Trust score renders `0` everywhere until Phase 06 (D50). Prod cutover deferred (Convex prod
 > uninitialized). The build plan below is preserved as the as-built record.
 >
-> **Build order:** **web first, then mobile** (mirrors Phase 2) — web front-loads the shared Convex
+> **Build order:** **web first, then mobile** (mirrors Phase 02a) — web front-loads the shared Convex
 > backend (comments/blocks/flags/moderation/profile reads) and the profile + comment surfaces are
 > faster to build and verify on web. Mobile mirrors once the backend + web prove the model.
 
@@ -32,8 +32,8 @@ These refine the roadmap bullets; they are the "don't code into a corner" calls.
    feed**, because an interpersonal block must never remove safety information from the commons.
    On a blocked author's report the author line is **de-emphasized and carries a "Blocked" chip**
    (so the user can see the block *is* working; the report content is unaffected).
-   - ⚠️ **This reverses the Phase-2 stub design.** `lib/reportVisibility.ts` was written so a block
-     *hid* reports (`canViewReport(..., { blocked })` → false). Phase 3 changes the report gate to
+   - ⚠️ **This reverses the Phase-02a stub design.** `lib/reportVisibility.ts` was written so a block
+     *hid* reports (`canViewReport(..., { blocked })` → false). Phase 03 changes the report gate to
      **moderation-visible only**; the block set is repurposed to (a) hide **comments** by blocked
      authors, (b) hide **profiles** both ways, and (c) annotate report/comment author lines for
      de-emphasis. See "Corrected visibility model" below.
@@ -42,16 +42,16 @@ These refine the roadmap bullets; they are the "don't code into a corner" calls.
    via Clerk's own UI for now; a first-class in-app avatar upload is a **later** add (logged below).
 3. **"Block/mute" is one feature, not two.** Ship a single **bidirectional `blocks`** row (matches
    the schema). No separate mute concept in v1.
-4. **Trust score shows as `0` on every profile now** (D50 computation lands in Phase 6). We render
-   the widget in Phase 3 (fed by `profiles.reputationPoints`, currently 0 for all) so the layout is
-   designed around it and we don't forget it — but no score *accrues* until Phase 6.
+4. **Trust score shows as `0` on every profile now** (D50 computation lands in Phase 06). We render
+   the widget in Phase 03 (fed by `profiles.reputationPoints`, currently 0 for all) so the layout is
+   designed around it and we don't forget it — but no score *accrues* until Phase 06.
 
 **Confirmed scope:**
 - **Profile editing is in scope** (bio, town/state label, public↔private toggle).
 - **Minors are read-only for comments too** (not just reports) — `comments.create` rejects a minor
   author, same as `reports.create` (D41).
 - **Moderation is minimal:** role-gated inline hide/remove + one `moderationActions` audit row per
-  action. **No `/admin` queue and no operator email alerts** (those are Phase 7 / D37 / D38). Flags
+  action. **No `/admin` queue and no operator email alerts** (those are Phase 07 / D37 / D38). Flags
   accumulate as `contentFlags` rows the founder reads via the Convex dashboard for now.
 - **Comment nesting caps at 2 levels** in the UI (top-level + one reply tier; deeper replies flatten
   to the reply tier). A moderation-hidden or blocked-author parent renders as a `[hidden]`
@@ -143,7 +143,7 @@ Every mutation gates at the trust boundary (D37): `requireProfile` for active-ac
   soft-removes their own (sets `moderationStatus: removed`) — distinct from moderator removal.
 - **`contentFlags.ts`** — `flag({ targetType, targetId, reason, note? })`: `requireProfile`,
   validate the target exists, dedupe to one **open** flag per (flagger, target). `unsafe_false_report`
-  is a first-class reason (D3). No queue UI here — rows accrue for Phase 7.
+  is a first-class reason (D3). No queue UI here — rows accrue for Phase 07.
 - **`moderation.ts`** — `setModerationStatus({ targetType, targetId, status, reason })` gated
   `requireRole('moderator')`, patches the target's `moderationStatus` and writes exactly one
   `moderationActions` row (`hide`/`remove`/`restore`). `resolveFlag({ flagId, resolution, reason })`
@@ -212,7 +212,7 @@ Mirror web once the backend + web are proven:
 
 ## PR / commit breakdown (one PR per phase — memory: bundle-prs-by-phase)
 
-One Phase 3 PR; sub-workstreams as separate commits (Greptile reviews are metered):
+One Phase 03 PR; sub-workstreams as separate commits (Greptile reviews are metered):
 
 - **A — `@skating/core`**: profile/comment/block logic + revised visibility + tests.
 - **B — Convex**: schema additions + `backfillNotificationPrefs` + blocks/comments/flags/moderation
@@ -229,8 +229,8 @@ deploy (memory: convex-test-is-not-deploy).
 
 - **Notification *delivery*** (comment/flag/rating). Type `report_commented` is documented +
   (optionally) added to enums now; the delivery pipeline + in-app notification center land later.
-- **Operator `/admin` queue + email alerts** (Resend/React Email) → **Phase 7** (D37/D38).
-- **Trust-score computation** (corroboration + helpful marks) → **Phase 6** (D50). Phase 3 shows 0.
+- **Operator `/admin` queue + email alerts** (Resend/React Email) → **Phase 07** (D37/D38).
+- **Trust-score computation** (corroboration + helpful marks) → **Phase 06** (D50). Phase 03 shows 0.
 - **First-class in-app avatar upload** (custom crop, our storage) — Clerk manages it for now
   (decision #2). Revisit if Clerk's avatar UX proves insufficient.
 - **Account deletion / data export** (D33) — matures on its own track; profile anonymization must
@@ -242,9 +242,9 @@ deploy (memory: convex-test-is-not-deploy).
 
 ## Relocated from the roadmap (2026-09-16)
 
-*The roadmap entry for Phase 3 as it stood before the 2026-09-16 rewrite, kept verbatim so nothing it said is lost. The roadmap now carries a one-paragraph summary; this is the long form.*
+*The roadmap entry for Phase 03 as it stood before the 2026-09-16 rewrite, kept verbatim so nothing it said is lost. The roadmap now carries a one-paragraph summary; this is the long form.*
 
-### Phase 3 — Comments + profiles + user-facing safety tools ✅ Complete (2026-07-16)
+### Phase 03 — Comments + profiles + user-facing safety tools ✅ Complete (2026-07-16)
 > **Detailed build plan:** [`phases/03-community-and-safety.md`](./03-community-and-safety.md)
 > (design settled 2026-07-16 — the four "don't code into a corner" calls are recorded there).
 >
@@ -257,7 +257,7 @@ deploy (memory: convex-test-is-not-deploy).
 > moderator actions, profile search, blocked-users list); **D** the mobile mirror. Review fixes followed:
 > block-failure surfacing, a bidirectional "Blocked" chip, bounded profile reads, and a broadened
 > profiles migration to canonicalize legacy `notificationPrefs` drift. Trust score renders `0` everywhere
-> (D50 computation is Phase 6). Prod cutover still deferred (Convex prod uninitialized).
+> (D50 computation is Phase 06). Prod cutover still deferred (Convex prod uninitialized).
 *(Was "Social graph + comments" — the **social graph was removed 2026-07-15 (D13)**. No
 follows/friends. What remains is the community-interaction + safety layer, kept ahead of
 the feeds so **blocks** are enforced before the Newsfeed filters on them.)*
@@ -275,7 +275,7 @@ the feeds so **blocks** are enforced before the Newsfeed filters on them.)*
   refines the earlier "moderation-visible + not-blocked" note: report reads are **moderation-visible
   only**; the block set gates comments/profiles + drives author de-emphasis.)
 - A minimal moderator **hide/remove** path (founder) so flagged content can be taken
-  down immediately, even before the full operator surface (Phase 7).
+  down immediately, even before the full operator surface (Phase 07).
 - **Done ✅:** comment threads work; profiles are viewable/searchable (privacy respected);
   users can block/mute and flag; content can be quickly taken down.
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Turn Sentinel-1's noise annotation into a raster that can be warped (N6e PR 2, §C1).
+"""Turn Sentinel-1's noise annotation into a raster that can be warped (A06e PR 2, §C1).
 
     sar-noise-lut.py <noise.xml> <grd-url-or-path> <out.tif> [--calibration cal.xml]
 
@@ -27,7 +27,7 @@ signal is darkest:
     true -26 dB  ->  measured -22.55   (+3.45)
 
 Which is precisely backwards for this archive. Smooth, specular ice — the dark tail, the entire premise
-of [N6g](../../plans/phase-N6g-imagery-research.md)'s black-ice lane — is the part the noise floor
+of [A06g](../../plans/phase-N6g-imagery-research.md)'s black-ice lane — is the part the noise floor
 corrupts most. Without this correction, `sigma0Hist`'s dark bins hold instrument noise rather than
 smooth ice, and "40% of this lake sat below −22 dB" is a statement about the sensor.
 
@@ -35,7 +35,7 @@ smooth ice, and "40% of this lake sat below −22 dB" is a statement about the s
 
 **S1C's noise floor is 2.80 dB quieter than S1A's.** Left in, that produces a *platform-dependent*
 bias on dark targets: on a lake at a true −22 dB it predicts **−0.73 dB** between the two. The archive
-measures an S1A−S1C offset of **−0.52 dB ascending** (`sar-cal-lut.py`, and N6e open question 7).
+measures an S1A−S1C offset of **−0.52 dB ascending** (`sar-cal-lut.py`, and A06e open question 7).
 
 That is close enough to be worth testing rather than assumed, and the test is cheap: denoise, then
 re-measure the offset. If it collapses, platforms can be pooled and a lake gets a 6-day look instead of

@@ -70,7 +70,7 @@ export const HAZARD_DEFAULT_GEOMETRY_KIND: Record<HazardType, HazardGeometryKind
 };
 
 /**
- * Starting radius for point+radius hazards, in metres — tunable in Phase 7 (D49), adjustable by the
+ * Starting radius for point+radius hazards, in metres — tunable in Phase 07 (D49), adjustable by the
  * skater at capture time with steppers.
  *
  * Sized by what the thing physically is (research §2): an auger hole is a few metres, a thaw-rotten
@@ -188,7 +188,7 @@ function footprintBufferMeters(shape: HazardShape): number {
  * The footprint of a hazard clipped to the water-body polygon it sits on — or `null` when clipping
  * either does nothing (the footprint is already wholly inside the body) or can't be done safely.
  *
- * Why clip (Phase 9.5): a point+radius hazard dropped near shore buffers into a circle that spills
+ * Why clip (Phase 09b): a point+radius hazard dropped near shore buffers into a circle that spills
  * across land or into a neighbouring lake, drawing a danger halo where there is no water to be in
  * danger on. Intersecting the footprint with the body confines the halo to the ice.
  *
@@ -288,7 +288,7 @@ export function lineShape(vertices: readonly LatLng[], bufferMeters: number): Ha
 }
 
 /**
- * Build a `polygon` shape from captured vertices (the freeform primitive, N5b).
+ * Build a `polygon` shape from captured vertices (the freeform primitive, A05b).
  *
  * Constructed literally rather than via Turf's `polygon`, for the same reason `lineShape` is: Turf
  * *throws* on a ring with fewer than four positions or one that isn't closed, and a ring is tapped out
@@ -394,7 +394,7 @@ export function isValidHazardShape(shape: HazardShape): boolean {
           ? [shape.geometry.coordinates]
           : shape.geometry.coordinates;
       if (parts.length === 0) return false;
-      // Every ring of every part, not just the first (N5b). This branch was unreachable until N5b
+      // Every ring of every part, not just the first (A05b). This branch was unreachable until A05b
       // gave a client a way to author a polygon; until then a hole or a second part could carry
       // anything — a NaN in ring 2 reaches `hazardFootprint` exactly as readily as one in ring 1, and
       // takes out the buffer for the whole row.

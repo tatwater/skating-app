@@ -1,5 +1,5 @@
 /**
- * The shared MapLibre shell (N2, Decision 12) — everything two maps in this app have in common.
+ * The shared MapLibre shell (A02, Decision 12) — everything two maps in this app have in common.
  *
  * `MapView` was a 745-line imperative component that owned both the *canvas* (protocol registration,
  * basemap style, theme flavor, bounds, controls, viewport reporting, teardown) and the *skater map*
@@ -164,7 +164,7 @@ export function useMapCanvas(options: MapCanvasOptions): MapCanvas {
     // enabled — pinch-to-zoom is essential — with only its rotation half switched off.
     map.touchZoomRotate.disableRotation();
     map.keyboard.disableRotation();
-    // **Compact: the credits live behind an ⓘ rather than across the map** (N6e A4, founder ask:
+    // **Compact: the credits live behind an ⓘ rather than across the map** (A06e A4, founder ask:
     // *"can we keep all attribution strings in the sidebar/drawer, instead of over the map itself?"*).
     //
     // MapLibre's own compact mode *is* that affordance, and using it beats hand-rolling one for a

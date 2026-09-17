@@ -1,5 +1,5 @@
 /**
- * Basemap hosting (Phase 1, PR#5 — D6). The self-built Vermont `.pmtiles` vector basemap is
+ * Basemap hosting (Phase 01, PR#5 — D6). The self-built Vermont `.pmtiles` vector basemap is
  * stored in **Convex file storage**, colocated with the app: its serving URL honors HTTP
  * `Range` requests *and* reflects CORS, the two hard requirements for the browser `pmtiles://`
  * protocol (both verified before choosing this host).

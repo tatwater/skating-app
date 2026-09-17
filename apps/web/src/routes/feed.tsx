@@ -26,8 +26,8 @@ import { useFeedFilters } from '../lib/feedFiltersStore';
 const PAGE_SIZE = 20;
 
 /**
- * Latest — the chronological, cross-water-body co-primary page (D28; Phase 5), renamed from
- * *Newsfeed* when it stopped being only reports (N6h / D159, D165). Reads `reports.listFeed`
+ * Latest — the chronological, cross-water-body co-primary page (D28; Phase 05), renamed from
+ * *Newsfeed* when it stopped being only reports (A06h / D159, D165). Reads `reports.listFeed`
  * (global, newest skate-end time first) via `usePaginatedQuery`, renders infinite `FeedCard`s, and
  * opens the report in a **drawer** (URL-backed `?report=<id>`) so the feed scroll position survives
  * — a deep-linkable overlay, not a full navigation. All reports are public (D13); a blocked author's
@@ -131,7 +131,7 @@ function FeedPage() {
       ) : (
         <div className="flex flex-col gap-3">
           <PastSeasonNotice results={results} now={now} />
-          {/* Recency scroll-divider headers (Phase 4, decision #5): "Today / Yesterday / …", over
+          {/* Recency scroll-divider headers (Phase 04, decision #5): "Today / Yesterday / …", over
               the interleaved list — a matched lake's event day buckets exactly like a skate-end. */}
           {groupFeedSections(
             interleaveLatest(

@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 #
-# One unified-corpus campaign, end to end (N7).
+# One unified-corpus campaign, end to end (A07a).
 #
-# The OSM-per-state path has had `run-canonical.sh` since N6c, for a stated reason: the interesting
+# The OSM-per-state path has had `run-canonical.sh` since A06c, for a stated reason: the interesting
 # arguments are the ones that are easy to forget, and a run row missing its provenance is the failure
-# that whole workstream was about. The N7 path — the one that decides every row in the corpus — had
+# that whole workstream was about. The A07a path — the one that decides every row in the corpus — had
 # no wrapper at all. It was four commands typed by hand, and the 2026-08-07 campaign is what that
 # costs: a `corpus_merge` run with an empty Path, and a `canonical_water` run labelled "unscoped
 # canonical water" for the load of all 25,050 bodies.
@@ -59,7 +59,7 @@ done
 # *a cheap argument must not be able to fail an expensive campaign at its last step*. Two seconds in
 # is the honest place to refuse; forty-five minutes and 25,000 bodies later is not.
 if [ -n "$APPLY_SUB_AREAS" ] && [ -z "$ACTOR" ]; then
-  echo "--apply-sub-areas needs --actor=<profileId>: every sub-area write is audited (N2/D60)" >&2
+  echo "--apply-sub-areas needs --actor=<profileId>: every sub-area write is audited (A02/D60)" >&2
   exit 1
 fi
 
@@ -119,7 +119,7 @@ elif [ -z "$ACTOR" ]; then
   # a 45-minute merge and a 25,000-body load had both succeeded. The campaign read as a failure, and
   # the non-zero exit then suppressed the prune the operator was meant to run next.
   #
-  # Bays need an actor by design (N2/D60 audits every sub-area write to a person), and this script's
+  # Bays need an actor by design (A02/D60 audits every sub-area write to a person), and this script's
   # own comment already said it needs *both* an actor and `--apply-sub-areas`. So the honest
   # behaviour when neither is present is to say what was not done and carry on — the bay lane is
   # idempotent and can be run on its own afterwards, which is exactly what the message tells you.
@@ -127,7 +127,7 @@ elif [ -z "$ACTOR" ]; then
   # This branch is reachable only when the operator asked for **neither**. `--apply-sub-areas` with no
   # actor is refused up at the argument parse, because a skip is an honest answer to a request that
   # was never made and a dishonest one to a request that was.
-  echo "══ sub-areas: SKIPPED — no --actor given, and every sub-area write is audited (N2/D60)"
+  echo "══ sub-areas: SKIPPED — no --actor given, and every sub-area write is audited (A02/D60)"
   echo "   the bodies above are loaded and this changes nothing about them. To seed bays:"
   echo "   pnpm --filter @skating/etl load-sub-areas ${SCRATCH}/sub-areas.ndjson \\"
   echo "     --campaign=${CAMPAIGN} --actor=<moderatorProfileId> [--apply]"
@@ -143,11 +143,11 @@ echo "Still manual, and deliberately so — all three change what the map shows,
 echo "default and none runs without you. Order does not matter; skipping any is silent."
 echo
 echo "  pnpm --filter @skating/etl prune-floor            # dry run; --apply to demote"
-echo "      rows the current admission rules refuse — to dormant, never deleted (N7b)."
+echo "      rows the current admission rules refuse — to dormant, never deleted (A07b)."
 echo
 echo "  pnpm --filter @skating/seed-destinations seed-standing \\"
 echo "    --gazetteer=training_data/google_group/gazetteer.csv   # dry run; --apply to shelve"
-echo "      bodies this campaign inserted with no evidence of access or use (N7b) — a fresh"
+echo "      bodies this campaign inserted with no evidence of access or use (A07b) — a fresh"
 echo "      import lands ACTIVE, and this is what puts a new region's 5,000 unskated ponds to sleep."
 echo
 echo "  pnpm --filter @skating/etl retire-absorbed \\"

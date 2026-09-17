@@ -1,5 +1,5 @@
 /**
- * Watching for the imagery season to open (N6e §C3 / **D149**).
+ * Watching for the imagery season to open (A06e §C3 / **D149**).
  *
  * > **D149 — Ingest is weather-gated, and the archive turns over on the first frame of the new
  * > season, never on a date.**
@@ -324,7 +324,7 @@ export const maybeCheckSeasonOpen = internalAction({
     //
     // This used to return here on any recorded row, which meant `ingestWindow` computed a perfectly
     // good `closesOn` that nothing ever persisted. Two consumers pay for that: imagery keeps cutting
-    // granules into July, and N6h's corpus-wide weather sweep (D161) keeps spending ~4,300
+    // granules into July, and A06h's corpus-wide weather sweep (D161) keeps spending ~4,300
     // Open-Meteo calls a day right through the spring, because the only thing it can gate on is the
     // presence of `opensOn`. So the row is complete when it has *both* dates, not one.
     const already = await ctx.runQuery(internal.imageryIngest.seasonRecord, { season });

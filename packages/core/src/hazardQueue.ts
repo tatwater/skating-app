@@ -1,5 +1,5 @@
 /**
- * The offline hazard queue (Phase 9 offline) — the pure half of "flag it now, send it later".
+ * The offline hazard queue (Phase 09a offline) — the pure half of "flag it now, send it later".
  *
  * Reuses the F2 report-queue contract rather than inventing a second one: same `DraftStatus`
  * machine, same transient-vs-permanent classification, same "persist after every advance" rule, so
@@ -88,7 +88,7 @@ export interface QueuedHazard {
   photos: DraftPhoto[];
   capturedAt: number;
   /**
-   * The pin the draw-time nudge offered and this skater said was a **different** hazard (N5c / D80).
+   * The pin the draw-time nudge offered and this skater said was a **different** hazard (A05c / D80).
    *
    * **Queued rather than dropped, and that is the whole point of the field existing.** The nudge fires
    * hardest exactly where there is no signal — two skaters, one ridge, both flagging it — so the
@@ -109,7 +109,7 @@ export interface QueuedHazard {
  * The queue's discriminator for a confirmation. `confirmation_vote`, **not** `hazard_confirmation`:
  * that string is the *notification type* for mail arriving at a hazard's author ("someone confirmed
  * your hazard"), and this is the opposite direction — a vote you cast, waiting on your own phone for
- * signal. The two shared a name until N8, and a reader grepping it found two mechanisms with no
+ * signal. The two shared a name until A08, and a reader grepping it found two mechanisms with no
  * connection. Renamed here and migrated on-device in the mobile `draftStore` (rows already queued
  * under the old name are rewritten once, at open).
  */

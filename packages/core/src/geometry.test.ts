@@ -312,7 +312,7 @@ describe('bufferedLineOverlap (rivers, D36)', () => {
   }, 20_000);
 });
 
-describe('distanceToPolygonMeters (offline auto-select / Phase 9 proximity)', () => {
+describe('distanceToPolygonMeters (offline auto-select / Phase 09a proximity)', () => {
   // ~111 m square centred on the equator, so a degree of lat or lng ≈ the same metres and the
   // local equirectangular projection is easy to reason about analytically.
   const M_PER_DEG = 6_371_008.8 * (Math.PI / 180); // ≈ 111,194.9 m per degree at the equator
@@ -366,12 +366,12 @@ describe('distanceToPolygonMeters (offline auto-select / Phase 9 proximity)', ()
 });
 
 /**
- * The consensus footprint (N5c / D80) — overlapping duplicates drawn as one outline rather than as
+ * The consensus footprint (A05c / D80) — overlapping duplicates drawn as one outline rather than as
  * stacked halos. Two properties carry the safety argument: the union covers every member (so
  * collapsing pins can only ever warn about *more* ice), and a clipper failure returns `null` so the
  * caller draws the members individually rather than losing one.
  */
-describe('polygonUnion (N5c consensus rendering)', () => {
+describe('polygonUnion (A05c consensus rendering)', () => {
   const A = rect({ minLng: 0, minLat: 0, maxLng: 2, maxLat: 2 });
   const B = rect({ minLng: 1, minLat: 1, maxLng: 3, maxLat: 3 });
 
@@ -557,7 +557,7 @@ describe('haversineMeters', () => {
   });
 });
 
-describe('destinationPoint (Phase 9.5 directional projection)', () => {
+describe('destinationPoint (Phase 09b directional projection)', () => {
   const origin: LatLng = { lat: 44.4759, lng: -73.2121 };
 
   it('heads due north for bearing 0 (latitude up, longitude unchanged)', () => {
@@ -707,7 +707,7 @@ describe('simplifyPath', () => {
   });
 });
 
-describe('polygonDistanceMeters (N5c hazard clustering)', () => {
+describe('polygonDistanceMeters (A05c hazard clustering)', () => {
   const M_PER_DEG = 6_371_008.8 * (Math.PI / 180);
   const box = rect({ minLat: -0.0005, minLng: -0.0005, maxLat: 0.0005, maxLng: 0.0005 });
 

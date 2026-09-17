@@ -1,5 +1,5 @@
 /**
- * One lake's freeze-up timeline, loaded progressively (N6e §C4).
+ * One lake's freeze-up timeline, loaded progressively (A06e §C4).
  *
  * ## Why this renders before it has finished loading
  *

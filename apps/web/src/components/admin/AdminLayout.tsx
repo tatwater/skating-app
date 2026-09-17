@@ -77,11 +77,11 @@ const NAV: NavItem[] = [
   // could not settle — and burying it one click deep is how 2,010 stored rows went unseen for a
   // campaign. See `admin.water.review.tsx`.
   { to: '/admin/water/review', label: 'Intake review' },
-  // The corpus-lifecycle page (N7b): what the machines shelved and what came back. Its own entry
+  // The corpus-lifecycle page (A07b): what the machines shelved and what came back. Its own entry
   // for the same reason as the intake queue — a page nobody can reach is a page nobody judges the
   // rollover from.
   { to: '/admin/water/standing', label: 'Standing' },
-  // Skaters asking for lakes (N7b PR 2). Beside Standing because the two are one story: what the
+  // Skaters asking for lakes (A07b PR 2). Beside Standing because the two are one story: what the
   // machines shelved, and who is asking for it back.
   { to: '/admin/water/requests', label: 'Requests' },
   { to: '/admin/features', label: 'Body features' },

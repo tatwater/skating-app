@@ -1,5 +1,5 @@
 /**
- * Correcting where a radar pass says the ground is (N6e open question 8).
+ * Correcting where a radar pass says the ground is (A06e open question 8).
  *
  * ## The error, and why a lake is the easy case
  *

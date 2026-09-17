@@ -118,7 +118,7 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 type StartMode = 'none' | 'start' | 'duration';
 
 /**
- * Optional "when did you get on the ice?" input (Phase 5). The skater enters *either* a start time
+ * Optional "when did you get on the ice?" input (Phase 05). The skater enters *either* a start time
  * *or* a duration; `resolveSkateWindow` back-computes the start from a duration at this input
  * boundary, and only the resolved `skateStartTime` (epoch ms) is ever lifted to the form — duration
  * is never stored. Re-derives when the end time or the entry changes; surfaces an inline error for an
@@ -227,7 +227,7 @@ export interface ReportFormFieldsProps {
   onRemovePhoto: (id: string) => void;
   onTogglePlaceOnMap: (id: string, on: boolean) => void;
   /**
-   * The photos already attached to the report being edited (N6f) — empty for a new one.
+   * The photos already attached to the report being edited (A06f) — empty for a new one.
    *
    * They are not drafts: they're uploaded rows with server ids, so they carry no blob to re-send and
    * no `placeOnMap` decision left to make. Rendering them is what makes `photoIds` on submit mean
@@ -246,7 +246,7 @@ export interface ReportFormFieldsProps {
    * (the prompt needs a Convex query; these fields must not).
    */
   bundlePrompt?: ReactNode;
-  /** "Post report" for a new one, "Save changes" for an edit (N6f). */
+  /** "Post report" for a new one, "Save changes" for an edit (A06f). */
   submitLabel?: { idle: string; busy: string };
 }
 
@@ -602,7 +602,7 @@ export function ReportForm({
   open: boolean;
   onOpenChange: (open: boolean) => void;
   /**
-   * An existing report to edit instead of creating a new one (N6f).
+   * An existing report to edit instead of creating a new one (A06f).
    *
    * **The form is seeded from the whole stored report, not from the fields being changed**, because
    * `reports.update` is last-write-wins over the entire content block: anything the form doesn't send
@@ -630,7 +630,7 @@ export function ReportForm({
   // Report photos + hazard photos are the same pipeline, so they share one hook — it owns the
   // checkpointed upload and the reclaim-on-abandon sweep (see `usePhotoDrafts`).
   const photoDrafts = usePhotoDrafts();
-  // The already-attached photos an edit is keeping (N6f). Seeded synchronously from the prop, so it
+  // The already-attached photos an edit is keeping (A06f). Seeded synchronously from the prop, so it
   // is correct before first paint; `photos.getUrls` only supplies the thumbnails to render.
   // Deliberately NOT routed through `usePhotoDrafts`: these rows are committed, and the hook's
   // reclaim-on-abandon sweep would delete a published report's photos the moment a user opened the
@@ -682,7 +682,7 @@ export function ReportForm({
     if (!result.ok) {
       setError(result.errors.map((e) => `${e.field}: ${e.message}`).join('; '));
       // A future skate time is nearly always device clock skew, not a bogus claim — and this
-      // rejection happens *client-side*, so the server never sees it. Report it (Phase 7b) so the
+      // rejection happens *client-side*, so the server never sees it. Report it (Phase 07-2) so the
       // rate is visible and `SKATE_TIME_FUTURE_TOLERANCE_MS` can be judged on evidence. Advisory
       // telemetry: fire-and-forget, and a failure here must never affect the form.
       if (hasFutureSkateTimeError(result.errors)) {

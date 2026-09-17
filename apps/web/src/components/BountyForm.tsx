@@ -29,10 +29,10 @@ export function BountyForm({
   const navigate = useNavigate();
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  // Named bays on this lake (N2/D60) — the whole lake stays the default, because most lakes have
+  // Named bays on this lake (A02/D60) — the whole lake stays the default, because most lakes have
   // none and asking "which part?" of a pond is noise.
   const subAreas = useQuery(api.subAreas.listForBody, { waterBodyId });
-  // The cap that applies to *this* person (N2). Hardcoding the global constant here would have made
+  // The cap that applies to *this* person (A02). Hardcoding the global constant here would have made
   // the form promise three bounties to the one user who's been limited to one.
   const myLimit = useQuery(api.bounties.myBountyLimit, {});
   const bays = (subAreas ?? []).filter((s) => !s.removed);

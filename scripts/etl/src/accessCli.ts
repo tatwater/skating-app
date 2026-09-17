@@ -1,5 +1,5 @@
 /**
- * The access ETL's transform stage (N6d B1/B2) — glue, so it is excluded from coverage; every rule it
+ * The access ETL's transform stage (A06d B1/B2) — glue, so it is excluded from coverage; every rule it
  * applies lives in `./accessTransform` and `@skating/core`.
  *
  *   pnpm --filter @skating/etl access-transform                       # all five states
@@ -10,14 +10,14 @@
  *   pnpm --filter @skating/etl access-transform --parking-radius=400  # eyeball a different radius
  *
  * Writes `.scratch/access/parking.ndjson` and `.scratch/access/put-ins.ndjson`, plus a
- * `summary.json` for the loader to fold into its `importRuns` row (N6c F2). **Two files rather than
+ * `summary.json` for the loader to fold into its `importRuns` row (A06c F2). **Two files rather than
  * one**, because a put-in references its lot by OSM id and the loader has to have inserted the lot
  * before it can resolve that — a mixed stream would work only until a pair straddled a batch
  * boundary, which is a bug that shows up once at scale and never in a fixture.
  *
  * ## The ORS stage, and why it is here rather than in the loader
  *
- * D87 routes the approach with `foot-hiking` on Phase 4's existing key. The quota is a non-issue
+ * D87 routes the approach with `foot-hiking` on Phase 04's existing key. The quota is a non-issue
  * **because of when we call it**: once per paired put-in, at ETL time, cached on disk and then on the
  * row. Never from a request path — that is the one rule worth writing at the call site, and it is
  * written at this one.
@@ -86,7 +86,7 @@ function log(message: string): void {
  * `429`. 1,600 ms sits just under the ceiling.
  *
  * Serialized with a gap rather than parallelized with a retry: this pass has no deadline, and the
- * failure mode of hammering a free endpoint is losing the key for everything else Phase 4 depends on.
+ * failure mode of hammering a free endpoint is losing the key for everything else Phase 04 depends on.
  */
 const ORS_GAP_MS = 1_600;
 
@@ -155,7 +155,7 @@ function accessFeatureFile(state: string, refresh: boolean): string {
   return out;
 }
 
-/** Extract one state's trail lines, cached in `.scratch` (N6e Workstream 0). */
+/** Extract one state's trail lines, cached in `.scratch` (A06e Workstream 0). */
 function trailFile(state: string, refresh: boolean): string {
   const out = join(SCRATCH, `osm-trails-${state}.geojsonseq`);
   if (existsSync(out) && !refresh) return out;
@@ -281,9 +281,9 @@ async function readAccessFeatures(states: readonly string[], refresh: boolean) {
 }
 
 /**
- * A cached leg, plus **whether we have already asked for its line** (N6e Workstream 0).
+ * A cached leg, plus **whether we have already asked for its line** (A06e Workstream 0).
  *
- * The flag exists because the geometry backfill has to be able to finish. N6d's parser read distance
+ * The flag exists because the geometry backfill has to be able to finish. A06d's parser read distance
  * and ascent off the ORS response and dropped `features[0].geometry`, so 4,945 legs were archived
  * without a line and the zero-cost window closed with the routing pass on 2026-08-13 — recovering
  * them means re-spending the quota, once, and never again.
@@ -420,7 +420,7 @@ async function main(): Promise<void> {
   );
 
   /**
-   * The trail pass (N6e Workstream 0) — connectivity where proximity has already given up.
+   * The trail pass (A06e Workstream 0) — connectivity where proximity has already given up.
    *
    * Run **before** routing, deliberately: a pairing found here is indistinguishable downstream from
    * one found by proximity, so it goes through the same ORS leg and comes back with the same
@@ -466,7 +466,7 @@ async function main(): Promise<void> {
   let cacheHits = 0;
   /** Legs that flew straight for a *transient* reason — the number a re-run will retry. */
   let uncached = 0;
-  /** Hike-in legs re-requested purely to recover the line N6d's parser discarded. */
+  /** Hike-in legs re-requested purely to recover the line A06d's parser discarded. */
   let pathBackfills = 0;
   /** …of which came back with a usable line. */
   let pathsRecovered = 0;
@@ -484,7 +484,7 @@ async function main(): Promise<void> {
     let leg = cache[key];
     if (leg) {
       cacheHits++;
-      // The geometry backfill (N6e Workstream 0). Only hike-in legs, because only they will be drawn
+      // The geometry backfill (A06e Workstream 0). Only hike-in legs, because only they will be drawn
       // or buffered — `approachPathWanted` is the *same* predicate the parser keeps a line by, so a
       // leg can never be re-routed against the quota and then have its geometry thrown away.
       if (owesPath(leg)) {
@@ -523,8 +523,8 @@ async function main(): Promise<void> {
       if (apiKey) await sleep(ORS_GAP_MS);
     }
 
-    // A leg ORS routed the long way round the water is not an approach (N6e Workstream 0). Applied
-    // here rather than at the request, so the 30 already sitting in the cache from N6d's pass are
+    // A leg ORS routed the long way round the water is not an approach (A06e Workstream 0). Applied
+    // here rather than at the request, so the 30 already sitting in the cache from A06d's pass are
     // demoted too — the cache keeps ORS's true answer and the row gets the usable one.
     const applied = plausibleApproach(leg, lot.point, putIn.point);
     if (applied !== leg) implausible++;
@@ -572,7 +572,7 @@ async function main(): Promise<void> {
     // that says whether re-running tomorrow is worth anything.
     retryableFallbacks: uncached,
     cacheHits,
-    // The N6e Workstream 0 lane, reported apart from the routing counters because it is a different
+    // The A06e Workstream 0 lane, reported apart from the routing counters because it is a different
     // question: routing asks "how far is the walk", this asks "do we have the line to draw it".
     pathBackfills,
     pathsRecovered,

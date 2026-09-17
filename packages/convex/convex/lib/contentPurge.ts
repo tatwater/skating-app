@@ -1,5 +1,5 @@
 /**
- * Redacting a departed skater's aged content (D62 second amendment / N5a decision 5).
+ * Redacting a departed skater's aged content (D62 second amendment / A05a decision 5).
  *
  * **The rule, and the one it replaces.** The first amendment said a departed user's content is
  * *erased* at 30 days. That was wrong in a way that only showed up once its consequences were
@@ -236,7 +236,7 @@ export async function redactAgedContent(
   // ── Reports: kept whole, minus the words ───────────────────────────────────────────────────────
   //
   // Bounded on **both** sides during the ghost window. The lower bound isn't decoration even though
-  // `skateEndTime` is required here: the N3/N4 postmortem was exactly a bare upper bound on an
+  // `skateEndTime` is required here: the A03/A04 postmortem was exactly a bare upper bound on an
   // optional field, and a sweep over a departed account is the last query in this codebase that should
   // be one row-class wider than it means.
   //
@@ -246,7 +246,7 @@ export async function redactAgedContent(
   // range with a far-future number would be the version to worry about, because it would read like an
   // age bound while being none.
   //
-  // ⚠ **This query must never grow a season bound** (N5a build note). `by_author_skate_end_time` is the
+  // ⚠ **This query must never grow a season bound** (A05a build note). `by_author_skate_end_time` is the
   // same index the seasonal work bounds elsewhere, and the bound is the wrong shape here twice over:
   // the age gate looks at everything *older* than the cutoff where a season looks at a window, and a
   // departed skater's pre-season prose would silently stop being redacted. Nothing visible would look
@@ -283,7 +283,7 @@ export async function redactAgedContent(
   //
   // Nothing about a hazard is erased. A hazard row is a point, a type and two dates; with the author
   // pointer tombstoned and the description gone there is no person left in it, and it is exactly the
-  // multi-season record N5a's recurrence detection and `bodyFeatures` promotion are built on.
+  // multi-season record A05a's recurrence detection and `bodyFeatures` promotion are built on.
   async function redactHazards(): Promise<string | null> {
     const page = await ctx.db
       .query('hazards')
@@ -328,7 +328,7 @@ export async function redactAgedContent(
   // retaining it after its author is gone the worst version of the oversight.
   //
   // What survives is everything a moderator needs: target, reason, status, counts, dates. The
-  // structured `reason` is what the queue sorts and the 7b rollup counts; the prose was context.
+  // structured `reason` is what the queue sorts and the 07-2 rollup counts; the prose was context.
   // `moderationActions.reason` — the operator's own words, on the audit trail — is a separate table and
   // is deliberately untouched.
   //
@@ -347,9 +347,9 @@ export async function redactAgedContent(
     return nextCursor(page);
   }
 
-  // ── Access alerts: the claim stays, the sentence goes (N6d / D73) ──────────────────────────────
+  // ── Access alerts: the claim stays, the sentence goes (A06d / D73) ──────────────────────────────
   //
-  // The same seam as flags and reports, on a table N6d added after this file was written. `note` is
+  // The same seam as flags and reports, on a table A06d added after this file was written. `note` is
   // free text *they typed* — "gate locked, the town put a chain on it after the logging trucks" — and
   // it sits on exactly the wrong side of the second amendment's line, so it comes off with everything
   // else somebody wrote.

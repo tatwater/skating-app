@@ -4,7 +4,7 @@ import { Paragraph, Text, YStack } from 'tamagui';
 import { Section } from './detailUi';
 
 /**
- * The lake sheet's reference-link list (N6c Workstream B).
+ * The lake sheet's reference-link list (A06c Workstream B).
  *
  * **Every link opens in-app (D76).** `openBrowserAsync` is SFSafariViewController on iOS and Chrome
  * Custom Tabs on Android: the page opens *over* our app with a Done button, shares the system cookie
@@ -25,7 +25,7 @@ export function ReferenceLinks({
   reveal = false,
 }: {
   body: ReferenceLinkBody | null | undefined;
-  /** N6c-2's reveal flag — states the absence instead of hiding the section. */
+  /** A06c-2's reveal flag — states the absence instead of hiding the section. */
   reveal?: boolean;
 }) {
   const links = allReferenceLinks(body);

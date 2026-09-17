@@ -7,8 +7,8 @@
  * all 116k lakes — so cost tracks hazard-carrying bodies (tens–hundreds at peak), not corpus size. It runs
  * at a fixed hourly base tick but **skips any hazard refreshed within `WEATHER_REFRESH_MIN_INTERVAL_HOURS`**,
  * giving an effective ~3h cadence without a redeploy (Convex crons can't retune their interval at runtime;
- * Phase 7 lifts the threshold to an admin config, same lever pattern as the D52 tiers). The scan is
- * stalest-first so its per-tick cap rotates through the backlog rather than re-reading one prefix (N1).
+ * Phase 07 lifts the threshold to an admin config, same lever pattern as the D52 tiers). The scan is
+ * stalest-first so its per-tick cap rotates through the backlog rather than re-reading one prefix (A01).
  *
  * It stores the **time-independent `decayMultiplier`** (+ `snowHidden`), never a frozen freshness bucket —
  * the online `toView` recomputes the live bucket from it. Fail-open throughout: a lagged/failed cron just
@@ -36,13 +36,13 @@ import { takeCapped } from './lib/scan';
 import { resolveWeatherSince } from './weather';
 
 /** Active hazards the decay sweep considers per tick. Hundreds at peak by design (the cron scopes
- *  to hazard-carrying bodies, not the 116k-lake corpus), so this is a backstop, not a bound (N1).
+ *  to hazard-carrying bodies, not the 116k-lake corpus), so this is a backstop, not a bound (A01).
  *  Safe to cap only because the scan is stalest-first — see `listActiveHazardsForWeather`. */
 const ACTIVE_HAZARD_SCAN_CAP = 1000;
 const HOUR_MS = 3_600_000;
 const DAY_MS = 86_400_000;
 
-/** Effective refresh cadence: skip a hazard refreshed more recently than this (Phase 7 → admin config). */
+/** Effective refresh cadence: skip a hazard refreshed more recently than this (Phase 07 → admin config). */
 export const WEATHER_REFRESH_MIN_INTERVAL_HOURS = 3;
 
 // Sampling helpers (`bodyWeatherCell`/`hazardCenter`) live in `lib/sampling` so `weather.ts` can share
@@ -59,7 +59,7 @@ interface HazardWeatherJob {
    * §5's strip↔decay consistency invariant is the thing that would break silently otherwise.
    */
   cell: WeatherCell;
-  /** Whether the hazard's body is shallow — amplifies the thaw response only (N6a / D69). */
+  /** Whether the hazard's body is shallow — amplifies the thaw response only (A06a / D69). */
   isShallow: boolean;
 }
 
@@ -100,7 +100,7 @@ export const listActiveHazardsForWeather = internalQuery({
       'hazardWeather.listActiveHazardsForWeather',
     );
 
-    // One entry per body, holding both the row and its shallowness (N6a). Cached together because the
+    // One entry per body, holding both the row and its shallowness (A06a). Cached together because the
     // shallow check costs an indexed read of the body's features and many hazards share a body — the
     // same reason the body row itself is cached. Bounded by hazard-carrying bodies, not the corpus.
     const bodyCache = new Map<
@@ -111,7 +111,7 @@ export const listActiveHazardsForWeather = internalQuery({
     const deferred: Id<'hazards'>[] = [];
     for (const h of hazards) {
       // A promoted pin used to be deferred here, on the reasoning that it no longer renders. Since the
-      // D53 amendment (N5c) it does — supersession is provenance, not a hiding mechanism — so it
+      // D53 amendment (A05c) it does — supersession is provenance, not a hiding mechanism — so it
       // decays like every other sighting and needs its weather multiplier kept current. Deferring it
       // would have left a visible pin reading its freshness off a stale window.
       const key = h.waterBodyId;
@@ -232,7 +232,7 @@ export const refreshHazardWeather = internalAction({
         await ctx.runMutation(internal.hazardWeather.storeHazardWeather, {
           hazardId: job.hazardId,
           // The shallow bit rides in the body context, not the options object: it's a fact about the
-          // lake, not one of the tunable magnitudes (N6a / D69).
+          // lake, not one of the tunable magnitudes (A06a / D69).
           decayMultiplier: decayMultiplier(job.type, summary, {}, { isShallow: job.isShallow }),
           snowHidden: isSnowHidden(summary),
           weatherAdjustedAt: now,

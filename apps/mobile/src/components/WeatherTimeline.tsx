@@ -29,7 +29,7 @@ import { Text, XStack, YStack } from 'tamagui';
 import { useThemePreference } from '../providers/ThemeProvider';
 
 /**
- * The past-weather timeline — the native mirror of web's `WeatherTimeline` (N6h Workstream D).
+ * The past-weather timeline — the native mirror of web's `WeatherTimeline` (A06h Workstream D).
  *
  * **The picture is not re-derived here.** Every coordinate comes from `weatherTimelineModel` in
  * `@skating/core`, the same function the web app calls, and every color from `@skating/design`'s

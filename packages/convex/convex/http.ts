@@ -1,5 +1,5 @@
 /**
- * The HTTP router — the **first** in this repo (Phase 8).
+ * The HTTP router — the **first** in this repo (Phase 08).
  *
  * Everything else the app does runs over Convex's client protocol, where a call carries a Clerk
  * identity. OAuth can't: the provider redirects a *browser* back to us, with no session and no way to
@@ -34,7 +34,7 @@ import { OAUTH_STATE_TTL_SECONDS, stravaAuthorizeUrl } from './strava';
 const http = httpRouter();
 
 /**
- * Email unsubscribe (N8 PR 3 / D174). The link in every skater-facing email — and the
+ * Email unsubscribe (A08 PR 3 / D174). The link in every skater-facing email — and the
  * `List-Unsubscribe` header a mail client turns into its own button — lands here with no session.
  * The secret in `t` is the authorization and it authorizes one thing: the email channel goes off for
  * user `u`.
@@ -83,7 +83,7 @@ http.route({
 });
 
 /**
- * Clerk's webhook (N8 post-merge / D174 amendment): `user.updated` keeps the email and avatar
+ * Clerk's webhook (A08 post-merge / D174 amendment): `user.updated` keeps the email and avatar
  * mirrors on `profiles` current the moment they change, instead of at the person's next app open
  * (`profiles.syncFromClerk`). The case it exists for is the email channel's own user — someone who
  * changed their address and then didn't open the app for a season, still receiving the digest at

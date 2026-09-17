@@ -1,5 +1,5 @@
 /**
- * Reconcile the stored corpus against the NHD archive — campaign step 2 (N7, D93).
+ * Reconcile the stored corpus against the NHD archive — campaign step 2 (A07a, D93).
  *
  *   pnpm --filter @skating/etl reconcile --export     # corpus + NHD geometry → .scratch/ (once)
  *   pnpm --filter @skating/etl reconcile --match      # score + decide, offline (many times)

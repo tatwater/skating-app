@@ -1,5 +1,5 @@
 /**
- * **The `.raw/` response archive** — the whole reason this package is being rebuilt (N7-3).
+ * **The `.raw/` response archive** — the whole reason this package is being rebuilt (A07a-3).
  *
  * ## The regret this exists to prevent, stated plainly
  *

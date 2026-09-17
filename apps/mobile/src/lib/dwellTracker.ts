@@ -1,5 +1,5 @@
 /**
- * The on-device dwell singleton (Phase 9.5) — the runtime around the pure `dwell.ts` fold, the mobile
+ * The on-device dwell singleton (Phase 09b) — the runtime around the pure `dwell.ts` fold, the mobile
  * mirror of how `onIceMode` wraps `onIce`. Plain module state (not React): the on-ice watcher pushes a
  * resolved body id in on every fix from the layout, and the report form reads a suggested skate window
  * out when it opens — neither needs to re-render on the stream of observations in between.

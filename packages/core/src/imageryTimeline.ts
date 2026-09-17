@@ -1,6 +1,6 @@
 /**
  * One lake's freeze-up timeline: which frames the scrubber offers, and why it withholds the rest
- * (N6e §C1/§C4, D84, D150).
+ * (A06e §C1/§C4, D84, D150).
  *
  * ## The scrubber is this lake's observation record, not a regional calendar
  *
@@ -435,7 +435,7 @@ export function candidateFramesFor(
  * that fails this has no scrubber, not an empty one.
  *
  * **Do we know where it is?** `linkCoordinate` resolves `interiorPoint → representativePoint →
- * centroid`, in that order and for the reason N6c-1 measured: `centroid` is Turf's `pointOnFeature`
+ * centroid`, in that order and for the reason A06c-1 measured: `centroid` is Turf's `pointOnFeature`
  * and lands on the *shoreline*, 30.7 km from mid-lake on Champlain. A shoreline point is a fine place
  * to open a link from and a poor place to test granule coverage from, since it is the one point on the
  * body most likely to fall the wrong side of a boundary.

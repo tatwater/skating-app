@@ -1,5 +1,5 @@
 /**
- * The analytics rollups (Phase 7b). The properties worth pinning are the ones that make the whole
+ * The analytics rollups (Phase 07-2). The properties worth pinning are the ones that make the whole
  * pipeline trustworthy rather than merely present:
  *
  *  - **idempotence** — the 6-hourly job recomputes today and yesterday every run, and the backfill
@@ -518,7 +518,7 @@ describe('pruneClientSignals', () => {
 });
 
 /**
- * The distribution behind the one constant a skater ever feels (N5c / D78).
+ * The distribution behind the one constant a skater ever feels (A05c / D78).
  *
  * `RECURRENCE_PUBLIC_MIN_SEASONS` decides whether a pattern is shown or stays on the dashboard, and
  * "how many go public if I raise it" is only answerable as a histogram. If this miscounts, the bar

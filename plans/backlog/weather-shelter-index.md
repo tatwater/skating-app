@@ -1,12 +1,12 @@
 # Next-gen — A terrain-and-canopy wind shelter index, and the "where will I be sheltered tomorrow" map
 
-> **Scoped 2026-09-16 (N9 kickoff), post-alpha, unbuilt.** First doc in the backlog series:
+> **Scoped 2026-09-16 (A09 kickoff), post-alpha, unbuilt.** First doc in the backlog series:
 > plans the founder wants bundled for after the alpha, not sequenced into the N-phases. This one
-> grew out of N9's §Wind in a cove, where the honest conclusion was that a bay's wind rose is the 2 km
+> grew out of A09's §Wind in a cove, where the honest conclusion was that a bay's wind rose is the 2 km
 > cell's and *fetch* is the only bay-specific wind signal we can compute. This is the part fetch
 > cannot answer.
 >
-> **Depends on:** N9 (bays carry their own `fetchProfileM`); the wind pass (N7 step 11) for the
+> **Depends on:** A09 (bays carry their own `fetchProfileM`); the wind pass (A07a step 11) for the
 > loader shape; [`weather-stations.md`](./weather-stations.md) for the validation
 > data. **Blocks nothing.**
 
@@ -67,7 +67,7 @@ sixteen numbers and provenance, the `windRose` posture.
 | elevation | USGS 3DEP 1/3 arc-second, the same product D104 read through EPQS | **10 m** | range-reads from the USGS COGs on AWS (`s3://prd-tnm/StagedProducts/Elevation/13/TIFF/current/<tile>/USGS_13_<tile>.tif`, public) via GDAL `/vsicurl/` — one window per body, **no 4 GB download**, which retires D104's reason for choosing the point service |
 | tree canopy | USFS NLCD Tree Canopy Cover (CONUS), 2021 vintage | 30 m | one clip of the five-state region (~60 MB), kept in `.raw/` with a manifest, the bathymetry archive's discipline |
 
-The N9 scoping said "30 m DEM"; the 10 m product exists for all of CONUS and range-reads make it the
+The A09 scoping said "30 m DEM"; the 10 m product exists for all of CONUS and range-reads make it the
 same cost to touch, so the terrain term should use it. The canopy term is 30 m by the source's
 nature, and the provenance fields say so.
 
@@ -85,7 +85,7 @@ provenance path and a `waterBodies.setWindShelter` / `subAreas.setWindShelter` i
 
 **Price it on 20 lakes first** (Willoughby, Malletts Bay, a 12-acre Vermont pond, a Winnipesaukee
 cove, a Moosehead bay, a flat-country reservoir…) and record the numbers in this doc before running
-the corpus — the plan's own rule from N9.
+the corpus — the plan's own rule from A09.
 
 ---
 
@@ -94,7 +94,7 @@ the corpus — the plan's own rule from N9.
 - **`mostExposedSector`** (core) becomes `frequency × fetch × exposure`; today's two-term product
   stays as the fallback when no shelter row exists, so an un-run body renders byte-identically.
 - **`WindExposure`** (both clients) gains a second, dashed ring, captioned *"Shelter modeled from
-  terrain and tree cover (3DEP 10 m, NLCD 2021)."* The caption N9 puts on every rose — *the wind
+  terrain and tree cover (3DEP 10 m, NLCD 2021)."* The caption A09 puts on every rose — *the wind
   climate is the 2 km cell's* — stays; this does not remove that caveat, it narrows it.
 - The heatmap, below.
 
@@ -113,7 +113,7 @@ Two products fall out of the index, and they differ in how much new machinery th
 ### 1. A per-lake "harshness" number for a forecast hour — cheap, and comparable across lakes
 
 For a chosen hour (tomorrow 8 am), the forecast gives a wind **from**-direction and speed at the
-lake's browse cell (`weatherForecastCache`, already fetched and already bay-resolved since N6h).
+lake's browse cell (`weatherForecastCache`, already fetched and already bay-resolved since A06h).
 Look up the sector, and `harshness = speed × exposure[sector] × g(fetch[sector])` — the same three
 numbers `mostExposedSector` multiplies, with today's wind in place of the climatological frequency.
 That is a **per-body scalar per forecast hour**, computed at render from data both clients already
@@ -136,7 +136,7 @@ sector from the forecast hour and shade. The "compare tomorrow morning" view the
 multiple: three lakes, each shaded for the same hour.
 
 Sequence **1 before 2**: the scalar version validates the index on real winters for nearly nothing,
-and the tile version is a rendering phase in its own right (N6b-shaped: build, tile, R2, coverage
+and the tile version is a rendering phase in its own right (A06b-shaped: build, tile, R2, coverage
 table, reveal gate). Neither is scoped further here.
 
 ---

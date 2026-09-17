@@ -1,5 +1,5 @@
 /**
- * The lake-profile reveal flag (N6c-2, founder call 2026-08-09).
+ * The lake-profile reveal flag (A06c-2, founder call 2026-08-09).
  *
  * > *"I'd rather not forget to test something in the wild before the season starts just because I
  * > couldn't see it."*
@@ -47,11 +47,11 @@ export const PROD_CONVEX_DEPLOYMENT = 'diligent-guanaco-965';
 /**
  * The switch.
  *
- * **`true` while N6c-2's surfaces are being walked through**, so every slot is visible on dev and on
+ * **`true` while A06c-2's surfaces are being walked through**, so every slot is visible on dev and on
  * a device build. Flip to `false` once each has been seen — before the season, and certainly before
  * the first production deploy, though the guard below means forgetting is survivable.
  *
- * A code constant rather than an admin toggle, matching the Phase 7 posture the tuning page
+ * A code constant rather than an admin toggle, matching the Phase 07 posture the tuning page
  * documents: constants live in code and changing one means a redeploy. This is a constant.
  */
 export const PROFILE_REVEAL_ALL = true;

@@ -5,7 +5,7 @@
  * lake-hopping) in `expo-sqlite`, with photo files in `expo-file-system`, and flushes them on
  * reconnect. All the *I/O* is native + impure (sqlite, file reads, `fetch` uploads, Convex
  * mutations); everything *decision-shaped* lives here so it's unit-testable in isolation and shares
- * one contract with the eventual Phase 9 hazard-capture queue:
+ * one contract with the eventual Phase 09a hazard-capture queue:
  *   - the draft record shape + status machine (`pending → uploading → creating → done | error`),
  *   - **idempotent, checkpointed** flush orchestration (`flushDraft`) — each photo's `storageId` /
  *     `photoId` is persisted the instant it lands, so a lost-ack retry *resumes* (reusing uploaded
@@ -69,7 +69,7 @@ export interface ReportDraft {
   form: ReportFormState;
   photos: DraftPhoto[];
   /**
-   * The **local** id of a recorded track this report describes (Phase 8). Both may be captured offline
+   * The **local** id of a recorded track this report describes (Phase 08). Both may be captured offline
    * on the same lake, so neither has a server id at capture time; the flush resolves this to an
    * `activityId` once the track has been ingested (`TrackFlushEffects` → `resolveActivityId`).
    */
@@ -162,7 +162,7 @@ export interface DraftFlushEffects {
     coord?: LatLng;
   }): Promise<string>;
   /**
-   * Resolve a local track-draft id to its server `gpsActivities` id (Phase 8), flushing the track
+   * Resolve a local track-draft id to its server `gpsActivities` id (Phase 08), flushing the track
    * first if it hasn't landed yet. Returns `null` when the track can't be sent — the report then goes
    * out **without** a path rather than waiting, because a report never requires one (D24) and the
    * observation about the ice is the part that matters.
@@ -268,7 +268,7 @@ export async function flushDraft(
       }
     }
 
-    // 4. Resolve a linked recorded track to its server id (Phase 8). Best-effort by design: a track
+    // 4. Resolve a linked recorded track to its server id (Phase 08). Best-effort by design: a track
     //    that can't be sent must not hold back the report, so a null resolution just drops the path.
     let activityId = d.activityId;
     if (activityId === undefined && d.trackDraftId !== undefined && effects.resolveActivityId) {

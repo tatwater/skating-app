@@ -1,16 +1,16 @@
-# Phase 7 — Operator surface (admin, moderation, dedup review, analytics)
+# Phase 07 — Operator surface (admin, moderation, dedup review, analytics)
 
-> **Status:** ✅ Complete on dev (prod deferred), 2026-07-24. PR 7a (operator core) merged as #24;
-> PR 7b (analytics & tuning) on branch `phase-7b-analytics-tuning`. All green: core 653 / convex 480 /
-> web 152 / mobile 76. Detailed build plan for the roadmap's Phase 7 (D37/D38 + the D49/D52/D56/D57
+> **Status:** ✅ Complete on dev (prod deferred), 2026-07-24. PR 07-1 (operator core) merged as #24;
+> PR 07-2 (analytics & tuning) on branch `phase-07-2-analytics-tuning`. All green: core 653 / convex 480 /
+> web 152 / mobile 76. Detailed build plan for the roadmap's Phase 07 (D37/D38 + the D49/D52/D56/D57
 > tuning surfaces). Decisions settled with the founder in the 2026-07-23 planning session — see
-> **Settled decisions** below; **build deltas are recorded in `07-roadmap.md` → Phase 7**.
+> **Settled decisions** below; **build deltas are recorded in `07-roadmap.md` → Phase 07**.
 >
 > **The one-line shape:** a **role-gated `/admin` route tree inside the existing web app** (D37 — not
 > a second app), mobile-responsive but web-only (no Expo surface), organized as **work queues +
 > a read-only "control-room" of every tunable constant paired with the chart that tells you if it's
 > set right.** Most of the *backend* (roles, audit log, flag/support/dedup schema, posting-permission
-> enforcement, takedown mutations) already shipped in Phases 3/6/9/10 — Phase 7 is mostly the **admin
+> enforcement, takedown mutations) already shipped in Phases 03/06/09a/10 — Phase 07 is mostly the **admin
 > UI + the admin-facing query/queue layer + user-lifecycle mutations + analytics instrumentation.**
 
 ---
@@ -38,18 +38,18 @@
 4. **Charts = shadcn/ui `chart` components (Recharts underneath).** shadcn is the house component DX;
    its `chart` primitive wraps Recharts and themes off our design tokens. No bespoke SVG, no raw Recharts.
 5. **Two PRs** (per the "bundle-by-phase, split when it helps" rule; Greptile is metered):
-   - **PR 7a — Operator core:** route tree + chrome, admin queue queries, user-lifecycle + merge +
+   - **PR 07-1 — Operator core:** route tree + chrome, admin queue queries, user-lifecycle + merge +
      support mutations, `canPostComments`, Resend alerts, audit.
-   - **PR 7b — Analytics & tuning:** `bountyGateEvents` + `metricSnapshots`, the cron rollups, the
+   - **PR 07-2 — Analytics & tuning:** `bountyGateEvents` + `metricSnapshots`, the cron rollups, the
      control-room + charts.
 6. **Contact-support / report-a-bug ships on BOTH web and mobile** (the one Expo-touching bit — a
    *submission* path, not the operator surface). Appeals/reinstatement reuse `supportTickets`
    (`category: account`), not a new table.
 7. **Founder bootstraps their own `admin` role** via the Clerk/Convex dashboards (no seed mutation
    needed).
-8. **Dedup review may be near-empty until Phase 8** (match-on-create + user-drawn bodies is Phase 8).
-   Build the merge mutation + queue UI now (schema's ready, cheap); expect ~zero rows until Phase 8.
-   See **Phase-8-deferred** checklist.
+8. **Dedup review may be near-empty until Phase 08** (match-on-create + user-drawn bodies is Phase 08).
+   Build the merge mutation + queue UI now (schema's ready, cheap); expect ~zero rows until Phase 08.
+   See **Phase-08-deferred** checklist.
 
 ---
 
@@ -77,7 +77,7 @@ Prior phases shipped most of the operator *backend*. Verified against `packages/
 
 ---
 
-## What Phase 7 must build
+## What Phase 07 must build
 
 ### Backend — new Convex functions/tables
 
@@ -118,7 +118,7 @@ founder on every new `supportTickets` row and every safety-priority flag (`unsaf
 action **no-ops (logs) when the key is absent** so it never blocks the build. Founder drops real keys +
 verifies the domain at the end (see **Resend checklist**).
 
-### Backend — analytics (PR 7b)
+### Backend — analytics (PR 07-2)
 
 Two tables + a cron, chosen to **avoid the read-cap-fragile whole-corpus-at-read-time trap** (the
 `listInViewport` PR#10/#11 lesson):
@@ -130,7 +130,7 @@ Two tables + a cron, chosen to **avoid the read-cap-fragile whole-corpus-at-read
 - **`metricSnapshots`** (daily cron rollups) — `{ metric, date, scalar?, buckets?: number[], meta? }`.
   A `crons.ts` job computes bounded aggregates once/day (histograms as `buckets`, rates as `scalar`,
   time series as one row/day). Charts read snapshot rows — **never** scan the live corpus. This is the
-  Phase-4 contribution-counter "maintain-on-write / sweep-by-cron" pattern generalized to metrics.
+  Phase-04 contribution-counter "maintain-on-write / sweep-by-cron" pattern generalized to metrics.
 - Small, bounded live counts (flag-queue depth, oldest-open age) can be **computed live** off existing
   indexes — no snapshot needed.
 
@@ -173,7 +173,7 @@ The operator surface is **not only** the `/_admin` tree. A moderator reading the
 able to **act from where they are** — see a hateful comment in a thread, hide it *there*; open a report
 drawer with a dangerously-false "ice is great" claim, take it down *there* — without hunting for it in a
 queue. This is the natural extension of the already-shipped `src/components/ModeratorActions.tsx` (a
-role-gated Hide/Remove dialog already dropped into report/comment views). Phase 7 **broadens that pattern
+role-gated Hide/Remove dialog already dropped into report/comment views). Phase 07 **broadens that pattern
 across the web app's existing surfaces** (web only — mobile has no operator affordances):
 
 - **Report drawer / hazard pin / comment / photo:** hide / remove / restore + resolve-flag inline (extend
@@ -192,7 +192,7 @@ front-ends over one audited backend. Admin-only actions (role grant/revoke) neve
 
 ## Analytics spec — every magic number ↔ the chart that tunes it
 
-`[CORE]` = built in PR 7b now. `[LATER]` = documented, built when corpus/traffic justifies.
+`[CORE]` = built in PR 07-2 now. `[LATER]` = documented, built when corpus/traffic justifies.
 Constants cited by their `@skating/core` names.
 
 **Bounties** — `FRESH_REPORT_HOURS=48`, `BOUNTY_REOPEN_FREEZING_DEGREE_HOURS=180`,
@@ -231,7 +231,7 @@ Constants cited by their `@skating/core` names.
 - **[LATER]** Archive-vs-re-report rate (D15 resurface) — high = archiving too eagerly.
 
 **Display / map** — `DISPLAY_AREA_MIN/MAX_SQM`, `minVisibleZoom` curve, `curatedBoost`,
-`MAX_VIEWPORT_LIMIT` *(256 when this was written; **1,000 since N1**, and now a render budget rather
+`MAX_VIEWPORT_LIMIT` *(256 when this was written; **1,000 since A01**, and now a render budget rather
 than a read-cap guard — a viewport read is bounded by the cell index, not by this number)*
 - **[CORE-lite]** **Viewport-truncation frequency** — the D5 truncation log **already exists**;
   surfacing how often it fires flags when the render budget / curve is dropping bodies. Cheap.
@@ -257,7 +257,7 @@ rates; low tuning value until notification volume exists.
 - **Photo-orphan count** — feeds the deferred GC cron decision (roadmap Later).
 - **Weather-since strip** render vs `aged` split (`minAgeHours=6`, `maxAgeDays=14`) — low priority.
 - **Report-rejected-for-future-skate-time** rate (`SKATE_TIME_FUTURE_TOLERANCE_MS=1h`) — low priority.
-- Per-`adminArea`/state **coverage** (bodies + reports) — informs Phase 2.5 regional expansion.
+- Per-`adminArea`/state **coverage** (bodies + reports) — informs Phase 02b regional expansion.
 
 > **Standing ask (founder, 2026-07-23):** as we build, flag anything else worth charting or at least
 > tracking as a single numeric stat — "I know there are things we're missing." Add them here.
@@ -294,7 +294,7 @@ mutations gate at moderator; role-grant/revoke and support/tuning stay admin. Ev
 
 ## Commit breakdown
 
-**PR 7a — Operator core**
+**PR 07-1 — Operator core**
 1. `canPostComments` field + `assertCanPostComments` + `comments.create` gate (+ tests).
 2. **Re-gate to moderator:** `setCuratedBoost` + `bodyFeatures.create`/`promote`/`demote` from admin →
    moderator (+ update tests).
@@ -310,7 +310,7 @@ mutations gate at moderator; role-grant/revoke and support/tuning stay admin. Ev
    water bodies, hazards, photos) — same server-gated mutations, web only.
 9. Resend action + React Email templates behind **placeholder env** (no-op without key).
 
-**PR 7b — Analytics & tuning** *(built as 7 commits, 2026-07-24)*
+**PR 07-2 — Analytics & tuning** *(built as 7 commits, 2026-07-24)*
 1. `metricSnapshots` + `bountyGateEvents` schema + the `@skating/core` metric vocabulary + write helpers.
 2. Instrument the bounty gate — refactor `createChecked` from throw-to-reject into a returned decision
    so `suppressed`/`capped` events survive the transaction; append one gate event per attempt.
@@ -323,28 +323,28 @@ mutations gate at moderator; role-grant/revoke and support/tuning stay admin. Ev
 7. `admin.index` app-health strip + `admin.tuning` control-room + the contributor-trend panel on
    `admin.users.$id`.
 
-**Naming note:** 7a shipped the route tree as **pathful `admin.*.tsx`** files (not the pathless
+**Naming note:** 07-1 shipped the route tree as **pathful `admin.*.tsx`** files (not the pathless
 `_admin.*.tsx` sketched below) — TanStack resolves the gate + chrome from `admin.tsx` all the same.
 Follow the code.
 
 ---
 
-## Phase-8-deferred (dedup) — ✅ RESOLVED 2026-07-24
+## Phase-08-deferred (dedup) — ✅ RESOLVED 2026-07-24
 
-> **Phase 8 shipped the producer.** `waterBodies.create` is no longer a scaffold: it takes a recorded
+> **Phase 08 shipped the producer.** `waterBodies.create` is no longer a scaffold: it takes a recorded
 > `activityId`, derives the polygon from the trusted path, runs `findMatchCandidates`, and stamps
 > `dedupStatus` / `duplicateCandidateIds` — so the merge queue built here finally has rows flowing
 > into it. `DEDUP_STATUSES` gained **`near_certain`** and `listDedupCandidates` surfaces both tiers,
 > near-certain first. **Still deferred** (unchanged): the re-ETL overlap scan, auto-merge of
 > very-high-confidence pairs, and community "same place?" confirmations. Original note follows.
 
-Dedup review will be near-empty until Phase 8 ships match-on-create + user-drawn bodies (`waterBodies.create`
-is still a scaffold with no dedup). Built now: the **merge mutation + review-queue UI**. Deferred to Phase 8:
+Dedup review will be near-empty until Phase 08 ships match-on-create + user-drawn bodies (`waterBodies.create`
+is still a scaffold with no dedup). Built now: the **merge mutation + review-queue UI**. Deferred to Phase 08:
 - Populating `dedupStatus: suspected_duplicate` + `duplicateCandidateIds` at create time (the
   `findMatchCandidates` bbox + geospatial + Turf IoU / name-similarity scan — D36).
 - Re-ETL overlap scan (auto-merge user→official at high confidence).
 - Auto-merge of very-high-confidence pairs + community "same place?" confirmations.
-The Phase-7 merge UI should degrade gracefully to an empty queue until then.
+The Phase-07 merge UI should degrade gracefully to an empty queue until then.
 
 ---
 
@@ -391,7 +391,7 @@ pnpm --filter @skating/convex exec convex env set --prod OPERATOR_ALERT_EMAIL 'd
   recipients means a bad key or from-address (check the Convex logs, which name which).
 - [ ] **Promote at least one moderator on prod** before November. `broadcastToStaff` mails active
   moderators and admins; with only the founder's admin account the season alerts reach one person,
-  which is the N2 open call arriving with a deadline attached.
+  which is the A02 open call arriving with a deadline attached.
 - Until done: every alert action logs-and-skips; no email sends, build unblocked.
 
 ---
@@ -410,9 +410,9 @@ pnpm --filter @skating/convex exec convex env set --prod OPERATOR_ALERT_EMAIL 'd
   metric per day is tiny; revisit only if it grows). `bountyGateEvents` — the one append-per-attempt
   table — is **pruned at 180d** by the daily cron, both to bound storage and because it carries
   `requesterId` (don't keep a permanent behavioural record). Days are UTC (`metricDay`).
-- **Clerk lock mechanism** — resolved in 7a (`banUser`/`unbanUser` lock/unlock the Clerk user via the
+- **Clerk lock mechanism** — resolved in 07-1 (`banUser`/`unbanUser` lock/unlock the Clerk user via the
   Backend API from a Convex action; unban fully reverses). Not touched in 7b.
-- **Metric channels** (settled during 7b): three ways a number enters the surface — a **rollup** (cron,
+- **Metric channels** (settled during 07-2): three ways a number enters the surface — a **rollup** (cron,
   backfillable), a **maintain-on-write counter** (event site, forward-only, for events that leave no
   queryable trace), and a narrow **client signal** (`analytics.recordClientSignal`, allowlisted +
   authenticated, only for the future-skate rejection the server can't see). Nothing that gates content,
@@ -423,15 +423,15 @@ pnpm --filter @skating/convex exec convex env set --prod OPERATOR_ALERT_EMAIL 'd
 
 ## Relocated from the roadmap (2026-09-16)
 
-*The roadmap entry for Phase 7 as it stood before the 2026-09-16 rewrite, kept verbatim so nothing it said is lost. The roadmap now carries a one-paragraph summary; this is the long form.*
+*The roadmap entry for Phase 07 as it stood before the 2026-09-16 rewrite, kept verbatim so nothing it said is lost. The roadmap now carries a one-paragraph summary; this is the long form.*
 
-### Phase 7 — Operator surface (admin, moderation, dedup review) ✅ Complete (dev; prod deferred) (2026-07-24)
+### Phase 07 — Operator surface (admin, moderation, dedup review) ✅ Complete (dev; prod deferred) (2026-07-24)
 *(The founder-facing back office — the second half of the old combined phase.)*
 > **Detailed build plan:** [`phases/07-operator-surface.md`](./07-operator-surface.md) (planning
 > session 2026-07-23; D37/D38 + the D49/D52/D56/D57 tuning surfaces). Read-only config control-room,
 > in-house Convex analytics, in-context moderation across the web app, two PRs (operator core + analytics).
 >
-> **Shipped:** PR 7a (operator core — merged, #24) + PR 7b (analytics & tuning). Two Convex tables
+> **Shipped:** PR 07-1 (operator core — merged, #24) + PR 07-2 (analytics & tuning). Two Convex tables
 > (`metricSnapshots` daily rollups, `bountyGateEvents` forward-only per-attempt), a `@skating/core`
 > metric vocabulary, maintain-on-write counters for the events that leave no trace (contradiction
 > funnel, flag dispositions, future-skate-time rejections), three rollup crons (6-hourly recompute,
@@ -439,7 +439,7 @@ pnpm --filter @skating/convex exec convex env set --prod OPERATOR_ALERT_EMAIL 'd
 > contributor-trend query, a validated Recharts chart kit (dataviz-checked palette), and the
 > `/admin/tuning` control-room + dashboard app-health strip + trust-trend panel.
 >
-> **Key build deltas vs this plan (settled 2026-07-23/-24 — the phase-7 doc is authoritative):**
+> **Key build deltas vs this plan (settled 2026-07-23/-24 — the phase-07 doc is authoritative):**
 > - **Config is a read-only control-room, NOT editable-in-dash.** The "admin UI to *edit* the
 >   displayScore curve / HAZARD_DECAY / FRESH_REPORT_HOURS" bullets below are superseded: the founder
 >   works with a coding agent, so *editing the constant in `@skating/core` and redeploying* is the
@@ -472,7 +472,7 @@ pnpm --filter @skating/convex exec convex env set --prod OPERATOR_ALERT_EMAIL 'd
   (that one stays editable — it's per-row data). Constants stay in `@skating/core`; the control-room
   surfaces the live value + its chart so they're **never buried in code** a non-engineer can't *see*
   (edit = change the constant + redeploy, per the settled decision above).
-- **Hazard-tuning surface (D52/D54, from Phase 9):** same read-only pattern for hazards — the
+- **Hazard-tuning surface (D52/D54, from Phase 09a):** same read-only pattern for hazards — the
   `HAZARD_DECAY` per-type durations live in `hazardDecay.ts`, checked against the
   `hazard_confirm_outcomes` + `hazard_age_at_confirm_h` charts (a type confirmed "still here" past its
   stale line is decaying too fast). The confirm/removal thresholds are likewise constants + their charts.
@@ -490,7 +490,7 @@ pnpm --filter @skating/convex exec convex env set --prod OPERATOR_ALERT_EMAIL 'd
   would-be-block to allow). Too-many dots clustered just under the line ⇒ bounties open too easily (raise
   the reopen thresholds / base window); a flat-zero reopen rate through a real thaw ⇒ too hard (lower them).
   The event log is also the honest input for the Phase-10-deferred **decay-magnitude refit**.
-- **Known seasonal body features (D53, from Phase 9):** a moderator surface to **promote** a recurring
+- **Known seasonal body features (D53, from Phase 09a):** a moderator surface to **promote** a recurring
   hazard into a persistent **`bodyFeatures`** attribute (spring/current, constriction, bridge-narrows,
   recurring pressure ridge) and to **demote** one — so a permanent risk stops needing user re-marking.
   Includes the **`hazard` flag queue** (`contentFlags.targetType: hazard`) to hide a bad/malicious pin.
@@ -500,7 +500,7 @@ pnpm --filter @skating/convex exec convex env set --prod OPERATOR_ALERT_EMAIL 'd
   panel**: the private, non-scoring **contradiction counter** (from the Phase-10 D56 signal) shown
   *alongside* a **good-vs-bad reports trend over time**, deliberately **tenure-aware** so a 10-year
   contributor and a 1-month account with the same raw count are obviously distinguishable at a glance.
-  - **3rd lever — `canPostComments` (boolean, D57 extension): ✅ BUILT in Phase 7** *(status corrected
+  - **3rd lever — `canPostComments` (boolean, D57 extension): ✅ BUILT in Phase 07** *(status corrected
     2026-07-24 — this read "planned")*. Comments are free-text content, so a boolean revocation fits; its
     point is muting a toxic commenter *without* silencing their safety reports. Enforced in
     `comments.create` via `assertCanPostComments` (`lib/auth.ts`); optional/migration-free. See D57.

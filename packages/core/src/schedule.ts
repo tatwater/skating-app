@@ -1,13 +1,13 @@
 /**
- * Pure scheduling helpers (Phase 4, decision #4) — the "next 8pm ET" instant the notification digest
+ * Pure scheduling helpers (Phase 04, decision #4) — the "next 8pm ET" instant the notification digest
  * flushes at. Kept framework-free + injectable (`nowMs`) so it's deterministic in tests and shared by
  * the Convex enqueue path.
  *
- * The zone primitives live in `zonedTime.ts` — they moved there when N6e's posted-access rules needed
+ * The zone primitives live in `zonedTime.ts` — they moved there when A06e's posted-access rules needed
  * the same `Intl` parse and the same DST correction.
  *
  * Per-user local-time / true-sunset timing is deferred (single-timezone pilot) — see the roadmap.
- * **N6e did not reopen that**: `solar.ts` computes sunrise/sunset for *display* in the lake drawer and
+ * **A06e did not reopen that**: `solar.ts` computes sunrise/sunset for *display* in the lake drawer and
  * is deliberately not imported here.
  */
 

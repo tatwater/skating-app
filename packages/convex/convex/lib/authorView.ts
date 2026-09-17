@@ -1,5 +1,5 @@
 /**
- * Public author attribution, derived in exactly one place (N3).
+ * Public author attribution, derived in exactly one place (A03).
  *
  * Four surfaces build this shape — the feed card, the report detail, the comment thread and the bounty
  * list — and they had four copies of the same three lines. That was harmless until deletion arrived,

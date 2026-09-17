@@ -20,13 +20,13 @@ export const env = {
   // archive's edge. ~45 MB, hosted alongside the basemap. Blank ⇒ the map falls back to the
   // single-source style, which renders but stops dead outside the region. Public.
   worldPmtilesUrl: import.meta.env.VITE_WORLD_PMTILES_URL ?? '',
-  // Bathymetric contours (N6b). A SECOND `.pmtiles` archive, hosted alongside the basemap and added
+  // Bathymetric contours (A06b). A SECOND `.pmtiles` archive, hosted alongside the basemap and added
   // to the style only while a lake's drawer is open (D81). Blank ⇒ the layer never mounts, which is
   // the correct behaviour rather than a degraded one: contours are decoration under D82, so an
   // unconfigured deployment simply shows a flat lake exactly as it does for the majority of bodies
   // that no agency ever surveyed. Public.
   bathymetryPmtilesUrl: import.meta.env.VITE_BATHYMETRY_PMTILES_URL ?? '',
-  // The freeze-up archive (N6e, D148) — a *base URL*, not a file, because unlike the three above this
+  // The freeze-up archive (A06e, D148) — a *base URL*, not a file, because unlike the three above this
   // is a directory of thousands of `.pmtiles` frames plus the JSON index that lists them. The client
   // composes addresses from it with `archiveUrl` and keys the artifacts carry, so dev and prod can
   // point at different buckets without anything in the archive knowing which one it landed in.

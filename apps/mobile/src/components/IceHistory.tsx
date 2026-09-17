@@ -11,7 +11,7 @@ import { Paragraph, YStack } from 'tamagui';
 import { Section } from './detailUi';
 
 /**
- * *Ice history* — what several winters said about one spot (N5c / §9, D78). The mobile half of the
+ * *Ice history* — what several winters said about one spot (A05c / §9, D78). The mobile half of the
  * web component of the same name, reading the same server decision and the same core copy.
  *
  * **It is not a hazard**, and the differences are the design: no pin, no halo, no confirm loop, no

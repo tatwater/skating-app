@@ -1,5 +1,5 @@
 /**
- * The past-weather panel's copy (N6h Workstream C).
+ * The past-weather panel's copy (A06h Workstream C).
  *
  * ## Why the formatting lives in core rather than in each client
  *
@@ -199,7 +199,7 @@ export function shortDayLabel(localDate: string): string {
  * So the shift is read back out with **UTC getters**, which is correct precisely because the value is
  * already local. Same rule as `shortDayLabel` and `monthDayLabel` above, for the same reason.
  *
- * This exists ahead of the hourly panel that will need it (N6h Workstream D) so the obvious function
+ * This exists ahead of the hourly panel that will need it (A06h Workstream D) so the obvious function
  * is also the right one — a note in a docblock is not protection when the code is written weeks later.
  */
 export function formatLocalHourLabel(startMs: number): string {

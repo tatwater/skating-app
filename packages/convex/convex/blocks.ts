@@ -2,7 +2,7 @@
  * Block functions (D32). A block is one bidirectional `blocks` row — "hide this person from me and
  * me from them" — with no follow graph to unwind (D13). Block == mute (one feature).
  *
- * What a block does (Phase 3, D3): it hides the other user's **profile** (both ways) and their
+ * What a block does (Phase 03, D3): it hides the other user's **profile** (both ways) and their
  * **comments**, and de-emphasizes their **report** author line with a "Blocked" chip — but it NEVER
  * hides their reports (a safety observation must stay in the commons). The block *set* is consumed by
  * `loadBlockedAuthorIds` (`lib/reportVisibility.ts`); this module owns the writes + the settings list.

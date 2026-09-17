@@ -1,5 +1,5 @@
 /**
- * The inbox resolver (N8/A2): stored rows → `NotificationView`s a client can render.
+ * The inbox resolver (A08/A2): stored rows → `NotificationView`s a client can render.
  *
  * A notification row is ids in a `v.any()` payload. Rendering "Ellie found your report on Lake Morey
  * helpful" means resolving those ids, and the resolution has to survive the content having changed
@@ -7,10 +7,10 @@
  *
  * - **The target may be hidden or removed** (D32). The row renders degraded — `available: false`,
  *   described as "a report that's no longer available" — and is never a dead tap. It must not vanish
- *   either: a disappearing inbox row reads like a bug (founder call, N8 #5).
+ *   either: a disappearing inbox row reads like a bug (founder call, A08 #5).
  * - **The actor may have departed.** Under D62 they're anonymized, not erased, so names come through
  *   `publicAuthor` — the same tombstone shape every other surface uses — rather than a new fallback.
- * - **The actor may be blocked.** Block == mute (Phase 3): a block doesn't hide content, but it must
+ * - **The actor may be blocked.** Block == mute (Phase 03): a block doesn't hide content, but it must
  *   not ring your phone. Actor-keyed rows are filtered through the viewer's block set at **read**
  *   time, so a block applies to old rows too; a row with no unblocked actors left is dropped.
  * - **The payload may be a shape this code has never seen** — a row from before the payloads were
@@ -18,7 +18,7 @@
  *   renders as the `unknown` variant instead of throwing the page away.
  *
  * Every referenced document is loaded once per page through a memo, so a page of thirty rows about
- * the same lake costs one body read, not thirty — the N+1 shape N1 dug out of the read path stays out.
+ * the same lake costs one body read, not thirty — the N+1 shape A01 dug out of the read path stays out.
  */
 
 import {
@@ -315,7 +315,7 @@ async function resolveOne(
         target: { id: payload.reportId, available: report?.moderationStatus === 'visible' },
         body: await bodyRef(load, payload.waterBodyId),
         count: payload.count,
-        // The bay, off the report's own stamp (N9) — a bucket of one is about one place. Read from
+        // The bay, off the report's own stamp (A09) — a bucket of one is about one place. Read from
         // the report already in hand rather than the bay row, so a rename that has not been
         // re-stamped yet reads the way the feed card does.
         ...(payload.count === 1 && report?.subAreaName !== undefined

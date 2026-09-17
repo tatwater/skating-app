@@ -2,11 +2,11 @@
 
 A bounty is one skater saying **"someone please go get fresh eyes on this lake."** This doc
 covers its whole life — when you're allowed to open one, how long a recent report *suppresses*
-new ones, how weather reopens them, and when they expire (Phase 6 D10/D17/D44; the decay-based
+new ones, how weather reopens them, and when they expire (Phase 06 D10/D17/D44; the decay-based
 freshness gate is Phase 10 §7c, D56).
 
 > **Who this is for.** Anyone tuning bounty behavior. The numbers are **admin-tunable defaults**
-> (Phase 7) living in `packages/core/src/reputationConfig.ts`, the shared
+> (Phase 07) living in `packages/core/src/reputationConfig.ts`, the shared
 > [reputation](./user-reputation.md) tuning surface. Note the "decay" here is a *freshness
 > window on the suppressing report*, not a decay of the bounty itself.
 
@@ -42,7 +42,7 @@ Two things worth setting straight up front:
 
 ## The decay-based freshness window (§7c)
 
-Phase 6 shipped a hard cutoff: any report within `FRESH_REPORT_HOURS = 48` blocked a bounty.
+Phase 06 shipped a hard cutoff: any report within `FRESH_REPORT_HOURS = 48` blocked a bounty.
 Phase 10 replaced that with a **weighted window** — the same 48 h *base*, stretched or shrunk by
 how much that report is worth as "fresh eyes" (`packages/core/src/bounties.ts`):
 
@@ -68,7 +68,7 @@ windowHours = base × (1 + thumbBoost + trustBoost)          (never negative)
   suppressing reports.
 - **`BOUNTY_FRESH_MAX_REPORTS = 10`** — cap on suppressing reports evaluated per create (newest
   first), bounding the read fan-out. `OPEN_BOUNTY_SCAN_CAP = 200` caps the open-bounty index scan, and
-  the per-body recent-report window is capped alongside it (N1) — both log what they drop.
+  the per-body recent-report window is capped alongside it (A01) — both log what they drop.
 
 A body is "too fresh to bounty" when *any* report is still inside its own weighted window (judged
 on `skateEndTime`, the freshest read of the ice, so a late-synced offline report still counts by

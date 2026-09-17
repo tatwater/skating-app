@@ -1,6 +1,6 @@
 /**
  * 3DHP acquisition and provenance — the third canonical-water catalogue, and the only one with a
- * future (N7).
+ * future (A07a).
  *
  * ## Why this exists at all, when NHD is already archived
  *
@@ -34,7 +34,7 @@
  *
  * **It cannot be the identity spine.** Its Waterbody layer carries `id3dhp`, `mainstemid` and
  * `gnisid` — and **no `Permanent_Identifier`, no `ReachCode`** (checked 2026-08-03). Every
- * reconciliation measurement in the N7 plan keys on `Permanent_Identifier`, including the five OSM
+ * reconciliation measurement in the A07a plan keys on `Permanent_Identifier`, including the five OSM
  * duplicate pairs and the whole Maine MIDAS linkage. If 3DHP wins D92 on geometry, it wins as a
  * `geometrySource` value on a record whose identity is still OSM ↔ NHD.
  *

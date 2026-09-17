@@ -7,7 +7,7 @@
  * `[0]` silently mails the wrong address for anyone with two), the log-and-return-null contract, and
  * the missing-key branch.
  *
- * **Since N8 PR 3 this is the fallback, not the design.** The primary address is mirrored onto
+ * **Since A08 PR 3 this is the fallback, not the design.** The primary address is mirrored onto
  * `profiles.email` from the JWT's `email` claim — written at onboarding (`upsertFromClerk`) and
  * refreshed on every app open (`syncFromClerk`) — so a user-scale send reads the row, not Clerk.
  * This lookup remains for what the mirror can't cover: a profile whose token never carried the claim

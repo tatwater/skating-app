@@ -1,17 +1,17 @@
-# Phase 2.5 build plan — Regional expansion (Northeast skating states)
+# Phase 02b build plan — Regional expansion (Northeast skating states)
 
 > **✅ COMPLETE on dev (2026-07-15, PR #14); prod deferred** (Convex prod uninitialized by decision).
 > All workstreams executed — see "Progress" below. The prod pass (re-run the loader + tiles + env
 > against a prod deployment) waits until prod exists.
 
 The execution runbook for **Workstream H** of [`phases/02a-map-and-reports.md`](./02a-map-and-reports.md)
-(§H) and **Phase 2.5** of [`07-roadmap.md`](../07-roadmap.md). Design rationale lives in those docs
+(§H) and **Phase 02b** of [`07-roadmap.md`](../07-roadmap.md). Design rationale lives in those docs
 and the decisions log (D5/D6/D48/D49); this doc is the *how* — the ordered ops runbook, the small
 code changes, and the tuning knobs.
 
 > **Goal.** Widen the pilot's **single-state Vermont** corpus + basemap to the Northeast
 > **lake-skating** states — **NY (north of the NYC/Long Island metro), VT, NH, ME, MA** — with **no
-> new app features**. Pure data + infra: re-run the Phase 1 ETL per state, build one multi-state
+> new app features**. Pure data + infra: re-run the Phase 01 ETL per state, build one multi-state
 > `.pmtiles` and host it on **Cloudflare R2**, then (last) widen the map bounds so a skater anywhere
 > in the region opens the app onto their lakes.
 
@@ -20,7 +20,7 @@ code changes, and the tuning knobs.
 - **§1 Water data — ✅ DONE (dev).** Per-state Geofabrik extracts (dated 2026-07-14 builds) → NY clip
   at lat 41.3 (`osmium extract --bbox=-79.9,41.3,-71.8,45.1`, dropped 481→272 MB) → filter/transform/
   load. Inserted (dev `agile-bee-397`): **NH 15,458 · ME 25,541 · MA 30,219 · NY 34,885** (+ VT's
-  ~9,970 from Phase 1) ≈ **116k bodies**, ~452 border-dedup updates (Champlain etc., idempotent on
+  ~9,970 from Phase 01) ≈ **116k bodies**, ~452 border-dedup updates (Champlain etc., idempotent on
   `source+externalId`). **Zero read-cap errors** across the whole import. *(Redownload note: the
   `-latest` URLs now 302-redirect to dated builds — fetch needs `curl -L`.)*
 - **Lake search box — ✅ DONE (decided 2026-07-15, folded into 2.5).** The 116k corpus made
@@ -52,21 +52,21 @@ code changes, and the tuning knobs.
   Dillenbeck, Saranac Lake → not-found), and a few (South Bay, Button Bay, Half Moon Cove, Foster
   Pond → matched Maine namesakes; Mill Pond → a NY namesake) **mis-matched a same-named body
   elsewhere** — the seed has no coordinates, so the name→body map isn't clean. This is exactly the
-  curation the **Phase 7 admin water-body UI** owns (set/adjust/remove per-body boost with the map in
-  front of you). Mechanism proven; data curation is Phase 7.
+  curation the **Phase 07 admin water-body UI** owns (set/adjust/remove per-body boost with the map in
+  front of you). Mechanism proven; data curation is Phase 07.
 - **Prod — ⬜ DEFERRED** (Convex prod uninitialized, as planned).
 
 ## Status / prerequisites
 
 - **Runs after the mobile MVP.** F1 (online loop) shipped 2026-07-14 (PR #13); F2 (offline queue)
   is **deferred past this** by decision (2026-07-14) — F2 is orthogonal (mobile-only draft queue),
-  nothing in H depends on it, so H goes first. This branch (`phase-2.5-regional-expansion`) is
-  **stacked on `phase-2-mobile-f1`**, which is stacked on `phase-2-web`; H's PR chains behind #12 → #13.
+  nothing in H depends on it, so H goes first. This branch (`phase-02b-regional-expansion`) is
+  **stacked on `phase-02a-mobile-f1`**, which is stacked on `phase-02a-web`; H's PR chains behind #12 → #13.
 - **Import target: dev only.** Convex **prod is still uninitialized** (never deployed; blocked on
   Clerk prod env vars), so the whole of H targets the **dev** deployment (`agile-bee-397`). Prod
   import + tile host is a later pass once prod exists.
 - **Operator prerequisites (yours to set up before the run):**
-  - `osmium-tool`, `GDAL`, `pmtiles` CLIs (already used in Phase 1 — see the ETL/basemap READMEs).
+  - `osmium-tool`, `GDAL`, `pmtiles` CLIs (already used in Phase 01 — see the ETL/basemap READMEs).
   - A **Cloudflare R2** bucket + credentials, and **`rclone`** configured with an R2 remote (below).
 
 ## Settled decisions (2026-07-14)
@@ -99,7 +99,7 @@ code changes, and the tuning knobs.
 
 ## §1 — Water data: per-state ETL into dev Convex
 
-Re-run the Phase 1 pipeline (see [`scripts/etl/README.md`](../../scripts/etl/README.md)) **once per
+Re-run the Phase 01 pipeline (see [`scripts/etl/README.md`](../../scripts/etl/README.md)) **once per
 state**. Only NY gets the extra clip step. Record each extract's **download date + md5** in the PR.
 
 Per-state Geofabrik extracts (north-america/us/):
@@ -179,15 +179,15 @@ The app reads the tile URL from env, so this is a swap, not code:
 
 The VT seed (`training_data/google_group/curated_boost_seed_vt.csv`) already lists NY/NH destinations
 (Lake George, Northwest Bay, Dillenbeck Bay, Saranac Lake, Lake Placid, Broad Lake, South Bay, …) that
-were **skipped in Phase 1** for not existing in a VT-only import. Now that those states are loaded,
+were **skipped in Phase 01** for not existing in a VT-only import. Now that those states are loaded,
 apply them:
 - Match seed rows to imported bodies **by name** (the seed has names + community mention counts, **no
   coordinates** — so it's a name match, disambiguated by region where a name repeats). Champlain-area
-  names already matched in Phase 1 stay boosted (idempotent).
+  names already matched in Phase 01 stay boosted (idempotent).
 - Apply via the existing `waterBodies.setCuratedBoost` admin mutation (recomputes `displayScore` +
   `minVisibleZoom`, re-inserts the geospatial key, writes a `moderationActions` row) — a small
-  one-off internal-mutation/script pass, same shape as the Phase 1 VT seed apply.
-- **Phase 7** lifts per-body boost editing into the admin water-body surface (don't bury it in a
+  one-off internal-mutation/script pass, same shape as the Phase 01 VT seed apply.
+- **Phase 07** lifts per-body boost editing into the admin water-body surface (don't bury it in a
   script long-term — see §H open items).
 
 ## §6 — Bounds + framing widening (LAST)
@@ -231,7 +231,7 @@ that no wanted lake falls outside the box or south of the clip.
    `waterMap.test.ts` updates. **Committed last.**
 5. **`curatedBoost` re-seed** — a tiny one-off apply (script or internal mutation) per §5.
 
-## Suggested commit breakdown (one PR — Phase 2.5)
+## Suggested commit breakdown (one PR — Phase 02b)
 
 1. **docs** — this plan + §H/README/roadmap status (+ the F1-done markers already staged).
 2. **basemap infra** — `upload-r2.sh` + basemap README (R2 + multi-state).
@@ -253,10 +253,10 @@ that no wanted lake falls outside the box or south of the clip.
 ## Risks / watch-outs
 
 - **Read-cap at scale (D49).** ⚠️ **This risk landed, and the validation it asks for never happened**
-  — caught 2026-07-26 by N1. The 116k corpus did stress `listInViewport`, but nobody re-measured
+  — caught 2026-07-26 by A01. The 116k corpus did stress `listInViewport`, but nobody re-measured
   wide-zoom read counts after the load, so the `MAX_VIEWPORT_LIMIT = 256` clamp (tuned against VT's
   9,967 bodies) silently stayed put — dropping 257 real lakes from a dense eastern-Maine viewport that
-  holds 513. Fixed by the N1 cell index; the read counts this bullet asked for are now recorded in
+  holds 513. Fixed by the A01 cell index; the read counts this bullet asked for are now recorded in
   [`phases/A01-read-path-durability.md`](./A01-read-path-durability.md) and re-checkable via
   `waterBodies:viewportReadStats`.
 - **Border-spanning bodies** — dedupe by `externalId` (verified idempotent), but spot-check Lake
@@ -272,21 +272,21 @@ that no wanted lake falls outside the box or south of the clip.
 
 ## Relocated from the roadmap (2026-09-16)
 
-*The roadmap entry for Phase 2.5 as it stood before the 2026-09-16 rewrite, kept verbatim so nothing it said is lost. The roadmap now carries a one-paragraph summary; this is the long form.*
+*The roadmap entry for Phase 02b as it stood before the 2026-09-16 rewrite, kept verbatim so nothing it said is lost. The roadmap now carries a one-paragraph summary; this is the long form.*
 
-### Phase 2.5 — Regional expansion (Northeast skating states) ✅ Complete (dev; prod deferred) (2026-07-15)
+### Phase 02b — Regional expansion (Northeast skating states) ✅ Complete (dev; prod deferred) (2026-07-15)
 > **Detailed plan + runbook:** [`phases/02b-regional-expansion.md`](./02b-regional-expansion.md)
-> (was §H of the Phase 2 plan). Slotted **after the mobile online loop (F1); reordered ahead of F2**
+> (was §H of the Phase 02a plan). Slotted **after the mobile online loop (F1); reordered ahead of F2**
 > (2026-07-14 — F2 is the orthogonal offline queue). It's data + infra, so it doesn't gate the
-> community layer (Phase 3) — but the corpus should be region-complete before drive-time / feeds
-> (Phase 4/5) reason over it.
+> community layer (Phase 03) — but the corpus should be region-complete before drive-time / feeds
+> (Phase 04/5) reason over it.
 >
 > **Status: ✅ mostly shipped on dev (2026-07-15)** — ~116k bodies across NY/VT/NH/ME/MA imported
 > (NY clipped downstate), a 948 MB multi-state basemap on Cloudflare R2, map bounds widened to the
 > region, a **lake name-search box** (added when the big corpus made it near-essential) in both apps,
 > and the **`curatedBoost` re-seed** (mechanism `applyCuratedBoostSeed` shipped + VT seed applied at
 > flat +0.3 — 21 bodies boosted). **Remaining:** clean per-body curation (a few bay mis-matches; add
-> the Champlain/Lake George bays OSM lacks) via the **Phase 7 admin UI**, and the prod cutover
+> the Champlain/Lake George bays OSM lacks) via the **Phase 07 admin UI**, and the prod cutover
 > (Convex prod uninitialized).
 
 Widen the pilot's **single-state Vermont** corpus + basemap to the Northeast **lake-skating** states.
@@ -295,11 +295,11 @@ Widen the pilot's **single-state Vermont** corpus + basemap to the Northeast **l
   west of NY (no NJ/PA — and CT/RI omitted too) — no lake-skating culture there, so importing them is
   pure clutter + cost. Use **per-state Geofabrik extracts** for exactly those 5 states; **clip NY by
   bbox** to drop the NYC/Long Island metro.
-- **Water data:** re-run the Phase 1 ETL (`scripts/etl`) per state → `importCanonical` into Convex
+- **Water data:** re-run the Phase 01 ETL (`scripts/etl`) per state → `importCanonical` into Convex
   (each body scored for D49 on insert). Much bigger corpus than VT's ~9,970.
 - **Basemap tiles → Cloudflare R2 (decided 2026-07-14):** the 5-state `.pmtiles` extract (z0–14) far
   exceeds VT's ~280 MB and **blows past the Convex free storage tier**, so the tiles move to
-  **Cloudflare R2** now (zero egress, the standard pmtiles host — the off-ramp Phase 1 already flagged).
+  **Cloudflare R2** now (zero egress, the standard pmtiles host — the off-ramp Phase 01 already flagged).
   The VT tiles migrate too, so all environments serve from one host. **App change is nil** — it reads
   `VITE_PMTILES_URL` / `EXPO_PUBLIC_PMTILES_URL`, so this is an env swap.
 - **Map bounds + framing:** widen `VERMONT_MAX_BOUNDS` / `INITIAL_CENTER` + the geolocation in-region

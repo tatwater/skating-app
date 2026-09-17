@@ -1,5 +1,5 @@
 /**
- * Per-state provenance records (N6b) — the committed half of the archive.
+ * Per-state provenance records (A06b) — the committed half of the archive.
  *
  * `.raw/` is gitignored, so on a fresh clone the repo knows nothing about what we hold, when we got
  * it, or under what terms. This renders that into `PROVENANCE.md`, which **is** committed: where each

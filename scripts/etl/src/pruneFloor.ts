@@ -5,7 +5,7 @@
  * the database, because `importCanonical` upserts and never deletes — so a deployment loaded before
  * 2026-08-02 still holds the ~100,000 unnamed sub-five-acre bodies the transform would now skip.
  * This walks the table through `waterBodies:pruneBelowAreaFloor` and shelves exactly those —
- * **demotes to dormant, never deletes, since N7b** (the CLI's `deleted` tally counts demotions).
+ * **demotes to dormant, never deletes, since A07b** (the CLI's `deleted` tally counts demotions).
  *
  *   pnpm --filter @skating/etl prune-floor              # DRY RUN — counts, writes nothing
  *   pnpm --filter @skating/etl prune-floor --apply      # actually demote (resumes if interrupted)

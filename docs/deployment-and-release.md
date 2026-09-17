@@ -228,7 +228,7 @@ so publishing a new archive is "upload, then change the URL in the three env pla
 | bathymetry | contour tiles | R2 `dev/bathymetry-<date>.pmtiles` |
 | `scripts/imagery` | seasonal satellite/aerial granules | R2 (Fly machines do the render; read the README's "Four ways to get this wrong" first) |
 
-Corpus loads can cost real Convex I/O: the N6d access-points load did 105 GB and disabled the
+Corpus loads can cost real Convex I/O: the A06d access-points load did 105 GB and disabled the
 deployment. Always pass `marginMeters` to `listedBodiesNearCoord`, and run big loads
 `--batch=1` where the README says so.
 
@@ -269,7 +269,7 @@ of every line is the founder — they are provisioning decisions, not code.
    `https://diligent-guanaco-965.convex.site/clerk-webhook`, its signing secret as
    `CLERK_WEBHOOK_SIGNING_SECRET` on prod Convex. Per-instance, nothing carries over from dev —
    recipe in [`05-accounts-and-credentials.md`](../plans/05-accounts-and-credentials.md) §11b.
-8. **Strava callback domain** (Phase 8) on the prod host.
+8. **Strava callback domain** (Phase 08) on the prod host.
 9. First **iOS build**: `eas device:create`, distribution cert via `eas credentials`; push works
    on it with no further setup.
 

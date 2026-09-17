@@ -38,7 +38,7 @@ import { TrustAvatar } from './TrustDisplay';
 import { WeatherStrip } from './WeatherStrip';
 
 /**
- * The hazard drawer (Phase 9) — reached by tapping a pin, from an on-ice banner, or via the
+ * The hazard drawer (Phase 09a) — reached by tapping a pin, from an on-ice banner, or via the
  * `skating://hazard/<id>` deep link. `action=confirm` (the on-ice notification tap, D54 Layer 2)
  * scrolls the confirm control into view so the drawer opens pre-focused on it — but never expands the
  * destructive "fully healed" step, which stays gated behind its own second tap even then (D3).
@@ -255,8 +255,8 @@ export function HazardDetail({ hazardId, action }: { hazardId: string; action?: 
       ) : null}
 
       <Paragraph color="$foregroundMuted" fontSize={13}>
-        {/* Attribution (name + TrustAvatar) is the row above — Phase 6's richer treatment supersedes
-            Phase 9.5's plain `hazard.reporterName` here, so this line only carries when + confirms. */}
+        {/* Attribution (name + TrustAvatar) is the row above — Phase 06's richer treatment supersedes
+            Phase 09b's plain `hazard.reporterName` here, so this line only carries when + confirms. */}
         Reported {formatWhen(hazard.firstReportedAt)}
         {/* `confirmerClause`, never `confirmerSummary(...).toLowerCase()` — the string carries names
             now, and lowercasing it renders "confirmed by alex r. and 3 others" (D65). */}
@@ -267,7 +267,7 @@ export function HazardDetail({ hazardId, action }: { hazardId: string; action?: 
       </Paragraph>
 
       {/* Which season this pin belongs to, said out loud. A hazard's season is its `firstReportedAt`
-          (N5a) and a past-season pin is off the map entirely, so a deep link is the only way anyone
+          (A05a) and a past-season pin is off the map entirely, so a deep link is the only way anyone
           reaches this — the same courtesy a past-season report gets. */}
       {seasonOf(hazard.firstReportedAt) === seasonOf(Date.now()) ? null : (
         <Paragraph color="$foregroundMuted" fontSize={13}>

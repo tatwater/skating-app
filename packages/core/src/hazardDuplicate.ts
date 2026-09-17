@@ -1,5 +1,5 @@
 /**
- * The draw-time duplicate nudge — layer 1 of D80, and the cheapest of the four (N5c).
+ * The draw-time duplicate nudge — layer 1 of D80, and the cheapest of the four (A05c).
  *
  * Before a skater submits, the form can say *"there's already a pressure ridge marked here"* and offer
  * *"confirm that one"* as the primary action, which converts the duplicate into the corroboration it

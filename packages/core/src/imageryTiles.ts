@@ -1,5 +1,5 @@
 /**
- * A fixed grid for aerial requests, so the same ground is always the same URL (N6e / D146).
+ * A fixed grid for aerial requests, so the same ground is always the same URL (A06e / D146).
  *
  * ## The measurement this exists for
  *

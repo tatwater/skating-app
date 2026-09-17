@@ -1,5 +1,5 @@
 /**
- * Hazard confirmations — the three-tier "is it still there?" vote (D52/D54, Phase 9).
+ * Hazard confirmations — the three-tier "is it still there?" vote (D52/D54, Phase 09a).
  *
  * This is where the lifecycle actually turns, and the asymmetry baked into it is the whole point:
  *
@@ -43,7 +43,7 @@ import { latLng, literals } from './lib/validators';
  * fresh audit row every time — a skater doing laps shouldn't spray rows. Note it is NOT a correctness
  * gate: counts are derived from *distinct users' latest votes* (`deriveHazardLifecycle`), so a stored
  * count is right regardless of the window. The window only governs row/audit granularity. Tunable in
- * Phase 7.
+ * Phase 07.
  */
 export const CONFIRM_WINDOW_MS = 12 * 60 * 60 * 1000;
 
@@ -124,7 +124,7 @@ export const confirm = mutation({
 
     // Boost-only reputation (D50). Awarded once per user per hazard — on their first vote, not on every
     // re-confirm — so laps, verdict changes, and offline replays can't farm points. Now routed through
-    // `awardPointEvent` so it finally bumps the confirmer's `reputationPoints` (the Phase-6 retrofit),
+    // `awardPointEvent` so it finally bumps the confirmer's `reputationPoints` (the Phase-06 retrofit),
     // then recomputes their badges (a confirmation feeds the `Watchdog` count).
     if (firstContribution) {
       await awardPointEvent(ctx, {
@@ -171,7 +171,7 @@ async function maybeAwardHazardCorroboration(
   if (!hazard) return;
   const scope = await clusterScopeFor(ctx, hazard);
   const consensus = (await poolConsensus(ctx, scope)).get(hazard._id);
-  // No pooled entry means a singleton — read the row, exactly as this did before N5c.
+  // No pooled entry means a singleton — read the row, exactly as this did before A05c.
   if ((consensus?.confirmCount ?? hazard.confirmCount) < HAZARD_CORROBORATION_MIN_CONFIRMS) return;
 
   const byId = new Map(scope.map((h) => [h._id as string, h]));
@@ -245,7 +245,7 @@ async function findUserVote(
  * Re-derive the hazard's lifecycle from every vote and patch the stored counts/status.
  *
  * `voterId` is the skater whose vote triggered this recompute — the actor for the author's
- * `hazard_confirmation` notification (N8/B2), which fires **on a phase transition, never per vote**
+ * `hazard_confirmation` notification (A08/B2), which fires **on a phase transition, never per vote**
  * (founder call). Per-vote notifications would turn a confirmation loop into a scoreboard, and D65's
  * "never existed" verdict makes it worse: that verdict also files a moderation flag, so a per-vote
  * notice would forward what is effectively an accusation, one voter at a time. The lifecycle change
@@ -293,7 +293,7 @@ async function recomputeLifecycle(
       ? { decayMultiplier: undefined, snowHidden: undefined, weatherAdjustedAt: undefined }
       : {}),
   });
-  // A vote that archived the pin takes it off the map card too (N6c/E). Only a `status` change can
+  // A vote that archived the pin takes it off the map card too (A06c/E). Only a `status` change can
   // do that, so this is cheap in the common case: the recompute short-circuits on an unchanged
   // summary rather than writing the body again.
   await recomputeBodySummary(ctx, hazard.waterBodyId);

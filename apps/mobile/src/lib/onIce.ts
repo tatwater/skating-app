@@ -31,11 +31,11 @@ export interface HazardRow {
   geometry: unknown;
   radiusMeters?: number;
   bufferMeters?: number;
-  /** The body-clipped footprint (Phase 9.5), when the server stored one. Broad, narrowed on use. */
+  /** The body-clipped footprint (Phase 09b), when the server stored one. Broad, narrowed on use. */
   clippedFootprint?: unknown;
   confirmCount: number;
   /**
-   * The **cluster's** distinct witnesses, when this pin shares one with another (N5c / D80). Absent for
+   * The **cluster's** distinct witnesses, when this pin shares one with another (A05c / D80). Absent for
    * the singleton case, which is nearly every hazard.
    */
   clusterConfirmCount?: number;
@@ -62,7 +62,7 @@ export function toProximityHazards(rows: readonly HazardRow[]): ProximityHazard[
     return {
       id: r._id,
       type: r.type,
-      // **The cluster's count, not the row's** (N5c / D80). This is the gate §1.2 of the phase plan
+      // **The cluster's count, not the row's** (A05c / D80). This is the gate §1.2 of the phase plan
       // opens with: duplicates split corroboration, so three people marking one ridge across three
       // pins left every phone on the lake stuck at the soft "can you see it?" while the community had
       // plainly confirmed it. The escalation has to read what the cluster knows — and it is the
@@ -269,7 +269,7 @@ export function dismissBanner(session: AlertSession): AlertSession {
 }
 
 /**
- * Resolve which lake the skater is on from the two available sources (Phase 9 §Mobile "on-ice state").
+ * Resolve which lake the skater is on from the two available sources (Phase 09a §Mobile "on-ice state").
  *
  * The **server** answer is authoritative and covers any listed lake, including one never opened on this
  * device. It arrives as `undefined` while loading and forever when offline, so until it answers we

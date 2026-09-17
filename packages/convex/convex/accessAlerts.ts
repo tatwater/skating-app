@@ -1,5 +1,5 @@
 /**
- * Access alerts — "temporarily inaccessible" as a decaying community claim (N6d Workstream C / D73).
+ * Access alerts — "temporarily inaccessible" as a decaying community claim (A06d Workstream C / D73).
  *
  * ## Why this is not a note
  *
@@ -85,7 +85,7 @@ async function recomputeAlert(
  *
  * Rides **D57's existing posting permission** rather than inventing one — the same call D88 made for
  * access photos, and for the same reason: a permission that is always equal to another permission is
- * one that will drift out of sync and confuse somebody in a year. Minors are read-only (Phase 3).
+ * one that will drift out of sync and confuse somebody in a year. Minors are read-only (Phase 03).
  */
 export const create = mutation({
   args: {
@@ -174,7 +174,7 @@ export const create = mutation({
 });
 
 /**
- * "Still blocked" / "it's open" — the confirm-deny half, reusing Phase 9's shape.
+ * "Still blocked" / "it's open" — the confirm-deny half, reusing Phase 09a's shape.
  *
  * **One vote row per user per alert**, so a queued confirmation replayed on flush updates the same row
  * and re-derives the same counts. A lost ack can never double-count toward resolution, which is the
@@ -228,7 +228,7 @@ export const vote = mutation({
  *
  * Distinct from letting it expire, and the distinction is the point: **expiry says the claim stopped
  * being true; retraction says it never was.** A skater who drops an alert on the wrong lot should be
- * able to take it back rather than watch a wrong claim decay over thirty days, and N5b made exactly
+ * able to take it back rather than watch a wrong claim decay over thirty days, and A05b made exactly
  * that argument for hazards.
  *
  * The author may retract their own; a moderator may retract anyone's. Never a delete — the row is the

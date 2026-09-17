@@ -1,5 +1,5 @@
 /**
- * Report conditions auto-fill from Open-Meteo (Phase 10 / §7a / D19). Populates the stubbed `openmeteo`
+ * Report conditions auto-fill from Open-Meteo (Phase 10 / §07-1 / D19). Populates the stubbed `openmeteo`
  * condition source with the weather **at the skate time** (a point-in-time reading — distinct from the
  * "since" summary that feeds the strip + decay).
  *
@@ -41,7 +41,7 @@ interface OpenMeteoResponse {
 /**
  * Fetch the weather at `atMs` for a point → the observed conditions, or null on failure / no near hour.
  *
- * ⚠ **Deliberately not cache-keyed, and therefore deliberately not cell-snapped (N6h).** Every other
+ * ⚠ **Deliberately not cache-keyed, and therefore deliberately not cell-snapped (A06h).** Every other
  * Open-Meteo path shares a `weatherCache` entry via a `WeatherCell` (D152); this one asks a different
  * question — *what was it doing at this exact instant at this exact put-in* — runs once per report
  * created, and never reads or writes the cache. Snapping it to a 5 km cell would trade the precision

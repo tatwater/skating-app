@@ -41,8 +41,8 @@ Each item cross-references its decision (`D#`) / open question (`Q#`) elsewhere 
 | L10 | OSM **ODbL share-alike** if we publish the derived DB | D5 | 🟡 | Only bites if we redistribute the extract |
 | L11 | Landowner takedown wording / obligation | D48, Q10 | 🟡 | Lawyer confirms takedown policy |
 | L12 | PostHog session replay (minors + location) | D29 | ⛔ | Masking + minor-exclusion + PRIVACY update |
-| L13 | Weather (Open-Meteo) attribution + **non-commercial free-tier licence** | 04-integrations, D158 | 🟢 | Attribution appreciated; ⚠ free tier is **non-commercial only** — N6h adds surfaces and sources |
-| L14 | Aggregate/heatmap privacy for **our own** tracks | D41, D42, D58 | 🟡 | Model decided (**D58**) **and built** (Phase 8): publish-is-consent (no k-anon) + minors-out + put-in-gated clip + opt-out. Still 🟡 — the *derivations* over the aggregate (L9) need their own pass |
+| L13 | Weather (Open-Meteo) attribution + **non-commercial free-tier licence** | 04-integrations, D158 | 🟢 | Attribution appreciated; ⚠ free tier is **non-commercial only** — A06h adds surfaces and sources |
+| L14 | Aggregate/heatmap privacy for **our own** tracks | D41, D42, D58 | 🟡 | Model decided (**D58**) **and built** (Phase 08): publish-is-consent (no k-anon) + minors-out + put-in-gated clip + opt-out. Still 🟡 — the *derivations* over the aggregate (L9) need their own pass |
 | L15 | **AGPL §13 network-service obligation** for a self-hosted radar service | D157 | 🟢⏸ | Dormant by design — D157 says *borrow the approach, don't deploy the software*. Bites only if we run a **modified** LibreWXR (or any AGPL service) for users |
 
 ---
@@ -160,7 +160,7 @@ What the current (post-Nov-2024) Agreement actually says, and how it moved our d
   integration (Garmin model), squarely in Strava's "still allowed" bucket.
 - [x] "Powered by Strava" / "Connect with Strava" brand kit met on the connect + push surfaces
       (see `04-integrations.md`) — honor it even though a pure push shows no Strava *data*.
-      *(Done — Phase 8: copy + brand orange single-sourced in `@skating/core/strava.ts` so web and
+      *(Done — Phase 08: copy + brand orange single-sourced in `@skating/core/strava.ts` so web and
       mobile can't drift; rendered by `StravaConnect.tsx`. The connect surface is **mobile-only**
       today, which is where recording happens.)*
 - [x] `activity:write` consent screen clearly states we upload on the user's behalf.
@@ -172,7 +172,7 @@ What the current (post-Nov-2024) Agreement actually says, and how it moved our d
 Garmin / COROS / Polar (partner-program terms + brand) and Apple HealthKit / Google Health Connect
 (on-device; Google Play **health-data access review** for sensitive permissions). Each has its own
 brand terms and data-use limits.
-- [ ] Per-provider ToS + brand checklist at the point each integration lands (Phase 8).
+- [ ] Per-provider ToS + brand checklist at the point each integration lands (Phase 08).
 - [ ] Google Play health-data access review for Health Connect permissions.
 
 ## L9 — Path-cluster hazard deduction (Q11) 🔬 — legal half cleared 2026-07-24
@@ -189,8 +189,8 @@ it in-app is a "Produced Work" (attribution suffices).
 - [ ] If we ever *publish* the derived extract, do so under ODbL (full wording legal-gated w/ Q10).
 
 ## L11 — Landowner takedown wording / obligation (D48) 🟡
-The takedown **mechanism** shipped in Phase 1 (reversible soft-delist + audit). The **request
-intake** rides with Phase 7. The exact **wording/obligation** is legal-gated (Q10).
+The takedown **mechanism** shipped in Phase 01 (reversible soft-delist + audit). The **request
+intake** rides with Phase 07. The exact **wording/obligation** is legal-gated (Q10).
 - [ ] Lawyer confirms takedown policy + any obligation to honor requests + the intake wording.
 - [ ] (Future hardening) teach dedup to honor a suppression list so a removed pond can't be
       re-created as a user body (D48 deferred edge).
@@ -205,17 +205,17 @@ only **after auth resolves AND `isMinor === false`**, and **update PRIVACY.md** 
 Open-Meteo is free with no key; attribution is appreciated. Minor, but note it wherever the
 weather-since strip appears (Phase 10).
 
-### N6h widens this in two ways (2026-09-03)
+### A06h widens this in two ways (2026-09-03)
 
 **⚠ The free tier is licensed for non-commercial use.** That is fine today — `00-vision.md:144`
 commits to a passion / open-source project leaning on free tiers — but it is now a *condition* rather
-than a convenience, because N6h leans on it much harder (a corpus-wide daily cron, not just
+than a convenience, because A06h leans on it much harder (a corpus-wide daily cron, not just
 drawer-open fetches). **If the project ever stops being plainly non-commercial, the licence stops
 covering us at any volume**, independent of whether we are under the call ceiling. That is written
 into **D158** as one of the three triggers for buying the $319/yr Standard plan, and it is the only
 one of the three that is a legal gate rather than an operational one.
 
-**More sources means more attribution surfaces.** N6h adds panels and a map layer, each needing its
+**More sources means more attribution surfaces.** A06h adds panels and a map layer, each needing its
 own credit line, and each source has different terms:
 
 | source | used for | obligation |
@@ -230,7 +230,7 @@ projected ~1,000 users; it is worth a re-read if adoption materially exceeds tha
 community" is the qualifying phrase and it is not defined numerically.
 
 ## L15 — AGPL §13 network-service obligation (D157) 🟢⏸
-**Dormant by design, recorded so it cannot surprise us.** LibreWXR — the self-hosted radar server N6h
+**Dormant by design, recorded so it cannot surprise us.** LibreWXR — the self-hosted radar server A06h
 evaluated — is **AGPL-3.0-or-later**. AGPL §13 goes further than GPL: running a **modified** version
 as a *network service* obliges us to offer that modified source to the service's users, even though we
 never distribute a binary. Its authors offer separate commercial licensing, which implies they expect
@@ -261,7 +261,7 @@ AGPL code as a service. Clearing one says nothing about the other.
 The **L7 pivot moved the binding constraint from Strava to us.** Once we render crowd layers off our own
 recorded tracks, *our* privacy design is what protects skaters — there's no upstream ToS doing it. **The
 model is now decided — D58** (see `phases/08-native-capture.md`): **publish-is-consent, not k-anonymity.**
-Requirements the aggregate layer must meet (Phase 8, PR 8e) — **all five built 2026-07-24**
+Requirements the aggregate layer must meet (Phase 08, PR 8e) — **all five built 2026-07-24**
 (`gpsActivities.listTracksForBody`, convex-tested for each gate; still to be **deployed + device-verified**):
 - [x] **Minors excluded** from all aggregate layers by construction (D41) — automatic: minors can't post
       reports, so their tracks never link to a public report and never aggregate. *(Nothing checks an age;

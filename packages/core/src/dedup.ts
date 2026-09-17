@@ -1,11 +1,11 @@
 /**
- * Water-body **match-on-create** scoring (D36, Phase 8) — the cheapest dedup is the one that never
+ * Water-body **match-on-create** scoring (D36, Phase 08) — the cheapest dedup is the one that never
  * creates the duplicate.
  *
  * Before a skate on unmapped water writes a new `waterBodies` row, the candidate is scored against
  * every nearby existing body and the result steers the UI: strong matches are offered as "attach
  * here?" and creating anyway requires an explicit "none of these". Whatever the user chooses, the new
- * row is **stamped** with its verdict, which is what feeds the moderator merge queue built in Phase 7
+ * row is **stamped** with its verdict, which is what feeds the moderator merge queue built in Phase 07
  * (and which has had nothing flowing into it until now).
  *
  * **This module adds no geometry.** Every metric it composes — `polygonIoU`, `pointInPolygon`,

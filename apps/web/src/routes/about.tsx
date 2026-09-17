@@ -6,7 +6,7 @@ import { DOC_URLS } from '../lib/links';
 
 /**
  * About + license disclosure (D43). The app is AGPL-3.0 with a GPLv3 §7 App Store / Play
- * distribution exception; both are referenced here per the Phase 0 license-hygiene
+ * distribution exception; both are referenced here per the Phase 00 license-hygiene
  * requirement. Final legal wording remains Q10.
  */
 export const Route = createFileRoute('/about')({ component: AboutPage });
@@ -29,7 +29,7 @@ function AboutPage() {
         observations at a specific time and place — never a guarantee that ice is safe. You alone
         decide whether to step on the ice.
       </p>
-      {/* Both numbers, always (N7b, founder call): what the map knows and what it recommends. */}
+      {/* Both numbers, always (A07b, founder call): what the map knows and what it recommends. */}
       {counts.length > 0 ? (
         <>
           <h2 className="font-semibold text-foreground text-lg">The map</h2>

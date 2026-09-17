@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Spawn one throwaway Fly Machine per granule (N6e PR 2, D148).
+# Spawn one throwaway Fly Machine per granule (A06e PR 2, D148).
 #
 #   scripts/imagery/fan-out.sh granules.txt              # one granule id per line
 #   scripts/imagery/fan-out.sh granules.txt --smoke      # plumbing only, no masking

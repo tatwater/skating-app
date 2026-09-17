@@ -1,14 +1,14 @@
-# Phase 4 — Drive-time + dynamic filtering
+# Phase 04 — Drive-time + dynamic filtering
 
-> **Roadmap:** [`07-roadmap.md`](../07-roadmap.md) → Phase 4. This is the detailed build plan,
-> in the style of the Phase 1/2/2.5/3/5 docs.
+> **Roadmap:** [`07-roadmap.md`](../07-roadmap.md) → Phase 04. This is the detailed build plan,
+> in the style of the Phase 01/2/2.5/3/5 docs.
 >
-> **What this phase is.** Turns drive-time from a *hard global gate* (the original Phase-4 sketch)
+> **What this phase is.** Turns drive-time from a *hard global gate* (the original Phase-04 sketch)
 > into a **soft, quality-weighted signal that behaves differently per context** — one thing while you
 > *browse* (the newsfeed, pull), another while you're *notified* (push). It also lands **favorites**
 > (place-based curation — the D13 stand-in for the removed people-follow graph), a **persisted feed
 > filter row**, **put-in markers + directions** on the map, and an **offline read-cache** of recent
-> reports. It layers on top of the global Phase 5 feed as an **additive filter** — the feed page and
+> reports. It layers on top of the global Phase 05 feed as an **additive filter** — the feed page and
 > card don't change; the result set narrows and re-orders.
 >
 > **Status:** ✅ **Complete on dev (2026-07-18), PR #19** (prod deferred — Convex prod uninitialized).
@@ -20,7 +20,7 @@
 > an in-app `notifications` row (the `coalesceKey` seeds the eventual APNs collapse-id / Android tag).
 > Self-hosted ORS (true 90-min band) + "Recommended" filter-breaking posts remain deferred (see below).
 >
-> **Build order:** web first, then mobile (mirrors Phase 2/3/5). Backend + `@skating/core` geometry
+> **Build order:** web first, then mobile (mirrors Phase 02a/3/5). Backend + `@skating/core` geometry
 > front-load; both clients consume the same `listFeed` filter args + isochrone helpers.
 
 Decisions referenced as D#; see [`01-decisions.md`](../01-decisions.md).
@@ -76,13 +76,13 @@ the feed, and highlighted on the map.
      report, "which users have *this lake* in their X-band?" With only polygons that's a scan over users'
      polygons per report — **fine at alpha scale** (dozens–hundreds of users). A reverse spatial index
      (index user home-points, or per-lake precomputed notify sets) is the future optimization; **not now.**
-     *(Amended by N1, 2026-07-26: that scan was inline in `reports.create`, i.e. an unbounded read inside
+     *(Amended by A01, 2026-07-26: that scan was inline in `reports.create`, i.e. an unbounded read inside
      the app's most important write. It's now a **scheduled, self-continuing paged job** — bounded per
-     invocation, and nobody gets dropped. The reverse index is still the real fix, still deferred: N1
+     invocation, and nobody gets dropped. The reverse index is still the real fix, still deferred: A01
      made the walk cheap to survive, not unnecessary.)*
 
 3. **Newsfeed dynamic filter row — persisted, offline-first, additive on `listFeed`.**
-   A filter bar above the Phase 5 feed, defaulting to *show all*:
+   A filter bar above the Phase 05 feed, defaulting to *show all*:
    - **Drive radius** — off / 30 / 60 / 90 (matches the bands in #2).
    - **Overall quality floor** — `skateQuality ≥ {good, great}`.
    - **Ice thickness floor** — min cm.
@@ -132,7 +132,7 @@ the feed, and highlighted on the map.
    Persist the filter row so it stays how the user left it. **Local storage is the working copy** (UI
    always reads it → instant, offline-safe); a **`profiles.feedFilterPrefs` blob is the durable/sync
    copy**; reconcile **last-write-wins** on connect (UI prefs, no conflict stakes). Same offline-first
-   shape as the Phase 2 report queue.
+   shape as the Phase 02a report queue.
 
 7. **Put-in markers + directions on the map.**
    - **Derived from report points**, with curation and privacy controls — a small **`putIns` entity**
@@ -142,9 +142,9 @@ the feed, and highlighted on the map.
        the nearest shore/road edge** (a report `point` can be mid-lake / on-ice — it is *not* a true
        put-in, so derived markers are approximate).
      - `source: official` markers are **admin-set** (accurate; priority styling) from the operator
-       dashboard (Phase 7 surface; the data + mutation land here).
+       dashboard (Phase 07 surface; the data + mutation land here).
    - **Per-report `showPutIn` opt-out** (default on) for private-property access — hides the **precise
-     pin** but keeps the **coarse town-level `place` label** (Phase 5); we suppress a marker, we don't
+     pin** but keeps the **coarse town-level `place` label** (Phase 05); we suppress a marker, we don't
      scrub location.
    - **Moderator hide = per-coord suppression** (one action kills the marker regardless of how many
      reports feed it) + a `moderationActions` audit row.
@@ -154,7 +154,7 @@ the feed, and highlighted on the map.
      on-water point, so routing there drives you into the middle of the lake).
 
 8. **Offline read-cache of recent reports (mobile).**
-   Reuse the **expo-sqlite** infra from the Phase 2 F2 offline write-queue. Cache, for on-ice-without-
+   Reuse the **expo-sqlite** infra from the Phase 02a F2 offline write-queue. Cache, for on-ice-without-
    service recall:
    - feed reports the user **read recently**,
    - reports for any lake whose **detail/drawer the user opened** (from feed or map) — a strong "might go
@@ -163,10 +163,10 @@ the feed, and highlighted on the map.
      standing on with no signal).
    - **Thumbnails only, not full photos** (full images blow the cache).
 
-9. **"Recommended" filter-breaking feed posts → deferred to Phase 6.** Occasionally surfacing
+9. **"Recommended" filter-breaking feed posts → deferred to Phase 06.** Occasionally surfacing
    *exceptional* ice that breaks the user's own distance/quality/thickness filters is only trustworthy
-   once we have **corroboration + trust (D50, Phase 6)** — one unverified "it's amazing!" report should
-   not drive someone 3 hours. Documented in `07-roadmap.md` → Phase 6.
+   once we have **corroboration + trust (D50, Phase 06)** — one unverified "it's amazing!" report should
+   not drive someone 3 hours. Documented in `07-roadmap.md` → Phase 06.
 
 ---
 
@@ -222,9 +222,9 @@ Applied in `packages/convex/convex/schema.ts`.
   1800/3600s); compute `outerRadiusMeters` for the 90 band; store on the profile. Rate-limited + cached
   (only on home/pref change). **Needs the OpenRouteService API key** (env). *(Self-hosted ORS → future,
   see roadmap Later/deferred.)*
-- **`reports.listFeed` (extend, from Phase 5):** accept optional **`filters`** + the viewer's cached
+- **`reports.listFeed` (extend, from Phase 05):** accept optional **`filters`** + the viewer's cached
   bands + favorite set; apply `matchesFilters` server-side; **boost favorites** to the top of the page.
-  Additive — unfiltered behavior is exactly Phase 5.
+  Additive — unfiltered behavior is exactly Phase 05.
 - **`putIns.ts` (new):** `listForBody` (derived cluster over visible report points via `clusterPutIns`,
   merged with `official` rows, minus `hidden`/suppressed); `setOfficial` + `hide` (admin/mod, writes
   `moderationActions`).
@@ -235,7 +235,7 @@ Applied in `packages/convex/convex/schema.ts`.
 
 ## Web + Mobile UI
 
-- **Feed filter row** above the Phase 5 feed (both clients), reading **local storage first** then
+- **Feed filter row** above the Phase 05 feed (both clients), reading **local storage first** then
   reconciling `feedFilterPrefs` (LWW). Recency **section-divider headers** in the infinite scroll.
   Favorites badged/boosted.
 - **Favorite toggle** on the lake detail drawer/page + a heart on feed cards/map.
@@ -282,10 +282,10 @@ Push to the dev deployment (`convex dev --once`) + run any migration before veri
   tuning → `07-roadmap.md` → Later/deferred. Until then the 90 band is a uniform crow-flies radius.
 - **Reverse spatial index for notification fan-out** (per-lake notify sets / indexed home-points) →
   future scaling; the per-report user-polygon scan is fine at alpha scale (decision #2).
-- **"Recommended" filter-breaking feed posts** → **Phase 6** (needs corroboration/trust, D50).
+- **"Recommended" filter-breaking feed posts** → **Phase 06** (needs corroboration/trust, D50).
 - **Per-user local-time / true-sunset digest timing** → later (fixed 8pm ET for the single-timezone
   pilot).
-- **Operator UI for official put-ins** lives in the **Phase 7** admin surface; the `putIns` data +
+- **Operator UI for official put-ins** lives in the **Phase 07** admin surface; the `putIns` data +
   `setOfficial`/`hide` mutations land here.
 
 
@@ -293,9 +293,9 @@ Push to the dev deployment (`convex dev --once`) + run any migration before veri
 
 ## Relocated from the roadmap (2026-09-16)
 
-*The roadmap entry for Phase 4 as it stood before the 2026-09-16 rewrite, kept verbatim so nothing it said is lost. The roadmap now carries a one-paragraph summary; this is the long form.*
+*The roadmap entry for Phase 04 as it stood before the 2026-09-16 rewrite, kept verbatim so nothing it said is lost. The roadmap now carries a one-paragraph summary; this is the long form.*
 
-### Phase 4 — Drive-time + dynamic filtering ✅ Complete (dev; prod deferred) (2026-07-18)
+### Phase 04 — Drive-time + dynamic filtering ✅ Complete (dev; prod deferred) (2026-07-18)
 > **Detailed build plan:** [`phases/04-drive-time-and-filtering.md`](./04-drive-time-and-filtering.md)
 > (decisions settled 2026-07-17).
 >
@@ -312,7 +312,7 @@ Push to the dev deployment (`convex dev --once`) + run any migration before veri
 > `commentCount` (true totals, not a windowed cap), paginated per-body report lists, recency scroll
 > headers, minor photo-upload gate, and coverage/cleanup. **Push delivery is deferred** (flush lands an
 > in-app `notifications` row); self-hosted ORS (true 90-min band) and the "Recommended" filter-breaking
-> feed posts are deferred (roadmap Later / Phase 6). Prod cutover still deferred (Convex prod uninitialized).
+> feed posts are deferred (roadmap Later / Phase 06). Prod cutover still deferred (Convex prod uninitialized).
 > **Reframed 2026-07-17:** drive-time is now a **soft, quality-weighted signal that behaves differently
 > per context** (browse vs. notify), not a hard global gate. Browse (feed) defaults *permissive* — show
 > all, filters narrow, favorites boosted; notifications default *conservative* — favorites on, distance/
@@ -329,14 +329,14 @@ Push to the dev deployment (`convex dev --once`) + run any migration before veri
   floor, no-snow (off `surfaceTags`), ideal ice/surface types, **recency floor** + "older than N days"
   scroll headers. **Optional-field filters include-unknown by default** (a thickness floor must not hide
   the ~84% of reports without a reading). Filter memory = **local-first + `profiles.feedFilterPrefs`
-  server-sync** (LWW). Additive on the Phase 5 `listFeed`.
+  server-sync** (LWW). Additive on the Phase 05 `listFeed`.
 - **Notifications = a coalescing queue, three opt-in types:** favorites (default on) · all within **X₁** ·
   great within **X₂** (**two independent radii, X₂ ≥ X₁** — "drive farther for better ice"). "All" →
   **once-daily 8pm-ET digest** grouped by body (corpus: ~87% of reports land before 8pm; misses are the
   lowest-priority slice); favorites/great fire ~individually, coalesced per `(user, waterBody)` via APNs
   `collapse-id` / Android `tag` (replace, never un-send).
 - **Map put-ins + directions:** put-in markers **derived from report points** (+ admin-set official ones,
-  Phase 7 UI), snapped to shore; per-report `showPutIn` opt-out (private property) + moderator hide.
+  Phase 07 UI), snapped to shore; per-report `showPutIn` opt-out (private property) + moderator hide.
   **Directions deep-link from the lake detail drawer button** (never a map tap), targeting a **put-in
   coord, not the on-water centroid**.
 - **Mobile offline read-cache** (reuse expo-sqlite): recently-read + opened-lake + favorites' reports
@@ -344,6 +344,6 @@ Push to the dev deployment (`convex dev --once`) + run any migration before veri
 - **Done:** feed/map/notifications scope by favorites + quality-weighted drive-time; put-ins + directions
   on the map; filters persist; recent reports readable offline.
 - **Needs:** OpenRouteService key. Notification fan-out uses a per-user polygon scan — moved off the
-  `reports.create` write path into a scheduled paged job by N1; a reverse spatial index (removing the
+  `reports.create` write path into a scheduled paged job by A01; a reverse spatial index (removing the
   scan entirely) is still a documented future seam.
 

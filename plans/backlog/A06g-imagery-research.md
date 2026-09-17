@@ -1,6 +1,6 @@
-# Phase N6g — What nine seasons of imagery might know
+# Phase A06g — What nine seasons of imagery might know
 
-*These lanes read [N6e](../phases/A06e-satellite-imagery.md)'s archive and none can start before it
+*These lanes read [A06e](../phases/A06e-satellite-imagery.md)'s archive and none can start before it
 exists. One would be the most-wanted feature in the product. One would shrink the corpus. All are the
 kind of thing that is easy to ship and hard to ship **correctly**, which is why they are here rather
 than in a workstream.*
@@ -9,16 +9,16 @@ than in a workstream.*
 > tested against a skater standing on it, is no. **[Reasoning across frames](#-the-lane-nobody-has-tried-stop-asking-one-frame-and-start-reasoning-across-them)**
 > is a different question, it is barely explored, and it is where the remaining value most likely is.
 
-> **Status:** 📋 Scoped 2026-08-21, unbuilt, **no scheduled start.** Split out of N6e at the founder's
-> ask — *"let's park black ice from SAR into a new N6g research doc! Let's also put the never-freezing
-> body elimination idea into N6g as well."*
+> **Status:** 📋 Scoped 2026-08-21, unbuilt, **no scheduled start.** Split out of A06e at the founder's
+> ask — *"let's park black ice from SAR into a new A06g research doc! Let's also put the never-freezing
+> body elimination idea into A06g as well."*
 >
-> **Hard prerequisite: partly met as of 2026-08-26.** N6e **PR 2** merged 2026-08-25 (#46) and **PR 3**
+> **Hard prerequisite: partly met as of 2026-08-26.** A06e **PR 2** merged 2026-08-25 (#46) and **PR 3**
 > — the consumer, so there is now a scrubber to look at frames in — was built 2026-08-26. So the
 > **granule pipeline exists** and one season is in R2.
 >
 > ⚠ **The other two halves do not.** The **nine-season archive** (2017-18 → 2025-26) and the
-> **phenology series derived dark** are N6e's **PR 4**, which is not started — the backfill is a
+> **phenology series derived dark** are A06e's **PR 4**, which is not started — the backfill is a
 > deliberate separate spend. Today's archive is **winter 2025-26 only**. Lane 2 (never-freezing bodies)
 > needs many seasons by definition and cannot start; the third lane (reasoning across frames) needs a
 > *series*, and one season is the thin end of one. **A single-season pilot is possible now; neither
@@ -54,12 +54,12 @@ rather than suffered:
 - **Smooth ice is specular.** Radar hitting a flat surface reflects away from the sensor, so smooth
   new ice returns **dark** in Sentinel-1 backscatter. Rough, deformed, snow-covered or ridged ice
   scatters back and returns **bright**.
-- **Calm open water is also dark**, which is exactly the confusion N6e §C1 warns about — and it is
+- **Calm open water is also dark**, which is exactly the confusion A06e §C1 warns about — and it is
   resolvable, because **Sentinel-2 can tell ice from water** where SAR cannot. So the signature is a
   *conjunction*: **low SAR backscatter AND optical classification of ice, not water.**
 - **Freeze rate is a genuine covariate.** Ice that formed fast over still water in a cold snap is the
   ice that ends up smooth; a slow freeze under wind produces the rough surface people call "crusty."
-  N6e's phenology series measures exactly that — how many days between "open" and "frozen."
+  A06e's phenology series measures exactly that — how many days between "open" and "frozen."
 
 Which means the ingredients all exist in the archive, and none of them requires a new sensor.
 
@@ -129,7 +129,7 @@ these two dates"*; what it does not support is *"this corner of it is glassy"*.
 Two things could yet reopen the spatial question, and both are testable from the archive rather than by
 argument: **`VV` sits well above the floor** (whole-body median near −17 dB), so a conjunction leaning
 on `VV` has room `VH` does not; and **S1C's floor is 2.80 dB quieter than S1A's**, so S1C passes have
-margin where S1A passes have none — which makes N6e's open question 7 a *measurability* question and
+margin where S1A passes have none — which makes A06e's open question 7 a *measurability* question and
 not only a cadence one.
 
 #### The archive now carries what this gate needs
@@ -298,7 +298,7 @@ by asking one frame one question. The archive was built to be asked harder ones.
 1. **Validated against our own condition reports before anything renders.** We have reports carrying
    surface descriptions, dated and located. That is a ground-truth set nobody else has, and it is the
    only honest way to find out whether the conjunction means what we think it means. **No validation,
-   no feature** — the N6a lesson: an evidence gate nobody points at is not a gate.
+   no feature** — the A06a lesson: an evidence gate nobody points at is not a gate.
 2. **The strongest claim it may ever make is *"smooth ice observed on \[date]."*** Never *"black ice
    here."* Never *"black ice now."* Never a color ramp that reads as a quality score, for the same
    reason D82 forbade one for depth.
@@ -318,12 +318,12 @@ justifies the lane or kills it for the price of neither.
 ## Lane 2 — Bodies that never freeze
 
 > **Founder, 2026-08-21c:** *"I'd be very happy to fully eliminate bodies if they haven't frozen over in
-> the past 9 years. We already have N7b planned which would allow users to manually request that we add
+> the past 9 years. We already have A07b planned which would allow users to manually request that we add
 > a body to the corpus, at which point we'd be able to grab all the data we delete during this
 > elimination phase once more with a proof point that people actually want it!"*
 
 **The argument is good**: a Cape Cod salt pond that has not frozen in nine observed winters is not a
-skating destination, it is corpus weight — and [N7b](../phases/A07b-corpus-by-request.md) makes removal
+skating destination, it is corpus weight — and [A07b](../phases/A07b-corpus-by-request.md) makes removal
 recoverable rather than final, which is what changes the calculus. Three findings shape how it should
 be done.
 
@@ -364,13 +364,13 @@ the re-cut carry water-only statistics.
 
 ### Delete the row, keep the enrichment
 
-The expensive part of a corpus row is not the row. N7-3's campaign spent real quota and real time on
+The expensive part of a corpus row is not the row. A07a-3's campaign spent real quota and real time on
 **3DEP elevation (99.5% coverage), measured depth, and the wind climatology** — none of which comes back
-from N7b for free. A user requesting a body via N7b would trigger a re-run of ETL passes that were
+from A07b for free. A user requesting a body via A07b would trigger a re-run of ETL passes that were
 already paid for once.
 
 **So: remove from the live corpus, archive the enriched row.** A cold JSON export in R2 beside the
-imagery archive costs approximately nothing and turns N7b re-add from *"re-run the enrichment"* into
+imagery archive costs approximately nothing and turns A07b re-add from *"re-run the enrichment"* into
 *"restore the row."* This is the one design note that makes the founder's recoverability argument
 actually true rather than nearly true.
 
@@ -390,7 +390,7 @@ sees when they confirm the removal.
 |---|---|
 | **Candidate** | ≥ N observations across the nine seasons, **zero** classified as ice, area above the elimination floor |
 | **Never automatic** | Surfaced to an operator with the evidence — count, seasons covered, area, and the frames themselves |
-| **Recoverable** | Enriched row archived to R2 before removal; N7b restores rather than re-derives |
+| **Recoverable** | Enriched row archived to R2 before removal; A07b restores rather than re-derives |
 | **Priors that agree** | Salt/brackish flags and `tidalBand` already exist in the ETL — a coastal body the imagery says never froze is two independent signals agreeing, which is a much stronger candidate than either alone |
 
 **Expected catch:** coastal and southern-Massachusetts bodies, Cape Cod salt ponds, and tidal
@@ -405,7 +405,7 @@ left unpurged.
   becomes an input to a notification, a ranking or a gate, it is a prediction (D3, D150).
 - **Shipping either without its gate.** Lane 1's gate is validation against our own reports; Lane 2's
   is an operator confirming with the evidence in front of them.
-- **Starting before N6e PR 2.** No lane has an input until the archive exists.
+- **Starting before A06e PR 2.** No lane has an input until the archive exists.
 - **Treating a deduction as more certain than a measurement.** The cross-frame reasoning above ends in
   claims like *"it cannot have melted"*, which are only as good as the gap between the two observations
   they span. A conclusion drawn across a fortnight of cloud carries a fortnight of doubt, and D151's

@@ -259,7 +259,7 @@ export const BODY_FEATURE_CAVEAT =
   'A known seasonal feature of this water body — weak every season regardless of recent cold.';
 
 /**
- * The one line a promoted pin carries in its drawer (D53 amendment, N5c).
+ * The one line a promoted pin carries in its drawer (D53 amendment, A05c).
  *
  * Promotion no longer hides the sighting it came from, so for the rest of that season the map shows
  * both: a hazard somebody reported on a date, and a permanent feature saying this is a thing the lake
@@ -289,7 +289,7 @@ export function consensusSummary(memberCount: number): string {
  *
  * Deliberately coarse. A hazard's age is a confidence signal, not a measurement, and printing it to
  * the minute implies a precision the observation never had (D3). `now` is passed rather than read so
- * every test can pin the clock, per the convention N5a's season work established.
+ * every test can pin the clock, per the convention A05a's season work established.
  */
 export function relativeWhen(at: number, now: number): string {
   const hours = (now - at) / 3_600_000;

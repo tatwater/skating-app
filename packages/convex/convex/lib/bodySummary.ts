@@ -1,10 +1,10 @@
 /**
- * Maintaining `waterBodies.summary` — the map card's denormalized counts (N6c Workstream E).
+ * Maintaining `waterBodies.summary` — the map card's denormalized counts (A06c Workstream E).
  *
  * ## Recomputed from the window, not incremented
  *
  * The plan describes this as a counter "bumped by `reports.create`, moderation transitions, and
- * hazard create/confirm/archive", generalizing the Phase 4 contribution counters. **A counter is the
+ * hazard create/confirm/archive", generalizing the Phase 04 contribution counters. **A counter is the
  * wrong shape for half of what the card carries**, and the reason is worth stating because
  * `contributionCounts.ts` sitting next door makes the counter look like the obvious pattern:
  *
@@ -61,7 +61,7 @@
  * means a third writer cannot be added without meeting it.
  *
  * **One deliberate omission.** `reports.renameSkateTimeToSkateEndTime` patches `skateEndTime`, but it
- * is the one-time Phase 5 field rename — already run, against reports far outside any card's window —
+ * is the one-time Phase 05 field rename — already run, against reports far outside any card's window —
  * and the sweep would reconcile it within six hours regardless. Named here so its absence reads as a
  * decision rather than a miss.
  *

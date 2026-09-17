@@ -1,5 +1,5 @@
 /**
- * Geometry for the wind-exposure rose — **pure, and deliberately not a component** (N7-3).
+ * Geometry for the wind-exposure rose — **pure, and deliberately not a component** (A07a-3).
  *
  * The same picture ships on the web app (SVG) and in the native app (`react-native-svg`), and those
  * two renderers share no element types at all. What they *can* share is the arithmetic, so this

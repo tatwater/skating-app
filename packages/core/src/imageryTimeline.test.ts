@@ -145,7 +145,7 @@ describe('buildBodyTimeline — the gates that run before coverage', () => {
   });
 
   it('tests coverage from the interior point, not the shoreline centroid', () => {
-    // N6c-1's finding: `centroid` is Turf's pointOnFeature and sits 30.7 km off on Champlain — the one
+    // A06c-1's finding: `centroid` is Turf's pointOnFeature and sits 30.7 km off on Champlain — the one
     // point on the body most likely to fall the wrong side of a granule boundary. Here the stored
     // centroid is outside the granule and the interior point is inside; preferring the centroid would
     // drop a frame that covers the lake perfectly well.

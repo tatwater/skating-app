@@ -1,5 +1,5 @@
 /**
- * Where an OAuth callback is allowed to send the browser (Phase 8).
+ * Where an OAuth callback is allowed to send the browser (Phase 08).
  *
  * The callback in `convex/http.ts` is a **public, unauthenticated** endpoint that ends by putting a
  * caller-influenced string into a `Location:` header. That is the classic shape of an open redirect,

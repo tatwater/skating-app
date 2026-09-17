@@ -9,7 +9,7 @@ import {
 } from './depthSources';
 
 /**
- * The registry and the manifest rules (N6a). Two things here are load-bearing rather than tidy:
+ * The registry and the manifest rules (A06a). Two things here are load-bearing rather than tidy:
  * `unverified` and `mismatch` must never collapse into one another, and an archive with no recorded
  * licence must refuse to be run from — because LAGOS-US' rights statement has been an open question
  * since this phase was scoped, and a clean import would close it by forgetting it.

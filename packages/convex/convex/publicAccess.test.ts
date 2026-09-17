@@ -1,5 +1,5 @@
 /**
- * "No public access" — corroboration, the moderator verdict, and the re-report gate (N6f).
+ * "No public access" — corroboration, the moderator verdict, and the re-report gate (A06f).
  *
  * Two properties carry the design and each has its own block below:
  *
@@ -355,7 +355,7 @@ describe('the re-report gate under an “open” verdict', () => {
   });
 });
 
-/** Make every queued notification due and flush it — the settle window (N8 / D169), fast-forwarded. */
+/** Make every queued notification due and flush it — the settle window (A08 / D169), fast-forwarded. */
 async function flushAllDue(t: ReturnType<typeof convexTest>) {
   await t.run(async (ctx) => {
     for (const row of await ctx.db.query('notificationQueue').collect()) {
@@ -368,8 +368,8 @@ async function flushAllDue(t: ReturnType<typeof convexTest>) {
 
 describe('a ruling resolves the reports the way the queue would', () => {
   // The drawer told each reporter "it's with the moderators". This is the moment they hear back —
-  // and the ruling has to count on the Phase 7b chart like any other resolution. Both were built
-  // after N6f and hang off `moderation.resolveFlag`; this path patched the rows itself and skipped
+  // and the ruling has to count on the Phase 07-2 chart like any other resolution. Both were built
+  // after A06f and hang off `moderation.resolveFlag`; this path patched the rows itself and skipped
   // both, silently.
   test('every distinct reporter is told the verdict, once, and the ruling moderator is not', async () => {
     const t = convexTest(schema, modules);

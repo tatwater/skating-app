@@ -2,12 +2,12 @@
 
 How a reported ice hazard ages, fades, gets confirmed or cleared, and how big it's drawn on
 the map. This is the human-readable companion to the calibration research in
-[`plans/research/hazard-decay-calibration-and-behavior.md`](../plans/research/hazard-decay-calibration-and-behavior.md) (Phase 9) and the
+[`plans/research/hazard-decay-calibration-and-behavior.md`](../plans/research/hazard-decay-calibration-and-behavior.md) (Phase 09a) and the
 weather layering in [`plans/phases/10-weather.md`](../plans/phases/10-weather.md) (Phase 10).
 
 > **Who this is for.** Anyone tuning hazard behavior, or trying to understand why a two-week-old
 > pressure-ridge pin is still on the map while a day-old open-water pin has already faded. The
-> numbers are **admin-tunable defaults** (Phase 7 / D49), calibrated from literature + a
+> numbers are **admin-tunable defaults** (Phase 07 / D49), calibrated from literature + a
 > 1,197-post regional corpus — *signs locked, magnitudes not.*
 
 ---
@@ -43,13 +43,13 @@ A hazard's freshness is computed at **read time** (never stored) from two layers
 ```
 
 Concretely: `effectiveAge = elapsed × multiplier`, then the same fresh/aging/stale thresholds
-run on `effectiveAge` instead of raw `elapsed`. Layer 1 is Phase 9 and weather-free; Layer 2 is
+run on `effectiveAge` instead of raw `elapsed`. Layer 1 is Phase 09a and weather-free; Layer 2 is
 Phase 10 and sits entirely on top. If weather data is missing, the multiplier is `1` and you're
 back to pure base decay (fail-open).
 
 ---
 
-## Layer 1 — base per-type decay (Phase 9, D52)
+## Layer 1 — base per-type decay (Phase 09a, D52)
 
 Every hazard type has its own clock, in **hours**, with two thresholds that split the timeline
 into three buckets (`packages/core/src/hazardDecay.ts`):
@@ -79,7 +79,7 @@ Two nuances baked into the tiers:
 - **`ridge_crossing` is a "passage" marker, not a danger.** It reuses the hazard *machinery*
   (geometry, decay tiers, the confirm loop) but marks *where you can get across* a ridge. It's
   A\* because a crossable spot at dawn can be a mess by mid-morning. It's the one type that
-  never triggers an [on-ice alert](./on-ice-alerts.md) — and, since N5a/D64, the one type whose
+  never triggers an [on-ice alert](./on-ice-alerts.md) — and, since A05a/D64, the one type whose
   **lifecycle is inverted at every point**. See
   [Passage markers decay the other way](#passage-markers-decay-the-other-way-n5ad64) below; the
   short version is that everything on this page about absence of evidence keeping a pin alive is
@@ -185,12 +185,12 @@ healed ridge *is* a line of refrozen blocks you can still catch an edge on):
 | `still_there` | resets the decay clock, counts toward confirmation |
 | `healing_unsafe` | **keeps** the pin (now annotated), counts toward *nothing* — "it changed and it's still dangerous" |
 | `fully_healed` | moves a hazard toward removal |
-| `never_existed` *(N5a/D65)* | pools with `fully_healed` toward the same archive, **and files a moderation flag** |
+| `never_existed` *(A05a/D65)* | pools with `fully_healed` toward the same archive, **and files a moderation flag** |
 
 **`never_existed` is not a fourth degree of gone.** The three above are claims about the *ice*;
 this one is a claim about the *report* — a mis-tapped location, a shadow read as a lead, or a
 troll. Without it the only way to clear a bogus pin was to record that it "healed", which writes
-a false entry into the ice record and, once N5a's cross-season recurrence work reads it, becomes
+a false entry into the ice record and, once A05a's cross-season recurrence work reads it, becomes
 evidence that a hazard formed somewhere it never did.
 
 Two consequences fall out, and they point in different directions:
@@ -230,7 +230,7 @@ Provisional vs. confirmed also drives [on-ice alerting](./on-ice-alerts.md): a p
 hazard can't shout a warning, only ask "can you see it?" — and that ask *is* how it collects the
 confirmation it needs.
 
-### Who confirmed it (N5a/D65)
+### Who confirmed it (A05a/D65)
 
 A confirmation from someone whose history you can look at carries weight a bare count doesn't —
 that's the whole argument behind [boost-only trust](./user-reputation.md). But a confirmation is
@@ -247,7 +247,7 @@ The hazard's **author** is excluded from the named list even when they voted `st
 their vote refreshes the clock but counts toward no threshold, so naming them would print more
 names than the count they sit under, and print the reporter as their own corroborator.
 
-### Passage markers decay the other way (N5a/D64)
+### Passage markers decay the other way (A05a/D64)
 
 Everything above assumes **absence of evidence keeps a pin alive**: a hazard fades to a visible
 floor and never disappears, because assuming a danger is still there is the recoverable mistake.
@@ -291,7 +291,7 @@ Three constants and one state carry it:
 The copy follows: **"suggested crossing", never "safe crossing"**, and every surface repeats that
 judging the crossing in the moment is the skater's call, not ours.
 
-### Seasons hide, they never remove (N5a/D63)
+### Seasons hide, they never remove (A05a/D63)
 
 A hazard now also leaves the default view at the **season boundary** (July 1). That is a third
 axis, and it must not be confused with either of the two above:
@@ -373,7 +373,7 @@ Stated so nobody hunts for a constant that doesn't exist:
 
 ## A near-neighbour that must NOT reuse this model (D73)
 
-N6d adds **access alerts** — "the gate is locked", "the road isn't plowed" — and they borrow this page's
+A06d adds **access alerts** — "the gate is locked", "the road isn't plowed" — and they borrow this page's
 *machinery* (the confirm/deny loop, `pointEvents`, the "never existed" retraction) while deliberately
 rejecting its *physics*.
 
@@ -382,7 +382,7 @@ padlock. Applying `decayMultiplier` to an access alert would let a warm week sil
 closure — and that failure is nearly invisible in review, because it looks exactly like an alert decaying
 normally. So access alerts use a plain TTL extended by confirmation, with **no weather term at all**.
 
-Recorded here rather than only in the N6d doc because the mistake is the kind you make by being helpful:
+Recorded here rather than only in the A06d doc because the mistake is the kind you make by being helpful:
 the two features look alike, the constants are right there, and reusing them reads as consistency.
 
 ## Where the type taxonomy comes from

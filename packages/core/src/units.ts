@@ -116,7 +116,7 @@ export function formatAreaAcres(sqm: number, decimals = 1): string {
 }
 
 /**
- * Lake depth in feet (N6a). Whole feet by default: every source we have is either a survey read off a
+ * Lake depth in feet (A06a). Whole feet by default: every source we have is either a survey read off a
  * contour interval or a model, so a decimal would be false precision on both.
  */
 export function formatDepthFeet(meters: number, decimals = 0): string {

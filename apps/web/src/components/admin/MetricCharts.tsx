@@ -16,7 +16,7 @@ import {
 } from '../charts/Charts';
 
 /**
- * The bridge from the analytics queries to the chart kit (Phase 7b). Each component here fetches one
+ * The bridge from the analytics queries to the chart kit (Phase 07-2). Each component here fetches one
  * metric (or a small set) and renders it through the right chart for its shape, so the dashboard and
  * the tuning control-room stay declarative — a page names the metric it wants and gets a titled,
  * table-backed, empty-state-aware card. The metric's label + description + axis labels come from the

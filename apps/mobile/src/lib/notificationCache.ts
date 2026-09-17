@@ -1,5 +1,5 @@
 /**
- * On-device cache of the inbox's last page plus the offline read overlay (N8 PR 3) — the
+ * On-device cache of the inbox's last page plus the offline read overlay (A08 PR 3) — the
  * `expo-sqlite` glue behind the pure `notificationCacheModel.ts`. Reuses the `reportCache` pattern:
  * best-effort throughout, a storage failure never blocks the live path.
  */

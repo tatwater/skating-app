@@ -48,7 +48,7 @@ const generatedDir = join(convexDir, '_generated');
 // `convex dev` writes before its first push (`componentApiStubDTS`):
 // `componentsGeneric()` in `api.js`, `AnyComponents` in `api.d.ts`. The app's own
 // `api`/`internal` stay precisely derived, as before.
-// Currently **no components are installed**: N1 retired `@convex-dev/geospatial` in favour
+// Currently **no components are installed**: A01 retired `@convex-dev/geospatial` in favour
 // of the plain `waterBodyCells` / `adminAreaCells` tables, so this branch is dormant. It
 // stays because installing one again shouldn't mean rediscovering the stub trick.
 const hasComponents = existsSync(join(convexDir, 'convex.config.ts'));

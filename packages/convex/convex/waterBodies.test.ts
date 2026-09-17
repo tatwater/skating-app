@@ -16,7 +16,7 @@ import { footprintMoved } from './waterBodies';
 
 const modules = import.meta.glob('./**/*.*s');
 
-/** A `convexTest` instance. (It used to register the geospatial component; N1 retired it.) */
+/** A `convexTest` instance. (It used to register the geospatial component; A01 retired it.) */
 function convexTestWithGeo() {
   const t = convexTest(schema, modules);
   return t;
@@ -52,7 +52,7 @@ const SAMPLE_BODY = {
 /**
  * A canonical (OSM) body as the ETL would hand it to `importCanonical`.
  *
- * **`osmId` is now required in practice** (N7 / D93): the upsert keys on the catalogue ids, and a
+ * **`osmId` is now required in practice** (A07a / D93): the upsert keys on the catalogue ids, and a
  * record carrying none cannot be identified at all — `resolveUpsert` returns `conflict` rather than
  * inventing one. It used to be derived from `source` + `externalId`, which is the conflation D93
  * exists to undo.
@@ -125,7 +125,7 @@ async function seedUser(
 /**
  * Seed a recorded skate for `subject` and return the `create` args derived from it.
  *
- * Phase 8 made `waterBodies.create` **path-only** (D14/D36): the client cannot supply a polygon at
+ * Phase 08 made `waterBodies.create` **path-only** (D14/D36): the client cannot supply a polygon at
  * all — the server derives it from a trusted GPS track. So every create test now needs a real
  * recorded activity behind it, which is the point: there is no way to mint a body without one.
  *
@@ -233,7 +233,7 @@ describe('waterBodies.create (path-only, D14/D36)', () => {
     const t = convexTestWithGeo();
     const asMember = await seedUser(t, 'clerk_member');
     const args = await seedTrackCreateArgs(t, 'clerk_member');
-    // The old contract took a client polygon and validated its shape. The Phase 8 contract doesn't
+    // The old contract took a client polygon and validated its shape. The Phase 08 contract doesn't
     // take one, so a hand-drawn blob is rejected by the arg validator before any handler logic runs
     // — the "no freehand drawing, ever" rule enforced at the trust boundary rather than in the UI.
     await expect(
@@ -436,7 +436,7 @@ describe('waterBodies.approve (role gating + audit log, D37)', () => {
   });
 });
 
-describe('waterBodies.listInViewport (the ladder-grid read path, D5/N1)', () => {
+describe('waterBodies.listInViewport (the ladder-grid read path, D5/A01)', () => {
   test('a pending user body is auto-visible (D37/D48) and stays visible after approval', async () => {
     const t = convexTestWithGeo();
     const asMember = await seedUser(t, 'clerk_member');
@@ -646,9 +646,9 @@ describe('waterBodies.listInViewport (the ladder-grid read path, D5/N1)', () => 
     }
   });
 
-  test('returns all 300 in-view bodies — the old 256 clamp used to drop the tail (N1)', async () => {
-    // The user-visible half of N1. `MAX_VIEWPORT_LIMIT` was 256, measured as a *safety* number
-    // against Vermont's 9,967 bodies; across the Phase-2.5 corpus a dense viewport exceeds it, so
+  test('returns all 300 in-view bodies — the old 256 clamp used to drop the tail (A01)', async () => {
+    // The user-visible half of A01. `MAX_VIEWPORT_LIMIT` was 256, measured as a *safety* number
+    // against Vermont's 9,967 bodies; across the Phase-02b corpus a dense viewport exceeds it, so
     // lakes silently stopped being drawn. With reads bounded by geometry the limit is only a render
     // budget, and 300 prominent bodies in view all come back. A client asking for a million still
     // gets no more than the ceiling — the clamp exists so the read-budget arithmetic holds.
@@ -712,7 +712,7 @@ describe('waterBodies.listInViewport (the ladder-grid read path, D5/N1)', () => 
   });
 });
 
-describe('waterBodies name claims and searchText (N7)', () => {
+describe('waterBodies name claims and searchText (A07a)', () => {
   /** Auburn's own water supply: NHD's `gnis_name` is "The Basin", OSM says "Lake Auburn". */
   const AUBURN = {
     ...CANONICAL_ITEM,
@@ -891,7 +891,7 @@ describe('waterBodies.backfillRepresentativePoint (the centroid rename transitio
   });
 });
 
-describe('waterBodies profile-richness prominence (N6c / D2)', () => {
+describe('waterBodies profile-richness prominence (A06c / D2)', () => {
   test('contour coverage feeds the richness score, and a re-tile can take it away', async () => {
     // Coverage is a property of the TILESET, not the body, so it lives in a side table keyed on
     // externalId — which is also why a body that drops out of a re-tile cannot keep claiming a
@@ -998,7 +998,7 @@ describe('waterBodies profile-richness prominence (N6c / D2)', () => {
   });
 });
 
-describe('waterBodies wind rose (N6c A4b)', () => {
+describe('waterBodies wind rose (A06c A4b)', () => {
   const FETCH = [
     1900, 500, 300, 200, 200, 200, 400, 4500, 1900, 1300, 1100, 1000, 1200, 1100, 1300, 3000,
   ];
@@ -1096,7 +1096,7 @@ describe('waterBodies wind rose (N6c A4b)', () => {
   });
 });
 
-describe('waterBodies elevation (N6c A1)', () => {
+describe('waterBodies elevation (A06c A1)', () => {
   const AT = { lat: 44.5, lng: -73.3 };
 
   async function seedBody(
@@ -1374,7 +1374,7 @@ describe('waterBodies.importCanonical (idempotent OSM upsert, D14/D48)', () => {
     ).toHaveLength(0);
   });
 
-  test('carries the N6c shape stats onto the row, and clears them when a re-import cannot measure them', async () => {
+  test('carries the A06c shape stats onto the row, and clears them when a re-import cannot measure them', async () => {
     const t = convexTestWithGeo();
 
     // `importCanonical` patches a NAMED field list, which is what lets depth, curatedBoost and the
@@ -1455,7 +1455,7 @@ describe('waterBodies.importCanonical (idempotent OSM upsert, D14/D48)', () => {
     expect(all[0]?.name).toBe('Second');
   });
 
-  test('cells a body at a rung matching its size — a big body rides a coarser one (N1)', async () => {
+  test('cells a body at a rung matching its size — a big body rides a coarser one (A01)', async () => {
     const t = convexTestWithGeo();
     await t.mutation(internal.waterBodies.importCanonical, {
       bodies: [
@@ -1510,7 +1510,7 @@ describe('waterBodies.importCanonical (idempotent OSM upsert, D14/D48)', () => {
     expect(after[0]?.z).toBeLessThan(before[0]?.z as number);
   });
 
-  test('rejects an unknown state code before any write (Phase 2.5 guard)', async () => {
+  test('rejects an unknown state code before any write (Phase 02b guard)', async () => {
     const t = convexTestWithGeo();
     await expect(
       t.mutation(internal.waterBodies.importCanonical, {
@@ -1523,7 +1523,7 @@ describe('waterBodies.importCanonical (idempotent OSM upsert, D14/D48)', () => {
   });
 });
 
-describe('waterBodies.backfillCells (the migration onto the ladder grid, N1)', () => {
+describe('waterBodies.backfillCells (the migration onto the ladder grid, A01)', () => {
   test('cells a body that has no index rows so it becomes queryable', async () => {
     const t = convexTestWithGeo();
     // A row written directly, with no cell rows — what every body in the deployed corpus looks
@@ -1648,7 +1648,7 @@ describe('waterBodies.pruneBelowAreaFloor (bringing the stored corpus to D91)', 
   }
 
   /**
-   * The bodies still **active** — since N7b the prune demotes rather than deletes, so "what
+   * The bodies still **active** — since A07b the prune demotes rather than deletes, so "what
    * survived" means what is still on the active map. `stillStored` below pins that nothing left.
    */
   async function remaining(t: ReturnType<typeof convexTest>): Promise<string[]> {
@@ -1667,7 +1667,7 @@ describe('waterBodies.pruneBelowAreaFloor (bringing the stored corpus to D91)', 
     const t = convexTestWithGeo();
     await seedBody(t, { externalId: 'osm/bog', type: 'wetland', surfaceAreaSqM: BIG });
     // A long-axis exemption was designed and measured for this class, then dropped (founder,
-    // 2026-08-03, "for now"). N7b's includedByRequest is what makes dropping it recoverable.
+    // 2026-08-03, "for now"). A07b's includedByRequest is what makes dropping it recoverable.
     await seedBody(t, {
       externalId: 'osm/bog-long',
       type: 'wetland',
@@ -1700,7 +1700,7 @@ describe('waterBodies.pruneBelowAreaFloor (bringing the stored corpus to D91)', 
     expect(await remaining(t)).toEqual(['osm/pond-named-small']);
   });
 
-  test('N7b: keeps a body admitted by request, however far under the floor', async () => {
+  test('A07b: keeps a body admitted by request, however far under the floor', async () => {
     const t = convexTestWithGeo();
     await seedBody(t, {
       externalId: 'osm/requested',
@@ -1729,7 +1729,7 @@ describe('waterBodies.pruneBelowAreaFloor (bringing the stored corpus to D91)', 
     expect(result.deleted).toBe(2);
     expect(result.kept.clearsFloor).toBe(2);
     expect(await remaining(t)).toEqual(['osm/big', 'osm/named']);
-    // Demoted, not deleted (N7b): the row is still there, dormant with the prune's reason, and its
+    // Demoted, not deleted (A07b): the row is still there, dormant with the prune's reason, and its
     // cell rows moved to the dormant rung — reachable by someone standing on it, invisible to
     // anyone browsing.
     expect(await stillStored(t)).toBe(4);
@@ -2004,7 +2004,7 @@ describe('waterBodies.get (detail + merged redirect, D36/D47)', () => {
     expect(result.body._id).toEqual(survivor._id);
   });
 
-  test('returns a removed body whole, so the client can say why (N7b)', async () => {
+  test('returns a removed body whole, so the client can say why (A07b)', async () => {
     const t = convexTestWithGeo();
     await t.mutation(internal.waterBodies.importCanonical, { bodies: [CANONICAL_ITEM] });
     const id = await onlyBodyId(t);
@@ -2096,7 +2096,7 @@ describe('waterBodies.setCuratedBoost (D49, moderator — D37 refined 2026-07-23
   });
 });
 
-describe('waterBodies.setSatelliteImagery (N6c D70/D75, moderator)', () => {
+describe('waterBodies.setSatelliteImagery (A06c D70/D75, moderator)', () => {
   test('a member cannot override the satellite link', async () => {
     const t = convexTestWithGeo();
     await t.mutation(internal.waterBodies.importCanonical, { bodies: [CANONICAL_ITEM] });
@@ -2316,7 +2316,7 @@ describe('waterBodies.listInViewport — zoom-scored prominence (D49)', () => {
     ]);
   });
 
-  test('a bound row budget is shared across cells, so a later cell is not starved (N1)', async () => {
+  test('a bound row budget is shared across cells, so a later cell is not starved (A01)', async () => {
     // Greptile PR #27, round 2: ranking after the scan isn't enough on its own — if the early cells
     // can spend the whole row budget, the sort ranks a *spatially selected* prefix and the bias just
     // moves down a level. Here every cell in the box holds bodies, the row budget is tightened to 6,
@@ -2361,7 +2361,7 @@ describe('waterBodies.listInViewport — zoom-scored prominence (D49)', () => {
     expect(stats.names).toContain('Headline Lake');
   });
 
-  test('a truncation in the LAST cell of the plan is still reported (N1)', async () => {
+  test('a truncation in the LAST cell of the plan is still reported (A01)', async () => {
     // Greptile PR #27 round 6. Clamping the probe to the remaining budget made the row ceiling exact,
     // but created a boundary: when the budget cuts the probe short, "was there more?" goes unanswered.
     // On any cell but the last, the exhausted budget flags it on the next iteration — on the last one
@@ -2398,7 +2398,7 @@ describe('waterBodies.listInViewport — zoom-scored prominence (D49)', () => {
     expect(stats.truncated).toBe(true); // …which is the part that has to be said out loud
   });
 
-  test('an over-budget cell plan drops whole rungs, not the tail of one (N1)', async () => {
+  test('an over-budget cell plan drops whole rungs, not the tail of one (A01)', async () => {
     // Greptile PR #27, round 7: the cell plan is built coarsest rung first and row-major within a
     // rung, so cutting it at `CELL_SCAN_BUDGET` blanked whichever corner of the box the walk reached
     // last — and pass 2 can't rank a body back in from a cell nobody looked up. The two ponds below
@@ -2640,7 +2640,7 @@ describe('waterBodies.searchByName (map search box)', () => {
   });
 });
 
-describe('waterBodies.applyCuratedBoostSeed (Phase 2.5 re-seed)', () => {
+describe('waterBodies.applyCuratedBoostSeed (Phase 02b re-seed)', () => {
   const canonical = (externalId: string, name: string, surfaceAreaSqM: number) => ({
     source: 'osm' as const,
     externalId,
@@ -2753,11 +2753,11 @@ describe('waterBodies.resolveBodyForCoord (F2 offline flush / coord→lake)', ()
   });
 
   /**
-   * The N7b change, and the reason a removed body keeps its cell rows: the landowner skating their
+   * The A07b change, and the reason a removed body keeps its cell rows: the landowner skating their
    * own taken-down pond resolves to *that* row, so their report attaches to it rather than minting
    * a fresh public body over the takedown.
    */
-  test('resolves a removed body when the coord is inside it (N7b)', async () => {
+  test('resolves a removed body when the coord is inside it (A07b)', async () => {
     const t = convexTestWithGeo();
     const id = await seedCanonical(t);
     const asAdmin = await seedUser(t, 'clerk_admin', 'admin');
@@ -2840,7 +2840,7 @@ describe('waterBodies.findMatchCandidates (the "attach here?" steer, D36)', () =
 });
 
 /**
- * Catalogue identity — `osmId` / `nhdId` / `geometrySource` (N6b follow-up).
+ * Catalogue identity — `osmId` / `nhdId` / `geometrySource` (A06b follow-up).
  *
  * These fields exist to separate *who a lake is* from *which key we imported it under*, so that a
  * body can eventually hold both an OSM and an NHD identity and draw from either. The tests that
@@ -2891,7 +2891,7 @@ describe('waterBodies catalogue identity', () => {
   });
 
   test('stores the third catalogue id and the gazetteer id D93 named', async () => {
-    // `threeDhpId` is a third of `resolveUpsert`'s lookup and had no column until N7 step 5; `gnisId`
+    // `threeDhpId` is a third of `resolveUpsert`'s lookup and had no column until A07a step 5; `gnisId`
     // proposes candidates and must never decide identity (GNIS_IS_NOT_AN_UPSERT_KEY).
     const t = convexTestWithGeo();
     await t.mutation(internal.waterBodies.importCanonical, {
@@ -2926,7 +2926,7 @@ describe('waterBodies catalogue identity', () => {
   });
 });
 
-describe('importCanonical keyed on catalogue ids (N7 / D93)', () => {
+describe('importCanonical keyed on catalogue ids (A07a / D93)', () => {
   test('an NHD feature finds the OSM body it already is, instead of duplicating it', async () => {
     // **The failure this whole phase exists to prevent.** Under `(source, externalId)` an NHD record
     // could never match an OSM row, so importing the federal lane would have inserted a second copy
@@ -3053,7 +3053,7 @@ describe('importCanonical keyed on catalogue ids (N7 / D93)', () => {
   });
 
   test('a conflict marks both rows for review, so step 6 cannot delete the evidence', async () => {
-    // **The N7 second audit's hole.** The conflict branch wrote nothing at all, which was right
+    // **The A07a second audit's hole.** The conflict branch wrote nothing at all, which was right
     // about the body and catastrophic next to step 6: neither row got a `lastCampaignId`, so
     // `pruneNotInCampaign` then saw two clean, unattached, un-reaffirmed rows and deleted BOTH —
     // resolving a corpus-uniqueness violation by destroying the evidence of it.
@@ -3121,7 +3121,7 @@ describe('importCanonical keyed on catalogue ids (N7 / D93)', () => {
     const after = await t.run(async (ctx) => ctx.db.get(id));
     expect(after?.removedAt).toBeDefined();
     expect(after?.removalReason).toBe('landowner_request');
-    // Since N7b a removed body keeps cell rows — at the dormant rung, so the browsable viewport
+    // Since A07b a removed body keeps cell rows — at the dormant rung, so the browsable viewport
     // read (`minVisibleZoom <= zoom` at z14) cannot reach it, while a coordinate lookup can. The
     // re-import must re-derive that rung from the preserved `removedAt`, not from area + boost.
     expect(after?.minVisibleZoom).toBe(DORMANT_MIN_VISIBLE_ZOOM);
@@ -3135,7 +3135,7 @@ describe('importCanonical keyed on catalogue ids (N7 / D93)', () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// The wire contract between the merge and the loader (N7 audit)
+// The wire contract between the merge and the loader (A07a audit)
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe('the merged record is accepted and stored whole', () => {
@@ -3232,12 +3232,12 @@ describe('the merged record is accepted and stored whole', () => {
 describe('pruneNotInCampaign — campaign step 6', () => {
   const CAMPAIGN = 'n7-2026-08-06';
 
-  test('demotes a stored body the master list did not re-affirm (deleted it, before N7b)', async () => {
+  test('demotes a stored body the master list did not re-affirm (deleted it, before A07b)', async () => {
     // `importCanonical` never deletes, so after a re-import the corpus is the UNION of the new master
     // list and whatever was there before — and neither set contains the other. A body the new rules
     // now refuse (a vetoed Great Lake, an out-of-region row, an unnamed wetland under the 50-acre
     // bar) survives forever: `pruneBelowAreaFloor` only sees area, `pruneOutsideCoverage` only sees
-    // polygons handed to it. Since N7b the answer is dormancy, not deletion: the row stays, off
+    // polygons handed to it. Since A07b the answer is dormancy, not deletion: the row stays, off
     // every push surface, and a report on it brings it back as `includedByRequest`.
     const t = convexTestWithGeo();
     await t.mutation(internal.waterBodies.importCanonical, {
@@ -3312,7 +3312,7 @@ describe('pruneNotInCampaign — campaign step 6', () => {
     expect(res).toMatchObject({ deleted: 0, kept: expect.objectContaining({ attached: 1 }) });
   });
 
-  test('never deletes a body somebody asked for — N7b’s whole point', async () => {
+  test('never deletes a body somebody asked for — A07b’s whole point', async () => {
     const t = convexTestWithGeo();
     await t.mutation(internal.waterBodies.importCanonical, {
       bodies: [{ ...CANONICAL_ITEM, osmId: 'way/1' }],
@@ -3336,7 +3336,7 @@ describe('pruneNotInCampaign — campaign step 6', () => {
     ).rejects.toThrow(/campaignId/);
   });
 
-  // ── The blast radius (N7 second audit) ──────────────────────────────────────
+  // ── The blast radius (A07a second audit) ──────────────────────────────────────
   //
   // The prune's premise is that an unstamped row is a row the master list did not contain. That
   // premise has one likely failure: `load.ts` deliberately survives isolated batch failures, and
@@ -3715,7 +3715,7 @@ describe('resolveCampaignDuplicates — the 61 the prune spared', () => {
 // ─────────────────────────────────────────────────────────────────────────────
 // The campaign's own tooling — read-only counters, backfills, and a second prune
 //
-// These are the functions the N7 campaign was actually driven with, and every one of them was
+// These are the functions the A07a campaign was actually driven with, and every one of them was
 // written and then run against the live corpus with no test behind it. `pruneOutsideCoverage` is
 // the one that matters most: it **deletes**, and an untested delete path is the thing this whole
 // audit exists to object to.
@@ -3859,7 +3859,7 @@ describe('pruneOutsideCoverage — the coverage cut that demotes', () => {
       deleted: 1,
       kept: expect.objectContaining({ inCoverage: 1 }),
     });
-    // Dormant, not gone (N7b).
+    // Dormant, not gone (A07b).
     const shelved = await t.run((ctx) => ctx.db.get(inside));
     expect(shelved?.dormant?.reason).toBe('not_in_campaign');
     const kept = await t.run((ctx) => ctx.db.get(outside));
@@ -4313,7 +4313,7 @@ describe('a boost of zero is not a curation decision', () => {
   });
 });
 
-describe('setIncludedByRequest — N7b’s primitive', () => {
+describe('setIncludedByRequest — A07b’s primitive', () => {
   /** A minimal admin profile — the audit row needs a real `profiles` id to attribute the write to. */
   const actor = (t: ReturnType<typeof convexTestWithGeo>) =>
     t.run((ctx) =>
@@ -4442,7 +4442,7 @@ describe('setIncludedByRequest — N7b’s primitive', () => {
   });
 });
 
-describe('the review queue (N7)', () => {
+describe('the review queue (A07a)', () => {
   /** A queued body, as the merge emits one. */
   const queued = (
     id: string,
@@ -4530,7 +4530,7 @@ describe('the review queue (N7)', () => {
   });
 });
 
-describe('importCanonical duplicate flagging (N7)', () => {
+describe('importCanonical duplicate flagging (A07a)', () => {
   // The run-7 load flagged 220 rows `near_certain` and 0 of them carried a partner, so
   // `resolveCampaignDuplicates` — which finds its survivor by walking `duplicateCandidateIds` —
   // reported `no-surviving-partner` for every pair in the queue it was built to clear.
@@ -4601,7 +4601,7 @@ describe('importCanonical duplicate flagging (N7)', () => {
   });
 });
 
-describe('resolveIncomingMergeDuplicates (N7)', () => {
+describe('resolveIncomingMergeDuplicates (A07a)', () => {
   /** The corpus shape run 7 met: two stored rows the new master list emits as one record. */
   async function seedSplitPair(t: ReturnType<typeof convexTest>) {
     await t.mutation(internal.waterBodies.importCanonical, {

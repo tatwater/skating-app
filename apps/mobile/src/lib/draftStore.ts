@@ -15,7 +15,7 @@ import {
 import * as SQLite from 'expo-sqlite';
 
 /**
- * The queue is one table with a `kind` discriminator (Phase 9 offline), not a table per kind.
+ * The queue is one table with a `kind` discriminator (Phase 09a offline), not a table per kind.
  *
  * They share a status machine, a flush loop and a retry contract, so splitting them would mean
  * keeping three copies of that in sync — and the flush has to drain them in **capture order**
@@ -25,7 +25,7 @@ const KIND_REPORT = 'report';
 const HAZARD_KINDS = ['hazard', CONFIRMATION_VOTE_KIND] as const;
 const KIND_TRACK = 'track';
 /**
- * What a queued confirmation was called before N8 renamed it (see `CONFIRMATION_VOTE_KIND` in core
+ * What a queued confirmation was called before A08 renamed it (see `CONFIRMATION_VOTE_KIND` in core
  * for why). Only `ensureSchema` reads this, to rewrite rows a device queued under the old name.
  */
 const LEGACY_CONFIRMATION_KIND = 'hazard_confirmation';
@@ -45,12 +45,12 @@ export interface SqliteLike {
 /**
  * Create the table if missing and run the two `kind` migrations.
  *
- * Installs from before Phase 9 have the table without `kind`. Adding the column with a default is
+ * Installs from before Phase 09a have the table without `kind`. Adding the column with a default is
  * what makes the migration a no-op for the drafts already sitting on those devices — they're reports,
  * and they keep being reports (the `NOT NULL DEFAULT 'report'` backfills every existing row). Guarded
  * by a column check because `ADD COLUMN` throws on a rerun. Pure w.r.t. the injected db so it's tested.
  *
- * The second migration (N8) renames a queued confirmation's kind from `hazard_confirmation` to
+ * The second migration (A08) renames a queued confirmation's kind from `hazard_confirmation` to
  * `confirmation_vote`. The kind is stored **twice** — as the queryable column and inside the JSON
  * blob the flush deserialises — so both are rewritten, in one statement each, and only for rows still
  * carrying the old name (a rerun matches nothing). A confirmation cast on the ice and left in the queue
@@ -82,7 +82,7 @@ export function ensureSchema(db: SqliteLike): void {
 }
 
 /** All **report** drafts, oldest first — the read half of `listDrafts`, factored out to test alongside
- *  `ensureSchema` (a migrated pre-Phase-9 row must still come back here). */
+ *  `ensureSchema` (a migrated pre-Phase-09a row must still come back here). */
 export function readReportDrafts(db: SqliteLike): ReportDraft[] {
   return db
     .getAllSync<{ data: string }>(
@@ -142,13 +142,13 @@ export function deleteDraft(id: string): void {
   getDb().runSync('DELETE FROM report_drafts WHERE id = ?', [id]);
 }
 
-/** Upsert a queued hazard or confirmation (Phase 9 offline) — the hazard `persist` effect. */
+/** Upsert a queued hazard or confirmation (Phase 09a offline) — the hazard `persist` effect. */
 export function saveHazardItem(item: HazardQueueItem): void {
   upsert(item.kind, item, item);
 }
 
 /** Every queued hazard + confirmation, oldest first — the read half of `listHazardItems`, factored
- *  out so the N8 kind rename is tested against a real engine the same way the column migration is. */
+ *  out so the A08 kind rename is tested against a real engine the same way the column migration is. */
 export function readHazardItems(db: SqliteLike): HazardQueueItem[] {
   return db
     .getAllSync<{ data: string }>(
@@ -177,7 +177,7 @@ export function deleteHazardItem(id: string): void {
 }
 
 /**
- * Upsert a recorded track (Phase 8) — the recorder's `persist` effect.
+ * Upsert a recorded track (Phase 08) — the recorder's `persist` effect.
  *
  * Called **during** recording, not only at stop: a three-hour skate is the one artifact a user cannot
  * recreate, so the buffer is checkpointed to disk as it grows. The whole point array is re-serialized

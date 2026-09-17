@@ -27,10 +27,10 @@ const AMENITY_LABELS: Record<string, string> = {
 };
 
 /**
- * How you get onto this lake (N6d / D72, D73, D87).
+ * How you get onto this lake (A06d / D72, D73, D87).
  *
  * Renders **nothing at all** when there is no access data, which is most of the corpus. That is the
- * N6c B4 discipline applied here: a section that says "we don't know where to park" on 20,000 lakes is
+ * A06c B4 discipline applied here: a section that says "we don't know where to park" on 20,000 lakes is
  * worse than no section, and the honest signal is its absence.
  *
  * ## What the alert strip is careful about
@@ -45,7 +45,7 @@ export function AccessSection({
   subAreaId,
 }: {
   waterBodyId: Id<'waterBodies'>;
-  /** The bay view (N9): the bay's own launches, the lots they serve, and lots within reach of its shore. */
+  /** The bay view (A09): the bay's own launches, the lots they serve, and lots within reach of its shore. */
   subAreaId?: Id<'waterBodySubAreas'>;
 }) {
   const access = useQuery(api.accessPoints.accessForBody, {
@@ -139,7 +139,7 @@ export function AccessSectionView({
           hedge is the difference between an estimate and a floor (D87). */}
       {approach ? <p className="text-foreground-muted text-sm">{approach}</p> : null}
 
-      {/* Rules posted on *these* access points (N6e), against the point each governs. The body's own
+      {/* Rules posted on *these* access points (A06e), against the point each governs. The body's own
           rule is a separate strip above this panel and is never folded in here: a lot shut during a
           shop's business hours says nothing about the launch beside it, or about the ice. */}
       {target ? (

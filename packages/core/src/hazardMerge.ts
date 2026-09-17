@@ -1,5 +1,5 @@
 /**
- * Auto-merge — layer 4 of D80, and the only destructive-looking one (N5c).
+ * Auto-merge — layer 4 of D80, and the only destructive-looking one (A05c).
  *
  * The first three layers make duplicates *read* as one hazard. This one makes them *be* one row, which
  * is what actually removes the N× work the confirm loop was doing: two "fully healed" votes retire one

@@ -1,5 +1,5 @@
 /**
- * Barebones themed placeholder for a Phase 0 route — the web analog of the mobile
+ * Barebones themed placeholder for a Phase 00 route — the web analog of the mobile
  * `PlaceholderScreen`. Proves the route renders and is themed (D34); each real surface
  * (map, feed, profile, …) gets deep-dived in its own later-phase PR.
  */

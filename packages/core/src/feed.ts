@@ -1,8 +1,8 @@
 /**
- * Pure logic for the cross-water-body **newsfeed** (Phase 5, D28) — the point-derived location label
+ * Pure logic for the cross-water-body **newsfeed** (Phase 05, D28) — the point-derived location label
  * and the feed-card view-model, framework-free so web + mobile render identically (D7/D40).
  *
- * The feed is global (all lakes, all regions) for now; Phase 4 later layers an additive drive-time /
+ * The feed is global (all lakes, all regions) for now; Phase 04 later layers an additive drive-time /
  * favorites narrow onto the same query without touching this shaping. The card composes the existing
  * `reportView.ts` helpers (humanized ice/surface vocab, quality label, skate-window duration) so a
  * single source drives both surfaces.
@@ -30,7 +30,7 @@ export interface FeedAuthor {
   deleted?: true;
 }
 
-/** The point-derived admin place (from `reports.place`), stamped at create via `adminAreas` (Phase 5). */
+/** The point-derived admin place (from `reports.place`), stamped at create via `adminAreas` (Phase 05). */
 export interface PlaceLabelParts {
   town?: string;
   county?: string;
@@ -55,17 +55,17 @@ export function formatPlaceLabel(place: PlaceLabelParts | undefined): string | n
 
 /** The pieces of a report's / hazard's location line, coarsest last. */
 export interface LocationLineParts {
-  /** The named sub-area stamped at create (N2 / D60) — "Malletts Bay". Absent on most bodies. */
+  /** The named sub-area stamped at create (A02 / D60) — "Malletts Bay". Absent on most bodies. */
   subAreaName?: string;
   /**
-   * Every bay the report is a member of, primary first (N9 / D175) — present only on a skate that
+   * Every bay the report is a member of, primary first (A09 / D175) — present only on a skate that
    * crossed more than one. When present it replaces `subAreaName` in the line: *"Malletts Bay &
    * Shelburne Bay · Lake Champlain"*, because a skater who was in both was in both.
    */
   subAreaNames?: readonly string[];
   /** The parent water body — always present on a report or hazard. */
   bodyName: string;
-  /** The point-derived admin place (`reports.place`), stamped at create via `adminAreas` (Phase 5). */
+  /** The point-derived admin place (`reports.place`), stamped at create via `adminAreas` (Phase 05). */
   place?: PlaceLabelParts;
 }
 
@@ -75,7 +75,7 @@ const LOCATION_SEPARATOR = ' · ';
 /**
  * The location segments, finest name first: `["Malletts Bay", "Lake Champlain", "Colchester, VT"]`.
  *
- * **This is the one place the line is composed, and it has to be** (N2). Before this, the sub-area
+ * **This is the one place the line is composed, and it has to be** (A02). Before this, the sub-area
  * would have been the third thing a card assembled by hand: `formatPlaceLabel` returned only the
  * `"Colchester, VT"` segment, and `bodyName` was a separate field each surface rendered beside it in
  * its own JSX. Adding a name to the front of that would have meant editing the feed card, report
@@ -160,9 +160,9 @@ export interface FeedCardData {
   reportId: string;
   waterBodyId: string;
   bodyName: string;
-  /** The report's named sub-area (N2 / D60), stamped at create. Absent on all but a few giants. */
+  /** The report's named sub-area (A02 / D60), stamped at create. Absent on all but a few giants. */
   subAreaName?: string;
-  /** Every member bay of a two-bay skate, primary first (N9) — see `LocationLineParts`. */
+  /** Every member bay of a two-bay skate, primary first (A09) — see `LocationLineParts`. */
   subAreaNames?: string[];
   place?: PlaceLabelParts;
   skateEndTime: number;
@@ -173,10 +173,10 @@ export interface FeedCardData {
   photoThumbUrls: string[];
   author: FeedAuthor;
   blocked: boolean;
-  /** Viewer has favorited this body (Phase 4) — drives the feed badge + the per-page boost. */
+  /** Viewer has favorited this body (Phase 04) — drives the feed badge + the per-page boost. */
   isFavorite?: boolean;
   /**
-   * The body's easiest known approach (N6d / D87), denormalized onto the row by the access join.
+   * The body's easiest known approach (A06d / D87), denormalized onto the row by the access join.
    *
    * **On the feed card because the drive-time filter is the thing it corrects.** A skater filtering
    * to "within 60 minutes" is filtering on *drive* time, and a hike-in lake inside that band is not
@@ -193,7 +193,7 @@ export interface FeedCardView {
   bodyName: string;
   placeLabel: string | null;
   /**
-   * The card's two rows, composed (N2): `primary` is the finest name — the bay when there is one,
+   * The card's two rows, composed (A02): `primary` is the finest name — the bay when there is one,
    * otherwise the lake — and `secondary` is everything coarser. Cards render **these**, never
    * `bodyName` + `placeLabel` by hand; see {@link splitLocationLine}.
    */
@@ -208,14 +208,14 @@ export interface FeedCardView {
   photoThumbUrls: string[];
   author: FeedAuthor;
   blocked: boolean;
-  /** Viewer has favorited this body (Phase 4) — the card shows a heart/badge and boosts it. */
+  /** Viewer has favorited this body (Phase 04) — the card shows a heart/badge and boosts it. */
   isFavorite: boolean;
   /** `true` ⇒ render the Hike-In chip (D87). Only the hike-in case; the others are unremarkable. */
   isHikeIn: boolean;
 }
 
 /**
- * Recency section a report falls in, keyed off its skate-*end* time relative to `now` (Phase 4,
+ * Recency section a report falls in, keyed off its skate-*end* time relative to `now` (Phase 04,
  * decision #5). Drives the feed's "Older than …" scroll-divider headers: a stable `key` for React
  * lists + a human `label`. Buckets widen with age (day → week → month) so a scrolling feed reads
  * "Today / Yesterday / Earlier this week / …". A future instant (clock skew) buckets as `today`.
@@ -243,7 +243,7 @@ export interface FeedSection<T> {
 }
 
 /**
- * Partition an already newest-first feed list into contiguous recency sections (Phase 4, decision #5).
+ * Partition an already newest-first feed list into contiguous recency sections (Phase 04, decision #5).
  * Each item keeps its position; a new section starts whenever the bucket changes, so an out-of-order
  * list can't produce a duplicate header for the same key. `getTime` extracts the skate-end time so this
  * works over raw `FeedCardData` or a built `FeedCardView` alike. Empty in → empty out.

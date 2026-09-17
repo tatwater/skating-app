@@ -1,10 +1,10 @@
-# @skating/admin-areas — OSM administrative-boundary ETL (Phase 5)
+# @skating/admin-areas — OSM administrative-boundary ETL (Phase 05)
 
 A manual, run-on-demand pipeline that turns a regional **OpenStreetMap** extract into the
 administrative boundaries stored in Convex (`adminAreas`), used to resolve a report's point
 (put-in pin / GPS start) → `{ town?, county?, state? }` for the newsfeed location label. This is
 **not** built or deployed with the apps — you run it by hand when seeding or refreshing a region
-(Phase 5; see [`plans/phases/05-newsfeed.md`](../../plans/phases/05-newsfeed.md)).
+(Phase 05; see [`plans/phases/05-newsfeed.md`](../../plans/phases/05-newsfeed.md)).
 
 It reuses the **same per-state Geofabrik extracts** the water ETL (`scripts/etl`) already uses — no
 new dataset, same **© OpenStreetMap contributors / ODbL** attribution. Pipeline stages mirror the
@@ -26,7 +26,7 @@ Prerequisites (`osmium-tool`, `GDAL`) are the same as the water ETL — see
 
 Admin boundaries **don't span states** (unlike water bodies), so each per-state extract is a single
 state and the loader stamps `--state=XX` onto every row. Run once per state (VT, NH, ME, MA, and the
-clipped NY-upstate extract — same set as Phase 2.5).
+clipped NY-upstate extract — same set as Phase 02b).
 
 ```bash
 cd scripts/admin-areas
@@ -63,7 +63,7 @@ The transform keeps only `admin_level` **4** (state) / **6** (county) / **7–8*
 the rest (nation, neighborhoods, wards, …). New England towns tile at level 8; some states use 7.
 
 > **NY:** use the same **upstate-clipped** `.osm.pbf` as the water ETL (`--bbox` drop of the NYC/Long
-> Island metro), so downstate boundaries never import. See the water README's Phase 2.5 section.
+> Island metro), so downstate boundaries never import. See the water README's Phase 02b section.
 
 ### 3. Transform (tested TS)
 
@@ -90,7 +90,7 @@ state). Chunks the NDJSON and calls the internal `adminAreas.importCanonical` mu
 resolved deployment before loading. The import is **idempotent** (upsert on `externalId`), so
 re-running (or resuming after a failed batch) is safe.
 
-The import also **cell-indexes each boundary** (N1): one `adminAreaCells` row per grid cell the
+The import also **cell-indexes each boundary** (A01): one `adminAreaCells` row per grid cell the
 boundary's bbox covers, which is what `resolvePlaceForCoord` reads. Cells are reconciled rather than
 appended, so re-importing a redrawn boundary moves its rows instead of leaving stale ones. To rebuild
 the index for every boundary without re-importing, loop the paginated migration until `isDone`:
@@ -107,10 +107,10 @@ pnpm exec convex run adminAreas:backfillCells '{"batchSize": 200, "cursor": "<cu
 
 ### 5. Backfill `reports.place` (one-time, after the import)
 
-Existing reports predate the point-derived label, so once the boundaries are loaded, run the Phase-5
+Existing reports predate the point-derived label, so once the boundaries are loaded, run the Phase-05
 report migration to stamp `place` (and complete the `skateTime` → `skateEndTime` rename) — see
 [`plans/phases/05-newsfeed.md`](../../plans/phases/05-newsfeed.md) → schema-migration dance and
-`reports.renameSkateTimeToSkateEndTime`. It's paginated (N1), so loop it on its returned `cursor`
+`reports.renameSkateTimeToSkateEndTime`. It's paginated (A01), so loop it on its returned `cursor`
 until `isDone`.
 
 ---

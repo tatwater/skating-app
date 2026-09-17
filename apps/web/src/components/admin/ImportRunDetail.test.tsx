@@ -159,7 +159,7 @@ describe('coverage', () => {
 });
 
 /**
- * The N7 merge reports forty-five counts and twenty stages. Everything below is about that run
+ * The A07a merge reports forty-five counts and twenty stages. Everything below is about that run
  * being *readable* — the first version rendered all of it as one flat uppercase grid, which made
  * `emitted` and `refused.refused-over-silence` look like the same kind of fact.
  */
@@ -307,7 +307,7 @@ describe('humanize', () => {
 });
 
 /**
- * The real N7 merge, verbatim off dev (run `ps75yqgd…`, campaign `n7-2026-08-07b`).
+ * The real A07a merge, verbatim off dev (run `ps75yqgd…`, campaign `n7-2026-08-07b`).
  *
  * A fixture rather than five invented counts, because forty-five is the number that broke the old
  * layout and none of the interesting cases are guessable: `nhdId` is camelCase where every other
@@ -362,7 +362,7 @@ const N7_MERGE_COUNTS = [
   { name: 'nhdId.accepted', value: 138_555 },
 ];
 
-describe('the N7 merge, as it actually landed', () => {
+describe('the A07a merge, as it actually landed', () => {
   it('resolves all forty-five counts into eight named groups', () => {
     const groups = groupCounts(N7_MERGE_COUNTS);
     expect(groups.map((g) => g.title)).toEqual([

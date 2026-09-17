@@ -1,5 +1,5 @@
 /**
- * How far the worst-covered water in a polygon is from the nearest measurement (D98, N7).
+ * How far the worst-covered water in a polygon is from the nearest measurement (D98, A07a).
  *
  * ## The half of the referee that `containedFraction` cannot be
  *

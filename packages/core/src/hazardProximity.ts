@@ -30,7 +30,7 @@ export interface ProximityHazard {
   type: HazardType;
   shape: HazardShape;
   /**
-   * The footprint clipped to the water body, when create stored one (Phase 9.5). Measured against
+   * The footprint clipped to the water body, when create stored one (Phase 09b). Measured against
    * directly when present, so the distance the alert uses matches the halo the map draws — a big circle
    * near shore can't warn about danger over land. Absent ⇒ fall back to the shape's live footprint.
    */
@@ -56,7 +56,7 @@ export interface HazardAlert {
 /**
  * How close (in metres beyond the hazard's own footprint) triggers an alert. Generous on purpose: the
  * footprint is already fuzzy, GPS on a cold phone is not great, and a skater with speed carries a long
- * way. Tunable in Phase 7 (D49).
+ * way. Tunable in Phase 07 (D49).
  */
 export const DEFAULT_ALERT_BUFFER_M = 150;
 

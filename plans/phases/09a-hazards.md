@@ -1,14 +1,14 @@
-# Phase 9 — Hazards
+# Phase 09a — Hazards
 
-> **Roadmap:** [`07-roadmap.md`](../07-roadmap.md) → Phase 9. This is the detailed build plan, in the
-> style of the Phase 1/2/2.5/3/4/5 docs.
+> **Roadmap:** [`07-roadmap.md`](../07-roadmap.md) → Phase 09a. This is the detailed build plan, in the
+> style of the Phase 01/2/2.5/3/4/5 docs.
 >
 > **What this phase is.** The safety-content surface the MVP has been missing: skaters can mark
 > *localized dangers* (open water, pressure ridges, thin ice, springs, …) on a water body, those
 > hazards **age per type** and can be **confirmed/cleared** by later skaters, permanent risks become
 > durable **body features**, and skaters actually on that ice get a **client-local alert** — all
 > honoring "no live GPS server-side" (D12) and "never assert ice is safe" (D3). It completes what a
-> report/lake *looks like* before Phase 6 layers reputation on top (sequencing call, 2026-07-18).
+> report/lake *looks like* before Phase 06 layers reputation on top (sequencing call, 2026-07-18).
 >
 > **Status:** ✅ **Merged to `main` (PR #20, 2026-07-21), deployed to the dev Convex deployment, and
 > smoke-tested on the Android emulator.** Tests green. Live-skating features (the on-ice watcher, Layer-1
@@ -17,21 +17,21 @@
 > build-kickoff gaps resolved 2026-07-21 (see *Calls made at build kickoff* below) — which amended
 > **D51** and **D54** and added **D55**. Schema deltas are in [`06-data-model.md`](../06-data-model.md).
 > Prior phases are on dev; prod deferred. **The Layer-3 offline basemap tile-pack was dropped** during
-> the build (native spike — findings recorded below); it was **retried in Phase 9.5** via a `file://`
+> the build (native spike — findings recorded below); it was **retried in Phase 09b** via a `file://`
 > pmtiles path, built flag-off and awaiting one on-device confirmation.
 >
 > **Fast-follow — ✅ done.** The deferred **D54 Layer 2** on-ice live-alerting bundle (plus the smaller
 > deferred threads: `?action=confirm`, the reporter/author line, clip-footprint-to-body, and auto-suggest
 > skate times) shipped as its own build plan — **[`phases/09b-on-ice-alerting.md`](./09b-on-ice-alerting.md)**,
-> ✅ **complete 2026-07-22** (branch `phase-9.5-on-ice-alerting`; pending PR + dev deploy). The deferred
+> ✅ **complete 2026-07-22** (branch `phase-09b-on-ice-alerting`; pending PR + dev deploy). The deferred
 > items below are annotated inline with what 9.5 delivered; **silent-push stays deferred** even so.
 >
 > **Prerequisites already in place.** The F2 offline substrate hazards depend on is **built**: the
 > "Layer 2" body-reference cache (`apps/mobile/src/lib/offlineBody.ts` pure resolver +
-> `bodyCache.ts` sqlite glue) is factored as a reusable module *explicitly for Phase 9 hazard capture*,
+> `bodyCache.ts` sqlite glue) is factored as a reusable module *explicitly for Phase 09a hazard capture*,
 > and `bodyCache.ts` is already "designed to gain a tile-pack column later." `adminAreas`
-> (place labels, Phase 5) and the spatial-index machinery (Phase 1/5 — then `@convex-dev/geospatial`,
-> since N1 the ladder-grid cell tables) are live. The
+> (place labels, Phase 05) and the spatial-index machinery (Phase 01/5 — then `@convex-dev/geospatial`,
+> since A01 the ladder-grid cell tables) are live. The
 > **Layer 3 offline basemap tile-pack** was the one genuinely-unbuilt piece — a native spike — and it
 > was **timeboxed and dropped from this phase** (findings below); the online-first degrade mirrors F2
 > report capture, and on-ice capture never depended on the basemap in the first place.
@@ -42,19 +42,19 @@ Decisions referenced as D#; see [`01-decisions.md`](../01-decisions.md).
 
 ## Decisions locked this session (2026-07-18)
 
-These were resolved in the Phase 9 planning discussion and promoted to `01-decisions.md` as **D51–D54**.
+These were resolved in the Phase 09a planning discussion and promoted to `01-decisions.md` as **D51–D54**.
 Short form here; full rationale in the decisions doc.
 
 - **D51 — Authoring: geometry-per-type, dual paths, both platforms.** Point+radius (default blobs),
   polyline (linear), polygon (opt-in advanced). Standalone quick-flag **and** in-report; web **and**
   mobile. Fuzzy/advisory render (D3). Minors treated uniformly for now (`TODO(16+)` on the create gate,
-  D41). Consensus-render + GPS negative-evidence designed-for but deferred (post-density / Phase 8+).
+  D41). Consensus-render + GPS negative-evidence designed-for but deferred (post-density / Phase 08+).
 - **D52 — Per-type decay + three-tier healing confirmation.** Tunable `HAZARD_DECAY` tiers A–D;
   confirmations are *still here / healing but unsafe / fully healed & safe* (only the last removes;
   "healing but unsafe" keeps the pin). Weather-driven dynamic decay documented for Phase 10.
 - **D53 — Known seasonal body features.** Springs/current, constrictions, bridges/narrows, recurring
   ridges → persistent `bodyFeatures` (always-shown, no decay). Promotion/demotion is an admin action
-  (Phase 7).
+  (Phase 07).
 - **D54 — On-ice alerts, client-side.** Server syncs hazard *data*; each phone evaluates its own GPS.
   Layers 0–1 (silent sync + on-ice proximity alert whose confirm-gate *is* the confirmation) ship in
   v1; Layer 2 (directional, opt-in live "on-ice mode") + server-push-to-sleeping-phone deferred.
@@ -116,7 +116,7 @@ into the skater's later report**.
   `waterBodyId + active`. **No geospatial instance for hazards (call 6)** — the originally-planned
   bbox-center geospatial index is dropped, because hazards are only ever queried *per body* (the map
   renders them for the selected/focused lake, the mobile cache stores them per cached body, and the
-  proximity evaluator runs against that same cached set). *(N1 removed the read-cap fragility this
+  proximity evaluator runs against that same cached set). *(A01 removed the read-cap fragility this
   reasoned from, but the call stands on its own: hazards are only ever asked for per body.)* A third
   `@convex-dev/geospatial` instance
   would re-enter the read-cap fragility that took two PRs to fix on `listInViewport` (#10/#11) for no
@@ -127,7 +127,7 @@ into the skater's later report**.
 
 Dev's `hazards`/`hazardConfirmations` tables are empty (feature never shipped), so the verdict-enum and
 new-column changes are effectively greenfield — **no migration was written or needed**, because there are
-no existing rows to migrate. (`packages/convex/convex/` ships zero migration files for Phase 9.) The
+no existing rows to migrate. (`packages/convex/convex/` ships zero migration files for Phase 09a.) The
 implication carries to the eventual **prod cutover**: prod (`diligent-guanaco-965`) has never been
 deployed at all, so the schema simply lands with the first deploy; a data migration only becomes a
 concern once real hazard rows exist under an older shape, which they never will pre-launch.
@@ -149,7 +149,7 @@ The modules:
 
 - **`hazardDecay.ts`** — the `HAZARD_DECAY` table (type → `{ tier, freshH, agingH }`, Tiers A–D + the
   A\* very-volatile sub-case; **stored in HOURS**, converted via `hoursToMs` at compare time so the
-  Phase-7 admin surface tweaks human-legible integers) + `deriveHazardFreshness(type, lastConfirmedAt,
+  Phase-07 admin surface tweaks human-legible integers) + `deriveHazardFreshness(type, lastConfirmedAt,
   now) → 'fresh' | 'aging' | 'stale'`. **Calibrated table + evidence:**
   [`research/hazard-decay-calibration-and-behavior.md`](../research/hazard-decay-calibration-and-behavior.md) §1. Property tests: monotonic in elapsed
   time; tier boundaries; a "still here" reset returns to fresh. Also exports **`isHazardVisibleByDefault(
@@ -160,7 +160,7 @@ The modules:
 - **`hazardLifecycle.ts`** — pure reducers over confirmations. The **authoritative** one is
   `deriveHazardLifecycle(votes, { authorId, createdAt, priorStatus })`, which recomputes a hazard's
   `{ lastConfirmedAt, confirmCount, goneCount, healingState, status }` from the **entire vote set** by
-  counting **distinct non-author users' latest verdicts**. This is a Phase 9 review fix: the earlier
+  counting **distinct non-author users' latest verdicts**. This is a Phase 09a review fix: the earlier
   per-vote `applyConfirmation` incremented a stored counter and so couldn't tell two rows came from the
   *same* account — one person could vote `fully_healed` twice (past the re-confirm window, or via an
   offline replay) and hit the removal threshold alone, a single-skater false all-clear, the worst D3
@@ -236,9 +236,9 @@ The modules:
   - **`attachHazardsToReport`** (helper, called from `reports.create`) + `insertHazard` — the two write
     paths that land in a report's `hazardIdsCreated[]` (freshly-created in-report hazards, and the D55
     bundled-in standalone pins), both re-checking ownership server-side.
-  - **Moderation is the shared `moderation.setModerationStatus`** (Phase 9 review fix — an earlier
+  - **Moderation is the shared `moderation.setModerationStatus`** (Phase 09a review fix — an earlier
     hazard-only `hazards.setModeration` was removed). `targetType` now accepts `'report' | 'comment' |
-    'hazard'`, so the Phase 7 takedown queue has **one** entry point that composes with `resolveFlag`
+    'hazard'`, so the Phase 07 takedown queue has **one** entry point that composes with `resolveFlag`
     rather than a parallel per-entity mutation. It touches only `moderationStatus`, never the
     `active|archived` lifecycle, so a mod hiding a bad pin never reads as the community clearing it
     (D3); hazards skip the contribution-counter bump reports/comments carry.
@@ -246,7 +246,7 @@ The modules:
     **`contentFlags`** path with `targetType: 'hazard'` (one line added to `contentFlags.ts`). This is
     the better idiom — a hazard flag is the same moderation object as a comment or report flag, sharing
     one queue and one set of moderator actions, rather than a parallel per-entity flag surface.
-  - **Input bounds** (Phase 9 review fix — reports go through `validateReportInput`; hazards had no
+  - **Input bounds** (Phase 09a review fix — reports go through `validateReportInput`; hazards had no
     equivalent): `insertHazard` rejects a `description` past `HAZARD_MAX_DESCRIPTION_LEN` (1000) and any
     shape past the `@skating/core` size ceiling; `reports.create` caps `hazards.length +
     attachHazardIds.length` at `HAZARD_MAX_PER_REPORT` (25) so one create can't fan out unboundedly.
@@ -263,9 +263,9 @@ The modules:
   on the ice (not the moment the queue drained) — the freshness math depends on it. Also exports
   **`listForHazard(hazardId)`** — the confirmation history for a hazard's detail drawer.
 - **`bodyFeatures.ts`** — `listForBody`, and **admin-gated** `promote(hazardId)` / `demote(id)` /
-  `create` (role check + `moderationActions` audit row; the UI is Phase 7, but the mutations land here so
-  hazards can already be promoted by an admin during Phase 9). **Promotion supersedes, it does not
-  archive** (Phase 9 review fix): a promoted hazard gets a new `promotedToFeatureId` — a **third axis**,
+  `create` (role check + `moderationActions` audit row; the UI is Phase 07, but the mutations land here so
+  hazards can already be promoted by an admin during Phase 09a). **Promotion supersedes, it does not
+  archive** (Phase 09a review fix): a promoted hazard gets a new `promotedToFeatureId` — a **third axis**,
   distinct from both `status` and `moderationStatus` — so it drops off the map (the feature carries the
   warning now) *without* its lifecycle `status` reading as a community all-clear (D3). `demote` clears
   the supersession, so the source hazard resurfaces intact and the round-trip is lossless.
@@ -273,7 +273,7 @@ The modules:
 - **`photos.ts`** — gained **`getHazardUrls`**, the hazard-scoped sibling of `getUrls`: it resolves a
   hazard's photo serving URLs but gates them on the *hazard's* visibility, so a URL (and any coord on it)
   never outlives the viewer's access to the thing that references it.
-- **Shared `lib/` extractions (Phase 9 became the second photo-bearing, lake-attached entity, so two
+- **Shared `lib/` extractions (Phase 09a became the second photo-bearing, lake-attached entity, so two
   helpers were lifted out of `reports.ts`/`photos.ts` rather than duplicated):**
   - **`lib/photoAccess.ts`** — `assertOwnedPhotos` (no attaching someone else's photo) +
     `resolvePhotoUrls`. Every photo-bearing entity now shares the *resolver* while keeping its **own**
@@ -331,7 +331,7 @@ hand, possibly moving, no signal, phone in a pocket.** Two rules fall out and ar
 mitten-fumble that hits Done early must still produce a useful pin.
 
 ### The "on-ice" state
-The `(map)` layout owns **one** GPS watcher (Phase 9 review fix — three separate bugs left the original
+The `(map)` layout owns **one** GPS watcher (Phase 09a review fix — three separate bugs left the original
 version essentially never activating: a permission race with the map's framing request, a one-shot check
 that never re-ran, and a body cache only ever populated by opening a lake's drawer). The single watcher
 publishes each fix as `onIceCoord` and resolves it to a lake two ways: the **server** `resolveBodyForCoord`
@@ -400,11 +400,11 @@ de-emphasized and gets a confirmation step: it is the only destructive verdict (
 and the asymmetry is the point (D3 — a false all-clear is the worst outcome). Relabels to *Still
 crossable / Dicey now / Ridge closed* for `ridge_crossing`. Confirmations queue offline like drafts.
 
-### Deep link (built in v1, used by Layer 2 — ✅ `?action=confirm` shipped in Phase 9.5)
+### Deep link (built in v1, used by Layer 2 — ✅ `?action=confirm` shipped in Phase 09b)
 `skating://hazard/<id>` routes into the hazard drawer (`/hazard/[id]` on mobile, `/_map/hazard/$id` on
 web). Both the route and the URL scheme were built in v1 precisely so Layer 2's notification tap had
 somewhere to land, at near-zero cost then. The one v1 gap — the **`?action=confirm` behaviour** (deep-
-focusing the three-tier confirm control) — **shipped in Phase 9.5 (2026-07-22)**: both routes now read the
+focusing the three-tier confirm control) — **shipped in Phase 09b (2026-07-22)**: both routes now read the
 `action` param and scroll/pre-focus the confirm control, while the destructive "fully healed" step stays
 gated behind its own second tap even when deep-linked (D3).
 
@@ -510,7 +510,7 @@ evidence rather than re-deriving it:
   regional `.pmtiles` and ship/download it to device storage, pointing the style at a local file URI
   — needs confirmation that native pmtiles reads `file://`; (3) generate a MapLibre offline sqlite DB
   in the build pipeline and sideload it via `mergeOfflineRegions` — a build-tooling project.
-- **Resolving this needs a device build**, which is also what the rest of the native Phase 9 UI is
+- **Resolving this needs a device build**, which is also what the rest of the native Phase 09a UI is
   waiting on. Sequencing it with that emulator/device pass is the cheap version.
 - **What already degrades correctly:** on-ice capture never depended on the basemap. The pin drops at
   GPS, sizing and Done work, and the whole flow queues offline. What's lost without tiles is *tapping
@@ -529,7 +529,7 @@ evidence rather than re-deriving it:
 
 ## Out of scope / deferred (logged so it isn't lost)
 
-- ✅ **SHIPPED in Phase 9.5 (2026-07-22). Layer 2 — the full on-ice alerting bundle. Near-term
+- ✅ **SHIPPED in Phase 09b (2026-07-22). Layer 2 — the full on-ice alerting bundle. Near-term
   commitment, not open-ended** (founder: *"I'm okay deferring so long as Layer 2 comes soon"*). Adds
   `expo-notifications` + local notifications, opt-in session-scoped background location, and the
   directional "hazard ahead" projection (30–60s out). Full spec in the **D54 amendment**. v1 deliberately
@@ -545,34 +545,34 @@ evidence rather than re-deriving it:
 - **Per-body summary cards on the map at zoom** — deferred to the roadmap's "Later / deferred" with a
   design sketch (needs cross-viewport aggregation + a denormalized per-body summary; call 6).
 - **Consensus rendering** (non-destructive cluster of same-type hazards) + **GPS negative-evidence**
-  (Q11 — tracks through a hazard lower its confidence, never auto-clear). Post-density / Phase 8+.
+  (Q11 — tracks through a hazard lower its confidence, never auto-clear). Post-density / Phase 08+.
 - **Weather-driven dynamic decay** — Phase 10 (documented there; extends D52).
 - **Admin tuning surface** (per-type decay durations, confirm/removal thresholds, bodyFeatures
-  promotion/demotion, `hazard` flag queue) — Phase 7 (D49-style); Phase 9 ships tuned constants + the
-  admin *mutations*, Phase 7 adds the UI.
+  promotion/demotion, `hazard` flag queue) — Phase 07 (D49-style); Phase 09a ships tuned constants + the
+  admin *mutations*, Phase 07 adds the UI.
 - **Silent background sync to a closed app** (content-available push to refresh the cache) — **still
-  deferred even after Phase 9.5.** Phase 9.5 shipped D54 Layer 2 with **local** notifications only (no
+  deferred even after Phase 09b.** Phase 09b shipped D54 Layer 2 with **local** notifications only (no
   push token, no server); silent push remains its own future decision (the biggest privacy departure from
   D12, and iOS throttles it — a shaky base for safety content), so the recommendation below stands. It is
   not
-  a Phase 9 loose end; it's the first user of a push stack this project has deliberately deferred
+  a Phase 09a loose end; it's the first user of a push stack this project has deliberately deferred
   twice. Concretely, the repo has **no push infrastructure at all**: `expo-notifications` isn't
   installed (build-kickoff call 4 explicitly kept new native deps out of v1), there are no device
   push tokens, no APNs/FCM credentials, and `notifications.ts` says outright that "push delivery
-  itself is deferred" — Phase 3 and Phase 4 both land **in-app rows only**, and Phase 4's
+  itself is deferred" — Phase 03 and Phase 04 both land **in-app rows only**, and Phase 04's
   `coalesceKey` is described as seeding a collapse-id for "a later push layer". Delivering a
   content-available push would mean building that whole layer: the dep + native config, token
   registration and storage, credentials on both stores, a server-side sender, and a background
   handler — plus iOS throttles silent pushes at its own discretion, so the resulting refresh is
   best-effort by design and can't be relied on for safety content. **Recommendation: build it with
   the push layer (D54 Layer 2, which needs `expo-notifications` anyway), not as an offline tweak.**
-  Nothing in Phase 9 depends on it: hazards for a lake sync reactively whenever the app is open, and
+  Nothing in Phase 09a depends on it: hazards for a lake sync reactively whenever the app is open, and
   the offline queue covers the capture direction.
 - ~~On-ice hazard photos~~ — ✅ **BUILT 2026-07-21** (see the commit below); no longer deferred.
-- **Layer-3 offline basemap tile-pack** — dropped from Phase 9 with findings recorded above; **retried in
-  Phase 9.5 (2026-07-22)** via route (1) (`file://` pmtiles, no crawlable server), built flag-off
+- **Layer-3 offline basemap tile-pack** — dropped from Phase 09a with findings recorded above; **retried in
+  Phase 09b (2026-07-22)** via route (1) (`file://` pmtiles, no crawlable server), built flag-off
   (`EXPO_PUBLIC_OFFLINE_BASEMAP`) and awaiting its one on-device confirmation.
-- ✅ **SHIPPED in Phase 9.5 (2026-07-22). Clip a hazard footprint to the water body boundary (founder idea, 2026-07-21).** A large point+radius
+- ✅ **SHIPPED in Phase 09b (2026-07-22). Clip a hazard footprint to the water body boundary (founder idea, 2026-07-21).** A large point+radius
   centred in a small bay currently renders as a circle that can spill across land onto a peninsula or a
   neighbouring lake. The ask: intersect the footprint with the body polygon so a hazard can never imply
   danger on water it isn't on. **Deferred deliberately, not dismissed** — it's a genuine safety-*visual*
@@ -584,7 +584,7 @@ evidence rather than re-deriving it:
   layer already makes. It's a schema + core + both-render-paths + cache change on the safety-critical path,
   so it wants its own focused commit and device verification rather than riding in the review-remediation
   PR. The `HAZARD_MAX_SIZE_M` ceiling shipped now is the crude backstop against the absurd case until then.
-- ✅ **SHIPPED in Phase 9.5 (2026-07-22). Auto-suggest skate start/end times from the on-ice watcher (founder idea, 2026-07-21).** The single
+- ✅ **SHIPPED in Phase 09b (2026-07-22). Auto-suggest skate start/end times from the on-ice watcher (founder idea, 2026-07-21).** The single
   GPS watcher now knows when a device entered and left a lake's footprint; that dwell interval is a strong
   prior for the report form's skate window, which today is manual entry. Natural fit, but it needs a small
   amount of session bookkeeping (enter/leave timestamps, debounced against brief GPS excursions) and a
@@ -619,9 +619,9 @@ Still no code assertion of safety (D3) — the harvested lakeice vocabulary powe
 
 ## Relocated from the roadmap (2026-09-16)
 
-*The roadmap entry for Phase 9 as it stood before the 2026-09-16 rewrite, kept verbatim so nothing it said is lost. The roadmap now carries a one-paragraph summary; this is the long form.*
+*The roadmap entry for Phase 09a as it stood before the 2026-09-16 rewrite, kept verbatim so nothing it said is lost. The roadmap now carries a one-paragraph summary; this is the long form.*
 
-### Phase 9 — Hazards ✅ Complete (dev; prod deferred) (2026-07-22)
+### Phase 09a — Hazards ✅ Complete (dev; prod deferred) (2026-07-22)
 > **Detailed build plan:** [`phases/09a-hazards.md`](./09a-hazards.md) (decisions settled 2026-07-18;
 > **D51–D55** — D55 added at build kickoff: on-ice hazards auto-bundle into the skater's later report).
 > Ship order within the **single PR**: online-first commits (authoring + lifecycle + render +
@@ -645,14 +645,14 @@ Still no code assertion of safety (D3) — the harvested lakeice vocabulary powe
   never a surveyed boundary (D3). Two paths — **standalone** quick-flag and **in-report**
   (`hazardIdsCreated[]`) — on **both web and mobile**. Full 16-key table + labels in `06-data-model.md`.
 - **Lifecycle — per-type decay + three-tier healing confirmation (D52, extends D15).** Decay rate is
-  per hazard type (Tier A volatile 24/72h → Tier D permanent 14d/45d; tunable, admin-editable Phase 7).
+  per hazard type (Tier A volatile 24/72h → Tier D permanent 14d/45d; tunable, admin-editable Phase 07).
   Confirmations are **"still here" / "healing but unsafe" / "fully healed & safe"** — only the last
   counts toward removal (2 independent, tunable); "healing but unsafe" **keeps the pin** so future
   skaters can read the healing ice. Triggered opportunistically (app-open nearby, report flow, post-hoc
   GPS path — D12/D15). A decayed open-water hazard never reads as "all clear" (D3).
 - **Known seasonal body features (D53).** Springs/current, constrictions, bridges/narrows, and
   ridges that reform annually graduate into a persistent **`bodyFeatures`** entity — always-shown, no
-  decay, no re-marking. v1 ships schema + rendering; promotion/demotion is an **admin action** (Phase 7).
+  decay, no re-marking. v1 ships schema + rendering; promotion/demotion is an **admin action** (Phase 07).
 - **On-ice alerts — client-side, D12-clean (D54).** The server only **syncs hazard data** to devices
   that care about a lake; each phone evaluates its **own** GPS against cached hazards. **Layer 0** silent
   cache sync + **Layer 1** on-ice proximity alert where the confirm-gate *is* the confirmation mechanism
@@ -662,26 +662,26 @@ Still no code assertion of safety (D3) — the harvested lakeice vocabulary powe
   D12) and **server-push-to-a-sleeping-phone** are **deferred/designed-for**.
 - **Deferred, designed-for:** non-destructive **consensus rendering** (cluster same-type hazards, keep
   the rows) + **GPS negative-evidence** (Q11 — tracks through a hazard nudge its *confidence*, never
-  auto-clear it). Both post-density / Phase 8+.
+  auto-clear it). Both post-density / Phase 08+.
 - **Done:** hazards are drawn (right primitive per type), age per type, can be confirmed via the
   three-tier vote / cleared; permanent body features persist without re-marking; skaters on that ice get
   a client-local alert (offline-capable) gated behind one confirmation.
-- **Offline hazard capture — inherited from Phase 2 F2 (decided 2026-07-15).** Hazards are drawn
-  **on the ice, often offline**, so Phase 9 reuses the Phase 2 F2 offline substrate:
+- **Offline hazard capture — inherited from Phase 02a F2 (decided 2026-07-15).** Hazards are drawn
+  **on the ice, often offline**, so Phase 09a reuses the Phase 02a F2 offline substrate:
   - **The offline body-reference cache** (F2 "Layer 2" — `@skating/core` buffered
     `pointInPolygon` auto-select + an on-device LRU cache of recently-viewed body polygons)
     is built in F2 as a **standalone, reusable module** *specifically so hazard capture reuses
     it* — GPS + cached polygon tells the offline app which lake the skater is on without a
     network round-trip.
-  - **Offline basemap tiles (F2 "Layer 3") were deferred here from Phase 2 F2 (decided
-    2026-07-15) — then dropped from Phase 9 at build time (2026-07-21).** F2's report capture
+  - **Offline basemap tiles (F2 "Layer 3") were deferred here from Phase 02a F2 (decided
+    2026-07-15) — then dropped from Phase 09a at build time (2026-07-21).** F2's report capture
     needs only *which lake* (the body cache) + GPS, so it ships with **no offline basemap** and
     degrades the put-in pin to "drop at my current GPS location." Hazards want the same offline
     basemap *ideally* — dropping an accurate pin is easier with the lake polygon as reference — but
     the tile-pack turned out to be a real native spike (does `@maplibre/maplibre-react-native`'s
     offline-pack API crawl our `pmtiles://` range source, or must we ship an on-device
     mini-`.pmtiles`?) that **can't be resolved without a device build**, which the rest of the native
-    Phase 9 UI is also waiting on. It was **timeboxed and not built**; on-ice capture degrades
+    Phase 09a UI is also waiting on. It was **timeboxed and not built**; on-ice capture degrades
     correctly regardless (the pin drops at GPS, sizing/Done/queue all work — only *tapping the map*
     to Move/Trace needs tiles). Findings + the three candidate routes are recorded in
     `phases/09a-hazards.md` → *Layer-3 offline basemap tile-pack — spike findings*; revisit alongside

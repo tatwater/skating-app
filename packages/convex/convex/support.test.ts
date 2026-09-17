@@ -1,5 +1,5 @@
 /**
- * Phase 7 support tickets (D35/D37). Covers the admin-only inbox gate, the key affordance that a
+ * Phase 07 support tickets (D35/D37). Covers the admin-only inbox gate, the key affordance that a
  * suspended/banned user can still file an appeal (create uses getCurrentProfile, not requireProfile),
  * and the two abuse bounds that affordance needs to stay safe: authentication is required, and one
  * account is capped per window (2026-07-24 review).

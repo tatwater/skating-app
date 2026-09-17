@@ -8,7 +8,7 @@ import {
 import { Badge } from './ui/badge';
 
 /**
- * Why this lake is not on the active map (N7b) — rendered under the drawer's title on any body whose
+ * Why this lake is not on the active map (A07b) — rendered under the drawer's title on any body whose
  * standing is not `active`, and nothing at all otherwise.
  *
  * The one sentence comes from `describeStanding`, shared with mobile, so the two clients cannot

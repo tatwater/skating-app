@@ -2,7 +2,7 @@ import { useRouter } from 'expo-router';
 import { Text, XStack, YStack } from 'tamagui';
 
 /**
- * Which place on a giant the Planning tab's weather is about (N6h / open question 5) — the mobile
+ * Which place on a giant the Planning tab's weather is about (A06h / open question 5) — the mobile
  * twin of web's `WeatherPlacePicker`, as chips like the season filter beside it.
  *
  * Nothing on the ~99% of bodies with no named bays. On a body with bays it is the scope line and

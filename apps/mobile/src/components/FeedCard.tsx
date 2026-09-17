@@ -11,7 +11,7 @@ import { TrustAvatar } from './TrustDisplay';
 const MAX_CHIPS = 4;
 
 /**
- * A single newsfeed card (Phase 5) — the mobile mirror of web's `FeedCard`. Body name +
+ * A single newsfeed card (Phase 05) — the mobile mirror of web's `FeedCard`. Body name +
  * point-derived location, skate-end relative time, quality + ice/surface chips, a horizontal photo
  * thumbnail carousel, and blocked-author de-emphasis (D3: a block never hides the report, only dims
  * the author line + adds a "Blocked" chip). The whole card is pressable → opens the report

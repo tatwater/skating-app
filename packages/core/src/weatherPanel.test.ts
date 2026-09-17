@@ -320,7 +320,7 @@ describe('buildPastWeatherPanel — a realistic week', () => {
   });
 });
 
-describe('formatLocalHourLabel — the local-shift trap (N6h hole 1)', () => {
+describe('formatLocalHourLabel — the local-shift trap (A06h hole 1)', () => {
   it('reads a local-shifted timestamp back with UTC getters', () => {
     // `HourlyWeather.startMs` is unix + utc_offset_seconds. This value encodes 8 PM local.
     const eightPmLocal = Date.UTC(2026, 0, 15, 20, 0);

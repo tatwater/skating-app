@@ -1,11 +1,11 @@
-# Phase 5 — Newsfeed page
+# Phase 05 — Newsfeed page
 
-> **Roadmap:** [`07-roadmap.md`](../07-roadmap.md) → Phase 5. This is the detailed build plan,
-> in the style of the Phase 1/2/2.5/3 docs.
+> **Roadmap:** [`07-roadmap.md`](../07-roadmap.md) → Phase 05. This is the detailed build plan,
+> in the style of the Phase 01/2/2.5/3 docs.
 >
 > **What this phase is.** The chronological, **cross-water-body** feed (D28) — the co-primary page
 > alongside the map. Browse recent community activity without going lake-by-lake. It reuses the whole
-> Phase 3 read stack (moderation gate, block set, `ReportDetail`, batch author/photo queries).
+> Phase 03 read stack (moderation gate, block set, `ReportDetail`, batch author/photo queries).
 >
 > **Status:** ✅ **Complete (dev; prod deferred) — 2026-07-17.** Merged as PR #18, deployed to the
 > `dev:agile-bee-…` deployment, `adminAreas` OSM import loaded, and the skate-time migration accounted
@@ -21,7 +21,7 @@
 > pull-to-refresh + `@gorhom/bottom-sheet` detail, `FeedCard` mirror + horizontal carousel, form
 > relabel).
 > **Operational (verified 2026-07-17 against `dev:agile-bee-…`):** (1) ✅ pushed to dev — the full
-> Phase 5 backend is live (`reports:listFeed`, `reports:renameSkateTimeToSkateEndTime`,
+> Phase 05 backend is live (`reports:listFeed`, `reports:renameSkateTimeToSkateEndTime`,
 > `adminAreas:importCanonical`, `adminAreas:resolvePlace`); (2) ✅ `scripts/admin-areas` OSM import
 > loaded — `adminAreas` populated and `resolvePlace` returns correct town/county/state at known points
 > across all five states (VT/NY/NH/ME/MA); (3) ✅ migration accounted for — the `reports` table on dev
@@ -29,14 +29,14 @@
 > left; new reports write `skateEndTime` via the deployed schema; (4) ⏳ app-run verification — owned by
 > the founder. Prod stays uninitialized.
 >
-> **⚠️ Brought forward, ahead of Phase 4 (drive-time), by decision (2026-07-16).** The feed ships
+> **⚠️ Brought forward, ahead of Phase 04 (drive-time), by decision (2026-07-16).** The feed ships
 > **global** — *all* reports from *all* lakes across the whole imported region, newest skate-end time
 > first. The roadmap's two drive-time bullets — *"within range"* and *"temporarily expand radius"* —
-> are **definitionally Phase 4** and are deferred there: Phase 4 later injects an in-range / favorites
+> are **definitionally Phase 04** and are deferred there: Phase 04 later injects an in-range / favorites
 > predicate as an **additive filter** on the same feed query, which is near-zero rework (the page and
 > card don't change; the result set narrows). This is a clean one-directional dependency, not a corner.
 >
-> **Build order:** **web first, then mobile** (mirrors Phase 2/3) — web front-loads the shared Convex
+> **Build order:** **web first, then mobile** (mirrors Phase 02a/3) — web front-loads the shared Convex
 > `listFeed` query + card view-model and is faster to verify. Mobile mirrors once proven.
 
 Decisions referenced as D#; see [`01-decisions.md`](../01-decisions.md).
@@ -58,7 +58,7 @@ Decisions referenced as D#; see [`01-decisions.md`](../01-decisions.md).
      richness:** the user can enter a start time *or* a duration; a duration back-computes
      `start = end − duration` **at the input boundary** (we still persist only the two timestamps).
      Copy changes from the ambiguous *"When did you skate?"* to *"When did you get off the ice?"*
-   - **`gpsActivities` prepped now for all three (Phase 8 wires them):** add optional `endTime` +
+   - **`gpsActivities` prepped now for all three (Phase 08 wires them):** add optional `endTime` +
      `elapsedSeconds` alongside `startTime`. Here three values are **genuinely non-redundant** — a
      provider's `elapsedSeconds` (moving/elapsed time) legitimately differs from wall-clock
      `end − start` because of pauses/stops. Conversion maps the path's **end** → `skateEndTime` and its
@@ -67,9 +67,9 @@ Decisions referenced as D#; see [`01-decisions.md`](../01-decisions.md).
      3pm — correct; the 6pm observer holds the fresher read.
 
 2. **The feed is global for now** (all lakes, all regions). No drive-time or favorites scoping in this
-   phase — that is **Phase 4**, applied later as an additive filter (see status note above). Accepted
+   phase — that is **Phase 04**, applied later as an additive filter (see status note above). Accepted
    trade-off: as real usage spreads across NY/VT/NH/ME/MA the unscoped feed gets noisy, but at alpha
-   scale it's fine and Phase 4 fixes it before it matters.
+   scale it's fine and Phase 04 fixes it before it matters.
 
 3. **Location label is derived from the report's *point* (the put-in pin / GPS start), not the water
    body** (founder call 2026-07-16). A body-level label would stamp one town on all of Lake Champlain;
@@ -85,17 +85,17 @@ Decisions referenced as D#; see [`01-decisions.md`](../01-decisions.md).
    - ⚠️ **Open scope decision (ask founder):** `adminAreas` in-phase (recommended — town is the real
      disambiguator; state alone won't separate VT's many same-state "Mud Pond"s) **vs.** ship
      `{name} · {state}` first (point→state is cheap — ~5 state polygons) and add town/county when
-     `adminAreas` lands. `adminAreas` is reused by GPS (Phase 8) + hazards (Phase 9), so it pays off.
+     `adminAreas` lands. `adminAreas` is reused by GPS (Phase 08) + hazards (Phase 09a), so it pays off.
 
 4. **Tapping a card opens the report in a drawer/sheet overlay, not a full navigation** — preserves
    feed scroll position and keeps things snappy. Web: a state-driven sheet reusing `ReportDetail`
-   (optional `?report=<id>` search param for deep-linkability without losing place). Mobile: the Phase 2
+   (optional `?report=<id>` search param for deep-linkability without losing place). Mobile: the Phase 02a
    `@gorhom/bottom-sheet` pattern.
 
 5. **Photo thumbnail carousel** in feed cards **and** the drawer, for reports with photos.
 
-6. **Lake map** in feed cards **and** the drawer, for reports with GPS paths (Phase 8), showing the
-   skater's put-in, path, and any hazards they reported or confirmed along the way (Phase 9).
+6. **Lake map** in feed cards **and** the drawer, for reports with GPS paths (Phase 08), showing the
+   skater's put-in, path, and any hazards they reported or confirmed along the way (Phase 09a).
 
 7. **Empty state** on both surfaces; **pull-to-refresh** on mobile. Web relies on Convex live
    reactivity (the feed auto-updates); a manual refresh affordance can be added later if wanted.
@@ -114,9 +114,9 @@ Applied in `packages/convex/convex/schema.ts`.
    - Add **`skateStartTime?: number`** (optional; duration derived, never stored).
    - **⚠️ Not migration-free** (a rename). Ship a one-time `internalMutation`
      `renameSkateTimeToSkateEndTime` that copies each report's `skateTime`→`skateEndTime` (and stamps
-     `place`, below). Reuse the Phase-3 strict-schema migration dance on a deployment with drift:
+     `place`, below). Reuse the Phase-03 strict-schema migration dance on a deployment with drift:
      temporarily `defineSchema(..., { schemaValidation: false })` (uncommitted) → push → run migration →
-     revert → redeploy strict (memory: `phase-3-community-safety`). Dev has a handful of test reports;
+     revert → redeploy strict (memory: `phase-03-community-safety`). Dev has a handful of test reports;
      prod is uninitialized.
    - Touches the **mobile offline draft queue** (F2) draft shape + `@skating/core` `draftQueue.ts` /
      `reportForm.ts` / `report.ts` / `reportView.ts`, and the web/mobile report forms + all reads.
@@ -125,12 +125,12 @@ Applied in `packages/convex/convex/schema.ts`.
    — the point-derived location label, stamped at `reports.create` from `report.point` (the put-in pin /
    GPS start) via the `adminAreas` resolver. Card shows *town if present, else county*, plus state.
 
-3. **`gpsActivities` — prep the end timestamp (Phase 8 wires it):** add optional **`endTime?`** alongside
+3. **`gpsActivities` — prep the end timestamp (Phase 08 wires it):** add optional **`endTime?`** alongside
    the existing `startTime`. We deliberately do **not** store provider moving/elapsed time — that's a
    speed-stats concern (Strava) and we compute no speed. Our duration signal is the *observation window*
    (wall-clock `endTime − startTime`): how much of the ice the reporter could watch. This mirrors the
    report model — a GPS activity's `startTime`/`endTime` map straight to `skateStartTime`/`skateEndTime`.
-   Migration-free (both optional). No behavior now — GPS ingest is Phase 8.
+   Migration-free (both optional). No behavior now — GPS ingest is Phase 08.
 
 4. **New `adminAreas` table** — administrative-boundary polygons for the region, for point→place lookup:
    ```
@@ -153,11 +153,11 @@ Applied in `packages/convex/convex/schema.ts`.
   ODbL attribution as the water data — **no new dataset**.
 - **`resolvePlaceForCoord(ctx, point)`** (convex, backed by `@skating/core` geometry): geospatial-
   nearest / bbox prefilter → `pointInPolygon` → return the most specific `{ town?, county?, state? }`.
-  Reused by `reports.create` now and by GPS (Phase 8) + hazards (Phase 9) later.
+  Reused by `reports.create` now and by GPS (Phase 08) + hazards (Phase 09a) later.
 - **Open scope decision (ask the founder):** `adminAreas` in-phase (recommended — town is the real
   disambiguator; state alone won't separate VT's many same-state "Mud Pond"s) **vs.** ship
   `{name} · {state}` first (point→state needs only ~5 state polygons) and add town/county as a
-  fast-follow. In-phase is reused by Phases 8/9, so it pays off.
+  fast-follow. In-phase is reused by Phases 08/09a, so it pays off.
 
 ---
 
@@ -183,7 +183,7 @@ Applied in `packages/convex/convex/schema.ts`.
 
 - **`adminAreas.ts` (new):** `importCanonical` internalMutation (geospatial insert) + the
   `resolvePlaceForCoord(ctx, point)` helper (geospatial/bbox prefilter → `pointInPolygon` → most
-  specific `{ town?, county?, state? }`). Reused by `reports.create` (now) and Phases 8/9 (later).
+  specific `{ town?, county?, state? }`). Reused by `reports.create` (now) and Phases 08/09a (later).
 - **`reports.create` (extend):** stamp `place = resolvePlaceForCoord(ctx, point)` from the resolved
   `report.point` (put-in pin / GPS start). Persist `skateStartTime?` alongside `skateEndTime`.
 - **`reports.listFeed`** — the cross-body feed. `paginationOpts` (Convex `usePaginatedQuery`); query
@@ -208,7 +208,7 @@ Applied in `packages/convex/convex/schema.ts`.
 - **`/feed` route** (replace placeholder): `usePaginatedQuery(api.reports.listFeed)` → infinite-scroll
   list of **`FeedCard`** (body name + location label, skate-end relative time, ice/surface/quality
   summary chips, blocked-author de-emphasis + `BlockedChip`, **photo thumbnail carousel**). Empty state
-  when there are no visible reports. `ProfileSearch` already sits here (Phase 3).
+  when there are no visible reports. `ProfileSearch` already sits here (Phase 03).
 - **Tap → report drawer:** a state-driven `Sheet`/`Dialog` overlay reusing the existing `ReportDetail`
   presentational component (same block/flag/moderator controls), so the feed scroll position is
   preserved. Optional `?report=<id>` search param for deep-linking without a full navigation.
@@ -221,7 +221,7 @@ Applied in `packages/convex/convex/schema.ts`.
 
 - **`feed` tab** (replace placeholder): `FlatList` + `usePaginatedQuery`, `RefreshControl`
   (pull-to-refresh), the `FeedCard` mirror with a horizontal **photo carousel**, empty state.
-- **Tap → bottom-sheet** report detail (Phase 2 `@gorhom/bottom-sheet` pattern) reusing the mobile
+- **Tap → bottom-sheet** report detail (Phase 02a `@gorhom/bottom-sheet` pattern) reusing the mobile
   `ReportDetail` + safety/moderator controls.
 - **Report form:** mirror the web relabel + optional start/duration input.
 
@@ -247,7 +247,7 @@ Applied in `packages/convex/convex/schema.ts`.
 
 ## PR / commit breakdown (one PR per phase — memory: bundle-prs-by-phase)
 
-One Phase 5 PR; sub-workstreams as separate commits:
+One Phase 05 PR; sub-workstreams as separate commits:
 
 - **A — `@skating/core`**: `skateEndTime` rename + `skateStartTime` + `resolveSkateWindow`/
   `formatSkateWindow` + `feed.ts` (`formatPlaceLabel` + card view-model) + tests.
@@ -267,11 +267,11 @@ Push to the dev deployment (`convex dev --once`) + run the migration before app 
 
 ## Out of scope / deferred (logged so it isn't lost)
 
-- **Drive-time / favorites scoping + "temporarily expand radius"** → **Phase 4** (the additive filter
+- **Drive-time / favorites scoping + "temporarily expand radius"** → **Phase 04** (the additive filter
   on `listFeed`; `waterBodyFavorites` join; session-only radius expansion).
 - **GPS *wiring* of the skate window** — `gpsActivities.endTime`/`elapsedSeconds` are added to the
   schema now (prep), but populating them from a provider path + on-water tail trimming + mapping
-  start/end → the report is **Phase 8**.
+  start/end → the report is **Phase 08**.
 - **Notification delivery** for feed activity → later (with the broader notifications work).
 - **Weather-since strips** on feed cards → **Phase 10** (D19).
 
@@ -280,25 +280,25 @@ Push to the dev deployment (`convex dev --once`) + run the migration before app 
 
 ## Relocated from the roadmap (2026-09-16)
 
-*The roadmap entry for Phase 5 as it stood before the 2026-09-16 rewrite, kept verbatim so nothing it said is lost. The roadmap now carries a one-paragraph summary; this is the long form.*
+*The roadmap entry for Phase 05 as it stood before the 2026-09-16 rewrite, kept verbatim so nothing it said is lost. The roadmap now carries a one-paragraph summary; this is the long form.*
 
-### Phase 5 — Newsfeed page ✅ Complete (dev; prod deferred) (2026-07-17)  *(brought forward ahead of Phase 4 — see doc)*
+### Phase 05 — Newsfeed page ✅ Complete (dev; prod deferred) (2026-07-17)  *(brought forward ahead of Phase 04 — see doc)*
 > **Detailed build plan:** [`phases/05-newsfeed.md`](./05-newsfeed.md) (decisions settled 2026-07-16).
-> **Reordered ahead of Phase 4 (2026-07-16):** the feed ships **global** (all lakes, all regions); the
+> **Reordered ahead of Phase 04 (2026-07-16):** the feed ships **global** (all lakes, all regions); the
 > two drive-time bullets below — *"within range"* and *"temporarily expand radius"* — are definitionally
-> Phase 4 and move there as an **additive filter** on the same `listFeed` query (near-zero rework).
+> Phase 04 and move there as an **additive filter** on the same `listFeed` query (near-zero rework).
 - Cross-water-body feed, newest **skate-*end* time** first (D28) — **sort key redefined 2026-07-16:**
   `reports.skateTime` → **`skateEndTime`** ("when the skater left the ice" = the freshest read), a
   project-wide rename affecting every surface that sorts reports (per-body feed + profile history too).
   Also **store `skateStartTime`** (optional; duration derived, never stored) — manual form takes
-  start-or-duration; `gpsActivities` gets `endTime`/`elapsedSeconds` prep (wired Phase 8). Shows
-  **`public`** reports minus **blocks** (D13) — the block filter landed in Phase 3.
+  start-or-duration; `gpsActivities` gets `endTime`/`elapsedSeconds` prep (wired Phase 08). Shows
+  **`public`** reports minus **blocks** (D13) — the block filter landed in Phase 03.
 - Feed card carries the water body **name + a point-derived town/county + state label** (from the report's
   put-in pin / GPS start — shows which town/side, correct for multi-town/-state lakes; disambiguates
   same-name lakes). Backed by a new **`adminAreas`** boundary table (OSM, same ODbL) resolved at report
-  create — no per-read geocode, no 116k-body backfill. Reused by GPS (Phase 8) + hazards (Phase 9).
+  create — no per-read geocode, no 116k-body backfill. Reused by GPS (Phase 08) + hazards (Phase 09a).
 - Tap a card → **report drawer/sheet** (no full navigation — preserves scroll); **photo carousel** in
   cards + drawer; empty state; pull-to-refresh (mobile).
-- ~~**Temporarily expand radius** (session-only) to browse wider.~~ → **Phase 4** (needs drive-time).
+- ~~**Temporarily expand radius** (session-only) to browse wider.~~ → **Phase 04** (needs drive-time).
 - **Done:** browse recent community activity without going lake-by-lake.
 

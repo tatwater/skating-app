@@ -51,7 +51,7 @@ import schema from './schema';
 
 /**
  * Notification defaults for a fresh profile — per-key (D16): most types on, but the two opt-in
- * Phase-4 drive-time buckets (`nearbyReportDigest` / `greatReportNearby`) default off (decision #4).
+ * Phase-04 drive-time buckets (`nearbyReportDigest` / `greatReportNearby`) default off (decision #4).
  * Single-sourced in `NOTIFICATION_PREF_DEFAULTS`; copied so a mutation can't mutate the shared map.
  */
 const DEFAULT_NOTIFICATION_PREFS = { ...NOTIFICATION_PREF_DEFAULTS };
@@ -113,11 +113,11 @@ export const upsertFromClerk = mutation({
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) throw new ConvexError('Not authenticated');
 
-    // Avatar is Clerk-managed for v1 (Phase 3 decision #2): mirror the OIDC `picture` claim into
+    // Avatar is Clerk-managed for v1 (Phase 03 decision #2): mirror the OIDC `picture` claim into
     // `profileImageUrl` — no upload pipeline. Absent if the Clerk `convex` JWT template doesn't map
     // `picture`; when absent we leave any existing mirror untouched rather than clearing it.
     const profileImageUrl = identity.pictureUrl;
-    // The email, likewise mirrored from the `email` claim (N8 PR 3 / D174) so a notification email is
+    // The email, likewise mirrored from the `email` claim (A08 PR 3 / D174) so a notification email is
     // not a Clerk API call per recipient. Same absence rule: an unmapped claim leaves the mirror alone.
     // Both mirrors are *refreshed* on every later app open by `syncFromClerk` below — this mutation
     // runs at onboarding only.
@@ -328,7 +328,7 @@ export const updateProfile = mutation({
  * chose, and `writeTombstone` deliberately never touches this field.
  */
 /**
- * Record the device's IANA timezone (N8/C) — the only per-user input the 8pm digest has. Called by
+ * Record the device's IANA timezone (A08/C) — the only per-user input the 8pm digest has. Called by
  * both clients on app open, and only when it differs from what's stored, so an ordinary day writes
  * nothing. Validated by the zone primitives' own probe (`isKnownTimeZone`, core `zonedTime.ts`): the
  * runtime's `Intl` table is the one authority on what counts as a zone, and a bad string from a client
@@ -349,7 +349,7 @@ export const setTimezone = mutation({
 });
 
 /**
- * Refresh the two Clerk mirrors — `email` (N8 PR 3 / D174) and `profileImageUrl` (Phase 3) — from
+ * Refresh the two Clerk mirrors — `email` (A08 PR 3 / D174) and `profileImageUrl` (Phase 03) — from
  * the identity's claims. Called by both clients on app open, beside `setTimezone`.
  *
  * **Why this exists apart from `upsertFromClerk`.** That mutation is the onboarding write: it takes
@@ -404,7 +404,7 @@ function clerkUpdatedAtFromClaim(claim: unknown): number | undefined {
 }
 
 /**
- * The webhook's write (N8 post-merge): Clerk said this user changed, here is the address and
+ * The webhook's write (A08 post-merge): Clerk said this user changed, here is the address and
  * avatar now on the account. Same helper, same gate as `syncFromClerk`; the difference is only
  * where the claims came from — a signed webhook (`lib/clerkWebhook.ts`) rather than a signed token.
  * A `null` claim means the account has no such value and clears the mirror (an address removed in
@@ -478,7 +478,7 @@ async function applyClerkMirrorsFor(
 }
 
 /**
- * The two channel switches (N8 PR 3 / D174): push on the phone, email for the eligible types. A
+ * The two channel switches (A08 PR 3 / D174): push on the phone, email for the eligible types. A
  * partial patch onto the effective prefs, so flipping one never resets the other. `requireProfile`
  * for the same reason as the aggregate opt-out: turning a channel *off* is exactly what a person on
  * their way out may want, and `canReceiveNotifications` already keeps a ghost from being sent to.
@@ -498,7 +498,7 @@ export const setChannelPrefs = mutation({
 });
 
 /**
- * The unsubscribe link's landing (N8 PR 3): turn the email channel off for the person whose secret
+ * The unsubscribe link's landing (A08 PR 3): turn the email channel off for the person whose secret
  * this is, and nothing else. Called from the HTTP route, which has no identity — the secret *is* the
  * authorization, and it authorizes exactly one direction: off. A wrong or stale secret is a no-op
  * that reports `false`, never an error that says whether the user exists.
@@ -584,7 +584,7 @@ export const setNotificationPrefs = mutation({
     // reports are *kept* under the second amendment, so people go on commenting on them and the
     // notifications go on arriving — and this is the switch that would have turned them off. The
     // right fix is to stop generating them for a departed account rather than to leave the switch
-    // reachable on a profile that is otherwise frozen; it's logged as a follow-up in the N5a plan.
+    // reachable on a profile that is otherwise frozen; it's logged as a follow-up in the A05a plan.
     const profile = await requireContributor(ctx);
 
     for (const [label, value] of [
@@ -840,7 +840,7 @@ export const getAdmin = query({
       canPostReports: target.canPostReports ?? true,
       canPostHazards: target.canPostHazards ?? true,
       canPostComments: target.canPostComments ?? true,
-      // The bounty lever is a number, not a switch (N2) — absent means "the global cap applies",
+      // The bounty lever is a number, not a switch (A02) — absent means "the global cap applies",
       // which the control renders as an empty field rather than as a value someone set.
       ...(target.activeBountyPostLimit !== undefined
         ? { activeBountyPostLimit: target.activeBountyPostLimit }
@@ -871,7 +871,7 @@ export const getAdmin = query({
 /**
  * The `profiles` fields the current schema allows — anything else on a stored row is retired drift.
  *
- * **Read off the schema, not hand-listed (N8).** This used to be a literal list, and it had drifted six
+ * **Read off the schema, not hand-listed (A08).** This used to be a literal list, and it had drifted six
  * fields behind the schema (`excludeTracksFromAggregate`, `activeBountyPostLimit`,
  * `deletionRequestedAt`, `photosExpiredForSeason`, `photoReconcileStartedAt`, `timezone`) — so the
  * `replace` in `backfillNotificationPrefs` would have silently stripped a departing user's
@@ -882,7 +882,7 @@ export const getAdmin = query({
 const PROFILE_FIELDS = Object.keys(schema.tables.profiles.validator.fields);
 
 /**
- * One-time migration (Phase 3): **canonicalize** every `profiles` row to the current schema. A row
+ * One-time migration (Phase 03): **canonicalize** every `profiles` row to the current schema. A row
  * accumulated across earlier phases can fail strict validation several ways: a **missing** required
  * field (the new `profileVisibility` for very old rows, or `notificationPrefs.reportCommented`, D16),
  * or a **retired** field left behind by a removed feature (`requireFollowApproval`,
@@ -894,10 +894,10 @@ const PROFILE_FIELDS = Object.keys(schema.tables.profiles.validator.fields);
  * and prod is uninitialized, so this is a no-op there. Idempotent. Run once after deploy:
  * `convex run profiles:backfillNotificationPrefs`.
  *
- * **Phase 4 reuse:** this same migration canonicalizes the Phase-4 profile changes — it backfills the
+ * **Phase 04 reuse:** this same migration canonicalizes the Phase-04 profile changes — it backfills the
  * three new `notificationPrefs` keys (`favoriteReport`/`nearbyReportDigest`/`greatReportNearby`, per
  * `NOTIFICATION_PREF_DEFAULTS`) and drops the retired `cachedIsochrone`/`cachedIsochroneAt` fields
- * (replaced by `cachedIsochrones`/`outerRadiusMeters`). Run it as part of the Phase-4 deploy.
+ * (replaced by `cachedIsochrones`/`outerRadiusMeters`). Run it as part of the Phase-04 deploy.
  */
 export const backfillNotificationPrefs = internalMutation({
   args: { cursor: v.optional(v.string()), batchSize: v.optional(v.number()) },
@@ -951,7 +951,7 @@ export const backfillNotificationPrefs = internalMutation({
 });
 
 /**
- * One-time migration (Phase 4 follow-up): seed the denormalized `reportCount` / `commentCount` on every
+ * One-time migration (Phase 04 follow-up): seed the denormalized `reportCount` / `commentCount` on every
  * profile from a one-time scan of that author's currently-**visible** reports + comments. Run once after
  * the counters ship; from then on the create / moderation / author-remove paths keep them exact, so the
  * profile read never re-scans a history to count it. Idempotent — re-running just rewrites the same
@@ -962,7 +962,7 @@ export const backfillContributionCounts = internalMutation({
   args: { cursor: v.optional(v.string()), batchSize: v.optional(v.number()) },
   handler: async (ctx, { cursor, batchSize }) => {
     // Smaller pages than the other migrations: each profile costs two *lifetime* history scans, so
-    // the per-profile read cost is what binds here, not the profile count (N1).
+    // the per-profile read cost is what binds here, not the profile count (A01).
     const page = await ctx.db
       .query('profiles')
       .paginate({ cursor: cursor ?? null, numItems: Math.min(200, Math.max(1, batchSize ?? 50)) });

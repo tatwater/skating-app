@@ -80,7 +80,7 @@ const DEG = Math.PI / 180;
 
 /**
  * Great-circle (crow-flies) distance between two points in metres — the shared radius primitive
- * behind the Phase-4 90-min drive band (a uniform crow-flies fallback, since hosted ORS caps
+ * behind the Phase-04 90-min drive band (a uniform crow-flies fallback, since hosted ORS caps
  * isochrones at 60 min) and put-in clustering. Uses the haversine formula on the WGS84 mean radius,
  * which is exact enough at drive-time / lake scale and dependency-free.
  */
@@ -97,7 +97,7 @@ export function haversineMeters(a: LatLng, b: LatLng): number {
  * The point `distanceMeters` away from `origin` along `bearingDeg` (degrees clockwise from north) —
  * the **inverse** of the equirectangular projection `toLocalMetres` uses, so a point projected out and
  * measured back with `haversineMeters` round-trips to sub-1% at the sub-km scale this serves. Feeds the
- * Phase 9.5 on-ice directional projection (walk the skater's course forward, test each step against a
+ * Phase 09b on-ice directional projection (walk the skater's course forward, test each step against a
  * hazard footprint); dependency-free, matching the rest of this file's flat-earth-around-the-point math.
  */
 export function destinationPoint(
@@ -116,7 +116,7 @@ export function destinationPoint(
 
 /**
  * The bearing from `origin` to `target`, in degrees clockwise from north, normalized to `[0, 360)` —
- * the **inverse of `destinationPoint`**, and the primitive N6d's compass-side put-in labels
+ * the **inverse of `destinationPoint`**, and the primitive A06d's compass-side put-in labels
  * ("North launch") derive from.
  *
  * Flat-earth around the origin, matching `destinationPoint` and `toLocalMetres` rather than the
@@ -164,7 +164,7 @@ function segmentDistanceMetres(
 /**
  * Distance in metres from `point` to the nearest edge of `polygon` — **`0` when the point is
  * inside** (boundary counts as inside, per `pointInPolygon`). The proximity primitive behind
- * offline body auto-select (F2), the map-open "you're at this lake" framing, and Phase 9 hazard
+ * offline body auto-select (F2), the map-open "you're at this lake" framing, and Phase 09a hazard
  * binding: a skater standing in the parking lot is *near* the lake though not *on* it, so a plain
  * `pointInPolygon` would miss them.
  *
@@ -197,7 +197,7 @@ function polygonRings(polygon: Polygon | MultiPolygon): Position[][] {
 
 /**
  * Minimum distance in metres between two polygons' **edges** — `0` when they overlap, touch or one
- * contains the other. The hazard-clustering primitive (N5c/D77): "are these the same ridge?" is asked
+ * contains the other. The hazard-clustering primitive (A05c/D77): "are these the same ridge?" is asked
  * of *footprints*, never of centroids, because a `pressure_ridge` is a buffered LineString that often
  * spans a bay, and two ridges sharing 300 m of geometry can have centroids 400 m apart. Measuring
  * edge-to-edge makes the tolerance a **gap** rather than a radius, which is a far tighter claim on a
@@ -263,7 +263,7 @@ function ringsCross(a: Polygon | MultiPolygon, b: Polygon | MultiPolygon): boole
 /**
  * The union of several polygons as one shape, or `null` if the clipper can't produce one.
  *
- * The consensus footprint (N5c / D80): overlapping duplicates of one hazard draw as a single outline
+ * The consensus footprint (A05c / D80): overlapping duplicates of one hazard draw as a single outline
  * rather than as stacked halos. **Union specifically, never a MultiPolygon of the parts** — a fill
  * layer blends each part separately, so overlapping members would darken where they agree and show
  * seams where they meet, which reads as several hazards at exactly the moment we are saying there is
@@ -489,7 +489,7 @@ export function polygonIoU(a: Polygon | MultiPolygon, b: Polygon | MultiPolygon)
  * Ramer–Douglas–Peucker: drop the points of a path that lie within `toleranceMeters` of the line
  * their neighbours already describe. Endpoints are always kept.
  *
- * Written for the N5b shore band, where the input is a section of an OSM shoreline — arbitrarily
+ * Written for the A05b shore band, where the input is a section of an OSM shoreline — arbitrarily
  * detailed, and detail is exactly what a hazard footprint must not claim to have. The tolerance is
  * chosen by the caller against the uncertainty it is already declaring: keeping shoreline vertices
  * finer than the band's own half-width is storing precision the hazard does not have, and paying
@@ -535,7 +535,7 @@ export function simplifyPath(points: readonly LatLng[], toleranceMeters: number)
 /**
  * Does a closed ring cross itself?
  *
- * Written for hazard polygon authoring (N5b): a ring tapped out on a phone can easily come back as a
+ * Written for hazard polygon authoring (A05b): a ring tapped out on a phone can easily come back as a
  * bowtie, and a bowtie's buffered footprint is not a statement about where the hazard is — it is two
  * lobes joined at a point nobody stood on. terra-draw prevents this on web; the tap-to-place path on
  * mobile has no such engine, and the server has no client at all it can trust, so the predicate has to

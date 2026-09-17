@@ -33,7 +33,7 @@ calls that shaped it, ending with what a skater or operator can now do.>
 - <verification, credentials, or follow-through still open>
 -->
 
-## Phase 0 — Foundations
+## Phase 00 — Foundations
 🟢 **Complete** 2026-07-12 · PRs #1–#6 · [plan](./phases/00-foundations.md) · D7 D26 D29 D34 D37 D39 D40 D41 D43 D45 D46
 
 The monorepo (Turborepo + pnpm, `apps/mobile` on Expo, `apps/web` on TanStack Start, shared
@@ -49,13 +49,13 @@ Newsfeed pages, and crash-report.*
 #### Owed
 - Apple dev-build distribution for the mobile alpha crew
 
-## Phase 1 — Water-body data
+## Phase 01 — Water-body data
 🟢 **Complete** 2026-07-13 · PRs #7–#11 · [plan](./phases/01-water-bodies.md) · D5 D6 D14 D48
 
 The OSM ETL (`scripts/etl`) filters water features, maps tags to our `type` enum, simplifies to
 ~5 m, computes bbox, an on-water point and area, and emits NDJSON keyed by OSM id; an idempotent
 `importCanonical` upserts on `source + externalId` and preserves removed state across re-imports.
-The `listed` filter-key refactor replaced the Phase 0 `reviewStatus`-only filter, and the two-tier
+The `listed` filter-key refactor replaced the Phase 00 `reviewStatus`-only filter, and the two-tier
 `listInViewport` made a real corpus queryable at all. A read-only MapLibre map on a self-hosted
 Vermont `.pmtiles` basemap confirmed the data, with OSM attribution as a build-time acceptance
 criterion. Rivers were deferred — reaches are hard, and pilot skating is still-water. *Vermont's
@@ -63,14 +63,14 @@ lakes render on a map and an admin can remove or restore one.*
 
 #### Data runs
 - **2026-07-13 — Vermont OSM import:** 9,967 bodies (PR #9)
-- **2026-07-13 — Vermont basemap:** `pmtiles extract` z0–14, ~280 MB, hosted on Convex file storage (PR #11); moved to R2 in Phase 2.5
+- **2026-07-13 — Vermont basemap:** `pmtiles extract` z0–14, ~280 MB, hosted on Convex file storage (PR #11); moved to R2 in Phase 02b
 
 #### Deferred
-- 🟢 **Basemap off-ramp to Cloudflare R2** — done in Phase 2.5
-- 🟢 **Curation / request-intake UX** — Phase 7 and N2
+- 🟢 **Basemap off-ramp to Cloudflare R2** — done in Phase 02b
+- 🟢 **Curation / request-intake UX** — Phase 07 and A02
 - ⚪ **Rivers as named reaches (D4)** — validate still-water with users first → register
 
-## Phase 2 — Map + reports (the MVP)
+## Phase 02a — Map + reports (the MVP)
 🟢 **Complete** 2026-07-16 · PRs #12 #13 #16 · [plan](./phases/02a-map-and-reports.md) · D9 D13 D20 D30 D31 D41 D42 D49
 
 The usable MVP: an interactive MapLibre map with the D49 zoom-scored prominence (a small-but-beloved
@@ -83,29 +83,29 @@ LRU and draft queue. Reports are always public (D13 — a visibility selector sh
 *Friends can post and read reports on real lakes, with or without signal.*
 
 #### Deferred
-- 🟢 **User-created water bodies + dedup** — moved to Phase 8, where a GPS path makes them trustworthy
-- 🟢 **Offline basemap tiles ("Layer 3")** — deferred to Phase 9, dropped there, built flag-off in 9.5
-- 🟢 **Photo-orphan GC** — folded into N3
+- 🟢 **User-created water bodies + dedup** — moved to Phase 08, where a GPS path makes them trustworthy
+- 🟢 **Offline basemap tiles ("Layer 3")** — deferred to Phase 09a, dropped there, built flag-off in Phase 09b
+- 🟢 **Photo-orphan GC** — folded into A03
 
-## Phase 2.5 — Regional expansion
+## Phase 02b — Regional expansion
 🟢 **Complete** 2026-07-15 · PR #14 · [plan](./phases/02b-regional-expansion.md)
 
 Data and infra only: the Vermont pilot widened to the Northeast lake-skating states — NY north of the
 metro, VT, NH, ME, MA, deliberately not the whole Geofabrik "northeast" dump — via per-state extracts
-through the Phase 1 ETL. The multi-state basemap blew past Convex's storage tier, so tiles moved to
+through the Phase 01 ETL. The multi-state basemap blew past Convex's storage tier, so tiles moved to
 Cloudflare R2 (zero egress; an env-var swap for the apps), map bounds widened only after the data
 landed, and the corpus size made a lake name-search box near-essential, so it shipped here in both
 apps. The `curatedBoost` seed mechanism landed with a flat +0.3 for 21 Vermont bodies. *A skater
 anywhere in the five states opens the app and sees their lakes.*
 
 #### Data runs
-- **2026-07-15 — five-state OSM import:** ~116,070 bodies (NY clipped downstate); replaced by the N7 unified corpus in August
+- **2026-07-15 — five-state OSM import:** ~116,070 bodies (NY clipped downstate); replaced by the A07a unified corpus in August
 - **2026-07-15 — five-state basemap on R2:** 948 MB, z0–14
 
 #### Deferred
-- 🟢 **Per-body curation and the bays OSM lacks** — N2 (and "add the bays" turned out unbuildable as asked)
+- 🟢 **Per-body curation and the bays OSM lacks** — A02 (and "add the bays" turned out unbuildable as asked)
 
-## Phase 3 — Comments + profiles + user-facing safety tools
+## Phase 03 — Comments + profiles + user-facing safety tools
 🟢 **Complete** 2026-07-16 · PRs #15 #17 · [plan](./phases/03-community-and-safety.md) · D13 D21 D25 D32 D50
 
 Threaded comments on reports, public/private profiles searchable by name, block (which is also mute)
@@ -118,10 +118,10 @@ must never pull ice conditions off the map (D3). *Comments work, profiles respec
 block and flag, and content can be taken down fast.*
 
 #### Deferred
-- 🟢 **Trust score computation** — rendered `0` here; built in Phase 6
-- 🟢 **Full operator surface** — Phase 7
+- 🟢 **Trust score computation** — rendered `0` here; built in Phase 06
+- 🟢 **Full operator surface** — Phase 07
 
-## Phase 4 — Drive-time + dynamic filtering
+## Phase 04 — Drive-time + dynamic filtering
 🟢 **Complete** 2026-07-18 · PR #19 · [plan](./phases/04-drive-time-and-filtering.md) · D11
 
 Reframed at scoping from a hard distance gate to a **soft, quality-weighted signal that behaves
@@ -136,13 +136,13 @@ mobile offline read-cache keeps recent reports readable on the ice. *Feed, map a
 scope by favorites and drive-time; put-ins and directions are on the map.*
 
 #### Deferred
-- 🟢 **Push delivery** — flush wrote an in-app row only; transports built in N8
-- 🟢 **Notification fan-out scanning every profile on `reports.create`** — moved to a paged job in N1
-- 🟢 **"Recommended" filter-breaking posts** — Phase 6, gated on corroboration
+- 🟢 **Push delivery** — flush wrote an in-app row only; transports built in A08
+- 🟢 **Notification fan-out scanning every profile on `reports.create`** — moved to a paged job in A01
+- 🟢 **"Recommended" filter-breaking posts** — Phase 06, gated on corroboration
 - ⚪ **Self-hosted ORS for a true 90-minute band** → [`backlog/self-hosted-ors.md`](./backlog/self-hosted-ors.md)
-- ⚪ **Reverse spatial index for fan-out (D172)** — trigger ~1,000 profiles → N8
+- ⚪ **Reverse spatial index for fan-out (D172)** — trigger ~1,000 profiles → A08
 
-## Phase 5 — Newsfeed
+## Phase 05 — Newsfeed
 🟢 **Complete** 2026-07-17 · PR #18 · [plan](./phases/05-newsfeed.md) · D28
 
 A global cross-body feed, newest skate-*end* time first — a project-wide rename of `skateTime` to
@@ -151,10 +151,10 @@ optionally and duration derived. Each card carries the body name plus a point-de
 state label from the report's put-in pin, backed by a new `adminAreas` boundary table resolved at
 report create — no per-read geocode, no corpus backfill — which GPS and hazards reuse. Tap a card and
 the report opens in a drawer, preserving scroll; photo carousel, empty state, pull-to-refresh. Built
-ahead of Phase 4, whose drive-time filters became an additive clause on the same `listFeed`. *Recent
+ahead of Phase 04, whose drive-time filters became an additive clause on the same `listFeed`. *Recent
 community activity is browsable without going lake by lake.*
 
-## Phase 6 — Bounties + trust score
+## Phase 06 — Bounties + trust score
 🟢 **Complete** 2026-07-22 · PR #22 · [plan](./phases/06-bounties-and-trust.md) · D10 D17 D44 D50
 
 Request-a-report bounties (post, browse on the bounded `by_status_expires` index, fulfill, thumbs)
@@ -163,17 +163,17 @@ corroboration plus helpful marks, so nobody is penalized for conditions changing
 honest "don't go" reports (D3). It renders as a cosmetic class chip and avatar ring, never a raw
 number, and never weights safety content. Polymorphic thumbs over reports *and* hazards, badges, and
 the corroboration-gated "Recommended" feed post that breaks a user's distance/quality/thickness
-filters for exceptional corroborated ice — never recency, blocks or moderation. Built after Phase 9:
+filters for exceptional corroborated ice — never recency, blocks or moderation. Built after Phase 09a:
 safety content before reputation. *A working bounty loop, and reporters accrue a public trust
 class from corroboration and helpful marks.*
 
 #### Deferred
-- 🟢 **GPS-skate half of bounty eligibility (D44)** — lit up with Phase 8
+- 🟢 **GPS-skate half of bounty eligibility (D44)** — lit up with Phase 08
 - 🟢 **Contradiction signal and weather-aware bounty freshness** — Phase 10
 - ⚪ **Server-tracked recommended caps** — trigger: real data showing it feels spammy → [`backlog/low-urgency-items.md`](./backlog/low-urgency-items.md)
 - ⚪ **A dedicated bounties geospatial instance** — only past the 200-scan cap → register
 
-## Phase 7 — Operator surface
+## Phase 07 — Operator surface
 🟢 **Complete** 2026-07-24 · PRs #24 #25 · [plan](./phases/07-operator-surface.md) · D35 D37 D38 D57
 
 The founder-facing back office: a role-gated `/admin` route tree in the web app organized as work
@@ -188,11 +188,11 @@ observable. *Operators triage flags and support, moderate in place, and see the 
 every tunable.*
 
 #### Deferred
-- 🟢 **`activeBountyPostLimit` lever** — N2
-- 🟢 **`weatherSamplePoints` writer** — Phase 10 shipped a reader; N2 shipped the mutation
+- 🟢 **`activeBountyPostLimit` lever** — A02
+- 🟢 **`weatherSamplePoints` writer** — Phase 10 shipped a reader; A02 shipped the mutation
 - **`appConfig` runtime-override table** — a documented seam, deliberately not built
 
-## Phase 8 — Native track capture + Strava push
+## Phase 08 — Native track capture + Strava push
 🟢 **Complete** 2026-07-24 · PR #26 · [plan](./phases/08-native-capture.md) · D14 D36 D58 D59
 
 The phase inverted before it started: Strava's 2024 terms forbid showing one athlete's data to
@@ -202,7 +202,7 @@ Modeled A→B→C: a native GPS recorder over a durable buffer (A), our own `gps
 resolve-to-lake and a decaying aggregate tracks layer under publish-is-consent privacy with put-in-
 gated endpoint clipping (B), and Strava `activity:write` via the repo's first HTTP router and OAuth
 state nonce (C). User-created bodies finally landed here, **path-only at the trust boundary** — no
-freehand drawing, ever — with match-on-create dedup feeding Phase 7's queue. Unified report freshness
+freehand drawing, ever — with match-on-create dedup feeding Phase 07's queue. Unified report freshness
 (D59) drives path opacity. *A phone-only skater records a skate, sees the path on their report and
 the lake, pushes it to Strava, and new water gets a body from the track.*
 
@@ -221,7 +221,7 @@ the lake, pushes it to Strava, and new water gets a body from the track.*
 - Device verification: Android GPX playback, and an iPhone for background/battery parity
 - A real Strava sandbox upload (callback domain is set)
 
-## Phase 9 — Hazards
+## Phase 09a — Hazards
 🟢 **Complete** 2026-07-21 · PR #20 · [plan](./phases/09a-hazards.md) · D12 D15 D51 D52 D53 D54 D55
 
 Hazard authoring with the geometry matched to the hazard — point-plus-radius by default, polyline for
@@ -231,28 +231,28 @@ Rendered fuzzy and advisory, never a surveyed boundary. Per-type decay with a th
 confirmation where only "fully healed" counts toward removal; recurring features graduate to a
 persistent `bodyFeatures` entity; and client-side on-ice alerts that evaluate the phone's own GPS
 against cached hazards, so they fire with no signal (D54 Layers 0–1). On-ice hazards auto-bundle into
-the skater's later report (D55). Pulled ahead of Phase 6 — safety before reputation. *Hazards draw
+the skater's later report (D55). Pulled ahead of Phase 06 — safety before reputation. *Hazards draw
 with the right shape, age per type, and warn a skater standing near one.*
 
 #### Deferred
-- 🟢 **Layer 2 directional on-ice mode** — Phase 9.5
-- 🟢 **Freeform polygon authoring** — N5b
-- 🟢 **Consensus rendering and auto-merge of same-type pins** — N5c
+- 🟢 **Layer 2 directional on-ice mode** — Phase 09b
+- 🟢 **Freeform polygon authoring** — A05b
+- 🟢 **Consensus rendering and auto-merge of same-type pins** — A05c
 - 🟢 **Weather-driven decay** — Phase 10
-- 🟢 **Hazard-tuning admin surface** — Phase 7
+- 🟢 **Hazard-tuning admin surface** — Phase 07
 - ⚪ **GPS negative evidence (Q11)** — tracks through a hazard nudge confidence, never auto-clear → register
 
 #### Ruled out
 - **The Layer-3 offline basemap tile-pack, in this phase** — a native spike needing a device build; on-ice capture degrades correctly without it (findings in the plan doc)
 
-## Phase 9.5 — On-ice live alerting
+## Phase 09b — On-ice live alerting
 🟢 **Complete** 2026-07-22 · PR #21 · [plan](./phases/09b-on-ice-alerting.md) · D54
 
 The D54 Layer 2 fast-follow: an opt-in "on-ice mode" that keeps warning you with the phone in your
 pocket — `expo-notifications` (local only) plus session-scoped background location and a
 course-over-ground projection giving 30–60 s of warning, the one conscious exception to D12. The
 re-alert is gated on an approached set (enter, then leave) rather than plain distance hysteresis,
-which spammed. Bundled with the smaller threads Phase 9 logged: `?action=confirm` deep links, the
+which spammed. Bundled with the smaller threads Phase 09a logged: `?action=confirm` deep links, the
 hazard author line, footprints clipped to the body so what's drawn is what the alert measures,
 auto-suggested skate times from the on-ice dwell, and the Layer-3 tile-pack built flag-off. *A
 skater in motion gets a directional warning before reaching a confirmed hazard.*
@@ -280,14 +280,14 @@ weather-aware bounty freshness. *Aging reports say what the weather has done sin
 by what actually happened.*
 
 #### Deferred
-- 🟢 **Lake depth as a decay input** — the `isShallow` scalar this plan described never existed; N6a built the signal
-- 🟢 **Multi-cell giants** — `weatherSamplePoints` reader here, writer in N2
+- 🟢 **Lake depth as a decay input** — the `isShallow` scalar this plan described never existed; A06a built the signal
+- 🟢 **Multi-cell giants** — `weatherSamplePoints` reader here, writer in A02
 - ⚪ **Decay-magnitude refit** of `HAZARD_DECAY` and `decayMultiplier` — needs a real in-app corpus; `bountyGateEvents` is the input → register
 
 #### Ruled out
-- **The archive API** — ~5 days lagged, so the forecast API's `past_days` was used; N6h later widened this past 92 days (D153)
+- **The archive API** — ~5 days lagged, so the forecast API's `past_days` was used; A06h later widened this past 92 days (D153)
 
-## Phase N1 — Read-path durability
+## Phase A01 — Read-path durability
 🟢 **Complete** 2026-07-26 · PR #27 · [plan](./phases/A01-read-path-durability.md)
 
 The crash class: `@convex-dev/geospatial` reads roughly in proportion to `maxResults`, not results,
@@ -304,9 +304,9 @@ profile to fan out notifications — now a paged scheduled job. *The map can't c
 - **2026-07-26 — cell backfill:** 116,070 bodies indexed; the off-data pan that crashed costs 22 reads, the heaviest real viewport 1,771, eastern Maine returns 513 where the clamp returned 256 (`waterBodies:viewportReadStats`)
 
 #### Deferred
-- ⚪ **Reverse spatial index for notification fan-out** — N1 bounded the walk, didn't remove it → N8 (D172)
+- ⚪ **Reverse spatial index for notification fan-out** — A01 bounded the walk, didn't remove it → A08 (D172)
 
-## Phase N2 — Lake editor + sub-areas
+## Phase A02 — Lake editor + sub-areas
 🟢 **Complete** 2026-07-26 · PR #28 · [plan](./phases/A02-body-editor-and-subareas.md) · D60 D61
 
 Named sub-areas (D60): a bay is a region *inside* one polygon, not a lake beside it, so one sheet of
@@ -322,7 +322,7 @@ a place with a name, and an operator can curate a lake in place.*
 #### Data runs
 - **2026-07-26 — curation session:** the seeded sub-areas and the bay re-parenting recorded in the plan doc
 
-## Phase N3 / N4 — Account lifecycle + storage hygiene
+## Phase A03 / A04 — Account lifecycle + storage hygiene
 🟢 **Complete** 2026-07-27 · PRs #29 #30 · [plan](./phases/A03-A04-account-lifecycle.md) · D33 D62
 
 Two register entries that were one phase: the crons exist to clean up what the lifecycle creates.
@@ -338,7 +338,7 @@ account. *A user can export or delete their account, and the record stays honest
 #### Deferred
 - ⚪ **Policy wording for deletion/retention (L3)** — mechanism built; copy waits on the legal pass → register
 
-## Phase N5a — Seasons
+## Phase A05a — Seasons
 🟢 **Complete** 2026-07-28 · PR #31 · [plan](./phases/A05a-seasons.md) · D63 D64 D65 D66
 
 Nothing in the app expired before this: freshness was an opacity, not a gate, so a 2024/25 report
@@ -354,12 +354,12 @@ this winter's.*
 #### Owed
 - Device verification of the native surfaces
 
-## Phase N5b — Hazard authoring UX
+## Phase A05b — Hazard authoring UX
 🟢 **Complete** 2026-07-29 · PR #32 · [plan](./phases/A05b-hazard-authoring.md) · D67
 
 The last of D51's three primitives: **freeform areas** with real vertex dragging on web (terra-draw)
 and close-the-ring on mobile's existing tap-to-place trace — terra-draw ships no React Native adapter,
-so the plan's "same lazy chunk on both clients" was unbuildable, and the Phase 9 polyline trace turned
+so the plan's "same lazy chunk on both clients" was unbuildable, and the Phase 09a polyline trace turned
 out to be the mobile path already. And **snap-to-shoreline** (D67): two taps near a shore produce the
 band of ice along it, straight off `waterBodies.polygon`, with a refused band offering narrowing
 rather than a dead end. The pass fixed two pre-existing bugs outside its scope: every admin detail
@@ -370,7 +370,7 @@ page was a dead link (a TanStack outlet-less leaf), and favorite paint drifted b
 - Device verification
 - Whether 25 m is the right default band half-width for a small pond
 
-## Phase N5c — Hazard identity
+## Phase A05c — Hazard identity
 🟢 **Complete** 2026-07-31 · PRs #34 #35 · [plan](./phases/A05c-hazard-memory.md) · D77 D78 D79 D80
 
 Two founder asks that were one problem: "which hazards were on this lake in '24/'25?" and "if three
@@ -387,7 +387,7 @@ corroboration, and operators watch recurrence form.*
 #### Deferred
 - ⚪ **Flip `RECURRENCE_ADVISORIES_PUBLIC`** — after operators have read the queue across two rollovers; a judgement, not a date
 
-## Phase N6a — Lake depth
+## Phase A06a — Lake depth
 🟢 **Complete** 2026-07-30 · PR #33 · [plan](./phases/A06a-body-depth.md) · D68 D69
 
 The body-level depth D56 was designed around and never got — the `isShallow` scalar Phase 10 described
@@ -400,18 +400,18 @@ regional zoom; the manual flag is permanent infrastructure for the ponds no sour
 shallow pond's hazards thaw faster in the model, and the drawer says where its depth came from.*
 
 #### Data runs
-- **Never run as scoped** — the ETL here was gated on N6c and then **superseded by the N7-3 campaign** (2026-08-09), which loaded depth for 24.2% of the corpus, 83–90% above 50 acres
+- **Never run as scoped** — the ETL here was gated on A06c and then **superseded by the A07a-3 campaign** (2026-08-09), which loaded depth for 24.2% of the corpus, 83–90% above 50 acres
 
 #### Deferred
-- 🟢 **The ETL run** — via N7-3
-- 🟢 **`state_agency` rung had no producer** — N7-3 wrote 3,033 measurements
+- 🟢 **The ETL run** — via A07a-3
+- 🟢 **`state_agency` rung had no producer** — A07a-3 wrote 3,033 measurements
 - 🟢 **OSM `depth`/`maxdepth` tags** — rides the water ETL (`--depths`), built in the review pass
 
-## Phase N6b — The bathymetry layer
+## Phase A06b — The bathymetry layer
 🟢 **Complete** 2026-08-01 · PRs #36 #37 · [plan](./phases/A06b-bathymetry-layer.md) · D81 D82 D83 D89
 
 Measured state-agency isobaths as a PMTiles overlay drawn inside the open lake: five sources archived
-and normalized, joined at 98%, gated, contoured, tiled on the Phase 2.5 upload lane, and rendered by
+and normalized, joined at 98%, gated, contoured, tiled on the Phase 02b upload lane, and rendered by
 both clients on drawer-open with no toggle (D81 — contours follow the detail view) and no safety copy
 at all (D82 — bathymetry is context, not counsel, which dissolved the doc's hardest part). Vermont
 publishes soundings, not isobaths, so it was the hardest lane: `gmt surface` with the shoreline as a
@@ -422,7 +422,7 @@ its basin.*
 
 #### Data runs
 - **2026-08-01 — bathymetry archive:** 5 agencies, 298 MB mirrored → 2,437 of 2,491 lakes joined → 2,042 contoured into 49,742 lines → 15 MB z9–z14 `dev/bathymetry-20260801-2.pmtiles`
-- **2026-08-09 — re-keyed under N7 (D95):** 2,298 lakes → 52,522 lines → 2,287 bodies (+232 net-new)
+- **2026-08-09 — re-keyed under A07a (D95):** 2,298 lakes → 52,522 lines → 2,287 bodies (+232 net-new)
 
 #### Deferred
 - ⚪ **A curving anisotropy axis** — mitigated by capping at each lake's elongation; revisit only when a user complains about a named lake
@@ -433,13 +433,13 @@ its basin.*
 - **Contours from GLOBathy rasters, permanently** — a linear distance-from-shore transform; an authoritative-looking rendering of a guess
 - **Reusing a third party's prebuilt Vermont tiles** — every state goes through our own pipeline
 
-## Phase N6c — Expanded lake profiles
+## Phase A06c — Expanded lake profiles
 🟢 **Complete** 2026-08-10 · PRs #38 #42 · [plan](./phases/A06c-expanded-body-profiles.md) · D70 D71 D74 D76 D85 D86 D90 D138–D142
 
-What N6a's depth numbers were missing — split at kickoff into **N6c-1** (derived numbers: geometry
+What A06a's depth numbers were missing — split at kickoff into **A06c-1** (derived numbers: geometry
 stats measured on the source geometry, elevation, a 16-bearing wind-fetch profile made honest by wind
 *frequency* from NREL's toolkit (D90), a generated caption, profile richness feeding prominence) and
-**N6c-2** (reference links generated not stored so they cover the whole corpus (D71), NWS alerts on a
+**A06c-2** (reference links generated not stored so they cover the whole corpus (D71), NWS alerts on a
 15-minute cron alongside Open-Meteo never blended (D74), the forward forecast the fetch was already
 discarding, per-body map summary cards with D86's graded consensus dots, the per-lake timeline). Four
 of the plan's claims were false and caught by running the code against real lakes, not fixtures —
@@ -447,14 +447,14 @@ including that `waterBodies.centroid` is a point *on the shoreline*, which would
 30 km off Champlain. *A lake page says how big, how deep, how exposed, and where else to look.*
 
 #### Data runs
-- **2026-08-09 — the campaign passes (N7-3):** elevation 99.5% · wind roses 11,114 bodies (completed 2026-08-15) · `regionStats` 5 states × 5 metrics
-- **2026-08-14 — `backfillCells`:** the D2 re-score N6c-1 had held since 2026-08-02 ran under N6d
+- **2026-08-09 — the campaign passes (A07a-3):** elevation 99.5% · wind roses 11,114 bodies (completed 2026-08-15) · `regionStats` 5 states × 5 metrics
+- **2026-08-14 — `backfillCells`:** the D2 re-score A06c-1 had held since 2026-08-02 ran under A06d
 
 #### Deferred
-- 🟢 **Everything satellite** — N6e, at the founder's ask, so the imagery story lands in one piece (D138)
+- 🟢 **Everything satellite** — A06e, at the founder's ask, so the imagery story lands in one piece (D138)
 - ⚪ **`PROFILE_REVEAL_ALL`** — the reveal flag (D142) is still on; flip it to `false` before the season
 
-## Phase N6d — Lake access points
+## Phase A06d — Lake access points
 🟢 **Complete** 2026-08-13 · PR #43 · [plan](./phases/A06d-body-access-points.md) · D72 D73 D87 D88 D143 D144
 
 Parking modelled apart from put-ins so directions stop routing cars to hike-in shorelines (D72,
@@ -463,7 +463,7 @@ second OSM pass over the same extract, and access blockers as decaying community
 hazard confirm machinery but *not* its weather decay — a locked gate doesn't thaw (D73). Approach
 distance is routed via ORS `foot-hiking` with ascent (D87), never summed with drive time, and shown as
 a Hike-In chip. The load found `amenity=parking` yields 95,294 lots, 92,384 of them supermarkets and
-fire departments, so a water-relevance gate went in. Split out of N6c at scoping because it was the
+fire departments, so a water-relevance gate went in. Split out of A06c at scoping because it was the
 size of everything else there combined. *A skater can see where to park, how far the walk is, and
 whether the gate is locked.*
 
@@ -473,12 +473,12 @@ whether the gate is locked.*
 - ⚠ **The parking load cost 104.95 GB of database I/O and disabled the dev deployment** — `listedBodiesNearCoord`'s fixed candidate box read 1,377× the area a 30 m gate needed; fixed with `marginMeters`
 
 #### Deferred
-- 🟢 **Trail-connectivity pairing** — shipped inside N6e Workstream 0 (69 pairings; the ~6% yield estimate held) → [`backlog/trail-connectivity-pairing.md`](./backlog/trail-connectivity-pairing.md)
-- 🟢 **Route geometry never stored** — recovered in N6e Workstream 0 (262 legs re-routed, 254 recovered)
+- 🟢 **Trail-connectivity pairing** — shipped inside A06e Workstream 0 (69 pairings; the ~6% yield estimate held) → [`backlog/trail-connectivity-pairing.md`](./backlog/trail-connectivity-pairing.md)
+- 🟢 **Route geometry never stored** — recovered in A06e Workstream 0 (262 legs re-routed, 254 recovered)
 - ⚪ **The 1,376 unmatched slipways** — an afternoon's sample, not a phase → [`backlog/unmatched-slipways.md`](./backlog/unmatched-slipways.md)
 - ⚪ **`matchBathymetryLakes` (51 GB) and `coveringBodyForPoints` (21 GB)** — the same unbounded-read shape as the parking load, unfixed
 
-## Phase N6e — Imagery, scoped to a lake
+## Phase A06e — Imagery, scoped to a lake
 🟡 **In progress** 2026-08-26 · PRs #44 #45 #46 #47 · [plan](./phases/A06e-satellite-imagery.md) · D75 D84 D146–D151
 
 Not a base map you switch to: a photograph of *this lake*, clipped to its shape and the way in, with a
@@ -488,7 +488,7 @@ watch the ice arrive, stored as one masked raster PMTiles per pass on our first 
 (a Fly granule job → R2, D148). The constraint was never quota but physics (D147): NAIP is mid-summer
 aerial and will never show ice; 10 m Sentinel can't show a 1–3 m ridge. Ingest is weather-gated and
 the archive turns over on a frame, not a date (D149). Workstream 0 recovered the ORS route geometry
-N6d never stored and drew the approach on both clients. *A lake can be revealed as a photograph and
+A06d never stored and drew the approach on both clients. *A lake can be revealed as a photograph and
 its freeze-up scrubbed, on both clients.*
 
 #### Data runs
@@ -499,20 +499,20 @@ its freeze-up scrubbed, on both clients.*
 - ⚪ **PR 4 — phenology (derived, dark)** and **PR 5 — the charts and the freeze-up notification** — both want the nine-season backfill, a deliberate separate spend
 - ⚪ **Radar geocode is not terrain-corrected** — islands bounce between dates (open question 8)
 - ⚪ **One number can't describe two surfaces** — Mascoma read 27% ice on a day the north half was ready (deferred question 7)
-- ⚪ **Ice classification (D150)** → N6g
+- ⚪ **Ice classification (D150)** → A06g
 
 #### Ruled out
 - **Tasked commercial imagery** — ~$200–400 per lake per capture; we buy neither end
 - **Skia on mobile** — PR 2's baked alpha made the reveal an `ImageSource`
 
-## Phase N6f — No public access
+## Phase A06f — No public access
 🟢 **Complete** 2026-08-16 · PRs #44 #56 · [plan](./phases/A06f-no-public-access.md)
 
 The third map state: **on the map, and marked.** `isListed` was binary; `waterBodies.publicAccess`
 adds a corroborated community claim — `contentFlags`' existing dedup *is* the vote count — that only a
 moderator's ruling turns into a 50% dim and a two-zoom-level demotion, the D2 ladder's first and only
 penalty, safe because `minVisibleZoom` clamps. `open` is a stored verdict whose whole job is to make
-re-reporting cost one sentence. Taken straight into the N6e branch with no plan doc and no D-number;
+re-reporting cost one sentence. Taken straight into the A06e branch with no plan doc and no D-number;
 the doc was written after the fact. Under the same prefix: the 164-function audit that armed eleven
 unreachable mutations, the first edit-a-report UI, and the You tab's unreported-skates list. *A lake
 you can't legally reach stays visible and says so.*
@@ -521,15 +521,15 @@ you can't legally reach stays visible and says so.*
 - ⚠ **Six scoring sites must read the verdict** — or `importCanonical` silently un-demotes while preserving the ruling
 - 🟢 **A mobile report control** — PR #56
 
-## Phase N6g — What nine seasons of imagery might know
+## Phase A06g — What nine seasons of imagery might know
 ⚫ **Withdrawn** 2026-09-16 · [plan](./backlog/A06g-imagery-research.md)
 
-Three research lanes that read N6e's archive — single-frame ice identification, corpus shrinking by
+Three research lanes that read A06e's archive — single-frame ice identification, corpus shrinking by
 observed freeze behavior, and the phenology derivations — none of which can start before the
-nine-season backfill exists. Assigned a number at N6e's scoping, never built, and now a backlog item;
+nine-season backfill exists. Assigned a number at A06e's scoping, never built, and now a backlog item;
 the number stays vacant. *(The doc moves to `backlog/imagery-research.md` in the renumbering pass.)*
 
-## Phase N6h — The weather panel
+## Phase A06h — The weather panel
 🟡 **In progress** 2026-09-12 · PRs #48 #49 #50 #51 #54 · [plan](./phases/A06h-weather-detail.md) · D152–D166
 
 Grew out of a costing question whose answer moved the design: the expensive half wasn't the data but
@@ -551,15 +551,15 @@ observations (D160). *A skater asks "do I get in the car?" against a lake with a
 - **True-sunset digest timing** — sunset runs opposite to the season; 8pm local stays
 - **An always-on LibreWXR** — ~$760/yr for what cutting costs ~$5/mo
 
-## Phase N7 — The unified corpus
+## Phase A07a — The unified corpus
 🟢 **Complete** 2026-08-09 · PRs #39 #40 #41 · [plan](./phases/A07a-unified-corpus.md) · D92–D105 D109–D137
 
-The corpus was OSM-only, per-state, and a lake split across two features was two rows. N7 merges
+The corpus was OSM-only, per-state, and a lake split across two features was two rows. A07a merges
 OSM + NHD + 3DHP + GNIS into one record per lake with our own minted key (D93), best-of-both per field
 (D94), and one admission floor applied *once* to the merged body (D109/D110): 178,095 groups in,
 24,958 bodies out. Then the audit and the referee (three open questions settled by measurement; OSM
 draws the lakes because the bake-off was a dead heat), then the enrichment campaign that ran every
-loader N6a–N6c had been waiting on. Four findings to carry: a ladder rung with no producer, no
+loader A06a–A06c had been waiting on. Four findings to carry: a ladder rung with no producer, no
 `osm→osm` matching lane, one constant doing two jobs, and *denominators lie by default, and so do
 instruments*. Provenance is the default: every loader replays the merge's path. *One record per
 lake, with the numbers the profile page needed.*
@@ -570,13 +570,13 @@ lake, with the numbers the profile page needed.*
 - **2026-08-15 — wind:** 47,765 cell-years archived (9,553 cells × 5 winters, 418.4M rows, hash-verified on R2) → 11,114 wind roses at the 250 m gate
 
 #### Deferred
-- 🟢 **Corpus by request / lifecycle** — N7b
+- 🟢 **Corpus by request / lifecycle** — A07b
 - ⚪ **1,353 downstate NY bodies still unpurged on dev** — the map draws five whole states, the corpus stops at I-84
 
-## Phase N7b — Corpus lifecycle and the request path
+## Phase A07b — Corpus lifecycle and the request path
 🟢 **Complete** 2026-09-16 · PRs #61 #63 · [plan](./phases/A07b-corpus-by-request.md) · D106–D108 D176–D179
 
-Split out of N7 as a product feature, not a data campaign, and widened at kickoff into the whole
+Split out of A07a as a product feature, not a data campaign, and widened at kickoff into the whole
 lifecycle: the 25,000-body corpus should settle toward the few hundred that are actually reached and
 skated. A body has a **standing** — `active` · `dormant` · `removed` · `unlisted` — derived from
 four fields by one function (D176). Only `active` is pushed (notifications, discovery, bounties, the
@@ -621,7 +621,7 @@ about a lake, and a moderator can fix it in place and have it stay fixed.*
 #### Owed
 - The five founder calls in the plan's *Open questions* before build
 
-## Phase N8 — The notification pipeline
+## Phase A08 — The notification pipeline
 🟢 **Complete** 2026-09-15 · PRs #52 #53 #55 #57 · [plan](./phases/A08-notification-pipeline.md) · D167–D174
 
 The scoping pass found the real problem: **nothing in the app could read a notification** — six types
@@ -645,7 +645,7 @@ fixed the Clerk mirrors that had never refreshed, with change-email and the `use
 - An install of the APK, a real change-email run
 - Prod: the webhook endpoint and secret need their own registration
 
-## Phase N9 — A bay is a place
+## Phase A09 — A bay is a place
 🟢 **Complete** 2026-09-16 · PRs #58 #59 · [plan](./phases/A09-subareas-as-places.md)
 
 Sub-areas become destinations rather than labels: favoritable, with their own put-ins, lots, bounties,
@@ -674,40 +674,40 @@ long-form register this table replaced is archived verbatim in
 
 | Item | Status | Blocked on | Where |
 | --- | --- | --- | --- |
-| **The prod cutover** — Convex prod init, Clerk prod vars, the corpus and tile URL into prod, Vercel/EAS env, Resend key, the N8 webhook | ⚪ | a founder task; Clerk prod env vars first | [`docs/deployment-and-release.md`](../docs/deployment-and-release.md) |
-| Device verification — Phase 8 recorder, 9.5 on-ice mode, N5a/N5b native surfaces, the Layer-3 tile-pack's one on-device check | ⚪ | device access; no owned iPhone | the phases' *Owed* lines |
+| **The prod cutover** — Convex prod init, Clerk prod vars, the corpus and tile URL into prod, Vercel/EAS env, Resend key, the A08 webhook | ⚪ | a founder task; Clerk prod env vars first | [`docs/deployment-and-release.md`](../docs/deployment-and-release.md) |
+| Device verification — Phase 08 recorder, 09b on-ice mode, A05a/A05b native surfaces, the Layer-3 tile-pack's one on-device check | ⚪ | device access; no owned iPhone | the phases' *Owed* lines |
 | Silent background push to a sleeping phone (D54) | ⚪ | a privacy decision + iOS throttling | 9.5 |
 | Legal engagement — ToS, privacy, risk-ack enforceability, minor-data posture, deletion wording, the AGPL store exception, takedown wording (Q10 / L1–L4, L11) | ⚪ | a lawyer; one engagement clears most of it | [`08`](./08-legal-feasibility-checklist.md) |
 | Forum / Facebook / Google-Group ingestion (Q8 / L5) · AI summarization beyond weather facts (Q9 / L6) · PostHog session replay (L12) · ODbL share-alike (L10) | ⚪ | legal, per item | `08` |
 | GPS-provider partner applications — Garmin / COROS / Polar / Health Connect | ⚪ | founder: submit them; weeks of review | [`backlog/partnerships.md`](./backlog/partnerships.md) |
 | Watch capture adapters + the watch-wins ingest path (L8) | ⚪ | partner approval | `backlog/partnerships.md` |
 | HealthKit adapter · server-tracked recommended caps · a CI GPS replay rig · first-class avatar upload | ⚪ | a trigger each; none urgent | [`backlog/low-urgency-items.md`](./backlog/low-urgency-items.md) |
-| N6e PR 4 (phenology) + PR 5 (charts, freeze-up notification) | ⚪ | the nine-season backfill spend | N6e |
-| N6g imagery research lanes | ⚪ | the same backfill | N6g |
-| N6h Workstream F — radar | ⚪ | nothing; next in N6h | N6h |
-| Multi-season weather climatology · paying Open-Meteo (D158) | ⚪ | D153 unlocked it; season two | N6h |
+| A06e PR 4 (phenology) + PR 5 (charts, freeze-up notification) | ⚪ | the nine-season backfill spend | A06e |
+| A06g imagery research lanes | ⚪ | the same backfill | A06g |
+| A06h Workstream F — radar | ⚪ | nothing; next in A06h | A06h |
+| Multi-season weather climatology · paying Open-Meteo (D158) | ⚪ | D153 unlocked it; season two | A06h |
 | `centroid` → `representativePoint` stage 2 — the ~100-site code sweep | ⚪ | nothing, and it shouldn't linger | [`features/representative-point-rename.md`](./features/representative-point-rename.md) |
-| Phase renumbering — the mechanical PR and the PR-title pass | ⚪ | nothing — N7b landed 2026-09-16 | [`features/phase-numbers.md`](./features/phase-numbers.md) |
+| Phase renumbering — the mechanical PR and the PR-title pass | ⚪ | nothing — A07b landed 2026-09-16 | [`features/phase-numbers.md`](./features/phase-numbers.md) |
 | US spellings sweep | ⚪ | same window | [`features/us-spellings.md`](./features/us-spellings.md) |
-| Reverse spatial index for notification fan-out (D172) | ⚪ | ~1,000 profiles | N8 |
-| Web push | ⚪ | a service worker | N8 |
-| GPS-path hazard deduction (Q11 / L9) · pressure-ridge / clearest-side crowd intelligence | ⚪ | path volume + an L14 privacy pass | Phase 8, 9 |
+| Reverse spatial index for notification fan-out (D172) | ⚪ | ~1,000 profiles | A08 |
+| Web push | ⚪ | a service worker | A08 |
+| GPS-path hazard deduction (Q11 / L9) · pressure-ridge / clearest-side crowd intelligence | ⚪ | path volume + an L14 privacy pass | Phase 08, 9 |
 | Decay-magnitude refit — `HAZARD_DECAY`, `decayMultiplier` | ⚪ | a real in-app corpus; `bountyGateEvents` is the input | Phase 10 |
-| A dedicated bounties geospatial instance | ⚪ | past the 200-scan cap | Phase 6 |
+| A dedicated bounties geospatial instance | ⚪ | past the 200-scan cap | Phase 06 |
 | Self-hosted ORS — a true 90-min band | ⚪ | a cost/ops call, ~$15–50/mo | [`backlog/self-hosted-ors.md`](./backlog/self-hosted-ors.md) |
-| Trail-connectivity widening beyond N6e §0 | ⚪ | the launch side is the ceiling | [`backlog/trail-connectivity-pairing.md`](./backlog/trail-connectivity-pairing.md) |
+| Trail-connectivity widening beyond A06e §0 | ⚪ | the launch side is the ceiling | [`backlog/trail-connectivity-pairing.md`](./backlog/trail-connectivity-pairing.md) |
 | The 1,376 unmatched slipways | ⚪ | an afternoon | [`backlog/unmatched-slipways.md`](./backlog/unmatched-slipways.md) |
-| `matchBathymetryLakes` (51 GB) / `coveringBodyForPoints` (21 GB) unbounded reads | ⚪ | nothing; the N6d fix pattern applies | N6d |
-| 1,353 downstate NY bodies unpurged on dev | ⚪ | a prune run | N7 |
+| `matchBathymetryLakes` (51 GB) / `coveringBodyForPoints` (21 GB) unbounded reads | ⚪ | nothing; the A06d fix pattern applies | A06d |
+| 1,353 downstate NY bodies unpurged on dev | ⚪ | a prune run | A07a |
 | Gli internal identifiers — `scheme`, `slug`, `@skating/*`, the remote | ⚪ | ride the Clerk Core 3 migration; the scheme is live OAuth | [`backlog/gli-identifiers.md`](./backlog/gli-identifiers.md) |
 | `@clerk/clerk-expo` → `@clerk/expo` Core 3 migration | ⚪ | nothing; the package is deprecated outright | `backlog/gli-identifiers.md` |
-| `PROFILE_REVEAL_ALL` → `false` before the season | ⚪ | first ice | N6c |
-| `RECURRENCE_ADVISORIES_PUBLIC` → `true` | ⚪ | two rollovers of operator reading | N5c |
-| Deletion / retention policy copy (L3) | ⚪ | the legal pass | N3/N4 |
+| `PROFILE_REVEAL_ALL` → `false` before the season | ⚪ | first ice | A06c |
+| `RECURRENCE_ADVISORIES_PUBLIC` → `true` | ⚪ | two rollovers of operator reading | A05c |
+| Deletion / retention policy copy (L3) | ⚪ | the legal pass | A03/A04 |
 | In-app guides · group-skate organizing · rivers as named reaches (D4) | ⚪ | design | — |
-| Bathymetry: a curving anisotropy axis · contour crowding · NY statewide coverage | ⚪ | a user complaint about a named lake; a NY source | N6b |
-| N6e: radar terrain correction · two-surface ice fractions | ⚪ | the backfill | N6e |
-| Strava: a real sandbox upload | ⚪ | a session | Phase 8 |
+| Bathymetry: a curving anisotropy axis · contour crowding · NY statewide coverage | ⚪ | a user complaint about a named lake; a NY source | A06b |
+| A06e: radar terrain correction · two-surface ice fractions | ⚪ | the backfill | A06e |
+| Strava: a real sandbox upload | ⚪ | a session | Phase 08 |
 | The Apple / Play / TestFlight distribution track | ⚪ | the accounts, with the prod cutover | `05` |
 
 **Ruled out, project-wide** (the per-phase reasons are in the entries above): pulling GPS from

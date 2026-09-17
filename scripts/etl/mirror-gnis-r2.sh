@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Mirror the GNIS Domestic Names archive to a PRIVATE R2 bucket (water ETL, N7 / D105).
+# Mirror the GNIS Domestic Names archive to a PRIVATE R2 bucket (water ETL, A07a / D105).
 #
 #   scripts/etl/mirror-gnis-r2.sh push
 #   scripts/etl/mirror-gnis-r2.sh pull

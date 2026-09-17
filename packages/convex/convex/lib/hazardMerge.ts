@@ -1,5 +1,5 @@
 /**
- * The server half of auto-merge (N5c / D80, layer 4) — the tombstone, the survivor chain, and the
+ * The server half of auto-merge (A05c / D80, layer 4) — the tombstone, the survivor chain, and the
  * footprint rule that keeps a merge from ever shrinking warned area.
  *
  * The bar itself is pure and lives in `@skating/core`'s `hazardMerge`; this module is the persistence
@@ -181,7 +181,7 @@ export async function mergeHazards(
   { actorId, reason }: { actorId?: Id<'profiles'>; reason: string },
 ): Promise<void> {
   await ctx.db.patch(loser._id, { mergedIntoHazardId: survivor._id });
-  // **The map card counts un-merged hazards only (N6c/E), so writing this field changes it.**
+  // **The map card counts un-merged hazards only (A06c/E), so writing this field changes it.**
   // Recomputed *here*, beside the write, rather than in each caller — every previous round of this
   // review found a caller that forgot, and `mergedIntoHazardId` now has exactly two writers. Callers
   // may recompute again afterwards; the recompute short-circuits when nothing changed.

@@ -1,12 +1,12 @@
 /**
- * Administrative-boundary functions (Phase 5) — the point→place resolver behind the newsfeed's
+ * Administrative-boundary functions (Phase 05) — the point→place resolver behind the newsfeed's
  * location label and the idempotent OSM boundary importer that feeds it.
  *
  * A report's `point` (put-in pin / GPS start) resolves against these polygons to
  * `{ town?, county?, state? }`, stamped onto `reports.place` at create so the feed reads the label
  * directly (no per-read geocode; works for an offline flush because the mutation runs at flush).
  * Reuses the shared `@skating/core` `bboxIntersects` / `pointInPolygon` primitives — no external
- * geocoder. Reused by GPS ingest (Phase 8) + hazards (Phase 9).
+ * geocoder. Reused by GPS ingest (Phase 08) + hazards (Phase 09a).
  */
 
 import { allLevels, bboxIntersects, cellForPoint, pointInPolygon } from '@skating/core';
@@ -30,7 +30,7 @@ const adminArea = v.object({
 });
 
 /**
- * Internal, never client-callable: idempotently upsert a batch of admin boundaries (Phase 5). Load
+ * Internal, never client-callable: idempotently upsert a batch of admin boundaries (Phase 05). Load
  * via `pnpm exec convex run` from `scripts/admin-areas` (chunk batches for the mutation read/size
  * limits, like the water ETL). Keyed on `by_external_id` — re-running on unchanged data is a no-op.
  */
@@ -72,7 +72,7 @@ export const importCanonical = internalMutation({
         });
         inserted++;
       }
-      // Re-cell the boundary in one place for both paths (N1). The sync diffs desired cells against
+      // Re-cell the boundary in one place for both paths (A01). The sync diffs desired cells against
       // stored ones, so a re-import moves a redrawn boundary rather than stacking duplicate rows.
       await syncAdminAreaCells(ctx, id, { bbox: item.bbox, level: item.level });
     }
@@ -96,12 +96,12 @@ function pointInArea(point: { lat: number; lng: number }, area: Doc<'adminAreas'
 const AREA_CELL_CAP = 64;
 
 /**
- * Find the boundary of `level` containing `point` (N1). One cell lookup per ladder rung, then a
+ * Find the boundary of `level` containing `point` (A01). One cell lookup per ladder rung, then a
  * `pointInPolygon` refine — a point sits inside exactly one area per level, so the first hit wins.
  *
  * **This replaced two different broken things.** Towns used to come from a ±0.2° *centroid*
  * rectangle, sized on the stated premise that "our towns run well under 0.4° across" — which the
- * Phase-2.5 corpus falsified the moment the Adirondacks loaded, and whose failure mode was silent
+ * Phase-02b corpus falsified the moment the Adirondacks loaded, and whose failure mode was silent
  * (its own comment: a town bigger than the margin "degrades to a county+state label"). Counties and
  * states, meanwhile, couldn't use that trick at all — a state centroid sits degrees from most
  * interior points — so they scanned **every** row of their level and grew with each state imported.
@@ -122,7 +122,7 @@ async function findContainingArea(
       .take(AREA_CELL_CAP);
     if (rows.length === AREA_CELL_CAP) {
       console.warn(
-        `findContainingArea hit the ${AREA_CELL_CAP}-row cap for ${level} at rung ${z}; a containing area may have been missed (N1).`,
+        `findContainingArea hit the ${AREA_CELL_CAP}-row cap for ${level} at rung ${z}; a containing area may have been missed (A01).`,
       );
     }
     for (const row of rows) {
@@ -134,7 +134,7 @@ async function findContainingArea(
 }
 
 /**
- * Internal migration (run via `pnpm exec convex run`): cell-index every boundary (N1). Paginated
+ * Internal migration (run via `pnpm exec convex run`): cell-index every boundary (A01). Paginated
  * like the water-body backfill — `adminAreas` is only single-digit thousands of rows, but a
  * migration that can't resume is a migration you can't safely re-run.
  */
@@ -150,7 +150,7 @@ export const backfillCells = internalMutation({
   },
 });
 
-/** The point-derived place label parts stamped onto `reports.place` (Phase 5). */
+/** The point-derived place label parts stamped onto `reports.place` (Phase 05). */
 export interface ResolvedPlace {
   town?: string;
   county?: string;
@@ -158,11 +158,11 @@ export interface ResolvedPlace {
 }
 
 /**
- * Resolve a coord to its most-specific `{ town?, county?, state? }` (Phase 5). All three levels now
+ * Resolve a coord to its most-specific `{ town?, county?, state? }` (Phase 05). All three levels now
  * come from the same cell-index lookup (a point sits in exactly one of each). The `state` code is
  * taken from the most-specific match's denormalized `state`. Returns `undefined` when nothing
  * contains the point (ocean / outside the imported region), so the caller simply omits `place`.
- * Reused by `reports.create`, GPS (Phase 8) and hazards (Phase 9).
+ * Reused by `reports.create`, GPS (Phase 08) and hazards (Phase 09a).
  */
 export async function resolvePlaceForCoord(
   ctx: QueryCtx,
@@ -192,7 +192,7 @@ export const resolvePlace = query({
 });
 
 /**
- * Page the boundary polygons out for an offline region clip — N7's merge step.
+ * Page the boundary polygons out for an offline region clip — A07a's merge step.
  *
  * **The five-state mask, and the only honest one we have.** The merge reads NHD and 3DHP from *state
  * geodatabases that are not clipped to their states* — New Hampshire's reaches 46.09°N, into Maine
@@ -229,7 +229,7 @@ export const listBoundariesForClip = internalQuery({
 });
 
 /**
- * Delete named admin areas **and their cell rows** — the superseded-duplicate path (N7).
+ * Delete named admin areas **and their cell rows** — the superseded-duplicate path (A07a).
  *
  * ## Why this needs to exist at all
  *
@@ -282,7 +282,7 @@ export const deleteByExternalIds = internalMutation({
 });
 
 /**
- * Retire the OSM-sourced boundary rows now that TIGER supplies all three levels (N7).
+ * Retire the OSM-sourced boundary rows now that TIGER supplies all three levels (A07a).
  *
  * ## Why they cannot simply be left alone
  *

@@ -1,5 +1,5 @@
 /**
- * Fetch 3DEP elevation into `.raw-elevation/` — **the pass that happens once** (D101/D104, N7-2).
+ * Fetch 3DEP elevation into `.raw-elevation/` — **the pass that happens once** (D101/D104, A07a-2).
  *
  *   pnpm --filter @skating/lake-depth snapshot-elevation --from=<bodies.ndjson> [--concurrency=N]
  *   pnpm --filter @skating/lake-depth snapshot-elevation --from-convex [--import-floor]

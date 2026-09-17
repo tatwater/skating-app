@@ -16,7 +16,7 @@ import { ViewportLakeListView } from './ViewportLakeList';
  * the map is open and nothing is selected — and its three states are easy to confuse for each
  * other: "nothing loaded yet" and "nothing here" look identical if either is rendered as a blank
  * column, and on a regional view "nothing here" is usually wrong (the small stuff isn't drawn until
- * you zoom, D49/N1). So each state is pinned to the copy that distinguishes it.
+ * you zoom, D49/A01). So each state is pinned to the copy that distinguishes it.
  */
 function renderWithRouter(ui: ReactNode) {
   const rootRoute = createRootRoute({ component: () => <>{ui}</> });

@@ -1,5 +1,5 @@
 /**
- * `metricSnapshots` write helpers (Phase 7b). The invariants worth pinning are the ones the whole
+ * `metricSnapshots` write helpers (Phase 07-2). The invariants worth pinning are the ones the whole
  * analytics surface rests on: a counter bump is **additive** (so concurrent event sites can't clobber
  * each other), a rollup write is **idempotent** (so the daily cron and the backfill can re-run over
  * the same day and land on the same number), and neither ever throws on a bad key — analytics hangs

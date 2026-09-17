@@ -1,5 +1,5 @@
 /**
- * The bay view's header and wind caption (N9 / D175) — what a bay says about itself when it is
+ * The bay view's header and wind caption (A09 / D175) — what a bay says about itself when it is
  * framed inside its parent's drawer, composed once here so web and mobile cannot disagree.
  *
  * The framing rule is the phase's principle applied to copy: a bay's own geometry is the only new
@@ -83,7 +83,7 @@ export function describeSubAreaHeader(
 }
 
 /**
- * The caveat under every wind rose (N9 kickoff call 6): the rose is the 2 km reanalysis cell's,
+ * The caveat under every wind rose (A09 kickoff call 6): the rose is the 2 km reanalysis cell's,
  * wherever it is shown — for a bay *and* for a 12-acre pond, since the corpus median body is a
  * tenth of one cell. D3's rule against implying knowledge we do not have applies to a rose as much
  * as to an ice condition. A bay adds the half that *is* local: fetch, measured off its own outline.

@@ -1,5 +1,5 @@
 /**
- * Phase 7 user-lifecycle + posting-permission + role mutations (D37/D57). Covers the role gates, the
+ * Phase 07 user-lifecycle + posting-permission + role mutations (D37/D57). Covers the role gates, the
  * self/admin safety guards, the status patches, the audit-row-written invariant, and that a suspension
  * is enforced by the Convex gate (`requireProfile`) with no Clerk dependency.
  */

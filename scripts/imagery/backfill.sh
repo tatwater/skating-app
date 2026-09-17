@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Run a granule list to completion, retrying whatever did not land (N6e PR 2).
+# Run a granule list to completion, retrying whatever did not land (A06e PR 2).
 #
 #   scripts/imagery/backfill.sh granules.txt <season> [max-rounds]
 #   e.g. scripts/imagery/backfill.sh .scratch/granules-2025-11-01-to-2026-05-05.txt winter-2025-26

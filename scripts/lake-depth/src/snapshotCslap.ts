@@ -1,5 +1,5 @@
 /**
- * Archive NYSDEC's CSLAP lakes into `.raw/cslap/` (N7-3).
+ * Archive NYSDEC's CSLAP lakes into `.raw/cslap/` (A07a-3).
  *
  *   pnpm --filter @skating/lake-depth snapshot-cslap [--campaign=<id>] [--refresh]
  *

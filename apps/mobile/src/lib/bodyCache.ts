@@ -5,7 +5,7 @@
  * GPS fix resolves the lake against this cache so a report can be captured with no signal. Polygons
  * are tiny (avg ~600 bytes), so ~50 bodies is KBs. Untested native glue (like `photoPipeline`), with
  * the decision logic factored into `offlineBody.ts`; **designed to gain a tile-pack column later**
- * (Phase 9 offline basemap) without a reshape.
+ * (Phase 09a offline basemap) without a reshape.
  */
 
 import type { LatLng } from '@skating/core';
@@ -110,7 +110,7 @@ function loadAll(): CachedBody[] {
 /**
  * The cached polygon for one body, or `null` if it isn't in the cache.
  *
- * Snap-to-shoreline (N5b) reads through here rather than through `waterBodies.get`, because the
+ * Snap-to-shoreline (A05b) reads through here rather than through `waterBodies.get`, because the
  * skater it's for is standing on the ice: the affordance needs the lake's outline, and on the ice
  * there is frequently no signal to fetch one with. The cache already holds exactly this — a body's
  * polygon is written on every detail view — so the shore band works offline for any lake the skater

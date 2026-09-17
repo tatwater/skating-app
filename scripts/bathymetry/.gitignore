@@ -1,4 +1,4 @@
-# The permanent raw snapshot of what each state agency served us (N6b). Gitignored because it is
+# The permanent raw snapshot of what each state agency served us (A06b). Gitignored because it is
 # hundreds of MB of third-party data, but — unlike `.scratch/` — it is **not** disposable: it is the
 # archive that makes reprocessing free and survives a state reorganising its portal. Mirror it with
 # `mirror-r2.sh push` rather than deleting it. See README §"The two caches".

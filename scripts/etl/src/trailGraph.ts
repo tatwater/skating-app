@@ -1,9 +1,9 @@
 /**
- * The trail network as a graph, and the pairing it makes possible (N6e Workstream 0).
+ * The trail network as a graph, and the pairing it makes possible (A06e Workstream 0).
  *
  * ## What this exists to find
  *
- * N6d pairs a lot with a launch when they are within `PARKING_INFER_RADIUS_M` of each other. That is
+ * A06d pairs a lot with a launch when they are within `PARKING_INFER_RADIUS_M` of each other. That is
  * proximity, and proximity cannot see the case the phase was written for: *"a couple of lakes that are
  * hike-in only where you park at least a mile from the ice."* Turning the radius up does not find it
  * either — measured over 3,000 unpaired lots, the distance curve to the nearest launch rises

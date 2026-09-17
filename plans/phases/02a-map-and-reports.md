@@ -1,30 +1,30 @@
-# Phase 2 build plan — Map + reports (the MVP)
+# Phase 02a build plan — Map + reports (the MVP)
 
-> **✅ Phase 2 COMPLETE (2026-07-16).** All workstreams shipped: web MVP §A–§E (2026-07-13),
-> mobile online loop §F1 (2026-07-14, PR #13), regional expansion §H → Phase 2.5 (2026-07-15, PR #14),
+> **✅ Phase 02a COMPLETE (2026-07-16).** All workstreams shipped: web MVP §A–§E (2026-07-13),
+> mobile online loop §F1 (2026-07-14, PR #13), regional expansion §H → Phase 02b (2026-07-15, PR #14),
 > mobile offline draft queue §F2 + docs §G (2026-07-16). Convex **prod remains uninitialized** by
 > decision, so everything runs on the **dev** deployment; the prod cutover is a later pass. Native
 > mobile UI carries a pending emulator-verification pass (pure + Convex layers are tested).
 >
-> **Spatial-mechanism note (N1, 2026-07-26):** D49's zoom-scored prominence is unchanged and still
+> **Spatial-mechanism note (A01, 2026-07-26):** D49's zoom-scored prominence is unchanged and still
 > live, but the machinery it rides on isn't — `minVisibleZoom` was the geospatial entry's `sortKey`
 > and is now the trailing field of `waterBodyCells.by_cell`. The `@convex-dev/geospatial@0.2.1`
 > `sortKey` spike recorded below is therefore historical. See
 > [`phases/A01-read-path-durability.md`](./A01-read-path-durability.md).
 
-The concrete implementation plan for **Phase 2** of [`07-roadmap.md`](../07-roadmap.md). Design
+The concrete implementation plan for **Phase 02a** of [`07-roadmap.md`](../07-roadmap.md). Design
 rationale lives in the decisions log (D3, D4, D6, D9, D13, D14, D20, D22–D25, D30, D31, D36,
 D41, D42, **D49**); this doc is the *how* — ordered workstreams, file-level changes, and the
 test plan.
 
-> **Goal.** Turn the read-only Phase 1 map into the usable MVP: a skater taps a real lake, reads
+> **Goal.** Turn the read-only Phase 01 map into the usable MVP: a skater taps a real lake, reads
 > its peer reports (newest **skate time** first), and **posts their own** — ice types, surface,
 > quality, thickness, photos, conditions, visibility. Plus the one thing that makes the map usable
 > at scale: **D49 zoom-scored display prominence**.
 >
 > **This is the usable MVP** — the "Done" line of the roadmap: *friends can post and read reports
-> on real lakes.* The pilot region's OSM corpus (9,967 Vermont bodies, imported in Phase 1) covers
-> the alpha crew's destinations, so **user-created water bodies are deferred to Phase 8** (see Scope)
+> on real lakes.* The pilot region's OSM corpus (9,967 Vermont bodies, imported in Phase 01) covers
+> the alpha crew's destinations, so **user-created water bodies are deferred to Phase 08** (see Scope)
 > — the MVP reads and writes reports on the *canonical* corpus.
 
 ## Surface sequencing (decided 2026-07-13)
@@ -43,13 +43,13 @@ test plan.
 ## Scope (decided)
 
 **In scope (web PR):**
-- **Interactive map** — extend the Phase 1 `WaterMap` with tap-to-select, selection highlight,
+- **Interactive map** — extend the Phase 01 `WaterMap` with tap-to-select, selection highlight,
   and a wintery-but-functional style (D6/D34). Home/water framing on open via **device
   geolocation** (D12/D20).
 - **D49 zoom-scored display prominence** — a derived `displayScore` (area + admin `curatedBoost`;
   **no popularity term yet**) → a bucketed `minVisibleZoom`, stored **and indexed as a geospatial
   filter key** so `listInViewport` filters `minVisibleZoom <= zoom` **inside the query** (not a
-  post-fetch refine). This is the *real* fix for the Phase 1 soft-cap truncation stopgap: at wide
+  post-fetch refine). This is the *real* fix for the Phase 01 soft-cap truncation stopgap: at wide
   zoom the query returns the *few prominent* bodies instead of an arbitrary read-capped slice, so a
   small-but-beloved lake (Lake Morey, via `curatedBoost`) is guaranteed to appear (see Workstream B).
 - **Water-body detail** — name, area (imperial display), report feed sorted by skate time; report
@@ -59,7 +59,7 @@ test plan.
   photos (client-optimized + EXIF-stripped, opt-in geotag), notes, skate time, and an optional
   **put-in pin** (`reports.point`; defaults to the body centroid) marking the access point the
   skater used. Metric storage / imperial display (D25).
-  > **⚠️ Historical:** as shipped, Phase 2 included a 2-level report **visibility** selector +
+  > **⚠️ Historical:** as shipped, Phase 02a included a 2-level report **visibility** selector +
   > `deriveDefaultVisibility`/`maxVisibilityForProfile` clamp. **The D13 revision removed report
   > visibility entirely — reports are always public** — so ignore every visibility mechanic in the
   > workstreams below (they were deleted). Minors are now read-only (D41).
@@ -70,34 +70,34 @@ test plan.
 **In scope (mobile PR, follow-on — §F):** native MapLibre map, the same tap→detail→report loop,
 **offline draft queue** (D9/D30), device geolocation framing, `expo-image-manipulator` optimize.
 
-**Explicitly OUT of Phase 2 (deferred, by decision):**
-- **User-created water bodies (D14) + match-on-create dedup (D36)** → **Phase 8** (decided
+**Explicitly OUT of Phase 02a (deferred, by decision):**
+- **User-created water bodies (D14) + match-on-create dedup (D36)** → **Phase 08** (decided
   2026-07-13). Rationale: the good version is **GPS-path-backed** (derive bounds / verify the skater
   was on new water from a real Strava/Garmin/etc. track) rather than error-prone freehand polygon
-  drawing — and GPS provider integrations don't exist until Phase 8 anyway. The pilot region's OSM
+  drawing — and GPS provider integrations don't exist until Phase 08 anyway. The pilot region's OSM
   corpus (9,967 Vermont bodies) covers the alpha crew's destinations, so nothing in the MVP needs
-  it. Phase 2 therefore builds **no** `dedup.ts`, no `waterBodies.create` dedup, no
+  it. Phase 02a therefore builds **no** `dedup.ts`, no `waterBodies.create` dedup, no
   `findMatchCandidates`, and no draw tool; `waterBodies.create` stays the existing v1 scaffold stub.
-  Fully detailed in Phase 8 of `07-roadmap.md`.
-- **Hazards** → Phase 9. Report-create leaves `hazardIdsCreated` empty; **no** in-polygon hazard
+  Fully detailed in Phase 08 of `07-roadmap.md`.
+- **Hazards** → Phase 09a. Report-create leaves `hazardIdsCreated` empty; **no** in-polygon hazard
   drawing. *(Mind the seam: D4 ties reports to hazard geometry, so the report data path should
   leave room for it — but we build none of it now.)*
-- **Weather auto-fill of `conditions`** → Phase 10 (Open-Meteo). Phase 2 stores `conditions` as
+- **Weather auto-fill of `conditions`** → Phase 10 (Open-Meteo). Phase 02a stores `conditions` as
   optional **manual** entry (`source: 'user'`).
-- **Moderator dedup review queue + merge** → Phase 7. With user-created bodies deferred (above),
-  Phase 2 produces no new duplicates; the merge tooling still lands in Phase 7 for any canonical
-  overlaps. Phase 2 *does* keep `get`'s `mergedIntoId` redirect so a link to a merged body already
+- **Moderator dedup review queue + merge** → Phase 07. With user-created bodies deferred (above),
+  Phase 02a produces no new duplicates; the merge tooling still lands in Phase 07 for any canonical
+  overlaps. Phase 02a *does* keep `get`'s `mergedIntoId` redirect so a link to a merged body already
   resolves to its survivor (forward-correct, cheap).
-- **Popularity term in `displayScore`** → Phase 3+ (needs report/skate signal that doesn't exist
+- **Popularity term in `displayScore`** → Phase 03+ (needs report/skate signal that doesn't exist
   until this phase lands).
-- **Comments** → Phase 3. Report detail renders the report + photos only.
-- **Comments + blocks** → Phase 3. Reports carry **no visibility** at all now — the D13 revision made
+- **Comments** → Phase 03. Report detail renders the report + photos only.
+- **Comments + blocks** → Phase 03. Reports carry **no visibility** at all now — the D13 revision made
   every report public, so reads are just *moderation-visible + not-blocked*. The block filter (which
-  subtracts blocked users) lands with the Phase 3 safety tools.
-- **Stored `homeCoord` / drive-time filtering** → Phase 4. Map framing uses **device geolocation**
+  subtracts blocked users) lands with the Phase 03 safety tools.
+- **Stored `homeCoord` / drive-time filtering** → Phase 04. Map framing uses **device geolocation**
   (D12), not a stored home.
-- **Cross-water-body / near-me report queries + a `reports.point` geospatial index** → Phase 4/5
-  (Newsfeed + drive-time). Phase 2 queries reports **by water body** off the existing DB index.
+- **Cross-water-body / near-me report queries + a `reports.point` geospatial index** → Phase 04/5
+  (Newsfeed + drive-time). Phase 02a queries reports **by water body** off the existing DB index.
 
 ## Done criteria (web PR)
 
@@ -109,7 +109,7 @@ test plan.
 - A deep link to a **merged** body resolves to its survivor; a link to a **removed/unavailable**
   body shows a clear "not available" state rather than a blank.
 - OSM/basemap attribution still visible; light/dark/high-contrast honored; **tests green in CI,
-  coverage does not regress** (untestable map/upload glue excluded from collection, per Phase 1's
+  coverage does not regress** (untestable map/upload glue excluded from collection, per Phase 01's
   precedent).
 
 ---
@@ -142,7 +142,7 @@ before anything consumes them.
   - **Tests:** monotonicity (bigger area ⇒ score up ⇒ minVisibleZoom down; `curatedBoost` raises
     prominence), floor/ceiling clamps, and a property that every body is visible by the floor zoom.
 
-  *(`dedup.ts` moved to Phase 8 with user-created water bodies — see Scope.)*
+  *(`dedup.ts` moved to Phase 08 with user-created water bodies — see Scope.)*
 
 - **`report.ts` (validation/normalization — D22–D25/D41):**
   - `validateReportInput(input, now): { ok: true; normalized } | { ok: false; errors }` — the
@@ -163,7 +163,7 @@ before anything consumes them.
     `public`** (clamp/reject).
 
 ### B. Convex schema + geospatial — ✅ DONE (2026-07-13)
-Minimal — the report/photo/comment tables already exist in full (Phase 0 schema). Only additive,
+Minimal — the report/photo/comment tables already exist in full (Phase 00 schema). Only additive,
 migration-free optional fields.
 
 > **Shipped:** `displayScore`/`curatedBoost`/`minVisibleZoom` on `waterBodies`; `minVisibleZoom`
@@ -172,23 +172,23 @@ migration-free optional fields.
 - **`waterBodies`:** add `displayScore?: number`, `curatedBoost?: number`, and the derived integer
   `minVisibleZoom?: number` (D49). Optional ⇒ no migration; computed on `importCanonical` /
   `create` / `setCuratedBoost`. Backfilled onto the existing Vermont corpus by re-running the
-  chunked ETL loader (same path Phase 1 used for `isLarge`).
+  chunked ETL loader (same path Phase 01 used for `isLarge`).
 - **`lib/geospatial.ts` (changed — the D49 fix; spike confirmed 2026-07-13):** store the integer
-  **`minVisibleZoom` as the geospatial entry's `sortKey`** (the 5th `insert` arg — Phase 1 parks
+  **`minVisibleZoom` as the geospatial entry's `sortKey`** (the 5th `insert` arg — Phase 01 parks
   `createdAt` there, which nothing reads). `listInViewport` filters `q.lt('sortKey', zoom + 1)`
   (i.e. `minVisibleZoom <= zoom`) *inside* the query, so wide zooms return only the *few prominent*
   bodies (Lake Morey guaranteed via `curatedBoost`) rather than an arbitrary read-capped slice — a
   post-fetch JS refine could not, because the read cap fills before the prominent body is reached.
   **Confirmed:** `@convex-dev/geospatial@0.2.1` exposes `sortKey` with `.gte`/`.lt` range filters,
   and results order by `sortKey` — so a capped query keeps the *most prominent* bodies, not an
-  arbitrary slice. `listed` stays a boolean `filterKey` (still refined in JS per the Phase 1
+  arbitrary slice. `listed` stays a boolean `filterKey` (still refined in JS per the Phase 01
   read-cap note, not passed to the query). Reindex cost: writing `minVisibleZoom` is one geospatial
   re-insert per body (the ETL loader batches under the read cap; a full-corpus backfill paginates).
 - **`reports`:** no schema change for web. *(An optional `idempotencyKey?` for the offline queue
   lands with the **mobile** PR, D30 — additive then.)* `reports.point` is already required in the
   schema; `create` fills it from the optional put-in pin, else the body centroid (Workstream C).
 - **No `reports.point` geospatial index this phase** — report feeds query the existing
-  `by_water_body_skate_time` DB index; near-me/cross-body geospatial is Phase 4/5.
+  `by_water_body_skate_time` DB index; near-me/cross-body geospatial is Phase 04/5.
 
 ### C. Convex functions + `convex-test` — ✅ DONE (2026-07-13)
 
@@ -207,13 +207,13 @@ migration-free optional fields.
     `displayScore` + `minVisibleZoom`, re-insert the geospatial key, write a `moderationActions` row.
   - `importCanonical` — also compute + store `displayScore` + `minVisibleZoom` (small addition, so
     imported bodies score immediately).
-  - `listInViewport` — **replace the Phase-1 soft-cap truncation with zoom-based rendering (D49):**
+  - `listInViewport` — **replace the Phase-01 soft-cap truncation with zoom-based rendering (D49):**
     take the client `zoom` and filter `minVisibleZoom <= zoom` **as a geospatial filter key**
     (Workstream B), so wide zooms return few prominent bodies instead of a read-capped arbitrary
     slice. Keeps the two-tier viewport lookup + the read-cap backstop; the in-query zoom filter is
     what actually makes wide zooms legible instead of truncated (and guarantees the Morey criterion).
 
-  *(`create` stays the existing v1 scaffold stub; dedup + `findMatchCandidates` moved to Phase 8.)*
+  *(`create` stays the existing v1 scaffold stub; dedup + `findMatchCandidates` moved to Phase 08.)*
 - **`reports.ts` (new):**
   - `create` (mutation) — `requireProfile`; `validateReportInput` (server re-enforce, D37);
     `deriveDefaultVisibility` from the caller's profile if unset **and clamp to
@@ -222,7 +222,7 @@ migration-free optional fields.
     server-stamp `reportTime`; insert. Photos are uploaded + rowed first (see `photos.ts`) and
     passed as `photoIds`.
   - `listByWaterBody` (query) — reports for a body, `skateTime` desc, **visibility-filtered per
-    viewer** via `canViewReport` (viewer relationship = self / none until Phase 3 — forward
+    viewer** via `canViewReport` (viewer relationship = self / none until Phase 03 — forward
     correct). Excludes `moderationStatus != visible`.
   - `get` (query) — single report, visibility-checked.
   - `update` (mutation) — author-only last-write-wins edit + `updatedAt` (D25).
@@ -274,10 +274,10 @@ migration-free optional fields.
   removed/unavailable body shows a friendly "this lake isn't available" state instead of a blank.
 - **Report read** — likewise a drawer/panel, **URL-backed at `/report/$id`** (deep-linkable):
   render a report (all fields, imperial via units.ts), its photos (thumbs + full), author, skate
-  time; photo **pins on the lake map** when `placeOnMap` (D42). *(Comments are Phase 3 — omitted.)*
+  time; photo **pins on the lake map** when `placeOnMap` (D42). *(Comments are Phase 03 — omitted.)*
 - **Tests:** the pure `waterMap.ts`-style helpers stay unit-tested; component tests (Vitest +
   Testing Library) for detail rendering + imperial formatting; the imperative MapLibre shell stays
-  excluded from coverage (Phase 1 precedent).
+  excluded from coverage (Phase 01 precedent).
 
 ### E. Web UI — write (report creation) — ✅ DONE (2026-07-13)
 
@@ -352,7 +352,7 @@ web-only glue stays in web: the datetime-**local** `<input>` round-trip and the 
 > `photo.test.ts` + shared core tests) but there are **no mobile component tests** — the native
 > `ReportForm`/detail clamp/thickness/put-in/geotag logic isn't exercised the way web's
 > `ReportFormFields` test covers it (`@testing-library/react-native` installed, unused). The
-> imperative `MapView`/`photoPipeline` shells stay excluded from coverage (Phase 1 precedent).
+> imperative `MapView`/`photoPipeline` shells stay excluded from coverage (Phase 01 precedent).
 > Worth a fast-follow native component test for parity.
 
 - **Map lib = `@maplibre/maplibre-react-native`** (decided 2026-07-13; **not** `@rnmapbox/maps`).
@@ -391,11 +391,11 @@ web-only glue stays in web: the datetime-**local** `<input>` round-trip and the 
 > pending): `bodyCache` (Layer-2 LRU + GPS auto-select), `draftStore`/`draftPhotos`/`flushService`,
 > `OfflineDraftsContext` (NetInfo/foreground/manual flush), `ReportForm` draft mode (save/hydrate/
 > current-location put-in), and the drafts-list tab + `draft/new`·`draft/[id]` routes. **Layer 3
-> (offline basemap tiles) deferred to Phase 9** (see `07-roadmap.md`).
+> (offline basemap tiles) deferred to Phase 09a** (see `07-roadmap.md`).
 
 > **Design settled 2026-07-15 (this build).** F2 + §G share **one PR off `main`, dev-only** (prod
 > still uninitialized). The offline story splits into three layers with very different cost/risk;
-> **F2 ships Layers 1–2; Layer 3 (offline basemap tiles) is deferred to Phase 9** (documented in
+> **F2 ships Layers 1–2; Layer 3 (offline basemap tiles) is deferred to Phase 09a** (documented in
 > `07-roadmap.md`). Key reframe: report capture needs only *which lake* + GPS, **not** a visible
 > basemap — so the map dependency drops out of F2 entirely.
 
@@ -433,27 +433,27 @@ web-only glue stays in web: the datetime-**local** `<input>` round-trip and the 
     pending drafts on reconnect (D12). Drafts are **device-local** (lost on sign-out / app-data
     clear) — acceptable for the alpha.
 
-- **Layer 2 — offline body auto-select (built as a reusable module; Phase 9 reuses it).**
+- **Layer 2 — offline body auto-select (built as a reusable module; Phase 09a reuses it).**
   - **On every `waterBodies.get`, cache the body's reference data** (polygon, centroid, name,
     `states`, bbox) in an **LRU sqlite cache (~50 bodies)** — polygons are tiny (avg ~600 bytes;
     Champlain worst-case ~tens of KB), so this is KBs, not MB.
   - **Offline capture resolves the lake by GPS** (`expo-location`) against the cache via a new pure
     `@skating/core` **buffered `pointInPolygon`** — a tunable ~parking/approach radius (start
-    ~300 m; tunable per the "don't bury constants" principle, D37/Phase 7) so **opening from the car
+    ~300 m; tunable per the "don't bury constants" principle, D37/Phase 07) so **opening from the car
     still selects the lake** (S1: access/put-ins are a dominant concern). Same primitive improves
-    the online map-open "you're at Lake X" framing and is the substrate Phase 9 hazard capture binds
+    the online map-open "you're at Lake X" framing and is the substrate Phase 09a hazard capture binds
     against.
   - **Gap-1 fallback (option A):** a draft stores `waterBodyId` when Layer 2 resolves it locally;
     otherwise it stores the raw **GPS coord**, and a coord-only draft resolves **server-side at
     flush** using the **existing `waterBodies` geospatial index** (tiny bbox around the coord →
-    buffered point-in-polygon) — **no new Phase-4 `reports.point` index required**.
+    buffered point-in-polygon) — **no new Phase-04 `reports.point` index required**.
   - **Offline put-in pin** degrades to **"drop at my current GPS location"** (better UX standing at
     the put-in anyway) — so F2 needs no offline basemap.
 
-- **Layer 3 — offline basemap tiles: DEFERRED to Phase 9** (decided 2026-07-15). Report capture
+- **Layer 3 — offline basemap tiles: DEFERRED to Phase 09a** (decided 2026-07-15). Report capture
   doesn't need it; accurate *hazard* pins do. A real native spike (maplibre-native offline packs vs.
   an on-device mini-`.pmtiles` over `pmtiles://`). The Layer-2 cache is designed to accept a
-  tile-pack field so it slots in later. See `07-roadmap.md` → Phase 9.
+  tile-pack field so it slots in later. See `07-roadmap.md` → Phase 09a.
 
 - **Testing seam.** Push the queue state machine + flush orchestration + idempotency-key gen +
   buffered auto-select into **pure, unit-tested modules** (`@skating/core` for the geometry + queue
@@ -468,19 +468,19 @@ web-only glue stays in web: the datetime-**local** `<input>` round-trip and the 
 
 ### G. Docs + hygiene — ✅ DONE (2026-07-16)
 - README updates: `packages/convex` (reports/photos functions, displayScore/minVisibleZoom),
-  `apps/web` (report flow, photo pipeline). Update `plans/README.md` index + the roadmap's Phase 2
+  `apps/web` (report flow, photo pipeline). Update `plans/README.md` index + the roadmap's Phase 02a
   status when it lands.
 - Confirm token/drift-guard tests still pass; keep OSM + "Powered by Strava" (N/A this phase) and
   ODbL attribution visible.
 
-### H. Regional expansion (post-MVP — Phase 2.5, its own PR) — decided 2026-07-14 — ✅ DONE (2026-07-15, PR #14)
+### H. Regional expansion (post-MVP — Phase 02b, its own PR) — decided 2026-07-14 — ✅ DONE (2026-07-15, PR #14)
 
 > **Execution runbook:** [`phases/02b-regional-expansion.md`](./02b-regional-expansion.md) — the
 > step-by-step ops (per-state ETL + NY clip, multi-state `.pmtiles` → R2, bounds widening) and the
 > small code changes. **Reordered 2026-07-14: H runs before F2** (F2 is the mobile-only offline
 > queue, orthogonal to H's data/infra — nothing in H depends on it).
 
-Runs **after the mobile online loop (F1)** and before Phase 3 (see roadmap "Phase 2.5"). Pure data +
+Runs **after the mobile online loop (F1)** and before Phase 03 (see roadmap "Phase 02b"). Pure data +
 infra — no app features — so it's a separate PR. Widens the pilot's **single-state Vermont** corpus +
 basemap to the Northeast lake-skating states. **Nothing here changes until the mobile online loop
 ships**; and the map-bounds widening is the *last* step (after the data lands), never before.
@@ -491,7 +491,7 @@ ships**; and the map-bounds widening is the *last* step (after the data lands), 
   **per-state Geofabrik extracts** (`us/new-york`, `us/vermont`, `us/new-hampshire`, `us/maine`,
   `us/massachusetts`) and process each; **clip the NY extract by bbox** to drop the NYC/Long Island
   metro (roughly keep lat ≳ 41.3, and trim the SE corner) so downstate lakes never import.
-- **Water data (`scripts/etl`):** re-run the Phase 1 pipeline per state → `importCanonical` (each body
+- **Water data (`scripts/etl`):** re-run the Phase 01 pipeline per state → `importCanonical` (each body
   D49-scored on insert; the loader paginates under the read cap). Record each extract's download date +
   md5 (per the ETL README). Corpus grows well past VT's ~9,970 bodies.
 - **Basemap tiles → Cloudflare R2 (decided 2026-07-14 — see "Settled").** Build one multi-state
@@ -529,7 +529,7 @@ PR; commits map to §A–§E):
    > *Optional split seam if the single PR gets too large for one review: read path (commits 1–3)
    > vs. write path (commit 4). Default is one PR unless it balloons.*
    >
-   > *(User-created water bodies + dedup are no longer in this plan — deferred to Phase 8, GPS-backed.)*
+   > *(User-created water bodies + dedup are no longer in this plan — deferred to Phase 08, GPS-backed.)*
 
 **Mobile — two separate follow-on PRs** (§F, decided 2026-07-13), each with its own short build-plan
 doc once web is proven:
@@ -555,7 +555,7 @@ doc once web is proven:
     session lifetime very long (multi-month) so existing users effectively never hit a sign-in wall
     from a shared link — a config task, tracked in §G/roadmap. **Fast-follow (post-MVP):** let
     `public`-visibility bodies/reports render for **signed-out** viewers, gating only with a blocking
-    risk-ack modal. Not in Phase 2.
+    risk-ack modal. Not in Phase 02a.
 
 - **Prominence lives in the query, not a post-fetch refine (D49, decided 2026-07-13).** `minVisibleZoom`
   is a bucketed integer stored on `waterBodies` and indexed as a geospatial **filter key**, so
@@ -573,8 +573,8 @@ doc once web is proven:
   the **access point** they used; it sets the required `reports.point` (default: body centroid). Named
   access points / put-ins are a nice future first-class concept — for now the data rides on `point`.
 
-- **User-created water bodies deferred to Phase 8 (decided 2026-07-13).** Cut from Phase 2 entirely;
-  the good version is GPS-path-backed and GPS integrations are Phase 8. See Scope + `07-roadmap.md`.
+- **User-created water bodies deferred to Phase 08 (decided 2026-07-13).** Cut from Phase 02a entirely;
+  the good version is GPS-path-backed and GPS integrations are Phase 08. See Scope + `07-roadmap.md`.
 
 - **HEIC on web supported (decided 2026-07-13).** The photo pipeline decodes HEIC/HEIF before the
   canvas optimize/strip pass (via `heic2any`), so iPhone photos upload from desktop browsers.
@@ -599,15 +599,15 @@ doc once web is proven:
   **deferred to a future cleanup/polish phase**; tracked in `07-roadmap.md` → "Later / deferred".
   Low urgency at alpha scale, but it should land before storage cost/quotas matter.
 
-- **Regional expansion = Phase 2.5, Northeast skating states only (decided 2026-07-14).** After the
-  mobile MVP (F1+F2), before Phase 3, expand the VT-only corpus + basemap to **NY (excl. NYC/Long
+- **Regional expansion = Phase 02b, Northeast skating states only (decided 2026-07-14).** After the
+  mobile MVP (F1+F2), before Phase 03, expand the VT-only corpus + basemap to **NY (excl. NYC/Long
   Island), VT, NH, ME, MA** — via **per-state** Geofabrik extracts (not the `us/northeast` dump, which
   drags in NJ/PA/CT/RI we don't want) with NY bbox-clipped downstate. See Workstream H + roadmap
-  "Phase 2.5". Map-bounds widening happens **last**, after the water data lands.
+  "Phase 02b". Map-bounds widening happens **last**, after the water data lands.
 
 - **Basemap tiles move to Cloudflare R2 (decided 2026-07-14).** The 5-state `.pmtiles` extract
   overflows Convex's free storage tier, so tiles host on **R2** (zero egress, standard pmtiles host —
-  the Phase 1-flagged off-ramp); the VT tiles migrate too. The app already reads the tile URL from
+  the Phase 01-flagged off-ramp); the VT tiles migrate too. The app already reads the tile URL from
   `VITE_PMTILES_URL` / `EXPO_PUBLIC_PMTILES_URL`, so this is a hosting + env swap, **no app change**.
   (Operationally yours: create the R2 bucket + public base URL; `scripts/basemap` gains an R2 upload
   target.) **Related fix (2026-07-14):** the old Protomaps demo `.pmtiles` default 404'd (they prune
@@ -618,9 +618,9 @@ doc once web is proven:
 ## Open items to settle during the build (small)
 - **`displayScore` curve constants** — start with fixed log-area bounds + a linear score→zoom map;
   eyeball Champlain, Morey, and a small pond across z6–z14 and adjust the floor/span.
-  **→ Phase 7:** these constants must get **admin-UI modification controls** in the operator
+  **→ Phase 07:** these constants must get **admin-UI modification controls** in the operator
   surface (D37) — they should be tunable through the UI, **never buried as code constants** a
-  non-engineer can't reach. Phase 2 ships them as tuned constants; Phase 7 lifts them behind admin
+  non-engineer can't reach. Phase 02a ships them as tuned constants; Phase 07 lifts them behind admin
   controls.
 - **`curatedBoost` seeding** — which known Vermont destinations get a manual boost at launch. **A
   data-derived VT seed already exists:** `training_data/google_group/curated_boost_seed_vt.csv`
@@ -629,7 +629,7 @@ doc once web is proven:
   actually in the VT OSM import** — the seed's region tag is "which community discusses it," so it
   includes NY/NH lakes VT skaters frequent (Lake George, Dillenbeck Bay) that won't exist in a
   VT-only import. Apply via a tiny admin action or one-off internal mutation.
-  **→ Phase 7:** per-body `curatedBoost` must be **editable from the admin water-body surface**
+  **→ Phase 07:** per-body `curatedBoost` must be **editable from the admin water-body surface**
   (set/adjust the boost on any body through the UI), not only via a seed script — same "don't bury
   it in code" principle as the score constants above.
 - **Geospatial numeric-filter spike — DONE (2026-07-13):** `@convex-dev/geospatial@0.2.1` supports a
@@ -649,15 +649,15 @@ doc once web is proven:
   timestamp + GPS, and GPS *only* on `placeOnMap`. Enforce on **both** client (strip) and server
   (`photos.create` drops `coord`) so a client bug can't leak location.
 - **Reports have no visibility field (D13)** — every report is public; reads gate on moderation +
-  blocks only. Keep the read behind `@skating/core` `canViewReport` (now block-only) so the Phase 3
+  blocks only. Keep the read behind `@skating/core` `canViewReport` (now block-only) so the Phase 03
   **block** filter drops in with no report re-write.
 - **`listInViewport` read-cap** — the D49 **in-query** `minVisibleZoom` filter is the real fix (wide
-  zooms return few prominent bodies, so the cap isn't hit in normal use), but keep the Phase 1
+  zooms return few prominent bodies, so the cap isn't hit in normal use), but keep the Phase 01
   read-cap safety (limit, `isListed` JS refine, truncation `log`) as a backstop. Watch the filter
   interaction: the read-cap note warned that a filter-stream *intersection* lowers the safe
   `maxResults` ceiling — validate the `minVisibleZoom` filter against the 9,967-body corpus during
   the spike so it doesn't reintroduce the wide-zoom crash it's meant to prevent.
-- **Hazard seam (Phase 9)** — don't paint the report data path into a corner that makes in-polygon
+- **Hazard seam (Phase 09a)** — don't paint the report data path into a corner that makes in-polygon
   hazard geometry hard to add later; `hazardIdsCreated` already exists in the schema, leave it be.
 
 
@@ -665,9 +665,9 @@ doc once web is proven:
 
 ## Relocated from the roadmap (2026-09-16)
 
-*The roadmap entry for Phase 2 as it stood before the 2026-09-16 rewrite, kept verbatim so nothing it said is lost. The roadmap now carries a one-paragraph summary; this is the long form.*
+*The roadmap entry for Phase 02a as it stood before the 2026-09-16 rewrite, kept verbatim so nothing it said is lost. The roadmap now carries a one-paragraph summary; this is the long form.*
 
-### Phase 2 — Map + reports (the MVP) ✅ Complete (2026-07-16)
+### Phase 02a — Map + reports (the MVP) ✅ Complete (2026-07-16)
 > **Detailed build plan:** [`phases/02a-map-and-reports.md`](./02a-map-and-reports.md).
 > **Web first, then mobile (two PRs)** — web front-loads the shared Convex backend and proves the
 > whole data model online before the native-build + offline-capture (D30) lift. No store/dev-account
@@ -690,18 +690,18 @@ doc once web is proven:
 > report with no signal and it flushes on reconnect. `@skating/core` carries the pure heart: a
 > buffered `pointInPolygon` GPS→lake resolver and a checkpointed, idempotent flush state machine
 > (transient-retry vs. permanent-park). On-device an `expo-sqlite` LRU caches recently-viewed body
-> polygons (Layer 2 — GPS auto-select offline, reused by Phase 9), plus an `expo-sqlite` +
+> polygons (Layer 2 — GPS auto-select offline, reused by Phase 09a), plus an `expo-sqlite` +
 > `expo-file-system` draft queue with NetInfo/foreground/manual flush; `reports.create` is idempotent
 > on an additive `idempotencyKey`, and `waterBodies.resolveBodyForCoord` resolves a coord-only draft
 > at flush. Offline editing + a drafts list ship too. **Offline basemap *tiles* (F2 "Layer 3") were
-> deferred to Phase 9** (hazard pins need them; report capture doesn't). Native UI pending an emulator
+> deferred to Phase 09a** (hazard pins need them; report capture doesn't). Native UI pending an emulator
 > verification pass (pure + Convex layers are tested).
 
 - MapLibre map (D6) with wintery style; home/water framing on open (D20).
 - **Zoom-scored display prominence (D49):** which bodies draw at a given zoom is a derived
   display score (area now; popularity + admin `curatedBoost` later), decoupled from the D48
   `listed` gate — so a small-but-beloved lake (Lake Morey) can still show at state zoom while
-  clutter drops. Phase 1 only stores `surfaceAreaSqM`; the score/threshold lands here.
+  clutter drops. Phase 01 only stores `surfaceAreaSqM`; the score/threshold lands here.
 - Tap a water body → detail view (name, area, report feed by **skate time**).
 - Create + read a **report** (ice types, surface tags, coarse quality, structured
   thickness, photos, conditions) — always public (D13, no visibility field) and
@@ -710,10 +710,10 @@ doc once web is proven:
 - **Photo geotag opt-in** (D42): default off; if on, photos pin at their coord within
   the water body.
 - **Reports are always public** (D13) — no per-report visibility field at all. Minors are
-  **read-only** (can't post; D41). *(The Phase 2 web/mobile MVP shipped with a 2-level visibility
+  **read-only** (can't post; D41). *(The Phase 02a web/mobile MVP shipped with a 2-level visibility
   selector; it was removed in the D13 revision — reports carry no visibility now.)*
-- *(User-created water bodies + dedup **moved to Phase 8**, decided 2026-07-13 — the good version is
-  GPS-path-backed, and the Vermont OSM corpus already covers the alpha. See Phase 8.)*
+- *(User-created water bodies + dedup **moved to Phase 08**, decided 2026-07-13 — the good version is
+  GPS-path-backed, and the Vermont OSM corpus already covers the alpha. See Phase 08.)*
 - **Done:** friends can post and read reports on real lakes. *This is the usable MVP.*
 - Needs: MapLibre + tiles (Protomaps), Convex file storage.
 

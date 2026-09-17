@@ -1,5 +1,5 @@
 /**
- * Give `state_agency` a producer — the archives already on disk, as loadable depth (N7-3).
+ * Give `state_agency` a producer — the archives already on disk, as loadable depth (A07a-3).
  *
  *   pnpm --filter @skating/bathymetry export-depths [--out=path] [--campaign=<id>]
  *   pnpm --filter @skating/lake-depth load scripts/bathymetry/.scratch/state-agency-depths.ndjson

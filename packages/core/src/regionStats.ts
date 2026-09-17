@@ -1,5 +1,5 @@
 /**
- * Per-state distribution statistics (N6c Workstream A5) — the comparison basis the derived caption
+ * Per-state distribution statistics (A06c Workstream A5) — the comparison basis the derived caption
  * needs to say things like *"among the deepest in Vermont."*
  *
  * ## Why deciles per state, and not a percentile per body
@@ -106,7 +106,7 @@ export function isBottomDecile(value: number, block: DecileBlock | undefined | n
   return decileRankOf(value, block) === 0;
 }
 
-// ── Corpus counts (N7b) ────────────────────────────────────────────────────────────────────────
+// ── Corpus counts (A07b) ────────────────────────────────────────────────────────────────────────
 
 const STATE_NAMES: Record<string, string> = {
   NY: 'New York',
@@ -121,7 +121,7 @@ export interface CorpusCountLine {
   state: string;
   stateName: string;
   known: number;
-  /** Absent on a row written before N7b's `recompute` ran; the line then shows known alone. */
+  /** Absent on a row written before A07b's `recompute` ran; the line then shows known alone. */
   active?: number;
 }
 

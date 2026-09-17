@@ -1,5 +1,5 @@
 /**
- * Deciding which granules are worth booting a Machine for (N6e PR 2, §C1/§C3).
+ * Deciding which granules are worth booting a Machine for (A06e PR 2, §C1/§C3).
  *
  * ## ⚠ The cloud gate is OFF by default — founder override, 2026-08-24
  *
@@ -9,7 +9,7 @@
  * The reasoning below is kept as history rather than deleted, because it is still *true* — the gate
  * really does refuse ~70% of a window for the price of a query parameter. It is simply no longer what
  * we want. Owning the pixels means every later re-derivation (SCL thresholds, a better per-lake cloud
- * statistic, N6g's research) is free, where a gated archive would send us back to Copernicus for
+ * statistic, A06g's research) is free, where a gated archive would send us back to Copernicus for
  * frames we chose not to keep.
  *
  * `maxCloudPct` remains an option and still works; it just no longer has a default. **Measured cost of

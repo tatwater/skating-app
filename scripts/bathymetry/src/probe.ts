@@ -1,5 +1,5 @@
 /**
- * Discovery CLI (N6b) — look at a candidate layer before committing it to the registry.
+ * Discovery CLI (A06b) — look at a candidate layer before committing it to the registry.
  *
  *   pnpm --filter @skating/bathymetry probe <layer-url> [--save=<key>]
  *

@@ -1,5 +1,5 @@
 /**
- * Corpus requests (N7b PR 2) — **the skater says "this is skateable", and the catalogue answers.**
+ * Corpus requests (A07b PR 2) — **the skater says "this is skateable", and the catalogue answers.**
  *
  * D91 put a floor under the corpus and deleted 102,000 bodies on one sentence: *"if I get user
  * feedback that someone's pond isn't there, then we can relax the rule and re-run the import."* That
@@ -16,7 +16,7 @@
  *   geometry, `includedByRequest` (D107). The user never draws.
  * - **`restore`** — the body was removed (D48). *"That was wrong, or things changed."*
  * - **`contest_access`** — a moderator ruled no public access. *"There is a way in, and here it is."*
- * - **`takedown`** — *"I own this; please take it off the map."* The intake D48 deferred to Phase 7
+ * - **`takedown`** — *"I own this; please take it off the map."* The intake D48 deferred to Phase 07
  *   and nobody built. Founder call 2026-09-16: the fifth kind, here.
  *
  * ## Why a request is a proposal and a moderator admits (D107)

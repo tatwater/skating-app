@@ -1,4 +1,4 @@
-# N7 — The unified corpus: one record per lake, two catalogues behind it, and a full data campaign on top
+# A07a — The unified corpus: one record per lake, two catalogues behind it, and a full data campaign on top
 
 > **Status:** ✅ **Campaign `n7-3-20260809` COMPLETE** (2026-08-09) — every pass run, `regionStats` last. The corpus is live on dev and
 > the enrichment is most of the way through. Originally written 2026-08-03 after a measurement session
@@ -164,7 +164,7 @@
 > master list, on the rule **merge first, filter once**. Sections written against the old shape are
 > flagged inline; *The operator's half* below carries what that rebuild actually produced.
 >
-> **Depends on:** the D91 area floor and its prune (both landed, 2026-08-03), the N6b containment join
+> **Depends on:** the D91 area floor and its prune (both landed, 2026-08-03), the A06b containment join
 > (landed, tiles **not** rebuilt), and the `osmId`/`nhdId`/`geometrySource` fields — **landed and now
 > backfilled**, see the step list.
 > **Touches:** every ETL package — `scripts/etl`, `scripts/admin-areas`, `scripts/lake-depth`,
@@ -215,7 +215,7 @@ have no polygon in the corpus; §Verification says the floor applied to the **42
 misses admits 41. Re-derive both from one query at kickoff and quote a single figure.
 
 **6. `regionStats` is empty on dev — zero rows, confirmed 2026-08-03.** D85's deciles and prominence
-are not stale, they are *absent*; the N6c campaign's recompute never ran because it was gated on the
+are not stale, they are *absent*; the A06c campaign's recompute never ran because it was gated on the
 elevation pass. Step 11 is a first computation, not a refresh.
 
 **7. Simplification parity is not addressed and would corrupt a bake-off signal.** Our transform
@@ -337,7 +337,7 @@ recoverable into **217 bodies that would draw** and that we currently render bla
 | `geometrySource` | 25,197 (100%) | `nhdId` | 20,467 (81%) |
 | `osmId` | 19,289 (77%) | wind rose | 0 |
 | depth | 5,662 (22%) | elevation | 5,716 (23%) |
-| sub-areas | 120 | of which N7-seeded | 111 |
+| sub-areas | 120 | of which A07a-seeded | 111 |
 
 **by class** — `lakePond` 17,637 · wetland 3,838 · reservoir 2,471 · unclassified 1,223 · river 26 ·
 bay 2
@@ -542,7 +542,7 @@ be re-derivable on a later dedup pass. Three reasons it cannot be the *key*:
    vertex 199, D85 amendment). Anything derived from a polygon inherits that value's pathologies.
 
 **Where the intuition is right is the blocking key** — the cheap thing that narrows candidates before
-an expensive `polygonIoU`. That is a real need and it is **already built**: N1's `waterBodyCells`
+an expensive `polygonIoU`. That is a real need and it is **already built**: A01's `waterBodyCells`
 ladder-grid indexes every body by the cells its bbox covers. A dedup pass asks the grid for co-located
 candidates, then computes IoU on the short list. So "re-derivable for dedup" is served by an *index*,
 which is allowed to move, rather than by an *identity*, which is not.
@@ -751,7 +751,7 @@ gate rejects. We will publish bathymetry for ~217 lakes on an attribution the su
 made. The lane already renders as `interpolated` rather than `surveyed`; **the credit line should say
 that the lake assignment is ours.**
 
-### ✅ Built 2026-08-09 (N7-3) — and the reject list confirmed the diagnosis exactly
+### ✅ Built 2026-08-09 (A07a-3) — and the reject list confirmed the diagnosis exactly
 
 `scripts/bathymetry/src/rekey.ts`, wired into `join.ts` as a second pass over the rejects.
 
@@ -1017,12 +1017,12 @@ spent on them was spent on a row that does not exist by morning.
 
 **Approved by the founder, 2026-08-03.** The elevation pass is the campaign's worst bottleneck and it
 is self-inflicted: `loadElevation` reads Open-Meteo, whose free tier counts **each coordinate**, not
-each request — so batching buys HTTP overhead and no quota at all. The N6c run stalled at **5,975
+each request — so batching buys HTTP overhead and no quota at all. The A06c run stalled at **5,975
 stamped, page 86 of ~248**, and it competes for that allowance with `weather.ts`'s forecast crons,
 which are the product itself.
 
 **We already have the data for the lakes that matter.** HydroLAKES — downloaded, checksummed and
-mirrored to R2 for N6a — carries an **`Elevation`** attribute alongside the `Depth_avg` we ingest from
+mirrored to R2 for A06a — carries an **`Elevation`** attribute alongside the `Depth_avg` we ingest from
 it. It covers lakes ≥ 10 ha, which is ~100% of what draws at regional zoom and every body a decile
 statistic is computed over. For the remainder, **USGS 3DEP** is a one-time raster download sampled
 locally, with no per-coordinate accounting and no shared allowance.
@@ -1177,7 +1177,7 @@ the classifier stay downstream where redoing them is cheap. 3DHP keeps less of i
 was forced by 11.9 GB against 417 MB. **The cost of that asymmetry, stated once:** adding an OSM or
 NHD layer later is free, adding a 3DHP layer costs an 11.9 GB re-download. The only dropped layer
 plausibly worth anything is `hydro_3dhp_all_flowline` — rivers and streams, which ties to the still-open
-"no rivers in the corpus at all" question from N2.
+"no rivers in the corpus at all" question from A02.
 
 **One latent bug fixed on the way in.** `scripts/lib/mirror-r2.sh` now passes `--s3-no-check-bucket`
 on every rclone call. rclone issues a `CreateBucket` before its first upload to a bucket it has not
@@ -1247,14 +1247,14 @@ the map and left out of the corpus, because a basemap with a world made "what we
 claim to cover" two questions instead of one. It is counted apart from `outOfRegion` on purpose: that
 number is the geodatabases spilling over their own state lines, which should stay roughly constant,
 and at 35,637 it is large enough to hide a coverage decision inside. See
-[D111](../01-decisions.md#d111--rendering-a-place-and-covering-it-are-two-questions-new-york-south-of-i-84-gets-one-answer-each-n7).
+[D111](../01-decisions.md#d111--rendering-a-place-and-covering-it-are-two-questions-new-york-south-of-i-84-gets-one-answer-each-a07).
 
 **Step 3 preceded step 5, and it was worth it — though not for the reason expected.** The worry was
 that importing first would mean importing 27,074 outlines twice. The bake-off's answer is that **the
 two catalogues are indistinguishable** (63.2% ties; 13.4% vs 12.6% on the least-confounded metric),
 so OSM-first stands as the default on D92's own tie-break — the cheaper pipeline. The placeholder
 turned out to be right, which is only knowable now. See
-[D92](../01-decisions.md#d92--osm-draws-the-lakes-because-the-bake-off-found-no-reason-to-prefer-nhd-n7)
+[D92](../01-decisions.md#d92--osm-draws-the-lakes-because-the-bake-off-found-no-reason-to-prefer-nhd-a07)
 for the numbers, the per-lake override, and — importantly — **what this result cannot say**: the
 referee set is built from the bathymetry join and therefore excludes every lake OSM is missing, Beau
 Lake among them.
@@ -1627,7 +1627,7 @@ unnamed wetlands above five acres:
 
 **Area is knowingly the weaker proxy** — a 60-acre round bog gets in where a 12-acre channel does
 not, which is wrong on the merits. Accepted because the rule stays cheap and total, and because
-**N7b is the backstop**: *"rely on N7b to repopulate anything we rip out now"* (founder).
+**A07b is the backstop**: *"rely on A07b to repopulate anything we rip out now"* (founder).
 
 ### The long-axis exemption it replaced: designed, measured, dropped
 
@@ -1646,7 +1646,7 @@ evidence. Two opposite readings of one rule is how a silent deletion happens. It
 `lakeGeometryStats` to be computed lazily mid-check in `transform.ts`, where it is deliberately
 derived *after* admission so a convex hull does not run over 124,000 features.
 
-**Dropping it is safe because of N7b.** `includedByRequest` overrides every rule, so a real 3 km
+**Dropping it is safe because of A07b.** `includedByRequest` overrides every rule, so a real 3 km
 channel someone actually skates has a way back in — one body at a time, with a human looking. That is
 a better answer than a threshold nobody can verify.
 
@@ -1672,7 +1672,7 @@ so the claim is about our knowledge rather than about the lake. Nothing may phra
 
 ### It lands on `bodyFeatures`, which already exists and already does most of this
 
-`bodyFeatures` (D53, N5c) is the **persistent** counterpart to a hazard: no seasonal reset touches it,
+`bodyFeatures` (D53, A05c) is the **persistent** counterpart to a hazard: no seasonal reset touches it,
 it shares the hazard authoring primitives (point / line / polygon with a buffer), `active` makes
 demotion reversible rather than destructive, and `promotedFromHazardId` **already implements the
 augment half** — a recurring user-reported hazard becomes a permanent feature by promotion.
@@ -1745,7 +1745,7 @@ hundred annual requests is the wrong trade. **Use EPQS.** Keep the tiles as the 
 it turns out to rate-limit.
 
 **The incremental behaviour is already built** — `listNeedingElevation` skips already-stamped rows
-server-side, which is what made the N6c pass resumable. Two caveats on "only new bodies":
+server-side, which is what made the A06c pass resumable. Two caveats on "only new bodies":
 
 1. **A body whose geometry changes needs re-stamping**, because its representative point moves. Under
    D92 a `geometrySource` switch moves it, potentially a long way (`pointOnFeature` puts Champlain's
@@ -1853,7 +1853,7 @@ had already flagged it for a human** — and the prune's rule is that a body und
 deleted out from under the person reviewing it.
 
 **That protection is right and is now redundant, which is the useful part.** Two independent systems —
-D36's geometric match-on-create and the N7 merge's federal-id collapse — reached the same conclusion
+D36's geometric match-on-create and the A07a merge's federal-id collapse — reached the same conclusion
 about the same 61 rows. The queue's items are pre-answered; a moderator merging them is confirming a
 finding rather than making one.
 
@@ -1872,7 +1872,7 @@ survivor is not in the corpus, and a body a contour tileset points at.
 | | |
 | --- | --- |
 | 34 | deleted outright — a surviving partner, nothing attached, nothing pointing at them |
-| 5 | held, then deleted on the founder's call: a full bathymetry pass is coming, and in every case the *survivor* had no coverage because the N6b join had matched the survey to the duplicate |
+| 5 | held, then deleted on the founder's call: a full bathymetry pass is coming, and in every case the *survivor* had no coverage because the A06b join had matched the survey to the duplicate |
 | 22 | **not a duplicate question at all** — pairs where *both* halves were refused by the D111 cut. They fail the region rule, which is a property of the body rather than of the queue, so `pruneOutsideCoverage` took them. It found exactly those 22 and nothing else, which also confirms no other downstate residue survived the campaign. |
 
 **The dedup queue is now empty**: 0 `near_certain`, 0 `suspected_duplicate`, 0 tombstones, 0 dangling
@@ -1932,7 +1932,7 @@ Three things that measurement settled that were assumptions:
 
 - **The identity fields really were unbackfilled** — zero rows carried `osmId`, `nhdId` or
   `geometrySource`. **Superseded — steps 2 and 4 have since run**, see below.
-- **Wind climate is at zero**, not ~2%. The N6c pass wrote nothing before it was stopped.
+- **Wind climate is at zero**, not ~2%. The A06c pass wrote nothing before it was stopped.
 - **`other` is the largest class in the corpus at 46%** — water OSM's classifier could not identify.
   That is a bigger unknown than the wetland question D96 has been agonising over, and nothing in this
   plan had looked at it. **Since addressed**: `waterClass.ts` maps all three catalogues into
@@ -1959,7 +1959,7 @@ are bodies NHD has no counterpart for; those insert cleanly, which is correct.
 **`source` is still 100% `osm` and `type` is still the old eight-value vocabulary.** Both are step 5's
 job to change — see the `WATER_BODY_CLASSES` migration under D96.
 
-**The N6c campaign's own passes are unfinished and this campaign subsumes them.** Elevation stopped at
+**The A06c campaign's own passes are unfinished and this campaign subsumes them.** Elevation stopped at
 5,975 of ~11,000 on quota (now D101's problem); wind stopped at ~2% deliberately; `regionStats` never
 ran and is empty. Nothing here needs resuming — it needs re-running against the corpus step 6
 establishes. The wind archive rebuild (**D134**) is a **hard prerequisite of step 11**: without the
@@ -1972,7 +1972,7 @@ establishes. The wind archive rebuild (**D134**) is a **hard prerequisite of ste
 
 *Everything below was folded in from `HANDOFF-n7-classification.md` and
 `HANDOFF-n7-2-data-campaign.md` when the campaign finished (2026-08-10). Both are deleted; this is
-the one N7 document.*
+the one A07a document.*
 
 ## How to run it
 
@@ -1983,7 +1983,7 @@ pnpm --filter @skating/etl prune-floor           # dry; --apply to delete
 pnpm --filter @skating/etl retire-absorbed       # dry; --apply. MUST run after a merge that collapsed
                                                  # duplicates — the load is an upsert and will not
                                                  # remove the rows it stopped emitting.
-# sub-areas need --actor=<moderator profileId>: every sub-area write is audited (N2/D60)
+# sub-areas need --actor=<moderator profileId>: every sub-area write is audited (A02/D60)
 
 # ── enrichment, in the order the data allows ──────────────────────────────────
 pnpm --filter @skating/lake-depth transform … && … load …        # depth (all rungs)
@@ -2202,7 +2202,7 @@ reading did.
 
 | | |
 | --- | --- |
-| **Refactor `waterBodies.ts`** | **5,400+ lines, 49 exported Convex functions** — the import/ETL path, the read path, moderation, and per-body editing in one module. Every loader calls `convexRun('waterBodies:X')` **by string**, so splitting it renames function paths; it wants its own PR with nothing else in flight. Flagged during the N7-3 audit and deliberately not done during a campaign. |
+| **Refactor `waterBodies.ts`** | **5,400+ lines, 49 exported Convex functions** — the import/ETL path, the read path, moderation, and per-body editing in one module. Every loader calls `convexRun('waterBodies:X')` **by string**, so splitting it renames function paths; it wants its own PR with nothing else in flight. Flagged during the A07a-3 audit and deliberately not done during a campaign. |
 | **MA and NY depth sources** | The largest remaining data gap, and it is **research, not engineering**. Measured: the join is lossless (stored coverage tracks source reach within 1–2 points in every area band), and **1,489 bodies ≥ 10 ha have no source point inside them at all** — MA 443 (reach 58.7%, vs 82–86% for ME/NH/VT) and NY 629. MassGIS is a dead end: it holds only **265 distinct lakes** and all 265 are already used. Needs new state/agency datasets found and vetted. |
 | **Québec** | Deliberately not done. Three new source lanes — StatCan boundaries, NHN/CanVec hydrography, CGNDB names. Only OSM crosses the border today. The classifier's French keywords are already in, and `OCEAN_NAME_VETO_MIN_ACRES` was kept rather than deleted specifically for this. |
 | ~~**The 250 m wind fetch**~~ | ✅ **Done 2026-08-15.** 47,765 / 47,765 cell-years archived and mirrored (hash-verified, 0 differences); `derive` stamped **11,114 / 11,114** bodies. The cell-years lost to 429 were recovered — the resumed run finished with **0 failures**, because `snapshot` re-offers anything missing rather than tracking a retry list. The real cost was a pacing bug, not the retry policy: see `WTK_REQUEST_DELAY_MS`. |
@@ -2213,7 +2213,7 @@ reading did.
 
 ## Related
 
-**This is the only N7 document.** `HANDOFF-n7-classification.md` and
+**This is the only A07a document.** `HANDOFF-n7-classification.md` and
 `HANDOFF-n7-2-data-campaign.md` were folded in above and deleted (2026-08-10);
 `HANDOFF-n6c-data-campaign.md` was audited against the deployment, folded into
 [`phase-N6c`](./A06c-expanded-body-profiles.md) and [`phase-N6a`](./A06a-body-depth.md), and
@@ -2226,7 +2226,7 @@ deleted. **No `HANDOFF-*` documents remain.**
 
 [`01-decisions.md`](../01-decisions.md) — **D92–D105**, **D109–D137** ·
 [`docs/water-body-data.md`](../../docs/water-body-data.md) — the same story for humans ·
-[`phase-1`](./01-water-bodies.md) · [`phase-N6a`](./A06a-body-depth.md) ·
+[`phase-01`](./01-water-bodies.md) · [`phase-N6a`](./A06a-body-depth.md) ·
 [`phase-N6b`](./A06b-bathymetry-layer.md) ·
 [`phase-N6c`](./A06c-expanded-body-profiles.md) · [`phase-N7b`](./A07b-corpus-by-request.md).
 
@@ -2235,10 +2235,10 @@ deleted. **No `HANDOFF-*` documents remain.**
 
 ## Relocated from the roadmap (2026-09-16)
 
-*The roadmap entry for N7 as it stood before the 2026-09-16 rewrite, kept verbatim so nothing it said is lost. The roadmap now carries a one-paragraph summary; this is the long form.*
+*The roadmap entry for A07a as it stood before the 2026-09-16 rewrite, kept verbatim so nothing it said is lost. The roadmap now carries a one-paragraph summary; this is the long form.*
 
-**N7 — The unified corpus: one record per lake, two catalogues behind it, and a full data campaign.**
-✅ **Corpus + campaign complete on dev, 2026-08-09** (the 250 m wind fetch runs on; prod deferred) — the phase this roadmap had no entry for at all until now. See [`phases/A07a-unified-corpus.md`](./A07a-unified-corpus.md) — the one N7 document, with the
+**A07a — The unified corpus: one record per lake, two catalogues behind it, and a full data campaign.**
+✅ **Corpus + campaign complete on dev, 2026-08-09** (the 250 m wind fetch runs on; prod deferred) — the phase this roadmap had no entry for at all until now. See [`phases/A07a-unified-corpus.md`](./A07a-unified-corpus.md) — the one A07a document, with the
 operator's half (commands, the governing rule, and everything expensive to re-learn) at the bottom —
 and [`docs/water-body-data.md`](../../docs/water-body-data.md) for the same story written for humans.
 Decisions **D92–D105** and **D109–D137**.
@@ -2247,7 +2247,7 @@ Three PRs so far: **#39** (the merge, the master list, the review queue), **#40*
 referee), and the current unmerged branch `phase-n7-3-unified-corpus` (the data campaign).
 
 **What it replaced.** The corpus was OSM-only, per-state, and a lake split across two features was two
-rows. N7 merges **OSM + NHD + 3DHP + GNIS** into one record per lake with our own minted key (D93),
+rows. A07a merges **OSM + NHD + 3DHP + GNIS** into one record per lake with our own minted key (D93),
 best-of-both per field (D94), and one admission floor applied **once** to the merged body rather than
 per catalogue (D109/D110). 178,095 groups in, **24,958 bodies** out.
 
@@ -2266,7 +2266,7 @@ per catalogue (D109/D110). 178,095 groups in, **24,958 bodies** out.
 
 - **`state_agency` was a ladder rung with no producer.** Rank 1 on D68's ladder, above LAGOS and
   HydroLAKES, and nothing had ever written to it while 298 MB of state survey data sat on disk from
-  N6b. It now holds **3,033 measurements**.
+  A06b. It now holds **3,033 measurements**.
 - **There was no `osm→osm` matching lane** (D136). Three lanes ran and none matched a catalogue
   against itself, so an OSM multipolygon relation and its own outer way both shipped as corpus rows.
   Every one of the 18 duplicate pairs at IoU ≥ 0.6 was OSM–OSM; two scored 1.000.

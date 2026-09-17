@@ -1,6 +1,6 @@
 /**
- * Lake-depth transform (N6a) — parse four sources, resolve the D68 ladder per lake, emit one
- * normalized record each. **No matching happens here**: the spatial join runs in Convex, where the N1
+ * Lake-depth transform (A06a) — parse four sources, resolve the D68 ladder per lake, emit one
+ * normalized record each. **No matching happens here**: the spatial join runs in Convex, where the A01
  * cell index lives (`waterBodies.matchAndImportDepths`), because resolving ~8k source lakes against an
  * index is cheap and exporting 116,070 polygons to do it locally is not.
  *

@@ -1,5 +1,5 @@
 /**
- * How hazards are turned into map data (Phase 9) — the GeoJSON transforms and the freshness→style
+ * How hazards are turned into map data (Phase 09a) — the GeoJSON transforms and the freshness→style
  * mapping, shared by web and mobile.
  *
  * This lives in `core` rather than in each app's map lib (the convention the water-body layers
@@ -38,7 +38,7 @@ export interface MappableHazard {
   radiusMeters?: number;
   bufferMeters?: number;
   /**
-   * The footprint clipped to the water body, when create stored one (Phase 9.5). Drawn directly when
+   * The footprint clipped to the water body, when create stored one (Phase 09b). Drawn directly when
    * present so the halo can't spill over land or a neighbouring lake — and it's the *same* polygon the
    * proximity/directional distance measures against, so what's drawn and what's warned about stay one
    * shape. Broad `GeoJSON.Geometry` like `geometry`: a row carrying an unexpected type is dropped in
@@ -50,7 +50,7 @@ export interface MappableHazard {
   healingState?: 'none' | 'healing_unsafe' | 'disputed';
   /**
    * Every pin the server judged to be the same hazard as this one, earliest first, including this one
-   * (N5c / D80). Present only for genuine duplicates; absent on the overwhelming majority of hazards.
+   * (A05c / D80). Present only for genuine duplicates; absent on the overwhelming majority of hazards.
    */
   clusterMemberIds?: string[];
 }
@@ -211,7 +211,7 @@ export function bodyFeaturesToFeatureCollection(
  * Above this many corners, a draft's vertex dots stop being drawn.
  *
  * The dots are feedback for placements a **person made one at a time** — that is the only thing they
- * are for. A snapped shore band (N5b) arrives as a ring nobody tapped: a buffered, simplified
+ * are for. A snapped shore band (A05b) arrives as a ring nobody tapped: a buffered, simplified
  * shoreline arc, routinely 130–150 corners and capped at `HAZARD_MAX_VERTICES` (500). Drawing a dot
  * on each one covers the band it is supposed to be clarifying, on the smallest screen, for the skater
  * standing on the ice.

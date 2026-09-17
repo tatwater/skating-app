@@ -56,7 +56,7 @@ function main(): void {
 
   const logger = new RunLogger({
     kind: 'osm_depths',
-    label: 'OSM depth tags (N6a rung 7)',
+    label: 'OSM depth tags (A06a rung 7)',
     campaignId,
     target,
     call: convexRun,

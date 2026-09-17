@@ -1,5 +1,5 @@
 /**
- * NHD acquisition and provenance — the second canonical-water catalogue (N7).
+ * NHD acquisition and provenance — the second canonical-water catalogue (A07a).
  *
  * ## Why this sits beside `archive.ts` rather than in its own package
  *

@@ -6,7 +6,7 @@
  * always stay visible — D3). Threads cap at **2 levels** (D25); the pure rules
  * (`isValidCommentBody`, `buildCommentThread`) live in `@skating/core` and are re-enforced here at
  * the trust boundary (D37). `create` enqueues the `report_commented` notification (D21, delivered
- * since N8) through the settle queue.
+ * since A08) through the settle queue.
  */
 
 import {
@@ -38,7 +38,7 @@ import { loadBlockedAuthorIds } from './lib/reportVisibility';
  * report must exist + be moderation-`visible`; validate the body; enforce the 2-level cap (D25) — a
  * reply's parent must exist, belong to the same report, and be **top-level** (the client flattens
  * deeper replies via `resolveReplyParentId`, and we re-enforce here). Then notify the report's author
- * and, for a reply, the parent comment's author (N8/B1).
+ * and, for a reply, the parent comment's author (A08/B1).
  */
 export const create = mutation({
   args: {
@@ -93,7 +93,7 @@ export const create = mutation({
     // Bump the author's denormalized comment counter (born visible) — see contributionCounts.ts.
     await bumpContributionCount(ctx, profile._id, 'commentCount', 1);
 
-    // `report_commented` (N8/B1, D21 finally delivered): the report's author hears about a comment,
+    // `report_commented` (A08/B1, D21 finally delivered): the report's author hears about a comment,
     // and a reply's parent author hears about the reply. Both ride the settle queue (D169) — a busy
     // report's burst becomes one "3 new comments", and a comment deleted or hidden inside the window
     // never sends. Never-self, prefs, deletion state and blocks are all applied in `enqueue`. The
@@ -133,7 +133,7 @@ export const create = mutation({
 /**
  * Public author attribution for a comment (never the private profile — no coord/DOB). Aliased to the
  * feed's shape rather than redeclared: this was a near-identical copy, and the copy is precisely how a
- * deleted author ended up rendering differently here than on the card next to it (N3).
+ * deleted author ended up rendering differently here than on the card next to it (A03).
  */
 type CommentAuthor = FeedAuthor;
 

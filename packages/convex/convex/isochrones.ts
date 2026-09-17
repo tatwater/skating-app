@@ -1,5 +1,5 @@
 /**
- * Drive-time isochrone computation (Phase 4, decision #2). Turns a user's PRIVATE `homeCoord` (D11)
+ * Drive-time isochrone computation (Phase 04, decision #2). Turns a user's PRIVATE `homeCoord` (D11)
  * into the cached band geometry every drive-time read consumes: the 30/60-min **ORS isochrone
  * polygons** and the 90-min **crow-flies `outerRadiusMeters`** fallback (hosted ORS caps isochrones at
  * 60 min). `homeCoord` never leaves the server — only the derived polygons + radius are stored.

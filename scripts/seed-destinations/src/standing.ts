@@ -1,5 +1,5 @@
 /**
- * `pnpm --filter @skating/seed-destinations seed-standing [--gazetteer=<csv>] [--apply]` (N7b).
+ * `pnpm --filter @skating/seed-destinations seed-standing [--gazetteer=<csv>] [--apply]` (A07b).
  *
  * **The one-time partition of the stored corpus into active and dormant**, re-runnable after any
  * campaign. The rule is `standing:seedStanding`'s (evidence of access or use keeps a body active);
@@ -15,7 +15,7 @@
  * cells the shelved bodies vacated.
  *
  * An ambiguous match is deliberately NOT kept: keeping every candidate would keep the wrong pond
- * active on the strength of a name, which is the Phase-2.5 mistake this matcher exists to refuse.
+ * active on the strength of a name, which is the Phase-02b mistake this matcher exists to refuse.
  * Resolve them by hand in the lake editor's Standing card, or add a `near` coordinate to the
  * shortlist and re-run.
  */
@@ -79,7 +79,7 @@ async function main() {
   const logger = apply
     ? new RunLogger({
         kind: 'standing_seed',
-        label: 'corpus standing seed (N7b)',
+        label: 'corpus standing seed (A07b)',
         ...(campaignId ? { campaignId } : {}),
         target: resolveDeployment(),
         call: convexRun,

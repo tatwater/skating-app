@@ -62,7 +62,7 @@ function renderView(data: Access) {
   );
 }
 
-describe('AccessSectionView (N6d / D72, D73, D87)', () => {
+describe('AccessSectionView (A06d / D72, D73, D87)', () => {
   /**
    * The routing rule, which is the bug the whole phase exists to fix: for a hike-in pond we were
    * handing a maps app the *launch* coordinate, a destination it cannot route a car to, and the

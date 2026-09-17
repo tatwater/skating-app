@@ -9,7 +9,7 @@ const ROSE = [
 const FETCH = Array.from({ length: 16 }, () => 5_000);
 
 describe('WindExposure', () => {
-  it('says the rose is the cell’s on a plain body (N9 kickoff call 6)', () => {
+  it('says the rose is the cell’s on a plain body (A09 kickoff call 6)', () => {
     render(<WindExposure body={{ windRose: ROSE, fetchProfileM: FETCH }} />);
     expect(
       screen.getByText('Wind climate is the 2 km grid cell’s, not this water’s own.'),

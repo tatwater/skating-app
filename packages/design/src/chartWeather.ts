@@ -1,5 +1,5 @@
 /**
- * The weather-timeline chart scale — **the one place its literal colors live** (N6h Workstream D).
+ * The weather-timeline chart scale — **the one place its literal colors live** (A06h Workstream D).
  *
  * ## Why this is not `themes.ts`
  *

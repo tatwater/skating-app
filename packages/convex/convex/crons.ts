@@ -1,5 +1,5 @@
 /**
- * Scheduled jobs (Convex crons). Phase 4 adds the notification-queue flush (decision #4): a single
+ * Scheduled jobs (Convex crons). Phase 04 adds the notification-queue flush (decision #4): a single
  * frequent drain that delivers every queued row whose `flushAfter` has passed — favorites/great after
  * their short debounce, and the "all nearby" digest at its next-8pm-ET target. One unified drain keeps
  * delivery simple; the bucket picks the timing when the row is enqueued (see `notifications.ts`).
@@ -17,7 +17,7 @@ crons.interval(
   {},
 );
 
-// Expire bounties past their lifetime (Phase 6, decision 12): flip `open → expired`. Every 6h is ample
+// Expire bounties past their lifetime (Phase 06, decision 12): flip `open → expired`. Every 6h is ample
 // for a ~30-day default lifetime — expiry is not time-critical, and the sweep reads a dedicated index.
 crons.interval('expire bounties', { hours: 6 }, internal.bounties.expireBounties, {});
 
@@ -31,7 +31,7 @@ crons.interval(
   {},
 );
 
-// Operator analytics (Phase 7b / D37). Three cadences, because the three jobs answer to different
+// Operator analytics (Phase 07-2 / D37). Three cadences, because the three jobs answer to different
 // things — see `analyticsRollup.ts`. The 6-hourly rollup recomputes today *and* yesterday, and its
 // writes replace rather than accumulate, so re-running is idempotent: the dashboard gets near-live
 // numbers without a second read path that scans the corpus, and a missed tick self-heals.
@@ -64,13 +64,13 @@ crons.interval(
   {},
 );
 
-// Expired OAuth connect nonces (Phase 8). They're single-use and 15-minute-lived, so an abandoned
+// Expired OAuth connect nonces (Phase 08). They're single-use and 15-minute-lived, so an abandoned
 // connect flow is the only way one survives — but a nonce that lingers is a credential that lingers,
 // so it gets swept rather than left to sit.
 crons.interval('prune oauth states', { hours: 6 }, internal.strava.pruneOAuthStates, {});
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Account lifecycle + storage hygiene (N3 / D33 / D62)
+// Account lifecycle + storage hygiene (A03 / D33 / D62)
 // ─────────────────────────────────────────────────────────────────────────────
 
 // Finalize accounts whose 30-day grace window has run out. Hourly, not by-the-minute: the window is a
@@ -83,7 +83,7 @@ crons.interval(
   {},
 );
 
-// The inbox's season purge (N8/A5): every notification created before this season's July 1 goes,
+// The inbox's season purge (A08/A5): every notification created before this season's July 1 goes,
 // read or not. Daily, bounded, and a no-op for eleven months — the day after the boundary is the one
 // that matters, and a bounded pass means it clears over a few ticks rather than one huge transaction.
 crons.interval(
@@ -93,7 +93,7 @@ crons.interval(
   {},
 );
 
-// The `activity_detected` producer (N8/B4): skates our recorder captured that sat `pending` past the
+// The `activity_detected` producer (A08/B4): skates our recorder captured that sat `pending` past the
 // prompt delay get one "add a report?" notification, after a per-user dedup pass. Hourly is plenty —
 // the delay is hours, and the notification then rides the once-a-minute flush like every other.
 crons.interval(
@@ -105,9 +105,9 @@ crons.interval(
 
 // `weatherCache` retention. Rows are addressable only during their own hour bucket (the cache key
 // contains it), so yesterday's rows are unreachable rather than merely stale — this is reclaiming
-// dead weight, and N2's per-sample-point weather grid multiplied how fast it accrues.
+// dead weight, and A02's per-sample-point weather grid multiplied how fast it accrues.
 crons.interval('prune weather cache', { hours: 6 }, internal.storageHygiene.pruneWeatherCache, {});
-// The forward-forecast cache (N6c/B5b), same cadence and the same argument: its rows become
+// The forward-forecast cache (A06c/B5b), same cadence and the same argument: its rows become
 // unaddressable the moment their hour bucket passes, so this is reclaiming space rather than
 // invalidating anything.
 crons.interval(
@@ -117,7 +117,7 @@ crons.interval(
   {},
 );
 
-// **The weather cell registry safety net (N6h / D152).** `weatherCells` is a projection of the corpus
+// **The weather cell registry safety net (A06h / D152).** `weatherCells` is a projection of the corpus
 // and the Tier-B sweep pages it, so a stale registry means a body is absent from weather discovery
 // and a vacated cell keeps costing Open-Meteo calls.
 //
@@ -137,7 +137,7 @@ crons.interval(
   internal.weatherArchive.maybeSyncWeatherCells,
   {},
 );
-// **The Tier-B daily archive append (N6h / D153, D161).** Corpus-wide, ~3,043 `filter` cells, batched
+// **The Tier-B daily archive append (A06h / D153, D161).** Corpus-wide, ~3,043 `filter` cells, batched
 // and self-rescheduling. Daily rather than hourly because past days do not change — an append only has
 // to close yesterday and refresh today's partial row.
 //
@@ -153,7 +153,7 @@ crons.interval(
   internal.weatherArchive.maybeRefreshFilterTier,
   {},
 );
-// **The Tier-A bay append (N9 / Workstream G).** Every live bay's browse cell, days and hours, so the
+// **The Tier-A bay append (A09 / Workstream G).** Every live bay's browse cell, days and hours, so the
 // season's record is complete for every bay whether or not anyone opened it — ~128 calls a day. Same
 // interval-with-a-gate shape as the filter append above, for the same reason.
 crons.interval(
@@ -164,7 +164,7 @@ crons.interval(
 );
 // The gap sweep (D161's recovery ladder). Separate from the append so a retry storm in one cannot
 // starve the other, and offset by running on its own 24h interval: past data is immutable, so a gap
-// is permanent unless something notices — and nothing in the weather path retried before N6h.
+// is permanent unless something notices — and nothing in the weather path retried before A06h.
 crons.interval(
   'repair weather archive gaps',
   { hours: 24 },
@@ -177,7 +177,7 @@ crons.interval(
 crons.interval('sweep orphan photos', { hours: 24 }, internal.storageHygiene.sweepOrphanPhotos, {});
 
 /**
- * Lapse access alerts whose TTL ran out, or whose season did (N6d / D73).
+ * Lapse access alerts whose TTL ran out, or whose season did (A06d / D73).
  *
  * Six-hourly rather than daily, because an alert is read at exactly the moment somebody is deciding
  * whether to drive somewhere: a road that reopened is a wasted trip in one direction and a stale
@@ -194,7 +194,7 @@ crons.interval('sweep orphan photos', { hours: 24 }, internal.storageHygiene.swe
 crons.interval('expire access alerts', { hours: 6 }, internal.accessAlerts.expireLapsedAlerts, {});
 
 /**
- * A departed skater's photos, expired with the season they were taken in (D66/N5a).
+ * A departed skater's photos, expired with the season they were taken in (D66/A05a).
  *
  * Daily rather than annually, even though the clock it enforces turns over once a year: accounts are
  * tombstoned continuously, and a skater who leaves in August has photos from a season that ended in
@@ -217,7 +217,7 @@ crons.interval(
 );
 
 /**
- * The season-rollover recurrence pass (N5c / §C4) — the once-a-year job, checked daily.
+ * The season-rollover recurrence pass (A05c / §C4) — the once-a-year job, checked daily.
  *
  * A daily tick with a month gate rather than a `crons.cron` expression, for two reasons. It keeps this
  * file uniform (every other job here is an interval), and more usefully it makes the rollover
@@ -233,7 +233,7 @@ crons.interval(
 );
 
 /**
- * The corpus-standing rollover (N7b) — the third once-a-year job, same shape.
+ * The corpus-standing rollover (A07b) — the third once-a-year job, same shape.
  *
  * Every active body with no report, track or hazard in the last `INACTIVE_SEASONS` (three) seasons
  * and no standing human decision (a curated boost, a favourite) becomes dormant: off every push
@@ -250,7 +250,7 @@ crons.interval(
 );
 
 /**
- * Watch for the imagery season to open (N6e §C3 / D149) — the other once-a-year job, same shape.
+ * Watch for the imagery season to open (A06e §C3 / D149) — the other once-a-year job, same shape.
  *
  * Daily from 1 October, this asks the observed weather whether freeze-up has started, and records the
  * answer once per season. It **does not** start a backfill: cutting granules spends money on
@@ -268,7 +268,7 @@ crons.interval(
 );
 
 /**
- * NWS active alerts (N6c B5). Fifteen minutes because a winter storm warning is issued on that kind
+ * NWS active alerts (A06c B5). Fifteen minutes because a winter storm warning is issued on that kind
  * of timescale and a skater deciding at 7am should not be reading 6am's picture — and because five
  * requests a quarter-hour is nothing to an unauthenticated public API that asks only for a
  * `User-Agent`. The sweep that retires a silent state's rows rides the same tick.
@@ -276,7 +276,7 @@ crons.interval(
 crons.interval('refresh nws alerts', { minutes: 15 }, internal.weatherAlerts.refreshAlerts, {});
 
 /**
- * Map summary cards (N6c/E). Six-hourly because the only thing this catches is *time* — a report
+ * Map summary cards (A06c/E). Six-hourly because the only thing this catches is *time* — a report
  * ageing out of the 14-day window, or a season boundary — and neither is urgent to the hour. Every
  * event-driven change to a card already happens synchronously on the write that caused it.
  */

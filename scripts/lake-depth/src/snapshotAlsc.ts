@@ -1,5 +1,5 @@
 /**
- * Archive the Adirondack Lakes Survey into `.raw/alsc/` — **once, ever** (N7-2).
+ * Archive the Adirondack Lakes Survey into `.raw/alsc/` — **once, ever** (A07a-2).
  *
  *   pnpm --filter @skating/lake-depth snapshot-alsc [--limit=N] [--delay-ms=N] [--refresh]
  *

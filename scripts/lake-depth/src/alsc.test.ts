@@ -1,5 +1,5 @@
 /**
- * The ALSC parser, against the markup the live site actually served (N7-2, 2026-08-08).
+ * The ALSC parser, against the markup the live site actually served (A07a-2, 2026-08-08).
  *
  * The fixtures below are trimmed from real responses, not invented — including the nested `<ul>`
  * with `style="list-style-type:none"`, the `<sup>` inside a label, the HTML entities in the

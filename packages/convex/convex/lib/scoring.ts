@@ -3,7 +3,7 @@
  * `displayScore` / `minVisibleZoom` — the import, the backfill, `create`, the curation mutations,
  * and the standing transitions in `./standing`.
  *
- * Lifted out of `waterBodies.ts` in N7b because standing needs to re-score and `waterBodies.ts`
+ * Lifted out of `waterBodies.ts` in A07b because standing needs to re-score and `waterBodies.ts`
  * already imports the standing helpers: a shared leaf module is the only shape without a cycle.
  *
  * ⚠ **`active` is a property of an *existing* row, and every caller that re-scores one has to pass
@@ -11,7 +11,7 @@
  * does not fail — it silently lands a dormant body back on its browsable rung and nothing says so.
  * `importCanonical` is the dangerous caller: it patches a named field list, so `dormant`,
  * `publicAccess` and `removedAt` all survive by omission while the *rung* they imply would be
- * recomputed from area + boost alone. The N6f tests (`assertScoredWithAccess`) pin that this cannot
+ * recomputed from area + boost alone. The A06f tests (`assertScoredWithAccess`) pin that this cannot
  * happen; `standingOf(existing)` is the input, never a hand-spelled boolean.
  */
 
@@ -50,7 +50,7 @@ export function scoreFields(input: {
  * heaviest work in the app and would pay this on all 116,070 rows mid-import.
  *
  * `hasContours` reads the `bathymetryCoverage` side table rather than a column, because contour
- * coverage is a property of the N6b TILESET rather than of the body — see that table's comment.
+ * coverage is a property of the A06b TILESET rather than of the body — see that table's comment.
  */
 export async function richnessFor(
   ctx: QueryCtx,
@@ -91,7 +91,7 @@ export async function richnessFor(
     // *a human confirmed you can get on the ice here*, which is what makes it the strongest static
     // signal we have; letting an ETL reach it would not raise OSM's standing, it would lower
     // `official`'s, across the whole corpus in one pass. Both terms have never fired (dev carried 0
-    // put-in rows before N6d), so the held `backfillCells` re-score bakes this choice in on its first
+    // put-in rows before A06d), so the held `backfillCells` re-score bakes this choice in on its first
     // run with no incumbent to compare against — which is the argument for the conservative rung.
     hasDerivedPutIn: visiblePutIns.some((p) => p.source === 'derived' || p.source === 'osm'),
     hasOfficialPutIn: visiblePutIns.some((p) => p.source === 'official'),

@@ -214,7 +214,7 @@ describe('moderation.setModerationStatus (comment target)', () => {
   });
 });
 
-/** Make every queued notification due and flush it — the settle window (N8 / D169), fast-forwarded. */
+/** Make every queued notification due and flush it — the settle window (A08 / D169), fast-forwarded. */
 async function flushAllDue(t: ReturnType<typeof convexTest>) {
   await t.run(async (ctx) => {
     for (const row of await ctx.db.query('notificationQueue').collect()) {
@@ -225,7 +225,7 @@ async function flushAllDue(t: ReturnType<typeof convexTest>) {
   return t.run((ctx) => ctx.db.query('notifications').collect());
 }
 
-describe('moderation.resolveFlag — content_flag_resolved (N8/B3)', () => {
+describe('moderation.resolveFlag — content_flag_resolved (A08/B3)', () => {
   test('tells a person who filed a flag the verdict, and nothing else', async () => {
     const t = convexTest(schema, modules);
     const author = await seedUser(t, 'a');
@@ -349,7 +349,7 @@ describe('moderation.resolveFlag', () => {
     expect(audits[0]).toMatchObject({ action: 'resolve_flag', targetType: 'contentFlag' });
   });
 
-  test('counts the disposition by flag reason — the enforcement funnel’s last stage (Phase 7b)', async () => {
+  test('counts the disposition by flag reason — the enforcement funnel’s last stage (Phase 07-2)', async () => {
     const t = convexTest(schema, modules);
     const author = await seedUser(t, 'a');
     const flagger = await seedUser(t, 'f');

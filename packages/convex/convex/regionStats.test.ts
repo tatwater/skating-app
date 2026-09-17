@@ -7,7 +7,7 @@ import schema from './schema';
 const modules = import.meta.glob('./**/*.*s');
 
 /**
- * `regionStats.recompute` — the per-state decile basis behind the derived caption (N6c A5).
+ * `regionStats.recompute` — the per-state decile basis behind the derived caption (A06c A5).
  *
  * The interesting behaviour is not "does it compute percentiles" (that is `computeDeciles`, tested
  * in core) but the three ways this job can produce a *confidently wrong* basis: counting a body in
@@ -136,7 +136,7 @@ describe('regionStats.recompute', () => {
   });
 
   test('pages the corpus rather than collecting it', async () => {
-    // The N1 lesson: 116,070 bodies cannot be read in one transaction. Forcing a tiny page size
+    // The A01 lesson: 116,070 bodies cannot be read in one transaction. Forcing a tiny page size
     // proves the cursor loop actually advances instead of re-reading page one forever.
     const t = convexTest(schema, modules);
     await seed(t, rampBodies('VT', 60));

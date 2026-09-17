@@ -2,7 +2,7 @@
 """
 Mascoma Lake, 22 December 2025 — the freeze-up frame, as a transparent PNG on the SVG's canvas.
 
-Source: `S2B_18TYP_20251222_0_L2A-visual.pmtiles` from the N6e freeze-up archive
+Source: `S2B_18TYP_20251222_0_L2A-visual.pmtiles` from the A06e freeze-up archive
 (`VITE_IMAGERY_ARCHIVE_URL`), season `winter-2025-26`. Sentinel-2B, 2025-12-22T15:50:59Z, 2.9% cloud.
 
 **The feather is already in the pixels.** The archive bakes its own alpha server-side —

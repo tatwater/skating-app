@@ -14,7 +14,7 @@ export default defineConfig({
       // `wtk.ts` and `archive.ts` are the tested logic; `snapshot.ts` and `derive.ts` are argv,
       // network and file glue. Mirrors the water ETL, admin-areas and lake-depth configs.
       //
-      // **Thresholds raised to match every other package** (N7-3). They sat at 80/75 while the rest
+      // **Thresholds raised to match every other package** (A07a-3). They sat at 80/75 while the rest
       // of the repo ran at 90/85, which is not a decision anybody took — it is where they landed
       // when this package held one file. A lower bar on the pass that costs 7.7 hours to re-run is
       // the wrong way round.

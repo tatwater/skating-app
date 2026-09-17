@@ -1,5 +1,5 @@
 /**
- * Admin-areas ETL transform (Phase 5) — the tested heart of the OSM administrative-boundary pipeline.
+ * Admin-areas ETL transform (Phase 05) — the tested heart of the OSM administrative-boundary pipeline.
  *
  * Turns raw `osmium export` boundary features into admin-area records for
  * `adminAreas.importCanonical`: classify `admin_level` → our `level` (state/county/town, dropping

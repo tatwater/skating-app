@@ -9,7 +9,7 @@ import { Badge } from './ui/badge';
 const MAX_CHIPS = 4;
 
 /**
- * A single newsfeed card (Phase 5) — body name + point-derived location, skate-end relative time,
+ * A single newsfeed card (Phase 05) — body name + point-derived location, skate-end relative time,
  * quality + ice/surface chips, a photo thumbnail carousel, and blocked-author de-emphasis (D3: a
  * block never hides the report, only dims the author line + adds a "Blocked" chip). The whole card
  * is one button that opens the report drawer, preserving the feed scroll position. Pure/presentational
@@ -46,7 +46,7 @@ export function FeedCard({
                 <FontAwesomeIcon icon={faStar} aria-hidden className="size-3.5" />
               </span>
             ) : null}
-            {/* The finest name the report carries — a bay when the lake has one (N2/D60). Composed
+            {/* The finest name the report carries — a bay when the lake has one (A02/D60). Composed
                 in `@skating/core`, never assembled here, so web and mobile can't drift. */}
             <span className="truncate">{card.locationPrimary}</span>
           </h3>
