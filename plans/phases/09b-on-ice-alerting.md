@@ -1,4 +1,4 @@
-# Phase 09b build plan — On-ice live alerting (D54 Layer 2) + deferred hazard threads
+# Phase 09b — On-ice live alerting (D54 Layer 2) + deferred hazard threads
 
 > **Roadmap / parent:** the fast-follow to [`phases/09a-hazards.md`](./09a-hazards.md). Phase 09a shipped
 > Layers 0–1 (silent sync + foreground-only proximity banners); this is the deferred **D54 Layer 2** —

@@ -1,4 +1,4 @@
-# A07a — The unified corpus: one record per water body, two catalogs behind it, and a full data campaign on top
+# Phase A07a — The unified corpus: one record per water body, two catalogs behind it, and a full data campaign on top
 
 > **Status:** ✅ **Campaign `n7-3-20260809` COMPLETE** (2026-08-09) — every pass run, `regionStats` last. The corpus is live on dev and
 > the enrichment is most of the way through. Originally written 2026-08-03 after a measurement session

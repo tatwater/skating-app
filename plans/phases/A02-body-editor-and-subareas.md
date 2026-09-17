@@ -1,4 +1,4 @@
-# A02 — The water body editor + named sub-areas
+# Phase A02 — The water body editor + named sub-areas
 
 > **Status: ✅ COMPLETE on dev (2026-07-26; prod deferred, as every phase since 2.5).** Decisions
 > **D60** (named sub-areas) and **D61** (the per-body operator canvas) are written into

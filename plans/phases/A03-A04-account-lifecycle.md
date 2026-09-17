@@ -1,4 +1,4 @@
-# A03/A04 — Account lifecycle + storage hygiene
+# Phase A03 / A04 — Account lifecycle + storage hygiene
 
 *The D33 phase: delete, export, anonymize — plus the two storage-hygiene crons that used to be their
 own entry (the old A04 and A03 respectively), bundled because **A04 creates exactly the storage problems

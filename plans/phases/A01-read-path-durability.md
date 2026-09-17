@@ -1,4 +1,4 @@
-# A01 — Read-path durability: the crash class
+# Phase A01 — Read-path durability: the crash class
 
 > **Status: ✅ complete on dev (2026-07-26); prod deferred.** PR **#27**. The first item in the
 > roadmap's *Next-phase candidates* register ([`07-roadmap.md`](../07-roadmap.md) → *Later /

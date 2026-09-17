@@ -1,4 +1,4 @@
-# A08 — The notification pipeline: the inbox, the missing producers, and the reverse reach index
+# Phase A08 — The notification pipeline: the inbox, the missing producers, and the reverse reach index
 
 > **Status:** ✅ **COMPLETE (2026-09-15)** — four PRs off `phase-n8-notification-pipeline`, all on
 > dev: **PR 1** (inbox + settled queue + producers §2.1–§2.3) #52; **PR 2** (§2.4/§2.4a, §1.5 purge, §3

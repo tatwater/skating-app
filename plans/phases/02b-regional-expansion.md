@@ -1,4 +1,4 @@
-# Phase 02b build plan — Regional expansion (Northeast skating states)
+# Phase 02b — Regional expansion (Northeast skating states)
 
 > **✅ COMPLETE on dev (2026-07-15, PR #14); prod deferred** (Convex prod uninitialized by decision).
 > All workstreams executed — see "Progress" below. The prod pass (re-run the loader + tiles + env

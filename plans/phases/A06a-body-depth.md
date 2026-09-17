@@ -1,4 +1,4 @@
-# A06a — Water body depth: the precedence ladder and the shallow signal
+# Phase A06a — Water body depth: the precedence ladder and the shallow signal
 
 > ### ⚠ Two corrections from A07a-2 (2026-08-08)
 >

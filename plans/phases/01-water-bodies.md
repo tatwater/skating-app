@@ -1,4 +1,4 @@
-# Phase 01 build plan — Water-body data
+# Phase 01 — Water-body data
 
 The concrete implementation plan for **Phase 01** of [`07-roadmap.md`](../07-roadmap.md).
 Design rationale lives in the decisions log (D5, D6, D14, D36, D37, **D48**); this doc is

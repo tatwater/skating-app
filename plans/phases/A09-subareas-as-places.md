@@ -1,4 +1,4 @@
-# A09 — A bay is a place: sub-areas become destinations, not labels
+# Phase A09 — A bay is a place: sub-areas become destinations, not labels
 
 > **Scoped 2026-08-07, unbuilt.** Founder ask, arrived out of the A07a Great Lakes question:
 > *"I would love if `waterBodySubAreas` could be favorited, supported put-ins, parking, bathrooms,

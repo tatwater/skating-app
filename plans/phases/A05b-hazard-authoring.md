@@ -1,4 +1,4 @@
-# A05b — Hazard authoring UX
+# Phase A05b — Hazard authoring UX
 
 *Two affordances that make drawing a hazard match how skaters actually describe one. All client work;
 no lifecycle, no schema, no decay.*

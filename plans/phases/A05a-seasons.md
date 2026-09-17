@@ -1,4 +1,4 @@
-# A05a — Seasons: seasonal visibility, the season filter, and departed-user redaction
+# Phase A05a — Seasons: seasonal visibility, the season filter, and departed-user redaction
 
 *The map should show **this** season's ice. Everything else is history you go and look at on purpose,
 not something that quietly shares the screen with a report from Tuesday.*

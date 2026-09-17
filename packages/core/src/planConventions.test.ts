@@ -135,3 +135,143 @@ describe('plans/ and docs/ follow the workstream convention (§N.M, never a lett
     expect(hits).toEqual([]);
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Two rules the renumbering pass (features/phase-numbers.md, deleted 2026-09-17 when it shipped)
+// had left as "not done, noted", closed in the US-spellings PR and kept closed here.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * A phase doc's H1 is `# Phase <token> — <title>` — the same shape as its roadmap entry. The pass
+ * found three styles in the tree (`# Phase 01 build plan —`, `# A01 —`, `# Phase A06e —`); a reader
+ * skimming `plans/phases/` should not have to guess whether a bare `A01` is a doc or a citation.
+ * `A03 / A04` is the one shared doc.
+ */
+const PHASE_H1 = /^# Phase (?:\d\d[a-z]?|A\d\d[a-z]?(?: \/ A\d\d)?) — \S/u;
+
+describe('every phase doc is headed "# Phase <token> — <title>"', () => {
+  test('no phase doc H1 deviates', () => {
+    const bad = markdownFiles(join(REPO, 'plans/phases')).flatMap((file) => {
+      const h1 = readFileSync(file, 'utf8')
+        .split('\n')
+        .find((l) => l.startsWith('# '));
+      return h1 && PHASE_H1.test(h1) ? [] : [`${relative(REPO, file)}: ${h1 ?? '(no H1)'}`];
+    });
+    expect(bad).toEqual([]);
+  });
+
+  test('the rule accepts the shapes in use and rejects the three the pass had to fix', () => {
+    for (const ok of ['# Phase 00 — Foundations', '# Phase 02a — Map', '# Phase A06e — Imagery', '# Phase A03 / A04 — Accounts']) {
+      expect(PHASE_H1.test(ok), ok).toBe(true);
+    }
+    for (const bad of ['# Phase 01 build plan — Water', '# A01 — Read-path', '# Phase A03/A04 — Accounts', '# Foundations']) {
+      expect(PHASE_H1.test(bad), bad).toBe(false);
+    }
+  });
+});
+
+/**
+ * Every relative link in the Markdown tree resolves — the file exists, and the `#anchor` is the
+ * GitHub slug of a heading in it. The pass found 84 that did not: 80 short `[D3](#d3)` forms inside
+ * `01-decisions.md` whose real slug is `#d3--safety-first…`, full slugs whose heading text had since
+ * changed, two decisions (D109, D110) cited by a dozen places that had never been written up, and
+ * links into A07a's own `## D9x` entries from the register. A stale anchor renders as a link and
+ * silently scrolls nowhere, so this is the one check a reader cannot do by eye.
+ *
+ * GitHub's slug (github-slugger): lowercase; drop everything that is not a letter, number, mark,
+ * space, `-` or `_`; spaces become `-`; a repeated slug gets `-1`, `-2`. Two things fall out of
+ * that: an em dash leaves a double hyphen (`d3--safety-first`), and an emoji-led heading slugs to a
+ * leading hyphen (`#-six-ways-…`). Code spans and emphasis markers are stripped first, as GitHub does.
+ */
+const LINK_ROOTS = [
+  ...ROOTS,
+  join(REPO, 'README.md'),
+  ...readdirSync(join(REPO, 'scripts')).flatMap((pkg) =>
+    ['README.md', 'PROVENANCE.md'].map((n) => join(REPO, 'scripts', pkg, n)),
+  ),
+].filter((p) => statSync(p, { throwIfNoEntry: false }));
+
+function githubSlug(heading: string): string {
+  const stripped = heading
+    .replace(/`/g, '')
+    .replace(/\*\*|__/g, '')
+    .replace(/(?<!\w)[*_](?!\w)/g, '')
+    .toLowerCase();
+  let out = '';
+  for (const ch of stripped) {
+    if (ch === ' ') out += '-';
+    else if (ch === '-' || ch === '_' || /[\p{L}\p{N}\p{M}]/u.test(ch)) out += ch;
+  }
+  return out;
+}
+
+/** Fenced blocks and HTML comments are not rendered links; the roadmap's entry template lives in one. */
+function linkable(markdown: string): string {
+  return markdown.replace(/```[\s\S]*?```/g, '').replace(/<!--[\s\S]*?-->/g, '');
+}
+
+const anchorCache = new Map<string, Set<string>>();
+function anchorsOf(file: string): Set<string> {
+  let set = anchorCache.get(file);
+  if (set) return set;
+  set = new Set();
+  const seen = new Map<string, number>();
+  const text = linkable(readFileSync(file, 'utf8'));
+  for (const m of text.matchAll(/^#{1,6} (.+?)\s*#*$/gmu)) {
+    const base = githubSlug(m[1] as string);
+    const n = seen.get(base) ?? 0;
+    seen.set(base, n + 1);
+    set.add(n === 0 ? base : `${base}-${n}`);
+  }
+  for (const m of text.matchAll(/<a\s+(?:id|name)="([^"]+)"/gu)) set.add(m[1] as string);
+  anchorCache.set(file, set);
+  return set;
+}
+
+function brokenLinks(): string[] {
+  const found: string[] = [];
+  const files = LINK_ROOTS.flatMap((p) => (statSync(p).isDirectory() ? markdownFiles(p) : [p]));
+  for (const file of files) {
+    const rel = relative(REPO, file);
+    const text = linkable(readFileSync(file, 'utf8'));
+    for (const m of text.matchAll(/\[[^\]]*\]\(([^)\s]+)\)/gu)) {
+      const target = m[1] as string;
+      if (/^[a-z]+:/u.test(target)) continue; // http(s), mailto
+      const [path, anchor] = target.split('#') as [string, string | undefined];
+      const targetFile = path ? resolve(file, '..', path) : file;
+      const line = text.slice(0, m.index).split('\n').length;
+      if (path && !statSync(targetFile, { throwIfNoEntry: false })) {
+        found.push(`${rel}:${line}  no such file  →  ${target}`);
+        continue;
+      }
+      if (anchor && targetFile.endsWith('.md') && !anchorsOf(targetFile).has(anchor)) {
+        found.push(`${rel}:${line}  no such anchor  →  ${target}`);
+      }
+    }
+  }
+  return found;
+}
+
+describe('every relative link and #anchor in the Markdown tree resolves', () => {
+  test('no broken file or anchor links', () => {
+    expect(brokenLinks()).toEqual([]);
+  });
+
+  test('the slugger matches GitHub on the shapes that bit', () => {
+    expect(githubSlug('D3 — Safety-first, non-authoritative framing (product-defining)')).toBe(
+      'd3--safety-first-non-authoritative-framing-product-defining',
+    );
+    expect(githubSlug('⚠ Six ways to get this wrong, each of which costs money')).toBe(
+      '-six-ways-to-get-this-wrong-each-of-which-costs-money',
+    );
+    expect(githubSlug('§0 — Getting the way in into the app ✅ **BUILT 2026-08-21**')).toBe(
+      '0--getting-the-way-in-into-the-app--built-2026-08-21',
+    );
+    expect(githubSlug('D129 — `RECONCILE_MIN_IOU` **holds at 0.5**, and nine pairs (A07a-2)')).toBe(
+      'd129--reconcile_min_iou-holds-at-05-and-nine-pairs-a07a-2',
+    );
+    expect(githubSlug('D90 — Wind exposure is frequency × fetch, never fetch alone (A06c-1)')).toBe(
+      'd90--wind-exposure-is-frequency--fetch-never-fetch-alone-a06c-1',
+    );
+  });
+});

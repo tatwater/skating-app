@@ -552,7 +552,7 @@ R2_BUCKET=skating-imagery
 ```
 
 `--stage` is load-bearing — see
-[Five ways to get this wrong](#-five-ways-to-get-this-wrong-each-of-which-costs-money).
+[Five ways to get this wrong](#-six-ways-to-get-this-wrong-each-of-which-costs-money).
 
 Values come from the **bucket-scoped** R2 API token (Cloudflare dashboard → R2 → Manage API Tokens).
 The account endpoint and key pair are the same ones the basemap uses; they are recorded locally in
@@ -647,7 +647,7 @@ fly machine list --app skating-imagery   # empty between runs
 fly status --app skating-imagery
 ```
 
-See [Five ways to get this wrong](#-five-ways-to-get-this-wrong-each-of-which-costs-money) for what
+See [Five ways to get this wrong](#-six-ways-to-get-this-wrong-each-of-which-costs-money) for what
 a non-empty list means and how to clear it.
 
 ## Local development, no Fly involved
@@ -674,7 +674,7 @@ If that ever stops working, the host-neutrality claim has quietly stopped being 
 - ~~**VM sizing.** `shared-cpu-4x` / 8 GB is a guess, not a measurement.~~ **Settled 2026-08-24:**
   measured against Fly's billing dashboard, `FLY_VM_MEMORY` now defaults to 2048 and `GDAL_CACHEMAX`
   is pinned so the block cache does not shrink with it. See
-  [Five ways to get this wrong](#-five-ways-to-get-this-wrong-each-of-which-costs-money). `fly.toml`'s
+  [Five ways to get this wrong](#-six-ways-to-get-this-wrong-each-of-which-costs-money). `fly.toml`'s
   `[[vm]]` block was moved to `2gb` to match, and is still ignored by `fly machine run` — see trap 5.
 - **Where buffered geometries come from.** A Convex read per job, or a pre-baked GeoJSON the caller
   stages. The second keeps this container's only network dependencies the granule store and R2, which

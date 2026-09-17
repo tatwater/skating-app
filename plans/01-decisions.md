@@ -2044,7 +2044,7 @@ legible to the ladder, which is the split we want. It is reversible (`clearDepth
 loader reports it separately from "already had a better source" so the person running an import sees the
 collision rather than inferring it from a count.
 
-**Related:** [D68](#d68--depth-is-a-best-available-number-that-carries-its-provenance-a06a), [D3](#d3),
+**Related:** [D68](#d68--depth-is-a-best-available-number-that-carries-its-provenance-a06a), [D3](#d3--safety-first-non-authoritative-framing-product-defining),
 [`phase-A06a`](./phases/A06a-body-depth.md).
 
 ## D70 — Water-body profile content is derived or third-party, never hand-maintained (A06c/A06d)
@@ -2536,7 +2536,7 @@ absolutely is the one with no copy behind it.
 nothing — it renders as a flat shape, exactly as today. So Maine's density gate and every other
 coverage gate can be set conservatively with no product argument pushing back.
 
-**Related:** [D3](#d3), [D52](#d52), [D81](#d81--the-map-has-exactly-one-layer-toggle-and-it-is-satellite-a06ba06e), [D68/D69](#d68), [`phase-A06b`](./phases/A06b-bathymetry-layer.md).
+**Related:** [D3](#d3--safety-first-non-authoritative-framing-product-defining), [D52](#d52--per-type-hazard-decay--three-tier-healing-confirmation), [D81](#d81--the-map-has-exactly-one-layer-toggle-and-it-is-satellite-a06ba06e), [D68/D69](#d68--depth-is-a-best-available-number-that-carries-its-provenance-a06a), [`phase-A06b`](./phases/A06b-bathymetry-layer.md).
 
 ## D83 — Contours carry their source's native interval and units, labeled; we never resample (A06b)
 
@@ -2640,7 +2640,7 @@ Under a mile renders as *"under a mile of shoreline"* — no decimal on a farm p
 source it is never presented as authoritative:** OSM's shoreline is a tracing by many hands and still
 won't equal a published survey.
 
-**Related:** [D3](#d3), [D25](#d25), [D48](#d48), [D70](#d70--water-body-profile-content-is-derived-or-third-party-never-hand-maintained-a06ca06d), [`phase-A06c`](./phases/A06c-expanded-body-profiles.md).
+**Related:** [D3](#d3--safety-first-non-authoritative-framing-product-defining), [D25](#d25--units-edits-comment-depth-housekeeping), [D48](#d48--water-body-removal-reversible-soft-delist-curation--landowner-takedown), [D70](#d70--water-body-profile-content-is-derived-or-third-party-never-hand-maintained-a06ca06d), [`phase-A06c`](./phases/A06c-expanded-body-profiles.md).
 
 ## D85 amendment — the stats are measured from an interior point, and `centroid` is not one (A06c-1)
 
@@ -2670,7 +2670,7 @@ reads it, because **weather sampling was the one consumer the offset genuinely h
 grid is 2–25 km, so Champlain's error was one to several cells wrong on an input the D56 decay math
 is supposed to be reproducible from.
 
-**Related:** [D48](#d48), [D56](#d56), [D85](#d85--derived-geometry-stats-are-measured-on-the-source-geometry-not-the-simplified-copy-a06c), [D90](#d90--wind-exposure-is-frequency-times-fetch-never-fetch-alone-a06c-1).
+**Related:** [D48](#d48--water-body-removal-reversible-soft-delist-curation--landowner-takedown), [D56](#d56--weather-driven-dynamic-hazard-decay--the-expanded-weather-since-variable-set), [D85](#d85--derived-geometry-stats-are-measured-on-the-source-geometry-not-the-simplified-copy-a06c), [D90](#d90--wind-exposure-is-frequency--fetch-never-fetch-alone-a06c-1).
 
 ## D90 — Wind exposure is frequency × fetch, never fetch alone (A06c-1)
 
@@ -2716,7 +2716,7 @@ northwest"* reads identically whether that sector carries 40% of winter hours or
 resolves. The credential is `WIND_TOOLKIT_API_KEY`, named for the dataset, since the provider has
 already moved once.
 
-**Related:** [D3](#d3), [D71](#d71--reference-links-are-generated-at-render-time-not-stored-per-body-a06c), [D78](#d78--a-recurrence-claim-is-history-with-its-denominator-attached-and-it-is-admin-only-until-it-clears-a-tunable-bar-a05c), [`phase-A06c`](./phases/A06c-expanded-body-profiles.md).
+**Related:** [D3](#d3--safety-first-non-authoritative-framing-product-defining), [D71](#d71--reference-links-are-generated-at-render-time-not-stored-per-body-a06c), [D78](#d78--a-recurrence-claim-is-history-with-its-denominator-attached-and-it-is-admin-only-until-it-clears-a-tunable-bar-a05c), [`phase-A06c`](./phases/A06c-expanded-body-profiles.md).
 
 ## D86 — Aggregate quality renders as a graded mark, never as a word (A06c)
 
@@ -2748,7 +2748,7 @@ off the eastern shore"*). These were bundled as "the D3-sensitive half of the ca
 answer separates them, because a recurrence claim has **no word-free rendering** — its whole content is
 the claim.
 
-**Related:** [D3](#d3), [D50](#d50), [D78](#d78--a-recurrence-claim-is-history-with-its-denominator-attached-and-it-is-admin-only-until-it-clears-a-tunable-bar-a05c), [`phase-A06c`](./phases/A06c-expanded-body-profiles.md).
+**Related:** [D3](#d3--safety-first-non-authoritative-framing-product-defining), [D50](#d50--trust-score-reputation-signal-the-asymmetric-stand-in-for-the-removed-social-graph), [D78](#d78--a-recurrence-claim-is-history-with-its-denominator-attached-and-it-is-admin-only-until-it-clears-a-tunable-bar-a05c), [`phase-A06c`](./phases/A06c-expanded-body-profiles.md).
 
 ## D86 amendment — the dots read `skateQuality`, not the Phase 06 thumbs (A06c-2)
 
@@ -2769,7 +2769,7 @@ is most of why this is small"* still holds.
 Everything else in D86 is unchanged: mark never word, the quorum floor, season- and window-scoping,
 and the accessible long form naming the denominator.
 
-**Related:** [D86](#d86--aggregate-quality-renders-as-a-graded-mark-never-as-a-word-a06c), [D50](#d50), [D78](#d78--a-recurrence-claim-is-history-with-its-denominator-attached-and-it-is-admin-only-until-it-clears-a-tunable-bar-a05c).
+**Related:** [D86](#d86--aggregate-quality-renders-as-a-graded-mark-never-as-a-word-a06c), [D50](#d50--trust-score-reputation-signal-the-asymmetric-stand-in-for-the-removed-social-graph), [D78](#d78--a-recurrence-claim-is-history-with-its-denominator-attached-and-it-is-admin-only-until-it-clears-a-tunable-bar-a05c).
 
 ## D87 — Approach distance is walked, not flown (A06d)
 
@@ -2830,7 +2830,7 @@ knobs for one idea is the same failure D70's `curatedBoost`-not-`isDestination` 
 bounds any single point's abuse surface, and minors are read-only (Phase 03), so the population that can
 upload is already the population trusted with reports.
 
-**Related:** [D57](#d57), [D62](#d62), [D66](#d66), [D70](#d70--water-body-profile-content-is-derived-or-third-party-never-hand-maintained-a06ca06d), [`phase-A06d`](./phases/A06d-body-access-points.md).
+**Related:** [D57](#d57--granular-posting-permissions-a-moderation-lever-finer-than-suspendban), [D62](#d62--account-deletion-a-30-day-grace-window-and-three-buckets-rather-than-two-a03-amends-d33), [D66](#d66--a-departed-skaters-photos-split-on-evidential-value-and-expire-at-the-season-boundary-a05a), [D70](#d70--water-body-profile-content-is-derived-or-third-party-never-hand-maintained-a06ca06d), [`phase-A06d`](./phases/A06d-body-access-points.md).
 
 ## D89 — The contour interval is a fixed ladder, not a per-body target (A06b)
 
@@ -2993,6 +2993,87 @@ corpus that means something.
 
 ---
 
+## D109 — Every catalog's vocabulary maps into ours, and the stored vocabulary migrates rather than mapping back (A07a)
+
+**Decided (2026-08-03; amended 2026-08-05, founder call). Written up 2026-09-17** — the decision had
+been cited from a dozen places (and by D115, D128, D131) without ever having an entry; the anchor
+pass found the links pointing at nothing. The substance is A07a's record, condensed here.
+
+**The problem.** Three catalogs, three class vocabularies: OSM's `water=*` values, NHD's FTypes and
+purpose codes, 3DHP's `featuretype`. The original eight-value `type` enum (`lake`, `pond`, `river`,
+`stream`, `reservoir`, `bay`, `marsh`, `other`) was OSM's shape, and *`other` was the largest class in
+the corpus at 46%* — water OSM's classifier could not identify, which is a bigger unknown than the
+wetland question the admission rules agonized over.
+
+**Decided:** one **six-class vocabulary of ours** — `WATER_BODY_CLASSES` = `lakePond`, `wetland`,
+`reservoir`, `bay`, `river`, `unclassified` — and every catalog maps *into* it, in one place
+(`packages/core/src/waterClass.ts`), each mapping carrying the source tag it came from
+(`osm:water=harbour` → `bay`) so a class is always traceable to a claim. The lake/pond split is
+**refused on evidence**: no catalog draws it consistently, so a boundary would be ours to invent and
+argue about. The honest name for what nobody could classify is `unclassified`, and under the mapping
+it falls from 46% to 5.7% of the master list (1,533 of 27,074).
+
+**The amendment — migrate, don't map back** (founder, 2026-08-05: *"we should use our latest,
+simplified schema, not the one that's live now"*). The alternative was to keep the eight-value column
+and map `WaterBodyClass` back at the loader. Rejected: it would re-introduce the lake/pond split D109
+had just refused, and do it *silently*, inside the ETL, where nothing reads it back. So
+`waterBodies.type` moves to `WATER_BODY_CLASSES` as a **hard cut** — the schema field, the
+`canonicalBody` validator and `scripts/etl`'s `CanonicalBody` are one wire contract, and flipping any
+one alone makes `importCanonical` reject every batch — run widen → deploy → backfill → narrow.
+`backfillWaterBodyClasses` rewrote the last 53 rows (the protected ones the loader can never reach)
+with `unmappable: 0`, and the legacy half of the union is gone.
+
+**Why it matters beyond tidiness:** `waterBodies.ts`'s `type === 'marsh'` check went silently dead in
+the cut, zeroing the `unnamedWetlandBands` tally — the distribution D96 says is most likely to be
+re-tuned. A vocabulary that lives in one module is one the type-checker can defend; a mapping at the
+loader is one it cannot.
+
+**Related:** [D96](./phases/A07a-unified-corpus.md#d96--accepted-classes-are-chosen-for-parity-between-the-two-catalogs),
+[D110](#d110--how-much-the-catalogs-agree-is-stored-per-attribute-a07a), D115, D128, D131,
+[`phase-A07a`](./phases/A07a-unified-corpus.md).
+
+---
+
+## D110 — How much the catalogs agree is stored per attribute (A07a)
+
+**Decided (2026-08-03). Written up 2026-09-17** — like D109, cited (by D115, D128, `schema.ts`,
+`confidence.ts`) without an entry.
+
+A merged body is assembled field by field from up to three publishers, and by the time it reaches a
+row every trace of *how sure we were* is gone. **One confidence number per body would be useless** —
+a lake can have a perfectly corroborated outline and a name only one source has ever heard of — so
+the merge scores **each attribute separately** (`name`, `polygon`, `cls`) and stores all three on
+the row (`waterBodies.confidence`), implemented in `packages/core/src/confidence.ts`.
+
+**Four levels, and the fourth is the one that makes the review queue workable:**
+
+| | means | who acts |
+| --- | --- | --- |
+| `high` | two **independent** catalogs assert the same thing (NHD and 3DHP count as one — 3DHP re-publishes NHD) | nobody |
+| `medium` | exactly one catalog asserts it, uncontested | nobody |
+| `low` | the catalogs **conflict** and a precedence rule broke the tie | **a moderator, from the queue** |
+| `none` | nothing asserts it at all | nobody — it is a backlog, not a queue |
+
+`low` and `none` are separated on purpose. Collapsing them would put every unnamed body and every
+`unclassified` row into review — thousands of rows, a backlog wearing a queue's clothes, and the
+honest consequence is that nobody opens it. A genuine conflict is rare enough to be worked.
+
+**Two carve-outs that follow from "per attribute":** a low-confidence *polygon* deliberately queues
+nobody — no human can adjudicate "these outlines differ by 20%" by eye; that is D92's bake-off's job —
+but it *is* the candidate pool for D92's per-lake geometry override, which until then had no producer.
+And the structural review reasons (`bay-without-parent`, `same-source-duplicate`) live in a separate
+`reviewReasons` field, because neither is a confidence score and neither may merge unattended.
+
+**What the first build got wrong** (fixed under D115): the module was fully tested and its entire
+output existed as three lines of terminal text in a merge run that had already ended — a 1,388-body
+review queue nobody could open. *Computed and thrown away* is the failure D115 names.
+
+**Related:** [D92](#d92--osm-draws-the-water-bodies-because-the-bake-off-found-no-reason-to-prefer-nhd-a07a),
+[D109](#d109--every-catalogs-vocabulary-maps-into-ours-and-the-stored-vocabulary-migrates-rather-than-mapping-back-a07a),
+D115, D128, [`phase-A07a`](./phases/A07a-unified-corpus.md).
+
+---
+
 ## D111 — Rendering a place and covering it are two questions; New York south of I-84 gets one answer each (A07a)
 
 **Decided (2026-08-05, founder call.)**
@@ -3033,7 +3114,7 @@ not claim to know; if that changes, the lever is one file and a re-run. And it d
 rendering, admin areas, or drive-time: a user downstate still sees their own town, still gets
 isochrones northward, and still searches the whole corpus.
 
-**Related:** [D5](#d5--regions-are-a-data-concern-not-a-code-concern), [D91](#d91--the-canonical-corpus-has-a-floor-five-acres-or-one-acre-with-a-name), [`phase-A07a`](./phases/A07a-unified-corpus.md).
+**Related:** [D5](#d5--geo-stack-renderer--tiles--routing--data-are-separate-concerns), [D91](#d91--the-canonical-corpus-has-a-floor-five-acres-or-one-acre-with-a-name), [`phase-A07a`](./phases/A07a-unified-corpus.md).
 
 ---
 
@@ -3219,7 +3300,7 @@ warning inside a twenty-minute ETL log is indistinguishable from silence.
 `reconcileNhd` and `auditArchives` did and the *merge* did not — the one pass that decides all 27,074
 rows reported to a terminal that scrolls. New kind: `corpus_merge`.
 
-**Related:** [D97](#d97--the-audit-reports-only-the-prune-deletes), [D99](#d99--every-pass-in-the-campaign-is-run-logged-and-the-ledger-is-wiped-first), [`phase-A07a`](./phases/A07a-unified-corpus.md).
+**Related:** [D97](./phases/A07a-unified-corpus.md#d97--the-audit-reports-only-the-prune-deletes), [D99](./phases/A07a-unified-corpus.md#d99--every-pass-in-the-campaign-is-run-logged-and-the-ledger-is-wiped-first), [`phase-A07a`](./phases/A07a-unified-corpus.md).
 
 ---
 
@@ -3268,7 +3349,7 @@ same rule now applies across sources. **It still loses to a real class**, which 
 123-body rescue the merge exists for — only *silence* loses to a refusal, and the two outcomes are
 counted apart (`no-class` vs `refused-over-silence`) so the size of the change is visible.
 
-**Related:** [D96](#d96--accepted-classes-are-chosen-for-parity-between-the-two-catalogs), [D109](#d109--the-stored-vocabulary-migrates-it-does-not-map-back), [`phase-A07a`](./phases/A07a-unified-corpus.md).
+**Related:** [D96](./phases/A07a-unified-corpus.md#d96--settled-the-four-admission-rules--approved), [D109](#d109--every-catalogs-vocabulary-maps-into-ours-and-the-stored-vocabulary-migrates-rather-than-mapping-back-a07a), [`phase-A07a`](./phases/A07a-unified-corpus.md).
 
 ---
 
@@ -3301,7 +3382,7 @@ the rules is exactly how a prune and an import come to disagree at the edges. Ev
 `pruneBelowAreaFloor` honors is honored identically, and a body carrying user content is never
 deleted whatever the master list says.
 
-**Related:** [D93](#d93--we-mint-the-body-key-osm-and-nhd-become-claims-on-our-record), [D100](#d100--downstream-enrichment-runs-only-against-the-corpus-we-keep), [D110](#d110--confidence-is-per-attribute), [`phase-A07a`](./phases/A07a-unified-corpus.md).
+**Related:** [D93](./phases/A07a-unified-corpus.md#d93--we-mint-the-body-key-osm-and-nhd-become-claims-on-our-record), [D100](./phases/A07a-unified-corpus.md#d100--downstream-enrichment-runs-only-against-the-corpus-we-keep--approved), [D110](#d110--how-much-the-catalogs-agree-is-stored-per-attribute-a07a), [`phase-A07a`](./phases/A07a-unified-corpus.md).
 
 ---
 
@@ -3339,7 +3420,7 @@ import re-adds"* — was being broken not by two copies of the rule but by two c
 `sourceAreaSqM` carries the number the decision was made on; the prune prefers it and falls back to
 `surfaceAreaSqM` for rows written before it existed.
 
-**Related:** [D91](#d91--the-canonical-corpus-has-a-floor-five-acres-or-one-acre-with-a-name), [D93](#d93--we-mint-the-body-key-osm-and-nhd-become-claims-on-our-record), [`phase-A07a`](./phases/A07a-unified-corpus.md).
+**Related:** [D91](#d91--the-canonical-corpus-has-a-floor-five-acres-or-one-acre-with-a-name), [D93](./phases/A07a-unified-corpus.md#d93--we-mint-the-body-key-osm-and-nhd-become-claims-on-our-record), [`phase-A07a`](./phases/A07a-unified-corpus.md).
 
 ---
 
@@ -3381,7 +3462,7 @@ Maine's published **1,788** and Wikipedia's 7.23 km² (1,786 ac), two independen
 within a percent. NHD's archived polygon is 1,876.6 ac, within 5% of both. The table's first entry is
 that water body, and the bake-off's 140 two-metric disagreements are the pool for extending it.
 
-**Related:** [D40](#d40--coverage-thresholds), [D92](#d92--osm-draws-the-water-bodies-because-the-bake-off-found-no-reason-to-prefer-nhd-a07a), [D93](#d93--we-mint-the-body-key-osm-and-nhd-become-claims-on-our-record), [`phase-A07a`](./phases/A07a-unified-corpus.md).
+**Related:** [D40](#d40--testing--ci-vitest-everywhere-layered-strategy), [D92](#d92--osm-draws-the-water-bodies-because-the-bake-off-found-no-reason-to-prefer-nhd-a07a), [D93](./phases/A07a-unified-corpus.md#d93--we-mint-the-body-key-osm-and-nhd-become-claims-on-our-record), [`phase-A07a`](./phases/A07a-unified-corpus.md).
 
 ---
 
@@ -3455,7 +3536,7 @@ act on. It does not merge: *"if we can resolve any automatically with high confi
 it. Otherwise if we're not sure or there's a good chance we're wrong, put these in the queue."* The
 high-confidence half is the name lane, upstream, where the evidence is.
 
-**Related:** [D36](#d36--water-body-dedup-match-on-create--soft-tombstone-merge-resolves-q12), [D93](#d93--we-mint-the-body-key-osm-and-nhd-become-claims-on-our-record), [D110](#d110--confidence-is-per-attribute), [`phase-A07a`](./phases/A07a-unified-corpus.md).
+**Related:** [D36](#d36--water-body-dedup-match-on-create--soft-tombstone-merge-resolves-q12), [D93](./phases/A07a-unified-corpus.md#d93--we-mint-the-body-key-osm-and-nhd-become-claims-on-our-record), [D110](#d110--how-much-the-catalogs-agree-is-stored-per-attribute-a07a), [`phase-A07a`](./phases/A07a-unified-corpus.md).
 
 ---
 
@@ -3528,7 +3609,7 @@ would build the rule and readmit ten tidal coves to save one water body.
 `tidal=yes` is the tag that does hold — 96 of the 595 refused OSM bodies carry it, every one already
 refused. That is 96 independent confirmations, not a rule we need.
 
-**Related:** [D96](#d96--settled-the-four-admission-rules-a07a), [D114](#d114--the-ocean-veto-needs-no-match-and-an-explicit-refusal-beats-another-sources-silence-a07a), [`phase-A07a`](./phases/A07a-unified-corpus.md).
+**Related:** [D96](./phases/A07a-unified-corpus.md#d96--settled-the-four-admission-rules--approved), [D114](#d114--the-ocean-veto-needs-no-match-and-an-explicit-refusal-beats-another-sources-silence-a07a), [`phase-A07a`](./phases/A07a-unified-corpus.md).
 
 ---
 
@@ -3583,7 +3664,7 @@ beside it — so this is a new lane on an existing table, not a new concept:
 - **A bay with no parent at all is still demoted and queued**, unchanged. Half Moon Cove is 330
   acres, named "Cove", contained in nothing, and is a wetland.
 
-**Related:** [D60](#d60--a-bay-is-a-named-sub-area-of-one-polygon-not-a-water-body-a02), [D96](#d96--settled-the-four-admission-rules-a07a), [`phase-A02`](./phases/A02-body-editor-and-subareas.md), [`phase-A07a`](./phases/A07a-unified-corpus.md).
+**Related:** [D60](#d60--a-bay-is-a-named-sub-area-of-one-polygon-not-a-water-body-a02), [D96](./phases/A07a-unified-corpus.md#d96--settled-the-four-admission-rules--approved), [`phase-A02`](./phases/A02-body-editor-and-subareas.md), [`phase-A07a`](./phases/A07a-unified-corpus.md).
 
 ---
 
@@ -3636,7 +3717,7 @@ Three artifacts close it, all of them cheap:
 is the equation between the two D113 already had: a `continue` added anywhere in the filter loop would
 otherwise remove water bodies from the corpus and from the report at the same time.
 
-**Related:** [D99](#d99--every-pass-in-the-campaign-is-run-logged-and-the-ledger-is-wiped-first), [D113](#d113--nothing-leaves-the-pipeline-uncounted-and-the-two-artifacts-have-to-balance-a07a), [`phase-A07a`](./phases/A07a-unified-corpus.md).
+**Related:** [D99](./phases/A07a-unified-corpus.md#d99--every-pass-in-the-campaign-is-run-logged-and-the-ledger-is-wiped-first), [D113](#d113--nothing-leaves-the-pipeline-uncounted-and-the-two-artifacts-have-to-balance-a07a), [`phase-A07a`](./phases/A07a-unified-corpus.md).
 
 ---
 
@@ -3676,7 +3757,7 @@ outline we drew is `geometrySource`, which *is* patched. The two disagreeing is 
 Recorded here because the fix was written, tested, and reverted within the hour, and the next audit
 will find the same smell.
 
-**Related:** [D36](#d36--water-body-dedup-match-on-create--soft-tombstone-merge-resolves-q12), [D48](#d48--water-body-removal-reversible-soft-delist-curation--landowner-takedown), [D93](#d93--we-mint-the-body-key-osm-and-nhd-become-claims-on-our-record), [D115](#d115--what-the-merge-learned-rides-on-the-row-confidence-region-share-and-campaign-membership-a07a), [`phase-A07a`](./phases/A07a-unified-corpus.md).
+**Related:** [D36](#d36--water-body-dedup-match-on-create--soft-tombstone-merge-resolves-q12), [D48](#d48--water-body-removal-reversible-soft-delist-curation--landowner-takedown), [D93](./phases/A07a-unified-corpus.md#d93--we-mint-the-body-key-osm-and-nhd-become-claims-on-our-record), [D115](#d115--what-the-merge-learned-rides-on-the-row-confidence-region-share-and-campaign-membership-a07a), [`phase-A07a`](./phases/A07a-unified-corpus.md).
 
 ---
 
@@ -3714,7 +3795,7 @@ absorbed-member list each picked a representative separately, so a fix to one wo
 whose `externalId` and `osmId` named two different OSM features. `representativeOf` is the single
 spelling.
 
-**Related:** [D92](#d92--osm-draws-the-water-bodies-because-the-bake-off-found-no-reason-to-prefer-nhd-a07a), [D93](#d93--we-mint-the-body-key-osm-and-nhd-become-claims-on-our-record), [D118](#d118--a-missed-match-is-a-duplicate-so-the-name-gets-a-lane--bounded-by-geometry-a07a), [`phase-A07a`](./phases/A07a-unified-corpus.md).
+**Related:** [D92](#d92--osm-draws-the-water-bodies-because-the-bake-off-found-no-reason-to-prefer-nhd-a07a), [D93](./phases/A07a-unified-corpus.md#d93--we-mint-the-body-key-osm-and-nhd-become-claims-on-our-record), [D118](#d118--a-missed-match-is-a-duplicate-so-the-name-gets-a-lane--bounded-by-geometry-a07a), [`phase-A07a`](./phases/A07a-unified-corpus.md).
 
 ---
 
@@ -3790,7 +3871,7 @@ nothing else. **4.9/s at concurrency 12 → ~1.5 h for the corpus.**
 **Sample `interiorPoint`, never `representativePoint`.** The latter is Turf `pointOnFeature` and
 lands *on the shoreline*, so a DEM read there returns the height of the bank — a hand-picked
 shoreline point near Paugus Bay read 171 m against the water body's 153 m. See
-[D68](#d68--lake-depth-is-a-five-rung-ladder-and-the-rung-is-stored-with-the-number-a06a).
+[D68](#d68--depth-is-a-best-available-number-that-carries-its-provenance-a06a).
 
 **3DEP's `resolution` is not always in meters.** Most tiles answer `1`; some answer in *degrees*
 (`3.086e-5`, which is 3.4 m and not a 31-micrometre DEM). Normalized on the way in, or D104's
@@ -3806,7 +3887,7 @@ Fetch is split from load, before the mistake rather than after it: [D134](#d134-
 exists because the wind pass fetched, parsed and discarded, and one derived statistic then cost a
 7.7-hour re-fetch.
 
-**Related:** [D101](#d101--elevation-comes-from-data-we-already-hold-not-from-a-metered-forecast-api), [D104](#d104--elevation-from-3dep-and-the-recurring-cost-is-near-zero), [D126](#d126--the-sea-is-settled-by-how-high-the-water-sits-not-by-what-it-is-called-a07a-2), [`phase-A07a`](./phases/A07a-unified-corpus.md).
+**Related:** [D101](./phases/A07a-unified-corpus.md#d101--elevation-comes-from-data-we-already-hold-not-from-a-metered-forecast-api--approved), [D104](./phases/A07a-unified-corpus.md#d104--elevation-from-3dep-and-the-recurring-cost-is-near-zero--approved), [D126](#d126--the-sea-is-settled-by-how-high-the-water-sits-not-by-what-it-is-called-a07a-2), [`phase-A07a`](./phases/A07a-unified-corpus.md).
 
 ---
 
@@ -3842,7 +3923,7 @@ about which kind of water it is, and it is rarer.
 catalogs; what does not drift is that a sharp move in the *unsettled* count means a source changed
 shape. The merge reports both halves.
 
-**Related:** [D96](#d96--accepted-classes-are-chosen-for-parity-between-the-two-catalogs), [D110](#d110--how-much-the-catalogs-agree-is-stored-per-attribute-a07a), [D123](#d123--every-refused-group-is-named-and-the-middle-of-the-pipeline-asserts-a07a), [D126](#d126--the-sea-is-settled-by-how-high-the-water-sits-not-by-what-it-is-called-a07a-2).
+**Related:** [D96](./phases/A07a-unified-corpus.md#d96--accepted-classes-are-chosen-for-parity-between-the-two-catalogs), [D110](#d110--how-much-the-catalogs-agree-is-stored-per-attribute-a07a), [D123](#d123--every-refused-group-is-named-and-the-campaign-is-diffable-a07a), [D126](#d126--the-sea-is-settled-by-how-high-the-water-sits-not-by-what-it-is-called-a07a-2).
 
 ---
 
@@ -3885,7 +3966,7 @@ and it was read as tuples. That is the D85 shoreline cross-check's `0 comparable
 result that reads exactly like agreement. It was caught only because zero bbox overlaps out of 569
 is implausible by chance.
 
-**Related:** [D36](#d36--water-body-dedup-match-on-create--soft-tombstone-merge-resolves-q12), [D92](#d92--osm-draws-the-water-bodies-because-the-bake-off-found-no-reason-to-prefer-nhd-a07a), [D93](#d93--we-mint-the-body-key-osm-and-nhd-become-claims-on-our-record), [D118](#d118--a-missed-match-is-a-duplicate-so-the-name-gets-a-lane--bounded-by-geometry-a07a).
+**Related:** [D36](#d36--water-body-dedup-match-on-create--soft-tombstone-merge-resolves-q12), [D92](#d92--osm-draws-the-water-bodies-because-the-bake-off-found-no-reason-to-prefer-nhd-a07a), [D93](./phases/A07a-unified-corpus.md#d93--we-mint-the-body-key-osm-and-nhd-become-claims-on-our-record), [D118](#d118--a-missed-match-is-a-duplicate-so-the-name-gets-a-lane--bounded-by-geometry-a07a).
 
 ---
 
@@ -3954,7 +4035,7 @@ without saying when is not.
 description of itself. Lake George, Schroon and Indian Lake are not in it, so the largest Adirondack
 water still has no measured depth.
 
-**Related:** [D68](#d68--lake-depth-is-a-five-rung-ladder-and-the-rung-is-stored-with-the-number-a06a), [D3](#d3--attribution-and-licensing-are-a-product-surface-not-a-footnote), [`phase-A06a`](./phases/A06a-body-depth.md).
+**Related:** [D68](#d68--depth-is-a-best-available-number-that-carries-its-provenance-a06a), [D3](#d3--safety-first-non-authoritative-framing-product-defining), [`phase-A06a`](./phases/A06a-body-depth.md).
 
 ---
 
@@ -4006,7 +4087,7 @@ only way a member can carry a `name:` token *and* a flowing `sourceToken`, becau
 name-keyword rung fires on silence and silence is never `flowing`. The 123-body wetland deletion went
 unnoticed for a year precisely because the rule that caused it left no count.
 
-**Related:** [D96](#d96--the-four-admission-rules), [D109](#d109--every-catalogs-vocabulary-maps-into-ours), [D128](#d128--a-contested-class-is-triaged-before-it-is-queued-a07a-2).
+**Related:** [D96](./phases/A07a-unified-corpus.md#d96--settled-the-four-admission-rules--approved), [D109](#d109--every-catalogs-vocabulary-maps-into-ours-and-the-stored-vocabulary-migrates-rather-than-mapping-back-a07a), [D128](#d128--a-contested-class-is-triaged-before-it-is-queued-a07a-2).
 
 ---
 
@@ -4045,7 +4126,7 @@ band will carry no depth, the `shallow_early_thaw` `bodyFeature` remains the onl
 (which A06a already called *"permanent infrastructure, not a stand-in"*), and the operator override
 remains the path for any specific water body worth the minutes.
 
-**Related:** [D3](#d3--attribution-and-licensing-are-a-product-surface-not-a-footnote), [D68](#d68--lake-depth-is-a-five-rung-ladder-and-the-rung-is-stored-with-the-number-a06a), [D69](#d69--shallowness-amplifies-the-thaw-response-only-and-never-the-cold-one).
+**Related:** [D3](#d3--safety-first-non-authoritative-framing-product-defining), [D68](#d68--depth-is-a-best-available-number-that-carries-its-provenance-a06a), [D69](#d69--shallowness-amplifies-the-thaw-response-only-never-the-cold-one-a06a).
 
 ---
 
@@ -4096,7 +4177,7 @@ Three consequences worth recording:
   **10**. Validated against published figures — Winnipesaukee 180 ft max / 41.5 ft mean (published
   180 / ~43), Little Squam 70 / 30 (published 68 / ~30).
 
-**Related:** [D68](#d68--lake-depth-is-a-five-rung-ladder-and-the-rung-is-stored-with-the-number-a06a), [D130](#d130--alsc-is-pre-fill-measured-forty-years-old-and-below-every-newer-source-a07a-2), [D132](#d132--depth-stays-measured-only-the-corpus-accepts-a-30-ceiling-a07a-3).
+**Related:** [D68](#d68--depth-is-a-best-available-number-that-carries-its-provenance-a06a), [D130](#d130--alsc-is-pre-fill-measured-forty-years-old-and-below-every-newer-source-a07a-2), [D132](#d132--depth-stays-measured-only-the-corpus-accepts-a-30-ceiling-a07a-3).
 
 ---
 
@@ -4140,7 +4221,7 @@ cell can therefore contribute strong-wind hours and no rose.**
 ✅ **No copy — and that is now settled, not pending.** [D145](#d145--wind-hole-risk-is-data-not-copy-no-clause-in-the-caption-or-the-profile-a07a-3)
 took the call on 2026-08-15: **nowhere**, in neither the caption nor the profile. `windHoleSectors`
 returns data; nothing writes a sentence. Same discipline as
-[D82](#d82--bathymetry-is-context-not-counsel), and this is the same class of number wearing a
+[D82](#d82--bathymetry-is-context-not-counsel-a06b), and this is the same class of number wearing a
 scarier name. The eventual home for it is a **conditional** banner, not a permanent clause — see D145.
 
 ⚠ **`WIND_HOLE_MIN_HOURS` is a rate, not an episode length.** Strict consecutiveness was ruled out
@@ -4165,7 +4246,7 @@ pushed more bodies over the 1 km fetch bar. The wall clock also grew because the
 the **measured 5.3 s response latency** plus pacing, where the old loader's *"~96 min at 1/s"*
 counted only the deliberate pause and was wrong by 5×.
 
-**Related:** [D82](#d82--bathymetry-is-context-not-counsel), [D86](#d86--a-rose-is-suppressed-rather-than-rendered-thin), [D145](#d145--wind-hole-risk-is-data-not-copy-no-clause-in-the-caption-or-the-profile-a07a-3), [`scripts/wind-climate/README.md`](../scripts/wind-climate/README.md).
+**Related:** [D82](#d82--bathymetry-is-context-not-counsel-a06b), [D86](#d86--aggregate-quality-renders-as-a-graded-mark-never-as-a-word-a06c), [D145](#d145--wind-hole-risk-is-data-not-copy-no-clause-in-the-caption-or-the-profile-a07a-3), [`scripts/wind-climate/README.md`](../scripts/wind-climate/README.md).
 
 ---
 
@@ -4215,7 +4296,7 @@ be there, which is the misleading-denominator shape this campaign has now correc
 This is the same reasoning that retired `--min-area-acres=N` in favor of `meetsAreaFloor`: *a
 parameter invites a caller to invent a floor; a shared constant cannot drift.*
 
-**Related:** [D134](#d134--the-wind-lane-archives-responses-and-captures-the-speed-it-was-already-fetching-a07a-3), [D86](#d86--a-rose-is-suppressed-rather-than-rendered-thin).
+**Related:** [D134](#d134--the-wind-lane-archives-responses-and-captures-the-speed-it-was-already-fetching-a07a-3), [D86](#d86--aggregate-quality-renders-as-a-graded-mark-never-as-a-word-a06c).
 
 ---
 
@@ -4270,7 +4351,7 @@ not a half-measure: the corpus stops carrying two rows, and the finding is still
 features from ONE catalog in one group means either our matching chained two distinct water bodies, or the
 catalog carries a duplicate it cannot see. Both are findings."*
 
-**Related:** [D93](./phases/A07a-unified-corpus.md#d93--we-mint-the-body-key-osm-and-nhd-become-claims-on-our-record), [D129](#d129--reconcile_min_iou-holds-at-05-and-nine-pairs-merge-on-evidence-instead).
+**Related:** [D93](./phases/A07a-unified-corpus.md#d93--we-mint-the-body-key-osm-and-nhd-become-claims-on-our-record), [D129](#d129--reconcile_min_iou-holds-at-05-and-nine-pairs-merge-on-evidence-instead-a07a-2).
 
 ---
 
@@ -4336,7 +4417,7 @@ they share a matcher. They ship in A06c-2 — see [D139](#d139--the-seed-script-
 `referenceLinks.ts` carries a test asserting no Copernicus URL is emitted, so the link cannot creep
 back in ahead of the layer.
 
-**Related:** [D75](#d75--copernicus-deep-link), [D84](#d84--two-imagery-tiers), D139.
+**Related:** [D75](#d75--satellite-imagery-ships-as-a-link-first-the-license-blocker-is-resolved-the-cost-one-isnt-a06c), [D84](#d84--satellite-imagery-is-two-tiers-with-different-jobs-a06e), D139.
 
 ---
 
@@ -4354,7 +4435,7 @@ other way.
 A06e re-adds the URL verification on top; the **input file** is what changes then, not the name — which
 was the durable half of the original argument all along.
 
-**Related:** [D49](#d49--display-prominence), D138.
+**Related:** [D49](#d49--zoom-scored-display-prominence-the-zoom-based-rendering-d48-gestured-at), D138.
 
 ---
 
@@ -4375,7 +4456,7 @@ every call site's memory.
 Pinned by a convex test whose fixture puts all the snow in the forward half and asserts
 `summarizeWeatherSince` still reports zero.
 
-**Related:** [D74](#d74--one-weather-physics-source-plus-a-separate-advisory-layer), [D56](#d56--weather-driven-hazard-decay), [D3](#d3--never-a-safety-verdict).
+**Related:** [D74](#d74--one-weather-physics-source-nws-alerts-are-an-advisory-layer-that-never-feeds-a-calculation-a06c), [D56](#d56--weather-driven-dynamic-hazard-decay--the-expanded-weather-since-variable-set), [D3](#d3--safety-first-non-authoritative-framing-product-defining).
 
 ---
 
@@ -4399,7 +4480,7 @@ The recompute is exact by construction rather than exact-until-a-path-is-missed,
 index range over a fortnight of one body's reports. A no-op result short-circuits before the write,
 so the common case is a read and nothing else.
 
-**Related:** [D86](#d86--aggregate-quality-renders-as-a-graded-mark-never-as-a-word), [D49](#d49--display-prominence).
+**Related:** [D86](#d86--aggregate-quality-renders-as-a-graded-mark-never-as-a-word-a06c), [D49](#d49--zoom-scored-display-prominence-the-zoom-based-rendering-d48-gestured-at).
 
 ---
 
@@ -4444,7 +4525,7 @@ persisting a below-quorum mark.
 Everything revealed carries `·dev`. **Flip the constant to `false` before the season**; the guard
 means forgetting is survivable rather than harmful.
 
-**Related:** [D86](#d86--aggregate-quality-renders-as-a-graded-mark-never-as-a-word), [D141](#d141--the-map-cards-counts-are-recomputed-never-incremented-a06c-2--e), [D3](#d3--never-a-safety-verdict).
+**Related:** [D86](#d86--aggregate-quality-renders-as-a-graded-mark-never-as-a-word-a06c), [D141](#d141--the-map-cards-counts-are-recomputed-never-incremented-a06c-2--e), [D3](#d3--safety-first-non-authoritative-framing-product-defining).
 
 ---
 
@@ -4473,7 +4554,7 @@ for choosing the conservative rung rather than the flattering one.
 The ladder still does its job on top: an operator who pins an `official` marker at an OSM-derived
 coordinate promotes it, and a re-import never overwrites them (A06d §2.3).
 
-**Related:** [D184](#d184--profile-richness-weights-are-fractions-of-the-score-and-activity-dominates-a06c-1), [D49](#d49--display-prominence), [D70](#d70--water-body-profile-content-is-derived-or-third-party-never-hand-maintained-a06ca06d), [D72](#d72--parking-is-modeled-apart-from-put-ins-and-directions-route-to-the-car-a06d), [`phase-A06d`](./phases/A06d-body-access-points.md).
+**Related:** [D184](#d184--profile-richness-weights-are-fractions-of-the-score-and-activity-dominates-a06c-1), [D49](#d49--zoom-scored-display-prominence-the-zoom-based-rendering-d48-gestured-at), [D70](#d70--water-body-profile-content-is-derived-or-third-party-never-hand-maintained-a06ca06d), [D72](#d72--parking-is-modeled-apart-from-put-ins-and-directions-route-to-the-car-a06d), [`phase-A06d`](./phases/A06d-body-access-points.md).
 
 ---
 
@@ -4504,7 +4585,7 @@ has to state the thing the chip will then tell everyone.
 Three product lines and one cap, and only `PARKING_INFER_RADIUS_M` (250 m) is the cap. These move by
 founder call; that one moves by eyeballing a state's output.
 
-**Related:** [D72](#d72--parking-is-modeled-apart-from-put-ins-and-directions-route-to-the-car-a06d), [D87](#d87--approach-distance-is-walked-not-flown-a06d), [D3](#d3--never-a-safety-verdict), [`phase-A06d`](./phases/A06d-body-access-points.md).
+**Related:** [D72](#d72--parking-is-modeled-apart-from-put-ins-and-directions-route-to-the-car-a06d), [D87](#d87--approach-distance-is-walked-not-flown-a06d), [D3](#d3--safety-first-non-authoritative-framing-product-defining), [`phase-A06d`](./phases/A06d-body-access-points.md).
 
 ---
 
@@ -4543,7 +4624,7 @@ That is a live, conditional, self-retiring claim rather than a permanent label, 
 weather trigger (D56's lane) plus the never-hide invariant. **Not built, not scheduled**; the data it
 would read is already stored, which is the point of having derived it.
 
-**Related:** [D3](#d3--never-a-safety-verdict), [D82](#d82--bathymetry-is-context-not-counsel), [D90](#d90--wind-exposure-is-frequency-times-fetch-never-fetch-alone-a06c-1), [D134](#d134--the-wind-lane-archives-responses-and-captures-the-speed-it-was-already-fetching-a07a-3), [`phase-A06c`](./phases/A06c-expanded-body-profiles.md).
+**Related:** [D3](#d3--safety-first-non-authoritative-framing-product-defining), [D82](#d82--bathymetry-is-context-not-counsel-a06b), [D90](#d90--wind-exposure-is-frequency--fetch-never-fetch-alone-a06c-1), [D134](#d134--the-wind-lane-archives-responses-and-captures-the-speed-it-was-already-fetching-a07a-3), [`phase-A06c`](./phases/A06c-expanded-body-profiles.md).
 
 ---
 
@@ -4664,7 +4745,7 @@ founder asked for over calendar-year invalidation.
 **Backfill last season on first build**, so the feature ships with a full scrubber rather than an empty
 one that fills over three weeks.
 
-**Related:** [D56](#d56), [D63](#d63), [D140](#d140--a-forecast-and-an-observation-are-separated-by-a-type-not-a-rule-a06c-2--25b), D148, [`phase-A06e`](./phases/A06e-satellite-imagery.md).
+**Related:** [D56](#d56--weather-driven-dynamic-hazard-decay--the-expanded-weather-since-variable-set), [D63](#d63--a-season-is-july-1--june-30-and-it-is-derived-rather-than-stored-a05a), [D140](#d140--a-forecast-and-an-observation-are-separated-by-a-type-not-a-rule-a06c-2--25b), D148, [`phase-A06e`](./phases/A06e-satellite-imagery.md).
 
 ---
 
@@ -4698,7 +4779,7 @@ deferring costs nothing structurally. **Capture the SCL and SWIR bands during A0
 anyway** — we are already paying for the download, and re-fetching a season later is the expensive
 version.
 
-**Related:** [D3](#d3--never-a-safety-verdict), [D140](#d140--a-forecast-and-an-observation-are-separated-by-a-type-not-a-rule-a06c-2--25b), D147, D148, [`phase-A06e`](./phases/A06e-satellite-imagery.md).
+**Related:** [D3](#d3--safety-first-non-authoritative-framing-product-defining), [D140](#d140--a-forecast-and-an-observation-are-separated-by-a-type-not-a-rule-a06c-2--25b), D147, D148, [`phase-A06e`](./phases/A06e-satellite-imagery.md).
 
 ---
 
@@ -4744,7 +4825,7 @@ satellites, which makes the number an event rather than a preference.
 is the closest thing to a reference implementation. Maine's **human ice-out records** give us ground
 truth inside our own region — worth more than any dataset we could have borrowed.
 
-**Related:** [D3](#d3--never-a-safety-verdict), [D140](#d140--a-forecast-and-an-observation-are-separated-by-a-type-not-a-rule-a06c-2--25b), D149, D150, [`phase-A06e`](./phases/A06e-satellite-imagery.md).
+**Related:** [D3](#d3--safety-first-non-authoritative-framing-product-defining), [D140](#d140--a-forecast-and-an-observation-are-separated-by-a-type-not-a-rule-a06c-2--25b), D149, D150, [`phase-A06e`](./phases/A06e-satellite-imagery.md).
 
 ## D152 — The weather cache key is a two-tier grid, not a coordinate (A06h)
 
@@ -4896,7 +4977,7 @@ aggressively."* Server-side proxying with a shared cache — one fetch per frame
 whole day near 150–300 requests. **RainViewer is a legitimate v1**; it just does not solve the mountain
 problem, because nothing at that layer does.
 
-**Related:** [D3](#d3--never-a-safety-verdict), D150, D157, [`phase-A06h`](./phases/A06h-weather-detail.md).
+**Related:** [D3](#d3--safety-first-non-authoritative-framing-product-defining), D150, D157, [`phase-A06h`](./phases/A06h-weather-detail.md).
 
 ## D157 — Radar is cut, not served (A06h)
 
@@ -4998,7 +5079,7 @@ admit new card types — a body that just froze, a hazard that just cleared — 
 a lie each time. **The escape hatch is a user-set "only show reports" boolean** in the filter row, so
 anyone who wants the old feed keeps it in one tap.
 
-**Related:** [D50](#d50--trust-is-boost-only), D152, D154, D161, [`phase-A01`](./phases/A01-read-path-durability.md), [`phase-A06h`](./phases/A06h-weather-detail.md).
+**Related:** [D50](#d50--trust-score-reputation-signal-the-asymmetric-stand-in-for-the-removed-social-graph), D152, D154, D161, [`phase-A01`](./phases/A01-read-path-durability.md), [`phase-A06h`](./phases/A06h-weather-detail.md).
 
 ## D160 — The ice-thickness estimate is an admin calibration instrument, and it ships dark (A06h)
 
@@ -5024,7 +5105,7 @@ against `measured` entries only**; fitting to `estimated` ones is fitting to som
   measured *against* the world and nothing reads it back; the moment a derived thickness becomes an
   input it acquires authority it has not earned.
 - **Graduating it to a skater surface requires its own decision.** This authorizes a dark instrument
-  and nothing more. [D3](#d3--never-a-safety-verdict) and D150 both still bind, and a thickness in
+  and nothing more. [D3](#d3--safety-first-non-authoritative-framing-product-defining) and D150 both still bind, and a thickness in
   inches is the most counsel-shaped number this app could ever publish.
 
 **The honest expectation:** it will probably perform poorly, because air-temperature FDD ignores snow
@@ -5032,7 +5113,7 @@ insulation, wind, depth, current and springs — the same variables that make th
 necessary. Learning *how* poorly, with numbers, is worth a season; learning it privately is what makes
 it safe to learn at all.
 
-**Related:** [D3](#d3--never-a-safety-verdict), D56, D150, D151, [`phase-A05c`](./phases/A05c-hazard-memory.md), [`phase-A06h`](./phases/A06h-weather-detail.md).
+**Related:** [D3](#d3--safety-first-non-authoritative-framing-product-defining), D56, D150, D151, [`phase-A05c`](./phases/A05c-hazard-memory.md), [`phase-A06h`](./phases/A06h-weather-detail.md).
 
 ## D161 — The season checker stays the trigger; the cell scanner is what it starts (A06h)
 
@@ -5701,7 +5782,7 @@ re-tiling replaces ~2,000 rows instead of migrating 116,070, and a dropped water
 flag claiming a survey we no longer draw. It records the **2,022** bodies that produced a visible
 contour line, not the 2,437 the join merely matched. **The put-in terms still wait on A06d.**
 
-**Related:** [D49](#d49), [D70](#d70--water-body-profile-content-is-derived-or-third-party-never-hand-maintained-a06ca06d), [`phase-A06c`](./phases/A06c-expanded-body-profiles.md).
+**Related:** [D49](#d49--zoom-scored-display-prominence-the-zoom-based-rendering-d48-gestured-at), [D70](#d70--water-body-profile-content-is-derived-or-third-party-never-hand-maintained-a06ca06d), [`phase-A06c`](./phases/A06c-expanded-body-profiles.md).
 
 ## D185 — A stored key spelled the UK way is migrated, not grandfathered (feat us-spellings)
 

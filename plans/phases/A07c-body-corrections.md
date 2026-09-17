@@ -1,4 +1,4 @@
-# A07c — Water body corrections: the skater says "this is wrong", and a moderator fixes it
+# Phase A07c — Water body corrections: the skater says "this is wrong", and a moderator fixes it
 
 > **Status:** ⚪ **Scoped 2026-09-16.** Not built. First phase named under the new scheme
 > ([`README.md`](../README.md#phase-names)); the era stays `A` because this is the last of the

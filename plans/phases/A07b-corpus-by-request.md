@@ -1,4 +1,4 @@
-# A07b — Corpus by request: the skater says "this is skateable", and the catalog answers
+# Phase A07b — Corpus by request: the skater says "this is skateable", and the catalog answers
 
 > **Status:** ✅ **Built 2026-09-16, two PRs** — PR 1 (`phase-n7b-corpus-lifecycle`, #61): the
 > lifecycle model — standing, transitions, the seed, the rollover, the surfaces, the docs. PR 2

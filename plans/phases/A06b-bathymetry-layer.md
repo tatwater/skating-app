@@ -1,4 +1,4 @@
-# A06b — The bathymetry layer: real isobaths inside the water body
+# Phase A06b — The bathymetry layer: real isobaths inside the water body
 
 *An underwater-contour layer inside an open water body's drawer, drawn from state-agency surveys.*
 

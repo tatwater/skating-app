@@ -10,7 +10,7 @@ with a date on it — and behind it, a season of passes you can scrub through an
 >
 > | | | |
 > |---|---|---|
-> | **PR 0** — the way in | ✅ Built 2026-08-21 | [Workstream 0](#workstream-0--getting-the-way-in-into-the-app--built-2026-08-21) — the access prerequisite that grew into a build of its own, landed on this phase's branch rather than as an A06d follow-up (founder call) |
+> | **PR 0** — the way in | ✅ Built 2026-08-21 | [Workstream 0](#0--getting-the-way-in-into-the-app--built-2026-08-21) — the access prerequisite that grew into a build of its own, landed on this phase's branch rather than as an A06d follow-up (founder call) |
 > | **PR 1** — the reveal, web only | ✅ Merged 2026-08-23 | PR **#45** |
 > | **PR 2** — the producer | ✅ Merged 2026-08-25 | PR **#46** — the Fly box, the granule transform, the masked archive, the S1 pipeline, and the single-season backfill |
 > | **PR 3** — the consumer | ✅ **Built 2026-08-26**, branch `phase-n6e-satellite-imagery-3` — **no PR opened yet, undeployed** | The Convex read path, both scrubbers, the band selector, **mobile's reveal**, attribution, and the per-frame date and cloud caveat |
@@ -820,7 +820,7 @@ coastal launches we do not carry.
 **PR 0 — the way in.** ✅ **Built 2026-08-21**, on this branch rather than inside A06d (founder call —
 A06d is merged, and a follow-up PR against it would have been a second review of the same code). The
 route geometry, the trail connectivity pass the founder took at the same time, and the approach drawn
-on both clients. See [Workstream 0](#workstream-0--getting-the-way-in-into-the-app--built-2026-08-21)
+on both clients. See [Workstream 0](#0--getting-the-way-in-into-the-app--built-2026-08-21)
 — including why *"while the routing pass is still running"* arrived eight days too late to be free.
 
 **PR 1 — the reveal, web only. Zero infrastructure.** ✅ **Merged 2026-08-23** (PR #45).
