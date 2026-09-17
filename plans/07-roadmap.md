@@ -590,7 +590,7 @@ queue whose approve performs the act. *A skater can vouch a water body into the 
 can stand one down.*
 
 #### Data runs
-- **2026-09-17 — standing seed `standing-seed-20260916`:** 24,961 scanned → 23,520 shelved, 1,441 active (1,377 attached · 52 keep-list · 3 curated · 1 by request); `regionStats` recomputed. Three matcher defects fixed first; the keep-list gaps are in the plan doc
+- **2026-09-17 — standing seed `standing-seed-20260916`:** 24,961 scanned → 23,520 shelved, 1,433 active (1,377 attached · 52 keep-list · 3 curated · 1 by request), 8 already inactive; `regionStats` recomputed. Three matcher defects fixed first; the keep-list gaps are in the plan doc
 
 #### Deferred
 - ⚪ **Cap open asks per water body per kind at create** — the sibling set is unbounded by construction, so a decision drains it in scheduled pages snapshotted at decision time (five review passes to get right); a cap of ~100 would delete `closeSiblings` and the snapshot outright. Trigger: the next defect in that code

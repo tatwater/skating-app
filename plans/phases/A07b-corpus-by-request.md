@@ -3,7 +3,8 @@
 > **Status:** ✅ **Built 2026-09-16, two PRs** — PR 1 (`phase-n7b-corpus-lifecycle`, #61): the
 > lifecycle model — standing, transitions, the seed, the rollover, the surfaces, the docs. PR 2
 > (`phase-n7b-requests`, stacked on PR 1): requests — the table, the gestures, the resolver, the
-> moderator queue, `NewWaterPrompt`. Neither deployed to dev nor device-tested; the seed not run.
+> moderator queue, `NewWaterPrompt`. **Both merged (#61, #63) and on dev; the standing seed applied
+> 2026-09-17** (see *The seed run* below). Not yet device-tested.
 > Split out of [`A07a`](./A07a-unified-corpus.md) because it is a product feature across two
 > clients, not a data campaign.
 > **Depends on:** A07a's `includedByRequest` field and `belongsInCorpus` predicate — **both landed
@@ -312,7 +313,8 @@ dry, then `--apply` as campaign `standing-seed-20260916` (run row `succeeded`), 
 | --- | --- |
 | Scanned | 24,961 |
 | **Shelved — dormant, `inactive`** | **23,520** |
-| Kept active | 1,441 — 1,377 attached (put-ins etc.) · 52 keep-list · 3 curated · 1 by request · 8 already inactive |
+| Kept active | 1,433 — 1,377 attached (put-ins etc.) · 52 keep-list · 3 curated · 1 by request |
+| Already inactive, skipped | 8 |
 | Active per state | NY 345 · VT 106 · NH 238 · ME 401 · MA 358 |
 
 **The first dry run found three matcher defects**, fixed before anything was applied
